@@ -28,6 +28,7 @@ Everything the source brings is renamed so it cannot clash with the host:
 | `XATTACH` | `XA` | Asks for a `.tbcad`, `.dxf` (or, when the reader is available, `.dwg`) file, then **Attach/Overlay** and the **path type** (Relative / Absolute / None), then a name (default: the file name); attaches it and inserts it (point, `Scale`, `Rotate`; Enter = origin). Esc undoes the attach. |
 | `XRELOAD` | `XR` | Reloads one xref by name or `All` (default). Inserts stay where they are. One undo step. |
 | `XDETACH` | | Removes the xref: its inserts, block, nested blocks and the layers nothing uses. |
+| `XUNLOAD` | | Drops the content of the xref but keeps its block, path and inserts and the layer states; `XRELOAD` brings it back. Shown as "unloaded" in `XLIST`. |
 | `XBIND` | `XB` | Makes the xref an ordinary block (the path is dropped). Its layers and blocks stay as they are. |
 | `XLIST` | | Lists xrefs with path, state (up to date / changed on disk / file not found) and use count. |
 
@@ -59,6 +60,18 @@ where it closes. Overlays inside a loaded file are left out.
 `AppCore::tickXrefs` (called every frame from `updateFrame`) checks all xrefs every two seconds.
 When a file's stamp differs from the snapshot and no command is running, it runs `XRELOAD`. A
 file that fails to load (half written, damaged) is not retried until its stamp changes again.
+
+## Layer states (VISRETAIN)
+
+Layers of an xref are ordinary layers under the xref's top-level layer. Reload and unload never
+touch layers that already exist, so what the user changed (on/off, frozen, locked, colour,
+linetype, plot) is kept. Layers that appear in a newer version of the source are created with
+the source's settings. This always behaves like AutoCAD's `VISRETAIN = 1`.
+
+## Missing files
+
+If the file cannot be found, the xref keeps its snapshot, `XLIST` says "file not found", the
+automatic reload is silent, and `XRELOAD` reports the error and leaves the drawing unchanged.
 
 ## File format
 

@@ -37,6 +37,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXReloadCommand());
     (void)registry.add(makeXDetachCommand());
     (void)registry.add(makeXBindCommand());
+    (void)registry.add(makeXUnloadCommand());
     (void)registry.add(makeXListCommand());
     (void)registry.add(makeBlockCountCommand());
 }

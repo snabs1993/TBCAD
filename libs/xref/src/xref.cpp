@@ -526,6 +526,16 @@ Result<void> detach(Transaction& tx, Document& doc, BlockId block) {
     return {};
 }
 
+Result<void> unload(Transaction& tx, Document& doc, BlockId block) {
+    const BlockDef* def = doc.block(block);
+    if (!def || def->xrefPath.empty())
+        return makeError(ErrorCode::InvalidArgument, "That block is not an external reference");
+    std::set<BlockId> nested = nestedBlocks(doc, block);
+    eraseContent(tx, doc, block);
+    eraseBlocks(tx, std::move(nested));
+    return tx.modifyBlock(block, [](BlockDef& d) { d.xrefStamp = 0; });
+}
+
 Result<void> bind(Transaction& tx, Document& doc, BlockId block) {
     const BlockDef* def = doc.block(block);
     if (!def || def->xrefPath.empty())
@@ -542,6 +552,8 @@ State state(const Document& doc, BlockId block, const std::filesystem::path& hos
     const BlockDef* def = doc.block(block);
     if (!def || def->xrefPath.empty())
         return State::NotXref;
+    if (def->xrefStamp == 0)
+        return State::Unloaded;
     std::filesystem::path p = resolvePath(def->xrefPath, hostFile);
     std::error_code ec;
     if (!std::filesystem::is_regular_file(p, ec))
