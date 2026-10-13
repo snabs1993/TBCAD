@@ -27,6 +27,10 @@ std::string lastFile(const cmd::IHost& host, Format format);
 std::string defaultFile(const cmd::IHost& host, Format format);
 void setLastFile(cmd::IHost& host, Format format, const std::string& path);
 
+// The layout to plot (host setting "plot.layout"); empty plots model space.
+std::string plotLayout(const cmd::IHost& host);
+void setPlotLayout(cmd::IHost& host, const std::string& name);
+
 // Adds the extension for the format when the path has none.
 std::string withExtension(std::string path, Format format);
 // The visible drawing area for PlotArea::Display, from the host's view.

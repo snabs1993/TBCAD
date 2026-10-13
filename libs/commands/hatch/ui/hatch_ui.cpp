@@ -181,6 +181,7 @@ void drawSection(ui::PanelContext& pc, EntityId id) {
 
 void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Hatch", "HATCH", "draw.hatch");
+    ui.addMenuItem("Draw/Gradient", "GRADIENT", "draw.gradient");
     ui.addMenuItem("Modify/Edit Hatch", "HATCHEDIT", "modify.hatchedit");
     ui.addPanel("hatch", "Hatch", drawPanel, false);
     ui.addPropertySection(EntityKind::Hatch, drawSection);

@@ -49,6 +49,24 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
     }
 
     for (const PlacedGlyph& g : layout.glyphs) {
+        if (fonts().isStroke(g.font)) {
+            for (const font::StrokePath& sp : fonts().strokes(g.font, g.glyphId).paths) {
+                if (sp.points.size() < 2)
+                    continue;
+                DisplayPolyline line;
+                line.style = base;
+                if (g.color >= 1 && g.color <= 255)
+                    line.style.color = paletteColor(static_cast<std::uint8_t>(g.color));
+                line.pts.reserve(sp.points.size());
+                for (const font::FPoint& p : sp.points) {
+                    Vec2 local{g.origin.x + (p.x + g.shear * p.y) * g.scale,
+                               g.origin.y + p.y * g.scale};
+                    line.pts.push_back(layout.toWorld.apply(local));
+                }
+                out.items.emplace_back(std::move(line));
+            }
+            continue;
+        }
         const font::GlyphOutline& o = fonts().outline(
             g.font, g.glyphId, outlineTolerance(ctx.tolerance(), g.scale * scaleToWorld));
         if (o.contours.empty())

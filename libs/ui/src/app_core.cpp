@@ -1,17 +1,23 @@
 #include "tbcad/ui/app_core.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iterator>
+#include <map>
 #include <sstream>
 #include <unordered_set>
 
 #include "app_commands.h"
 #include "tbcad/blocks/index_refresh.h"
+#include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
 
@@ -76,6 +82,9 @@ struct AppCore::Session {
     std::unique_ptr<cmd::CommandRunner> runner{};
     fs::path file{};
     std::uint64_t savedRevision = 0;
+    // File stamp of each xref that a reload was already tried for (a failed reload is not retried
+    // until the file changes again).
+    std::map<BlockId, std::int64_t> xrefTried{};
 };
 
 struct AppCore::DocSlot {
@@ -415,11 +424,109 @@ void AppCore::newDocument() {
     addSession(std::make_unique<Document>(), {});
 }
 
+namespace {
+
+bool isDxfPath(const fs::path& p) {
+    std::string e = p.extension().string();
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return e == ".dxf";
+}
+
+}  // namespace
+
+Result<void> AppCore::openDxf(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        print("Cannot open " + path.string());
+        settings_.removeRecentFile(platform::pathToUtf8(path));
+        return makeError(ErrorCode::Io, "Cannot read " + path.string());
+    }
+    std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(raw.size());
+    std::transform(raw.begin(), raw.end(), bytes.begin(),
+                   [](char c) { return static_cast<std::byte>(c); });
+    dxf::Report report;
+    auto result = dxf::importDxf(bytes, {}, report);
+    if (!result) {
+        print("Cannot open " + path.string() + ": " + result.error().message);
+        return makeError(ErrorCode::Parse, result.error().message);
+    }
+    auto& imported = result.value();
+    std::size_t total = 0;
+    for (const auto& [name, count] : imported.summary.entities)
+        total += count.imported;
+    addSession(std::move(imported.document), path);
+    std::size_t shown = 0;
+    for (const auto& d : report.diagnostics()) {
+        if (d.severity == dxf::Severity::Info)
+            continue;
+        if (++shown > 5)
+            break;
+        print("DXF: " + d.message);
+    }
+    std::size_t warnings =
+        report.count(dxf::Severity::Warning) + report.count(dxf::Severity::Error);
+    if (warnings > 5)
+        print("DXF: " + std::to_string(warnings - 5) + " more notice(s) not shown.");
+    if (imported.summary.unitsAssumed)
+        print("DXF: the file has no units; millimetres assumed.");
+    settings_.addRecentFile(platform::pathToUtf8(path));
+    (void)settings_.save(paths_.settingsFile());
+    print("Opened " + path.string() + " (" + std::to_string(total) + " objects)");
+    return {};
+}
+
+Result<void> AppCore::saveDxf(const fs::path& path) {
+    dxf::Report report;
+    dxf::ExportOptions options;
+    auto out = dxf::exportDxf(session_->doc, options, report);
+    if (!out) {
+        print("Cannot save " + path.string() + ": " + out.error().message);
+        return makeError(ErrorCode::InvalidArgument, out.error().message);
+    }
+    std::error_code ec;
+    fs::path tmp = path;
+    tmp += ".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (f)
+            f.write(out.value().bytes.data(),
+                    static_cast<std::streamsize>(out.value().bytes.size()));
+        if (!f) {
+            f.close();
+            fs::remove(tmp, ec);
+            print("Cannot save " + path.string());
+            return makeError(ErrorCode::Io, "Cannot write " + path.string());
+        }
+    }
+    if (fs::exists(path, ec)) {
+        fs::path bak = path;
+        bak += ".bak";
+        fs::remove(bak, ec);
+        fs::rename(path, bak, ec);
+    }
+    fs::rename(tmp, path, ec);
+    if (ec) {
+        print("Cannot save " + path.string() + ": " + ec.message());
+        return makeError(ErrorCode::Io, ec.message());
+    }
+    const auto& sum = out.value().summary;
+    if (sum.skipped > 0)
+        print("DXF: " + std::to_string(sum.skipped) + " object(s) could not be written.");
+    if (sum.downgraded > 0)
+        print("DXF: " + std::to_string(sum.downgraded) +
+              " object(s) were written in a simpler form.");
+    return {};
+}
+
 Result<void> AppCore::openFile(const fs::path& path) {
     if (auto open = slotOfFile(path)) {
         activateDocument(*open);
         return {};
     }
+    if (isDxfPath(path))
+        return openDxf(path);
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
@@ -448,12 +555,12 @@ Result<void> AppCore::save() {
 Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
-        path += ".tbcad";
+        path += settings_.getString("files.defaultFormat", "tbcad") == "dxf" ? ".dxf" : ".tbcad";
     if (runner().active()) {
         print("Finish the current command first.");
         return makeError(ErrorCode::Conflict, "A command is running.");
     }
-    auto r = io::writeTbcad(session_->doc, path);
+    auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path);
     if (!r) {
         print("Cannot save " + path.string() + ": " + r.error().message);
         return r;
@@ -607,8 +714,35 @@ void AppCore::zoomToEntities(const std::vector<EntityId>& ids) {
     zoomToBox(box);
 }
 
+void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
+    using namespace std::chrono_literals;
+    if (now - lastXrefCheck_ < 2s)
+        return;
+    lastXrefCheck_ = now;
+    if (!session_ || session_->runner->active())
+        return;
+    bool stale = false;
+    for (BlockId id : xref::xrefs(session_->doc)) {
+        if (xref::state(session_->doc, id, session_->file) != xref::State::Changed)
+            continue;
+        const BlockDef* def = session_->doc.block(id);
+        std::int64_t stamp = xref::fileStamp(xref::resolvePath(def->xrefPath, session_->file));
+        auto tried = session_->xrefTried.find(id);
+        if (tried != session_->xrefTried.end() && tried->second == stamp)
+            continue;
+        session_->xrefTried[id] = stamp;
+        stale = true;
+    }
+    if (!stale || !registry_.find("XRELOAD"))
+        return;
+    print("External reference changed on disk; reloading");
+    submitText("XRELOAD");
+    submitText("");
+}
+
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     tickAutosave(now);
+    tickXrefs(now);
     if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
@@ -706,6 +840,7 @@ PanelContext AppCore::makePanelContext() {
     pc.feedback = &feedback_;
     pc.cursorWorld = cursorWorld_;
     pc.apertureMm = apertureMm();
+    pc.commandActive = runner().active();
     pc.runCommand = [this](const std::string& line) { submitText(line); };
     return pc;
 }
@@ -726,7 +861,7 @@ void AppCore::click(const PointerState& p) {
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:
                 if (auto id = pickEntity(session_->doc, session_->index, world, apertureMm()))
-                    run.submit(cmd::Input::pick(*id, world));
+                    run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
             default:
                 break;
@@ -974,6 +1109,14 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    // Active-only mode lives in the drawing (Header::activeOnly); the command that owns it is
+    // registered by the layers module, so this is a no-op in builds without it.
+    ui.addStatusToggle(
+        "activeonly", "ACTIVE", [this] { return document().header().activeOnly; },
+        [this](bool on) {
+            if (!prompt_)
+                submitText(on ? "ACTIVEONLY On" : "ACTIVEONLY Off");
+        });
     ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 

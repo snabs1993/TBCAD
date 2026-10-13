@@ -37,6 +37,9 @@ struct Header {
     LineWeight currentLineweight = LineWeight::byLayer();
     TextStyleId currentTextStyle = kTextStyleStandard;
     DimStyleId currentDimStyle = kDimStyleStandard;
+    // "Active only": every layer except the current layer and its sub-layers behaves as locked
+    // (see Document::effective). Session state: not written to the file.
+    bool activeOnly = false;
     std::string createdBy{};
     std::map<std::string, std::string> custom{};  // settings stored in the file
 };
@@ -212,7 +215,7 @@ public:
     const Layer* layerByName(std::string_view name) const { return layers_.findByName(name); }
     // Layer state with sub-layer inheritance applied. Cached; the cache is dropped on any
     // layer-table change. An unknown id yields defaults with a null id.
-    EffectiveLayer effective(LayerId id) const;
+    EffectiveLayer effective(LayerId id) const;  // honours Header::activeOnly
     // Child layer with this name under `parent` (null parent = top level).
     const Layer* layerByName(LayerId parent, std::string_view name) const;
     const Linetype* linetypeByName(std::string_view n) const { return linetypes_.findByName(n); }
@@ -262,6 +265,7 @@ private:
     detail::Table<DimStyle, DimStyleId> dimStyles_{};
     detail::Table<BlockDef, BlockId> blocks_{};
 
+    EffectiveLayer withActiveOnly(EffectiveLayer e) const;
     mutable std::unordered_map<LayerId, EffectiveLayer> effectiveCache_{};
     mutable std::uint64_t effectiveVersion_ = 0;
 
@@ -314,6 +318,9 @@ public:
     // by it so far (entities added in this transaction are not listed). Sorted by id. Lets
     // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
     std::vector<EntityId> touchedEntities() const;
+
+    // The document this transaction edits; reads see the edits made so far.
+    const Document& document() const { return *doc_; }
 
     // Finishes the transaction. Observers are notified once unless nothing changed.
     ChangeSet commit();

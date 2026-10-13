@@ -135,3 +135,42 @@ TEST_CASE("hit testing uses the transformed layout box") {
     CHECK(hitTest(doc, e, {103, 100 + w / 2}, 3));  // below the baseline, within the aperture
     CHECK_FALSE(geom::hitTest(e, {500, 500}, 0.5, &doc));
 }
+
+namespace {
+TextStyleId strokeStyle(Document& doc, const char* family) {
+    auto tx = doc.begin("style");
+    auto id = tx.addTextStyle(TextStyle{{}, "Strokes", family, "", 1.0, 0.0});
+    REQUIRE(id.ok());
+    tx.commit();
+    return id.value();
+}
+}  // namespace
+
+TEST_CASE("TBCAD Stroke style displays as open polylines, not fills") {
+    Document doc;
+    TextData t = thai("HI");
+    t.style = strokeStyle(doc, "TBCAD Stroke");
+    Entity e{{}, t};
+    DisplayList l = build(doc, e);
+    REQUIRE_FALSE(l.items.empty());
+    double top = -1e18;
+    for (const auto& it : l.items) {
+        const auto* p = std::get_if<DisplayPolyline>(&it);
+        REQUIRE(p);
+        CHECK_FALSE(p->closed);
+        CHECK(p->pts.size() >= 2);
+        for (const Vec2& q : p->pts)
+            top = std::max(top, q.y);
+    }
+    CHECK(l.items.size() == 6);           // H: three strokes, I: three strokes
+    CHECK(top == doctest::Approx(10.0));  // text height is the capital height
+}
+
+TEST_CASE("stroke font text has a layout frame") {
+    Document doc;
+    TextData t = thai("HI");
+    t.style = strokeStyle(doc, "tbcad stroke");
+    TextLayout l = layoutText(doc, t);
+    CHECK_FALSE(l.frame.empty());
+    CHECK(l.worldBounds().width() > 10);
+}

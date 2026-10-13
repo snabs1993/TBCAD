@@ -30,9 +30,15 @@ namespace {
 
 constexpr ImGuiID kDockId = 0x7BC4D001u;
 
-const std::vector<platform::FileFilter>& drawingFilters() {
-    static const std::vector<platform::FileFilter> f = {{"TBCAD drawings", "*.tbcad"}};
-    return f;
+const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
+    static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
+                                                                 {"DXF drawings", "*.dxf"},
+                                                                 {"All drawings", "*.tbcad;*.dxf"}};
+    static const std::vector<platform::FileFilter> dxfFirstList = {
+        {"DXF drawings", "*.dxf"},
+        {"TBCAD drawings", "*.tbcad"},
+        {"All drawings", "*.tbcad;*.dxf"}};
+    return dxfFirst ? dxfFirstList : tbcadFirst;
 }
 
 const char* kindName(EntityKind k) {
@@ -313,7 +319,7 @@ void Gui::doOpen() {
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::Open;
-    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad");
+    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf");
 }
 
 void Gui::doOpenPath(const std::string& path) {
@@ -333,10 +339,22 @@ void Gui::doSave() {
 }
 
 void Gui::doSaveAs() {
-    std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1.tbcad";
+    std::string ext = core_.settings().getString("files.defaultFormat", "tbcad");
+    if (ext != "dxf")
+        ext = "tbcad";
+    if (core_.hasFile()) {
+        std::string e = core_.file().extension().string();
+        std::transform(e.begin(), e.end(), e.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (e == ".dxf")
+            ext = "dxf";
+        else if (e == ".tbcad")
+            ext = "tbcad";
+    }
+    std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1." + ext;
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(), "Save drawing as",
-                                              "tbcad", suggested)) {
+        if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
+                                              "Save drawing as", ext, suggested)) {
             auto r = core_.saveAs(*p);
             if (!r)
                 lastError_ = r.error().message;
@@ -349,7 +367,7 @@ void Gui::doSaveAs() {
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::SaveAs;
-    browser_.open(FileBrowser::Mode::Save, start, suggested, ".tbcad");
+    browser_.open(FileBrowser::Mode::Save, start, suggested, "." + ext);
 }
 
 // ---- shortcuts ---------------------------------------------------------------------------------
@@ -1337,7 +1355,14 @@ void Gui::viewportInput(const ViewportRect& rect) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 }
 
+void Gui::queueDroppedFile(std::string path) {
+    droppedFiles_.push_back(std::move(path));
+}
+
 ViewportRect Gui::frame() {
+    for (const std::string& path : droppedFiles_)
+        doOpenPath(path);
+    droppedFiles_.clear();
     if (auto text = core_.takeClipboardText())
         glfwSetClipboardString(window_, text->c_str());
     shortcuts();

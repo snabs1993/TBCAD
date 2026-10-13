@@ -32,7 +32,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | DXF | Result |
 |---|---|
 | HEADER | `$ACADVER`, `$DWGCODEPAGE` (encoding), `$INSUNITS` (units), `$LTSCALE`, `$CLAYER` |
-| TABLES | LAYER, LTYPE (dashes only), STYLE, DIMSTYLE (text height, arrow size, gaps, scale, decimals); VPORT, VIEW, UCS, APPID, BLOCK_RECORD are ignored |
+| TABLES | LAYER, LTYPE (dashes only), STYLE (an `.shx` font file becomes the TBCAD Stroke font, with an info message in the report), DIMSTYLE (text height, arrow size, gaps, scale, decimals); VPORT, VIEW, UCS, APPID, BLOCK_RECORD are ignored |
 | BLOCKS | `BlockDef` (name, base point, entities); `*Model_Space` and `*Paper_Space*` are skipped; anonymous blocks (`*D1`, `*U2`) are kept with `anonymous = true`; a block used before it is defined works |
 | ENTITIES | see below; paper space entities (group 67 = 1) are skipped and counted |
 | OBJECTS, CLASSES, THUMBNAILIMAGE | skipped |
@@ -134,17 +134,19 @@ kind:
 |---|---|
 | Linear, Aligned | group 13, group 14, group 10 (point on the dimension line), unused |
 | Radius, Diameter | group 10 (centre / first point), group 15 (point on the circle), unused, unused |
-| Angular2Line | 13, 14, 15, 10 |
+| Angular2Line | 13, 14, 15, 10; the point on the arc (group 16) goes to `textPos` |
 | Angular3Point | 13, 14, 15 (vertex), 10 (arc point) |
 
 Some writers (ezdxf, some CAD programs) store an aligned dimension as a rotated linear one;
 that is imported as Linear with `rotation`. Ordinate dimensions have no `DimensionData` form.
 
-With `dimensionGraphics` (default) the anonymous `*D` block of the dimension is also kept so the
-dimension displays before the dimension generator (W5-5) exists: its lines, arcs and solid
-arrowheads become one `ProxyData` entity (`originalType = "DIMENSION"`, resolved `DisplayList`),
-and its text becomes loose `TextData`/`MTextData`. W5-5 should switch the option off (the
-converter has `--no-dimension-graphics`) once `DimensionData` draws itself.
+Dimensions draw themselves from their definition points and style (`docs/dim.md`), so the file's
+own drawing (the anonymous `*D` block) is not needed. After the import the text position of every
+dimension whose text the user did not move is recomputed by the generator, which makes
+export, import and export give the same dimension again; the stored measurement is kept. With
+`dimensionGraphics` on (converter `--dimension-graphics`) the block is also kept as one
+`ProxyData` entity (`originalType = "DIMENSION"`, resolved `DisplayList`) and loose
+`TextData`/`MTextData`, which shows exactly what the other program drew. Off by default.
 
 ## Report and exit codes
 
@@ -167,7 +169,7 @@ offsets for binary DXF).
 ```
 tbcad-convert input.dxf -o output.tbcad [--report report.json] [--units mm|cm|m|km|in|ft|yd|mi|<n>]
               [--encoding utf-8|cp874|cp1252|...] [--split-layers <sep>]
-              [--no-dimension-graphics] [-q]
+              [--dimension-graphics] [-q]
 ```
 
 Exit codes: **0** converted without warnings, **1** converted with warnings (printed to stderr
@@ -194,3 +196,15 @@ Speed: a 50 MB synthetic DXF (about 480 000 entities) imports in 0.65 s and conv
 OBJECTS (layouts, groups, dictionaries), paper space and viewports, xrefs (the block stays empty),
 proxy graphics, complex linetype elements (text/shape), gradient colours,
 3D entities, mirrored text, DIMSTYLE variables beyond the basic ones.
+
+## Codepages
+
+Tables live in `libs/dxf/src/encoding/tables/` and are produced by `libs/dxf/tools/gen_codepages.py`:
+with `--mapping-dir DIR` from the Unicode Consortium `CP*.TXT` vendor mapping files, without it from
+Python's codecs, which derive from the same files (both give identical output; a CI-less offline
+machine can regenerate). Codepages: 874, 932, 936, 949, 950, 1250-1258 and 1361 (Johab, `ANSI_1361`).
+
+`\M+nXXXX` escapes: n = 1 Shift-JIS (932), 2 Big5 (950), 3 KS C 5601 (949), 4 Johab (1361),
+5 GB2312 (936). `libs/dxf/tools/gen_mplus_vectors.py` writes `tests/corpus/encoding/mplus_vectors.txt`
+(about 2100 sample escapes and the characters the platform codecs give for them), and the encoding
+tests check `decodeText` against it.

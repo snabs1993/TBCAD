@@ -55,7 +55,28 @@ the rotated X axis; negative spacing goes the other way. A polar array spreads `
 `fillAngle` (a full circle puts none on top of the original; a partial angle puts the last item at
 the end). Without `rotateItems` the objects keep their orientation and the centre of their bounding
 box follows the circle (or `basePoint`). Arrays are limited to 100,000 copies. The result is plain
-copies; there is no associative array in v1.
+copies (answer `No` to the associative question of `ARRAY`).
+
+### Associative arrays
+
+An associative array is one Insert whose `InsertData::array` (`ArrayInfo`) says how many times and
+where the block is shown. `ARRAY` moves the selected objects into a new anonymous block (`*A1`, `*A2`,
+...) with base point (0, 0) and inserts it at the origin, so the array geometry (centre, path, spacing)
+is in block coordinates and moving, rotating or scaling the Insert moves the whole array. The
+parameters stay editable with `ARRAYEDIT`; the source objects can be edited by changing the block.
+
+`blocks::arrayItemTransforms(info)` gives the block-space transform of every item (item 0 included):
+rectangular and polar items are translations or rotations about the centre (item 0 is the identity);
+a path array puts the base point on the path start for item 0 and at `pathSpacing` multiples of arc
+length for the others (0 spreads the items evenly: over the length for open paths, round the loop for
+closed ones), turning each item by the change of the path direction when `rotateItems` is set.
+`instanceTransforms(insert, base)` multiplies them with the instance transform; display, bounds, snap
+geometry and explode all use it, so every item is drawn, measured, snapped to and exploded. Exploding
+an array gives the individual objects of all items.
+
+DXF has no associative array: export writes one INSERT per item (with its ATTRIBs). A stretched Insert
+(unequal X and Y scale) whose items turn is written with the nearest placement and a note in the export
+report. In `.tbcad` the array is a trailing field of the Insert record (format 1.3).
 
 ## Commands
 
@@ -64,7 +85,9 @@ copies; there is no associative array in v1.
 | `BLOCK` | `B` | name, base point, objects, then `Retain/Convert/Delete`. An existing name offers `Redefine`. |
 | `INSERT` | `I` | block name (`?` lists, Enter takes the last one), then the point with `Scale/X/Y/Rotate` options and a live preview. |
 | `EXPLODE` | `X` | objects (selected inserts and polylines), one level. |
-| `ARRAY` | `AR` | objects, `Rectangular` (rows, columns, column distance, row distance, angle) or `Polar` (centre, count, angle to fill, rotate items), with preview. |
+| `ARRAY` | `AR` | objects, `Rectangular` (rows, columns, column distance, row distance, angle), `Polar` (centre, count, angle to fill, rotate items) or `Path` (path curve, base point, count or distance, align), with preview, then `Associative [Yes/No]` (default Yes; a path array is always associative). |
+| `ARRAYRECT` / `ARRAYPOLAR` / `ARRAYPATH` | | The same, for one type. |
+| `ARRAYEDIT` | | Pick an associative array and change its rows, columns and spacing (rectangular), or its count and angle or distance (polar, path). One undo step. |
 
 Defaults are 3 x 4 for rectangular arrays (spacing 1.5 x the selection's size) and 6 items over
 360 degrees for polar ones, so pressing Enter all the way gives a sensible result.
@@ -123,3 +146,31 @@ readers see an ATTDEF as plain text showing its tag.
   map to definitions and insert values (see `docs/dxf-import.md`, `docs/dxf-export.md`). An exported
   ATTRIB sits where the definition lands after the insert transform; text is never stretched, so
   its height follows the Y scale.
+
+## External references
+
+An xref is a block whose content is a snapshot of another drawing; see `docs/xref.md`.
+
+## Block palette, library and block count
+
+The `Blocks` panel is a palette with two tabs.
+
+* **Drawing**: one tile per named block with a line thumbnail (`thumbnailOfBlock`), the number of
+  uses (or `xref`), a filter box and a `Count` button. Double-click inserts; right-click offers
+  Insert and, for xrefs, Reload / Bind / Detach.
+* **Library**: a folder of `.tbcad` and `.dxf` files (setting `block.library`, three levels deep,
+  at most 2,000 files). Thumbnails load one file per frame. Double-click inserts the file as a
+  block; right-click can attach it as an xref instead.
+
+`INSERT` accepts the name of a library file in place of a block name (absolute path, or relative
+to the drawing's folder or the library folder; `.tbcad` may be left out). The file becomes an
+ordinary block named like the file (`xref::importAsBlock`: layers are matched by name, missing
+ones are created, layer 0 stays layer 0, nested blocks are copied as `name$block`) the first time;
+later inserts reuse it. Esc during the insert leaves nothing behind.
+
+`BLOCKCOUNT` (`BCOUNT`) lists each used block with the inserts placed in model space and the total
+including blocks nested in other inserted blocks, then offers `Table` (a grid of text and lines at
+a point), `Csv` (a file with `Block,Count,Total`) or `None`.
+
+The ImGui part of the palette is compiled only with `TBCAD_BUILD_APP`; everything it shows comes
+from `palette.h`, which the tests cover.

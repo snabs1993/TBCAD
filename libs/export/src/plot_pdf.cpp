@@ -58,6 +58,12 @@ public:
         }
     }
 
+    // Graphics state was saved or restored behind our back: forget what is set.
+    void reset() {
+        have_ = false;
+        cap_ = pdf::LineCap::Butt;
+    }
+
 private:
     void apply(const PlotStyle& st, pdf::LineCap cap) {
         if (!have_ || !sameStyle(st, last_)) {
@@ -79,8 +85,7 @@ private:
     pdf::LineCap cap_ = pdf::LineCap::Butt;
 };
 
-void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, const std::string& title) {
-    doc.setInfo(title, "TBCAD");
+void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
     const PlotLayout& lay = sheet.layout;
     pdf::Page& page = doc.addPage(lay.pageWidthMm, lay.pageHeightMm);
     page.save();
@@ -97,6 +102,17 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, const std::string& tit
             painter.fill(*f);
         else if (const auto* d = std::get_if<PlotDots>(&prim))
             painter.dots(*d);
+        else if (const auto* c = std::get_if<PlotClip>(&prim)) {
+            if (c->begin) {
+                page.save();
+                page.clipRect(c->rect.min.x, c->rect.min.y, c->rect.width(), c->rect.height());
+                page.setLineJoin(pdf::LineJoin::Round);
+                painter.reset();
+            } else {
+                page.restore();
+                painter.reset();
+            }
+        }
     }
     page.restore();
 }
@@ -105,23 +121,28 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, const std::string& tit
 
 Result<void> writePdf(const PlotSheet& sheet, const std::string& path, const std::string& title,
                       bool compress) {
+    return writePdfPages({sheet}, path, title, compress);
+}
+
+Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::string& path,
+                           const std::string& title, bool compress) {
     pdf::PdfDocument doc;
     doc.setCompression(compress);
-    paint(sheet, doc, title);
-    pdf::Result r = doc.writeFile(path);
-    if (!r)
-        return Error{ErrorCode::Io, r.error};
-    return {};
+    doc.setInfo(title, "TBCAD");
+    for (const PlotSheet& sheet : sheets)
+        paint(sheet, doc);
+    return doc.writeFile(path);
 }
 
 Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
     pdf::PdfDocument doc;
     doc.setCompression(compress);
-    paint(sheet, doc, "TBCAD drawing");
+    doc.setInfo("TBCAD drawing", "TBCAD");
+    paint(sheet, doc);
     std::ostringstream out;
-    pdf::Result r = doc.write(out);
+    Result<void> r = doc.write(out);
     if (!r)
-        return Error{ErrorCode::Io, r.error};
+        return r.error();
     return out.str();
 }
 

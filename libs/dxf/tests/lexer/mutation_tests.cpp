@@ -33,7 +33,7 @@ void exercise(const std::vector<std::byte>& bytes) {
     }
     std::string text;
     std::size_t groups = 0;
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         if (g->type() == ValueType::String) {
             text += g->str();
         }

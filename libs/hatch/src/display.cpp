@@ -10,17 +10,28 @@ namespace {
 
 constexpr std::uint8_t kToneAlpha = 110;
 
-Rgba fillColor(const HatchData& h, const Rgba& base, const geom::DisplayContext& ctx) {
-    switch (h.fill.kind) {
+Rgba toRgba(const Color& c, const Rgba& base, const geom::DisplayContext& ctx) {
+    switch (c.kind) {
         case ColorKind::Index:
-            return paletteColor(h.fill.indexValue());
+            return paletteColor(c.indexValue());
         case ColorKind::Rgb:
-            return Rgba{h.fill.r, h.fill.g, h.fill.b, 255};
+            return Rgba{c.r, c.g, c.b, 255};
         case ColorKind::ByBlock:
             return ctx.byBlockColor;
         default:
             return base;
     }
+}
+
+Rgba fillColor(const HatchData& h, const Rgba& base, const geom::DisplayContext& ctx) {
+    return toRgba(h.fill, base, ctx);
+}
+
+Rgba mix(const Rgba& a, const Rgba& b, double t) {
+    auto ch = [&](std::uint8_t x, std::uint8_t y) {
+        return static_cast<std::uint8_t>(std::lround(x + (y - x) * t));
+    };
+    return Rgba{ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a)};
 }
 
 void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayContext& ctx,
@@ -33,6 +44,19 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
     style.pattern = nullptr;  // hatch lines are continuous; the pattern makes the dashes
     if (!e.common.lineweight.isValue())
         style.lineweight = 0;  // thinnest, unless the hatch has a weight of its own
+
+    if (h->gradient) {
+        Rgba c1 = toRgba(h->gradient->color1, style.color, ctx);
+        Rgba c2 = toRgba(h->gradient->color2, style.color, ctx);
+        for (GradientBand& band : gradientBands(*h, ctx.tolerance())) {
+            DisplayFill fill;
+            fill.rings = std::move(band.rings);
+            fill.style = style;
+            fill.style.color = mix(c1, c2, band.t);
+            out.items.emplace_back(std::move(fill));
+        }
+        return;
+    }
 
     FillOptions opt;
     opt.tolerance = ctx.tolerance();

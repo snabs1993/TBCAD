@@ -12,7 +12,7 @@ class UiRegistry;
 
 namespace tbcad::hatchcmd {
 
-// HATCH [H], HATCHEDIT [HE]. Also registers the Hatch display generator with geom.
+// HATCH [H], GRADIENT [GR], HATCHEDIT [HE]. Also registers the Hatch display generator with geom.
 void registerCommands(cmd::Registry& registry);
 
 // Hatch panel, property section and menu items. Defined only in application builds
@@ -20,11 +20,14 @@ void registerCommands(cmd::Registry& registry);
 void registerUi(ui::UiRegistry& ui);
 
 // Settings keys shared by the commands and the UI (host settings, lower-case dotted names).
-inline constexpr const char* kSettingPattern = "hatch.pattern";  // pattern name
-inline constexpr const char* kSettingScale = "hatch.scale";      // number
-inline constexpr const char* kSettingAngle = "hatch.angle";      // degrees
-inline constexpr const char* kSettingBase = "hatch.base";        // "x,y"
-inline constexpr const char* kSettingGap = "hatch.gap";          // gap tolerance in mm, 0 = off
+inline constexpr const char* kSettingPattern = "hatch.pattern";                 // pattern name
+inline constexpr const char* kSettingScale = "hatch.scale";                     // number
+inline constexpr const char* kSettingAngle = "hatch.angle";                     // degrees
+inline constexpr const char* kSettingBase = "hatch.base";                       // "x,y"
+inline constexpr const char* kSettingGradientKind = "hatch.gradient.kind";      // linear|cylinder
+inline constexpr const char* kSettingGradientColor1 = "hatch.gradient.color1";  // "r,g,b"
+inline constexpr const char* kSettingGradientColor2 = "hatch.gradient.color2";  // "r,g,b"
+inline constexpr const char* kSettingGap = "hatch.gap";  // gap tolerance in mm, 0 = off
 inline constexpr const char* kSettingAssociative = "hatch.associative";  // "1" / "0", default "1"
 
 }  // namespace tbcad::hatchcmd

@@ -16,7 +16,7 @@ namespace tbcad::io::detail {
 
 inline constexpr std::uint8_t kMagic[10] = {0x89, 'T', 'B', 'C', 'A', 'D', '\r', '\n', 0x1A, '\n'};
 inline constexpr std::uint32_t kFormatMajor = 1;
-inline constexpr std::uint32_t kFormatMinor = 1;
+inline constexpr std::uint32_t kFormatMinor = 3;
 inline constexpr std::size_t kFileHeaderSize = 22;   // magic 10 + major + minor + flags
 inline constexpr std::size_t kChunkHeaderSize = 16;  // fourcc + flags + length
 inline constexpr std::uint32_t kChunkDeflate = 1;
@@ -31,6 +31,7 @@ inline constexpr std::uint32_t kLtyp = fourcc("LTYP");
 inline constexpr std::uint32_t kTsty = fourcc("TSTY");
 inline constexpr std::uint32_t kDsty = fourcc("DSTY");
 inline constexpr std::uint32_t kBlks = fourcc("BLKS");
+inline constexpr std::uint32_t kXrfs = fourcc("XRFS");
 inline constexpr std::uint32_t kEnts = fourcc("ENTS");
 inline constexpr std::uint32_t kOrdr = fourcc("ORDR");
 inline constexpr std::uint32_t kEnd = fourcc("END ");

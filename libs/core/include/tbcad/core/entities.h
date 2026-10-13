@@ -204,6 +204,18 @@ struct HatchLoop {
     bool outer = true;
 };
 
+// A gradient fill: the colour runs from `color1` to `color2` across the hatch, along `angle`
+// (radians, direction of the colour change). Linear goes colour 1 -> colour 2; Cylinder goes
+// 1 -> 2 -> 1 (brightest in the middle). A hatch with a gradient is solid (`HatchData::solid`).
+enum class GradientKind : std::uint8_t { Linear = 1, Cylinder = 2 };
+
+struct GradientData {
+    GradientKind kind = GradientKind::Linear;
+    Color color1 = Color::rgb(30, 60, 200);
+    Color color2 = Color::rgb(190, 220, 255);
+    double angle = 0;
+};
+
 struct HatchData {
     std::vector<HatchLoop> loops{};
     bool solid = true;
@@ -213,6 +225,7 @@ struct HatchData {
     Vec2 patternOrigin{};
     Color fill = Color::byLayer();
     std::vector<EntityId> sourceBoundary{};  // for later associativity
+    std::optional<GradientData> gradient{};  // set: fill with a colour gradient
 };
 
 // Value of one attribute of an Insert, matched to the block's attribute definition by tag.
@@ -221,12 +234,42 @@ struct AttribValue {
     std::string value{};
 };
 
+// An associative array: the Insert's block holds the source objects and the Insert is shown once
+// per item. All geometry is in the block's own coordinates, so moving, rotating or scaling the
+// Insert moves the whole array, and the parameters stay editable (ARRAYEDIT).
+struct ArrayInfo {
+    enum class Kind : std::uint8_t { Rectangular, Polar, Path };
+    Kind kind = Kind::Rectangular;
+    // Rectangular: rows run along the grid's Y axis, columns along X; negative spacing goes the
+    // other way. `angle` turns the grid.
+    int rows = 1;
+    int columns = 1;
+    double rowSpacing = 0;
+    double columnSpacing = 0;
+    double angle = 0;
+    // Polar: `count` items including the original; fillAngle 2*pi spreads them evenly around the
+    // circle, anything else puts the last item at the end of the sweep. Items turn with the circle
+    // when rotateItems is set, otherwise `reference` (a point of the source) travels around it.
+    Vec2 center{};
+    int count = 1;
+    double fillAngle = kTwoPi;
+    bool rotateItems = true;
+    Vec2 reference{};
+    // Path: the polyline `path`; item 0 puts `reference` on its start, the others follow at
+    // `pathSpacing` along it (0 = divide the length evenly over `count` items). rotateItems aligns
+    // the items to the path direction.
+    std::vector<PolyVertex> path{};
+    bool pathClosed = false;
+    double pathSpacing = 0;
+};
+
 struct InsertData {
     BlockId block{};
     Vec2 position{};
     Vec2 scale{1, 1};
     double rotation = 0;
     std::vector<AttribValue> attribs{};  // non-constant attributes of the block, by tag
+    std::optional<ArrayInfo> array{};    // set: shown once per array item
 };
 
 enum class DimKind : std::uint8_t {

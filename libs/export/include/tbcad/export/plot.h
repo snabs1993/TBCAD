@@ -6,6 +6,7 @@
 // scaled by ltScale x entity scale (already in DisplayStyle::patternScale) and the plot scale.
 #pragma once
 
+#include <functional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -95,7 +96,12 @@ struct PlotDots {
     std::vector<Vec2> pts{};
     PlotStyle style{};
 };
-using PlotPrimitive = std::variant<PlotPath, PlotArc, PlotFill, PlotDots>;
+// Clips everything between a begin and its end to a rectangle on the sheet (layout viewports).
+struct PlotClip {
+    BBox2 rect{};
+    bool begin = true;
+};
+using PlotPrimitive = std::variant<PlotPath, PlotArc, PlotFill, PlotDots, PlotClip>;
 
 struct PlotSheet {
     PlotLayout layout{};
@@ -112,8 +118,19 @@ Rgba plotColor(Rgba c, ColorMode mode);
 // resolution (chordTolMm on paper).
 Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& settings);
 
+// Entities for which the filter returns true are left out.
+using EntityFilter = std::function<bool(const Entity&)>;
+// Plots entities (in the order given) through `layout` into `sheet`; the building block of
+// buildSheet and of layout plotting, where each viewport has a layout of its own.
+void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<EntityId>& ids,
+                    const PlotLayout& layout, const PlotSettings& settings,
+                    const EntityFilter& skip = {});
+
 Result<void> writePdf(const PlotSheet& sheet, const std::string& path,
                       const std::string& title = "TBCAD drawing", bool compress = true);
+// One page per sheet, each with its own paper size.
+Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::string& path,
+                           const std::string& title = "TBCAD drawing", bool compress = true);
 // For tests: the whole PDF in memory.
 Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress = false);
 // SVG in millimetres: width/height in mm, viewBox in mm, y flipped (SVG y runs downwards).

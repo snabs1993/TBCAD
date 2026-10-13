@@ -1,4 +1,6 @@
 
+#include <fstream>
+#include <sstream>
 #include <string>
 
 #include "doctest_include.h"
@@ -62,10 +64,41 @@ TEST_CASE("decodeText: double-byte codepages keep trail bytes out of escape hand
 
 TEST_CASE("decodeText: \\M+ multibyte escapes") {
     CHECK(decodeText("\\M+1955C", Encoding::Cp1252) == "表");
-    CHECK(decodeText("\\M+482A0", Encoding::Cp1252) == "\\M+482A0");  // Johab: unsupported
+    CHECK(decodeText("\\M+48861", Encoding::Cp1252) == "가");  // Johab
     CHECK(decodeText("\\M+5B0A1", Encoding::Cp1252) == "啊");
     CHECK(decodeText("\\M+3B0A1", Encoding::Cp1252) == "가");
     CHECK(decodeText("\\M+2A440", Encoding::Cp1252) == "一");
+}
+
+TEST_CASE("decodeText: \\M+ vectors made with the platform codecs (tools/gen_mplus_vectors.py)") {
+    std::ifstream f(std::string(TBCAD_TEST_CORPUS_DIR) + "/encoding/mplus_vectors.txt");
+    REQUIRE(f.good());
+    std::string line;
+    std::size_t checked = 0;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#')
+            continue;
+        std::istringstream in(line);
+        std::string digit, pair, uni;
+        in >> digit >> pair >> uni;
+        REQUIRE(uni.size() > 2);
+        std::string expected;
+        {
+            const char32_t cp = static_cast<char32_t>(std::stoul(uni.substr(2), nullptr, 16));
+            if (cp < 0x800) {
+                expected.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                expected.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else if (cp < 0x10000) {
+                expected.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                expected.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                expected.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+        }
+        INFO("escape: \\M+" << digit << pair);
+        CHECK(decodeText("\\M+" + digit + pair, Encoding::Cp1252) == expected);
+        ++checked;
+    }
+    CHECK(checked >= 1000);
 }
 
 TEST_CASE("decodeText: UTF-8 input is validated") {
@@ -84,6 +117,7 @@ TEST_CASE("encodingFromName") {
     CHECK(encodingFromName("ansi_1252") == Encoding::Cp1252);
     CHECK(encodingFromName(" ANSI_932\r") == Encoding::Cp932);
     CHECK(encodingFromName("UTF-8") == Encoding::Utf8);
+    CHECK(encodingFromName("ANSI_1361") == Encoding::Cp1361);
     CHECK(encodingFromName("8859_1") == Encoding::Cp1252);
     CHECK_FALSE(encodingFromName("UNDEFINED").has_value());
     CHECK_FALSE(encodingFromName("").has_value());
@@ -165,7 +199,7 @@ TEST_CASE("corpus: cp874 Thai without $DWGCODEPAGE decodes to the Thai word") {
     auto lx = Lexer::open(bytes, r);
     REQUIRE(lx.ok());
     std::string text;
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         if (g->code == 1)
             text = decodeText(g->str(), enc);
     }
@@ -184,7 +218,7 @@ TEST_CASE("corpus: R2013 UTF-8 Thai with a stale ANSI_1252 header") {
     auto lx = Lexer::open(bytes, r);
     REQUIRE(lx.ok());
     std::string text;
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         if (g->code == 1)
             text = decodeText(g->str(), enc);
     }

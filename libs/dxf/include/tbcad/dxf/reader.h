@@ -24,9 +24,10 @@ struct ImportOptions {
     // parent layer and a sub-layer. Sub-layers stored in TBCAD XDATA are restored regardless.
     std::string splitLayers{};
     // Keep the graphics of the anonymous *D block of every dimension next to the
-    // DimensionData entity (ProxyData graphics + loose text) so it displays before the
-    // dimension generator exists.
-    bool dimensionGraphics = true;
+    // DimensionData entity (ProxyData graphics + loose text). Off by default: dimensions draw
+    // themselves from their definition points (W5-5). Turn it on to see exactly what the
+    // other program drew.
+    bool dimensionGraphics = false;
 };
 
 struct EntityCount {
@@ -89,6 +90,7 @@ inline constexpr std::string_view kProxy = "dxf.reader.proxy_entity";
 inline constexpr std::string_view kPaperSpace = "dxf.reader.paper_space";
 inline constexpr std::string_view kGradient = "dxf.reader.gradient_hatch";
 inline constexpr std::string_view kComplexLinetype = "dxf.reader.complex_linetype";
+inline constexpr std::string_view kShxFont = "dxf.reader.shx_font_mapped";
 inline constexpr std::string_view kNoDimensionBlock = "dxf.reader.dimension_block_missing";
 inline constexpr std::string_view kXref = "dxf.reader.xref_block";
 inline constexpr std::string_view kMissingSection = "dxf.reader.missing_section";

@@ -174,6 +174,9 @@ struct DataDumper {
           << " fill" << d.fill << " src";
         for (EntityId e : d.sourceBoundary)
             o << " " << e;
+        if (d.gradient)
+            o << " grad" << static_cast<int>(d.gradient->kind) << " " << d.gradient->color1 << " "
+              << d.gradient->color2 << " ang" << d.gradient->angle;
         for (const auto& loop : d.loops) {
             o << " loop(outer" << loop.outer;
             for (const auto& e : loop.edges) {
@@ -210,6 +213,15 @@ struct DataDumper {
             o.quoted(a.tag);
             o << "=";
             o.quoted(a.value);
+        }
+        if (d.array) {
+            const ArrayInfo& a = *d.array;
+            o << " ARRAY kind" << static_cast<int>(a.kind) << " rows" << a.rows << " cols"
+              << a.columns << " rs" << a.rowSpacing << " cs" << a.columnSpacing << " ang" << a.angle
+              << " ctr" << a.center << " n" << a.count << " fill" << a.fillAngle << " rot"
+              << a.rotateItems << " ref" << a.reference << " closed" << a.pathClosed << " sp"
+              << a.pathSpacing;
+            polyV(o, a.path);
         }
     }
     void operator()(const DimensionData& d) {
