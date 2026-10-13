@@ -492,6 +492,10 @@ TEST_CASE("round trip: levels, entity levels, current level and the level view")
 TEST_CASE("round trip: a document with one pristine level has no level chunks") {
     auto doc = makeRichDocument();
     auto bytes = writeOrFail(*doc);
-    for (const auto& c : io::listChunks(bytes).value())
+    auto chunks = io::listChunks(bytes);
+    REQUIRE(chunks.ok());
+    for (const auto& c : chunks.value()) {
         CHECK(c.type != "LVLS");
+        CHECK(c.type != "ELVL");
+    }
 }
