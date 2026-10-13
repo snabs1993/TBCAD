@@ -391,3 +391,83 @@ TEST_CASE("ZIGZAG draws rows of 3 x 3 mm zigzags 8 mm apart") {
         }
     }
 }
+
+TEST_CASE("gradientBands cuts the area into ordered colour bands") {
+    HatchData h = squareHatch(100);
+    CHECK(gradientBands(h, 0.01).empty());  // no gradient set
+    GradientData g;
+    g.angle = 0;  // colour changes along +x
+    h.gradient = g;
+    auto bands = gradientBands(h, 0.01, 20);
+    REQUIRE(bands.size() == 20);
+    double last = -1;
+    for (const GradientBand& b : bands) {
+        CHECK(b.t > last);
+        last = b.t;
+        REQUIRE_FALSE(b.rings.empty());
+    }
+    CHECK(bands.front().t == doctest::Approx(0.025));
+    CHECK(bands.back().t == doctest::Approx(0.975));
+    // The first band is the left strip (5 mm plus the quarter-band overlap), the last the right.
+    BBox2 first;
+    for (auto& r : bands.front().rings)
+        for (auto& p : r)
+            first.expand(p);
+    CHECK(first.min.x == doctest::Approx(0));
+    CHECK(first.max.x == doctest::Approx(6.25));
+    CHECK(first.max.y == doctest::Approx(100));
+
+    g.kind = GradientKind::Cylinder;
+    h.gradient = g;
+    auto cyl = gradientBands(h, 0.01, 20);
+    REQUIRE(cyl.size() == 20);
+    CHECK(cyl[0].t == doctest::Approx(cyl[19].t));
+    CHECK(cyl[9].t > cyl[0].t);
+    CHECK(cyl[9].t == doctest::Approx(cyl[10].t));
+}
+
+TEST_CASE("gradient bands keep holes") {
+    Scene s;
+    s.rectLines({0, 0}, {100, 100});
+    s.add(circle({50, 50}, 20));
+    auto b = findBoundary(s.candidates(), {10, 10});
+    REQUIRE(b.ok());
+    REQUIRE(b.value().loops.size() == 2);
+    HatchData h;
+    h.loops = b.value().loops;
+    h.gradient = GradientData{};
+    auto bands = gradientBands(h, 0.01, 10);
+    // The band through the middle has two rings per side of the hole: outer strip and the circle
+    // chord cut, so more rings than the bands at the edge.
+    REQUIRE(bands.size() == 10);
+    CHECK(bands[0].rings.size() == 1);
+    CHECK(bands[5].rings.size() >= 2);
+}
+
+TEST_CASE("a gradient hatch displays as bands that run from colour 1 to colour 2") {
+    Document doc;
+    Scene s;
+    s.rectLines({0, 0}, {50, 50});
+    auto b = findBoundary(s.candidates(), {25, 25});
+    REQUIRE(b.ok());
+    EntityId id;
+    {
+        Transaction tx = doc.begin("hatch");
+        Entity e = makeHatchEntity(b.value(), *findBuiltinPattern("SOLID"), 1, 0, {});
+        GradientData g;
+        g.color1 = Color::rgb(0, 0, 0);
+        g.color2 = Color::rgb(200, 100, 50);
+        entityAs<HatchData>(e)->gradient = g;
+        id = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    geom::DisplayContext ctx;
+    DisplayList out;
+    geom::buildDisplay(doc, *doc.find(id), ctx, out);
+    REQUIRE(out.items.size() == 64);
+    auto& first = std::get<DisplayFill>(out.items.front());
+    auto& last = std::get<DisplayFill>(out.items.back());
+    CHECK(first.style.color.r < 5);
+    CHECK(last.style.color.r > 195);
+    CHECK(last.style.color.b > 45);
+}

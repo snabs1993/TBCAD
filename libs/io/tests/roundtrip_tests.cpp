@@ -293,3 +293,39 @@ TEST_CASE("round trip: ids freed after the highest saved id are not reused after
     CHECK(tx.add(b).value().value > lastEntity.value);
     CHECK(tx.addLayer(Layer{.name = "again"}).value().value > lastLayer.value);
 }
+
+TEST_CASE("round trip: a gradient hatch keeps its gradient") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("hatch");
+        HatchData h;
+        HatchLoop loop;
+        loop.edges.push_back(HatchLineEdge{{0, 0}, {10, 0}});
+        loop.edges.push_back(HatchLineEdge{{10, 0}, {10, 10}});
+        loop.edges.push_back(HatchLineEdge{{10, 10}, {0, 0}});
+        h.loops.push_back(loop);
+        GradientData g;
+        g.kind = GradientKind::Cylinder;
+        g.color1 = Color::index(5);
+        g.color2 = Color::rgb(1, 2, 3);
+        g.angle = 0.75;
+        h.gradient = g;
+        Entity e;
+        e.data = std::move(h);
+        (void)tx.add(std::move(e));
+        Entity plain;
+        plain.data = HatchData{};
+        (void)tx.add(std::move(plain));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == canonicalDump(doc));
+    const HatchData* h = entityAs<HatchData>(*back->find(EntityId{1}));
+    REQUIRE(h != nullptr);
+    REQUIRE(h->gradient.has_value());
+    CHECK(h->gradient->kind == GradientKind::Cylinder);
+    CHECK(h->gradient->color1.kind == ColorKind::Index);
+    CHECK(h->gradient->color2.b == 3);
+    CHECK(h->gradient->angle == doctest::Approx(0.75));
+    CHECK_FALSE(entityAs<HatchData>(*back->find(EntityId{2}))->gradient.has_value());
+}

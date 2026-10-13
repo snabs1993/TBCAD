@@ -85,6 +85,21 @@ patterns (they shadow built-in ones); `parsePatterns(text)` reads the file forma
 * `explodeHatch(doc, hatch)` is the hook for the EXPLODE command (W5-3): Line and Point entities for a
   pattern hatch, the boundary edges for a solid one. Refuses a pattern that is too dense.
 
+## Gradient fills and the pattern library
+
+* `HatchData::gradient` (`GradientData`: kind Linear or Cylinder, two colours, angle) turns a hatch
+  into a colour gradient. The hatch is solid (`solid == true`, pattern SOLID). The display
+  generator cuts the area into 64 bands across the gradient direction (`gradientBands`, rings
+  clipped per band, even-odd and holes kept) and fills each with the blended colour; bands overlap
+  their successor by a quarter band so no seams show. Cylinder runs colour 1 -> 2 -> 1. Saved
+  in `.tbcad` as a few bytes after the loops of the hatch record (older readers skip them); DXF
+  export writes a gradient hatch as a plain solid hatch.
+* `assets/patterns/tbcad.patterns` has 34 patterns, all of our own design: LINE90, LINE135, LINE30,
+  LINE60, LINE45F/W/D, DASHES, GRIDFINE, GRIDWIDE, DIAMOND, TRIANGLE, STEEL, TICKS, WOOD, MESH,
+  BLOCK, STONE, TILEDOT, PLASTER, DOTSTAG, CROSSES, ZIGZAG, and the seeded random CONCRETE and
+  GRAVEL, next to the first nine. ZIGZAG's numbers were derived so that the 45 degree and 315
+  degree dash families meet at the zigzag corners (6 mm period, 3 mm high, rows 8 mm apart).
+
 ## Commands (`libs/commands/hatch`)
 
 * **HATCH [H]**: `Pick internal point (LINE45, scale 1, angle 0) or [Objects/Pattern/Scale/Angle/Base/Gap/Link/Undo]`.
@@ -106,6 +121,12 @@ patterns (they shadow built-in ones); `parsePatterns(text)` reads the file forma
   region, the hatch keeps its last loops and becomes non-associative. Unchanged geometry is not
   rewritten. Limitation: a hatch that was closed with a gap is rebuilt without a gap tolerance, so it
   detaches once its sources move apart.
+* **GRADIENT [GR]**: the same command with a gradient instead of a pattern:
+  `Pick internal point (linear 30,60,200 to 190,220,255, angle 0) or [Objects/Kind/First/Second/Angle/Gap/Link/Undo]`.
+  `Kind` Linear or Cylinder, `First` and `Second` colours (index 1-255, `r,g,b` or `#rrggbb`), `Angle`
+  the direction of the colour change. Settings `hatch.gradient.kind`, `hatch.gradient.color1`,
+  `hatch.gradient.color2`. Preview, Gap and Link work as in HATCH. HATCHEDIT with a pattern removes
+  the gradient.
 * **HATCHEDIT [HE]**: select hatches (the current selection is used first), then
   `[Pattern/Scale/Angle/Base/Done]`. All selected hatches change in one transaction, so editing
   1,000 of them is one undo step. Esc throws the edits away. The property section and the panel call it
