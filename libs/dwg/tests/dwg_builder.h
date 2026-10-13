@@ -2,6 +2,7 @@
 // sections 2, 3, 20 and 23). It is only as right as that reading; real files confirm it.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -213,6 +214,12 @@ public:
         objects_.push_back({handle, std::move(bytes)});
     }
 
+    // Registers a class (type numbers 500, 501, ...); returns its object type number.
+    int addClass(const std::string& dxfName) {
+        classes_.push_back(dxfName);
+        return 499 + static_cast<int>(classes_.size());
+    }
+
     std::vector<std::uint8_t> build(const char* version = "AC1015") const {
         constexpr std::size_t kHeader = 0x19 + 3 * 9 + 2 + 16;
         std::vector<std::uint8_t> out(kHeader, 0);
@@ -223,6 +230,31 @@ public:
             out.insert(out.end(), bytes.begin(), bytes.end());
         }
         std::sort(map.begin(), map.end());
+        std::size_t classAt = 0, classSize = 0;
+        if (!classes_.empty()) {
+            static constexpr std::uint8_t kStart[16] = {0x8D, 0xA1, 0xC4, 0xB8, 0xC4, 0xA9,
+                                                        0xF8, 0xC5, 0xC0, 0xDC, 0xF4, 0x5F,
+                                                        0xE7, 0xCF, 0xB6, 0x8A};
+            BitWriter cw;
+            for (std::size_t i = 0; i < classes_.size(); ++i) {
+                cw.bs(500 + static_cast<int>(i));
+                cw.bs(0);
+                cw.text("App");
+                cw.text("CppName");
+                cw.text(classes_[i]);
+                cw.b(false);
+                cw.bs(0x1F2);
+            }
+            const std::vector<std::uint8_t> data = cw.bytes();
+            classAt = out.size();
+            out.insert(out.end(), kStart, kStart + 16);
+            for (int i = 0; i < 4; ++i)
+                out.push_back(static_cast<std::uint8_t>(data.size() >> (8 * i)));
+            out.insert(out.end(), data.begin(), data.end());
+            out.push_back(0);
+            out.push_back(0);
+            classSize = out.size() - classAt;
+        }
         const std::size_t mapAt = out.size();
         std::vector<std::uint8_t> sec;
         std::uint64_t lastH = 0;
@@ -254,7 +286,11 @@ public:
             const std::size_t at = 0x19 + i * 9;
             out[at] = static_cast<std::uint8_t>(i);
         }
-        // record 0 (header) and 1 (classes) are absent; 2 is the object map
+        // record 0 (header) is absent; 1 holds the classes when there are any; 2 is the object map
+        if (classAt) {
+            put32(0x19 + 9 + 1, static_cast<std::uint32_t>(classAt));
+            put32(0x19 + 9 + 5, static_cast<std::uint32_t>(classSize));
+        }
         put32(0x19 + 2 * 9 + 1, static_cast<std::uint32_t>(mapAt));
         put32(0x19 + 2 * 9 + 5, static_cast<std::uint32_t>(mapSize));
         return out;
@@ -262,6 +298,7 @@ public:
 
 private:
     std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> objects_{};
+    std::vector<std::string> classes_{};
 };
 
 }  // namespace tbcad::dwg::test

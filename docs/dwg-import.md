@@ -9,8 +9,10 @@ from the public ODA specification (see `docs/dwg-cleanroom-log.md`); no other DW
 2. `bits/bit_reader` reads the bit-packed data types; every read is bounds-checked, so damaged data
    sets a failed flag instead of reading outside the buffer.
 3. `objects/decode` turns table records and entities into plain structs (layers, linetypes, text
-   styles, blocks, LINE, CIRCLE, ARC, POINT, TEXT, INSERT, LWPOLYLINE). Other object types are counted
-   and reported as skipped.
+   styles, dimension styles, blocks, LINE, CIRCLE, ARC, POINT, ELLIPSE, SPLINE, SOLID, TRACE, TEXT,
+   MTEXT, INSERT and MINSERT with their attributes, ATTDEF, 2D POLYLINE with its vertices, LWPOLYLINE,
+   HATCH, the seven DIMENSION kinds with their drawn blocks, and LEADER). Other object types are
+   counted and reported as skipped.
 4. `map/emit` writes those structs as DXF text in memory and `dxf::importDxf` builds the document, so
    DWG and DXF share one importer and one report.
 
