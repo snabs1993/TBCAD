@@ -6,6 +6,8 @@
 
 namespace tbcad::plot {
 
+std::unique_ptr<cmd::Command> makePrinterCommand();
+
 namespace {
 
 using cmd::KeywordOptions;
@@ -271,6 +273,7 @@ void registerCommands(cmd::Registry& registry) {
         "EXPORTPDF", std::vector<std::string>{}, "Export the drawing to a PDF file", Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
+    (void)registry.add(makePrinterCommand());
     (void)registry.add(std::make_unique<PlotPanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
 }
