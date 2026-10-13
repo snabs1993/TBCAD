@@ -4,7 +4,7 @@ tbcad_add_library(content_cmds
   SOURCES
     src/content_command.cpp
     src/register.cpp
-  DEPENDS tbcad::cmd tbcad::xref tbcad::block_cmds tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::xref tbcad::block_cmds tbcad::palettes tbcad::ui)
 
 if(TBCAD_BUILD_APP)
   include(deps/imgui)

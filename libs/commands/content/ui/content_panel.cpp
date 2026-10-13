@@ -10,6 +10,7 @@
 
 #include "../src/commands.h"
 #include "tbcad/block_cmds/palette.h"
+#include "tbcad/palettes/palettes.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::content_cmds {
@@ -178,6 +179,33 @@ void drawFiles(ui::PanelContext& pc, State& st) {
     ImGui::EndChild();
 }
 
+// Lists the palettes; choosing one adds the selected blocks to it as tools that copy the block
+// from this file when the drawing does not have it yet.
+void addToPaletteMenu(ui::PanelContext& pc, State& st) {
+    const std::filesystem::path folder = pc.host ? pc.host->settingsFolder() : fs::path{};
+    if (folder.empty()) {
+        ImGui::TextDisabled("No settings folder.");
+        return;
+    }
+    palettes::PaletteStore store(folder / "palettes.json");
+    store.load();
+    for (const palettes::Palette& p : store.palettes()) {
+        if (!ImGui::MenuItem(p.name.c_str()))
+            continue;
+        for (const auto& i : st.items) {
+            if (i.kind != xref::ContentKind::Block || !st.selected.count(keyOf(i)))
+                continue;
+            palettes::Tool t;
+            t.name = i.name;
+            t.kind = palettes::ToolKind::Block;
+            t.block = i.name;
+            t.file = utf8(st.file);
+            (void)store.addTool(p.name, std::move(t));  // a name already on the palette is skipped
+        }
+        st.error = store.save();
+    }
+}
+
 void drawItems(ui::PanelContext& pc, State& st) {
     if (!st.error.empty())
         ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.3f, 1.0f), "%s", st.error.c_str());
@@ -236,6 +264,14 @@ void drawItems(ui::PanelContext& pc, State& st) {
         if (ImGui::Button("Copy to drawing"))
             importSelected(pc, st, kind);
         if (kind == xref::ContentKind::Block) {
+            ImGui::SameLine();
+            ImGui::SameLine();
+            if (ImGui::Button("Add to palette"))
+                ImGui::OpenPopup("##addToPalette");
+            if (ImGui::BeginPopup("##addToPalette")) {
+                addToPaletteMenu(pc, st);
+                ImGui::EndPopup();
+            }
             ImGui::SameLine();
             if (ImGui::Button("Copy and insert")) {
                 importSelected(pc, st, kind);
