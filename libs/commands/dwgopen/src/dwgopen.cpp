@@ -4,6 +4,7 @@
 #include <iterator>
 
 #include "tbcad/dwg/dwg.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::dwgopen {
 
@@ -61,6 +62,15 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
 
 void registerForeignFormats(ui::AppCore& core) {
     core.setForeignReader(".dwg", readDwgFile, /*readOnly=*/true);
+    // A .dwg can also be an external reference.
+    xref::registerLoader(".dwg", [](const std::filesystem::path& file) -> Result<xref::Source> {
+        auto r = readDwgFile(file);
+        if (!r)
+            return r.error();
+        xref::Source s;
+        s.doc = std::move(r.value().document);
+        return s;
+    });
 }
 
 }  // namespace tbcad::dwgopen

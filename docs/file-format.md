@@ -1,6 +1,6 @@
 # The .tbcad file format
 
-Format version **1.3** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, below). This document is the specification; the reference implementation is
+Format version **1.4** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 the `XRFO` chunk for overlay xrefs, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
 `libs/io/tools`) prints any file as text.
 
@@ -53,6 +53,7 @@ error, an unknown chunk is kept whatever its flags.
 | `LAYR` | layers, including the sub-layer tree | 0..1 |
 | `BLKS` | block definitions | 0..1 |
 | `XRFS` | external references of blocks (since 1.2) | 0..1, only when a block is an xref |
+| `XRFO` | overlay flags of xrefs (since 1.4) | 0..1, only when an xref is an overlay |
 | `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
@@ -120,6 +121,8 @@ it; relative paths are resolved against the folder of the drawing), `i64 stamp` 
 the source file in nanoseconds since the Unix epoch when the block was last loaded). The block's
 entities are stored as for any block, so a drawing opens and plots without the source file.
 1.0 and 1.1 readers keep the chunk as an unknown chunk and write it back unchanged.
+
+**XRFO** (since 1.4): `varint n`, then `n` × `varint block`: the xref blocks that are *overlays* (shown here, but not carried along when this drawing is itself used as an xref). Older readers keep the chunk and treat the xref as an ordinary attach.
 
 A **colour** is 4 bytes: `u8 kind` (0 ByLayer, 1 ByBlock, 2 Index, 3 Rgb, 4 ByParent), then
 `r g b` (for Index the palette index is in `r`).

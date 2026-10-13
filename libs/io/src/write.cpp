@@ -166,6 +166,16 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             xrfs.i64(r.xrefStamp);
         }
 
+        // Overlay flags of xrefs (since 1.4); only when at least one xref is an overlay.
+        ByteWriter xrfo;
+        std::size_t overlayCount = 0;
+        for (const auto& [id, r] : doc.blocks())
+            overlayCount += (!r.xrefPath.empty() && r.xrefOverlay) ? 1 : 0;
+        xrfo.varint(overlayCount);
+        for (const auto& [id, r] : doc.blocks())
+            if (!r.xrefPath.empty() && r.xrefOverlay)
+                xrfo.varint(id.value);
+
         // Entities in id order, split over ENTS chunks of about 8 MiB.
         std::vector<const Entity*> ents;
         ents.reserve(doc.entityCount());
@@ -236,6 +246,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         appendChunk(out, kBlks, blks.bytes(), options.compress);
         if (xrefCount > 0)
             appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
+        if (overlayCount > 0)
+            appendChunk(out, kXrfo, xrfo.bytes(), options.compress);
         for (const auto& c : entChunks)
             appendChunk(out, kEnts, c, options.compress);
         if (ordr.size() != 0)

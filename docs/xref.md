@@ -25,7 +25,7 @@ Everything the source brings is renamed so it cannot clash with the host:
 
 | Command | Alias | What it does |
 |---|---|---|
-| `XATTACH` | `XA` | Asks for a `.tbcad` or `.dxf` file and a name (default: the file name), attaches it and inserts it (point, `Scale`, `Rotate`; Enter = origin). Esc undoes the attach. |
+| `XATTACH` | `XA` | Asks for a `.tbcad`, `.dxf` (or, when the reader is available, `.dwg`) file, then **Attach/Overlay** and the **path type** (Relative / Absolute / None), then a name (default: the file name); attaches it and inserts it (point, `Scale`, `Rotate`; Enter = origin). Esc undoes the attach. |
 | `XRELOAD` | `XR` | Reloads one xref by name or `All` (default). Inserts stay where they are. One undo step. |
 | `XDETACH` | | Removes the xref: its inserts, block, nested blocks and the layers nothing uses. |
 | `XBIND` | `XB` | Makes the xref an ordinary block (the path is dropped). Its layers and blocks stay as they are. |
@@ -33,6 +33,26 @@ Everything the source brings is renamed so it cannot clash with the host:
 
 Relative paths are taken from the folder of the drawing (the host setting `document.file`); an
 unsaved drawing uses the current folder. The stored path is the text the user typed.
+
+## Attach or overlay
+
+An **attached** xref travels with its drawing: if drawing B attaches A and drawing C attaches B, C
+shows A too. An **overlay** xref is shown in the drawing that holds it but is left out when that
+drawing is used as an xref (so two drawings can overlay each other without a loop). `XLIST` marks
+overlays. The flag is stored in the `XRFO` chunk (format 1.4).
+
+## Paths
+
+The path stored with the xref is chosen when attaching: **Relative** (from the folder of the
+drawing, forward slashes; the full path when the drawing is not saved yet or the file is on another
+drive), **Absolute**, or **None** (only the file name, looked up next to the drawing).
+
+## Nested xrefs
+
+Loading a file (attach or reload) first refreshes the xrefs inside it from their own files, with
+paths taken from that file's folder, so a change deep in a chain reaches the top. A nested xref
+that cannot be read keeps the snapshot saved in its parent. A loop (A attaches B attaches A) is cut
+where it closes. Overlays inside a loaded file are left out.
 
 ## Reload when the file changes
 
@@ -47,6 +67,5 @@ readers keep it as an unknown chunk and still show the snapshot.
 
 ## Not done
 
-* Overlay mode, clipping boundaries, nested xrefs staying live (an xref inside the source is
-  copied as plain content), and path types other than "as typed".
+* Clipping boundaries (XCLIP).
 * DXF export writes an xref as an ordinary block (no `XREF` flag in group 70).

@@ -26,6 +26,14 @@ std::string lower(std::string s) {
     return s;
 }
 
+// An insert of an overlay xref: left out when its drawing is used as an xref by another one.
+bool isOverlayInsert(const Document& doc, const Entity& e) {
+    if (const auto* ins = entityAs<InsertData>(e))
+        if (const BlockDef* b = doc.block(ins->block))
+            return !b->xrefPath.empty() && b->xrefOverlay;
+    return false;
+}
+
 // Copies the model space and the blocks it uses of `src` into the host document.
 class Filler {
 public:
@@ -44,7 +52,7 @@ public:
         }
         for (EntityId id : src_.modelSpace()) {
             const Entity* e = src_.find(id);
-            if (!e)
+            if (!e || isOverlayInsert(src_, *e))
                 continue;
             auto added = tx_.add(remap(*e, 0), into);
             if (!added)
@@ -190,7 +198,7 @@ private:
         std::vector<EntityId> members = sb->entities;
         for (EntityId eid : members) {
             const Entity* e = src_.find(eid);
-            if (!e)
+            if (!e || isOverlayInsert(src_, *e))
                 continue;
             Entity copy = remap(*e, depth + 1);
             if (auto r = tx_.add(std::move(copy), out); !r)
@@ -324,13 +332,21 @@ std::string defaultName(const std::filesystem::path& file) {
     return s.empty() ? "xref" : s;
 }
 
-Result<Source> loadSource(const std::filesystem::path& file) {
+namespace {
+
+std::map<std::string, Loader>& loaders() {
+    static std::map<std::string, Loader> table;
+    return table;
+}
+
+Result<Source> loadOne(const std::filesystem::path& file) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(file, ec))
         return makeError(ErrorCode::NotFound, "Cannot find the file " + file.string());
     const std::string ext = lower(file.extension().string());
     Source out;
     out.stamp = fileStamp(file);
+    out.file = file;
     if (ext == ".tbcad") {
         io::IoReport report;
         auto doc = io::readTbcad(file, report);
@@ -354,11 +370,85 @@ Result<Source> loadSource(const std::filesystem::path& file) {
         out.doc = std::move(res.value().document);
         return out;
     }
+    if (auto it = loaders().find(ext); it != loaders().end()) {
+        auto res = it->second(file);
+        if (!res)
+            return res.error();
+        res.value().file = file;
+        if (res.value().stamp == 0)
+            res.value().stamp = out.stamp;
+        return res;
+    }
     return makeError(ErrorCode::Unsupported, "Only .tbcad and .dxf files can be attached");
 }
 
+// Reads `file` and refreshes the xrefs inside it from their own files. `chain` holds the files
+// being read up the call chain, so a loop of xrefs is cut where it closes.
+Result<Source> loadChain(const std::filesystem::path& file, std::set<std::filesystem::path>& chain,
+                         int depth) {
+    auto loaded = loadOne(file);
+    if (!loaded || depth >= kMaxNesting)
+        return loaded;
+    Document& doc = *loaded.value().doc;
+    std::vector<BlockId> nested;
+    for (BlockId id : xrefs(doc))
+        if (!doc.block(id)->xrefOverlay)
+            nested.push_back(id);
+    if (nested.empty())
+        return loaded;
+    std::error_code ec;
+    std::filesystem::path self = std::filesystem::weakly_canonical(file, ec);
+    chain.insert(ec ? file : self);
+    {
+        Transaction tx = doc.begin("refresh nested xrefs");
+        for (BlockId id : nested) {
+            std::filesystem::path p = resolvePath(doc.block(id)->xrefPath, file);
+            std::filesystem::path key = std::filesystem::weakly_canonical(p, ec);
+            if (chain.count(ec ? p : key))
+                continue;  // a loop: keep the snapshot
+            auto sub = loadChain(p, chain, depth + 1);
+            if (sub)
+                (void)reload(tx, doc, id, sub.value());
+        }
+        tx.commit();
+    }
+    chain.erase(ec ? file : self);
+    return loaded;
+}
+
+}  // namespace
+
+void registerLoader(std::string extension, Loader loader) {
+    loaders()[lower(std::move(extension))] = std::move(loader);
+}
+
+std::string storedPath(const std::filesystem::path& file, const std::filesystem::path& hostFile,
+                       PathType type) {
+    auto text = [](const std::filesystem::path& p) {
+        std::u8string u = p.generic_u8string();
+        return std::string(u.begin(), u.end());
+    };
+    if (type == PathType::None)
+        return text(file.filename());
+    if (type == PathType::Relative && !hostFile.empty() && file.is_absolute()) {
+        std::error_code ec;
+        std::filesystem::path rel = std::filesystem::relative(file, hostFile.parent_path(), ec);
+        if (!ec && !rel.empty())
+            return text(rel);
+    }
+    std::error_code ec;
+    std::filesystem::path abs = std::filesystem::absolute(file, ec);
+    return text(ec ? file : abs);
+}
+
+Result<Source> loadSource(const std::filesystem::path& file) {
+    std::set<std::filesystem::path> chain;
+    return loadChain(file, chain, 0);
+}
+
 Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
-                       std::string_view stored, const Source& source, Summary* summary) {
+                       std::string_view stored, const Source& source, Summary* summary,
+                       bool overlay) {
     if (!source.doc)
         return makeError(ErrorCode::InvalidArgument, "There is nothing to attach");
     if (auto ok = blocks::validateBlockName(doc, name); !ok)
@@ -367,6 +457,7 @@ Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
     row.name = std::string(name);
     row.xrefPath = std::string(stored);
     row.xrefStamp = source.stamp;
+    row.xrefOverlay = overlay;
     auto block = tx.addBlock(std::move(row));
     if (!block)
         return block.error();
@@ -443,6 +534,7 @@ Result<void> bind(Transaction& tx, Document& doc, BlockId block) {
     return tx.modifyBlock(block, [](BlockDef& d) {
         d.xrefPath.clear();
         d.xrefStamp = 0;
+        d.xrefOverlay = false;
     });
 }
 
