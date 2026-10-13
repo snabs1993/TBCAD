@@ -18,6 +18,9 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Blend", "BLEND", "modify.blend", "");
     ui.addMenuItem("Modify/Align", "ALIGN", "modify.align", "");
     ui.addMenuItem("Modify/Reverse", "REVERSE", "modify.reverse", "");
+    ui.addMenuItem("Edit/Find and Replace", "FIND", "edit.find", "Ctrl+F");
+    ui.addMenuItem("Modify/Copy to Layer", "COPYTOLAYER", "modify.copytolayer", "");
+    ui.addMenuItem("Format/Rename", "RENAME", "format.rename", "");
     ui.addMenuItem("Modify/Overkill", "OVERKILL", "modify.overkill", "");
     ui.addMenuItem("Modify/Match Properties", "MATCHPROP", "modify.matchprop", "");
     ui.addMenuItem("Modify/Set ByLayer", "SETBYLAYER", "modify.setbylayer", "");

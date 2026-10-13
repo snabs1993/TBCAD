@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 #include "tbcad/modify/common.h"
@@ -110,5 +111,17 @@ enum class SplineFitOp { Add, Delete, Move, Close, Open };
 // Close / Open change whether the curve returns to its first point. Errors when the spline has
 // no fit points or fewer than two would remain.
 Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a = {}, Vec2 b = {});
+
+// ---- FIND / replace ----------------------------------------------------------------------------
+
+struct TextReplace {
+    Entity entity{};  // the entity with every match replaced
+    int count = 0;    // matches found (replaced or not)
+};
+// Text and MText, leader notes, dimension text overrides, block attribute values and table cells.
+// Returns nothing when the entity holds no match. An empty `find` never matches. With an empty
+// `replacement` the matches are deleted.
+std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
+                                       std::string_view replacement, bool matchCase);
 
 }  // namespace tbcad::modify

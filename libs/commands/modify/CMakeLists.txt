@@ -1,6 +1,7 @@
 tbcad_add_library(modify_commands
   SOURCES
     src/break_join.cpp
+    src/edit_tools.cpp
     src/fillet.cpp
     src/group_order.cpp
     src/misc.cpp

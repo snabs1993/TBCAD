@@ -345,3 +345,24 @@ TEST_CASE("spline fit point editing") {
     CHECK(as<SplineData>(*closed.value().modified).closed);
     CHECK_FALSE(editSplineFit(line({0, 0}, {1, 1}), SplineFitOp::Add).ok());
 }
+
+TEST_CASE("replaceText replaces in text kinds, honours case and skips the rest") {
+    Entity t;
+    TextData td;
+    td.utf8 = "Door door DOOR";
+    t.data = Indirect<TextData>(td);
+    auto r = replaceText(t, "door", "window", false);
+    REQUIRE(r.has_value());
+    CHECK(r->count == 3);
+    CHECK(entityAs<TextData>(r->entity)->utf8 == "window window window");
+    auto cs = replaceText(t, "door", "x", true);
+    REQUIRE(cs.has_value());
+    CHECK(cs->count == 1);
+    CHECK(entityAs<TextData>(cs->entity)->utf8 == "Door x DOOR");
+    CHECK_FALSE(replaceText(t, "wall", "x", false).has_value());
+    CHECK_FALSE(replaceText(t, "", "x", false).has_value());
+    auto del = replaceText(t, " ", "", true);
+    REQUIRE(del.has_value());
+    CHECK(entityAs<TextData>(del->entity)->utf8 == "DoordoorDOOR");
+    CHECK_FALSE(replaceText(line({0, 0}, {1, 1}), "a", "b", false).has_value());
+}
