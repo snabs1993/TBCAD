@@ -49,6 +49,14 @@ public:
     // the next is released when the host has answered the previous. Send it to the host.
     std::function<void(const Op&)> onLocalOp{};
 
+    // Called when the host accepted a local edit: `applied` holds its before/after images (the
+    // document as it was changed, which per-user undo needs), `seq` is the new version of
+    // everything it touched, `clientSeq` identifies the edit.
+    std::function<void(const ChangeSet& applied, std::uint64_t seq, std::uint64_t clientSeq)>
+        onOwnAccepted{};
+    // clientSeq of the edit most recently made locally (0 before the first).
+    std::uint64_t lastClientSeq() const { return clientSeq_; }
+
     // The host's answer to a local edit that was accepted, or a broadcast of anybody else's edit.
     // Returns the change applied to the document (empty for the replica's own accepted edits).
     Result<ChangeSet> apply(const Accepted& accepted);

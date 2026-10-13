@@ -59,6 +59,13 @@ public:
             throw FormatError("element count exceeds the remaining data");
         return static_cast<std::size_t>(n);
     }
+    std::span<const std::uint8_t> take(std::size_t n) {
+        if (n > remaining())
+            throw FormatError("unexpected end of data");
+        auto r = s_.subspan(pos_, n);
+        pos_ += n;
+        return r;
+    }
     std::span<const std::uint8_t> rest() {
         auto r = s_.subspan(pos_);
         pos_ = s_.size();

@@ -1,4 +1,4 @@
-# Live collaboration: core (Q61)
+# Live collaboration: core (Q61) and session engine (Q62)
 
 This is the library part of the plan in `build/collab-brief.md`: everything that must be exactly right before sockets and UI are added. It has no networking. Layout:
 
@@ -19,15 +19,17 @@ The host owns the authoritative document. Every edit is a `ChangeSet`; what trav
 * **Guest side.** `Replica` watches its document: each local commit becomes an `Op` (`onLocalOp`), one in flight at a time (the next is released when the host answers, with its bases moved on by `rebasePending`). The document is always "confirmed state plus pending edits". A broadcast from someone else takes the pending edits off, applies the broadcast and puts the pending edits back by replaying their after images; a refusal (`Replica::reject`) takes that edit out and replays the ones after it. An edit that no longer fits after a replay is kept as dead: the host refuses it too.
 * **Snapshot.** `saveSnapshot` / `loadSnapshot` write and read a `.tbcad` image plus the versions and sequence number in an optional `VERS` chunk. Programs that do not know the chunk ignore it and write it back unchanged.
 
-## What the session engine (Q62) still has to do
+## Session engine (Q62)
 
-* Move `Op` / `Accepted` / refusals over a connection and call `Host::submit`, `Replica::apply`, `Replica::reject`.
-* Ask for another id block when `Replica::idsLeft()` runs low.
-* Tell the user why an edit was refused (`Rejection::message`, `Rejection::key`).
-* Per-user undo (undo is a new local edit, so it goes through the same version check).
-* Decide which header fields are shared: `Delta::header` is the whole header; `activeOnly` and file-carried chunks are never overwritten, but things like the current layer may be better kept per peer.
-* Layer locks and viewer enforcement beyond the role flag (Q64).
+Everything above the wire, without sockets: `protocol.h` (one `Message` per frame), `HostSession`, `GuestSession`. The owner connects them to `net::Channel` frames (Q63) or, in tests, to queues.
+
+* **Messages.** Hello, Welcome (peer id, role, sequence, first id block, who is here, the `.tbcad` snapshot with versions), Denied, Op, Accepted, Refused, RangeRequest/RangeGrant, PeerJoined/PeerLeft/RoleChanged, Bye. Decoding never throws; unknown or damaged input ends the connection. A snapshot larger than `net::kMaxFrameBytes` (16 MB) can not be sent yet: chunked snapshots are a follow-up.
+* **Host.** `HostSession::open(send)` per connection, `receive(connection, frame, now)`, `close`. The handshake asks `approve(name)` ("Nok wants to join, Allow?"). Accepted edits (the host's own included) are broadcast to everyone; a refused edit goes back to its author only, as `Refused` with the reason and, for a conflict, who changed the thing first (the host remembers the author of the last 4096 edits). `kick`, `setRole`, `shutdown`.
+* **Guest.** `GuestSession::start()`, `receive(frame)`, `leave()`, `connectionLost()`. After Welcome `document()` is the guest's copy; every edit is sent optimistically through the `Replica`. Events: `onJoined`, `onPeerJoined/Left`, `onRoleChanged`, `onRemoteChange`, `onConflict` (text ready to show: "Somchai changed this first, so your change was undone."), `onEnded`. More ids are requested automatically when fewer than 1000 are left.
+* **Per-user undo.** `GuestSession::undo()/redo()` take back only this user's own accepted edits, by sending the inverse as a new edit. It is refused (and the entry dropped, so the user is not stuck behind it) when anyone has changed any of the things it touched since: the guest checks the versions, the host checks them again. One edit is in flight at a time, so undo asks the user to wait while an earlier change is still being saved.
+* **Per-user settings.** The current layer, level, level view, colour, linetype, lineweight, text and dimension style and Active Only are the user's own: a header change that touches only those is not sent, and a header change from somebody else keeps the receiver's values (`keepPersonalSettings`). Shared header fields (units, work area, linetype scale, custom keys) travel and are versioned like everything else.
+* **Not here yet.** Layer claim locks, kicking by vote, chat (Q64); offline queue and conflict list (Q65); presence cursors (Q63, separate unreliable channel); sockets and TLS wiring (Q63).
 
 ## Tests
 
-`libs/io/tests/delta_tests.cpp` (round trip of an edit series, refused changes, limits, decoder fuzz, optional chunk), `libs/collab/tests/*`: versions, ids, ops (incl. fuzz), host rules, and `convergence_tests.cpp`, which runs a host and three guests with random edits and random message delays for 40 seeds and requires identical drawings, versions and sequence numbers at the end (600 seeds were run while developing).
+`libs/io/tests/delta_tests.cpp` (round trip of an edit series, refused changes, limits, decoder fuzz, optional chunk), `libs/collab/tests/*`: versions, ids, ops (incl. fuzz), host rules, and `session_tests.cpp` (join, deny, edits, conflicts with the winner's name, viewer, kick, id refill, per-user undo and its refusal, personal settings, random edits through the real protocol, message fuzz), and `convergence_tests.cpp`, which runs a host and three guests with random edits and random message delays for 40 seeds and requires identical drawings, versions and sequence numbers at the end (600 seeds were run while developing).

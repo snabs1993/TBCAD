@@ -82,12 +82,61 @@ PeerId peerId(detail::Reader& r) {
 
 }  // namespace
 
+namespace {
+// Everything in the header that is the same for all users of a drawing.
+bool sameShared(const Header& a, const Header& b) {
+    return a.units == b.units && a.workArea == b.workArea && a.ltScale == b.ltScale &&
+           a.createdBy == b.createdBy && a.custom == b.custom;
+}
+}  // namespace
+
+io::Delta sharedDeltaOf(const ChangeSet& changes) {
+    io::Delta d = io::deltaOf(changes);
+    if (changes.header && sameShared(changes.header->before, changes.header->after))
+        d.header.reset();
+    return d;
+}
+
+void keepPersonalSettings(ChangeSet& cs, const Document& doc) {
+    if (!cs.header)
+        return;
+    const Header& now = doc.header();
+    Header& after = cs.header->after;
+    after.currentLayer = now.currentLayer;
+    after.currentLevel = now.currentLevel;
+    after.levelView = now.levelView;
+    after.currentColor = now.currentColor;
+    after.currentLinetype = now.currentLinetype;
+    after.currentLineweight = now.currentLineweight;
+    after.currentTextStyle = now.currentTextStyle;
+    after.currentDimStyle = now.currentDimStyle;
+    after.activeOnly = now.activeOnly;
+}
+
+ChangeSet sharedChangesOf(const ChangeSet& changes) {
+    ChangeSet out = changes;
+    if (out.header) {
+        if (sameShared(out.header->before, out.header->after)) {
+            out.header.reset();
+        } else {
+            Header before = out.header->after;  // per-user fields as they are now
+            before.units = out.header->before.units;
+            before.workArea = out.header->before.workArea;
+            before.ltScale = out.header->before.ltScale;
+            before.createdBy = out.header->before.createdBy;
+            before.custom = out.header->before.custom;
+            out.header->before = std::move(before);
+        }
+    }
+    return out;
+}
+
 Op makeOp(PeerId author, std::uint64_t clientSeq, const ChangeSet& committed,
           const VersionMap& versions) {
     Op op;
     op.author = author;
     op.clientSeq = clientSeq;
-    op.delta = io::deltaOf(committed);
+    op.delta = sharedDeltaOf(committed);
     for (const Key& k : keysOf(op.delta))
         op.bases.push_back({k, versions.get(k), existedBefore(committed, k)});
     return op;
