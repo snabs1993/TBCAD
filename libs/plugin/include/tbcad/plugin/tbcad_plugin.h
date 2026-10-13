@@ -39,11 +39,11 @@ extern "C" {
 
 /* Result of every call that can fail or be cancelled. */
 enum {
-    TBCAD_OK = 0,       /* the call worked / the user answered */
-    TBCAD_CANCEL = 1,   /* the user pressed Esc: return from the command now */
-    TBCAD_NONE = 2,     /* the user pressed Enter without answering */
-    TBCAD_KEYWORD = 3,  /* the user chose a keyword (see the `keyword` argument) */
-    TBCAD_ERROR = 4     /* the request was wrong (bad id, zero radius, ...) */
+    TBCAD_OK = 0,      /* the call worked / the user answered */
+    TBCAD_CANCEL = 1,  /* the user pressed Esc: return from the command now */
+    TBCAD_NONE = 2,    /* the user pressed Enter without answering */
+    TBCAD_KEYWORD = 3, /* the user chose a keyword (see the `keyword` argument) */
+    TBCAD_ERROR = 4    /* the request was wrong (bad id, zero radius, ...) */
 };
 
 /* Entity kinds reported by get_entity. */
@@ -70,9 +70,9 @@ typedef struct TbcadCommandCtx TbcadCommandCtx;
 typedef int (*TbcadCommandFn)(TbcadCommandCtx* ctx, void* user);
 
 typedef struct TbcadEntityInfo {
-    int kind;                       /* TBCAD_ENTITY_* */
-    double min_x, min_y, max_x, max_y;  /* bounding box in drawing units */
-    char layer[64];                 /* layer name, UTF-8, truncated */
+    int kind;                          /* TBCAD_ENTITY_* */
+    double min_x, min_y, max_x, max_y; /* bounding box in drawing units */
+    char layer[64];                    /* layer name, UTF-8, truncated */
 } TbcadEntityInfo;
 
 typedef struct TbcadHost {

@@ -46,7 +46,8 @@ static int hellogrid(TbcadCommandCtx* ctx, void* user) {
 }
 
 TBCAD_PLUGIN_EXPORT const TbcadPluginInfo* tbcad_plugin_info(void) {
-    static const TbcadPluginInfo info = {TBCAD_PLUGIN_ABI_VERSION, "Hello", "1.0", "TBCAD contributors"};
+    static const TbcadPluginInfo info = {TBCAD_PLUGIN_ABI_VERSION, "Hello", "1.0",
+                                         "TBCAD contributors"};
     return &info;
 }
 
