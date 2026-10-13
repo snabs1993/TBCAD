@@ -49,6 +49,15 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
 // grip lands on `p`. Mirror: line from `base` to `p`.
 std::optional<Transform2> modeTransform(GripMode mode, Vec2 base, Vec2 hotPos, Vec2 p);
 
+// Position of the grip a running GRIPEDIT edits (drawn red); empty when none. UI thread only.
+void setHotGrip(std::optional<Vec2> pos);
+std::optional<Vec2> hotGrip();
+
+// The command line the UI runs when the user clicks at `world` with grips showing: `GRIPEDIT x,y`
+// (plus `Copy` when `copy`), or empty when no grip of `ids` lies within `apertureMm`.
+std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids, Vec2 world,
+                             double apertureMm, std::size_t limit, bool copy);
+
 void registerGripCommand(cmd::Registry& registry);
 
 }  // namespace tbcad::transform

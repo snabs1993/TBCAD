@@ -189,3 +189,28 @@ TEST_CASE("performance: MOVE of 100k selected lines is one undo step and fast") 
     CHECK(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - g0).count() <
           5);
 }
+
+TEST_CASE("gripClickCommand names the grip under the click, and Copy for Ctrl") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10.5, 0}});
+    std::vector<EntityId> ids{a};
+    auto line = tf::gripClickCommand(f.doc, ids, {10.6, 0.1}, 1.0, 100, false);
+    CHECK(line == "GRIPEDIT 10.5,0");
+    CHECK(tf::gripClickCommand(f.doc, ids, {10.6, 0.1}, 1.0, 100, true) == "GRIPEDIT 10.5,0 Copy");
+    CHECK(tf::gripClickCommand(f.doc, ids, {50, 50}, 1.0, 100, false).empty());
+    // the produced line runs as typed in the command line
+    f.host.setSelection(ids);
+    f.host.run("GRIPEDIT", {"10.5,0", "20,0"});
+    CHECK(near(get<LineData>(f.doc, a).b, {20, 0}));
+}
+
+TEST_CASE("the hot grip is set while GRIPEDIT waits and cleared afterwards") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    f.host.run("GRIPEDIT", {"10,0"});
+    REQUIRE(tf::hotGrip().has_value());
+    CHECK(near(*tf::hotGrip(), {10, 0}));
+    f.host.feed({cmd::ScriptItem::esc()});
+    CHECK_FALSE(tf::hotGrip().has_value());
+}
