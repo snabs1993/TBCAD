@@ -24,3 +24,7 @@ nothing is overwritten. A block whose name is taken is skipped. Each copy is one
     door-single|door-double      (names separated by |, or * for all)
 
 Choose `List` instead of a kind to see what the file offers.
+
+## Drag and drop
+
+Drag a block, layer, linetype or style from the list onto the drawing area to copy it into the drawing; a dragged block is also started as an INSERT. Drag blocks onto the "Drop blocks here" bar of a palette tab to add them as tools. If several rows are selected, dragging one of them takes all of them.

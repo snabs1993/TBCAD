@@ -18,6 +18,7 @@
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
+#include "tbcad/ui/drag_payload.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -1838,6 +1839,25 @@ void Gui::viewportInput(const ViewportRect& rect) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 }
 
+// Content browser items and palette tools dragged onto the drawing run as if typed.
+void Gui::dropIntoViewport(const ViewportRect& rect) {
+    const ImGuiPayload* pl = ImGui::GetDragDropPayload();
+    if (!pl || !pl->Data || !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        return;
+    const ImVec2 m = ImGui::GetIO().MousePos;
+    if (m.x < rect.x || m.y < rect.y || m.x >= rect.x + rect.w || m.y >= rect.y + rect.h ||
+        ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
+        return;
+    const std::string data(static_cast<const char*>(pl->Data));
+    std::vector<std::string> lines;
+    if (pl->IsDataType(ui::kCommandsPayload))
+        lines = ui::toolDropLines(data);
+    else if (pl->IsDataType(ui::kContentPayload))
+        lines = ui::contentDropLines(ui::decodeContent(data));
+    for (const std::string& line : lines)
+        core_.submitText(line);
+}
+
 // What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
 // options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
 void Gui::viewportMenu() {
@@ -1949,6 +1969,7 @@ ViewportRect Gui::frame() {
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);
+    dropIntoViewport(rect);
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);

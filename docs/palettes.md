@@ -24,3 +24,7 @@ Every tool can also name a **layer**; it becomes the current layer before the to
 Palettes are saved in `palettes.json` in the settings folder. The first start offers a Draw and a
 Hatches palette. `-PALETTE` edits them from the command line (New, Rename, Delete, AddBlock,
 AddHatch, AddCommand, Remove, List).
+
+## Drag and drop
+
+Drag a tool onto the drawing area to run it, exactly like a click. Drag a tool onto another tool of the same palette to move it there. Blocks dragged from the content browser onto the "Drop blocks here" bar are added as tools.
