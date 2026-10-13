@@ -30,7 +30,6 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeScaleText());
     (void)registry.add(makeSetByLayer());
     (void)registry.add(makeFind());
-    (void)registry.add(makeRename());
     (void)registry.add(makeCopyToLayer());
     if (!registry.find("ERASE"))
         (void)registry.add(makeErase());
