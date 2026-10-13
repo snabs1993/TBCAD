@@ -304,6 +304,119 @@ std::vector<std::uint8_t> mtextObj(std::uint64_t h) {
     return o.finish();
 }
 
+std::vector<std::uint8_t> hatchObj(std::uint64_t h, int type) {
+    ObjectWriter o(type, h);
+    o.entityCommon(2, 256, 0);
+    o.main.bd(0.0);  // elevation
+    o.main.bd(0.0);  // extrusion
+    o.main.bd(0.0);
+    o.main.bd(1.0);
+    o.main.text("SOLID");
+    o.main.b(true);   // solid
+    o.main.b(false);  // not associative
+    o.main.bl(2);     // two paths
+    // path 1: a polyline path, a closed square
+    o.main.bl(2);
+    o.main.b(false);
+    o.main.b(true);
+    o.main.bl(4);
+    for (double v : {0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0})
+        o.main.rd(v);
+    o.main.bl(0);
+    // path 2: edges, a line then a circular arc
+    o.main.bl(0);
+    o.main.bl(2);
+    o.main.rc(1);
+    for (double v : {2.0, 2.0, 4.0, 2.0})
+        o.main.rd(v);
+    o.main.rc(2);
+    o.main.rd(3.0);
+    o.main.rd(2.0);
+    o.main.bd(1.0);
+    o.main.bd(0.0);
+    o.main.bd(3.14159265358979323846);
+    o.main.b(true);
+    o.main.bl(0);
+    o.main.bs(0);  // style
+    o.main.bs(1);  // pattern type
+    o.main.bl(0);  // no seed points
+    commonHandles(o, 2, 0, kLayer0);
+    return o.finish();
+}
+
+constexpr std::uint64_t kDimStyle = 0x17, kDimBlock = 0x18;
+
+std::vector<std::uint8_t> dimStyleObj(std::uint64_t h, const char* name, double textHeight) {
+    ObjectWriter o(0x45, h);
+    o.objectCommon();
+    o.main.text(name);
+    o.main.b(false);  // 64 flag
+    o.main.bs(0);
+    o.main.b(false);
+    o.main.text("");  // DIMPOST
+    o.main.text("");  // DIMAPOST
+    for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48})
+        o.main.bd(code == 40 ? 1.0 : code == 41 ? 2.5 : 0.0);
+    for (int i = 0; i < 6; ++i)
+        o.main.b(false);  // 71..76
+    for (int i = 0; i < 3; ++i)
+        o.main.bs(0);  // 77..79
+    for (int code : {140, 141, 142, 143, 144, 145, 146, 147, 148})
+        o.main.bd(code == 140 ? textHeight : code == 147 ? 0.625 : 0.0);
+    o.main.b(false);  // 170
+    o.main.bs(0);     // 171
+    for (int i = 0; i < 4; ++i)
+        o.main.b(false);  // 172..175
+    for (int i = 0; i < 14; ++i)
+        o.main.bs(i == 5 ? 2 : 0);  // 176..280 ... (271 DIMDEC is the 6th entry)
+    o.main.b(false);
+    o.main.b(false);
+    for (int i = 0; i < 4; ++i)
+        o.main.bs(0);  // 283..286
+    o.main.b(false);   // 288
+    o.main.bs(0);      // 287
+    o.main.bs(0);      // 371
+    o.main.bs(0);      // 372
+    o.main.b(false);   // unknown bit
+    o.handles.handle(4, 0x04);
+    o.handles.handle(3, 0);
+    for (int i = 0; i < 6; ++i)
+        o.handles.handle(5, 0);
+    return o.finish();
+}
+
+std::vector<std::uint8_t> linearDimObj(std::uint64_t h) {
+    ObjectWriter o(0x15, h);
+    o.entityCommon(2, 256, 0);
+    for (double v : {0.0, 0.0, 1.0})
+        o.main.bd(v);  // extrusion
+    o.main.rd(5.0);    // text midpoint
+    o.main.rd(2.0);
+    o.main.bd(0.0);  // elevation
+    o.main.rc(1);    // flags 1
+    o.main.text("");
+    o.main.bd(0.0);
+    o.main.bd(0.0);
+    o.main.bd(1.0);
+    o.main.bd(1.0);
+    o.main.bd(1.0);
+    o.main.bd(0.0);
+    o.main.bs(5);
+    o.main.bs(1);
+    o.main.bd(1.0);
+    o.main.bd(10.0);  // measurement
+    o.main.rd(0.0);   // 12-pt
+    o.main.rd(0.0);
+    for (double v : {0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 2.0, 0.0})
+        o.main.bd(v);  // 13, 14, 10 points
+    o.main.bd(0.0);    // extension line rotation
+    o.main.bd(0.0);    // dimension rotation
+    commonHandles(o, 2, 0, kLayer0);
+    o.handles.handle(5, kDimStyle);
+    o.handles.handle(5, kDimBlock);
+    return o.finish();
+}
+
 std::vector<std::uint8_t> sampleDrawing() {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
@@ -489,4 +602,60 @@ TEST_CASE("a 2D polyline with its vertices and an mtext import") {
     }
     CHECK(polys == 1);
     CHECK(mtexts == 1);
+}
+
+TEST_CASE("a solid hatch with two kinds of boundary imports") {
+    DwgFile f;
+    const int hatchType = f.addClass("HATCH");
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(0x70, hatchObj(0x70, hatchType));
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    int hatches = 0;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity& e = *doc.find(id);
+        if (kind(e) == EntityKind::Hatch) {
+            ++hatches;
+            const auto* d = entityAs<HatchData>(e);
+            CHECK(d->solid);
+            CHECK(d->loops.size() == 2);
+        }
+    }
+    CHECK(hatches == 1);
+}
+
+TEST_CASE("a linear dimension with its style and drawn block imports") {
+    DwgFile f;
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(kDimStyle, dimStyleObj(kDimStyle, "ARCH", 3.5));
+    f.add(kDimBlock, blockHeader(kDimBlock, "*D1", 0, 0));
+    f.add(0x80, linearDimObj(0x80));
+    f.add(0x81, line(0x81, 0, kDimBlock, 0, 0, 10, 0));
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    REQUIRE(doc.dimStyleByName("ARCH") != nullptr);
+    CHECK(doc.dimStyleByName("ARCH")->textHeight == doctest::Approx(3.5));
+    int dims = 0;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity& e = *doc.find(id);
+        if (kind(e) == EntityKind::Dimension) {
+            ++dims;
+            const auto* d = entityAs<DimensionData>(e);
+            CHECK(d->kind == DimKind::Linear);
+            CHECK(d->measurement == doctest::Approx(10.0));
+        }
+    }
+    CHECK(dims == 1);
 }

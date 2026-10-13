@@ -54,6 +54,13 @@ struct StyleRec {
     std::string font{}, bigFont{};
 };
 
+struct DimStyleRec {
+    std::uint64_t handle = 0;
+    std::string name{};
+    int flags = 0;
+    std::vector<Group> groups{};
+};
+
 struct BlockRec {
     std::uint64_t handle = 0;
     std::string name{};
@@ -73,7 +80,8 @@ struct EntityRec {
     std::uint64_t linetype = 0;  // explicit linetype handle (0 = by layer)
     int ltFlags = 0;
     std::uint64_t style = 0;        // text style handle for TEXT-like entities
-    std::uint64_t blockHeader = 0;  // INSERT: the inserted block's header
+    std::uint64_t blockHeader = 0;  // INSERT: the inserted block's header; DIMENSION: its block
+    std::uint64_t dimStyle = 0;     // DIMENSION and LEADER
     // POLYLINE (vertices) and INSERT (attributes): the first and last owned object handle.
     std::uint64_t firstChild = 0, lastChild = 0;
     bool hasChildren = false;  // INSERT: the attribute bit was set
@@ -92,6 +100,7 @@ struct Drawing {
     std::map<std::uint64_t, LayerRec> layers{};
     std::map<std::uint64_t, LinetypeRec> linetypes{};
     std::map<std::uint64_t, StyleRec> styles{};
+    std::map<std::uint64_t, DimStyleRec> dimStyles{};
     std::map<std::uint64_t, BlockRec> blocks{};
     std::vector<EntityRec> entities{};  // in handle order
     std::size_t skipped = 0;            // objects of types not decoded

@@ -52,6 +52,10 @@ struct Names {
         auto it = d.styles.find(h);
         return it == d.styles.end() ? std::string{} : it->second.name;
     }
+    std::string dimStyle(std::uint64_t h) const {
+        auto it = d.dimStyles.find(h);
+        return it == d.dimStyles.end() ? std::string{} : it->second.name;
+    }
     std::string block(std::uint64_t h) const {
         auto it = d.blocks.find(h);
         return it == d.blocks.end() ? std::string{} : it->second.name;
@@ -86,6 +90,12 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
     }
     if (e.dxfType == "POLYLINE")
         o.group(66, 1);
+    if (e.dxfType == "DIMENSION") {
+        o.group(2, n.block(e.blockHeader));
+        o.group(3, n.dimStyle(e.dimStyle));
+    }
+    if (e.dxfType == "LEADER")
+        o.group(3, n.dimStyle(e.dimStyle));
     if (e.dxfType == "TEXT" || e.dxfType == "ATTRIB" || e.dxfType == "ATTDEF" ||
         e.dxfType == "MTEXT") {
         const std::string st = n.style(e.style);
@@ -193,6 +203,17 @@ std::string emitDxf(const Drawing& d) {
         o.group(42, s.lastHeight);
         o.group(3, s.font);
         o.group(4, s.bigFont);
+    }
+    o.begin("ENDTAB");
+    o.begin("TABLE");
+    o.group(2, "DIMSTYLE");
+    o.group(70, static_cast<long long>(d.dimStyles.size()));
+    for (const auto& [h, ds] : d.dimStyles) {
+        o.begin("DIMSTYLE");
+        o.group(2, ds.name);
+        o.group(70, ds.flags);
+        for (const Group& g : ds.groups)
+            emitGroup(o, g);
     }
     o.begin("ENDTAB");
     o.endSection();
