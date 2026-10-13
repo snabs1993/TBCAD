@@ -42,8 +42,10 @@ struct World {
     cmd::ScriptHost host;
     DraftingEnv env;
     OsnapFilter osnap{&env};
+    DynamicUcsFilter dynUcs{&env};
     PolarOrthoFilter polar{&env};
     GridSnapFilter grid{&env};
+    DynamicInput dyn{&env};
     TypedPointParser parser{&env};
 
     World() : host(doc, reg) {
@@ -51,7 +53,9 @@ struct World {
         env.doc = &doc;
         env.index = &idx;
         env.host = &host;
+        host.filters().add(&dyn, kDynamicInputOrder);
         host.filters().add(&osnap, kOsnapOrder);
+        host.filters().add(&dynUcs, kDynamicUcsOrder);
         host.filters().add(&polar, kPolarOrder);
         host.filters().add(&grid, kGridSnapOrder);
         host.runner().setLineParser(&parser);
@@ -70,12 +74,19 @@ struct World {
 
     // Runs the chain like a hover at `cursor` (pixel size 1 mm unless given).
     Vec2 hover(Vec2 cursor, std::optional<Vec2> base = std::nullopt, double pixelSize = 1,
-               cmd::FilterFeedback* fb = nullptr) {
+               cmd::FilterFeedback* fb = nullptr, bool shift = false, bool click = false) {
         cmd::PointQuery q;
         q.base = base;
         q.pixelSize = pixelSize;
+        q.shift = shift;
+        q.click = click;
         cmd::FilterFeedback local;
-        return host.filters().apply(q, cursor, fb ? *fb : local);
+        cmd::FilterFeedback& out = fb ? *fb : local;
+        const Vec2 p = host.filters().apply(q, cursor, out);
+        out.hasPoint = true;
+        out.base = base;
+        out.point = p;
+        return p;
     }
 };
 

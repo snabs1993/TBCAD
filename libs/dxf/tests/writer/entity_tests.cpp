@@ -660,6 +660,36 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
     CHECK(attribs == 2);
 }
 
+TEST_CASE("a dynamic block is exported as its current geometry") {
+    Document doc;
+    {
+        auto tx = doc.begin("dynamic");
+        BlockId b = tx.addBlock(BlockDef{.name = "BAR"}).value();
+        EntityId line = tx.add(make(LineData{{0, 0}, {10, 0}}), b).value();
+        DynamicDef def;
+        DynParam w;
+        w.name = "Length";
+        w.base = {0, 0};
+        w.end = {10, 0};
+        def.params.push_back(w);
+        DynAction move;
+        move.kind = DynAction::Kind::Move;
+        move.objects = {line};
+        def.actions.push_back(move);
+        REQUIRE(tx.modifyBlock(b, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok());
+        InsertData ins{b, {100, 0}, {1, 1}, 0};
+        ins.dynValues = {13};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    std::string text = rt.bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    // no INSERT of the dynamic block; the line of the current state is in the model space
+    CHECK(text.find("\nINSERT\n") == std::string::npos);
+    CHECK(text.find("\n10\n103.0") != std::string::npos);
+}
+
 TEST_CASE("an associative array is exported as one INSERT per item") {
     Document doc;
     {
@@ -761,6 +791,39 @@ TEST_CASE("a dimension is exported with a drawn *D block that other programs can
     });
     CHECK(proxies == 1);
     CHECK(texts >= 1);
+}
+
+TEST_CASE("an xref block and an insert clipping boundary survive the DXF round trip") {
+    Document doc;
+    BlockId b;
+    {
+        auto tx = doc.begin("xref");
+        b = tx.addBlock(BlockDef{.name = "site", .base = {0, 0}}).value();
+        REQUIRE(tx.add(make(LineData{{0, 0}, {10, 0}}), b).ok());
+        REQUIRE(tx.modifyBlock(b, [](BlockDef& d) {
+                      d.xrefPath = "../plans/site.tbcad";
+                      d.xrefStamp = 123456789;
+                      d.xrefOverlay = true;
+                  }).ok());
+        InsertData ins{b, {5, 5}, {1, 1}, 0};
+        ins.clip = {{0, 0}, {4, 0}, {4, 4}, {0, 4}};
+        ins.clipOn = false;
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const BlockDef* back = rt.back->blockByName("site");
+    REQUIRE(back);
+    CHECK(back->xrefPath == "../plans/site.tbcad");
+    CHECK(back->xrefStamp == 123456789);
+    CHECK(back->xrefOverlay);
+    CHECK(back->entities.size() == 1);
+    REQUIRE(rt.back->modelSpace().size() == 1);
+    const auto* ins = entityAs<InsertData>(*rt.back->find(rt.back->modelSpace()[0]));
+    REQUIRE(ins);
+    CHECK(ins->clip.size() == 4);
+    CHECK_FALSE(ins->clipOn);
+    CHECK(ins->clip[2] == Vec2{4, 4});
 }
 
 }  // namespace tbcad::dxf

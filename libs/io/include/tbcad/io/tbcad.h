@@ -6,8 +6,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "tbcad/core/document.h"
@@ -30,7 +32,17 @@ struct ReadOptions {
     bool verifyCrc = true;
 };
 
+// An optional chunk added by a layer above the document model (for example the entity versions
+// of a shared session). Readers that do not know the type keep it and write it back unchanged.
+struct ExtraChunk {
+    std::string type{};  // four characters, e.g. "VERS"
+    std::vector<std::uint8_t> payload{};
+};
+
 struct WriteOptions {
+    // Written after the entities. An opaque chunk of the same type that came from a file we read
+    // is dropped in their favour.
+    std::vector<ExtraChunk> extraChunks{};
     bool compress = true;    // deflate every chunk that is large enough to benefit
     bool keepBackup = true;  // keep the previous file as <name>.tbcad.bak
     // Test hook: stop after the temporary file is complete, as if the process died before the
@@ -51,6 +63,15 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
 // <path>.bak (when keepBackup), then the temporary file replaces <path>.
 Result<void> writeTbcad(const Document& doc, const std::filesystem::path& path,
                         const WriteOptions& options = {});
+
+// The (inflated) payload of the optional chunk `type` that readTbcad kept for a file with chunks
+// this build does not interpret itself, or nothing.
+std::optional<std::vector<std::uint8_t>> findOptionalChunk(const Document& doc,
+                                                           std::string_view type);
+
+// As findOptionalChunk, and removes the chunk from the document's header so that a later save
+// does not write a stale copy back. Meant for a document that was just read.
+std::optional<std::vector<std::uint8_t>> takeOptionalChunk(Document& doc, std::string_view type);
 
 struct ChunkInfo {
     std::string type{};  // four characters, e.g. "ENTS"

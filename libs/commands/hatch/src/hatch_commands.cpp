@@ -52,7 +52,7 @@ std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& hos
             return;
         if (checkWindow && !window.intersects(geom::bounds(e)))
             return;
-        if (!doc.effective(e.common.layer).visible())
+        if (!doc.effective(e.common).live())
             return;
         out.push_back({e.common.id, &e});
     };
@@ -302,6 +302,7 @@ private:
             g.angle = p.angle;
             entityAs<HatchData>(hatch)->gradient = g;
         }
+        applyCurrentProperties(ctx.doc().header(), hatch);
         auto id = ctx.tx().add(std::move(hatch));
         if (!id) {
             ctx.message(id.error().message);

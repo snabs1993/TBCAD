@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include "tbcad/render/camera.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
+#include "tbcad/ui/foreign_files.h"
 #include "tbcad/ui/scene_sync.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
@@ -64,8 +66,12 @@ public:
     // Problems found while reading settings, keybindings and aliases (shown in the history).
     const std::vector<std::string>& startupWarnings() const { return startupWarnings_; }
     // Autosaves from a crashed session, if any.
+    // Unsaved drawings found in the autosave folder (one entry per drawing), and the first of them.
+    std::vector<Recovery> pendingRecoveries() const;
     std::optional<Recovery> pendingRecovery() const;
     Result<void> recover(const Recovery& r);
+    // Opens every pending recovery (the first replaces the untouched drawing, the rest get tabs).
+    Result<void> recoverAll();
     void discardRecovery();
     // Writes settings; removes the autosave. Call on a normal exit.
     void shutdown();
@@ -83,6 +89,9 @@ public:
 
     // New and open add a tab. An untouched "Untitled" drawing is reused instead of keeping an
     // empty tab; a file that is already open is just activated.
+    // Starts from the default template (setting "template.default": a template name, empty or
+    // "Built-in" = the built-in drawing). A template that cannot be read falls back to the
+    // built-in drawing and says so in the history.
     void newDocument();
     Result<void> openFile(const std::filesystem::path& path);
 
@@ -108,6 +117,14 @@ public:
     Result<void> saveAs(const std::filesystem::path& path);
     bool hasFile() const;
     const std::filesystem::path& file() const;
+    // Foreign formats. `extension` is lower case with the dot (".dwg"). A read-only format
+    // opens as a copy: Save always asks for a new name and never writes the original.
+    void setForeignReader(std::string extension, ForeignReadFn read, bool readOnly);
+    bool canOpenExtension(std::string_view lowerExtension) const;
+    // True while the drawing came from a read-only format and has not been saved as .tbcad.
+    bool readOnlyOrigin() const;
+    // One-line banner for a read-only drawing; empty otherwise.
+    std::string readOnlyBanner() const;
     bool modified() const;
     // "Untitled" or the file name.
     std::string displayName() const;
@@ -169,6 +186,13 @@ public:
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);
     // Live selection rectangle shown in the overlay while dragging; nullopt = none.
     void setSelectionDrag(std::optional<std::pair<Vec2, Vec2>> corners) { drag_ = corners; }
+    // Freeform selection: the screen-space path shown while dragging (empty = none) and the
+    // selection made when it is released.
+    void setLassoPath(std::vector<Vec2> screenPath) { lasso_ = std::move(screenPath); }
+    void lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p);
+    // Click that cycles through the overlapping objects under the cursor (Alt+click): each click
+    // at the same spot picks the next one down.
+    void cycleClick(const PointerState& p);
 
     // ---- selection ---------------------------------------------------------------------------
     const std::vector<EntityId>& selection() const override { return selection_; }
@@ -186,6 +210,9 @@ public:
     // Crosshair, pick box, command preview, snap marker, selection rectangle and the overlay
     // drawers modules registered. Cleared first.
     void buildOverlay(render::Overlay& overlay, const UiRegistry* ui = nullptr);
+    // What lies under the drawing (the grid): the modules' underlay drawers. Cleared first; the
+    // window draws it before the scene.
+    void buildUnderlay(render::Overlay& underlay, const UiRegistry* ui = nullptr);
 
     // ---- notices -----------------------------------------------------------------------------
     const std::optional<OutOfAreaNotice>& outOfAreaNotice() const { return outOfArea_; }
@@ -211,13 +238,21 @@ public:
     // Once every couple of seconds: when an external reference changed on disk and no command is
     // running, reloads it (XRELOAD). The window calls it every frame.
     void tickXrefs(std::chrono::steady_clock::time_point now);
-    // Writes the autosave now when the drawing has unsaved changes. True if one was written.
+    // Writes the autosave of every open drawing that has unsaved changes. True if any was written.
     bool autosaveNow();
 
     // ---- cmd::IHost --------------------------------------------------------------------------
     std::optional<std::string> setting(std::string_view key) const override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
+    // Key binding profiles (keybindings.json format). Both return an error text, empty on success.
+    std::string exportKeybindings(const std::filesystem::path& file);
+    std::string importKeybindings(const std::filesystem::path& file);
+    // ---- templates ---------------------------------------------------------------------------
+    std::filesystem::path templateFolder() const { return paths_.configDir / "templates"; }
+    std::vector<std::string> templateNames() const override;
+    std::string saveAsTemplate(std::string_view name) override;
+    std::string newFromTemplate(std::string_view name) override;
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
     // Panels asked for since the last call (the window opens them).
@@ -250,18 +285,27 @@ private:
     std::optional<std::size_t> slotOfFile(const std::filesystem::path& path) const;
     void resetSessionState();
     void removeAutosaveFiles();
+    void removeAutosaveOf(std::uint64_t slotId);
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
     void notifySessionHooks();
 
+    struct ForeignReader {
+        ForeignReadFn read{};
+        bool readOnly = true;
+    };
+    std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
     PanelContext makePanelContext();
     std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
+    // A copy of the default template; `problem` gets a sentence when the chosen one is unusable
+    // and the built-in drawing was used instead.
+    std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
     std::vector<std::string> panelRequests_{};
     platform::Settings settings_;
@@ -283,6 +327,10 @@ private:
     PointerState lastPointer_{};
 
     std::vector<EntityId> selection_{};
+    std::vector<Vec2> lasso_{};
+    std::vector<EntityId> cycleStack_{};
+    std::optional<EntityId> cycleCurrent_{};
+    Vec2 cycleAt_{};
     std::vector<std::string> history_{};
     std::optional<cmd::PromptInfo> prompt_{};
     cmd::FilterFeedback feedback_{};
@@ -294,7 +342,6 @@ private:
     std::optional<std::string> clipboardOut_{};
 
     std::chrono::steady_clock::time_point lastAutosave_{};
-    std::uint64_t autosavedRevision_ = ~std::uint64_t{0};
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
 };

@@ -11,6 +11,7 @@
 #include "panel_util.h"
 #include "panels.h"
 #include "tbcad/layers/layer_ops.h"
+#include "tbcad/layers/layer_states.h"
 
 namespace tbcad::layers {
 
@@ -27,6 +28,8 @@ struct Row {
 
 struct PanelState {
     std::string filter{};
+    std::string lastCommandFilter{};  // last layers.filter.serial we applied
+    std::string stateName{};
     std::set<std::uint32_t> collapsed{};
     LayerId selected{};
     LayerId renaming{};
@@ -53,8 +56,15 @@ std::string lowered(std::string s) {
 std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
     std::vector<Row> rows;
     std::string f = lowered(st.filter);
+    // "name:S-* frozen", "branch:Walls" ... use the filter language of -LAYERFILTER; plain text is
+    // a substring of the layer path.
+    const bool expression = f.find(':') != std::string::npos;
     auto matches = [&](LayerId id) {
-        return f.empty() || lowered(layerPath(doc, id)).find(f) != std::string::npos;
+        if (f.empty())
+            return true;
+        if (expression)
+            return layerMatchesFilter(doc, id, st.filter);
+        return lowered(layerPath(doc, id)).find(f) != std::string::npos;
     };
     // A layer shows when it or any descendant matches.
     auto subtreeMatches = [&](auto&& self, LayerId id) -> bool {
@@ -144,7 +154,9 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
             st.renaming = {};  // Esc or click elsewhere cancels
         }
     } else {
-        std::string label = std::string(current ? "\xE2\x97\x8F " : "   ") + l->name;  // filled dot
+        // The UI font has no filled-dot glyph (it showed as "?"), so mark the current layer in
+        // ASCII.
+        std::string label = std::string(current ? "> " : "   ") + l->name;
         if (dimmed)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         bool sel = st.selected == row.id;
@@ -291,6 +303,15 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         }
     }
 
+    // -LAYERFILTER sets the host setting layers.filter; the panel follows it.
+    if (ctx.host) {
+        const std::string serial = ctx.host->setting("layers.filter.serial").value_or("");
+        if (serial != st.lastCommandFilter) {
+            st.lastCommandFilter = serial;
+            st.filter = ctx.host->setting("layers.filter").value_or("");
+        }
+    }
+
     // Toolbar.
     if (ImGui::Button("New"))
         newLayer(ctx, {});
@@ -312,7 +333,25 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##filter", "Filter layers", &st.filter);
+    ImGui::InputTextWithHint("##filter", "Filter layers (text, or name:S-* frozen ...)",
+                             &st.filter);
+
+    // Named layer states: pick one to restore it, or save the current state under a new name.
+    ImGui::SetNextItemWidth(160);
+    if (ImGui::BeginCombo("##states", "Layer states...")) {
+        for (const std::string& n : layerStateNames(doc))
+            if (ImGui::Selectable(n.c_str()))
+                exec(ctx, {"-LAYERSTATE", "Restore", n, "All"});
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputTextWithHint("##newstate", "Save as", &st.stateName);
+        ImGui::SameLine();
+        if (ImGui::Button("Save") && !st.stateName.empty()) {
+            exec(ctx, {"-LAYERSTATE", "Save", st.stateName});
+            st.stateName.clear();
+        }
+        ImGui::EndCombo();
+    }
 
     std::vector<Row> rows = buildRows(doc, st);
 

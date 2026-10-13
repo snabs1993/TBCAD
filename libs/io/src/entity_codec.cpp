@@ -16,7 +16,8 @@ constexpr std::uint8_t kCfLineweight = 4;
 constexpr std::uint8_t kCfLtScale = 8;
 constexpr std::uint8_t kCfHidden = 16;
 constexpr std::uint8_t kCfOwner = 32;
-constexpr std::uint8_t kCfKnownMask = 63;
+constexpr std::uint8_t kCfAnnotative = 64;
+constexpr std::uint8_t kCfKnownMask = 127;
 
 // ---------------------------------------------------------------- writing
 
@@ -182,8 +183,9 @@ struct PayloadWriter {
         w.vec2(d.position);
         w.vec2(d.scale);
         w.f64(d.rotation);
-        // Trailing fields: attribute values (format 1.1), then an array (format 1.3).
-        if (!d.attribs.empty() || d.array) {
+        // Trailing fields: attribute values (format 1.1), then tagged sections: 1 = array
+        // (format 1.3), 2 = dynamic block values (format 1.4), 3 = clipping boundary (format 1.6).
+        if (!d.attribs.empty() || d.array || !d.dynValues.empty() || d.clip.size() >= 3) {
             w.varint(d.attribs.size());
             for (const AttribValue& a : d.attribs) {
                 str(a.tag);
@@ -208,6 +210,19 @@ struct PayloadWriter {
             w.f64(a.pathSpacing);
             polyVertices(a.path);
         }
+        if (!d.dynValues.empty()) {
+            w.u8(2);
+            w.varint(d.dynValues.size());
+            for (double v : d.dynValues)
+                w.f64(v);
+        }
+        if (d.clip.size() >= 3) {
+            w.u8(3);
+            w.u8(d.clipOn ? 1 : 0);
+            w.varint(d.clip.size());
+            for (const Vec2& p : d.clip)
+                w.vec2(p);
+        }
     }
     void operator()(const DimensionData& d) {
         w.u8(static_cast<std::uint8_t>(d.kind));
@@ -225,6 +240,27 @@ struct PayloadWriter {
         w.varint(d.style.value);
         str(d.utf8);
         w.vec2(d.textPos);
+    }
+    void operator()(const TableData& d) {
+        w.vec2(d.origin);
+        w.f64(d.rotation);
+        w.f64(d.textHeight);
+        w.f64(d.margin);
+        w.varint(d.style.value);
+        w.u8(d.titleRow ? 1 : 0);
+        w.varint(d.colWidths.size());
+        for (double x : d.colWidths)
+            w.f64(x);
+        w.varint(d.rowHeights.size());
+        for (double y : d.rowHeights)
+            w.f64(y);
+        w.varint(d.cells.size());
+        for (const TableCell& c : d.cells) {
+            str(c.utf8);
+            w.varint(c.colSpan);
+            w.varint(c.rowSpan);
+            w.u8(c.covered ? 1 : 0);
+        }
     }
     void operator()(const ProxyData& d) {
         str(d.originalType);
@@ -470,7 +506,25 @@ struct PayloadReader {
                         d.attribs.push_back(std::move(a));
                     }
                 }
-                if (r.remaining() > 0 && r.u8() == 1) {
+                while (r.remaining() > 0) {
+                    std::uint8_t tag = r.u8();
+                    if (tag == 2) {
+                        std::size_t n = r.count(8);
+                        d.dynValues.reserve(n);
+                        for (std::size_t i = 0; i < n; ++i)
+                            d.dynValues.push_back(r.f64());
+                        continue;
+                    }
+                    if (tag == 3) {
+                        d.clipOn = r.boolean();
+                        std::size_t n = r.count(16);
+                        d.clip.reserve(n);
+                        for (std::size_t i = 0; i < n; ++i)
+                            d.clip.push_back(r.vec2());
+                        continue;
+                    }
+                    if (tag != 1)
+                        bad("unknown insert section");
                     ArrayInfo a;
                     a.kind = enumeration<ArrayInfo::Kind>(
                         static_cast<std::uint8_t>(ArrayInfo::Kind::Path));
@@ -514,6 +568,36 @@ struct PayloadReader {
             }
             case EntityKind::Proxy:
                 return proxy();
+            case EntityKind::Table: {
+                TableData d;
+                d.origin = r.vec2();
+                d.rotation = r.f64();
+                d.textHeight = r.f64();
+                d.margin = r.f64();
+                d.style = id<TextStyleId>();
+                d.titleRow = r.boolean();
+                std::size_t nc = r.count(8);
+                d.colWidths.resize(nc);
+                for (double& x : d.colWidths)
+                    x = r.f64();
+                std::size_t nr = r.count(8);
+                d.rowHeights.resize(nr);
+                for (double& y : d.rowHeights)
+                    y = r.f64();
+                std::size_t n = r.count(4);
+                if (nc == 0 || nr == 0 || n != nc * nr)
+                    bad("table cell count does not match its rows and columns");
+                d.cells.resize(n);
+                for (TableCell& c : d.cells) {
+                    c.utf8 = str();
+                    c.colSpan =
+                        static_cast<std::uint16_t>(std::min<std::uint64_t>(r.varint(), 65535));
+                    c.rowSpan =
+                        static_cast<std::uint16_t>(std::min<std::uint64_t>(r.varint(), 65535));
+                    c.covered = r.boolean();
+                }
+                return make(std::move(d));
+            }
         }
         bad("unknown entity kind");
     }
@@ -642,7 +726,7 @@ struct PayloadReader {
     }
 };
 
-constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::Proxy);
+constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::Table);
 
 }  // namespace
 
@@ -681,6 +765,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         flags |= kCfLtScale;
     if (!c.visible)
         flags |= kCfHidden;
+    if (c.annotative)
+        flags |= kCfAnnotative;
     if (owner)
         flags |= kCfOwner;
     w.varint(c.id.value);
@@ -733,6 +819,7 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
     if (flags & kCfLtScale)
         c.linetypeScale = r.f64();
     c.visible = !(flags & kCfHidden);
+    c.annotative = (flags & kCfAnnotative) != 0;
     if (flags & kCfOwner)
         out.owner = pr.id<BlockId>();
     if (!c.id)

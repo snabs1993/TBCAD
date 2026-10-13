@@ -15,6 +15,7 @@
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
 
@@ -167,6 +168,8 @@ void App::drawScene() {
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
     renderer_.beginFrame();
+    core_->buildUnderlay(underlay_, uiRegistry_.get());
+    renderer_.draw(underlay_);
     renderer_.draw(core_->scene());
     core_->buildOverlay(overlay_, uiRegistry_.get());
     renderer_.draw(overlay_);
@@ -299,6 +302,7 @@ int App::run() {
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);
+    dwgopen::registerForeignFormats(*core_);
     if (!options_.listCommands.empty()) {
         const std::string table = cmd::commandListMarkdown(*registry_);
         if (options_.listCommands == "-") {
@@ -331,8 +335,18 @@ int App::run() {
         if (options_.mcp)
             core_->settings().setBool(mcpapp::kSettingEnabled, true);
     }
+    // Plugins: shared libraries in <settings folder>/plugins that add commands
+    // (docs/plugin-api.md).
+    plugins_ = std::make_unique<plugin::PluginHost>();
+    const std::filesystem::path pluginFolder = paths_.configDir / "plugins";
+    if (core_->settings().getBool("plugins.enabled", true))
+        plugins_->loadFolder(pluginFolder, *registry_);
+    plugins_->registerListCommand(*registry_, pluginFolder);
+    for (const std::string& line : plugins_->takeLog())
+        core_->print(line);
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
+    plugins_->registerUi(*uiRegistry_);
     mcp_->registerUi(*uiRegistry_);
     core_->registerBuiltinUi(*uiRegistry_);
     core_->applyUiKeybindings(*uiRegistry_);

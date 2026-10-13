@@ -154,6 +154,28 @@ TEST_CASE("drag left to right selects inside, right to left selects touching") {
     CHECK(f.core->selection().empty());
 }
 
+TEST_CASE("Alt+click cycles through overlapping objects; lasso selects inside the path") {
+    Fixture f("cyclelasso");
+    f.line("0,0", "100,0");
+    f.line("0,0", "100,0");
+    f.core->cycleClick(f.at({50, 0}));
+    REQUIRE(f.core->selection().size() == 1);
+    const EntityId first = f.core->selection()[0];
+    f.core->cycleClick(f.at({50, 0}));
+    REQUIRE(f.core->selection().size() == 1);
+    CHECK(f.core->selection()[0] != first);
+    f.core->cycleClick(f.at({50, 0}));
+    CHECK(f.core->selection()[0] == first);  // wrapped round
+    f.core->cycleClick(f.at({700, 700}));
+    CHECK(f.core->selection().empty());
+
+    f.line("10,30", "20,30");
+    auto s = [&](Vec2 w) { return f.core->camera().worldToScreen(w); };
+    std::vector<Vec2> path{s({5, 20}), s({25, 20}), s({25, 40}), s({5, 40})};
+    f.core->lassoSelect(path, f.at({0, 0}));
+    CHECK(f.core->selection().size() == 1);
+}
+
 TEST_CASE("a selection prompt takes picks, windows and the selection made beforehand") {
     Fixture f("selprompt");
     f.line("0,0", "10,0");
@@ -239,6 +261,28 @@ TEST_CASE("zoom extents fits the drawing; ZOOM and PAN work as commands") {
     Vec2 c0 = f.core->camera().center;
     f.core->submitText("PAN 0,0 10,0");
     CHECK(f.core->camera().center.x == doctest::Approx(c0.x - 10));
+}
+
+TEST_CASE("ZOOM Extents counts every entity kind, not only lines and circles") {
+    Fixture f("zoomkinds");
+    {
+        // The command used a coarse scan that skipped ellipses (and text, hatches, dimensions).
+        auto tx = f.core->document().begin("ellipse");
+        Entity e;
+        EllipseData el;
+        el.center = {7000, 3000};
+        el.majorAxis = {500, 0};
+        el.ratio = 0.5;
+        e.data = el;
+        REQUIRE(tx.add(e).ok());
+        tx.commit();
+    }
+    f.core->submitText("ZOOM E");
+    BBox2 vis = f.core->camera().visibleWorld();
+    CHECK(vis.min.x <= 6500);
+    CHECK(vis.max.x >= 7500);
+    CHECK(vis.min.y <= 2750);
+    CHECK(vis.max.y >= 3250);
 }
 
 TEST_CASE("ZOOM is transparent inside another command") {
@@ -351,6 +395,33 @@ TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
     CHECK(second.modified());
     second.discardRecovery();
     CHECK_FALSE(second.pendingRecovery().has_value());
+}
+
+TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
+    Fixture f("autosave_multi");
+    f.line("0,0", "100,0");
+    f.core->newDocument();
+    f.line("0,0", "0,50");
+    f.core->newDocument();
+    f.line("5,5", "6,6");
+    REQUIRE(f.core->documentCount() == 3);
+    CHECK(f.core->autosaveNow());
+    CHECK_FALSE(f.core->autosaveNow());
+
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    CHECK(second.pendingRecoveries().size() == 3);
+    REQUIRE(second.recoverAll().ok());
+    CHECK(second.documentCount() == 3);
+    CHECK(second.modified());
+    // The recovered drawings are protected again straight away.
+    CHECK(second.pendingRecoveries().size() == 3);
+
+    // Closing a drawing takes its backup away.
+    second.closeDocument(0);
+    CHECK(second.pendingRecoveries().size() == 2);
+    second.discardRecovery();
+    CHECK(second.pendingRecoveries().empty());
 }
 
 TEST_CASE("a clean save or shutdown removes the autosave") {
@@ -708,6 +779,50 @@ TEST_CASE("SETTINGS asks the window to open the dialog") {
     CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
 
+TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never .dwg") {
+    Fixture f("foreign");
+    fs::path src = f.dir / "plan.dwg";
+    { std::ofstream(src, std::ios::binary) << "original bytes"; }
+    f.core->setForeignReader(
+        ".dwg",
+        [](const fs::path&) -> Result<ForeignOpenResult> {
+            ForeignOpenResult r;
+            r.document = std::make_unique<Document>();
+            auto tx = r.document->begin("fake");
+            (void)tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}});
+            tx.commit();
+            r.format = "DWG R2000";
+            r.messages = {"fake summary"};
+            return r;
+        },
+        true);
+
+    CHECK(f.core->canOpenExtension(".dwg"));
+    REQUIRE(f.core->openFile(src).ok());
+    CHECK(f.core->readOnlyOrigin());
+    CHECK(f.core->document().modelSpaceCount() == 1);
+    CHECK(f.core->displayName() == "plan.dwg [Read-only]");
+    CHECK(f.core->readOnlyBanner().find("Save As") != std::string::npos);
+    CHECK_FALSE(f.core->modified());
+
+    f.line("0,0", "5,5");
+    CHECK(f.core->modified());
+    CHECK_FALSE(f.core->save().ok());                   // Ctrl+S never writes the .dwg
+    CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());  // nor any .dwg
+    CHECK_FALSE(fs::exists(f.dir / "x.dwg"));
+
+    REQUIRE(f.core->saveAs(f.dir / "plan.tbcad").ok());
+    CHECK_FALSE(f.core->readOnlyOrigin());
+    CHECK_FALSE(f.core->modified());
+    CHECK(f.core->readOnlyBanner().empty());
+    CHECK(f.core->displayName() == "plan.tbcad");
+    REQUIRE(f.core->save().ok());
+
+    std::ifstream in(src, std::ios::binary);
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content == "original bytes");
+}
+
 TEST_CASE("a .dxf file opens and saves back as DXF in place") {
     Fixture f("dxfmain");
     f.line("0,0", "100,0");
@@ -800,4 +915,9 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
     CHECK(gFakeXReloadRuns == 1);
     f.core->tickXrefs(now + std::chrono::seconds(6));  // the fake did not reload; no second try
     CHECK(gFakeXReloadRuns == 1);
+}
+
+TEST_CASE("Delete is bound to edit.delete") {
+    Fixture f("deletekey");
+    CHECK(f.core->keybindings().label("edit.delete") == "Delete");
 }

@@ -103,3 +103,18 @@ TEST_CASE("every DIMSTYLE property accepts a valid value") {
         if (k != "Prefix" && k != "Suffix")  // free text
             CHECK(!ok(k.c_str(), "@@@").empty());
 }
+
+TEST_CASE("DIMSTYLE Rename keeps the id, refuses Standard and duplicates") {
+    Fixture f;
+    f.host->run("D", {"New", "A", "New", "B", "Done"});
+    const auto id = f.doc.dimStyleByName("A")->id;
+    f.host->run("D", {"Rename", "A", "C", "Done"});
+    CHECK(f.doc.dimStyleByName("A") == nullptr);
+    REQUIRE(f.doc.dimStyleByName("C"));
+    CHECK(f.doc.dimStyleByName("C")->id == id);
+    f.host->run("D", {"Rename", "C", "B", "Done"});
+    CHECK(f.host->logContains("already used"));
+    f.host->run("D", {"Rename", "Standard", "Z", "Done"});
+    CHECK(f.doc.dimStyleByName("Standard"));
+    CHECK(f.host->undo());
+}

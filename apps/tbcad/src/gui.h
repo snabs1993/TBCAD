@@ -15,6 +15,7 @@
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
+#include "tbcad/ui/workspace.h"
 
 struct GLFWwindow;
 
@@ -82,15 +83,23 @@ public:
 
 private:
     enum class Pending { None, Close, Exit };
-    enum class BrowserPurpose { Open, SaveAs };
+    enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf };
 
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void readOnlyBanner();
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();
     void dockLayout(ImGuiID dockspace);
+    // Workspaces (saved window layouts). Switching applies the panels at once and the docking
+    // layout through Dear ImGui's ini data.
+    void applyWorkspace(const ui::Workspace& ws);
+    void switchWorkspace(const std::string& name);
+    void saveWorkspace(const std::string& name);
+    void workspaceMenu();
+    void workspaceDialog();
     void commandWindow();
     void updateSuggestions();
     void drawSuggestions(ImVec2 inputPos, float width);
@@ -98,9 +107,12 @@ private:
     void cursorHud(const ViewportRect& rect);
     void logWindow();
     std::string actionLabel(const std::string& action) const;
+    void quickProperties(const ViewportRect& rect);
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
+    void viewportMenu();
+    void dropIntoViewport(const ViewportRect& rect);
     void registeredMenu(const std::string& top);
     void registeredSubmenu(const std::string& prefix, std::vector<const ui::MenuItemInfo*>& items);
     void runAction(const std::string& action);
@@ -108,6 +120,9 @@ private:
     void doNew();
     void doOpen();
     void doOpenPath(const std::string& path);
+    void doImportDxf();
+    void doExportDxf();
+    void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
     void doSave();
     void doSaveAs();
     void afterSavePrompt(bool saved);
@@ -123,6 +138,12 @@ private:
     FileBrowser browser_;
     SettingsDialog settings_;
 
+    // Dynamic input field being edited in the cursor HUD.
+    void dynamicFields(const cmd::FilterFeedback& fb);
+    int dynFocus_ = -1;
+    bool dynFocusPending_ = false;
+    std::string dynBuf_{};
+
     ui::ThemeMode themeMode_ = ui::ThemeMode::Dark;
     ui::Theme theme_ = ui::darkTheme();
     bool lineweights_ = true;
@@ -131,9 +152,16 @@ private:
     bool showNotices_ = false;
     bool showCommandLine_ = true;
     bool layoutBuilt_ = false;
+    ui::WorkspaceStore workspaces_;
+    std::string workspaceName_{};  // the one last switched to or saved
+    bool rebuildDock_ = false;     // rebuild the default docking layout next frame
+    bool openWorkspaceSave_ = false;
+    std::string workspaceNameInput_{};
+    std::string workspaceMessage_{};
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
+    std::size_t recoveryCount_ = 0;
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};
@@ -179,6 +207,7 @@ private:
     bool leftDown_ = false;
     bool doubleClick_ = false;
     bool dragging_ = false;
+    std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
     Vec2 pressPos_{};
     bool panning_ = false;
     double pendingNotches_ = 0;

@@ -6,6 +6,15 @@
 
 namespace tbcad::plot {
 
+Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHost& host,
+                                            exportlib::PlotSettings settings) {
+    if (settings.area == exportlib::PlotArea::Display)
+        settings.window = viewWindow(host);
+    const std::string layoutName = plotLayout(host);
+    return layoutName.empty() ? exportlib::buildSheet(doc, settings)
+                              : layout::buildLayoutSheet(doc, layoutName, settings);
+}
+
 Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
                                exportlib::PlotSettings settings, Format format,
                                const std::string& path) {

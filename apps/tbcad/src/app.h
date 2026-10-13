@@ -10,6 +10,7 @@
 #include "tbcad/mcp/session.h"
 #include "tbcad/mcpapp/controller.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/plugin/plugin_host.h"
 #include "tbcad/render/renderer.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
@@ -71,6 +72,8 @@ private:
 
     Options options_;
     platform::AppPaths paths_;
+    // Destroyed after the registry: the plugins' code must stay loaded as long as its commands.
+    std::unique_ptr<plugin::PluginHost> plugins_;
     std::unique_ptr<cmd::Registry> registry_;
     std::unique_ptr<ui::UiRegistry> uiRegistry_;
     std::unique_ptr<ui::AppCore> core_;
@@ -81,6 +84,7 @@ private:
     ViewportTarget target_;
     ViewportTarget captureTarget_;
     std::atomic<bool> windowReady_{false};  // glfwPostEmptyEvent is only legal after glfwInit
+    render::Overlay underlay_;
     render::Overlay overlay_;
     std::string iniPath_{};
     bool imguiReady_ = false;

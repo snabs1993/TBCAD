@@ -223,6 +223,16 @@ struct DataDumper {
               << a.pathSpacing;
             polyV(o, a.path);
         }
+        if (d.clip.size() >= 3) {
+            o << " CLIP" << (d.clipOn ? "on" : "off");
+            for (const Vec2& p : d.clip)
+                o << " " << p;
+        }
+        if (!d.dynValues.empty()) {
+            o << " DYN";
+            for (double v : d.dynValues)
+                o << " " << v;
+        }
     }
     void operator()(const DimensionData& d) {
         o << "DIM kind" << static_cast<int>(d.kind) << " rot" << d.rotation;
@@ -238,6 +248,20 @@ struct DataDumper {
         for (const auto& p : d.vertices)
             o << " " << p;
     }
+    void operator()(const TableData& d) {
+        o << "TABLE at" << d.origin << " rot" << d.rotation << " th" << d.textHeight << " m"
+          << d.margin << " style" << d.style << " title" << d.titleRow << " cols";
+        for (double w : d.colWidths)
+            o << " " << w;
+        o << " rows";
+        for (double h : d.rowHeights)
+            o << " " << h;
+        for (const TableCell& c : d.cells) {
+            o << " [" << c.colSpan << "x" << c.rowSpan << (c.covered ? "c" : "") << " ";
+            o.quoted(c.utf8);
+            o << "]";
+        }
+    }
     void operator()(const ProxyData& d) {
         o << "PROXY ";
         o.quoted(d.originalType);
@@ -249,8 +273,9 @@ struct DataDumper {
 };
 
 void common(Out& o, const EntityCommon& c) {
-    o << "e" << c.id << " L" << c.layer << " lt" << c.linetype << " c" << c.color << " lw"
-      << static_cast<int>(c.lineweight.v) << " ls" << c.linetypeScale << " vis" << c.visible << " ";
+    o << "e" << c.id << " L" << c.layer << " V" << c.level << " lt" << c.linetype << " c" << c.color
+      << " lw" << static_cast<int>(c.lineweight.v) << " ls" << c.linetypeScale << " vis"
+      << c.visible << (c.annotative ? " anno" : "") << " ";
 }
 
 }  // namespace
@@ -266,11 +291,12 @@ std::string canonicalDump(const Document& doc) {
     Out o;
     const Header& h = doc.header();
     o << "header units" << static_cast<int>(h.units) << " workArea" << h.workArea << " ltScale"
-      << h.ltScale << " layer" << h.currentLayer << " color"
-      << static_cast<int>(h.currentColor.kind) << ":" << static_cast<int>(h.currentColor.r) << ","
-      << static_cast<int>(h.currentColor.g) << "," << static_cast<int>(h.currentColor.b)
-      << " linetype" << h.currentLinetype.value << " lineweight" << h.currentLineweight.v
-      << " textStyle" << h.currentTextStyle << " dimStyle" << h.currentDimStyle << " createdBy=";
+      << h.ltScale << " layer" << h.currentLayer << " level" << h.currentLevel << " view"
+      << static_cast<int>(h.levelView) << " color" << static_cast<int>(h.currentColor.kind) << ":"
+      << static_cast<int>(h.currentColor.r) << "," << static_cast<int>(h.currentColor.g) << ","
+      << static_cast<int>(h.currentColor.b) << " linetype" << h.currentLinetype.value
+      << " lineweight" << h.currentLineweight.v << " textStyle" << h.currentTextStyle << " dimStyle"
+      << h.currentDimStyle << " createdBy=";
     o.quoted(h.createdBy);
     o << "\n";
     for (const auto& [k, v] : h.custom) {
@@ -286,6 +312,11 @@ std::string canonicalDump(const Document& doc) {
         o << " parent" << r.parent << " color" << r.color << " lt" << r.linetype << " lw"
           << static_cast<int>(r.lineweight.v) << " on" << r.on << " frozen" << r.frozen << " locked"
           << r.locked << " plot" << r.plot << "\n";
+    }
+    for (const auto& [id, r] : doc.levels()) {
+        o << "level " << id << " ";
+        o.quoted(r.name);
+        o << " elev" << r.elevation << " visible" << r.visible << " locked" << r.locked << "\n";
     }
     for (const auto& [id, r] : doc.linetypes()) {
         o << "linetype " << id << " ";
@@ -327,6 +358,28 @@ std::string canonicalDump(const Document& doc) {
         for (EntityId e : r.entities)
             o << " " << e;
         o << "\n";
+        if (r.dynamic) {
+            for (const DynParam& p : r.dynamic->params) {
+                o << "  dynparam " << static_cast<int>(p.kind) << " ";
+                o.quoted(p.name);
+                o << " " << p.base << " " << p.end << " " << p.min << " " << p.max;
+                for (std::size_t i = 0; i < p.states.size(); ++i) {
+                    o << " state ";
+                    o.quoted(p.states[i]);
+                    if (i < p.stateObjects.size())
+                        for (EntityId e : p.stateObjects[i])
+                            o << " " << e;
+                }
+                o << "\n";
+            }
+            for (const DynAction& a : r.dynamic->actions) {
+                o << "  dynaction " << static_cast<int>(a.kind) << " p" << a.param << " "
+                  << a.frameMin << " " << a.frameMax << " objs";
+                for (EntityId e : a.objects)
+                    o << " " << e;
+                o << "\n";
+            }
+        }
     }
     // Entities in id order.
     std::vector<EntityId> ids;

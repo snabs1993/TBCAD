@@ -16,7 +16,9 @@
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
+#include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/ui/settings_model.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
@@ -82,6 +84,7 @@ struct AppCore::Session {
     std::unique_ptr<cmd::CommandRunner> runner{};
     fs::path file{};
     std::uint64_t savedRevision = 0;
+    std::string readOnlyFormat{};  // "DWG" while the drawing came from a read-only format
     // File stamp of each xref that a reload was already tried for (a failed reload is not retried
     // until the file changes again).
     std::map<BlockId, std::int64_t> xrefTried{};
@@ -93,6 +96,7 @@ struct AppCore::DocSlot {
     render::Camera2D camera{};  // the view while the drawing is in the background
     std::vector<EntityId> selection{};
     bool viewSaved = false;
+    std::uint64_t autosavedRevision = ~std::uint64_t{0};  // revision last written to the autosave
 };
 
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
@@ -110,6 +114,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("edit.redo", "Ctrl+Y");
     keybindings_.declare("edit.selectAll", "Ctrl+A");
     keybindings_.declare("edit.deselect", "Escape");
+    keybindings_.declare("edit.delete", "Delete");
     keybindings_.declare("view.zoomExtents", "");
     keybindings_.declare("view.toggleCommandLine", "");
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
@@ -131,7 +136,13 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     for (const auto& w : report.warnings)
         startupWarnings_.push_back(w);
 
-    installSession(std::make_unique<Document>(), {});
+    {
+        std::string problem;
+        auto doc = defaultDocument(&problem);
+        if (!problem.empty())
+            startupWarnings_.push_back(problem);
+        installSession(std::move(doc), {});
+    }
     for (const auto& w : startupWarnings_)
         print(w);
 }
@@ -191,7 +202,6 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     scene_.setSelected(selection_);
     ++generation_;
     lastTessellatedFor_ = camera_;
-    autosavedRevision_ = ~std::uint64_t{0};
     notifySessionHooks();
     if (fitView && !session_->index.empty())
         zoomExtents();
@@ -202,10 +212,13 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
         slots_.emplace_back();
     DocSlot& slot = slots_[active_];
     session_ = nullptr;
+    if (slot.session)
+        removeAutosaveOf(slot.id);
     slot.session.reset();
     slot.session = makeSession(std::move(doc), std::move(file));
     slot.id = nextDocId_++;
     slot.viewSaved = false;
+    slot.autosavedRevision = ~std::uint64_t{0};
     enterSlot(active_, true);
 }
 
@@ -248,8 +261,9 @@ void AppCore::closeDocument(std::size_t index) {
         return;
     if (index == active_ && runner().active())
         pressEscape();
+    removeAutosaveOf(slots_[index].id);
     if (slots_.size() == 1) {
-        installSession(std::make_unique<Document>(), {});
+        installSession(defaultDocument(), {});
         return;
     }
     if (index == active_) {
@@ -273,7 +287,8 @@ std::string AppCore::documentTitle(std::size_t index) const {
     if (index >= slots_.size())
         return {};
     const Session& s = *slots_[index].session;
-    return s.file.empty() ? std::string("Untitled") : s.file.filename().string();
+    std::string name = s.file.empty() ? std::string("Untitled") : s.file.filename().string();
+    return s.readOnlyFormat.empty() ? name : name + " [Read-only]";
 }
 
 bool AppCore::documentModified(std::size_t index) const {
@@ -338,14 +353,14 @@ bool AppCore::modified() const {
 
 // ---- recovery / shutdown -------------------------------------------------------------------
 
-std::optional<Recovery> AppCore::pendingRecovery() const {
-    fs::path file = paths_.autosaveDir() / "recovery.tbcad";
-    std::error_code ec;
-    if (!fs::exists(file, ec))
-        return std::nullopt;
+namespace {
+
+Recovery readRecovery(const fs::path& tbcadFile) {
     Recovery r;
-    r.autosaveFile = file;
-    std::ifstream in(paths_.autosaveDir() / "recovery.json", std::ios::binary);
+    r.autosaveFile = tbcadFile;
+    fs::path meta = tbcadFile;
+    meta.replace_extension(".json");
+    std::ifstream in(meta, std::ios::binary);
     if (in) {
         std::ostringstream buf;
         buf << in.rdbuf();
@@ -354,6 +369,37 @@ std::optional<Recovery> AppCore::pendingRecovery() const {
                 r.originalPath = o->asString();
     }
     return r;
+}
+
+bool isRecoveryFile(const fs::path& p) {
+    const std::string name = p.filename().string();
+    return name.rfind("recovery", 0) == 0 &&
+           (p.extension() == ".tbcad" || p.extension() == ".json");
+}
+
+}  // namespace
+
+// Every unsaved drawing has its own pair of files, recovery-<n>.tbcad and recovery-<n>.json
+// (a single recovery.tbcad from older versions is found too).
+std::vector<Recovery> AppCore::pendingRecoveries() const {
+    std::vector<fs::path> files;
+    std::error_code ec;
+    for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
+         it.increment(ec))
+        if (it->path().extension() == ".tbcad" && isRecoveryFile(it->path()))
+            files.push_back(it->path());
+    std::sort(files.begin(), files.end());
+    std::vector<Recovery> out;
+    for (const fs::path& f : files)
+        out.push_back(readRecovery(f));
+    return out;
+}
+
+std::optional<Recovery> AppCore::pendingRecovery() const {
+    auto all = pendingRecoveries();
+    if (all.empty())
+        return std::nullopt;
+    return all.front();
 }
 
 Result<void> AppCore::recover(const Recovery& r) {
@@ -367,14 +413,58 @@ Result<void> AppCore::recover(const Recovery& r) {
     return {};
 }
 
+Result<void> AppCore::recoverAll() {
+    const auto all = pendingRecoveries();
+    std::optional<Error> firstError;
+    std::size_t done = 0;
+    for (const Recovery& r : all) {
+        if (done == 0) {
+            if (auto res = recover(r); !res) {
+                firstError = res.error();
+                continue;
+            }
+        } else {
+            io::IoReport report;
+            auto doc = io::readTbcad(r.autosaveFile, report);
+            if (!doc) {
+                firstError = doc.error();
+                continue;
+            }
+            addSession(std::move(doc.value()), platform::pathFromUtf8(r.originalPath));
+            session_->savedRevision = ~std::uint64_t{0};
+        }
+        ++done;
+    }
+    // The leftovers are replaced by autosaves of the recovered drawings.
+    removeAutosaveFiles();
+    autosaveNow();
+    if (done == 0 && firstError)
+        return *firstError;
+    if (done > 1)
+        print("Recovered " + std::to_string(done) + " drawings from the last autosave.");
+    return {};
+}
+
 void AppCore::discardRecovery() {
     removeAutosaveFiles();
 }
 
 void AppCore::removeAutosaveFiles() {
     std::error_code ec;
-    fs::remove(paths_.autosaveDir() / "recovery.tbcad", ec);
-    fs::remove(paths_.autosaveDir() / "recovery.json", ec);
+    std::vector<fs::path> files;
+    for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
+         it.increment(ec))
+        if (isRecoveryFile(it->path()))
+            files.push_back(it->path());
+    for (const fs::path& f : files)
+        fs::remove(f, ec);
+}
+
+void AppCore::removeAutosaveOf(std::uint64_t slotId) {
+    std::error_code ec;
+    const std::string base = "recovery-" + std::to_string(slotId);
+    fs::remove(paths_.autosaveDir() / (base + ".tbcad"), ec);
+    fs::remove(paths_.autosaveDir() / (base + ".json"), ec);
 }
 
 void AppCore::shutdown() {
@@ -384,23 +474,29 @@ void AppCore::shutdown() {
 }
 
 bool AppCore::autosaveNow() {
-    if (!modified() || autosavedRevision_ == session_->doc.revision())
-        return false;
-    if (!platform::ensureDirectory(paths_.autosaveDir()))
-        return false;
-    io::WriteOptions opt;
-    opt.keepBackup = false;
-    if (!io::writeTbcad(session_->doc, paths_.autosaveDir() / "recovery.tbcad", opt))
-        return false;
-    {
-        platform::Json::Object o;
-        o["original"] = platform::pathToUtf8(session_->file);
-        std::ofstream out(paths_.autosaveDir() / "recovery.json",
-                          std::ios::binary | std::ios::trunc);
-        out << platform::toJson(platform::Json(std::move(o)));
+    bool wrote = false;
+    for (DocSlot& slot : slots_) {
+        Session& ses = *slot.session;
+        if (ses.doc.revision() == ses.savedRevision || slot.autosavedRevision == ses.doc.revision())
+            continue;
+        if (!platform::ensureDirectory(paths_.autosaveDir()))
+            return wrote;
+        const std::string base = "recovery-" + std::to_string(slot.id);
+        io::WriteOptions opt;
+        opt.keepBackup = false;
+        if (!io::writeTbcad(ses.doc, paths_.autosaveDir() / (base + ".tbcad"), opt))
+            continue;
+        {
+            platform::Json::Object o;
+            o["original"] = platform::pathToUtf8(ses.file);
+            std::ofstream out(paths_.autosaveDir() / (base + ".json"),
+                              std::ios::binary | std::ios::trunc);
+            out << platform::toJson(platform::Json(std::move(o)));
+        }
+        slot.autosavedRevision = ses.doc.revision();
+        wrote = true;
     }
-    autosavedRevision_ = session_->doc.revision();
-    return true;
+    return wrote;
 }
 
 void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
@@ -420,8 +516,84 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
 
 // ---- files -------------------------------------------------------------------------------------
 
+std::unique_ptr<Document> AppCore::defaultDocument(std::string* problem) {
+    const std::string name = settings_.getString("template.default", "");
+    if (!name.empty() && name != tmpl::kBuiltinTemplate) {
+        const fs::path file =
+            templateFolder() /
+            platform::pathFromUtf8(tmpl::sanitizeTemplateName(name) + tmpl::kTemplateExtension);
+        std::error_code ec;
+        std::string why;
+        if (!fs::exists(file, ec)) {
+            why = "No template named \"" + name + "\".";
+        } else if (auto doc = tmpl::loadTemplate(file)) {
+            return std::move(doc.value());
+        } else {
+            why = "Cannot read the template: " + doc.error().message;
+        }
+        if (problem)
+            *problem = "Default template \"" + name + "\": " + why + " Using the built-in drawing.";
+    }
+    return tmpl::builtinTemplate();
+}
+
 void AppCore::newDocument() {
-    addSession(std::make_unique<Document>(), {});
+    std::string problem;
+    auto doc = defaultDocument(&problem);
+    if (!problem.empty())
+        print(problem);
+    addSession(std::move(doc), {});
+}
+
+std::string AppCore::exportKeybindings(const fs::path& file) {
+    return KeybindingEditor(keybindings_, paths_.keybindingsFile()).exportTo(file);
+}
+
+std::string AppCore::importKeybindings(const fs::path& file) {
+    std::vector<std::string> warnings;
+    auto out = KeybindingEditor(keybindings_, paths_.keybindingsFile()).importFrom(file, &warnings);
+    for (const std::string& w : warnings)
+        print("Key bindings: " + w);
+    if (!out.ok)
+        return out.error;
+    print("Key bindings imported from " + platform::pathToUtf8(file));
+    return {};
+}
+
+std::vector<std::string> AppCore::templateNames() const {
+    std::vector<std::string> out{tmpl::kBuiltinTemplate};
+    for (const auto& t : tmpl::listTemplates(templateFolder()))
+        out.push_back(t.name);
+    return out;
+}
+
+std::string AppCore::newFromTemplate(std::string_view name) {
+    if (name.empty() || name == tmpl::kBuiltinTemplate) {
+        addSession(tmpl::builtinTemplate(), {});
+        return {};
+    }
+    const fs::path file =
+        templateFolder() / platform::pathFromUtf8(tmpl::sanitizeTemplateName(std::string(name)) +
+                                                  tmpl::kTemplateExtension);
+    std::error_code ec;
+    if (!fs::exists(file, ec))
+        return "No template named \"" + std::string(name) + "\".";
+    auto doc = tmpl::loadTemplate(file);
+    if (!doc)
+        return "Cannot read the template: " + doc.error().message;
+    addSession(std::move(doc.value()), {});
+    return {};
+}
+
+std::string AppCore::saveAsTemplate(std::string_view name) {
+    const std::string clean = tmpl::sanitizeTemplateName(std::string(name));
+    if (clean == tmpl::kBuiltinTemplate)
+        return "\"Built-in\" is reserved; choose another name.";
+    auto r = tmpl::saveTemplate(document(), templateFolder() / platform::pathFromUtf8(clean));
+    if (!r)
+        return r.error().message;
+    print("Template saved: " + platform::pathToUtf8(r.value()));
+    return {};
 }
 
 namespace {
@@ -520,13 +692,75 @@ Result<void> AppCore::saveDxf(const fs::path& path) {
     return {};
 }
 
+static std::string lowerExtension(const fs::path& p) {
+    std::string e = p.extension().string();
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return e;
+}
+
+void AppCore::setForeignReader(std::string extension, ForeignReadFn read, bool readOnly) {
+    foreignReaders_[std::move(extension)] = ForeignReader{std::move(read), readOnly};
+}
+
+bool AppCore::canOpenExtension(std::string_view e) const {
+    return e == ".tbcad" || e == ".dxf" || foreignReaders_.find(e) != foreignReaders_.end();
+}
+
+bool AppCore::readOnlyOrigin() const {
+    return !session_->readOnlyFormat.empty();
+}
+
+std::string AppCore::readOnlyBanner() const {
+    if (!readOnlyOrigin())
+        return {};
+    return session_->readOnlyFormat +
+           " opened read-only. Use Save As to keep a copy as .tbcad or .dxf.";
+}
+
 Result<void> AppCore::openFile(const fs::path& path) {
     if (auto open = slotOfFile(path)) {
         activateDocument(*open);
         return {};
     }
+    if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
+        auto res = it->second.read(path);
+        if (!res) {
+            print("Cannot open " + path.string() + ": " + res.error().message);
+            settings_.removeRecentFile(platform::pathToUtf8(path));
+            return res.error();
+        }
+        ForeignOpenResult& r = res.value();
+        addSession(std::move(r.document), path);
+        if (it->second.readOnly) {
+            std::string fmt = it->first.size() > 1 ? it->first.substr(1) : it->first;
+            for (char& c : fmt)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            session_->readOnlyFormat = fmt;
+        }
+        for (const auto& m : r.messages)
+            print(m);
+        settings_.addRecentFile(platform::pathToUtf8(path));
+        (void)settings_.save(paths_.settingsFile());
+        print("Opened " + path.string() + (r.format.empty() ? "" : " (" + r.format + ")") +
+              (it->second.readOnly ? " read-only" : ""));
+        if (it->second.readOnly)
+            print(readOnlyBanner());
+        return {};
+    }
     if (isDxfPath(path))
         return openDxf(path);
+    if (tmpl::isTemplatePath(path)) {
+        // A template opens as a new untitled drawing; the template file stays as it is.
+        auto doc = tmpl::loadTemplate(path);
+        if (!doc) {
+            print("Cannot open " + path.string() + ": " + doc.error().message);
+            return doc.error();
+        }
+        addSession(std::move(doc.value()), {});
+        print("New drawing from template " + path.string());
+        return {};
+    }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
@@ -547,6 +781,9 @@ Result<void> AppCore::openFile(const fs::path& path) {
 }
 
 Result<void> AppCore::save() {
+    if (readOnlyOrigin())
+        return makeError(ErrorCode::Conflict,
+                         session_->readOnlyFormat + " files are read-only: use Save As.");
     if (session_->file.empty())
         return makeError(ErrorCode::InvalidArgument, "This drawing has no file name yet.");
     return saveAs(session_->file);
@@ -560,13 +797,20 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         print("Finish the current command first.");
         return makeError(ErrorCode::Conflict, "A command is running.");
     }
+    const std::string ext = lowerExtension(path);
+    if (ext != ".tbcad" && ext != ".dxf") {
+        return makeError(ErrorCode::Unsupported,
+                         "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
+    }
     auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path);
     if (!r) {
         print("Cannot save " + path.string() + ": " + r.error().message);
         return r;
     }
     session_->file = path;
+    session_->readOnlyFormat.clear();
     session_->savedRevision = session_->doc.revision();
+    removeAutosaveOf(slots_[active_].id);
     if (!anyDocumentModified())
         removeAutosaveFiles();
     settings_.addRecentFile(platform::pathToUtf8(path));
@@ -576,7 +820,9 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
 }
 
 std::string AppCore::displayName() const {
-    return session_->file.empty() ? std::string("Untitled") : session_->file.filename().string();
+    std::string name =
+        session_->file.empty() ? std::string("Untitled") : session_->file.filename().string();
+    return readOnlyOrigin() ? name + " [Read-only]" : name;
 }
 
 std::string AppCore::windowTitle() const {
@@ -920,6 +1166,53 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
         applyPick(ids, false);
 }
 
+void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
+    if (screenPath.size() < 3)
+        return;
+    std::vector<Vec2> poly;
+    poly.reserve(screenPath.size());
+    for (const Vec2& s : screenPath)
+        poly.push_back(camera_.screenToWorld(s));
+    const bool crossing = dragIsCrossing(screenPath.front().x, screenPath.back().x);
+    std::vector<EntityId> ids = selectInPolygon(session_->doc, session_->index, poly, crossing);
+    cmd::CommandRunner& run = runner();
+    if (run.active()) {
+        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
+            run.submit(cmd::Input::select(std::move(ids)));
+        return;
+    }
+    applyPick(ids, p.shift);
+}
+
+void AppCore::cycleClick(const PointerState& p) {
+    const Vec2 world = makeRaw(p).worldCursor;
+    const double aperture = apertureMm();
+    cmd::CommandRunner& run = runner();
+    const bool pickPrompt = prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Entity ||
+                                        prompt_->kind == cmd::PromptInfo::Kind::Selection);
+    if (run.active() && !pickPrompt)
+        return click(p);
+    // A new spot starts a new stack; the same spot goes on to the next object in it.
+    if (cycleStack_.empty() || distance(world, cycleAt_) > aperture) {
+        cycleStack_ = pickAllAt(session_->doc, session_->index, world, aperture);
+        cycleCurrent_.reset();
+        cycleAt_ = world;
+    }
+    auto id = cycleNext(cycleStack_, cycleCurrent_);
+    if (!id) {
+        if (!run.active() && !p.shift)
+            clearSelection();
+        return;
+    }
+    cycleCurrent_ = id;
+    if (run.active())
+        run.submit(cmd::Input::pick(*id, world, p.shift));
+    else if (p.shift)
+        applyPick({*id}, true);
+    else
+        setSelection({*id});  // cycling replaces the previous pick
+}
+
 // ---- selection ---------------------------------------------------------------------------------
 
 void AppCore::setSelection(std::vector<EntityId> ids) {
@@ -1012,7 +1305,17 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         overlay.selectionWindow(drag_->first, drag_->second, crossing, tone,
                                 ui::withAlpha(tone, 0.15));
     }
-    if (cursorInside_ && !drag_) {
+    if (lasso_.size() >= 2) {
+        const bool crossing = dragIsCrossing(lasso_.front().x, lasso_.back().x);
+        const Rgba tone = crossing ? theme_.crossing : theme_.select;
+        render::OverlayStyle st;
+        st.color = tone;
+        st.widthPx = 1.0;
+        st.dashPx = crossing ? 6 : 0;
+        st.gapPx = crossing ? 4 : 0;
+        overlay.polyline(render::Space::Screen, lasso_, false, st);
+    }
+    if (cursorInside_ && !drag_ && lasso_.empty()) {
         const Vec2 c = lastPointer_.screen;
         const double arm = std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;
@@ -1038,6 +1341,15 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         for (const auto& fn : ui->overlayDrawers())
             fn(pc, overlay);
     }
+}
+
+void AppCore::buildUnderlay(render::Overlay& underlay, const UiRegistry* ui) {
+    underlay.clear();
+    if (!ui)
+        return;
+    PanelContext pc = makePanelContext();
+    for (const auto& fn : ui->underlayDrawers())
+        fn(pc, underlay);
 }
 
 // ---- notices

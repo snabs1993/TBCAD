@@ -117,3 +117,43 @@ TEST_CASE("circles are retessellated when the zoom changes a lot, lines are not"
     CHECK(sync.refreshStale(cam) == 1);
     CHECK(sync.refreshStale(cam) == 0);
 }
+
+TEST_CASE("levels: other levels are hidden or faded, hidden levels leave the scene") {
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    EntityId a = addLine(doc, {0, 0}, {10, 0});  // first level
+    LevelId upper;
+    {
+        auto tx = doc.begin("level");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentLevel = upper; }).ok());
+        tx.commit();
+    }
+    EntityId b = addLine(doc, {0, 0}, {10, 0});  // same place, upper level
+    CHECK(scene.contains(a));                    // dimmed view: still drawn
+    CHECK(scene.contains(b));
+    {
+        auto tx = doc.begin("hide others");
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.levelView = LevelView::HideOthers; }).ok());
+        tx.commit();
+    }
+    CHECK_FALSE(scene.contains(a));
+    CHECK(scene.contains(b));
+    {
+        auto tx = doc.begin("dim others");
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.levelView = LevelView::DimOthers; }).ok());
+        REQUIRE(tx.modifyLevel(upper, [](Level& l) { l.locked = true; }).ok());
+        tx.commit();
+    }
+    CHECK(scene.contains(a));
+    {
+        auto tx = doc.begin("hide first");
+        REQUIRE(tx.modifyLevel(kLevelDefault, [](Level& l) { l.visible = false; }).ok());
+        tx.commit();
+    }
+    CHECK_FALSE(scene.contains(a));
+    CHECK(scene.contains(b));
+}

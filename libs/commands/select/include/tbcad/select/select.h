@@ -50,6 +50,15 @@ struct Query {
 // Empty (nullopt) when the value cannot be read for that property.
 std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Query& query);
 
+// Objects that satisfy every query (AND). Empty (nullopt) when any value cannot be read.
+std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
+                                                    const std::vector<Query>& queries);
+
+// Named filters (FILTER Save / Use), stored in the file as Header::custom "filter.<name>".
+std::string encodeFilter(const std::vector<Query>& queries);
+std::vector<Query> decodeFilter(const std::string& text);
+std::vector<std::string> savedFilters(const Document& doc);
+
 enum class Match : unsigned { Type = 1, Layer = 2, Color = 4, Linetype = 8, Lineweight = 16 };
 
 // Visible model-space objects that agree with `reference` on every property in `match` (the

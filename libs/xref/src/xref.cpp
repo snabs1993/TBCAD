@@ -26,6 +26,14 @@ std::string lower(std::string s) {
     return s;
 }
 
+// An insert of an overlay xref: left out when its drawing is used as an xref by another one.
+bool isOverlayInsert(const Document& doc, const Entity& e) {
+    if (const auto* ins = entityAs<InsertData>(e))
+        if (const BlockDef* b = doc.block(ins->block))
+            return !b->xrefPath.empty() && b->xrefOverlay;
+    return false;
+}
+
 // Copies the model space and the blocks it uses of `src` into the host document.
 class Filler {
 public:
@@ -43,6 +51,26 @@ public:
             root_ = root.value();
         }
         for (EntityId id : src_.modelSpace()) {
+            const Entity* e = src_.find(id);
+            if (!e || isOverlayInsert(src_, *e))
+                continue;
+            auto added = tx_.add(remap(*e, 0), into);
+            if (!added)
+                return added.error();
+            ++sum_.entities;
+        }
+        return failure_.empty() ? Result<void>{} : makeError(ErrorCode::InvalidArgument, failure_);
+    }
+
+    // Used by importContent: copy one row (and what it needs) from the source.
+    LayerId importLayer(LayerId id) { return mapLayer(id); }
+    LinetypeId importLinetype(LinetypeId id) { return mapLinetype(id); }
+    TextStyleId importTextStyle(TextStyleId id) { return mapTextStyle(id); }
+    DimStyleId importDimStyle(DimStyleId id) { return mapDimStyle(id); }
+    // Copies the entities of the source block `sb` into the new host block `into`.
+    Result<void> runBlock(const BlockDef& sb, BlockId into) {
+        std::vector<EntityId> members = sb.entities;
+        for (EntityId id : members) {
             const Entity* e = src_.find(id);
             if (!e)
                 continue;
@@ -190,7 +218,7 @@ private:
         std::vector<EntityId> members = sb->entities;
         for (EntityId eid : members) {
             const Entity* e = src_.find(eid);
-            if (!e)
+            if (!e || isOverlayInsert(src_, *e))
                 continue;
             Entity copy = remap(*e, depth + 1);
             if (auto r = tx_.add(std::move(copy), out); !r)
@@ -203,11 +231,14 @@ private:
         Entity e = in;
         e.common.id = {};
         e.common.layer = mapLayer(in.common.layer);
+        e.common.level = {};  // the host decides (the current level); block content ignores it
         e.common.linetype = mapLinetype(in.common.linetype);
         if (auto* t = entityAs<TextData>(e))
             t->style = mapTextStyle(t->style);
         else if (auto* m = entityAs<MTextData>(e))
             m->style = mapTextStyle(m->style);
+        else if (auto* tb = entityAs<TableData>(e))
+            tb->style = mapTextStyle(tb->style);
         else if (auto* d = entityAs<DimensionData>(e))
             d->style = mapDimStyle(d->style);
         else if (auto* l = entityAs<LeaderData>(e))
@@ -324,14 +355,22 @@ std::string defaultName(const std::filesystem::path& file) {
     return s.empty() ? "xref" : s;
 }
 
-Result<Source> loadSource(const std::filesystem::path& file) {
+namespace {
+
+std::map<std::string, Loader>& loaders() {
+    static std::map<std::string, Loader> table;
+    return table;
+}
+
+Result<Source> loadOne(const std::filesystem::path& file) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(file, ec))
         return makeError(ErrorCode::NotFound, "Cannot find the file " + file.string());
     const std::string ext = lower(file.extension().string());
     Source out;
     out.stamp = fileStamp(file);
-    if (ext == ".tbcad") {
+    out.file = file;
+    if (ext == ".tbcad" || ext == ".tbt") {  // a template is a .tbcad file
         io::IoReport report;
         auto doc = io::readTbcad(file, report);
         if (!doc)
@@ -354,11 +393,85 @@ Result<Source> loadSource(const std::filesystem::path& file) {
         out.doc = std::move(res.value().document);
         return out;
     }
-    return makeError(ErrorCode::Unsupported, "Only .tbcad and .dxf files can be attached");
+    if (auto it = loaders().find(ext); it != loaders().end()) {
+        auto res = it->second(file);
+        if (!res)
+            return res.error();
+        res.value().file = file;
+        if (res.value().stamp == 0)
+            res.value().stamp = out.stamp;
+        return res;
+    }
+    return makeError(ErrorCode::Unsupported, "Only .tbcad, .tbt and .dxf files can be attached");
+}
+
+// Reads `file` and refreshes the xrefs inside it from their own files. `chain` holds the files
+// being read up the call chain, so a loop of xrefs is cut where it closes.
+Result<Source> loadChain(const std::filesystem::path& file, std::set<std::filesystem::path>& chain,
+                         int depth) {
+    auto loaded = loadOne(file);
+    if (!loaded || depth >= kMaxNesting)
+        return loaded;
+    Document& doc = *loaded.value().doc;
+    std::vector<BlockId> nested;
+    for (BlockId id : xrefs(doc))
+        if (!doc.block(id)->xrefOverlay)
+            nested.push_back(id);
+    if (nested.empty())
+        return loaded;
+    std::error_code ec;
+    std::filesystem::path self = std::filesystem::weakly_canonical(file, ec);
+    chain.insert(ec ? file : self);
+    {
+        Transaction tx = doc.begin("refresh nested xrefs");
+        for (BlockId id : nested) {
+            std::filesystem::path p = resolvePath(doc.block(id)->xrefPath, file);
+            std::filesystem::path key = std::filesystem::weakly_canonical(p, ec);
+            if (chain.count(ec ? p : key))
+                continue;  // a loop: keep the snapshot
+            auto sub = loadChain(p, chain, depth + 1);
+            if (sub)
+                (void)reload(tx, doc, id, sub.value());
+        }
+        tx.commit();
+    }
+    chain.erase(ec ? file : self);
+    return loaded;
+}
+
+}  // namespace
+
+void registerLoader(std::string extension, Loader loader) {
+    loaders()[lower(std::move(extension))] = std::move(loader);
+}
+
+std::string storedPath(const std::filesystem::path& file, const std::filesystem::path& hostFile,
+                       PathType type) {
+    auto text = [](const std::filesystem::path& p) {
+        std::u8string u = p.generic_u8string();
+        return std::string(u.begin(), u.end());
+    };
+    if (type == PathType::None)
+        return text(file.filename());
+    if (type == PathType::Relative && !hostFile.empty() && file.is_absolute()) {
+        std::error_code ec;
+        std::filesystem::path rel = std::filesystem::relative(file, hostFile.parent_path(), ec);
+        if (!ec && !rel.empty())
+            return text(rel);
+    }
+    std::error_code ec;
+    std::filesystem::path abs = std::filesystem::absolute(file, ec);
+    return text(ec ? file : abs);
+}
+
+Result<Source> loadSource(const std::filesystem::path& file) {
+    std::set<std::filesystem::path> chain;
+    return loadChain(file, chain, 0);
 }
 
 Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
-                       std::string_view stored, const Source& source, Summary* summary) {
+                       std::string_view stored, const Source& source, Summary* summary,
+                       bool overlay) {
     if (!source.doc)
         return makeError(ErrorCode::InvalidArgument, "There is nothing to attach");
     if (auto ok = blocks::validateBlockName(doc, name); !ok)
@@ -367,6 +480,7 @@ Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
     row.name = std::string(name);
     row.xrefPath = std::string(stored);
     row.xrefStamp = source.stamp;
+    row.xrefOverlay = overlay;
     auto block = tx.addBlock(std::move(row));
     if (!block)
         return block.error();
@@ -435,6 +549,16 @@ Result<void> detach(Transaction& tx, Document& doc, BlockId block) {
     return {};
 }
 
+Result<void> unload(Transaction& tx, Document& doc, BlockId block) {
+    const BlockDef* def = doc.block(block);
+    if (!def || def->xrefPath.empty())
+        return makeError(ErrorCode::InvalidArgument, "That block is not an external reference");
+    std::set<BlockId> nested = nestedBlocks(doc, block);
+    eraseContent(tx, doc, block);
+    eraseBlocks(tx, std::move(nested));
+    return tx.modifyBlock(block, [](BlockDef& d) { d.xrefStamp = 0; });
+}
+
 Result<void> bind(Transaction& tx, Document& doc, BlockId block) {
     const BlockDef* def = doc.block(block);
     if (!def || def->xrefPath.empty())
@@ -443,13 +567,166 @@ Result<void> bind(Transaction& tx, Document& doc, BlockId block) {
     return tx.modifyBlock(block, [](BlockDef& d) {
         d.xrefPath.clear();
         d.xrefStamp = 0;
+        d.xrefOverlay = false;
     });
+}
+
+namespace {
+
+std::string layerPathOf(const Document& doc, LayerId id) {
+    std::vector<std::string> parts;
+    for (int guard = 0; id && guard < 16; ++guard) {
+        const Layer* l = doc.layer(id);
+        if (!l)
+            break;
+        parts.push_back(l->name);
+        id = l->parent;
+    }
+    std::string out;
+    for (auto it = parts.rbegin(); it != parts.rend(); ++it)
+        out += (out.empty() ? "" : "~") + *it;
+    return out;
+}
+
+// The layer with this parent~child path, or null.
+const Layer* layerByPath(const Document& doc, const std::string& path) {
+    for (const auto& [id, l] : doc.layers())
+        if (layerPathOf(doc, id) == path)
+            return &l;
+    return nullptr;
+}
+
+}  // namespace
+
+std::vector<ContentItem> listContent(const Document& src) {
+    std::vector<ContentItem> out;
+    auto sorted = [&](ContentKind kind, std::vector<std::string> names) {
+        std::sort(names.begin(), names.end(),
+                  [](const std::string& a, const std::string& b) { return lower(a) < lower(b); });
+        for (std::string& n : names)
+            out.push_back({kind, std::move(n)});
+    };
+    std::vector<std::string> names;
+    for (const auto& [id, b] : src.blocks())
+        if (!b.anonymous && b.xrefPath.empty() && !b.name.empty() && b.name.front() != '*')
+            names.push_back(b.name);
+    sorted(ContentKind::Block, std::move(names));
+    names.clear();
+    for (const auto& [id, l] : src.layers())
+        if (id != kLayerZero)
+            names.push_back(layerPathOf(src, id));
+    sorted(ContentKind::Layer, std::move(names));
+    names.clear();
+    for (const auto& [id, lt] : src.linetypes())
+        if (id != kLinetypeContinuous)
+            names.push_back(lt.name);
+    sorted(ContentKind::Linetype, std::move(names));
+    names.clear();
+    for (const auto& [id, ts] : src.textStyles())
+        if (id != kTextStyleStandard)
+            names.push_back(ts.name);
+    sorted(ContentKind::TextStyle, std::move(names));
+    names.clear();
+    for (const auto& [id, ds] : src.dimStyles())
+        if (id != kDimStyleStandard)
+            names.push_back(ds.name);
+    sorted(ContentKind::DimStyle, std::move(names));
+    return out;
+}
+
+Result<void> importContent(Transaction& tx, Document& doc, const Source& source,
+                           const std::vector<ContentItem>& items, ImportReport& report) {
+    if (!source.doc)
+        return makeError(ErrorCode::InvalidArgument, "There is nothing to import from");
+    const Document& src = *source.doc;
+    Summary summary;
+    Filler fill(tx, doc, src, "content", summary, true);
+    for (const ContentItem& item : items) {
+        auto skip = [&](const std::string& why) {
+            report.skipped.push_back(item.name + ": " + why);
+        };
+        switch (item.kind) {
+            case ContentKind::Block: {
+                const BlockDef* sb = src.blockByName(item.name);
+                if (!sb) {
+                    skip("not in the file");
+                    break;
+                }
+                if (auto ok = blocks::validateBlockName(doc, item.name); !ok) {
+                    skip(ok.error().message);
+                    break;
+                }
+                BlockDef row;
+                row.name = sb->name;
+                row.base = sb->base;
+                auto block = tx.addBlock(std::move(row));
+                if (!block)
+                    return block.error();
+                if (auto r = fill.runBlock(*sb, block.value()); !r)
+                    return r;
+                ++report.added;
+                break;
+            }
+            case ContentKind::Layer: {
+                const Layer* sl = layerByPath(src, item.name);
+                if (!sl) {
+                    skip("not in the file");
+                } else if (layerByPath(doc, item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    const std::size_t before = summary.layers;
+                    (void)fill.importLayer(sl->id);
+                    report.added += summary.layers - before;
+                }
+                break;
+            }
+            case ContentKind::Linetype: {
+                const Linetype* sl = src.linetypeByName(item.name);
+                if (!sl) {
+                    skip("not in the file");
+                } else if (doc.linetypeByName(item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    (void)fill.importLinetype(sl->id);
+                    ++report.added;
+                }
+                break;
+            }
+            case ContentKind::TextStyle: {
+                const TextStyle* sts = src.textStyleByName(item.name);
+                if (!sts) {
+                    skip("not in the file");
+                } else if (doc.textStyleByName(item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    (void)fill.importTextStyle(sts->id);
+                    ++report.added;
+                }
+                break;
+            }
+            case ContentKind::DimStyle: {
+                const DimStyle* sds = src.dimStyleByName(item.name);
+                if (!sds) {
+                    skip("not in the file");
+                } else if (doc.dimStyleByName(item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    (void)fill.importDimStyle(sds->id);
+                    ++report.added;
+                }
+                break;
+            }
+        }
+    }
+    return {};
 }
 
 State state(const Document& doc, BlockId block, const std::filesystem::path& hostFile) {
     const BlockDef* def = doc.block(block);
     if (!def || def->xrefPath.empty())
         return State::NotXref;
+    if (def->xrefStamp == 0)
+        return State::Unloaded;
     std::filesystem::path p = resolvePath(def->xrefPath, hostFile);
     std::error_code ec;
     if (!std::filesystem::is_regular_file(p, ec))

@@ -4,6 +4,7 @@
 
 #include "tbcad/cmd/host.h"
 #include "tbcad/core/core.h"
+#include "tbcad/drafting/ucs.h"
 
 namespace tbcad::index {
 class SpatialIndex;
@@ -27,6 +28,14 @@ struct DraftingEnv {
         Vec2 direction{};  // unit vector
     };
     std::optional<Tracking> tracking{};
+
+    // Set by the dynamic UCS filter while the cursor is on a straight edge: origin at the start of
+    // the edge, X axis along it. Ortho, polar and grid snap use it instead of the current UCS.
+    // Mutable because the filters that read it hold the environment as const.
+    mutable std::optional<Ucs> dynamicUcs{};
+
+    // The system the point filters work in right now.
+    Ucs effectiveUcs() const;
 
     bool ready() const { return doc && index && host; }
 };

@@ -10,7 +10,8 @@ tbcad_add_library(draw
     src/polyline.cpp
     src/rectangle.cpp
     src/spline.cpp
-  DEPENDS tbcad::cmd tbcad::core tbcad::geom)
+    src/ui.cpp
+  DEPENDS tbcad::ui tbcad::cmd tbcad::core tbcad::geom)
 
 tbcad_add_tests(draw
   SOURCES
