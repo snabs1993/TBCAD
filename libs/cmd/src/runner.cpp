@@ -192,13 +192,21 @@ void CommandRunner::refreshPrompt() {
 Vec2 CommandRunner::filtered(const RawInput& raw, bool click, const std::optional<Vec2>& base) {
     if (!chain_) {
         feedback_ = FilterFeedback{};
+        feedback_.hasPoint = true;
+        feedback_.base = base;
+        feedback_.point = raw.worldCursor;
         return raw.worldCursor;
     }
     PointQuery q;
     q.base = base;
     q.click = click;
+    q.shift = raw.shift;
     q.pixelSize = raw.pixelSize;
-    return chain_->apply(q, raw.worldCursor, feedback_);
+    const Vec2 p = chain_->apply(q, raw.worldCursor, feedback_);
+    feedback_.hasPoint = true;
+    feedback_.base = base;
+    feedback_.point = p;
+    return p;
 }
 
 PointParseContext CommandRunner::parseContext(const detail::PromptRequest& req) const {

@@ -82,11 +82,12 @@ public:
 
 private:
     enum class Pending { None, Close, Exit };
-    enum class BrowserPurpose { Open, SaveAs };
+    enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf };
 
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void readOnlyBanner();
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();
@@ -102,6 +103,7 @@ private:
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
+    void viewportMenu();
     void registeredMenu(const std::string& top);
     void registeredSubmenu(const std::string& prefix, std::vector<const ui::MenuItemInfo*>& items);
     void runAction(const std::string& action);
@@ -109,6 +111,9 @@ private:
     void doNew();
     void doOpen();
     void doOpenPath(const std::string& path);
+    void doImportDxf();
+    void doExportDxf();
+    void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
     void doSave();
     void doSaveAs();
     void afterSavePrompt(bool saved);
@@ -124,6 +129,12 @@ private:
     FileBrowser browser_;
     SettingsDialog settings_;
 
+    // Dynamic input field being edited in the cursor HUD.
+    void dynamicFields(const cmd::FilterFeedback& fb);
+    int dynFocus_ = -1;
+    bool dynFocusPending_ = false;
+    std::string dynBuf_{};
+
     ui::ThemeMode themeMode_ = ui::ThemeMode::Dark;
     ui::Theme theme_ = ui::darkTheme();
     bool lineweights_ = true;
@@ -136,6 +147,7 @@ private:
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
+    std::size_t recoveryCount_ = 0;
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};

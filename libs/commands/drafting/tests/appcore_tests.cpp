@@ -152,10 +152,17 @@ TEST_CASE("snap markers and the grid are drawn by the overlay; the F-keys are bo
     render::Overlay plain;
     app.core->buildOverlay(plain, &app.uiReg);
     CHECK_FALSE(plain.empty());
+    render::Overlay noGrid;
+    app.core->buildUnderlay(noGrid, &app.uiReg);
+    CHECK(noGrid.empty());
     app.core->submitText("'TOGGLEGRID");
+    // The grid is in the underlay (drawn before the objects), not in the overlay.
     render::Overlay withGrid;
-    app.core->buildOverlay(withGrid, &app.uiReg);
-    CHECK(withGrid.build(app.core->camera()).vertices.size() >
+    app.core->buildUnderlay(withGrid, &app.uiReg);
+    CHECK_FALSE(withGrid.empty());
+    render::Overlay over;
+    app.core->buildOverlay(over, &app.uiReg);
+    CHECK(over.build(app.core->camera()).vertices.size() ==
           plain.build(app.core->camera()).vertices.size());
     app.core->pressEscape();
 

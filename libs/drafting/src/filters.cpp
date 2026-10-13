@@ -69,7 +69,11 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     if (!env_ || !env_->host || !query.base)
         return std::nullopt;
     const DraftingSettings s = DraftingSettings::read(*env_->host);
-    if (!s.ortho && !s.polar)
+    // Shift flips ORTHO for as long as it is held: temporary ortho when it is off, free
+    // (or polar) movement when it is on.
+    const bool ortho = s.ortho != query.shift;
+    const bool polar = s.polar && !(query.shift && s.ortho);
+    if (!ortho && !polar)
         return std::nullopt;
     const Vec2 base = *query.base;
     const Vec2 v = raw - base;
@@ -79,7 +83,7 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
 
     Vec2 dir{};
     double angleDeg = 0;
-    if (s.ortho) {
+    if (ortho) {
         if (std::abs(v.x) >= std::abs(v.y))
             dir = {v.x >= 0 ? 1.0 : -1.0, 0.0};
         else
@@ -119,7 +123,7 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     double shown = angleDeg < 0 ? angleDeg + 360.0 : angleDeg;
     char ang[32];
     std::snprintf(ang, sizeof ang, "%.4g", std::fabs(shown) < 1e-9 ? 0.0 : shown);
-    feedback.tooltip = std::string(s.ortho ? "Ortho: " : "Polar: ") + formatDistance(*env_, d) +
+    feedback.tooltip = std::string(ortho ? "Ortho: " : "Polar: ") + formatDistance(*env_, d) +
                        " < " + ang + "\xC2\xB0";
     const double reach = std::max(d, 1.0) + 4000.0 * std::max(query.pixelSize, 1e-9);
     feedback.guide =

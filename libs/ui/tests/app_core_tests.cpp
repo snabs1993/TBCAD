@@ -353,6 +353,33 @@ TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
     CHECK_FALSE(second.pendingRecovery().has_value());
 }
 
+TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
+    Fixture f("autosave_multi");
+    f.line("0,0", "100,0");
+    f.core->newDocument();
+    f.line("0,0", "0,50");
+    f.core->newDocument();
+    f.line("5,5", "6,6");
+    REQUIRE(f.core->documentCount() == 3);
+    CHECK(f.core->autosaveNow());
+    CHECK_FALSE(f.core->autosaveNow());
+
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    CHECK(second.pendingRecoveries().size() == 3);
+    REQUIRE(second.recoverAll().ok());
+    CHECK(second.documentCount() == 3);
+    CHECK(second.modified());
+    // The recovered drawings are protected again straight away.
+    CHECK(second.pendingRecoveries().size() == 3);
+
+    // Closing a drawing takes its backup away.
+    second.closeDocument(0);
+    CHECK(second.pendingRecoveries().size() == 2);
+    second.discardRecovery();
+    CHECK(second.pendingRecoveries().empty());
+}
+
 TEST_CASE("a clean save or shutdown removes the autosave") {
     Fixture f("autosave2");
     f.line("0,0", "100,0");
@@ -708,6 +735,50 @@ TEST_CASE("SETTINGS asks the window to open the dialog") {
     CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
 
+TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never .dwg") {
+    Fixture f("foreign");
+    fs::path src = f.dir / "plan.dwg";
+    { std::ofstream(src, std::ios::binary) << "original bytes"; }
+    f.core->setForeignReader(
+        ".dwg",
+        [](const fs::path&) -> Result<ForeignOpenResult> {
+            ForeignOpenResult r;
+            r.document = std::make_unique<Document>();
+            auto tx = r.document->begin("fake");
+            (void)tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}});
+            tx.commit();
+            r.format = "DWG R2000";
+            r.messages = {"fake summary"};
+            return r;
+        },
+        true);
+
+    CHECK(f.core->canOpenExtension(".dwg"));
+    REQUIRE(f.core->openFile(src).ok());
+    CHECK(f.core->readOnlyOrigin());
+    CHECK(f.core->document().modelSpaceCount() == 1);
+    CHECK(f.core->displayName() == "plan.dwg [Read-only]");
+    CHECK(f.core->readOnlyBanner().find("Save As") != std::string::npos);
+    CHECK_FALSE(f.core->modified());
+
+    f.line("0,0", "5,5");
+    CHECK(f.core->modified());
+    CHECK_FALSE(f.core->save().ok());                   // Ctrl+S never writes the .dwg
+    CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());  // nor any .dwg
+    CHECK_FALSE(fs::exists(f.dir / "x.dwg"));
+
+    REQUIRE(f.core->saveAs(f.dir / "plan.tbcad").ok());
+    CHECK_FALSE(f.core->readOnlyOrigin());
+    CHECK_FALSE(f.core->modified());
+    CHECK(f.core->readOnlyBanner().empty());
+    CHECK(f.core->displayName() == "plan.tbcad");
+    REQUIRE(f.core->save().ok());
+
+    std::ifstream in(src, std::ios::binary);
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content == "original bytes");
+}
+
 TEST_CASE("a .dxf file opens and saves back as DXF in place") {
     Fixture f("dxfmain");
     f.line("0,0", "100,0");
@@ -800,4 +871,9 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
     CHECK(gFakeXReloadRuns == 1);
     f.core->tickXrefs(now + std::chrono::seconds(6));  // the fake did not reload; no second try
     CHECK(gFakeXReloadRuns == 1);
+}
+
+TEST_CASE("Delete is bound to edit.delete") {
+    Fixture f("deletekey");
+    CHECK(f.core->keybindings().label("edit.delete") == "Delete");
 }

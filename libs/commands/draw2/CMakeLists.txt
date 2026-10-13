@@ -7,7 +7,8 @@ tbcad_add_library(draw2
     src/draw2.cpp
     src/point.cpp
     src/revcloud.cpp
-  DEPENDS tbcad::cmd tbcad::core tbcad::geom tbcad::hatch)
+    src/ui.cpp
+  DEPENDS tbcad::ui tbcad::cmd tbcad::core tbcad::geom tbcad::hatch)
 
 tbcad_add_tests(draw2
   SOURCES
