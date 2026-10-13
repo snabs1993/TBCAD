@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
+#include <span>
 
 namespace tbcad::cmd {
 
@@ -319,6 +320,13 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         }
         collected_.push_back(id);
     };
+    // A picked member brings its whole group along (GROUP).
+    auto addWithGroup = [&](EntityId id) {
+        for (EntityId m : expandGroups(doc_, std::span<const EntityId>(&id, 1))) {
+            if (m == id || accepts(m))
+                addCollected(m);
+        }
+    };
 
     switch (in.kind) {
         case Input::Kind::Cancel:
@@ -522,7 +530,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             if (req.kind == K::Selection) {
                 if (!accepts(in.entity))
                     return reject("That object cannot be selected here.");
-                addCollected(in.entity);
+                addWithGroup(in.entity);
                 if (req.single) {
                     ans.status = Status::Ok;
                     ans.ids = collected_;
@@ -539,7 +547,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             std::size_t added = 0;
             for (EntityId id : in.ids) {
                 if (accepts(id)) {
-                    addCollected(id);
+                    addWithGroup(id);
                     ++added;
                 }
             }

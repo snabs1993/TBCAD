@@ -135,6 +135,26 @@ Result<std::size_t> moveToLevel(const Document& doc, Transaction& tx,
     return n;
 }
 
+Result<std::vector<EntityId>> copyToLevel(const Document& doc, Transaction& tx,
+                                          const std::vector<EntityId>& ids, LevelId level) {
+    if (!doc.level(level))
+        return err(ErrorCode::NotFound, "No such level.");
+    std::vector<EntityId> made;
+    for (EntityId id : ids) {
+        const Entity* e = doc.find(id);
+        if (!e || doc.ownerBlock(id))
+            continue;
+        Entity copy = *e;
+        copy.common.id = EntityId{};
+        copy.common.level = level;
+        auto r = tx.add(std::move(copy));
+        if (!r)
+            return err(r.error().code, r.error().message);
+        made.push_back(r.value());
+    }
+    return made;
+}
+
 Result<void> deleteLevel(const Document& doc, Transaction& tx, LevelId id, LevelId moveTo) {
     const Level* row = doc.level(id);
     if (!row)

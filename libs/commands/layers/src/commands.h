@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "tbcad/cmd/command.h"
+#include "tbcad/cmd/registry.h"
 
 namespace tbcad::layers {
 
@@ -15,5 +16,7 @@ std::unique_ptr<cmd::Command> makeLinetypeCommand();
 std::unique_ptr<cmd::Command> makeCurrentCommand();      // -CURRENT      // -LINETYPE
 std::unique_ptr<cmd::Command> makeLayerStateCommand();   // -LAYERSTATE
 std::unique_ptr<cmd::Command> makeLayerFilterCommand();  // -LAYERFILTER
+
+void registerLayerTools(cmd::Registry& registry);  // LAYOFF, LAYFRZ, LAYISO, LAYMRG ...
 
 }  // namespace tbcad::layers

@@ -6,6 +6,7 @@
 #include "tbcad/core/document.h"
 #include "tbcad/core/dump.h"
 #include "tbcad/core/entities.h"
+#include "tbcad/core/groups.h"
 #include "tbcad/core/ids.h"
 #include "tbcad/core/math.h"
 #include "tbcad/core/result.h"

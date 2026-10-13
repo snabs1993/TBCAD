@@ -25,6 +25,9 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Edit Spline", "SPLINEDIT", "modify.splinedit", "");
     ui.addMenuItem("Modify/Scale Text", "SCALETEXT", "modify.scaletext", "");
     ui.addMenuItem("Modify/Justify Text", "JUSTIFYTEXT", "modify.justifytext", "");
+    ui.addMenuItem("Modify/Group", "GROUP", "modify.group", "Ctrl+G");
+    ui.addMenuItem("Modify/Ungroup", "UNGROUP", "modify.ungroup", "Ctrl+Shift+G");
+    ui.addMenuItem("Modify/Draw Order", "DRAWORDER", "modify.draworder", "");
     ui.addMenuItem("Draw/Divide", "DIVIDE", "draw.divide", "");
     ui.addMenuItem("Draw/Measure", "MEASURE", "draw.measure", "");
 }

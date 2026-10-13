@@ -27,6 +27,7 @@ settings across levels.
   hidden. Making a hidden level current shows it.
 * Deleting a level moves its objects to the first level. It is one undo step.
 * Move objects to another level with `CHLEVEL` (or `-LEVEL Move`, or the panel button).
+* Copy objects to another level, keeping the position, with `COPYTOLEVEL` (for example to repeat a wall layout on the next floor).
 
 ## Commands
 
@@ -35,6 +36,7 @@ settings across levels.
 | `LEVEL` | `LV` | Opens the Levels panel. |
 | `-LEVEL` | `-LV` | Command line: `New` (name, elevation; becomes current), `Set`, `Rename`, `Elevation`, `Show`, `Hide`, `Lock`, `Unlock`, `View` (Dim, Hide, All), `Move`, `Delete`, `List`. Levels are named by name or `#<id>`. One undo step per command. |
 | `CHLEVEL` | `CHLV` | Moves the selected objects to another level. |
+| `COPYTOLEVEL` | `COPYLV` | Copies the selected objects to another level at the same position. |
 | `LEVELUP` / `LEVELDOWN` | `LVUP` / `LVDN` | Work on the next level up or down. |
 
 ## Files

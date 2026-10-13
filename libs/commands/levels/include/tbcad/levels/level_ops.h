@@ -32,6 +32,10 @@ Result<void> setLevelView(const Document& doc, Transaction& tx, LevelView view);
 // number moved.
 Result<std::size_t> moveToLevel(const Document& doc, Transaction& tx,
                                 const std::vector<EntityId>& ids, LevelId level);
+// Copies model-space objects onto `level` at the same position (objects inside block definitions
+// are skipped; objects already on `level` are copied too). Returns the new objects' ids.
+Result<std::vector<EntityId>> copyToLevel(const Document& doc, Transaction& tx,
+                                          const std::vector<EntityId>& ids, LevelId level);
 // Moves the level's objects to `moveTo` (default: the default level) and deletes it. The default
 // level cannot be deleted. When the level is current, `moveTo` becomes current.
 Result<void> deleteLevel(const Document& doc, Transaction& tx, LevelId id,

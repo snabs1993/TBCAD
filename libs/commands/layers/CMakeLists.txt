@@ -14,6 +14,7 @@ set(_layers_sources
   src/linetype_file.cpp
   src/properties.cpp
   src/layer_commands.cpp
+  src/layer_tools.cpp
   src/property_commands.cpp
   src/register.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/builtin_linetypes.cpp")
@@ -40,6 +41,7 @@ tbcad_add_tests(layers
     tests/main.cpp
     tests/layer_ops_tests.cpp
     tests/layer_command_tests.cpp
+    tests/layer_tools_tests.cpp
     tests/layer_state_tests.cpp
     tests/linetype_tests.cpp
     tests/properties_tests.cpp

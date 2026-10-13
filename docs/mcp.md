@@ -129,7 +129,7 @@ Every entity has:
 | field | meaning |
 |---|---|
 | `id` | decimal string (64-bit safe); ignored when writing |
-| `kind` | line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, insert, dimension, leader, proxy |
+| `kind` | line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, insert, dimension, leader, table, ray, mline, proxy |
 | `layer` | full layer path, sub-layers joined with `~` (`S-FLOOR~edge`) |
 | `color` | `"ByLayer"`, `"ByBlock"`, an ACI number 1..255, or `"#RRGGBB"` |
 | `linetype` | linetype name, `"ByLayer"` or `"ByBlock"` |
@@ -151,10 +151,13 @@ Kind fields:
 - **hatch**: `loops`, `solid`, and for patterns `pattern`, `scale`, `angle`. When writing, a loop is `[[x,y],...]` or `{"vertices": [...]}` or `{"edges": [{"type":"line"|"arc"|"polyline",...}]}`.
 - **insert**: `block` (name), `position`, `scale` (number or `[sx, sy]`), `rotation`
 - **dimension**, **leader**: read and write (`dimKind`, definition points, `textOverride`, `style`; leader `vertices`, `text`). Moving one with `set` is refused; use `transform`.
+- **ray**, **xline**: `origin`, `direction` (normalised when written); a ray starts at the origin, an xline (`kind: "xline"` when writing, or `infinite: true`) runs both ways. Reads back as kind `ray` with `infinite`.
+- **mline**: `vertices`, `style` (MLSTYLE name), `scale`, `justification` (0 top, 1 zero, 2 bottom), `closed`.
+- **table**: `origin` (top-left), `columnWidths`, `rowHeights`, `cells` (row-major strings, MText markup allowed), `rotation`, `textHeight`, `margin`, `titleRow`.
 - **proxy**: an imported entity of an unknown type; read only.
 
 Writing: `add_entities` accepts line, circle, arc, polyline, point, ellipse, spline, text, mtext,
-hatch and insert. `modify_entities` `set` takes any of the fields above for the entity's kind.
+hatch, insert, dimension, leader, ray, xline, mline and table. `modify_entities` `set` takes any of the fields above for the entity's kind.
 
 ## For developers
 

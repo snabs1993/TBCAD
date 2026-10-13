@@ -190,3 +190,21 @@ TEST_CASE("undo and redo of level edits keep the table and header in step") {
     CHECK(f.doc.levels().size() == 3);
     CHECK(f.doc.header().currentLevel == f.level("B"));
 }
+
+TEST_CASE("COPYTOLEVEL copies objects to another level at the same position") {
+    Fixture f;
+    EntityId a = f.addLine();
+    f.run("-LEVEL", {"New", "Upper", "3000", cmd::ScriptItem::enter()});
+    LevelId up = f.level("Upper");
+    f.host.setSelection({a});
+    f.run("COPYTOLEVEL", {"Upper"});
+    int onUpper = 0, onFirst = 0;
+    f.doc.forEachEntity([&](const Entity& e) { (e.common.level == up ? onUpper : onFirst)++; });
+    CHECK(onUpper == 1);
+    CHECK(onFirst == 1);
+    CHECK(f.host.undoStack().undo(f.doc));
+    CHECK(f.doc.find(a) != nullptr);
+    onUpper = 0;
+    f.doc.forEachEntity([&](const Entity& e) { onUpper += e.common.level == up; });
+    CHECK(onUpper == 0);
+}

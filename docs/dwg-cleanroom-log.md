@@ -18,6 +18,10 @@ Drawings/Teigha, RealDWG or any other DWG library or its tests, and nobody has d
 | 2026-10-13 | Q25 | Record layouts of LAYER, LTYPE, STYLE, BLOCK_HEADER and entities LINE, CIRCLE, ARC, POINT, TEXT, INSERT, LWPOLYLINE (R2000). | ODA spec, per-object sections |
 | 2026-10-13 | Q25 | Header variable order up to $INSUNITS (read only under a plausibility check). | ODA spec, header variables |
 | 2026-10-13 | Q25 | Assumed, not confirmed by any file: LWPOLYLINE closed flag 512; layer off = negative colour; lineweight index table; DXF code page for output is written as ANSI_1252. To be checked against real files. | general knowledge; Autodesk public DXF Reference |
+| 2026-10-13 | Q26 | Record layouts of ELLIPSE, SPLINE (both scenarios), SOLID, TRACE, MTEXT, 2D POLYLINE with VERTEX, ATTRIB, ATTDEF, MINSERT (R2000). | ODA spec, per-object sections 20.4.4, 20.4.5, 20.4.10, 20.4.11, 20.4.16, 20.4.35, 20.4.36, 20.4.39, 20.4.40, 20.4.46 |
+| 2026-10-13 | Q26 | HATCH layout (boundary paths of polyline and edge kind, pattern lines, seed points) and that it is a class-based object (type number from 500 up, DXF name in the class table). | ODA spec, 20.4.75; class table (section 2) |
+| 2026-10-13 | Q26 | Common dimension data and the seven DIMENSION layouts; DIMSTYLE variable order; LEADER layout. | ODA spec, 20.4.22 to 20.4.29, 20.4.47, 20.4.68 |
+| 2026-10-13 | Q26 | Assumed, not confirmed by any file: hatch and pattern angles are radians; DIMSTYLE group 70 bits; dimension type flag composition (flags 1 bit 0 = opposite of 128, bit 1 = 32); polyline and vertex flag bits equal the DXF ones. | general knowledge; Autodesk public DXF Reference |
 
 ## ODA specification terms
 

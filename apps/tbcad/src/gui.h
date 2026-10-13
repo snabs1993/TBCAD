@@ -120,6 +120,7 @@ private:
     void doNew();
     void doOpen();
     void doOpenPath(const std::string& path);
+    void openPending();
     void doImportDxf();
     void doExportDxf();
     void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
@@ -162,6 +163,8 @@ private:
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
     std::size_t recoveryCount_ = 0;
+    std::string pendingOpen_{};  // big file waiting for the "Opening ..." message to be shown
+    bool pendingOpenShown_ = false;
     std::string crashReport_{};  // newest unacknowledged crash report file, if any
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;

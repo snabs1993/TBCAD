@@ -9,6 +9,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeLevelPanelCommand());
     (void)registry.add(makeLevelCommand());
     (void)registry.add(makeChangeLevelCommand());
+    (void)registry.add(makeCopyToLevelCommand());
     (void)registry.add(makeLevelUpCommand());
     (void)registry.add(makeLevelDownCommand());
 }
@@ -19,6 +20,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Format/Level Up", "LEVELUP", "levels.up", "Ctrl+PageUp");
     ui.addMenuItem("Format/Level Down", "LEVELDOWN", "levels.down", "Ctrl+PageDown");
     ui.addMenuItem("Modify/Move to Level", "CHLEVEL", "levels.move");
+    ui.addMenuItem("Modify/Copy to Level", "COPYTOLEVEL", "levels.copy");
 }
 
 }  // namespace tbcad::levels
