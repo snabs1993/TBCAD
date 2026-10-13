@@ -698,6 +698,8 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
             return 0;
         }
         case ImGuiInputTextFlags_CallbackCompletion: {
+            if (auto* dyn = registry_.cursorFields(); dyn && core_.promptInfo() && dyn->focusNext())
+                return 0;  // dynamic input: Tab goes to the first field
             if (suggestVisible_ && !suggestions_.empty()) {
                 const auto& pick = suggestions_[static_cast<std::size_t>(
                     std::clamp(suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))];
@@ -723,6 +725,83 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         default:
             return 0;
     }
+}
+
+// Dynamic input: the distance and angle (or X and Y) of the point under the cursor. Tab moves the
+// keyboard through the fields; a value typed into one locks it, Enter in the last unlocked field
+// places the point.
+void Gui::dynamicFields(const cmd::FilterFeedback& fb) {
+    cmd::CursorFieldProvider* dyn = registry_.cursorFields();
+    if (!dyn)
+        return;
+    const std::vector<cmd::CursorField> fields = dyn->fields(fb);
+    if (fields.empty()) {
+        dynFocus_ = -1;
+        return;
+    }
+    const int focus = dyn->focused();
+    if (focus != dynFocus_) {
+        // Tab away from a field keeps what was typed in it.
+        if (dynFocus_ >= 0 && dynFocus_ < static_cast<int>(fields.size()) &&
+            dynBuf_ != fields[static_cast<std::size_t>(dynFocus_)].text)
+            dyn->edit(static_cast<std::size_t>(dynFocus_), dynBuf_);
+        dynFocus_ = focus;
+        if (focus >= 0 && focus < static_cast<int>(fields.size())) {
+            dynBuf_ = fields[static_cast<std::size_t>(focus)].text;
+            dynFocusPending_ = true;
+        }
+    }
+    const Rgba snap = theme_.snap;
+    const ImVec4 accent(snap.r / 255.0f, snap.g / 255.0f, snap.b / 255.0f, 1.0f);
+    ImGui::PushID("dynfields");
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        if (i)
+            ImGui::SameLine();
+        const cmd::CursorField& f = fields[i];
+        if (static_cast<int>(i) == focus) {
+            ImGui::TextUnformatted(f.label.c_str());
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(72.0f * dpiScale_);
+            if (dynFocusPending_) {
+                ImGui::SetKeyboardFocusHere();
+                dynFocusPending_ = false;
+            }
+            bool tab = false;
+            auto callback = [](ImGuiInputTextCallbackData* d) {
+                if (d->EventFlag == ImGuiInputTextFlags_CallbackCompletion)
+                    *static_cast<bool*>(d->UserData) = true;
+                return 0;
+            };
+            const ImGuiInputTextFlags flags = ImGuiInputTextFlags_EnterReturnsTrue |
+                                              ImGuiInputTextFlags_AutoSelectAll |
+                                              ImGuiInputTextFlags_CallbackCompletion;
+            if (ImGui::InputText("##field", &dynBuf_, flags, callback, &tab)) {
+                if (!dyn->edit(i, dynBuf_)) {
+                    core_.print("That value cannot be used here.");
+                } else if (auto p = dyn->lockedPoint(fb)) {
+                    // Every field is fixed: Enter places the point.
+                    ui::PointerState ps;
+                    ps.screen = core_.camera().worldToScreen(*p);
+                    dyn->focus(-1);
+                    core_.click(ps);
+                    refocusInput_ = true;
+                } else {
+                    dyn->focusNext();  // on to the next field
+                }
+            } else if (tab) {
+                if (dynBuf_ != f.text)
+                    dyn->edit(i, dynBuf_);
+                dyn->focusNext();
+            }
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                  f.locked ? accent : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+            const std::string shown = f.label + " " + f.text + (f.locked ? " *" : "");
+            ImGui::TextUnformatted(shown.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::PopID();
 }
 
 void Gui::logWindow() {
@@ -949,6 +1028,9 @@ void Gui::cursorHud(const ViewportRect& rect) {
     if (!cursorHud_ || !info) {
         hudAnchor_ = ImVec2(-1e6f, -1e6f);
         hudHovered_ = false;
+        if (auto* dyn = registry_.cursorFields())
+            dyn->reset();  // the point prompt is over: forget typed field values
+        dynFocus_ = -1;
         return;
     }
     ImGuiIO& io = ImGui::GetIO();
@@ -968,7 +1050,9 @@ void Gui::cursorHud(const ViewportRect& rect) {
                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                           ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
                           ImGuiWindowFlags_NoMove;
-    if (!options)
+    const auto* dynProvider = registry_.cursorFields();
+    const bool editingField = dynProvider && dynProvider->focused() >= 0;
+    if (!options && !editingField)
         wf |= ImGuiWindowFlags_NoInputs;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 5));
     if (ImGui::Begin("##hud", nullptr, wf)) {
@@ -986,6 +1070,7 @@ void Gui::cursorHud(const ViewportRect& rect) {
             ImGui::TextUnformatted(fb.tooltip.c_str());
             ImGui::PopStyleColor();
         }
+        dynamicFields(fb);
         if (options) {
             ImGui::PushID("hudchips");
             for (std::size_t i = 0; i < info->keywords.size(); ++i) {

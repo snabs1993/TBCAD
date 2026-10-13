@@ -8,6 +8,7 @@ namespace tbcad::draftingcmds {
 
 namespace {
 
+using drafting::keys::dynInput;
 using drafting::keys::grid;
 using drafting::keys::ortho;
 using drafting::keys::osnap;
@@ -26,6 +27,8 @@ bool isOn(const cmd::IHost& host, const char* key) {
         return s.snap;
     if (k == ortho)
         return s.ortho;
+    if (k == dynInput)
+        return s.dynInput;
     return s.polar;
 }
 
@@ -245,12 +248,16 @@ private:
     const char* key_;
 };
 
-// Tab: next object snap candidate under the cursor.
+// Tab: next dynamic input field while there are some, else the next object snap candidate under
+// the cursor.
 class SnapCycleCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SNAPCYCLE"; }
     bool isTransparent() const override { return true; }
     cmd::Task run(cmd::CommandContext&) override {
+        // With dynamic input fields on the screen Tab goes through them instead.
+        if (auto* d = moduleState().dyn; d && d->focusNext())
+            co_return;
         if (auto* f = moduleState().osnap)
             f->cycle();
         co_return;
@@ -270,6 +277,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLESNAP", "Snap", snap));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEORTHO", "Ortho", ortho));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEPOLAR", "Polar tracking", polar));
+    (void)registry.add(
+        std::make_unique<ToggleCommand>("TOGGLEDYNINPUT", "Dynamic input", dynInput));
     (void)registry.add(std::make_unique<SnapCycleCommand>());
 }
 

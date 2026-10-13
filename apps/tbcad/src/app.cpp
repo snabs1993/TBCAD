@@ -165,6 +165,8 @@ void App::drawScene() {
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
     renderer_.beginFrame();
+    core_->buildUnderlay(underlay_, uiRegistry_.get());
+    renderer_.draw(underlay_);
     renderer_.draw(core_->scene());
     core_->buildOverlay(overlay_, uiRegistry_.get());
     renderer_.draw(overlay_);

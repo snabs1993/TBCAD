@@ -121,6 +121,12 @@ private:
     FileBrowser browser_;
     SettingsDialog settings_;
 
+    // Dynamic input field being edited in the cursor HUD.
+    void dynamicFields(const cmd::FilterFeedback& fb);
+    int dynFocus_ = -1;
+    bool dynFocusPending_ = false;
+    std::string dynBuf_{};
+
     ui::ThemeMode themeMode_ = ui::ThemeMode::Dark;
     ui::Theme theme_ = ui::darkTheme();
     bool lineweights_ = true;

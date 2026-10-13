@@ -186,6 +186,9 @@ public:
     // Crosshair, pick box, command preview, snap marker, selection rectangle and the overlay
     // drawers modules registered. Cleared first.
     void buildOverlay(render::Overlay& overlay, const UiRegistry* ui = nullptr);
+    // What lies under the drawing (the grid): the modules' underlay drawers. Cleared first; the
+    // window draws it before the scene.
+    void buildUnderlay(render::Overlay& underlay, const UiRegistry* ui = nullptr);
 
     // ---- notices -----------------------------------------------------------------------------
     const std::optional<OutOfAreaNotice>& outOfAreaNotice() const { return outOfArea_; }

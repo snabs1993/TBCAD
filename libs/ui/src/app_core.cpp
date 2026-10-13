@@ -905,6 +905,15 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     }
 }
 
+void AppCore::buildUnderlay(render::Overlay& underlay, const UiRegistry* ui) {
+    underlay.clear();
+    if (!ui)
+        return;
+    PanelContext pc = makePanelContext();
+    for (const auto& fn : ui->underlayDrawers())
+        fn(pc, underlay);
+}
+
 // ---- notices
 // -------------------------------------------------------------------------------------
 

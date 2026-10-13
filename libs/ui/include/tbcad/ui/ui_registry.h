@@ -91,6 +91,9 @@ public:
     bool addStatusToggle(std::string id, std::string label, std::function<bool()> get,
                          std::function<void(bool)> set);
     void addOverlayDrawer(OverlayDrawFn fn);
+    // Like an overlay drawer, but drawn before the drawing so that it lies under the objects
+    // (the grid).
+    void addUnderlayDrawer(OverlayDrawFn fn);
     // Hooks run in registration order until one returns true.
     void addIdleClickHook(IdleClickFn fn) { idleClicks_.push_back(std::move(fn)); }
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
@@ -100,6 +103,9 @@ public:
     // Extends typed point input (direct distance ...). Not owned: the pointer must outlive the
     // application. A later call replaces the earlier one; nullptr clears it.
     void setLineParser(cmd::CommandLineParser* parser) { lineParser_ = parser; }
+    // The editable fields next to the cursor (dynamic input). Not owned: the pointer must outlive
+    // the application. A later call replaces the earlier one; nullptr clears it.
+    void setCursorFields(cmd::CursorFieldProvider* provider) { cursorFields_ = provider; }
     // Called by AppCore each time a document becomes current (new, open, recover).
     void addSessionHook(SessionHookFn fn) {
         if (fn)
@@ -110,6 +116,7 @@ public:
     const std::vector<MenuItemInfo>& menuItems() const { return menuItems_; }
     const std::vector<StatusToggle>& statusToggles() const { return toggles_; }
     const std::vector<OverlayDrawFn>& overlayDrawers() const { return overlays_; }
+    const std::vector<OverlayDrawFn>& underlayDrawers() const { return underlays_; }
     const std::vector<IdleClickFn>& idleClickHooks() const { return idleClicks_; }
     const std::vector<PropertySection>& propertySections() const { return sections_; }
     struct PointFilterEntry {
@@ -118,6 +125,7 @@ public:
     };
     const std::vector<PointFilterEntry>& pointFilters() const { return filters_; }
     cmd::CommandLineParser* lineParser() const { return lineParser_; }
+    cmd::CursorFieldProvider* cursorFields() const { return cursorFields_; }
     const std::vector<SessionHookFn>& sessionHooks() const { return sessionHooks_; }
     // Sections registered for this entity kind, in registration order.
     std::vector<const PropertySection*> sectionsFor(EntityKind kind) const;
@@ -127,10 +135,12 @@ private:
     std::vector<MenuItemInfo> menuItems_{};
     std::vector<StatusToggle> toggles_{};
     std::vector<OverlayDrawFn> overlays_{};
+    std::vector<OverlayDrawFn> underlays_{};
     std::vector<IdleClickFn> idleClicks_{};
     std::vector<PropertySection> sections_{};
     std::vector<PointFilterEntry> filters_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
+    cmd::CursorFieldProvider* cursorFields_ = nullptr;
     std::vector<SessionHookFn> sessionHooks_{};
 };
 
