@@ -266,9 +266,11 @@ TEST_CASE("the tbcad-mcp executable speaks MCP over redirected stdio") {
     cmd = "\"" + cmd + "\"";
 #endif
     REQUIRE(std::system(cmd.c_str()) == 0);
-    std::ifstream f(out, std::ios::binary);
     std::stringstream buf;
-    buf << f.rdbuf();
+    {
+        std::ifstream f(out, std::ios::binary);  // closed before the folder is removed (Windows)
+        buf << f.rdbuf();
+    }
     auto replies = parseLines(buf.str());
     REQUIRE(replies.size() == 2);
     CHECK(replies[0].find("result")->find("serverInfo")->find("name")->asString() == "tbcad");
