@@ -158,7 +158,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         blockSpace = cache->find(key);
     }
     if (!blockSpace) {
-        blockSpace = buildBlockSpace(doc, *def, insert, shown, resolved ? &resolved->nested : nullptr, child);
+        blockSpace = buildBlockSpace(doc, *def, insert, shown,
+                                     resolved ? &resolved->nested : nullptr, child);
         if (cache) {
             cache->countBuild();
             cache->put(key, blockSpace);

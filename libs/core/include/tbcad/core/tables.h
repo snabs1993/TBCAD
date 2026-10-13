@@ -139,15 +139,15 @@ struct AsmParam {
 
 struct AsmBinding {
     enum class Kind : std::uint8_t {
-        DynParam,   // value of a dynamic parameter of this block (number; a state name or index)
-        Attribute,  // text of an attribute of this block
-        Nested,     // a parameter of the insert `entity` inside this block
-        ArrayField, // rows, columns, count, rowSpacing, columnSpacing or pathSpacing of the array
-                    // of the insert `entity` inside this block
+        DynParam,    // value of a dynamic parameter of this block (number; a state name or index)
+        Attribute,   // text of an attribute of this block
+        Nested,      // a parameter of the insert `entity` inside this block
+        ArrayField,  // rows, columns, count, rowSpacing, columnSpacing or pathSpacing of the array
+                     // of the insert `entity` inside this block
     };
     Kind kind = Kind::DynParam;
-    EntityId entity{};      // Nested, ArrayField: the Insert entity in this block
-    std::string target{};   // parameter / attribute tag / array field name
+    EntityId entity{};     // Nested, ArrayField: the Insert entity in this block
+    std::string target{};  // parameter / attribute tag / array field name
     std::string formula{};
 };
 

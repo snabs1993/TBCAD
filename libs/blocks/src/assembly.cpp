@@ -204,12 +204,18 @@ void applyNested(const Document& doc, std::vector<Entity>& items,
                     field = static_cast<int>(
                         std::clamp(std::round(x), 1.0, static_cast<double>(kMaxArrayItems)));
                 };
-                if (n.target == "rows") count(a.rows);
-                else if (n.target == "columns") count(a.columns);
-                else if (n.target == "count") count(a.count);
-                else if (n.target == "rowSpacing") a.rowSpacing = x;
-                else if (n.target == "columnSpacing") a.columnSpacing = x;
-                else if (n.target == "pathSpacing") a.pathSpacing = x;
+                if (n.target == "rows")
+                    count(a.rows);
+                else if (n.target == "columns")
+                    count(a.columns);
+                else if (n.target == "count")
+                    count(a.count);
+                else if (n.target == "rowSpacing")
+                    a.rowSpacing = x;
+                else if (n.target == "columnSpacing")
+                    a.columnSpacing = x;
+                else if (n.target == "pathSpacing")
+                    a.pathSpacing = x;
                 break;
             }
             const BlockDef* inner = doc.block(ins->block);
@@ -252,7 +258,8 @@ Result<Entity> asmSet(const Document& doc, const Entity& insert, std::string_vie
         return makeError(ErrorCode::InvalidArgument, "This block is not a parametric assembly");
     const int pi = asmFind(*def->assembly, name);
     if (pi < 0)
-        return makeError(ErrorCode::NotFound, "There is no parameter called \"" + std::string(name) + "\"");
+        return makeError(ErrorCode::NotFound,
+                         "There is no parameter called \"" + std::string(name) + "\"");
     const AsmParam& p = def->assembly->params[static_cast<std::size_t>(pi)];
     AsmValue v;
     v.name = p.name;
@@ -281,7 +288,8 @@ Result<Entity> asmSet(const Document& doc, const Entity& insert, std::string_vie
         if (p.max > p.min && (v.number < p.min || v.number > p.max))
             return makeError(ErrorCode::OutOfRange, p.name + " must be between " +
                                                         expr::Value::ofNumber(p.min).toString() +
-                                                        " and " + expr::Value::ofNumber(p.max).toString());
+                                                        " and " +
+                                                        expr::Value::ofNumber(p.max).toString());
         if (p.kind == AsmParam::Kind::Integer && v.number != std::round(v.number))
             return makeError(ErrorCode::InvalidArgument, p.name + " must be a whole number");
     }
@@ -302,10 +310,12 @@ Result<Entity> asmApplyPreset(const Document& doc, const Entity& insert, std::st
         if (lower(p.name) == lower(preset))
             found = &p;
     if (!found)
-        return makeError(ErrorCode::NotFound, "There is no preset called \"" + std::string(preset) + "\"");
+        return makeError(ErrorCode::NotFound,
+                         "There is no preset called \"" + std::string(preset) + "\"");
     Entity out = insert;
     for (const AsmValue& v : found->values) {
-        auto r = asmSet(doc, out, v.name, v.isText ? expr::Value::ofText(v.text) : expr::Value::ofNumber(v.number));
+        auto r = asmSet(doc, out, v.name,
+                        v.isText ? expr::Value::ofText(v.text) : expr::Value::ofNumber(v.number));
         if (!r)
             return r;
         out = std::move(r).value();
@@ -336,7 +346,8 @@ std::vector<std::string> asmValidate(const Document& doc, const BlockDef& def) {
         }
         for (const std::string& n : e.value().names())
             if (asmFind(*def.assembly, n) < 0)
-                problems.push_back(b.target + ": the formula uses \"" + n + "\", which is not a parameter");
+                problems.push_back(b.target + ": the formula uses \"" + n +
+                                   "\", which is not a parameter");
         switch (b.kind) {
             case AsmBinding::Kind::DynParam:
                 if (!def.dynamic || dynFind(*def.dynamic, b.target) < 0)
@@ -346,7 +357,8 @@ std::vector<std::string> asmValidate(const Document& doc, const BlockDef& def) {
                 bool found = false;
                 for (EntityId id : def.entities)
                     if (const Entity* en = doc.find(id))
-                        if (const auto* t = entityAs<TextData>(*en); t && t->attdef && t->attdef->tag == b.target)
+                        if (const auto* t = entityAs<TextData>(*en);
+                            t && t->attdef && t->attdef->tag == b.target)
                             found = true;
                 if (!found)
                     problems.push_back("There is no attribute \"" + b.target + "\"");
@@ -356,18 +368,22 @@ std::vector<std::string> asmValidate(const Document& doc, const BlockDef& def) {
             case AsmBinding::Kind::ArrayField: {
                 const Entity* en = doc.find(b.entity);
                 const auto* ni = en ? entityAs<InsertData>(*en) : nullptr;
-                if (!ni || std::find(def.entities.begin(), def.entities.end(), b.entity) == def.entities.end()) {
-                    problems.push_back("The nested insert for \"" + b.target + "\" is not in the block");
+                if (!ni || std::find(def.entities.begin(), def.entities.end(), b.entity) ==
+                               def.entities.end()) {
+                    problems.push_back("The nested insert for \"" + b.target +
+                                       "\" is not in the block");
                     break;
                 }
                 if (b.kind == AsmBinding::Kind::ArrayField) {
                     if (!ni->array)
-                        problems.push_back("The nested insert for \"" + b.target + "\" is not an array");
+                        problems.push_back("The nested insert for \"" + b.target +
+                                           "\" is not an array");
                     break;
                 }
                 const BlockDef* inner = doc.block(ni->block);
-                const bool ok = inner && ((inner->assembly && asmFind(*inner->assembly, b.target) >= 0) ||
-                                          (inner->dynamic && dynFind(*inner->dynamic, b.target) >= 0));
+                const bool ok =
+                    inner && ((inner->assembly && asmFind(*inner->assembly, b.target) >= 0) ||
+                              (inner->dynamic && dynFind(*inner->dynamic, b.target) >= 0));
                 if (!ok)
                     problems.push_back("The nested block has no parameter \"" + b.target + "\"");
                 break;

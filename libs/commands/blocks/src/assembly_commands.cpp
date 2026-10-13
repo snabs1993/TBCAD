@@ -85,8 +85,9 @@ public:
                     d.assembly = AssemblyDef{};
                 d.assembly->joinClass = name;
             });
-            ctx.message(name.empty() ? "The assembly no longer joins others"
-                                     : "Overlapping assemblies of class \"" + name + "\" now merge");
+            ctx.message(name.empty()
+                            ? "The assembly no longer joins others"
+                            : "Overlapping assemblies of class \"" + name + "\" now merge");
             ctx.setUndoLabel("Set join class");
             co_return;
         }
@@ -108,8 +109,8 @@ public:
             if (!type.ok())
                 co_return;
             if (type.keyword == "Number" || type.keyword == "Integer") {
-                p.kind = type.keyword == "Number" ? AsmParam::Kind::Number
-                                                  : AsmParam::Kind::Integer;
+                p.kind =
+                    type.keyword == "Number" ? AsmParam::Kind::Number : AsmParam::Kind::Integer;
                 auto d = co_await ctx.getReal("Default value <0>",
                                               cmd::RealOptions{.defaultValue = 0.0});
                 if (!d.ok())
@@ -118,7 +119,8 @@ public:
                                                cmd::RealOptions{.defaultValue = 0.0});
                 if (!lo.ok())
                     co_return;
-                auto hi = co_await ctx.getReal("Maximum <0>", cmd::RealOptions{.defaultValue = 0.0});
+                auto hi =
+                    co_await ctx.getReal("Maximum <0>", cmd::RealOptions{.defaultValue = 0.0});
                 if (!hi.ok())
                     co_return;
                 p.defaultNumber = d.value;
@@ -128,8 +130,8 @@ public:
                 }
             } else if (type.keyword == "Text") {
                 p.kind = AsmParam::Kind::Text;
-                auto d = co_await ctx.getString("Default text",
-                                                cmd::StringOptions{.allowEmpty = true});
+                auto d =
+                    co_await ctx.getString("Default text", cmd::StringOptions{.allowEmpty = true});
                 if (d.status == cmd::Status::Cancel)
                     co_return;
                 p.defaultText = d.text;
@@ -202,7 +204,7 @@ public:
                     co_return;
                 }
             }
-            const char* prompt = b.kind == AsmBinding::Kind::DynParam   ? "Dynamic parameter name"
+            const char* prompt = b.kind == AsmBinding::Kind::DynParam    ? "Dynamic parameter name"
                                  : b.kind == AsmBinding::Kind::Attribute ? "Attribute tag"
                                  : b.kind == AsmBinding::Kind::Nested
                                      ? "Parameter name of the nested block"
@@ -295,7 +297,8 @@ public:
         std::string list;
         for (const AsmParam& p : ad.params)
             list += (list.empty() ? "" : "/") + p.name;
-        auto pname = co_await ctx.getString("Parameter [" + list + (ad.presets.empty() ? "" : "/Preset") + "]");
+        auto pname = co_await ctx.getString("Parameter [" + list +
+                                            (ad.presets.empty() ? "" : "/Preset") + "]");
         if (!pname.ok())
             co_return;
         const std::string wanted = cmd::trim(pname.text);
@@ -305,14 +308,13 @@ public:
             std::string names;
             for (const AsmPreset& p : ad.presets)
                 names += (names.empty() ? "" : "/") + p.name;
-            auto k = co_await ctx.getKeyword(
-                "Preset [" + names + "]",
-                cmd::KeywordOptions{.keywords = [&] {
-                    std::vector<std::string> v;
-                    for (const AsmPreset& p : ad.presets)
-                        v.push_back(p.name);
-                    return v;
-                }()});
+            auto k = co_await ctx.getKeyword("Preset [" + names + "]",
+                                             cmd::KeywordOptions{.keywords = [&] {
+                                                 std::vector<std::string> v;
+                                                 for (const AsmPreset& p : ad.presets)
+                                                     v.push_back(p.name);
+                                                 return v;
+                                             }()});
             if (!k.ok())
                 co_return;
             changed = blocks::asmApplyPreset(doc, *e, k.keyword);
@@ -409,49 +411,54 @@ public:
         auto sel = co_await ctx.getSelection("Select assemblies");
         if (!sel.ok() || sel.ids.empty())
             co_return;
-        auto pname = co_await ctx.getString("Parameter");
-        if (!pname.ok())
-            co_return;
-        auto value = co_await ctx.getString("Value", cmd::StringOptions{.allowEmpty = true});
-        if (value.status == cmd::Status::Cancel)
-            co_return;
-        const std::string name = cmd::trim(pname.text);
         std::size_t changed = 0;
-        for (EntityId id : sel.ids) {
-            const Entity* e = doc.find(id);
-            const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
-            const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
-            if (!def || !def->assembly)
-                continue;
-            Result<Entity> r = makeError(ErrorCode::NotFound, "");
-            if (name == "@preset") {
-                r = blocks::asmApplyPreset(doc, *e, cmd::trim(value.text));
-            } else {
-                const int pi = blocks::asmFind(*def->assembly, name);
-                if (pi < 0)
+        for (;;) {
+            auto pname = co_await ctx.getString("Parameter, Enter to finish",
+                                                cmd::StringOptions{.allowEmpty = true});
+            if (!pname.ok() && pname.status != cmd::Status::None)
+                co_return;
+            if (cmd::trim(pname.text).empty())
+                break;
+            auto value = co_await ctx.getString("Value", cmd::StringOptions{.allowEmpty = true});
+            if (value.status == cmd::Status::Cancel)
+                co_return;
+            const std::string name = cmd::trim(pname.text);
+            for (EntityId id : sel.ids) {
+                const Entity* e = doc.find(id);
+                const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+                const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+                if (!def || !def->assembly)
                     continue;
-                const AsmParam& p = def->assembly->params[static_cast<std::size_t>(pi)];
-                if (p.kind == AsmParam::Kind::Number || p.kind == AsmParam::Kind::Integer) {
-                    auto parsed = expr::Expression::parse(value.text);
-                    auto v = parsed ? parsed.value().eval([](std::string_view) {
-                        return std::optional<expr::Value>{};
-                    })
-                                    : Result<expr::Value>(parsed.error());
-                    if (!v || v.value().isText) {
-                        ctx.message("\"" + value.text + "\" is not a number");
-                        continue;
-                    }
-                    r = blocks::asmSet(doc, *e, p.name, v.value());
+                Result<Entity> r = makeError(ErrorCode::NotFound, "");
+                if (name == "@preset") {
+                    r = blocks::asmApplyPreset(doc, *e, cmd::trim(value.text));
                 } else {
-                    r = blocks::asmSet(doc, *e, p.name, expr::Value::ofText(value.text));
+                    const int pi = blocks::asmFind(*def->assembly, name);
+                    if (pi < 0)
+                        continue;
+                    const AsmParam& p = def->assembly->params[static_cast<std::size_t>(pi)];
+                    if (p.kind == AsmParam::Kind::Number || p.kind == AsmParam::Kind::Integer) {
+                        auto parsed = expr::Expression::parse(value.text);
+                        auto v = parsed ? parsed.value().eval([](std::string_view) {
+                            return std::optional<expr::Value>{};
+                        })
+                                        : Result<expr::Value>(parsed.error());
+                        if (!v || v.value().isText) {
+                            ctx.message("\"" + value.text + "\" is not a number");
+                            continue;
+                        }
+                        r = blocks::asmSet(doc, *e, p.name, v.value());
+                    } else {
+                        r = blocks::asmSet(doc, *e, p.name, expr::Value::ofText(value.text));
+                    }
                 }
+                if (!r) {
+                    ctx.message(r.error().message);
+                    continue;
+                }
+                (void)ctx.tx().modify(id, [&](Entity& target) { target = std::move(r).value(); });
+                ++changed;
             }
-            if (!r) {
-                ctx.message(r.error().message);
-                continue;
-            }
-            (void)ctx.tx().modify(id, [&](Entity& target) { target = std::move(r).value(); });
-            ++changed;
         }
         if (changed == 0)
             ctx.message("Nothing changed");
@@ -490,7 +497,8 @@ public:
         if (n == 0)
             ctx.message("No assembly changed");
         else
-            ctx.message(std::to_string(n) + (join_ ? " assemblies join again" : " assemblies separated"));
+            ctx.message(std::to_string(n) +
+                        (join_ ? " assemblies join again" : " assemblies separated"));
         ctx.setUndoLabel(join_ ? "Join assemblies" : "Unjoin assemblies");
     }
 

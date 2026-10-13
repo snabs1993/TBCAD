@@ -1,6 +1,6 @@
 # The .tbcad file format
 
-Format version **1.4** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, below). This document is the specification; the reference implementation is
+Format version **1.5** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, 1.5 parametric assemblies: the `ASMB` chunk and values on Insert, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
 `libs/io/tools`) prints any file as text.
 
@@ -54,6 +54,7 @@ error, an unknown chunk is kept whatever its flags.
 | `BLKS` | block definitions | 0..1 |
 | `XRFS` | external references of blocks (since 1.2) | 0..1, only when a block is an xref |
 | `DYNB` | dynamic block parameters and actions (since 1.4) | 0..1, only when a block is dynamic |
+| `ASMB` | parametric assembly definitions (since 1.5) | 0..1, only when a block is an assembly |
 | `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
@@ -129,6 +130,14 @@ entities are stored as for any block, so a drawing opens and plots without the s
 (index), `v2 frameMin`, `v2 frameMax`, `varint n`, `n` x `varint entityId`. Entity ids are those of the
 block's own entities. Older readers keep the chunk as an unknown chunk.
 
+**ASMB** row (since 1.5), one per assembly block: `varint block`, `varint parameterCount`, per parameter
+`u8 kind` (0 number, 1 integer, 2 text, 3 choice), `string name`, `f64 defaultNumber`, `string defaultText`,
+`f64 min`, `f64 max`, `varint choiceCount`, `string` each; `varint bindingCount`, per binding `u8 kind`
+(0 dynamic, 1 attribute, 2 nested, 3 array field), `varint entityId` (the nested insert, else 0),
+`string target`, `string formula`; `varint presetCount`, per preset `string name`, `varint n`, `n` x value;
+finally `string joinClass` (empty = no joining). A **value** is `string name`, `u8 isText`, `f64 number`,
+`string text`. Older readers keep the chunk as an unknown chunk.
+
 A **colour** is 4 bytes: `u8 kind` (0 ByLayer, 1 ByBlock, 2 Index, 3 Rgb, 4 ByParent), then
 `r g b` (for Index the palette index is in `r`).
 
@@ -198,7 +207,7 @@ loses nothing when it saves. The common properties stay editable. Bytes after th
 | Text | `v2 position`, `v2 alignPoint`, `f64 height`, `f64 rotation`, `f64 widthFactor`, `f64 oblique`, `varint style`, `u8 hAlign`, `u8 vAlign`, `string`; since 1.1, optional trailing attribute definition: `u8 flags` (1 invisible, 2 constant, 4 verify, 8 preset, 128 always set), `string tag`, `string prompt`, `string default` |
 | MText | `v2 position`, `f64 height`, `f64 width`, `f64 rotation`, `u8 attachment`, `varint style`, `string` |
 | Hatch | `u8 solid`, `string pattern`, `f64 scale`, `f64 angle`, `v2 origin`, colour fill, `varint n` + `n` × `varint` source boundary ids, `varint loops` × (`u8 outer`, `varint edges` × edge) |
-| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`; since 1.1, optional trailing attribute values: `varint count`, then per attribute `string tag`, `string value`; since 1.3, after them (count may be 0), an optional associative array: `u8 1`, `u8 kind` (0 rectangular, 1 polar, 2 path), `varint rows`, `varint columns`, `f64 rowSpacing`, `f64 columnSpacing`, `f64 angle`, `v2 center`, `varint count`, `f64 fillAngle`, `u8 rotateItems`, `v2 reference`, `u8 pathClosed`, `f64 pathSpacing`, then the path vertices as for a polyline; since 1.4, further optional sections each started by a tag byte, `u8 2` = dynamic block values: `varint count`, `f64` each |
+| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`; since 1.1, optional trailing attribute values: `varint count`, then per attribute `string tag`, `string value`; since 1.3, after them (count may be 0), an optional associative array: `u8 1`, `u8 kind` (0 rectangular, 1 polar, 2 path), `varint rows`, `varint columns`, `f64 rowSpacing`, `f64 columnSpacing`, `f64 angle`, `v2 center`, `varint count`, `f64 fillAngle`, `u8 rotateItems`, `v2 reference`, `u8 pathClosed`, `f64 pathSpacing`, then the path vertices as for a polyline; since 1.4, further optional sections each started by a tag byte, `u8 2` = dynamic block values: `varint count`, `f64` each; since 1.5, `u8 3` = assembly values: `varint count`, per value as in `ASMB`, and `u8 4` = the insert is not joined (no data) |
 | Dimension | `u8 kind`, `f64 rotation`, 4 × `v2` defining points, `v2 textPos`, `u8 textPosUser`, `string textOverride`, `varint style`, `f64 measurement` |
 | Leader | `varint n` × `v2` vertices, `varint style`, `string`, `v2 textPos` |
 | Proxy | `string originalType`, `varint n` + raw bytes, `varint items` × display item |

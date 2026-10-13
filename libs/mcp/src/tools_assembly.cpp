@@ -60,7 +60,8 @@ ToolResult listParameters(ToolContext& ctx, const Json& a) {
     Json::Array params;
     for (std::size_t i = 0; i < ad.params.size(); ++i) {
         const AsmParam& p = ad.params[i];
-        Json::Object o{{"name", p.name}, {"type", kindText(p.kind)}, {"value", valueJson(p, values[i])}};
+        Json::Object o{
+            {"name", p.name}, {"type", kindText(p.kind)}, {"value", valueJson(p, values[i])}};
         if (p.kind == AsmParam::Kind::Number || p.kind == AsmParam::Kind::Integer) {
             o["default"] = p.defaultNumber;
             if (p.max > p.min) {

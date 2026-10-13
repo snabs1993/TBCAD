@@ -41,7 +41,8 @@ TEST_CASE("expr: arithmetic, precedence and power") {
 }
 
 TEST_CASE("expr: names, Thai names and unknown names") {
-    CHECK(num("Length * 2 + Width", {{"Length", Value::ofNumber(5)}, {"Width", Value::ofNumber(1)}}) == 11);
+    CHECK(num("Length * 2 + Width",
+              {{"Length", Value::ofNumber(5)}, {"Width", Value::ofNumber(1)}}) == 11);
     CHECK(num("ความยาว / 2", {{"ความยาว", Value::ofNumber(8)}}) == 4);
     auto r = run("Nope + 1");
     REQUIRE_FALSE(r.ok());

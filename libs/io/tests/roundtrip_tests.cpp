@@ -434,12 +434,13 @@ TEST_CASE("round trip: assembly definitions and parameter values") {
         def.bindings.push_back(
             AsmBinding{AsmBinding::Kind::ArrayField, line, "columns", "ceil(ความยาว / 5)"});
         def.joinClass = "ชั้น";
-        def.presets.push_back(
-            AsmPreset{"long", {AsmValue{"ความยาว", false, 80, ""}, AsmValue{"Material", true, 0, "Pine"}}});
+        def.presets.push_back(AsmPreset{
+            "long", {AsmValue{"ความยาว", false, 80, ""}, AsmValue{"Material", true, 0, "Pine"}}});
         REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) { d.assembly = std::move(def); }).ok());
         Entity ins;
         InsertData data{blk, {3, 3}, {1, 1}, 0};
-        data.asmValues = {AsmValue{"ความยาว", false, 42, ""}, AsmValue{"Material", true, 0, "Pine"}};
+        data.asmValues = {AsmValue{"ความยาว", false, 42, ""},
+                          AsmValue{"Material", true, 0, "Pine"}};
         data.joinOff = true;
         ins.data = Indirect<InsertData>(std::move(data));
         (void)tx.add(std::move(ins));

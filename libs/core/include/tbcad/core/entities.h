@@ -11,10 +11,10 @@
 #include <vector>
 
 #include "tbcad/core/color.h"
-#include "tbcad/core/tables.h"
 #include "tbcad/core/display.h"
 #include "tbcad/core/ids.h"
 #include "tbcad/core/math.h"
+#include "tbcad/core/tables.h"
 
 namespace tbcad {
 

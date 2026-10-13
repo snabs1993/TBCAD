@@ -75,7 +75,8 @@ viewport; does not change the user's view).
 
 Changing the drawing (one undo step each): `add_entities` (up to 10,000 per call), `modify_entities`
 (`set` properties or geometry, or `transform` with move/rotate/scale/mirror), `delete_entities`,
-`create_layer`, `modify_layer`, `delete_layer`, `set_current_layer`, `run_command`.
+`create_layer`, `modify_layer`, `delete_layer`, `set_current_layer`, `set_assembly_parameters`, `run_command`;
+`list_assembly_parameters` reads the parameters of an inserted assembly (see `docs/assembly.md`).
 
 `run_command` runs a command exactly as typed. `inputs` are strings (`"0,0"`, `"@100,0"`, `"C"`, `""` for
 Enter, `"<Esc>"`), `{click:[x,y]}`, `{pick:id}` or `{select:[ids]}`. If the command still waits for input

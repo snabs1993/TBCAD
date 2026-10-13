@@ -293,7 +293,8 @@ Result<double> number(const Value& v, const std::string& what) {
         char* end = nullptr;
         double d = std::strtod(v.text.c_str(), &end);
         if (end == v.text.c_str() || *end != '\0')
-            return makeError(ErrorCode::Parse, "\"" + v.text + "\" is text, but " + what + " needs a number");
+            return makeError(ErrorCode::Parse,
+                             "\"" + v.text + "\" is text, but " + what + " needs a number");
         return d;
     }
     return v.number;
@@ -304,8 +305,10 @@ Result<Value> evalNode(const Expression::Node& n, const Env& env, int depth) {
     if (depth > 200)
         return makeError(ErrorCode::Parse, "the formula is nested too deeply");
     switch (n.kind) {
-        case K::Number: return Value::ofNumber(n.number);
-        case K::Text: return Value::ofText(n.text);
+        case K::Number:
+            return Value::ofNumber(n.number);
+        case K::Text:
+            return Value::ofText(n.text);
         case K::Name: {
             if (n.text == "pi")
                 return Value::ofNumber(3.14159265358979323846);
@@ -352,7 +355,8 @@ Result<Value> evalNode(const Expression::Node& n, const Env& env, int depth) {
             if (n.text == "&")
                 return Value::ofText(a.toString() + b.toString());
             if (n.text == "==" || n.text == "!=") {
-                bool eq = (a.isText || b.isText) ? a.toString() == b.toString() : a.number == b.number;
+                bool eq =
+                    (a.isText || b.isText) ? a.toString() == b.toString() : a.number == b.number;
                 return Value::ofNumber((n.text == "==") == eq ? 1 : 0);
             }
             auto x = number(a, n.text);
@@ -362,19 +366,27 @@ Result<Value> evalNode(const Expression::Node& n, const Env& env, int depth) {
             if (!y)
                 return y.error();
             const double p = x.value(), q = y.value();
-            if (n.text == "+") return Value::ofNumber(p + q);
-            if (n.text == "-") return Value::ofNumber(p - q);
-            if (n.text == "*") return Value::ofNumber(p * q);
+            if (n.text == "+")
+                return Value::ofNumber(p + q);
+            if (n.text == "-")
+                return Value::ofNumber(p - q);
+            if (n.text == "*")
+                return Value::ofNumber(p * q);
             if (n.text == "/") {
                 if (q == 0)
                     return makeError(ErrorCode::OutOfRange, "division by zero");
                 return Value::ofNumber(p / q);
             }
-            if (n.text == "^") return Value::ofNumber(std::pow(p, q));
-            if (n.text == "<") return Value::ofNumber(p < q);
-            if (n.text == "<=") return Value::ofNumber(p <= q);
-            if (n.text == ">") return Value::ofNumber(p > q);
-            if (n.text == ">=") return Value::ofNumber(p >= q);
+            if (n.text == "^")
+                return Value::ofNumber(std::pow(p, q));
+            if (n.text == "<")
+                return Value::ofNumber(p < q);
+            if (n.text == "<=")
+                return Value::ofNumber(p <= q);
+            if (n.text == ">")
+                return Value::ofNumber(p > q);
+            if (n.text == ">=")
+                return Value::ofNumber(p >= q);
             return makeError(ErrorCode::Parse, "unknown operator " + n.text);
         }
         case K::Call: {
@@ -409,7 +421,8 @@ Result<Value> evalNode(const Expression::Node& n, const Env& env, int depth) {
             }
             auto need = [&](std::size_t k) -> std::optional<Error> {
                 if (d.size() != k)
-                    return Error{ErrorCode::Parse, f + " needs " + std::to_string(k) + " argument(s)"};
+                    return Error{ErrorCode::Parse,
+                                 f + " needs " + std::to_string(k) + " argument(s)"};
                 return std::nullopt;
             };
             if (f == "min" || f == "max") {
@@ -419,14 +432,18 @@ Result<Value> evalNode(const Expression::Node& n, const Env& env, int depth) {
                                                   : *std::max_element(d.begin(), d.end()));
             }
             if (f == "pow") {
-                if (auto e = need(2)) return *e;
+                if (auto e = need(2))
+                    return *e;
                 return Value::ofNumber(std::pow(d[0], d[1]));
             }
             if (f == "round" && d.size() == 2) {
                 const double k = std::pow(10.0, d[1]);
                 return Value::ofNumber(std::round(d[0] * k) / k);
             }
-            struct Fn { const char* name; double (*fn)(double); };
+            struct Fn {
+                const char* name;
+                double (*fn)(double);
+            };
             static const Fn fns[] = {{"abs", [](double x) { return std::abs(x); }},
                                      {"round", [](double x) { return std::round(x); }},
                                      {"floor", [](double x) { return std::floor(x); }},
@@ -437,7 +454,8 @@ Result<Value> evalNode(const Expression::Node& n, const Env& env, int depth) {
                                      {"tan", [](double x) { return std::tan(x); }}};
             for (const Fn& fn : fns)
                 if (f == fn.name) {
-                    if (auto e = need(1)) return *e;
+                    if (auto e = need(1))
+                        return *e;
                     if (f == "sqrt" && d[0] < 0)
                         return makeError(ErrorCode::OutOfRange, "sqrt of a negative number");
                     return Value::ofNumber(fn.fn(d[0]));

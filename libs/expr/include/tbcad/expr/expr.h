@@ -29,10 +29,9 @@ struct Value {
 using Env = std::function<std::optional<Value>(std::string_view name)>;
 
 // A parsed formula.
-//   literals   12  2.5  1e3  "text"           names      Length  Width_2  (letters, digits, _, Thai)
-//   operators  ^  unary -  * /  + -  &(text join)  < <= > >= == !=  &&  ||  !
-//   functions  min max abs round floor ceil sqrt pow sin cos tan len if(cond, a, b)
-//   constants  pi
+//   literals   12  2.5  1e3  "text"           names      Length  Width_2  (letters, digits, _,
+//   Thai) operators  ^  unary -  * /  + -  &(text join)  < <= > >= == !=  &&  ||  ! functions  min
+//   max abs round floor ceil sqrt pow sin cos tan len if(cond, a, b) constants  pi
 // Division by zero, an unknown name or function, or text where a number is needed is an error
 // that names the problem.
 class Expression {

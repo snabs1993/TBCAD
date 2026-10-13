@@ -510,9 +510,9 @@ TEST_CASE("assembly parameters: list, set, refuse bad values, undo") {
     CHECK(listed.find("parameters")->asArray().size() == 2);
     CHECK(listed.find("parameters")->asArray()[0].find("value")->asNumber() == 10);
 
-    Json set = r.ok("set_assembly_parameters",
-                    Json(Json::Object{{"id", idArg},
-                                      {"values", J(R"({"Width":25,"Material":"Pine"})")}}));
+    Json set =
+        r.ok("set_assembly_parameters",
+             Json(Json::Object{{"id", idArg}, {"values", J(R"({"Width":25,"Material":"Pine"})")}}));
     CHECK(set.find("parameters")->asArray()[0].find("value")->asNumber() == 25);
     CHECK(set.find("parameters")->asArray()[1].find("value")->asString() == "Pine");
 

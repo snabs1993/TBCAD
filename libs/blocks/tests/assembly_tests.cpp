@@ -91,8 +91,8 @@ TEST_CASE("assembly: defaults, clamping and effective values") {
     InsertData big;
     big.asmValues = {AsmValue{"l", false, 500, ""}, AsmValue{"Material", true, 0, "Glass"}};
     v = asmEffectiveValues(as, big);
-    CHECK(v[0].number == 100);       // clamped, name matched without case
-    CHECK(v[2].text == "Steel");     // not offered
+    CHECK(v[0].number == 100);    // clamped, name matched without case
+    CHECK(v[2].text == "Steel");  // not offered
     CHECK(asmFind(as, "LABEL") == 1);
     CHECK(asmFind(as, "nope") == -1);
 }
@@ -138,8 +138,10 @@ TEST_CASE("assembly: validate finds bad names, targets and formulas") {
         Transaction tx = b.doc.begin("bad");
         REQUIRE(tx.modifyBlock(b.block, [](BlockDef& d) {
                       d.assembly->bindings.push_back(bind(AsmBinding::Kind::DynParam, "Nope", "L"));
-                      d.assembly->bindings.push_back(bind(AsmBinding::Kind::DynParam, "Length", "Q + 1"));
-                      d.assembly->bindings.push_back(bind(AsmBinding::Kind::Attribute, "TAG", "L +"));
+                      d.assembly->bindings.push_back(
+                          bind(AsmBinding::Kind::DynParam, "Length", "Q + 1"));
+                      d.assembly->bindings.push_back(
+                          bind(AsmBinding::Kind::Attribute, "TAG", "L +"));
                       d.assembly->params.push_back(number("l", 1));
                   }).ok());
         tx.commit();
@@ -154,17 +156,20 @@ TEST_CASE("assembly: asmSet validates, presets apply") {
     const Entity& e = *b.doc.find(id);
     auto r = asmSet(b.doc, e, "L", expr::Value::ofNumber(30));
     REQUIRE(r.ok());
-    CHECK(asmEffectiveValues(*b.doc.block(b.block)->assembly, *entityAs<InsertData>(r.value()))[0].number == 30);
-    CHECK_FALSE(asmSet(b.doc, e, "L", expr::Value::ofNumber(500)).ok());      // above the limit
+    CHECK(asmEffectiveValues(*b.doc.block(b.block)->assembly, *entityAs<InsertData>(r.value()))[0]
+              .number == 30);
+    CHECK_FALSE(asmSet(b.doc, e, "L", expr::Value::ofNumber(500)).ok());  // above the limit
     CHECK_FALSE(asmSet(b.doc, e, "Material", expr::Value::ofText("Glass")).ok());
     CHECK_FALSE(asmSet(b.doc, e, "Nope", expr::Value::ofNumber(1)).ok());
     CHECK_FALSE(asmSet(b.doc, e, "L", expr::Value::ofText("abc")).ok());
     auto t = asmSet(b.doc, e, "Label", expr::Value::ofNumber(12));
     REQUIRE(t.ok());
-    CHECK(asmEffectiveValues(*b.doc.block(b.block)->assembly, *entityAs<InsertData>(t.value()))[1].text == "12");
+    CHECK(asmEffectiveValues(*b.doc.block(b.block)->assembly, *entityAs<InsertData>(t.value()))[1]
+              .text == "12");
     auto preset = asmApplyPreset(b.doc, e, "big");
     REQUIRE(preset.ok());
-    auto v = asmEffectiveValues(*b.doc.block(b.block)->assembly, *entityAs<InsertData>(preset.value()));
+    auto v =
+        asmEffectiveValues(*b.doc.block(b.block)->assembly, *entityAs<InsertData>(preset.value()));
     CHECK(v[0].number == 50);
     CHECK(v[2].text == "Oak");
     CHECK_FALSE(asmApplyPreset(b.doc, e, "none").ok());
@@ -215,10 +220,12 @@ TEST_CASE("assembly: nested inserts take parameters and array sizes from the out
     // W = 40 -> the Bar gets L = 20 -> its Length is 40
     CHECK(near(insertBounds(b.doc, *b.doc.find(rid)).max, {40, 0}));
     // default W = 20 -> L = 10 -> Length 20
-    CHECK(near(insertBounds(b.doc, *b.doc.find(addEntity(b.doc, insertOf(room, {0, 100})))).max, {20, 100}));
+    CHECK(near(insertBounds(b.doc, *b.doc.find(addEntity(b.doc, insertOf(room, {0, 100})))).max,
+               {20, 100}));
 
     Entity f = insertOf(fence, {0, 0});
-    entityAs<InsertData>(f)->asmValues = {AsmValue{"Posts", false, 4, ""}, AsmValue{"Gap", false, 3, ""}};
+    entityAs<InsertData>(f)->asmValues = {AsmValue{"Posts", false, 4, ""},
+                                          AsmValue{"Gap", false, 3, ""}};
     EntityId fid = addEntity(b.doc, f);
     auto ex = explode(b.doc, *b.doc.find(fid));
     REQUIRE(ex.ok());
@@ -251,7 +258,8 @@ TEST_CASE("assembly: attribute texts come from formulas") {
         tx.commit();
     }
     EntityId id = b.insert({AsmValue{"L", false, 7, ""}});
-    auto res = resolveAssembly(b.doc, *b.doc.block(b.block), *entityAs<InsertData>(*b.doc.find(id)));
+    auto res =
+        resolveAssembly(b.doc, *b.doc.block(b.block), *entityAs<InsertData>(*b.doc.find(id)));
     REQUIRE(res.insert.attribs.size() == 1);
     CHECK(res.insert.attribs[0].value == "Bar 7 x bar");
     CHECK(asmValidate(b.doc, *b.doc.block(b.block)).empty());
