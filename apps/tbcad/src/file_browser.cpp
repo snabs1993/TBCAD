@@ -1,10 +1,10 @@
-#include <cctype>
 #include "file_browser.h"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cctype>
 #include <system_error>
 
 namespace tbcad::app {

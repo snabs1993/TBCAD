@@ -1,7 +1,7 @@
 #include "tbcad/ui/app_core.h"
 
-#include <cctype>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <sstream>

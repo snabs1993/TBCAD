@@ -17,7 +17,9 @@ static std::vector<std::byte> bytesOf(const std::string& s) {
 }
 
 TEST_CASE("version signatures") {
-    auto info = [](const char* s) { return dwg::detectVersion(bytesOf(std::string(s) + "\0\0\0\0\0")); };
+    auto info = [](const char* s) {
+        return dwg::detectVersion(bytesOf(std::string(s) + "\0\0\0\0\0"));
+    };
     CHECK(info("AC1015").version == dwg::Version::R2000);
     CHECK(info("AC1018").version == dwg::Version::R2004);
     CHECK(info("AC1021").version == dwg::Version::R2007);

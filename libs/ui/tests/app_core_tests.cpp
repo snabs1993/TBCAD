@@ -708,10 +708,11 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, 
         },
         true);
     std::vector<fs::path> dxfWrites;
-    f.core->setDxfWriter([&](const Document&, const fs::path& p) -> Result<std::vector<std::string>> {
-        dxfWrites.push_back(p);
-        return std::vector<std::string>{};
-    });
+    f.core->setDxfWriter(
+        [&](const Document&, const fs::path& p) -> Result<std::vector<std::string>> {
+            dxfWrites.push_back(p);
+            return std::vector<std::string>{};
+        });
 
     CHECK(f.core->canOpenExtension(".dwg"));
     REQUIRE(f.core->openFile(src).ok());
@@ -723,8 +724,8 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, 
 
     f.line("0,0", "5,5");
     CHECK(f.core->modified());
-    CHECK_FALSE(f.core->save().ok());                       // Ctrl+S never writes the .dwg
-    CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());      // nor any .dwg
+    CHECK_FALSE(f.core->save().ok());                   // Ctrl+S never writes the .dwg
+    CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());  // nor any .dwg
     CHECK_FALSE(fs::exists(f.dir / "x.dwg"));
 
     REQUIRE(f.core->saveAs(f.dir / "copy.dxf").ok());

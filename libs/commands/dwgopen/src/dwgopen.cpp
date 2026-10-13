@@ -20,8 +20,9 @@ std::vector<std::string> messagesOf(const dxf::Report& report) {
             continue;
         ++total;
         if (shown < kMaxMessages) {
-            out.push_back(std::string(d.severity == dxf::Severity::Error ? "Error: " : "Warning: ") +
-                          d.message);
+            out.push_back(
+                std::string(d.severity == dxf::Severity::Error ? "Error: " : "Warning: ") +
+                d.message);
             ++shown;
         }
     }
@@ -50,10 +51,11 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
     ui::ForeignOpenResult out;
     out.format = "DWG " + r.summary.version;
     out.messages = messagesOf(report);
-    out.messages.insert(out.messages.begin(),
-                        "DWG " + r.summary.version + ": " + std::to_string(r.document->modelSpaceCount()) +
-                            " objects, " + std::to_string(r.summary.layers) + " layers, " +
-                            std::to_string(r.summary.blocks) + " blocks.");
+    out.messages.insert(out.messages.begin(), "DWG " + r.summary.version + ": " +
+                                                  std::to_string(r.document->modelSpaceCount()) +
+                                                  " objects, " + std::to_string(r.summary.layers) +
+                                                  " layers, " + std::to_string(r.summary.blocks) +
+                                                  " blocks.");
     out.document = std::move(r.document);
     return out;
 }
