@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <new>
 #include <stdexcept>
 #include <unordered_set>
@@ -510,6 +511,32 @@ Result<void> checkRow(const Document&, BlockDef& r, const BlockDef*) {
     return {};
 }
 
+// Header rules shared by Transaction::modifyHeader and Document::applyChecked.
+Result<void> checkHeader(const Document& d, const Header& work) {
+    if (!std::isfinite(work.workArea) || !(work.workArea > 0) || work.workArea > kHardCap) {
+        return makeError(ErrorCode::OutOfRange, "work area must be in (0, 1e10] mm");
+    }
+    if (!std::isfinite(work.ltScale) || !(work.ltScale > 0)) {
+        return invalid("linetype scale must be positive");
+    }
+    if (!d.layer(work.currentLayer))
+        return invalid("unknown current layer");
+    if (work.currentColor.kind == ColorKind::ByParent)
+        return invalid("the current colour cannot be ByParent");
+    if (work.currentColor.kind == ColorKind::Index && work.currentColor.indexValue() == 0)
+        return invalid("color index 0 is not valid");
+    if (work.currentLinetype != kLinetypeByLayer && work.currentLinetype != kLinetypeByBlock &&
+        !d.linetype(work.currentLinetype))
+        return invalid("unknown current linetype");
+    if (work.currentLineweight.v < -3)
+        return invalid("invalid current lineweight");
+    if (!d.textStyle(work.currentTextStyle))
+        return invalid("unknown current text style");
+    if (!d.dimStyle(work.currentDimStyle))
+        return invalid("unknown current dimension style");
+    return {};
+}
+
 bool isBuiltin(LayerId id) {
     return id == kLayerZero;
 }
@@ -518,6 +545,9 @@ bool isBuiltin(LinetypeId id) {
 }
 bool isBuiltin(TextStyleId id) {
     return id == kTextStyleStandard;
+}
+bool isBuiltin(BlockId) {
+    return false;
 }
 bool isBuiltin(DimStyleId id) {
     return id == kDimStyleStandard;
@@ -863,10 +893,223 @@ void Document::apply(const ChangeSet& changes, Direction direction) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Collaboration support
+
+Result<void> Document::setEntityIdWindow(std::uint64_t first, std::uint64_t limit) {
+    if (active_)
+        return makeError(ErrorCode::Conflict, "cannot change the id window during a transaction");
+    if (first == 0 || limit <= first)
+        return makeError(ErrorCode::InvalidArgument, "empty entity id window");
+    windowNext_ = first;
+    windowLimit_ = limit;
+    nextEntityId_ = std::max(nextEntityId_, first);
+    return {};
+}
+
+void Document::clearEntityIdWindow() {
+    if (active_)
+        throw std::logic_error("cannot change the id window during a transaction");
+    windowNext_ = windowLimit_ = 0;
+}
+
+std::uint64_t Document::entityIdsLeft() const {
+    if (!windowLimit_)
+        return std::numeric_limits<std::uint64_t>::max();
+    return windowNext_ >= windowLimit_ ? 0 : windowLimit_ - windowNext_;
+}
+
+namespace {
+
+// Two rows of the final table must not share a name.
+template <class Row, class IdT>
+Result<void> checkFinalNames(const detail::Table<Row, IdT>& t,
+                             const std::vector<RowChange<Row>>& changes) {
+    std::unordered_map<std::string, IdT> names;
+    std::unordered_set<IdT> touched;
+    for (const auto& c : changes)
+        touched.insert(c.after ? c.after->id : c.before->id);
+    for (const auto& [id, row] : t.rows) {
+        if (!touched.count(id))
+            names.emplace(nameKey(row), id);
+    }
+    for (const auto& c : changes) {
+        if (!c.after)
+            continue;
+        if (!names.emplace(nameKey(*c.after), c.after->id).second)
+            return makeError(ErrorCode::Conflict, "name already in use: " + c.after->name);
+    }
+    return {};
+}
+
+template <class Row, class IdT>
+Result<void> checkRowIds(const detail::Table<Row, IdT>& t,
+                         const std::vector<RowChange<Row>>& changes) {
+    std::unordered_set<IdT> seen;
+    for (const auto& c : changes) {
+        if (!c.before && !c.after)
+            return makeError(ErrorCode::InvalidArgument, "empty row change");
+        IdT id = c.after ? c.after->id : c.before->id;
+        if (!id || !seen.insert(id).second)
+            return makeError(ErrorCode::InvalidArgument, "bad or repeated row id");
+        if (c.before && c.after && c.before->id != c.after->id)
+            return makeError(ErrorCode::InvalidArgument, "row id changed");
+        if (c.before && !t.find(id))
+            return makeError(ErrorCode::Conflict, "row to change does not exist");
+        if (!c.before && t.find(id))
+            return makeError(ErrorCode::Conflict, "row to add already exists");
+        if (!c.after && isBuiltin(id))
+            return makeError(ErrorCode::InvalidArgument, "a built-in row cannot be erased");
+    }
+    return {};
+}
+
+template <class Row>
+bool anyErased(const std::vector<RowChange<Row>>& changes) {
+    for (const auto& c : changes)
+        if (!c.after)
+            return true;
+    return false;
+}
+
+template <class Row, class IdT>
+Result<void> checkRowsAfter(const Document& d, const std::vector<RowChange<Row>>& changes) {
+    for (const auto& c : changes) {
+        if (!c.after)
+            continue;
+        Row copy = *c.after;
+        const Row* old = c.before ? &*c.before : nullptr;
+        if (Result<void> r = checkRow(d, copy, old); !r)
+            return r;
+    }
+    return {};
+}
+
+}  // namespace
+
+Result<void> Document::applyChecked(const ChangeSet& cs) {
+    if (active_)
+        return makeError(ErrorCode::Conflict, "cannot apply changes while a transaction is open");
+
+    // 1. Checks that need only the document as it is now.
+    std::unordered_set<EntityId> deltaIds, erasedIds;
+    for (const EntityChange& c : cs.entities) {
+        if (c.before == kNoSnapshot && c.after == kNoSnapshot)
+            return makeError(ErrorCode::InvalidArgument, "empty entity change");
+        const Entity* before = cs.before(c);
+        const Entity* after = cs.after(c);
+        EntityId id = after ? after->common.id : before->common.id;
+        if (!id || (before && after && before->common.id != after->common.id))
+            return makeError(ErrorCode::InvalidArgument, "bad entity id");
+        if (!deltaIds.insert(id).second)
+            return makeError(ErrorCode::InvalidArgument, "entity listed twice");
+        if (before && !find(id))
+            return makeError(ErrorCode::Conflict, "entity to change does not exist");
+        if (!before && find(id))
+            return makeError(ErrorCode::Conflict, "entity to add already exists");
+        if (!after)
+            erasedIds.insert(id);
+    }
+    if (Result<void> r = checkRowIds(layers_, cs.layers); !r)
+        return r;
+    if (Result<void> r = checkRowIds(linetypes_, cs.linetypes); !r)
+        return r;
+    if (Result<void> r = checkRowIds(textStyles_, cs.textStyles); !r)
+        return r;
+    if (Result<void> r = checkRowIds(dimStyles_, cs.dimStyles); !r)
+        return r;
+    if (Result<void> r = checkRowIds(blocks_, cs.blocks); !r)
+        return r;
+    if (Result<void> r = checkFinalNames(layers_, cs.layers); !r)
+        return r;
+    if (Result<void> r = checkFinalNames(linetypes_, cs.linetypes); !r)
+        return r;
+    if (Result<void> r = checkFinalNames(textStyles_, cs.textStyles); !r)
+        return r;
+    if (Result<void> r = checkFinalNames(dimStyles_, cs.dimStyles); !r)
+        return r;
+    if (Result<void> r = checkFinalNames(blocks_, cs.blocks); !r)
+        return r;
+
+    // Entities of a block belong to it for good: a block row may list entities that are new
+    // in this change or already in the block, and must not list an entity it has lost without
+    // erasing it.
+    std::unordered_set<EntityId> listed;
+    std::unordered_set<BlockId> blockRowsChanged;
+    for (const auto& c : cs.blocks) {
+        BlockId bid = c.after ? c.after->id : c.before->id;
+        blockRowsChanged.insert(bid);
+        if (!c.after)
+            continue;
+        for (EntityId e : c.after->entities) {
+            if (!listed.insert(e).second)
+                return makeError(ErrorCode::Conflict, "entity listed by two blocks");
+            BlockId prev = ownerBlock(e);
+            if (find(e) ? prev != bid : !deltaIds.count(e))
+                return makeError(ErrorCode::Conflict, "block lists an entity it does not own");
+        }
+    }
+    for (EntityId e : erasedIds) {
+        BlockId prev = ownerBlock(e);
+        if (!prev)
+            continue;
+        if (!blockRowsChanged.count(prev))
+            return makeError(ErrorCode::Conflict, "block still lists an erased entity");
+        for (const auto& c : cs.blocks) {
+            if (c.after && c.after->id == prev &&
+                std::find(c.after->entities.begin(), c.after->entities.end(), e) !=
+                    c.after->entities.end())
+                return makeError(ErrorCode::Conflict, "block still lists an erased entity");
+        }
+    }
+
+    // 2. Apply, then check the result as a Transaction would have; undo if anything fails.
+    applyForward(cs);
+    auto fail = [&](Error err) -> Result<void> {
+        applyForward(cs.inverted());
+        return err;
+    };
+    if (cs.header) {
+        if (Result<void> r = checkHeader(*this, header_); !r)
+            return fail(r.error());
+    }
+    if (Result<void> r = checkRowsAfter<Layer, LayerId>(*this, cs.layers); !r)
+        return fail(r.error());
+    if (Result<void> r = checkRowsAfter<Linetype, LinetypeId>(*this, cs.linetypes); !r)
+        return fail(r.error());
+    if (Result<void> r = checkRowsAfter<TextStyle, TextStyleId>(*this, cs.textStyles); !r)
+        return fail(r.error());
+    if (Result<void> r = checkRowsAfter<DimStyle, DimStyleId>(*this, cs.dimStyles); !r)
+        return fail(r.error());
+    if (Result<void> r = checkRowsAfter<BlockDef, BlockId>(*this, cs.blocks); !r)
+        return fail(r.error());
+    for (const EntityChange& c : cs.entities) {
+        const Entity* after = cs.after(c);
+        if (!after)
+            continue;
+        Entity copy = *after;
+        if (Result<double> r = validateEntity(*this, copy, ownerBlock(after->common.id)); !r)
+            return fail(r.error());
+    }
+    // Erasing a row other objects still use leaves them dangling: look at every entity again.
+    if (anyErased(cs.layers) || anyErased(cs.linetypes) || anyErased(cs.textStyles) ||
+        anyErased(cs.dimStyles) || anyErased(cs.blocks)) {
+        for (std::size_t i = 0; i < store_.size(); ++i) {
+            Entity copy = store_.at(i);
+            if (Result<double> r = validateEntity(*this, copy, ownerBlock(copy.common.id)); !r)
+                return fail(r.error());
+        }
+    }
+    ++revision_;
+    if (!cs.empty())
+        notify(cs);
+    return {};
+}
+
+// ---------------------------------------------------------------------------------------------
 // Transaction
 
 Transaction::Transaction(Document* doc, std::string name)
-    : doc_(doc), name_(std::move(name)), startNextId_(doc->nextEntityId_) {
+    : doc_(doc), name_(std::move(name)), startNextId_(doc->allocCursor()) {
     doc->active_ = this;
 }
 
@@ -910,7 +1153,7 @@ std::vector<EntityId> Transaction::touchedEntities() const {
 }
 
 void Transaction::touchEntity(EntityId id) {
-    if (id.value >= startNextId_ || touched_.count(id))
+    if ((id.value >= startNextId_ && id.value < doc_->allocCursor()) || touched_.count(id))
         return;
     const Entity* e = doc_->find(id);
     if (!e)
@@ -951,7 +1194,10 @@ Result<EntityId> Transaction::add(Entity entity, BlockId owner) {
     Result<double> ext = validateEntity(d, entity, owner);
     if (!ext)
         return ext.error();
-    EntityId id{d.nextEntityId_++};
+    if (d.windowLimit_ && d.windowNext_ >= d.windowLimit_)
+        return makeError(ErrorCode::OutOfRange, "this peer has used up its range of entity ids");
+    EntityId id{d.windowLimit_ ? d.windowNext_++ : d.nextEntityId_++};
+    d.nextEntityId_ = std::max(d.nextEntityId_, id.value + 1);
     entity.common.id = id;
     if (ext.value() > d.header_.workArea)
         outOfArea_.push_back(id);
@@ -1163,27 +1409,8 @@ Result<void> Transaction::modifyHeader(const std::function<void(Header&)>& fn) {
     Document& d = doc();
     Header work = d.header_;
     fn(work);
-    if (!std::isfinite(work.workArea) || !(work.workArea > 0) || work.workArea > kHardCap) {
-        return makeError(ErrorCode::OutOfRange, "work area must be in (0, 1e10] mm");
-    }
-    if (!std::isfinite(work.ltScale) || !(work.ltScale > 0)) {
-        return invalid("linetype scale must be positive");
-    }
-    if (!d.layer(work.currentLayer))
-        return invalid("unknown current layer");
-    if (work.currentColor.kind == ColorKind::ByParent)
-        return invalid("the current colour cannot be ByParent");
-    if (work.currentColor.kind == ColorKind::Index && work.currentColor.indexValue() == 0)
-        return invalid("color index 0 is not valid");
-    if (work.currentLinetype != kLinetypeByLayer && work.currentLinetype != kLinetypeByBlock &&
-        !d.linetype(work.currentLinetype))
-        return invalid("unknown current linetype");
-    if (work.currentLineweight.v < -3)
-        return invalid("invalid current lineweight");
-    if (!d.textStyle(work.currentTextStyle))
-        return invalid("unknown current text style");
-    if (!d.dimStyle(work.currentDimStyle))
-        return invalid("unknown current dimension style");
+    if (Result<void> r = checkHeader(d, work); !r)
+        return r;
     if (!headerBefore_)
         headerBefore_ = d.header_;
     d.header_ = std::move(work);
@@ -1219,7 +1446,7 @@ ChangeSet Transaction::commit() {
     std::sort(touchedIds.begin(), touchedIds.end());
 
     std::size_t added = 0;
-    for (std::uint64_t v = startNextId_; v < d.nextEntityId_; ++v) {
+    for (std::uint64_t v = startNextId_; v < d.allocCursor(); ++v) {
         if (v < d.posOf_.size() && d.posOf_[v] != 0xFFFFFFFFu)
             ++added;
     }
@@ -1237,7 +1464,7 @@ ChangeSet Transaction::commit() {
         }
         cs.entities.push_back(c);
     }
-    for (std::uint64_t v = startNextId_; v < d.nextEntityId_; ++v) {
+    for (std::uint64_t v = startNextId_; v < d.allocCursor(); ++v) {
         if (v >= d.posOf_.size() || d.posOf_[v] == 0xFFFFFFFFu)
             continue;
         EntityChange c;
@@ -1287,7 +1514,7 @@ void Transaction::rollback() {
     Document& d = *doc_;
 
     // Entities added by this transaction.
-    for (std::uint64_t v = startNextId_; v < d.nextEntityId_; ++v) {
+    for (std::uint64_t v = startNextId_; v < d.allocCursor(); ++v) {
         EntityId id{v};
         if (d.find(id)) {
             d.owner_.erase(id);

@@ -196,6 +196,13 @@ public:
     // Model-space entity ids in draw order (back to front).
     std::vector<EntityId> modelSpace() const;
     std::size_t modelSpaceCount() const { return store_.size() - owner_.size(); }
+    // The draw-order override of an entity (bring to front / send to back), if it has one.
+    std::optional<std::int64_t> drawOrderOverride(EntityId id) const {
+        auto it = orderOverride_.find(id);
+        if (it == orderOverride_.end())
+            return std::nullopt;
+        return it->second;
+    }
     // Block that owns the entity; null for model space.
     BlockId ownerBlock(EntityId id) const;
 
@@ -241,6 +248,21 @@ public:
     // Incremented by every commit, undo and redo.
     std::uint64_t revision() const { return revision_; }
 
+    // Collaboration. While a window is set, new entities take their ids from [first, limit)
+    // instead of the shared counter, so peers that edit the same drawing never mint the same id.
+    // The shared counter (nextIds().entity) still rises past every id in use. Adding an entity
+    // fails once the window is used up. Fails while a transaction is open.
+    Result<void> setEntityIdWindow(std::uint64_t first, std::uint64_t limit);
+    void clearEntityIdWindow();
+    // Ids left in the window; the largest value when no window is set.
+    std::uint64_t entityIdsLeft() const;
+
+    // Applies a change set that came from another peer, as apply(changes, Redo) does, but first
+    // checks every entity and row it writes with the rules a Transaction enforces (known layers,
+    // unique names, no dangling references ...). A change set that fails is not applied at all,
+    // and observers are not told. `changes` must carry the true "before" state of the document.
+    Result<void> applyChecked(const ChangeSet& changes);
+
 private:
     friend class Transaction;
 
@@ -256,6 +278,9 @@ private:
     detail::EntityStore store_{};
     std::vector<std::uint32_t> posOf_{};  // indexed by EntityId::value
     std::uint64_t nextEntityId_ = 1;
+    std::uint64_t windowNext_ = 0, windowLimit_ = 0;  // entity id window; limit 0 = none
+    // Where the next new entity id comes from.
+    std::uint64_t allocCursor() const { return windowLimit_ ? windowNext_ : nextEntityId_; }
     std::unordered_map<EntityId, BlockId> owner_{};  // entities that live in a block definition
     std::map<EntityId, std::int64_t> orderOverride_{};
 
