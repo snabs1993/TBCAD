@@ -35,5 +35,6 @@ tbcad_add_tests(appcore
     tests/app_core_tests.cpp
     tests/template_tests.cpp
     tests/pgp_tests.cpp
+    tests/drag_payload_tests.cpp
     tests/workspace_tests.cpp
     tests/headless_file_tests.cpp)
