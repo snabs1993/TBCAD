@@ -116,6 +116,9 @@ void SettingsDialog::display(ui::AppCore& core) {
     bool grid = s.getBool("view.grid", false);
     if (ImGui::Checkbox("Show grid", &grid))
         s.setBool("view.grid", grid);
+    bool rightIsEnter = s.getString("ui.rightClick", "menu") == "enter";
+    if (ImGui::Checkbox("Right-click in the drawing acts as Enter (no menu)", &rightIsEnter))
+        s.setString("ui.rightClick", rightIsEnter ? "enter" : "menu");
 }
 
 void SettingsDialog::drafting(ui::AppCore& core) {

@@ -64,8 +64,12 @@ public:
     // Problems found while reading settings, keybindings and aliases (shown in the history).
     const std::vector<std::string>& startupWarnings() const { return startupWarnings_; }
     // Autosaves from a crashed session, if any.
+    // Unsaved drawings found in the autosave folder (one entry per drawing), and the first of them.
+    std::vector<Recovery> pendingRecoveries() const;
     std::optional<Recovery> pendingRecovery() const;
     Result<void> recover(const Recovery& r);
+    // Opens every pending recovery (the first replaces the untouched drawing, the rest get tabs).
+    Result<void> recoverAll();
     void discardRecovery();
     // Writes settings; removes the autosave. Call on a normal exit.
     void shutdown();
@@ -211,7 +215,7 @@ public:
     // Once every couple of seconds: when an external reference changed on disk and no command is
     // running, reloads it (XRELOAD). The window calls it every frame.
     void tickXrefs(std::chrono::steady_clock::time_point now);
-    // Writes the autosave now when the drawing has unsaved changes. True if one was written.
+    // Writes the autosave of every open drawing that has unsaved changes. True if any was written.
     bool autosaveNow();
 
     // ---- cmd::IHost --------------------------------------------------------------------------
@@ -248,6 +252,7 @@ private:
     std::optional<std::size_t> slotOfFile(const std::filesystem::path& path) const;
     void resetSessionState();
     void removeAutosaveFiles();
+    void removeAutosaveOf(std::uint64_t slotId);
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     void applyPick(const std::vector<EntityId>& ids, bool remove);
@@ -292,7 +297,6 @@ private:
     std::optional<std::string> clipboardOut_{};
 
     std::chrono::steady_clock::time_point lastAutosave_{};
-    std::uint64_t autosavedRevision_ = ~std::uint64_t{0};
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
 };

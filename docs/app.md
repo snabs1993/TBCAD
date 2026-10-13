@@ -136,3 +136,13 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
   viewport and the command line. Both are rebindable like any other action.
 - `IHost::requestUi(what)` lets a command ask the window to open something; `AppCore::takeUiRequests()`
   hands the requests to the window.
+
+## Right-click menu and autosave of every drawing
+
+- **Right-click in the drawing** opens a menu that depends on the state: while a command runs it lists
+  Enter, Cancel, the prompt's options and Zoom Extents; with a selection it lists Move, Copy, Rotate, Scale,
+  Mirror, Erase and Deselect All; otherwise Repeat <last command>, Select All, Undo, Redo and Zoom Extents.
+  Setting `ui.rightClick = enter` (Settings > General) makes right-click act as Enter instead.
+- **Autosave** writes every open drawing with unsaved changes (`recovery-<n>.tbcad` + `.json` in the
+  autosave folder). Saving or closing a drawing removes its backup. After a crash the recovery prompt reopens all
+  of them (`AppCore::recoverAll`); the first replaces the empty drawing, the others get tabs.
