@@ -240,14 +240,12 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
     std::istringstream in(text);
     std::string line;
     while (std::getline(in, line)) {
-        unsigned id = 0, kind = 0, ea = 0, pa = 0, eb = 0, pb = 0;
+        unsigned id = 0, kind = 0, pa = 0, pb = 0;
         unsigned long long a = 0, b = 0;
         double value = 0;
-        if (std::sscanf(line.c_str(), "%u %u %llu %u %llu %u %lf", &id, &kind, &a, &pa, &b, &pb,
-                        &value) != 7)
+        std::istringstream fields(line);
+        if (!(fields >> id >> kind >> a >> pa >> b >> pb >> value))
             continue;
-        (void)ea;
-        (void)eb;
         if (kind > static_cast<unsigned>(Kind::Angle) || pa > 3 || pb > 3 || a == 0 || id == 0)
             continue;
         Constraint c;
