@@ -117,7 +117,7 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
     std::vector<Item> items;
     for (const index::Neighbor& n : near) {
         const Entity* e = doc.find(n.id);
-        if (!e || !e->common.visible || !doc.effective(e->common.layer).visible())
+        if (!e || !e->common.visible || !doc.effective(e->common).live())
             continue;
         Item item{n.id, {}};
         if (!providers.collect(doc, *e, item.geometry))

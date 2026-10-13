@@ -9,6 +9,7 @@ namespace {
 
 struct Maps {
     std::unordered_map<LayerId, LayerId> layer{};
+    std::unordered_map<LevelId, LevelId> level{};
     std::unordered_map<LinetypeId, LinetypeId> linetype{};
     std::unordered_map<TextStyleId, TextStyleId> textStyle{};
     std::unordered_map<DimStyleId, DimStyleId> dimStyle{};
@@ -24,6 +25,7 @@ struct Maps {
 // Ids with a special meaning (null, ByLayer, ByBlock, ByParent) have no row and stay as they are.
 void remap(Entity& e, const Maps& m) {
     e.common.layer = Maps::get(m.layer, e.common.layer);
+    e.common.level = Maps::get(m.level, e.common.level);
     e.common.linetype = Maps::get(m.linetype, e.common.linetype);
     if (auto* t = entityAs<TextData>(e))
         t->style = Maps::get(m.textStyle, t->style);
@@ -87,6 +89,16 @@ Result<MergeSummary> mergeDocument(const Document& dst, Transaction& tx, const D
             row.textStyle = Maps::get(m.textStyle, row.textStyle);
             TRY(n, tx.addDimStyle(std::move(row)));
             m.dimStyle[id] = n.value();
+        }
+    }
+
+    // Levels are matched by name; missing ones are added.
+    for (const auto& [id, lv] : src.levels()) {
+        if (const Level* have = dst.levelByName(lv.name)) {
+            m.level[id] = have->id;
+        } else {
+            TRY(n, tx.addLevel(lv));
+            m.level[id] = n.value();
         }
     }
 

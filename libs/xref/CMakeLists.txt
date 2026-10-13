@@ -7,4 +7,5 @@ tbcad_add_library(xref
 tbcad_add_tests(xref
   SOURCES
     tests/main.cpp
-    tests/xref_tests.cpp)
+    tests/xref_tests.cpp
+    tests/content_tests.cpp)

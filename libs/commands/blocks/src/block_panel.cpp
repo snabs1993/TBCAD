@@ -139,6 +139,10 @@ void drawDrawingTab(ui::PanelContext& ctx) {
                     ctx.runCommand("XRELOAD");
                     ctx.runCommand(r.name);
                 }
+                if (ImGui::MenuItem("Unload xref")) {
+                    ctx.runCommand("XUNLOAD");
+                    ctx.runCommand(r.name);
+                }
                 if (ImGui::MenuItem("Bind xref")) {
                     ctx.runCommand("XBIND");
                     ctx.runCommand(r.name);

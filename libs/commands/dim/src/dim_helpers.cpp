@@ -131,8 +131,13 @@ double autoRotation(Vec2 p1, Vec2 p2, Vec2 c) {
 }
 
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain) {
+    return leaderOf(doc, std::move(pts), plain, doc.header().currentDimStyle);
+}
+
+LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain,
+                    DimStyleId style) {
     LeaderData l;
-    l.style = doc.header().currentDimStyle;
+    l.style = style;
     l.vertices = std::move(pts);
     l.utf8 = text::markupFromPlain(plain);
     if (l.vertices.size() >= 2) {

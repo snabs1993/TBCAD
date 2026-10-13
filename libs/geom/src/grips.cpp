@@ -94,6 +94,19 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             g.push_back(d.textPos);
             break;
         }
+        case EntityKind::Table: {
+            const auto& d = *entityAs<TableData>(e);
+            g.push_back(d.origin);
+            double w = 0, h = 0;
+            for (double x : d.colWidths)
+                w += x;
+            for (double y : d.rowHeights)
+                h += y;
+            const double c = std::cos(d.rotation), si = std::sin(d.rotation);
+            // bottom-right corner in the rotated frame (y points down)
+            g.push_back(d.origin + Vec2{w * c + h * si, w * si - h * c});
+            break;
+        }
         default:
             break;
     }
@@ -277,6 +290,32 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
                 d.textPos = to;
             else
                 return badGrip();
+            return out;
+        }
+        case EntityKind::Table: {
+            auto& d = *entityAs<TableData>(out);
+            if (index == 0) {
+                d.origin = to;
+                return out;
+            }
+            if (index != 1)
+                return badGrip();
+            // The corner drags the whole grid: columns and rows keep their proportions.
+            double w = 0, h = 0;
+            for (double x : d.colWidths)
+                w += x;
+            for (double y : d.rowHeights)
+                h += y;
+            const double c = std::cos(d.rotation), si = std::sin(d.rotation);
+            const Vec2 v = to - d.origin;
+            const double nw = v.x * c + v.y * si;
+            const double nh = v.x * si - v.y * c;
+            if (!(nw > 1e-9) || !(nh > 1e-9) || !(w > 0) || !(h > 0))
+                return makeError(ErrorCode::InvalidArgument, "table would collapse");
+            for (double& x : d.colWidths)
+                x *= nw / w;
+            for (double& y : d.rowHeights)
+                y *= nh / h;
             return out;
         }
         default:

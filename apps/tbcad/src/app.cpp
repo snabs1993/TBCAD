@@ -338,8 +338,18 @@ int App::run() {
         if (options_.mcp)
             core_->settings().setBool(mcpapp::kSettingEnabled, true);
     }
+    // Plugins: shared libraries in <settings folder>/plugins that add commands
+    // (docs/plugin-api.md).
+    plugins_ = std::make_unique<plugin::PluginHost>();
+    const std::filesystem::path pluginFolder = paths_.configDir / "plugins";
+    if (core_->settings().getBool("plugins.enabled", true))
+        plugins_->loadFolder(pluginFolder, *registry_);
+    plugins_->registerListCommand(*registry_, pluginFolder);
+    for (const std::string& line : plugins_->takeLog())
+        core_->print(line);
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
+    plugins_->registerUi(*uiRegistry_);
     mcp_->registerUi(*uiRegistry_);
     core_->registerBuiltinUi(*uiRegistry_);
     core_->applyUiKeybindings(*uiRegistry_);

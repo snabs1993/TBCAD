@@ -3,6 +3,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/modify/modify.h"
+#include "tbcad/text/text.h"
 
 using namespace tbcad;
 using cmd::ScriptItem;
@@ -434,4 +435,104 @@ TEST_CASE("PEDIT converts a line, closes, widens and joins") {
             CHECK_FALSE(p->closed);
         }
     });
+}
+
+TEST_CASE("EXTRIM cuts several objects on one side of an edge") {
+    Fixture f;
+    EntityId edge = f.add(LineData{{5, -10}, {5, 10}});
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 3}, {10, 3}});
+    f.add(LineData{{0, 20}, {4, 20}});
+    auto r = f.host.run("EXTRIM", {ScriptItem::pick(edge, {5, 0}), "8,0",
+                                   ScriptItem::select({a, b}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(near(entityAs<LineData>(f.get(a))->b, {5, 0}));
+    CHECK(near(entityAs<LineData>(f.get(b))->b, {5, 3}));
+    CHECK(f.host.undoStack().undoLabel() == "EXTRIM");
+    f.host.undo();
+    CHECK(near(entityAs<LineData>(f.get(a))->b, {10, 0}));
+}
+
+TEST_CASE("BLEND adds a spline between two line ends") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{30, 10}, {20, 10}});
+    f.host.run("BLEND", {ScriptItem::pick(a, {9, 0}), ScriptItem::pick(b, {21, 10})});
+    CHECK(f.count(EntityKind::Spline) == 1);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Spline) == 0);
+}
+
+TEST_CASE("SCALETEXT and SETBYLAYER") {
+    Fixture f;
+    TextData t;
+    t.height = 2;
+    t.utf8 = "abc";
+    EntityId id = f.add(Indirect<TextData>(t));
+    f.host.run("SCALETEXT", {ScriptItem::select({id}), ScriptItem::enter(), "3"});
+    CHECK(entityAs<TextData>(f.get(id))->height == doctest::Approx(6));
+    f.host.run("SCALETEXT", {ScriptItem::select({id}), ScriptItem::enter(), "New height", "5"});
+    CHECK(entityAs<TextData>(f.get(id))->height == doctest::Approx(5));
+
+    EntityId l = f.add(LineData{{0, 0}, {1, 0}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(l, [](Entity& e) { e.common.lineweight = LineWeight::mm(0.5); }));
+        tx.commit();
+    }
+    f.host.run("SETBYLAYER", {ScriptItem::select({l}), ScriptItem::enter()});
+    CHECK(f.get(l).common.lineweight == LineWeight::byLayer());
+}
+
+TEST_CASE("ALIGN and MATCHPROP also work on text") {
+    Fixture f;
+    TextData t;
+    t.position = {1, 1};
+    t.utf8 = "x";
+    EntityId id = f.add(Indirect<TextData>(t));
+    f.host.run("ALIGN", {ScriptItem::select({id}), ScriptItem::enter(), "0,0", "10,10",
+                         ScriptItem::enter()});
+    CHECK(near(entityAs<TextData>(f.get(id))->position, {11, 11}));
+}
+
+TEST_CASE("JUSTIFYTEXT keeps the text where it is") {
+    Fixture f;
+    TextData t;
+    t.position = {10, 20};
+    t.height = 2;
+    t.utf8 = "hello";
+    EntityId id = f.add(Indirect<TextData>(t));
+    auto before = text::layoutEntity(f.doc, f.get(id)).frameCorners()[0];
+    f.host.run("JUSTIFYTEXT", {ScriptItem::select({id}), ScriptItem::enter(), "MC"});
+    const auto* now = entityAs<TextData>(f.get(id));
+    CHECK(now->h == HAlign::Center);
+    CHECK(now->v == VAlign::Middle);
+    auto after = text::layoutEntity(f.doc, f.get(id)).frameCorners()[0];
+    CHECK(near(before, after, 1e-6));
+}
+
+TEST_CASE("PEDIT edits vertices") {
+    Fixture f;
+    EntityId p =
+        f.add(PolylineData{{{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0}}, false, 0});
+    f.host.run("PEDIT", {ScriptItem::pick(p, {5, 0}), "Vertices", "Insert", "4,0", "Move", "10,10",
+                         "12,12", "Exit", "Exit"});
+    const auto* pl = entityAs<PolylineData>(f.get(p));
+    REQUIRE(pl->v.size() == 4);
+    CHECK(near(pl->v[1].p, {4, 0}));
+    CHECK(near(pl->v[3].p, {12, 12}));
+}
+
+TEST_CASE("SPLINEDIT adds and removes fit points") {
+    Fixture f;
+    SplineData s;
+    s.fit = {{0, 0}, {5, 4}, {10, 0}, {15, 4}};
+    geom::InterpolateOptions io;
+    auto fitted = geom::interpolateSpline(s.fit, io);
+    REQUIRE(fitted.ok());
+    EntityId id = f.add(Indirect<SplineData>(fitted.value()));
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {5, 4}), "Delete", "5,4", "Exit"});
+    CHECK(entityAs<SplineData>(f.get(id))->fit.size() == 3);
+    f.host.undo();
+    CHECK(entityAs<SplineData>(f.get(id))->fit.size() == 4);
 }

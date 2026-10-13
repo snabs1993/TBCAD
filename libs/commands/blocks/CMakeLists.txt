@@ -13,6 +13,7 @@ set(_block_cmd_sources
   src/insert_command.cpp
   src/palette.cpp
   src/snap_provider.cpp
+  src/xclip_command.cpp
   src/xref_commands.cpp)
 
 tbcad_add_library(block_cmds

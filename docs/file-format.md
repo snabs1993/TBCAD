@@ -1,6 +1,6 @@
 # The .tbcad file format
 
-Format version **1.4** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, below). This document is the specification; the reference implementation is
+Format version **1.7** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, 1.5 the `XRFO` chunk for overlay xrefs, 1.6 a clipping boundary on Insert, 1.7 levels: the `LVLS` and `ELVL` chunks and three `HEAD` keys, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
 `libs/io/tools`) prints any file as text.
 
@@ -51,10 +51,13 @@ error, an unknown chunk is kept whatever its flags.
 | `TSTY` | text styles | 0..1 |
 | `DSTY` | dimension styles | 0..1 |
 | `LAYR` | layers, including the sub-layer tree | 0..1 |
+| `LVLS` | levels (floors) (since 1.7) | 0..1, only when there is more than the untouched first level |
 | `BLKS` | block definitions | 0..1 |
 | `XRFS` | external references of blocks (since 1.2) | 0..1, only when a block is an xref |
 | `DYNB` | dynamic block parameters and actions (since 1.4) | 0..1, only when a block is dynamic |
+| `XRFO` | overlay flags of xrefs (since 1.5) | 0..1, only when an xref is an overlay |
 | `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
+| `ELVL` | level of each entity not on the first level (since 1.7) | 0..1 |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
 | `END ` | empty chunk, last | exactly 1 |
@@ -113,6 +116,13 @@ then three colours (dim line, extension line, text).
 **LAYR** row: `id`, `name`, `varint parent`, colour, `u32 linetype`, `i16 lineweight`,
 `u8 flags` (bit 0 on, 1 frozen, 2 locked, 3 plot).
 
+**LVLS** row (since 1.7): `id`, `name`, `f64 elevation` (mm), `u8 flags` (bit 0 visible, bit 1
+locked). Level 1 always exists (it is the level of every entity not listed in `ELVL`) and can be
+renamed but not deleted. `HEAD` carries `currentLevel`, `levelView` (0 dim others, 1 hide others,
+2 show all) and `nextLevel`. **ELVL**: `varint count`, then per entity `varint idDelta` (from the
+previous entry; ascending ids) and `varint level`. 1.0 to 1.3 readers keep `LVLS` and `ELVL` as
+unknown chunks (every entity then lies on one level for them) and ignore the three `HEAD` keys.
+
 **BLKS** row: `id`, `name`, `f64 x`, `f64 y` (base point), `u8 anonymous`. Which entities belong
 to a block is given by each entity's *owner* field; a block's members are in id order.
 
@@ -128,6 +138,8 @@ entities are stored as for any block, so a drawing opens and plots without the s
 `varint actionCount`, per action `u8 kind` (0 stretch, 1 move, 2 scale, 3 rotate, 4 flip), `varint parameter`
 (index), `v2 frameMin`, `v2 frameMax`, `varint n`, `n` x `varint entityId`. Entity ids are those of the
 block's own entities. Older readers keep the chunk as an unknown chunk.
+
+**XRFO** (since 1.5): `varint n`, then `n` × `varint block`: the xref blocks that are *overlays* (shown here, but not carried along when this drawing is itself used as an xref). Older readers keep the chunk and treat the xref as an ordinary attach.
 
 A **colour** is 4 bytes: `u8 kind` (0 ByLayer, 1 ByBlock, 2 Index, 3 Rgb, 4 ByParent), then
 `r g b` (for Index the palette index is in `r`).
@@ -198,7 +210,7 @@ loses nothing when it saves. The common properties stay editable. Bytes after th
 | Text | `v2 position`, `v2 alignPoint`, `f64 height`, `f64 rotation`, `f64 widthFactor`, `f64 oblique`, `varint style`, `u8 hAlign`, `u8 vAlign`, `string`; since 1.1, optional trailing attribute definition: `u8 flags` (1 invisible, 2 constant, 4 verify, 8 preset, 128 always set), `string tag`, `string prompt`, `string default` |
 | MText | `v2 position`, `f64 height`, `f64 width`, `f64 rotation`, `u8 attachment`, `varint style`, `string` |
 | Hatch | `u8 solid`, `string pattern`, `f64 scale`, `f64 angle`, `v2 origin`, colour fill, `varint n` + `n` × `varint` source boundary ids, `varint loops` × (`u8 outer`, `varint edges` × edge) |
-| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`; since 1.1, optional trailing attribute values: `varint count`, then per attribute `string tag`, `string value`; since 1.3, after them (count may be 0), an optional associative array: `u8 1`, `u8 kind` (0 rectangular, 1 polar, 2 path), `varint rows`, `varint columns`, `f64 rowSpacing`, `f64 columnSpacing`, `f64 angle`, `v2 center`, `varint count`, `f64 fillAngle`, `u8 rotateItems`, `v2 reference`, `u8 pathClosed`, `f64 pathSpacing`, then the path vertices as for a polyline; since 1.4, further optional sections each started by a tag byte, `u8 2` = dynamic block values: `varint count`, `f64` each |
+| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`; since 1.1, optional trailing attribute values: `varint count`, then per attribute `string tag`, `string value`; since 1.3, after them (count may be 0), an optional associative array: `u8 1`, `u8 kind` (0 rectangular, 1 polar, 2 path), `varint rows`, `varint columns`, `f64 rowSpacing`, `f64 columnSpacing`, `f64 angle`, `v2 center`, `varint count`, `f64 fillAngle`, `u8 rotateItems`, `v2 reference`, `u8 pathClosed`, `f64 pathSpacing`, then the path vertices as for a polyline; since 1.4, further optional sections each started by a tag byte, `u8 2` = dynamic block values: `varint count`, `f64` each; since 1.6, `u8 3` = clipping boundary: `u8 on`, `varint count`, `v2` each (block coordinates) |
 | Dimension | `u8 kind`, `f64 rotation`, 4 × `v2` defining points, `v2 textPos`, `u8 textPosUser`, `string textOverride`, `varint style`, `f64 measurement` |
 | Leader | `varint n` × `v2` vertices, `varint style`, `string`, `v2 textPos` |
 | Proxy | `string originalType`, `varint n` + raw bytes, `varint items` × display item |

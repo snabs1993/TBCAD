@@ -39,6 +39,7 @@ public:
     BBox2 bounds() const { return scene_.bounds(); }
 
 private:
+    bool hiddenByLevel(const Entity& e) const;
     void upsertEntity(const Entity& e);
     void syncLayers();
     void rebuildDrawOrder();

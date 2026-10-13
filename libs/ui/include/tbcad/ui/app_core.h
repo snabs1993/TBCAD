@@ -91,6 +91,9 @@ public:
 
     // New and open add a tab. An untouched "Untitled" drawing is reused instead of keeping an
     // empty tab; a file that is already open is just activated.
+    // Starts from the default template (setting "template.default": a template name, empty or
+    // "Built-in" = the built-in drawing). A template that cannot be read falls back to the
+    // built-in drawing and says so in the history.
     void newDocument();
     Result<void> openFile(const std::filesystem::path& path);
 
@@ -185,6 +188,13 @@ public:
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);
     // Live selection rectangle shown in the overlay while dragging; nullopt = none.
     void setSelectionDrag(std::optional<std::pair<Vec2, Vec2>> corners) { drag_ = corners; }
+    // Freeform selection: the screen-space path shown while dragging (empty = none) and the
+    // selection made when it is released.
+    void setLassoPath(std::vector<Vec2> screenPath) { lasso_ = std::move(screenPath); }
+    void lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p);
+    // Click that cycles through the overlapping objects under the cursor (Alt+click): each click
+    // at the same spot picks the next one down.
+    void cycleClick(const PointerState& p);
 
     // ---- selection ---------------------------------------------------------------------------
     const std::vector<EntityId>& selection() const override { return selection_; }
@@ -240,6 +250,14 @@ public:
     std::optional<std::string> setting(std::string_view key) const override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
+    // Key binding profiles (keybindings.json format). Both return an error text, empty on success.
+    std::string exportKeybindings(const std::filesystem::path& file);
+    std::string importKeybindings(const std::filesystem::path& file);
+    // ---- templates ---------------------------------------------------------------------------
+    std::filesystem::path templateFolder() const { return paths_.configDir / "templates"; }
+    std::vector<std::string> templateNames() const override;
+    std::string saveAsTemplate(std::string_view name) override;
+    std::string newFromTemplate(std::string_view name) override;
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
     // Panels asked for since the last call (the window opens them).
@@ -290,6 +308,9 @@ private:
     PanelContext makePanelContext();
     std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
+    // A copy of the default template; `problem` gets a sentence when the chosen one is unusable
+    // and the built-in drawing was used instead.
+    std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
     std::vector<std::string> panelRequests_{};
     platform::Settings settings_;
@@ -311,6 +332,10 @@ private:
     PointerState lastPointer_{};
 
     std::vector<EntityId> selection_{};
+    std::vector<Vec2> lasso_{};
+    std::vector<EntityId> cycleStack_{};
+    std::optional<EntityId> cycleCurrent_{};
+    Vec2 cycleAt_{};
     std::vector<std::string> history_{};
     std::optional<cmd::PromptInfo> prompt_{};
     cmd::FilterFeedback feedback_{};

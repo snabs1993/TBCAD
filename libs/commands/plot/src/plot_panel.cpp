@@ -6,6 +6,7 @@
 #include <string>
 
 #include "panel.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/plot/plot.h"
 
 namespace tbcad::plot {
@@ -124,6 +125,17 @@ void draw(ui::PanelContext& pc) {
     PlotSettings& s = st.settings;
     bool changed = false;
 
+    // What to plot: model space, or one of the drawing's layouts (which brings its own paper).
+    const std::string layoutName = plotLayout(*pc.host);
+    if (ImGui::BeginCombo("Plot", layoutName.empty() ? "Model" : layoutName.c_str())) {
+        if (ImGui::Selectable("Model", layoutName.empty()))
+            setPlotLayout(*pc.host, "");
+        for (const auto& l : layout::layouts(*pc.doc))
+            if (ImGui::Selectable(l.name.c_str(), l.name == layoutName))
+                setPlotLayout(*pc.host, l.name);
+        ImGui::EndCombo();
+    }
+
     // Paper
     if (ImGui::BeginCombo("Paper", s.paperName.c_str())) {
         for (const auto& p : exportlib::paperSizes())
@@ -208,9 +220,11 @@ void draw(ui::PanelContext& pc) {
     PlotSettings built = s;
     if (built.area == PlotArea::Display)
         built.window = view;
-    std::string key = keyOf(built, view);
+    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host);
     if (key != st.builtKey || pc.doc->revision() != st.builtRevision) {
-        auto sheet = exportlib::buildSheet(*pc.doc, built);
+        const std::string name = plotLayout(*pc.host);
+        auto sheet = name.empty() ? exportlib::buildSheet(*pc.doc, built)
+                                  : layout::buildLayoutSheet(*pc.doc, name, built);
         st.sheetError = sheet ? std::string() : sheet.error().message;
         st.sheet = sheet ? std::move(sheet.value()) : exportlib::PlotSheet{};
         st.builtKey = key;

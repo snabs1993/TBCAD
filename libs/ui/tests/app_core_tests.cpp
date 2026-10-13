@@ -154,6 +154,28 @@ TEST_CASE("drag left to right selects inside, right to left selects touching") {
     CHECK(f.core->selection().empty());
 }
 
+TEST_CASE("Alt+click cycles through overlapping objects; lasso selects inside the path") {
+    Fixture f("cyclelasso");
+    f.line("0,0", "100,0");
+    f.line("0,0", "100,0");
+    f.core->cycleClick(f.at({50, 0}));
+    REQUIRE(f.core->selection().size() == 1);
+    const EntityId first = f.core->selection()[0];
+    f.core->cycleClick(f.at({50, 0}));
+    REQUIRE(f.core->selection().size() == 1);
+    CHECK(f.core->selection()[0] != first);
+    f.core->cycleClick(f.at({50, 0}));
+    CHECK(f.core->selection()[0] == first);  // wrapped round
+    f.core->cycleClick(f.at({700, 700}));
+    CHECK(f.core->selection().empty());
+
+    f.line("10,30", "20,30");
+    auto s = [&](Vec2 w) { return f.core->camera().worldToScreen(w); };
+    std::vector<Vec2> path{s({5, 20}), s({25, 20}), s({25, 40}), s({5, 40})};
+    f.core->lassoSelect(path, f.at({0, 0}));
+    CHECK(f.core->selection().size() == 1);
+}
+
 TEST_CASE("a selection prompt takes picks, windows and the selection made beforehand") {
     Fixture f("selprompt");
     f.line("0,0", "10,0");
@@ -239,6 +261,28 @@ TEST_CASE("zoom extents fits the drawing; ZOOM and PAN work as commands") {
     Vec2 c0 = f.core->camera().center;
     f.core->submitText("PAN 0,0 10,0");
     CHECK(f.core->camera().center.x == doctest::Approx(c0.x - 10));
+}
+
+TEST_CASE("ZOOM Extents counts every entity kind, not only lines and circles") {
+    Fixture f("zoomkinds");
+    {
+        // The command used a coarse scan that skipped ellipses (and text, hatches, dimensions).
+        auto tx = f.core->document().begin("ellipse");
+        Entity e;
+        EllipseData el;
+        el.center = {7000, 3000};
+        el.majorAxis = {500, 0};
+        el.ratio = 0.5;
+        e.data = el;
+        REQUIRE(tx.add(e).ok());
+        tx.commit();
+    }
+    f.core->submitText("ZOOM E");
+    BBox2 vis = f.core->camera().visibleWorld();
+    CHECK(vis.min.x <= 6500);
+    CHECK(vis.max.x >= 7500);
+    CHECK(vis.min.y <= 2750);
+    CHECK(vis.max.y >= 3250);
 }
 
 TEST_CASE("ZOOM is transparent inside another command") {

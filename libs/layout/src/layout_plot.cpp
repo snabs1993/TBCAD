@@ -45,6 +45,7 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         vl.area.max = vp.center + half;
         vl.origin = vp.paper.min;
         vl.overflows = false;
+        vl.annoScale = vp.scaleN;
 
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true});
         exportlib::appendEntities(sheet, doc, model, vl, s, [&](const Entity& e) {

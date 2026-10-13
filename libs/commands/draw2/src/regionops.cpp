@@ -1,0 +1,229 @@
+#include <algorithm>
+
+#include "commands.h"
+#include "common.h"
+#include "tbcad/geom/polybool.h"
+
+namespace tbcad::draw2::detail {
+
+namespace {
+
+constexpr double kChord = 0.005;  // drawing units; arcs and circles become polygons this fine
+
+// The outline of a closed object (closed polyline, circle, full ellipse, closed spline) as a
+// polygon with arcs flattened. False for anything open or not a curve.
+bool ringOf(const Entity& e, geom::Ring& ring) {
+    switch (kind(e)) {
+        case EntityKind::Polyline:
+            if (!entityAs<PolylineData>(e)->closed)
+                return false;
+            break;
+        case EntityKind::Circle:
+            break;
+        case EntityKind::Ellipse: {
+            const auto* el = entityAs<EllipseData>(e);
+            if (!tol::nearlyEqualAngle(el->startParam, el->endParam) &&
+                std::fabs(el->endParam - el->startParam) < kTwoPi - 1e-9)
+                return false;
+            break;
+        }
+        case EntityKind::Spline:
+            break;
+        default:
+            return false;
+    }
+    std::vector<geom::CurveRef> curves;
+    if (!geom::curvesOf(e, curves) || curves.empty())
+        return false;
+    if (kind(e) == EntityKind::Spline && !curves[0].isClosed())
+        return false;
+    ring.clear();
+    for (const geom::CurveRef& c : curves) {
+        std::vector<Vec2> pts;
+        geom::flatten(c, kChord, pts);
+        if (!pts.empty())
+            pts.pop_back();  // the next piece starts where this one ends
+        ring.insert(ring.end(), pts.begin(), pts.end());
+    }
+    return ring.size() >= 3;
+}
+
+bool closedObject(const Entity& e) {
+    geom::Ring r;
+    return ringOf(e, r);
+}
+
+// Everything the selection describes as one region (the union of its objects).
+geom::Region regionOfSelection(cmd::CommandContext& ctx, const std::vector<EntityId>& ids,
+                               int& used) {
+    geom::Region acc;
+    used = 0;
+    for (EntityId id : ids) {
+        const Entity* e = ctx.doc().find(id);
+        geom::Ring r;
+        if (!e || !ringOf(*e, r))
+            continue;
+        geom::Region one;
+        one.rings.push_back(std::move(r));
+        acc = used == 0 ? geom::normalized(one) : geom::boolean(acc, one, geom::BoolOp::Union);
+        ++used;
+    }
+    return acc;
+}
+
+PolylineData polylineOf(const geom::Ring& ring) {
+    PolylineData d;
+    d.closed = true;
+    for (const Vec2& p : ring) {
+        PolyVertex v;
+        v.p = p;
+        d.v.push_back(v);
+    }
+    return d;
+}
+
+// Replaces the sources by the polygons of `result`, which take the first source's properties.
+void replace(cmd::CommandContext& ctx, const std::vector<EntityId>& sources,
+             const geom::Region& result) {
+    const Entity* first = sources.empty() ? nullptr : ctx.doc().find(sources.front());
+    const EntityCommon common = first ? first->common : EntityCommon{};
+    for (EntityId id : sources)
+        (void)ctx.tx().erase(id);
+    for (const geom::Ring& r : result.rings) {
+        Entity e{{}, polylineOf(r)};
+        e.common = common;
+        e.common.id = {};
+        auto id = ctx.tx().add(std::move(e));
+        if (!id)
+            ctx.message(id.error().message);
+    }
+}
+
+cmd::SelectionOptions closedOnly() {
+    cmd::SelectionOptions so;
+    so.filter = [](const Entity& e) { return closedObject(e); };
+    return so;
+}
+
+// REGION: closed objects become plain closed polylines (the region's outline); the originals go.
+class RegionCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "REGION"; }
+    std::vector<std::string> defaultAliases() const override { return {"REG"}; }
+    std::string_view description() const override {
+        return "Turn closed objects into closed polylines (regions)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select closed objects", closedOnly());
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        int made = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            geom::Ring r;
+            if (!e || !ringOf(*e, r))
+                continue;
+            Entity out{{},
+                       polylineOf(geom::normalized({{r}}).rings.empty()
+                                      ? r
+                                      : geom::normalized({{r}}).rings[0])};
+            out.common = e->common;
+            out.common.id = {};
+            if (!made)
+                ctx.checkpoint();
+            (void)ctx.tx().erase(id);
+            if (ctx.tx().add(std::move(out)))
+                ++made;
+        }
+        ctx.message(std::to_string(made) + (made == 1 ? " region created." : " regions created."));
+    }
+};
+
+class BoolCommand final : public cmd::Command {
+public:
+    BoolCommand(std::string name, std::string alias, std::string description, geom::BoolOp op)
+        : name_(std::move(name)),
+          alias_(std::move(alias)),
+          description_(std::move(description)),
+          op_(op) {}
+    std::string_view name() const override { return name_; }
+    std::vector<std::string> defaultAliases() const override { return {alias_}; }
+    std::string_view description() const override { return description_; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        if (op_ == geom::BoolOp::Subtract) {
+            auto base = co_await ctx.getSelection("Select regions to subtract from", closedOnly());
+            if (!base.ok() || base.ids.empty())
+                co_return;
+            auto cut = co_await ctx.getSelection("Select regions to subtract", closedOnly());
+            if (!cut.ok() || cut.ids.empty())
+                co_return;
+            int nb = 0, nc = 0;
+            const geom::Region a = regionOfSelection(ctx, base.ids, nb);
+            const geom::Region b = regionOfSelection(ctx, cut.ids, nc);
+            if (!nb || !nc) {
+                ctx.message("Nothing to subtract: select closed objects.");
+                co_return;
+            }
+            const geom::Region r = geom::boolean(a, b, op_);
+            ctx.checkpoint();
+            std::vector<EntityId> all = base.ids;
+            // Only the objects that were used go; the subtracted ones go too, as in AutoCAD.
+            all.insert(all.end(), cut.ids.begin(), cut.ids.end());
+            replace(ctx, all, r);
+            ctx.message(r.empty() ? "The result is empty."
+                                  : std::to_string(r.rings.size()) + " polygon(s) created.");
+            co_return;
+        }
+        auto sel = co_await ctx.getSelection("Select regions", closedOnly());
+        if (!sel.ok() || sel.ids.size() < 2) {
+            if (sel.ok())
+                ctx.message("Select at least two closed objects.");
+            co_return;
+        }
+        geom::Region acc;
+        int n = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            geom::Ring ring;
+            if (!e || !ringOf(*e, ring))
+                continue;
+            geom::Region one;
+            one.rings.push_back(std::move(ring));
+            acc = n == 0 ? geom::normalized(one) : geom::boolean(acc, one, op_);
+            ++n;
+        }
+        if (n < 2) {
+            ctx.message("Select at least two closed objects.");
+            co_return;
+        }
+        ctx.checkpoint();
+        replace(ctx, sel.ids, acc);
+        ctx.message(acc.empty() ? "The result is empty."
+                                : std::to_string(acc.rings.size()) + " polygon(s) created.");
+    }
+
+private:
+    std::string name_, alias_, description_;
+    geom::BoolOp op_;
+};
+
+}  // namespace
+
+std::unique_ptr<cmd::Command> makeRegion() {
+    return std::make_unique<RegionCommand>();
+}
+std::unique_ptr<cmd::Command> makeUnion() {
+    return std::make_unique<BoolCommand>("UNION", "UNI", "Merge closed objects into one region",
+                                         geom::BoolOp::Union);
+}
+std::unique_ptr<cmd::Command> makeSubtract() {
+    return std::make_unique<BoolCommand>(
+        "SUBTRACT", "SU", "Cut closed objects out of other closed objects", geom::BoolOp::Subtract);
+}
+std::unique_ptr<cmd::Command> makeIntersect() {
+    return std::make_unique<BoolCommand>(
+        "INTERSECT", "IN", "Keep only the area shared by closed objects", geom::BoolOp::Intersect);
+}
+
+}  // namespace tbcad::draw2::detail

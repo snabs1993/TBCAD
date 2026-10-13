@@ -16,7 +16,9 @@
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
+#include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/ui/settings_model.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
@@ -134,7 +136,13 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     for (const auto& w : report.warnings)
         startupWarnings_.push_back(w);
 
-    installSession(std::make_unique<Document>(), {});
+    {
+        std::string problem;
+        auto doc = defaultDocument(&problem);
+        if (!problem.empty())
+            startupWarnings_.push_back(problem);
+        installSession(std::move(doc), {});
+    }
     for (const auto& w : startupWarnings_)
         print(w);
 }
@@ -255,7 +263,7 @@ void AppCore::closeDocument(std::size_t index) {
         pressEscape();
     removeAutosaveOf(slots_[index].id);
     if (slots_.size() == 1) {
-        installSession(std::make_unique<Document>(), {});
+        installSession(defaultDocument(), {});
         return;
     }
     if (index == active_) {
@@ -508,8 +516,84 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
 
 // ---- files -------------------------------------------------------------------------------------
 
+std::unique_ptr<Document> AppCore::defaultDocument(std::string* problem) {
+    const std::string name = settings_.getString("template.default", "");
+    if (!name.empty() && name != tmpl::kBuiltinTemplate) {
+        const fs::path file =
+            templateFolder() /
+            platform::pathFromUtf8(tmpl::sanitizeTemplateName(name) + tmpl::kTemplateExtension);
+        std::error_code ec;
+        std::string why;
+        if (!fs::exists(file, ec)) {
+            why = "No template named \"" + name + "\".";
+        } else if (auto doc = tmpl::loadTemplate(file)) {
+            return std::move(doc.value());
+        } else {
+            why = "Cannot read the template: " + doc.error().message;
+        }
+        if (problem)
+            *problem = "Default template \"" + name + "\": " + why + " Using the built-in drawing.";
+    }
+    return tmpl::builtinTemplate();
+}
+
 void AppCore::newDocument() {
-    addSession(std::make_unique<Document>(), {});
+    std::string problem;
+    auto doc = defaultDocument(&problem);
+    if (!problem.empty())
+        print(problem);
+    addSession(std::move(doc), {});
+}
+
+std::string AppCore::exportKeybindings(const fs::path& file) {
+    return KeybindingEditor(keybindings_, paths_.keybindingsFile()).exportTo(file);
+}
+
+std::string AppCore::importKeybindings(const fs::path& file) {
+    std::vector<std::string> warnings;
+    auto out = KeybindingEditor(keybindings_, paths_.keybindingsFile()).importFrom(file, &warnings);
+    for (const std::string& w : warnings)
+        print("Key bindings: " + w);
+    if (!out.ok)
+        return out.error;
+    print("Key bindings imported from " + platform::pathToUtf8(file));
+    return {};
+}
+
+std::vector<std::string> AppCore::templateNames() const {
+    std::vector<std::string> out{tmpl::kBuiltinTemplate};
+    for (const auto& t : tmpl::listTemplates(templateFolder()))
+        out.push_back(t.name);
+    return out;
+}
+
+std::string AppCore::newFromTemplate(std::string_view name) {
+    if (name.empty() || name == tmpl::kBuiltinTemplate) {
+        addSession(tmpl::builtinTemplate(), {});
+        return {};
+    }
+    const fs::path file =
+        templateFolder() / platform::pathFromUtf8(tmpl::sanitizeTemplateName(std::string(name)) +
+                                                  tmpl::kTemplateExtension);
+    std::error_code ec;
+    if (!fs::exists(file, ec))
+        return "No template named \"" + std::string(name) + "\".";
+    auto doc = tmpl::loadTemplate(file);
+    if (!doc)
+        return "Cannot read the template: " + doc.error().message;
+    addSession(std::move(doc.value()), {});
+    return {};
+}
+
+std::string AppCore::saveAsTemplate(std::string_view name) {
+    const std::string clean = tmpl::sanitizeTemplateName(std::string(name));
+    if (clean == tmpl::kBuiltinTemplate)
+        return "\"Built-in\" is reserved; choose another name.";
+    auto r = tmpl::saveTemplate(document(), templateFolder() / platform::pathFromUtf8(clean));
+    if (!r)
+        return r.error().message;
+    print("Template saved: " + platform::pathToUtf8(r.value()));
+    return {};
 }
 
 namespace {
@@ -666,6 +750,17 @@ Result<void> AppCore::openFile(const fs::path& path) {
     }
     if (isDxfPath(path))
         return openDxf(path);
+    if (tmpl::isTemplatePath(path)) {
+        // A template opens as a new untitled drawing; the template file stays as it is.
+        auto doc = tmpl::loadTemplate(path);
+        if (!doc) {
+            print("Cannot open " + path.string() + ": " + doc.error().message);
+            return doc.error();
+        }
+        addSession(std::move(doc.value()), {});
+        print("New drawing from template " + path.string());
+        return {};
+    }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
@@ -1095,6 +1190,53 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
         applyPick(ids, false);
 }
 
+void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
+    if (screenPath.size() < 3)
+        return;
+    std::vector<Vec2> poly;
+    poly.reserve(screenPath.size());
+    for (const Vec2& s : screenPath)
+        poly.push_back(camera_.screenToWorld(s));
+    const bool crossing = dragIsCrossing(screenPath.front().x, screenPath.back().x);
+    std::vector<EntityId> ids = selectInPolygon(session_->doc, session_->index, poly, crossing);
+    cmd::CommandRunner& run = runner();
+    if (run.active()) {
+        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
+            run.submit(cmd::Input::select(std::move(ids)));
+        return;
+    }
+    applyPick(ids, p.shift);
+}
+
+void AppCore::cycleClick(const PointerState& p) {
+    const Vec2 world = makeRaw(p).worldCursor;
+    const double aperture = apertureMm();
+    cmd::CommandRunner& run = runner();
+    const bool pickPrompt = prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Entity ||
+                                        prompt_->kind == cmd::PromptInfo::Kind::Selection);
+    if (run.active() && !pickPrompt)
+        return click(p);
+    // A new spot starts a new stack; the same spot goes on to the next object in it.
+    if (cycleStack_.empty() || distance(world, cycleAt_) > aperture) {
+        cycleStack_ = pickAllAt(session_->doc, session_->index, world, aperture);
+        cycleCurrent_.reset();
+        cycleAt_ = world;
+    }
+    auto id = cycleNext(cycleStack_, cycleCurrent_);
+    if (!id) {
+        if (!run.active() && !p.shift)
+            clearSelection();
+        return;
+    }
+    cycleCurrent_ = id;
+    if (run.active())
+        run.submit(cmd::Input::pick(*id, world, p.shift));
+    else if (p.shift)
+        applyPick({*id}, true);
+    else
+        setSelection({*id});  // cycling replaces the previous pick
+}
+
 // ---- selection ---------------------------------------------------------------------------------
 
 void AppCore::setSelection(std::vector<EntityId> ids) {
@@ -1187,7 +1329,17 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         overlay.selectionWindow(drag_->first, drag_->second, crossing, tone,
                                 ui::withAlpha(tone, 0.15));
     }
-    if (cursorInside_ && !drag_) {
+    if (lasso_.size() >= 2) {
+        const bool crossing = dragIsCrossing(lasso_.front().x, lasso_.back().x);
+        const Rgba tone = crossing ? theme_.crossing : theme_.select;
+        render::OverlayStyle st;
+        st.color = tone;
+        st.widthPx = 1.0;
+        st.dashPx = crossing ? 6 : 0;
+        st.gapPx = crossing ? 4 : 0;
+        overlay.polyline(render::Space::Screen, lasso_, false, st);
+    }
+    if (cursorInside_ && !drag_ && lasso_.empty()) {
         const Vec2 c = lastPointer_.screen;
         const double arm = std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;

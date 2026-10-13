@@ -14,7 +14,7 @@ using cmd::Task;
 
 std::optional<EntityKind> kindFromName(std::string_view name) {
     std::string up = cmd::toUpperAscii(name);
-    for (int i = 0; i <= static_cast<int>(EntityKind::Proxy); ++i) {
+    for (int i = 0; i <= static_cast<int>(EntityKind::Table); ++i) {
         auto k = static_cast<EntityKind>(i);
         if (cmd::toUpperAscii(kindLabel(k)) == up)
             return k;
@@ -152,7 +152,7 @@ private:
             const Entity* e = ctx.doc().find(id);
             if (!e || (only && kind(*e) != *only))
                 continue;
-            if (ctx.doc().effective(e->common.layer).locked)
+            if (ctx.doc().effective(e->common).locked)
                 continue;
             auto fields = geometryFields(*e);
             auto it = std::find_if(fields.begin(), fields.end(),

@@ -16,7 +16,7 @@ namespace tbcad::io::detail {
 
 inline constexpr std::uint8_t kMagic[10] = {0x89, 'T', 'B', 'C', 'A', 'D', '\r', '\n', 0x1A, '\n'};
 inline constexpr std::uint32_t kFormatMajor = 1;
-inline constexpr std::uint32_t kFormatMinor = 4;
+inline constexpr std::uint32_t kFormatMinor = 7;
 inline constexpr std::size_t kFileHeaderSize = 22;   // magic 10 + major + minor + flags
 inline constexpr std::size_t kChunkHeaderSize = 16;  // fourcc + flags + length
 inline constexpr std::uint32_t kChunkDeflate = 1;
@@ -27,6 +27,7 @@ inline constexpr std::size_t kEntsChunkTarget = std::size_t{8} << 20;
 inline constexpr std::uint32_t kHead = fourcc("HEAD");
 inline constexpr std::uint32_t kStrs = fourcc("STRS");
 inline constexpr std::uint32_t kLayr = fourcc("LAYR");
+inline constexpr std::uint32_t kLvls = fourcc("LVLS");
 inline constexpr std::uint32_t kLtyp = fourcc("LTYP");
 inline constexpr std::uint32_t kTsty = fourcc("TSTY");
 inline constexpr std::uint32_t kDsty = fourcc("DSTY");
@@ -34,7 +35,9 @@ inline constexpr std::uint32_t kBlks = fourcc("BLKS");
 inline constexpr std::uint32_t kXrfs = fourcc("XRFS");
 inline constexpr std::uint32_t kDynb = fourcc("DYNB");
 inline constexpr std::uint32_t kEnts = fourcc("ENTS");
+inline constexpr std::uint32_t kElvl = fourcc("ELVL");
 inline constexpr std::uint32_t kOrdr = fourcc("ORDR");
+inline constexpr std::uint32_t kXrfo = fourcc("XRFO");
 inline constexpr std::uint32_t kEnd = fourcc("END ");
 
 // Key prefixes inside Header::custom used to carry data that has no other home in the Document.

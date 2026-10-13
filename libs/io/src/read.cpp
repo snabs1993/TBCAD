@@ -85,8 +85,11 @@ public:
         loadTextStyles(tx);
         loadDimStyles(tx);
         loadLayers(tx);
+        loadLevels(tx);
+        loadEntityLevels();
         loadBlocks(tx);
         loadXrefs(tx);
+        loadXrefOverlays(tx);
         loadDynamic(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
@@ -106,8 +109,11 @@ private:
                 case kTsty:
                 case kDsty:
                 case kLayr:
+                case kLvls:
+                case kElvl:
                 case kBlks:
                 case kXrfs:
+                case kXrfo:
                 case kDynb:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
@@ -157,6 +163,7 @@ private:
     }
 
     NextIds nextIds_{};
+    std::unordered_map<std::uint64_t, LevelId> entityLevel_{};
 
     Header loadHead() {
         Header h;
@@ -213,6 +220,13 @@ private:
                 h.currentColor.r = static_cast<std::uint8_t>(ival >> 16);
                 h.currentColor.g = static_cast<std::uint8_t>(ival >> 8);
                 h.currentColor.b = static_cast<std::uint8_t>(ival);
+            } else if (key == "currentLevel") {
+                id(h.currentLevel);
+            } else if (key == "levelView") {
+                wantInt();
+                if (ival < 0 || ival > static_cast<std::int64_t>(LevelView::ShowAll))
+                    bad("invalid level view");
+                h.levelView = static_cast<LevelView>(ival);
             } else if (key == "currentLinetype") {
                 id(h.currentLinetype);
             } else if (key == "currentLineweight") {
@@ -225,8 +239,9 @@ private:
             } else if (key == "currentDimStyle") {
                 id(h.currentDimStyle);
             } else if (key.starts_with("next") && type == 1 &&
-                       (key == "nextEntity" || key == "nextLayer" || key == "nextLinetype" ||
-                        key == "nextTextStyle" || key == "nextDimStyle" || key == "nextBlock")) {
+                       (key == "nextEntity" || key == "nextLayer" || key == "nextLevel" ||
+                        key == "nextLinetype" || key == "nextTextStyle" || key == "nextDimStyle" ||
+                        key == "nextBlock")) {
                 if (ival < 1 || ival > (std::int64_t{1} << 48))
                     bad("HEAD next-id out of range");
                 if (key == "nextEntity") {
@@ -237,6 +252,8 @@ private:
                     auto v = static_cast<std::uint32_t>(ival);
                     if (key == "nextLayer")
                         nextIds_.layer = v;
+                    else if (key == "nextLevel")
+                        nextIds_.level = v;
                     else if (key == "nextLinetype")
                         nextIds_.linetype = v;
                     else if (key == "nextTextStyle")
@@ -449,6 +466,48 @@ private:
         }
     }
 
+    void loadLevels(Transaction& tx) {
+        std::uint32_t next = 2;
+        forRows(kLvls, 11, [&](std::uint32_t id, ByteReader& r) {
+            Level row;
+            row.name = str(r);
+            row.elevation = r.f64();
+            std::uint8_t f = r.u8();
+            if (f > 3)
+                bad("invalid level flags");
+            row.visible = (f & 1) != 0;
+            row.locked = (f & 2) != 0;
+            if (id == kLevelDefault.value) {
+                check(tx.modifyLevel(kLevelDefault, [&](Level& l) { l = row; }), "level");
+                return;
+            }
+            reachId(
+                id, next, [&] { return take(tx.addLevel(Level{.name = "~burn"}), "level"); },
+                [&](LevelId b) { check(tx.eraseLevel(b), "level"); });
+            LevelId got = take(tx.addLevel(std::move(row)), "level");
+            if (got.value != id)
+                bad("internal id mismatch");
+            ++next;
+        });
+    }
+
+    // ELVL: entity id (delta coded) -> level id, for entities not on the default level.
+    void loadEntityLevels() {
+        const RawChunk* c = find(kElvl);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(2);
+        std::uint64_t prev = 0;
+        for (std::size_t i = 0; i < n; ++i) {
+            prev += r.varint();
+            entityLevel_[prev] = LevelId{id32(r)};
+        }
+        if (!r.atEnd())
+            bad("trailing data in ELVL");
+    }
+
     void loadBlocks(Transaction& tx) {
         std::uint32_t next = 1;
         forRows(kBlks, 12, [&](std::uint32_t id, ByteReader& r) {
@@ -485,6 +544,22 @@ private:
         }
         if (!r.atEnd())
             bad("trailing data in XRFS");
+    }
+
+    void loadXrefOverlays(Transaction& tx) {
+        const RawChunk* c = find(kXrfo);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(1);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            if (!tx.modifyBlock(b, [&](BlockDef& d) { d.xrefOverlay = !d.xrefPath.empty(); }).ok())
+                bad("overlay flag names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in XRFO");
     }
 
     void loadDynamic(Transaction& tx) {
@@ -563,6 +638,7 @@ private:
                 for (; next < id; ++next) {
                     Entity filler;
                     filler.common.layer = kLayerZero;
+                    filler.common.level = kLevelDefault;
                     filler.data = PointData{};
                     EntityId got = take(tx.add(std::move(filler)), "entity");
                     if (got.value != next)
@@ -575,6 +651,10 @@ private:
                     report_.warnings.push_back("entity " + std::to_string(id) + " has " +
                                                std::to_string(d.trailingBytes) +
                                                " bytes from a newer format that were ignored");
+                }
+                {
+                    auto lv = entityLevel_.find(id);
+                    d.entity.common.level = lv == entityLevel_.end() ? kLevelDefault : lv->second;
                 }
                 Result<EntityId> added = tx.add(std::move(d.entity), d.owner);
                 if (!added) {
