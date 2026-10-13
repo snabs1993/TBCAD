@@ -103,6 +103,8 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     lineweights_ = core_.settings().getBool("view.lineweights", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
+    // The IME hook positions the candidate window on this native window.
+    ImGui::GetMainViewport()->PlatformHandleRaw = nativeHandle();
     installImeHook(window);
 }
 
