@@ -5,6 +5,7 @@ tbcad_add_library(geom
     src/entity_ops.cpp
     src/grips.cpp
     src/intersect.cpp
+    src/polybool.cpp
     src/spline.cpp
     src/transform.cpp
   DEPENDS tbcad::core)
@@ -15,6 +16,7 @@ tbcad_add_tests(geom
     tests/display_tests.cpp
     tests/entity_tests.cpp
     tests/intersect_tests.cpp
+    tests/polybool_tests.cpp
     tests/spline_tests.cpp
     tests/transform_tests.cpp
     tests/bench_tests.cpp)
