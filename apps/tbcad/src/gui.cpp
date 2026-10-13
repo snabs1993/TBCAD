@@ -593,6 +593,9 @@ void Gui::menuBar() {
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
         ImGui::MenuItem("Properties", nullptr, &showProperties_);
+        if (bool qp = core_.setting("ui.quickProps").value_or("0") == "1";
+            ImGui::MenuItem("Quick Properties", nullptr, qp))
+            core_.setSetting("ui.quickProps", qp ? "0" : "1");
         if (ImGui::MenuItem("Command Log", keys.label("view.expandLog").c_str(), logExpanded_))
             logExpanded_ = !logExpanded_;
         if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
@@ -1438,6 +1441,132 @@ void Gui::propertiesWindow() {
     ImGui::End();
 }
 
+// Small floating box in the corner of the viewport with the common properties of the selection.
+// Edits go through CHPROP, so they are undoable and logged like anything typed.
+void Gui::quickProperties(const ViewportRect& rect) {
+    if (core_.setting("ui.quickProps").value_or("0") != "1" || core_.selection().empty() ||
+        core_.runner().active())
+        return;
+    const Document& doc = core_.document();
+    std::vector<const Entity*> ents;
+    for (EntityId id : core_.selection())
+        if (const Entity* e = doc.find(id))
+            ents.push_back(e);
+    if (ents.empty())
+        return;
+    auto same = [&](auto get) {
+        for (const Entity* e : ents)
+            if (!(get(*e) == get(*ents.front())))
+                return false;
+        return true;
+    };
+    auto layerPath = [&](const Layer* l) {
+        std::string path;
+        for (; l; l = l->parent.value ? doc.layer(l->parent) : nullptr)
+            path = l->name + (path.empty() ? "" : "/" + path);
+        return path;
+    };
+    auto run = [&](const char* what, const std::string& value) {
+        core_.submitText("CHPROP");
+        core_.submitText(what);
+        core_.submitText(value);
+    };
+
+    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - 12, rect.y + 12), ImGuiCond_Always,
+                            ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.94f);
+    const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    if (ImGui::Begin("##quickprops", nullptr, wf)) {
+        if (ents.size() == 1)
+            ImGui::TextUnformatted(kindName(kind(*ents.front())));
+        else
+            ImGui::Text("%zu objects", ents.size());
+        ImGui::PushItemWidth(150.0f);
+
+        const bool layerSame = same([](const Entity& e) { return e.common.layer; });
+        const Layer* cur = layerSame ? doc.layer(ents.front()->common.layer) : nullptr;
+        if (ImGui::BeginCombo("Layer", cur ? layerPath(cur).c_str() : "*VARIES*")) {
+            for (const auto& [id, l] : doc.layers()) {
+                const std::string path = layerPath(&l);
+                if (ImGui::Selectable(path.c_str(), cur && cur->id == id))
+                    run("Layer", path);
+            }
+            ImGui::EndCombo();
+        }
+
+        struct Named {
+            const char* label;
+            const char* value;
+        };
+        static const Named kColors[] = {
+            {"ByLayer", "ByLayer"}, {"ByBlock", "ByBlock"}, {"1 Red", "1"},
+            {"2 Yellow", "2"},      {"3 Green", "3"},       {"4 Cyan", "4"},
+            {"5 Blue", "5"},        {"6 Magenta", "6"},     {"7 White", "7"}};
+        std::string colorLabel = "*VARIES*";
+        if (same([](const Entity& e) { return e.common.color; })) {
+            const Color c = ents.front()->common.color;
+            colorLabel = c.kind == ColorKind::ByLayer   ? "ByLayer"
+                         : c.kind == ColorKind::ByBlock ? "ByBlock"
+                         : c.kind == ColorKind::Index   ? std::to_string(int(c.r))
+                                                        : "RGB";
+            for (const Named& n : kColors)
+                if (colorLabel == n.value)
+                    colorLabel = n.label;
+        }
+        if (ImGui::BeginCombo("Color", colorLabel.c_str())) {
+            for (const Named& n : kColors)
+                if (ImGui::Selectable(n.label, colorLabel == n.label))
+                    run("Color", n.value);
+            ImGui::EndCombo();
+        }
+
+        std::string ltLabel = "*VARIES*";
+        if (same([](const Entity& e) { return e.common.linetype; })) {
+            const LinetypeId lt = ents.front()->common.linetype;
+            const Linetype* row = doc.linetype(lt);
+            ltLabel = lt == kLinetypeByLayer   ? "ByLayer"
+                      : lt == kLinetypeByBlock ? "ByBlock"
+                      : row                    ? row->name
+                                               : "?";
+        }
+        if (ImGui::BeginCombo("Linetype", ltLabel.c_str())) {
+            if (ImGui::Selectable("ByLayer", ltLabel == "ByLayer"))
+                run("Linetype", "ByLayer");
+            if (ImGui::Selectable("ByBlock", ltLabel == "ByBlock"))
+                run("Linetype", "ByBlock");
+            for (const auto& [id, l] : doc.linetypes())
+                if (ImGui::Selectable(l.name.c_str(), ltLabel == l.name))
+                    run("Linetype", l.name);
+            ImGui::EndCombo();
+        }
+
+        static const Named kWeights[] = {
+            {"ByLayer", "ByLayer"}, {"Default", "Default"}, {"0.13 mm", "0.13"},
+            {"0.25 mm", "0.25"},    {"0.35 mm", "0.35"},    {"0.50 mm", "0.5"},
+            {"0.70 mm", "0.7"},     {"1.00 mm", "1"},       {"2.00 mm", "2"}};
+        std::string lwLabel = "*VARIES*";
+        if (same([](const Entity& e) { return e.common.lineweight; })) {
+            const LineWeight w = ents.front()->common.lineweight;
+            char buf[32];
+            std::snprintf(buf, sizeof buf, "%.2f mm", w.v / 100.0);
+            lwLabel = w.isByLayer()   ? "ByLayer"
+                      : w.isByBlock() ? "ByBlock"
+                      : w.isValue()   ? buf
+                                      : "Default";
+        }
+        if (ImGui::BeginCombo("Lineweight", lwLabel.c_str())) {
+            for (const Named& n : kWeights)
+                if (ImGui::Selectable(n.label, lwLabel == n.label))
+                    run("Lineweight", n.value);
+            ImGui::EndCombo();
+        }
+        ImGui::PopItemWidth();
+    }
+    ImGui::End();
+}
+
 void Gui::panels() {
     ui::PanelContext pc;
     pc.doc = &core_.document();
@@ -1514,16 +1643,34 @@ void Gui::viewportInput(const ViewportRect& rect) {
             if (!pointPrompt && !dragging_ &&
                 std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y) > 4.0 * s)
                 dragging_ = true;
-            if (dragging_)
+            if (dragging_ && io.KeyAlt) {
+                // Alt+drag: freeform lasso instead of a rectangle.
+                if (lassoPath_.empty())
+                    lassoPath_.push_back(pressPos_);
+                if (std::hypot(mouse.x - lassoPath_.back().x, mouse.y - lassoPath_.back().y) >
+                    3.0 * s)
+                    lassoPath_.push_back(mouse);
+                core_.setLassoPath(lassoPath_);
+                core_.setSelectionDrag(std::nullopt);
+            } else if (dragging_) {
+                lassoPath_.clear();
+                core_.setLassoPath({});
                 core_.setSelectionDrag(std::make_pair(pressPos_, mouse));
+            }
         } else {
-            if (dragging_)
+            if (dragging_ && !lassoPath_.empty()) {
+                core_.lassoSelect(lassoPath_, ps);
+            } else if (dragging_) {
                 core_.dragSelect(pressPos_, mouse, ps);
-            else if (doubleClick_)
+            } else if (io.KeyAlt) {
+                core_.cycleClick(ps);
+            } else if (doubleClick_)
                 core_.doubleClick(ps);
             else
                 core_.click(ps);
             core_.setSelectionDrag(std::nullopt);
+            core_.setLassoPath({});
+            lassoPath_.clear();
             leftDown_ = dragging_ = false;
         }
     }
@@ -1639,6 +1786,7 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    quickProperties(rect);
 
     // Non-blocking notice when a command put geometry outside the working area.
     if (core_.outOfAreaNotice()) {

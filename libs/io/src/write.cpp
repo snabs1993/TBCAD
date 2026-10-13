@@ -185,6 +185,16 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             xrfs.i64(r.xrefStamp);
         }
 
+        // Overlay flags of xrefs (since 1.5); only when at least one xref is an overlay.
+        ByteWriter xrfo;
+        std::size_t overlayCount = 0;
+        for (const auto& [id, r] : doc.blocks())
+            overlayCount += (!r.xrefPath.empty() && r.xrefOverlay) ? 1 : 0;
+        xrfo.varint(overlayCount);
+        for (const auto& [id, r] : doc.blocks())
+            if (!r.xrefPath.empty() && r.xrefOverlay)
+                xrfo.varint(id.value);
+
         // Dynamic block definitions (format 1.4).
         ByteWriter dynb;
         std::size_t dynCount = 0;
@@ -315,6 +325,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         appendChunk(out, kBlks, blks.bytes(), options.compress);
         if (xrefCount > 0)
             appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
+        if (overlayCount > 0)
+            appendChunk(out, kXrfo, xrfo.bytes(), options.compress);
         if (dynCount > 0)
             appendChunk(out, kDynb, dynb.bytes(), options.compress);
         for (const auto& c : entChunks)

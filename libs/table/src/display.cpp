@@ -5,13 +5,14 @@ namespace tbcad::table {
 
 namespace {
 
-Entity textEntity(const Entity& owner, const TableData& t, const TextItem& item) {
+Entity textEntity(const Entity& owner, const TableData& t, const TextItem& item, double f) {
     Entity out;
     out.common = owner.common;
     out.common.id = {};
+    out.common.annotative = false;  // the height is already scaled
     MTextData m;
     m.position = item.position;
-    m.height = t.textHeight;
+    m.height = t.textHeight * f;
     m.width = item.width;
     m.rotation = item.rotation;
     m.attach = item.attach;
@@ -36,8 +37,9 @@ void buildTableDisplay(const Document& doc, const Entity& e, const geom::Display
         pl.style = style;
         out.items.emplace_back(std::move(pl));
     }
+    const double f = annotationFactor(doc.header(), e.common, ctx.annoScale);
     for (const TextItem& item : L.texts)
-        text::buildTextDisplay(doc, textEntity(e, *t, item), ctx, out);
+        text::buildTextDisplay(doc, textEntity(e, *t, item, f), ctx, out);
 }
 
 void registerDisplay() {
@@ -48,7 +50,7 @@ void registerDisplay() {
                                });
 }
 
-Result<std::vector<Entity>> explodeTable(const Document&, const Entity& e) {
+Result<std::vector<Entity>> explodeTable(const Document& doc, const Entity& e) {
     const auto* t = entityAs<TableData>(e);
     if (!t)
         return makeError(ErrorCode::InvalidArgument, "not a table");
@@ -58,11 +60,13 @@ Result<std::vector<Entity>> explodeTable(const Document&, const Entity& e) {
         Entity n;
         n.common = e.common;
         n.common.id = {};
+        n.common.annotative = false;
         n.data = LineData{a, b};
         out.push_back(std::move(n));
     }
+    const double f = annotationFactor(doc.header(), e.common);
     for (const TextItem& item : L.texts)
-        out.push_back(textEntity(e, *t, item));
+        out.push_back(textEntity(e, *t, item, f));
     return out;
 }
 

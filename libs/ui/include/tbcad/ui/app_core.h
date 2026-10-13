@@ -183,6 +183,13 @@ public:
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);
     // Live selection rectangle shown in the overlay while dragging; nullopt = none.
     void setSelectionDrag(std::optional<std::pair<Vec2, Vec2>> corners) { drag_ = corners; }
+    // Freeform selection: the screen-space path shown while dragging (empty = none) and the
+    // selection made when it is released.
+    void setLassoPath(std::vector<Vec2> screenPath) { lasso_ = std::move(screenPath); }
+    void lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p);
+    // Click that cycles through the overlapping objects under the cursor (Alt+click): each click
+    // at the same spot picks the next one down.
+    void cycleClick(const PointerState& p);
 
     // ---- selection ---------------------------------------------------------------------------
     const std::vector<EntityId>& selection() const override { return selection_; }
@@ -306,6 +313,10 @@ private:
     PointerState lastPointer_{};
 
     std::vector<EntityId> selection_{};
+    std::vector<Vec2> lasso_{};
+    std::vector<EntityId> cycleStack_{};
+    std::optional<EntityId> cycleCurrent_{};
+    Vec2 cycleAt_{};
     std::vector<std::string> history_{};
     std::optional<cmd::PromptInfo> prompt_{};
     cmd::FilterFeedback feedback_{};

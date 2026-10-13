@@ -21,7 +21,7 @@ double outlineTolerance(double tolMm, double mmPerEm) {
 
 void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayContext& ctx,
                       DisplayList& out) {
-    TextLayout layout = layoutEntity(doc, e);
+    TextLayout layout = layoutEntity(doc, e, ctx.annoScale);
     if (layout.empty() && layout.lines.empty())
         return;
     const DisplayStyle base = geom::resolveStyle(doc, e, ctx);

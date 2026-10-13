@@ -51,6 +51,9 @@ struct EntityCommon {
     Color color = Color::byLayer();
     LineWeight lineweight = LineWeight::byLayer();
     bool visible = true;
+    // Annotative: text height, dimension sizes and table text follow the annotation scale
+    // (Header custom "tbcad.annoscale", or the viewport's scale when plotting a layout).
+    bool annotative = false;
 };
 
 enum class EntityKind : std::uint8_t {

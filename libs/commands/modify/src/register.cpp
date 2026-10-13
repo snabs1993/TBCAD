@@ -21,6 +21,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeOverkill());
     (void)registry.add(makePedit());
     (void)registry.add(makeBlend());
+    (void)registry.add(makeJustifyText());
+    (void)registry.add(makeSplineEdit());
     (void)registry.add(makeExtrim());
     (void)registry.add(makeScaleText());
     (void)registry.add(makeSetByLayer());

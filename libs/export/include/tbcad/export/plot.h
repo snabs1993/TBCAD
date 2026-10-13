@@ -59,6 +59,9 @@ struct PlotLayout {
     Vec2 origin{};
     // True when the scaled area is larger than the printable rectangle (it is clipped).
     bool overflows = false;
+    // Scale N of 1:N for annotative objects; 0 = the drawing's current annotation scale. A layout
+    // viewport sets its own, so the same text prints at one paper height in every viewport.
+    double annoScale = 0;
 
     Vec2 toPaper(Vec2 p) const {
         return {(p.x - area.min.x) * paperPerUnit + origin.x,

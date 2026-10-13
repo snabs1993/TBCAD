@@ -1,0 +1,54 @@
+#include "test_util.h"
+
+using namespace tbcad;
+using namespace tbcad::select::test;
+
+TEST_CASE("CHPROP changes the properties of the selection in one undo step") {
+    Fixture f;
+    const LayerId walls = f.addLayer("Walls");
+    const LayerId north = f.addLayer("North", walls);
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(CircleData{{0, 0}, 5});
+    f.host.setSelection({a, b});
+    f.host.run("CHPROP", {"Layer", "Walls"});
+    CHECK(f.doc.find(a)->common.layer == walls);
+    CHECK(f.doc.find(b)->common.layer == walls);
+    f.host.setSelection({a});
+    f.host.run("CH", {"Layer", "Walls/North"});
+    CHECK(f.doc.find(a)->common.layer == north);
+    CHECK(f.doc.find(b)->common.layer == walls);
+    f.host.setSelection({a, b});
+    f.host.run("CH", {"Color", "1"});
+    CHECK(f.doc.find(b)->common.color == Color::index(1));
+    f.host.run("CH", {"Lineweight", "0.5"});
+    CHECK(f.doc.find(a)->common.lineweight == LineWeight::mm(0.5));
+    f.host.run("CH", {"Scale", "2.5"});
+    CHECK(f.doc.find(a)->common.linetypeScale == 2.5);
+    f.host.undo();
+    CHECK(f.doc.find(a)->common.linetypeScale == 1);
+}
+
+TEST_CASE("CHPROP refuses values that do not exist") {
+    Fixture f;
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    f.host.run("CHPROP", {"Layer", "Nope"});
+    CHECK(f.host.logContains("no layer named"));
+    f.host.feed({cmd::ScriptItem::esc()});
+    f.host.run("CHPROP", {"Color", "banana"});
+    CHECK(f.host.logContains("not a colour"));
+    f.host.feed({cmd::ScriptItem::esc()});
+    f.host.run("CHPROP", {"Scale", "-1"});
+    CHECK(f.host.logContains("positive"));
+    f.host.feed({cmd::ScriptItem::esc()});
+    CHECK(f.doc.find(a)->common.layer != LayerId{});
+    CHECK(f.doc.find(a)->common.color == Color::byLayer());
+}
+
+TEST_CASE("QUICKPROPERTIES toggles the setting the application reads") {
+    Fixture f;
+    f.host.run("QP", {});
+    CHECK(f.host.setting("ui.quickProps") == "1");
+    f.host.run("QUICKPROPERTIES", {});
+    CHECK(f.host.setting("ui.quickProps") == "0");
+}

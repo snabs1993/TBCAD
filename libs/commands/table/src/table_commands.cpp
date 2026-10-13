@@ -5,6 +5,7 @@
 #include "tbcad/geom/geom.h"
 #include "tbcad/table/table.h"
 #include "tbcad/tablecmd/tablecmd.h"
+#include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::tablecmd {
 
@@ -240,6 +241,11 @@ void registerCommands(cmd::Registry& registry) {
         });
     (void)registry.add(std::make_unique<TableCommand>());
     (void)registry.add(std::make_unique<TableEditCommand>());
+}
+
+void registerUi(ui::UiRegistry& ui) {
+    ui.addMenuItem("Draw/Table", "TABLE");
+    ui.addMenuItem("Modify/Edit Table", "TABLEEDIT");
 }
 
 }  // namespace tbcad::tablecmd

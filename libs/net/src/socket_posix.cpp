@@ -158,6 +158,10 @@ long receive(Handle s, void* buffer, std::size_t size, int timeoutMs) {
     return kError;
 }
 
+bool waitReadable(Handle s, int timeoutMs) {
+    return waitFor(static_cast<int>(s), POLLIN, timeoutMs) != 0;
+}
+
 bool sendAll(Handle s, const void* data, std::size_t size) {
     const char* p = static_cast<const char*>(data);
     while (size > 0) {

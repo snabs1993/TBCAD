@@ -334,3 +334,158 @@ TEST_CASE("importAsBlock makes an ordinary block and matches layers by name") {
     Transaction tx = host.begin("again");
     CHECK_FALSE(importAsBlock(tx, host, "door set", src).ok());
 }
+
+TEST_CASE("overlay flag is kept, saved and cleared by bind") {
+    Document host;
+    BlockId b;
+    {
+        Source src = sourceOf(makeSource(), 7);
+        Transaction tx = host.begin("overlay");
+        b = attach(tx, host, "site", "site.tbcad", src, nullptr, true).value();
+        tx.commit();
+    }
+    CHECK(host.block(b)->xrefOverlay);
+    auto bytes = io::writeTbcadToMemory(host);
+    REQUIRE(bytes.ok());
+    io::IoReport rep;
+    auto back = io::readTbcad(bytes.value(), rep);
+    REQUIRE(back.ok());
+    CHECK(back.value()->blockByName("site")->xrefOverlay);
+    {
+        Transaction tx = host.begin("bind");
+        REQUIRE(bind(tx, host, b).ok());
+        tx.commit();
+    }
+    CHECK_FALSE(host.block(b)->xrefOverlay);
+}
+
+TEST_CASE("an overlay is not carried along when its drawing is attached elsewhere") {
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / "tbcad_xref_overlay";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    // B holds its own line plus an attached xref of A and an overlay of A.
+    {
+        auto a = makeSource();
+        REQUIRE(io::writeTbcad(*a, dir / "a.tbcad", io::WriteOptions{.keepBackup = false}).ok());
+    }
+    auto loadedA = loadSource(dir / "a.tbcad");
+    REQUIRE(loadedA.ok());
+    Document b;
+    {
+        Transaction tx = b.begin("b");
+        (void)tx.add(lineOn(kLayerZero, 0, 0, 1, 1));
+        BlockId att = attach(tx, b, "attached", "a.tbcad", loadedA.value()).value();
+        BlockId ovl = attach(tx, b, "overlaid", "a.tbcad", loadedA.value(), nullptr, true).value();
+        for (BlockId id : {att, ovl}) {
+            Entity ins;
+            ins.data = Indirect<InsertData>(InsertData{id, {0, 0}, {1, 1}, 0});
+            (void)tx.add(ins);
+        }
+        tx.commit();
+    }
+    REQUIRE(io::writeTbcad(b, dir / "b.tbcad", io::WriteOptions{.keepBackup = false}).ok());
+
+    auto loadedB = loadSource(dir / "b.tbcad");
+    REQUIRE(loadedB.ok());
+    Document c;
+    Transaction tx = c.begin("c");
+    auto blk = attach(tx, c, "b", "b.tbcad", loadedB.value());
+    REQUIRE(blk.ok());
+    tx.commit();
+    // b's line + the insert of "attached"; the overlay insert is left out.
+    CHECK(c.block(blk.value())->entities.size() == 2);
+    CHECK(c.blockByName("b$overlaid") == nullptr);
+    CHECK(c.blockByName("b$attached") != nullptr);
+    fs::remove_all(dir);
+}
+
+TEST_CASE("nested xrefs are refreshed from their own files when the outer one loads") {
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / "tbcad_xref_nested";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    auto writeA = [&](int extra) {
+        auto a = makeSource(extra);
+        REQUIRE(io::writeTbcad(*a, dir / "a.tbcad", io::WriteOptions{.keepBackup = false}).ok());
+    };
+    writeA(0);
+    {
+        auto loadedA = loadSource(dir / "a.tbcad");
+        REQUIRE(loadedA.ok());
+        Document b;
+        Transaction tx = b.begin("b");
+        BlockId att = attach(tx, b, "a", "a.tbcad", loadedA.value()).value();
+        Entity ins;
+        ins.data = Indirect<InsertData>(InsertData{att, {0, 0}, {1, 1}, 0});
+        (void)tx.add(ins);
+        tx.commit();
+        REQUIRE(io::writeTbcad(b, dir / "b.tbcad", io::WriteOptions{.keepBackup = false}).ok());
+    }
+    writeA(4);  // A grows after B was saved
+    fs::last_write_time(dir / "a.tbcad",
+                        fs::last_write_time(dir / "a.tbcad") + std::chrono::seconds(5));
+
+    auto loadedB = loadSource(dir / "b.tbcad");
+    REQUIRE(loadedB.ok());
+    const Document& bdoc = *loadedB.value().doc;
+    const BlockDef* a = bdoc.blockByName("a");
+    REQUIRE(a);
+    CHECK(a->entities.size() == 4 + 4);  // 4 original objects + the 4 new lines
+    fs::remove_all(dir);
+}
+
+TEST_CASE("a loop of xrefs does not recurse forever") {
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / "tbcad_xref_loop";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    // x.tbcad attaches y.tbcad, y.tbcad attaches x.tbcad.
+    auto write = [&](const char* self, const char* other, bool withOther) {
+        Document d;
+        Transaction tx = d.begin("d");
+        (void)tx.add(lineOn(kLayerZero, 0, 0, 1, 1));
+        if (withOther) {
+            Source s;
+            s.doc = std::make_unique<Document>();
+            s.stamp = 1;
+            auto blk = attach(tx, d, other, std::string(other) + ".tbcad", s);
+            REQUIRE(blk.ok());
+        }
+        tx.commit();
+        REQUIRE(io::writeTbcad(d, dir / (std::string(self) + ".tbcad"),
+                               io::WriteOptions{.keepBackup = false})
+                    .ok());
+    };
+    write("x", "y", true);
+    write("y", "x", true);
+    auto loaded = loadSource(dir / "x.tbcad");
+    CHECK(loaded.ok());
+    fs::remove_all(dir);
+}
+
+TEST_CASE("stored path types and extra loaders") {
+    namespace fs = std::filesystem;
+    fs::path root = fs::absolute(fs::temp_directory_path() / "tbcad_xref_paths");
+    fs::path host = root / "drawings" / "main.tbcad";
+    fs::path file = root / "refs" / "site.tbcad";
+    CHECK(storedPath(file, host, PathType::Relative) == "../refs/site.tbcad");
+    CHECK(storedPath(file, host, PathType::None) == "site.tbcad");
+    CHECK(fs::path(storedPath(file, host, PathType::Absolute)) == file);
+    CHECK(fs::path(storedPath(file, {}, PathType::Relative)) == file);
+
+    fs::path dir = fs::temp_directory_path() / "tbcad_xref_loader";
+    fs::create_directories(dir);
+    std::ofstream(dir / "t.zzz") << "x";
+    CHECK_FALSE(loadSource(dir / "t.zzz").ok());
+    registerLoader(".ZZZ", [](const fs::path&) -> Result<Source> {
+        Source s;
+        s.doc = makeSource();
+        return s;
+    });
+    auto loaded = loadSource(dir / "t.zzz");
+    REQUIRE(loaded.ok());
+    CHECK(loaded.value().stamp != 0);
+    CHECK(loaded.value().file == dir / "t.zzz");
+    fs::remove_all(dir);
+}

@@ -230,6 +230,7 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
         }
         if (entityAs<DimensionData>(*e)) {
             i += writeDimension(ids, i, owner);
+            writeAnnotativeData(*e);
             continue;
         }
         writeEntity(*e, owner);
@@ -322,6 +323,17 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
             writeTable(p, e, owner);
             break;
     }
+    if (kind(e) != EntityKind::Insert)
+        writeAnnotativeData(e);
+}
+
+// Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer
+// turns it back into the flag. Written after the last group of the record.
+void Writer::writeAnnotativeData(const Entity& e) {
+    if (!e.common.annotative)
+        return;
+    o_->raw(1001, "TBCAD");
+    o_->str(1000, "annotative=1");
 }
 
 // A table is an INSERT of an anonymous *T block that holds its drawn grid and texts, so any

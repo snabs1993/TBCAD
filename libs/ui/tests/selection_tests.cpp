@@ -145,3 +145,33 @@ TEST_CASE("objects on another level cannot be picked, even at the same position"
     }
     CHECK(pickEntity(d.doc, d.idx, {50, 0}, 3) == top);
 }
+
+TEST_CASE("pickAllAt lists the overlapping entities nearest first and cycling walks them") {
+    Indexed d;
+    EntityId a = addLine(d.doc, {0, 0}, {100, 0});
+    EntityId b = addLine(d.doc, {0, 2}, {100, 2});
+    EntityId c = addLine(d.doc, {0, 0}, {100, 0});
+    auto stack = pickAllAt(d.doc, d.idx, {50, 0.5}, 5);
+    CHECK(stack == std::vector<EntityId>{c, a, b});  // a and c tie: the one on top comes first
+    CHECK(pickAllAt(d.doc, d.idx, {50, 40}, 5).empty());
+    CHECK(cycleNext(stack, std::nullopt) == c);
+    CHECK(cycleNext(stack, c) == a);
+    CHECK(cycleNext(stack, b) == c);  // wraps
+    CHECK(cycleNext(stack, EntityId{9999}) == c);
+    CHECK_FALSE(cycleNext({}, c).has_value());
+}
+
+TEST_CASE("lasso selects inside a concave polygon; crossing also takes what it touches") {
+    Indexed d;
+    EntityId inside = addLine(d.doc, {10, 10}, {20, 20});
+    EntityId crossing = addLine(d.doc, {50, 50}, {150, 50});
+    EntityId notch = addLine(d.doc, {60, 80}, {90, 80});  // in the bounding box, outside the lasso
+    EntityId outside = addLine(d.doc, {200, 200}, {300, 300});
+    // An L shape: the upper right quadrant is cut away.
+    std::vector<Vec2> lasso{{0, 0}, {100, 0}, {100, 60}, {50, 60}, {50, 100}, {0, 100}};
+    CHECK(selectInPolygon(d.doc, d.idx, lasso, false) == std::vector<EntityId>{inside});
+    CHECK(selectInPolygon(d.doc, d.idx, lasso, true) == std::vector<EntityId>{inside, crossing});
+    CHECK(selectInPolygon(d.doc, d.idx, {{0, 0}, {10, 10}}, true).empty());
+    (void)notch;
+    (void)outside;
+}

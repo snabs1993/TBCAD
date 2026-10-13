@@ -3,6 +3,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/modify/modify.h"
+#include "tbcad/text/text.h"
 
 using namespace tbcad;
 using cmd::ScriptItem;
@@ -492,4 +493,46 @@ TEST_CASE("ALIGN and MATCHPROP also work on text") {
     f.host.run("ALIGN", {ScriptItem::select({id}), ScriptItem::enter(), "0,0", "10,10",
                          ScriptItem::enter()});
     CHECK(near(entityAs<TextData>(f.get(id))->position, {11, 11}));
+}
+
+TEST_CASE("JUSTIFYTEXT keeps the text where it is") {
+    Fixture f;
+    TextData t;
+    t.position = {10, 20};
+    t.height = 2;
+    t.utf8 = "hello";
+    EntityId id = f.add(Indirect<TextData>(t));
+    auto before = text::layoutEntity(f.doc, f.get(id)).frameCorners()[0];
+    f.host.run("JUSTIFYTEXT", {ScriptItem::select({id}), ScriptItem::enter(), "MC"});
+    const auto* now = entityAs<TextData>(f.get(id));
+    CHECK(now->h == HAlign::Center);
+    CHECK(now->v == VAlign::Middle);
+    auto after = text::layoutEntity(f.doc, f.get(id)).frameCorners()[0];
+    CHECK(near(before, after, 1e-6));
+}
+
+TEST_CASE("PEDIT edits vertices") {
+    Fixture f;
+    EntityId p =
+        f.add(PolylineData{{{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0}}, false, 0});
+    f.host.run("PEDIT", {ScriptItem::pick(p, {5, 0}), "Vertices", "Insert", "4,0", "Move", "10,10",
+                         "12,12", "Exit", "Exit"});
+    const auto* pl = entityAs<PolylineData>(f.get(p));
+    REQUIRE(pl->v.size() == 4);
+    CHECK(near(pl->v[1].p, {4, 0}));
+    CHECK(near(pl->v[3].p, {12, 12}));
+}
+
+TEST_CASE("SPLINEDIT adds and removes fit points") {
+    Fixture f;
+    SplineData s;
+    s.fit = {{0, 0}, {5, 4}, {10, 0}, {15, 4}};
+    geom::InterpolateOptions io;
+    auto fitted = geom::interpolateSpline(s.fit, io);
+    REQUIRE(fitted.ok());
+    EntityId id = f.add(Indirect<SplineData>(fitted.value()));
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {5, 4}), "Delete", "5,4", "Exit"});
+    CHECK(entityAs<SplineData>(f.get(id))->fit.size() == 3);
+    f.host.undo();
+    CHECK(entityAs<SplineData>(f.get(id))->fit.size() == 4);
 }

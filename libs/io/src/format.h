@@ -16,7 +16,7 @@ namespace tbcad::io::detail {
 
 inline constexpr std::uint8_t kMagic[10] = {0x89, 'T', 'B', 'C', 'A', 'D', '\r', '\n', 0x1A, '\n'};
 inline constexpr std::uint32_t kFormatMajor = 1;
-inline constexpr std::uint32_t kFormatMinor = 5;
+inline constexpr std::uint32_t kFormatMinor = 6;
 inline constexpr std::size_t kFileHeaderSize = 22;   // magic 10 + major + minor + flags
 inline constexpr std::size_t kChunkHeaderSize = 16;  // fourcc + flags + length
 inline constexpr std::uint32_t kChunkDeflate = 1;
@@ -37,6 +37,7 @@ inline constexpr std::uint32_t kDynb = fourcc("DYNB");
 inline constexpr std::uint32_t kEnts = fourcc("ENTS");
 inline constexpr std::uint32_t kElvl = fourcc("ELVL");
 inline constexpr std::uint32_t kOrdr = fourcc("ORDR");
+inline constexpr std::uint32_t kXrfo = fourcc("XRFO");
 inline constexpr std::uint32_t kEnd = fourcc("END ");
 
 // Key prefixes inside Header::custom used to carry data that has no other home in the Document.

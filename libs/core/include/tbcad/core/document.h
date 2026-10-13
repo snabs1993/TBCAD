@@ -54,6 +54,16 @@ struct Header {
     std::map<std::string, std::string> custom{};  // settings stored in the file
 };
 
+// Annotation scale: model units per paper unit (100 for 1:100). Kept in Header::custom so it is
+// saved with the drawing. Always positive; 1 when unset or damaged.
+inline constexpr const char* kAnnoScaleKey = "tbcad.annoscale";
+inline constexpr const char* kAnnoScaleListKey = "tbcad.scalelist";
+double currentAnnotationScale(const Header& h);
+// The scales offered for annotation, as N of 1:N. Default list when none is stored.
+std::vector<double> annotationScaleList(const Header& h);
+// 1 for ordinary objects; for annotative ones `override` when positive, else the current scale.
+double annotationFactor(const Header& h, const EntityCommon& c, double override = 0);
+
 enum class Direction { Undo, Redo };
 
 template <class Row>

@@ -89,6 +89,7 @@ public:
         loadEntityLevels();
         loadBlocks(tx);
         loadXrefs(tx);
+        loadXrefOverlays(tx);
         loadDynamic(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
@@ -112,6 +113,7 @@ private:
                 case kElvl:
                 case kBlks:
                 case kXrfs:
+                case kXrfo:
                 case kDynb:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
@@ -542,6 +544,22 @@ private:
         }
         if (!r.atEnd())
             bad("trailing data in XRFS");
+    }
+
+    void loadXrefOverlays(Transaction& tx) {
+        const RawChunk* c = find(kXrfo);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(1);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            if (!tx.modifyBlock(b, [&](BlockDef& d) { d.xrefOverlay = !d.xrefPath.empty(); }).ok())
+                bad("overlay flag names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in XRFO");
     }
 
     void loadDynamic(Transaction& tx) {
