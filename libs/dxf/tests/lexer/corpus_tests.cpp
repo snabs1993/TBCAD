@@ -1,6 +1,5 @@
 // Runs the lexer over every tests/corpus/synthetic/lexer/*.dxf and compares the token
 // stream and warnings with the neighbouring .expected.txt (see tools/make_lexer_corpus.py).
-#include <doctest/doctest.h>
 
 #include <algorithm>
 #include <charconv>
@@ -8,6 +7,7 @@
 #include <filesystem>
 #include <sstream>
 
+#include "doctest_include.h"
 #include "tbcad/dxf/lexer.h"
 #include "test_util.h"
 

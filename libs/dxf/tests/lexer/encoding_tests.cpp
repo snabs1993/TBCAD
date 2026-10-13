@@ -1,7 +1,7 @@
-#include <doctest/doctest.h>
 
 #include <string>
 
+#include "doctest_include.h"
 #include "tbcad/dxf/encoding.h"
 #include "tbcad/dxf/lexer.h"
 #include "test_util.h"

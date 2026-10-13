@@ -2,11 +2,11 @@
 // must never crash or hang the lexer, encoding detection or text decoding. (The libFuzzer
 // target in fuzz_lexer.cpp does the real work; this keeps a cheap version in every ctest run
 // and on platforms without libFuzzer.)
-#include <doctest/doctest.h>
 
 #include <cstdint>
 #include <filesystem>
 
+#include "doctest_include.h"
 #include "tbcad/dxf/encoding.h"
 #include "tbcad/dxf/lexer.h"
 #include "test_util.h"

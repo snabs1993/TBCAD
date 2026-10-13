@@ -1,5 +1,4 @@
-#include <doctest/doctest.h>
-
+#include "doctest_include.h"
 #include "tbcad/dxf/report.h"
 
 namespace tbcad::dxf {
