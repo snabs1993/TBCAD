@@ -27,14 +27,7 @@ auto r = hatch::findBoundary(cands, pickPoint); // Result<Boundary>
 * Guard: more than `BoundaryOptions::maxEdges` (20,000) graph edges → `Error{OutOfRange}`
   "Too many objects in view to find a boundary; zoom in and try again." The check also stops the
   search early when the number of crossings alone is far over the limit.
-* **Gap tolerance** (`BoundaryOptions::gapTolerance`, mm, default 0): a free end that stops short of
-  another curve (its end or its side) by at most the tolerance is joined to it with a connecting
-  line. The connector is a normal line edge of the loop but has no source entity, so
-  `Boundary::sources` lists real entities only. One extra pass over all pieces per free end.
-* `Boundary::sources` lists the outer loop's entities first, then the islands'. This is what an
-  associative hatch stores in `HatchData::sourceBoundary`.
-* `BoundaryFinder` builds the graph once and answers many picks (`find(pick)`, `outermost()`); it is
-  what the hover preview uses. The entities handed to it must stay unchanged while it is used.
+* Gaps are not closed in v1 (`gapTolerance` is reserved).
 * Edge encoding in `HatchData`: `HatchArcEdge` / `HatchEllipseEdge` travel from `startAngle` to
   `endAngle` counter-clockwise when `ccw`, clockwise otherwise; equal angles mean a full turn.
 * `boundaryFromObjects(objects)` is the select-objects mode: the regions enclosed by the chosen
@@ -87,25 +80,12 @@ patterns (they shadow built-in ones); `parsePatterns(text)` reads the file forma
 
 ## Commands (`libs/commands/hatch`)
 
-* **HATCH [H]**: `Pick internal point (LINE45, scale 1, angle 0) or [Objects/Pattern/Scale/Angle/Base/Gap/Link/Undo]`.
+* **HATCH [H]**: `Pick internal point (LINE45, scale 1, angle 0) or [Objects/Pattern/Scale/Angle/Base/Undo]`.
   Each pick adds a hatch (islands included). `Objects` hatches the selected shapes, `Undo` removes the
   last hatch of this run, Esc keeps what was made. The boundary search sees the model-space entities
   that are visible (entity visible, layer on and not frozen) and inside the current view; without a
   viewport (scripts) it sees all of them. The chosen pattern, scale, angle and base are remembered in
-  the host settings (`hatch.pattern`, `hatch.scale`, `hatch.angle` in degrees, `hatch.base`, `hatch.gap`,
-  `hatch.associative`). `Gap` sets the gap tolerance (0 = off); `Link` toggles whether new hatches
-  are associative. While the command waits for a point, the region under the cursor is previewed
-  (outline plus a light tint), from a boundary graph that is cached per drawing revision, view and
-  gap. Candidates come from `IHost::entitiesInWindow` when the host has a spatial index, otherwise
-  from a scan of the document.
-* **Associative hatches.** A commit hook registered by the module calls
-  `hatch::updateAssociativeHatches` at the end of every command that changed something. A hatch
-  whose `sourceBoundary` contains a touched entity is rebuilt from its source entities (the
-  outermost region that best overlaps the old outer loop) in the same transaction, so the update
-  is part of the command's undo step. If a source was erased or the sources no longer enclose a
-  region, the hatch keeps its last loops and becomes non-associative. Unchanged geometry is not
-  rewritten. Limitation: a hatch that was closed with a gap is rebuilt without a gap tolerance, so it
-  detaches once its sources move apart.
+  the host settings (`hatch.pattern`, `hatch.scale`, `hatch.angle` in degrees, `hatch.base`).
 * **HATCHEDIT [HE]**: select hatches (the current selection is used first), then
   `[Pattern/Scale/Angle/Base/Done]`. All selected hatches change in one transaction, so editing
   1,000 of them is one undo step. Esc throws the edits away. The property section and the panel call it
