@@ -248,6 +248,20 @@ struct DataDumper {
         for (const auto& p : d.vertices)
             o << " " << p;
     }
+    void operator()(const TableData& d) {
+        o << "TABLE at" << d.origin << " rot" << d.rotation << " th" << d.textHeight << " m"
+          << d.margin << " style" << d.style << " title" << d.titleRow << " cols";
+        for (double w : d.colWidths)
+            o << " " << w;
+        o << " rows";
+        for (double h : d.rowHeights)
+            o << " " << h;
+        for (const TableCell& c : d.cells) {
+            o << " [" << c.colSpan << "x" << c.rowSpan << (c.covered ? "c" : "") << " ";
+            o.quoted(c.utf8);
+            o << "]";
+        }
+    }
     void operator()(const ProxyData& d) {
         o << "PROXY ";
         o.quoted(d.originalType);

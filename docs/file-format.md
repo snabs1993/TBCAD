@@ -1,4 +1,4 @@
-#The.tbcad file format
+# The .tbcad file format
 
 Format version **1.6** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, 1.5 the `XRFO` chunk for overlay xrefs, 1.6 a clipping boundary on Insert, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
@@ -9,40 +9,38 @@ compatible (an older program opens a newer file without losing data it does not 
 
 All integers are little-endian. Doubles are IEEE 754 binary64 stored as their raw 8 bytes, never
 as text. A **varint** is an unsigned LEB128 integer (7 bits per byte, high bit = more bytes,
-at most 10 bytes). **Ids** are varints;
-**0 is the null id **.
+at most 10 bytes). **Ids** are varints; **0 is the null id**.
 
-  ##File layout
+## File layout
 
-``` signature 10 bytes 89 54 42 43 41 44 0D 0A 1A 0A "\x89TBCAD\r\n\x1a\n" formatMajor u32
-      formatMinor u32 flags u32 reserved,
-    written as 0 chunk *until the END chunk
+```
+signature   10 bytes   89 54 42 43 41 44 0D 0A 1A 0A      "\x89TBCAD\r\n\x1a\n"
+formatMajor u32
+formatMinor u32
+flags       u32        reserved, written as 0
+chunk*                 until the END chunk
 ```
 
-        The signature is PNG -
-        style : the high - bit first byte,
-    the `\r\n` pair and the `\x1a\n` pair make text - mode transfers and line -
-        ending conversion visible immediately("the signature is damaged")
-            .
+The signature is PNG-style: the high-bit first byte, the `\r\n` pair and the `\x1a\n` pair make
+text-mode transfers and line-ending conversion visible immediately ("the signature is damaged").
 
-        A reader refuses a file whose `formatMajor` is higher than it knows,
-    with a message asking the user to update.A higher `formatMinor` is read normally
-    : minor versions only *add *chunks,
-    entity kinds,
-    and trailing fields.
+A reader refuses a file whose `formatMajor` is higher than it knows, with a message asking the
+user to update. A higher `formatMinor` is read normally: minor versions only *add* chunks, entity
+kinds, and trailing fields.
 
-        ##Chunks
+## Chunks
 
-``` fourcc 4 bytes flags u32 bit 0 =
-        payload is deflated length u64 size of the stored payload payload length bytes crc32 u32 CRC
-        - 32(IEEE, as in zlib / PNG) of the payload * as stored
-              *
+```
+fourcc   4 bytes
+flags    u32       bit 0 = payload is deflated
+length   u64       size of the stored payload
+payload  length bytes
+crc32    u32       CRC-32 (IEEE, as in zlib/PNG) of the payload *as stored*
 ```
 
-              If bit 0 is set the stored payload is `u64 rawLength` followed by a zlib stream
-                  .A reader checks
-`rawLength` against a sanity limit(1 GiB, and at most about 1100 times the compressed size) before
-              allocating.Other flag bits are reserved; a known chunk with an unknown flag bit is an
+If bit 0 is set the stored payload is `u64 rawLength` followed by a zlib stream. A reader checks
+`rawLength` against a sanity limit (1 GiB, and at most about 1100 times the compressed size)
+before allocating. Other flag bits are reserved; a known chunk with an unknown flag bit is an
 error, an unknown chunk is kept whatever its flags.
 
 | Chunk | Content | Count |
@@ -146,10 +144,9 @@ entirely in `LAYR`:
   its child (a layer can be re-parented after it was created).
 * ByParent settings are stored as special field values: colour kind **4**, linetype id
   **`0xFFFFFFFD`**, lineweight **−4**. They are only valid on a layer that has a parent.
-* Names are unique among siblings (case-insensitively);
-the same name may appear under different parents.Depth is at most 8;
-layer "0"(id 1)has no parent and no children.* Effective on / frozen / locked / plot / colour
-    / linetype / lineweight are * not *stored; they are computed
+* Names are unique among siblings (case-insensitively); the same name may appear under
+  different parents. Depth is at most 8; layer "0" (id 1) has no parent and no children.
+* Effective on/frozen/locked/plot/colour/linetype/lineweight are *not* stored; they are computed
   from the tree when the file is loaded (`Document::effective`).
 
 A reader that finds a cycle, a missing parent, a bad depth, a ByParent value without a parent,
@@ -169,8 +166,7 @@ common properties
 kind payload
 ```
 
-Records are in ascending entity id order;
-ids may have gaps.
+Records are in ascending entity id order; ids may have gaps.
 
 **Common properties**: `varint id`, `u8 flags`, `varint layer`, then only the fields whose flag
 is set:
@@ -202,13 +198,10 @@ loses nothing when it saves. The common properties stay editable. Bytes after th
 | Point | `v2` |
 | Ellipse | `v2 center`, `v2 majorAxis`, `f64 ratio`, `f64 startParam`, `f64 endParam` |
 | Spline | spline body |
-| Text | `v2 position`, `v2 alignPoint`, `f64 height`, `f64 rotation`, `f64 widthFactor`, `f64 oblique`, `varint style`, `u8 hAlign`, `u8 vAlign`, `string`;
-since 1.1, optional trailing attribute definition : `u8 flags` (1 invisible, 2 constant, 4 verify, 8 preset, 128 always set), `string tag`, `string prompt`, `string default` | | MText | `v2 position`, `f64 height`, `f64 width`, `f64 rotation`, `u8 attachment`, `varint style`, `string` | | Hatch | `u8 solid`, `string pattern`, `f64 scale`, `f64 angle`, `v2 origin`, colour fill, `varint n` + `n` × `varint` source boundary ids, `varint loops` × (`u8 outer`, `varint edges` × edge) | | Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`;
-since 1.1,
-    optional trailing attribute values : `varint count`, then per attribute `string tag`, `string value`; since 1.3, after them (count may be 0), an optional associative array: `u8 1`, `u8 kind` (0 rectangular, 1 polar, 2 path), `varint rows`, `varint columns`, `f64 rowSpacing`, `f64 columnSpacing`, `f64 angle`, `v2 center`, `varint count`, `f64 fillAngle`, `u8 rotateItems`, `v2 reference`, `u8 pathClosed`, `f64 pathSpacing`, then the path vertices as for a polyline;
-since 1.4,
-    further optional sections each started by a tag byte, `u8 2` = dynamic block values : `varint count`, `f64` each;
-since 1.6, `u8 3` = clipping boundary: `u8 on`, `varint count`, `v2` each (block coordinates) |
+| Text | `v2 position`, `v2 alignPoint`, `f64 height`, `f64 rotation`, `f64 widthFactor`, `f64 oblique`, `varint style`, `u8 hAlign`, `u8 vAlign`, `string`; since 1.1, optional trailing attribute definition: `u8 flags` (1 invisible, 2 constant, 4 verify, 8 preset, 128 always set), `string tag`, `string prompt`, `string default` |
+| MText | `v2 position`, `f64 height`, `f64 width`, `f64 rotation`, `u8 attachment`, `varint style`, `string` |
+| Hatch | `u8 solid`, `string pattern`, `f64 scale`, `f64 angle`, `v2 origin`, colour fill, `varint n` + `n` × `varint` source boundary ids, `varint loops` × (`u8 outer`, `varint edges` × edge) |
+| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`; since 1.1, optional trailing attribute values: `varint count`, then per attribute `string tag`, `string value`; since 1.3, after them (count may be 0), an optional associative array: `u8 1`, `u8 kind` (0 rectangular, 1 polar, 2 path), `varint rows`, `varint columns`, `f64 rowSpacing`, `f64 columnSpacing`, `f64 angle`, `v2 center`, `varint count`, `f64 fillAngle`, `u8 rotateItems`, `v2 reference`, `u8 pathClosed`, `f64 pathSpacing`, then the path vertices as for a polyline; since 1.4, further optional sections each started by a tag byte, `u8 2` = dynamic block values: `varint count`, `f64` each; since 1.6, `u8 3` = clipping boundary: `u8 on`, `varint count`, `v2` each (block coordinates) |
 | Dimension | `u8 kind`, `f64 rotation`, 4 × `v2` defining points, `v2 textPos`, `u8 textPosUser`, `string textOverride`, `varint style`, `f64 measurement` |
 | Leader | `varint n` × `v2` vertices, `varint style`, `string`, `v2 textPos` |
 | Proxy | `string originalType`, `varint n` + raw bytes, `varint items` × display item |
@@ -216,12 +209,9 @@ since 1.6, `u8 3` = clipping boundary: `u8 on`, `varint count`, `v2` each (block
 *vertices*: `varint n` × (`v2 p`, `f64 bulge`, `f64 startWidth`, `f64 endWidth`).
 *spline body*: `i32 degree`, `u8 flags` (bit 0 closed, bit 1 periodic), then four lists, each
 `varint n` + elements: knots (`f64`), control points (`v2`), weights (`f64`), fit points (`v2`).
-*hatch edge*: `u8 type` then 0 line (`v2 a`, `v2 b`);
-1 arc(`v2 center`, `f64 radius`,
-`f64 start`, `f64 end`, `u8 ccw`);
-2 ellipse(`v2 center`, `v2 major`, `f64 ratio`,
-`f64 startParam`, `f64 endParam`, `u8 ccw`);
-3 spline(spline body); 4 polyline (`u8 closed`,
+*hatch edge*: `u8 type` then 0 line (`v2 a`, `v2 b`); 1 arc (`v2 center`, `f64 radius`,
+`f64 start`, `f64 end`, `u8 ccw`); 2 ellipse (`v2 center`, `v2 major`, `f64 ratio`,
+`f64 startParam`, `f64 endParam`, `u8 ccw`); 3 spline (spline body); 4 polyline (`u8 closed`,
 vertices).
 *display item* (Proxy graphics): `u8 type` (0 polyline: `u8 closed`, points; 1 fill:
 `varint rings` × points; 2 points: points), then style = RGBA 4 bytes, `f64 lineweight`,
@@ -231,49 +221,41 @@ table).
 
 Entities are validated by `Document` while loading. An entity the document refuses (for example
 a negative radius or a coordinate beyond ±1e10 mm) is **skipped with a warning** and the rest of
-the file loads;
-its id stays unused.
+the file loads; its id stays unused.
 
-    ##ORDR
+## ORDR
 
-        Present only when model -
-    space draw order(back to front) differs from id order :
-`varint n` + `n` × `varint entityId`,
-    a permutation of the model - space entities.On load the longest ascending run is left alone,
-    entities before it are sent to the back and entities after it are brought to the front,
-    which reproduces the stored order exactly
-            .A list that is not a permutation is ignored with a warning.
+Present only when model-space draw order (back to front) differs from id order:
+`varint n` + `n` × `varint entityId`, a permutation of the model-space entities. On load the
+longest ascending run is left alone, entities before it are sent to the back and entities after
+it are brought to the front, which reproduces the stored order exactly. A list that is not a
+permutation is ignored with a warning.
 
-        ##Reading safely
+## Reading safely
 
-        * Every length,
-    count and index is checked against the bytes that remain;
-an element count that cannot fit is an error before anything is allocated
-    .* Deflated chunks are bounded as described above and must inflate to exactly `rawLength`.* Ids
-        are reproduced by adding and erasing placeholders in the document;
-a gap of more than 2 ^ 24 ids is treated as corruption.* Any failure returns an `Error`;
-nothing crashes or throws out of `readTbcad`.The test suite truncates a file at every
-                       byte offset and applies thousands of random mutations,
-    under AddressSanitizer and UBSan in CI.
+* Every length, count and index is checked against the bytes that remain; an element count that
+  cannot fit is an error before anything is allocated.
+* Deflated chunks are bounded as described above and must inflate to exactly `rawLength`.
+* Ids are reproduced by adding and erasing placeholders in the document; a gap of more than
+  2^24 ids is treated as corruption.
+* Any failure returns an `Error`; nothing crashes or throws out of `readTbcad`. The test suite
+  truncates a file at every byte offset and applies thousands of random mutations, under
+  AddressSanitizer and UBSan in CI.
 
-    ##Writing safely
+## Writing safely
 
 `writeTbcad(doc, path)`:
 
-    1. serialise to memory;
-2. write `<path>.tmp`, flush and sync it(`fsync` / `FlushFileBuffers`);
+1. serialise to memory;
+2. write `<path>.tmp`, flush and sync it (`fsync` / `FlushFileBuffers`);
 3. keep the old file as `<path>.bak` (`keepBackup`, default on);
-4. replace `<path>` with the temporary file(`rename` on POSIX, `ReplaceFileW` on Windows)
-    .
+4. replace `<path>` with the temporary file (`rename` on POSIX, `ReplaceFileW` on Windows).
 
-    If the process dies before step 4 the original file is untouched and still opens;
-a stale
-`.tmp` is overwritten by the next save.The output is deterministic
-    : the same document and options give the same bytes,
-    and `write(read(write(d)))` equals `write(d)`.
+If the process dies before step 4 the original file is untouched and still opens; a stale
+`.tmp` is overwritten by the next save. The output is deterministic: the same document and
+options give the same bytes, and `write(read(write(d)))` equals `write(d)`.
 
-        ##Not stored
+## Not stored
 
-        Undo history,
-    selection and view state, the effective layer cache,
-    and the linetype pointer inside proxy display styles.
+Undo history, selection and view state, the effective layer cache, and the linetype pointer
+inside proxy display styles.

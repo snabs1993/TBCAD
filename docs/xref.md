@@ -1,7 +1,7 @@
-#External references(xref)
+# External references (xref)
 
-An xref shows another drawing inside the current one without copying it by hand,
-    and follows that file when it changes.Library : `libs / xref`; commands in `libs/commands/blocks`.
+An xref shows another drawing inside the current one without copying it by hand, and follows that
+file when it changes. Library: `libs/xref`; commands in `libs/commands/blocks`.
 
 ## What it is
 

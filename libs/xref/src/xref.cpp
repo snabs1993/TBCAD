@@ -216,6 +216,8 @@ private:
             t->style = mapTextStyle(t->style);
         else if (auto* m = entityAs<MTextData>(e))
             m->style = mapTextStyle(m->style);
+        else if (auto* tb = entityAs<TableData>(e))
+            tb->style = mapTextStyle(tb->style);
         else if (auto* d = entityAs<DimensionData>(e))
             d->style = mapDimStyle(d->style);
         else if (auto* l = entityAs<LeaderData>(e))

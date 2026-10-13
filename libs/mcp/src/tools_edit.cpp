@@ -162,7 +162,8 @@ std::string applySet(const Document& doc, Entity& e, const Json& set) {
         return {};
     }
     EntityKind k = kind(e);
-    if (k == EntityKind::Dimension || k == EntityKind::Leader || k == EntityKind::Proxy) {
+    if (k == EntityKind::Dimension || k == EntityKind::Leader || k == EntityKind::Proxy ||
+        k == EntityKind::Table) {
         return "the geometry of a " + kindName(k) +
                " is changed with transform or run_command, not with set";
     }
