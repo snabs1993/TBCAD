@@ -894,3 +894,8 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
     f.core->tickXrefs(now + std::chrono::seconds(6));  // the fake did not reload; no second try
     CHECK(gFakeXReloadRuns == 1);
 }
+
+TEST_CASE("Delete is bound to edit.delete") {
+    Fixture f("deletekey");
+    CHECK(f.core->keybindings().label("edit.delete") == "Delete");
+}

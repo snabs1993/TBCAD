@@ -12,6 +12,10 @@
 
 namespace tbcad::transform {
 
+// Grip indices from here up belong to the parameters of a dynamic block Insert: index
+// kDynGripBase + n is the handle of parameter n (see blocks::dynHandles).
+constexpr int kDynGripBase = 1000;
+
 // One grip of one selected entity (index as in geom::gripPoints).
 struct Grip {
     EntityId entity{};

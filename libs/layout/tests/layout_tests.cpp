@@ -3,6 +3,8 @@
 #include <regex>
 #include <sstream>
 
+#include "tbcad/blocks/attributes.h"
+#include "tbcad/blocks/display.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/pdf/pdf.h"
@@ -239,10 +241,12 @@ TEST_CASE("title block and sheet objects are plotted; viewports can be switched 
         f.sheet = "A-101";
         return addTitleBlock(tx, "T", f);
     });
+    blocks::registerInsertDisplay();
     auto sheet = buildLayoutSheet(doc, "T");
     REQUIRE(sheet.ok());
-    // 4 frame lines + 3 row lines; text only draws once a text generator is registered.
-    CHECK(sheet.value().prims.size() >= 7);
+    // 4 frame lines + 3 row lines + the date divider; text only draws once a text generator is
+    // registered.
+    CHECK(sheet.value().prims.size() >= 8);
     BBox2 b;
     for (const auto& p : sheet.value().prims)
         if (const auto* pp = std::get_if<exportlib::PlotPath>(&p))
@@ -252,6 +256,52 @@ TEST_CASE("title block and sheet objects are plotted; viewports can be switched 
     CHECK(b.min.y == doctest::Approx(10));
 
     CHECK_FALSE(buildLayoutSheet(doc, "missing").ok());
+}
+
+TEST_CASE("the title block is a block with attributes; a second one reuses the definition") {
+    Document doc;
+    run(doc, "layout", [](Transaction& tx) {
+        if (auto r = createLayout(tx, "A", "A3"); !r)
+            return r;
+        if (auto r = createLayout(tx, "B", "A4"); !r)
+            return r;
+        TitleBlockFields f;
+        f.project = "Tower";
+        f.drawing = "Ground floor";
+        f.scale = "1:100";
+        f.date = "2026-10-13";
+        f.sheet = "A-101";
+        if (auto r = addTitleBlock(tx, "A", f); !r)
+            return r;
+        f.sheet = "A-102";
+        return addTitleBlock(tx, "B", f);
+    });
+    const BlockDef* def = doc.blockByName("TITLEBLOCK");
+    REQUIRE(def != nullptr);
+    CHECK(blocks::attributeDefinitions(doc, def->id).size() == 5);
+    auto sheetValue = [&](const char* layoutName, const char* tag) -> std::string {
+        auto l = findLayout(doc, layoutName);
+        REQUIRE(l.has_value());
+        const BlockDef* content = doc.block(l->content);
+        REQUIRE(content != nullptr);
+        for (EntityId id : content->entities) {
+            const auto* ins = entityAs<InsertData>(*doc.find(id));
+            if (!ins)
+                continue;
+            for (const auto& a : ins->attribs)
+                if (a.tag == tag)
+                    return a.value;
+        }
+        return "?";
+    };
+    CHECK(sheetValue("A", "PROJECT") == "Tower");
+    CHECK(sheetValue("A", "SHEET") == "A-101");
+    CHECK(sheetValue("B", "SHEET") == "A-102");
+    CHECK(sheetValue("B", "DATE") == "2026-10-13");
+    std::size_t blockCount = 0;
+    for (const auto& [id, b] : doc.blocks())
+        blockCount += b.name == "TITLEBLOCK";
+    CHECK(blockCount == 1);
 }
 
 TEST_CASE("SVG of a layout is clipped per viewport and well-formed") {

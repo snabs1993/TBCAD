@@ -4,6 +4,7 @@
 
 #include "tbcad/blocks/array.h"
 #include "tbcad/blocks/blocks.h"
+#include "tbcad/blocks/explode.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
 #include "writer_impl.h"
@@ -272,9 +273,22 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
             writeHatch(p, h, owner);
             break;
         }
-        case EntityKind::Insert:
-            writeInsert(p, *entityAs<InsertData>(e), owner);
+        case EntityKind::Insert: {
+            const auto* ins = entityAs<InsertData>(e);
+            const BlockDef* bd = doc_.block(ins->block);
+            if (bd && bd->dynamic) {
+                // DXF has no dynamic blocks: the current state is written as plain objects.
+                downgrade("INSERT", "a dynamic block is written as its current geometry");
+                if (auto parts = blocks::explode(doc_, e)) {
+                    for (const Entity& part : parts.value().entities)
+                        if (kind(part) != EntityKind::Dimension)
+                            writeEntity(part, owner);
+                }
+                break;
+            }
+            writeInsert(p, *ins, owner);
             break;
+        }
         case EntityKind::Dimension: {
             std::vector<EntityId> one{e.common.id};
             writeDimension(one, 0, owner);

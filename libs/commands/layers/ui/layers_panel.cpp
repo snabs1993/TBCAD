@@ -154,7 +154,8 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
             st.renaming = {};  // Esc or click elsewhere cancels
         }
     } else {
-        // The UI font has no filled-dot glyph (it showed as "?"), so mark the current layer in ASCII.
+        // The UI font has no filled-dot glyph (it showed as "?"), so mark the current layer in
+        // ASCII.
         std::string label = std::string(current ? "> " : "   ") + l->name;
         if (dimmed)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));

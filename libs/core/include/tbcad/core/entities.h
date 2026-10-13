@@ -270,6 +270,8 @@ struct InsertData {
     double rotation = 0;
     std::vector<AttribValue> attribs{};  // non-constant attributes of the block, by tag
     std::optional<ArrayInfo> array{};    // set: shown once per array item
+    // Values of the block's dynamic parameters, in parameter order (missing = the default).
+    std::vector<double> dynValues{};
 };
 
 enum class DimKind : std::uint8_t {
