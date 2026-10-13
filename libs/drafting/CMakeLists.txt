@@ -9,6 +9,7 @@ tbcad_add_library(drafting
     src/osnap.cpp
     src/filters.cpp
     src/grid.cpp
+    src/ucs.cpp
     src/markers.cpp
   DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::cmd tbcad::render)
 
@@ -18,4 +19,5 @@ tbcad_add_tests(drafting
     tests/parser_tests.cpp
     tests/osnap_tests.cpp
     tests/tracking_tests.cpp
-    tests/grid_tests.cpp)
+    tests/grid_tests.cpp
+    tests/ucs_tests.cpp)

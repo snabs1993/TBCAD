@@ -2,6 +2,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/drafting/settings.h"
+#include "tbcad/drafting/ucs.h"
 #include "tbcad/draftingcmds/drafting_cmds.h"
 
 using namespace tbcad;
@@ -114,4 +115,54 @@ TEST_CASE("the F-key toggles flip their setting") {
     f.host.run("TOGGLESNAP", {});
     CHECK(f.get("drafting.snap") == "1");
     f.host.run("SNAPCYCLE", {});  // nothing to cycle headless: must not crash
+}
+
+TEST_CASE("UCS: origin, rotate, points, save, restore, delete and list") {
+    Fixture f;
+    CHECK(f.reg.find("UCS") != nullptr);
+    f.host.run("UCS", {"Origin", "10,20"});
+    CHECK(f.get("drafting.ucs") == "@10,20,0");
+    f.host.run("UCS", {"Rotate", "90"});
+    auto u = drafting::currentUcs(&f.doc, &f.host);
+    CHECK(u.origin == Vec2{10, 20});
+    CHECK(u.angle == doctest::Approx(kPi / 2));
+    // Typed points follow it.
+    f.host.run("UCS", {"Save", "Wing"});
+    CHECK(f.get("drafting.ucs") == "Wing");
+    CHECK(drafting::ucsList(f.doc).size() == 1);
+    f.host.run("UCS", {"World"});
+    CHECK(f.get("drafting.ucs") == "World");
+    CHECK(drafting::currentUcs(&f.doc, &f.host).isWorld());
+    f.host.run("UCS", {"Restore", "wing"});
+    CHECK(f.get("drafting.ucs") == "Wing");
+    f.host.run("UCS", {"List"});
+    CHECK(f.host.logContains("* Wing"));
+    f.host.run("UCS", {"Points", "0,0", "0,10"});
+    CHECK(drafting::currentUcs(&f.doc, &f.host).angle == doctest::Approx(kPi / 2));
+    f.host.run("UCS", {"Restore", "Nope"});
+    CHECK(f.host.logContains("No UCS named"));
+    f.host.run("UCS", {"Delete", "Wing"});
+    CHECK(drafting::ucsList(f.doc).empty());
+}
+
+TEST_CASE("UCS Object aligns to a line and DYNUCS toggles") {
+    Fixture f;
+    EntityId lineId;
+    {
+        auto tx = f.doc.begin("line");
+        Entity e;
+        e.data = LineData{{0, 0}, {10, 10}};
+        auto id = tx.add(e);
+        REQUIRE(id.ok());
+        lineId = id.value();
+        (void)tx.commit();
+    }
+    f.host.run("UCS", {"Object", ScriptItem::pick(lineId, {5, 5})});
+    auto u = drafting::currentUcs(&f.doc, &f.host);
+    CHECK(u.angle == doctest::Approx(kPi / 4));
+    CHECK(u.origin == Vec2{0, 0});
+    f.host.run("DYNUCS", {});
+    CHECK(f.get("drafting.dynucs") == "1");
+    f.host.run("DYNUCS", {});
+    CHECK(f.get("drafting.dynucs") == "0");
 }

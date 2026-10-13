@@ -6,6 +6,8 @@
 
 namespace tbcad::draftingcmds {
 
+void registerUcsCommands(cmd::Registry& registry);
+
 namespace {
 
 using drafting::keys::grid;
@@ -26,6 +28,8 @@ bool isOn(const cmd::IHost& host, const char* key) {
         return s.snap;
     if (k == ortho)
         return s.ortho;
+    if (k == drafting::keys::dynUcs)
+        return s.dynUcs;
     return s.polar;
 }
 
@@ -270,7 +274,10 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLESNAP", "Snap", snap));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEORTHO", "Ortho", ortho));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEPOLAR", "Polar tracking", polar));
+    (void)registry.add(
+        std::make_unique<ToggleCommand>("DYNUCS", "Dynamic UCS", drafting::keys::dynUcs));
     (void)registry.add(std::make_unique<SnapCycleCommand>());
+    registerUcsCommands(registry);
 }
 
 }  // namespace tbcad::draftingcmds

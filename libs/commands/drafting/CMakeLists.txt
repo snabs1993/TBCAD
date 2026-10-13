@@ -6,6 +6,7 @@ tbcad_add_library(drafting_cmds
     src/commands.cpp
     src/module_state.cpp
     src/ui.cpp
+    src/ucs_command.cpp
   DEPENDS tbcad::drafting tbcad::cmd tbcad::ui tbcad::render tbcad::core)
 target_include_directories(tbcad_drafting_cmds PRIVATE src)
 

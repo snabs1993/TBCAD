@@ -42,6 +42,7 @@ struct World {
     cmd::ScriptHost host;
     DraftingEnv env;
     OsnapFilter osnap{&env};
+    DynamicUcsFilter dynUcs{&env};
     PolarOrthoFilter polar{&env};
     GridSnapFilter grid{&env};
     TypedPointParser parser{&env};
@@ -52,6 +53,7 @@ struct World {
         env.index = &idx;
         env.host = &host;
         host.filters().add(&osnap, kOsnapOrder);
+        host.filters().add(&dynUcs, kDynamicUcsOrder);
         host.filters().add(&polar, kPolarOrder);
         host.filters().add(&grid, kGridSnapOrder);
         host.runner().setLineParser(&parser);
