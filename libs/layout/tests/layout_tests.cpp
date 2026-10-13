@@ -176,6 +176,53 @@ TEST_CASE("plotting a layout: a 10,000 mm model line in a 1:100 viewport is 100 
     CHECK(std::abs((std::stod(m[3]) - std::stod(m[1])) - 100.0) <= 0.01);
 }
 
+TEST_CASE("a viewport can show one level only; the choice is saved and plotted") {
+    Document doc;
+    LevelId upper;
+    {
+        auto tx = doc.begin("levels");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        tx.commit();
+    }
+    {
+        auto tx = doc.begin("model");
+        REQUIRE(tx.add(line({0, 0}, {100, 0})).ok());  // first level
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentLevel = upper; }).ok());
+        REQUIRE(tx.add(line({0, 10}, {100, 10})).ok());  // upper level
+        REQUIRE(tx.add(line({0, 20}, {100, 20})).ok());  // upper level
+        tx.commit();
+    }
+    run(doc, "layout", [&](Transaction& tx) {
+        if (auto r = createLayout(tx, "L"); !r)
+            return r;
+        BBox2 a;
+        a.expand({10, 10});
+        a.expand({100, 100});
+        auto vp = addViewport(tx, "L", a, {50, 10}, 1);
+        if (!vp)
+            return Result<void>(vp.error());
+        return setViewportLevel(tx, "L", vp.value(), upper);
+    });
+    CHECK(findLayout(doc, "L")->viewports[0].level == upper);
+    auto strokes = [&] {
+        auto sheet = buildLayoutSheet(doc, "L", {}, {false}).value();
+        int n = 0;
+        for (const auto& p : sheet.prims)
+            if (std::holds_alternative<exportlib::PlotPath>(p))
+                ++n;
+        return n;
+    };
+    CHECK(strokes() == 2);
+    run(doc, "all", [&](Transaction& tx) { return setViewportLevel(tx, "L", 1, LevelId{}); });
+    CHECK(strokes() == 3);
+    run(doc, "bad", [&](Transaction& tx) {
+        CHECK_FALSE(setViewportLevel(tx, "L", 1, LevelId{99}).ok());
+        return Result<void>{};
+    });
+}
+
 TEST_CASE("freezing a layer in one viewport hides it there only, sub-layers included") {
     Document doc;
     LayerId walls = addLayer(doc, "Walls");

@@ -12,6 +12,7 @@ so they are saved in the `.tbcad` file and changes are undoable.
 | `MVIEW` (`MV`) | Adds a viewport: two sheet corners in mm, scale `1:N`, model centre |
 | `VPSCALE` | Changes a viewport's scale |
 | `VPLAYER` | Freezes or thaws a layer in one viewport (sub-layers follow their parent) |
+| `VPLEVEL` | Shows one level only in a viewport (empty name = every visible level again); plots follow it |
 | `TITLEBLOCK` | Inserts the `TITLEBLOCK` block (frame, labels and PROJECT, DRAWN BY, DATE, SCALE, SHEET attributes) on the sheet; edit the values with the attribute commands |
 
 A viewport plots the model through its own scale, clipped to its rectangle.

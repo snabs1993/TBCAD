@@ -29,5 +29,7 @@ std::string kindName(const Entity& e);
 
 // Model-space objects that are shown: visible, on a layer that is on and thawed.
 std::vector<const Entity*> shownEntities(const Document& doc);
+// The same on every level that is not hidden (other levels shown dimmed count).
+std::vector<const Entity*> shownOnAnyLevel(const Document& doc);
 
 }  // namespace tbcad::select::detail
