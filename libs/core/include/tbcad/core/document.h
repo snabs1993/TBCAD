@@ -31,6 +31,10 @@ struct Header {
     double workArea = kDefaultWorkArea;  // geometry beyond +-workArea is flagged, not rejected
     double ltScale = 1;
     LayerId currentLayer = kLayerZero;
+    // Properties new objects get from the drawing commands (ByLayer unless the user sets them).
+    Color currentColor = Color::byLayer();  // never ByParent
+    LinetypeId currentLinetype = kLinetypeByLayer;
+    LineWeight currentLineweight = LineWeight::byLayer();
     TextStyleId currentTextStyle = kTextStyleStandard;
     DimStyleId currentDimStyle = kDimStyleStandard;
     std::string createdBy{};
@@ -310,6 +314,9 @@ public:
     // by it so far (entities added in this transaction are not listed). Sorted by id. Lets
     // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
     std::vector<EntityId> touchedEntities() const;
+
+    // The document this transaction edits; reads see the edits made so far.
+    const Document& document() const { return *doc_; }
 
     // Finishes the transaction. Observers are notified once unless nothing changed.
     ChangeSet commit();

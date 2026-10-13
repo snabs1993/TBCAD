@@ -208,13 +208,8 @@ Result<PlotLayout> computeLayout(const Document& doc, const PlotSettings& s) {
     return lay;
 }
 
-Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {
-    auto layout = computeLayout(doc, s);
-    if (!layout)
-        return layout.error();
-    PlotSheet sheet;
-    sheet.layout = layout.value();
-    const PlotLayout& lay = sheet.layout;
+void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<EntityId>& ids,
+                    const PlotLayout& lay, const PlotSettings& s, const EntityFilter& skip) {
     Builder b{s, lay};
 
     geom::DisplayContext ctx;
@@ -226,9 +221,9 @@ Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {
     // Slight growth so lines on the border are not culled away.
     const BBox2 cull = lay.area.inflated(1.0 / lay.paperPerUnit);
 
-    for (EntityId id : doc.modelSpace()) {
+    for (EntityId id : ids) {
         const Entity* e = doc.find(id);
-        if (!e || !plottable(doc, *e))
+        if (!e || !plottable(doc, *e) || (skip && skip(*e)))
             continue;
         BBox2 box = geom::bounds(*e, doc);
         if (!box.empty() && !box.intersects(cull))
@@ -260,6 +255,15 @@ Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {
         for (const DisplayItem& it : list.items)
             b.item(it, sheet.prims);
     }
+}
+
+Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {
+    auto layout = computeLayout(doc, s);
+    if (!layout)
+        return layout.error();
+    PlotSheet sheet;
+    sheet.layout = layout.value();
+    appendEntities(sheet, doc, doc.modelSpace(), sheet.layout, s, {});
     return sheet;
 }
 
