@@ -149,6 +149,7 @@ private:
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
     std::size_t recoveryCount_ = 0;
+    std::string crashReport_{};  // newest unacknowledged crash report file, if any
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};

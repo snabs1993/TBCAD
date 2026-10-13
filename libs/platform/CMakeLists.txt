@@ -1,4 +1,4 @@
-set(_platform_sources src/json.cpp src/paths.cpp src/settings.cpp src/keybindings.cpp)
+set(_platform_sources src/json.cpp src/paths.cpp src/settings.cpp src/keybindings.cpp src/crash.cpp)
 if(WIN32)
   list(APPEND _platform_sources src/file_dialog_win32.cpp)
 else()
@@ -17,4 +17,5 @@ tbcad_add_tests(platform
     tests/json_tests.cpp
     tests/paths_tests.cpp
     tests/settings_tests.cpp
-    tests/keybindings_tests.cpp)
+    tests/keybindings_tests.cpp
+    tests/crash_tests.cpp)
