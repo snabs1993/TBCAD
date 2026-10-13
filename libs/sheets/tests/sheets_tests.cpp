@@ -83,3 +83,43 @@ TEST_CASE("a sheet list from two drawings becomes one two-page PDF") {
     CHECK_FALSE(fs::exists(dir / "bad.pdf"));
     fs::remove_all(dir);
 }
+
+TEST_CASE("a layout with a page setup is plotted with that setup, others with the base settings") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad_sheets_pagesetup";
+    fs::create_directories(dir);
+    {
+        Document doc;
+        auto tx = doc.begin("content");
+        Entity e = line({0, 0}, {5000, 2000});
+        e.common.color = Color::index(1);  // red
+        REQUIRE(tx.add(e).ok());
+        REQUIRE(layout::createLayout(tx, "Mono", "A3").ok());
+        REQUIRE(layout::createLayout(tx, "Plain", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "Mono", {{20, 20}, {400, 277}}, {2500, 1000}, 100).ok());
+        REQUIRE(layout::addViewport(tx, "Plain", {{20, 20}, {400, 277}}, {2500, 1000}, 100).ok());
+        layout::PageSetup mono;
+        mono.name = "Mono";
+        mono.settings.color = exportlib::ColorMode::Monochrome;
+        REQUIRE(layout::savePageSetup(tx, mono).ok());
+        REQUIRE(layout::assignPageSetup(tx, "Mono", "Mono").ok());
+        tx.commit();
+        REQUIRE(io::writeTbcad(doc, dir / "a.tbcad").ok());
+    }
+    auto entries = parseSheetList("a.tbcad | Mono\na.tbcad | Plain\n", dir);
+    REQUIRE(entries.ok());
+    exportlib::PlotSettings base;
+    base.color = exportlib::ColorMode::AsDisplayed;
+    auto set = buildSheetList(entries.value(), base);
+    REQUIRE(set.ok());
+    REQUIRE(set.value().sheets.size() == 2);
+    auto firstColor = [](const exportlib::PlotSheet& s) {
+        for (const auto& p : s.prims)
+            if (const auto* path = std::get_if<exportlib::PlotPath>(&p))
+                if (path->pts.size() == 2)
+                    return path->style.color;
+        return Rgba{1, 2, 3, 255};
+    };
+    CHECK(firstColor(set.value().sheets[0]) == Rgba{0, 0, 0, 255});
+    CHECK(firstColor(set.value().sheets[1]) == Rgba{255, 0, 0, 255});
+    fs::remove_all(dir);
+}

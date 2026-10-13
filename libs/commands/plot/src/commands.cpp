@@ -22,13 +22,20 @@ std::string lower(std::string s) {
     return s;
 }
 
-std::string summary(const PlotSettings& s, Format format) {
-    std::string t = format == Format::Pdf ? "PDF" : "SVG";
+std::string styleLabel(const PlotSettings& s) {
+    return s.styleTable ? (s.styleTable->name.empty() ? "styled" : s.styleTable->name) : "no style";
+}
+
+std::string summary(const cmd::IHost& host, const PlotSettings& s, Format format) {
+    std::string t = formatName(format);
+    if (format == Format::Png || format == Format::Jpeg)
+        t += " " + std::to_string(static_cast<int>(plotDpi(host) + 0.5)) + " dpi";
     t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
     t += s.area == PlotArea::Extents   ? ", Extents"
          : s.area == PlotArea::Display ? ", Display"
                                        : ", Window";
     t += ", scale " + scaleText(s);
+    t += ", " + styleLabel(s);
     return t;
 }
 
@@ -51,10 +58,11 @@ public:
         Format format = format_;
         for (;;) {
             KeywordOptions menu;
-            menu.keywords = {"Paper",  "Orientation", "Area",  "Scale",  "Center", "Offset",
-                             "Margin", "LineWeights", "Color", "Format", "Layout", "Export"};
+            menu.keywords = {"Paper",  "Orientation", "Area",        "Scale", "Center",
+                             "Offset", "Margin",      "LineWeights", "Color", "Style",
+                             "Format", "Resolution",  "Layout",      "Export"};
             menu.defaultKeyword = "Export";
-            auto choice = co_await ctx.getKeyword("Plot " + summary(s, format), menu);
+            auto choice = co_await ctx.getKeyword("Plot " + summary(ctx.host(), s, format), menu);
             if (choice.status == Status::Cancel)
                 co_return;
             const std::string& kw = choice.keyword;
@@ -188,19 +196,51 @@ public:
                     s.color = r.keyword == "Monochrome"  ? ColorMode::Monochrome
                               : r.keyword == "Greyscale" ? ColorMode::Greyscale
                                                          : ColorMode::AsDisplayed;
+            } else if (kw == "Style") {
+                cmd::StringOptions so;
+                so.defaultValue = plotStyleName(ctx.host());
+                auto r = co_await ctx.getString("Plot style table (name, file, or None)", so);
+                if (!r.ok())
+                    continue;
+                auto t = resolveStyleTable(ctx.host(), r.text);
+                if (!t) {
+                    ctx.message(t.error().message);
+                    continue;
+                }
+                setPlotStyleName(ctx.host(), r.text);
+                s.styleTable = t.value();
             } else if (kw == "Layout") {
                 cmd::StringOptions so;
                 so.defaultValue = plotLayout(ctx.host());
                 auto r = co_await ctx.getString("Layout to plot (empty = model space)", so);
-                if (r.ok())
+                if (r.ok()) {
                     setPlotLayout(ctx.host(), r.text);
+                    if (const auto m = applyAssignedPageSetup(ctx.doc(), ctx.host()); !m.empty()) {
+                        s = loadSettings(ctx.host());
+                        ctx.message(m);
+                    }
+                }
             } else if (kw == "Format") {
                 KeywordOptions ko;
-                ko.keywords = {"Pdf", "Svg"};
-                ko.defaultKeyword = format == Format::Pdf ? "Pdf" : "Svg";
+                ko.keywords = {"Pdf", "Svg", "Png", "Jpeg"};
+                ko.defaultKeyword = format == Format::Pdf   ? "Pdf"
+                                    : format == Format::Svg ? "Svg"
+                                    : format == Format::Png ? "Png"
+                                                            : "Jpeg";
                 auto r = co_await ctx.getKeyword("Output format", ko);
                 if (r.ok())
-                    format = r.keyword == "Pdf" ? Format::Pdf : Format::Svg;
+                    format = r.keyword == "Pdf"   ? Format::Pdf
+                             : r.keyword == "Svg" ? Format::Svg
+                             : r.keyword == "Png" ? Format::Png
+                                                  : Format::Jpeg;
+            } else if (kw == "Resolution") {
+                cmd::RealOptions ro;
+                ro.min = 10;
+                ro.max = 2400;
+                ro.defaultValue = plotDpi(ctx.host());
+                auto r = co_await ctx.getReal("Resolution of PNG / JPEG output in dpi", ro);
+                if (r.ok())
+                    setPlotDpi(ctx.host(), r.value);
             }
             saveSettings(ctx.host(), s);  // preferences stick even if the plot is cancelled
         }
@@ -230,7 +270,7 @@ public:
     std::string_view name() const override { return "PLOTSET"; }
     std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT", "PUBLISH"}; }
     std::string_view description() const override {
-        return "Plot a list of layouts from several drawings into one PDF";
+        return "Plot a list of layouts from several drawings into one PDF or onto a printer";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::StringOptions lo;
@@ -244,7 +284,8 @@ public:
             bool hasExt = dot != std::string::npos && (slash == std::string::npos || dot > slash);
             fo.defaultValue = (hasExt ? list.text.substr(0, dot) : list.text) + ".pdf";
         }
-        auto file = co_await ctx.getString("Output PDF file", fo);
+        auto file =
+            co_await ctx.getString("Output PDF file (or Printer / Dialog to print the sheets)", fo);
         if (!file.ok())
             co_return;
         auto entries = sheets::readSheetList(list.text);
@@ -252,8 +293,30 @@ public:
             ctx.message(entries.error().message);
             co_return;
         }
+        if (lower(file.text) == "printer" || lower(file.text) == "dialog") {
+            if (!print::available()) {
+                ctx.message(
+                    "Printing is only available in the Windows version. Plot to a PDF instead.");
+                co_return;
+            }
+            auto set = sheets::buildSheetList(entries.value(), loadSettings(ctx.host()),
+                                              styleResolver(ctx.host()));
+            if (!set) {
+                ctx.message(set.error().message);
+                co_return;
+            }
+            for (const auto& w : set.value().warnings)
+                ctx.message("Warning: " + w);
+            auto r = print::printSheets(set.value().sheets,
+                                        printJob(ctx.host(), lower(file.text) == "dialog"));
+            ctx.message(r ? "Sent " + std::to_string(set.value().sheets.size()) +
+                                " sheets to the printer."
+                          : r.error().message);
+            co_return;
+        }
         auto out = withExtension(file.text, Format::Pdf);
-        auto r = sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out);
+        auto r = sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out,
+                                       styleResolver(ctx.host()));
         if (!r) {
             ctx.message(r.error().message);
             co_return;
@@ -264,18 +327,210 @@ public:
     }
 };
 
+// PLOTSTYLE: choose, list, import and edit plot style tables.
+class PlotStyleCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLOTSTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"CTB"}; }
+    std::string_view description() const override {
+        return "Choose, list, import and edit plot style tables";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        KeywordOptions menu;
+        menu.keywords = {"Select", "List", "Import", "Edit", "Save"};
+        menu.defaultKeyword = "List";
+        auto choice =
+            co_await ctx.getKeyword("Plot style table: " + plotStyleName(ctx.host()), menu);
+        if (!choice.ok())
+            co_return;
+        const std::string& kw = choice.keyword;
+        if (kw == "List") {
+            const std::string cur = plotStyleName(ctx.host());
+            for (const auto& n : listStyleTables(ctx.host()))
+                ctx.message((n == cur ? "* " : "  ") + n);
+            co_return;
+        }
+        if (kw == "Select") {
+            cmd::StringOptions so;
+            so.defaultValue = plotStyleName(ctx.host());
+            auto r = co_await ctx.getString("Table name, file path, or None", so);
+            if (!r.ok())
+                co_return;
+            auto t = resolveStyleTable(ctx.host(), r.text);
+            if (!t) {
+                ctx.message(t.error().message);
+                co_return;
+            }
+            setPlotStyleName(ctx.host(), r.text);
+            ctx.message("Plot style table: " + (r.text.empty() ? std::string("None") : r.text));
+            co_return;
+        }
+        if (kw == "Import") {
+            cmd::StringOptions so;
+            auto file = co_await ctx.getString("Path of the .ctb file to import", so);
+            if (!file.ok())
+                co_return;
+            auto folder = plotStyleFolder(ctx.host());
+            if (folder.empty()) {
+                ctx.message("There is no folder for plot style tables on this system.");
+                co_return;
+            }
+            auto t = plotstyle::loadFile(file.text);
+            if (!t) {
+                ctx.message(t.error().message);
+                co_return;
+            }
+            std::error_code ec;
+            std::filesystem::create_directories(folder, ec);
+            auto name = std::filesystem::path(file.text).stem().string();
+            auto saved = plotstyle::saveFile(t.value(), folder / (name + ".tbstyle"));
+            if (!saved) {
+                ctx.message(saved.error().message);
+                co_return;
+            }
+            setPlotStyleName(ctx.host(), name + ".tbstyle");
+            ctx.message("Imported " + name + " and selected it.");
+            co_return;
+        }
+        if (kw == "Save") {  // copies the current table under a new name so it can be edited
+            auto folder = plotStyleFolder(ctx.host());
+            auto cur = resolveStyleTable(ctx.host(), plotStyleName(ctx.host()));
+            if (folder.empty() || !cur || !cur.value()) {
+                ctx.message("Nothing to save: choose a plot style table first.");
+                co_return;
+            }
+            cmd::StringOptions so;
+            auto n = co_await ctx.getString("Name for the copy", so);
+            if (!n.ok() || n.text.empty())
+                co_return;
+            std::error_code ec;
+            std::filesystem::create_directories(folder, ec);
+            plotstyle::PlotStyleTable copy = *cur.value();
+            copy.name = n.text;
+            auto saved = plotstyle::saveFile(copy, folder / (n.text + ".tbstyle"));
+            if (!saved) {
+                ctx.message(saved.error().message);
+                co_return;
+            }
+            setPlotStyleName(ctx.host(), n.text + ".tbstyle");
+            ctx.message("Saved " + n.text + ".tbstyle and selected it.");
+            co_return;
+        }
+        ctx.host().openPanel("plotstyle");  // Edit
+    }
+};
+
+// PAGESETUP: named page setups saved in the drawing.
+class PageSetupCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PAGESETUP"; }
+    std::vector<std::string> defaultAliases() const override { return {}; }
+    std::string_view description() const override {
+        return "Save, apply and assign named page setups (plot options kept in the drawing)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        KeywordOptions menu;
+        menu.keywords = {"List", "Save", "Apply", "Assign", "Rename", "Delete"};
+        menu.defaultKeyword = "List";
+        auto choice = co_await ctx.getKeyword("Page setup", menu);
+        if (!choice.ok())
+            co_return;
+        const std::string& kw = choice.keyword;
+        if (kw == "List") {
+            const auto all = layout::pageSetups(ctx.doc());
+            if (all.empty())
+                ctx.message("This drawing has no page setups. Use Save to create one.");
+            const std::string model = layout::modelPageSetup(ctx.doc());
+            for (const auto& p : all) {
+                std::string line = "  " + p.name + ": " + p.settings.paperName +
+                                   (p.settings.landscape ? " landscape" : " portrait") + ", " +
+                                   scaleText(p.settings) + ", " +
+                                   (p.styleName.empty() ? "no style" : p.styleName);
+                std::string users;
+                if (p.name == model)
+                    users = "model";
+                for (const auto& l : layout::layouts(ctx.doc()))
+                    if (l.pageSetup == p.name)
+                        users += (users.empty() ? "" : ", ") + l.name;
+                if (!users.empty())
+                    line += "  [" + users + "]";
+                ctx.message(line);
+            }
+            co_return;
+        }
+        cmd::StringOptions so;
+        if (kw == "Save") {
+            so.defaultValue = layout::modelPageSetup(ctx.doc());
+            auto n =
+                co_await ctx.getString("Name for the page setup (the current plot options)", so);
+            if (!n.ok() || n.text.empty())
+                co_return;
+            const auto p = currentPageSetup(ctx.host(), n.text);
+            auto r = layout::savePageSetup(ctx.tx(), p);
+            ctx.message(r ? "Page setup \"" + n.text + "\" saved." : r.error().message);
+            co_return;
+        }
+        auto n = co_await ctx.getString(
+            kw == "Assign" ? "Page setup to assign (empty = none)" : "Page setup name", so);
+        if (!n.ok())
+            co_return;
+        if (kw == "Apply") {
+            auto p = layout::findPageSetup(ctx.doc(), n.text);
+            if (!p) {
+                ctx.message("No page setup named \"" + n.text + "\".");
+                co_return;
+            }
+            applyPageSetup(ctx.host(), *p);
+            ctx.message("Page setup \"" + p->name + "\" is now the current plot options.");
+        } else if (kw == "Assign") {
+            cmd::StringOptions lo;
+            lo.defaultValue = plotLayout(ctx.host()).empty() ? "Model" : plotLayout(ctx.host());
+            auto l = co_await ctx.getString("Layout (Model = model space)", lo);
+            if (!l.ok())
+                co_return;
+            const bool model = l.text.empty() || lower(l.text) == "model";
+            auto r = model ? layout::assignModelPageSetup(ctx.tx(), n.text)
+                           : layout::assignPageSetup(ctx.tx(), l.text, n.text);
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            ctx.message(std::string(n.text.empty() ? "Page setup removed from "
+                                                   : "Page setup assigned to ") +
+                        (model ? "model space." : "layout \"" + l.text + "\"."));
+        } else if (kw == "Rename") {
+            auto nn = co_await ctx.getString("New name");
+            if (!nn.ok())
+                co_return;
+            auto r = layout::renamePageSetup(ctx.tx(), n.text, nn.text);
+            ctx.message(r ? "Renamed to \"" + nn.text + "\"." : r.error().message);
+        } else if (kw == "Delete") {
+            auto r = layout::deletePageSetup(ctx.tx(), n.text);
+            ctx.message(r ? "Page setup \"" + n.text + "\" deleted." : r.error().message);
+        }
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
-    (void)registry.add(std::make_unique<PlotCommand>(
-        "PLOT", std::vector<std::string>{"PRINT"}, "Plot the drawing to PDF or SVG", Format::Pdf));
+    (void)registry.add(std::make_unique<PlotCommand>("PLOT", std::vector<std::string>{"PRINT"},
+                                                     "Plot the drawing to PDF, SVG, PNG or JPEG",
+                                                     Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTPDF", std::vector<std::string>{}, "Export the drawing to a PDF file", Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
     (void)registry.add(makePrinterCommand());
+    (void)registry.add(std::make_unique<PlotCommand>(
+        "EXPORTPNG", std::vector<std::string>{}, "Export the drawing to a PNG image", Format::Png));
+    (void)registry.add(
+        std::make_unique<PlotCommand>("EXPORTJPG", std::vector<std::string>{"EXPORTJPEG"},
+                                      "Export the drawing to a JPEG image", Format::Jpeg));
     (void)registry.add(std::make_unique<PlotPanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
+    (void)registry.add(std::make_unique<PlotStyleCommand>());
+    (void)registry.add(std::make_unique<PageSetupCommand>());
 }
 
 }  // namespace tbcad::plot

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
@@ -35,6 +37,67 @@ bool getB(const cmd::IHost& h, const char* key, bool fallback) {
 }
 
 }  // namespace
+
+std::string plotStyleName(const cmd::IHost& host) {
+    auto v = host.setting("plot.style");
+    return v && !v->empty() ? *v : std::string(plotstyle::kDefaultTable);
+}
+
+void setPlotStyleName(cmd::IHost& host, const std::string& name) {
+    host.setSetting("plot.style", name);
+}
+
+std::filesystem::path plotStyleFolder(const cmd::IHost& host) {
+    auto base = host.settingsFolder();
+    return base.empty() ? base : base / "plot styles";
+}
+
+Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
+    const cmd::IHost& host, const std::string& name) {
+    using Table = std::shared_ptr<const plotstyle::PlotStyleTable>;
+    std::string lowered = name;
+    for (char& c : lowered)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lowered.empty() || lowered == "none")
+        return Table{};
+    if (auto b = plotstyle::builtinTable(name))
+        return Table(std::make_shared<plotstyle::PlotStyleTable>(std::move(*b)));
+    std::filesystem::path path(name);
+    std::error_code ec;
+    if (!path.is_absolute() || !std::filesystem::exists(path, ec)) {
+        auto folder = plotStyleFolder(host);
+        if (!folder.empty()) {
+            for (const char* ext : {"", ".tbstyle", ".ctb"}) {
+                auto candidate = folder / (name + ext);
+                if (std::filesystem::exists(candidate, ec)) {
+                    path = candidate;
+                    break;
+                }
+            }
+        }
+    }
+    auto t = plotstyle::loadFile(path);
+    if (!t)
+        return Error{t.error().code, "Plot style table \"" + name + "\": " + t.error().message};
+    return Table(std::make_shared<plotstyle::PlotStyleTable>(std::move(t.value())));
+}
+
+std::vector<std::string> listStyleTables(const cmd::IHost& host) {
+    std::vector<std::string> out = plotstyle::builtinTableNames();
+    auto folder = plotStyleFolder(host);
+    std::error_code ec;
+    if (!folder.empty() && std::filesystem::is_directory(folder, ec)) {
+        std::vector<std::string> files;
+        for (const auto& e : std::filesystem::directory_iterator(folder, ec)) {
+            auto ext = e.path().extension().string();
+            if (ext == ".tbstyle" || ext == ".ctb")
+                files.push_back(e.path().filename().string());
+        }
+        std::sort(files.begin(), files.end());
+        out.insert(out.end(), files.begin(), files.end());
+    }
+    return out;
+}
 
 PlotSettings loadSettings(const cmd::IHost& h) {
     PlotSettings s;
@@ -79,6 +142,8 @@ PlotSettings loadSettings(const cmd::IHost& h) {
         else if (*v == "grey")
             s.color = ColorMode::Greyscale;
     }
+    if (auto t = resolveStyleTable(h, plotStyleName(h)))
+        s.styleTable = t.value();
     return s;
 }
 
@@ -105,10 +170,66 @@ void saveSettings(cmd::IHost& h, const PlotSettings& s) {
                                                                  : "color");
 }
 
+const char* extension(Format f) {
+    switch (f) {
+        case Format::Pdf:
+            return ".pdf";
+        case Format::Svg:
+            return ".svg";
+        case Format::Png:
+            return ".png";
+        case Format::Jpeg:
+            return ".jpg";
+    }
+    return ".pdf";
+}
+
+const char* formatName(Format f) {
+    switch (f) {
+        case Format::Pdf:
+            return "PDF";
+        case Format::Svg:
+            return "SVG";
+        case Format::Png:
+            return "PNG";
+        case Format::Jpeg:
+            return "JPEG";
+    }
+    return "PDF";
+}
+
+double plotDpi(const cmd::IHost& h) {
+    if (auto v = h.setting("plot.dpi"); v && !v->empty()) {
+        const double d = std::atof(v->c_str());
+        if (d >= 10 && d <= 2400)
+            return d;
+    }
+    return 300;
+}
+
+void setPlotDpi(cmd::IHost& h, double dpi) {
+    h.setSetting("plot.dpi", fmt(dpi));
+}
+
+int jpegQuality(const cmd::IHost& h) {
+    if (auto v = h.setting("plot.jpegQuality"); v && !v->empty()) {
+        const int q = std::atoi(v->c_str());
+        if (q >= 1 && q <= 100)
+            return q;
+    }
+    return 90;
+}
+
+namespace {
+std::string fileKey(Format f) {
+    return std::string("plot.file") + extension(f);  // plot.file.pdf, plot.file.svg, ...
+}
+}  // namespace
+
 std::string lastFile(const cmd::IHost& h, Format f) {
-    if (auto v = h.setting(f == Format::Pdf ? "plot.file.pdf" : "plot.file.svg"); v && !v->empty())
+    if (auto v = h.setting(fileKey(f)); v && !v->empty())
         return *v;
-    return f == Format::Pdf ? "drawing.pdf" : "drawing.svg";
+    return std::string("drawing") + extension(f);
 }
 
 std::string defaultFile(const cmd::IHost& h, Format f) {
@@ -119,11 +240,11 @@ std::string defaultFile(const cmd::IHost& h, Format f) {
     auto slash = doc.find_last_of("/\\");
     if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
         doc.resize(dot);
-    return doc + (f == Format::Pdf ? ".pdf" : ".svg");
+    return doc + extension(f);
 }
 
 void setLastFile(cmd::IHost& h, Format f, const std::string& path) {
-    h.setSetting(f == Format::Pdf ? "plot.file.pdf" : "plot.file.svg", path);
+    h.setSetting(fileKey(f), path);
 }
 
 std::string plotLayout(const cmd::IHost& host) {
@@ -135,12 +256,25 @@ void setPlotLayout(cmd::IHost& host, const std::string& name) {
 }
 
 std::string withExtension(std::string path, Format f) {
-    const std::string ext = f == Format::Pdf ? ".pdf" : ".svg";
+    const std::string ext = extension(f);
     auto slash = path.find_last_of("/\\");
     auto dot = path.find_last_of('.');
     if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
         path += ext;
     return path;
+}
+
+std::string forFormat(std::string path, Format f) {
+    const auto slash = path.find_last_of("/\\");
+    const auto dot = path.find_last_of('.');
+    if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) {
+        std::string ext = path.substr(dot);
+        for (char& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext == ".pdf" || ext == ".svg" || ext == ".png" || ext == ".jpg" || ext == ".jpeg")
+            path.resize(dot);
+    }
+    return withExtension(std::move(path), f);
 }
 
 BBox2 viewWindow(const cmd::IHost& h) {
@@ -178,6 +312,35 @@ bool parseScale(const std::string& text, PlotSettings& s) {
 
 std::string scaleText(const PlotSettings& s) {
     return s.fitToPaper ? "Fit" : "1:" + fmt(s.scaleN);
+}
+
+layout::StyleResolver styleResolver(const cmd::IHost& host) {
+    return [&host](const std::string& name) -> std::shared_ptr<const plotstyle::PlotStyleTable> {
+        auto t = resolveStyleTable(host, name);
+        return t ? t.value() : nullptr;
+    };
+}
+
+layout::PageSetup currentPageSetup(const cmd::IHost& host, const std::string& name) {
+    return layout::makePageSetup(name, loadSettings(host), plotStyleName(host));
+}
+
+void applyPageSetup(cmd::IHost& host, const layout::PageSetup& setup) {
+    const exportlib::PlotSettings now = loadSettings(host);
+    exportlib::PlotSettings s = layout::settingsFor(now, setup, styleResolver(host));
+    saveSettings(host, s);
+    setPlotStyleName(host, setup.styleName.empty() ? "none" : setup.styleName);
+}
+
+std::string applyAssignedPageSetup(const Document& doc, cmd::IHost& host) {
+    const std::string layoutName = plotLayout(host);
+    const auto setup = layoutName.empty() ? layout::pageSetupOfModel(doc)
+                                          : layout::pageSetupOfLayout(doc, layoutName);
+    if (!setup)
+        return {};
+    applyPageSetup(host, *setup);
+    return "Page setup \"" + setup->name + "\" applied" +
+           (layoutName.empty() ? " (model space)." : " (layout " + layoutName + ").");
 }
 
 }  // namespace tbcad::plot

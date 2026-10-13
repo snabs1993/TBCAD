@@ -9,6 +9,7 @@
 #include <regex>
 #include <sstream>
 
+#include "miniz.h"
 #include "tbcad/export/plot.h"
 
 using namespace tbcad;
@@ -212,6 +213,59 @@ TEST_CASE("monochrome turns red black; white is always black; greyscale") {
     CHECK(pdf.find("1 0 0 RG") != std::string::npos);
 }
 
+TEST_CASE("a plot style table maps colour, lineweight and screening per palette colour") {
+    Document doc;
+    Entity red = line({0, 0}, {100, 0});
+    red.common.color = Color::index(1);
+    red.common.lineweight = LineWeight::mm(0.25);
+    addEntity(doc, red);
+    Entity blue = line({0, 10}, {100, 10});
+    blue.common.color = Color::index(5);
+    addEntity(doc, blue);
+    Entity truecolor = line({0, 20}, {100, 20});
+    truecolor.common.color = Color::rgb(10, 200, 30);
+    addEntity(doc, truecolor);
+
+    plotstyle::PlotStyleTable t;
+    t.entries[1].color = Rgba{0, 0, 0, 255};
+    t.entries[1].lineweightMm = 0.7;
+    t.entries[5].screen = 50;
+    PlotSettings s;
+    s.styleTable = std::make_shared<plotstyle::PlotStyleTable>(t);
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    std::vector<const PlotPath*> paths;
+    for (const auto& p : sheet.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            paths.push_back(pp);
+    REQUIRE(paths.size() == 3);
+    // Red -> black, 0.7 mm.
+    CHECK(paths[0]->style.color == Rgba{0, 0, 0, 255});
+    CHECK(paths[0]->style.widthMm == doctest::Approx(0.7));
+    // Blue screened to 50%: lighter than the drawn blue, lineweight untouched.
+    const Rgba drawn = paletteColor(5);
+    CHECK(paths[1]->style.color.r > drawn.r);
+    CHECK(paths[1]->style.widthMm == doctest::Approx(0.25));
+    // A true colour is left alone.
+    CHECK(paths[2]->style.color == Rgba{10, 200, 30, 255});
+    // Monochrome mode still wins over the table.
+    s.color = ColorMode::Monochrome;
+    auto mono = buildSheet(doc, s);
+    for (const auto& p : mono.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            CHECK(pp->style.color == Rgba{0, 0, 0, 255});
+    // The built-in monochrome table makes every palette colour black.
+    s.color = ColorMode::AsDisplayed;
+    s.styleTable =
+        std::make_shared<plotstyle::PlotStyleTable>(*plotstyle::builtinTable("monochrome.ctb"));
+    auto bw = buildSheet(doc, s);
+    int black = 0;
+    for (const auto& p : bw.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            black += pp->style.color == Rgba{0, 0, 0, 255};
+    CHECK(black == 2);  // the two palette-coloured lines; the true colour stays
+}
+
 TEST_CASE("lineweights are absolute on paper; dashes scale with the plot scale") {
     Document doc;
     {
@@ -342,4 +396,117 @@ TEST_CASE("culling: entities outside a window are not plotted; 20,000 lines plot
     REQUIRE(pdf.ok());
     CHECK(sheet.entityCount == 20000);
     CHECK(sec < 2.0);
+}
+
+namespace {
+std::uint32_t be32(const std::string& s, std::size_t at) {
+    return (static_cast<std::uint32_t>(static_cast<unsigned char>(s[at])) << 24) |
+           (static_cast<std::uint32_t>(static_cast<unsigned char>(s[at + 1])) << 16) |
+           (static_cast<std::uint32_t>(static_cast<unsigned char>(s[at + 2])) << 8) |
+           static_cast<std::uint32_t>(static_cast<unsigned char>(s[at + 3]));
+}
+}  // namespace
+
+TEST_CASE("raster: A4 at 150 dpi has the right size, white paper and an anti-aliased red line") {
+    Document doc;
+    Entity e = line({0, 0}, {100, 50});
+    e.common.color = Color::index(1);  // red
+    addEntity(doc, e);
+    PlotSettings s;
+    s.paperName = "A4";
+    s.color = ColorMode::AsDisplayed;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    auto img = rasterize(sheet.value(), 150);
+    REQUIRE(img.ok());
+    CHECK(img.value().width == 1754);  // landscape default
+    CHECK(img.value().height == 1240);
+    CHECK(img.value().rgb.size() == 1754u * 1240u * 3u);
+    std::size_t white = 0, red = 0, partial = 0;
+    for (std::size_t i = 0; i < img.value().rgb.size(); i += 3) {
+        const auto r = img.value().rgb[i], g = img.value().rgb[i + 1], b = img.value().rgb[i + 2];
+        if (r == 255 && g == 255 && b == 255)
+            ++white;
+        else if (r > 200 && g < 60 && b < 60)
+            ++red;
+        else if (r > g && g == b)
+            ++partial;
+    }
+    CHECK(red > 100);
+    CHECK(partial > 100);  // the edges are anti-aliased
+    CHECK(white > img.value().rgb.size() / 3 * 95 / 100);
+
+    CHECK_FALSE(rasterize(sheet.value(), 5).ok());
+    CHECK_FALSE(rasterize(sheet.value(), 150, 1000).ok());
+}
+
+TEST_CASE("PNG: signature, dimensions, resolution and pixels survive a round trip") {
+    Document doc;
+    addEntity(doc, line({0, 0}, {100, 0}));
+    PlotSettings s;
+    s.paperName = "A4";
+    auto sheet = buildSheet(doc, s).value();
+    auto img = rasterize(sheet, 100).value();
+    const std::string png = pngBytes(img);
+    REQUIRE(png.size() > 60);
+    CHECK(png.compare(0, 8, "\x89PNG\r\n\x1a\n", 8) == 0);
+    CHECK(be32(png, 16) == static_cast<std::uint32_t>(img.width));
+    CHECK(be32(png, 20) == static_cast<std::uint32_t>(img.height));
+    const auto phys = png.find("pHYs");
+    REQUIRE(phys != std::string::npos);
+    CHECK(be32(png, phys + 4) == 3937);  // 100 dpi in pixels per metre
+    // Inflate and undo the Up filter.
+    const auto idat = png.find("IDAT");
+    REQUIRE(idat != std::string::npos);
+    const std::uint32_t zlen = be32(png, idat - 4);
+    const std::size_t rowBytes = static_cast<std::size_t>(img.width) * 3 + 1;
+    std::string raw(rowBytes * static_cast<std::size_t>(img.height), '\0');
+    mz_ulong rawLen = static_cast<mz_ulong>(raw.size());
+    REQUIRE(mz_uncompress(reinterpret_cast<unsigned char*>(raw.data()), &rawLen,
+                          reinterpret_cast<const unsigned char*>(png.data()) + idat + 4,
+                          zlen) == MZ_OK);
+    CHECK(rawLen == raw.size());
+    CHECK(png.substr(png.size() - 8, 4) == "IEND");
+    std::vector<std::uint8_t> back(img.rgb.size());
+    for (int y = 0; y < img.height; ++y)
+        for (std::size_t i = 0; i < static_cast<std::size_t>(img.width) * 3; ++i) {
+            const auto up = y ? back[(static_cast<std::size_t>(y) - 1) * (rowBytes - 1) + i] : 0;
+            back[static_cast<std::size_t>(y) * (rowBytes - 1) + i] = static_cast<std::uint8_t>(
+                static_cast<unsigned char>(raw[static_cast<std::size_t>(y) * rowBytes + 1 + i]) +
+                up);
+        }
+    CHECK(back == img.rgb);
+}
+
+TEST_CASE("JPEG: markers, dimensions and density; files are written") {
+    Document doc;
+    addEntity(doc, line({0, 0}, {100, 0}));
+    PlotSettings s;
+    s.paperName = "A4";
+    auto sheet = buildSheet(doc, s).value();
+    auto img = rasterize(sheet, 100).value();
+    const std::string jpg = jpegBytes(img, 85);
+    REQUIRE(jpg.size() > 200);
+    CHECK(static_cast<unsigned char>(jpg[0]) == 0xFF);
+    CHECK(static_cast<unsigned char>(jpg[1]) == 0xD8);
+    CHECK(static_cast<unsigned char>(jpg[jpg.size() - 2]) == 0xFF);
+    CHECK(static_cast<unsigned char>(jpg[jpg.size() - 1]) == 0xD9);
+    const auto sof = jpg.find("\xFF\xC0");
+    REQUIRE(sof != std::string::npos);
+    auto be16 = [&](std::size_t at) {
+        return static_cast<int>((static_cast<unsigned char>(jpg[at]) << 8) |
+                                static_cast<unsigned char>(jpg[at + 1]));
+    };
+    CHECK(be16(sof + 5) == img.height);
+    CHECK(be16(sof + 7) == img.width);
+    // Whiter paper compresses far smaller than the raw pixels.
+    CHECK(jpg.size() < img.rgb.size() / 10);
+
+    const auto dir = std::filesystem::temp_directory_path() / "tbcad_raster_test";
+    std::filesystem::create_directories(dir);
+    CHECK(writePng(sheet, (dir / "a.png").string(), 72).ok());
+    CHECK(writeJpeg(sheet, (dir / "a.jpg").string(), 72, 80).ok());
+    CHECK(std::filesystem::file_size(dir / "a.png") > 100);
+    CHECK(std::filesystem::file_size(dir / "a.jpg") > 100);
+    std::filesystem::remove_all(dir);
 }

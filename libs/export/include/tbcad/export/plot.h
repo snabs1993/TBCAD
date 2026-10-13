@@ -6,12 +6,15 @@
 // scaled by ltScale x entity scale (already in DisplayStyle::patternScale) and the plot scale.
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "tbcad/core/core.h"
+#include "tbcad/plotstyle/plotstyle.h"
 
 namespace tbcad::exportlib {
 
@@ -44,6 +47,9 @@ struct PlotSettings {
     double marginMm = 10;
     bool lineweights = true;
     ColorMode color = ColorMode::AsDisplayed;
+    // Plot style table: per palette colour, overrides colour, lineweight and screening. Applied
+    // before `color` (Monochrome / Greyscale still win over it). Null plots as drawn.
+    std::shared_ptr<const plotstyle::PlotStyleTable> styleTable{};
     // Used for lineweight 0 ("thinnest") and when lineweights are off.
     double hairlineMm = 0.1;
     double chordTolMm = 0.01;  // on paper
@@ -139,5 +145,23 @@ Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress = false);
 // SVG in millimetres: width/height in mm, viewBox in mm, y flipped (SVG y runs downwards).
 std::string svgString(const PlotSheet& sheet);
 Result<void> writeSvg(const PlotSheet& sheet, const std::string& path);
+
+// A rendered sheet: 8-bit RGB, rows top to bottom, no padding.
+struct RasterImage {
+    int width = 0;
+    int height = 0;
+    double dpi = 0;
+    std::vector<std::uint8_t> rgb{};
+};
+// Renders the sheet, anti-aliased, on white paper at `dpi`. Fails when the image would exceed
+// `maxPixels`.
+Result<RasterImage> rasterize(const PlotSheet& sheet, double dpi,
+                              std::int64_t maxPixels = 200'000'000);
+// PNG (with a pHYs chunk carrying the dpi) and baseline JPEG (quality 1..100, JFIF density set).
+std::string pngBytes(const RasterImage& img);
+std::string jpegBytes(const RasterImage& img, int quality = 90);
+Result<void> writePng(const PlotSheet& sheet, const std::string& path, double dpi);
+Result<void> writeJpeg(const PlotSheet& sheet, const std::string& path, double dpi,
+                       int quality = 90);
 
 }  // namespace tbcad::exportlib

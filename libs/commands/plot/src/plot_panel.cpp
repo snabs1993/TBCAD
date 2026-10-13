@@ -29,6 +29,9 @@ struct PanelState {
     std::string sheetError{};
     std::uint64_t builtRevision = ~0ull;
     std::string builtKey{};
+    std::string styleLoaded{};
+    std::string setupName{};      // text field of "Save as"
+    bool reloadWhenIdle = false;  // a command changed the host settings; read them again
 };
 
 PanelState& state() {
@@ -116,6 +119,11 @@ void draw(ui::PanelContext& pc) {
     PanelState& st = state();
     if (!pc.doc || !pc.host)
         return;
+    if (st.reloadWhenIdle && !pc.commandActive) {
+        st.loaded = false;
+        st.reloadWhenIdle = false;
+        st.styleLoaded.clear();
+    }
     if (!st.loaded) {
         st.settings = loadSettings(*pc.host);
         st.scaleInput = scaleText(st.settings);
@@ -128,12 +136,74 @@ void draw(ui::PanelContext& pc) {
     // What to plot: model space, or one of the drawing's layouts (which brings its own paper).
     const std::string layoutName = plotLayout(*pc.host);
     if (ImGui::BeginCombo("Plot", layoutName.empty() ? "Model" : layoutName.c_str())) {
-        if (ImGui::Selectable("Model", layoutName.empty()))
+        bool picked = false;
+        if (ImGui::Selectable("Model", layoutName.empty())) {
             setPlotLayout(*pc.host, "");
+            picked = true;
+        }
         for (const auto& l : layout::layouts(*pc.doc))
-            if (ImGui::Selectable(l.name.c_str(), l.name == layoutName))
+            if (ImGui::Selectable(l.name.c_str(), l.name == layoutName)) {
                 setPlotLayout(*pc.host, l.name);
+                picked = true;
+            }
         ImGui::EndCombo();
+        if (picked) {  // a layout with a page setup brings its options along
+            st.message = applyAssignedPageSetup(*pc.doc, *pc.host);
+            st.loaded = false;
+            st.styleLoaded.clear();
+            return;
+        }
+    }
+
+    // Page setups saved in the drawing.
+    {
+        const auto setups = layout::pageSetups(*pc.doc);
+        const auto assigned = layoutName.empty() ? layout::pageSetupOfModel(*pc.doc)
+                                                 : layout::pageSetupOfLayout(*pc.doc, layoutName);
+        if (ImGui::BeginCombo("Page setup", assigned ? assigned->name.c_str() : "<none>")) {
+            for (const auto& p : setups)
+                if (ImGui::Selectable(p.name.c_str(), assigned && assigned->name == p.name)) {
+                    pc.runCommand("PAGESETUP");
+                    pc.runCommand("Apply");
+                    pc.runCommand(p.name);
+                    pc.runCommand("PAGESETUP");
+                    pc.runCommand("Assign");
+                    pc.runCommand(p.name);
+                    pc.runCommand("");  // the layout being plotted
+                    st.reloadWhenIdle = true;
+                }
+            if (ImGui::Selectable("<none>", !assigned) && assigned) {
+                pc.runCommand("PAGESETUP");
+                pc.runCommand("Assign");
+                pc.runCommand("");
+                pc.runCommand("");
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::InputText("Save current options as", &st.setupName);
+        ImGui::SameLine();
+        if (ImGui::Button("Save") && !st.setupName.empty()) {
+            saveSettings(*pc.host, st.settings);
+            pc.runCommand("PAGESETUP");
+            pc.runCommand("Save");
+            pc.runCommand(st.setupName);
+        }
+    }
+
+    // Plot style table.
+    const std::string styleName = plotStyleName(*pc.host);
+    if (ImGui::BeginCombo("Style", styleName.c_str())) {
+        for (const auto& n : listStyleTables(*pc.host))
+            if (ImGui::Selectable(n.c_str(), n == styleName))
+                setPlotStyleName(*pc.host, n);
+        if (ImGui::Selectable("none", false))
+            setPlotStyleName(*pc.host, "none");
+        ImGui::EndCombo();
+    }
+    if (st.styleLoaded != styleName) {
+        auto t = resolveStyleTable(*pc.host, styleName);
+        s.styleTable = t ? t.value() : nullptr;
+        st.styleLoaded = styleName;
     }
 
     // Paper
@@ -220,7 +290,7 @@ void draw(ui::PanelContext& pc) {
     PlotSettings built = s;
     if (built.area == PlotArea::Display)
         built.window = view;
-    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host);
+    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host) + "|" + st.styleLoaded;
     if (key != st.builtKey || pc.doc->revision() != st.builtRevision) {
         const std::string name = plotLayout(*pc.host);
         auto sheet = name.empty() ? exportlib::buildSheet(*pc.doc, built)
@@ -246,9 +316,16 @@ void draw(ui::PanelContext& pc) {
 
     // Export
     ImGui::InputText("File", &st.fileInput);
+    {
+        float dpi = static_cast<float>(plotDpi(*pc.host));
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::InputFloat("Image resolution (dpi)", &dpi, 0, 0, "%.0f"))
+            setPlotDpi(*pc.host, std::clamp<double>(dpi, 10, 2400));
+    }
     auto doExport = [&](Format f) {
         st.format = f;
-        std::string path = st.fileInput.empty() ? defaultFile(*pc.host, f) : st.fileInput;
+        std::string path =
+            st.fileInput.empty() ? defaultFile(*pc.host, f) : forFormat(st.fileInput, f);
         PlotSettings run = s;
         auto r = exportFile(*pc.doc, *pc.host, run, f, path);
         st.message = r ? r.value() : r.error().message;
@@ -261,6 +338,52 @@ void draw(ui::PanelContext& pc) {
     ImGui::SameLine();
     if (ImGui::Button("Export SVG"))
         doExport(Format::Svg);
+    ImGui::SameLine();
+    if (ImGui::Button("Export PNG"))
+        doExport(Format::Png);
+    ImGui::SameLine();
+    if (ImGui::Button("Export JPEG"))
+        doExport(Format::Jpeg);
+
+    // Printer
+    ImGui::Separator();
+    if (!print::available()) {
+        ImGui::TextDisabled("Printing is available in the Windows version. Export a PDF instead.");
+    } else {
+        const std::string chosen = pc.host->setting("plot.printer").value_or("");
+        if (ImGui::BeginCombo("Printer", chosen.empty() ? "<default printer>" : chosen.c_str())) {
+            if (ImGui::Selectable("<default printer>", chosen.empty()))
+                pc.host->setSetting("plot.printer", "");
+            for (const auto& p : print::listPrinters())
+                if (ImGui::Selectable(p.name.c_str(), p.name == chosen))
+                    pc.host->setSetting("plot.printer", p.name);
+            ImGui::EndCombo();
+        }
+        int copies =
+            std::clamp(std::atoi(pc.host->setting("plot.copies").value_or("1").c_str()), 1, 99);
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::InputInt("Copies", &copies)) {
+            copies = std::clamp(copies, 1, 99);
+            pc.host->setSetting("plot.copies", std::to_string(copies));
+        }
+        auto doPrint = [&](bool dialog) {
+            auto sheet = buildPlotSheet(*pc.doc, *pc.host, s);
+            if (!sheet) {
+                st.message = sheet.error().message;
+                return;
+            }
+            auto r = print::printSheet(sheet.value(), printJob(*pc.host, dialog));
+            st.message =
+                r ? "Sent " + std::to_string(sheet.value().entityCount) + " objects to the printer."
+                  : r.error().message;
+            pc.host->print(st.message);
+        };
+        if (ImGui::Button("Print"))
+            doPrint(false);
+        ImGui::SameLine();
+        if (ImGui::Button("Print dialog..."))
+            doPrint(true);
+    }
     if (!st.message.empty())
         ImGui::TextWrapped("%s", st.message.c_str());
 }
@@ -269,6 +392,7 @@ void draw(ui::PanelContext& pc) {
 
 void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("plot", "Plot", draw, false);
+    registerStylePanel(registry);
 }
 
 }  // namespace tbcad::plot

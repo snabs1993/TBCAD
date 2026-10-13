@@ -65,12 +65,11 @@ Result<std::vector<SheetEntry>> readSheetList(const std::filesystem::path& listF
     return parseSheetList(buf.str(), listFile.parent_path());
 }
 
-Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
-                                     const exportlib::PlotSettings& base,
-                                     const std::filesystem::path& pdfFile) {
+Result<SheetSet> buildSheetList(const std::vector<SheetEntry>& entries,
+                                const exportlib::PlotSettings& base,
+                                const layout::StyleResolver& styles) {
     std::map<std::filesystem::path, std::unique_ptr<Document>> docs;
-    std::vector<exportlib::PlotSheet> sheets;
-    SheetSetReport report;
+    SheetSet set;
     for (const SheetEntry& e : entries) {
         const std::string what =
             e.file.filename().string() + (e.layout.empty() ? "" : " / " + e.layout);
@@ -82,18 +81,33 @@ Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
                 return Error{doc.error().code, what + ": " + doc.error().message};
             it = docs.emplace(e.file, std::move(doc.value())).first;
         }
-        auto sheet = e.layout.empty() ? exportlib::buildSheet(*it->second, base)
-                                      : layout::buildLayoutSheet(*it->second, e.layout, base);
+        const auto setup = e.layout.empty() ? layout::pageSetupOfModel(*it->second)
+                                            : layout::pageSetupOfLayout(*it->second, e.layout);
+        const exportlib::PlotSettings s = setup ? layout::settingsFor(base, *setup, styles) : base;
+        auto sheet = e.layout.empty() ? exportlib::buildSheet(*it->second, s)
+                                      : layout::buildLayoutSheet(*it->second, e.layout, s);
         if (!sheet)
             return Error{sheet.error().code, what + ": " + sheet.error().message};
         if (sheet.value().layout.overflows)
-            report.warnings.push_back(what + " is larger than its paper");
-        sheets.push_back(std::move(sheet.value()));
+            set.warnings.push_back(what + " is larger than its paper");
+        set.sheets.push_back(std::move(sheet.value()));
     }
-    auto written = exportlib::writePdfPages(sheets, pdfFile.string());
+    return set;
+}
+
+Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
+                                     const exportlib::PlotSettings& base,
+                                     const std::filesystem::path& pdfFile,
+                                     const layout::StyleResolver& styles) {
+    auto set = buildSheetList(entries, base, styles);
+    if (!set)
+        return set.error();
+    auto written = exportlib::writePdfPages(set.value().sheets, pdfFile.string());
     if (!written)
         return written.error();
-    report.pages = sheets.size();
+    SheetSetReport report;
+    report.pages = set.value().sheets.size();
+    report.warnings = std::move(set.value().warnings);
     return report;
 }
 

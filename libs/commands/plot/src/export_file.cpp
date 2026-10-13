@@ -26,8 +26,12 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     if (!sheet)
         return sheet.error();
     const std::string file = withExtension(path, format);
-    auto written = format == Format::Pdf ? exportlib::writePdf(sheet.value(), file)
-                                         : exportlib::writeSvg(sheet.value(), file);
+    const double dpi = plotDpi(host);
+    auto written = format == Format::Pdf   ? exportlib::writePdf(sheet.value(), file)
+                   : format == Format::Svg ? exportlib::writeSvg(sheet.value(), file)
+                   : format == Format::Png
+                       ? exportlib::writePng(sheet.value(), file, dpi)
+                       : exportlib::writeJpeg(sheet.value(), file, dpi, jpegQuality(host));
     if (!written)
         return written.error();
     const auto& lay = sheet.value().layout;
@@ -37,6 +41,11 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     std::string text = (layoutName.empty() ? std::string() : "Layout " + layoutName + ": ") +
                        "Plotted " + std::to_string(sheet.value().entityCount) + " objects to " +
                        file + " (" + settings.paperName + ", " + size + ", scale " + scale + ")";
+    if (format == Format::Png || format == Format::Jpeg) {
+        char res[48];
+        std::snprintf(res, sizeof res, ", %.0f dpi", dpi);
+        text.insert(text.size() - 1, res);
+    }
     if (lay.overflows)
         text += ". Warning: the drawing is larger than the paper and was clipped.";
     return text;
