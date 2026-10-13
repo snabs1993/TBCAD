@@ -16,7 +16,8 @@ constexpr std::uint8_t kCfLineweight = 4;
 constexpr std::uint8_t kCfLtScale = 8;
 constexpr std::uint8_t kCfHidden = 16;
 constexpr std::uint8_t kCfOwner = 32;
-constexpr std::uint8_t kCfKnownMask = 63;
+constexpr std::uint8_t kCfAnnotative = 64;
+constexpr std::uint8_t kCfKnownMask = 127;
 
 // ---------------------------------------------------------------- writing
 
@@ -749,6 +750,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         flags |= kCfLtScale;
     if (!c.visible)
         flags |= kCfHidden;
+    if (c.annotative)
+        flags |= kCfAnnotative;
     if (owner)
         flags |= kCfOwner;
     w.varint(c.id.value);
@@ -801,6 +804,7 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
     if (flags & kCfLtScale)
         c.linetypeScale = r.f64();
     c.visible = !(flags & kCfHidden);
+    c.annotative = (flags & kCfAnnotative) != 0;
     if (flags & kCfOwner)
         out.owner = pr.id<BlockId>();
     if (!c.id)

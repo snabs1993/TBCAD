@@ -76,8 +76,11 @@ struct AngularGeometry {
 AngularGeometry angularGeometry(const DimensionData& d);
 
 // `tolerance` is the chord tolerance used for dots (arcs stay arcs).
-Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance = 0.01);
-Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance = 0.01);
+// `annoScale` multiplies every size of the style (annotative objects); 1 = as styled.
+Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance = 0.01,
+                       double annoScale = 1);
+Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance = 0.01,
+                    double annoScale = 1);
 
 // Recomputes what depends on the definition points: `measurement`, and `textPos` unless the user
 // placed the text (textPosUser). Used by the commands after creating or editing a dimension.

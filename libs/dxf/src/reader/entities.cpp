@@ -155,6 +155,13 @@ EntityCommon Importer::commonOf(const Record& r) {
             c.linetypeScale = s;
     }
     c.visible = r.integer(60, 0) == 0;
+    bool ours = false;
+    for (const Group& g : r.g) {
+        if (g.code == 1001)
+            ours = g.str() == "TBCAD";
+        else if (ours && g.code == 1000 && g.str() == "annotative=1")
+            c.annotative = true;
+    }
     return c;
 }
 
