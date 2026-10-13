@@ -15,9 +15,10 @@ namespace tbcad {
 struct Layer {
     LayerId id{};
     std::string name{};
+    LayerId parent{};  // null = top level; names are unique per parent (S-FLOOR > edge)
     Color color = Color::index(7);                        // never ByLayer / ByBlock
     LinetypeId linetype{};                                // filled with "Continuous" when null
-    LineWeight lineweight = LineWeight::defaultWeight();  // Default or a value
+    LineWeight lineweight = LineWeight::defaultWeight();  // Default, a value, or ByParent
     bool on = true;
     bool frozen = false;
     bool locked = false;
@@ -76,6 +77,26 @@ struct BlockDef {
     Vec2 base{};
     std::vector<EntityId> entities{};
     bool anonymous = false;
+};
+
+}  // namespace tbcad
+
+namespace tbcad {
+
+// A layer's state after resolving sub-layer inheritance: on/plot are ANDed over the ancestors,
+// frozen/locked ORed, and ByParent colour/linetype/lineweight follow the chain upwards.
+struct EffectiveLayer {
+    LayerId id{};
+    Color color = Color::index(7);                        // Index or Rgb
+    LinetypeId linetype{1};                               // never null / ByParent
+    LineWeight lineweight = LineWeight::defaultWeight();  // Default or a value
+    bool on = true;
+    bool frozen = false;
+    bool locked = false;
+    bool plot = true;
+
+    // Drawn at all: on and not frozen.
+    bool visible() const { return on && !frozen; }
 };
 
 }  // namespace tbcad

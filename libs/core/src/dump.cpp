@@ -252,9 +252,9 @@ std::string canonicalDump(const Document& doc) {
     for (const auto& [id, r] : doc.layers()) {
         o << "layer " << id << " ";
         o.quoted(r.name);
-        o << " color" << r.color << " lt" << r.linetype << " lw" << static_cast<int>(r.lineweight.v)
-          << " on" << r.on << " frozen" << r.frozen << " locked" << r.locked << " plot" << r.plot
-          << "\n";
+        o << " parent" << r.parent << " color" << r.color << " lt" << r.linetype << " lw"
+          << static_cast<int>(r.lineweight.v) << " on" << r.on << " frozen" << r.frozen << " locked"
+          << r.locked << " plot" << r.plot << "\n";
     }
     for (const auto& [id, r] : doc.linetypes()) {
         o << "linetype " << id << " ";

@@ -784,3 +784,122 @@ TEST_CASE("modifying an entity inside a block keeps it owned") {
     CHECK(doc.ownerBlock(e) == blk);
     CHECK(doc.modelSpaceCount() == 0);
 }
+
+TEST_CASE("sub-layers: names unique per parent and no cycles") {
+    Document doc;
+    Transaction tx = doc.begin("sub");
+    LayerId floor = tx.addLayer(Layer{.name = "S-FLOOR"}).value();
+    LayerId other = tx.addLayer(Layer{.name = "S-WALL"}).value();
+    LayerId edge = tx.addLayer(Layer{.name = "edge", .parent = floor}).value();
+    LayerId edge2 = tx.addLayer(Layer{.name = "EDGE", .parent = other}).value();  // other parent
+    CHECK_FALSE(tx.addLayer(Layer{.name = "Edge", .parent = floor}));
+    CHECK_FALSE(tx.addLayer(Layer{.name = "x", .parent = LayerId{999}}));
+    CHECK_FALSE(tx.addLayer(Layer{.name = "S-FLOOR"}));  // same name at top level
+    LayerId sub = tx.addLayer(Layer{.name = "hidden", .parent = edge}).value();  // deeper
+    CHECK_FALSE(tx.modifyLayer(floor, [&](Layer& l) { l.parent = sub; }));       // cycle
+    CHECK_FALSE(tx.modifyLayer(floor, [&](Layer& l) { l.parent = floor; }));
+    CHECK_FALSE(tx.modifyLayer(kLayerZero, [&](Layer& l) { l.parent = floor; }));
+    CHECK_FALSE(tx.eraseLayer(floor));                                        // has sub-layers
+    CHECK_FALSE(tx.modifyLayer(edge2, [&](Layer& l) { l.parent = floor; }));  // name clash
+    CHECK(tx.modifyLayer(edge2, [&](Layer& l) {
+        l.name = "other";
+        l.parent = floor;
+    }));
+    ChangeSet cs = tx.commit();
+    CHECK(doc.layerByName(floor, "EDGE") == doc.layer(edge));
+    CHECK(doc.layerByName("edge") == nullptr);
+    CHECK(doc.layerByName("s-floor") == doc.layer(floor));
+    doc.apply(cs, Direction::Undo);
+    CHECK(doc.layerByName(floor, "edge") == nullptr);
+    doc.apply(cs, Direction::Redo);
+    CHECK(doc.layerByName(floor, "edge") == doc.layer(edge));
+}
+
+TEST_CASE("effective layer state follows the ancestors") {
+    Document doc;
+    Transaction tx = doc.begin("eff");
+    LayerId floor =
+        tx.addLayer(
+              Layer{.name = "S-FLOOR", .color = Color::index(3), .lineweight = LineWeight::mm(0.5)})
+            .value();
+    LayerId edge = tx.addLayer(Layer{.name = "edge",
+                                     .parent = floor,
+                                     .color = Color::byParent(),
+                                     .linetype = kLinetypeByParent,
+                                     .lineweight = LineWeight::byParent()})
+                       .value();
+    LayerId own =
+        tx.addLayer(Layer{.name = "own", .parent = floor, .color = Color::index(1)}).value();
+    tx.commit();
+
+    EffectiveLayer e = doc.effective(edge);
+    CHECK(e.color == Color::index(3));
+    CHECK(e.lineweight == LineWeight::mm(0.5));
+    CHECK(e.linetype == kLinetypeContinuous);
+    CHECK(doc.effective(own).color == Color::index(1));
+    CHECK(e.visible());
+
+    // Parent off hides the branch, each child's own switch survives.
+    Transaction t2 = doc.begin("off");
+    REQUIRE(t2.modifyLayer(floor, [](Layer& l) { l.on = false; }));
+    REQUIRE(t2.modifyLayer(own, [](Layer& l) { l.on = false; }));
+    REQUIRE(t2.modifyLayer(edge, [](Layer& l) {
+        l.locked = true;
+        l.plot = false;
+    }));
+    ChangeSet cs = t2.commit();
+    CHECK_FALSE(doc.effective(edge).on);  // cache was dropped
+    CHECK_FALSE(doc.effective(edge).visible());
+    CHECK(doc.effective(edge).locked);
+    CHECK_FALSE(doc.effective(edge).plot);
+    CHECK(doc.layer(edge)->on);  // own switch kept
+    Transaction t3 = doc.begin("on");
+    REQUIRE(t3.modifyLayer(floor, [](Layer& l) {
+        l.on = true;
+        l.frozen = true;
+    }));
+    t3.commit();
+    CHECK(doc.effective(edge).on);
+    CHECK(doc.effective(edge).frozen);
+    CHECK_FALSE(doc.effective(own).on);  // its own switch is still off
+    CHECK(doc.effective(LayerId{999}).id == LayerId{});
+
+    doc.apply(cs, Direction::Undo);
+    CHECK(doc.effective(edge).on);
+    CHECK_FALSE(doc.effective(edge).locked);
+}
+
+TEST_CASE("ByParent needs a parent and is for layers only") {
+    Document doc;
+    Transaction tx = doc.begin("bp");
+    CHECK_FALSE(tx.addLayer(Layer{.name = "top", .color = Color::byParent()}));
+    CHECK_FALSE(tx.addLayer(Layer{.name = "top", .lineweight = LineWeight::byParent()}));
+    CHECK_FALSE(tx.addLayer(Layer{.name = "top", .linetype = kLinetypeByParent}));
+    LayerId p = tx.addLayer(Layer{.name = "P"}).value();
+    CHECK(tx.addLayer(Layer{.name = "c", .parent = p, .color = Color::byParent()}));
+    Entity e = line(0, 0, 1, 1);
+    e.common.color = Color::byParent();
+    CHECK_FALSE(tx.add(e));
+    CHECK_FALSE(tx.addLayer(Layer{.name = "k", .parent = kLayerZero}));
+    tx.commit();
+}
+
+TEST_CASE("sub-layer depth is limited to 8 levels") {
+    Document doc;
+    Transaction tx = doc.begin("deep");
+    LayerId parent{};
+    std::vector<LayerId> chain;
+    for (int i = 0; i < 8; ++i) {
+        auto l = tx.addLayer(Layer{.name = "L" + std::to_string(i), .parent = parent});
+        REQUIRE(l);
+        parent = l.value();
+        chain.push_back(parent);
+    }
+    CHECK_FALSE(tx.addLayer(Layer{.name = "L8", .parent = parent}));
+    // Re-parenting a subtree that would end up too deep is refused too.
+    LayerId side = tx.addLayer(Layer{.name = "side"}).value();
+    LayerId side2 = tx.addLayer(Layer{.name = "side2", .parent = side}).value();
+    CHECK_FALSE(tx.modifyLayer(chain[0], [&](Layer& l) { l.parent = side2; }));
+    CHECK(tx.modifyLayer(chain[7], [&](Layer& l) { l.parent = chain[6]; }));
+    tx.commit();
+}

@@ -28,6 +28,8 @@ using BlockId = StrongId<struct BlockIdTag, std::uint32_t>;
 
 inline constexpr LinetypeId kLinetypeByLayer{0};
 inline constexpr LinetypeId kLinetypeByBlock{0xFFFFFFFEu};
+// Only valid on a sub-layer: take the parent layer's linetype.
+inline constexpr LinetypeId kLinetypeByParent{0xFFFFFFFDu};
 
 }  // namespace tbcad
 

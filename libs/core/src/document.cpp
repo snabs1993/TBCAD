@@ -29,6 +29,18 @@ bool validName(std::string_view s) {
     return true;
 }
 
+// Index key of a table row: names are unique per parent for layers, globally otherwise.
+std::string layerKey(LayerId parent, std::string_view name) {
+    return std::to_string(parent.value) + "/" + foldName(name);
+}
+template <class Row>
+std::string nameKey(const Row& r) {
+    if constexpr (std::is_same_v<Row, Layer>)
+        return layerKey(r.parent, r.name);
+    else
+        return foldName(r.name);
+}
+
 Error invalid(std::string msg) {
     return makeError(ErrorCode::InvalidArgument, std::move(msg));
 }
@@ -63,7 +75,7 @@ void EntityStore::popBack() {
 
 template <class Row, class IdT>
 const Row* Table<Row, IdT>::findByName(std::string_view name) const {
-    auto it = byName.find(foldName(name));
+    auto it = byName.find(std::is_same_v<Row, Layer> ? layerKey(LayerId{}, name) : foldName(name));
     return it == byName.end() ? nullptr : find(it->second);
 }
 
@@ -116,6 +128,7 @@ ChangeSet ChangeSet::inverted() const {
 
 namespace {
 
+constexpr int kMaxLayerDepth = 8;
 constexpr std::int64_t kFrontBase = std::int64_t{1} << 62;
 
 // Checks one entity's payload, normalizes where the model says so (arc angles) and measures the
@@ -364,6 +377,8 @@ Result<double> validateEntity(const Document& doc, Entity& e, BlockId owner) {
         !doc.linetype(c.linetype)) {
         return invalid("unknown linetype");
     }
+    if (c.color.kind == ColorKind::ByParent)
+        return invalid("ByParent applies to layers only");
     if (c.color.kind == ColorKind::Index && c.color.indexValue() == 0) {
         return invalid("color index 0 is not valid");
     }
@@ -387,22 +402,53 @@ Result<double> validateEntity(const Document& doc, Entity& e, BlockId owner) {
 Result<void> checkRow(const Document& doc, Layer& r, const Layer* old) {
     if (!validName(r.name))
         return invalid("invalid layer name");
-    if (old && old->id == kLayerZero && r.name != old->name) {
+    if (old && old->id == kLayerZero && r.name != old->name)
         return invalid("layer \"0\" cannot be renamed");
+    if (r.parent) {
+        if (old && old->id == kLayerZero)
+            return invalid("layer \"0\" cannot have a parent");
+        if (r.parent == kLayerZero)
+            return invalid("layer \"0\" cannot have sub-layers");
+        if (!doc.layer(r.parent))
+            return invalid("unknown parent layer");
+        int depth = 1;
+        for (LayerId p = r.parent; p; p = doc.layer(p)->parent) {
+            if (old && p == old->id)
+                return invalid("layer parent would create a cycle");
+            ++depth;
+        }
+        // Height of the subtree below this layer (0 for a leaf).
+        int height = 0;
+        if (old) {
+            for (const auto& [lid, l] : doc.layers()) {
+                int d = 1;
+                bool below = false;
+                for (LayerId p = l.parent; p; p = doc.layer(p)->parent, ++d)
+                    below = below || p == old->id;
+                if (below) {
+                    d = 0;
+                    for (LayerId p = l.id; p != old->id; p = doc.layer(p)->parent)
+                        ++d;
+                    height = std::max(height, d);
+                }
+            }
+        }
+        if (depth + height > kMaxLayerDepth)
+            return invalid("sub-layers nest at most 8 levels deep");
+    } else if (r.color.kind == ColorKind::ByParent || r.lineweight.isByParent() ||
+               r.linetype == kLinetypeByParent) {
+        return invalid("ByParent needs a parent layer");
     }
-    if (r.color.kind == ColorKind::ByLayer || r.color.kind == ColorKind::ByBlock) {
+    if (r.color.kind == ColorKind::ByLayer || r.color.kind == ColorKind::ByBlock)
         return invalid("a layer color cannot be ByLayer or ByBlock");
-    }
-    if (r.color.kind == ColorKind::Index && r.color.indexValue() == 0) {
+    if (r.color.kind == ColorKind::Index && r.color.indexValue() == 0)
         return invalid("color index 0 is not valid");
-    }
     if (!r.linetype)
         r.linetype = kLinetypeContinuous;
-    if (!doc.linetype(r.linetype))
+    if (r.linetype != kLinetypeByParent && !doc.linetype(r.linetype))
         return invalid("unknown linetype");
-    if (r.lineweight.isByLayer() || r.lineweight.isByBlock() || r.lineweight.v < -3) {
-        return invalid("a layer lineweight must be Default or a value");
-    }
+    if (r.lineweight.isByLayer() || r.lineweight.isByBlock() || r.lineweight.v < -4)
+        return invalid("a layer lineweight must be Default, a value or ByParent");
     return {};
 }
 Result<void> checkRow(const Document&, Linetype& r, const Linetype* old) {
@@ -480,6 +526,10 @@ bool isBuiltin(DimStyleId id) {
 bool inUse(const Document& d, LayerId id) {
     if (d.header().currentLayer == id)
         return true;
+    for (const auto& [lid, l] : d.layers()) {
+        if (l.parent == id)
+            return true;  // has sub-layers
+    }
     bool used = false;
     d.forEachEntity([&](const Entity& e) { used = used || e.common.layer == id; });
     return used;
@@ -533,14 +583,15 @@ bool inUse(const Document& d, BlockId id) {
 // Replaces (or removes, when newRow is empty) a table row and keeps the name index in step.
 template <class Row, class IdT>
 void replaceRow(detail::Table<Row, IdT>& t, IdT id, const std::optional<Row>& newRow) {
+    ++t.version;
     auto it = t.rows.find(id);
     if (it != t.rows.end()) {
-        t.byName.erase(foldName(it->second.name));
+        t.byName.erase(nameKey(it->second));
         t.rows.erase(it);
     }
     if (newRow) {
         t.rows.emplace(id, *newRow);
-        t.byName[foldName(newRow->name)] = id;
+        t.byName[nameKey(*newRow)] = id;
         t.next = std::max<std::uint32_t>(t.next, id.value + 1);
     }
 }
@@ -648,6 +699,46 @@ void Document::setBlockRow(const BlockDef* oldRow, const BlockDef* newRow) {
         for (EntityId id : newRow->entities)
             owner_[id] = newRow->id;
     }
+}
+
+const Layer* Document::layerByName(LayerId parent, std::string_view name) const {
+    return layers_.findByKey(layerKey(parent, name));
+}
+
+EffectiveLayer Document::effective(LayerId id) const {
+    if (effectiveVersion_ != layers_.version) {
+        effectiveCache_.clear();
+        effectiveVersion_ = layers_.version;
+    }
+    auto hit = effectiveCache_.find(id);
+    if (hit != effectiveCache_.end())
+        return hit->second;
+    EffectiveLayer e;
+    const Layer* own = layer(id);
+    if (!own)
+        return e;
+    e.id = id;
+    bool haveColor = false, haveLt = false, haveLw = false;
+    for (const Layer* l = own; l; l = l->parent ? layer(l->parent) : nullptr) {
+        e.on = e.on && l->on;
+        e.plot = e.plot && l->plot;
+        e.frozen = e.frozen || l->frozen;
+        e.locked = e.locked || l->locked;
+        if (!haveColor && l->color.kind != ColorKind::ByParent) {
+            e.color = l->color;
+            haveColor = true;
+        }
+        if (!haveLt && l->linetype != kLinetypeByParent) {
+            e.linetype = l->linetype;
+            haveLt = true;
+        }
+        if (!haveLw && !l->lineweight.isByParent()) {
+            e.lineweight = l->lineweight;
+            haveLw = true;
+        }
+    }
+    effectiveCache_.emplace(id, e);
+    return e;
 }
 
 Transaction Document::begin(std::string name) {
@@ -906,7 +997,7 @@ Result<IdT> Transaction::addRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p
     doc();
     if (Result<void> r = checkRow(*doc_, row, nullptr); !r)
         return r.error();
-    if (t.byName.count(foldName(row.name))) {
+    if (t.byName.count(nameKey(row))) {
         return makeError(ErrorCode::Conflict, "name already in use: " + row.name);
     }
     IdT id{t.next};
@@ -933,7 +1024,7 @@ Result<void> Transaction::modifyRow(detail::Table<Row, IdT>& t, Pending<Row, IdT
         work.entities = live->entities;
     if (Result<void> r = checkRow(*doc_, work, live); !r)
         return r.error();
-    if (foldName(work.name) != foldName(live->name) && t.byName.count(foldName(work.name))) {
+    if (nameKey(work) != nameKey(*live) && t.byName.count(nameKey(work))) {
         return makeError(ErrorCode::Conflict, "name already in use: " + work.name);
     }
     touchRow(t, p, id);

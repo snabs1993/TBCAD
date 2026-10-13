@@ -9,7 +9,8 @@ struct Rgba {
     friend constexpr bool operator==(const Rgba&, const Rgba&) = default;
 };
 
-enum class ColorKind : std::uint8_t { ByLayer, ByBlock, Index, Rgb };
+// ByParent is only valid on a sub-layer's own color.
+enum class ColorKind : std::uint8_t { ByLayer, ByBlock, Index, Rgb, ByParent };
 
 // ByLayer | ByBlock | palette index (1..255) | RGB. For Index the index is kept in `r`.
 struct Color {
@@ -18,6 +19,7 @@ struct Color {
 
     static constexpr Color byLayer() { return {}; }
     static constexpr Color byBlock() { return {ColorKind::ByBlock, 0, 0, 0}; }
+    static constexpr Color byParent() { return {ColorKind::ByParent, 0, 0, 0}; }
     static constexpr Color index(std::uint8_t i) { return {ColorKind::Index, i, 0, 0}; }
     static constexpr Color rgb(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
         return {ColorKind::Rgb, r, g, b};
@@ -27,13 +29,14 @@ struct Color {
     friend constexpr bool operator==(const Color&, const Color&) = default;
 };
 
-// ByLayer | ByBlock | Default | value in hundredths of a millimetre.
+// ByLayer | ByBlock | Default | value in hundredths of a millimetre (ByParent: sub-layers only).
 struct LineWeight {
     std::int16_t v = -1;
 
     static constexpr LineWeight byLayer() { return {-1}; }
     static constexpr LineWeight byBlock() { return {-2}; }
     static constexpr LineWeight defaultWeight() { return {-3}; }
+    static constexpr LineWeight byParent() { return {-4}; }
     static constexpr LineWeight hundredths(std::int16_t h) { return {h}; }
     static LineWeight mm(double millimetres);
 
@@ -41,6 +44,7 @@ struct LineWeight {
     constexpr bool isByLayer() const { return v == -1; }
     constexpr bool isByBlock() const { return v == -2; }
     constexpr bool isDefault() const { return v == -3; }
+    constexpr bool isByParent() const { return v == -4; }
     // Weight in mm; 0 for the symbolic values.
     constexpr double toMm() const { return v >= 0 ? v / 100.0 : 0.0; }
     friend constexpr bool operator==(const LineWeight&, const LineWeight&) = default;

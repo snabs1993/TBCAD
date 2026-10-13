@@ -139,12 +139,17 @@ struct Table {
     std::map<IdT, Row> rows{};
     std::unordered_map<std::string, IdT> byName{};  // ASCII case-folded names
     std::uint32_t next = 1;
+    std::uint64_t version = 0;  // bumped on every row change
 
     const Row* find(IdT id) const {
         auto it = rows.find(id);
         return it == rows.end() ? nullptr : &it->second;
     }
     const Row* findByName(std::string_view name) const;
+    const Row* findByKey(const std::string& key) const {
+        auto it = byName.find(key);
+        return it == byName.end() ? nullptr : find(it->second);
+    }
 };
 
 }  // namespace detail
@@ -188,7 +193,13 @@ public:
     const DimStyle* dimStyle(DimStyleId id) const { return dimStyles_.find(id); }
     const BlockDef* block(BlockId id) const { return blocks_.find(id); }
     // Names compare ASCII case-insensitively.
+    // Top-level layer with this name.
     const Layer* layerByName(std::string_view name) const { return layers_.findByName(name); }
+    // Layer state with sub-layer inheritance applied. Cached; the cache is dropped on any
+    // layer-table change. An unknown id yields defaults with a null id.
+    EffectiveLayer effective(LayerId id) const;
+    // Child layer with this name under `parent` (null parent = top level).
+    const Layer* layerByName(LayerId parent, std::string_view name) const;
     const Linetype* linetypeByName(std::string_view n) const { return linetypes_.findByName(n); }
     const TextStyle* textStyleByName(std::string_view n) const { return textStyles_.findByName(n); }
     const DimStyle* dimStyleByName(std::string_view n) const { return dimStyles_.findByName(n); }
@@ -228,6 +239,9 @@ private:
     detail::Table<TextStyle, TextStyleId> textStyles_{};
     detail::Table<DimStyle, DimStyleId> dimStyles_{};
     detail::Table<BlockDef, BlockId> blocks_{};
+
+    mutable std::unordered_map<LayerId, EffectiveLayer> effectiveCache_{};
+    mutable std::uint64_t effectiveVersion_ = 0;
 
     std::vector<DocumentObserver*> observers_{};
     Transaction* active_ = nullptr;
