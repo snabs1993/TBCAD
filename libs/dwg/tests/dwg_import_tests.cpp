@@ -576,6 +576,26 @@ TEST_CASE("damaged or truncated files give a result or a clean error, never a cr
     CHECK(true);
 }
 
+TEST_CASE("damaged R2004 and R2010 files give a result or a clean error, never a crash") {
+    for (const char* version : {"AC1018", "AC1024"}) {
+        const auto good = sampleDrawing2004(version);
+        for (std::size_t cut :
+             {std::size_t{0x90}, std::size_t{0x100}, good.size() / 2, good.size() - 5}) {
+            std::vector<std::uint8_t> bad(good.begin(),
+                                          good.begin() + static_cast<std::ptrdiff_t>(cut));
+            dxf::Report report;
+            (void)importDwg(asBytes(bad), dxf::ImportOptions{}, report);
+        }
+        for (std::size_t i = 0x80; i < good.size(); i += 13) {
+            auto bad = good;
+            bad[i] = static_cast<std::uint8_t>(bad[i] ^ 0xA5);
+            dxf::Report report;
+            (void)importDwg(asBytes(bad), dxf::ImportOptions{}, report);
+        }
+    }
+    CHECK(true);
+}
+
 TEST_CASE("ellipse, spline and solid import") {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
