@@ -36,8 +36,9 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
         if (findLayerByPath(doc, path))
             continue;
         if (!create)
-            return ToolResult::fail("unknown layer \"" + path +
-                                    "\". Create it with create_layer, or pass create_layers: true.");
+            return ToolResult::fail(
+                "unknown layer \"" + path +
+                "\". Create it with create_layer, or pass create_layers: true.");
         auto r = ensureLayerPath(doc, tx, path, &createdLayers);
         if (!r)
             return ToolResult::fail(r.error().message);
@@ -64,15 +65,15 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
 }
 
 const std::set<std::string>& commonKeys() {
-    static const std::set<std::string> k{"layer", "color", "linetype", "lineweight",
-                                         "linetypeScale", "visible"};
+    static const std::set<std::string> k{"layer",      "color",         "linetype",
+                                         "lineweight", "linetypeScale", "visible"};
     return k;
 }
 const std::set<std::string>& optionalGeometryKeys() {
-    static const std::set<std::string> k{
-        "rotation", "style",      "alignPoint", "widthFactor", "oblique",     "width",
-        "startParam", "endParam", "constantWidth", "weights",  "fitPoints",   "hAlign",
-        "vAlign",   "attachment", "closed",     "ratio"};
+    static const std::set<std::string> k{"rotation",      "style",      "alignPoint", "widthFactor",
+                                         "oblique",       "width",      "startParam", "endParam",
+                                         "constantWidth", "weights",    "fitPoints",  "hAlign",
+                                         "vAlign",        "attachment", "closed",     "ratio"};
     return k;
 }
 
@@ -260,10 +261,12 @@ ToolResult modifyEntities(ToolContext& ctx, const Json& a) {
             x.data = e.data;
         });
         if (!m)
-            return ToolResult::fail("entity " + std::to_string(id.value) + ": " + m.error().message);
+            return ToolResult::fail("entity " + std::to_string(id.value) + ": " +
+                                    m.error().message);
     }
     commit(s, tx, kModifyLabel);
-    return ToolResult::ok(Json(Json::Object{{"modified", static_cast<double>(ids.value().size())}}));
+    return ToolResult::ok(
+        Json(Json::Object{{"modified", static_cast<double>(ids.value().size())}}));
 }
 
 ToolResult deleteEntities(ToolContext& ctx, const Json& a) {
@@ -277,14 +280,15 @@ ToolResult deleteEntities(ToolContext& ctx, const Json& a) {
     for (EntityId id : unique) {
         auto r = tx.erase(id);
         if (!r)
-            return ToolResult::fail("entity " + std::to_string(id.value) + ": " + r.error().message);
+            return ToolResult::fail("entity " + std::to_string(id.value) + ": " +
+                                    r.error().message);
     }
     commit(s, tx, kDeleteLabel);
     // Drop erased entities from the selection.
     auto sel = s.selection();
-    sel.erase(std::remove_if(sel.begin(), sel.end(),
-                             [&](EntityId id) { return unique.count(id) > 0; }),
-              sel.end());
+    sel.erase(
+        std::remove_if(sel.begin(), sel.end(), [&](EntityId id) { return unique.count(id) > 0; }),
+        sel.end());
     s.setSelection(std::move(sel));
     return ToolResult::ok(Json(Json::Object{{"deleted", static_cast<double>(unique.size())}}));
 }
@@ -300,7 +304,9 @@ ToolResult setSelection(ToolContext& ctx, const Json& a) {
 }  // namespace
 
 void registerEditTools(ToolSet& tools) {
-    auto idArray = [](const char* d = "Entity ids (decimal strings)") { return tArray(tString(), d); };
+    auto idArray = [](const char* d = "Entity ids (decimal strings)") {
+        return tArray(tString(), d);
+    };
 
     Json entitySchema = tObject(
         {{"kind", tString("line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch "
@@ -336,19 +342,17 @@ void registerEditTools(ToolSet& tools) {
                "{mirror:{p1,p2}}.",
                tObject({{"ids", idArray()},
                         {"set", tObject({})},
-                        {"transform", tObject({{"move", tPoint("[dx, dy]")},
-                                               {"rotate", tObject({{"base", tPoint()},
-                                                                   {"angle", tAny()}})},
-                                               {"scale", tObject({{"base", tPoint()},
-                                                                  {"factor", tNumber()}})},
-                                               {"mirror", tObject({{"p1", tPoint()},
-                                                                   {"p2", tPoint()}})}})}},
+                        {"transform",
+                         tObject({{"move", tPoint("[dx, dy]")},
+                                  {"rotate", tObject({{"base", tPoint()}, {"angle", tAny()}})},
+                                  {"scale", tObject({{"base", tPoint()}, {"factor", tNumber()}})},
+                                  {"mirror", tObject({{"p1", tPoint()}, {"p2", tPoint()}})}})}},
                        {"ids"}),
                outSchema({"modified"}), Edit::Document, false, false, true, modifyEntities});
 
     tools.add({"delete_entities", "Delete entities", "Erases entities in one undo step.",
-               tObject({{"ids", idArray()}}, {"ids"}), outSchema({"deleted"}), Edit::Document,
-               true, false, true, deleteEntities});
+               tObject({{"ids", idArray()}}, {"ids"}), outSchema({"deleted"}), Edit::Document, true,
+               false, true, deleteEntities});
 
     tools.add({"set_selection", "Set selection",
                "Selects entities in TBCAD (highlights them for the user). Not an undo step.",

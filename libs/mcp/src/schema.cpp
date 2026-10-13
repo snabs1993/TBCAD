@@ -18,7 +18,8 @@ bool typeMatches(const std::string& type, const Json& v) {
     if (type == "number")
         return v.isNumber() && std::isfinite(v.asNumber());
     if (type == "integer")
-        return v.isNumber() && std::isfinite(v.asNumber()) && v.asNumber() == std::floor(v.asNumber());
+        return v.isNumber() && std::isfinite(v.asNumber()) &&
+               v.asNumber() == std::floor(v.asNumber());
     if (type == "null")
         return v.isNull();
     return true;

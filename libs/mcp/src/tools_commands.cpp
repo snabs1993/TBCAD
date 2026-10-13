@@ -9,8 +9,8 @@ namespace {
 const std::set<std::string>& deniedCommands() {
     // Developer commands and anything that would open a file dialog or leave the program; files
     // have their own tools.
-    static const std::set<std::string> k{"DEVGEN", "OPEN",  "SAVE", "SAVEAS", "QSAVE",
-                                         "NEW",    "QNEW",  "QUIT", "EXIT",   "CLOSE"};
+    static const std::set<std::string> k{"DEVGEN", "OPEN", "SAVE", "SAVEAS", "QSAVE",
+                                         "NEW",    "QNEW", "QUIT", "EXIT",   "CLOSE"};
     return k;
 }
 
@@ -137,8 +137,8 @@ Json stringsJson(const std::vector<std::string>& v) {
 }
 
 Json limitedIds(const std::vector<EntityId>& ids, std::size_t cap = 1000) {
-    std::vector<EntityId> part(ids.begin(), ids.begin() + static_cast<std::ptrdiff_t>(
-                                                              std::min(ids.size(), cap)));
+    std::vector<EntityId> part(
+        ids.begin(), ids.begin() + static_cast<std::ptrdiff_t>(std::min(ids.size(), cap)));
     return idsJson(part);
 }
 
@@ -248,7 +248,8 @@ void registerCommandTools(ToolSet& tools) {
                outSchema({"finished", "messages", "prompts", "created", "changed", "erased"}),
                Edit::Document, false, false, true, runCommand});
 
-    Tool pdf{"export_pdf", "Export PDF",
+    Tool pdf{"export_pdf",
+             "Export PDF",
              "Writes the drawing to a PDF at the given scale (the EXPORTPDF command).",
              tObject({{"path", tString("absolute path ending in .pdf")},
                       {"paper", tString("A0..A4, ANSI A..E")},
@@ -256,16 +257,27 @@ void registerCommandTools(ToolSet& tools) {
                       {"scale", tString("Fit or 1:N, e.g. 1:100")},
                       {"area", tString("Extents or Display")}},
                      {"path"}),
-             outSchema({"finished", "messages"}), Edit::Session, false, false, true, exportPdf};
+             outSchema({"finished", "messages"}),
+             Edit::Session,
+             false,
+             false,
+             true,
+             exportPdf};
     pdf.available = [](DrawingSession& s) { return s.registry().find("EXPORTPDF") != nullptr; };
     tools.add(std::move(pdf));
 
-    Tool dxf{"export_dxf", "Export DXF",
+    Tool dxf{"export_dxf",
+             "Export DXF",
              "Writes the drawing to a DXF file (the EXPORTDXF command).",
              tObject({{"path", tString("absolute path ending in .dxf")},
                       {"version", tString("R12, R2000 or R2007; default R2000")}},
                      {"path"}),
-             outSchema({"finished", "messages"}), Edit::Session, false, false, true, exportDxf};
+             outSchema({"finished", "messages"}),
+             Edit::Session,
+             false,
+             false,
+             true,
+             exportDxf};
     dxf.available = [](DrawingSession& s) {
         return s.registry().find("EXPORTDXF") != nullptr || s.registry().find("DXFOUT") != nullptr;
     };

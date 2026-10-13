@@ -42,7 +42,7 @@ struct Image {
     int width = 0;
     int height = 0;
     std::vector<std::uint8_t> rgba{};
-    BBox2 worldBox{};         // what the picture shows
+    BBox2 worldBox{};  // what the picture shows
     double mmPerPixel = 0;
 };
 

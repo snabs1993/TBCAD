@@ -82,10 +82,10 @@ struct Rig {
     }
 
     void initialize(const std::string& version = "2025-06-18") {
-        Json r = rpc("initialize",
-                     J("{\"protocolVersion\":\"" + version +
-                       "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\","
-                       "\"version\":\"1\"}}"));
+        Json r =
+            rpc("initialize", J("{\"protocolVersion\":\"" + version +
+                                "\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\","
+                                "\"version\":\"1\"}}"));
         REQUIRE(r.find("result"));
         Message n;
         n.kind = Message::Kind::Notification;
@@ -95,7 +95,8 @@ struct Rig {
 
     // tools/call -> the CallToolResult object.
     Json call(const std::string& name, Json args = Json(Json::Object{})) {
-        Json r = rpc("tools/call", Json(Json::Object{{"name", name}, {"arguments", std::move(args)}}));
+        Json r =
+            rpc("tools/call", Json(Json::Object{{"name", name}, {"arguments", std::move(args)}}));
         const Json* res = r.find("result");
         REQUIRE_MESSAGE(res, dump(r));
         return *res;

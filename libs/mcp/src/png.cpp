@@ -25,8 +25,8 @@ std::string base64Encode(const std::vector<std::uint8_t>& bytes) {
     out.reserve((bytes.size() + 2) / 3 * 4);
     std::size_t i = 0;
     for (; i + 2 < bytes.size(); i += 3) {
-        std::uint32_t v = (std::uint32_t{bytes[i]} << 16) | (std::uint32_t{bytes[i + 1]} << 8) |
-                          bytes[i + 2];
+        std::uint32_t v =
+            (std::uint32_t{bytes[i]} << 16) | (std::uint32_t{bytes[i + 1]} << 8) | bytes[i + 2];
         out += kTable[(v >> 18) & 63];
         out += kTable[(v >> 12) & 63];
         out += kTable[(v >> 6) & 63];

@@ -91,9 +91,8 @@ ToolResult saveDrawing(ToolContext& ctx, const Json& a) {
     if (!r)
         return ToolResult::fail(r.error().message);
     FileInfo f = s.file();
-    return ToolResult::ok(Json(Json::Object{{"saved", true},
-                                            {"path", platform::pathToUtf8(f.path)},
-                                            {"name", f.name}}));
+    return ToolResult::ok(Json(
+        Json::Object{{"saved", true}, {"path", platform::pathToUtf8(f.path)}, {"name", f.name}}));
 }
 
 ToolResult openDrawing(ToolContext& ctx, const Json& a) {
@@ -102,8 +101,9 @@ ToolResult openDrawing(ToolContext& ctx, const Json& a) {
     if (!p)
         return ToolResult::fail(p.error().message);
     if (s.file().modified && !argBool(a, "discard_changes"))
-        return ToolResult::fail("the open drawing has unsaved changes; save it first or pass "
-                                "discard_changes: true");
+        return ToolResult::fail(
+            "the open drawing has unsaved changes; save it first or pass "
+            "discard_changes: true");
     auto r = s.open(p.value());
     if (!r)
         return ToolResult::fail(r.error().message);
@@ -113,8 +113,9 @@ ToolResult openDrawing(ToolContext& ctx, const Json& a) {
 ToolResult newDrawing(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;
     if (s.file().modified && !argBool(a, "discard_changes"))
-        return ToolResult::fail("the open drawing has unsaved changes; save it first or pass "
-                                "discard_changes: true");
+        return ToolResult::fail(
+            "the open drawing has unsaved changes; save it first or pass "
+            "discard_changes: true");
     s.newDocument();
     return ToolResult::ok(drawingInfoJson(s, ctx.serverVersion));
 }
@@ -153,8 +154,8 @@ ToolResult setView(ToolContext& ctx, const Json& a) {
         s.zoomToBox(ext);
     }
     auto nv = s.view();
-    return ToolResult::ok(Json(Json::Object{{"center", pointToJson(nv->center)},
-                                            {"mmPerPixel", nv->mmPerPixel}}));
+    return ToolResult::ok(
+        Json(Json::Object{{"center", pointToJson(nv->center)}, {"mmPerPixel", nv->mmPerPixel}}));
 }
 
 }  // namespace
@@ -191,13 +192,19 @@ void registerFileTools(ToolSet& tools) {
                tObject({{"discard_changes", tBool()}}), outSchema({"name", "entityCount"}),
                Edit::Session, true, false, true, newDrawing});
 
-    Tool view{"set_view", "Set view",
+    Tool view{"set_view",
+              "Set view",
               "Moves the user's viewport: fit the drawing (default), fit a bbox, or centre on a "
               "point at a scale. Not an undo step.",
               tObject({{"bbox", tArray(tPoint(), "[[x1,y1],[x2,y2]]", 2)},
                        {"center", tPoint()},
                        {"mm_per_pixel", tNumber()}}),
-              outSchema({"center", "mmPerPixel"}), Edit::Session, false, true, false, setView};
+              outSchema({"center", "mmPerPixel"}),
+              Edit::Session,
+              false,
+              true,
+              false,
+              setView};
     view.available = [](DrawingSession& s) { return s.view().has_value(); };
     tools.add(std::move(view));
 }

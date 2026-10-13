@@ -183,7 +183,8 @@ ToolResult getDrawingInfo(ToolContext& ctx, const Json&) {
 }
 
 ToolResult listLayers(ToolContext& ctx, const Json& a) {
-    return ToolResult::ok(layersJson(ctx.session.document(), argBool(a, "include_effective", true)));
+    return ToolResult::ok(
+        layersJson(ctx.session.document(), argBool(a, "include_effective", true)));
 }
 
 bool layerInSet(const Document& doc, LayerId id, const std::set<LayerId>& wanted, bool sub) {
@@ -267,8 +268,8 @@ ToolResult queryEntities(ToolContext& ctx, const Json& a) {
         if (!kinds.empty() && !kinds.count(kindName(kind(*e))))
             continue;
         if (box) {
-            bool hit = crossing ? geom::crossesWindow(*e, *box, &doc)
-                                : geom::insideWindow(*e, *box, &doc);
+            bool hit =
+                crossing ? geom::crossesWindow(*e, *box, &doc) : geom::insideWindow(*e, *box, &doc);
             if (!hit)
                 continue;
         }
@@ -494,22 +495,22 @@ void registerReadTools(ToolSet& tools) {
     add({"get_drawing_info", "Drawing info",
          "Summary of the open drawing: file, units (mm), entity count, extents, current layer, "
          "layer and block counts, undo label, whether the user is in the middle of a command.",
-         tObject({}), outSchema({"name", "entityCount", "extents", "currentLayer"}), Edit::None, false,
-         true, true, getDrawingInfo});
+         tObject({}), outSchema({"name", "entityCount", "extents", "currentLayer"}), Edit::None,
+         false, true, true, getDrawingInfo});
 
     add({"list_layers", "List layers",
          "Layer tree. Sub-layers are nested in `children`; `path` joins names with '~' "
          "(S-FLOOR~edge). `effective` shows the state after inheriting from parent layers.",
-         tObject({{"include_effective", tBool("default true")}}), outSchema({"layers", "currentLayer"}),
-         Edit::None, false, true, true, listLayers});
+         tObject({{"include_effective", tBool("default true")}}),
+         outSchema({"layers", "currentLayer"}), Edit::None, false, true, true, listLayers});
 
     add({"query_entities", "Find entities",
          "Entities as JSON, ordered by id. Filter by ids, kinds, layers (paths), or a bounding "
          "box. Paginate with limit and cursor (use next_cursor from the previous page).",
          tObject({{"ids", idArray()},
                   {"kinds", tArray(tEnum({"line", "circle", "arc", "polyline", "point", "ellipse",
-                                          "spline", "text", "mtext", "hatch", "insert",
-                                          "dimension", "leader", "proxy"}))},
+                                          "spline", "text", "mtext", "hatch", "insert", "dimension",
+                                          "leader", "proxy"}))},
                   {"layers", tArray(tString(), "Layer paths such as S-FLOOR~edge")},
                   {"include_sublayers", tBool("default true")},
                   {"bbox", tArray(tPoint(), "[[x1,y1],[x2,y2]] in mm", 2)},
@@ -549,15 +550,21 @@ void registerReadTools(ToolSet& tools) {
     add({"list_linetypes", "List linetypes", "Linetypes with dash patterns (mm).", tObject({}),
          outSchema({"linetypes"}), Edit::None, false, true, true, listLinetypes});
 
-    Tool cap{"capture_view", "Capture picture",
-             "A PNG picture of the drawing (as the user sees it) so you can check your work. "
-             "Does not change the user's view.",
-             tObject({{"fit", tEnum({"extents", "selection", "ids", "view"},
-                                    "what to show; default extents (the whole drawing)")},
-                      {"ids", idArray()},
-                      {"max_size", tInt("longer side in pixels, default 1024, max 2048", 64, 2048)}}),
-             outSchema({"width", "height", "worldBox", "mmPerPixel"}), Edit::None, false, true, true,
-             captureView};
+    Tool cap{
+        "capture_view",
+        "Capture picture",
+        "A PNG picture of the drawing (as the user sees it) so you can check your work. "
+        "Does not change the user's view.",
+        tObject({{"fit", tEnum({"extents", "selection", "ids", "view"},
+                               "what to show; default extents (the whole drawing)")},
+                 {"ids", idArray()},
+                 {"max_size", tInt("longer side in pixels, default 1024, max 2048", 64, 2048)}}),
+        outSchema({"width", "height", "worldBox", "mmPerPixel"}),
+        Edit::None,
+        false,
+        true,
+        true,
+        captureView};
     cap.available = [](DrawingSession& s) { return s.view().has_value(); };
     add(std::move(cap));
 }

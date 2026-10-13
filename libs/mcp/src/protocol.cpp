@@ -103,13 +103,13 @@ std::optional<Json> McpServerCore::handle(Client& client, const Message& m) {
             Json empty{Json::Object{}};
             if (args && !args->isObject() && !args->isNull())
                 return makeError(m.id, rpc::kInvalidParams, "arguments must be an object");
-            return makeResult(m.id, callTool(client, name->asString(), args && args->isObject() ? *args : empty));
+            return makeResult(
+                m.id, callTool(client, name->asString(), args && args->isObject() ? *args : empty));
         }
         if (m.method == "resources/list")
             return makeResult(m.id, listResources());
         if (m.method == "resources/templates/list") {
-            return makeResult(m.id,
-                              Json(Json::Object{{"resourceTemplates", Json(Json::Array{})}}));
+            return makeResult(m.id, Json(Json::Object{{"resourceTemplates", Json(Json::Array{})}}));
         }
         if (m.method == "resources/read")
             return makeResult(m.id, readResource(m.params));
@@ -195,9 +195,9 @@ Json McpServerCore::callTool(Client& client, const std::string& name, const Json
     auto finish = [&](Json result, bool ok, std::string error) {
         log.ok = ok;
         log.error = std::move(error);
-        log.milliseconds = std::chrono::duration<double, std::milli>(
-                               std::chrono::steady_clock::now() - started)
-                               .count();
+        log.milliseconds =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
+                .count();
         session_.logToolCall(log);
         return result;
     };
@@ -221,7 +221,8 @@ Json McpServerCore::callTool(Client& client, const std::string& name, const Json
         cmd::UndoStack& undo = session_.undoStack();
         if (tool->edit != Edit::None && tool->needsIdle && session_.runner().active()) {
             const cmd::PromptInfo* p = session_.runner().prompt();
-            result = ToolResult::fail("The user is running " + (p ? p->command : std::string("a command")) +
+            result = ToolResult::fail("The user is running " +
+                                      (p ? p->command : std::string("a command")) +
                                       " in TBCAD; try again when it finishes.");
             return;
         }
@@ -261,9 +262,8 @@ Json McpServerCore::callTool(Client& client, const std::string& name, const Json
     if (result.image) {
         auto png = encodePng(result.image->rgba, result.image->width, result.image->height);
         if (!png.empty()) {
-            content.push_back(Json(Json::Object{{"type", "image"},
-                                                {"mimeType", "image/png"},
-                                                {"data", base64Encode(png)}}));
+            content.push_back(Json(Json::Object{
+                {"type", "image"}, {"mimeType", "image/png"}, {"data", base64Encode(png)}}));
         }
     }
     Json::Object out;
@@ -276,8 +276,8 @@ Json McpServerCore::callTool(Client& client, const std::string& name, const Json
 
 Json McpServerCore::listResources() {
     auto res = [](const char* uri, const char* name, const char* desc, const char* mime) {
-        return Json(Json::Object{{"uri", uri}, {"name", name}, {"description", desc},
-                                 {"mimeType", mime}});
+        return Json(
+            Json::Object{{"uri", uri}, {"name", name}, {"description", desc}, {"mimeType", mime}});
     };
     return Json(Json::Object{
         {"resources",
@@ -286,8 +286,7 @@ Json McpServerCore::listResources() {
                  "application/json"),
              res("tbcad://drawing/layers", "Layers", "Layer tree with sub-layers",
                  "application/json"),
-             res("tbcad://commands", "Commands", "TBCAD commands with aliases",
-                 "application/json"),
+             res("tbcad://commands", "Commands", "TBCAD commands with aliases", "application/json"),
              res("tbcad://docs/entity-json", "Entity JSON format",
                  "How entities are written and read by the tools", "text/markdown")})}});
 }
@@ -315,7 +314,8 @@ Json McpServerCore::readResource(const Json& params) {
         throw RpcError{-32002, "Resource not found: " + uri};
     }
     return Json(Json::Object{
-        {"contents", Json(Json::Array{Json(Json::Object{{"uri", uri}, {"mimeType", mime}, {"text", text}})})}});
+        {"contents",
+         Json(Json::Array{Json(Json::Object{{"uri", uri}, {"mimeType", mime}, {"text", text}})})}});
 }
 
 }  // namespace tbcad::mcp

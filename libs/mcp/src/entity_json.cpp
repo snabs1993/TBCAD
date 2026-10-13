@@ -324,7 +324,9 @@ SplineData splineFromJson(const Json& j) {
         }
         return s;
     }
-    fail("a spline needs \"controlPoints\" (fit-point-only splines are drawn with run_command SPLINE)");
+    fail(
+        "a spline needs \"controlPoints\" (fit-point-only splines are drawn with run_command "
+        "SPLINE)");
 }
 
 }  // namespace
@@ -448,8 +450,8 @@ Result<LayerId> ensureLayerPath(const Document& doc, Transaction& tx, std::strin
     std::string soFar;
     for (const auto& name : splitPath(path)) {
         if (name.empty())
-            return makeError(ErrorCode::InvalidArgument, "empty layer name in \"" +
-                                                             std::string(path) + "\"");
+            return makeError(ErrorCode::InvalidArgument,
+                             "empty layer name in \"" + std::string(path) + "\"");
         if (!soFar.empty())
             soFar += '~';
         soFar += name;
@@ -839,7 +841,8 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
                     fail("unknown text style \"" + st + "\"");
                 t.style = s->id;
             }
-            std::string h = lower(strOr(j, "hAlign", "left")), v = lower(strOr(j, "vAlign", "baseline"));
+            std::string h = lower(strOr(j, "hAlign", "left")),
+                        v = lower(strOr(j, "vAlign", "baseline"));
             const char* hn[] = {"left", "center", "right", "aligned", "middle", "fit"};
             const char* vn[] = {"baseline", "bottom", "middle", "top"};
             bool found = false;
@@ -883,8 +886,9 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
                 }
             }
             if (!found)
-                fail("attachment must be one of topLeft, topCenter, topRight, middleLeft, "
-                     "middleCenter, middleRight, bottomLeft, bottomCenter, bottomRight");
+                fail(
+                    "attachment must be one of topLeft, topCenter, topRight, middleLeft, "
+                    "middleCenter, middleRight, bottomLeft, bottomCenter, bottomRight");
             std::string st = strOr(j, "style");
             if (!st.empty()) {
                 const TextStyle* s = doc.textStyleByName(st);
@@ -926,8 +930,9 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             in.rotation = angOr(j, "rotation", 0);
             e.data = Indirect<InsertData>(std::move(in));
         } else if (k == "dimension" || k == "leader") {
-            fail("dimensions and leaders are created with run_command (DIMLINEAR, DIMALIGNED, "
-                 "DIMRADIUS, ... and LEADER), which own their geometry rules");
+            fail(
+                "dimensions and leaders are created with run_command (DIMLINEAR, DIMALIGNED, "
+                "DIMRADIUS, ... and LEADER), which own their geometry rules");
         } else if (k == "proxy") {
             fail("proxy entities are read-only");
         } else {

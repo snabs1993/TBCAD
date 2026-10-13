@@ -70,8 +70,9 @@ ToolResult createLayer(ToolContext& ctx, const Json& a) {
     Document& doc = s.document();
     std::string name = argString(a, "name");
     if (name.find('~') != std::string::npos)
-        return ToolResult::fail("a layer name cannot contain '~' (it separates sub-layer names in "
-                                "paths); use the `parent` argument to make a sub-layer");
+        return ToolResult::fail(
+            "a layer name cannot contain '~' (it separates sub-layer names in "
+            "paths); use the `parent` argument to make a sub-layer");
     Layer row;
     row.name = name;
     std::string parentPath = argString(a, "parent");
@@ -287,18 +288,17 @@ void registerLayerTools(ToolSet& tools) {
                tObject(modifyProps, {"path"}), outSchema({"path"}), Edit::Document, false, false,
                true, modifyLayer});
 
-    tools.add({"delete_layer", "Delete layer",
-               "Deletes an empty layer. mode `branch` (default) also deletes its sub-layers (all "
-               "must be empty); `move_children_up` keeps the sub-layers one level higher.",
-               tObject({{"path", tString()},
-                        {"mode", tEnum({"branch", "move_children_up"})}},
-                       {"path"}),
-               outSchema({"deleted"}), Edit::Document, true, false, true, deleteLayer});
+    tools.add(
+        {"delete_layer", "Delete layer",
+         "Deletes an empty layer. mode `branch` (default) also deletes its sub-layers (all "
+         "must be empty); `move_children_up` keeps the sub-layers one level higher.",
+         tObject({{"path", tString()}, {"mode", tEnum({"branch", "move_children_up"})}}, {"path"}),
+         outSchema({"deleted"}), Edit::Document, true, false, true, deleteLayer});
 
     tools.add({"set_current_layer", "Set current layer",
                "New entities drawn by the user and by commands go on this layer.",
-               tObject({{"path", tString()}}, {"path"}), outSchema({"currentLayer"}), Edit::Document,
-               false, true, true, setCurrentLayer});
+               tObject({{"path", tString()}}, {"path"}), outSchema({"currentLayer"}),
+               Edit::Document, false, true, true, setCurrentLayer});
 }
 
 }  // namespace tbcad::mcp::detail

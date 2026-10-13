@@ -38,9 +38,13 @@ TEST_CASE("add_entities: unknown layer needs create_layers, errors name the enti
     Rig r;
     r.initialize();
     std::string before = r.dumpDoc();
-    std::string e = r.fails("add_entities", J(R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]}],"layer":"X"})"));
+    std::string e =
+        r.fails("add_entities",
+                J(R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]}],"layer":"X"})"));
     CHECK(e.find("create_layers") != std::string::npos);
-    e = r.fails("add_entities", J(R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]},{"kind":"circle","center":[0,0]}]})"));
+    e = r.fails(
+        "add_entities",
+        J(R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]},{"kind":"circle","center":[0,0]}]})"));
     CHECK(e.find("entities[1]") != std::string::npos);
     CHECK(e.find("radius") != std::string::npos);
     CHECK(r.dumpDoc() == before);  // the good first entity was rolled back too
@@ -101,12 +105,14 @@ TEST_CASE("modify_entities: properties, geometry, transforms") {
     CHECK(e.find("start")->asArray()[0].asNumber() == 10);
     CHECK(e.find("end")->asArray()[1].asNumber() == 20);
 
-    r.ok("modify_entities", J(R"({"ids":[")" + l + R"("],"transform":{"rotate":{"base":[10,20],"angle":{"deg":90}}}})"));
+    r.ok("modify_entities", J(R"({"ids":[")" + l +
+                              R"("],"transform":{"rotate":{"base":[10,20],"angle":{"deg":90}}}})"));
     e = r.ok("get_entity", J(R"({"id":")" + l + R"("})"));
     CHECK(e.find("end")->asArray()[0].asNumber() == doctest::Approx(10));
     CHECK(e.find("end")->asArray()[1].asNumber() == doctest::Approx(120));
 
-    std::string err = r.fails("modify_entities", J(R"({"ids":[")" + l + R"("],"set":{"radius":3}})"));
+    std::string err =
+        r.fails("modify_entities", J(R"({"ids":[")" + l + R"("],"set":{"radius":3}})"));
     CHECK(err.find("unknown property") != std::string::npos);
     err = r.fails("modify_entities", J(R"({"ids":["999999"],"set":{"color":1}})"));
     CHECK(err.find("999999") != std::string::npos);
@@ -115,7 +121,9 @@ TEST_CASE("modify_entities: properties, geometry, transforms") {
 TEST_CASE("delete_entities and set_selection") {
     Rig r;
     r.initialize();
-    Json added = r.ok("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]},{"kind":"point","position":[1,1]}]})"));
+    Json added = r.ok(
+        "add_entities",
+        J(R"({"entities":[{"kind":"point","position":[0,0]},{"kind":"point","position":[1,1]}]})"));
     auto ids = added.find("ids")->asArray();
     r.ok("set_selection", J(R"({"ids":[")" + ids[0].asString() + R"("]})"));
     CHECK(r.ok("get_selection").find("count")->asNumber() == 1);
@@ -131,8 +139,8 @@ TEST_CASE("query_entities: pagination, bbox, kinds") {
     r.initialize();
     Json::Array ents;
     for (int i = 0; i < 25; ++i) {
-        ents.push_back(J("{\"kind\":\"line\",\"start\":[" + std::to_string(i * 10) + ",0],\"end\":[" +
-                         std::to_string(i * 10 + 5) + ",5]}"));
+        ents.push_back(J("{\"kind\":\"line\",\"start\":[" + std::to_string(i * 10) +
+                         ",0],\"end\":[" + std::to_string(i * 10 + 5) + ",5]}"));
     }
     ents.push_back(J(R"({"kind":"circle","center":[500,500],"radius":5})"));
     r.ok("add_entities", Json(Json::Object{{"entities", Json(std::move(ents))}}));
@@ -144,7 +152,8 @@ TEST_CASE("query_entities: pagination, bbox, kinds") {
     Json p2 = r.ok("query_entities", J(R"({"limit":10,"cursor":")" + cursor + R"("})"));
     CHECK(p2.find("entities")->asArray()[0].find("id")->asString() ==
           std::to_string(std::stoull(cursor) + 1));
-    Json p3 = r.ok("query_entities", J(R"({"limit":10,"cursor":")" + p2.find("next_cursor")->asString() + R"("})"));
+    Json p3 = r.ok("query_entities",
+                   J(R"({"limit":10,"cursor":")" + p2.find("next_cursor")->asString() + R"("})"));
     CHECK(p3.find("entities")->asArray().size() == 6);
     CHECK_FALSE(p3.find("next_cursor"));
 
@@ -187,7 +196,8 @@ TEST_CASE("all writable kinds round trip through JSON") {
         {"kind":"hatch","loops":[[[0,0],[10,0],[10,10],[0,10]]],"pattern":"ANSI31","scale":2,"angle":{"deg":45}}]})"));
     auto ids = added.find("ids")->asArray();
     REQUIRE(ids.size() == 9);
-    const char* kinds[] = {"line", "circle", "polyline", "point", "ellipse", "spline", "text", "mtext", "hatch"};
+    const char* kinds[] = {"line",   "circle", "polyline", "point", "ellipse",
+                           "spline", "text",   "mtext",    "hatch"};
     for (std::size_t i = 0; i < ids.size(); ++i) {
         Json e = r.ok("get_entity", J(R"({"id":")" + ids[i].asString() + R"("})"));
         CHECK(e.find("kind")->asString() == kinds[i]);
@@ -195,15 +205,20 @@ TEST_CASE("all writable kinds round trip through JSON") {
         if (i != 8) {
             Json copy = e;
             copy.object().erase("id");
-            Json again = r.ok("add_entities", Json(Json::Object{{"entities", Json(Json::Array{copy})}}));
-            Json e2 = r.ok("get_entity", J(R"({"id":")" + again.find("ids")->asArray()[0].asString() + R"("})"));
+            Json again =
+                r.ok("add_entities", Json(Json::Object{{"entities", Json(Json::Array{copy})}}));
+            Json e2 = r.ok("get_entity",
+                           J(R"({"id":")" + again.find("ids")->asArray()[0].asString() + R"("})"));
             e2.object().erase("id");
             CHECK(dump(e2) == dump(copy));
         }
     }
-    CHECK(r.ok("get_entity", J(R"({"id":")" + ids[0].asString() + R"("})")).find("color")->asString() == "#FF8000");
+    CHECK(r.ok("get_entity", J(R"({"id":")" + ids[0].asString() + R"("})"))
+              .find("color")
+              ->asString() == "#FF8000");
     Json t = r.ok("get_entity", J(R"({"id":")" + ids[6].asString() + R"("})"));
-    CHECK(t.find("value")->asString() == "Hello \xe0\xb8\xaa\xe0\xb8\xa7\xe0\xb8\xb1\xe0\xb8\xaa\xe0\xb8\x94\xe0\xb8\xb5");
+    CHECK(t.find("value")->asString() ==
+          "Hello \xe0\xb8\xaa\xe0\xb8\xa7\xe0\xb8\xb1\xe0\xb8\xaa\xe0\xb8\x94\xe0\xb8\xb5");
     CHECK(t.find("rotation")->asNumber() == doctest::Approx(kPi / 6));
     Json h = r.ok("get_entity", J(R"({"id":")" + ids[8].asString() + R"("})"));
     CHECK(h.find("pattern")->asString() == "ANSI31");
@@ -240,7 +255,8 @@ TEST_CASE("sub-layers: create, nest, refuse cycles, delete") {
     CHECK(edge.find("effective")->find("color")->asNumber() == 3);
     CHECK(edge.find("children")->asArray().size() == 1);
 
-    std::string e = r.fails("modify_layer", J(R"({"path":"S-FLOOR","new_parent":"S-FLOOR~edge~inner"})"));
+    std::string e =
+        r.fails("modify_layer", J(R"({"path":"S-FLOOR","new_parent":"S-FLOOR~edge~inner"})"));
     CHECK(e.find("cycle") != std::string::npos);
     e = r.fails("create_layer", J(R"({"name":"a~b"})"));
     CHECK(e.find("~") != std::string::npos);
@@ -251,10 +267,16 @@ TEST_CASE("sub-layers: create, nest, refuse cycles, delete") {
     r.ok("modify_layer", J(R"({"path":"S-FLOOR","on":false})"));
     Json one = r.ok("list_layers");
     (void)one;
-    CHECK_FALSE(r.session.document().effective(r.session.document().layerByName(r.session.document().layerByName("S-FLOOR")->id, "rim")->id).on);
+    CHECK_FALSE(
+        r.session.document()
+            .effective(r.session.document()
+                           .layerByName(r.session.document().layerByName("S-FLOOR")->id, "rim")
+                           ->id)
+            .on);
 
     // A layer with entities cannot be deleted.
-    r.ok("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}],"layer":"S-FLOOR~rim"})"));
+    r.ok("add_entities",
+         J(R"({"entities":[{"kind":"point","position":[0,0]}],"layer":"S-FLOOR~rim"})"));
     e = r.fails("delete_layer", J(R"({"path":"S-FLOOR"})"));
     CHECK(e.find("holds 1 entities") != std::string::npos);
     r.ok("delete_layer", J(R"({"path":"S-FLOOR~rim~inner"})"));
@@ -311,7 +333,8 @@ TEST_CASE("busy: a running user command blocks edits but not reads") {
     r.initialize();
     REQUIRE(r.session.runner().start("TESTLINE").ok());
     std::string before = r.dumpDoc();
-    std::string e = r.fails("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}]})"));
+    std::string e =
+        r.fails("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}]})"));
     CHECK(e.find("TESTLINE") != std::string::npos);
     CHECK(e.find("try again") != std::string::npos);
     CHECK(r.dumpDoc() == before);
@@ -327,7 +350,8 @@ TEST_CASE("permission: deny, read-only and allow-once") {
         r.session.setPolicy([](const ClientInfo&) { return EditDecision::Deny; });
         r.initialize();
         std::string before = r.dumpDoc();
-        std::string e = r.fails("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}]})"));
+        std::string e =
+            r.fails("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}]})"));
         CHECK(e.find("not allowed") != std::string::npos);
         CHECK(r.dumpDoc() == before);
         r.ok("get_drawing_info");
@@ -361,15 +385,25 @@ TEST_CASE("permission: deny, read-only and allow-once") {
 TEST_CASE("measure") {
     Rig r;
     r.initialize();
-    CHECK(r.ok("measure", J(R"({"kind":"distance","points":[[0,0],[3,4]]})")).find("distance")->asNumber() == 5);
+    CHECK(r.ok("measure", J(R"({"kind":"distance","points":[[0,0],[3,4]]})"))
+              .find("distance")
+              ->asNumber() == 5);
     Json a = r.ok("add_entities", J(R"({"entities":[
         {"kind":"polyline","vertices":[[0,0],[10,0],[10,10],[0,10]],"closed":true},
         {"kind":"circle","center":[0,0],"radius":1}]})"));
     auto ids = a.find("ids")->asArray();
-    CHECK(r.ok("measure", J(R"({"kind":"area","ids":[")" + ids[0].asString() + R"("]})")).find("area")->asNumber() == doctest::Approx(100));
-    CHECK(r.ok("measure", J(R"({"kind":"area","ids":[")" + ids[1].asString() + R"("]})")).find("area")->asNumber() == doctest::Approx(kPi));
-    CHECK(r.ok("measure", J(R"({"kind":"length","ids":[")" + ids[0].asString() + R"("]})")).find("length")->asNumber() == doctest::Approx(40));
-    CHECK(r.ok("measure", J(R"({"kind":"area","points":[[0,0],[4,0],[4,3]]})")).find("area")->asNumber() == doctest::Approx(6));
+    CHECK(r.ok("measure", J(R"({"kind":"area","ids":[")" + ids[0].asString() + R"("]})"))
+              .find("area")
+              ->asNumber() == doctest::Approx(100));
+    CHECK(r.ok("measure", J(R"({"kind":"area","ids":[")" + ids[1].asString() + R"("]})"))
+              .find("area")
+              ->asNumber() == doctest::Approx(kPi));
+    CHECK(r.ok("measure", J(R"({"kind":"length","ids":[")" + ids[0].asString() + R"("]})"))
+              .find("length")
+              ->asNumber() == doctest::Approx(40));
+    CHECK(r.ok("measure", J(R"({"kind":"area","points":[[0,0],[4,0],[4,3]]})"))
+              .find("area")
+              ->asNumber() == doctest::Approx(6));
 }
 
 TEST_CASE("save and open round trip") {

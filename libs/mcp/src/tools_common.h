@@ -55,9 +55,9 @@ inline Json tEnum(std::vector<std::string> values, const std::string& desc = {})
     return withDesc({{"type", Json("string")}, {"enum", Json(std::move(a))}}, desc);
 }
 inline Json tPoint(const std::string& desc = "Point [x, y] in mm") {
-    return withDesc({{"type", Json("array")}, {"items", tAny()}, {"minItems", Json(2)},
-                     {"maxItems", Json(2)}},
-                    desc);
+    return withDesc(
+        {{"type", Json("array")}, {"items", tAny()}, {"minItems", Json(2)}, {"maxItems", Json(2)}},
+        desc);
 }
 inline Json tObject(Json::Object props, std::vector<std::string> required = {},
                     const std::string& desc = {}) {
@@ -126,8 +126,7 @@ inline Result<std::vector<EntityId>> parseIds(const Document& doc, const Json* a
         if (!id)
             return makeError(ErrorCode::InvalidArgument, "bad entity id " + dump(j));
         if (!doc.contains(*id) || doc.ownerBlock(*id))
-            return makeError(ErrorCode::NotFound,
-                             "no entity with id " + std::to_string(id->value));
+            return makeError(ErrorCode::NotFound, "no entity with id " + std::to_string(id->value));
         out.push_back(*id);
     }
     return out;

@@ -17,8 +17,8 @@ inline constexpr const char* kProtocolVersionOld = "2025-03-26";
 
 // State of one MCP session (one initialize handshake). Belongs to the transport that created it.
 struct Client {
-    bool initialized = false;      // initialize request answered
-    bool ready = false;            // notifications/initialized received
+    bool initialized = false;  // initialize request answered
+    bool ready = false;        // notifications/initialized received
     std::string protocol{};
     ClientInfo info{};
     std::optional<EditDecision> decision{};  // answer of requestEdit for this session
