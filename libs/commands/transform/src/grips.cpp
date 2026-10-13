@@ -1,6 +1,7 @@
 #include "tbcad/transform/grips.h"
 
 #include <cmath>
+#include <cstdio>
 
 #include "tbcad/geom/geom.h"
 
@@ -65,6 +66,32 @@ const Grip* hitGrip(const std::vector<Grip>& grips, Vec2 p, double apertureMm) {
         }
     }
     return best;
+}
+
+namespace {
+std::optional<Vec2> g_hot;
+}
+
+void setHotGrip(std::optional<Vec2> pos) {
+    g_hot = pos;
+}
+
+std::optional<Vec2> hotGrip() {
+    return g_hot;
+}
+
+std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids, Vec2 world,
+                             double apertureMm, std::size_t limit, bool copy) {
+    auto grips = collectGrips(doc, ids, limit);
+    const Grip* g = hitGrip(grips, world, apertureMm);
+    if (!g)
+        return {};
+    char buf[96];
+    std::snprintf(buf, sizeof buf, "GRIPEDIT %.17g,%.17g", g->pos.x, g->pos.y);
+    std::string line = buf;
+    if (copy)
+        line += " Copy";
+    return line;
 }
 
 std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,

@@ -536,6 +536,19 @@ void AppCore::applyPick(const std::vector<EntityId>& ids, bool remove) {
     setSelection(std::move(sel));
 }
 
+PanelContext AppCore::makePanelContext() {
+    PanelContext pc;
+    pc.doc = &session_->doc;
+    pc.host = this;
+    pc.selection = &selection_;
+    pc.camera = &camera_;
+    pc.feedback = &feedback_;
+    pc.cursorWorld = cursorWorld_;
+    pc.apertureMm = apertureMm();
+    pc.runCommand = [this](const std::string& line) { submitText(line); };
+    return pc;
+}
+
 void AppCore::click(const PointerState& p) {
     cmd::RawInput raw = makeRaw(p);
     Vec2 world = raw.worldCursor;
@@ -558,6 +571,13 @@ void AppCore::click(const PointerState& p) {
                 break;
         }
         return;
+    }
+    if (ui_ && !ui_->idleClickHooks().empty()) {
+        PanelContext pc = makePanelContext();
+        for (const auto& hook : ui_->idleClickHooks()) {
+            if (hook(pc, world, apertureMm(), p.shift, p.ctrl))
+                return;
+        }
     }
     auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
     if (!id) {
@@ -700,13 +720,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         }
     }
     if (ui) {
-        PanelContext pc;
-        pc.doc = &session_->doc;
-        pc.host = this;
-        pc.selection = &selection_;
-        pc.camera = &camera_;
-        pc.feedback = &feedback_;
-        pc.runCommand = [this](const std::string& line) { submitText(line); };
+        PanelContext pc = makePanelContext();
         for (const auto& fn : ui->overlayDrawers())
             fn(pc, overlay);
     }

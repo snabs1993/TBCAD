@@ -65,6 +65,10 @@ public:
             co_return;
         }
         const Grip hot = *found;
+        struct HotScope {  // the overlay draws the hot grip red while the command runs
+            explicit HotScope(Vec2 p) { setHotGrip(p); }
+            ~HotScope() { setHotGrip(std::nullopt); }
+        } hotScope(hot.pos);
 
         GripMode mode = GripMode::Stretch;
         bool copy = false;
