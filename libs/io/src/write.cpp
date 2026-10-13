@@ -71,6 +71,11 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     return std::move(body.bytes());
 }
 
+std::uint32_t fourcc4(const std::string& s) {
+    char t[5] = {s[0], s[1], s[2], s[3], 0};
+    return fourcc(t);
+}
+
 }  // namespace
 
 Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
@@ -340,13 +345,77 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
                 reinterpret_cast<const std::uint8_t*>(value->data()), value->size()));
             std::uint32_t type = r.u32();
             std::uint32_t flags = r.u32();
-            appendStoredChunk(out, type, flags, r.rest());
+            bool replaced = false;
+            for (const ExtraChunk& x : options.extraChunks) {
+                replaced = replaced || (x.type.size() == 4 && fourcc4(x.type) == type);
+            }
+            if (!replaced)
+                appendStoredChunk(out, type, flags, r.rest());
+        }
+        for (const ExtraChunk& x : options.extraChunks) {
+            if (x.type.size() != 4)
+                return makeError(ErrorCode::InvalidArgument, "chunk type must be four characters");
+            appendChunk(out, fourcc4(x.type), x.payload, options.compress);
         }
         appendStoredChunk(out, kEnd, 0, {});
         return std::move(out.bytes());
     } catch (const std::exception& ex) {
         return makeError(ErrorCode::Generic, std::string("cannot write .tbcad: ") + ex.what());
     }
+}
+
+}  // namespace tbcad::io
+
+namespace tbcad::io {
+
+namespace {
+// The header key and payload of the opaque chunk `type`.
+std::optional<std::pair<std::string, std::vector<std::uint8_t>>> locateOptionalChunk(
+    const Document& doc, std::string_view type) {
+    if (type.size() != 4)
+        return std::nullopt;
+    char t[5] = {type[0], type[1], type[2], type[3], 0};
+    const std::uint32_t want = detail::fourcc(t);
+    for (const auto& [key, value] : doc.header().custom) {
+        if (!key.starts_with(detail::kOpaqueChunkPrefix) || value.size() < 8)
+            continue;
+        try {
+            detail::ByteReader r(std::span<const std::uint8_t>(
+                reinterpret_cast<const std::uint8_t*>(value.data()), value.size()));
+            detail::RawChunk c;
+            c.type = r.u32();
+            c.flags = r.u32();
+            if (c.type != want)
+                continue;
+            c.stored = r.rest();
+            std::vector<std::uint8_t> scratch;
+            auto payload = detail::chunkPayload(c, scratch);
+            return std::make_pair(key, std::vector<std::uint8_t>(payload.begin(), payload.end()));
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+}  // namespace
+
+std::optional<std::vector<std::uint8_t>> findOptionalChunk(const Document& doc,
+                                                           std::string_view type) {
+    auto found = locateOptionalChunk(doc, type);
+    if (!found)
+        return std::nullopt;
+    return std::move(found->second);
+}
+
+std::optional<std::vector<std::uint8_t>> takeOptionalChunk(Document& doc, std::string_view type) {
+    auto found = locateOptionalChunk(doc, type);
+    if (!found)
+        return std::nullopt;
+    Transaction tx = doc.begin("drop optional chunk");
+    if (!tx.modifyHeader([&](Header& h) { h.custom.erase(found->first); }))
+        return std::move(found->second);
+    tx.commit();
+    return std::move(found->second);
 }
 
 }  // namespace tbcad::io
