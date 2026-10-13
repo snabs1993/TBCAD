@@ -101,6 +101,8 @@ Editing tools (one undo step each, `AI: <tool>`):
 - Blocks: `create_block` (BLOCK command: `ids`, `base`, `originals` convert/retain/delete, `redefine`);
   text with `attdef` becomes an attribute. `list_blocks` lists attributes, dynamic parameters/actions and xref
   state. Insert with `add_entities` kind `insert` (`attributes: {TAG: value}`).
+- Dynamic blocks: `add_block_parameter` (linear, rotation, flip, visibility), `add_block_action` (stretch, move,
+  scale), `set_dynamic_value` on an insert.
 - Layers: `set_active_only`, `layer_state` (list, save, restore with `parts`, rename, delete).
 - Constraints: `list_constraints`, `add_constraint` (Coincident, Horizontal, Vertical, Parallel,
   Perpendicular, Equal, Tangent, Fix, Distance, Radius, Angle in degrees; solves and moves the geometry; a

@@ -137,6 +137,168 @@ ToolResult layerState(ToolContext& ctx, const Json& a) {
     return r;
 }
 
+Result<std::pair<Vec2, Vec2>> windowFromJson(const Json* j, const char* what) {
+    if (!j || !j->isArray() || j->asArray().size() != 2)
+        return makeError(ErrorCode::InvalidArgument,
+                         std::string(what) + " must be two corners [[x1,y1],[x2,y2]]");
+    auto p1 = pointFromJson(j->asArray()[0]);
+    auto p2 = pointFromJson(j->asArray()[1]);
+    if (!p1 || !p2)
+        return makeError(ErrorCode::InvalidArgument, std::string(what) + ": bad corner");
+    return std::make_pair(p1.value(), p2.value());
+}
+
+std::size_t dynCount(const Document& doc, const std::string& block, bool actions) {
+    const BlockDef* d = doc.blockByName(block);
+    if (!d || !d->dynamic)
+        return 0;
+    return actions ? d->dynamic->actions.size() : d->dynamic->params.size();
+}
+
+ToolResult noteIfUnchanged(ToolResult r, bool changed) {
+    if (r.isError || changed)
+        return r;
+    std::string why = "nothing was added";
+    if (const Json* m = r.data.find("messages"))
+        if (m->isArray() && !m->asArray().empty())
+            why = m->asArray().back().asString();
+    return ToolResult::fail(why);
+}
+
+ToolResult addBlockParameter(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    Document& doc = s.document();
+    std::string block = argString(a, "block");
+    std::string type = argString(a, "type");
+    std::string name = argString(a, "name");
+    if (!doc.blockByName(block))
+        return ToolResult::fail("no block named \"" + block + "\"");
+    std::vector<Json> in{Json(block)};
+    auto pt = [&](const char* key) -> Result<std::string> {
+        const Json* j = a.find(key);
+        if (!j)
+            return makeError(ErrorCode::InvalidArgument, std::string(key) + " is required");
+        auto p = pointFromJson(*j);
+        if (!p)
+            return makeError(ErrorCode::InvalidArgument, std::string(key) + ": bad point");
+        return pointInput(p.value());
+    };
+    if (type == "linear" || type == "flip" || type == "rotation") {
+        in.emplace_back(type == "linear" ? "Linear" : type == "flip" ? "Flip" : "Rotation");
+        in.emplace_back(name);
+        const char* k1 = type == "linear" ? "start" : type == "flip" ? "line_start" : "center";
+        const char* k2 = type == "linear" ? "end" : type == "flip" ? "line_end" : "handle";
+        auto p1 = pt(k1);
+        auto p2 = pt(k2);
+        if (!p1)
+            return ToolResult::fail(p1.error().message);
+        if (!p2)
+            return ToolResult::fail(p2.error().message);
+        in.emplace_back(p1.value());
+        in.emplace_back(p2.value());
+        if (type == "linear") {
+            in.emplace_back(formatDouble(argNumber(a, "min", 0)));
+            in.emplace_back(formatDouble(argNumber(a, "max", 0)));
+        }
+    } else if (type == "visibility") {
+        in.emplace_back("Visibility");
+        in.emplace_back(name);
+        const Json* states = a.find("states");
+        if (!states || !states->isArray() || states->asArray().size() < 2)
+            return ToolResult::fail("states needs at least two {name, window} entries");
+        for (const Json& st : states->asArray()) {
+            auto w = windowFromJson(st.find("window"), "state window");
+            std::string sn = argString(st, "name");
+            if (!w || sn.empty())
+                return ToolResult::fail(
+                    "each state needs a name and a window of the objects it shows");
+            in.emplace_back(sn);
+            in.emplace_back(pointInput(w.value().first));
+            in.emplace_back(pointInput(w.value().second));
+        }
+        in.emplace_back("");
+    } else {
+        return ToolResult::fail("type must be linear, rotation, flip or visibility");
+    }
+    const std::size_t before = dynCount(doc, block, false);
+    ToolResult r = runChecked(s, "BPARAM", in, {{"block", block}});
+    return noteIfUnchanged(std::move(r), dynCount(doc, block, false) > before);
+}
+
+ToolResult addBlockAction(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    Document& doc = s.document();
+    std::string block = argString(a, "block");
+    std::string param = argString(a, "parameter");
+    std::string action = argString(a, "action", "");
+    const BlockDef* def = doc.blockByName(block);
+    if (!def)
+        return ToolResult::fail("no block named \"" + block + "\"");
+    std::vector<Json> in{Json(block), Json(param)};
+    const DynParam* dp = nullptr;
+    if (def->dynamic)
+        for (const DynParam& p : def->dynamic->params)
+            if (p.name == param)
+                dp = &p;
+    if (!dp)
+        return ToolResult::fail("the block has no parameter \"" + param + "\"");
+    if (dp->kind == DynParam::Kind::Linear) {
+        if (action != "stretch" && action != "move" && action != "scale")
+            return ToolResult::fail("action must be stretch, move or scale for a linear parameter");
+        in.emplace_back(action == "stretch" ? "Stretch" : action == "move" ? "Move" : "Scale");
+        if (action == "stretch") {
+            auto f = windowFromJson(a.find("frame"), "frame");
+            if (!f)
+                return ToolResult::fail(f.error().message);
+            in.emplace_back(pointInput(f.value().first));
+            in.emplace_back(pointInput(f.value().second));
+        }
+    }
+    auto w = windowFromJson(a.find("objects"), "objects");
+    if (!w)
+        return ToolResult::fail(w.error().message);
+    in.emplace_back(pointInput(w.value().first));
+    in.emplace_back(pointInput(w.value().second));
+    const std::size_t before = dynCount(doc, block, true);
+    ToolResult r = runChecked(s, "BACTION", in, {{"block", block}});
+    return noteIfUnchanged(std::move(r), dynCount(doc, block, true) > before);
+}
+
+ToolResult setDynamicValue(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    Document& doc = s.document();
+    auto id = a.find("id") ? parseId(*a.find("id")) : std::nullopt;
+    const Entity* e = id ? doc.find(*id) : nullptr;
+    const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+    if (!ins)
+        return ToolResult::fail("id must be an insert of a dynamic block");
+    std::string param = argString(a, "parameter");
+    const Json* v = a.find("value");
+    if (!v)
+        return ToolResult::fail("value is required");
+    std::string text;
+    if (v->isString())
+        text = v->asString();
+    else if (v->isBool())
+        text = v->asBool() ? "Yes" : "No";
+    else if (v->isNumber())
+        text = formatDouble(v->asNumber());
+    else
+        return ToolResult::fail("value must be a number, boolean or state name");
+    std::vector<Json> in;
+    in.push_back(Json(Json::Object{{"pick", idJson(*id)}}));
+    in.emplace_back(param);
+    in.emplace_back(text);
+    ToolResult r = runChecked(s, "DYNSET", in, {{"id", idJson(*id)}});
+    if (r.isError)
+        return r;
+    for (const Json& m : r.data.find("messages")->asArray())
+        if (m.asString().find("No such") != std::string::npos ||
+            m.asString().find("cannot") != std::string::npos)
+            return ToolResult::fail(m.asString());
+    return r;
+}
+
 }  // namespace
 
 void registerBlockTools(ToolSet& tools) {
@@ -178,6 +340,73 @@ void registerBlockTools(ToolSet& tools) {
                true,
                layerState};
     tools.add(std::move(state));
+
+    Tool bparam{"add_block_parameter",
+                "Add dynamic block parameter",
+                "Adds a dynamic parameter to a block (BPARAM). linear: start, end (block "
+                "coordinates), optional min/max; rotation: center, handle; flip: line_start, "
+                "line_end; visibility: states [{name, window: [[x,y],[x,y]]}] where the window "
+                "encloses the objects that state shows.",
+                tObject({{"block", tString()},
+                         {"type", tEnum({"linear", "rotation", "flip", "visibility"})},
+                         {"name", tString("parameter name; default is the type")},
+                         {"start", tPoint()},
+                         {"end", tPoint()},
+                         {"min", tNumber()},
+                         {"max", tNumber()},
+                         {"center", tPoint()},
+                         {"handle", tPoint()},
+                         {"line_start", tPoint()},
+                         {"line_end", tPoint()},
+                         {"states", tArray(tAny(), "visibility states")}},
+                        {"block", "type"}),
+                outSchema({"block", "messages"}),
+                Edit::Document,
+                false,
+                false,
+                true,
+                addBlockParameter};
+    bparam.available = [](DrawingSession& s) { return s.registry().find("BPARAM") != nullptr; };
+    tools.add(std::move(bparam));
+
+    Tool baction{"add_block_action",
+                 "Add dynamic block action",
+                 "Adds an action driven by a parameter (BACTION): stretch, move or scale for a "
+                 "linear parameter (stretch also needs a `frame`), rotate and flip are implied by "
+                 "their parameters. `objects` is a window of block coordinates; objects completely "
+                 "inside it are changed.",
+                 tObject({{"block", tString()},
+                          {"parameter", tString()},
+                          {"action", tEnum({"stretch", "move", "scale"})},
+                          {"frame", tArray(tPoint(), "stretch frame, two corners")},
+                          {"objects", tArray(tPoint(), "two corners")}},
+                         {"block", "parameter", "objects"}),
+                 outSchema({"block", "messages"}),
+                 Edit::Document,
+                 false,
+                 false,
+                 true,
+                 addBlockAction};
+    baction.available = [](DrawingSession& s) { return s.registry().find("BACTION") != nullptr; };
+    tools.add(std::move(baction));
+
+    Tool dynset{"set_dynamic_value",
+                "Set dynamic block value",
+                "Sets one parameter of an inserted dynamic block (DYNSET): a distance (mm) for "
+                "linear, an angle for rotation, true/false for flip, or a state name for "
+                "visibility.",
+                tObject({{"id", tString("insert entity id")},
+                         {"parameter", tString()},
+                         {"value", tAny("number, boolean or state name")}},
+                        {"id", "parameter", "value"}),
+                outSchema({"id", "messages"}),
+                Edit::Document,
+                false,
+                true,
+                true,
+                setDynamicValue};
+    dynset.available = [](DrawingSession& s) { return s.registry().find("DYNSET") != nullptr; };
+    tools.add(std::move(dynset));
 }
 
 }  // namespace tbcad::mcp::detail

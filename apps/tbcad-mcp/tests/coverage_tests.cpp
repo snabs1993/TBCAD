@@ -232,3 +232,34 @@ TEST_CASE("hatch gradient and Active Only through the tools") {
     f.ok("set_active_only", R"({"on":false})");
     f.ok("delete_entities", "{\"ids\":[\"" + h + "\"]}");
 }
+
+TEST_CASE("dynamic blocks: parameter, action, set value on an insert") {
+    Full f;
+    std::string a = f.add(R"({"kind":"line","start":[0,0],"end":[10,0]})");
+    std::string b = f.add(R"({"kind":"line","start":[10,0],"end":[10,5]})");
+    f.ok("create_block", "{\"name\":\"Bar\",\"ids\":[\"" + a + "\",\"" + b + "\"]}");
+    CHECK(f.fails("add_block_parameter", R"({"block":"Nope","type":"linear"})").size() > 0);
+    f.ok("add_block_parameter",
+         R"({"block":"Bar","type":"linear","name":"Length","start":[0,0],"end":[10,0]})");
+    CHECK(f.fails("add_block_parameter",
+                  R"({"block":"Bar","type":"linear","name":"Length","start":[0,0],"end":[10,0]})")
+              .find("already") != std::string::npos);
+    f.ok("add_block_action", R"({"block":"Bar","parameter":"Length","action":"stretch",
+         "frame":[[5,-1],[11,6]],"objects":[[5,-1],[11,6]]})");
+    Json list = f.ok("list_blocks");
+    bool seen = false;
+    for (const Json& blk : list.find("blocks")->asArray())
+        if (blk.find("name")->asString() == "Bar") {
+            seen = true;
+            CHECK(blk.find("dynamicParameters")->asArray().size() == 1);
+            CHECK(blk.find("dynamicActions")->asNumber() == 1);
+        }
+    CHECK(seen);
+    std::string ins = f.add(R"({"kind":"insert","block":"Bar","position":[100,0]})");
+    f.ok("set_dynamic_value", "{\"id\":\"" + ins + "\",\"parameter\":\"Length\",\"value\":25}");
+    Json got = f.ok("get_entity", "{\"id\":\"" + ins + "\"}");
+    REQUIRE(got.find("dynamicValues"));
+    CHECK(dump(*got.find("dynamicValues")).find("25") != std::string::npos);
+    CHECK(f.fails("set_dynamic_value", "{\"id\":\"" + ins + "\",\"parameter\":\"Zzz\",\"value\":1}")
+              .size() > 0);
+}
