@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <optional>
 #include <unordered_map>
 
 #include "tbcad/geom/geom.h"
@@ -158,6 +159,42 @@ Result<LoopSet> buildLoops(const std::vector<Candidate>& cands, const BoundaryOp
     if (pieces.size() > opt.maxEdges * 2)
         return makeBoundaryError(BoundaryError::TooManyEdges);
 
+    // 1b. Gap tolerance: a free end that stops short of another curve by at most the gap gets a
+    // connecting line (a piece of its own, without a source entity). Ends that already touch
+    // something are left alone.
+    if (opt.gapTolerance > kMerge) {
+        std::vector<BBox2> gapBoxes(pieces.size());
+        for (std::size_t i = 0; i < pieces.size(); ++i)
+            gapBoxes[i] = pieces[i].curve.bounds().inflated(opt.gapTolerance);
+        std::vector<Piece> connectors;
+        for (std::size_t i = 0; i < pieces.size(); ++i) {
+            const CurveRef& c = pieces[i].curve;
+            if (c.isClosed())
+                continue;
+            for (Vec2 p : {c.startPoint(), c.endPoint()}) {
+                bool touching = false;
+                double bestD = opt.gapTolerance;
+                std::optional<Vec2> target;
+                for (std::size_t j = 0; j < pieces.size() && !touching; ++j) {
+                    if (j == i || !gapBoxes[j].contains(p))
+                        continue;
+                    Vec2 q = pieces[j].curve.closestPoint(p);
+                    double d = distance(p, q);
+                    if (d <= kMerge) {
+                        touching = true;
+                    } else if (d <= bestD) {
+                        bestD = d;
+                        target = q;
+                    }
+                }
+                if (!touching && target)
+                    connectors.push_back({CurveRef::line(p, *target), -1});
+            }
+        }
+        for (Piece& c : connectors)
+            pieces.push_back(std::move(c));
+    }
+
     // 2. Intersections of every pair whose boxes overlap (sweep over x).
     std::vector<BBox2> boxes(pieces.size());
     for (std::size_t i = 0; i < pieces.size(); ++i)
@@ -232,7 +269,7 @@ Result<LoopSet> buildLoops(const std::vector<Candidate>& cands, const BoundaryOp
                 continue;
             e.curve = sub;
             e.cand = pieces[i].cand;
-            if (whole && c.kind() == CurveRef::Kind::Spline) {
+            if (whole && c.kind() == CurveRef::Kind::Spline && e.cand >= 0) {
                 const Entity* ent = cands[static_cast<std::size_t>(e.cand)].entity;
                 if (ent && kind(*ent) == EntityKind::Spline)
                     e.spline = entityAs<SplineData>(*ent);
@@ -492,12 +529,18 @@ Boundary makeBoundary(const std::vector<Candidate>& cands, const LoopSet& set, s
     Boundary result;
     result.graphEdges = g.edges.size();
     result.loops.push_back(toHatchLoop(g, outer, true));
-    for (int h : outer.half) {
-        EntityId id =
-            cands[static_cast<std::size_t>(g.edges[static_cast<std::size_t>(h >> 1)].cand)].id;
-        if (std::find(result.sources.begin(), result.sources.end(), id) == result.sources.end())
-            result.sources.push_back(id);
-    }
+    auto addSources = [&](const Loop& loop) {
+        for (int h : loop.half) {
+            int c = g.edges[static_cast<std::size_t>(h >> 1)].cand;
+            if (c < 0)
+                continue;  // a gap connector
+            EntityId id = cands[static_cast<std::size_t>(c)].id;
+            if (std::find(result.sources.begin(), result.sources.end(), id) ==
+                result.sources.end())
+                result.sources.push_back(id);
+        }
+    };
+    addSources(outer);
     // Nesting depth among the inner loops decides hole (odd) or filled again (even).
     for (std::size_t a = 0; a < inner.size(); ++a) {
         int depth = 1;
@@ -505,19 +548,52 @@ Boundary makeBoundary(const std::vector<Candidate>& cands, const LoopSet& set, s
             if (b != a && nestedIn(set.loops[inner[a]], set.loops[inner[b]], boundaryTol))
                 ++depth;
         result.loops.push_back(toHatchLoop(g, set.loops[inner[a]], depth % 2 == 0));
+        addSources(set.loops[inner[a]]);
     }
     return result;
 }
 
 }  // namespace
 
-Result<Boundary> findBoundary(const std::vector<Candidate>& candidates, Vec2 pick,
-                              const BoundaryOptions& options) {
-    auto built = buildLoops(candidates, options);
-    if (!built.ok())
-        return built.error();
-    const LoopSet& set = built.value();
-    double btol = options.flattenTolerance * 2 + kMerge;
+struct BoundaryFinder::Impl {
+    std::vector<Candidate> candidates{};
+    BoundaryOptions options{};
+    std::optional<LoopSet> set{};
+    Error error{};
+};
+
+BoundaryFinder::BoundaryFinder(std::vector<Candidate> candidates, const BoundaryOptions& options)
+    : impl_(std::make_unique<Impl>()) {
+    impl_->candidates = std::move(candidates);
+    impl_->options = options;
+    auto built = buildLoops(impl_->candidates, options);
+    if (built.ok())
+        impl_->set = std::move(built).value();
+    else
+        impl_->error = built.error();
+}
+
+BoundaryFinder::~BoundaryFinder() = default;
+BoundaryFinder::BoundaryFinder(BoundaryFinder&&) noexcept = default;
+BoundaryFinder& BoundaryFinder::operator=(BoundaryFinder&&) noexcept = default;
+
+bool BoundaryFinder::ok() const {
+    return impl_->set.has_value();
+}
+
+const Error& BoundaryFinder::error() const {
+    return impl_->error;
+}
+
+std::size_t BoundaryFinder::graphEdges() const {
+    return impl_->set ? impl_->set->graph.edges.size() : 0;
+}
+
+Result<Boundary> BoundaryFinder::find(Vec2 pick) const {
+    if (!impl_->set)
+        return impl_->error;
+    const LoopSet& set = *impl_->set;
+    double btol = impl_->options.flattenTolerance * 2 + kMerge;
     std::size_t best = set.loops.size();
     for (std::size_t i = 0; i < set.loops.size(); ++i) {
         const Loop& l = set.loops[i];
@@ -530,16 +606,14 @@ Result<Boundary> findBoundary(const std::vector<Candidate>& candidates, Vec2 pic
     }
     if (best == set.loops.size())
         return makeBoundaryError(BoundaryError::NoClosedBoundary);
-    return makeBoundary(candidates, set, best, btol);
+    return makeBoundary(impl_->candidates, set, best, btol);
 }
 
-Result<std::vector<Boundary>> boundaryFromObjects(const std::vector<Candidate>& objects,
-                                                  const BoundaryOptions& options) {
-    auto built = buildLoops(objects, options);
-    if (!built.ok())
-        return built.error();
-    const LoopSet& set = built.value();
-    double btol = options.flattenTolerance * 2 + kMerge;
+Result<std::vector<Boundary>> BoundaryFinder::outermost() const {
+    if (!impl_->set)
+        return impl_->error;
+    const LoopSet& set = *impl_->set;
+    double btol = impl_->options.flattenTolerance * 2 + kMerge;
     std::vector<std::size_t> roots;
     for (std::size_t i = 0; i < set.loops.size(); ++i) {
         bool covered = false;
@@ -557,8 +631,18 @@ Result<std::vector<Boundary>> boundaryFromObjects(const std::vector<Candidate>& 
     });
     std::vector<Boundary> out;
     for (std::size_t r : roots)
-        out.push_back(makeBoundary(objects, set, r, btol));
+        out.push_back(makeBoundary(impl_->candidates, set, r, btol));
     return out;
+}
+
+Result<Boundary> findBoundary(const std::vector<Candidate>& candidates, Vec2 pick,
+                              const BoundaryOptions& options) {
+    return BoundaryFinder(candidates, options).find(pick);
+}
+
+Result<std::vector<Boundary>> boundaryFromObjects(const std::vector<Candidate>& objects,
+                                                  const BoundaryOptions& options) {
+    return BoundaryFinder(objects, options).outermost();
 }
 
 }  // namespace tbcad::hatch
