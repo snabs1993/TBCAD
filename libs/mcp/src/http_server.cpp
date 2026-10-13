@@ -6,7 +6,7 @@
 #include <random>
 #include <sstream>
 
-#include "net/socket.h"
+#include "tbcad/net/socket.h"
 #include "tbcad/platform/paths.h"
 
 namespace tbcad::mcp {

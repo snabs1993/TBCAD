@@ -1,13 +1,14 @@
 #pragma once
 
-// Thin loopback-only socket layer. The two implementations (socket_win32.cpp, socket_posix.cpp)
-// are the only places that include system socket headers.
+// Thin blocking TCP socket layer shared by the MCP server and collaboration. The two
+// implementations (socket_win32.cpp, socket_posix.cpp) are the only places that include system
+// socket headers. IPv4 only for now.
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
-namespace tbcad::mcp::net {
+namespace tbcad::net {
 
 using Handle = std::intptr_t;
 inline constexpr Handle kInvalid = -1;
@@ -18,6 +19,13 @@ inline constexpr long kTimeout = -2;  // receive: nothing arrived in time
 
 // One-time start-up (WSAStartup on Windows). Safe to call repeatedly.
 bool initialize();
+
+// Listens on `bindAddress` (dotted IPv4 text; "" or "0.0.0.0" means every interface). Otherwise
+// like listenLoopback.
+Handle listenTcp(const std::string& bindAddress, int port, bool fallbackToAny, int& boundPort,
+                 std::string& error);
+// Connects to `host` (name or dotted IPv4) on `port`. kInvalid on failure or timeout.
+Handle connectTcp(const std::string& host, int port, int timeoutMs);
 
 // Listens on 127.0.0.1 only. `port` 0 picks a free one; `boundPort` receives the real port. When
 // `port` is in use and `fallbackToAny` is set, binds port 0 instead.
@@ -38,4 +46,4 @@ std::string localAddress(Handle s);
 
 long currentProcessId();
 
-}  // namespace tbcad::mcp::net
+}  // namespace tbcad::net
