@@ -135,6 +135,13 @@ struct Builder {
 }  // namespace
 
 Rgba plotColor(Rgba c, ColorMode mode) {
+    if (c.a < 255) {  // translucent tones (dense hatches) are mixed with the white sheet
+        double k = c.a / 255.0;
+        auto mix = [k](std::uint8_t v) {
+            return static_cast<std::uint8_t>(std::lround(v * k + 255.0 * (1.0 - k)));
+        };
+        c = {mix(c.r), mix(c.g), mix(c.b), 255};
+    }
     double lum = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255.0;
     Rgba base = c;
     base.a = 255;
@@ -212,7 +219,8 @@ Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {
 
     geom::DisplayContext ctx;
     ctx.chordTolMm = s.chordTolMm / lay.paperPerUnit;
-    ctx.pixelSizeMm = ctx.chordTolMm * 4;
+    // A "pixel" on paper is a hairline: hatches denser than that are drawn as a tone.
+    ctx.pixelSizeMm = s.hairlineMm / lay.paperPerUnit;
     ctx.defaultLineweightMm = 0.25;
     ctx.byBlockLineweightMm = 0.25;
     // Slight growth so lines on the border are not culled away.

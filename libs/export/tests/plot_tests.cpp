@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -44,11 +45,26 @@ constexpr const char* kNull = "NUL";
 constexpr const char* kNull = "/dev/null";
 #endif
 
+bool requireQpdf() {
+    std::string v;
+#ifdef _WIN32
+    std::size_t n = 0;
+    char* buf = nullptr;
+    if (_dupenv_s(&buf, &n, "TBCAD_REQUIRE_QPDF") == 0 && buf)
+        v = buf;
+    std::free(buf);
+#else
+    if (const char* e = std::getenv("TBCAD_REQUIRE_QPDF"))
+        v = e;
+#endif
+    return !v.empty();
+}
+
 void checkWithQpdf(const PlotSheet& sheet, const char* name) {
     static const bool available =
         std::system((std::string("qpdf --version > ") + kNull + " 2>&1").c_str()) == 0;
     if (!available) {
-        if (std::getenv("TBCAD_REQUIRE_QPDF"))
+        if (requireQpdf())
             FAIL("qpdf not installed but TBCAD_REQUIRE_QPDF is set");
         MESSAGE("qpdf not found, skipping check for ", std::string(name));
         return;

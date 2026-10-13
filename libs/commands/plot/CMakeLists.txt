@@ -18,4 +18,5 @@ tbcad_add_tests(plot
   SOURCES
     tests/main.cpp
     tests/plot_command_tests.cpp
-  DEPENDS tbcad_plot)
+    tests/plot_content_tests.cpp
+  DEPENDS tbcad_plot tbcad::text tbcad::hatch)
