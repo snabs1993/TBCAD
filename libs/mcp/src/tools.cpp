@@ -25,6 +25,9 @@ void registerDrawingTools(ToolSet& tools) {
     detail::registerReadTools(tools);
     detail::registerEditTools(tools);
     detail::registerModifyTools(tools);
+    detail::registerLayoutTools(tools);
+    detail::registerBlockTools(tools);
+    detail::registerConstraintTools(tools);
     detail::registerLayerTools(tools);
     detail::registerCommandTools(tools);
     detail::registerFileTools(tools);

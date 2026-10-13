@@ -933,6 +933,20 @@ Json entityToJson(const Document& doc, const Entity& e) {
                 o["widthFactor"] = d.widthFactor;
             if (d.oblique != 0)
                 o["oblique"] = d.oblique;
+            if (d.attdef) {
+                Json::Object ad{{"tag", d.attdef->tag},
+                                {"prompt", d.attdef->prompt},
+                                {"default", d.attdef->defaultValue}};
+                if (d.attdef->invisible)
+                    ad["invisible"] = true;
+                if (d.attdef->constant)
+                    ad["constant"] = true;
+                if (d.attdef->verify)
+                    ad["verify"] = true;
+                if (d.attdef->preset)
+                    ad["preset"] = true;
+                o["attdef"] = Json(std::move(ad));
+            }
         } else if constexpr (std::is_same_v<T, MTextData>) {
             o["position"] = pointToJson(d.position);
             o["height"] = d.height;
@@ -1120,6 +1134,26 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
                 if (!s)
                     fail("unknown text style \"" + st + "\"");
                 t.style = s->id;
+            }
+            if (const Json* ad = j.find("attdef")) {
+                if (!ad->isObject())
+                    fail("attdef must be an object {tag, prompt, default, ...}");
+                AttDefInfo info;
+                info.tag = strOr(*ad, "tag");
+                for (char& c : info.tag)
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                if (info.tag.empty() || info.tag.find_first_of(" \t\r\n") != std::string::npos)
+                    fail("attdef.tag must be a name without spaces");
+                info.prompt = strOr(*ad, "prompt");
+                info.defaultValue = strOr(*ad, "default");
+                auto flag = [&](const char* key) {
+                    return ad->find(key) ? ad->find(key)->asBool(false) : false;
+                };
+                info.invisible = flag("invisible");
+                info.constant = flag("constant");
+                info.verify = flag("verify");
+                info.preset = flag("preset");
+                t.attdef = info;
             }
             std::string h = lower(strOr(j, "hAlign", "left")),
                         v = lower(strOr(j, "vAlign", "baseline"));

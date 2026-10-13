@@ -183,6 +183,9 @@ void registerLayerTools(ToolSet& tools);
 void registerFileTools(ToolSet& tools);
 void registerCommandTools(ToolSet& tools);
 void registerModifyTools(ToolSet& tools);
+void registerLayoutTools(ToolSet& tools);
+void registerBlockTools(ToolSet& tools);
+void registerConstraintTools(ToolSet& tools);
 
 // Result of running a command with scripted input (also used by export_pdf / export_dxf).
 struct CommandRunReport {
