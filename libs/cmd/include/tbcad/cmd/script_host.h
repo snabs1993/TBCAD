@@ -21,7 +21,9 @@ struct ScriptItem {
     static ScriptItem esc() { return ScriptItem(Input::cancel()); }
     static ScriptItem enter() { return ScriptItem(Input::enter()); }
     static ScriptItem click(Vec2 p) { return ScriptItem(Input::click(p)); }
-    static ScriptItem pick(EntityId id, Vec2 at = {}) { return ScriptItem(Input::pick(id, at)); }
+    static ScriptItem pick(EntityId id, Vec2 at = {}, bool shift = false) {
+        return ScriptItem(Input::pick(id, at, shift));
+    }
     static ScriptItem select(std::vector<EntityId> ids) {
         return ScriptItem(Input::select(std::move(ids)));
     }
