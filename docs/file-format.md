@@ -84,9 +84,14 @@ in first-use order, so output is deterministic. The reader rejects invalid UTF-8
 | `ltScale` | real | global linetype scale |
 | `currentLayer`, `currentTextStyle`, `currentDimStyle` | int | row ids |
 | `createdBy` | string | free text |
+| `nextEntity` | int | next free entity id |
+| `nextLayer`, `nextLinetype`, `nextTextStyle`, `nextDimStyle`, `nextBlock` | int | next free row id of each table |
 | `c:<key>` | string | an entry of `Header::custom` |
 
-Unknown keys are ignored with a warning.
+Unknown keys are ignored with a warning. The `next*` keys are optional: ids are never reused, so a
+file stores the next free ids, which can be higher than the highest saved id when the last rows
+were deleted. A reader raises its counters to at least these values (they never lower them).
+Older files without them get the id after the highest saved one.
 
 ## Tables
 
@@ -242,5 +247,4 @@ options give the same bytes, and `write(read(write(d)))` equals `write(d)`.
 ## Not stored
 
 Undo history, selection and view state, the effective layer cache, and the linetype pointer
-inside proxy display styles. The next free id of each table is derived from the highest saved
-id, so ids freed *after* the highest one are reused after a reload.
+inside proxy display styles.

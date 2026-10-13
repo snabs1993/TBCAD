@@ -39,6 +39,35 @@ double angleBetweenLines(Vec2 a0, Vec2 a1, Vec2 pickA, Vec2 b0, Vec2 b1, Vec2 pi
 // Multi-line description of an entity for LIST (lengths in the document's units).
 std::vector<std::string> describeEntity(const Document& doc, const Entity& e, Precision precision);
 
+// ---- Quick measure ----------------------------------------------------------------------------
+
+struct Measurement {
+    enum class Kind { Length, Radius, Distance };
+    Kind kind = Kind::Length;
+    double value = 0;  // mm
+    Vec2 a{}, b{};     // the two ends of the measured span (for a radius: centre and rim)
+    std::string text{};
+};
+
+// What QUICKMEASURE shows with the cursor at `cursor`: the length of a line or straight polyline
+// segment, the radius of a circle or arc, and the shortest distance between the two objects nearest
+// the cursor (omitted when they touch). `nearby` are the objects within the pick aperture.
+std::vector<Measurement> quickMeasure(const Document& doc, const std::vector<const Entity*>& nearby,
+                                      Vec2 cursor, Precision precision);
+
+// ---- Area table -------------------------------------------------------------------------------
+
+struct AreaTableOptions {
+    double textHeight = 2.5;
+    Precision precision = 2;
+};
+
+// Lines and text of a table (header, one row per closed shape, a total row) whose top-left corner
+// is `topLeft`. Shapes that are not closed are skipped.
+std::vector<EntityData> buildAreaTable(const Document& doc,
+                                       const std::vector<const Entity*>& shapes, Vec2 topLeft,
+                                       const AreaTableOptions& options);
+
 // Unit-aware formatting used for all results.
 std::string formatLengthIn(const Document& doc, double mm, Precision precision);
 std::string formatAreaIn(const Document& doc, double mm2, Precision precision);

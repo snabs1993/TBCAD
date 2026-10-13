@@ -222,7 +222,4 @@ private:
     std::unordered_map<std::string, std::vector<HatchPatternLine>> patternCache_{};
 };
 
-// Built-in hatch patterns (hatch.cpp). Null when the name is unknown.
-const std::vector<HatchPatternLine>* builtinPattern(std::string_view name);
-
 }  // namespace tbcad::dxf::detail

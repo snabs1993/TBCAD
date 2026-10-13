@@ -91,6 +91,7 @@ public:
         loadEntities(tx);
         loadOrder(tx);
         tx.commit();
+        check(doc_->reserveIds(nextIds_), "next ids");
         return std::move(doc_);
     }
 
@@ -153,6 +154,8 @@ private:
         return strings_[static_cast<std::size_t>(i)];
     }
 
+    NextIds nextIds_{};
+
     Header loadHead() {
         Header h;
         Payload p(*find(kHead));
@@ -203,6 +206,28 @@ private:
                 id(h.currentTextStyle);
             } else if (key == "currentDimStyle") {
                 id(h.currentDimStyle);
+            } else if (key.starts_with("next") && type == 1 &&
+                       (key == "nextEntity" || key == "nextLayer" || key == "nextLinetype" ||
+                        key == "nextTextStyle" || key == "nextDimStyle" || key == "nextBlock")) {
+                if (ival < 1 || ival > (std::int64_t{1} << 48))
+                    bad("HEAD next-id out of range");
+                if (key == "nextEntity") {
+                    nextIds_.entity = static_cast<std::uint64_t>(ival);
+                } else {
+                    if (ival > std::numeric_limits<std::uint32_t>::max())
+                        bad("HEAD next-id out of range");
+                    auto v = static_cast<std::uint32_t>(ival);
+                    if (key == "nextLayer")
+                        nextIds_.layer = v;
+                    else if (key == "nextLinetype")
+                        nextIds_.linetype = v;
+                    else if (key == "nextTextStyle")
+                        nextIds_.textStyle = v;
+                    else if (key == "nextDimStyle")
+                        nextIds_.dimStyle = v;
+                    else
+                        nextIds_.block = v;
+                }
             } else if (key == "createdBy") {
                 if (type != 0)
                     bad("HEAD key createdBy has the wrong type");

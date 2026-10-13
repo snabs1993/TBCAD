@@ -44,7 +44,7 @@ foreach(_cml IN LISTS _tbcad_libs _tbcad_cmds)
 endforeach()
 
 # Command line tools build everywhere; the desktop application only when TBCAD_BUILD_APP is on.
-set(_tbcad_cli_apps tbcad-convert)
+set(_tbcad_cli_apps tbcad-convert tbcad-mcp)
 foreach(_cml IN LISTS _tbcad_apps)
   get_filename_component(_dir "${_cml}" DIRECTORY)
   get_filename_component(_name "${_dir}" NAME)
