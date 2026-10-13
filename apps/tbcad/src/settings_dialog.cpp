@@ -177,6 +177,17 @@ void SettingsDialog::display(ui::AppCore& core) {
     bool grid = s.getBool("view.grid", false);
     if (ImGui::Checkbox("Show grid", &grid))
         s.setBool("view.grid", grid);
+    static const char* const kCross[] = {"full", "short", "off"};
+    static const char* const kCrossLabel[] = {"Full screen", "Short (5 %)", "Off"};
+    const std::string cross = s.getString("view.crosshair", "full");
+    int crossIdx = cross == "short" ? 1 : cross == "off" ? 2 : 0;
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::BeginCombo("Crosshair", kCrossLabel[crossIdx])) {
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::Selectable(kCrossLabel[i], i == crossIdx))
+                s.setString("view.crosshair", kCross[i]);
+        ImGui::EndCombo();
+    }
     bool rightIsEnter = s.getString("ui.rightClick", "menu") == "enter";
     if (ImGui::Checkbox("Right-click in the drawing acts as Enter (no menu)", &rightIsEnter))
         s.setString("ui.rightClick", rightIsEnter ? "enter" : "menu");

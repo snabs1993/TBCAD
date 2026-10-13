@@ -1597,6 +1597,8 @@ void Gui::docTabs() {
                         toActivate = i;
                     ImGui::EndTabItem();
                 }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
+                    open = false;  // middle-click closes a tab
                 if (!open)
                     toClose = i;
             }
@@ -2053,8 +2055,11 @@ void Gui::viewportMenu() {
                     run(c);
             if (ImGui::MenuItem("Deselect All"))
                 core_.clearSelection();
-        } else if (ImGui::MenuItem("Select All")) {
-            core_.selectAll();
+        } else {
+            if (core_.registry().find("PASTECLIP") && ImGui::MenuItem("Paste"))
+                run("PASTECLIP");
+            if (ImGui::MenuItem("Select All"))
+                core_.selectAll();
         }
         ImGui::Separator();
         const std::string undo = core_.undoLabel();
