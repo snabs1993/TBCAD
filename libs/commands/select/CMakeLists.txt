@@ -4,7 +4,6 @@ tbcad_add_library(select
     src/chprop.cpp
     src/quickprops.cpp
     src/isolate.cpp
-    src/matchprop.cpp
     src/props.cpp
     src/purge.cpp
     src/qselect.cpp
@@ -18,7 +17,6 @@ tbcad_add_tests(select
     tests/filter_tests.cpp
     tests/chprop_tests.cpp
     tests/isolate_tests.cpp
-    tests/matchprop_tests.cpp
     tests/purge_tests.cpp
     tests/qselect_tests.cpp
     tests/similar_tests.cpp
