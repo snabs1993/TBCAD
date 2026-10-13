@@ -104,7 +104,7 @@ Do not choose `|` (xref layers) or `$` (bound xrefs) as separator; the exporter 
 | MText | MTEXT in chunks of 250 characters; TBCAD markup is converted back (`\P`, bold/italic as a `\f` font code, `\H`, `\C` as ACI) | one TEXT per line |
 | Insert | INSERT with scale and rotation; one ATTRIB per non-constant attribute of the block and a SEQEND (group 66 = 1) | same; attributes read back as insert values |
 | Attribute definition | ATTDEF (tag, prompt, default, flags) inside the block | same |
-| Hatch | HATCH: polyline and edge paths (line, arc, ellipse, spline), islands, pattern name, scale, angle; the pattern's definition lines are embedded | boundary outline only |
+| Hatch | HATCH: polyline and edge paths (line, arc, ellipse, spline), islands, pattern name, scale, angle; the pattern's definition lines are embedded; gradient fills (kind, angle, two colours) | boundary outline only |
 | Dimension | DIMENSION + anonymous block `*D<n>` (below) | same |
 | Leader | LEADER (+ an MTEXT for its annotation) | polyline |
 | Proxy | `ACAD_PROXY_ENTITY` with its data; proxies that only carry graphics become LINE/LWPOLYLINE/SOLID/HATCH/POINT | graphics only |
@@ -172,7 +172,7 @@ back (74 MB of DXF) in 1.4 s with a Release build.
 
 ## Not done yet
 
-Paper space and layouts beyond the two default ones, XDATA other than TBCAD's, gradient hatches,
+Paper space and layouts beyond the two default ones, XDATA other than TBCAD's,
 hatch associativity, arc-length dimensions (skipped with a warning), dimension style variables
 beyond the basic ones, binary DXF output.
 

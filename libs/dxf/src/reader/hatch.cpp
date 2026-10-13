@@ -55,6 +55,60 @@ bool endsEdge(int code) {
 
 }  // namespace
 
+// Reads the gradient groups (450 ... 470) that follow the boundary paths of a HATCH: the angle,
+// the two colours (group 463 starts each colour; 421 is its RGB value, 63 its palette index) and
+// the name (LINEAR, CYLINDER; others are drawn as linear and reported).
+void Importer::readGradient(const Record& r, std::size_t from, const Frame& f, HatchData& h) {
+    const std::vector<Group>& g = r.g;
+    GradientData gd;
+    std::vector<Color> colors;
+    bool inColor = false;
+    for (std::size_t j = from; j < g.size(); ++j) {
+        switch (g[j].code) {
+            case 460:
+                gd.angle = f.angle(g[j].number());
+                if (!std::isfinite(gd.angle))
+                    gd.angle = 0;
+                break;
+            case 463:
+                if (colors.size() < 2)
+                    colors.push_back(Color::byLayer());
+                inColor = colors.size() <= 2;
+                break;
+            case 63:
+                if (inColor && colors.back().kind == ColorKind::ByLayer)
+                    colors.back() =
+                        mapAci(static_cast<int>(std::clamp<std::int64_t>(g[j].integer(), 1, 255)));
+                break;
+            case 421:
+                if (inColor) {
+                    std::int64_t v = g[j].integer();
+                    colors.back() = Color::rgb(static_cast<std::uint8_t>((v >> 16) & 0xFF),
+                                               static_cast<std::uint8_t>((v >> 8) & 0xFF),
+                                               static_cast<std::uint8_t>(v & 0xFF));
+                }
+                break;
+            case 470: {
+                std::string name = dec(g[j].str());
+                if (foldAsciiEquals(name, "cylinder")) {
+                    gd.kind = GradientKind::Cylinder;
+                } else if (!foldAsciiEquals(name, "linear")) {
+                    report_.info(code::kGradient,
+                                 "gradient \"" + name + "\" is drawn as a linear gradient", r.line);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    if (colors.size() >= 1 && colors[0].kind != ColorKind::ByLayer)
+        gd.color1 = colors[0];
+    if (colors.size() >= 2 && colors[1].kind != ColorKind::ByLayer)
+        gd.color2 = colors[1];
+    h.gradient = gd;
+}
+
 bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& out) {
     const std::vector<Group>& g = r.g;
     const std::size_t n = g.size();
@@ -64,9 +118,6 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
     std::string pattern = dec(r.raw(2));
     bool solid = r.integer(70) == 1 || foldAsciiEquals(pattern, "solid");
     if (r.integer(450) == 1) {
-        report_.info(code::kGradient,
-                     "gradient hatch imported as a solid fill (gradient colours are not kept)",
-                     r.line);
         solid = true;
     }
 
@@ -253,6 +304,8 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
                 h.patternScale = s;
         }
     }
+    if (r.integer(450) == 1)
+        readGradient(r, i, f, h);
     out.push_back([&] {
         Entity e;
         e.data = std::move(h);

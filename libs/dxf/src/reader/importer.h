@@ -135,6 +135,7 @@ private:
     DisplayStyle resolveProxyStyle(const EntityCommon& base, Color color);
 
     // ---- hatch.cpp --------------------------------------------------------------------------
+    void readGradient(const Record& r, std::size_t from, const Frame& f, HatchData& h);
     bool convHatch(const Record& r, const Frame& f, std::vector<Entity>& out);
 
     // ---- dimension.cpp ----------------------------------------------------------------------

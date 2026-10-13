@@ -382,6 +382,46 @@ TEST_CASE("every palette index and RGB colour keeps its look") {
     }
 }
 
+TEST_CASE("gradient hatches keep kind, angle and both colours through DXF") {
+    Document doc;
+    {
+        auto tx = doc.begin("gradients");
+        for (int i = 0; i < 2; ++i) {
+            HatchData h;
+            GradientData g;
+            g.kind = i == 0 ? GradientKind::Linear : GradientKind::Cylinder;
+            g.color1 = i == 0 ? Color::rgb(10, 20, 30) : Color::index(1);
+            g.color2 = Color::rgb(200, 210, 220);
+            g.angle = i == 0 ? 0.5 : 0;
+            h.gradient = g;
+            HatchPolylineEdge e;
+            e.closed = true;
+            e.v = {pv(0, 0), pv(10, 0), pv(10, 10)};
+            HatchLoop loop;
+            loop.edges.emplace_back(e);
+            h.loops.push_back(loop);
+            REQUIRE(tx.add(make(Indirect<HatchData>(h))).ok());
+        }
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    std::vector<GradientData> got;
+    for (EntityId id : rt.back->modelSpace()) {
+        const auto* h = entityAs<HatchData>(*rt.back->find(id));
+        REQUIRE(h);
+        REQUIRE(h->gradient);
+        CHECK(h->solid);
+        got.push_back(*h->gradient);
+    }
+    REQUIRE(got.size() == 2);
+    CHECK(got[0].kind == GradientKind::Linear);
+    CHECK(got[0].angle == doctest::Approx(0.5));
+    CHECK(got[0].color1 == Color::rgb(10, 20, 30));
+    CHECK(got[0].color2 == Color::rgb(200, 210, 220));
+    CHECK(got[1].kind == GradientKind::Cylinder);
+    CHECK(got[1].color1 == Color::rgb(255, 0, 0));
+}
+
 TEST_CASE("pattern hatches embed their definition lines; a pattern library can be supplied") {
     Document doc;
     {
