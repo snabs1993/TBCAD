@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "file_browser.h"
+#include "settings_dialog.h"
 #include "tbcad/core/color.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
@@ -90,6 +91,8 @@ private:
     void drawSuggestions(ImVec2 inputPos, float width);
     bool optionChips();
     void cursorHud(const ViewportRect& rect);
+    void logWindow();
+    std::string actionLabel(const std::string& action) const;
     void propertiesWindow();
     void panels();
     void dialogs();
@@ -114,6 +117,7 @@ private:
     ui::UiRegistry& registry_;
     GLFWwindow* window_;
     FileBrowser browser_;
+    SettingsDialog settings_;
 
     ui::ThemeMode themeMode_ = ui::ThemeMode::Dark;
     ui::Theme theme_ = ui::darkTheme();
@@ -153,6 +157,10 @@ private:
     std::size_t shownActive_ = static_cast<std::size_t>(-1);
     ImVec2 hudAnchor_{-1e6f, -1e6f};
 
+    // Command log (Ctrl+L) and clean-screen mode (F11).
+    bool logExpanded_ = false;
+    bool cleanScreen_ = false;
+
     // Save prompt.
     Pending pending_ = Pending::None;
     bool openSavePrompt_ = false;
@@ -163,6 +171,7 @@ private:
 
     // Viewport interaction.
     bool leftDown_ = false;
+    bool doubleClick_ = false;
     bool dragging_ = false;
     Vec2 pressPos_{};
     bool panning_ = false;

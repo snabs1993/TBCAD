@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -14,6 +15,7 @@
 #include "key_map.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -92,7 +94,17 @@ void insertItem(MenuNode& root, const ui::MenuItemInfo& item, std::string_view r
 }  // namespace
 
 Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
-    : core_(core), registry_(registry), window_(window) {
+    : core_(core),
+      registry_(registry),
+      window_(window),
+      settings_(SettingsDialog::Hooks{
+          [this] {
+              return themeMode_ == ui::ThemeMode::Dark ||
+                     (themeMode_ == ui::ThemeMode::System && systemPrefersDark());
+          },
+          [this](bool dark) { setThemeMode(dark ? ui::ThemeMode::Dark : ui::ThemeMode::Light); },
+          [this] { setDpiScale(dpiScale_); },
+          [this](const std::string& action) { return actionLabel(action); }}) {
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
@@ -106,6 +118,11 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
+    // Text layout finds its fonts and the Thai word list next to the executable.
+    if (std::string f = findAsset("fonts/Sarabun-Regular.ttf"); !f.empty())
+        text::fonts().setBundledDirectory(std::filesystem::path(f).parent_path());
+    if (std::string d = findAsset("dictionaries/thai-words.txt"); !d.empty())
+        text::setDictionaryDirectory(std::filesystem::path(d).parent_path());
     // The IME hook positions the candidate window on this native window.
     ImGui::GetMainViewport()->PlatformHandleRaw = nativeHandle();
     installImeHook(window);
@@ -124,6 +141,34 @@ Rgba Gui::viewportBackground() const {
     if (auto custom = ui::parseHexColor(core_.settings().getString("ui.viewportBackground", "")))
         return *custom;
     return theme_.bgViewport;
+}
+
+std::string Gui::actionLabel(const std::string& action) const {
+    static const std::map<std::string, std::string> builtin = {
+        {"file.new", "File > New"},
+        {"file.open", "File > Open"},
+        {"file.save", "File > Save"},
+        {"file.saveAs", "File > Save As"},
+        {"edit.undo", "Edit > Undo"},
+        {"edit.redo", "Edit > Redo"},
+        {"edit.selectAll", "Edit > Select All"},
+        {"edit.deselect", "Edit > Deselect / cancel"},
+        {"view.zoomExtents", "View > Zoom Extents"},
+        {"view.toggleCommandLine", "View > Command Line"},
+        {"view.expandLog", "View > Command Log"},
+        {"view.cleanScreen", "View > Clean Screen"},
+        {"tools.settings", "Tools > Settings"}};
+    if (auto it = builtin.find(action); it != builtin.end())
+        return it->second;
+    for (const auto& item : registry_.menuItems()) {
+        if (item.actionId != action)
+            continue;
+        std::string path = item.path;
+        for (std::size_t p = path.find('/'); p != std::string::npos; p = path.find('/', p + 3))
+            path.replace(p, 1, " > ");
+        return path;
+    }
+    return action;
 }
 
 void Gui::setDpiScale(float scale) {
@@ -191,7 +236,13 @@ void Gui::runAction(const std::string& action) {
     } else if (action == "view.cursorHud") {
         cursorHud_ = !cursorHud_;
         core_.settings().setBool("hud.enabled", cursorHud_);
-    } else {
+    } else if (action == "view.expandLog")
+        logExpanded_ = !logExpanded_;
+    else if (action == "view.cleanScreen")
+        cleanScreen_ = !cleanScreen_;
+    else if (action == "tools.settings")
+        settings_.open();
+    else {
         for (const auto& item : registry_.menuItems())
             if (item.actionId == action) {
                 core_.submitText(item.command);
@@ -461,6 +512,10 @@ void Gui::menuBar() {
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
         ImGui::MenuItem("Properties", nullptr, &showProperties_);
+        if (ImGui::MenuItem("Command Log", keys.label("view.expandLog").c_str(), logExpanded_))
+            logExpanded_ = !logExpanded_;
+        if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
+            cleanScreen_ = !cleanScreen_;
         for (const auto& p : registry_.panels())
             ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
         ImGui::Separator();
@@ -670,6 +725,38 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         default:
             return 0;
     }
+}
+
+void Gui::logWindow() {
+    if (!logExpanded_)
+        return;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(
+        ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.12f),
+        ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x * 0.7f, vp->WorkSize.y * 0.6f),
+                             ImGuiCond_Appearing);
+    bool open = true;
+    if (ImGui::Begin("Command log", &open, ImGuiWindowFlags_NoSavedSettings)) {
+        // One read-only multi-line box: the text can be selected and copied (Ctrl+C).
+        const auto& lines = core_.history();
+        std::string text;
+        for (const auto& l : lines) {
+            text += l;
+            text += '\n';
+        }
+        if (ImGui::SmallButton("Copy all"))
+            ImGui::SetClipboardText(text.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu lines. Ctrl+L or Esc closes.", lines.size());
+        ImGui::InputTextMultiline("##log", &text, ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+            ImGui::IsKeyPressed(ImGuiKey_Escape))
+            open = false;
+    }
+    ImGui::End();
+    if (!open)
+        logExpanded_ = false;
 }
 
 void Gui::commandWindow() {
@@ -1117,6 +1204,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         leftDown_ = true;
         dragging_ = false;
+        doubleClick_ = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
         pressPos_ = mouse;
     }
     if (leftDown_) {
@@ -1129,6 +1217,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         } else {
             if (dragging_)
                 core_.dragSelect(pressPos_, mouse, ps);
+            else if (doubleClick_)
+                core_.doubleClick(ps);
             else
                 core_.click(ps);
             core_.setSelectionDrag(std::nullopt);
@@ -1148,16 +1238,27 @@ ViewportRect Gui::frame() {
     if (auto text = core_.takeClipboardText())
         glfwSetClipboardString(window_, text->c_str());
     shortcuts();
-    menuBar();
-    toolStrip();
-    docTabs();
-    statusBar();
+    for (const std::string& what : core_.takeUiRequests()) {
+        if (what == "settings")
+            settings_.open();
+        else if (what.rfind("settings:", 0) == 0)
+            settings_.open(what.substr(9));
+    }
+    if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
+        menuBar();
+        toolStrip();
+        docTabs();
+        statusBar();
+    }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::DockSpaceOverViewport(kDockId, vp, ImGuiDockNodeFlags_PassthruCentralNode);
     dockLayout(kDockId);
     commandWindow();
-    propertiesWindow();
-    panels();
+    if (!cleanScreen_) {
+        propertiesWindow();
+        panels();
+    }
+    logWindow();
 
     ViewportRect rect{vp->WorkPos.x, vp->WorkPos.y, vp->WorkSize.x, vp->WorkSize.y};
     if (ImGuiDockNode* center = ImGui::DockBuilderGetCentralNode(kDockId)) {
@@ -1220,6 +1321,7 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
 // ---- dialogs -----------------------------------------------------------------------------------
 
 void Gui::dialogs() {
+    settings_.draw(core_);
     if (openRecoveryPrompt_) {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;

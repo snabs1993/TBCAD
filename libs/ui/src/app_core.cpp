@@ -105,6 +105,9 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("view.toggleCommandLine", "");
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
     keybindings_.declare("view.cursorHud", "F12");
+    keybindings_.declare("view.expandLog", "Ctrl+L");
+    keybindings_.declare("view.cleanScreen", "F11");
+    keybindings_.declare("tools.settings", "");
     if (auto r = keybindings_.load(paths_.keybindingsFile()); r) {
         for (auto& w : r.value())
             startupWarnings_.push_back(std::move(w));
@@ -742,6 +745,22 @@ void AppCore::click(const PointerState& p) {
     applyPick({*id}, p.shift);
 }
 
+void AppCore::doubleClick(const PointerState& p) {
+    if (runner().active()) {
+        click(p);
+        return;
+    }
+    Vec2 world = makeRaw(p).worldCursor;
+    auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
+    const Entity* e = id ? session_->doc.find(*id) : nullptr;
+    if (!e || (kind(*e) != EntityKind::Text && kind(*e) != EntityKind::MText)) {
+        click(p);
+        return;
+    }
+    applyPick({*id}, false);
+    submitText("TEXTEDIT");
+}
+
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
     const bool crossing = dragIsCrossing(a.x, b.x);
     Vec2 wa = camera_.screenToWorld(a);
@@ -942,6 +961,7 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 
 std::optional<std::string> AppCore::setting(std::string_view key) const {

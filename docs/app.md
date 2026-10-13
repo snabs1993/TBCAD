@@ -122,3 +122,17 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
 - **Document tabs**: several drawings open at once, `●` marks unsaved ones, middle-click or ✕ closes (asks first), Ctrl+W closes, Ctrl+Tab switches. Each tab keeps its own undo history, view and selection. Autosave covers the active drawing only.
 - **Start page** while only an untouched "Untitled" drawing is open.
 - A command can copy text to the system clipboard by setting `clipboard.text`.
+
+## Settings dialog, command log, clean screen
+
+- **Tools > Settings** (`SETTINGS`, aliases `OPTIONS`, `OP`): tabs General, Display, Drafting, Files, Aliases and
+  Keybindings. Everything is saved as you change it. The Aliases tab lists built-in and user aliases
+  (clashes marked), adds, changes and removes user aliases, and writes `aliases.json` through
+  `ui::AliasEditor`. The Keybindings tab captures the next key press for an action, warns when the keys are
+  already used (Take over / Cancel), and can unbind or restore the default, through
+  `ui::KeybindingEditor` and `keybindings.json`. A hidden `SETTINGSPAGE <page>` opens a tab directly.
+- **Ctrl+L** (`view.expandLog`): the whole command history in one read-only box that can be selected and
+  copied. **F11** (`view.cleanScreen`): hides menus, tool strip, status bar and panels, leaving the
+  viewport and the command line. Both are rebindable like any other action.
+- `IHost::requestUi(what)` lets a command ask the window to open something; `AppCore::takeUiRequests()`
+  hands the requests to the window.
