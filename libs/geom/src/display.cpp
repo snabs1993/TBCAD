@@ -17,7 +17,7 @@ struct RegistryEntry {
 
 struct Registry {
     std::shared_mutex mutex;
-    std::array<RegistryEntry, 14> entries{};
+    std::array<RegistryEntry, static_cast<std::size_t>(EntityKind::Table) + 1> entries{};
 };
 
 Registry& registry() {

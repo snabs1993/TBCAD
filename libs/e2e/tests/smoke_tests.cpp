@@ -305,3 +305,44 @@ TEST_CASE("end to end: current colour and lineweight reach what every drawing co
     // Lines, a ring, text, a dimension and a hatch were all created.
     CHECK(seen.size() >= 5);
 }
+
+TEST_CASE("end to end: table with merged title, save, reload, DXF export and re-import") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    REQUIRE(host.run("TABLE", {"3", "3", "40", "10", "Door schedule", "0,0"}).finished);
+    EntityId id{};
+    doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Table)
+            id = e.common.id;
+    });
+    REQUIRE(id != EntityId{});
+    // The title row is row 0; click the first data cell and type, then a second cell.
+    REQUIRE(host.run("TABLEEDIT", {ScriptItem::pick(id, {20, -15}), "20,-15", "D1", "60,-15",
+                                   "Oak 900", ScriptItem::enter()})
+                .finished);
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_table";
+    std::filesystem::create_directories(dir);
+    const auto file = dir / "table.tbcad";
+    REQUIRE(io::writeTbcad(doc, file).ok());
+    io::IoReport ioReport;
+    auto back = io::readTbcad(file, ioReport);
+    REQUIRE(back.ok());
+    CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+
+    const auto dxfFile = (dir / "table.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxfFile, "R2000"}).finished);
+    dxf::Report report;
+    auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
+    REQUIRE(imported.ok());
+    const Document& d2 = *imported.value().document;
+    CHECK(countKind(d2, EntityKind::Table) == 1);
+    CHECK(countKind(d2, EntityKind::Line) == 0);  // the drawn grid stays in the file's *T block
+    CHECK(canonicalDump(d2).find("Oak 900") != std::string::npos);
+    CHECK(canonicalDump(d2).find("Door schedule") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
