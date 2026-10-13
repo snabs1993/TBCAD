@@ -223,6 +223,11 @@ struct DataDumper {
               << a.pathSpacing;
             polyV(o, a.path);
         }
+        if (d.clip.size() >= 3) {
+            o << " CLIP" << (d.clipOn ? "on" : "off");
+            for (const Vec2& p : d.clip)
+                o << " " << p;
+        }
         if (!d.dynValues.empty()) {
             o << " DYN";
             for (double v : d.dynValues)

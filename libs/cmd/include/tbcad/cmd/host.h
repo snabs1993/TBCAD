@@ -58,6 +58,17 @@ public:
     // Folder holding aliases.json, keybindings.json ... Empty = none.
     virtual std::filesystem::path settingsFolder() const { return {}; }
 
+    // Drawing templates (.tbt files in the user's templates folder). Names are file names without
+    // the extension; "Built-in" is the default drawing that ships with the program. Both return
+    // an error text, empty on success. Hosts without a window have no templates.
+    virtual std::vector<std::string> templateNames() const { return {}; }
+    virtual std::string saveAsTemplate(std::string_view /*name*/) {
+        return "Templates are not available here.";
+    }
+    virtual std::string newFromTemplate(std::string_view /*name*/) {
+        return "Templates are not available here.";
+    }
+
     // View. A host without a viewport keeps the defaults.
     virtual ViewState view() const { return {}; }
     virtual void setView(const ViewState& /*view*/) {}

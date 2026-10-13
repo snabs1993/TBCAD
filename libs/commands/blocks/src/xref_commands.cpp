@@ -40,6 +40,8 @@ const char* stateText(xref::State s) {
             return "changed on disk";
         case xref::State::Missing:
             return "file not found";
+        case xref::State::Unloaded:
+            return "unloaded";
         case xref::State::NotXref:
             break;
     }
@@ -236,16 +238,19 @@ public:
 // XDETACH and XBIND: one xref chosen by name.
 class XrefByNameCommand final : public cmd::Command {
 public:
-    enum class Mode { Detach, Bind };
+    enum class Mode { Detach, Bind, Unload };
     explicit XrefByNameCommand(Mode mode) : mode_(mode) {}
 
-    std::string_view name() const override { return mode_ == Mode::Detach ? "XDETACH" : "XBIND"; }
+    std::string_view name() const override {
+        return mode_ == Mode::Detach ? "XDETACH" : mode_ == Mode::Unload ? "XUNLOAD" : "XBIND";
+    }
     std::vector<std::string> defaultAliases() const override {
         return mode_ == Mode::Bind ? std::vector<std::string>{"XB"} : std::vector<std::string>{};
     }
     std::string_view description() const override {
-        return mode_ == Mode::Detach ? "Remove an external reference"
-                                     : "Make an external reference a part of the drawing";
+        return mode_ == Mode::Detach   ? "Remove an external reference"
+               : mode_ == Mode::Unload ? "Unload an external reference (keeps its place)"
+                                       : "Make an external reference a part of the drawing";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -257,8 +262,9 @@ public:
         BlockId id{};
         for (;;) {
             auto n =
-                co_await ctx.getString(mode_ == Mode::Detach ? "Enter xref name to detach or [?]"
-                                                             : "Enter xref name to bind or [?]");
+                co_await ctx.getString(mode_ == Mode::Detach   ? "Enter xref name to detach or [?]"
+                                       : mode_ == Mode::Unload ? "Enter xref name to unload or [?]"
+                                                               : "Enter xref name to bind or [?]");
             if (!n.ok())
                 co_return;
             const std::string text = cmd::trim(n.text);
@@ -283,6 +289,15 @@ public:
             ctx.host().setSelection({});
             ctx.setUndoLabel("Detach " + blockName);
             ctx.message("Detached \"" + blockName + "\"");
+        } else if (mode_ == Mode::Unload) {
+            auto r = xref::unload(ctx.tx(), doc, id);
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            ctx.host().setSelection({});
+            ctx.setUndoLabel("Unload " + blockName);
+            ctx.message("Unloaded \"" + blockName + "\"; XRELOAD brings it back");
         } else {
             auto r = xref::bind(ctx.tx(), doc, id);
             if (!r) {
@@ -332,6 +347,9 @@ std::unique_ptr<cmd::Command> makeXReloadCommand() {
 }
 std::unique_ptr<cmd::Command> makeXDetachCommand() {
     return std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Detach);
+}
+std::unique_ptr<cmd::Command> makeXUnloadCommand() {
+    return std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Unload);
 }
 std::unique_ptr<cmd::Command> makeXBindCommand() {
     return std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Bind);

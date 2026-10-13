@@ -780,6 +780,31 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             loose.push_back(std::move(e));
         }
     }
+    // TBCAD XDATA: clipping boundary in block coordinates (1000 "clip=<on>", then 1010/1020
+    // points).
+    std::vector<Vec2> clip;
+    bool clipOn = true;
+    {
+        bool inOurs = false;
+        Vec2 pending{};
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                inOurs = g.str() == "TBCAD";
+            } else if (!inOurs) {
+                continue;
+            } else if (g.code == 1000) {
+                if (g.str() == "clip=0")
+                    clipOn = false;
+            } else if (g.code == 1010) {
+                pending.x = g.number() * k_;
+            } else if (g.code == 1020) {
+                pending.y = g.number() * k_;
+                clip.push_back(pending);
+            }
+        }
+        if (clip.size() < 3)
+            clip.clear();
+    }
     double cr = std::cos(rot), sr = std::sin(rot);
     for (std::int64_t row = 0; row < rows; ++row) {
         for (std::int64_t col = 0; col < cols; ++col) {
@@ -791,6 +816,8 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             d.scale = f.mirror ? Vec2{-sx, sy} : Vec2{sx, sy};
             d.rotation = f.mirror ? -rot : rot;
             d.attribs = values;
+            d.clip = clip;
+            d.clipOn = clipOn;
             out.push_back(makeEntity(std::move(d)));
         }
     }

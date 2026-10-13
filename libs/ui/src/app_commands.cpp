@@ -7,6 +7,7 @@
 #include "tbcad/cmd/command.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/render/camera.h"
+#include "tbcad/tmpl/tmpl.h"
 
 namespace tbcad::ui {
 
@@ -207,6 +208,74 @@ public:
     }
 };
 
+class SaveAsTemplateCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "SAVEASTEMPLATE"; }
+    std::string_view description() const override {
+        return "Save the drawing as a template (.tbt) for new drawings";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions so;
+        auto n = co_await ctx.getString("Template name", so);
+        if (!n.ok())
+            co_return;
+        const std::string err = ctx.host().saveAsTemplate(cmd::trim(n.text));
+        if (!err.empty())
+            ctx.message(err);
+    }
+};
+
+class NewFromTemplateCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "NEWFROMTEMPLATE"; }
+    std::vector<std::string> defaultAliases() const override { return {"QNEWT"}; }
+    std::string_view description() const override {
+        return "Start a new drawing from a template (Built-in, or a .tbt file)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string all;
+        for (const std::string& t : ctx.host().templateNames())
+            all += (all.empty() ? "" : ", ") + t;
+        ctx.message("Templates: " + all);
+        cmd::StringOptions so;
+        so.defaultValue = tmpl::kBuiltinTemplate;
+        auto n = co_await ctx.getString("Template name", so);
+        if (!n.ok())
+            co_return;
+        // The window opens the drawing once this command has ended; a command must not swap the
+        // document it is editing.
+        ctx.host().requestUi("newfrom:" + cmd::trim(n.text));
+    }
+};
+
+class TemplateDefaultCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TEMPLATEDEFAULT"; }
+    std::string_view description() const override {
+        return "Choose the template that NEW starts from";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::vector<std::string> names = ctx.host().templateNames();
+        std::string all;
+        for (const std::string& t : names)
+            all += (all.empty() ? "" : ", ") + t;
+        ctx.message("Templates: " + all);
+        cmd::StringOptions so;
+        std::string current = ctx.host().setting("template.default").value_or("");
+        so.defaultValue = current.empty() ? std::string(tmpl::kBuiltinTemplate) : current;
+        auto n = co_await ctx.getString("Default template", so);
+        if (!n.ok())
+            co_return;
+        const std::string want = cmd::trim(n.text);
+        if (std::find(names.begin(), names.end(), want) == names.end()) {
+            ctx.message("No template named \"" + want + "\".");
+            co_return;
+        }
+        ctx.host().setSetting("template.default", want == tmpl::kBuiltinTemplate ? "" : want);
+        ctx.message("New drawings start from " + want + ".");
+    }
+};
+
 }  // namespace
 
 void registerAppCommands(cmd::Registry& registry) {
@@ -215,6 +284,9 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
     (void)registry.add(std::make_unique<SettingsPageCommand>());
+    (void)registry.add(std::make_unique<SaveAsTemplateCommand>());
+    (void)registry.add(std::make_unique<NewFromTemplateCommand>());
+    (void)registry.add(std::make_unique<TemplateDefaultCommand>());
 }
 
 }  // namespace tbcad::ui
