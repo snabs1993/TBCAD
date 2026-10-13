@@ -38,6 +38,15 @@ void makeStamp(char* out, size_t n) {
                   tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
 }
 
+FILE* openForWrite(const char* path) {
+#ifdef _WIN32
+    FILE* f = nullptr;
+    return fopen_s(&f, path, "w") == 0 ? f : nullptr;
+#else
+    return std::fopen(path, "w");
+#endif
+}
+
 #ifdef _WIN32
 
 using MiniDumpWriteDumpFn = BOOL(WINAPI*)(HANDLE, DWORD, HANDLE, int, void*, void*, void*);
@@ -51,7 +60,7 @@ LONG WINAPI onException(EXCEPTION_POINTERS* info) {
     char path[1300];
 
     std::snprintf(path, sizeof path, "%s\\crash-%s.txt", g_dir, stamp);
-    if (FILE* f = std::fopen(path, "w")) {
+    if (FILE* f = openForWrite(path)) {
         std::fprintf(f, "TBCAD %s crashed\nexception code 0x%08lx at %p\n", g_version,
                      static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode),
                      info->ExceptionRecord->ExceptionAddress);
@@ -131,7 +140,7 @@ void onTerminate() {
 #else
     std::snprintf(path, sizeof path, "%s/crash-%s.txt", g_dir, stamp);
 #endif
-    if (FILE* f = std::fopen(path, "w")) {
+    if (FILE* f = openForWrite(path)) {
         std::fprintf(f, "TBCAD %s crashed\nuncaught C++ exception (std::terminate)\n", g_version);
         std::fclose(f);
     }
