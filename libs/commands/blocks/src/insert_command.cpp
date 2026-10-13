@@ -1,13 +1,18 @@
 #include <cmath>
+#include <filesystem>
 
 #include "commands.h"
+#include "tbcad/block_cmds/palette.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::block_cmds {
 
 namespace {
 
 constexpr const char* kLastBlockSetting = "block.lastinsert";
+// Folder of drawing files that INSERT accepts by name (the Library tab of the block palette).
+constexpr const char* kLibrarySetting = "block.library";
 // "0": INSERT does not ask for attribute values and keeps the defaults.
 constexpr const char* kAttReqSetting = "block.attreq";
 
@@ -23,6 +28,36 @@ std::string blockNames(const Document& doc) {
     return s.empty() ? "(no blocks defined)" : s;
 }
 
+std::filesystem::path pathSetting(cmd::CommandContext& ctx, const char* key) {
+    auto v = ctx.host().setting(key);
+    return v ? std::filesystem::path(std::u8string(v->begin(), v->end())) : std::filesystem::path{};
+}
+
+// A typed name that is not a block but names a drawing file: the file becomes a block (once; an
+// existing block of the same name is reused).
+const BlockDef* blockFromFile(cmd::CommandContext& ctx, const std::string& typed) {
+    Document& doc = ctx.doc();
+    std::filesystem::path file =
+        libraryFileFor(typed, pathSetting(ctx, "document.file"), pathSetting(ctx, kLibrarySetting));
+    if (file.empty())
+        return nullptr;
+    const std::string name = xref::defaultName(file);
+    if (const BlockDef* same = doc.blockByName(name))
+        return same;
+    auto src = xref::loadSource(file);
+    if (!src) {
+        ctx.message(src.error().message);
+        return nullptr;
+    }
+    auto id = xref::importAsBlock(ctx.tx(), doc, name, src.value());
+    if (!id) {
+        ctx.message(id.error().message);
+        return nullptr;
+    }
+    ctx.message("Block \"" + name + "\" made from " + file.filename().string());
+    return doc.block(id.value());
+}
+
 // INSERT [I]: places an instance of a block with a live preview.
 class InsertCommand final : public cmd::Command {
 public:
@@ -32,7 +67,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        if (doc.blocks().empty()) {
+        if (doc.blocks().empty() && pathSetting(ctx, kLibrarySetting).empty()) {
             ctx.message("There are no blocks in this drawing. Use BLOCK to make one.");
             co_return;
         }
@@ -41,9 +76,13 @@ public:
         const BlockDef* def = nullptr;
         for (;;) {
             cmd::StringOptions so;
-            if (auto last = ctx.host().setting(kLastBlockSetting); last && doc.blockByName(*last))
+            if (auto last = ctx.host().setting(kLastBlockSetting);
+                last &&
+                (doc.blockByName(*last) || !libraryFileFor(*last, pathSetting(ctx, "document.file"),
+                                                           pathSetting(ctx, kLibrarySetting))
+                                                .empty()))
                 so.defaultValue = *last;
-            auto n = co_await ctx.getString("Enter block name or [?]", std::move(so));
+            auto n = co_await ctx.getString("Enter block name or file or [?]", std::move(so));
             if (!n.ok())
                 co_return;
             std::string text = cmd::trim(n.text);
@@ -52,6 +91,8 @@ public:
                 continue;
             }
             def = doc.blockByName(text);
+            if (!def)
+                def = blockFromFile(ctx, text);
             if (def)
                 break;
             ctx.message("No block named \"" + text + "\". Blocks: " + blockNames(doc));

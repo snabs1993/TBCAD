@@ -285,6 +285,71 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
     CHECK(withAttribs == 1);
 }
 
+TEST_CASE("round trip: associative arrays of every kind") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("arrays");
+        BlockId blk = tx.addBlock(BlockDef{.name = "*A1", .anonymous = true}).value();
+        Entity c;
+        c.data = CircleData{{0, 0}, 1};
+        (void)tx.add(std::move(c), blk);
+        auto put = [&](ArrayInfo a, Vec2 at) {
+            Entity e;
+            e.data = Indirect<InsertData>(InsertData{blk, at, {1, 1}, 0, {}, std::move(a)});
+            (void)tx.add(std::move(e));
+        };
+        ArrayInfo rect;
+        rect.rows = 3;
+        rect.columns = 4;
+        rect.rowSpacing = -7.5;
+        rect.columnSpacing = 6;
+        rect.angle = 0.25;
+        put(rect, {0, 0});
+        ArrayInfo polar;
+        polar.kind = ArrayInfo::Kind::Polar;
+        polar.center = {5, 5};
+        polar.count = 7;
+        polar.fillAngle = 3;
+        polar.rotateItems = false;
+        polar.reference = {1, 2};
+        put(polar, {1, 1});
+        ArrayInfo path;
+        path.kind = ArrayInfo::Kind::Path;
+        path.count = 9;
+        path.path = {PolyVertex{{0, 0}, 0.5}, PolyVertex{{10, 0}}, PolyVertex{{10, 10}}};
+        path.pathClosed = true;
+        path.pathSpacing = 2.5;
+        path.reference = {1, 1};
+        put(path, {2, 2});
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    int arrays = 0;
+    back->forEachEntity([&](const Entity& e) {
+        const auto* i = entityAs<InsertData>(e);
+        if (!i || !i->array)
+            return;
+        ++arrays;
+        if (i->array->kind == ArrayInfo::Kind::Rectangular) {
+            CHECK(i->array->rows == 3);
+            CHECK(i->array->columns == 4);
+            CHECK(i->array->rowSpacing == -7.5);
+            CHECK(i->array->angle == 0.25);
+        } else if (i->array->kind == ArrayInfo::Kind::Polar) {
+            CHECK(i->array->count == 7);
+            CHECK_FALSE(i->array->rotateItems);
+        } else {
+            CHECK(i->array->path.size() == 3);
+            CHECK(i->array->path[0].bulge == 0.5);
+            CHECK(i->array->pathClosed);
+            CHECK(i->array->pathSpacing == 2.5);
+        }
+    });
+    CHECK(arrays == 3);
+}
+
 TEST_CASE("round trip: external reference fields of a block") {
     Document doc;
     {
@@ -339,4 +404,40 @@ TEST_CASE("round trip: ids freed after the highest saved id are not reused after
     b.data = LineData{{0, 0}, {2, 0}};
     CHECK(tx.add(b).value().value > lastEntity.value);
     CHECK(tx.addLayer(Layer{.name = "again"}).value().value > lastLayer.value);
+}
+
+TEST_CASE("round trip: a gradient hatch keeps its gradient") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("hatch");
+        HatchData h;
+        HatchLoop loop;
+        loop.edges.push_back(HatchLineEdge{{0, 0}, {10, 0}});
+        loop.edges.push_back(HatchLineEdge{{10, 0}, {10, 10}});
+        loop.edges.push_back(HatchLineEdge{{10, 10}, {0, 0}});
+        h.loops.push_back(loop);
+        GradientData g;
+        g.kind = GradientKind::Cylinder;
+        g.color1 = Color::index(5);
+        g.color2 = Color::rgb(1, 2, 3);
+        g.angle = 0.75;
+        h.gradient = g;
+        Entity e;
+        e.data = std::move(h);
+        (void)tx.add(std::move(e));
+        Entity plain;
+        plain.data = HatchData{};
+        (void)tx.add(std::move(plain));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == canonicalDump(doc));
+    const HatchData* h = entityAs<HatchData>(*back->find(EntityId{1}));
+    REQUIRE(h != nullptr);
+    REQUIRE(h->gradient.has_value());
+    CHECK(h->gradient->kind == GradientKind::Cylinder);
+    CHECK(h->gradient->color1.kind == ColorKind::Index);
+    CHECK(h->gradient->color2.b == 3);
+    CHECK(h->gradient->angle == doctest::Approx(0.75));
+    CHECK_FALSE(entityAs<HatchData>(*back->find(EntityId{2}))->gradient.has_value());
 }

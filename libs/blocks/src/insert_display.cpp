@@ -2,6 +2,7 @@
 #include <mutex>
 
 #include "internal.h"
+#include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/display.h"
 
@@ -126,6 +127,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     // Style of the insert itself: what ByBlock means for everything inside.
     const DisplayStyle self = geom::resolveStyle(doc, insert, ctx);
     const Transform2 t = instanceTransform(*ins, def->base);
+    const std::vector<Transform2> items = instanceTransforms(*ins, def->base);
 
     geom::DisplayContext child = ctx;
     child.byBlockColor = self.color;
@@ -150,7 +152,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             cache->put(key, blockSpace);
         }
     }
-    transformList(*blockSpace, t, out);
+    for (const Transform2& it : items)
+        transformList(*blockSpace, it, out);
 
     // Attribute values differ per insert, so they are built here and not shared.
     for (EntityId id : def->entities) {
@@ -164,7 +167,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             text->common.layer = insert.common.layer;
         DisplayList own;
         geom::buildDisplay(doc, *text, child, own);
-        transformList(own, t, out);
+        for (const Transform2& it : items)
+            transformList(own, it, out);
     }
 }
 

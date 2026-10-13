@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "internal.h"
+#include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
 
 namespace tbcad::blocks {
@@ -106,7 +107,8 @@ void Flatten::place(Entity child, const Transform2& t, int depth) {
             }
             note("A nested block cannot be scaled this way, so it was exploded too");
         }
-        contents(child, t * instanceTransform(*ins, def->base), depth + 1);
+        for (const Transform2& it : instanceTransforms(*ins, def->base))
+            contents(child, t * it, depth + 1);
         return;
     }
     if (curvesOnly && !hasCurveOrPoint(k))
@@ -228,7 +230,8 @@ Result<ExplodeResult> explode(const Document& doc, const Entity& entity) {
             if (!def)
                 return makeError(ErrorCode::NotFound, "The block of this insert no longer exists");
             detail::Flatten f{doc};
-            f.contents(entity, instanceTransform(*ins, def->base), 0);
+            for (const Transform2& t : instanceTransforms(*ins, def->base))
+                f.contents(entity, t, 0);
             return ExplodeResult{std::move(f.out), std::move(f.messages)};
         }
         case EntityKind::Polyline: {

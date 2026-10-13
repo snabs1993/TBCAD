@@ -90,6 +90,7 @@ inline constexpr std::string_view kProxy = "dxf.reader.proxy_entity";
 inline constexpr std::string_view kPaperSpace = "dxf.reader.paper_space";
 inline constexpr std::string_view kGradient = "dxf.reader.gradient_hatch";
 inline constexpr std::string_view kComplexLinetype = "dxf.reader.complex_linetype";
+inline constexpr std::string_view kShxFont = "dxf.reader.shx_font_mapped";
 inline constexpr std::string_view kNoDimensionBlock = "dxf.reader.dimension_block_missing";
 inline constexpr std::string_view kXref = "dxf.reader.xref_block";
 inline constexpr std::string_view kMissingSection = "dxf.reader.missing_section";

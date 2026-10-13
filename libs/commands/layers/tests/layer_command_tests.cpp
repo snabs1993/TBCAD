@@ -331,3 +331,44 @@ TEST_CASE("-CURRENT sets the colour, linetype and lineweight that new objects ge
     CHECK(f.doc.header().currentColor == Color::byLayer());
     CHECK(f.host.log().size() >= 2);
 }
+
+TEST_CASE("ACTIVEONLY locks every layer outside the current layer's branch") {
+    Fixture f;
+    f.run("-LAYER", {"New", "A,B", "NewSub", "A", "kid", cmd::ScriptItem::enter()});
+    LayerId a = f.layer("A")->id, b = f.layer("B")->id, kid = f.layer("A~kid")->id;
+    f.run("-LAYER", {"Set", "A", cmd::ScriptItem::enter()});
+    CHECK_FALSE(f.doc.effective(b).locked);
+
+    auto r = f.run("ACTIVEONLY", {"On"});
+    CHECK(r.finished);
+    CHECK(f.doc.header().activeOnly);
+    CHECK_FALSE(f.doc.effective(a).locked);
+    CHECK_FALSE(f.doc.effective(kid).locked);  // sub-layers of the current layer are active
+    CHECK_FALSE(f.doc.effective(kid).inactive);
+    CHECK(f.doc.effective(b).locked);
+    CHECK(f.doc.effective(b).inactive);
+    CHECK(f.doc.effective(kLayerZero).locked);
+    CHECK_FALSE(f.doc.layer(b)->locked);  // the layer's own flag is untouched
+
+    // Changing the current layer moves the active set.
+    f.run("-LAYER", {"Set", "B", cmd::ScriptItem::enter()});
+    CHECK(f.doc.effective(a).locked);
+    CHECK(f.doc.effective(kid).locked);
+    CHECK_FALSE(f.doc.effective(b).locked);
+
+    // -PROP leaves objects on inactive layers alone.
+    EntityId onB = f.addLine();
+    f.run("-LAYER", {"Set", "A", cmd::ScriptItem::enter()});
+    f.run("-PROP", {"Only", "Color", "1", cmd::ScriptItem::enter()});
+
+    f.run("ACTIVEONLY", {"Off"});
+    CHECK_FALSE(f.doc.header().activeOnly);
+    CHECK_FALSE(f.doc.effective(b).locked);
+    (void)onB;
+
+    // One undo step; Toggle flips.
+    f.run("ACTIVEONLY", {"Toggle"});
+    CHECK(f.doc.header().activeOnly);
+    CHECK(f.host.undo());
+    CHECK_FALSE(f.doc.header().activeOnly);
+}

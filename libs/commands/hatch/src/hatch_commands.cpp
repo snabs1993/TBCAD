@@ -150,12 +150,16 @@ private:
 
 // ---- HATCH ---------------------------------------------------------------------------------
 
+// HATCH fills with a pattern or a solid colour; GRADIENT is the same command with a colour
+// gradient instead of a pattern.
 class HatchCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "HATCH"; }
-    std::vector<std::string> defaultAliases() const override { return {"H"}; }
+    explicit HatchCommand(bool gradient = false) : gradient_(gradient) {}
+    std::string_view name() const override { return gradient_ ? "GRADIENT" : "HATCH"; }
+    std::vector<std::string> defaultAliases() const override { return {gradient_ ? "GR" : "H"}; }
     std::string_view description() const override {
-        return "Fill an enclosed area with a pattern or a solid colour";
+        return gradient_ ? "Fill an enclosed area with a colour gradient"
+                         : "Fill an enclosed area with a pattern or a solid colour";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -166,9 +170,14 @@ public:
         HoverPreview hover;
         for (;;) {
             cmd::PointOptions opt;
-            opt.keywords = {"Objects", "Pattern", "Scale", "Angle", "Base", "Gap", "Link", "Undo"};
+            opt.keywords = gradient_
+                               ? std::vector<std::string>{"Objects", "Kind", "First", "Second",
+                                                          "Angle",   "Gap",  "Link",  "Undo"}
+                               : std::vector<std::string>{"Objects", "Pattern", "Scale", "Angle",
+                                                          "Base",    "Gap",     "Link",  "Undo"};
             opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
-            auto r = co_await ctx.getPoint("Pick internal point (" + summary(p) + ")", opt);
+            std::string what = gradient_ ? gradientSummary(p) : summary(p);
+            auto r = co_await ctx.getPoint("Pick internal point (" + what + ")", opt);
             if (r.status == Status::Keyword) {
                 if (r.keyword == "Pattern") {
                     cmd::StringOptions so;
@@ -193,6 +202,28 @@ public:
                     auto b = co_await ctx.getPoint("Pattern origin");
                     if (b.ok())
                         p.base = b.point;
+                } else if (r.keyword == "Kind") {
+                    cmd::KeywordOptions ko;
+                    ko.keywords = {"Linear", "Cylinder"};
+                    ko.defaultKeyword =
+                        p.gradient.kind == GradientKind::Cylinder ? "Cylinder" : "Linear";
+                    auto k = co_await ctx.getKeyword("Gradient kind", ko);
+                    if (k.ok())
+                        p.gradient.kind =
+                            k.keyword == "Cylinder" ? GradientKind::Cylinder : GradientKind::Linear;
+                } else if (r.keyword == "First" || r.keyword == "Second") {
+                    bool first = r.keyword == "First";
+                    cmd::StringOptions so;
+                    so.defaultValue = colorText(first ? p.gradient.color1 : p.gradient.color2);
+                    auto s2 = co_await ctx.getString(std::string(first ? "First" : "Second") +
+                                                         " colour (index 1-255, r,g,b or #rrggbb)",
+                                                     so);
+                    if (s2.ok()) {
+                        if (auto c = parseColor(s2.text))
+                            (first ? p.gradient.color1 : p.gradient.color2) = *c;
+                        else
+                            ctx.message("Not a colour: \"" + cmd::trim(s2.text) + "\".");
+                    }
                 } else if (r.keyword == "Gap") {
                     cmd::RealOptions ro;
                     ro.defaultValue = p.gap;
@@ -229,6 +260,8 @@ public:
     }
 
 private:
+    bool gradient_;
+
     static void setPattern(cmd::CommandContext& ctx, Params& p, const std::string& text) {
         std::string name = cmd::trim(text);
         if (name == "?") {
@@ -249,14 +282,26 @@ private:
         return bo;
     }
 
-    static std::size_t add(cmd::CommandContext& ctx, const Params& p, const Boundary& b) {
-        const Pattern* pattern = PatternRegistry::find(p.pattern);
+    static std::string gradientSummary(const Params& p) {
+        return std::string(p.gradient.kind == GradientKind::Cylinder ? "cylinder " : "linear ") +
+               colorText(p.gradient.color1) + " to " + colorText(p.gradient.color2) + ", angle " +
+               number(p.angle * 180.0 / kPi) + (p.gap > 0 ? ", gap " + number(p.gap) : "") +
+               (p.associative ? "" : ", not linked");
+    }
+
+    std::size_t add(cmd::CommandContext& ctx, const Params& p, const Boundary& b) const {
+        const Pattern* pattern = PatternRegistry::find(gradient_ ? "SOLID" : p.pattern);
         if (!pattern)
             return 0;
         ctx.checkpoint();
         Entity hatch = makeHatchEntity(b, *pattern, p.scale, p.angle, p.base);
         if (!p.associative)
             entityAs<HatchData>(hatch)->sourceBoundary.clear();
+        if (gradient_) {
+            GradientData g = p.gradient;
+            g.angle = p.angle;
+            entityAs<HatchData>(hatch)->gradient = g;
+        }
         applyCurrentProperties(ctx.doc().header(), hatch);
         auto id = ctx.tx().add(std::move(hatch));
         if (!id) {
@@ -268,7 +313,7 @@ private:
         return 1;
     }
 
-    static std::size_t hatchPoint(cmd::CommandContext& ctx, const Params& p, Vec2 at) {
+    std::size_t hatchPoint(cmd::CommandContext& ctx, const Params& p, Vec2 at) {
         std::vector<Candidate> cands = viewCandidates(ctx.doc(), ctx.host());
         auto b = findBoundary(cands, at, options(p));
         if (!b.ok()) {
@@ -278,8 +323,8 @@ private:
         return add(ctx, p, b.value());
     }
 
-    static std::size_t hatchObjects(cmd::CommandContext& ctx, const Params& p,
-                                    const std::vector<EntityId>& ids) {
+    std::size_t hatchObjects(cmd::CommandContext& ctx, const Params& p,
+                             const std::vector<EntityId>& ids) {
         auto bs = boundaryFromObjects(idCandidates(ctx.doc(), ids), options(p));
         if (!bs.ok()) {
             ctx.message(bs.error().message);
@@ -349,6 +394,7 @@ public:
                     changed += apply(ctx, ids, [&](HatchData& h) {
                         h.pattern = pattern->name;
                         h.solid = pattern->solid;
+                        h.gradient.reset();
                     });
                 }
             } else if (k.keyword == "Scale") {
@@ -404,6 +450,7 @@ private:
 void registerCommands(cmd::Registry& registry) {
     hatch::registerHatchDisplay();
     (void)registry.add(std::make_unique<HatchCommand>());
+    (void)registry.add(std::make_unique<HatchCommand>(true));
     (void)registry.add(std::make_unique<HatchEditCommand>());
     registry.addCommitHook(
         [](Document& doc, Transaction& tx) { hatch::updateAssociativeHatches(doc, tx); });

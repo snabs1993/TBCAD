@@ -335,6 +335,12 @@ Result<void> deleteLayer(const Document& doc, Transaction& tx, LayerId id, Delet
     return {};
 }
 
+Result<void> setActiveOnly(const Document& doc, Transaction& tx, bool on) {
+    if (doc.header().activeOnly == on)
+        return {};
+    return tx.modifyHeader([&](Header& h) { h.activeOnly = on; });
+}
+
 Result<void> setCurrentLayer(const Document& doc, Transaction& tx, LayerId id) {
     if (!doc.layer(id))
         return err(ErrorCode::NotFound, "No such layer.");

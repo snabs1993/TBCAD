@@ -223,6 +223,28 @@ TEST_CASE("an empty document exports a complete, consistent R2000 skeleton") {
     CHECK(report.count(Severity::Warning) == 0);
 }
 
+TEST_CASE("the TBCAD Stroke font is written as txt.shx and reads back as the stroke font") {
+    Document doc;
+    {
+        auto tx = doc.begin("style");
+        REQUIRE(tx.addTextStyle(TextStyle{{}, "Strokes", "TBCAD Stroke", "", 1.0, 0.0}).ok());
+        tx.commit();
+    }
+    Result<ExportResult> out = exportDoc(doc);
+    REQUIRE(out.ok());
+    bool found = false;
+    for (const G& g : groups(out.value().bytes))
+        found = found || (g.code == 3 && g.value == "txt.shx");
+    CHECK(found);
+    Report rep;
+    Result<ImportResult> back =
+        importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, rep);
+    REQUIRE(back.ok());
+    const TextStyle* ts = back.value().document->textStyleByName("Strokes");
+    REQUIRE(ts);
+    CHECK(ts->fontFamily == "TBCAD Stroke");
+}
+
 TEST_CASE("Thai text is escaped in R2000 and survives; R2007 writes UTF-8") {
     Document doc;
     {
