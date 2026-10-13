@@ -1,11 +1,11 @@
 #include "app_commands.h"
-#include "tbcad/geom/entity.h"
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
 
 #include "tbcad/cmd/command.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/render/camera.h"
 
 namespace tbcad::ui {
