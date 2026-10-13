@@ -79,18 +79,42 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
         o.group(48, e.ltScale);
     if (e.invisible)
         o.group(60, 1);
-    if (e.dxfType == "INSERT")
+    if (e.dxfType == "INSERT") {
         o.group(2, n.block(e.blockHeader));
-    if (e.dxfType == "TEXT") {
+        if (e.hasChildren && e.firstChild)
+            o.group(66, 1);
+    }
+    if (e.dxfType == "POLYLINE")
+        o.group(66, 1);
+    if (e.dxfType == "TEXT" || e.dxfType == "ATTRIB" || e.dxfType == "ATTDEF" ||
+        e.dxfType == "MTEXT") {
         const std::string st = n.style(e.style);
         if (!st.empty())
             o.group(7, st);
     }
-    for (const Group& g : e.groups) {
-        if (e.dxfType == "INSERT" && g.code == 66)
-            continue;  // attribute records are not read yet
+    for (const Group& g : e.groups)
         emitGroup(o, g);
-    }
+}
+
+bool isChild(const EntityRec& e) {
+    return e.dxfType == "VERTEX" || e.dxfType == "ATTRIB";
+}
+
+// Writes the entity and, for a polyline or an insert with attributes, its owned records (found
+// by handle range, they follow each other) and the closing SEQEND.
+void emitWithChildren(DxfText& o, const Drawing& d, const EntityRec& e, const Names& n) {
+    emitEntity(o, e, n);
+    const bool poly = e.dxfType == "POLYLINE";
+    if (!poly && !(e.dxfType == "INSERT" && e.hasChildren && e.firstChild))
+        return;
+    const char* want = poly ? "VERTEX" : "ATTRIB";
+    auto it = std::lower_bound(d.entities.begin(), d.entities.end(), e.firstChild,
+                               [](const EntityRec& a, std::uint64_t h) { return a.handle < h; });
+    for (; it != d.entities.end() && it->handle <= e.lastChild; ++it)
+        if (it->dxfType == want)
+            emitEntity(o, *it, n);
+    o.begin("SEQEND");
+    o.group(8, n.layer(e.layer));
 }
 
 }  // namespace
@@ -194,7 +218,8 @@ std::string emitDxf(const Drawing& d) {
         auto members = byOwner.find(h);
         if (members != byOwner.end())
             for (std::size_t idx : members->second)
-                emitEntity(o, d.entities[idx], n);
+                if (!isChild(d.entities[idx]))
+                    emitWithChildren(o, d, d.entities[idx], n);
         o.begin("ENDBLK");
         o.group(8, "0");
     }
@@ -203,8 +228,8 @@ std::string emitDxf(const Drawing& d) {
     o.beginSection("ENTITIES");
     for (const EntityRec& e : d.entities) {
         const bool model = e.entmode == 2 || (e.entmode == 0 && e.owner == modelSpace);
-        if (model)
-            emitEntity(o, e, n);
+        if (model && !isChild(e))
+            emitWithChildren(o, d, e, n);
     }
     o.endSection();
     o.endFile();

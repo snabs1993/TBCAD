@@ -74,7 +74,10 @@ struct EntityRec {
     int ltFlags = 0;
     std::uint64_t style = 0;        // text style handle for TEXT-like entities
     std::uint64_t blockHeader = 0;  // INSERT: the inserted block's header
-    int color = 256;                // ACI, 256 = by layer
+    // POLYLINE (vertices) and INSERT (attributes): the first and last owned object handle.
+    std::uint64_t firstChild = 0, lastChild = 0;
+    bool hasChildren = false;  // INSERT: the attribute bit was set
+    int color = 256;           // ACI, 256 = by layer
     double ltScale = 1;
     bool invisible = false;
     int lineweight = 29;  // DWG lineweight code (29 = by layer)

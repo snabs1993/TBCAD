@@ -15,14 +15,24 @@ constexpr std::size_t kMaxNotes = 200;
 // Fixed object type numbers (ODA spec section 20.3).
 enum Type : std::uint32_t {
     kText = 1,
+    kAttrib = 2,
+    kAttdef = 3,
     kBlock = 4,
     kEndBlk = 5,
     kSeqEnd = 6,
     kInsert = 7,
+    kMinsert = 8,
+    kVertex2d = 10,
+    kPolyline2d = 15,
     kArc = 0x11,
     kCircle = 0x12,
     kLine = 0x13,
     kPoint = 0x1B,
+    kSolid = 0x1F,
+    kTrace = 0x20,
+    kEllipse = 0x23,
+    kSpline = 0x24,
+    kMtext = 0x2C,
     kBlockHeader = 0x31,
     kLayer = 0x33,
     kStyle = 0x35,
@@ -130,6 +140,16 @@ private:
             case kInsert:
             case kLwPolyline:
             case kPoint:
+            case kSolid:
+            case kTrace:
+            case kEllipse:
+            case kSpline:
+            case kAttrib:
+            case kAttdef:
+            case kMinsert:
+            case kVertex2d:
+            case kPolyline2d:
+            case kMtext:
                 decodeEntity(type, r, objBits, body, self.value);
                 return;
             case kBlock:
@@ -344,6 +364,7 @@ private:
         e.ltFlags = c.ltFlags;
         bool wantStyle = false;
         bool wantBlock = false;
+        bool wantChildren = false;
         switch (type) {
             case kLine:
                 line(r, e);
@@ -355,18 +376,47 @@ private:
                 arc(r, e);
                 break;
             case kText:
-                text(r, e);
+                text(r, e, "TEXT");
+                wantStyle = true;
+                break;
+            case kAttrib:
+            case kAttdef:
+                text(r, e, type == kAttrib ? "ATTRIB" : "ATTDEF");
+                attribTail(r, e, type == kAttdef);
                 wantStyle = true;
                 break;
             case kInsert:
-                insert(r, e);
+            case kMinsert:
+                insert(r, e, type == kMinsert);
                 wantBlock = true;
+                wantChildren = e.hasChildren;
+                break;
+            case kPolyline2d:
+                polyline2d(r, e);
+                wantChildren = true;
+                break;
+            case kVertex2d:
+                vertex2d(r, e);
+                break;
+            case kMtext:
+                mtext(r, e);
+                wantStyle = true;
                 break;
             case kLwPolyline:
                 lwPolyline(r, e);
                 break;
             case kPoint:
                 point(r, e);
+                break;
+            case kSolid:
+            case kTrace:
+                solid(r, e, type == kTrace);
+                break;
+            case kEllipse:
+                ellipse(r, e);
+                break;
+            case kSpline:
+                spline(r, e);
                 break;
             default:
                 return;
@@ -390,6 +440,11 @@ private:
             e.style = resolveHandle(h.handle(), self);
         if (wantBlock)
             e.blockHeader = resolveHandle(h.handle(), self);
+        if (wantChildren) {
+            e.firstChild = resolveHandle(h.handle(), self);
+            e.lastChild = resolveHandle(h.handle(), self);
+            h.handle();  // SEQEND
+        }
         if (h.failed()) {
             note(e.dxfType + " " + hex(self) + " has damaged references and was skipped");
             return;
@@ -473,8 +528,8 @@ private:
         extrusionGroups(e, n);
     }
 
-    void text(BitReader& r, EntityRec& e) {
-        e.dxfType = "TEXT";
+    void text(BitReader& r, EntityRec& e, const char* dxfType) {
+        e.dxfType = dxfType;
         const unsigned flags = r.rc();
         double elevation = 0;
         if (!(flags & 0x01))
@@ -527,7 +582,203 @@ private:
         extrusionGroups(e, n);
     }
 
-    void insert(BitReader& r, EntityRec& e) {
+    void solid(BitReader& r, EntityRec& e, bool trace) {
+        e.dxfType = trace ? "TRACE" : "SOLID";
+        const double thickness = r.bitThickness();
+        const double elevation = r.bd();
+        double xy[4][2];
+        for (auto& c : xy) {
+            c[0] = r.rd();
+            c[1] = r.rd();
+        }
+        const Vec3 n = extrusion(r);
+        for (int i = 0; i < 4; ++i)
+            point3(e, 10 + i, {xy[i][0], xy[i][1], elevation});
+        if (thickness != 0)
+            add(e, 39, thickness);
+        extrusionGroups(e, n);
+    }
+
+    void ellipse(BitReader& r, EntityRec& e) {
+        e.dxfType = "ELLIPSE";
+        const Vec3 center = bd3(r);
+        const Vec3 major = bd3(r);
+        const Vec3 n = bd3(r);
+        const double ratio = r.bd();
+        const double a0 = r.bd();
+        const double a1 = r.bd();
+        point3(e, 10, center);
+        point3(e, 11, major);
+        extrusionGroups(e, n);
+        add(e, 40, ratio);
+        add(e, 41, a0);
+        add(e, 42, a1);
+    }
+
+    void spline(BitReader& r, EntityRec& e) {
+        e.dxfType = "SPLINE";
+        const std::int32_t scenario = r.bl();
+        const std::int32_t degree = r.bl();
+        bool rational = false, closed = false, periodic = false;
+        double fitTol = 0, knotTol = 0, ctrlTol = 0;
+        Vec3 beginTan, endTan;
+        std::int32_t knots = 0, ctrl = 0, fit = 0;
+        bool weighted = false;
+        if (scenario == 2) {
+            fitTol = r.bd();
+            beginTan = bd3(r);
+            endTan = bd3(r);
+            fit = r.bl();
+        } else if (scenario == 1) {
+            rational = r.b();
+            closed = r.b();
+            periodic = r.b();
+            knotTol = r.bd();
+            ctrlTol = r.bd();
+            knots = r.bl();
+            ctrl = r.bl();
+            weighted = r.b();
+        } else {
+            r.fail();
+            return;
+        }
+        // Every value needs at least two bits, so counts beyond the data are damage.
+        const auto limit = static_cast<std::int64_t>(r.bitsLeft()) / 2;
+        if (degree < 0 || degree > 1000 || knots < 0 || ctrl < 0 || fit < 0 || knots > limit ||
+            ctrl > limit || fit > limit) {
+            r.fail();
+            return;
+        }
+        std::vector<double> knotValues;
+        for (std::int32_t i = 0; i < knots && !r.failed(); ++i)
+            knotValues.push_back(r.bd());
+        std::vector<Vec3> ctrlPts;
+        std::vector<double> weights;
+        for (std::int32_t i = 0; i < ctrl && !r.failed(); ++i) {
+            ctrlPts.push_back(bd3(r));
+            if (weighted)
+                weights.push_back(r.bd());
+        }
+        std::vector<Vec3> fitPts;
+        for (std::int32_t i = 0; i < fit && !r.failed(); ++i)
+            fitPts.push_back(bd3(r));
+        add(e, 70, (closed ? 1 : 0) | (periodic ? 2 : 0) | (rational ? 4 : 0));
+        add(e, 71, degree);
+        add(e, 72, static_cast<long long>(knotValues.size()));
+        add(e, 73, static_cast<long long>(ctrlPts.size()));
+        add(e, 74, static_cast<long long>(fitPts.size()));
+        if (knotTol != 0)
+            add(e, 42, knotTol);
+        if (ctrlTol != 0)
+            add(e, 43, ctrlTol);
+        if (fitTol != 0)
+            add(e, 44, fitTol);
+        if (scenario == 2) {
+            point3(e, 12, beginTan);
+            point3(e, 13, endTan);
+        }
+        for (double k : knotValues)
+            add(e, 40, k);
+        for (std::size_t i = 0; i < ctrlPts.size(); ++i) {
+            point3(e, 10, ctrlPts[i]);
+            if (i < weights.size())
+                add(e, 41, weights[i]);
+        }
+        for (const Vec3& p : fitPts)
+            point3(e, 11, p);
+    }
+
+    // The tail ATTRIB and ATTDEF add to the TEXT data (ODA spec 20.4.4, 20.4.5; R2000 layout).
+    void attribTail(BitReader& r, EntityRec& e, bool def) {
+        const std::string tag = r.textBytes();
+        r.bs();  // field length, unused
+        const int flags = r.rc();
+        std::string prompt;
+        if (def)
+            prompt = r.textBytes();
+        add(e, 2, tag);
+        add(e, 70, flags);
+        if (def)
+            add(e, 3, prompt);
+    }
+
+    void polyline2d(BitReader& r, EntityRec& e) {
+        e.dxfType = "POLYLINE";
+        const int flags = r.bs();
+        const int curve = r.bs();
+        const double w0 = r.bd();
+        const double w1 = r.bd();
+        const double thickness = r.bitThickness();
+        const double elevation = r.bd();
+        const Vec3 n = extrusion(r);
+        point3(e, 10, {0, 0, elevation});
+        if (thickness != 0)
+            add(e, 39, thickness);
+        add(e, 70, flags);
+        if (w0 != 0)
+            add(e, 40, w0);
+        if (w1 != 0)
+            add(e, 41, w1);
+        if (curve != 0)
+            add(e, 75, curve);
+        extrusionGroups(e, n);
+    }
+
+    void vertex2d(BitReader& r, EntityRec& e) {
+        e.dxfType = "VERTEX";
+        const int flags = r.rc();
+        const Vec3 p = bd3(r);
+        double w0 = r.bd();
+        double w1 = w0;
+        if (w0 < 0)
+            w0 = w1 = -w0;
+        else
+            w1 = r.bd();
+        const double bulge = r.bd();
+        const double tangent = r.bd();
+        point3(e, 10, p);
+        if (w0 != 0)
+            add(e, 40, w0);
+        if (w1 != 0)
+            add(e, 41, w1);
+        if (bulge != 0)
+            add(e, 42, bulge);
+        add(e, 70, flags);
+        if (tangent != 0)
+            add(e, 50, tangent * kDeg);
+    }
+
+    void mtext(BitReader& r, EntityRec& e) {
+        e.dxfType = "MTEXT";
+        const Vec3 p = bd3(r);
+        const Vec3 n = bd3(r);
+        const Vec3 xdir = bd3(r);
+        const double width = r.bd();
+        const double height = r.bd();
+        const int attach = r.bs();
+        const int direction = r.bs();
+        r.bd();  // extents height
+        r.bd();  // extents width
+        const std::string value = r.textBytes();
+        const int spacingStyle = r.bs();
+        const double spacingFactor = r.bd();
+        r.b();  // unknown bit
+        point3(e, 10, p);
+        add(e, 40, height);
+        if (width != 0)
+            add(e, 41, width);
+        add(e, 71, attach);
+        add(e, 72, direction);
+        add(e, 1, value);
+        point3(e, 11, xdir);
+        if (spacingStyle != 0)
+            add(e, 73, spacingStyle);
+        if (spacingFactor != 1 && spacingFactor != 0)
+            add(e, 44, spacingFactor);
+        extrusionGroups(e, n);
+    }
+
+    void insert(BitReader& r, EntityRec& e, bool multi) {
         e.dxfType = "INSERT";
         const Vec3 p = bd3(r);
         Vec3 s{1, 1, 1};
@@ -563,9 +814,21 @@ private:
             add(e, 50, rotation * kDeg);
         if (n.x != 0 || n.y != 0 || n.z != 1)
             point3(e, 210, n);
-        if (attribs)
-            add(e, 66,
-                0);  // attribute records are not read yet; the flag is dropped by the emitter
+        e.hasChildren = attribs;
+        if (multi) {
+            const int cols = r.bs();
+            const int rows = r.bs();
+            const double colSpacing = r.bd();
+            const double rowSpacing = r.bd();
+            if (cols > 1)
+                add(e, 70, cols);
+            if (rows > 1)
+                add(e, 71, rows);
+            if (colSpacing != 0)
+                add(e, 44, colSpacing);
+            if (rowSpacing != 0)
+                add(e, 45, rowSpacing);
+        }
     }
 
     void lwPolyline(BitReader& r, EntityRec& e) {
