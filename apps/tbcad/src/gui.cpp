@@ -92,7 +92,13 @@ void insertItem(MenuNode& root, const ui::MenuItemInfo& item, std::string_view r
 }  // namespace
 
 Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
-    : core_(core), registry_(registry), window_(window) {
+    : core_(core),
+      registry_(registry),
+      window_(window),
+      settings_(SettingsDialog::Hooks{
+          [this] { return dark_; }, [this](bool dark) { setTheme(dark); },
+          [this] { setDpiScale(dpiScale_); },
+          [this](const std::string& action) { return actionLabel(action); }}) {
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
@@ -106,6 +112,34 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     // The IME hook positions the candidate window on this native window.
     ImGui::GetMainViewport()->PlatformHandleRaw = nativeHandle();
     installImeHook(window);
+}
+
+std::string Gui::actionLabel(const std::string& action) const {
+    static const std::map<std::string, std::string> builtin = {
+        {"file.new", "File > New"},
+        {"file.open", "File > Open"},
+        {"file.save", "File > Save"},
+        {"file.saveAs", "File > Save As"},
+        {"edit.undo", "Edit > Undo"},
+        {"edit.redo", "Edit > Redo"},
+        {"edit.selectAll", "Edit > Select All"},
+        {"edit.deselect", "Edit > Deselect / cancel"},
+        {"view.zoomExtents", "View > Zoom Extents"},
+        {"view.toggleCommandLine", "View > Command Line"},
+        {"view.expandLog", "View > Command Log"},
+        {"view.cleanScreen", "View > Clean Screen"},
+        {"tools.settings", "Tools > Settings"}};
+    if (auto it = builtin.find(action); it != builtin.end())
+        return it->second;
+    for (const auto& item : registry_.menuItems()) {
+        if (item.actionId != action)
+            continue;
+        std::string path = item.path;
+        for (std::size_t p = path.find('/'); p != std::string::npos; p = path.find('/', p + 3))
+            path.replace(p, 1, " > ");
+        return path;
+    }
+    return action;
 }
 
 void Gui::setTheme(bool dark) {
@@ -166,6 +200,12 @@ void Gui::runAction(const std::string& action) {
         core_.zoomExtents();
     else if (action == "view.toggleCommandLine")
         showCommandLine_ = !showCommandLine_;
+    else if (action == "view.expandLog")
+        logExpanded_ = !logExpanded_;
+    else if (action == "view.cleanScreen")
+        cleanScreen_ = !cleanScreen_;
+    else if (action == "tools.settings")
+        settings_.open();
     else {
         for (const auto& item : registry_.menuItems())
             if (item.actionId == action) {
@@ -412,6 +452,10 @@ void Gui::menuBar() {
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
         ImGui::MenuItem("Properties", nullptr, &showProperties_);
+        if (ImGui::MenuItem("Command Log", keys.label("view.expandLog").c_str(), logExpanded_))
+            logExpanded_ = !logExpanded_;
+        if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
+            cleanScreen_ = !cleanScreen_;
         for (const auto& p : registry_.panels())
             ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
         ImGui::Separator();
@@ -604,6 +648,38 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
     }
 }
 
+void Gui::logWindow() {
+    if (!logExpanded_)
+        return;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(
+        ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.12f),
+        ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x * 0.7f, vp->WorkSize.y * 0.6f),
+                             ImGuiCond_Appearing);
+    bool open = true;
+    if (ImGui::Begin("Command log", &open, ImGuiWindowFlags_NoSavedSettings)) {
+        // One read-only multi-line box: the text can be selected and copied (Ctrl+C).
+        const auto& lines = core_.history();
+        std::string text;
+        for (const auto& l : lines) {
+            text += l;
+            text += '\n';
+        }
+        if (ImGui::SmallButton("Copy all"))
+            ImGui::SetClipboardText(text.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu lines. Ctrl+L or Esc closes.", lines.size());
+        ImGui::InputTextMultiline("##log", &text, ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+            ImGui::IsKeyPressed(ImGuiKey_Escape))
+            open = false;
+    }
+    ImGui::End();
+    if (!open)
+        logExpanded_ = false;
+}
+
 void Gui::commandWindow() {
     if (!showCommandLine_)
         return;
@@ -794,15 +870,26 @@ void Gui::viewportInput(const ViewportRect& rect) {
 
 ViewportRect Gui::frame() {
     shortcuts();
-    menuBar();
-    toolStrip();
-    statusBar();
+    for (const std::string& what : core_.takeUiRequests()) {
+        if (what == "settings")
+            settings_.open();
+        else if (what.rfind("settings:", 0) == 0)
+            settings_.open(what.substr(9));
+    }
+    if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
+        menuBar();
+        toolStrip();
+        statusBar();
+    }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::DockSpaceOverViewport(kDockId, vp, ImGuiDockNodeFlags_PassthruCentralNode);
     dockLayout(kDockId);
     commandWindow();
-    propertiesWindow();
-    panels();
+    if (!cleanScreen_) {
+        propertiesWindow();
+        panels();
+    }
+    logWindow();
 
     ViewportRect rect{vp->WorkPos.x, vp->WorkPos.y, vp->WorkSize.x, vp->WorkSize.y};
     if (ImGuiDockNode* center = ImGui::DockBuilderGetCentralNode(kDockId)) {
@@ -863,6 +950,7 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
 // ---- dialogs -----------------------------------------------------------------------------------
 
 void Gui::dialogs() {
+    settings_.draw(core_);
     if (openRecoveryPrompt_) {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;

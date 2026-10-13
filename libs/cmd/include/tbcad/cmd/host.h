@@ -54,6 +54,9 @@ public:
     virtual ViewState view() const { return {}; }
     virtual void setView(const ViewState& /*view*/) {}
 
+    // Asks the application window to open something ("settings"). Hosts without a window ignore it.
+    virtual void requestUi(std::string_view /*what*/) {}
+
     // Rubber-band preview from the active prompt; nullptr clears it.
     virtual void setPreview(const DisplayList* /*list*/) {}
 

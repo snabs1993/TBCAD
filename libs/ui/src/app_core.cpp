@@ -90,6 +90,9 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("edit.deselect", "Escape");
     keybindings_.declare("view.zoomExtents", "");
     keybindings_.declare("view.toggleCommandLine", "");
+    keybindings_.declare("view.expandLog", "Ctrl+L");
+    keybindings_.declare("view.cleanScreen", "F11");
+    keybindings_.declare("tools.settings", "");
     if (auto r = keybindings_.load(paths_.keybindingsFile()); r) {
         for (auto& w : r.value())
             startupWarnings_.push_back(std::move(w));
@@ -786,6 +789,7 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 
 std::optional<std::string> AppCore::setting(std::string_view key) const {
