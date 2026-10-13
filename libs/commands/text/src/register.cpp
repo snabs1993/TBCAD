@@ -16,6 +16,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeAnnotativeCommand());
     (void)registry.add(makeAnnoScaleCommand());
     (void)registry.add(makeAnnoNewCommand());
+    (void)registry.add(makeFieldCommand());
     (void)registry.add(makeScaleListCommand());
 }
 
@@ -25,6 +26,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Text/Edit Text", "TEXTEDIT");
     ui.addMenuItem("Format/Text Style...", "STYLE");
     ui.addMenuItem("Format/Text Style Manager", "TEXTSTYLES", "format.textstyles");
+    ui.addMenuItem("Draw/Text/Field", "FIELD");
     ui.addMenuItem("Format/Annotative Objects", "ANNOTATIVE");
     ui.addMenuItem("Format/Annotation Scale", "CANNOSCALE");
     ui.addMenuItem("Format/Edit Scale List", "SCALELISTEDIT");

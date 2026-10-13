@@ -8,6 +8,7 @@
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/table/table.h"
+#include "tbcad/text/field.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -563,7 +564,7 @@ void Writer::writeSpline(const Props& p, const SplineData& d, const Entity& e,
 // Text
 
 void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
-    writeTextRecord(p, d, owner, d.attdef ? "ATTDEF" : "TEXT", d.utf8);
+    writeTextRecord(p, d, owner, d.attdef ? "ATTDEF" : "TEXT", text::expandFields(doc_, d.utf8));
 }
 
 // TEXT, ATTDEF (inside a block) and ATTRIB (after an INSERT) share the text groups; only the
@@ -608,7 +609,7 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
 void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner) {
     if (r12_) {
         downgrade("MTEXT", "has no R12 form; written as one TEXT per line");
-        std::string plain = plainLines(d.utf8);
+        std::string plain = plainLines(text::expandFields(doc_, d.utf8));
         std::vector<std::string> lines;
         std::size_t pos = 0;
         while (true) {
@@ -650,7 +651,8 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
     o.d(41, d.width);
     o.i(71, static_cast<int>(d.attach) + 1);
     o.i(72, 1);
-    std::vector<std::string> parts = chunks(encodeText(toDxfMarkup(d.utf8), utf8_), 250);
+    std::vector<std::string> parts =
+        chunks(encodeText(toDxfMarkup(text::expandFields(doc_, d.utf8)), utf8_), 250);
     for (std::size_t i = 0; i + 1 < parts.size(); ++i)
         o.raw(3, parts[i]);
     o.raw(1, parts.back());

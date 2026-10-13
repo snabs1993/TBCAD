@@ -3,6 +3,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "tbcad/text/field.h"
 #include "text_internal.h"
 
 namespace tbcad::text {
@@ -387,7 +388,7 @@ double measureWidth(const TextStyle* style, std::string_view utf8, double height
     return shapeChunk(style, utf8, a).advance;
 }
 
-TextLayout layoutText(const Document& doc, const TextData& d) {
+static TextLayout layoutTextRaw(const Document& doc, const TextData& d) {
     TextLayout out;
     const TextStyle* style = styleFor(doc, d.style);
     const double styleWf = style ? style->widthFactor : 1.0;
@@ -464,7 +465,7 @@ TextLayout layoutText(const Document& doc, const TextData& d) {
     return out;
 }
 
-TextLayout layoutMText(const Document& doc, const MTextData& d) {
+static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
     TextLayout out;
     const TextStyle* style = styleFor(doc, d.style);
     const double wf = style ? style->widthFactor : 1.0;
@@ -562,6 +563,22 @@ TextLayout layoutMText(const Document& doc, const MTextData& d) {
     finishBox(out);
     out.toWorld = makeTransform(d.position, d.rotation, wf, obl, 1.0);
     return out;
+}
+
+TextLayout layoutText(const Document& doc, const TextData& d) {
+    if (!hasFields(d.utf8))
+        return layoutTextRaw(doc, d);
+    TextData c = d;
+    c.utf8 = expandFields(doc, d.utf8);
+    return layoutTextRaw(doc, c);
+}
+
+TextLayout layoutMText(const Document& doc, const MTextData& d) {
+    if (!hasFields(d.utf8))
+        return layoutMTextRaw(doc, d);
+    MTextData c = d;
+    c.utf8 = expandFields(doc, d.utf8);
+    return layoutMTextRaw(doc, c);
 }
 
 TextLayout layoutEntity(const Document& doc, const Entity& e, double annoScale) {
