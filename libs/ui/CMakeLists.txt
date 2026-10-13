@@ -15,7 +15,7 @@ tbcad_add_library(appcore
     src/selection.cpp
     src/workspace.cpp
     src/settings_model.cpp
-  DEPENDS tbcad::ui tbcad::dxf tbcad::blocks tbcad::xref tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd tbcad::template)
+  DEPENDS tbcad::ui tbcad::dxf tbcad::blocks tbcad::xref tbcad::underlay tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd tbcad::template)
 target_include_directories(tbcad_appcore PRIVATE src)
 
 tbcad_add_tests(ui

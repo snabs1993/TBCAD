@@ -111,4 +111,26 @@ out vec4 oColor;
 void main() { oColor = vColor; }
 )GLSL";
 
+const char* const kImageVs = R"GLSL(#version 330 core
+layout(location = 0) in vec2 aPos;  // pixels, origin top-left
+layout(location = 1) in vec2 aUv;
+uniform vec2 uViewport;
+out vec2 vUv;
+void main() {
+    gl_Position = vec4(aPos.x / uViewport.x * 2.0 - 1.0, 1.0 - aPos.y / uViewport.y * 2.0, 0.0, 1.0);
+    vUv = aUv;
+}
+)GLSL";
+
+const char* const kImageFs = R"GLSL(#version 330 core
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform float uOpacity;
+out vec4 oColor;
+void main() {
+    vec4 c = texture(uTex, vUv);
+    oColor = vec4(c.rgb, c.a * uOpacity);
+}
+)GLSL";
+
 }  // namespace tbcad::render::gl

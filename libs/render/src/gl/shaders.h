@@ -12,5 +12,7 @@ extern const char* const kFillVs;
 extern const char* const kFillFs;
 extern const char* const kOverlayVs;
 extern const char* const kOverlayFs;
+extern const char* const kImageVs;
+extern const char* const kImageFs;
 
 }  // namespace tbcad::render::gl

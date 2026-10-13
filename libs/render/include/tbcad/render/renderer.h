@@ -1,10 +1,12 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 
 #include "tbcad/core/color.h"
 #include "tbcad/render/camera.h"
+#include "tbcad/render/image.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
 #include "tbcad/render/stats.h"
@@ -55,6 +57,8 @@ public:
     void setSelectionStyle(const HighlightStyle& style);
 
     void beginFrame();
+    // Images go first (they are underlays); then the scene, then the overlay.
+    void draw(std::span<const ImageDraw> images);
     void draw(Scene& scene);
     void draw(const Overlay& overlay);
     RenderStats endFrame();

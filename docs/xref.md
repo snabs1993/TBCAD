@@ -25,6 +25,8 @@ Everything the source brings is renamed so it cannot clash with the host:
 
 | Command | Alias | What it does |
 |---|---|---|
+| `PDFATTACH` | `PA` | Attaches a PDF page as a faded vector underlay (`docs/underlay.md`). |
+| `IMAGEATTACH` | `IAT` | Attaches a PNG, JPEG or BMP picture as a faded underlay (`docs/underlay.md`). |
 | `XATTACH` | `XA` | Asks for a `.tbcad`, `.dxf` (or, when the reader is available, `.dwg`) file, then **Attach/Overlay** and the **path type** (Relative / Absolute / None), then a name (default: the file name); attaches it and inserts it (point, `Scale`, `Rotate`; Enter = origin). Esc undoes the attach. |
 | `XRELOAD` | `XR` | Reloads one xref by name or `All` (default). Inserts stay where they are. One undo step. |
 | `XDETACH` | | Removes the xref: its inserts, block, nested blocks and the layers nothing uses. |

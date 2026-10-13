@@ -3,7 +3,7 @@
 tbcad_add_library(xref
   SOURCES
     src/xref.cpp
-  DEPENDS tbcad::core tbcad::io tbcad::dxf tbcad::blocks)
+  DEPENDS tbcad::core tbcad::io tbcad::dxf tbcad::blocks tbcad::underlay)
 tbcad_add_tests(xref
   SOURCES
     tests/main.cpp
