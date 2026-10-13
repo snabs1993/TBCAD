@@ -72,6 +72,11 @@ Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id
                                 LineWeight weight);
 // Turns off every layer except `keep`, its ancestors and its descendants.
 Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep);
+// Same, keeping several layers (each with its ancestors and descendants).
+Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep);
+// Moves every object on `from` to `into`, then deletes `from`. Refuses layer 0 and a layer with
+// sub-layers. If `from` is current, `into` becomes current.
+Result<void> mergeLayer(const Document& doc, Transaction& tx, LayerId from, LayerId into);
 // Turns every layer on.
 Result<void> showAllLayers(const Document& doc, Transaction& tx);
 

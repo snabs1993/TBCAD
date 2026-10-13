@@ -401,14 +401,18 @@ Result<void> setLayerLineweight(const Document&, Transaction& tx, LayerId id, Li
     return editLayer(tx, id, [&](Layer& l) { l.lineweight = weight; });
 }
 
-Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep) {
-    if (!doc.layer(keep))
-        return err(ErrorCode::NotFound, "No such layer.");
+Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep) {
+    if (keep.empty())
+        return err(ErrorCode::InvalidArgument, "No layers to isolate.");
     std::vector<LayerId> keepers;
-    for (const Layer* l = doc.layer(keep); l; l = l->parent ? doc.layer(l->parent) : nullptr)
-        keepers.push_back(l->id);
-    for (LayerId b : branchOf(doc, keep))
-        keepers.push_back(b);
+    for (LayerId k : keep) {
+        if (!doc.layer(k))
+            return err(ErrorCode::NotFound, "No such layer.");
+        for (const Layer* l = doc.layer(k); l; l = l->parent ? doc.layer(l->parent) : nullptr)
+            keepers.push_back(l->id);
+        for (LayerId b : branchOf(doc, k))
+            keepers.push_back(b);
+    }
     // Collect first: editing replaces rows in the layer table, so it cannot be iterated meanwhile.
     std::vector<LayerId> turnOff, turnOn;
     for (const auto& [id, l] : doc.layers()) {
@@ -416,7 +420,7 @@ Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep) {
         if (!k && l.on)
             turnOff.push_back(id);
     }
-    // The kept layer and its ancestors must be visible for the isolation to mean anything.
+    // The kept layers and their ancestors must be visible for the isolation to mean anything.
     for (LayerId k : keepers)
         if (!doc.layer(k)->on)
             turnOn.push_back(k);
@@ -426,6 +430,36 @@ Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep) {
     for (LayerId id : turnOn)
         if (auto r = editLayer(tx, id, [](Layer& x) { x.on = true; }); !r)
             return r;
+    return {};
+}
+
+Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep) {
+    return isolateLayers(doc, tx, std::vector<LayerId>{keep});
+}
+
+Result<void> mergeLayer(const Document& doc, Transaction& tx, LayerId from, LayerId into) {
+    if (from == into)
+        return err(ErrorCode::InvalidArgument, "Source and target are the same layer.");
+    if (!doc.layer(from) || !doc.layer(into))
+        return err(ErrorCode::NotFound, "No such layer.");
+    if (doc.layer(from)->name == "0" && !doc.layer(from)->parent)
+        return err(ErrorCode::Conflict, "Layer 0 cannot be merged away.");
+    if (!childrenOf(doc, from).empty())
+        return err(ErrorCode::Conflict, "Layer " + quoted(layerPath(doc, from)) +
+                                            " has sub-layers; merge or move them first.");
+    std::vector<EntityId> ids;
+    doc.forEachEntity([&](const Entity& e) {
+        if (e.common.layer == from)
+            ids.push_back(e.common.id);
+    });
+    for (EntityId id : ids)
+        if (auto r = tx.modify(id, [&](Entity& e) { e.common.layer = into; }); !r)
+            return err(r.error().code, r.error().message);
+    if (doc.header().currentLayer == from)
+        if (auto r = setCurrentLayer(doc, tx, into); !r)
+            return r;
+    if (auto r = tx.eraseLayer(from); !r)
+        return err(r.error().code, "Cannot delete layer: " + r.error().message);
     return {};
 }
 
