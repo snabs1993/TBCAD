@@ -58,6 +58,12 @@ public:
         }
     }
 
+    // Graphics state was saved or restored behind our back: forget what is set.
+    void reset() {
+        have_ = false;
+        cap_ = pdf::LineCap::Butt;
+    }
+
 private:
     void apply(const PlotStyle& st, pdf::LineCap cap) {
         if (!have_ || !sameStyle(st, last_)) {
@@ -97,6 +103,17 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, const std::string& tit
             painter.fill(*f);
         else if (const auto* d = std::get_if<PlotDots>(&prim))
             painter.dots(*d);
+        else if (const auto* c = std::get_if<PlotClip>(&prim)) {
+            if (c->begin) {
+                page.save();
+                page.clipRect(c->rect.min.x, c->rect.min.y, c->rect.width(), c->rect.height());
+                page.setLineJoin(pdf::LineJoin::Round);
+                painter.reset();
+            } else {
+                page.restore();
+                painter.reset();
+            }
+        }
     }
     page.restore();
 }
