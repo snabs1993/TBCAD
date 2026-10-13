@@ -13,6 +13,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makePropCommand());
     (void)registry.add(makeLinetypeCommand());
     (void)registry.add(makeCurrentCommand());
+    (void)registry.add(makeLayerStateCommand());
+    (void)registry.add(makeLayerFilterCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
