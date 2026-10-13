@@ -76,7 +76,8 @@ TEST_CASE("end to end: open DXF, draw, hatch, move, save, reload, undo") {
 
     // 5. Optional commands from later workstreams.
     for (const char* name : {"DIMLINEAR", "PLOT", "BLOCK", "OFFSET", "TRIM"})
-        MESSAGE(std::string(name) + (reg.find(name) ? ": registered" : ": not on main yet"));
+        MESSAGE(name << (reg.find(name) ? std::string(": registered")
+                                        : std::string(": not on main yet")));
 
     // 6. Save and reload: the canonical dump must match.
     auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_smoke";
