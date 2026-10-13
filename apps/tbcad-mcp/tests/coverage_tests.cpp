@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/dump.h"
@@ -284,4 +285,67 @@ TEST_CASE("ray, xline, mline and table can be written and read back") {
     CHECK(tg.find("columnWidths")->asArray()[1].asNumber() == 60);
     Json q = f.ok("query_entities", R"({"kinds":["table","ray","mline"]})");
     CHECK(q.find("entities")->asArray().size() == 4);
+}
+
+TEST_CASE("layer tools by object, groups, draw order and the clipboard") {
+    Full f;
+    f.ok("create_layer", R"({"name":"A"})");
+    f.ok("create_layer", R"({"name":"B"})");
+    std::string a = f.add(R"({"kind":"line","layer":"A","start":[0,0],"end":[10,0]})");
+    std::string b = f.add(R"({"kind":"line","layer":"B","start":[0,5],"end":[10,5]})");
+    Json offr = f.ok("layer_by_objects", "{\"action\":\"off\",\"ids\":[\"" + a + "\"]}");
+    (void)offr;
+    std::function<bool(const Json&)> isOn = [&](const Json& nodes) {
+        for (const Json& l : nodes.asArray()) {
+            if (l.find("name")->asString() == "A")
+                return l.find("on")->asBool();
+            if (const Json* ch = l.find("children"))
+                if (ch->isArray() && !isOn(*ch))
+                    return false;
+        }
+        return true;
+    };
+    const bool aOn = isOn(*f.ok("list_layers").find("layers"));
+    CHECK_FALSE(aOn);
+    f.ok("layer_by_objects", R"({"action":"all_on"})");
+    f.ok("layer_by_objects", "{\"action\":\"isolate\",\"ids\":[\"" + b + "\"]}");
+    f.ok("layer_by_objects", R"({"action":"unisolate"})");
+    f.ok("layer_by_objects",
+         "{\"action\":\"match\",\"ids\":[\"" + a + "\"],\"target\":\"" + b + "\"}");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + a + "\"}").find("layer")->asString() == "B");
+    CHECK(f.fails("layer_by_objects", R"({"action":"bogus"})").size() > 0);
+
+    f.ok("group_entities", "{\"ids\":[\"" + a + "\",\"" + b + "\"],\"name\":\"pair\"}");
+    CHECK(f.ok("list_groups").find("groups")->asArray().size() == 1);
+    CHECK(f.fails("group_entities", "{\"ids\":[\"" + a + "\"],\"name\":\"pair\"}").size() > 0);
+    f.ok("ungroup", "{\"id\":\"" + a + "\"}");
+    CHECK(f.ok("list_groups").find("groups")->asArray().empty());
+
+    f.ok("set_draw_order", "{\"ids\":[\"" + a + "\"],\"order\":\"front\"}");
+    f.ok("set_draw_order",
+         "{\"ids\":[\"" + a + "\"],\"order\":\"below\",\"reference\":\"" + b + "\"}");
+
+    Json copied = f.ok("clipboard", "{\"action\":\"copy\",\"ids\":[\"" + a + "\"]}");
+    (void)copied;
+    Json pasted = f.ok("clipboard", R"({"action":"paste","point":[100,100]})");
+    CHECK(pasted.find("created")->asArray().size() == 1);
+    f.ok("clipboard", R"({"action":"paste_original"})");
+}
+
+TEST_CASE("region booleans and copy to level") {
+    Full f;
+    std::string p =
+        f.add(R"({"kind":"polyline","closed":true,"vertices":[[0,0],[10,0],[10,10],[0,10]]})");
+    std::string q =
+        f.add(R"({"kind":"polyline","closed":true,"vertices":[[5,5],[15,5],[15,15],[5,15]]})");
+    Json u = f.ok("region_op", "{\"op\":\"union\",\"ids\":[\"" + p + "\",\"" + q + "\"]}");
+    CHECK(u.find("created")->asArray().size() == 1);
+    CHECK(u.find("erased")->asArray().size() == 2);
+    CHECK(f.fails("region_op", "{\"op\":\"union\",\"ids\":[\"" + p + "\"]}").size() > 0);
+    std::string r =
+        f.add(R"({"kind":"polyline","closed":true,"vertices":[[0,0],[4,0],[4,4],[0,4]]})");
+    std::string c = f.add(R"({"kind":"circle","center":[2,2],"radius":1})");
+    Json sub = f.ok("region_op",
+                    "{\"op\":\"subtract\",\"ids\":[\"" + r + "\"],\"subtract\":[\"" + c + "\"]}");
+    CHECK(sub.find("created")->asArray().size() >= 1);
 }

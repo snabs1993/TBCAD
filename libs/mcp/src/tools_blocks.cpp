@@ -6,15 +6,13 @@
 
 namespace tbcad::mcp::detail {
 
-namespace {
-
 std::string pointInput(Vec2 p) {
     return formatDouble(p.x) + "," + formatDouble(p.y);
 }
 
 // Runs a command and turns a failure into a tool error naming the prompts it saw.
 ToolResult runChecked(DrawingSession& s, const std::string& command, std::vector<Json> inputs,
-                      Json::Object extra = {}) {
+                      Json::Object extra) {
     ChangeRecorder rec(s.document());
     CommandRunReport rep = runScripted(s, command, inputs, false);
     if (!rep.error.empty()) {
@@ -31,6 +29,8 @@ ToolResult runChecked(DrawingSession& s, const std::string& command, std::vector
     extra["erased"] = idsJson(rec.erased());
     return ToolResult::ok(Json(std::move(extra)));
 }
+
+namespace {
 
 ToolResult createBlock(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;

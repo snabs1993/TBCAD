@@ -106,6 +106,11 @@ Editing tools (one undo step each, `AI: <tool>`):
   state. Insert with `add_entities` kind `insert` (`attributes: {TAG: value}`).
 - Dynamic blocks: `add_block_parameter` (linear, rotation, flip, visibility), `add_block_action` (stretch, move,
   scale), `set_dynamic_value` on an insert.
+- Selection-driven commands as tools: `layer_by_objects` (off, freeze, lock, unlock, isolate, unisolate, all_on,
+  thaw_all, match, merge), `delete_layer_with_objects`, `list_groups`, `group_entities`, `ungroup`,
+  `set_draw_order`, `clipboard` (copy, cut, paste, paste_block, paste_original; the clip is kept by the server),
+  `copy_to_level`, `region_op` (region, union, subtract, intersect). They run the real command, so problems the
+  command reports come back as tool errors.
 - Layers: `set_active_only`, `layer_state` (list, save, restore with `parts`, rename, delete).
 - Constraints: `list_constraints`, `add_constraint` (Coincident, Horizontal, Vertical, Parallel,
   Perpendicular, Equal, Tangent, Fix, Distance, Radius, Angle in degrees; solves and moves the geometry; a
