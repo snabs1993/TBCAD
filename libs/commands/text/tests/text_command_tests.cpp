@@ -1,0 +1,222 @@
+#include <cmath>
+
+#include <doctest/doctest.h>
+
+#include "tbcad/cmd/cmd.h"
+#include "tbcad/cmd/register_all.h"
+#include "tbcad/text/text.h"
+
+using namespace tbcad;
+
+namespace {
+
+struct Fixture {
+    Document doc;
+    cmd::Registry reg;
+    cmd::ScriptHost host;
+    Fixture() : host(doc, (registerAllCommands(reg), reg)) {}
+
+    const TextData* firstText() {
+        const TextData* r = nullptr;
+        doc.forEachEntity([&](const Entity& e) {
+            if (!r)
+                r = entityAs<TextData>(e);
+        });
+        return r;
+    }
+    const MTextData* firstMText() {
+        const MTextData* r = nullptr;
+        doc.forEachEntity([&](const Entity& e) {
+            if (!r)
+                r = entityAs<MTextData>(e);
+        });
+        return r;
+    }
+};
+
+const std::string kHong = "\u0E2B\u0E49\u0E2D\u0E07";  // ห้อง
+
+}  // namespace
+
+TEST_CASE("TEXT: start point, height, rotation, text") {
+    Fixture f;
+    auto r = f.host.run("TEXT", {"10,20", "5", "90", "Hello"});
+    CHECK(r.finished);
+    const TextData* t = f.firstText();
+    REQUIRE(t);
+    CHECK(t->position == Vec2{10, 20});
+    CHECK(t->alignPoint == Vec2{10, 20});
+    CHECK(t->height == doctest::Approx(5));
+    CHECK(t->rotation == doctest::Approx(kPi / 2));
+    CHECK(t->utf8 == "Hello");
+    CHECK(t->h == HAlign::Left);
+    CHECK(t->v == VAlign::Baseline);
+    CHECK(f.host.undoStack().undoLabel() == "TEXT");
+    f.host.undo();
+    CHECK(f.doc.entityCount() == 0);
+}
+
+TEST_CASE("TEXT accepts Thai text") {
+    Fixture f;
+    f.host.run("T", {"0,0", "", "", kHong});
+    const TextData* t = f.firstText();
+    REQUIRE(t);
+    CHECK(t->utf8 == kHong);
+    CHECK(t->height == doctest::Approx(2.5));  // Enter takes the default height
+}
+
+TEST_CASE("TEXT remembers the last height as the next default") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "7", "0", "a"});
+    f.host.run("TEXT", {"1,1", "", "0", "b"});
+    int n = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TextData>(e)) {
+            CHECK(t->height == doctest::Approx(7));
+            ++n;
+        }
+    });
+    CHECK(n == 2);
+}
+
+TEST_CASE("TEXT Justify options") {
+    Fixture f;
+    f.host.run("TEXT", {"J", "MC", "5,5", "4", "0", "mid"});
+    const TextData* t = f.firstText();
+    REQUIRE(t);
+    CHECK(t->h == HAlign::Middle);
+    CHECK(t->v == VAlign::Middle);
+
+    Fixture g;
+    g.host.run("TEXT", {"J", "TR", "5,5", "4", "0", "tr"});
+    CHECK(g.firstText()->h == HAlign::Right);
+    CHECK(g.firstText()->v == VAlign::Top);
+
+    Fixture h;  // Aligned: second point, no height and no rotation prompts
+    auto r = h.host.run("TEXT", {"J", "A", "0,0", "10,0", "fit me"});
+    CHECK(r.finished);
+    const TextData* a = h.firstText();
+    REQUIRE(a);
+    CHECK(a->h == HAlign::Aligned);
+    CHECK(a->position == Vec2{0, 0});
+    CHECK(a->alignPoint == Vec2{10, 0});
+    CHECK(a->utf8 == "fit me");
+
+    Fixture k;  // Fit asks for the second point and the height
+    k.host.run("TEXT", {"J", "F", "0,0", "10,0", "3", "fit"});
+    REQUIRE(k.firstText());
+    CHECK(k.firstText()->h == HAlign::Fit);
+    CHECK(k.firstText()->height == doctest::Approx(3));
+}
+
+TEST_CASE("TEXT Style option picks an existing style, unknown names are reported") {
+    Fixture f;
+    f.host.run("STYLE", {"Tall", "Sarabun", "0.5", "0"});
+    // STYLE made "Tall" current; pick Standard explicitly for this text.
+    f.host.run("TEXT", {"S", "Nope", "S", "Standard", "0,0", "2", "0", "x"});
+    CHECK(f.host.logContains("Unknown text style: Nope"));
+    const TextData* t = f.firstText();
+    REQUIRE(t);
+    CHECK(t->style == kTextStyleStandard);
+}
+
+TEST_CASE("TEXT: Esc anywhere leaves the drawing untouched") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "5", cmd::ScriptItem::esc()});
+    CHECK(f.doc.entityCount() == 0);
+    f.host.run("TEXT", {cmd::ScriptItem::esc()});
+    CHECK(f.doc.entityCount() == 0);
+}
+
+TEST_CASE("MTEXT: corners give width and top-left insertion point") {
+    Fixture f;
+    auto r = f.host.run("MT", {"H", "3", "0,100", "40,60", "line one\\Pline two"});
+    CHECK(r.finished);
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->position == Vec2{0, 100});
+    CHECK(m->width == doctest::Approx(40));
+    CHECK(m->height == doctest::Approx(3));
+    CHECK(m->attach == Attachment::TopLeft);
+    CHECK(m->utf8 == "line one\\Pline two");
+}
+
+TEST_CASE("MTEXT: Justify, Width, Rotation options and corner order") {
+    Fixture f;
+    f.host.run("MTEXT", {"J", "BR", "W", "25", "10,10", "50,0", "x"});
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->attach == Attachment::BottomRight);
+    CHECK(m->width == doctest::Approx(25));
+    // The bottom-right of the rectangle (10,10)-(50,0) is (50,0).
+    CHECK(m->position.x == doctest::Approx(50));
+    CHECK(m->position.y == doctest::Approx(0));
+
+    Fixture g;
+    g.host.run("MTEXT", {"R", "90", "0,0", "0,30", "rot"});
+    const MTextData* r = g.firstMText();
+    REQUIRE(r);
+    CHECK(r->rotation == doctest::Approx(kPi / 2));
+    CHECK(r->width == doctest::Approx(30));  // measured along the rotated x axis
+    CHECK(r->position.x == doctest::Approx(0).epsilon(1e-9));
+    CHECK(r->position.y == doctest::Approx(0).epsilon(1e-9));
+}
+
+TEST_CASE("MTEXT shows a rectangle preview while picking the second corner") {
+    Fixture f;
+    f.host.run("MTEXT", {"0,0"});
+    f.host.runner().pointerMoved(cmd::RawInput{{10, -5}, {10, -5}, 1});
+    CHECK_FALSE(f.host.preview().items.empty());
+    f.host.feed({cmd::ScriptItem::esc()});
+}
+
+TEST_CASE("TEXTEDIT edits TEXT and MTEXT in one undo step") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "5", "0", "before"});
+    EntityId id = f.doc.modelSpace().front();
+    f.host.setSelection({id});
+    auto r = f.host.run("ED", {"after"});
+    CHECK(r.finished);
+    CHECK(f.firstText()->utf8 == "after");
+    CHECK(f.host.undoStack().undoLabel() == "TEXTEDIT");
+    f.host.undo();
+    CHECK(f.firstText()->utf8 == "before");
+
+    // Enter keeps the current text; Thai content replaces it.
+    f.host.setSelection({id});
+    f.host.run("TEXTEDIT", {""});
+    CHECK(f.firstText()->utf8 == "before");
+    f.host.setSelection({id});
+    f.host.run("TEXTEDIT", {kHong});
+    CHECK(f.firstText()->utf8 == kHong);
+
+    Fixture g;
+    g.host.run("MTEXT", {"0,0", "20,-10", "a"});
+    g.host.setSelection({g.doc.modelSpace().front()});
+    g.host.run("TEXTEDIT", {"{\\b1;bold}\\Pnext"});
+    CHECK(g.firstMText()->utf8 == "{\\b1;bold}\\Pnext");
+}
+
+TEST_CASE("TEXTEDIT ignores objects that are not text") {
+    Fixture f;
+    auto tx = f.doc.begin("line");
+    auto id = tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}});
+    tx.commit();
+    REQUIRE(id.ok());
+    f.host.setSelection({id.value()});
+    f.host.run("TEXTEDIT", {cmd::ScriptItem::esc()});
+    CHECK(f.doc.entityCount() == 1);
+}
+
+TEST_CASE("created text displays: Thai TEXT produces filled rings through the registry") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "10", "0", kHong});
+    const Entity* e = f.doc.find(f.doc.modelSpace().front());
+    REQUIRE(e);
+    geom::DisplayContext ctx;
+    ctx.pixelSizeMm = 0.01;
+    DisplayList out;
+    geom::buildDisplay(f.doc, *e, ctx, out);
+    CHECK(out.items.size() >= 3);
+    CHECK(std::holds_alternative<DisplayFill>(out.items.front()));
+}
