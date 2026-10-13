@@ -16,6 +16,7 @@ Every entity has:
 | `id` | decimal string (64-bit safe); ignored when writing |
 | `kind` | line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, insert, dimension, leader, proxy |
 | `layer` | full layer path, sub-layers joined with `~` (`S-FLOOR~edge`) |
+| `level` | level name; only written when the drawing has more than one level; when writing, the current level is used if omitted |
 | `color` | `"ByLayer"`, `"ByBlock"`, an ACI number 1..255, or `"#RRGGBB"` |
 | `linetype` | linetype name, `"ByLayer"` or `"ByBlock"` |
 | `lineweight` | mm number, `"ByLayer"`, `"ByBlock"` or `"Default"` |

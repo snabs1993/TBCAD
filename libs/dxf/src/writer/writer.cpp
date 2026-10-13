@@ -41,7 +41,13 @@ Writer::Writer(const Document& doc, const ExportOptions& options, Report& report
       rep_(report),
       r12_(options.version == DxfVersion::R12),
       utf8_(options.version == DxfVersion::R2007),
-      layerSep_(options.layerSeparator) {}
+      layerSep_(options.layerSeparator) {
+    const Level* first = doc.level(kLevelDefault);
+    tagLevels_ =
+        !options.onlyLevel &&
+        (doc.levels().size() > 1 || (first && (first->name != "Level 1" || first->elevation != 0 ||
+                                               !first->visible || first->locked)));
+}
 
 // ---------------------------------------------------------------------------------------------
 // Names
@@ -521,6 +527,7 @@ std::string Writer::tablesSection() {
         tableBegin(o, "APPID", table, 2);
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "ACAD", 0);
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "TBCAD", 0);
+        levelsXdata(o);
         tableEnd(o);
     }
     writeDimStyles(o, newHandle());
@@ -528,6 +535,23 @@ std::string Writer::tablesSection() {
         writeBlockRecords(o, newHandle());
     o.zero("ENDSEC");
     return std::move(o.buf);
+}
+
+// The level table travels as XDATA on the TBCAD application record: the current level, how
+// other levels show, and one "level=<name>" row (elevation, flags) per level so that empty
+// levels and their visible / locked state survive. Entities name their level the same way.
+void Writer::levelsXdata(Out& o) {
+    if (!tagLevels_)
+        return;
+    o.raw(1001, "TBCAD");
+    const Level* cur = doc_.level(doc_.header().currentLevel);
+    o.str(1000, "levels-current=" + (cur ? cur->name : std::string()));
+    o.str(1000, "levels-view=" + std::to_string(static_cast<int>(doc_.header().levelView)));
+    for (const auto& [id, l] : doc_.levels()) {
+        o.str(1000, "levels-row=" + l.name);
+        o.d(1040, l.elevation);
+        o.i(1070, (l.visible ? 1 : 0) | (l.locked ? 2 : 0));
+    }
 }
 
 std::string Writer::objectsSection() {
@@ -741,6 +765,14 @@ Result<ExportResult> Writer::run() {
 
     // Extents of model space for $EXTMIN/$EXTMAX and the active viewport.
     std::vector<EntityId> model = doc_.modelSpace();
+    if (opt_.onlyLevel) {
+        model.erase(std::remove_if(model.begin(), model.end(),
+                                   [&](EntityId id) {
+                                       const Entity* e = doc_.find(id);
+                                       return !e || e->common.level != opt_.onlyLevel;
+                                   }),
+                    model.end());
+    }
     for (EntityId id : model) {
         const Entity* e = doc_.find(id);
         if (!e)

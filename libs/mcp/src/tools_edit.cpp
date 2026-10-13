@@ -19,11 +19,19 @@ void commit(DrawingSession& s, Transaction& tx, const std::string& label) {
 // Why an entity cannot be edited, empty when it can: locked layers (and, in "active only"
 // mode, every layer outside the current layer's branch) are read-only.
 std::string whyReadOnly(const Document& doc, const Entity& e) {
-    EffectiveLayer l = doc.effective(e.common.layer);
+    EffectiveLayer l = doc.effective(e.common);
     if (!l.locked)
         return {};
     const Layer* row = doc.layer(e.common.layer);
     std::string name = row ? row->name : std::string("?");
+    if (l.otherLevel) {
+        const Level* lv = doc.level(e.common.level);
+        return "it is on level \"" + (lv ? lv->name : std::string("?")) +
+               "\", not the current level (make that level current, or set the level view to all)";
+    }
+    if (const Level* lv = doc.level(e.common.level);
+        lv && lv->locked && !doc.layer(e.common.layer)->locked)
+        return "level \"" + lv->name + "\" is locked";
     return l.inactive ? "layer \"" + name + "\" is not the active layer (Active Only mode is on)"
                       : "layer \"" + name + "\" is locked";
 }
@@ -81,7 +89,7 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
 }
 
 const std::set<std::string>& commonKeys() {
-    static const std::set<std::string> k{"layer",      "color",         "linetype",
+    static const std::set<std::string> k{"layer",      "level",         "color",  "linetype",
                                          "lineweight", "linetypeScale", "visible"};
     return k;
 }
@@ -107,6 +115,12 @@ std::string applySet(const Document& doc, Entity& e, const Json& set) {
         if (!l)
             return "unknown layer " + dump(*v) + " (create it first with create_layer)";
         e.common.layer = l->id;
+    }
+    if (const Json* v = set.find("level")) {
+        const Level* lv = v->isString() ? doc.levelByName(v->asString()) : nullptr;
+        if (!lv)
+            return "unknown level " + dump(*v) + " (create it first with create_level)";
+        e.common.level = lv->id;
     }
     if (const Json* v = set.find("color")) {
         auto r = colorFromJson(*v, false);
@@ -333,6 +347,7 @@ void registerEditTools(ToolSet& tools) {
         {{"kind", tString("line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch "
                           "or insert")},
          {"layer", tString("layer path; default: the `layer` argument or the current layer")},
+         {"level", tString("level name; default: the current level")},
          {"color", tAny("\"ByLayer\", \"ByBlock\", ACI 1..255 or \"#RRGGBB\"")},
          {"linetype", tString("name, \"ByLayer\" or \"ByBlock\"")},
          {"lineweight", tAny("mm, \"ByLayer\", \"ByBlock\" or \"Default\"")}},

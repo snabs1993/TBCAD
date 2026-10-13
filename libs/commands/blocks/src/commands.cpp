@@ -67,7 +67,7 @@ std::vector<EntityId> inDrawOrder(const Document& doc, const std::vector<EntityI
 }
 
 bool editable(const Document& doc, const Entity& e) {
-    EffectiveLayer l = doc.effective(e.common.layer);
+    EffectiveLayer l = doc.effective(e.common);
     return l.visible() && !l.locked;
 }
 

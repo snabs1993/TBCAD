@@ -235,8 +235,25 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
     }
 }
 
+void Writer::setLevelTag(const EntityCommon& c) {
+    levelTag_.clear();
+    if (!tagLevels_)
+        return;
+    if (const Level* l = doc_.level(c.level))
+        levelTag_ = l->name;
+}
+
+void Writer::emitLevelTag() {
+    if (levelTag_.empty() || !o_)
+        return;
+    o_->raw(1001, "TBCAD");
+    o_->str(1000, "level=" + levelTag_);
+    levelTag_.clear();
+}
+
 void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
     Props p = propsOf(e.common);
+    setLevelTag(e.common);
     switch (kind(e)) {
         case EntityKind::Line:
             writeLine(p, *entityAs<LineData>(e), owner);
@@ -334,6 +351,7 @@ void Writer::writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& 
         o.d(41, constantWidth);
     }
     o.i(70, closed ? 1 : 0);
+    emitLevelTag();  // XDATA of the polyline comes before its vertices
     for (const PolyVertex& pv : v) {
         o.zero("VERTEX");
         o.str(8, p.layer);
@@ -888,6 +906,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             break;
     }
 
+    setLevelTag(e->common);
     head("DIMENSION", p, owner, "AcDbDimension");
     Out& o = *o_;
     o.str(2, blockName);

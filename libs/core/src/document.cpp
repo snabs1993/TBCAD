@@ -80,6 +80,7 @@ const Row* Table<Row, IdT>::findByName(std::string_view name) const {
 }
 
 template struct Table<Layer, LayerId>;
+template struct Table<Level, LevelId>;
 template struct Table<Linetype, LinetypeId>;
 template struct Table<TextStyle, TextStyleId>;
 template struct Table<DimStyle, DimStyleId>;
@@ -88,8 +89,8 @@ template struct Table<BlockDef, BlockId>;
 }  // namespace detail
 
 bool ChangeSet::empty() const {
-    return entities.empty() && layers.empty() && linetypes.empty() && textStyles.empty() &&
-           dimStyles.empty() && blocks.empty() && !header && order.empty();
+    return entities.empty() && layers.empty() && levels.empty() && linetypes.empty() &&
+           textStyles.empty() && dimStyles.empty() && blocks.empty() && !header && order.empty();
 }
 
 namespace {
@@ -111,6 +112,7 @@ ChangeSet ChangeSet::inverted() const {
     for (const auto& c : entities)
         r.entities.push_back({c.after, c.before});
     r.layers = invertRows(layers);
+    r.levels = invertRows(levels);
     r.linetypes = invertRows(linetypes);
     r.textStyles = invertRows(textStyles);
     r.dimStyles = invertRows(dimStyles);
@@ -373,6 +375,10 @@ Result<double> validateEntity(const Document& doc, Entity& e, BlockId owner) {
         c.layer = doc.header().currentLayer;
     if (!doc.layer(c.layer))
         return invalid("unknown layer");
+    if (!c.level)
+        c.level = doc.header().currentLevel;
+    if (!doc.level(c.level))
+        return invalid("unknown level");
     if (c.linetype != kLinetypeByLayer && c.linetype != kLinetypeByBlock &&
         !doc.linetype(c.linetype)) {
         return invalid("unknown linetype");
@@ -451,6 +457,13 @@ Result<void> checkRow(const Document& doc, Layer& r, const Layer* old) {
         return invalid("a layer lineweight must be Default, a value or ByParent");
     return {};
 }
+Result<void> checkRow(const Document&, Level& r, const Level*) {
+    if (!validName(r.name))
+        return invalid("invalid level name");
+    if (!std::isfinite(r.elevation))
+        return invalid("non-finite level elevation");
+    return {};
+}
 Result<void> checkRow(const Document&, Linetype& r, const Linetype* old) {
     if (!validName(r.name))
         return invalid("invalid linetype name");
@@ -513,6 +526,9 @@ Result<void> checkRow(const Document&, BlockDef& r, const BlockDef*) {
 bool isBuiltin(LayerId id) {
     return id == kLayerZero;
 }
+bool isBuiltin(LevelId id) {
+    return id == kLevelDefault;
+}
 bool isBuiltin(LinetypeId id) {
     return id == kLinetypeContinuous;
 }
@@ -532,6 +548,13 @@ bool inUse(const Document& d, LayerId id) {
     }
     bool used = false;
     d.forEachEntity([&](const Entity& e) { used = used || e.common.layer == id; });
+    return used;
+}
+bool inUse(const Document& d, LevelId id) {
+    if (d.header().currentLevel == id)
+        return true;
+    bool used = false;
+    d.forEachEntity([&](const Entity& e) { used = used || e.common.level == id; });
     return used;
 }
 bool inUse(const Document& d, LinetypeId id) {
@@ -607,6 +630,7 @@ NextIds Document::nextIds() const {
     NextIds n;
     n.entity = nextEntityId_;
     n.layer = layers_.next;
+    n.level = levels_.next;
     n.linetype = linetypes_.next;
     n.textStyle = textStyles_.next;
     n.dimStyle = dimStyles_.next;
@@ -619,6 +643,7 @@ Result<void> Document::reserveIds(const NextIds& ids) {
         return makeError(ErrorCode::Conflict, "cannot reserve ids while a transaction is open");
     nextEntityId_ = std::max(nextEntityId_, ids.entity);
     layers_.next = std::max(layers_.next, ids.layer);
+    levels_.next = std::max(levels_.next, ids.level);
     linetypes_.next = std::max(linetypes_.next, ids.linetype);
     textStyles_.next = std::max(textStyles_.next, ids.textStyle);
     dimStyles_.next = std::max(dimStyles_.next, ids.dimStyle);
@@ -638,6 +663,11 @@ Document::Document() {
     zero.name = "0";
     zero.linetype = kLinetypeContinuous;
     replaceRow<Layer, LayerId>(layers_, zero.id, zero);
+
+    Level lv;
+    lv.id = kLevelDefault;
+    lv.name = "Level 1";
+    replaceRow<Level, LevelId>(levels_, lv.id, lv);
 
     TextStyle ts;
     ts.id = kTextStyleStandard;
@@ -766,6 +796,29 @@ EffectiveLayer Document::effective(LayerId id) const {
     return withActiveOnly(e);
 }
 
+EffectiveLayer Document::effective(const EntityCommon& c) const {
+    EffectiveLayer e = effective(c.layer);
+    const Level* lv = level(c.level);
+    if (!lv)
+        return e;
+    if (!lv->visible) {
+        e.on = false;
+        return e;
+    }
+    const bool other = c.level != header_.currentLevel;
+    if (other && header_.levelView == LevelView::HideOthers) {
+        e.on = false;
+        return e;
+    }
+    if (lv->locked)
+        e.locked = true;
+    if (other && header_.levelView == LevelView::DimOthers) {
+        e.locked = true;
+        e.otherLevel = true;
+    }
+    return e;
+}
+
 // The active-only override depends on the header, which the cache does not watch, so it is
 // applied on every lookup.
 EffectiveLayer Document::withActiveOnly(EffectiveLayer e) const {
@@ -830,6 +883,7 @@ void Document::applyForward(const ChangeSet& cs) {
         }
     }
     applyRows(layers_, cs.layers);
+    applyRows(levels_, cs.levels);
     applyRows(linetypes_, cs.linetypes);
     applyRows(textStyles_, cs.textStyles);
     applyRows(dimStyles_, cs.dimStyles);
@@ -880,6 +934,7 @@ Transaction::Transaction(Transaction&& o) noexcept
       headerBefore_(std::move(o.headerBefore_)),
       order_(std::move(o.order_)),
       pLayers_(std::move(o.pLayers_)),
+      pLevels_(std::move(o.pLevels_)),
       pLinetypes_(std::move(o.pLinetypes_)),
       pTextStyles_(std::move(o.pTextStyles_)),
       pDimStyles_(std::move(o.pDimStyles_)),
@@ -1104,6 +1159,16 @@ Result<void> Transaction::eraseLayer(LayerId id) {
     return eraseRow(doc().layers_, pLayers_, id);
 }
 
+Result<LevelId> Transaction::addLevel(Level r) {
+    return addRow(doc().levels_, pLevels_, std::move(r));
+}
+Result<void> Transaction::modifyLevel(LevelId id, const std::function<void(Level&)>& fn) {
+    return modifyRow(doc().levels_, pLevels_, id, fn);
+}
+Result<void> Transaction::eraseLevel(LevelId id) {
+    return eraseRow(doc().levels_, pLevels_, id);
+}
+
 Result<LinetypeId> Transaction::addLinetype(Linetype r) {
     return addRow(doc().linetypes_, pLinetypes_, std::move(r));
 }
@@ -1171,6 +1236,8 @@ Result<void> Transaction::modifyHeader(const std::function<void(Header&)>& fn) {
     }
     if (!d.layer(work.currentLayer))
         return invalid("unknown current layer");
+    if (!d.level(work.currentLevel))
+        return invalid("unknown current level");
     if (work.currentColor.kind == ColorKind::ByParent)
         return invalid("the current colour cannot be ByParent");
     if (work.currentColor.kind == ColorKind::Index && work.currentColor.indexValue() == 0)
@@ -1248,6 +1315,7 @@ ChangeSet Transaction::commit() {
     cs.snapshots = std::move(snaps);
 
     collectRows(d.layers_, pLayers_, cs.layers);
+    collectRows(d.levels_, pLevels_, cs.levels);
     collectRows(d.linetypes_, pLinetypes_, cs.linetypes);
     collectRows(d.textStyles_, pTextStyles_, cs.textStyles);
     collectRows(d.dimStyles_, pDimStyles_, cs.dimStyles);
@@ -1306,6 +1374,7 @@ void Transaction::rollback() {
             replaceRow(table, id, rc.before);
     };
     restore(d.layers_, pLayers_);
+    restore(d.levels_, pLevels_);
     restore(d.linetypes_, pLinetypes_);
     restore(d.textStyles_, pTextStyles_);
     restore(d.dimStyles_, pDimStyles_);

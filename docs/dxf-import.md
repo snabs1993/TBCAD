@@ -89,6 +89,13 @@ definitions), the TBCAD entities produced and the records dropped.
 * Group 60 = 1 sets `visible = false`. Layer off (negative colour), frozen (70 bit 0), locked
   (70 bit 2) and plot (290) are kept on the layer.
 
+## Levels
+
+The `TBCAD` APPID record's XDATA (`levels-current`, `levels-view`, `levels-row` + elevation + flags)
+recreates the level table, empty levels included, and each entity's `1000 level=<name>` puts it back
+on its level (see `dxf-export.md`). Without that XDATA, which is every file from another program,
+everything lies on the first level.
+
 ## Layers and sub-layers
 
 DXF layers are flat. Three ways a hierarchy appears:

@@ -144,8 +144,14 @@ private:
               std::string_view subclass);
     void sub(std::string_view subclass);
     void count(std::string_view type, std::size_t n = 1) {
+        emitLevelTag();
         summary_.entities[std::string(type)] += n;
     }
+    // TBCAD XDATA naming the entity's level ("level=<name>"), written at the end of the
+    // record that setLevelTag() prepared; a no-op when no tag is pending.
+    void emitLevelTag();
+    void setLevelTag(const EntityCommon& c);
+    void levelsXdata(Out& o);
     void skipEntity(std::string_view what, const std::string& why);
     void downgrade(std::string_view what, const std::string& why);
 
@@ -219,6 +225,8 @@ private:
     std::unordered_set<std::string> warnedPatterns_{};
     BBox2 extents_{};
     bool r12HatchWarned_ = false;
+    bool tagLevels_ = false;  // the document has more than the pristine default level
+    std::string levelTag_{};
     std::unordered_map<std::string, std::vector<HatchPatternLine>> patternCache_{};
 };
 

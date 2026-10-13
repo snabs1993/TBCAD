@@ -651,6 +651,10 @@ Json entityToJson(const Document& doc, const Entity& e) {
     o["id"] = std::to_string(e.common.id.value);
     o["kind"] = kindName(kind(e));
     o["layer"] = layerPath(doc, e.common.layer);
+    if (doc.levels().size() > 1) {
+        if (const Level* lv = doc.level(e.common.level))
+            o["level"] = lv->name;
+    }
     o["color"] = colorToJson(e.common.color);
     o["linetype"] = linetypeToJson(doc, e.common.linetype);
     o["lineweight"] = lineweightToJson(e.common.lineweight);
@@ -784,6 +788,12 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
                 fail("unknown layer \"" + layer +
                      "\" (create it first, or pass create_layers: true)");
             e.common.layer = l->id;
+        }
+        if (const Json* c = j.find("level"); c && c->isString() && !c->asString().empty()) {
+            const Level* lv = doc.levelByName(c->asString());
+            if (!lv)
+                fail("unknown level \"" + c->asString() + "\" (create it with create_level)");
+            e.common.level = lv->id;
         }
         if (const Json* c = j.find("color"))
             e.common.color = orFail(colorFromJson(*c, false));

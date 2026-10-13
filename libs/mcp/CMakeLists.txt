@@ -17,6 +17,7 @@ set(_mcp_sources
   src/tools_edit.cpp
   src/tools_files.cpp
   src/tools_layers.cpp
+  src/tools_levels.cpp
   src/tools_read.cpp)
 
 if(WIN32)
