@@ -298,3 +298,39 @@ TEST_CASE("a dxf file can be attached") {
     CHECK(host.layerByName(root->id, "A-WALL") != nullptr);
     fs::remove_all(dir);
 }
+
+TEST_CASE("importAsBlock makes an ordinary block and matches layers by name") {
+    Document host;
+    {
+        Transaction tx = host.begin("layer");
+        Layer l;
+        l.name = "walls";
+        l.color = Color::index(1);
+        REQUIRE(tx.addLayer(l).ok());
+        tx.commit();
+    }
+    Source src = sourceOf(makeSource());
+    BlockId b;
+    {
+        Transaction tx = host.begin("import");
+        auto r = importAsBlock(tx, host, "door set", src);
+        REQUIRE(r.ok());
+        b = r.value();
+        tx.commit();
+    }
+    const BlockDef* def = host.block(b);
+    CHECK(def->xrefPath.empty());
+    CHECK(def->entities.size() == 4);
+    // The existing layer was reused (its colour is untouched), the missing one was created.
+    std::size_t walls = 0;
+    for (const auto& [id, l] : host.layers())
+        walls += l.name == "walls";
+    CHECK(walls == 1);
+    CHECK(host.layerByName("walls")->color == Color::index(1));
+    CHECK(host.layerByName(host.layerByName("walls")->id, "inner") != nullptr);
+    CHECK(host.layerByName("door set") == nullptr);  // no xref layer
+    CHECK(host.blockByName("door set$door") != nullptr);
+    // Name already taken.
+    Transaction tx = host.begin("again");
+    CHECK_FALSE(importAsBlock(tx, host, "door set", src).ok());
+}
