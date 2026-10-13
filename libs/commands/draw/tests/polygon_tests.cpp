@@ -112,3 +112,19 @@ TEST_CASE("POLYGON shows its outline while the radius point moves") {
     CHECK(pl->pts.size() == 5);
     f.host.feed({ScriptItem::esc()});
 }
+
+TEST_CASE("POLYGON accepts a typed radius (orientation 0 degrees)") {
+    Fixture f;
+    f.host.run("POL", {"6", "5,5", "", "10"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    checkRegular(as<PolylineData>(es[0]), {5, 5}, 10, 0, 6);
+}
+
+TEST_CASE("POLYGON circumscribed with a typed radius has an edge middle at 0 degrees") {
+    Fixture f;
+    f.host.run("POL", {"4", "0,0", "C", "10"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    checkVertices(as<PolylineData>(es[0]), {{10, -10}, {10, 10}, {-10, 10}, {-10, -10}});
+}

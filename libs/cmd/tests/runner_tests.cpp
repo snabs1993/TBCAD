@@ -563,3 +563,28 @@ TEST_CASE("a hook that observes the document sees checkpoint steps and the final
     CHECK(obs.calls >= 2);
     f.doc.removeObserver(&obs);
 }
+
+namespace {
+class LastPointProbe final : public Command {
+public:
+    std::string_view name() const override { return "LASTPOINTPROBE"; }
+    Task run(CommandContext& ctx) override {
+        DistanceOptions o;
+        o.base = Vec2{0, 0};
+        auto d = co_await ctx.getDistance("Distance", o);
+        if (!d.ok())
+            co_return;
+        ctx.message("last=" + std::to_string(ctx.lastPoint().x) + "," +
+                    std::to_string(ctx.lastPoint().y));
+    }
+};
+}  // namespace
+
+TEST_CASE("CommandContext::lastPoint is the click that answered a distance prompt") {
+    Document doc;
+    Registry reg;
+    reg.add(std::make_unique<LastPointProbe>());
+    ScriptHost host(doc, reg);
+    host.run("LASTPOINTPROBE", {ScriptItem::click({3, 4})});
+    CHECK(host.logContains("last=3.000000,4.000000"));
+}
