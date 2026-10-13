@@ -1,0 +1,16 @@
+tbcad_add_library(modify
+  SOURCES
+    src/break_join.cpp
+    src/common.cpp
+    src/fillet.cpp
+    src/offset.cpp
+    src/trim.cpp
+  DEPENDS tbcad::core tbcad::geom)
+tbcad_add_tests(modify
+  SOURCES
+    tests/main.cpp
+    tests/break_join_tests.cpp
+    tests/fillet_tests.cpp
+    tests/offset_tests.cpp
+    tests/test_support.h
+    tests/trim_tests.cpp)

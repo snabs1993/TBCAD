@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -677,7 +678,25 @@ void Gui::logWindow() {
             ImGui::SetClipboardText(text.c_str());
         ImGui::SameLine();
         ImGui::TextDisabled("%zu lines. Ctrl+L or Esc closes.", lines.size());
+        const ImGuiID logId = ImGui::GetID("##log");
+        const std::string logChild =
+            std::string(ImGui::GetCurrentWindow()->Name) + "/##log_" + [&] {
+                char hex[16];
+                std::snprintf(hex, sizeof hex, "%08X", logId);
+                return std::string(hex);
+            }();
         ImGui::InputTextMultiline("##log", &text, ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+        // Follow new output: the box scrolls inside a child window ImGui names after the label.
+        if (lines.size() != logShownSize_) {
+            if (ImGuiWindow* child = ImGui::FindWindowByName(logChild.c_str()))
+                child->Scroll.y = child->ScrollMax.y + ImGui::GetTextLineHeightWithSpacing();
+            logShownSize_ = lines.size();
+            logFollow_ = 2;  // scroll limits are only known after a frame with the new text
+        } else if (logFollow_ > 0) {
+            if (ImGuiWindow* child = ImGui::FindWindowByName(logChild.c_str()))
+                child->Scroll.y = child->ScrollMax.y;
+            --logFollow_;
+        }
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
             ImGui::IsKeyPressed(ImGuiKey_Escape))
             open = false;
@@ -789,6 +808,8 @@ void Gui::panels() {
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
     pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    for (const std::string& id : core_.takePanelRequests())
+        panelOpen_[id] = true;
     for (const auto& p : registry_.panels()) {
         bool& open = panelOpen_[p.id];
         if (!open)

@@ -134,6 +134,8 @@ private:
     // Command log (Ctrl+L) and clean-screen mode (F11).
     bool logExpanded_ = false;
     bool cleanScreen_ = false;
+    std::size_t logShownSize_ = static_cast<std::size_t>(-1);  // forces a scroll on first show
+    int logFollow_ = 0;
 
     // Save prompt.
     Pending pending_ = Pending::None;

@@ -52,6 +52,7 @@ struct EntityResult {
     EntityId id{};
     Vec2 pickPoint{};
     std::string keyword{};
+    bool shift = false;  // Shift was held for the pick (TRIM <-> EXTEND)
     bool ok() const { return status == Status::Ok; }
 };
 struct SelectionResult {
@@ -154,11 +155,12 @@ struct Input {
     }
     static Input click(Vec2 p) { return click(RawInput{p, p, 1}); }
     // The host picked an entity at `at` (for getEntity, and for getSelection).
-    static Input pick(EntityId id, Vec2 at = {}) {
+    static Input pick(EntityId id, Vec2 at = {}, bool shift = false) {
         Input i;
         i.kind = Kind::Entity;
         i.entity = id;
         i.raw.worldCursor = at;
+        i.raw.shift = shift;
         return i;
     }
     static Input select(std::vector<EntityId> ids) {
