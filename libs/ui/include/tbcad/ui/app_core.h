@@ -220,6 +220,7 @@ public:
     // Panels asked for since the last call (the window opens them).
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
+    std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
     void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
