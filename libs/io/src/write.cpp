@@ -47,6 +47,13 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     headInt(body, st, "currentTextStyle", h.currentTextStyle.value), bump();
     headInt(body, st, "currentDimStyle", h.currentDimStyle.value), bump();
     headString(body, st, "createdBy", h.createdBy), bump();
+    const NextIds next = doc.nextIds();
+    headInt(body, st, "nextEntity", static_cast<std::int64_t>(next.entity)), bump();
+    headInt(body, st, "nextLayer", next.layer), bump();
+    headInt(body, st, "nextLinetype", next.linetype), bump();
+    headInt(body, st, "nextTextStyle", next.textStyle), bump();
+    headInt(body, st, "nextDimStyle", next.dimStyle), bump();
+    headInt(body, st, "nextBlock", next.block), bump();
     for (const auto& [k, v] : h.custom) {
         if (k.starts_with(kOpaqueChunkPrefix))
             continue;

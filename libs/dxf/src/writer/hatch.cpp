@@ -3,6 +3,7 @@
 #include <cmath>
 #include <map>
 
+#include "tbcad/hatch/pattern.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -18,28 +19,6 @@ std::string lowerAscii(std::string_view s) {
             c = static_cast<char>(c - 'A' + 'a');
     }
     return r;
-}
-
-using Lines = std::vector<HatchPatternLine>;
-
-// TBCAD's own patterns, designed from scratch (spacings in millimetres at scale 1).
-const std::map<std::string, Lines>& builtins() {
-    static const std::map<std::string, Lines> kPatterns = [] {
-        std::map<std::string, Lines> m;
-        m["line0"] = {{0, 0, 0, 0, 3, {}}};
-        m["line45"] = {{45, 0, 0, 0, 3, {}}};
-        m["cross45"] = {{45, 0, 0, 0, 4, {}}, {135, 0, 0, 0, 4, {}}};
-        m["grid"] = {{0, 0, 0, 0, 5, {}}, {90, 0, 0, 0, 5, {}}};
-        m["brick"] = {{0, 0, 0, 0, 6, {}}, {90, 0, 0, 0, 12, {6, -6}}, {90, 6, 6, 0, 12, {6, -6}}};
-        m["dots"] = {{0, 0, 0, 0, 4, {0, -4}}};
-        m["sand"] = {{0, 0, 0, 1.3, 4.1, {0, -5.3}},
-                     {37, 1.7, 0.9, 2.9, 5.7, {0, -4.4}},
-                     {101, 0.6, 2.2, 3.1, 6.3, {0, -7.1}}};
-        m["earth"] = {
-            {0, 0, 0, 0, 8, {}}, {45, 0, 0, 0, 8, {2.5, -5.5}}, {45, 1.2, 0, 0, 8, {2.5, -5.5}}};
-        return m;
-    }();
-    return kPatterns;
 }
 
 // Corner points of a bulged segment as an arc: centre, radius, start and end angle (radians).
@@ -73,9 +52,23 @@ bool hasBulge(const std::vector<PolyVertex>& v) {
 
 }  // namespace
 
-const std::vector<HatchPatternLine>* builtinPattern(std::string_view name) {
-    auto it = builtins().find(lowerAscii(name));
-    return it == builtins().end() ? nullptr : &it->second;
+// The pattern library of W5-4 (built-in patterns plus the user's own), in the .pat convention.
+std::optional<std::vector<HatchPatternLine>> libraryPattern(std::string_view name) {
+    const hatch::Pattern* pat = hatch::PatternRegistry::find(name);
+    if (!pat)
+        return std::nullopt;
+    std::vector<HatchPatternLine> lines;
+    for (const hatch::PatternFamily& f : pat->families) {
+        HatchPatternLine l;
+        l.angleDeg = f.angle * kDeg;
+        l.originX = f.origin.x;
+        l.originY = f.origin.y;
+        l.dx = f.delta.x;
+        l.dy = f.delta.y;
+        l.dashes = f.dashes;
+        lines.push_back(std::move(l));
+    }
+    return lines;
 }
 
 std::optional<std::vector<HatchPatternLine>> Writer::patternLines(const std::string& name) {
@@ -86,10 +79,8 @@ std::optional<std::vector<HatchPatternLine>> Writer::patternLines(const std::str
     std::optional<std::vector<HatchPatternLine>> found;
     if (opt_.patterns)
         found = opt_.patterns(name);
-    if (!found) {
-        if (const auto* b = builtinPattern(name))
-            found = *b;
-    }
+    if (!found)
+        found = libraryPattern(name);
     if (found)
         patternCache_[key] = *found;
     return found;
