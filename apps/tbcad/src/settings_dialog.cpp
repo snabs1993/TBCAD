@@ -155,6 +155,12 @@ void SettingsDialog::files(ui::AppCore& core) {
         s.setNumber("autosave.minutes", minutes);
     ImGui::EndDisabled();
     ImGui::Spacing();
+    int fmt = s.getString("files.defaultFormat", "tbcad") == "dxf" ? 1 : 0;
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::Combo("Default save format", &fmt, "TBCAD (.tbcad)\0DXF (.dxf)\0"))
+        s.setString("files.defaultFormat", fmt == 1 ? "dxf" : "tbcad");
+    ImGui::TextDisabled("A drawing opened from a .dxf file is saved back as DXF.");
+    ImGui::Spacing();
     ImGui::TextDisabled("Settings folder: %s", core.settingsFolder().string().c_str());
 }
 

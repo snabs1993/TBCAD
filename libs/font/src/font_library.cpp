@@ -1,6 +1,8 @@
 #include "tbcad/font/font_library.h"
 
 #include <ft2build.h>
+
+#include "stroke_font.h"
 #include FT_FREETYPE_H
 #include FT_OUTLINE_H
 #include FT_TRUETYPE_TABLES_H
@@ -189,6 +191,7 @@ struct FontLibrary::Impl {
         int upem = 1000;
         FontMetrics metrics;
         std::string family;
+        std::unique_ptr<StrokeFont> stroke;  // set for single-stroke fonts (ft is then null)
         std::unordered_map<OutlineKey, GlyphOutline, OutlineKeyHash> outlines;
 
         ~Face() {
@@ -298,6 +301,40 @@ struct FontLibrary::Impl {
         return addFace(std::move(data), index, key);
     }
 
+    Result<FontId> addStroke(std::string_view text, const std::string& key) {
+        auto font = std::make_unique<StrokeFont>();
+        std::string err = font->parse(text);
+        if (!err.empty())
+            return Error{"stroke font: " + err};
+        auto face = std::make_unique<Face>();
+        face->upem = font->unitsPerEm();
+        face->metrics = font->metrics();
+        face->family = font->family();
+        face->stroke = std::move(font);
+        const FontId id{static_cast<std::uint32_t>(faces.size())};
+        faces.push_back(std::move(face));
+        if (!key.empty())
+            byPath[{key, -1}] = id;
+        return id;
+    }
+
+    Result<FontId> loadStrokeFile(const std::filesystem::path& path) {
+        std::error_code ec;
+        const std::string key = std::filesystem::absolute(path, ec).generic_string();
+        if (auto it = byPath.find({key, -1}); it != byPath.end())
+            return it->second;
+        const auto size = std::filesystem::file_size(path, ec);
+        if (ec)
+            return Error{"cannot open stroke font: " + path.generic_string()};
+        if (size == 0 || size > 64ull * 1024 * 1024)
+            return Error{"unreasonable stroke font size"};
+        std::ifstream in(path, std::ios::binary);
+        std::string text(static_cast<std::size_t>(size), '\0');
+        if (!in || !in.read(text.data(), static_cast<std::streamsize>(text.size())))
+            return Error{"cannot read stroke font: " + path.generic_string()};
+        return addStroke(text, key);
+    }
+
     Result<FontId> loadBundledLocked(std::string_view name) {
         const std::string n = lower(name);
         const char* file = n == "sarabun" ? "Sarabun-Regular.ttf"
@@ -338,6 +375,8 @@ struct FontLibrary::Impl {
 
     bool hasGlyphLocked(FontId id, char32_t cp) {
         Face* f = get(id);
+        if (f && f->stroke)
+            return f->stroke->has(cp);
         return f && FT_Get_Char_Index(f->ft, static_cast<FT_ULong>(cp)) != 0;
     }
 
@@ -392,6 +431,48 @@ struct FontLibrary::Impl {
         }
     }
 };
+
+namespace {
+
+// Stroke fonts have no shaping engine: glyph id = code point, advances come from the font, and
+// combining marks (zero advance) are centred over the previous base character. A tone mark that
+// has no upper vowel under it is moved down by the font's tone drop.
+ShapedRun shapeStroke(const StrokeFont& font, FontId id, std::string_view utf8,
+                      const std::vector<Cp>& cps, std::size_t from, std::size_t to) {
+    ShapedRun run;
+    run.font = id;
+    run.unitsPerEm = font.unitsPerEm();
+    const double upm = font.unitsPerEm();
+    (void)utf8;
+    double baseAdvance = 0;  // advance of the last non-mark glyph
+    StrokeFont::Mark prevMark = StrokeFont::Mark::None;
+    bool havePrev = false;
+    for (std::size_t k = from; k < to; ++k) {
+        const StrokeFont::Glyph* g = font.glyph(cps[k].cp);
+        if (!g)
+            continue;
+        ShapedGlyph sg;
+        sg.glyphId = static_cast<std::uint32_t>(cps[k].cp);
+        sg.cluster = cps[k].offset;
+        const bool isMark = g->mark != StrokeFont::Mark::None && havePrev;
+        if (isMark) {
+            sg.xAdvance = 0;
+            sg.xOffset = static_cast<std::int32_t>(std::lround(-baseAdvance * upm / 2));
+            if (g->mark == StrokeFont::Mark::Tone && prevMark != StrokeFont::Mark::Upper)
+                sg.yOffset = static_cast<std::int32_t>(std::lround(-font.toneDrop() * upm));
+            prevMark = g->mark;
+        } else {
+            sg.xAdvance = static_cast<std::int32_t>(std::lround(g->advance * upm));
+            baseAdvance = g->advance;
+            prevMark = StrokeFont::Mark::None;
+        }
+        havePrev = true;
+        run.glyphs.push_back(sg);
+    }
+    return run;
+}
+
+}  // namespace
 
 FontLibrary::FontLibrary() : impl_(std::make_unique<Impl>()) {}
 FontLibrary::~FontLibrary() = default;
@@ -485,6 +566,12 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
             j < cps.size() ? cps[j].offset : static_cast<std::uint32_t>(utf8.size());
         Impl::Face* f = impl_->get(chain[pick[i]]);
 
+        if (f->stroke) {
+            runs.push_back(shapeStroke(*f->stroke, chain[pick[i]], utf8, cps, i, j));
+            i = j;
+            continue;
+        }
+
         hb_buffer_clear_contents(buf);
         hb_buffer_add_utf8(buf, utf8.data(), static_cast<int>(utf8.size()), begin, end - begin);
         hb_buffer_set_direction(buf,
@@ -518,6 +605,8 @@ const GlyphOutline& FontLibrary::outline(FontId font, std::uint32_t glyphId, dou
     Impl::Face* f = impl_->get(font);
     if (!f)
         return kEmpty;
+    if (f->stroke)
+        return kEmpty;  // stroke fonts have no outlines, see strokes()
     if (!(toleranceEm > 1e-6))
         toleranceEm = 1e-6;
     std::uint64_t bits = 0;
@@ -547,6 +636,47 @@ const GlyphOutline& FontLibrary::outline(FontId font, std::uint32_t glyphId, dou
     if (!out.contours.empty())
         fl.closeContour();
     return out;
+}
+
+Result<FontId> FontLibrary::loadStroke(const std::filesystem::path& path) {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->loadStrokeFile(path);
+}
+
+Result<FontId> FontLibrary::loadStrokeFromMemory(std::string_view tbsfText) {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->addStroke(tbsfText, std::string());
+}
+
+Result<FontId> FontLibrary::loadBundledStroke(std::string_view name) {
+    std::lock_guard lock(impl_->mutex);
+    const std::string file = lower(name) + ".tbsf";
+    std::vector<std::filesystem::path> dirs;
+    if (!impl_->bundledDir.empty())
+        dirs.push_back(impl_->bundledDir / "stroke");
+    dirs.emplace_back("assets/fonts/stroke");
+    for (const auto& d : dirs) {
+        std::error_code ec;
+        if (std::filesystem::exists(d / file, ec))
+            return impl_->loadStrokeFile(d / file);
+    }
+    return Error{"bundled stroke font not found: " + file};
+}
+
+bool FontLibrary::isStroke(FontId font) {
+    std::lock_guard lock(impl_->mutex);
+    Impl::Face* f = impl_->get(font);
+    return f && f->stroke;
+}
+
+const StrokeGlyph& FontLibrary::strokes(FontId font, std::uint32_t glyphId) {
+    static const StrokeGlyph kEmpty;
+    std::lock_guard lock(impl_->mutex);
+    Impl::Face* f = impl_->get(font);
+    if (!f || !f->stroke)
+        return kEmpty;
+    const StrokeFont::Glyph* g = f->stroke->glyph(static_cast<char32_t>(glyphId));
+    return g ? g->strokes : kEmpty;
 }
 
 FontMetrics FontLibrary::metrics(FontId font) {

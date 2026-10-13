@@ -85,6 +85,29 @@ jobs:
       - name: Test (includes fuzz targets)
         run: ctest --preset linux-clang-asan
 
+  perf:
+    name: ubuntu-24.04 (GCC release, performance numbers)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install tools
+        # Mesa (llvmpipe) gives render_bench a software OpenGL context; its numbers say little about a GPU.
+        run: sudo apt-get update && sudo apt-get install -y ninja-build g++ libegl1 libegl-mesa0 libgl1-mesa-dri
+      - name: Configure
+        run: cmake --preset linux-gcc-release -DTBCAD_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build --preset linux-gcc-release --target tbcad_index_tests render_bench
+      - name: Index numbers (1 M boxes; informational, shared runners are noisy)
+        continue-on-error: true
+        run: |
+          build/linux-gcc-release/libs/index/tbcad_index_tests -tc="bulk load*" | tee index-perf.txt
+          { echo '### Spatial index'; echo '```'; grep 'index perf' index-perf.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Render benchmark (software OpenGL, numbers only)
+        continue-on-error: true
+        run: |
+          build/linux-gcc-release/libs/render/render_bench --lines 200000 --frames 60 --size 1280x720 | tee render-bench.txt
+          { echo '### Render benchmark (llvmpipe, 200,000 lines)'; echo '```'; cat render-bench.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   format:
     name: clang-format
     runs-on: ubuntu-24.04

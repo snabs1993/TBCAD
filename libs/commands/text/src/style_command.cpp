@@ -24,7 +24,7 @@ bool looksLikeFontFile(const std::string& s) {
                 return false;
         return true;
     };
-    return ends(".ttf") || ends(".otf") || ends(".ttc");
+    return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf");
 }
 
 // STYLE: create or change a text style and make it current.
@@ -72,12 +72,7 @@ public:
         else if (f.text != "Sarabun")
             row.fontFamily = f.text;
         if (!row.fontFile.empty() || !row.fontFamily.empty()) {
-            bool found = false;
-            if (!row.fontFile.empty())
-                found = text::fonts().load(row.fontFile).ok();
-            else
-                found = text::fonts().findSystem(row.fontFamily, false, false).has_value();
-            if (!found)
+            if (!text::fontAvailable(row.fontFamily, row.fontFile))
                 ctx.message("Font not found; the bundled Sarabun is used instead: " + f.text);
         }
 

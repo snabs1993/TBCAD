@@ -18,7 +18,7 @@ import os
 import sys
 
 SINGLE = [874, 1250, 1251, 1252, 1253, 1254, 1255, 1256, 1257, 1258]
-DOUBLE = [932, 936, 949, 950]
+DOUBLE = [932, 936, 949, 950, 1361]
 UNDEFINED = 0xFFFD
 LEAD = 0xFFFF  # marker in the single-byte part: this byte starts a two-byte sequence
 
@@ -48,7 +48,7 @@ def parse_mapping_file(path):
 
 def from_python(cp):
     single, double, leads = {}, {}, set()
-    name = f"cp{cp}"
+    name = "johab" if cp == 1361 else f"cp{cp}"
     for b in range(256):
         try:
             single[b] = ord(bytes([b]).decode(name))

@@ -18,6 +18,7 @@ enum class Encoding {
     Cp936,   // Simplified Chinese (GBK)
     Cp949,   // Korean
     Cp950,   // Traditional Chinese (Big5)
+    Cp1361,  // Korean (Johab)
     Cp1250,  // Central European
     Cp1251,  // Cyrillic
     Cp1252,  // Western European (the DXF default)

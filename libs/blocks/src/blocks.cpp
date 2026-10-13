@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include "internal.h"
+#include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
 
 namespace tbcad::blocks {
@@ -17,6 +18,16 @@ Transform2 instanceTransform(const InsertData& ins, Vec2 base) {
 Transform2 instanceTransform(const Document& doc, const InsertData& ins) {
     const BlockDef* def = doc.block(ins.block);
     return instanceTransform(ins, def ? def->base : Vec2{});
+}
+
+std::vector<Transform2> instanceTransforms(const InsertData& ins, Vec2 base) {
+    Transform2 inst = instanceTransform(ins, base);
+    if (!ins.array)
+        return {inst};
+    std::vector<Transform2> out = arrayItemTransforms(*ins.array);
+    for (Transform2& t : out)
+        t = inst * t;
+    return out;
 }
 
 Result<void> validateBlockName(const Document& doc, std::string_view name, BlockId ignore) {
@@ -119,8 +130,8 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
             continue;
         if (const auto* ins = entityAs<InsertData>(*e)) {
             if (const BlockDef* inner = doc.block(ins->block))
-                box.merge(contentBounds(doc, *inner, t * instanceTransform(*ins, inner->base),
-                                        depth + 1, ins));
+                for (const Transform2& it : instanceTransforms(*ins, inner->base))
+                    box.merge(contentBounds(doc, *inner, t * it, depth + 1, ins));
             continue;
         }
         std::optional<Entity> shown;
@@ -151,7 +162,10 @@ BBox2 insertBounds(const Document& doc, const Entity& insert) {
     const BlockDef* def = doc.block(ins->block);
     if (!def)
         return {};
-    return contentBounds(doc, *def, instanceTransform(*ins, def->base), 0, ins);
+    BBox2 box;
+    for (const Transform2& t : instanceTransforms(*ins, def->base))
+        box.merge(contentBounds(doc, *def, t, 0, ins));
+    return box;
 }
 
 BBox2 blockBounds(const Document& doc, BlockId block) {
@@ -169,7 +183,8 @@ std::vector<Entity> snapGeometry(const Document& doc, const Entity& insert) {
     const BlockDef* def = doc.block(ins->block);
     if (!def)
         return {};
-    f.contents(insert, instanceTransform(*ins, def->base), 0);
+    for (const Transform2& t : instanceTransforms(*ins, def->base))
+        f.contents(insert, t, 0);
     return std::move(f.out);
 }
 

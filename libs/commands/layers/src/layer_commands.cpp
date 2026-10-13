@@ -323,6 +323,36 @@ public:
     }
 };
 
+class ActiveOnlyCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ACTIVEONLY"; }
+    std::vector<std::string> defaultAliases() const override { return {"AO"}; }
+    std::string_view description() const override {
+        return "Draw, pick and edit only on the current layer (and its sub-layers)";
+    }
+    Task run(CommandContext& ctx) override {
+        ctx.setUndoLabel("ACTIVEONLY");
+        cmd::KeywordOptions opts;
+        opts.keywords = {"On", "Off", "Toggle"};
+        opts.defaultKeyword = "Toggle";
+        auto k = co_await ctx.getKeyword("Active only", opts);
+        if (!k.ok())
+            co_return;
+        bool on = k.keyword == "On"    ? true
+                  : k.keyword == "Off" ? false
+                                       : !ctx.doc().header().activeOnly;
+        auto r = setActiveOnly(ctx.doc(), ctx.tx(), on);
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message(on ? "Active Only is on: only layer " +
+                             layerPath(ctx.doc(), ctx.doc().header().currentLayer) +
+                             " (and its sub-layers) can be picked or edited."
+                       : "Active Only is off.");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeLayerPanelCommand() {
@@ -330,6 +360,9 @@ std::unique_ptr<cmd::Command> makeLayerPanelCommand() {
 }
 std::unique_ptr<cmd::Command> makeLayerCommand() {
     return std::make_unique<LayerCommand>();
+}
+std::unique_ptr<cmd::Command> makeActiveOnlyCommand() {
+    return std::make_unique<ActiveOnlyCommand>();
 }
 std::unique_ptr<cmd::Command> makeLayerCurrentCommand() {
     return std::make_unique<LayerCurrentCommand>();

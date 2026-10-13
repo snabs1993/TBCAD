@@ -56,6 +56,9 @@ enum class DeleteMode {
 // and, in LeafOnly mode, a layer with sub-layers.
 Result<void> deleteLayer(const Document& doc, Transaction& tx, LayerId id, DeleteMode mode);
 
+// "Active only" mode: layers outside the current layer's branch behave as locked.
+Result<void> setActiveOnly(const Document& doc, Transaction& tx, bool on);
+
 Result<void> setCurrentLayer(const Document& doc, Transaction& tx, LayerId id);
 Result<void> setOn(const Document& doc, Transaction& tx, LayerId id, bool on);
 Result<void> setFrozen(const Document& doc, Transaction& tx, LayerId id, bool frozen);

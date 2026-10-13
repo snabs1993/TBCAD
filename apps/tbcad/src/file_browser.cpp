@@ -4,6 +4,7 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cctype>
 #include <system_error>
 
 namespace tbcad::app {
@@ -26,6 +27,23 @@ void FileBrowser::open(Mode mode, fs::path startDir, std::string suggestedName,
     refresh();
 }
 
+// extension_ holds one or more extensions separated by ';' (".tbcad;.dxf"), compared ignoring case.
+bool FileBrowser::extensionMatches(const fs::path& p) const {
+    std::string e = p.extension().string();
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::size_t start = 0;
+    while (start <= extension_.size()) {
+        std::size_t end = extension_.find(';', start);
+        if (end == std::string::npos)
+            end = extension_.size();
+        if (extension_.substr(start, end - start) == e)
+            return true;
+        start = end + 1;
+    }
+    return false;
+}
+
 void FileBrowser::refresh() {
     items_.clear();
     error_.clear();
@@ -37,7 +55,7 @@ void FileBrowser::refresh() {
         std::string name = it->path().filename().string();
         if (!name.empty() && name[0] == '.')
             continue;
-        if (!isDir && !extension_.empty() && it->path().extension() != extension_)
+        if (!isDir && !extension_.empty() && !extensionMatches(it->path()))
             continue;
         items_.push_back({name, isDir});
     }
