@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,10 @@
 #include "tbcad/core/core.h"
 #include "tbcad/render/camera.h"
 #include "tbcad/render/overlay.h"
+
+namespace tbcad::index {
+class SpatialIndex;
+}
 
 namespace tbcad::ui {
 
@@ -20,7 +25,18 @@ struct PanelContext {
     const render::Camera2D* camera = nullptr;
     // Runs a command line exactly as if the user had typed it ("LAYER", "-LAYER N Walls").
     std::function<void(const std::string&)> runCommand{};
+    // Snap marker / tracking line of the point prompt in progress (overlay drawers only).
+    const cmd::FilterFeedback* feedback = nullptr;
 };
+
+// The drawing a command module works on. Passed to the session hooks whenever a different
+// document becomes current, and once when the hook is installed.
+struct SessionInfo {
+    Document* doc = nullptr;
+    const index::SpatialIndex* index = nullptr;
+    cmd::IHost* host = nullptr;
+};
+using SessionHookFn = std::function<void(const SessionInfo&)>;
 
 // Panels are drawn with Dear ImGui by the module that registers them: the application calls
 // drawFn inside a window it created. The function may include <imgui.h> itself.
@@ -68,12 +84,30 @@ public:
                          std::function<void(bool)> set);
     void addOverlayDrawer(OverlayDrawFn fn);
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
+    // Point filters (osnap, polar/ortho, grid snap ...). The registry owns them; the lowest
+    // `order` that returns a point wins. AppCore installs them into every command runner.
+    void addPointFilter(int order, std::unique_ptr<cmd::PointFilter> filter);
+    // Extends typed point input (direct distance ...). Not owned: the pointer must outlive the
+    // application. A later call replaces the earlier one; nullptr clears it.
+    void setLineParser(cmd::CommandLineParser* parser) { lineParser_ = parser; }
+    // Called by AppCore each time a document becomes current (new, open, recover).
+    void addSessionHook(SessionHookFn fn) {
+        if (fn)
+            sessionHooks_.push_back(std::move(fn));
+    }
 
     const std::vector<PanelInfo>& panels() const { return panels_; }
     const std::vector<MenuItemInfo>& menuItems() const { return menuItems_; }
     const std::vector<StatusToggle>& statusToggles() const { return toggles_; }
     const std::vector<OverlayDrawFn>& overlayDrawers() const { return overlays_; }
     const std::vector<PropertySection>& propertySections() const { return sections_; }
+    struct PointFilterEntry {
+        int order = 0;
+        std::unique_ptr<cmd::PointFilter> filter{};
+    };
+    const std::vector<PointFilterEntry>& pointFilters() const { return filters_; }
+    cmd::CommandLineParser* lineParser() const { return lineParser_; }
+    const std::vector<SessionHookFn>& sessionHooks() const { return sessionHooks_; }
     // Sections registered for this entity kind, in registration order.
     std::vector<const PropertySection*> sectionsFor(EntityKind kind) const;
 
@@ -83,6 +117,9 @@ private:
     std::vector<StatusToggle> toggles_{};
     std::vector<OverlayDrawFn> overlays_{};
     std::vector<PropertySection> sections_{};
+    std::vector<PointFilterEntry> filters_{};
+    cmd::CommandLineParser* lineParser_ = nullptr;
+    std::vector<SessionHookFn> sessionHooks_{};
 };
 
 }  // namespace tbcad::ui

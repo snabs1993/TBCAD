@@ -47,6 +47,11 @@ void UiRegistry::addPropertySection(EntityKind kind, PropertyDrawFn draw) {
         sections_.push_back({kind, std::move(draw)});
 }
 
+void UiRegistry::addPointFilter(int order, std::unique_ptr<cmd::PointFilter> filter) {
+    if (filter)
+        filters_.push_back({order, std::move(filter)});
+}
+
 std::vector<const PropertySection*> UiRegistry::sectionsFor(EntityKind kind) const {
     std::vector<const PropertySection*> out;
     for (const auto& s : sections_)

@@ -1,0 +1,62 @@
+# TBCAD hatch patterns. Written from scratch for TBCAD; MIT licensed like the rest of the project.
+#
+# Format (one pattern per [NAME] section):
+#   description = free text
+#   solid       = yes            (a pattern with no lines: a solid fill)
+#   line        = angle | origin x,y | delta dx,dy | dash list
+#
+# All lengths are millimetres at pattern scale 1, angles are degrees counter-clockwise from +X.
+# One `line` is a family of parallel lines: the first passes through `origin`; every next line is
+# shifted by `dx` along the line and `dy` perpendicular to it (to the left of the direction).
+# The dash list alternates drawn and skipped lengths: a positive number is a dash, a negative
+# number a gap, 0 a dot. An empty list is a continuous line. The dash cycle starts at the point
+# where each line crosses its own origin position (origin + k*delta).
+
+[SOLID]
+description = Solid fill
+solid = yes
+
+[LINE45]
+description = Diagonal lines at 45 degrees
+line = 45 | 0,0 | 0,3 |
+
+[LINE0]
+description = Horizontal lines
+line = 0 | 0,0 | 0,3 |
+
+[CROSS45]
+description = Diagonal crosshatch
+line = 45 | 0,0 | 0,3 |
+line = 135 | 0,0 | 0,3 |
+
+[GRID]
+description = Square grid
+line = 0 | 0,0 | 0,6 |
+line = 90 | 0,0 | 0,6 |
+
+[BRICK]
+description = Running-bond brickwork, brick 12 x 6
+line = 0 | 0,0 | 0,6 |
+line = 90 | 0,0 | 0,12 | 6,-6
+line = 90 | 6,6 | 0,12 | 6,-6
+
+[DOTS]
+description = Regular dots
+line = 0 | 0,0 | 0,4 | 0,-4
+
+[SAND]
+description = Scattered dots (fixed random seed 20261013)
+line = 109.9 | 1.93,8.79 | 4.56,6.31 | 0,-7.84
+line = 74.7 | 6.18,5.94 | 4.14,8.53 | 0,-10.05
+line = 13.3 | 2.21,7.27 | 4.12,5.42 | 0,-6.5
+line = 23.2 | 4.52,7.28 | 0.23,7.69 | 0,-6.35
+line = 105.4 | 6.09,3.25 | 2.09,7.69 | 0,-9.36
+line = 84.6 | 9.29,5.61 | 2.38,6.83 | 0,-10.35
+line = 43.9 | 7.32,3.06 | 4.2,7.75 | 0,-9.91
+line = 18.4 | 6.44,0.46 | 4.93,7.68 | 0,-5.42
+
+[EARTH]
+description = Earth: layered dashes with short slanted ticks
+line = 0 | 0,0 | 0,6 | 8,-3
+line = 0 | 4,3 | 0,6 | 3,-8
+line = 60 | 1,0 | 7,7 | 2,-5

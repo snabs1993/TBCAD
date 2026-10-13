@@ -863,6 +863,15 @@ Document& Transaction::doc() const {
     return *doc_;
 }
 
+std::vector<EntityId> Transaction::touchedEntities() const {
+    std::vector<EntityId> ids;
+    ids.reserve(touched_.size());
+    for (const auto& kv : touched_)
+        ids.push_back(kv.first);
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
 void Transaction::touchEntity(EntityId id) {
     if (id.value >= startNextId_ || touched_.count(id))
         return;
