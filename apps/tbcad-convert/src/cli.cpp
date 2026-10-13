@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 
+#include "export/export.h"
 #include "tbcad/core/document.h"
 #include "tbcad/dxf/encoding.h"
 #include "tbcad/dxf/reader.h"
@@ -21,17 +22,27 @@ namespace {
 
 const char* kUsage =
     "usage: tbcad-convert input.dxf -o output.tbcad [options]\n"
+    "       tbcad-convert input.tbcad -o output.dxf [export options]\n"
+    "\n"
+    "A .tbcad input is exported to DXF, anything else is imported from DXF.\n"
     "\n"
     "options:\n"
-    "  -o, --output FILE       the .tbcad file to write (required)\n"
+    "  -o, --output FILE       the file to write (required)\n"
     "  --report FILE           write a JSON report (counts, units, encoding, warnings)\n"
+    "  -q, --quiet             print nothing except errors\n"
+    "  -h, --help              show this text\n"
+    "\n"
+    "import options (DXF -> .tbcad):\n"
     "  --units UNIT            treat the drawing as being in UNIT (mm, cm, m, km, in, ft, yd, mi\n"
     "                          or a $INSUNITS number) instead of what the file says\n"
     "  --encoding NAME         text encoding of the file (utf-8, cp874, cp1252, ...)\n"
     "  --split-layers SEP      turn layer names like A~b into a sub-layer b of A (SEP = ~)\n"
     "  --no-dimension-graphics do not keep the drawn graphics of dimensions\n"
-    "  -q, --quiet             print nothing except errors\n"
-    "  -h, --help              show this text\n"
+    "\n"
+    "export options (.tbcad -> DXF):\n"
+    "  --version V             r2000 (default, AC1015), r12 (AC1009) or r2007 (AC1021, UTF-8)\n"
+    "  --utf8                  same as --version r2007\n"
+    "  --layer-separator SEP   joins sub-layer names in DXF (default ~), e.g. S-FLOOR~edge\n"
     "\n"
     "exit codes: 0 converted, 1 converted with warnings, 2 failed\n";
 
@@ -111,6 +122,7 @@ std::string jsonString(const std::string& s) {
 int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream& err) {
     std::string input, output, reportPath;
     dxf::ImportOptions options;
+    dxf::ExportOptions exportOptions;
     bool quiet = false;
 
     for (std::size_t i = 0; i < args.size(); ++i) {
@@ -162,6 +174,24 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             options.splitLayers = *v;
         } else if (a == "--no-dimension-graphics") {
             options.dimensionGraphics = false;
+        } else if (a == "--version") {
+            auto v = value("a DXF version");
+            if (!v)
+                return kExitFailed;
+            std::optional<dxf::DxfVersion> version = dxf::parseVersion(*v);
+            if (!version) {
+                err << "tbcad-convert: unknown DXF version \"" << *v
+                    << "\" (use r12, r2000 or r2007)\n";
+                return kExitFailed;
+            }
+            exportOptions.version = *version;
+        } else if (a == "--utf8") {
+            exportOptions.version = dxf::DxfVersion::R2007;
+        } else if (a == "--layer-separator") {
+            auto v = value("a separator");
+            if (!v)
+                return kExitFailed;
+            exportOptions.layerSeparator = *v;
         } else if (!a.empty() && a[0] == '-') {
             err << "tbcad-convert: unknown option " << a << "\n" << kUsage;
             return kExitFailed;
@@ -175,6 +205,16 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     if (input.empty() || output.empty()) {
         err << "tbcad-convert: an input file and -o output are required\n" << kUsage;
         return kExitFailed;
+    }
+
+    if (lower(std::filesystem::path(input).extension().string()) == ".tbcad") {
+        ExportArgs exportArgs;
+        exportArgs.input = input;
+        exportArgs.output = output;
+        exportArgs.reportPath = reportPath;
+        exportArgs.options = exportOptions;
+        exportArgs.quiet = quiet;
+        return runExport(exportArgs, out, err);
     }
 
     auto fail = [&](const std::string& message, const dxf::Report& report) {

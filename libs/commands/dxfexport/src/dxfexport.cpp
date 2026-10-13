@@ -1,0 +1,125 @@
+#include "tbcad/dxfexport/dxfexport.h"
+
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+
+#include "tbcad/cmd/cmd.h"
+#include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
+
+namespace tbcad::dxfexport {
+
+namespace {
+
+namespace fs = std::filesystem;
+
+// Typed names are UTF-8 on every platform.
+fs::path pathOf(const std::string& utf8) {
+    return fs::path(std::u8string(utf8.begin(), utf8.end()));
+}
+
+std::string summaryLine(const dxf::Report& report) {
+    return std::to_string(report.count(dxf::Severity::Warning)) + " warning(s), " +
+           std::to_string(report.count(dxf::Severity::Error)) + " error(s)";
+}
+
+// EXPORTDXF: file name, then the DXF version. Writes the whole drawing; nothing in the document
+// changes.
+class ExportDxf final : public cmd::Command {
+public:
+    std::string_view name() const override { return "EXPORTDXF"; }
+    std::string_view description() const override { return "Save the drawing as a DXF file"; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions so;
+        so.defaultValue = "drawing.dxf";
+        auto path = co_await ctx.getString("Enter DXF file name", std::move(so));
+        if (!path.ok())
+            co_return;
+
+        cmd::KeywordOptions ko;
+        ko.keywords = {"R2000", "R12", "R2007"};
+        ko.defaultKeyword = "R2000";
+        auto ver = co_await ctx.getKeyword("DXF version", std::move(ko));
+        if (ver.status != cmd::Status::Keyword)
+            co_return;
+
+        dxf::ExportOptions opt;
+        opt.version = dxf::parseVersion(ver.keyword).value_or(dxf::DxfVersion::R2000);
+        dxf::Report report;
+        auto res = dxf::exportDxf(ctx.doc(), opt, report);
+        if (!res) {
+            ctx.message("EXPORTDXF failed: " + res.error().message);
+            co_return;
+        }
+        const fs::path out = pathOf(path.text);
+        const fs::path tmp = fs::path(out).concat(".tmp");
+        {
+            std::ofstream f(tmp, std::ios::binary);
+            f.write(res.value().bytes.data(),
+                    static_cast<std::streamsize>(res.value().bytes.size()));
+            if (!f) {
+                ctx.message("Cannot write " + path.text);
+                co_return;
+            }
+        }
+        std::error_code ec;
+        fs::rename(tmp, out, ec);
+        if (ec) {
+            fs::remove(tmp, ec);
+            ctx.message("Cannot write " + path.text);
+            co_return;
+        }
+        ctx.message("Saved " + path.text + " (" + std::string(dxf::versionCode(opt.version)) +
+                    "), " + summaryLine(report));
+    }
+};
+
+// IMPORTDXF: reads a DXF file and adds its contents to the open drawing (one undo step).
+class ImportDxf final : public cmd::Command {
+public:
+    std::string_view name() const override { return "IMPORTDXF"; }
+    std::string_view description() const override { return "Add the contents of a DXF file"; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto path = co_await ctx.getString("Enter DXF file name");
+        if (!path.ok())
+            co_return;
+
+        std::ifstream f(pathOf(path.text), std::ios::binary);
+        if (!f) {
+            ctx.message("Cannot open " + path.text);
+            co_return;
+        }
+        std::vector<std::byte> bytes;
+        {
+            std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            bytes.resize(raw.size());
+            std::memcpy(bytes.data(), raw.data(), raw.size());
+        }
+        dxf::Report report;
+        auto res = dxf::importDxf(bytes, {}, report);
+        if (!res) {
+            ctx.message("IMPORTDXF failed: " + res.error().message);
+            co_return;
+        }
+        auto merged = mergeDocument(ctx.doc(), ctx.tx(), *res.value().document);
+        if (!merged) {
+            ctx.message("IMPORTDXF failed: " + merged.error().message);
+            co_return;
+        }
+        ctx.message("Imported " + std::to_string(merged.value().entities) + " object(s) from " +
+                    path.text + ", " + summaryLine(report));
+    }
+};
+
+}  // namespace
+
+void registerCommands(cmd::Registry& registry) {
+    (void)registry.add(std::make_unique<ExportDxf>());
+    (void)registry.add(std::make_unique<ImportDxf>());
+}
+
+}  // namespace tbcad::dxfexport
