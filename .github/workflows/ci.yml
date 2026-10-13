@@ -38,12 +38,15 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+        # libegl1 + Mesa give the render tests a software OpenGL context (llvmpipe, no GPU).
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang libegl1 libegl-mesa0 libgl1-mesa-dri
       - name: Configure
         run: cmake --preset linux-clang-debug -DTBCAD_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build --preset linux-clang-debug
       - name: Test
+        env:
+          TBCAD_REQUIRE_GL: "1"  # a missing GL context fails instead of skipping the GL smoke tests
         run: ctest --preset linux-clang-debug
 
   format:
