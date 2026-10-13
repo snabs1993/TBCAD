@@ -2,6 +2,7 @@
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/underlay/pdf.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::block_cmds {
@@ -46,13 +47,19 @@ const char* stateText(xref::State s) {
     return "";
 }
 
-// XATTACH [XA]: attaches a .tbcad or .dxf file as an external reference and inserts it.
+// XATTACH [XA]: attaches a .tbcad, .dxf or .pdf file as an external reference and inserts it.
+// PDFATTACH [PA] is the same for a PDF page: it also asks for the page and how much to fade it.
 class XAttachCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "XATTACH"; }
-    std::vector<std::string> defaultAliases() const override { return {"XA"}; }
+    explicit XAttachCommand(bool pdf) : pdf_(pdf) {}
+
+    std::string_view name() const override { return pdf_ ? "PDFATTACH" : "XATTACH"; }
+    std::vector<std::string> defaultAliases() const override {
+        return pdf_ ? std::vector<std::string>{"PA"} : std::vector<std::string>{"XA"};
+    }
     std::string_view description() const override {
-        return "Attach a drawing as an external reference";
+        return pdf_ ? "Attach a PDF page as an underlay to look at and trace"
+                    : "Attach a drawing as an external reference";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -62,13 +69,40 @@ public:
         xref::Source source;
         std::string stored;
         for (;;) {
-            auto f = co_await ctx.getString("Enter the .tbcad or .dxf file to attach");
+            auto f = co_await ctx.getString(pdf_ ? "Enter the .pdf file to attach"
+                                                 : "Enter the .tbcad, .dxf or .pdf file to attach");
             if (!f.ok())
                 co_return;
             stored = cmd::trim(f.text);
             if (stored.size() >= 2 && stored.front() == '"' && stored.back() == '"')
                 stored = stored.substr(1, stored.size() - 2);
-            auto loaded = xref::loadSource(xref::resolvePath(stored, hostFile));
+            if (pdf_) {
+                const underlay::Spec spec = underlay::parseSpec(stored);
+                auto pages = underlay::pdfPageCount(xref::resolvePath(stored, hostFile));
+                if (!pages) {
+                    ctx.message(pages.error().message);
+                    continue;
+                }
+                underlay::PdfOptions options = spec.pdf;
+                if (!spec.hasSpec) {
+                    if (pages.value() > 1) {
+                        auto pg = co_await ctx.getInteger(
+                            "Enter the page number (1-" + std::to_string(pages.value()) + ") <1>",
+                            cmd::IntOptions{.defaultValue = 1});
+                        if (!pg.ok())
+                            co_return;
+                        options.page =
+                            static_cast<int>(std::clamp<long long>(pg.value, 1, pages.value()));
+                    }
+                    auto fd = co_await ctx.getReal("Enter the fade, 0 to 90 percent <50>",
+                                                   cmd::RealOptions{.defaultValue = 50});
+                    if (!fd.ok())
+                        co_return;
+                    options.fadePercent = std::clamp(fd.value, 0.0, 90.0);
+                }
+                stored = underlay::makeSpec(spec.file, options);
+            }
+            auto loaded = xref::loadStored(stored, hostFile);
             if (loaded.ok()) {
                 source = std::move(loaded.value());
                 break;
@@ -153,6 +187,9 @@ public:
         ctx.message("Attached \"" + blockName + "\": " + std::to_string(sum.entities) +
                     " objects, " + std::to_string(sum.layers) + " layers");
     }
+
+private:
+    bool pdf_;
 };
 
 // XRELOAD [XR]: reloads external references from their files.
@@ -189,7 +226,7 @@ public:
         std::size_t done = 0;
         for (BlockId id : targets) {
             const std::string blockName = doc.block(id)->name;
-            auto loaded = xref::loadSource(xref::resolvePath(doc.block(id)->xrefPath, hostFile));
+            auto loaded = xref::loadStored(doc.block(id)->xrefPath, hostFile);
             if (!loaded) {
                 ctx.message("\"" + blockName + "\": " + loaded.error().message);
                 continue;
@@ -301,7 +338,11 @@ public:
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeXAttachCommand() {
-    return std::make_unique<XAttachCommand>();
+    return std::make_unique<XAttachCommand>(false);
+}
+
+std::unique_ptr<cmd::Command> makePdfAttachCommand() {
+    return std::make_unique<XAttachCommand>(true);
 }
 std::unique_ptr<cmd::Command> makeXReloadCommand() {
     return std::make_unique<XReloadCommand>();

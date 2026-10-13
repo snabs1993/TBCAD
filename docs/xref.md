@@ -25,7 +25,8 @@ Everything the source brings is renamed so it cannot clash with the host:
 
 | Command | Alias | What it does |
 |---|---|---|
-| `XATTACH` | `XA` | Asks for a `.tbcad` or `.dxf` file and a name (default: the file name), attaches it and inserts it (point, `Scale`, `Rotate`; Enter = origin). Esc undoes the attach. |
+| `PDFATTACH` | `PA` | Attaches a PDF page as a faded vector underlay (`docs/underlay.md`). |
+| `XATTACH` | `XA` | Asks for a `.tbcad`, `.dxf` or `.pdf` file and a name (default: the file name), attaches it and inserts it (point, `Scale`, `Rotate`; Enter = origin). Esc undoes the attach. |
 | `XRELOAD` | `XR` | Reloads one xref by name or `All` (default). Inserts stay where they are. One undo step. |
 | `XDETACH` | | Removes the xref: its inserts, block, nested blocks and the layers nothing uses. |
 | `XBIND` | `XB` | Makes the xref an ordinary block (the path is dropped). Its layers and blocks stay as they are. |

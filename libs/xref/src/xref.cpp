@@ -12,6 +12,7 @@
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::xref {
 
@@ -286,7 +287,8 @@ void eraseLayerTree(Transaction& tx, const Document& doc, LayerId root) {
 }  // namespace
 
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile) {
-    std::filesystem::path p{std::u8string(stored.begin(), stored.end())};
+    const std::string plain = underlay::parseSpec(stored).file;
+    std::filesystem::path p{std::u8string(plain.begin(), plain.end())};
     if (p.is_absolute() || hostFile.empty())
         return p;
     return hostFile.parent_path() / p;
@@ -316,11 +318,49 @@ std::string defaultName(const std::filesystem::path& file) {
     return s.empty() ? "xref" : s;
 }
 
+namespace {
+
+Result<Source> loadPdf(const std::filesystem::path& file, const underlay::PdfOptions& options) {
+    underlay::PdfReport report;
+    auto doc = underlay::importPdfFile(file, options, &report);
+    if (!doc)
+        return doc.error();
+    Source out;
+    out.doc = std::move(doc.value());
+    out.stamp = fileStamp(file);
+    out.warnings = report.notes.size();
+    return out;
+}
+
+}  // namespace
+
+Result<Source> loadStored(std::string_view stored, const std::filesystem::path& hostFile) {
+    const std::filesystem::path file = resolvePath(stored, hostFile);
+    if (underlay::isPdfPath(stored)) {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(file, ec))
+            return makeError(ErrorCode::NotFound, "Cannot find the file " + file.string());
+        return loadPdf(file, underlay::parseSpec(stored).pdf);
+    }
+    return loadSource(file);
+}
+
+bool isUnderlayPath(std::string_view stored) {
+    return underlay::isPdfPath(stored);
+}
+
+bool isUnderlay(const Document& doc, BlockId block) {
+    const BlockDef* def = doc.block(block);
+    return def && !def->xrefPath.empty() && isUnderlayPath(def->xrefPath);
+}
+
 Result<Source> loadSource(const std::filesystem::path& file) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(file, ec))
         return makeError(ErrorCode::NotFound, "Cannot find the file " + file.string());
     const std::string ext = lower(file.extension().string());
+    if (ext == ".pdf")
+        return loadPdf(file, {});
     Source out;
     out.stamp = fileStamp(file);
     if (ext == ".tbcad") {
@@ -346,7 +386,7 @@ Result<Source> loadSource(const std::filesystem::path& file) {
         out.doc = std::move(res.value().document);
         return out;
     }
-    return makeError(ErrorCode::Unsupported, "Only .tbcad and .dxf files can be attached");
+    return makeError(ErrorCode::Unsupported, "Only .tbcad, .dxf and .pdf files can be attached");
 }
 
 Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,

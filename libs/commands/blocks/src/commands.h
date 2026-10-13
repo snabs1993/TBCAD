@@ -18,6 +18,7 @@ std::unique_ptr<cmd::Command> makeAttDefCommand();
 std::unique_ptr<cmd::Command> makeAttEditCommand();
 std::unique_ptr<cmd::Command> makeAttSyncCommand();
 std::unique_ptr<cmd::Command> makeXAttachCommand();
+std::unique_ptr<cmd::Command> makePdfAttachCommand();
 std::unique_ptr<cmd::Command> makeXReloadCommand();
 std::unique_ptr<cmd::Command> makeXDetachCommand();
 std::unique_ptr<cmd::Command> makeXBindCommand();

@@ -41,15 +41,22 @@ enum class State {
 };
 
 // Resolves a stored path: absolute paths stay, relative ones are taken from the folder of the
-// host drawing (empty `hostFile` = the current folder).
+// host drawing (empty `hostFile` = the current folder). An options part ("plan.pdf#page=2,fade=60",
+// see tbcad/underlay/pdf.h) is not a part of the file name and is dropped.
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile);
 // Last-write time in nanoseconds since the Unix epoch; 0 when the file cannot be read.
 std::int64_t fileStamp(const std::filesystem::path& file);
 // A block name for a file: its stem with characters a block name cannot hold replaced.
 std::string defaultName(const std::filesystem::path& file);
 
-// Reads a .tbcad or .dxf file by its extension.
+// Reads a .tbcad, .dxf or .pdf file by its extension. A PDF gives page 1 with the default fade.
 Result<Source> loadSource(const std::filesystem::path& file);
+// Reads the file a block stores (the path as typed, with its options): the way to reload.
+Result<Source> loadStored(std::string_view stored, const std::filesystem::path& hostFile);
+// True when the stored path is an underlay (PDF page) and not another drawing: its geometry is
+// only a picture to look at, snapping skips it.
+bool isUnderlayPath(std::string_view stored);
+bool isUnderlay(const Document& doc, BlockId block);
 
 // Creates the block `name` as an xref of `stored` (the path as the user typed it) and fills it
 // from `source`. The block name must be free. Returns the new block.
