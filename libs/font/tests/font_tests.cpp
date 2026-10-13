@@ -350,3 +350,22 @@ TEST_CASE("bundled stroke font loads and covers ASCII") {
     for (char32_t c = 0x21; c < 0x7F; ++c)
         CHECK_MESSAGE(lib.strokes(r.value(), c).paths.size() > 0, "missing U+" << (unsigned)c);
 }
+
+TEST_CASE("bundled stroke font covers the Thai block and places marks") {
+    FontLibrary lib;
+    FontId f = lib.loadBundledStroke().value();
+    for (char32_t c = 0x0E01; c <= 0x0E2E; ++c)
+        CHECK_MESSAGE(lib.hasGlyph(f, c), "missing consonant U+" << std::hex << (unsigned)c);
+    for (char32_t c : {0xE2F, 0xE30, 0xE31, 0xE32, 0xE33, 0xE34, 0xE35, 0xE36, 0xE37, 0xE38,
+                       0xE39, 0xE3A, 0xE3F, 0xE40, 0xE41, 0xE42, 0xE43, 0xE44, 0xE45, 0xE46,
+                       0xE47, 0xE48, 0xE49, 0xE4A, 0xE4B, 0xE4C, 0xE4D, 0xE4E, 0xE50, 0xE59})
+        CHECK_MESSAGE(lib.hasGlyph(f, c), "missing U+" << std::hex << (unsigned)c);
+    // "ก้อง": the tone mark sits on the consonant, so it drops to the vowel-less height
+    auto runs = lib.shape(f, "\xE0\xB8\x81\xE0\xB9\x89\xE0\xB8\xAD\xE0\xB8\x87");
+    auto g = flat(runs);
+    REQUIRE(g.size() == 4);
+    CHECK(g[1].xAdvance == 0);
+    CHECK(g[1].yOffset < 0);
+    CHECK(g[2].xAdvance > 0);
+    CHECK(runs.size() == 1);  // no fallback font was needed
+}

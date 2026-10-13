@@ -111,5 +111,9 @@ s ...
 
 API: `FontLibrary::loadStroke(path)`, `loadStrokeFromMemory(text)`, `loadBundledStroke()`,
 `isStroke(id)` and `strokes(id, glyphId)` (the glyph id is the code point). `shape()` works on
-stroke fonts like on any other font; `outline()` is empty for them. The bundled font is regenerated
-with `python3 tools/fonts/make_stroke_font.py`.
+stroke fonts like on any other font; `outline()` is empty for them. The bundled font covers ASCII, common CAD symbols (° ± × ÷ ² ³ µ Ø ø Δ Φ Ω ⌀) and the whole Thai
+block (consonants, vowels, tone marks, digits, ฿). Thai marks have no GPOS rules in a stroke font:
+upper vowels and tone marks are centred over the previous base letter, and a tone mark with no upper
+vowel under it drops by the `tonedrop` value so it sits at vowel height. The bundled font is
+regenerated with `python3 tools/fonts/make_stroke_font.py` (Latin) and `tools/fonts/thai_glyphs.py`
+(Thai); every glyph is original work of the TBCAD contributors.
