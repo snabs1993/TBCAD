@@ -26,6 +26,16 @@ Callbacks take `(EntityId, const BBox2&)`. Return `false` to stop the query earl
 `void` continues). Results come in no particular order. Do not modify the index from a callback.
 Reads are thread-safe while nobody writes.
 
+**Single writer.** `SpatialIndex` has no locks. Any number of threads may read at once, but a
+write (`bulkLoad`, `insert`, `remove`, `update`, `clear`, `rebalance`) needs the caller to be the only
+user of the index at that moment. In the application the `DocumentIndexer` is the only writer and it
+runs on the thread that commits the transaction; code on other threads must either not touch the
+index or be stopped while a commit is in progress.
+
+**Numbers in CI.** The `perf` job in `.github/workflows/ci.yml` builds a Release configuration and
+prints the 1 M box bulk load, the viewport query and the render benchmark into the job summary on
+every run (the render numbers come from Mesa's software renderer and only show trends).
+
 ## How it works
 
 - **Tree.** An R-tree with 32 entries per node. `bulkLoad` sorts box centres by a 64-bit Hilbert
