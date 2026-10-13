@@ -1,4 +1,4 @@
-set(_plot_sources src/commands.cpp src/export_file.cpp src/print_cmd.cpp src/settings.cpp src/ui.cpp)
+set(_plot_sources src/commands.cpp src/export_file.cpp src/print_cmd.cpp src/settings.cpp src/stamp.cpp src/ui.cpp)
 
 # The dialog panel draws with Dear ImGui, which only exists when the application is built.
 if(TBCAD_BUILD_APP)

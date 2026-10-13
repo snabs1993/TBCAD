@@ -11,18 +11,18 @@ Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHos
     if (settings.area == exportlib::PlotArea::Display)
         settings.window = viewWindow(host);
     const std::string layoutName = plotLayout(host);
-    return layoutName.empty() ? exportlib::buildSheet(doc, settings)
-                              : layout::buildLayoutSheet(doc, layoutName, settings);
+    auto sheet = layoutName.empty() ? exportlib::buildSheet(doc, settings)
+                                    : layout::buildLayoutSheet(doc, layoutName, settings);
+    if (sheet)
+        addPlotStamp(sheet.value(), host, settings);
+    return sheet;
 }
 
 Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
                                exportlib::PlotSettings settings, Format format,
                                const std::string& path) {
-    if (settings.area == exportlib::PlotArea::Display)
-        settings.window = viewWindow(host);
     const std::string layoutName = plotLayout(host);
-    auto sheet = layoutName.empty() ? exportlib::buildSheet(doc, settings)
-                                    : layout::buildLayoutSheet(doc, layoutName, settings);
+    auto sheet = buildPlotSheet(doc, host, settings);
     if (!sheet)
         return sheet.error();
     const std::string file = withExtension(path, format);

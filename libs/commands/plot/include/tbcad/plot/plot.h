@@ -91,6 +91,19 @@ std::string scaleText(const exportlib::PlotSettings& settings);
 Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHost& host,
                                             exportlib::PlotSettings settings);
 
+// Plot stamp: a line of text (file name, layout, date, scale, paper) in the lower-left corner of
+// the printable area, plotted with the sheet. Settings "plot.stamp" (0/1) and "plot.stampText".
+// Tokens: %file% %layout% %date% %time% %scale% %paper%.
+bool plotStampOn(const cmd::IHost& host);
+void setPlotStamp(cmd::IHost& host, bool on);
+std::string plotStampText(const cmd::IHost& host);
+void setPlotStampText(cmd::IHost& host, const std::string& text);
+std::string expandStamp(const std::string& tmpl, const cmd::IHost& host,
+                        const exportlib::PlotSheet& sheet, const exportlib::PlotSettings& settings);
+// Adds the stamp to the sheet when it is switched on.
+void addPlotStamp(exportlib::PlotSheet& sheet, const cmd::IHost& host,
+                  const exportlib::PlotSettings& settings);
+
 // Builds the sheet from the settings (Display area is resolved from the host's view) and writes the
 // file. The returned text is the one-line summary for the command line.
 Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
