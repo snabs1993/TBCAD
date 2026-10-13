@@ -94,4 +94,21 @@ Result<EntityEdit> extrimEntity(const Entity& target, const Entity& edge, Vec2 s
 // open spline), taking the end of each nearest to its pick point. Properties come from `a`.
 Result<Entity> blendCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB);
 
+// ---- PEDIT vertices / SPLINEDIT ---------------------------------------------------------------
+
+// Inserts a vertex at the point of the polyline closest to `p`, splitting a straight or arc
+// segment. Per-vertex widths are not kept.
+Result<EntityEdit> insertPolylineVertex(const Entity& e, Vec2 p);
+// Removes the vertex nearest to `near`; its neighbours are joined by a straight segment.
+Result<EntityEdit> removePolylineVertex(const Entity& e, Vec2 near);
+// Moves the vertex nearest to `near` to `to`; arc bulges are kept.
+Result<EntityEdit> movePolylineVertex(const Entity& e, Vec2 near, Vec2 to);
+
+enum class SplineFitOp { Add, Delete, Move, Close, Open };
+// Edits the fit points of a spline and fits it again. Add: a new fit point on the curve closest to
+// `a`; Delete: the fit point nearest to `a`; Move: the fit point nearest to `a` goes to `b`;
+// Close / Open change whether the curve returns to its first point. Errors when the spline has
+// no fit points or fewer than two would remain.
+Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a = {}, Vec2 b = {});
+
 }  // namespace tbcad::modify

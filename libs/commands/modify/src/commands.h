@@ -24,6 +24,8 @@ std::unique_ptr<cmd::Command> makeMatchProp();
 std::unique_ptr<cmd::Command> makeOverkill();
 std::unique_ptr<cmd::Command> makePedit();
 std::unique_ptr<cmd::Command> makeBlend();
+std::unique_ptr<cmd::Command> makeJustifyText();
+std::unique_ptr<cmd::Command> makeSplineEdit();
 std::unique_ptr<cmd::Command> makeExtrim();
 std::unique_ptr<cmd::Command> makeScaleText();
 std::unique_ptr<cmd::Command> makeSetByLayer();
