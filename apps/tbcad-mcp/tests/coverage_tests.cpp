@@ -415,3 +415,19 @@ TEST_CASE("plot: page setups, plot style tables and image export") {
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
 }
+
+TEST_CASE("symbols, wipeout flag and fields in text") {
+    Full f;
+    Json made = f.ok("insert_symbol",
+                     R"({"symbol":"grid_bubble","position":[0,0],"attributes":{"ID":"A"}})");
+    CHECK(made.find("created")->asArray().size() >= 1);
+    f.ok("insert_symbol", R"({"symbol":"north_arrow","position":[100,0],"rotation":30})");
+    CHECK(f.fails("insert_symbol", R"({"symbol":"pizza","position":[0,0]})").size() > 0);
+    std::string w = f.add(R"({"kind":"polyline","closed":true,"wipeout":true,
+        "vertices":[[0,0],[10,0],[10,10],[0,10]]})");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + w + "\"}").find("wipeout")->asBool());
+    f.ok("modify_entities", "{\"ids\":[\"" + w + "\"],\"set\":{\"wipeout\":false}}");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + w + "\"}").find("wipeout") == nullptr);
+    std::string t = f.add(R"({"kind":"text","position":[0,0],"height":2.5,"value":"%<date>%"})");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + t + "\"}").find("value")->asString() == "%<date>%");
+}

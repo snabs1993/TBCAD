@@ -115,6 +115,9 @@ Editing tools (one undo step each, `AI: <tool>`):
   selects or imports tables (.ctb); `page_setup` lists, saves, applies, assigns, renames and deletes page setups.
 - Annotation: `annotation` reads and sets the annotation scale, the scale list, whether new objects start
   annotative, and makes objects annotative with chosen scales. Entities show `annotative` and `annotativeScales`.
+- Drafting: `insert_symbol` (north arrow, grid bubble, level/section/elevation/detail marks, annotative). Any
+  text can carry a field such as `%<date>%` or `%<length:#ID:2:m>%` in its `value`. A closed polyline with
+  `wipeout: true` hides what is behind it.
 - Layers: `set_active_only`, `layer_state` (list, save, restore with `parts`, rename, delete).
 - Constraints: `list_constraints`, `add_constraint` (Coincident, Horizontal, Vertical, Parallel,
   Perpendicular, Equal, Tangent, Fix, Distance, Radius, Angle in degrees; solves and moves the geometry; a

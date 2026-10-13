@@ -93,8 +93,8 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
 }
 
 const std::set<std::string>& commonKeys() {
-    static const std::set<std::string> k{"layer",      "level",         "color",  "linetype",
-                                         "lineweight", "linetypeScale", "visible"};
+    static const std::set<std::string> k{"layer",      "level",         "color",   "linetype",
+                                         "lineweight", "linetypeScale", "visible", "wipeout"};
     return k;
 }
 const std::set<std::string>& optionalGeometryKeys() {
@@ -148,6 +148,8 @@ std::string applySet(const Document& doc, Entity& e, const Json& set) {
         e.common.linetypeScale = static_cast<float>(v->asNumber(1));
     if (const Json* v = set.find("visible"))
         e.common.visible = v->asBool(true);
+    if (const Json* v = set.find("wipeout"))
+        e.common.wipeout = v->asBool(false);
 
     bool geometry = false;
     for (const auto& [key, v] : set.asObject()) {

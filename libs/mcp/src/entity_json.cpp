@@ -895,6 +895,8 @@ Json entityToJson(const Document& doc, const Entity& e) {
     }
     if (!e.common.visible)
         o["visible"] = false;
+    if (e.common.wipeout)
+        o["wipeout"] = true;
     if (e.common.annotative) {
         o["annotative"] = true;
         Json::Array scales;
@@ -1121,6 +1123,8 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             e.common.linetypeScale = static_cast<float>(c->asNumber(1));
         if (const Json* c = j.find("visible"))
             e.common.visible = c->asBool(true);
+        if (const Json* c = j.find("wipeout"))
+            e.common.wipeout = c->asBool(false);
 
         if (k == "line") {
             e.data = LineData{pt(j, "start"), pt(j, "end")};

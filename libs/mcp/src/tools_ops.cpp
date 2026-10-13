@@ -327,6 +327,50 @@ ToolResult plotStyle(ToolContext& ctx, const Json& a) {
     return r;
 }
 
+// ---- annotative symbols -----------------------------------------------------------------------
+
+struct SymbolRow {
+    const char* name;
+    const char* command;
+    std::vector<const char*> attributes;  // in the order the command asks for them
+};
+
+const std::vector<SymbolRow>& symbolRows() {
+    static const std::vector<SymbolRow> rows{{"north_arrow", "NORTHARROW", {}},
+                                             {"grid_bubble", "GRIDBUBBLE", {"ID"}},
+                                             {"level_mark", "LEVELMARK", {"LEVEL"}},
+                                             {"section_mark", "SECTIONMARK", {"SECTION", "SHEET"}},
+                                             {"elevation_mark", "ELEVATIONMARK", {"VIEW", "SHEET"}},
+                                             {"detail_mark", "DETAILMARK", {"DETAIL", "SHEET"}}};
+    return rows;
+}
+
+ToolResult insertSymbol(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    std::string name = argString(a, "symbol");
+    const SymbolRow* row = nullptr;
+    for (const SymbolRow& r : symbolRows())
+        if (name == r.name)
+            row = &r;
+    if (!row)
+        return ToolResult::fail(
+            "symbol must be north_arrow, grid_bubble, level_mark, section_mark, elevation_mark or "
+            "detail_mark");
+    const Json* pj = a.find("position");
+    auto p = pj ? pointFromJson(*pj)
+                : Result<Vec2>(makeError(ErrorCode::InvalidArgument, "position is required"));
+    if (!p)
+        return ToolResult::fail("position: " + p.error().message);
+    std::vector<Json> in{Json(pointInput(p.value())),
+                         Json(formatDouble(argNumber(a, "rotation", 0)))};
+    const Json* attrs = a.find("attributes");
+    for (const char* tag : row->attributes) {
+        const Json* v = attrs ? attrs->find(tag) : nullptr;
+        in.push_back(Json(Json::Object{{"text", v && v->isString() ? v->asString() : ""}}));
+    }
+    return failOnProblem(runChecked(s, row->command, in));
+}
+
 // ---- annotation scale -------------------------------------------------------------------------
 
 ToolResult annotation(ToolContext& ctx, const Json& a) {
@@ -477,6 +521,18 @@ void registerOpsTools(ToolSet& tools) {
                      {"path", tString("absolute path of a .ctb file, for import")}},
                     {}),
             outMsg, false, "PLOTSTYLE", plotStyle);
+    cmdTool("insert_symbol", "Insert an annotative symbol",
+            "Puts in an annotative drafting symbol at the current annotation scale: north_arrow, "
+            "grid_bubble (ID), level_mark (LEVEL), section_mark (SECTION, SHEET), elevation_mark "
+            "(VIEW, SHEET) or detail_mark (DETAIL, SHEET). `attributes` gives the values; "
+            "`rotation` is in degrees.",
+            tObject({{"symbol", tEnum({"north_arrow", "grid_bubble", "level_mark", "section_mark",
+                                       "elevation_mark", "detail_mark"})},
+                     {"position", tPoint()},
+                     {"rotation", tNumber("degrees")},
+                     {"attributes", tAny("object {TAG: value}")}},
+                    {"symbol", "position"}),
+            outSchema({"messages", "created"}), false, "NORTHARROW", insertSymbol);
     cmdTool("annotation", "Annotation scale",
             "get: current annotation scale, whether new text/dimensions start annotative, and the "
             "scale list. set_scale (CANNOSCALE), new_objects on/off (ANNONEW), add_scale / "
