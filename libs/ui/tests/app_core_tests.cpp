@@ -445,3 +445,33 @@ TEST_CASE("command completion lists names and aliases") {
     CHECK(std::find(c.begin(), c.end(), "TESTLINE") != c.end());
     CHECK(f.core->complete("").empty());
 }
+
+namespace {
+struct SnapTo100 : cmd::PointFilter {
+    std::optional<Vec2> filter(const cmd::PointQuery&, Vec2, cmd::FilterFeedback&) override {
+        return Vec2{100, 100};
+    }
+};
+}  // namespace
+
+TEST_CASE("registered point filters apply to clicks, also after a new document") {
+    Fixture f("hook_filter");
+    UiRegistry ui;
+    ui.addPointFilter(0, std::make_unique<SnapTo100>());
+    f.core->applyUiKeybindings(ui);
+    for (int round = 0; round < 2; ++round) {
+        if (round == 1)
+            f.core->newDocument();
+        f.core->submitText("TESTLINE");
+        f.core->click(f.at({300, 300}));
+        f.core->click(f.at({400, 400}));
+        f.core->pressEscape();
+        // Both clicks snapped to (100,100).
+        bool found = false;
+        f.core->document().forEachEntity([&](const Entity& e) {
+            if (const auto* l = entityAs<LineData>(e))
+                found = found || (l->a.x == 100 && l->a.y == 100);
+        });
+        CHECK(found);
+    }
+}

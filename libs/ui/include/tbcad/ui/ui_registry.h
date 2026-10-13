@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -68,12 +69,24 @@ public:
                          std::function<void(bool)> set);
     void addOverlayDrawer(OverlayDrawFn fn);
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
+    // Point filters (osnap, polar/ortho, grid snap ...). The registry owns them; the lowest
+    // `order` that returns a point wins. AppCore installs them into every command runner.
+    void addPointFilter(int order, std::unique_ptr<cmd::PointFilter> filter);
+    // Extends typed point input (direct distance ...). Not owned: the pointer must outlive the
+    // application. A later call replaces the earlier one; nullptr clears it.
+    void setLineParser(cmd::CommandLineParser* parser) { lineParser_ = parser; }
 
     const std::vector<PanelInfo>& panels() const { return panels_; }
     const std::vector<MenuItemInfo>& menuItems() const { return menuItems_; }
     const std::vector<StatusToggle>& statusToggles() const { return toggles_; }
     const std::vector<OverlayDrawFn>& overlayDrawers() const { return overlays_; }
     const std::vector<PropertySection>& propertySections() const { return sections_; }
+    struct PointFilterEntry {
+        int order = 0;
+        std::unique_ptr<cmd::PointFilter> filter{};
+    };
+    const std::vector<PointFilterEntry>& pointFilters() const { return filters_; }
+    cmd::CommandLineParser* lineParser() const { return lineParser_; }
     // Sections registered for this entity kind, in registration order.
     std::vector<const PropertySection*> sectionsFor(EntityKind kind) const;
 
@@ -83,6 +96,8 @@ private:
     std::vector<StatusToggle> toggles_{};
     std::vector<OverlayDrawFn> overlays_{};
     std::vector<PropertySection> sections_{};
+    std::vector<PointFilterEntry> filters_{};
+    cmd::CommandLineParser* lineParser_ = nullptr;
 };
 
 }  // namespace tbcad::ui

@@ -134,6 +134,8 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
     s->sync->rebuildAll();
     s->observer = std::make_unique<AppObserver>(d, *this);
     s->runner = std::make_unique<cmd::CommandRunner>(d, s->undo, *this, registry_);
+    s->runner->setFilterChain(&filterChain_);
+    s->runner->setLineParser(lineParser_);
     s->undo.setMessageSink([this](std::string m) { print(m); });
     s->file = std::move(file);
     s->savedRevision = d.revision();
@@ -720,6 +722,12 @@ void AppCore::outOfAreaUndo() {
 // ---- settings / IHost ----------------------------------------------------------------------
 
 void AppCore::applyUiKeybindings(const UiRegistry& ui) {
+    filterChain_.clear();
+    for (const auto& f : ui.pointFilters())
+        filterChain_.add(f.filter.get(), f.order);
+    lineParser_ = ui.lineParser();
+    if (session_)
+        session_->runner->setLineParser(lineParser_);
     for (const auto& item : ui.menuItems())
         if (!item.actionId.empty())
             keybindings_.declare(item.actionId, item.defaultChord);

@@ -164,7 +164,9 @@ public:
     platform::Keybindings& keybindings() { return keybindings_; }
     const platform::AppPaths& paths() const { return paths_; }
     // Declares the default chords of the modules' menu items, then re-reads keybindings.json so
-    // the user's choices win. Call once after registerAllUi.
+    // the user's choices win. Also installs the registry's point filters and line parser into the
+    // command runner (now and for every document opened later). Call once after registerAllUi;
+    // the registry must outlive this object.
     void applyUiKeybindings(const UiRegistry& ui);
     // Adds the SNAP / GRID / ORTHO / POLAR / OSNAP toggles (stored in settings, readable by
     // drafting aids through IHost::setting("drafting.snap") ...).
@@ -197,6 +199,8 @@ private:
     void pruneSelection();
 
     cmd::Registry& registry_;
+    cmd::PointFilterChain filterChain_{};
+    cmd::CommandLineParser* lineParser_ = nullptr;
     platform::AppPaths paths_;
     platform::Settings settings_;
     platform::Keybindings keybindings_;
