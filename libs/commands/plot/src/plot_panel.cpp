@@ -29,6 +29,7 @@ struct PanelState {
     std::string sheetError{};
     std::uint64_t builtRevision = ~0ull;
     std::string builtKey{};
+    std::string styleLoaded{};
 };
 
 PanelState& state() {
@@ -136,6 +137,22 @@ void draw(ui::PanelContext& pc) {
         ImGui::EndCombo();
     }
 
+    // Plot style table.
+    const std::string styleName = plotStyleName(*pc.host);
+    if (ImGui::BeginCombo("Style", styleName.c_str())) {
+        for (const auto& n : listStyleTables(*pc.host))
+            if (ImGui::Selectable(n.c_str(), n == styleName))
+                setPlotStyleName(*pc.host, n);
+        if (ImGui::Selectable("none", false))
+            setPlotStyleName(*pc.host, "none");
+        ImGui::EndCombo();
+    }
+    if (st.styleLoaded != styleName) {
+        auto t = resolveStyleTable(*pc.host, styleName);
+        s.styleTable = t ? t.value() : nullptr;
+        st.styleLoaded = styleName;
+    }
+
     // Paper
     if (ImGui::BeginCombo("Paper", s.paperName.c_str())) {
         for (const auto& p : exportlib::paperSizes())
@@ -220,7 +237,7 @@ void draw(ui::PanelContext& pc) {
     PlotSettings built = s;
     if (built.area == PlotArea::Display)
         built.window = view;
-    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host);
+    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host) + "|" + st.styleLoaded;
     if (key != st.builtKey || pc.doc->revision() != st.builtRevision) {
         const std::string name = plotLayout(*pc.host);
         auto sheet = name.empty() ? exportlib::buildSheet(*pc.doc, built)
@@ -269,6 +286,7 @@ void draw(ui::PanelContext& pc) {
 
 void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("plot", "Plot", draw, false);
+    registerStylePanel(registry);
 }
 
 }  // namespace tbcad::plot

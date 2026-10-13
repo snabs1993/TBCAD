@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
@@ -35,6 +37,67 @@ bool getB(const cmd::IHost& h, const char* key, bool fallback) {
 }
 
 }  // namespace
+
+std::string plotStyleName(const cmd::IHost& host) {
+    auto v = host.setting("plot.style");
+    return v && !v->empty() ? *v : std::string(plotstyle::kDefaultTable);
+}
+
+void setPlotStyleName(cmd::IHost& host, const std::string& name) {
+    host.setSetting("plot.style", name);
+}
+
+std::filesystem::path plotStyleFolder(const cmd::IHost& host) {
+    auto base = host.settingsFolder();
+    return base.empty() ? base : base / "plot styles";
+}
+
+Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
+    const cmd::IHost& host, const std::string& name) {
+    using Table = std::shared_ptr<const plotstyle::PlotStyleTable>;
+    std::string lowered = name;
+    for (char& c : lowered)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (lowered.empty() || lowered == "none")
+        return Table{};
+    if (auto b = plotstyle::builtinTable(name))
+        return Table(std::make_shared<plotstyle::PlotStyleTable>(std::move(*b)));
+    std::filesystem::path path(name);
+    std::error_code ec;
+    if (!path.is_absolute() || !std::filesystem::exists(path, ec)) {
+        auto folder = plotStyleFolder(host);
+        if (!folder.empty()) {
+            for (const char* ext : {"", ".tbstyle", ".ctb"}) {
+                auto candidate = folder / (name + ext);
+                if (std::filesystem::exists(candidate, ec)) {
+                    path = candidate;
+                    break;
+                }
+            }
+        }
+    }
+    auto t = plotstyle::loadFile(path);
+    if (!t)
+        return Error{t.error().code, "Plot style table \"" + name + "\": " + t.error().message};
+    return Table(std::make_shared<plotstyle::PlotStyleTable>(std::move(t.value())));
+}
+
+std::vector<std::string> listStyleTables(const cmd::IHost& host) {
+    std::vector<std::string> out = plotstyle::builtinTableNames();
+    auto folder = plotStyleFolder(host);
+    std::error_code ec;
+    if (!folder.empty() && std::filesystem::is_directory(folder, ec)) {
+        std::vector<std::string> files;
+        for (const auto& e : std::filesystem::directory_iterator(folder, ec)) {
+            auto ext = e.path().extension().string();
+            if (ext == ".tbstyle" || ext == ".ctb")
+                files.push_back(e.path().filename().string());
+        }
+        std::sort(files.begin(), files.end());
+        out.insert(out.end(), files.begin(), files.end());
+    }
+    return out;
+}
 
 PlotSettings loadSettings(const cmd::IHost& h) {
     PlotSettings s;
@@ -79,6 +142,8 @@ PlotSettings loadSettings(const cmd::IHost& h) {
         else if (*v == "grey")
             s.color = ColorMode::Greyscale;
     }
+    if (auto t = resolveStyleTable(h, plotStyleName(h)))
+        s.styleTable = t.value();
     return s;
 }
 

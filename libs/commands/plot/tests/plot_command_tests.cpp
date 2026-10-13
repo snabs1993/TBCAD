@@ -203,3 +203,36 @@ TEST_CASE("the Layout option plots a layout at 1:1 instead of model space") {
     f.host->run("EXPORTPDF", {"Layout", "Nope", "", bad});
     CHECK_FALSE(std::filesystem::exists(bad));
 }
+
+TEST_CASE("PLOTSTYLE selects a table; the default is monochrome and None plots as drawn") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("red");
+        Entity e;
+        e.data = LineData{{0, 50}, {10000, 50}};
+        e.common.color = Color::index(1);
+        REQUIRE(tx.add(e).ok());
+        tx.commit();
+    }
+    CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
+    auto mono = f.path("mono.svg");
+    f.host->run("EXPORTSVG", {"", mono});
+    REQUIRE(std::filesystem::exists(mono));
+    auto svgMono = slurp(mono);
+    CHECK(svgMono.find("#ff0000") == std::string::npos);
+
+    f.host->run("PLOTSTYLE", {"Select", "none"});
+    CHECK(plot::plotStyleName(*f.host) == "none");
+    auto drawn = f.path("drawn.svg");
+    f.host->run("EXPORTSVG", {"", drawn});
+    CHECK(slurp(drawn).find("#ff0000") != std::string::npos);
+
+    f.host->run("PLOTSTYLE", {"Select", "grayscale.ctb"});
+    CHECK(plot::plotStyleName(*f.host) == "grayscale.ctb");
+    f.host->run("PLOTSTYLE", {"Select", "missing-table.ctb"});
+    CHECK(f.host->logContains("missing-table.ctb"));
+    CHECK(plot::plotStyleName(*f.host) == "grayscale.ctb");  // unchanged
+    f.host->run("PLOTSTYLE", {"List"});
+    CHECK(f.host->logContains("* grayscale.ctb"));
+    CHECK(f.host->logContains("  monochrome.ctb"));
+}

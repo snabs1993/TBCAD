@@ -212,6 +212,59 @@ TEST_CASE("monochrome turns red black; white is always black; greyscale") {
     CHECK(pdf.find("1 0 0 RG") != std::string::npos);
 }
 
+TEST_CASE("a plot style table maps colour, lineweight and screening per palette colour") {
+    Document doc;
+    Entity red = line({0, 0}, {100, 0});
+    red.common.color = Color::index(1);
+    red.common.lineweight = LineWeight::mm(0.25);
+    addEntity(doc, red);
+    Entity blue = line({0, 10}, {100, 10});
+    blue.common.color = Color::index(5);
+    addEntity(doc, blue);
+    Entity truecolor = line({0, 20}, {100, 20});
+    truecolor.common.color = Color::rgb(10, 200, 30);
+    addEntity(doc, truecolor);
+
+    plotstyle::PlotStyleTable t;
+    t.entries[1].color = Rgba{0, 0, 0, 255};
+    t.entries[1].lineweightMm = 0.7;
+    t.entries[5].screen = 50;
+    PlotSettings s;
+    s.styleTable = std::make_shared<plotstyle::PlotStyleTable>(t);
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    std::vector<const PlotPath*> paths;
+    for (const auto& p : sheet.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            paths.push_back(pp);
+    REQUIRE(paths.size() == 3);
+    // Red -> black, 0.7 mm.
+    CHECK(paths[0]->style.color == Rgba{0, 0, 0, 255});
+    CHECK(paths[0]->style.widthMm == doctest::Approx(0.7));
+    // Blue screened to 50%: lighter than the drawn blue, lineweight untouched.
+    const Rgba drawn = paletteColor(5);
+    CHECK(paths[1]->style.color.r > drawn.r);
+    CHECK(paths[1]->style.widthMm == doctest::Approx(0.25));
+    // A true colour is left alone.
+    CHECK(paths[2]->style.color == Rgba{10, 200, 30, 255});
+    // Monochrome mode still wins over the table.
+    s.color = ColorMode::Monochrome;
+    auto mono = buildSheet(doc, s);
+    for (const auto& p : mono.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            CHECK(pp->style.color == Rgba{0, 0, 0, 255});
+    // The built-in monochrome table makes every palette colour black.
+    s.color = ColorMode::AsDisplayed;
+    s.styleTable =
+        std::make_shared<plotstyle::PlotStyleTable>(*plotstyle::builtinTable("monochrome.ctb"));
+    auto bw = buildSheet(doc, s);
+    int black = 0;
+    for (const auto& p : bw.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            black += pp->style.color == Rgba{0, 0, 0, 255};
+    CHECK(black == 2);  // the two palette-coloured lines; the true colour stays
+}
+
 TEST_CASE("lineweights are absolute on paper; dashes scale with the plot scale") {
     Document doc;
     {

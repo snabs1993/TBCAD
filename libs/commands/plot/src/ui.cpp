@@ -6,6 +6,7 @@ namespace tbcad::plot {
 void registerUi(ui::UiRegistry& registry) {
     registry.addMenuItem("File/Plot Preview...", "PLOTPANEL", "file.plot_panel");
     registry.addMenuItem("File/Plot...", "PLOT", "file.plot", "Ctrl+P");
+    registry.addMenuItem("File/Plot Style Tables...", "PLOTSTYLE", "file.plot_styles");
     registry.addMenuItem("File/Export PDF", "EXPORTPDF", "file.export_pdf");
     registry.addMenuItem("File/Export SVG", "EXPORTSVG", "file.export_svg");
 #ifdef TBCAD_PLOT_WITH_IMGUI

@@ -4,7 +4,7 @@ tbcad_add_library(export
     src/plot.cpp
     src/plot_pdf.cpp
     src/plot_svg.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::pdf)
+  DEPENDS tbcad::core tbcad::geom tbcad::pdf tbcad::plotstyle)
 
 tbcad_add_tests(export
   SOURCES

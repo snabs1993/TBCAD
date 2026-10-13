@@ -1,11 +1,15 @@
 #pragma once
 
+#include <filesystem>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "tbcad/cmd/host.h"
 #include "tbcad/cmd/registry.h"
 #include "tbcad/core/core.h"
 #include "tbcad/export/plot.h"
+#include "tbcad/plotstyle/plotstyle.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::plot {
@@ -30,6 +34,19 @@ void setLastFile(cmd::IHost& host, Format format, const std::string& path);
 // The layout to plot (host setting "plot.layout"); empty plots model space.
 std::string plotLayout(const cmd::IHost& host);
 void setPlotLayout(cmd::IHost& host, const std::string& name);
+
+// Plot style table (setting "plot.style"): a built-in name ("monochrome.ctb" ...), a file in the
+// user "plot styles" folder, a full path to a .tbstyle / .ctb file, or "none" to plot as drawn. The
+// default is monochrome.ctb.
+std::string plotStyleName(const cmd::IHost& host);
+void setPlotStyleName(cmd::IHost& host, const std::string& name);
+// The user's folder for plot style tables (empty when the host has no settings folder).
+std::filesystem::path plotStyleFolder(const cmd::IHost& host);
+// Finds and loads a table by name. A null table with ok() means "none".
+Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(const cmd::IHost& host,
+                                                                           const std::string& name);
+// Built-in names, then the files of the user folder.
+std::vector<std::string> listStyleTables(const cmd::IHost& host);
 
 // Adds the extension for the format when the path has none.
 std::string withExtension(std::string path, Format format);

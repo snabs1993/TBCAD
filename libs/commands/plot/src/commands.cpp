@@ -22,6 +22,10 @@ std::string lower(std::string s) {
     return s;
 }
 
+std::string styleLabel(const PlotSettings& s) {
+    return s.styleTable ? (s.styleTable->name.empty() ? "styled" : s.styleTable->name) : "no style";
+}
+
 std::string summary(const PlotSettings& s, Format format) {
     std::string t = format == Format::Pdf ? "PDF" : "SVG";
     t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
@@ -29,6 +33,7 @@ std::string summary(const PlotSettings& s, Format format) {
          : s.area == PlotArea::Display ? ", Display"
                                        : ", Window";
     t += ", scale " + scaleText(s);
+    t += ", " + styleLabel(s);
     return t;
 }
 
@@ -51,8 +56,9 @@ public:
         Format format = format_;
         for (;;) {
             KeywordOptions menu;
-            menu.keywords = {"Paper",  "Orientation", "Area",  "Scale",  "Center", "Offset",
-                             "Margin", "LineWeights", "Color", "Format", "Layout", "Export"};
+            menu.keywords = {"Paper",  "Orientation", "Area",        "Scale", "Center",
+                             "Offset", "Margin",      "LineWeights", "Color", "Style",
+                             "Format", "Layout",      "Export"};
             menu.defaultKeyword = "Export";
             auto choice = co_await ctx.getKeyword("Plot " + summary(s, format), menu);
             if (choice.status == Status::Cancel)
@@ -188,6 +194,19 @@ public:
                     s.color = r.keyword == "Monochrome"  ? ColorMode::Monochrome
                               : r.keyword == "Greyscale" ? ColorMode::Greyscale
                                                          : ColorMode::AsDisplayed;
+            } else if (kw == "Style") {
+                cmd::StringOptions so;
+                so.defaultValue = plotStyleName(ctx.host());
+                auto r = co_await ctx.getString("Plot style table (name, file, or None)", so);
+                if (!r.ok())
+                    continue;
+                auto t = resolveStyleTable(ctx.host(), r.text);
+                if (!t) {
+                    ctx.message(t.error().message);
+                    continue;
+                }
+                setPlotStyleName(ctx.host(), r.text);
+                s.styleTable = t.value();
             } else if (kw == "Layout") {
                 cmd::StringOptions so;
                 so.defaultValue = plotLayout(ctx.host());
@@ -264,6 +283,99 @@ public:
     }
 };
 
+// PLOTSTYLE: choose, list, import and edit plot style tables.
+class PlotStyleCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLOTSTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"CTB"}; }
+    std::string_view description() const override {
+        return "Choose, list, import and edit plot style tables";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        KeywordOptions menu;
+        menu.keywords = {"Select", "List", "Import", "Edit", "Save"};
+        menu.defaultKeyword = "List";
+        auto choice =
+            co_await ctx.getKeyword("Plot style table: " + plotStyleName(ctx.host()), menu);
+        if (!choice.ok())
+            co_return;
+        const std::string& kw = choice.keyword;
+        if (kw == "List") {
+            const std::string cur = plotStyleName(ctx.host());
+            for (const auto& n : listStyleTables(ctx.host()))
+                ctx.message((n == cur ? "* " : "  ") + n);
+            co_return;
+        }
+        if (kw == "Select") {
+            cmd::StringOptions so;
+            so.defaultValue = plotStyleName(ctx.host());
+            auto r = co_await ctx.getString("Table name, file path, or None", so);
+            if (!r.ok())
+                co_return;
+            auto t = resolveStyleTable(ctx.host(), r.text);
+            if (!t) {
+                ctx.message(t.error().message);
+                co_return;
+            }
+            setPlotStyleName(ctx.host(), r.text);
+            ctx.message("Plot style table: " + (r.text.empty() ? std::string("None") : r.text));
+            co_return;
+        }
+        if (kw == "Import") {
+            cmd::StringOptions so;
+            auto file = co_await ctx.getString("Path of the .ctb file to import", so);
+            if (!file.ok())
+                co_return;
+            auto folder = plotStyleFolder(ctx.host());
+            if (folder.empty()) {
+                ctx.message("There is no folder for plot style tables on this system.");
+                co_return;
+            }
+            auto t = plotstyle::loadFile(file.text);
+            if (!t) {
+                ctx.message(t.error().message);
+                co_return;
+            }
+            std::error_code ec;
+            std::filesystem::create_directories(folder, ec);
+            auto name = std::filesystem::path(file.text).stem().string();
+            auto saved = plotstyle::saveFile(t.value(), folder / (name + ".tbstyle"));
+            if (!saved) {
+                ctx.message(saved.error().message);
+                co_return;
+            }
+            setPlotStyleName(ctx.host(), name + ".tbstyle");
+            ctx.message("Imported " + name + " and selected it.");
+            co_return;
+        }
+        if (kw == "Save") {  // copies the current table under a new name so it can be edited
+            auto folder = plotStyleFolder(ctx.host());
+            auto cur = resolveStyleTable(ctx.host(), plotStyleName(ctx.host()));
+            if (folder.empty() || !cur || !cur.value()) {
+                ctx.message("Nothing to save: choose a plot style table first.");
+                co_return;
+            }
+            cmd::StringOptions so;
+            auto n = co_await ctx.getString("Name for the copy", so);
+            if (!n.ok() || n.text.empty())
+                co_return;
+            std::error_code ec;
+            std::filesystem::create_directories(folder, ec);
+            plotstyle::PlotStyleTable copy = *cur.value();
+            copy.name = n.text;
+            auto saved = plotstyle::saveFile(copy, folder / (n.text + ".tbstyle"));
+            if (!saved) {
+                ctx.message(saved.error().message);
+                co_return;
+            }
+            setPlotStyleName(ctx.host(), n.text + ".tbstyle");
+            ctx.message("Saved " + n.text + ".tbstyle and selected it.");
+            co_return;
+        }
+        ctx.host().openPanel("plotstyle");  // Edit
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -276,6 +388,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makePrinterCommand());
     (void)registry.add(std::make_unique<PlotPanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
+    (void)registry.add(std::make_unique<PlotStyleCommand>());
 }
 
 }  // namespace tbcad::plot

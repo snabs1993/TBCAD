@@ -7,11 +7,13 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "tbcad/core/core.h"
+#include "tbcad/plotstyle/plotstyle.h"
 
 namespace tbcad::exportlib {
 
@@ -44,6 +46,9 @@ struct PlotSettings {
     double marginMm = 10;
     bool lineweights = true;
     ColorMode color = ColorMode::AsDisplayed;
+    // Plot style table: per palette colour, overrides colour, lineweight and screening. Applied
+    // before `color` (Monochrome / Greyscale still win over it). Null plots as drawn.
+    std::shared_ptr<const plotstyle::PlotStyleTable> styleTable{};
     // Used for lineweight 0 ("thinnest") and when lineweights are off.
     double hairlineMm = 0.1;
     double chordTolMm = 0.01;  // on paper
