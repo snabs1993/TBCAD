@@ -663,6 +663,22 @@ TEST_CASE(
     CHECK(f.core->selection().empty());
 }
 
+TEST_CASE("PanelContext reports whether a command is running") {
+    Fixture f("panel_ctx_active");
+    UiRegistry ui;
+    bool seen = false;
+    ui.addOverlayDrawer([&](PanelContext& pc, render::Overlay&) { seen = pc.commandActive; });
+    render::Overlay overlay;
+    f.core->buildOverlay(overlay, &ui);
+    CHECK_FALSE(seen);
+    f.core->submitText("TESTLINE");
+    f.core->buildOverlay(overlay, &ui);
+    CHECK(seen);
+    f.core->pressEscape();
+    f.core->buildOverlay(overlay, &ui);
+    CHECK_FALSE(seen);
+}
+
 TEST_CASE("the window query is answered by the spatial index") {
     Fixture f("window");
     f.line("0,0", "10,0");
