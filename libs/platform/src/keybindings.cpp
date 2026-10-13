@@ -211,6 +211,22 @@ void Keybindings::set(std::string_view actionId, std::string chord) {
     overrides_[std::string(actionId)] = std::move(chord);
 }
 
+std::string Keybindings::defaultChordOf(std::string_view actionId) const {
+    auto d = defaults_.find(std::string(actionId));
+    if (d == defaults_.end())
+        return {};
+    auto c = parseChord(d->second);
+    return c ? c->toString() : std::string{};
+}
+
+bool Keybindings::overridden(std::string_view actionId) const {
+    return overrides_.count(std::string(actionId)) > 0;
+}
+
+void Keybindings::reset(std::string_view actionId) {
+    overrides_.erase(std::string(actionId));
+}
+
 std::vector<std::string> Keybindings::actions() const {
     std::vector<std::string> out;
     for (const auto& [k, v] : defaults_)

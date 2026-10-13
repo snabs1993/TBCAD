@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "file_browser.h"
+#include "settings_dialog.h"
 #include "tbcad/core/color.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
@@ -79,6 +80,8 @@ private:
     void statusBar();
     void dockLayout(ImGuiID dockspace);
     void commandWindow();
+    void logWindow();
+    std::string actionLabel(const std::string& action) const;
     void propertiesWindow();
     void panels();
     void dialogs();
@@ -101,6 +104,7 @@ private:
     ui::UiRegistry& registry_;
     GLFWwindow* window_;
     FileBrowser browser_;
+    SettingsDialog settings_;
 
     bool dark_ = true;
     bool lineweights_ = true;
@@ -127,6 +131,10 @@ private:
     std::size_t lastHistorySize_ = 0;
     ImGuiID inputId_ = 0;
 
+    // Command log (Ctrl+L) and clean-screen mode (F11).
+    bool logExpanded_ = false;
+    bool cleanScreen_ = false;
+
     // Save prompt.
     Pending pending_ = Pending::None;
     std::string pendingPath_{};
@@ -138,6 +146,7 @@ private:
 
     // Viewport interaction.
     bool leftDown_ = false;
+    bool doubleClick_ = false;
     bool dragging_ = false;
     Vec2 pressPos_{};
     bool panning_ = false;

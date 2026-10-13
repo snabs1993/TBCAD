@@ -216,6 +216,16 @@ Result<std::map<std::string, std::string>> parseAliasJson(std::string_view text)
 Registry::Registry() = default;
 Registry::~Registry() = default;
 
+void Registry::addCommitHook(CommitHook hook) {
+    if (hook)
+        commitHooks_.push_back(std::move(hook));
+}
+
+void Registry::runCommitHooks(Document& doc, Transaction& tx) const {
+    for (const CommitHook& hook : commitHooks_)
+        hook(doc, tx);
+}
+
 Result<void> Registry::add(std::unique_ptr<Command> command) {
     if (!command)
         return makeError(ErrorCode::InvalidArgument, "null command");
@@ -256,6 +266,62 @@ std::vector<std::string> Registry::aliasesOf(std::string_view commandName) const
         if (target == key)
             out.push_back(alias);
     }
+    return out;
+}
+
+std::vector<AliasEntry> Registry::aliasTable() const {
+    // Built-in claims per alias.
+    std::map<std::string, std::vector<std::string>> claims;
+    for (const auto& [name, cmd] : commands_) {
+        for (const std::string& raw : cmd->defaultAliases()) {
+            std::string a = toUpperAscii(raw);
+            if (validName(a) && !commands_.count(a))
+                claims[a].push_back(name);
+        }
+    }
+    std::map<std::string, AliasEntry> rows;
+    for (const auto& [a, cmds] : claims) {
+        AliasEntry e;
+        e.alias = a;
+        if (cmds.size() == 1) {
+            e.command = cmds[0];
+        } else {
+            e.conflict = true;
+            e.note = "claimed by " + cmds[0];
+            for (std::size_t i = 1; i < cmds.size(); ++i)
+                e.note += (i + 1 == cmds.size() ? " and " : ", ") + cmds[i];
+        }
+        rows[a] = std::move(e);
+    }
+    for (const auto& [rawAlias, rawTarget] : user_) {
+        std::string a = toUpperAscii(trim(rawAlias));
+        std::string t = toUpperAscii(trim(rawTarget));
+        AliasEntry e;
+        e.alias = a.empty() ? rawAlias : a;
+        e.command = t;
+        e.source = AliasEntry::Source::User;
+        if (!validName(a)) {
+            e.conflict = true;
+            e.note = "not a valid alias";
+        } else if (commands_.count(a)) {
+            e.conflict = true;
+            e.note = "is the name of a command";
+        } else if (!commands_.count(t)) {
+            e.conflict = true;
+            e.note = "unknown command " + t;
+        } else if (auto it = rows.find(a);
+                   it != rows.end() && it->second.source == AliasEntry::Source::BuiltIn) {
+            if (!it->second.command.empty() && it->second.command != t)
+                e.note = "overrides the built-in " + it->second.command;
+            else if (it->second.command.empty())
+                e.note = "settles the built-in clash (" + it->second.note + ")";
+        }
+        rows[e.alias] = std::move(e);
+    }
+    std::vector<AliasEntry> out;
+    out.reserve(rows.size());
+    for (auto& [a, e] : rows)
+        out.push_back(std::move(e));
     return out;
 }
 

@@ -91,7 +91,8 @@ Do not choose `|` (xref layers) or `$` (bound xrefs) as separator; the exporter 
 | Spline | SPLINE (knots, weights, control and fit points; a missing knot vector becomes clamped uniform) | polyline |
 | Text | TEXT with alignment, width factor, oblique, style | same |
 | MText | MTEXT in chunks of 250 characters; TBCAD markup is converted back (`\P`, bold/italic as a `\f` font code, `\H`, `\C` as ACI) | one TEXT per line |
-| Insert | INSERT with scale and rotation | same |
+| Insert | INSERT with scale and rotation; one ATTRIB per non-constant attribute of the block and a SEQEND (group 66 = 1) | same; attributes read back as insert values |
+| Attribute definition | ATTDEF (tag, prompt, default, flags) inside the block | same |
 | Hatch | HATCH: polyline and edge paths (line, arc, ellipse, spline), islands, pattern name, scale, angle; the pattern's definition lines are embedded | boundary outline only |
 | Dimension | DIMENSION + anonymous block `*D<n>` (below) | same |
 | Leader | LEADER (+ an MTEXT for its annotation) | polyline |

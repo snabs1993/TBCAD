@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include "app_commands.h"
+#include "tbcad/blocks/index_refresh.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
@@ -68,6 +69,8 @@ struct AppCore::Session {
     cmd::UndoStack undo{};
     index::SpatialIndex index{};
     std::unique_ptr<index::DocumentIndexer> indexer{};
+    // Declared after the indexer so it is destroyed first.
+    std::unique_ptr<blocks::BlockIndexRefresher> blockRefresher{};
     std::unique_ptr<SceneSync> sync{};
     std::unique_ptr<AppObserver> observer{};
     std::unique_ptr<cmd::CommandRunner> runner{};
@@ -90,6 +93,9 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("edit.deselect", "Escape");
     keybindings_.declare("view.zoomExtents", "");
     keybindings_.declare("view.toggleCommandLine", "");
+    keybindings_.declare("view.expandLog", "Ctrl+L");
+    keybindings_.declare("view.cleanScreen", "F11");
+    keybindings_.declare("tools.settings", "");
     if (auto r = keybindings_.load(paths_.keybindingsFile()); r) {
         for (auto& w : r.value())
             startupWarnings_.push_back(std::move(w));
@@ -129,6 +135,7 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
     Document& d = s->doc;
     s->indexer = std::make_unique<index::DocumentIndexer>(
         d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); });
+    s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
     s->sync = std::make_unique<SceneSync>(d, scene_);
     s->sync->setPixelSize(camera_.pixelSizeMm());
     s->sync->rebuildAll();
@@ -536,6 +543,19 @@ void AppCore::applyPick(const std::vector<EntityId>& ids, bool remove) {
     setSelection(std::move(sel));
 }
 
+PanelContext AppCore::makePanelContext() {
+    PanelContext pc;
+    pc.doc = &session_->doc;
+    pc.host = this;
+    pc.selection = &selection_;
+    pc.camera = &camera_;
+    pc.feedback = &feedback_;
+    pc.cursorWorld = cursorWorld_;
+    pc.apertureMm = apertureMm();
+    pc.runCommand = [this](const std::string& line) { submitText(line); };
+    return pc;
+}
+
 void AppCore::click(const PointerState& p) {
     cmd::RawInput raw = makeRaw(p);
     Vec2 world = raw.worldCursor;
@@ -559,6 +579,13 @@ void AppCore::click(const PointerState& p) {
         }
         return;
     }
+    if (ui_ && !ui_->idleClickHooks().empty()) {
+        PanelContext pc = makePanelContext();
+        for (const auto& hook : ui_->idleClickHooks()) {
+            if (hook(pc, world, apertureMm(), p.shift, p.ctrl))
+                return;
+        }
+    }
     auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
     if (!id) {
         if (!p.shift)
@@ -566,6 +593,22 @@ void AppCore::click(const PointerState& p) {
         return;
     }
     applyPick({*id}, p.shift);
+}
+
+void AppCore::doubleClick(const PointerState& p) {
+    if (runner().active()) {
+        click(p);
+        return;
+    }
+    Vec2 world = makeRaw(p).worldCursor;
+    auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
+    const Entity* e = id ? session_->doc.find(*id) : nullptr;
+    if (!e || (kind(*e) != EntityKind::Text && kind(*e) != EntityKind::MText)) {
+        click(p);
+        return;
+    }
+    applyPick({*id}, false);
+    submitText("TEXTEDIT");
 }
 
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
@@ -700,13 +743,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         }
     }
     if (ui) {
-        PanelContext pc;
-        pc.doc = &session_->doc;
-        pc.host = this;
-        pc.selection = &selection_;
-        pc.camera = &camera_;
-        pc.feedback = &feedback_;
-        pc.runCommand = [this](const std::string& line) { submitText(line); };
+        PanelContext pc = makePanelContext();
         for (const auto& fn : ui->overlayDrawers())
             fn(pc, overlay);
     }
@@ -772,6 +809,7 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 
 std::optional<std::string> AppCore::setting(std::string_view key) const {

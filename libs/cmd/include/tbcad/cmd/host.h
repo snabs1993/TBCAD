@@ -54,6 +54,16 @@ public:
     virtual ViewState view() const { return {}; }
     virtual void setView(const ViewState& /*view*/) {}
 
+    // Asks the application window to open something ("settings"). Hosts without a window ignore it.
+    virtual void requestUi(std::string_view /*what*/) {}
+
+    // Ids of the model-space entities whose bounding box meets `window`, answered from the host's
+    // spatial index. nullopt means the host has no index; callers then scan the document. The
+    // order is unspecified. Hidden entities and layer visibility are not applied.
+    virtual std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& /*window*/) const {
+        return std::nullopt;
+    }
+
     // Rubber-band preview from the active prompt; nullptr clears it.
     virtual void setPreview(const DisplayList* /*list*/) {}
 
