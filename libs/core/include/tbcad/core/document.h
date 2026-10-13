@@ -154,6 +154,17 @@ struct Table {
 
 }  // namespace detail
 
+// The next id each id space will hand out. Ids are never reused, so a document that is saved
+// must also keep these: the highest id still in use can be lower than the highest id ever given.
+struct NextIds {
+    std::uint64_t entity = 1;
+    std::uint32_t layer = 1;
+    std::uint32_t linetype = 1;
+    std::uint32_t textStyle = 1;
+    std::uint32_t dimStyle = 1;
+    std::uint32_t block = 1;
+};
+
 class Transaction;
 
 class Document {
@@ -212,6 +223,13 @@ public:
 
     void addObserver(DocumentObserver* observer);
     void removeObserver(DocumentObserver* observer);
+
+    // The next free id of each id space.
+    NextIds nextIds() const;
+    // Raises the next free ids to at least `ids` (a field that is lower than the current value is
+    // left alone). Used by file readers to restore ids that were handed out before the file was
+    // saved. Not undoable; fails while a transaction is open.
+    Result<void> reserveIds(const NextIds& ids);
 
     // Incremented by every commit, undo and redo.
     std::uint64_t revision() const { return revision_; }
