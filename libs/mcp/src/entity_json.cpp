@@ -637,6 +637,10 @@ std::string kindName(EntityKind kind) {
             return "proxy";
         case EntityKind::Table:
             return "table";
+        case EntityKind::Ray:
+            return "ray";
+        case EntityKind::MLine:
+            return "mline";
     }
     return "proxy";
 }
@@ -769,6 +773,16 @@ Json entityToJson(const Document& doc, const Entity& e) {
             for (const TableCell& c : d.cells)
                 cells.push_back(Json(c.utf8));
             o["cells"] = Json(std::move(cells));
+        } else if constexpr (std::is_same_v<T, RayData>) {
+            o["origin"] = pointToJson(d.origin);
+            o["direction"] = pointToJson(d.dir);
+            o["infinite"] = d.infinite;
+        } else if constexpr (std::is_same_v<T, MlineData>) {
+            o["style"] = d.style;
+            o["scale"] = d.scale;
+            o["justification"] = static_cast<double>(d.justification);
+            o["closed"] = d.closed;
+            o["vertices"] = pointsToJson(d.v);
         } else if constexpr (std::is_same_v<T, LeaderData>) {
             o["vertices"] = pointsToJson(d.vertices);
             if (!d.utf8.empty())

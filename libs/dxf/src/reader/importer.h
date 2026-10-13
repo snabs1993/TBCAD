@@ -103,6 +103,7 @@ private:
     void bad(const Record& r, std::string_view type, const std::string& message);
 
     bool convLine(const Record& r, std::vector<Entity>& out);
+    bool convRay(const Record& r, bool infinite, std::vector<Entity>& out);
     bool convCircle(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convArc(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convLwPolyline(const Record& r, const Frame& f, std::vector<Entity>& out);

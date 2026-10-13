@@ -389,6 +389,30 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
             o.textPos = t.apply(o.textPos);
             return out;
         }
+        case EntityKind::Ray: {
+            auto& o = *entityAs<RayData>(out);
+            const Vec2 p0 = t.apply(o.origin);
+            const Vec2 p1 = t.apply(o.origin + o.dir);
+            o.origin = p0;
+            const Vec2 d = p1 - p0;
+            const double len = std::hypot(d.x, d.y);
+            if (!(len > 1e-18))
+                return makeError(ErrorCode::InvalidArgument, "transform collapses the ray");
+            o.dir = {d.x / len, d.y / len};
+            return out;
+        }
+        case EntityKind::MLine: {
+            if (!uniform)
+                return makeError(ErrorCode::Unsupported,
+                                 "multilines cannot be scaled non-uniformly");
+            auto& o = *entityAs<MlineData>(out);
+            for (Vec2& p : o.v)
+                p = t.apply(p);
+            o.scale *= s;
+            if (mirror)
+                o.justification = 2 - o.justification;
+            return out;
+        }
         case EntityKind::Table: {
             if (!uniform)
                 return makeError(ErrorCode::Unsupported, "tables cannot be scaled non-uniformly");

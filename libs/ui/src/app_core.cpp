@@ -944,7 +944,14 @@ void AppCore::panPixels(double dx, double dy) {
 }
 
 void AppCore::zoomExtents() {
-    zoomToBox(session_->index.bounds());
+    // Rays and xlines have no end, so they do not count; if they are all there is, use them.
+    BBox2 box;
+    const Document& doc = session_->doc;
+    doc.forEachEntity([&](const Entity& e) {
+        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e))
+            box.merge(session_->index.boxOf(e.common.id));
+    });
+    zoomToBox(box.empty() ? session_->index.bounds() : box);
 }
 
 void AppCore::zoomToBox(const BBox2& box) {

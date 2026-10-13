@@ -16,12 +16,10 @@ std::vector<EntityId> modelSpaceIds(const Document& doc) {
 }
 
 BBox2 drawingExtents(DrawingSession& s) {
-    if (const auto* idx = s.spatialIndex())
-        return idx->bounds();
     BBox2 box;
     const Document& doc = s.document();
     doc.forEachEntity([&](const Entity& e) {
-        if (!doc.ownerBlock(e.common.id))
+        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e))
             box.merge(geom::bounds(e, doc));
     });
     return box;
