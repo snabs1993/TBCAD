@@ -638,6 +638,30 @@ void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
     submitText("");
 }
 
+std::vector<render::ImageDraw> AppCore::underlayImages() {
+    std::vector<render::ImageDraw> out;
+    if (!session_)
+        return out;
+    const std::filesystem::path host = session_->file;
+    auto list = underlay::collectImages(session_->doc, imageCache_, [&](std::string_view stored) {
+        return xref::resolvePath(stored, host);
+    });
+    out.reserve(list.size());
+    for (underlay::ImageInstance& im : list) {
+        render::ImageDraw d;
+        d.key = im.key;
+        d.data = std::move(im.data);
+        d.corners = im.corners;
+        d.uMin = im.uMin;
+        d.uMax = im.uMax;
+        d.vMin = im.vMin;
+        d.vMax = im.vMax;
+        d.opacity = im.opacity;
+        out.push_back(std::move(d));
+    }
+    return out;
+}
+
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     tickAutosave(now);
     tickXrefs(now);

@@ -167,6 +167,7 @@ void App::drawScene() {
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
     renderer_.beginFrame();
+    renderer_.draw(core_->underlayImages());
     renderer_.draw(core_->scene());
     core_->buildOverlay(overlay_, uiRegistry_.get());
     renderer_.draw(overlay_);
@@ -180,6 +181,7 @@ void App::renderDrawingOnce(bool finish) {
     renderer_.setBackground(ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
+    renderer_.draw(core_->underlayImages());
     renderer_.draw(core_->scene());
     renderer_.endFrame();
     if (finish)
@@ -265,6 +267,7 @@ std::optional<mcp::Image> App::captureView(int maxPx, const BBox2& area) {
     renderer_.setBackground(gui_ ? gui_->viewportBackground() : ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
+    renderer_.draw(core_->underlayImages());
     renderer_.draw(core_->scene());
     renderer_.endFrame();
     glFinish();

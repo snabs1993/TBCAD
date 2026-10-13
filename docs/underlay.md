@@ -3,7 +3,7 @@
 An underlay is a drawing or picture you look at and trace over. In TBCAD an underlay is an
 **external reference** (`docs/xref.md`): a block whose path is stored with the drawing, whose
 content is a snapshot saved in the file, and which reloads by itself when the file changes. This
-page is about PDF pages; images are added in a later step.
+page is about PDF pages and pictures.
 
 ## PDF pages
 
@@ -41,3 +41,28 @@ scanning the file, so a damaged or incrementally updated cross-reference table d
 reads object streams and the page tree, then runs the content stream (`q Q cm m l c v y h re S s f F
 B b n W g G rg RG k K sc scn SC SCN Do BI`) and form XObjects up to 8 levels deep.
 `importPdf(bytes, options, report)` returns a `Document`; `PdfReport` says what was left out.
+
+## Pictures
+
+`IMAGEATTACH` (`IAT`) attaches a PNG, JPEG or BMP picture behind the drawing. It asks for the
+file, how much to fade it (0 to 95 percent, default 30), a name and the insertion point; the
+`Scale` option of the insertion is the size of one pixel in millimetres (default 1).
+
+* The picture is an external reference like a PDF page: the block holds only a closed frame
+  polyline (layer `IMAGE`, in pixel units, origin bottom-left) and the path of the file. The pixels
+  are never stored in the drawing, so keep the file next to it (a relative path is taken from the
+  drawing's folder). It is reloaded by itself when the file changes.
+* `IMAGECLIP` (`ICLIP`) shows only a rectangle of the picture: two corners, or `Delete` to show it
+  all again. The rest is not drawn, the frame stays whole so the picture can still be picked.
+* `UNDERLAYFADE` (`UF`) changes the fade of a picture or a PDF page (0 = as is, 95 = nearly gone;
+  a PDF page is limited to 90 and is read again with the new colours).
+* Display settings (fade, clip) of each picture live in the drawing header under
+  `tbcad.underlays`, one line per block: name, fade, then the clip as fractions of the picture
+  (`u0 v0 u1 v1`, `v` counted from the top). Undo covers them.
+* Pictures are drawn by the renderer as textured rectangles under the drawing, blended with the
+  background, so a faded picture stays out of the way. A picture is decoded once per file and
+  time stamp; textures not used for a while are dropped.
+* Snapping skips the frame, like PDF underlays. The hide/freeze state of the insert's layer and of
+  the layer named like the picture decides whether it is shown.
+* Limits: up to 16384 x 16384 pixels and 100 million pixels in all. Pictures are not printed or
+  exported by PLOT yet.

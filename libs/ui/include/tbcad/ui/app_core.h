@@ -20,11 +20,13 @@
 #include "tbcad/platform/paths.h"
 #include "tbcad/platform/settings.h"
 #include "tbcad/render/camera.h"
+#include "tbcad/render/image.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
 #include "tbcad/ui/scene_sync.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::ui {
 
@@ -211,6 +213,9 @@ public:
     // Once every couple of seconds: when an external reference changed on disk and no command is
     // running, reloads it (XRELOAD). The window calls it every frame.
     void tickXrefs(std::chrono::steady_clock::time_point now);
+    // The picture underlays (IMAGEATTACH) that are visible, to draw before the scene. Pictures are
+    // read from disk once and kept while the drawing shows them.
+    std::vector<render::ImageDraw> underlayImages();
     // Writes the autosave now when the drawing has unsaved changes. True if one was written.
     bool autosaveNow();
 
@@ -295,6 +300,7 @@ private:
     std::uint64_t autosavedRevision_ = ~std::uint64_t{0};
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
+    underlay::ImageCache imageCache_{};
 };
 
 }  // namespace tbcad::ui

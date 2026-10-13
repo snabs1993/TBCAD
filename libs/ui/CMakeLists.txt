@@ -14,7 +14,7 @@ tbcad_add_library(appcore
     src/scene_sync.cpp
     src/selection.cpp
     src/settings_model.cpp
-  DEPENDS tbcad::ui tbcad::blocks tbcad::xref tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd)
+  DEPENDS tbcad::ui tbcad::blocks tbcad::xref tbcad::underlay tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd)
 target_include_directories(tbcad_appcore PRIVATE src)
 
 tbcad_add_tests(ui

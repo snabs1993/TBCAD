@@ -5,6 +5,7 @@
 #include "support.h"
 #include "tbcad/drafting/snap_geometry.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/underlay/image.h"
 #include "tbcad/xref/xref.h"
 
 using namespace tbcad;
@@ -192,4 +193,89 @@ TEST_CASE("a PDF underlay offers no snap points") {
                                                              g));
     CHECK(g.endpoints.empty());
     CHECK(g.curves.empty());
+}
+
+namespace {
+
+fs::path writeBmp(const fs::path& dir, const char* name, int w, int h) {
+    auto le = [](std::string& s, std::uint32_t v, int bytes) {
+        for (int i = 0; i < bytes; ++i)
+            s.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
+    };
+    const int stride = (w * 3 + 3) / 4 * 4;
+    std::string out = "BM";
+    le(out, 54 + stride * h, 4);
+    le(out, 0, 4);
+    le(out, 54, 4);
+    le(out, 40, 4);
+    le(out, w, 4);
+    le(out, h, 4);
+    le(out, 1, 2);
+    le(out, 24, 2);
+    le(out, 0, 4);
+    le(out, stride * h, 4);
+    le(out, 2835, 4);
+    le(out, 2835, 4);
+    le(out, 0, 4);
+    le(out, 0, 4);
+    out.append(static_cast<std::size_t>(stride) * h, '\x80');
+    fs::path file = dir / name;
+    std::ofstream(file, std::ios::binary) << out;
+    return file;
+}
+
+}  // namespace
+
+TEST_CASE("IMAGEATTACH attaches a picture with a fade; the path is stored, not the pixels") {
+    Dir dir;
+    fs::path file = writeBmp(dir.path, "site.bmp", 100, 50);
+    Fixture f;
+    auto r = f.host->run("IMAGEATTACH", {file.string(), "40", "", "0,0"});
+    CHECK(r.finished);
+    const BlockDef* def = f.doc.blockByName("site");
+    REQUIRE(def);
+    CHECK(def->xrefPath == file.string());
+    CHECK(def->entities.size() == 1);  // the frame
+    CHECK(xref::isUnderlay(f.doc, def->id));
+    CHECK(underlay::imageParams(f.doc.header(), "site").fade == 40);
+    CHECK(f.host->undo());
+    CHECK(f.doc.blockByName("site") == nullptr);
+    CHECK(underlay::imageParams(f.doc.header(), "site") == underlay::ImageParams{});
+
+    f.host->clearLog();
+    f.host->run("IMAGEATTACH", {(dir.path / "x.png").string(), "", ""});
+    CHECK(f.doc.blockByName("x") == nullptr);
+}
+
+TEST_CASE("IMAGECLIP keeps a rectangle of the picture; Delete shows it all") {
+    Dir dir;
+    fs::path file = writeBmp(dir.path, "site.bmp", 100, 50);
+    Fixture f;
+    f.host->run("IMAGEATTACH", {file.string(), "0", "", "0,0"});
+    f.host->run("IMAGECLIP", {"20,0", "40,10"});
+    auto p = underlay::imageParams(f.doc.header(), "site");
+    CHECK(p.u0 == doctest::Approx(0.2));
+    CHECK(p.u1 == doctest::Approx(0.4));
+    CHECK(p.v0 == doctest::Approx(0.8));
+    CHECK(p.v1 == doctest::Approx(1.0));
+    CHECK(p.clipped());
+    f.host->run("IMAGECLIP", {"Delete"});
+    CHECK_FALSE(underlay::imageParams(f.doc.header(), "site").clipped());
+}
+
+TEST_CASE("UNDERLAYFADE changes the fade of a picture and of a PDF page") {
+    Dir dir;
+    fs::path bmp = writeBmp(dir.path, "pic.bmp", 10, 10);
+    Fixture f;
+    f.host->run("IMAGEATTACH", {bmp.string(), "10", "", "0,0"});
+    f.host->run("UNDERLAYFADE", {"75"});
+    CHECK(underlay::imageParams(f.doc.header(), "pic").fade == 75);
+
+    fs::path pdf = writePdf(dir.path, "pg.pdf", "0 0 0 RG 0 0 m 72 0 l S");
+    f.host->run("PDFATTACH", {pdf.string(), "50", "", "0,0"});
+    f.host->run("UNDERLAYFADE", {"pg", "20"});
+    const BlockDef* def = f.doc.blockByName("pg");
+    REQUIRE(def);
+    CHECK(def->xrefPath == pdf.string() + "#fade=20");
+    CHECK(f.doc.find(def->entities[0])->common.color == Color::rgb(32, 32, 32));
 }

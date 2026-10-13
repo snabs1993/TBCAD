@@ -49,7 +49,8 @@ std::int64_t fileStamp(const std::filesystem::path& file);
 // A block name for a file: its stem with characters a block name cannot hold replaced.
 std::string defaultName(const std::filesystem::path& file);
 
-// Reads a .tbcad, .dxf or .pdf file by its extension. A PDF gives page 1 with the default fade.
+// Reads a .tbcad, .dxf, .pdf or picture file by its extension. A PDF gives page 1 with the default
+// fade; a picture (.png .jpg .jpeg .bmp) gives its frame in pixel units.
 Result<Source> loadSource(const std::filesystem::path& file);
 // Reads the file a block stores (the path as typed, with its options): the way to reload.
 Result<Source> loadStored(std::string_view stored, const std::filesystem::path& hostFile);

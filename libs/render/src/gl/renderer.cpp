@@ -27,6 +27,11 @@ struct Program {
     GLint patN = -1, pat = -1, patP = -1, pixelMm = -1, soft = -1;
 };
 
+struct Texture {
+    GLuint id = 0;
+    std::uint64_t lastFrame = 0;
+};
+
 struct Buffer {
     GLuint vbo = 0;
     GLuint vaoThin = 0;   // vertices as GL_LINES / GL_TRIANGLES / GL_POINTS input
@@ -160,6 +165,11 @@ struct Renderer::Impl {
     std::vector<Buffer> highlightBuffers, selectionBuffers;
     std::uint64_t highlightVersion = ~0ull, selectionVersion = ~0ull;
     GLuint overlayVao = 0, overlayVbo = 0;
+    Program image;
+    GLint imageTex = -1, imageOpacity = -1;
+    GLuint imageVao = 0, imageVbo = 0;
+    std::unordered_map<std::uint64_t, Texture> textures;
+    std::uint64_t frameNo = 0;
 
     RenderStats stats;
     std::chrono::steady_clock::time_point frameStart;
@@ -327,8 +337,20 @@ bool Renderer::init(GLLoadProc loader, std::string* error) {
     if (!link(d.stroke, s::kStrokeThinVs, s::kStrokeFs, err) ||
         !link(d.strokeThick, s::kStrokeThickVs, s::kStrokeFs, err) ||
         !link(d.fill, s::kFillVs, s::kFillFs, err) ||
-        !link(d.overlay, s::kOverlayVs, s::kOverlayFs, err))
+        !link(d.overlay, s::kOverlayVs, s::kOverlayFs, err) ||
+        !link(d.image, s::kImageVs, s::kImageFs, err))
         return fail(err);
+    d.imageTex = glGetUniformLocation(d.image.id, "uTex");
+    d.imageOpacity = glGetUniformLocation(d.image.id, "uOpacity");
+    glGenVertexArrays(1, &d.imageVao);
+    glGenBuffers(1, &d.imageVbo);
+    glBindVertexArray(d.imageVao);
+    glBindBuffer(GL_ARRAY_BUFFER, d.imageVbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                          reinterpret_cast<void*>(2 * sizeof(float)));
 
     glGenVertexArrays(1, &d.overlayVao);
     glGenBuffers(1, &d.overlayVbo);
@@ -361,10 +383,15 @@ void Renderer::shutdown() {
     d.highlightBuffers.clear();
     d.selectionBuffers.clear();
     d.highlightVersion = d.selectionVersion = ~0ull;
-    for (Program* p : {&d.stroke, &d.strokeThick, &d.fill, &d.overlay})
+    for (auto& [key, t] : d.textures)
+        glDeleteTextures(1, &t.id);
+    d.textures.clear();
+    glDeleteBuffers(1, &d.imageVbo);
+    glDeleteVertexArrays(1, &d.imageVao);
+    for (Program* p : {&d.stroke, &d.strokeThick, &d.fill, &d.overlay, &d.image})
         if (p->id)
             glDeleteProgram(p->id);
-    d.stroke = d.strokeThick = d.fill = d.overlay = {};
+    d.stroke = d.strokeThick = d.fill = d.overlay = d.image = {};
     glDeleteBuffers(1, &d.overlayVbo);
     glDeleteVertexArrays(1, &d.overlayVao);
     d.ok = false;
@@ -410,6 +437,59 @@ void Renderer::beginFrame() {
                  d.background.a / 255.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glPointSize(kPointSizePx);
+}
+
+void Renderer::draw(std::span<const ImageDraw> images) {
+    Impl& d = *impl_;
+    for (const ImageDraw& im : images) {
+        if (!im.data || im.data->width <= 0 || im.data->height <= 0 || im.opacity <= 0 ||
+            im.data->rgba.size() < static_cast<std::size_t>(im.data->width) * im.data->height * 4)
+            continue;
+        Texture& t = d.textures[im.key];
+        if (!t.id) {
+            glGenTextures(1, &t.id);
+            glBindTexture(GL_TEXTURE_2D, t.id);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, im.data->width, im.data->height, 0, GL_RGBA,
+                         GL_UNSIGNED_BYTE, im.data->rgba.data());
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            d.stats.uploadedBytes += im.data->rgba.size();
+        }
+        t.lastFrame = d.frameNo;
+        // Corners to pixels (double precision on the CPU), two triangles.
+        std::array<Vec2, 4> px;
+        for (int i = 0; i < 4; ++i)
+            px[i] = d.camera.worldToScreen(im.corners[i]);
+        const float u0 = static_cast<float>(im.uMin), u1 = static_cast<float>(im.uMax);
+        const float v0 = static_cast<float>(im.vMin), v1 = static_cast<float>(im.vMax);
+        // BL, BR, TR, TL
+        const float uv[4][2] = {{u0, v1}, {u1, v1}, {u1, v0}, {u0, v0}};
+        float vtx[6][4];
+        const int order[6] = {0, 1, 2, 0, 2, 3};
+        for (int i = 0; i < 6; ++i) {
+            vtx[i][0] = static_cast<float>(px[order[i]].x);
+            vtx[i][1] = static_cast<float>(px[order[i]].y);
+            vtx[i][2] = uv[order[i]][0];
+            vtx[i][3] = uv[order[i]][1];
+        }
+        glUseProgram(d.image.id);
+        glUniform2f(d.image.viewport, static_cast<float>(d.camera.viewportW),
+                    static_cast<float>(d.camera.viewportH));
+        glUniform1i(d.imageTex, 0);
+        glUniform1f(d.imageOpacity, std::min(im.opacity, 1.0f));
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, t.id);
+        glBindVertexArray(d.imageVao);
+        glBindBuffer(GL_ARRAY_BUFFER, d.imageVbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof vtx, vtx, GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        ++d.stats.drawCalls;
+        d.stats.vertices += 6;
+    }
 }
 
 void Renderer::draw(Scene& scene) {
@@ -458,6 +538,16 @@ RenderStats Renderer::endFrame() {
     d.stats.cpuMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - d.frameStart)
             .count();
+    // Drop textures of images that were not drawn for a while.
+    ++d.frameNo;
+    for (auto it = d.textures.begin(); it != d.textures.end();) {
+        if (d.frameNo - it->second.lastFrame > 300) {
+            glDeleteTextures(1, &it->second.id);
+            it = d.textures.erase(it);
+        } else {
+            ++it;
+        }
+    }
     glBindVertexArray(0);
     glUseProgram(0);
     return d.stats;

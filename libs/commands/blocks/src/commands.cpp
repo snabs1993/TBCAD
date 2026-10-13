@@ -28,6 +28,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeAttSyncCommand());
     (void)registry.add(makeXAttachCommand());
     (void)registry.add(makePdfAttachCommand());
+    (void)registry.add(makeImageAttachCommand());
+    (void)registry.add(makeImageClipCommand());
+    (void)registry.add(makeUnderlayFadeCommand());
     (void)registry.add(makeXReloadCommand());
     (void)registry.add(makeXDetachCommand());
     (void)registry.add(makeXBindCommand());

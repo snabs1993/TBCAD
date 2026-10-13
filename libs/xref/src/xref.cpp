@@ -12,6 +12,7 @@
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/underlay/image.h"
 #include "tbcad/underlay/pdf.h"
 
 namespace tbcad::xref {
@@ -332,6 +333,19 @@ Result<Source> loadPdf(const std::filesystem::path& file, const underlay::PdfOpt
     return out;
 }
 
+Result<Source> loadImageFrame(const std::filesystem::path& file) {
+    auto info = underlay::imageInfo(file);
+    if (!info)
+        return info.error();
+    auto doc = underlay::imageFrameDocument(info.value().width, info.value().height);
+    if (!doc)
+        return doc.error();
+    Source out;
+    out.doc = std::move(doc.value());
+    out.stamp = fileStamp(file);
+    return out;
+}
+
 }  // namespace
 
 Result<Source> loadStored(std::string_view stored, const std::filesystem::path& hostFile) {
@@ -342,11 +356,17 @@ Result<Source> loadStored(std::string_view stored, const std::filesystem::path& 
             return makeError(ErrorCode::NotFound, "Cannot find the file " + file.string());
         return loadPdf(file, underlay::parseSpec(stored).pdf);
     }
+    if (underlay::isImagePath(stored)) {
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(file, ec))
+            return makeError(ErrorCode::NotFound, "Cannot find the file " + file.string());
+        return loadImageFrame(file);
+    }
     return loadSource(file);
 }
 
 bool isUnderlayPath(std::string_view stored) {
-    return underlay::isPdfPath(stored);
+    return underlay::isPdfPath(stored) || underlay::isImagePath(stored);
 }
 
 bool isUnderlay(const Document& doc, BlockId block) {
@@ -361,6 +381,8 @@ Result<Source> loadSource(const std::filesystem::path& file) {
     const std::string ext = lower(file.extension().string());
     if (ext == ".pdf")
         return loadPdf(file, {});
+    if (underlay::isImagePath(file.string()))
+        return loadImageFrame(file);
     Source out;
     out.stamp = fileStamp(file);
     if (ext == ".tbcad") {
