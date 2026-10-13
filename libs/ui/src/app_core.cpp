@@ -702,6 +702,7 @@ PanelContext AppCore::makePanelContext() {
     pc.feedback = &feedback_;
     pc.cursorWorld = cursorWorld_;
     pc.apertureMm = apertureMm();
+    pc.commandActive = runner().active();
     pc.runCommand = [this](const std::string& line) { submitText(line); };
     return pc;
 }
@@ -722,7 +723,7 @@ void AppCore::click(const PointerState& p) {
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:
                 if (auto id = pickEntity(session_->doc, session_->index, world, apertureMm()))
-                    run.submit(cmd::Input::pick(*id, world));
+                    run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
             default:
                 break;

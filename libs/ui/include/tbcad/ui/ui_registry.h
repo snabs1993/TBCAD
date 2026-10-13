@@ -30,6 +30,8 @@ struct PanelContext {
     // Cursor in drawing units and the pick aperture in mm at the current zoom.
     Vec2 cursorWorld{};
     double apertureMm = 0;
+    // A command is waiting for input (property panels may disable their edits meanwhile).
+    bool commandActive = false;
 };
 
 // The drawing a command module works on. Passed to the session hooks whenever a different
