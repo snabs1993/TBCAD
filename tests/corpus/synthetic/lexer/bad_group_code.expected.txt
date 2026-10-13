@@ -1,0 +1,12 @@
+G 1 0 S SECTION
+G 3 2 S ENTITIES
+G 5 0 S LINE
+G 7 8 S 0
+G 9 10 D 1
+G 15 0 S CIRCLE
+G 17 8 S 0
+G 19 40 D 5
+G 21 0 S ENDSEC
+G 23 0 S EOF
+W 11 dxf.lexer.bad_group_code
+W 11 dxf.lexer.resync
