@@ -361,3 +361,33 @@ TEST_CASE("explodeHatch: lines for patterns, boundary edges for solids") {
 
     CHECK_FALSE(explodeHatch(doc, s.candidates()[0].entity[0]).ok());
 }
+
+TEST_CASE("the built-in library has at least 30 patterns") {
+    CHECK(PatternRegistry::names().size() >= 30);
+}
+
+TEST_CASE("ZIGZAG draws rows of 3 x 3 mm zigzags 8 mm apart") {
+    const Pattern* p = PatternRegistry::find("ZIGZAG");
+    REQUIRE(p != nullptr);
+    HatchData h = squareHatch(100);
+    FillResult r = generateFill(h, *p);
+    REQUIRE(r.mode == FillResult::Mode::Lines);
+    // Distance from a point to the nearest drawn segment.
+    auto nearest = [&](Vec2 q) {
+        double best = 1e9;
+        for (const auto& s : r.segments) {
+            Vec2 d = s.second - s.first;
+            double t = std::clamp(dot(q - s.first, d) / dot(d, d), 0.0, 1.0);
+            best = std::min(best, distance(q, s.first + d * t));
+        }
+        return best;
+    };
+    for (int row = 2; row <= 8; ++row) {
+        for (int col = 2; col <= 8; ++col) {
+            Vec2 base{6.0 * col, 8.0 * row};
+            CHECK(nearest(base + Vec2{1.5, 1.5}) < 1e-4);  // up stroke
+            CHECK(nearest(base + Vec2{4.5, 1.5}) < 1e-4);  // down stroke
+            CHECK(nearest(base + Vec2{3, 6}) > 1.0);       // clear of the zigzag between rows
+        }
+    }
+}
