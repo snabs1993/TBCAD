@@ -3,10 +3,82 @@
 #include <cstring>
 
 #include "container/r2000.h"
+#include "container/r2004.h"
+#include "container/sections.h"
 #include "map/emit.h"
 #include "objects/decode.h"
 
 namespace tbcad::dwg {
+
+namespace {
+
+using detail::Bytes;
+
+// Reads the drawing into `drawing` for an R2000 file.
+Result<bool> readR2000(Bytes file, detail::Drawing& drawing, std::vector<std::string>& notes,
+                       dxf::Report& report) {
+    auto header = detail::readFileHeader(file);
+    if (!header)
+        return header.error();
+    const auto classes = detail::readClasses(file, header.value().records[1], notes);
+    const auto map = detail::readObjectMap(file, header.value().records[2], notes);
+    if (map.empty()) {
+        std::string msg = "the drawing has no object table";
+        report.error(code::kBadSection, msg);
+        return makeError(ErrorCode::Parse, msg);
+    }
+    drawing.codepage = header.value().codepage;
+    const auto vars = detail::readHeaderVars(file, header.value().records[0], notes);
+    drawing.unitsKnown = vars.valid;
+    drawing.insunits = vars.insunits;
+    drawing.ltscale = vars.ltscale;
+    detail::decodeObjects(file, map, classes, drawing, notes);
+    return true;
+}
+
+// R2004, R2010, R2013 and R2018: compressed sections, objects addressed inside one section.
+Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing,
+                           std::vector<std::string>& notes, dxf::Report& report) {
+    auto sections = detail::readSections(file, notes);
+    if (!sections)
+        return sections.error();
+    detail::Format fmt;
+    fmt.r2004 = true;
+    fmt.r2007 = version >= Version::R2010;  // R2007 has its own container and is not read
+    fmt.r2010 = version >= Version::R2010;
+    fmt.r2013 = version >= Version::R2013;
+    fmt.r2018 = version >= Version::R2018;
+    auto& sec = sections.value();
+    const int maintenance = sec.maintenance;
+    auto find = [&](const char* name) -> Bytes {
+        auto it = sec.sections.find(name);
+        return it == sec.sections.end() ? Bytes{} : Bytes(it->second);
+    };
+    const Bytes objects = find("AcDb:AcDbObjects");
+    const Bytes handles = find("AcDb:Handles");
+    if (handles.empty()) {
+        std::string msg = "the drawing has no object table";
+        report.error(code::kBadSection, msg);
+        return makeError(ErrorCode::Parse, msg);
+    }
+    const auto map = detail::readObjectMapData(handles, 0, handles.size(), notes);
+    if (map.empty()) {
+        std::string msg = "the drawing has no object table";
+        report.error(code::kBadSection, msg);
+        return makeError(ErrorCode::Parse, msg);
+    }
+    const auto classes = detail::parseClasses(find("AcDb:Classes"), fmt, maintenance, notes);
+    const auto vars = detail::parseHeader(find("AcDb:Header"), fmt, maintenance, notes);
+    drawing.codepage = sec.codepage;
+    drawing.unicode = fmt.r2007;
+    drawing.unitsKnown = vars.valid;
+    drawing.insunits = vars.insunits;
+    drawing.ltscale = vars.ltscale;
+    detail::decodeObjects(objects, map, classes, drawing, notes, fmt);
+    return true;
+}
+
+}  // namespace
 
 Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                     const dxf::ImportOptions& options, dxf::Report& report) {
@@ -19,29 +91,17 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.error(code::kUnsupportedVersion, msg);
         return makeError(ErrorCode::Parse, msg);
     }
-    if (v.version != Version::R2000)
-        return makeError(ErrorCode::Parse, "DWG " + v.name + " files are not readable yet");
+    if (v.version == Version::R2007)
+        return makeError(ErrorCode::Parse, "DWG R2007 files are not readable yet");
 
-    const std::span<const std::uint8_t> file(reinterpret_cast<const std::uint8_t*>(bytes.data()),
-                                             bytes.size());
-    auto header = detail::readFileHeader(file);
-    if (!header)
-        return header.error();
+    const Bytes file(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
     std::vector<std::string> notes;
-    const auto classes = detail::readClasses(file, header.value().records[1], notes);
-    const auto map = detail::readObjectMap(file, header.value().records[2], notes);
-    if (map.empty()) {
-        std::string msg = "the drawing has no object table";
-        report.error(code::kBadSection, msg);
-        return makeError(ErrorCode::Parse, msg);
-    }
     detail::Drawing drawing;
-    drawing.codepage = header.value().codepage;
-    const auto vars = detail::readHeaderVars(file, header.value().records[0], notes);
-    drawing.unitsKnown = vars.valid;
-    drawing.insunits = vars.insunits;
-    drawing.ltscale = vars.ltscale;
-    detail::decodeObjects(file, map, classes, drawing, notes);
+    Result<bool> read = v.version == Version::R2000
+                            ? readR2000(file, drawing, notes, report)
+                            : readR2004Plus(file, v.version, drawing, notes, report);
+    if (!read)
+        return read.error();
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
     for (const auto& [name, count] : drawing.skippedTypes)

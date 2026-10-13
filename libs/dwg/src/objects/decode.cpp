@@ -74,8 +74,8 @@ Vec3 extrusion(BitReader& r) {
 class ObjectReader {
 public:
     ObjectReader(Bytes file, const std::vector<ClassInfo>& classes, Drawing& out,
-                 std::vector<std::string>& notes)
-        : file_(file), classes_(classes), out_(out), notes_(notes) {}
+                 std::vector<std::string>& notes, const Format& fmt)
+        : file_(file), classes_(classes), out_(out), notes_(notes), fmt_(fmt) {}
 
     void run(const std::vector<MapEntry>& map) {
         for (const MapEntry& e : map) {
@@ -125,7 +125,10 @@ private:
         }
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
         BitReader r(body);
-        std::uint32_t type = static_cast<std::uint32_t>(r.bs());
+        std::size_t handleBits = 0;
+        if (fmt_.r2010)
+            handleBits = static_cast<std::size_t>(r.mcUnsigned());
+        std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
         if (type >= 500) {
             const std::string cls = dxfNameOfClass(type);
             if (cls == "LWPOLYLINE")
@@ -133,12 +136,29 @@ private:
             else if (cls == "HATCH")
                 type = kHatch;
         }
-        const std::size_t objBits = r.rl();
+        std::size_t objBits = 0;
+        if (fmt_.r2010) {
+            if (handleBits > body.size() * 8) {
+                note("object " + hex(e.handle) + " has a damaged header");
+                return;
+            }
+            objBits = body.size() * 8 - handleBits;
+        } else {
+            objBits = r.rl();
+        }
         const HandleRef self = r.handle();
         if (r.failed() || objBits > body.size() * 8) {
             note("object " + hex(e.handle) + " has a damaged header");
             return;
         }
+        // R2007 and later: strings live in their own stream just before the handle stream.
+        BitReader strings;
+        if (fmt_.r2007 && !locateStringStream(body, objBits, strings)) {
+            note("object " + hex(e.handle) + " has a damaged string stream");
+            return;
+        }
+        if (strings.bitSize() != 0)
+            r.setStringStream(&strings);
         switch (type) {
             case kBlockHeader:
             case kLayer:
@@ -191,6 +211,57 @@ private:
 
     // ---- shared prefixes ----------------------------------------------------------------------
 
+    struct ColorValue {
+        int index = 256;
+        int rgb = -1;
+        bool book = false;
+    };
+
+    // CMC: a plain index up to R2000; from R2004 on an index (always 0), an RGB word whose top
+    // byte says how to read it, and optional names (ODA spec 2.11).
+    ColorValue readCmc(BitReader& r, int defaultIndex) {
+        ColorValue c;
+        const int idx = r.bs();
+        c.index = idx;
+        if (!fmt_.r2004)
+            return c;
+        const std::uint32_t word = r.bl();
+        const unsigned flags = r.rc();
+        if (flags & 1)
+            r.textBytes();
+        if (flags & 2)
+            r.textBytes();
+        switch (word >> 24) {
+            case 0xC3:
+                c.index = static_cast<int>(word & 0xFF);
+                break;
+            case 0xC2:
+                c.rgb = static_cast<int>(word & 0xFFFFFF);
+                c.index = defaultIndex;
+                break;
+            default:
+                c.index = idx > 0 ? idx : defaultIndex;
+                break;
+        }
+        return c;
+    }
+
+    // ENC (entity colour, R2004+): flags in the high bits of the first value (ODA spec 2.11).
+    ColorValue readEnc(BitReader& r) {
+        ColorValue c;
+        const unsigned v = static_cast<unsigned>(r.bs()) & 0xFFFF;
+        c.index = static_cast<int>(v & 0x1FF);
+        if (v & 0x8000) {
+            c.rgb = static_cast<int>(r.bl() & 0xFFFFFF);
+            c.index = 256;
+        }
+        if (v & 0x4000)
+            c.book = true;
+        if (v & 0x2000)
+            r.bl();  // transparency
+        return c;
+    }
+
     void skipEed(BitReader& r) {
         for (int guard = 0; guard < 100000; ++guard) {
             const std::int32_t size = r.bs();
@@ -206,6 +277,11 @@ private:
     void commonObjectPrefix(BitReader& r, std::uint32_t& reactors) {
         skipEed(r);
         reactors = static_cast<std::uint32_t>(r.bl());
+        xdicMissing_ = false;
+        if (fmt_.r2004)
+            xdicMissing_ = r.b();
+        if (fmt_.r2013)
+            r.b();  // object has data in the data store section
     }
 
     // Handle stream: owner/parent, reactors, xdictionary. Returns the owner handle.
@@ -216,7 +292,8 @@ private:
             owner = resolveHandle(h.handle(), self);
         for (std::uint32_t i = 0; i < reactors && i < 100000 && !h.failed(); ++i)
             h.handle();
-        h.handle();  // xdictionary (R2000 always stores it, possibly null)
+        if (!xdicMissing_)
+            h.handle();  // xdictionary (always stored up to R2000, possibly null)
         return owner;
     }
 
@@ -234,10 +311,12 @@ private:
                 r.bs();  // xref index
                 const bool xdep = r.b();
                 const int values = r.bs();
-                const int color = r.bs();
+                const ColorValue color = readCmc(r, 7);
                 leadingHandles(h, self, reactors, true);
                 h.handle();  // external reference block
                 h.handle();  // plot style
+                if (fmt_.r2007)
+                    h.handle();  // material
                 const HandleRef lt = h.handle();
                 if (r.failed()) {
                     note("layer " + hex(self) + " is damaged");
@@ -247,7 +326,8 @@ private:
                 l.locked = (values & 8) != 0;
                 l.plot = (values & 16) != 0;
                 l.lineweight = lineweightToDxf((values & 0x03E0) >> 5);
-                l.color = color;
+                l.color = color.index;
+                l.trueColor = color.rgb;
                 l.flags = (l.frozen ? 1 : 0) | (l.locked ? 4 : 0) | (xdep ? 16 : 0);
                 l.linetype = resolveHandle(lt, self);
                 out_.layers[self] = std::move(l);
@@ -333,6 +413,8 @@ private:
                 const bool isXref = r.b();
                 const bool overlay = r.b();
                 r.b();  // loaded bit
+                if (fmt_.r2004)
+                    r.bl();  // owned object count
                 b.baseX = r.bd();
                 b.baseY = r.bd();
                 b.baseZ = r.bd();
@@ -358,9 +440,13 @@ private:
         std::uint32_t reactors = 0;
         bool nolinks = true;
         int color = 256;
+        int trueColor = -1;
+        bool colorBook = false;
         double ltScale = 1;
         int ltFlags = 0;
         int plotFlags = 0;
+        int materialFlags = 0;
+        bool visualStyles[3] = {false, false, false};
         int invisible = 0;
         int lineweight = 29;
     };
@@ -368,20 +454,38 @@ private:
     bool readCommonEntity(BitReader& r, CommonBits& c) {
         skipEed(r);
         if (r.b()) {  // graphic image present
-            const std::uint32_t bytes = r.rl();
-            if (bytes > r.bitsLeft() / 8) {
+            const std::uint64_t bytes = fmt_.r2010 ? static_cast<std::uint64_t>(r.bll()) : r.rl();
+            if (bytes > r.bitsLeft() / 8)
                 return false;
-            }
-            for (std::uint32_t i = 0; i < bytes; ++i)
-                r.rc();
+            r.seekBit(r.bitPos() + static_cast<std::size_t>(bytes) * 8);
         }
         c.entmode = static_cast<int>(r.bb());
         c.reactors = static_cast<std::uint32_t>(r.bl());
+        xdicMissing_ = false;
+        if (fmt_.r2004)
+            xdicMissing_ = r.b();
+        if (fmt_.r2013)
+            r.b();  // object has data in the data store section
         c.nolinks = r.b();
-        c.color = r.bs();
+        if (fmt_.r2004) {
+            const ColorValue cv = readEnc(r);
+            c.color = cv.index;
+            c.trueColor = cv.rgb;
+            c.colorBook = cv.book;
+        } else {
+            c.color = r.bs();
+        }
         c.ltScale = r.bd();
         c.ltFlags = static_cast<int>(r.bb());
         c.plotFlags = static_cast<int>(r.bb());
+        if (fmt_.r2007) {
+            c.materialFlags = static_cast<int>(r.bb());
+            r.rc();  // shadow flags
+        }
+        if (fmt_.r2010) {
+            for (bool& v : c.visualStyles)
+                v = r.b();
+        }
         c.invisible = r.bs();
         c.lineweight = r.rc();
         return !r.failed();
@@ -390,6 +494,7 @@ private:
     void decodeEntity(std::uint32_t type, BitReader& r, std::size_t objBits, Bytes body,
                       std::uint64_t self) {
         CommonBits c;
+        ownedCount_ = 0;
         if (!readCommonEntity(r, c)) {
             note("entity " + hex(self) + " has a damaged common part");
             return;
@@ -398,6 +503,7 @@ private:
         e.handle = self;
         e.entmode = c.entmode;
         e.color = c.color;
+        e.trueColor = c.trueColor;
         e.ltScale = c.ltScale;
         e.invisible = (c.invisible & 1) != 0;
         e.lineweight = c.lineweight;
@@ -486,15 +592,22 @@ private:
         }
         BitReader h(body, objBits);
         e.owner = leadingHandles(h, self, c.reactors, c.entmode == 0);
-        if (!c.nolinks) {
+        if (!c.nolinks && !fmt_.r2004) {
             h.handle();  // previous entity
             h.handle();  // next entity
         }
+        if (c.colorBook)
+            h.handle();
         e.layer = resolveHandle(h.handle(), self);
         if (c.ltFlags == 3)
             e.linetype = resolveHandle(h.handle(), self);
+        if (fmt_.r2007 && c.materialFlags == 3)
+            h.handle();
         if (c.plotFlags == 3)
             h.handle();
+        for (bool v : c.visualStyles)
+            if (v)
+                h.handle();
         if (wantStyle)
             e.style = resolveHandle(h.handle(), self);
         if (wantBlock)
@@ -506,9 +619,16 @@ private:
         if (wantDim)
             e.blockHeader = resolveHandle(h.handle(), self);
         if (wantChildren) {
-            e.firstChild = resolveHandle(h.handle(), self);
-            e.lastChild = resolveHandle(h.handle(), self);
-            h.handle();  // SEQEND
+            if (fmt_.r2004) {
+                const std::int32_t n = std::max<std::int32_t>(0, ownedCount_);
+                for (std::int32_t i = 0; i < n && !h.failed() && h.bitsLeft() >= 8; ++i)
+                    e.childHandles.push_back(resolveHandle(h.handle(), self));
+                h.handle();  // SEQEND
+            } else {
+                e.firstChild = resolveHandle(h.handle(), self);
+                e.lastChild = resolveHandle(h.handle(), self);
+                h.handle();  // SEQEND
+            }
         }
         if (h.failed()) {
             note(e.dxfType + " " + hex(self) + " has damaged references and was skipped");
@@ -700,8 +820,14 @@ private:
     void spline(BitReader& r, EntityRec& e) {
         e.dxfType = "SPLINE";
         const std::int32_t scenario = r.bl();
+        bool flagClosed = false;
+        if (fmt_.r2013) {
+            const std::int32_t flags1 = r.bl();
+            r.bl();  // knot parameter
+            flagClosed = (flags1 & 4) != 0;
+        }
         const std::int32_t degree = r.bl();
-        bool rational = false, closed = false, periodic = false;
+        bool rational = false, closed = flagClosed, periodic = false;
         double fitTol = 0, knotTol = 0, ctrlTol = 0;
         Vec3 beginTan, endTan;
         std::int32_t knots = 0, ctrl = 0, fit = 0;
@@ -779,6 +905,28 @@ private:
     // angles of the format; this is unconfirmed until a real file is checked.
     void hatch(BitReader& r, EntityRec& e) {
         e.dxfType = "HATCH";
+        if (fmt_.r2004) {
+            // Gradient fill description; the hatch is imported with a plain fill.
+            r.bl();  // is gradient
+            r.bl();
+            r.bd();  // angle
+            r.bd();  // shift
+            r.bl();  // single colour
+            r.bd();  // tint
+            const std::int32_t colors = r.bl();
+            if (colors < 0 ||
+                static_cast<std::int64_t>(colors) > static_cast<std::int64_t>(r.bitsLeft()) / 8) {
+                r.fail();
+                return;
+            }
+            for (std::int32_t i = 0; i < colors && !r.failed(); ++i) {
+                r.bd();
+                r.bs();
+                r.bl();
+                r.rc();
+            }
+            r.textBytes();  // gradient name
+        }
         const double elevation = r.bd();
         const Vec3 n = bd3(r);
         const std::string name = r.textBytes();
@@ -956,7 +1104,22 @@ private:
                     if (rational)
                         add(e, 42, r.bd());
                 }
-                // The fit point block exists from R24 on, so an R2000 spline edge ends here.
+                if (fmt_.r2010) {
+                    const std::int32_t fit = r.bl();
+                    if (fit < 0 || static_cast<std::int64_t>(fit) >
+                                       static_cast<std::int64_t>(r.bitsLeft()) / 16) {
+                        r.fail();
+                        return;
+                    }
+                    for (std::int32_t i = 0; i < fit && !r.failed(); ++i) {
+                        r.rd();
+                        r.rd();
+                    }
+                    r.rd();  // start tangent
+                    r.rd();
+                    r.rd();  // end tangent
+                    r.rd();
+                }
                 break;
             }
             default:
@@ -967,25 +1130,57 @@ private:
 
     // DIMSTYLE variables in file order (ODA spec 20.4.68, R2000), each with its DXF group code.
     void dimStyleVars(BitReader& r, DimStyleRec& d) {
-        auto bd = [&](int code) { d.groups.push_back({code, r.bd()}); };
-        auto bs = [&](int code) { d.groups.push_back({code, r.bs()}); };
-        auto bit = [&](int code) { d.groups.push_back({code, r.b() ? 1 : 0}); };
-        auto tv = [&](int code) { d.groups.push_back({code, r.textBytes()}); };
+        // Code 0 reads a value that has no DXF group here and drops it.
+        auto bd = [&](int code) {
+            const double v = r.bd();
+            if (code)
+                d.groups.push_back({code, v});
+        };
+        auto bs = [&](int code) {
+            const int v = r.bs();
+            if (code)
+                d.groups.push_back({code, v});
+        };
+        auto bit = [&](int code) {
+            const int v = r.b() ? 1 : 0;
+            if (code)
+                d.groups.push_back({code, v});
+        };
+        auto tv = [&](int code) {
+            std::string v = r.textBytes();
+            if (code)
+                d.groups.push_back({code, std::move(v)});
+        };
+        auto cmc = [&](int code) {
+            const int v = readCmc(r, 0).index;
+            if (code)
+                d.groups.push_back({code, v});
+        };
         tv(3);
         tv(4);
         for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48})
             bd(code);
+        if (fmt_.r2007) {
+            bd(0);
+            bd(0);
+            bs(0);
+            cmc(0);
+        }
         for (int code : {71, 72, 73, 74, 75, 76})
             bit(code);
         for (int code : {77, 78, 79})
             bs(code);
+        if (fmt_.r2007)
+            bs(90);
         for (int code : {140, 141, 142, 143, 144, 145, 146, 147, 148})
             bd(code);
         bit(170);
         bs(171);
         for (int code : {172, 173, 174, 175})
             bit(code);
-        for (int code : {176, 177, 178, 179, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280})
+        for (int code : {176, 177, 178})
+            cmc(code);
+        for (int code : {179, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280})
             bs(code);
         bit(281);
         bit(282);
@@ -993,6 +1188,15 @@ private:
             bs(code);
         bit(288);
         bs(287);
+        if (fmt_.r2007)
+            bit(290);
+        if (fmt_.r2010) {
+            bit(295);
+            bd(0);  // DIMALTMZF
+            tv(0);  // DIMALTMZS
+            bd(0);  // DIMMZF
+            tv(0);  // DIMMZS
+        }
         bs(371);
         bs(372);
     }
@@ -1013,6 +1217,8 @@ private:
     void dimension(BitReader& r, EntityRec& e, std::uint32_t type) {
         e.dxfType = "DIMENSION";
         DimCommon c;
+        if (fmt_.r2010)
+            r.rc();  // version
         c.extrusion = bd3(r);
         c.midX = r.rd();
         c.midY = r.rd();
@@ -1029,6 +1235,11 @@ private:
         c.spacingStyle = r.bs();
         c.spacingFactor = r.bd();
         c.measurement = r.bd();
+        if (fmt_.r2007) {
+            r.b();  // unknown
+            r.b();  // flip arrow 1
+            r.b();  // flip arrow 2
+        }
         c.insX = r.rd();
         c.insY = r.rd();
 
@@ -1173,12 +1384,26 @@ private:
 
     // The tail ATTRIB and ATTDEF add to the TEXT data (ODA spec 20.4.4, 20.4.5; R2000 layout).
     void attribTail(BitReader& r, EntityRec& e, bool def) {
+        if (fmt_.r2010)
+            r.rc();  // version
+        if (fmt_.r2018) {
+            const int kind = r.rc();
+            if (kind != 1) {
+                r.fail();  // multi-line attributes carry an embedded MTEXT: not read yet
+                return;
+            }
+        }
         const std::string tag = r.textBytes();
         r.bs();  // field length, unused
         const int flags = r.rc();
+        if (fmt_.r2007)
+            r.b();  // lock position
         std::string prompt;
-        if (def)
+        if (def) {
+            if (fmt_.r2010)
+                r.rc();  // version
             prompt = r.textBytes();
+        }
         add(e, 2, tag);
         add(e, 70, flags);
         if (def)
@@ -1194,6 +1419,8 @@ private:
         const double thickness = r.bitThickness();
         const double elevation = r.bd();
         const Vec3 n = extrusion(r);
+        if (fmt_.r2004)
+            ownedCount_ = r.bl();
         point3(e, 10, {0, 0, elevation});
         if (thickness != 0)
             add(e, 39, thickness);
@@ -1218,6 +1445,8 @@ private:
         else
             w1 = r.bd();
         const double bulge = r.bd();
+        if (fmt_.r2010)
+            r.bl();  // vertex id
         const double tangent = r.bd();
         point3(e, 10, p);
         if (w0 != 0)
@@ -1237,6 +1466,8 @@ private:
         const Vec3 n = bd3(r);
         const Vec3 xdir = bd3(r);
         const double width = r.bd();
+        if (fmt_.r2007)
+            r.bd();  // reference rectangle height
         const double height = r.bd();
         const int attach = r.bs();
         const int direction = r.bs();
@@ -1286,6 +1517,8 @@ private:
         const double rotation = r.bd();
         const Vec3 n = bd3(r);
         const bool attribs = r.b();
+        if (fmt_.r2004)
+            ownedCount_ = r.bl();
         point3(e, 10, p);
         if (s.x != 1)
             add(e, 41, s.x);
@@ -1393,6 +1626,9 @@ private:
     const std::vector<ClassInfo>& classes_;
     Drawing& out_;
     std::vector<std::string>& notes_;
+    Format fmt_;
+    bool xdicMissing_ = false;  // R2004+: the object stores no extension dictionary handle
+    std::int32_t ownedCount_ = 0;
 };
 
 }  // namespace
@@ -1411,8 +1647,8 @@ int lineweightToDxf(int code) {
 
 void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    const std::vector<ClassInfo>& classes, Drawing& out,
-                   std::vector<std::string>& notes) {
-    ObjectReader reader(file, classes, out, notes);
+                   std::vector<std::string>& notes, const Format& fmt) {
+    ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
 }
 

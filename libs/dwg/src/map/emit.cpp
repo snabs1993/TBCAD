@@ -76,6 +76,8 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
     }
     if (e.color != 256)
         o.group(62, e.color);
+    if (e.trueColor >= 0)
+        o.group(420, e.trueColor);
     const int lw = lineweightToDxf(e.lineweight);
     if (lw != -3)
         o.group(370, lw);
@@ -85,7 +87,7 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
         o.group(60, 1);
     if (e.dxfType == "INSERT") {
         o.group(2, n.block(e.blockHeader));
-        if (e.hasChildren && e.firstChild)
+        if (e.hasChildren && (e.firstChild || !e.childHandles.empty()))
             o.group(66, 1);
     }
     if (e.dxfType == "POLYLINE")
@@ -115,14 +117,26 @@ bool isChild(const EntityRec& e) {
 void emitWithChildren(DxfText& o, const Drawing& d, const EntityRec& e, const Names& n) {
     emitEntity(o, e, n);
     const bool poly = e.dxfType == "POLYLINE";
-    if (!poly && !(e.dxfType == "INSERT" && e.hasChildren && e.firstChild))
+    const bool listed = !e.childHandles.empty();
+    if (!poly && !(e.dxfType == "INSERT" && e.hasChildren && (e.firstChild || listed)))
         return;
     const char* want = poly ? "VERTEX" : "ATTRIB";
-    auto it = std::lower_bound(d.entities.begin(), d.entities.end(), e.firstChild,
-                               [](const EntityRec& a, std::uint64_t h) { return a.handle < h; });
-    for (; it != d.entities.end() && it->handle <= e.lastChild; ++it)
-        if (it->dxfType == want)
-            emitEntity(o, *it, n);
+    auto byHandle = [&](std::uint64_t h) {
+        return std::lower_bound(d.entities.begin(), d.entities.end(), h,
+                                [](const EntityRec& a, std::uint64_t v) { return a.handle < v; });
+    };
+    if (listed) {
+        for (std::uint64_t h : e.childHandles) {
+            auto it = byHandle(h);
+            if (it != d.entities.end() && it->handle == h && it->dxfType == want)
+                emitEntity(o, *it, n);
+        }
+    } else {
+        for (auto it = byHandle(e.firstChild); it != d.entities.end() && it->handle <= e.lastChild;
+             ++it)
+            if (it->dxfType == want)
+                emitEntity(o, *it, n);
+    }
     o.begin("SEQEND");
     o.group(8, n.layer(e.layer));
 }
@@ -135,9 +149,11 @@ std::string emitDxf(const Drawing& d) {
 
     o.beginSection("HEADER");
     o.group(9, "$ACADVER");
-    o.group(1, "AC1015");
-    o.group(9, "$DWGCODEPAGE");
-    o.group(3, "ANSI_1252");
+    o.group(1, d.unicode ? "AC1021" : "AC1015");
+    if (!d.unicode) {
+        o.group(9, "$DWGCODEPAGE");
+        o.group(3, "ANSI_1252");
+    }
     if (d.unitsKnown) {
         o.group(9, "$INSUNITS");
         o.group(70, d.insunits);
@@ -181,6 +197,8 @@ std::string emitDxf(const Drawing& d) {
         o.group(2, l.name);
         o.group(70, l.flags);
         o.group(62, l.color == 0 ? 7 : l.color);
+        if (l.trueColor >= 0)
+            o.group(420, l.trueColor);
         const std::string lt = n.linetype(l.linetype);
         o.group(6, lt.empty() ? "CONTINUOUS" : lt);
         if (!l.plot)

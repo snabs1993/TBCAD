@@ -223,6 +223,12 @@ std::uint32_t BitReader::objectTypeR2010() {
 }
 
 std::string BitReader::textBytes() {
+    if (strings_) {
+        std::string t = strings_->textUnicode();
+        if (strings_->failed())
+            failed_ = true;
+        return t;
+    }
     const std::int32_t n = bs();
     std::string s;
     if (n <= 0 || failed_)
@@ -345,6 +351,52 @@ std::uint32_t crc32(std::uint32_t seed, std::span<const std::uint8_t> data) {
     for (std::uint8_t byte : data)
         c = (c >> 8) ^ t[(c ^ byte) & 0xff];
     return ~c;
+}
+
+}  // namespace tbcad::dwg
+
+namespace tbcad::dwg {
+
+std::uint32_t BitReader::cmc(bool r2004, std::int32_t* index) {
+    const std::int32_t idx = bs();
+    if (index)
+        *index = idx;
+    if (!r2004)
+        return 0;
+    const std::uint32_t word = bl();
+    const unsigned flags = rc();
+    if (flags & 1)
+        textBytes();
+    if (flags & 2)
+        textBytes();
+    return word;
+}
+
+bool locateStringStream(std::span<const std::uint8_t> data, std::size_t endBit,
+                        BitReader& strings) {
+    strings = BitReader();
+    if (endBit < 1 || endBit > data.size() * 8)
+        return endBit == 0;
+    BitReader flag(data, endBit - 1);
+    if (!flag.b())
+        return !flag.failed();
+    if (endBit < 17)
+        return false;
+    std::size_t pos = endBit - 1 - 16;
+    BitReader a(data, pos);
+    std::uint32_t size = a.rs();
+    if (size & 0x8000) {
+        if (pos < 16)
+            return false;
+        pos -= 16;
+        BitReader b(data, pos);
+        const std::uint32_t hi = b.rs();
+        size = (size & 0x7FFF) | (hi << 15);
+    }
+    if (a.failed() || size > pos)
+        return false;
+    strings = BitReader(data, pos - size);
+    return true;
 }
 
 }  // namespace tbcad::dwg

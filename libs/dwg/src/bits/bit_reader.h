@@ -58,6 +58,12 @@ public:
 
     // T for R2004 and older: BS length, then that many bytes in the file code page.
     std::string textBytes();
+    // R2007 and later keep every string in a separate stream of the same object; once set,
+    // textBytes() reads (UTF-16) from there. The pointed-to reader must outlive this one.
+    void setStringStream(BitReader* strings) { strings_ = strings; }
+    // CMC: a plain index up to R2000; from R2004 on index, RGB word, flags and optional names.
+    // Returns the RGB word (0 before R2004).
+    std::uint32_t cmc(bool r2004, std::int32_t* index = nullptr);
     // TU: BS length in characters, then UTF-16LE; returned as UTF-8.
     std::string textUnicode();
 
@@ -65,7 +71,15 @@ private:
     std::span<const std::uint8_t> data_{};
     std::size_t pos_ = 0;
     bool failed_ = false;
+    BitReader* strings_ = nullptr;
 };
+
+// Finds the string stream of an R2007+ object, header or class section whose bit stream ends
+// at `endBit`: the last bit says whether one exists, the 16 bits before it hold its size in
+// bits (plus a second 16 bit part when the first has 0x8000 set). The spec gives that distance
+// as "16 bytes" and "128 bits"; the natural layout is assumed and has to be confirmed with real
+// files. Returns false on damage; `strings` stays empty when there is no string stream.
+bool locateStringStream(std::span<const std::uint8_t> data, std::size_t endBit, BitReader& strings);
 
 // Resolves a stored handle against the handle of the object that holds it (spec 2.13).
 std::uint64_t resolveHandle(const HandleRef& ref, std::uint64_t referenceHandle);

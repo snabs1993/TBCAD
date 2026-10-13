@@ -1,0 +1,158 @@
+#include "container/lz77.h"
+
+namespace tbcad::dwg::detail {
+
+namespace {
+
+class Cursor {
+public:
+    explicit Cursor(std::span<const std::uint8_t> in) : in_(in) {}
+    bool atEnd() const { return pos_ >= in_.size(); }
+    std::uint8_t peek() const { return pos_ < in_.size() ? in_[pos_] : 0; }
+    std::uint8_t next() {
+        if (pos_ >= in_.size()) {
+            failed = true;
+            return 0;
+        }
+        return in_[pos_++];
+    }
+    bool failed = false;
+    std::span<const std::uint8_t> take(std::size_t n) {
+        if (n > in_.size() - pos_) {
+            failed = true;
+            return {};
+        }
+        auto s = in_.subspan(pos_, n);
+        pos_ += n;
+        return s;
+    }
+
+private:
+    std::span<const std::uint8_t> in_;
+    std::size_t pos_ = 0;
+};
+
+// "Literal Length": 1..15 means value + 3; 0 starts a run of 0xFF steps; a byte with a high
+// nibble means no literals (the byte is the next opcode and is left in the stream).
+std::size_t literalLength(Cursor& c) {
+    const std::uint8_t b = c.peek();
+    if (b & 0xF0)
+        return 0;
+    c.next();
+    if (b != 0)
+        return static_cast<std::size_t>(b) + 3;
+    std::size_t total = 0x0F;
+    for (int guard = 0; guard < (1 << 20); ++guard) {
+        const std::uint8_t x = c.next();
+        if (c.failed)
+            return 0;
+        if (x == 0) {
+            total += 0xFF;
+            continue;
+        }
+        total += x;
+        break;
+    }
+    return total + 3;
+}
+
+// "Long Compression Offset": a byte, or 0xFF plus further bytes while they are zero.
+std::size_t longCount(Cursor& c) {
+    std::uint8_t b = c.next();
+    if (b != 0)
+        return b;
+    std::size_t total = 0xFF;
+    for (int guard = 0; guard < (1 << 20); ++guard) {
+        b = c.next();
+        if (c.failed)
+            return 0;
+        if (b == 0) {
+            total += 0xFF;
+            continue;
+        }
+        return total + b;
+    }
+    return total;
+}
+
+// `extra` is the distance bias: the stored offset counts back from the byte before the output
+// position, so the source is `size - (offset + extra)`. The spec does not say whether the
+// stored value is zero based; the caller tries 1 first (offset 0 would copy from nothing).
+bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t extra,
+         std::vector<std::uint8_t>& out) {
+    out.clear();
+    out.reserve(expected);
+    Cursor c(in);
+    auto copyLiterals = [&](std::size_t n) {
+        if (n > expected - out.size())
+            return false;
+        const auto s = c.take(n);
+        if (c.failed)
+            return false;
+        out.insert(out.end(), s.begin(), s.end());
+        return true;
+    };
+    if (!copyLiterals(literalLength(c)))
+        return false;
+    for (;;) {
+        if (c.atEnd())
+            return out.size() == expected;  // tolerate a missing terminator
+        const std::uint8_t op = c.next();
+        std::size_t count = 0, offset = 0, lit = 0;
+        auto twoByte = [&]() {
+            const std::uint8_t first = c.next();
+            const std::uint8_t second = c.next();
+            offset =
+                (static_cast<std::size_t>(first) >> 2) | (static_cast<std::size_t>(second) << 6);
+            lit = first & 3;
+        };
+        if (op == 0x11)
+            return out.size() == expected;
+        if (op < 0x10) {
+            return false;  // 0x00..0x0F cannot start an opcode set
+        } else if (op == 0x10) {
+            count = longCount(c) + 9;
+            twoByte();
+            offset += 0x3FFF;
+        } else if (op < 0x20) {
+            count = (op & 0x0F) + 2;
+            twoByte();
+            offset += 0x3FFF;
+        } else if (op == 0x20) {
+            count = longCount(c) + 0x21;
+            twoByte();
+        } else if (op < 0x40) {
+            count = static_cast<std::size_t>(op) - 0x1E;
+            twoByte();
+        } else {
+            count = (static_cast<std::size_t>(op & 0xF0) >> 4) - 1;
+            const std::uint8_t second = c.next();
+            offset = (static_cast<std::size_t>(second) << 2) | ((op & 0x0C) >> 2);
+            lit = op & 3;
+        }
+        if (c.failed)
+            return false;
+        if (lit == 0 && op != 0x11)
+            lit = literalLength(c);
+        if (c.failed)
+            return false;
+        const std::size_t back = offset + extra;
+        if (back == 0 || back > out.size() || count > expected - out.size())
+            return false;
+        // The ranges may overlap (a distance shorter than the length repeats a pattern).
+        std::size_t from = out.size() - back;
+        for (std::size_t i = 0; i < count; ++i)
+            out.push_back(out[from + i]);
+        if (!copyLiterals(lit))
+            return false;
+    }
+}
+
+}  // namespace
+
+bool lz77Decompress(std::span<const std::uint8_t> in, std::size_t expected,
+                    std::vector<std::uint8_t>& out) {
+    return run(in, expected, 1, out) || run(in, expected, 0, out);
+}
+
+}  // namespace tbcad::dwg::detail

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "container/r2000.h"
+#include "format.h"
 #include "objects/model.h"
 
 namespace tbcad::dwg::detail {
@@ -12,7 +13,7 @@ namespace tbcad::dwg::detail {
 // skipped and described in `notes` (one line each, capped).
 void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    const std::vector<ClassInfo>& classes, Drawing& out,
-                   std::vector<std::string>& notes);
+                   std::vector<std::string>& notes, const Format& fmt = {});
 
 // Lineweight code of the file (index into the standard list) to DXF 370 (1/100 mm); -1 = by layer,
 // -2 = by block, -3 = default.

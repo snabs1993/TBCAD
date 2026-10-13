@@ -28,11 +28,13 @@ std::vector<std::uint8_t> layer(std::uint64_t h, const char* name, int color, st
     o.main.bs(0);
     o.main.b(false);
     o.main.bs(16);  // plot flag only
-    o.main.bs(color);
+    o.cmc(color);
     o.handles.handle(4, 0x02);  // layer control
-    o.handles.handle(3, 0);     // xdictionary
-    o.handles.handle(5, 0);     // external reference block
-    o.handles.handle(5, 0);     // plot style
+    o.xdic();
+    o.handles.handle(5, 0);  // external reference block
+    o.handles.handle(5, 0);  // plot style
+    if (gR2007)
+        o.handles.handle(5, 0);  // material
     o.handles.handle(5, lt);
     return o.finish();
 }
@@ -49,7 +51,7 @@ std::vector<std::uint8_t> linetype(std::uint64_t h, const char* name) {
     o.main.rc('A');
     o.main.rc(0);
     o.handles.handle(4, 0x05);
-    o.handles.handle(3, 0);
+    o.xdic();
     return o.finish();
 }
 
@@ -70,7 +72,7 @@ std::vector<std::uint8_t> style(std::uint64_t h, const char* name) {
     o.main.text("txt");
     o.main.text("");
     o.handles.handle(4, 0x03);
-    o.handles.handle(3, 0);
+    o.xdic();
     return o.finish();
 }
 
@@ -82,19 +84,21 @@ std::vector<std::uint8_t> blockHeader(std::uint64_t h, const char* name, double 
     o.main.bs(0);
     for (int i = 0; i < 6; ++i)
         o.main.b(false);  // xdep, anonymous, has attributes, xref, overlay, loaded
+    if (gR2004)
+        o.main.bl(0);  // owned object count
     o.main.bd(bx);
     o.main.bd(by);
     o.main.bd(0.0);
     o.main.text("");
     o.handles.handle(4, 0x01);
-    o.handles.handle(3, 0);
+    o.xdic();
     return o.finish();
 }
 
 void commonHandles(ObjectWriter& o, int entmode, std::uint64_t owner, std::uint64_t layer) {
     if (entmode == 0)
         o.handles.handle(4, owner);
-    o.handles.handle(3, 0);  // xdictionary
+    o.xdic();
     o.handles.handle(5, layer);
 }
 
@@ -195,6 +199,8 @@ std::vector<std::uint8_t> insert(std::uint64_t h, double x, double y, double sx,
     o.main.bd(0.0);
     o.main.bd(1.0);
     o.main.b(false);  // no attributes
+    if (gR2004)
+        o.main.bl(0);  // owned object count
     commonHandles(o, 2, 0, kLayer0);
     o.handles.handle(5, kDoor);
     return o.finish();
@@ -379,7 +385,7 @@ std::vector<std::uint8_t> dimStyleObj(std::uint64_t h, const char* name, double 
     o.main.bs(0);      // 372
     o.main.b(false);   // unknown bit
     o.handles.handle(4, 0x04);
-    o.handles.handle(3, 0);
+    o.xdic();
     for (int i = 0; i < 6; ++i)
         o.handles.handle(5, 0);
     return o.finish();
@@ -417,7 +423,7 @@ std::vector<std::uint8_t> linearDimObj(std::uint64_t h) {
     return o.finish();
 }
 
-std::vector<std::uint8_t> sampleDrawing() {
+DwgFile sampleFile() {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
     f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
@@ -433,7 +439,26 @@ std::vector<std::uint8_t> sampleDrawing() {
     f.add(0x24, text(0x24));
     f.add(0x25, insert(0x25, 30, 40, 2.0, 0.0));
     f.add(0x30, line(0x30, 0, kDoor, 0, 0, 0, 10));
-    return f.build();
+    return f;
+}
+
+std::vector<std::uint8_t> sampleDrawing() {
+    return sampleFile().build();
+}
+
+std::vector<std::uint8_t> sampleDrawing2004(const char* version) {
+    const std::string v = version;
+    gR2004 = true;
+    gR2007 = v >= "AC1024";
+    gR2013 = v >= "AC1027";
+    const DwgFile f = sampleFile();
+    gR2004 = gR2007 = gR2013 = false;
+    Dwg2004File c;
+    std::vector<std::uint8_t> objects, handles;
+    f.sections(objects, handles);
+    c.section("AcDb:AcDbObjects", objects);
+    c.section("AcDb:Handles", handles, 0x80);
+    return c.build(version);
 }
 
 }  // namespace
@@ -506,6 +531,29 @@ TEST_CASE("an R2000 file with tables, entities and a block imports") {
     CHECK(polys == 1);
     CHECK(texts == 1);
     CHECK(inserts == 1);
+}
+
+TEST_CASE("an R2004 file with compressed sections imports like the R2000 one") {
+    for (const char* version : {"AC1018", "AC1024", "AC1027", "AC1032"}) {
+        CAPTURE(version);
+        auto file = asBytes(sampleDrawing2004(version));
+        dxf::Report report;
+        auto r = importDwg(file, dxf::ImportOptions{}, report);
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        const Document& doc = *r.value().document;
+        CHECK(report.count(dxf::Severity::Error) == 0);
+        int texts = 0;
+        for (EntityId id : doc.modelSpace()) {
+            if (const auto* tx = entityAs<TextData>(*doc.find(id))) {
+                ++texts;
+                CHECK(tx->utf8 == "Hello");
+            }
+        }
+        CHECK(texts == 1);
+        CHECK(doc.layerByName("WALLS") != nullptr);
+        REQUIRE(doc.blockByName("DOOR") != nullptr);
+        CHECK(doc.modelSpace().size() == 6);
+    }
 }
 
 TEST_CASE("damaged or truncated files give a result or a clean error, never a crash") {

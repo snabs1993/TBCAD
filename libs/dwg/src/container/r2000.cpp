@@ -1,6 +1,7 @@
 #include "container/r2000.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "bits/bit_reader.h"
 
@@ -98,106 +99,23 @@ HeaderVars readHeaderVars(Bytes file, const Locator& loc, std::vector<std::strin
         return v;
     }
     BitReader r(file.subspan(dataStart, size));
-    auto skipBits = [&](int n) {
-        for (int i = 0; i < n; ++i)
-            r.b();
-    };
-    auto skipBs = [&](int n) {
-        for (int i = 0; i < n; ++i)
-            r.bs();
-    };
-    auto skipBd = [&](int n) {
-        for (int i = 0; i < n; ++i)
-            r.bd();
-    };
-    auto skipBl = [&](int n) {
-        for (int i = 0; i < n; ++i)
-            r.bl();
-    };
-    auto skipH = [&](int n) {
-        for (int i = 0; i < n; ++i)
-            r.handle();
-    };
-    auto skipSpace = [&] {  // one set of paper or model space variables
-        skipBd(9);          // INSBASE, EXTMIN, EXTMAX
-        skipBd(4);          // LIMMIN, LIMMAX (2RD each)
-        r.bd();             // ELEVATION
-        skipBd(9);          // UCSORG, UCSXDIR, UCSYDIR
-        skipH(2);           // UCSNAME, UCSORTHOREF
-        r.bs();             // UCSORTHOVIEW
-        r.handle();         // UCSBASE
-        skipBd(18);         // six UCSORG* points
-    };
-    skipBd(4);
-    for (int i = 0; i < 4; ++i)
-        r.textBytes();
-    skipBl(2);
-    r.handle();   // current viewport entity header
-    skipBits(2);  // DIMASO, DIMSHO
-    skipBits(6);  // PLINEGEN .. LIMCHECK
-    skipBits(4);  // USRTIMER, SKPOLY, ANGDIR, SPLFRAME
-    skipBits(2);  // MIRRTEXT, WORLDVIEW
-    skipBits(3);  // TILEMODE, PLIMCHECK, VISRETAIN
-    skipBits(2);  // DISPSILH, PELLIPSE
-    r.bs();       // PROXYGRAPHICS
-    skipBs(5);    // TREEDEPTH, LUNITS, LUPREC, AUNITS, AUPREC
-    r.bs();       // ATTMODE
-    r.bs();       // PDMODE
-    skipBs(5);    // USERI1..5
-    skipBs(14);
-    v.ltscale = r.bd();
-    skipBd(20);
-    r.textBytes();  // MENUNAME
-    skipBl(8);
-    r.bs();       // CECOLOR
-    skipH(6);     // HANDSEED, CLAYER, TEXTSTYLE, CELTYPE, DIMSTYLE, CMLSTYLE
-    r.bd();       // PSVPSCALE
-    skipSpace();  // paper space
-    skipSpace();  // model space
-    r.textBytes();
-    r.textBytes();  // DIMPOST, DIMAPOST
-    skipBd(9);
-    skipBits(6);
-    skipBs(3);
-    skipBd(8);
-    r.bd();  // DIMALTRND
-    r.b();   // DIMALT
-    r.bs();  // DIMALTD
-    skipBits(4);
-    skipBs(3);  // three colours
-    skipBs(11);
-    skipBits(2);
-    skipBs(4);
-    r.b();   // DIMUPT
-    r.bs();  // DIMATFIT
-    skipH(5);
-    skipBs(2);   // DIMLWD, DIMLWE
-    skipH(9);    // control objects
-    r.handle();  // viewport entity header control
-    skipH(3);    // dictionaries
-    skipBs(2);   // TSTACKALIGN, TSTACKSIZE
-    r.textBytes();
-    r.textBytes();
-    skipH(3);
-    r.bl();  // flags
-    const int units = r.bs();
-    if (r.failed() || units < 0 || units > 20) {
-        notes.push_back("the drawing units could not be read from the header; unitless assumed");
-        return v;
-    }
-    v.insunits = units;
-    v.valid = true;
+    parseHeaderVariables(r, Format{}, v, notes);
     return v;
 }
 
 std::vector<MapEntry> readObjectMap(Bytes file, const Locator& loc,
                                     std::vector<std::string>& notes) {
-    std::vector<MapEntry> out;
     if (!loc.present)
-        return out;
-    std::size_t pos = loc.seeker;
+        return {};
     const std::size_t end =
         std::min<std::size_t>(file.size(), static_cast<std::size_t>(loc.seeker) + loc.size);
+    return readObjectMapData(file, loc.seeker, end, notes);
+}
+
+std::vector<MapEntry> readObjectMapData(Bytes file, std::size_t start, std::size_t end,
+                                        std::vector<std::string>& notes) {
+    std::vector<MapEntry> out;
+    std::size_t pos = start;
     std::uint64_t lastHandle = 0;
     std::int64_t lastLoc = 0;
     while (pos + 2 <= end) {
@@ -227,6 +145,142 @@ std::vector<MapEntry> readObjectMap(Bytes file, const Locator& loc,
         pos += size + 2;  // size field counts itself; the CRC follows the data
     }
     return out;
+}
+
+void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
+                          std::vector<std::string>& notes) {
+    const bool r2004 = fmt.r2004;
+    const bool r2007 = fmt.r2007;
+    auto skipBits = [&](int n) {
+        for (int i = 0; i < n; ++i)
+            r.b();
+    };
+    auto skipBs = [&](int n) {
+        for (int i = 0; i < n; ++i)
+            r.bs();
+    };
+    auto skipBd = [&](int n) {
+        for (int i = 0; i < n; ++i)
+            r.bd();
+    };
+    auto skipBl = [&](int n) {
+        for (int i = 0; i < n; ++i)
+            r.bl();
+    };
+    // From R2007 the handles are in a stream of their own.
+    auto skipH = [&](int n) {
+        if (r2007)
+            return;
+        for (int i = 0; i < n; ++i)
+            r.handle();
+    };
+    auto skipSpace = [&] {  // one set of paper or model space variables
+        skipBd(9);          // INSBASE, EXTMIN, EXTMAX
+        skipBd(4);          // LIMMIN, LIMMAX (2RD each)
+        r.bd();             // ELEVATION
+        skipBd(9);          // UCSORG, UCSXDIR, UCSYDIR
+        skipH(2);           // UCSNAME, UCSORTHOREF
+        r.bs();             // UCSORTHOVIEW
+        skipH(1);           // UCSBASE
+        skipBd(18);         // six UCSORG* points
+    };
+    if (fmt.r2013)
+        r.bll();  // REQUIRED VERSIONS
+    skipBd(4);
+    for (int i = 0; i < 4; ++i)
+        r.textBytes();
+    skipBl(2);
+    if (!r2004)
+        r.handle();  // current viewport entity header
+    skipBits(2);     // DIMASO, DIMSHO
+    skipBits(7);     // PLINEGEN, ORTHOMODE, REGENMODE, FILLMODE, QTEXTMODE, PSLTSCALE, LIMCHECK
+    if (r2004)
+        skipBits(1);  // undocumented
+    skipBits(4);      // USRTIMER, SKPOLY, ANGDIR, SPLFRAME
+    skipBits(2);      // MIRRTEXT, WORLDVIEW
+    skipBits(3);      // TILEMODE, PLIMCHECK, VISRETAIN
+    skipBits(2);      // DISPSILH, PELLIPSE
+    r.bs();           // PROXYGRAPHICS
+    skipBs(5);        // TREEDEPTH, LUNITS, LUPREC, AUNITS, AUPREC
+    r.bs();           // ATTMODE
+    r.bs();           // PDMODE
+    if (r2004)
+        skipBl(3);
+    skipBs(5);  // USERI1..5
+    skipBs(14);
+    v.ltscale = r.bd();
+    skipBd(20);
+    if (!r2007)
+        r.textBytes();  // MENUNAME (up to R2004)
+    skipBl(4);          // TDCREATE, TDUPDATE
+    if (r2004)
+        skipBl(3);
+    skipBl(4);             // TDINDWG, TDUSRTIMER
+    r.cmc(r2004);          // CECOLOR
+    r.handle();            // HANDSEED (always in this stream)
+    skipH(r2007 ? 6 : 5);  // CLAYER, TEXTSTYLE, CELTYPE, [CMATERIAL], DIMSTYLE, CMLSTYLE
+    r.bd();                // PSVPSCALE
+    skipSpace();           // paper space
+    skipSpace();           // model space
+    r.textBytes();
+    r.textBytes();  // DIMPOST, DIMAPOST
+    skipBd(9);
+    if (r2007) {
+        skipBd(2);  // DIMFXL, DIMJOGANG
+        r.bs();     // DIMTFILL
+        r.cmc(r2004);
+    }
+    skipBits(6);
+    skipBs(3);
+    if (r2007)
+        r.bs();  // DIMARCSYM
+    skipBd(8);
+    r.bd();  // DIMALTRND
+    r.b();   // DIMALT
+    r.bs();  // DIMALTD
+    skipBits(4);
+    for (int i = 0; i < 3; ++i)
+        r.cmc(r2004);  // DIMCLRD, DIMCLRE, DIMCLRT
+    skipBs(11);
+    skipBits(2);
+    skipBs(4);
+    r.b();   // DIMUPT
+    r.bs();  // DIMATFIT
+    if (r2007)
+        r.b();  // DIMFXLON
+    if (fmt.r2010) {
+        r.b();   // DIMTXTDIRECTION
+        r.bd();  // DIMALTMZF
+        r.textBytes();
+        r.bd();  // DIMMZF
+        r.textBytes();
+    }
+    skipH(r2007 ? 8 : 5);  // DIMTXSTY, DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2, [three linetypes]
+    skipBs(2);             // DIMLWD, DIMLWE
+    skipH(9);              // control objects
+    if (!r2004)
+        skipH(1);  // viewport entity header control
+    skipH(3);      // dictionaries
+    skipBs(2);     // TSTACKALIGN, TSTACKSIZE
+    r.textBytes();
+    r.textBytes();
+    skipH(3);  // LAYOUTS, PLOTSETTINGS, PLOTSTYLES
+    if (r2004)
+        skipH(2);  // MATERIALS, COLORS
+    if (r2007)
+        skipH(1);  // VISUALSTYLE
+    if (fmt.r2013)
+        skipH(1);
+    r.bl();  // flags
+    const int units = r.bs();
+    if (r.failed() || units < 0 || units > 20 || !std::isfinite(v.ltscale) || v.ltscale <= 0 ||
+        v.ltscale > 1e9) {
+        notes.push_back("the drawing units could not be read from the header; unitless assumed");
+        v.valid = false;
+        return;
+    }
+    v.insunits = units;
+    v.valid = true;
 }
 
 }  // namespace tbcad::dwg::detail
