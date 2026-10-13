@@ -581,14 +581,16 @@ TEST_CASE("the window query is answered by the spatial index") {
     both = f.core->entitiesInWindow(BBox2{{-5, -5}, {600, 600}});
     REQUIRE(both.has_value());
     CHECK(both->size() == 1);
-    TEST_CASE("SETTINGS asks the window to open the dialog") {
-        Fixture f("settings_cmd");
-        f.core->submitText("op");  // alias
-        auto req = f.core->takeUiRequests();
-        REQUIRE(req.size() == 1);
-        CHECK(req[0] == "settings");
-        CHECK(f.core->takeUiRequests().empty());
-        CHECK_FALSE(f.core->runner().active());
-        CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
-        CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
-    }
+}
+
+TEST_CASE("SETTINGS asks the window to open the dialog") {
+    Fixture f("settings_cmd");
+    f.core->submitText("op");  // alias
+    auto req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "settings");
+    CHECK(f.core->takeUiRequests().empty());
+    CHECK_FALSE(f.core->runner().active());
+    CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
+    CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
+}
