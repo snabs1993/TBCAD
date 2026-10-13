@@ -58,8 +58,8 @@ public:
             co_return;
         const BlockId block = def->id;
         auto what = co_await ctx.getKeyword(
-            "Option [Parameter/Bind/Preset/Check] <Parameter>",
-            cmd::KeywordOptions{.keywords = {"Parameter", "Bind", "Preset", "Check"},
+            "Option [Parameter/Bind/Preset/Join/Check] <Parameter>",
+            cmd::KeywordOptions{.keywords = {"Parameter", "Bind", "Preset", "Join", "Check"},
                                 .defaultKeyword = "Parameter"});
         if (!what.ok())
             co_return;
@@ -70,6 +70,24 @@ public:
                 ctx.message("The assembly is sound");
             for (const std::string& s : problems)
                 ctx.message(s);
+            co_return;
+        }
+
+        if (what.keyword == "Join") {
+            auto cls = co_await ctx.getString(
+                "Join class, e.g. wall (Enter for none; assemblies of one class merge)",
+                cmd::StringOptions{.allowEmpty = true});
+            if (cls.status == cmd::Status::Cancel)
+                co_return;
+            const std::string name = cmd::trim(cls.text);
+            (void)ctx.tx().modifyBlock(block, [&](BlockDef& d) {
+                if (!d.assembly)
+                    d.assembly = AssemblyDef{};
+                d.assembly->joinClass = name;
+            });
+            ctx.message(name.empty() ? "The assembly no longer joins others"
+                                     : "Overlapping assemblies of class \"" + name + "\" now merge");
+            ctx.setUndoLabel("Set join class");
             co_return;
         }
 
@@ -440,6 +458,46 @@ public:
     }
 };
 
+// JOINASM / UNJOINASM: lets the selected assemblies merge with overlapping ones of their class,
+// or keeps them separate.
+class JoinAsmCommand final : public cmd::Command {
+public:
+    explicit JoinAsmCommand(bool join) : join_(join) {}
+    std::string_view name() const override { return join_ ? "JOINASM" : "UNJOINASM"; }
+    std::string_view description() const override {
+        return join_ ? "Merge the selected assemblies with overlapping ones of the same class"
+                     : "Keep the selected assemblies separate from overlapping ones";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        auto sel = co_await ctx.getSelection("Select assemblies");
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        std::size_t n = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = doc.find(id);
+            const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+            const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+            if (!def || !def->assembly || ins->joinOff == !join_)
+                continue;
+            (void)ctx.tx().modify(id, [&](Entity& x) {
+                if (auto* d = entityAs<InsertData>(x))
+                    d->joinOff = !join_;
+            });
+            ++n;
+        }
+        if (n == 0)
+            ctx.message("No assembly changed");
+        else
+            ctx.message(std::to_string(n) + (join_ ? " assemblies join again" : " assemblies separated"));
+        ctx.setUndoLabel(join_ ? "Join assemblies" : "Unjoin assemblies");
+    }
+
+private:
+    bool join_;
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeAsmDefCommand() {
@@ -450,6 +508,9 @@ std::unique_ptr<cmd::Command> makeAsmSetCommand() {
 }
 std::unique_ptr<cmd::Command> makeAsmSetSelectedCommand() {
     return std::make_unique<AsmSetSelectedCommand>();
+}
+std::unique_ptr<cmd::Command> makeJoinAsmCommand(bool join) {
+    return std::make_unique<JoinAsmCommand>(join);
 }
 std::unique_ptr<cmd::Command> makeAsmInfoCommand() {
     return std::make_unique<AsmInfoCommand>();

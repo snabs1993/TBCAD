@@ -96,3 +96,20 @@ TEST_CASE("-ASMSET changes the selected assemblies in one step") {
                                      *entityAs<InsertData>(*f.doc.find(a)))[0]
               .number == doctest::Approx(24));
 }
+
+TEST_CASE("ASMDEF Join sets the class, UNJOINASM and JOINASM toggle inserts") {
+    Fixture f;
+    BlockId b = makeBar(f);
+    f.host->run("ASMDEF", {"Bar", "Parameter", "Len", "Number", "10", "0", "0"});
+    f.host->run("ASMDEF", {"Bar", "Join", "wall"});
+    CHECK(f.doc.block(b)->assembly->joinClass == "wall");
+    EntityId a = insertBar(f, b);
+    f.host->setSelection({a});
+    f.host->run("UNJOINASM", {""});
+    CHECK(entityAs<InsertData>(*f.doc.find(a))->joinOff);
+    f.host->setSelection({a});
+    f.host->run("JOINASM", {""});
+    CHECK_FALSE(entityAs<InsertData>(*f.doc.find(a))->joinOff);
+    f.host->run("ASMDEF", {"Bar", "Join", ""});
+    CHECK(f.doc.block(b)->assembly->joinClass.empty());
+}

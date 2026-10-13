@@ -433,12 +433,14 @@ TEST_CASE("round trip: assembly definitions and parameter values") {
         def.params.push_back(m);
         def.bindings.push_back(
             AsmBinding{AsmBinding::Kind::ArrayField, line, "columns", "ceil(ความยาว / 5)"});
+        def.joinClass = "ชั้น";
         def.presets.push_back(
             AsmPreset{"long", {AsmValue{"ความยาว", false, 80, ""}, AsmValue{"Material", true, 0, "Pine"}}});
         REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) { d.assembly = std::move(def); }).ok());
         Entity ins;
         InsertData data{blk, {3, 3}, {1, 1}, 0};
         data.asmValues = {AsmValue{"ความยาว", false, 42, ""}, AsmValue{"Material", true, 0, "Pine"}};
+        data.joinOff = true;
         ins.data = Indirect<InsertData>(std::move(data));
         (void)tx.add(std::move(ins));
         tx.commit();
@@ -454,6 +456,7 @@ TEST_CASE("round trip: assembly definitions and parameter values") {
     CHECK(def->assembly->bindings[0].formula == "ceil(ความยาว / 5)");
     REQUIRE(def->assembly->presets.size() == 1);
     CHECK(def->assembly->presets[0].values[1].text == "Pine");
+    CHECK(def->assembly->joinClass == "ชั้น");
     int values = 0;
     back->forEachEntity([&](const Entity& e) {
         if (const auto* i = entityAs<InsertData>(e)) {
@@ -461,6 +464,7 @@ TEST_CASE("round trip: assembly definitions and parameter values") {
             REQUIRE(i->asmValues.size() == 2);
             CHECK(i->asmValues[0].number == 42);
             CHECK(i->asmValues[1].text == "Pine");
+            CHECK(i->joinOff);
         }
     });
     CHECK(values == 1);

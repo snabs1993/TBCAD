@@ -275,6 +275,7 @@ struct InsertData {
     std::vector<double> dynValues{};
     // Values of the block's assembly parameters by name (missing = the default).
     std::vector<AsmValue> asmValues{};
+    bool joinOff = false;  // assembly insert: stays separate from overlapping assemblies
 };
 
 enum class DimKind : std::uint8_t {

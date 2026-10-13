@@ -2,6 +2,7 @@ tbcad_add_library(blocks
   SOURCES
     src/array.cpp
     src/assembly.cpp
+    src/join.cpp
     src/attributes.cpp
     src/blocks.cpp
     src/dynamic.cpp
@@ -14,6 +15,7 @@ tbcad_add_tests(blocks
     tests/main.cpp
     tests/array_tests.cpp
     tests/assembly_tests.cpp
+    tests/join_tests.cpp
     tests/attribute_tests.cpp
     tests/blocks_tests.cpp
     tests/display_tests.cpp

@@ -605,6 +605,7 @@ private:
                     pr.values.push_back(value());
                 def.presets.push_back(std::move(pr));
             }
+            def.joinClass = str(r);
             if (!tx.modifyBlock(b, [&](BlockDef& d) { d.assembly = std::move(def); }).ok())
                 bad("assembly definition names an unknown block");
         }

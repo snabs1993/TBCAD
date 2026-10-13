@@ -248,6 +248,7 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
                 for (const AsmValue& v : pr.values)
                     putValue(v);
             }
+            asmb.varint(st.intern(r.assembly->joinClass));
         }
 
         // Entities in id order, split over ENTS chunks of about 8 MiB.

@@ -184,7 +184,8 @@ struct PayloadWriter {
         w.f64(d.rotation);
         // Trailing fields: attribute values (format 1.1), then tagged sections: 1 = array
         // (format 1.3), 2 = dynamic block values (format 1.4).
-        if (!d.attribs.empty() || d.array || !d.dynValues.empty() || !d.asmValues.empty()) {
+        if (!d.attribs.empty() || d.array || !d.dynValues.empty() || !d.asmValues.empty() ||
+            d.joinOff) {
             w.varint(d.attribs.size());
             for (const AttribValue& a : d.attribs) {
                 str(a.tag);
@@ -225,6 +226,8 @@ struct PayloadWriter {
                 str(v.text);
             }
         }
+        if (d.joinOff)
+            w.u8(4);
     }
     void operator()(const DimensionData& d) {
         w.u8(static_cast<std::uint8_t>(d.kind));
@@ -507,6 +510,10 @@ struct PayloadReader {
                             v.text = str();
                             d.asmValues.push_back(std::move(v));
                         }
+                        continue;
+                    }
+                    if (tag == 4) {
+                        d.joinOff = true;
                         continue;
                     }
                     if (tag != 1)

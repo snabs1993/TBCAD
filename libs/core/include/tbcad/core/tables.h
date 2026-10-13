@@ -160,6 +160,9 @@ struct AssemblyDef {
     std::vector<AsmParam> params{};
     std::vector<AsmBinding> bindings{};
     std::vector<AsmPreset> presets{};
+    // Non-empty: inserts of this block that overlap other inserts with the same class merge into
+    // one body (see blocks/join.h).
+    std::string joinClass{};
 };
 
 struct BlockDef {

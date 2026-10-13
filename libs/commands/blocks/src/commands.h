@@ -24,6 +24,7 @@ std::unique_ptr<cmd::Command> makeDynSetCommand();
 std::unique_ptr<cmd::Command> makeAsmDefCommand();
 std::unique_ptr<cmd::Command> makeAsmSetCommand();
 std::unique_ptr<cmd::Command> makeAsmInfoCommand();
+std::unique_ptr<cmd::Command> makeJoinAsmCommand(bool join);
 std::unique_ptr<cmd::Command> makeAsmSetSelectedCommand();
 std::unique_ptr<cmd::Command> makeAttDefCommand();
 std::unique_ptr<cmd::Command> makeAttEditCommand();

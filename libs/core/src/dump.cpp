@@ -234,6 +234,8 @@ struct DataDumper {
             o << (v.isText ? " t " : " n ") << v.number << " ";
             o.quoted(v.text);
         }
+        if (d.joinOff)
+            o << " JOINOFF";
     }
     void operator()(const DimensionData& d) {
         o << "DIM kind" << static_cast<int>(d.kind) << " rot" << d.rotation;
@@ -367,6 +369,11 @@ std::string canonicalDump(const Document& doc) {
                     o << (v.isText ? " t " : " n ") << v.number << " ";
                     o.quoted(v.text);
                 }
+                o << "\n";
+            }
+            if (!r.assembly->joinClass.empty()) {
+                o << "  asmjoin ";
+                o.quoted(r.assembly->joinClass);
                 o << "\n";
             }
         }

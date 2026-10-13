@@ -125,6 +125,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     if (!def || def->entities.empty())
         return;
     DepthGuard guard;
+    const std::size_t firstItem = out.items.size();
 
     // An assembly's formulas turn its parameter values into the values the content is built from.
     std::optional<AsmResolved> resolved;
@@ -181,6 +182,10 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         for (const Transform2& it : items)
             transformList(own, it, out);
     }
+
+    // Overlapping assemblies of one join class read as a single body.
+    if (g_depth == 1 && detail::joinApplies(doc, insert, *def, *ins))
+        detail::joinClip(doc, insert, *def, ctx, out, firstItem);
 }
 
 void registerInsertDisplay() {
