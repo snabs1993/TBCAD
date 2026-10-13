@@ -35,8 +35,8 @@ std::string todayText(std::string_view format) {
 #endif
     std::string f = format.empty() ? std::string("yyyy-MM-dd") : std::string(format);
     auto two = [](int v) {
-        char b[8];
-        std::snprintf(b, sizeof b, "%02d", v);
+        char b[16];
+        std::snprintf(b, sizeof b, "%02d", ((v % 100) + 100) % 100);
         return std::string(b);
     };
     auto replaceAll = [](std::string& s, const std::string& what, const std::string& with) {

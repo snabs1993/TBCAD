@@ -122,7 +122,7 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
             if (edit.linetype)
                 x.common.linetype = *edit.linetype;
             if (edit.linetypeScale)
-                x.common.linetypeScale = *edit.linetypeScale;
+                x.common.linetypeScale = static_cast<float>(*edit.linetypeScale);
             if (edit.lineweight)
                 x.common.lineweight = *edit.lineweight;
         });

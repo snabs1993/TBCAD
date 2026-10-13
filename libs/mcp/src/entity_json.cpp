@@ -1099,7 +1099,7 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
         if (const Json* c = j.find("lineweight"))
             e.common.lineweight = orFail(lineweightFromJson(*c, false));
         if (const Json* c = j.find("linetypeScale"))
-            e.common.linetypeScale = c->asNumber(1);
+            e.common.linetypeScale = static_cast<float>(c->asNumber(1));
         if (const Json* c = j.find("visible"))
             e.common.visible = c->asBool(true);
 

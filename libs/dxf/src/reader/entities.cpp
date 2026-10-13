@@ -154,7 +154,7 @@ EntityCommon Importer::commonOf(const Record& r) {
     if (const Group* g = r.find(48)) {
         double s = g->number();
         if (std::isfinite(s) && s > 0)
-            c.linetypeScale = s;
+            c.linetypeScale = static_cast<float>(s);
     }
     c.visible = r.integer(60, 0) == 0;
     bool ours = false;

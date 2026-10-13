@@ -868,7 +868,7 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
     if (flags & kCfLineweight)
         c.lineweight = LineWeight{r.i16()};
     if (flags & kCfLtScale)
-        c.linetypeScale = r.f64();
+        c.linetypeScale = static_cast<float>(r.f64());
     c.visible = !(flags & kCfHidden);
     c.annotative = (flags & kCfAnnotative) != 0;
     if (flags & kCfOwner)
