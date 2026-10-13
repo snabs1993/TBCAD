@@ -1,4 +1,5 @@
 #include "rig.h"
+#include "tbcad/core/math.h"
 
 using namespace tbcad;
 using namespace tbcad::mcp;
@@ -34,7 +35,7 @@ TEST_CASE("entity json: hatch gradients and fill colours round trip") {
     Json h = get(r, id);
     REQUIRE(h.find("gradient"));
     CHECK(h.find("gradient")->find("type")->asString() == "cylinder");
-    CHECK(h.find("gradient")->find("angle")->asNumber() == doctest::Approx(M_PI / 4));
+    CHECK(h.find("gradient")->find("angle")->asNumber() == doctest::Approx(tbcad::kPi / 4));
     CHECK(h.find("gradient")->find("color1")->asString() == "#102030");
     // the gradient survives a modify that changes something else
     r.ok("modify_entities", J("{\"ids\":[\"" + id + "\"],\"set\":{\"color\":1}}"));
@@ -109,11 +110,11 @@ TEST_CASE("entity json: dimensions of every kind and leaders can be written and 
     std::string ang = addOne(
         r, R"({"kind":"dimension","dimKind":"angular","lines":[[[0,0],[100,0]],[[0,0],[0,100]]],
               "arcPoint":[50,50]})");
-    CHECK(get(r, ang).find("measurement")->asNumber() == doctest::Approx(M_PI / 2));
+    CHECK(get(r, ang).find("measurement")->asNumber() == doctest::Approx(tbcad::kPi / 2));
     std::string ang3 =
         addOne(r, R"({"kind":"dimension","dimKind":"angular3","first":[100,0],"second":[0,100],
               "vertex":[0,0],"arcPoint":[50,50]})");
-    CHECK(get(r, ang3).find("measurement")->asNumber() == doctest::Approx(M_PI / 2));
+    CHECK(get(r, ang3).find("measurement")->asNumber() == doctest::Approx(tbcad::kPi / 2));
 
     // text override and a fixed text position
     std::string txt = addOne(
