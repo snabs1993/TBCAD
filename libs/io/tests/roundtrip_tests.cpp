@@ -263,3 +263,33 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
     });
     CHECK(withAttribs == 1);
 }
+
+TEST_CASE("round trip: ids freed after the highest saved id are not reused after a reload") {
+    Document doc;
+    EntityId lastEntity;
+    LayerId lastLayer;
+    {
+        Transaction tx = doc.begin("setup");
+        Entity a;
+        a.data = LineData{{0, 0}, {1, 0}};
+        (void)tx.add(a);
+        lastEntity = tx.add(a).value();
+        lastLayer = tx.addLayer(Layer{.name = "temp"}).value();
+        tx.commit();
+    }
+    {
+        Transaction tx = doc.begin("delete");
+        (void)tx.erase(lastEntity);
+        (void)tx.eraseLayer(lastLayer);
+        tx.commit();
+    }
+    NextIds before = doc.nextIds();
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(back->nextIds().entity == before.entity);
+    CHECK(back->nextIds().layer == before.layer);
+    Transaction tx = back->begin("more");
+    Entity b;
+    b.data = LineData{{0, 0}, {2, 0}};
+    CHECK(tx.add(b).value().value > lastEntity.value);
+    CHECK(tx.addLayer(Layer{.name = "again"}).value().value > lastLayer.value);
+}
