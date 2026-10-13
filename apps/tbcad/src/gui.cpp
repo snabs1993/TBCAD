@@ -173,6 +173,47 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     installImeHook(window);
 }
 
+namespace {
+
+// Shows the Markdown of the help page as plain text: headings in the accent colour, bullets
+// with a dot, and the **bold** and `code` markers removed.
+void drawMarkdownLite(const std::string& text) {
+    auto clean = [](std::string line) {
+        for (const char* mark : {"**", "`"}) {
+            const std::string m = mark;
+            for (size_t at; (at = line.find(m)) != std::string::npos;)
+                line.erase(at, m.size());
+        }
+        return line;
+    };
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        size_t level = 0;
+        while (level < line.size() && line[level] == '#')
+            ++level;
+        if (level > 0 && level < line.size() && line[level] == ' ') {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
+            ImGui::TextWrapped("%s", clean(line.substr(level + 1)).c_str());
+            ImGui::PopStyleColor();
+            if (level <= 2)
+                ImGui::Separator();
+        } else if (line.rfind("- ", 0) == 0) {
+            ImGui::Bullet();
+            ImGui::TextWrapped("%s", clean(line.substr(2)).c_str());
+        } else if (line.empty()) {
+            ImGui::Dummy(ImVec2(0, 4));
+        } else {
+            ImGui::TextWrapped("%s", clean(line).c_str());
+        }
+    }
+}
+
+}  // namespace
+
 void Gui::setThemeMode(ui::ThemeMode mode) {
     themeMode_ = mode;
     theme_ = ui::themeFor(mode, systemPrefersDark());
@@ -2294,7 +2335,7 @@ void Gui::dialogs() {
     if (ImGui::BeginPopupModal("Quick Start", nullptr)) {
         ImGui::BeginChild("##quickstart", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted(quickStartText_.c_str());
+        drawMarkdownLite(quickStartText_);
         ImGui::PopTextWrapPos();
         ImGui::EndChild();
         if (ImGui::Button("Close", ImVec2(110, 0)))
