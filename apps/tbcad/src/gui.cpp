@@ -594,6 +594,8 @@ void Gui::menuBar() {
             logExpanded_ = !logExpanded_;
         if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
             cleanScreen_ = !cleanScreen_;
+        if (ImGui::MenuItem("Reset Layout"))
+            resetLayout_ = true;
         for (const auto& p : registry_.panels())
             ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
         ImGui::Separator();
@@ -735,8 +737,15 @@ void Gui::statusBar() {
 
 void Gui::dockLayout(ImGuiID ds) {
     ImGuiDockNode* existing = ImGui::DockBuilderGetNode(ds);
-    if (existing && (existing->IsSplitNode() || existing->Windows.Size > 0))
+    if (resetLayout_) {
+        resetLayout_ = false;  // View > Reset Layout: rebuild the default arrangement
+        showCommandLine_ = true;
+        showProperties_ = true;
+        for (auto& [id, open] : panelOpen_)
+            open = true;
+    } else if (existing && (existing->IsSplitNode() || existing->Windows.Size > 0)) {
         return;  // restored from imgui.ini
+    }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::DockBuilderRemoveNode(ds);
     ImGui::DockBuilderAddNode(ds, ImGuiDockNodeFlags_DockSpace);

@@ -150,3 +150,5 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
 ## DXF as the main file
 
 File > Open and drag-and-drop accept `.dxf` as well as `.tbcad`. Save on a drawing that came from a `.dxf` writes DXF (R2000) back to the same file, keeping the old one as `.bak`; notices from the reader and writer (skipped or simplified objects) go to the command history. Tools > Settings > Files > "Default save format" chooses the extension for new drawings; `.tbcad` stays the default.
+
+View > Reset Layout rebuilds the default panel arrangement (Command at the bottom, Properties at the right) and shows every panel again; the layout is otherwise remembered in `imgui.ini` in the settings folder. The drawing is only redrawn after input or a visible change (idle frames wait up to half a second).

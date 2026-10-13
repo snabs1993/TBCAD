@@ -144,6 +144,7 @@ private:
     bool showCommandLine_ = true;
     bool showProperties_ = true;
     bool layoutBuilt_ = false;
+    bool resetLayout_ = false;
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
