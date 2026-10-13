@@ -137,6 +137,13 @@ struct PayloadWriter {
             for (const auto& edge : loop.edges)
                 std::visit([&](const auto& e) { hatchEdge(e); }, edge);
         }
+        // A gradient is appended after the loops; readers that do not know it skip the bytes.
+        if (d.gradient) {
+            w.u8(static_cast<std::uint8_t>(d.gradient->kind));
+            color(d.gradient->color1);
+            color(d.gradient->color2);
+            w.f64(d.gradient->angle);
+        }
     }
     void hatchEdge(const HatchLineEdge& e) {
         w.u8(0);
@@ -531,6 +538,18 @@ struct PayloadReader {
                         bad("unknown hatch edge type");
                 }
             }
+        }
+        if (r.remaining() > 0) {
+            std::uint8_t k = r.u8();
+            if (k != static_cast<std::uint8_t>(GradientKind::Linear) &&
+                k != static_cast<std::uint8_t>(GradientKind::Cylinder))
+                bad("unknown gradient kind");
+            GradientData g;
+            g.kind = static_cast<GradientKind>(k);
+            g.color1 = color();
+            g.color2 = color();
+            g.angle = r.f64();
+            d.gradient = g;
         }
         return make(std::move(d));
     }

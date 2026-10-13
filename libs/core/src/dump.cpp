@@ -174,6 +174,9 @@ struct DataDumper {
           << " fill" << d.fill << " src";
         for (EntityId e : d.sourceBoundary)
             o << " " << e;
+        if (d.gradient)
+            o << " grad" << static_cast<int>(d.gradient->kind) << " " << d.gradient->color1 << " "
+              << d.gradient->color2 << " ang" << d.gradient->angle;
         for (const auto& loop : d.loops) {
             o << " loop(outer" << loop.outer;
             for (const auto& e : loop.edges) {

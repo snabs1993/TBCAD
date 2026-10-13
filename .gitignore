@@ -12,3 +12,5 @@ compile_commands.json
 *.obj
 *.o
 *.pdb
+__pycache__/
+*.pyc

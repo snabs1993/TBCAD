@@ -29,6 +29,13 @@ font::FontLibrary& fonts();
 // FontId{0} is a valid id; this value means no font could be loaded at all.
 inline constexpr font::FontId kNoFont{0xFFFFFFFFu};
 font::FontId fontForStyle(const TextStyle* style, bool bold = false, bool italic = false);
+
+/// True for the family name of the bundled single-stroke font ("TBCAD Stroke", case-insensitive).
+bool isStrokeFamily(std::string_view family);
+/// True for a font file name ending in .tbsf (own single-stroke format).
+bool isStrokeFile(std::string_view path);
+/// True when the family / font file resolves to a usable font (system, file or bundled stroke).
+bool fontAvailable(const std::string& family, const std::string& file);
 // The style a text entity uses: its own, else the document's current one, else Standard.
 const TextStyle* styleFor(const Document& doc, TextStyleId id);
 

@@ -37,5 +37,6 @@ extern const DoubleByteTable kCp932;
 extern const DoubleByteTable kCp936;
 extern const DoubleByteTable kCp949;
 extern const DoubleByteTable kCp950;
+extern const DoubleByteTable kCp1361;
 
 }  // namespace tbcad::dxf::detail

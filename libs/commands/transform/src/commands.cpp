@@ -3,6 +3,7 @@
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/apply.h"
 #include "tbcad/transform/grips.h"
+#include "tbcad/transform/stretch.h"
 #include "tbcad/transform/transform.h"
 
 namespace tbcad::transform {
@@ -42,6 +43,51 @@ cmd::PreviewFn previewOf(CommandContext& ctx, const std::vector<EntityId>& ids,
         if (t)
             buildPreview(ctx.doc(), ids, *t, ctx.host().view().scale, out);
     };
+}
+
+// COPY > Array: a row of copies. A second point sets the spacing between neighbours, Fit makes
+// it the position of the last copy.
+Task arrayCopies(CommandContext& ctx, const std::vector<EntityId>& ids, Vec2 base) {
+    cmd::IntOptions io;
+    io.min = 2;
+    io.max = 100000;
+    io.defaultValue = 5;
+    auto count = co_await ctx.getInteger("Enter the number of items to array <5>", io);
+    if (!count.ok())
+        co_return;
+    const long long n = count.value;
+    bool fit = false;
+    for (;;) {
+        PointOptions o;
+        o.base = base;
+        o.keywords = {"Fit"};
+        o.allowNone = false;
+        o.preview = [&ctx, &ids, base, n, &fit](Vec2 c, DisplayList& out) {
+            const Vec2 step = fit ? (c - base) * (1.0 / static_cast<double>(n - 1)) : c - base;
+            const double px = ctx.host().view().scale;
+            if (n > 50) {  // keep the preview light: first and last copy only
+                buildPreview(ctx.doc(), ids, Transform2::translate(step), px, out);
+                buildPreview(ctx.doc(), ids, Transform2::translate(step * double(n - 1)), px, out);
+                return;
+            }
+            for (long long k = 1; k < n; ++k)
+                buildPreview(ctx.doc(), ids, Transform2::translate(step * double(k)), px, out);
+        };
+        auto to = co_await ctx.getPoint(
+            fit ? "Specify second point to fit the array between" : "Specify second point or [Fit]",
+            std::move(o));
+        if (to.status == Status::Keyword && to.keyword == "Fit") {
+            fit = true;
+            continue;
+        }
+        if (!to.ok())
+            co_return;
+        const Vec2 step =
+            fit ? (to.point - base) * (1.0 / static_cast<double>(n - 1)) : to.point - base;
+        for (long long k = 1; k < n; ++k)
+            report(ctx, applyTransform(ctx, ids, Transform2::translate(step * double(k)), true));
+        co_return;
+    }
 }
 
 class MoveCommand final : public cmd::Command {
@@ -95,14 +141,18 @@ public:
         for (;;) {
             PointOptions o;
             o.base = base.point;
-            o.keywords = {"Exit"};
+            o.keywords = {"Array", "Exit"};
             o.preview = previewOf(ctx, ids, [b = base.point](Vec2 c) -> std::optional<Transform2> {
                 return Transform2::translate(c - b);
             });
             auto to = co_await ctx.getPoint(
-                first ? "Specify second point or <use first point as displacement>"
-                      : "Specify second point or [Exit]",
+                first ? "Specify second point or [Array] <use first point as displacement>"
+                      : "Specify second point or [Array/Exit]",
                 std::move(o));
+            if (to.status == Status::Keyword && to.keyword == "Array") {
+                co_await arrayCopies(ctx, ids, base.point);
+                co_return;
+            }
             if (to.status == Status::None && first) {
                 report(ctx, applyTransform(ctx, ids, Transform2::translate(base.point), true));
                 co_return;
@@ -301,6 +351,88 @@ public:
     }
 };
 
+// Entities a crossing window can stretch: visible, unlocked, not inside a block definition.
+std::vector<EntityId> stretchCandidates(CommandContext& ctx, const BBox2& window) {
+    const Document& doc = ctx.doc();
+    std::vector<EntityId> out;
+    auto consider = [&](const Entity& e, bool test) {
+        if (!e.common.visible || doc.ownerBlock(e.common.id))
+            return;
+        const EffectiveLayer layer = doc.effective(e.common.layer);
+        if (!layer.visible() || layer.locked)
+            return;
+        if (test && !window.intersects(geom::bounds(e, doc)))
+            return;
+        out.push_back(e.common.id);
+    };
+    if (auto ids = ctx.host().entitiesInWindow(window)) {
+        for (EntityId id : *ids)
+            if (const Entity* e = doc.find(id))
+                consider(*e, true);
+    } else {
+        doc.forEachEntity([&](const Entity& e) { consider(e, true); });
+    }
+    return out;
+}
+
+class StretchCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "STRETCH"; }
+    std::vector<std::string> defaultAliases() const override { return {"S"}; }
+    std::string_view description() const override {
+        return "Stretch the vertices inside a crossing window";
+    }
+
+    Task run(CommandContext& ctx) override {
+        auto c1 = co_await ctx.getPoint("Specify first corner of the crossing window");
+        if (!c1.ok())
+            co_return;
+        PointOptions co;
+        co.base = c1.point;
+        auto c2 = co_await ctx.getPoint("Specify opposite corner", std::move(co));
+        if (!c2.ok())
+            co_return;
+        BBox2 window;
+        window.expand(c1.point);
+        window.expand(c2.point);
+        const std::vector<EntityId> ids = stretchCandidates(ctx, window);
+        if (ids.empty()) {
+            ctx.message("Nothing to stretch in the window.");
+            co_return;
+        }
+        auto base = co_await ctx.getPoint("Specify base point");
+        if (!base.ok())
+            co_return;
+        PointOptions o;
+        o.base = base.point;
+        o.preview = [&ctx, &ids, window, b = base.point](Vec2 c, DisplayList& out) {
+            geom::DisplayContext dc;
+            dc.pixelSizeMm = ctx.host().view().scale > 0 ? ctx.host().view().scale : 1;
+            for (auto& [id, e] : stretchByWindow(ctx.doc(), ids, window, c - b))
+                geom::buildDisplay(ctx.doc(), e, dc, out);
+        };
+        auto to = co_await ctx.getPoint("Specify second point or <use first point as displacement>",
+                                        std::move(o));
+        Vec2 delta;
+        if (to.status == Status::None)
+            delta = base.point;
+        else if (to.ok())
+            delta = to.point - base.point;
+        else
+            co_return;
+        std::string err;
+        std::size_t n = 0;
+        for (auto& [id, e] : stretchByWindow(ctx.doc(), ids, window, delta, &err)) {
+            Entity moved = std::move(e);
+            if (ctx.tx().modify(id, [&](Entity& tgt) { tgt.data = std::move(moved.data); }))
+                ++n;
+        }
+        if (!err.empty())
+            ctx.message("Some objects could not be stretched: " + err);
+        ctx.message(std::to_string(n) + " object(s) stretched.");
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -309,6 +441,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RotateCommand>());
     (void)registry.add(std::make_unique<ScaleCommand>());
     (void)registry.add(std::make_unique<MirrorCommand>());
+    (void)registry.add(std::make_unique<StretchCommand>());
     registerGripCommand(registry);
 }
 

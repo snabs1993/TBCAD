@@ -34,6 +34,18 @@ public:
     // or "Lato" (Latin only). Loading the same name twice returns the same id.
     Result<FontId> loadBundled(std::string_view name);
 
+    // Single-stroke fonts (TBCAD's own .tbsf format, see docs/font.md). A stroke font has FontId,
+    // metrics and shaping like an outline font (glyph id = code point, no outlines), and its
+    // glyphs come from strokes(). Characters it lacks fall back like for any other font.
+    Result<FontId> loadStroke(const std::filesystem::path& path);
+    Result<FontId> loadStrokeFromMemory(std::string_view tbsfText);
+    // "tbcad-stroke" (Latin + Thai), looked up in <bundled directory>/stroke.
+    Result<FontId> loadBundledStroke(std::string_view name = "tbcad-stroke");
+    bool isStroke(FontId font);
+    // Strokes of a glyph in em units, y up; empty for outline fonts and unknown glyphs. The
+    // reference stays valid for the life of the library.
+    const StrokeGlyph& strokes(FontId font, std::uint32_t glyphId);
+
     // Directory searched for bundled font files. Defaults to the source tree's
     // assets/fonts (set at build time), then ./assets/fonts. The installer sets
     // it to the shipped location.

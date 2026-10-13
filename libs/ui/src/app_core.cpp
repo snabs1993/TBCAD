@@ -738,6 +738,7 @@ PanelContext AppCore::makePanelContext() {
     pc.feedback = &feedback_;
     pc.cursorWorld = cursorWorld_;
     pc.apertureMm = apertureMm();
+    pc.commandActive = runner().active();
     pc.runCommand = [this](const std::string& line) { submitText(line); };
     return pc;
 }
@@ -758,7 +759,7 @@ void AppCore::click(const PointerState& p) {
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:
                 if (auto id = pickEntity(session_->doc, session_->index, world, apertureMm()))
-                    run.submit(cmd::Input::pick(*id, world));
+                    run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
             default:
                 break;
@@ -997,6 +998,14 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    // Active-only mode lives in the drawing (Header::activeOnly); the command that owns it is
+    // registered by the layers module, so this is a no-op in builds without it.
+    ui.addStatusToggle(
+        "activeonly", "ACTIVE", [this] { return document().header().activeOnly; },
+        [this](bool on) {
+            if (!prompt_)
+                submitText(on ? "ACTIVEONLY On" : "ACTIVEONLY Off");
+        });
     ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 

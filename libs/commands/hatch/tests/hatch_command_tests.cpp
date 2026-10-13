@@ -416,3 +416,43 @@ TEST_CASE("a hatch made with Link off stays put when the boundary moves") {
     f.host->run("WIDEN", {});
     CHECK(hatch::hatchBounds(*f.hatches()[0]).max.x == doctest::Approx(100));
 }
+
+TEST_CASE("GRADIENT: makes a solid hatch with a gradient from the chosen colours") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    REQUIRE(f.reg.find("GR") == f.reg.find("GRADIENT"));
+    auto r = f.host->run("GRADIENT",
+                         {"K", "cylinder", "F", "255,0,0", "S", "#0000ff", "A", "90", "50,30", ""});
+    CHECK(r.finished);
+    CHECK(r.rejected == 0);
+    auto hs = f.hatches();
+    REQUIRE(hs.size() == 1);
+    REQUIRE(hs[0]->gradient.has_value());
+    CHECK(hs[0]->solid);
+    CHECK(hs[0]->gradient->kind == GradientKind::Cylinder);
+    CHECK(hs[0]->gradient->color1.r == 255);
+    CHECK(hs[0]->gradient->color2.b == 255);
+    CHECK(hs[0]->gradient->angle == doctest::Approx(kPi / 2));
+    CHECK(f.host->setting("hatch.gradient.color2").value() == "0,0,255");
+    // A bad colour is refused and the old one stays.
+    f.host->run("GRADIENT", {"F", "banana", ScriptItem::esc()});
+    CHECK(f.host->logContains("Not a colour"));
+}
+
+TEST_CASE("HATCHEDIT: choosing a pattern drops the gradient") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    f.host->run("GRADIENT", {"50,30", ""});
+    REQUIRE(f.hatches().size() == 1);
+    REQUIRE(f.hatches()[0]->gradient.has_value());
+    EntityId id;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Hatch)
+            id = e.common.id;
+    });
+    f.host->setSelection({id});
+    f.host->run("HATCHEDIT", {"P", "LINE45", "D"});
+    REQUIRE(f.hatches().size() == 1);
+    CHECK_FALSE(f.hatches()[0]->gradient.has_value());
+    CHECK_FALSE(f.hatches()[0]->solid);
+}
