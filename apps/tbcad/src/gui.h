@@ -87,6 +87,7 @@ private:
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void readOnlyBanner();
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();
@@ -102,6 +103,7 @@ private:
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
+    void viewportMenu();
     void registeredMenu(const std::string& top);
     void registeredSubmenu(const std::string& prefix, std::vector<const ui::MenuItemInfo*>& items);
     void runAction(const std::string& action);
@@ -142,6 +144,7 @@ private:
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
+    std::size_t recoveryCount_ = 0;
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};

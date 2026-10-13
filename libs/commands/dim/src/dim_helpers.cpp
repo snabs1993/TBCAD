@@ -10,7 +10,7 @@
 namespace tbcad::dimcmd {
 
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out) {
-    e.common.layer = ctx.doc().header().currentLayer;
+    applyCurrentProperties(ctx.doc().header(), e);
     geom::DisplayContext dc;
     const double scale = ctx.host().view().scale;
     if (scale > 0)
@@ -27,6 +27,7 @@ Entity dimEntity(const Document& doc, DimensionData d) {
     dim::refresh(doc, d);
     Entity e;
     e.data = Indirect<DimensionData>(std::move(d));
+    applyCurrentProperties(doc.header(), e);
     return e;
 }
 

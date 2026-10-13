@@ -30,6 +30,14 @@ namespace {
 
 constexpr ImGuiID kDockId = 0x7BC4D001u;
 
+const std::vector<platform::FileFilter>& openFilters() {
+    static const std::vector<platform::FileFilter> f = {{"All drawings", "*.tbcad;*.dxf;*.dwg"},
+                                                        {"TBCAD drawings", "*.tbcad"},
+                                                        {"DXF drawings", "*.dxf"},
+                                                        {"DWG drawings (read-only)", "*.dwg"}};
+    return f;
+}
+
 const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
     static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
                                                                  {"DXF drawings", "*.dxf"},
@@ -112,6 +120,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
+    recoveryCount_ = core_.pendingRecoveries().size();
     recovery_ = core_.pendingRecovery();
     openRecoveryPrompt_ = recovery_.has_value();
     anyActivity_ = true;
@@ -312,14 +321,14 @@ bool Gui::requestClose() {
 
 void Gui::doOpen() {
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), drawingFilters(), "Open drawing"))
+        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing"))
             doOpenPath(platform::pathToUtf8(*p));
         return;
     }
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::Open;
-    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf");
+    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf;.dwg");
 }
 
 void Gui::doOpenPath(const std::string& path) {
@@ -329,7 +338,7 @@ void Gui::doOpenPath(const std::string& path) {
 }
 
 void Gui::doSave() {
-    if (!core_.hasFile()) {
+    if (!core_.hasFile() || core_.readOnlyOrigin()) {
         doSaveAs();
         return;
     }
@@ -352,6 +361,10 @@ void Gui::doSaveAs() {
             ext = "tbcad";
     }
     std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1." + ext;
+    if (core_.readOnlyOrigin()) {  // never suggest the original (read-only) name
+        ext = "tbcad";
+        suggested = core_.file().stem().string() + ".tbcad";
+    }
     if (platform::nativeDialogsAvailable()) {
         if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
                                               "Save drawing as", ext, suggested)) {
@@ -610,6 +623,24 @@ void Gui::toolStrip() {
         if (button("Zoom Extents"))
             core_.zoomExtents();
         ImGui::NewLine();
+    }
+    ImGui::End();
+}
+
+void Gui::readOnlyBanner() {
+    const std::string text = core_.readOnlyBanner();
+    if (text.empty())
+        return;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    if (ImGui::BeginViewportSideBar("##readonlybanner", vp, ImGuiDir_Up, h, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Save As..."))
+            runAction("file.saveAs");
     }
     ImGui::End();
 }
@@ -1347,12 +1378,70 @@ void Gui::viewportInput(const ViewportRect& rect) {
         }
     }
 
+    // Right button: context menu, or Enter for users who set ui.rightClick = enter.
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        if (core_.settings().getString("ui.rightClick", "menu") == "enter")
+            core_.submitText("");
+        else
+            ImGui::OpenPopup("##viewportMenu");
+    }
+    viewportMenu();
+
     if (hovered || leftDown_ || panning_)
         core_.pointerMoved(ps);
     else
         core_.pointerLeft();
     if (hovered)
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+}
+
+// What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
+// options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
+void Gui::viewportMenu() {
+    if (!ImGui::BeginPopup("##viewportMenu"))
+        return;
+    anyActivity_ = true;
+    auto run = [&](const std::string& line) { core_.submitText(line); };
+    if (core_.runner().active()) {
+        if (ImGui::MenuItem("Enter"))
+            run("");
+        if (ImGui::MenuItem("Cancel"))
+            core_.pressEscape();
+        if (const auto* prompt = core_.runner().prompt(); prompt && !prompt->keywords.empty()) {
+            ImGui::Separator();
+            for (const std::string& k : prompt->keywords)
+                if (ImGui::MenuItem(k.c_str()))
+                    run(k);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Zoom Extents"))
+            core_.zoomExtents();
+    } else {
+        const std::string last(core_.runner().lastCommand());
+        if (!last.empty() && ImGui::MenuItem(("Repeat " + last).c_str()))
+            run("");
+        if (!core_.selection().empty()) {
+            ImGui::Separator();
+            for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
+                if (core_.registry().find(c) && ImGui::MenuItem(c))
+                    run(c);
+            if (ImGui::MenuItem("Deselect All"))
+                core_.clearSelection();
+        } else if (ImGui::MenuItem("Select All")) {
+            core_.selectAll();
+        }
+        ImGui::Separator();
+        const std::string undo = core_.undoLabel();
+        const std::string redo = core_.redoLabel();
+        if (ImGui::MenuItem(undo.empty() ? "Undo" : undo.c_str(), nullptr, false, !undo.empty()))
+            core_.undo();
+        if (ImGui::MenuItem(redo.empty() ? "Redo" : redo.c_str(), nullptr, false, !redo.empty()))
+            core_.redo();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Zoom Extents"))
+            core_.zoomExtents();
+    }
+    ImGui::EndPopup();
 }
 
 void Gui::queueDroppedFile(std::string path) {
@@ -1376,6 +1465,7 @@ ViewportRect Gui::frame() {
         menuBar();
         toolStrip();
         docTabs();
+        readOnlyBanner();
         statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -1456,13 +1546,16 @@ void Gui::dialogs() {
     }
     if (ImGui::BeginPopupModal("Recover drawing?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("TBCAD did not close normally last time.");
-        ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
+        if (recoveryCount_ > 1)
+            ImGui::Text("Automatic backups of %zu unsaved drawings were found.", recoveryCount_);
+        else
+            ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
         ImGui::Spacing();
         if (ImGui::Button("Recover", ImVec2(110, 0))) {
             if (recovery_) {
-                auto r = core_.recover(*recovery_);
+                auto r = core_.recoverAll();
                 if (!r)
                     lastError_ = r.error().message;
             }

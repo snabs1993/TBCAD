@@ -15,5 +15,13 @@ std::unique_ptr<cmd::Command> makeBreak();
 std::unique_ptr<cmd::Command> makeBreakAtPoint();
 std::unique_ptr<cmd::Command> makeJoin();
 std::unique_ptr<cmd::Command> makeErase();
+std::unique_ptr<cmd::Command> makeLengthen();
+std::unique_ptr<cmd::Command> makeReverse();
+std::unique_ptr<cmd::Command> makeDivide();
+std::unique_ptr<cmd::Command> makeMeasure();
+std::unique_ptr<cmd::Command> makeAlign();
+std::unique_ptr<cmd::Command> makeMatchProp();
+std::unique_ptr<cmd::Command> makeOverkill();
+std::unique_ptr<cmd::Command> makePedit();
 
 }  // namespace tbcad::modifycmd

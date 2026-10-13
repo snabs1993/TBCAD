@@ -270,6 +270,7 @@ public:
             firstBranch = false;
             Entity e;
             e.data = Indirect<LeaderData>(std::move(l));
+            applyCurrentProperties(ctx.doc().header(), e);
             auto id = ctx.tx().add(std::move(e));
             if (!id) {
                 ctx.message(id.error().message);
@@ -282,6 +283,7 @@ public:
             ins.position = contentPos;
             Entity e;
             e.data = std::move(ins);
+            applyCurrentProperties(ctx.doc().header(), e);
             auto id = ctx.tx().add(std::move(e));
             if (!id)
                 ctx.message(id.error().message);

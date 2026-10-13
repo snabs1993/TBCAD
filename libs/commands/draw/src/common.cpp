@@ -18,11 +18,7 @@ std::string promptWith(std::string_view text, const std::vector<std::string>& ke
 
 // New objects take the layer and the current colour, linetype and lineweight from the header.
 void applyCurrentProperties(const Document& doc, Entity& e) {
-    const Header& h = doc.header();
-    e.common.layer = h.currentLayer;
-    e.common.color = h.currentColor;
-    e.common.linetype = h.currentLinetype;
-    e.common.lineweight = h.currentLineweight;
+    tbcad::applyCurrentProperties(doc.header(), e);
 }
 
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out) {
