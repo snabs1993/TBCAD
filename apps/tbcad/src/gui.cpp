@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -14,6 +15,7 @@
 #include "key_map.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -103,6 +105,11 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     lineweights_ = core_.settings().getBool("view.lineweights", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
+    // Text layout finds its fonts and the Thai word list next to the executable.
+    if (std::string f = findAsset("fonts/Sarabun-Regular.ttf"); !f.empty())
+        text::fonts().setBundledDirectory(std::filesystem::path(f).parent_path());
+    if (std::string d = findAsset("dictionaries/thai-words.txt"); !d.empty())
+        text::setDictionaryDirectory(std::filesystem::path(d).parent_path());
     // The IME hook positions the candidate window on this native window.
     ImGui::GetMainViewport()->PlatformHandleRaw = nativeHandle();
     installImeHook(window);
@@ -765,6 +772,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         leftDown_ = true;
         dragging_ = false;
+        doubleClick_ = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
         pressPos_ = mouse;
     }
     if (leftDown_) {
@@ -777,6 +785,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         } else {
             if (dragging_)
                 core_.dragSelect(pressPos_, mouse, ps);
+            else if (doubleClick_)
+                core_.doubleClick(ps);
             else
                 core_.click(ps);
             core_.setSelectionDrag(std::nullopt);

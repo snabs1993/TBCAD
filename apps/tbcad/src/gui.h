@@ -140,6 +140,7 @@ private:
 
     // Viewport interaction.
     bool leftDown_ = false;
+    bool doubleClick_ = false;
     bool dragging_ = false;
     Vec2 pressPos_{};
     bool panning_ = false;

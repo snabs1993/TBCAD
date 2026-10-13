@@ -147,10 +147,22 @@ std::vector<Unit> splitUnits(const std::vector<Piece>& pieces) {
     std::vector<Unit> units;
     Unit cur;
     auto flushWordText = [&](std::string& buf, const Attr& attr) {
-        if (!buf.empty()) {
-            cur.word.push_back({std::move(buf), attr, Token::Kind::Word});
-            buf.clear();
+        if (buf.empty())
+            return;
+        // Thai has no spaces: the word list gives soft break opportunities between words.
+        std::size_t from = 0;
+        for (std::size_t at : thaiWordBreaks(buf)) {
+            cur.word.push_back({buf.substr(from, at - from), attr, Token::Kind::Word});
+            Token t;
+            t.attr = attr;
+            t.kind = Token::Kind::Zwsp;
+            cur.brk = std::move(t);
+            units.push_back(std::move(cur));
+            cur = Unit{};
+            from = at;
         }
+        cur.word.push_back({buf.substr(from), attr, Token::Kind::Word});
+        buf.clear();
     };
     for (const Piece& p : pieces) {
         std::string buf;

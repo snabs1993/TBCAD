@@ -21,6 +21,7 @@ file(REMOVE "${_pattern_cpp}.tmp")
 
 tbcad_add_library(hatch
   SOURCES
+    src/associate.cpp
     src/boundary.cpp
     src/display.cpp
     src/fill.cpp
@@ -31,6 +32,8 @@ tbcad_add_library(hatch
 tbcad_add_tests(hatch
   SOURCES
     tests/main.cpp
+    tests/associate_tests.cpp
+    tests/gap_tests.cpp
     tests/boundary_tests.cpp
     tests/fill_tests.cpp
     tests/pattern_tests.cpp

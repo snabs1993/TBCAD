@@ -1,6 +1,7 @@
 #include <stdexcept>
 
 #include "tbcad/cmd/command.h"
+#include "tbcad/cmd/registry.h"
 
 namespace tbcad::cmd {
 
@@ -154,6 +155,7 @@ std::coroutine_handle<> CommandContext::deliver(detail::PromptAnswer answer) {
 void CommandContext::commitOpen() {
     if (!tx_)
         return;
+    registry_.runCommitHooks(doc_, *tx_);
     ChangeSet cs = tx_->commit();
     tx_.reset();
     if (!cs.empty())

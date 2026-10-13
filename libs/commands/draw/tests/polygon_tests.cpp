@@ -94,7 +94,8 @@ TEST_CASE("POLYGON: a zero radius is refused; Esc draws nothing") {
     Fixture f;
     f.host.run("POL", {"4", "0,0", "", "0,0"});
     CHECK(f.entities().empty());
-    CHECK(f.host.logContains("radius must not be zero"));
+    CHECK(f.host.logContains("must not be zero"));
+    f.host.feed({ScriptItem::esc()});
     f.host.run("POL", {"4", "0,0", "", ScriptItem::esc()});
     CHECK(f.entities().empty());
     CHECK_FALSE(f.host.undoStack().canUndo());
@@ -111,4 +112,20 @@ TEST_CASE("POLYGON shows its outline while the radius point moves") {
     REQUIRE(pl != nullptr);
     CHECK(pl->pts.size() == 5);
     f.host.feed({ScriptItem::esc()});
+}
+
+TEST_CASE("POLYGON accepts a typed radius (orientation 0 degrees)") {
+    Fixture f;
+    f.host.run("POL", {"6", "5,5", "", "10"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    checkRegular(as<PolylineData>(es[0]), {5, 5}, 10, 0, 6);
+}
+
+TEST_CASE("POLYGON circumscribed with a typed radius has an edge middle at 0 degrees") {
+    Fixture f;
+    f.host.run("POL", {"4", "0,0", "C", "10"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    checkVertices(as<PolylineData>(es[0]), {{10, -10}, {10, 10}, {-10, 10}, {-10, -10}});
 }
