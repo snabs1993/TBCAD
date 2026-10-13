@@ -104,8 +104,8 @@ std::vector<cmd::CursorField> DynamicInput::fields(const cmd::FilterFeedback& fb
     if (fb.base) {
         const Vec2 v = fb.point - *fb.base;
         out.push_back({"Distance", dist_ ? len(*dist_) : len(length(v)), dist_.has_value()});
-        out.push_back({"Angle", angle_ ? ang(*angle_) : ang(std::atan2(v.y, v.x)),
-                       angle_.has_value()});
+        out.push_back(
+            {"Angle", angle_ ? ang(*angle_) : ang(std::atan2(v.y, v.x)), angle_.has_value()});
     } else {
         out.push_back({"X", x_ ? len(*x_) : len(fb.point.x), x_.has_value()});
         out.push_back({"Y", y_ ? len(*y_) : len(fb.point.y), y_.has_value()});
@@ -140,7 +140,8 @@ bool DynamicInput::focusNext() {
 bool DynamicInput::edit(std::size_t index, std::string_view text) {
     if (!seen_ || index > 1)
         return false;
-    std::optional<double>* slot = base_ ? (index == 0 ? &dist_ : &angle_) : (index == 0 ? &x_ : &y_);
+    std::optional<double>* slot =
+        base_ ? (index == 0 ? &dist_ : &angle_) : (index == 0 ? &x_ : &y_);
     std::string_view t = text;
     while (!t.empty() && t.front() == ' ')
         t.remove_prefix(1);
