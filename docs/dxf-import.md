@@ -194,3 +194,15 @@ Speed: a 50 MB synthetic DXF (about 480 000 entities) imports in 0.65 s and conv
 OBJECTS (layouts, groups, dictionaries), paper space and viewports, xrefs (the block stays empty),
 proxy graphics, complex linetype elements (text/shape), gradient colours,
 3D entities, mirrored text, DIMSTYLE variables beyond the basic ones.
+
+## Codepages
+
+Tables live in `libs/dxf/src/encoding/tables/` and are produced by `libs/dxf/tools/gen_codepages.py`:
+with `--mapping-dir DIR` from the Unicode Consortium `CP*.TXT` vendor mapping files, without it from
+Python's codecs, which derive from the same files (both give identical output; a CI-less offline
+machine can regenerate). Codepages: 874, 932, 936, 949, 950, 1250-1258 and 1361 (Johab, `ANSI_1361`).
+
+`\M+nXXXX` escapes: n = 1 Shift-JIS (932), 2 Big5 (950), 3 KS C 5601 (949), 4 Johab (1361),
+5 GB2312 (936). `libs/dxf/tools/gen_mplus_vectors.py` writes `tests/corpus/encoding/mplus_vectors.txt`
+(about 2100 sample escapes and the characters the platform codecs give for them), and the encoding
+tests check `decodeText` against it.
