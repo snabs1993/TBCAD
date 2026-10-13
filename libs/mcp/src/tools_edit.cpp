@@ -343,18 +343,6 @@ ToolResult setSelection(ToolContext& ctx, const Json& a) {
 
 }  // namespace
 
-// Why an entity cannot be edited, empty when it can: locked layers (and, in "active only"
-// mode, every layer outside the current layer's branch) are read-only.
-std::string whyReadOnly(const Document& doc, const Entity& e) {
-    EffectiveLayer l = doc.effective(e.common.layer);
-    if (!l.locked)
-        return {};
-    const Layer* row = doc.layer(e.common.layer);
-    std::string name = row ? row->name : std::string("?");
-    return l.inactive ? "layer \"" + name + "\" is not the active layer (Active Only mode is on)"
-                      : "layer \"" + name + "\" is locked";
-}
-
 void registerEditTools(ToolSet& tools) {
     auto idArray = [](const char* d = "Entity ids (decimal strings)") {
         return tArray(tString(), d);
