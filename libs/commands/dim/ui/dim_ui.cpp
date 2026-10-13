@@ -20,6 +20,7 @@ constexpr ImGuiInputTextFlags kEnter = ImGuiInputTextFlags_EnterReturnsTrue;
 struct PanelState {
     DimStyleId selected{};
     char newName[64] = "";
+    char renameTo[64] = "";
 };
 
 PanelState& state() {
@@ -234,6 +235,17 @@ void drawPanel(ui::PanelContext& pc) {
         if (ImGui::Button("Delete"))
             pc.runCommand("DIMSTYLE Delete " + sel->name + " Done");
         ImGui::EndDisabled();
+        ImGui::SetNextItemWidth(160);
+        ImGui::InputText("##renamedimstyle", st.renameTo, sizeof st.renameTo);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(st.selected == kDimStyleStandard || hasSpace(sel->name) ||
+                             hasSpace(st.renameTo) || st.renameTo[0] == '\0' ||
+                             pc.doc->dimStyleByName(st.renameTo) != nullptr);
+        if (ImGui::Button("Rename")) {
+            pc.runCommand("DIMSTYLE Rename " + sel->name + " " + st.renameTo + " Done");
+            st.renameTo[0] = '\0';
+        }
+        ImGui::EndDisabled();
     }
     ImGui::SetNextItemWidth(160);
     ImGui::InputText("##newdimstyle", st.newName, sizeof st.newName);
@@ -286,6 +298,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Dimension/Diameter", "DIMDIAMETER", "dim.diameter");
     ui.addMenuItem("Dimension/Angular", "DIMANGULAR", "dim.angular");
     ui.addMenuItem("Dimension/Leader", "LEADER", "dim.leader");
+    ui.addMenuItem("Format/Dimension Style Manager", "DIMSTYLES", "format.dimstyles");
     ui.addPanel("dimstyles", "Dimension Styles", drawPanel, false);
     ui.addPropertySection(EntityKind::Dimension, drawDimensionSection);
     ui.addPropertySection(EntityKind::Leader, drawLeaderSection);
