@@ -227,6 +227,31 @@ public:
     }
 };
 
+class CopyToLevelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "COPYTOLEVEL"; }
+    std::vector<std::string> defaultAliases() const override { return {"COPYLV"}; }
+    std::string_view description() const override {
+        return "Copy the selected objects to another level, at the same position";
+    }
+    Task run(CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select objects to copy to another level");
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        bool ok = false;
+        LevelId id;
+        co_await askLevel(ctx, "Copy to level", id, ok);
+        if (!ok)
+            co_return;
+        auto made = copyToLevel(ctx.doc(), ctx.tx(), sel.ids, id);
+        if (made)
+            ctx.message(std::to_string(made.value().size()) + " object(s) copied to " +
+                        describe(ctx.doc(), id) + ".");
+        else
+            ctx.message(made.error().message);
+    }
+};
+
 // Switch the working level with the previous / next level by elevation.
 class LevelStepCommand final : public cmd::Command {
 public:
@@ -266,6 +291,10 @@ std::unique_ptr<cmd::Command> makeLevelPanelCommand() {
 std::unique_ptr<cmd::Command> makeLevelCommand() {
     return std::make_unique<LevelCommand>();
 }
+std::unique_ptr<cmd::Command> makeCopyToLevelCommand() {
+    return std::make_unique<CopyToLevelCommand>();
+}
+
 std::unique_ptr<cmd::Command> makeChangeLevelCommand() {
     return std::make_unique<ChangeLevelCommand>();
 }
