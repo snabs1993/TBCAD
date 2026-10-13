@@ -22,6 +22,9 @@ exportlib::PlotSettings loadSettings(const cmd::IHost& host);
 void saveSettings(cmd::IHost& host, const exportlib::PlotSettings& settings);
 // Output file used last (or the default name for the format).
 std::string lastFile(const cmd::IHost& host, Format format);
+// Default output name: next to the open drawing with the format's extension; otherwise the file
+// used last.
+std::string defaultFile(const cmd::IHost& host, Format format);
 void setLastFile(cmd::IHost& host, Format format, const std::string& path);
 
 // Adds the extension for the format when the path has none.

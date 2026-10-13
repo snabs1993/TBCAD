@@ -789,6 +789,8 @@ void Gui::panels() {
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
     pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    for (const std::string& id : core_.takePanelRequests())
+        panelOpen_[id] = true;
     for (const auto& p : registry_.panels()) {
         bool& open = panelOpen_[p.id];
         if (!open)

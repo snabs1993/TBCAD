@@ -186,6 +186,10 @@ public:
     std::optional<std::string> setting(std::string_view key) const override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
+    std::string documentFile() const override { return platform::pathToUtf8(file()); }
+    void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
+    // Panels asked for since the last call (the window opens them).
+    std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
@@ -215,6 +219,7 @@ private:
     std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
     platform::AppPaths paths_;
+    std::vector<std::string> panelRequests_{};
     platform::Settings settings_;
     platform::Keybindings keybindings_;
     std::vector<std::string> startupWarnings_{};
