@@ -510,22 +510,22 @@ private:
             DynamicDef def;
             std::size_t np = r.count(20);
             for (std::size_t k = 0; k < np; ++k) {
-                DynParam p;
+                DynParam prm;
                 std::uint8_t kind = r.u8();
                 if (kind > static_cast<std::uint8_t>(DynParam::Kind::Visibility))
                     bad("unknown dynamic parameter kind");
-                p.kind = static_cast<DynParam::Kind>(kind);
-                p.name = str(r);
-                p.base = r.vec2();
-                p.end = r.vec2();
-                p.min = r.f64();
-                p.max = r.f64();
+                prm.kind = static_cast<DynParam::Kind>(kind);
+                prm.name = str(r);
+                prm.base = r.vec2();
+                prm.end = r.vec2();
+                prm.min = r.f64();
+                prm.max = r.f64();
                 std::size_t ns = small(r.varint(), 10000, "state");
                 for (std::size_t s = 0; s < ns; ++s) {
-                    p.states.push_back(str(r));
-                    p.stateObjects.push_back(ids());
+                    prm.states.push_back(str(r));
+                    prm.stateObjects.push_back(ids());
                 }
-                def.params.push_back(std::move(p));
+                def.params.push_back(std::move(prm));
             }
             std::size_t na = r.count(20);
             for (std::size_t k = 0; k < na; ++k) {
