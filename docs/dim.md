@@ -115,3 +115,12 @@ points (Enter to finish), then the content: **Text**, **Block** (an existing blo
 point) or **None**. It uses the current dimension style for arrow and text. Each arrowhead is a `Leader`
 entity; the first one carries the note and the others end at the same landing point, so they move, erase
 and export to DXF like any other leaders. Everything from one MLEADER run is one undo step.
+
+## Chains and text editing (Q67)
+
+- **DIMCONTINUE** (DCO) continues from the last linear or aligned dimension: the new one starts at the previous
+  second extension line and shares its dimension line. Keep picking points; Enter ends. **Select** chooses another
+  base dimension.
+- **DIMBASELINE** (DBA) starts every new dimension at the base dimension's first extension line and stacks each one
+  further out, by 2.5 text heights (scaled by the style's overall scale).
+- **DIMTEDIT** (DTE) moves the text of a picked dimension to a new point; **Home** puts it back at its automatic place.
