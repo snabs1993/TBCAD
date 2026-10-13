@@ -152,7 +152,7 @@ private:
             const Entity* e = ctx.doc().find(id);
             if (!e || (only && kind(*e) != *only))
                 continue;
-            if (ctx.doc().effective(e->common.layer).locked)
+            if (ctx.doc().effective(e->common).locked)
                 continue;
             auto fields = geometryFields(*e);
             auto it = std::find_if(fields.begin(), fields.end(),

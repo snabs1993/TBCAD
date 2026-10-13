@@ -18,6 +18,7 @@
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
+#include "tbcad/ui/drag_payload.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -119,7 +120,8 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
           [this] { return static_cast<int>(themeMode_); },
           [this](int mode) { setThemeMode(static_cast<ui::ThemeMode>(mode)); },
           [this] { setDpiScale(dpiScale_); },
-          [this](const std::string& action) { return actionLabel(action); }}) {
+          [this](const std::string& action) { return actionLabel(action); }}),
+      workspaces_(core.settingsFolder() / "workspaces") {
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
@@ -134,6 +136,21 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
+    // The workspace used last time. Only the panels are applied here: the docking layout comes
+    // back from imgui.ini by itself.
+    workspaceName_ = core_.settings().getString("workspace.current", "");
+    if (!workspaceName_.empty()) {
+        if (auto ws = workspaces_.load(workspaceName_)) {
+            for (auto& [id, on] : panelOpen_) {
+                auto it = ws->panels.find(id);
+                on = it != ws->panels.end() && it->second;
+            }
+            showCommandLine_ = ws->commandLine;
+            showProperties_ = ws->properties;
+        } else {
+            workspaceName_.clear();
+        }
+    }
     // Text layout finds its fonts and the Thai word list next to the executable.
     if (std::string f = findAsset("fonts/Sarabun-Regular.ttf"); !f.empty())
         text::fonts().setBundledDirectory(std::filesystem::path(f).parent_path());
@@ -615,6 +632,7 @@ void Gui::menuBar() {
         for (const auto& p : registry_.panels())
             ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
         ImGui::Separator();
+        workspaceMenu();
         if (ImGui::BeginMenu("Theme")) {
             if (ImGui::MenuItem("Dark", nullptr, themeMode_ == ui::ThemeMode::Dark))
                 setThemeMode(ui::ThemeMode::Dark);
@@ -808,6 +826,44 @@ void Gui::statusBar() {
         const Layer* layer = doc.layer(doc.header().currentLayer);
         ImGui::SameLine();
         ImGui::Text("  Layer: %s", layer ? layer->name.c_str() : "0");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(130);
+        if (ImGui::BeginCombo("##workspace",
+                              workspaceName_.empty() ? "Workspace" : workspaceName_.c_str(),
+                              ImGuiComboFlags_HeightLarge)) {
+            for (const std::string& name : workspaces_.names())
+                if (ImGui::Selectable(name.c_str(), name == workspaceName_))
+                    switchWorkspace(name);
+            ImGui::EndCombo();
+        }
+
+        // Level switcher: pick the level to work on (highest first, like a section).
+        {
+            const Level* cur = doc.level(doc.header().currentLevel);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("  Level:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::CalcTextSize("Level 00 (mmm)").x + 40.0f);
+            if (ImGui::BeginCombo("##levelsw", cur ? cur->name.c_str() : "?")) {
+                std::vector<const Level*> order;
+                for (const auto& [id, l] : doc.levels())
+                    order.push_back(&l);
+                std::stable_sort(order.begin(), order.end(), [](const Level* a, const Level* b) {
+                    return a->elevation > b->elevation;
+                });
+                for (const Level* l : order) {
+                    const bool sel = l->id == doc.header().currentLevel;
+                    if (ImGui::Selectable(l->name.c_str(), sel) && !sel) {
+                        core_.submitText("-LEVEL Set #" + std::to_string(l->id.value));
+                        core_.submitText("");
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Level you work on. Ctrl+PageUp / Ctrl+PageDown steps through levels.");
+        }
 
         // Annotation scale for new objects, and whether new objects are annotative.
         {
@@ -859,8 +915,9 @@ void Gui::statusBar() {
 
 void Gui::dockLayout(ImGuiID ds) {
     ImGuiDockNode* existing = ImGui::DockBuilderGetNode(ds);
-    if (existing && (existing->IsSplitNode() || existing->Windows.Size > 0))
+    if (existing && (existing->IsSplitNode() || existing->Windows.Size > 0) && !rebuildDock_)
         return;  // restored from imgui.ini
+    rebuildDock_ = false;
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::DockBuilderRemoveNode(ds);
     ImGui::DockBuilderAddNode(ds, ImGuiDockNodeFlags_DockSpace);
@@ -873,6 +930,112 @@ void Gui::dockLayout(ImGuiID ds) {
     for (const auto& p : registry_.panels())
         ImGui::DockBuilderDockWindow(p.title.c_str(), right);
     ImGui::DockBuilderFinish(ds);
+}
+
+void Gui::applyWorkspace(const ui::Workspace& ws) {
+    for (auto& [id, on] : panelOpen_) {
+        auto it = ws.panels.find(id);
+        on = it != ws.panels.end() && it->second;
+    }
+    showCommandLine_ = ws.commandLine;
+    showProperties_ = ws.properties;
+    if (ws.dockIni.empty())
+        rebuildDock_ = true;  // built-in workspaces use the default layout
+    else
+        ImGui::LoadIniSettingsFromMemory(ws.dockIni.c_str(), ws.dockIni.size());
+    anyActivity_ = true;
+}
+
+void Gui::switchWorkspace(const std::string& name) {
+    auto ws = workspaces_.load(name);
+    if (!ws) {
+        core_.print("No workspace named \"" + name + "\".");
+        return;
+    }
+    applyWorkspace(*ws);
+    workspaceName_ = ws->name;
+    core_.settings().setString("workspace.current", workspaceName_);
+}
+
+void Gui::saveWorkspace(const std::string& name) {
+    ui::Workspace ws;
+    ws.name = name;
+    for (const auto& [id, on] : panelOpen_)
+        ws.panels[id] = on;
+    ws.commandLine = showCommandLine_;
+    ws.properties = showProperties_;
+    size_t size = 0;
+    const char* ini = ImGui::SaveIniSettingsToMemory(&size);
+    ws.dockIni.assign(ini ? ini : "", ini ? size : 0);
+    const std::string err = workspaces_.save(ws);
+    if (!err.empty()) {
+        core_.print(err);
+        return;
+    }
+    workspaceName_ = name;
+    core_.settings().setString("workspace.current", workspaceName_);
+    core_.print("Workspace saved: " + name);
+}
+
+void Gui::workspaceMenu() {
+    if (!ImGui::BeginMenu("Workspaces"))
+        return;
+    for (const std::string& name : workspaces_.names()) {
+        if (ImGui::MenuItem(name.c_str(), nullptr, name == workspaceName_))
+            switchWorkspace(name);
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Save Current Layout As...")) {
+        openWorkspaceSave_ = true;
+        workspaceNameInput_ = workspaceName_;
+        workspaceMessage_.clear();
+    }
+    if (ImGui::BeginMenu("Delete")) {
+        for (const std::string& name : workspaces_.names()) {
+            if (workspaces_.isBuiltin(name))
+                continue;
+            if (ImGui::MenuItem(name.c_str())) {
+                const std::string err = workspaces_.remove(name);
+                if (!err.empty())
+                    core_.print(err);
+                else if (name == workspaceName_) {
+                    workspaceName_.clear();
+                    core_.settings().setString("workspace.current", "");
+                }
+            }
+        }
+        ImGui::EndMenu();
+    }
+    ImGui::EndMenu();
+}
+
+void Gui::workspaceDialog() {
+    if (openWorkspaceSave_) {
+        ImGui::OpenPopup("Save workspace");
+        openWorkspaceSave_ = false;
+    }
+    if (!ImGui::BeginPopupModal("Save workspace", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    ImGui::TextUnformatted("Name for the current panel layout:");
+    ImGui::SetNextItemWidth(260);
+    const bool enter =
+        ImGui::InputText("##wsName", &workspaceNameInput_, ImGuiInputTextFlags_EnterReturnsTrue);
+    if (!workspaceMessage_.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), "%s", workspaceMessage_.c_str());
+    if (ImGui::Button("Save", ImVec2(100, 0)) || enter) {
+        if (workspaces_.isBuiltin(workspaceNameInput_)) {
+            workspaceMessage_ = "That name is built in; choose another.";
+        } else if (workspaceNameInput_.empty()) {
+            workspaceMessage_ = "Give the workspace a name.";
+        } else {
+            saveWorkspace(workspaceNameInput_);
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(100, 0)))
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 namespace {
@@ -1712,6 +1875,25 @@ void Gui::viewportInput(const ViewportRect& rect) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 }
 
+// Content browser items and palette tools dragged onto the drawing run as if typed.
+void Gui::dropIntoViewport(const ViewportRect& rect) {
+    const ImGuiPayload* pl = ImGui::GetDragDropPayload();
+    if (!pl || !pl->Data || !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        return;
+    const ImVec2 m = ImGui::GetIO().MousePos;
+    if (m.x < rect.x || m.y < rect.y || m.x >= rect.x + rect.w || m.y >= rect.y + rect.h ||
+        ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
+        return;
+    const std::string data(static_cast<const char*>(pl->Data));
+    std::vector<std::string> lines;
+    if (pl->IsDataType(ui::kCommandsPayload))
+        lines = ui::toolDropLines(data);
+    else if (pl->IsDataType(ui::kContentPayload))
+        lines = ui::contentDropLines(ui::decodeContent(data));
+    for (const std::string& line : lines)
+        core_.submitText(line);
+}
+
 // What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
 // options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
 void Gui::viewportMenu() {
@@ -1777,7 +1959,20 @@ ViewportRect Gui::frame() {
             settings_.open();
         else if (what.rfind("settings:", 0) == 0)
             settings_.open(what.substr(9));
-        else if (what.rfind("newfrom:", 0) == 0) {
+        else if (what.rfind("workspace:load:", 0) == 0)
+            switchWorkspace(what.substr(15));
+        else if (what.rfind("workspace:save:", 0) == 0)
+            saveWorkspace(what.substr(15));
+        else if (what.rfind("keys:", 0) == 0) {
+            const bool import = what.rfind("keys:import:", 0) == 0;
+            const std::string path = what.substr(12);
+            const std::string err = import ? core_.importKeybindings(platform::pathFromUtf8(path))
+                                           : core_.exportKeybindings(platform::pathFromUtf8(path));
+            if (!err.empty())
+                core_.print(err);
+            else if (!import)
+                core_.print("Key bindings written to " + path);
+        } else if (what.rfind("newfrom:", 0) == 0) {
             const std::string err = core_.newFromTemplate(what.substr(8));
             if (err.empty())
                 startPage_ = false;
@@ -1810,6 +2005,7 @@ ViewportRect Gui::frame() {
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);
+    dropIntoViewport(rect);
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
@@ -1865,6 +2061,7 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
 
 void Gui::dialogs() {
     settings_.draw(core_);
+    workspaceDialog();
     if (openRecoveryPrompt_) {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;

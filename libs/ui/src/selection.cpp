@@ -10,7 +10,7 @@ namespace tbcad::ui {
 bool isVisible(const Document& doc, const Entity& e) {
     if (!e.common.visible)
         return false;
-    return doc.effective(e.common.layer).visible();
+    return doc.effective(e.common).visible();
 }
 
 bool isSelectable(const Document& doc, const Entity& e) {
@@ -18,7 +18,7 @@ bool isSelectable(const Document& doc, const Entity& e) {
         return false;
     if (doc.ownerBlock(e.common.id))
         return false;
-    EffectiveLayer layer = doc.effective(e.common.layer);
+    EffectiveLayer layer = doc.effective(e.common);
     return layer.visible() && !layer.locked;
 }
 

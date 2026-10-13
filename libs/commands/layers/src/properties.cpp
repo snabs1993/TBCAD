@@ -106,7 +106,7 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
         const Entity* e = doc.find(id);
         if (!e || !matches(*e, only))
             continue;
-        if (doc.effective(e->common.layer).locked) {
+        if (doc.effective(e->common).locked) {
             ++sum.skippedLocked;
             continue;
         }

@@ -15,6 +15,7 @@
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
+#include "tbcad/ui/workspace.h"
 
 struct GLFWwindow;
 
@@ -92,6 +93,13 @@ private:
     void startPage(const ViewportRect& rect);
     void statusBar();
     void dockLayout(ImGuiID dockspace);
+    // Workspaces (saved window layouts). Switching applies the panels at once and the docking
+    // layout through Dear ImGui's ini data.
+    void applyWorkspace(const ui::Workspace& ws);
+    void switchWorkspace(const std::string& name);
+    void saveWorkspace(const std::string& name);
+    void workspaceMenu();
+    void workspaceDialog();
     void commandWindow();
     void updateSuggestions();
     void drawSuggestions(ImVec2 inputPos, float width);
@@ -105,6 +113,7 @@ private:
     void dialogs();
     void viewportInput(const ViewportRect& rect);
     void viewportMenu();
+    void dropIntoViewport(const ViewportRect& rect);
     void registeredMenu(const std::string& top);
     void registeredSubmenu(const std::string& prefix, std::vector<const ui::MenuItemInfo*>& items);
     void runAction(const std::string& action);
@@ -145,6 +154,12 @@ private:
     bool showCommandLine_ = true;
     bool showProperties_ = true;
     bool layoutBuilt_ = false;
+    ui::WorkspaceStore workspaces_;
+    std::string workspaceName_{};  // the one last switched to or saved
+    bool rebuildDock_ = false;     // rebuild the default docking layout next frame
+    bool openWorkspaceSave_ = false;
+    std::string workspaceNameInput_{};
+    std::string workspaceMessage_{};
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};

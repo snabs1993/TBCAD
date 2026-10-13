@@ -192,3 +192,21 @@ TEST_CASE("cli: DXF -> .tbcad -> read equals the direct import for every corpus 
     }
     CHECK(checked >= 20);
 }
+
+TEST_CASE("a .dwg input is routed to the DWG reader and fails cleanly when it is not one") {
+    TempDir dir;
+    {
+        std::ofstream f(dir / "bad.dwg", std::ios::binary);
+        f << "this is not a drawing";
+    }
+    Run r = run({(dir / "bad.dwg").string(), "-o", (dir / "bad.tbcad").string()});
+    CHECK(r.exit == 2);
+    CHECK(r.err.find("DWG") != std::string::npos);
+    {
+        std::ofstream f(dir / "old.dwg", std::ios::binary);
+        f << "AC1009 and some bytes";
+    }
+    Run old = run({(dir / "old.dwg").string(), "-o", (dir / "old.tbcad").string()});
+    CHECK(old.exit == 2);
+    CHECK(old.err.find("unsupported DWG version") != std::string::npos);
+}

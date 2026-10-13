@@ -120,6 +120,7 @@ DimStyleId Importer::dimStyleFor(std::string_view raw) const {
 EntityCommon Importer::commonOf(const Record& r) {
     EntityCommon c;
     c.layer = layerFor(r.raw(8), r.line);
+    c.level = levelFor(r);
     if (r.has(6))
         c.linetype = linetypeFor(r.raw(6), r.line);
     if (const Group* g = r.find(62)) {

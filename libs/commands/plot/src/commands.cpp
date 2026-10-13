@@ -228,7 +228,7 @@ public:
 class PlotSetCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "PLOTSET"; }
-    std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT"}; }
+    std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT", "PUBLISH"}; }
     std::string_view description() const override {
         return "Plot a list of layouts from several drawings into one PDF";
     }

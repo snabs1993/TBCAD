@@ -35,7 +35,9 @@ bool plottable(const Document& doc, const Entity& e) {
     if (!e.common.visible)
         return false;
     EffectiveLayer l = doc.effective(e.common.layer);
-    return l.visible() && l.plot;
+    // Plots show every level that is switched on, whatever the on-screen view of other levels.
+    const Level* level = doc.level(e.common.level);
+    return l.visible() && l.plot && (!level || level->visible);
 }
 
 BBox2 extentsOf(const Document& doc) {

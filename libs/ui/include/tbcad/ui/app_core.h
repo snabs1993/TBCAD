@@ -245,6 +245,9 @@ public:
     std::optional<std::string> setting(std::string_view key) const override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
+    // Key binding profiles (keybindings.json format). Both return an error text, empty on success.
+    std::string exportKeybindings(const std::filesystem::path& file);
+    std::string importKeybindings(const std::filesystem::path& file);
     // ---- templates ---------------------------------------------------------------------------
     std::filesystem::path templateFolder() const { return paths_.configDir / "templates"; }
     std::vector<std::string> templateNames() const override;

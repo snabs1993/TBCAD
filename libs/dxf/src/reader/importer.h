@@ -51,6 +51,13 @@ struct LayerRow {
     int xFlags = 0;  // bit0 colour, bit1 linetype, bit2 lineweight are ByParent
 };
 
+// A level named by the TBCAD XDATA on the APPID record (see docs/dxf-import.md).
+struct LevelRow {
+    std::string name{};
+    double elevation = 0;
+    int flags = 1;  // bit0 visible, bit1 locked
+};
+
 class Importer {
 public:
     Importer(std::span<const std::byte> bytes, const ImportOptions& options, Report& report)
@@ -68,6 +75,9 @@ private:
     void readStyle(const Record& r);
     void readDimStyle(const Record& r);
     void readLayerRow(const Record& r);
+    void readAppId(const Record& r);
+    void createLevels();
+    LevelId levelFor(const Record& r);
     void createLayers();
     void createLayerRows(const std::vector<LayerRow>& rows);
     LayerId ensureLayerPath(const std::vector<std::string>& segments, const LayerRow* leaf);
@@ -132,6 +142,11 @@ private:
     std::vector<LayerRow> layerRows_{};
     std::vector<std::string> layerRawNames_{};  // raw bytes of each row's name
     bool layersCreated_ = false;
+    std::vector<LevelRow> levelRows_{};
+    std::string levelCurrent_{};
+    int levelView_ = 0;
+    bool levelsCreated_ = false;
+    std::unordered_map<std::string, LevelId> levelByFold_{};    // folded level name
     std::map<std::string, LayerId, std::less<>> layerByRaw_{};  // raw layer name bytes
     std::unordered_map<std::string, LayerId> layerByFold_{};    // folded decoded DXF name
     std::set<LayerId> placeholderLayers_{};

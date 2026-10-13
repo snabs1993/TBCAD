@@ -18,6 +18,7 @@
 #include "tbcad/platform/json.h"
 #include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/ui/settings_model.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
@@ -543,6 +544,21 @@ void AppCore::newDocument() {
     if (!problem.empty())
         print(problem);
     addSession(std::move(doc), {});
+}
+
+std::string AppCore::exportKeybindings(const fs::path& file) {
+    return KeybindingEditor(keybindings_, paths_.keybindingsFile()).exportTo(file);
+}
+
+std::string AppCore::importKeybindings(const fs::path& file) {
+    std::vector<std::string> warnings;
+    auto out = KeybindingEditor(keybindings_, paths_.keybindingsFile()).importFrom(file, &warnings);
+    for (const std::string& w : warnings)
+        print("Key bindings: " + w);
+    if (!out.ok)
+        return out.error;
+    print("Key bindings imported from " + platform::pathToUtf8(file));
+    return {};
 }
 
 std::vector<std::string> AppCore::templateNames() const {
