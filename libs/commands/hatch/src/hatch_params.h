@@ -19,6 +19,8 @@ struct Params {
     double scale = 1;
     double angle = 0;  // radians
     Vec2 base{};
+    double gap = 0;           // mm; 0 = boundaries must be closed
+    bool associative = true;  // the hatch follows its boundary objects
 };
 
 inline std::string number(double v) {
@@ -48,6 +50,10 @@ inline Params loadParams(const cmd::IHost& host) {
             parseNumber(v->substr(comma + 1), y))
             p.base = {x, y};
     }
+    if (auto v = host.setting(kSettingGap); v && parseNumber(*v, d) && d >= 0)
+        p.gap = d;
+    if (auto v = host.setting(kSettingAssociative))
+        p.associative = *v != "0";
     return p;
 }
 
@@ -56,10 +62,13 @@ inline void saveParams(cmd::IHost& host, const Params& p) {
     host.setSetting(kSettingScale, number(p.scale));
     host.setSetting(kSettingAngle, number(p.angle * 180.0 / kPi));
     host.setSetting(kSettingBase, number(p.base.x) + "," + number(p.base.y));
+    host.setSetting(kSettingGap, number(p.gap));
+    host.setSetting(kSettingAssociative, p.associative ? "1" : "0");
 }
 
 inline std::string summary(const Params& p) {
-    return p.pattern + ", scale " + number(p.scale) + ", angle " + number(p.angle * 180.0 / kPi);
+    return p.pattern + ", scale " + number(p.scale) + ", angle " + number(p.angle * 180.0 / kPi) +
+           (p.gap > 0 ? ", gap " + number(p.gap) : "") + (p.associative ? "" : ", not linked");
 }
 
 }  // namespace tbcad::hatchcmd

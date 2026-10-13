@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "internal.h"
+#include "tbcad/blocks/attributes.h"
 
 namespace tbcad::blocks {
 
@@ -79,6 +80,13 @@ void Flatten::contents(const Entity& insert, const Transform2& outer, int depth)
         const Entity* child = doc.find(id);
         if (!child || !child->common.visible)
             continue;
+        if (const auto* t = entityAs<TextData>(*child); t && t->attdef) {
+            // An attribute turns into plain text holding this insert's value.
+            auto shown = attributeText(*child, *ins);
+            if (shown)
+                place(resolveChild(*shown, insert), outer, depth);
+            continue;
+        }
         place(resolveChild(*child, insert), outer, depth);
     }
 }

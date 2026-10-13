@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include "internal.h"
+#include "tbcad/blocks/attributes.h"
 
 namespace tbcad::blocks {
 
@@ -107,7 +108,8 @@ std::vector<BlockId> dependentBlocks(const Document& doc, const std::vector<Bloc
 
 namespace {
 
-BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& t, int depth) {
+BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& t, int depth,
+                    const InsertData* owner = nullptr) {
     BBox2 box;
     if (depth > kMaxNesting)
         return box;
@@ -118,8 +120,17 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
         if (const auto* ins = entityAs<InsertData>(*e)) {
             if (const BlockDef* inner = doc.block(ins->block))
                 box.merge(contentBounds(doc, *inner, t * instanceTransform(*ins, inner->base),
-                                        depth + 1));
+                                        depth + 1, ins));
             continue;
+        }
+        std::optional<Entity> shown;
+        if (const auto* td = entityAs<TextData>(*e); td && td->attdef) {
+            if (!owner)
+                continue;  // a bare definition (no insert) is measured by its tag below
+            shown = attributeText(*e, *owner);
+            if (!shown)
+                continue;
+            e = &*shown;
         }
         auto moved = geom::transformed(*e, t);
         if (moved) {
@@ -140,7 +151,7 @@ BBox2 insertBounds(const Document& doc, const Entity& insert) {
     const BlockDef* def = doc.block(ins->block);
     if (!def)
         return {};
-    return contentBounds(doc, *def, instanceTransform(*ins, def->base), 0);
+    return contentBounds(doc, *def, instanceTransform(*ins, def->base), 0, ins);
 }
 
 BBox2 blockBounds(const Document& doc, BlockId block) {

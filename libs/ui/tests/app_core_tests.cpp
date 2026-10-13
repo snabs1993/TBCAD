@@ -596,6 +596,42 @@ TEST_CASE("a leading apostrophe on an idle command line is ignored") {
     f.core->pressEscape();
 }
 
+TEST_CASE("double click on a text object selects it and starts TEXTEDIT") {
+    // The text generator lives in libs/text; a stand-in gives the object a pickable outline.
+    geom::DisplayRegistry::set(EntityKind::Text, [](const Document&, const Entity& e,
+                                                    const geom::DisplayContext&, DisplayList& out) {
+        const auto& t = *entityAs<TextData>(e);
+        DisplayPolyline pl;
+        pl.closed = true;
+        pl.pts = {t.position, t.position + Vec2{40, 0}, t.position + Vec2{40, 10},
+                  t.position + Vec2{0, 10}};
+        out.items.emplace_back(std::move(pl));
+    });
+    Fixture f("dblclick");
+    EntityId text;
+    {
+        auto tx = f.core->document().begin("text");
+        TextData d;
+        d.position = {100, 100};
+        d.utf8 = "abc";
+        text = tx.add(Entity{{}, d}).value();
+        tx.commit();
+    }
+    EntityId line = addLine(f.core->document(), {0, 0}, {50, 0});
+
+    f.core->doubleClick(f.at({100, 105}));  // on the text outline
+    CHECK(f.core->selection() == std::vector<EntityId>{text});
+    bool started = false;
+    for (const auto& h : f.core->history())
+        started = started || h.find("TEXTEDIT") != std::string::npos;
+    CHECK(started);
+
+    f.core->clearSelection();
+    f.core->doubleClick(f.at({25, 0}));  // a line: plain single click
+    CHECK(f.core->selection() == std::vector<EntityId>{line});
+    geom::DisplayRegistry::clear(EntityKind::Text);
+}
+
 TEST_CASE(
     "an idle click goes to the click hooks first; a handled click leaves the selection alone") {
     Fixture f("hook_idle_click");
@@ -623,4 +659,16 @@ TEST_CASE(
     f.core->click(f.at({300, 300}));
     CHECK(calls == 2);
     CHECK(f.core->selection().empty());
+}
+
+TEST_CASE("SETTINGS asks the window to open the dialog") {
+    Fixture f("settings_cmd");
+    f.core->submitText("op");  // alias
+    auto req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "settings");
+    CHECK(f.core->takeUiRequests().empty());
+    CHECK_FALSE(f.core->runner().active());
+    CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
+    CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }

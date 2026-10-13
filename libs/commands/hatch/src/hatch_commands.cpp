@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include "hatch_params.h"
 #include "tbcad/cmd/cmd.h"
@@ -31,9 +32,10 @@ bool hasCurves(const Entity& e) {
 
 // The model-space entities that can bound a hatch and are inside the current view (every entity
 // when the host has no viewport). Hidden objects and objects on layers that are off or frozen do
-// not count. TODO(hatch): ask the host's spatial index instead of scanning the document, once
-// IHost offers a window query (see the PR description).
-std::vector<Candidate> viewCandidates(const Document& doc, const cmd::ViewState& view) {
+// not count. The host's spatial index answers the window query when it has one; otherwise the
+// document is scanned.
+std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& host) {
+    const cmd::ViewState view = host.view();
     bool all = !(view.sizePx.x > 0 && view.sizePx.y > 0 && view.scale > 0);
     BBox2 window;
     if (!all) {
@@ -43,17 +45,26 @@ std::vector<Candidate> viewCandidates(const Document& doc, const cmd::ViewState&
     }
     bool hasBlocks = !doc.blocks().empty();
     std::vector<Candidate> out;
-    doc.forEachEntity([&](const Entity& e) {
+    auto consider = [&](const Entity& e, bool checkWindow) {
         if (!e.common.visible || !hasCurves(e))
             return;
         if (hasBlocks && doc.ownerBlock(e.common.id))
             return;
-        if (!all && !window.intersects(geom::bounds(e)))
+        if (checkWindow && !window.intersects(geom::bounds(e)))
             return;
         if (!doc.effective(e.common.layer).visible())
             return;
         out.push_back({e.common.id, &e});
-    });
+    };
+    if (!all) {
+        if (auto ids = host.entitiesInWindow(window)) {
+            for (EntityId id : *ids)
+                if (const Entity* e = doc.find(id))
+                    consider(*e, false);
+            return out;
+        }
+    }
+    doc.forEachEntity([&](const Entity& e) { consider(e, !all); });
     return out;
 }
 
@@ -68,6 +79,74 @@ std::vector<Candidate> idCandidates(const Document& doc, const std::vector<Entit
 const char* loopWord(std::size_t n) {
     return n == 1 ? "loop" : "loops";
 }
+
+// ---- Hover preview -------------------------------------------------------------------------
+
+// The boundary graph of the view, rebuilt only when the drawing, the view or the gap changes, so
+// moving the cursor costs one pick.
+class HoverPreview {
+public:
+    void draw(cmd::CommandContext& ctx, const Params& p, Vec2 cursor, DisplayList& out) {
+        refresh(ctx, p);
+        if (!finder_ || !finder_->ok())
+            return;
+        auto b = finder_->find(cursor);
+        if (!b.ok())
+            return;
+        const cmd::ViewState view = ctx.host().view();
+        const Rgba line{255, 200, 40, 255};
+        HatchData d;
+        d.loops = b.value().loops;
+        d.solid = true;
+        Pattern solid;
+        solid.solid = true;
+        FillOptions fo;
+        fo.tolerance = std::max(view.scale * 0.5, 1e-4);
+        FillResult r = generateFill(d, solid, fo);
+        if (!r.rings.empty()) {
+            DisplayFill fill;
+            fill.rings = std::move(r.rings);
+            fill.style.color = Rgba{255, 200, 40, 70};
+            out.items.emplace_back(std::move(fill));
+        }
+        for (const HatchLoop& l : d.loops) {
+            HatchData one;
+            one.loops.push_back(l);
+            FillResult o = generateFill(one, solid, fo);
+            for (auto& ring : o.rings) {
+                DisplayPolyline pl;
+                pl.pts = std::move(ring);
+                pl.closed = true;
+                pl.style.color = line;
+                out.items.emplace_back(std::move(pl));
+            }
+        }
+    }
+
+private:
+    void refresh(cmd::CommandContext& ctx, const Params& p) {
+        const Document& doc = ctx.doc();
+        const cmd::ViewState view = ctx.host().view();
+        if (finder_ && revision_ == doc.revision() && gap_ == p.gap && center_ == view.center &&
+            scale_ == view.scale && size_ == view.sizePx)
+            return;
+        revision_ = doc.revision();
+        gap_ = p.gap;
+        center_ = view.center;
+        scale_ = view.scale;
+        size_ = view.sizePx;
+        BoundaryOptions bo;
+        bo.gapTolerance = p.gap;
+        finder_ = std::make_unique<BoundaryFinder>(viewCandidates(doc, ctx.host()), bo);
+    }
+
+    std::unique_ptr<BoundaryFinder> finder_;
+    std::uint64_t revision_ = 0;
+    double gap_ = 0;
+    Vec2 center_{};
+    double scale_ = 0;
+    Vec2 size_{};
+};
 
 // ---- HATCH ---------------------------------------------------------------------------------
 
@@ -84,9 +163,11 @@ public:
         ctx.commitOnCancel();  // Esc ends the command but keeps the hatches already made
         Params p = loadParams(ctx.host());
         std::size_t made = 0;
+        HoverPreview hover;
         for (;;) {
             cmd::PointOptions opt;
-            opt.keywords = {"Objects", "Pattern", "Scale", "Angle", "Base", "Undo"};
+            opt.keywords = {"Objects", "Pattern", "Scale", "Angle", "Base", "Gap", "Link", "Undo"};
+            opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
             auto r = co_await ctx.getPoint("Pick internal point (" + summary(p) + ")", opt);
             if (r.status == Status::Keyword) {
                 if (r.keyword == "Pattern") {
@@ -112,6 +193,17 @@ public:
                     auto b = co_await ctx.getPoint("Pattern origin");
                     if (b.ok())
                         p.base = b.point;
+                } else if (r.keyword == "Gap") {
+                    cmd::RealOptions ro;
+                    ro.defaultValue = p.gap;
+                    ro.min = 0;
+                    auto g = co_await ctx.getReal("Gap tolerance (0 = off)", ro);
+                    if (g.ok())
+                        p.gap = g.value;
+                } else if (r.keyword == "Link") {
+                    p.associative = !p.associative;
+                    ctx.message(p.associative ? "Hatches follow their boundary objects."
+                                              : "New hatches are not linked to their boundary.");
                 } else if (r.keyword == "Undo") {
                     if (made > 0 && ctx.rollbackToCheckpoint()) {
                         --made;
@@ -151,12 +243,21 @@ private:
         }
     }
 
+    static BoundaryOptions options(const Params& p) {
+        BoundaryOptions bo;
+        bo.gapTolerance = p.gap;
+        return bo;
+    }
+
     static std::size_t add(cmd::CommandContext& ctx, const Params& p, const Boundary& b) {
         const Pattern* pattern = PatternRegistry::find(p.pattern);
         if (!pattern)
             return 0;
         ctx.checkpoint();
-        auto id = ctx.tx().add(makeHatchEntity(b, *pattern, p.scale, p.angle, p.base));
+        Entity hatch = makeHatchEntity(b, *pattern, p.scale, p.angle, p.base);
+        if (!p.associative)
+            entityAs<HatchData>(hatch)->sourceBoundary.clear();
+        auto id = ctx.tx().add(std::move(hatch));
         if (!id) {
             ctx.message(id.error().message);
             return 0;
@@ -167,8 +268,8 @@ private:
     }
 
     static std::size_t hatchPoint(cmd::CommandContext& ctx, const Params& p, Vec2 at) {
-        std::vector<Candidate> cands = viewCandidates(ctx.doc(), ctx.host().view());
-        auto b = findBoundary(cands, at);
+        std::vector<Candidate> cands = viewCandidates(ctx.doc(), ctx.host());
+        auto b = findBoundary(cands, at, options(p));
         if (!b.ok()) {
             ctx.message(b.error().message);
             return 0;
@@ -178,7 +279,7 @@ private:
 
     static std::size_t hatchObjects(cmd::CommandContext& ctx, const Params& p,
                                     const std::vector<EntityId>& ids) {
-        auto bs = boundaryFromObjects(idCandidates(ctx.doc(), ids));
+        auto bs = boundaryFromObjects(idCandidates(ctx.doc(), ids), options(p));
         if (!bs.ok()) {
             ctx.message(bs.error().message);
             return 0;
@@ -303,6 +404,8 @@ void registerCommands(cmd::Registry& registry) {
     hatch::registerHatchDisplay();
     (void)registry.add(std::make_unique<HatchCommand>());
     (void)registry.add(std::make_unique<HatchEditCommand>());
+    registry.addCommitHook(
+        [](Document& doc, Transaction& tx) { hatch::updateAssociativeHatches(doc, tx); });
 }
 
 }  // namespace tbcad::hatchcmd

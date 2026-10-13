@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -39,6 +40,22 @@ const TextStyle* styleFor(const Document& doc, TextStyleId id);
 // vowel (U+0E40..U+0E44) belongs with the consonant that follows it. Invalid UTF-8 bytes count
 // as one cluster each.
 std::vector<std::size_t> clusterBoundaries(std::string_view utf8);
+
+// ---- Thai word breaking -------------------------------------------------------------------------
+
+// Directory searched for thai-words.txt. Defaults to the source tree's assets/dictionaries (set at
+// build time), then ./assets/dictionaries. Setting it drops any word list loaded before.
+void setDictionaryDirectory(std::filesystem::path dir);
+// Loads a word list (one UTF-8 word per line) and replaces the current one. Returns the number of
+// words, 0 when the file cannot be read (Thai text then wraps at cluster boundaries only).
+std::size_t loadThaiWordList(const std::filesystem::path& file);
+// Loads the list from the dictionary directory on first use. True when a list is available.
+bool thaiWordListAvailable();
+// Break opportunities inside Thai text: byte offsets (ascending, excluding 0 and the end) at which
+// a line may break between two words. Characters other than Thai letters never get a break next
+// to them from this function. The split minimises unknown clusters, then the number of words
+// (maximal matching). Empty when no word list is available.
+std::vector<std::size_t> thaiWordBreaks(std::string_view utf8);
 
 // ---- markup ------------------------------------------------------------------------------------
 

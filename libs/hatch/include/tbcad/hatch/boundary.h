@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 #include "tbcad/core/entities.h"
@@ -19,8 +20,10 @@ struct BoundaryOptions {
     // More graph edges than this (after every curve was split at its crossings) aborts the search
     // with BoundaryError::TooManyEdges.
     std::size_t maxEdges = 20000;
-    // Largest gap between two end points that still counts as touching. v1 only supports 0, which
-    // means "end points must meet within tol::kLinear" (the default). Reserved for later.
+    // Gap tolerance (mm). A free end that stops short of another curve (its end or its side) by at
+    // most this much is joined to it with a connecting line, which becomes an edge of the loop (it
+    // has no source entity). 0 (the default) means ends must meet within 1e-5 mm. Costs one pass
+    // over all pieces per free end, so keep it 0 unless the drawing has gaps.
     double gapTolerance = 0;
     // Chord tolerance (mm) used to decide containment and compare areas. Does not change the
     // geometry that is returned.
@@ -32,7 +35,9 @@ struct Boundary {
     // strictly inside it. Loops at odd nesting depth are holes (`outer == false`), at even depth
     // (2, 4, ...) they are filled again: Normal island style. Every loop is counter-clockwise.
     std::vector<HatchLoop> loops{};
-    // Ids of the entities whose edges form the outer loop (each once, in loop order).
+    // Ids of the entities whose edges form the loops: the outer loop's first (each once, in loop
+    // order), then those of the islands. Gap connectors have no entity. This is what an
+    // associative hatch stores as its source boundary.
     std::vector<EntityId> sources{};
     // Size of the planar graph that was searched, for diagnostics and tests.
     std::size_t graphEdges = 0;
@@ -46,6 +51,31 @@ enum class BoundaryError {
 
 // Message for the command line, e.g. "Too many objects in view; zoom in and try again."
 const char* boundaryErrorText(BoundaryError e);
+
+// The planar graph of a set of entities, built once. Use it when several picks are made against
+// the same drawing (a hover preview, several HATCH picks): building is the expensive part, a pick
+// is cheap. The candidates' entities must stay alive and unchanged while the finder is used.
+class BoundaryFinder {
+public:
+    explicit BoundaryFinder(std::vector<Candidate> candidates, const BoundaryOptions& options = {});
+    ~BoundaryFinder();
+    BoundaryFinder(BoundaryFinder&&) noexcept;
+    BoundaryFinder& operator=(BoundaryFinder&&) noexcept;
+
+    // False when the graph could not be built (too many edges, no geometry): error() says why and
+    // every query returns it.
+    bool ok() const;
+    const Error& error() const;
+    std::size_t graphEdges() const;
+
+    // As findBoundary / boundaryFromObjects.
+    Result<Boundary> find(Vec2 pick) const;
+    Result<std::vector<Boundary>> outermost() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 // Pick-point mode. Splits all candidate curves at their mutual intersections, builds the planar
 // graph, walks its faces, and returns the smallest enclosed region that contains `pick` together
