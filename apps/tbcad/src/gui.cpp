@@ -1741,7 +1741,16 @@ ViewportRect Gui::frame() {
             settings_.open();
         else if (what.rfind("settings:", 0) == 0)
             settings_.open(what.substr(9));
-        else if (what.rfind("newfrom:", 0) == 0) {
+        else if (what.rfind("keys:", 0) == 0) {
+            const bool import = what.rfind("keys:import:", 0) == 0;
+            const std::string path = what.substr(12);
+            const std::string err = import ? core_.importKeybindings(platform::pathFromUtf8(path))
+                                           : core_.exportKeybindings(platform::pathFromUtf8(path));
+            if (!err.empty())
+                core_.print(err);
+            else if (!import)
+                core_.print("Key bindings written to " + path);
+        } else if (what.rfind("newfrom:", 0) == 0) {
             const std::string err = core_.newFromTemplate(what.substr(8));
             if (err.empty())
                 startPage_ = false;

@@ -2,12 +2,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <iterator>
 #include <memory>
 
 #include "tbcad/cmd/command.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
 #include "tbcad/tmpl/tmpl.h"
+#include "tbcad/ui/settings_model.h"
 
 namespace tbcad::ui {
 
@@ -276,6 +280,85 @@ public:
     }
 };
 
+std::filesystem::path pathOf(const std::string& text) {
+    return platform::pathFromUtf8(cmd::trim(text));
+}
+
+class AliasImportCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ALIASIMPORT"; }
+    std::string_view description() const override {
+        return "Import command aliases from an acad.pgp style file";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions so;
+        auto p = co_await ctx.getString("File to import (.pgp)", so);
+        if (!p.ok())
+            co_return;
+        std::ifstream in(pathOf(p.text), std::ios::binary);
+        if (!in) {
+            ctx.message("Cannot read " + cmd::trim(p.text));
+            co_return;
+        }
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        AliasEditor editor(ctx.registry(), ctx.host().settingsFolder() / "aliases.json");
+        AliasImportReport rep = editor.importPgp(text);
+        if (!rep.error.empty()) {
+            ctx.message("Aliases not imported: " + rep.error);
+            co_return;
+        }
+        for (std::size_t i = 0; i < rep.skipped.size() && i < 8; ++i)
+            ctx.message("Skipped " + rep.skipped[i]);
+        if (rep.skipped.size() > 8)
+            ctx.message(std::to_string(rep.skipped.size() - 8) + " more skipped.");
+        ctx.message("Imported " + std::to_string(rep.added) + " alias(es).");
+    }
+};
+
+class AliasExportCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ALIASEXPORT"; }
+    std::string_view description() const override {
+        return "Write all command aliases to an acad.pgp style file";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions so;
+        auto p = co_await ctx.getString("File to write (.pgp)", so);
+        if (!p.ok())
+            co_return;
+        AliasEditor editor(ctx.registry(), {});
+        std::ofstream out(pathOf(p.text), std::ios::binary | std::ios::trunc);
+        out << editor.exportPgp();
+        if (!out)
+            ctx.message("Cannot write " + cmd::trim(p.text));
+        else
+            ctx.message("Aliases written to " + cmd::trim(p.text));
+    }
+};
+
+class KeysFileCommand final : public cmd::Command {
+public:
+    KeysFileCommand(const char* name, bool import, const char* what)
+        : name_(name), import_(import), what_(what) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return what_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions so;
+        auto p = co_await ctx.getString(
+            import_ ? "Key binding file to read (.json)" : "Key binding file to write (.json)", so);
+        if (!p.ok())
+            co_return;
+        // The window owns the key bindings; it does the work once this command has ended.
+        ctx.host().requestUi(std::string(import_ ? "keys:import:" : "keys:export:") +
+                             cmd::trim(p.text));
+    }
+
+private:
+    const char* name_;
+    bool import_;
+    const char* what_;
+};
+
 }  // namespace
 
 void registerAppCommands(cmd::Registry& registry) {
@@ -287,6 +370,12 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<SaveAsTemplateCommand>());
     (void)registry.add(std::make_unique<NewFromTemplateCommand>());
     (void)registry.add(std::make_unique<TemplateDefaultCommand>());
+    (void)registry.add(std::make_unique<AliasImportCommand>());
+    (void)registry.add(std::make_unique<AliasExportCommand>());
+    (void)registry.add(std::make_unique<KeysFileCommand>("KEYSIMPORT", true,
+                                                         "Load a key binding profile from a file"));
+    (void)registry.add(
+        std::make_unique<KeysFileCommand>("KEYSEXPORT", false, "Save the key bindings to a file"));
 }
 
 }  // namespace tbcad::ui
