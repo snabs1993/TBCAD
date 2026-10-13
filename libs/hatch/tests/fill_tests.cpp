@@ -71,8 +71,9 @@ TEST_CASE("LINE45 on a 100 x 100 square at spacing 10: expected count and end po
     // Chord k has length sqrt(2) * (100 - 10 * sqrt(2) * |k|).
     for (int k = 0; k <= 7; ++k) {
         double want = std::sqrt(2.0) * (100 - 10 * std::sqrt(2.0) * k);
-        CHECK(std::count_if(len.begin(), len.end(), [&](double l) { return std::abs(l - want) < 1e-3; }) ==
-              (k == 0 ? 1 : 2));
+        CHECK(std::count_if(len.begin(), len.end(), [&](double l) {
+                  return std::abs(l - want) < 1e-3;
+              }) == (k == 0 ? 1 : 2));
     }
 }
 
@@ -193,7 +194,7 @@ TEST_CASE("density guards fall back to a solid tone") {
 
     FillOptions few;
     few.maxSegments = 50;
-    CHECK(generateFill(h, oneFamily(0, 10), few).mode == FillResult::Mode::Lines);   // 10 lines
+    CHECK(generateFill(h, oneFamily(0, 10), few).mode == FillResult::Mode::Lines);     // 10 lines
     CHECK(generateFill(h, oneFamily(0, 1), few).mode == FillResult::Mode::SolidTone);  // 100
 }
 

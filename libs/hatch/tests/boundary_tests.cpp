@@ -14,8 +14,9 @@ namespace {
 
 template <class T>
 std::size_t countEdges(const HatchLoop& loop) {
-    return static_cast<std::size_t>(std::count_if(loop.edges.begin(), loop.edges.end(),
-                                                  [](const HatchEdge& e) { return std::holds_alternative<T>(e); }));
+    return static_cast<std::size_t>(
+        std::count_if(loop.edges.begin(), loop.edges.end(),
+                      [](const HatchEdge& e) { return std::holds_alternative<T>(e); }));
 }
 
 // Signed area of a loop made of line edges only.

@@ -16,7 +16,7 @@ const char* boundaryErrorText(BoundaryError e) {
         case BoundaryError::TooManyEdges:
             return "Too many objects in view to find a boundary; zoom in and try again.";
         case BoundaryError::NoGeometry:
-            return "No usable objects to build a boundary from.";
+            return "No objects in view can form a boundary.";
     }
     return "";
 }
@@ -74,8 +74,8 @@ private:
 struct Edge {
     int a = 0, b = 0;  // nodes at the start (t0) and end (t1) of the curve
     CurveRef curve{};
-    int cand = 0;                          // index into the candidates
-    const SplineData* spline = nullptr;    // set when the edge is a whole, unsplit spline
+    int cand = 0;                        // index into the candidates
+    const SplineData* spline = nullptr;  // set when the edge is a whole, unsplit spline
 };
 
 // Half-edge h = 2 * edge (a -> b) or 2 * edge + 1 (b -> a).
@@ -164,9 +164,9 @@ Result<LoopSet> buildLoops(const std::vector<Candidate>& cands, const BoundaryOp
         boxes[i] = pieces[i].curve.bounds().inflated(kMerge * 10);
     std::vector<int> order(pieces.size());
     std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(),
-              [&](int a, int b) { return boxes[static_cast<std::size_t>(a)].min.x <
-                                         boxes[static_cast<std::size_t>(b)].min.x; });
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return boxes[static_cast<std::size_t>(a)].min.x < boxes[static_cast<std::size_t>(b)].min.x;
+    });
     std::vector<std::vector<double>> splits(pieces.size());
     std::vector<geom::Intersection> hits;
     std::size_t hitCount = 0;
@@ -478,23 +478,23 @@ HatchLoop toHatchLoop(const Graph& g, const Loop& loop, bool outer) {
 }
 
 // The loop at index `outerIdx` and everything nested in it, as a Boundary.
-Boundary makeBoundary(const std::vector<Candidate>& cands, const LoopSet& set,
-                      std::size_t outerIdx, double boundaryTol) {
+Boundary makeBoundary(const std::vector<Candidate>& cands, const LoopSet& set, std::size_t outerIdx,
+                      double boundaryTol) {
     const Graph& g = set.graph;
     const Loop& outer = set.loops[outerIdx];
     std::vector<std::size_t> inner;
     for (std::size_t i = 0; i < set.loops.size(); ++i)
         if (i != outerIdx && nestedIn(set.loops[i], outer, boundaryTol))
             inner.push_back(i);
-    std::sort(inner.begin(), inner.end(), [&](std::size_t a, std::size_t b) {
-        return set.loops[a].area > set.loops[b].area;
-    });
+    std::sort(inner.begin(), inner.end(),
+              [&](std::size_t a, std::size_t b) { return set.loops[a].area > set.loops[b].area; });
 
     Boundary result;
     result.graphEdges = g.edges.size();
     result.loops.push_back(toHatchLoop(g, outer, true));
     for (int h : outer.half) {
-        EntityId id = cands[static_cast<std::size_t>(g.edges[static_cast<std::size_t>(h >> 1)].cand)].id;
+        EntityId id =
+            cands[static_cast<std::size_t>(g.edges[static_cast<std::size_t>(h >> 1)].cand)].id;
         if (std::find(result.sources.begin(), result.sources.end(), id) == result.sources.end())
             result.sources.push_back(id);
     }

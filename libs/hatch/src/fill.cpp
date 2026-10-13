@@ -166,8 +166,7 @@ void emitInterval(Emitter& em, const PatternFamily& f, double scale, Vec2 q, Vec
     double cycles = (s1 - s0) / cycle + 2;
     double visible = static_cast<double>(
         std::count_if(f.dashes.begin(), f.dashes.end(), [](double d) { return d >= 0; }));
-    if (cycles * visible +
-            static_cast<double>(em.out.segments.size() + em.out.dots.size()) >
+    if (cycles * visible + static_cast<double>(em.out.segments.size() + em.out.dots.size()) >
         static_cast<double>(em.maxSegments) * 1.5) {
         em.overflow = true;
         return;
@@ -226,8 +225,7 @@ std::vector<double> crossings(Vec2 q, Vec2 u, const std::vector<const CurveRef*>
 
 }  // namespace
 
-FillResult generateFill(const HatchData& hatch, const Pattern& pattern,
-                        const FillOptions& opt) {
+FillResult generateFill(const HatchData& hatch, const Pattern& pattern, const FillOptions& opt) {
     FillResult res;
     if (pattern.solid || hatch.solid || pattern.families.empty()) {
         res.mode = FillResult::Mode::Solid;

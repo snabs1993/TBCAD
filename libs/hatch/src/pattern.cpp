@@ -137,7 +137,8 @@ Result<std::vector<Pattern>> parsePatterns(std::string_view text) {
     }
     for (const Pattern& p : out)
         if (!p.solid && p.families.empty())
-            return makeError(ErrorCode::Parse, "pattern " + p.name + " has no lines and is not solid");
+            return makeError(ErrorCode::Parse,
+                             "pattern " + p.name + " has no lines and is not solid");
     return out;
 }
 

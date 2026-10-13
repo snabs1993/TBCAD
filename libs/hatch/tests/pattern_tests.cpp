@@ -55,15 +55,16 @@ TEST_CASE("parsePatterns reports the offending line") {
     CHECK_FALSE(parsePatterns("[A]\nline = x | 0,0 | 0,5 |\n").ok());      // angle
     CHECK_FALSE(parsePatterns("[A]\nline = 0 | 0 | 0,5 |\n").ok());        // origin
     CHECK_FALSE(parsePatterns("[A]\nline = 0 | 0,0 | 0,5 | 0,0\n").ok());  // zero cycle
-    CHECK_FALSE(parsePatterns("[A]\nfoo = 1\n").ok());                      // unknown key
-    CHECK_FALSE(parsePatterns("[A]\n").ok());                               // no lines, not solid
-    CHECK_FALSE(parsePatterns("[A]\nsolid=yes\n[A]\nsolid=yes\n").ok());    // duplicate
+    CHECK_FALSE(parsePatterns("[A]\nfoo = 1\n").ok());                     // unknown key
+    CHECK_FALSE(parsePatterns("[A]\n").ok());                              // no lines, not solid
+    CHECK_FALSE(parsePatterns("[A]\nsolid=yes\n[A]\nsolid=yes\n").ok());   // duplicate
     CHECK(parsePatterns("# only a comment\n").ok());
 }
 
 TEST_CASE("user patterns shadow built-in ones and show up in names()") {
     PatternRegistry::clearUser();
-    auto parsed = parsePatterns("[MYHATCH]\nline = 30 | 0,0 | 0,2.5 | 5,-2\n[LINE45]\nsolid = yes\n");
+    auto parsed =
+        parsePatterns("[MYHATCH]\nline = 30 | 0,0 | 0,2.5 | 5,-2\n[LINE45]\nsolid = yes\n");
     REQUIRE(parsed.ok());
     for (Pattern& p : parsed.value())
         PatternRegistry::add(p);

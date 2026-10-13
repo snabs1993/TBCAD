@@ -154,9 +154,9 @@ Result<std::vector<Entity>> explodeHatch(const Document& doc, const Entity& hatc
                         if (tol::nearlyEqualAngle(from, to))
                             out.push_back(entityWith(hatch, CircleData{e.center, e.radius}));
                         else
-                            out.push_back(entityWith(
-                                hatch, ArcData{e.center, e.radius, normalizeAngle(from),
-                                               normalizeAngle(to)}));
+                            out.push_back(
+                                entityWith(hatch, ArcData{e.center, e.radius, normalizeAngle(from),
+                                                          normalizeAngle(to)}));
                     } else if constexpr (std::is_same_v<T, HatchEllipseEdge>) {
                         double from = e.ccw ? e.startParam : e.endParam;
                         double to = e.ccw ? e.endParam : e.startParam;
