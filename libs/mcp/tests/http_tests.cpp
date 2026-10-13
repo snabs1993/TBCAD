@@ -2,11 +2,11 @@
 #include <cstring>
 #include <thread>
 
-#include "tbcad/net/socket.h"
 #include "rig.h"
 #include "tbcad/mcp/http_client.h"
 #include "tbcad/mcp/http_server.h"
 #include "tbcad/mcp/owner_queue.h"
+#include "tbcad/net/socket.h"
 
 using namespace tbcad;
 using namespace tbcad::mcp;
