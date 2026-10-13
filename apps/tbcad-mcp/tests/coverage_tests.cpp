@@ -118,14 +118,13 @@ TEST_CASE("layouts: create, add a viewport and a title block, change it, plot it
     std::filesystem::remove(pdf);
     f.ok("export_pdf", "{\"path\":\"" + pdf.generic_string() + "\",\"layout\":\"Plan A3\"}");
     REQUIRE(std::filesystem::exists(pdf));
-    std::ifstream in(pdf, std::ios::binary);
-    std::string head(5, ' ');
-    in.read(head.data(), 5);
-    CHECK(head == "%PDF-");
-    // the sheet is A3 landscape: 420 x 297 mm = 1190.55 x 841.89 pt
-    in.seekg(0);
-    std::string all((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    CHECK(all.find("1190") != std::string::npos);
+    {
+        std::ifstream in(pdf, std::ios::binary);
+        std::string all((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(all.rfind("%PDF-", 0) == 0);
+        // the sheet is A3 landscape: 420 x 297 mm = 1190.55 x 841.89 pt
+        CHECK(all.find("1190") != std::string::npos);
+    }
 
     // model space again: a different page size is not required, the call must simply work
     auto pdf2 = dir / "model.pdf";
@@ -141,7 +140,8 @@ TEST_CASE("layouts: create, add a viewport and a title block, change it, plot it
     f.ok("modify_viewport", R"({"layout":"Plan A3","id":1,"remove":true})");
     f.ok("delete_layout", R"({"name":"Plan A3"})");
     CHECK(f.ok("list_layouts").find("layouts")->asArray().empty());
-    std::filesystem::remove_all(dir);
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
 }
 
 TEST_CASE("blocks: create with an attribute, list its details, insert it") {
