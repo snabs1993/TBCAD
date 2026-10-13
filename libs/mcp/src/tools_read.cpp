@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include "tbcad/blocks/attributes.h"
 #include "tools_common.h"
 
 namespace tbcad::mcp::detail {
@@ -16,12 +17,10 @@ std::vector<EntityId> modelSpaceIds(const Document& doc) {
 }
 
 BBox2 drawingExtents(DrawingSession& s) {
-    if (const auto* idx = s.spatialIndex())
-        return idx->bounds();
     BBox2 box;
     const Document& doc = s.document();
     doc.forEachEntity([&](const Entity& e) {
-        if (!doc.ownerBlock(e.common.id))
+        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e))
             box.merge(geom::bounds(e, doc));
     });
     return box;
@@ -422,9 +421,43 @@ ToolResult listBlocks(ToolContext& ctx, const Json&) {
     for (const auto& [id, b] : doc.blocks()) {
         if (b.anonymous)
             continue;
-        rows.push_back(Json(Json::Object{{"name", b.name},
-                                         {"base", pointToJson(b.base)},
-                                         {"entityCount", static_cast<double>(b.entities.size())}}));
+        Json::Object row{{"name", b.name},
+                         {"base", pointToJson(b.base)},
+                         {"entityCount", static_cast<double>(b.entities.size())}};
+        Json::Array attrs;
+        for (const Entity* def : blocks::attributeDefinitions(doc, id)) {
+            const AttDefInfo& a = *entityAs<TextData>(*def)->attdef;
+            attrs.push_back(Json(Json::Object{{"tag", a.tag},
+                                              {"prompt", a.prompt},
+                                              {"default", a.defaultValue},
+                                              {"constant", a.constant},
+                                              {"invisible", a.invisible}}));
+        }
+        if (!attrs.empty())
+            row["attributes"] = Json(std::move(attrs));
+        if (b.dynamic) {
+            static const char* kinds[] = {"linear", "rotation", "flip", "visibility"};
+            Json::Array params;
+            for (const DynParam& p : b.dynamic->params) {
+                Json::Object po{{"name", p.name}, {"kind", kinds[static_cast<int>(p.kind)]}};
+                if (p.max > p.min) {
+                    po["min"] = p.min;
+                    po["max"] = p.max;
+                }
+                if (!p.states.empty()) {
+                    Json::Array st;
+                    for (const std::string& n : p.states)
+                        st.emplace_back(n);
+                    po["states"] = Json(std::move(st));
+                }
+                params.push_back(Json(std::move(po)));
+            }
+            row["dynamicParameters"] = Json(std::move(params));
+            row["dynamicActions"] = static_cast<double>(b.dynamic->actions.size());
+        }
+        if (!b.xrefPath.empty())
+            row["xref"] = b.xrefPath;
+        rows.push_back(Json(std::move(row)));
     }
     return ToolResult::ok(Json(Json::Object{{"blocks", Json(std::move(rows))}}));
 }
@@ -557,8 +590,9 @@ void registerReadTools(ToolSet& tools) {
          tObject({{"filter", tString("text to look for in name, alias or description")}}),
          outSchema({"commands"}), Edit::None, false, true, true, listCommands});
 
-    add({"list_blocks", "List blocks", "Block definitions.", tObject({}), outSchema({"blocks"}),
-         Edit::None, false, true, true, listBlocks});
+    add({"list_blocks", "List blocks",
+         "Block definitions with their attribute definitions, dynamic parameters and xref path.",
+         tObject({}), outSchema({"blocks"}), Edit::None, false, true, true, listBlocks});
     add({"list_text_styles", "List text styles", "Text styles.", tObject({}),
          outSchema({"textStyles"}), Edit::None, false, true, true, listTextStyles});
     add({"list_linetypes", "List linetypes", "Linetypes with dash patterns (mm).", tObject({}),

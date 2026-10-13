@@ -11,6 +11,7 @@
 #include "../src/commands.h"
 #include "tbcad/block_cmds/palette.h"
 #include "tbcad/palettes/palettes.h"
+#include "tbcad/ui/drag_payload.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::content_cmds {
@@ -242,6 +243,24 @@ void drawItems(ui::PanelContext& pc, State& st) {
                     st.selected.erase(key);
                 else
                     st.selected.insert(key);
+            }
+            // Drag onto the drawing (copy, and insert a block) or onto a palette (add as tool).
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                if (!st.selected.count(key)) {
+                    st.selected.clear();
+                    st.selected.insert(key);
+                }
+                ui::ContentDrag drag;
+                drag.file = utf8(st.file);
+                drag.kind = kindName(kind);
+                for (const auto& i : st.items)
+                    if (i.kind == kind && st.selected.count(keyOf(i)))
+                        drag.names.push_back(i.name);
+                const std::string data = ui::encodeContent(drag);
+                ImGui::SetDragDropPayload(ui::kContentPayload, data.c_str(), data.size() + 1);
+                ImGui::Text("%s: %s%s", drag.kind.c_str(), item.name.c_str(),
+                            drag.names.size() > 1 ? " ..." : "");
+                ImGui::EndDragDropSource();
             }
             ImGui::SameLine();
             if (kind == xref::ContentKind::Block) {

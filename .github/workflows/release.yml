@@ -5,7 +5,8 @@ name: Release
 #                        suffix (v0.1.0-preview.1) are published at once as a pre-release;
 #                        plain tags (v1.0.0) stay a DRAFT for the owner to publish.
 #  - workflow_dispatch : same build without a release; the files are workflow artifacts. Use it
-#                        to try the pipeline.
+#                        to try the pipeline. With publish=true it also makes a private DRAFT
+#                        release v<version> (tag created on the selected commit).
 # Code signing is not done yet (needs a certificate); see docs/release.md.
 
 on:
@@ -17,6 +18,11 @@ on:
         description: 'Version number for the file names (for example 0.1.0)'
         required: false
         default: '0.0.0-test'
+      publish:
+        description: 'Also make a DRAFT release v<version> (private, tag made on the selected commit)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -97,19 +103,23 @@ jobs:
           if-no-files-found: error
 
       - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $files = Get-ChildItem dist/* | ForEach-Object FullName
-          if ($env:GITHUB_REF_NAME -like '*-*') {
-            gh release create "$env:GITHUB_REF_NAME" --prerelease --verify-tag `
+          $tag = $env:GITHUB_REF_NAME
+          $target = @('--verify-tag')
+          $manual = -not ($tag -like 'v*')
+          if ($manual) { $tag = 'v${{ steps.ver.outputs.version }}'; $target = @('--target', $env:GITHUB_SHA) }
+          if ($tag -like '*-*' -and -not $manual) {
+            gh release create $tag --prerelease @target `
               --title "TBCAD ${{ steps.ver.outputs.version }} (test build)" `
               --notes "Test build for trying TBCAD. Not code signed yet, so Windows SmartScreen may warn: click More info, then Run anyway. Files: the Setup .exe installs it; the portable .zip runs without installing." `
               $files
           } else {
-            gh release create "$env:GITHUB_REF_NAME" --draft --verify-tag `
+            gh release create $tag --draft @target `
               --title "TBCAD ${{ steps.ver.outputs.version }}" `
               --notes "Draft. Windows installer and portable ZIP. Not code signed yet: Windows SmartScreen may warn on first run." `
               $files

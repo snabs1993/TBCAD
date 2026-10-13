@@ -36,12 +36,12 @@ cmd::ViewState viewOf(const render::Camera2D& cam, const cmd::ViewState& like) {
 
 BBox2 boxOfEntities(const Document& doc) {
     BBox2 box;
+    // Every kind counts (text, hatches, dimensions, inserts ...), so ZOOM Extents agrees with the
+    // toolbar button, which uses the spatial index built from the same bounds.
     doc.forEachEntity([&](const Entity& e) {
         BBox2 b = geom::bounds(e, doc);
-        if (!b.empty()) {
-            box.expand(b.min);
-            box.expand(b.max);
-        }
+        if (!b.empty())
+            box.merge(b);
     });
     return box;
 }

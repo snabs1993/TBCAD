@@ -43,7 +43,7 @@ public:
     bool collect(const Document& doc, const Entity& e, SnapGeometry& out) const;
 
 private:
-    std::array<SnapGeometryProvider, static_cast<std::size_t>(EntityKind::Table) + 1> providers_{};
+    std::array<SnapGeometryProvider, kEntityKindCount> providers_{};
 };
 
 }  // namespace tbcad::drafting

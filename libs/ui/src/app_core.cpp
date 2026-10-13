@@ -121,6 +121,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("view.cursorHud", "F12");
     keybindings_.declare("view.expandLog", "Ctrl+L");
     keybindings_.declare("view.cleanScreen", "F11");
+    keybindings_.declare("help.quickStart", "F1");
     keybindings_.declare("tools.settings", "");
     if (auto r = keybindings_.load(paths_.keybindingsFile()); r) {
         for (auto& w : r.value())
@@ -944,7 +945,14 @@ void AppCore::panPixels(double dx, double dy) {
 }
 
 void AppCore::zoomExtents() {
-    zoomToBox(session_->index.bounds());
+    // Rays and xlines have no end, so they do not count; if they are all there is, use them.
+    BBox2 box;
+    const Document& doc = session_->doc;
+    doc.forEachEntity([&](const Entity& e) {
+        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e))
+            box.merge(session_->index.boxOf(e.common.id));
+    });
+    zoomToBox(box.empty() ? session_->index.bounds() : box);
 }
 
 void AppCore::zoomToBox(const BBox2& box) {

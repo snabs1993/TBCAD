@@ -256,6 +256,16 @@ struct DataDumper {
         for (const auto& p : d.vertices)
             o << " " << p;
     }
+    void operator()(const RayData& d) {
+        o << (d.infinite ? "XLINE" : "RAY") << " at" << d.origin << " dir" << d.dir;
+    }
+    void operator()(const MlineData& d) {
+        o << "MLINE ";
+        o.quoted(d.style);
+        o << " scale" << d.scale << " just" << d.justification << " closed" << d.closed;
+        for (const Vec2& p : d.v)
+            o << " " << p;
+    }
     void operator()(const TableData& d) {
         o << "TABLE at" << d.origin << " rot" << d.rotation << " th" << d.textHeight << " m"
           << d.margin << " style" << d.style << " title" << d.titleRow << " cols";

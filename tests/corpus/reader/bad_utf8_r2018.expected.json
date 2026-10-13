@@ -1,0 +1,17 @@
+{
+  "description": "R2018 file with invalid UTF-8 bytes in a text and a layer name: kept with replacement characters, reported",
+  "dxf": {
+    "LINE": 1,
+    "TEXT": 2
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 1,
+    "Text": 2
+  },
+  "version": "AC1032",
+  "warnings_has": [
+    "dxf.encoding.mismatch"
+  ]
+}

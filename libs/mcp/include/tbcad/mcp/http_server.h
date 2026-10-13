@@ -91,7 +91,7 @@ private:
 
     mutable std::mutex mutex_{};
     std::map<std::string, std::shared_ptr<Session>> sessions_{};
-    std::list<std::unique_ptr<Connection>> connections_{};
+    std::list<std::unique_ptr<Connection>> connections_;
 };
 
 // ---- Discovery file (how tbcad-mcp finds the running program) -----------------------------------

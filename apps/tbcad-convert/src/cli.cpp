@@ -12,6 +12,7 @@
 
 #include "export/export.h"
 #include "tbcad/core/document.h"
+#include "tbcad/dwg/dwg.h"
 #include "tbcad/dxf/encoding.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
@@ -22,9 +23,11 @@ namespace {
 
 const char* kUsage =
     "usage: tbcad-convert input.dxf -o output.tbcad [options]\n"
+    "       tbcad-convert input.dwg -o output.tbcad|output.dxf [options]\n"
     "       tbcad-convert input.tbcad -o output.dxf [export options]\n"
     "\n"
-    "A .tbcad input is exported to DXF, anything else is imported from DXF.\n"
+    "A .tbcad input is exported to DXF, a .dwg input is read (R2000 and later, read-only) and\n"
+    "written as .tbcad or .dxf, anything else is imported from DXF.\n"
     "\n"
     "options:\n"
     "  -o, --output FILE       the file to write (required)\n"
@@ -233,14 +236,25 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     if (!readFile(input, bytes))
         return fail("cannot read " + input, report);
 
-    Result<dxf::ImportResult> result = dxf::importDxf(bytes, options, report);
+    const bool fromDwg = lower(std::filesystem::path(input).extension().string()) == ".dwg";
+    Result<dxf::ImportResult> result =
+        fromDwg ? dwg::importDwg(bytes, options, report) : dxf::importDxf(bytes, options, report);
     if (!result)
         return fail(input + ": " + result.error().message, report);
     dxf::ImportResult& imported = result.value();
 
-    Result<void> written = io::writeTbcad(*imported.document, std::filesystem::path(output));
-    if (!written)
-        return fail("cannot write " + output + ": " + written.error().message, report);
+    if (fromDwg && lower(std::filesystem::path(output).extension().string()) == ".dxf") {
+        Result<dxf::ExportResult> exported =
+            dxf::exportDxf(*imported.document, exportOptions, report);
+        if (!exported)
+            return fail("cannot export " + output + ": " + exported.error().message, report);
+        if (!writeText(output, exported.value().bytes))
+            return fail("cannot write " + output, report);
+    } else {
+        Result<void> written = io::writeTbcad(*imported.document, std::filesystem::path(output));
+        if (!written)
+            return fail("cannot write " + output + ": " + written.error().message, report);
+    }
 
     if (!reportPath.empty() && !writeText(reportPath, imported.summary.toJson(report))) {
         return fail("cannot write " + reportPath, report);

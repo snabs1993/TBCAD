@@ -225,11 +225,11 @@ TEST_CASE("all writable kinds round trip through JSON") {
     CHECK(h.find("loops")->asArray().size() == 1);
 }
 
-TEST_CASE("dimensions cannot be written directly") {
+TEST_CASE("a dimension without its points is refused with the missing field named") {
     Rig r;
     r.initialize();
     std::string e = r.fails("add_entities", J(R"({"entities":[{"kind":"dimension"}]})"));
-    CHECK(e.find("run_command") != std::string::npos);
+    CHECK(e.find("start") != std::string::npos);
 }
 
 TEST_CASE("sub-layers: create, nest, refuse cycles, delete") {

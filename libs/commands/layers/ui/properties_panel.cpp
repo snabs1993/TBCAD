@@ -482,8 +482,10 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
     assemblySection(ctx, c);
     geometrySection(ctx, c);
 
-    // Sections other modules registered for the kind in play (text, dimensions ...).
-    // The application draws those for a single selection in its own window; nothing to do here.
+    // Sections other modules registered for the kind in play (text, dimensions, hatch ...),
+    // for a single selected object.
+    if (ctx.selection->size() == 1 && ctx.drawPropertySections)
+        ctx.drawPropertySections(ctx.selection->front());
 }
 
 }  // namespace tbcad::layers

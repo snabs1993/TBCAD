@@ -146,6 +146,10 @@ BBox2 drawingExtents(DrawingSession& s);
 
 Json bboxJson(const BBox2& b);
 
+// Why an entity cannot be edited (locked layer, or outside the active branch in Active Only
+// mode); empty when it can.
+std::string whyReadOnly(const Document& doc, const Entity& e);
+
 // Records which entities a block of work created, changed and erased.
 class ChangeRecorder final : public DocumentObserver {
 public:
@@ -180,6 +184,10 @@ void registerAssemblyTools(ToolSet& tools);
 void registerLevelTools(ToolSet& tools);
 void registerFileTools(ToolSet& tools);
 void registerCommandTools(ToolSet& tools);
+void registerModifyTools(ToolSet& tools);
+void registerLayoutTools(ToolSet& tools);
+void registerBlockTools(ToolSet& tools);
+void registerConstraintTools(ToolSet& tools);
 
 // Result of running a command with scripted input (also used by export_pdf / export_dxf).
 struct CommandRunReport {

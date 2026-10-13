@@ -8,6 +8,7 @@
 
 #include "../src/commands.h"
 #include "tbcad/palettes/palettes.h"
+#include "tbcad/ui/drag_payload.h"
 
 namespace tbcad::palettes {
 
@@ -155,6 +156,29 @@ void drawNamePopup(State& st, const char* title, bool& open, bool rename) {
     ImGui::EndPopup();
 }
 
+// Blocks dragged from the content browser land here and become tools of the palette.
+void drawDropZone(State& st, const std::string& palette) {
+    ImGui::Spacing();
+    ImGui::Button("Drop blocks here to add them", ImVec2(-1, 28));
+    if (!ImGui::BeginDragDropTarget())
+        return;
+    if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload(ui::kContentPayload)) {
+        const ui::ContentDrag drag = ui::decodeContent(static_cast<const char*>(pl->Data));
+        if (drag.kind == "Block") {
+            for (const std::string& n : drag.names) {
+                Tool t;
+                t.name = n;
+                t.kind = ToolKind::Block;
+                t.block = n;
+                t.file = drag.file;
+                (void)st.store->addTool(palette, std::move(t));  // a name already there is skipped
+            }
+            persist(st);
+        }
+    }
+    ImGui::EndDragDropTarget();
+}
+
 void drawPanel(ui::PanelContext& pc) {
     if (!pc.doc)
         return;
@@ -190,7 +214,7 @@ void drawPanel(ui::PanelContext& pc) {
                 ImGui::EndTabItem();
                 continue;
             }
-            std::string removeTool, moveTool;
+            std::string removeTool, moveTool, moveTo;
             int moveBy = 0;
             const float width = std::max(110.0f, ImGui::GetContentRegionAvail().x);
             float x = 0;
@@ -203,7 +227,26 @@ void drawPanel(ui::PanelContext& pc) {
                 x += w + ImGui::GetStyle().ItemSpacing.x;
                 if (ImGui::Button((t.name + "##" + name + t.name).c_str(), ImVec2(w, 34)))
                     runTool(pc, t);
-                if (ImGui::IsItemHovered()) {
+                if (ImGui::BeginDragDropSource()) {
+                    const std::string data = ui::encodeTool(name, t.name, toolLines(t, *pc.doc));
+                    ImGui::SetDragDropPayload(ui::kCommandsPayload, data.c_str(), data.size() + 1);
+                    ImGui::Text("%s", t.name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if (ImGui::BeginDragDropTarget()) {  // drop another tool of this palette here
+                    if (const ImGuiPayload* pl =
+                            ImGui::AcceptDragDropPayload(ui::kCommandsPayload)) {
+                        const std::string data(static_cast<const char*>(pl->Data));
+                        const std::string origin = data.substr(0, data.find('\n'));
+                        const size_t tab = origin.find('\t');
+                        if (tab != std::string::npos && origin.substr(0, tab) == name) {
+                            moveTool = origin.substr(tab + 1);
+                            moveTo = t.name;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                if (ImGui::IsItemHovered() && !ImGui::IsMouseDragging(0)) {
                     const auto lines = toolLines(t, *pc.doc);
                     std::string tip;
                     for (const std::string& l : lines)
@@ -228,9 +271,21 @@ void drawPanel(ui::PanelContext& pc) {
                 st.store->removeTool(name, removeTool);
                 persist(st);
             } else if (!moveTool.empty()) {
-                st.store->moveTool(name, moveTool, moveBy);
-                persist(st);
+                if (!moveTo.empty()) {  // dragged: land where the target tool is
+                    int from = -1, to = -1, i = 0;
+                    for (const Tool& t : p->tools) {
+                        from = t.name == moveTool ? i : from;
+                        to = t.name == moveTo ? i : to;
+                        ++i;
+                    }
+                    moveBy = (from >= 0 && to >= 0) ? to - from : 0;
+                }
+                if (moveBy != 0) {
+                    st.store->moveTool(name, moveTool, moveBy);
+                    persist(st);
+                }
             }
+            drawDropZone(st, name);
             ImGui::Spacing();
             if (ImGui::SmallButton("+ Add tool")) {
                 st.draft = Tool{};

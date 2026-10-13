@@ -16,6 +16,7 @@
   ],
   "version": "AC1015",
   "warnings": [
-    "dxf.reader.proxy_entity"
+    "dxf.reader.proxy_entity",
+    "dxf.reader.proxy_graphics_damaged"
   ]
 }

@@ -15,9 +15,11 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/platform/crash.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
+#include "tbcad/ui/drag_payload.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -82,6 +84,10 @@ const char* kindName(EntityKind k) {
             return "Proxy object";
         case EntityKind::Table:
             return "Table";
+        case EntityKind::Ray:
+            return "Ray";
+        case EntityKind::MLine:
+            return "Multiline";
     }
     return "Object";
 }
@@ -126,7 +132,12 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     dpiScale_ = std::max(1.0f, sx);
     recoveryCount_ = core_.pendingRecoveries().size();
     recovery_ = core_.pendingRecovery();
-    openRecoveryPrompt_ = recovery_.has_value();
+    {
+        auto crashes = platform::pendingCrashReports(core_.paths().crashDir());
+        if (!crashes.empty())
+            crashReport_ = platform::pathToUtf8(crashes.back());
+    }
+    openRecoveryPrompt_ = recovery_.has_value() || !crashReport_.empty();
     anyActivity_ = true;
     themeMode_ = ui::parseThemeMode(core_.settings().getString("ui.theme", "dark"));
     theme_ = ui::themeFor(themeMode_, systemPrefersDark());
@@ -145,7 +156,8 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
                 on = it != ws->panels.end() && it->second;
             }
             showCommandLine_ = ws->commandLine;
-            showProperties_ = ws->properties;
+            if (!ws->panels.count("properties"))
+                panelOpen_["properties"] = ws->properties;
         } else {
             workspaceName_.clear();
         }
@@ -189,6 +201,7 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"view.toggleCommandLine", "View > Command Line"},
         {"view.expandLog", "View > Command Log"},
         {"view.cleanScreen", "View > Clean Screen"},
+        {"help.quickStart", "Help > Quick Start"},
         {"tools.settings", "Tools > Settings"}};
     if (auto it = builtin.find(action); it != builtin.end())
         return it->second;
@@ -275,6 +288,8 @@ void Gui::runAction(const std::string& action) {
         logExpanded_ = !logExpanded_;
     else if (action == "view.cleanScreen")
         cleanScreen_ = !cleanScreen_;
+    else if (action == "help.quickStart")
+        showQuickStart_ = true;
     else if (action == "tools.settings")
         settings_.open();
     else {
@@ -620,7 +635,6 @@ void Gui::menuBar() {
         ImGui::Separator();
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
-        ImGui::MenuItem("Properties", nullptr, &showProperties_);
         if (bool qp = core_.setting("ui.quickProps").value_or("0") == "1";
             ImGui::MenuItem("Quick Properties", nullptr, qp))
             core_.setSetting("ui.quickProps", qp ? "0" : "1");
@@ -667,6 +681,8 @@ void Gui::menuBar() {
         }
     }
     if (ImGui::BeginMenu("Help")) {
+        if (ImGui::MenuItem("Quick Start", keys.label("help.quickStart").c_str()))
+            showQuickStart_ = true;
         if (ImGui::MenuItem("About TBCAD"))
             showAbout_ = true;
         if (ImGui::MenuItem("Third-Party Notices"))
@@ -889,7 +905,6 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.22f, nullptr, &center);
     ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
-    ImGui::DockBuilderDockWindow("Properties", right);
     for (const auto& p : registry_.panels())
         ImGui::DockBuilderDockWindow(p.title.c_str(), right);
     ImGui::DockBuilderFinish(ds);
@@ -901,7 +916,8 @@ void Gui::applyWorkspace(const ui::Workspace& ws) {
         on = it != ws.panels.end() && it->second;
     }
     showCommandLine_ = ws.commandLine;
-    showProperties_ = ws.properties;
+    if (!ws.panels.count("properties"))  // workspaces saved before the panel replaced the window
+        panelOpen_["properties"] = ws.properties;
     if (ws.dockIni.empty())
         rebuildDock_ = true;  // built-in workspaces use the default layout
     else
@@ -926,7 +942,7 @@ void Gui::saveWorkspace(const std::string& name) {
     for (const auto& [id, on] : panelOpen_)
         ws.panels[id] = on;
     ws.commandLine = showCommandLine_;
-    ws.properties = showProperties_;
+    ws.properties = panelOpen_["properties"];
     size_t size = 0;
     const char* ini = ImGui::SaveIniSettingsToMemory(&size);
     ws.dockIni.assign(ini ? ini : "", ini ? size : 0);
@@ -1548,47 +1564,6 @@ void Gui::startPage(const ViewportRect& rect) {
     ImGui::PopStyleVar();
 }
 
-void Gui::propertiesWindow() {
-    if (!showProperties_)
-        return;
-    ImGui::SetNextWindowSize(ImVec2(280, 400), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Properties", &showProperties_)) {
-        const auto& sel = core_.selection();
-        const Document& doc = core_.document();
-        if (sel.empty()) {
-            ImGui::TextDisabled("Nothing selected");
-        } else if (sel.size() == 1) {
-            const Entity* e = doc.find(sel[0]);
-            if (e) {
-                ImGui::TextUnformatted(kindName(kind(*e)));
-                const Layer* layer = doc.layer(e->common.layer);
-                ImGui::Text("Layer: %s", layer ? layer->name.c_str() : "?");
-                ui::PanelContext pc;
-                pc.doc = &core_.document();
-                pc.host = &core_;
-                pc.selection = &sel;
-                pc.camera = &core_.camera();
-                pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
-                for (const auto* section : registry_.sectionsFor(kind(*e))) {
-                    ImGui::Separator();
-                    section->draw(pc, sel[0]);
-                }
-            }
-        } else {
-            std::map<std::string, int> counts;
-            for (EntityId id : sel)
-                if (const Entity* e = doc.find(id))
-                    ++counts[kindName(kind(*e))];
-            ImGui::Text("%zu objects selected", sel.size());
-            for (const auto& [name, n] : counts)
-                ImGui::BulletText("%s: %d", name.c_str(), n);
-        }
-    }
-    ImGui::End();
-}
-
-// Small floating box in the corner of the viewport with the common properties of the selection.
-// Edits go through CHPROP, so they are undoable and logged like anything typed.
 void Gui::quickProperties(const ViewportRect& rect) {
     if (core_.setting("ui.quickProps").value_or("0") != "1" || core_.selection().empty() ||
         core_.runner().active())
@@ -1720,6 +1695,16 @@ void Gui::panels() {
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
     pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    pc.commandActive = core_.runner().active();
+    pc.drawPropertySections = [this, &pc](EntityId id) {
+        const Entity* e = core_.document().find(id);
+        if (!e)
+            return;
+        for (const auto* section : registry_.sectionsFor(kind(*e))) {
+            ImGui::Separator();
+            section->draw(pc, id);
+        }
+    };
     for (const std::string& id : core_.takePanelRequests())
         panelOpen_[id] = true;
     for (const auto& p : registry_.panels()) {
@@ -1838,6 +1823,25 @@ void Gui::viewportInput(const ViewportRect& rect) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 }
 
+// Content browser items and palette tools dragged onto the drawing run as if typed.
+void Gui::dropIntoViewport(const ViewportRect& rect) {
+    const ImGuiPayload* pl = ImGui::GetDragDropPayload();
+    if (!pl || !pl->Data || !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        return;
+    const ImVec2 m = ImGui::GetIO().MousePos;
+    if (m.x < rect.x || m.y < rect.y || m.x >= rect.x + rect.w || m.y >= rect.y + rect.h ||
+        ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow))
+        return;
+    const std::string data(static_cast<const char*>(pl->Data));
+    std::vector<std::string> lines;
+    if (pl->IsDataType(ui::kCommandsPayload))
+        lines = ui::toolDropLines(data);
+    else if (pl->IsDataType(ui::kContentPayload))
+        lines = ui::contentDropLines(ui::decodeContent(data));
+    for (const std::string& line : lines)
+        core_.submitText(line);
+}
+
 // What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
 // options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
 void Gui::viewportMenu() {
@@ -1936,7 +1940,6 @@ ViewportRect Gui::frame() {
     dockLayout(kDockId);
     commandWindow();
     if (!cleanScreen_) {
-        propertiesWindow();
         panels();
     }
     logWindow();
@@ -1949,6 +1952,7 @@ ViewportRect Gui::frame() {
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);
+    dropIntoViewport(rect);
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
@@ -2013,12 +2017,27 @@ void Gui::dialogs() {
         ImGui::TextUnformatted("TBCAD did not close normally last time.");
         if (recoveryCount_ > 1)
             ImGui::Text("Automatic backups of %zu unsaved drawings were found.", recoveryCount_);
-        else
+        else if (recovery_)
             ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
+        if (!crashReport_.empty()) {
+            ImGui::TextWrapped(
+                "A crash report was saved to %s. Attach it when you report the problem.",
+                crashReport_.c_str());
+            if (!recovery_) {
+                ImGui::Spacing();
+                if (ImGui::Button("OK", ImVec2(110, 0))) {
+                    platform::acknowledgeCrashReports(core_.paths().crashDir());
+                    crashReport_.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
         ImGui::Spacing();
-        if (ImGui::Button("Recover", ImVec2(110, 0))) {
+        if (recovery_ && ImGui::Button("Recover", ImVec2(110, 0))) {
+            platform::acknowledgeCrashReports(core_.paths().crashDir());
+            crashReport_.clear();
             if (recovery_) {
                 auto r = core_.recoverAll();
                 if (!r)
@@ -2028,7 +2047,9 @@ void Gui::dialogs() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Discard", ImVec2(110, 0))) {
+        if (recovery_ && ImGui::Button("Discard", ImVec2(110, 0))) {
+            platform::acknowledgeCrashReports(core_.paths().crashDir());
+            crashReport_.clear();
             core_.discardRecovery();
             recovery_.reset();
             ImGui::CloseCurrentPopup();
@@ -2092,6 +2113,7 @@ void Gui::dialogs() {
     ImGui::SetNextWindowSize(ImVec2(560, 0), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("About TBCAD", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("TBCAD %s", TBCAD_VERSION);
+        ImGui::TextDisabled("Build %s", TBCAD_GIT_HASH);
         ImGui::TextUnformatted("A free 2D CAD program.");
         ImGui::Separator();
         ImGui::TextWrapped(
@@ -2114,6 +2136,28 @@ void Gui::dialogs() {
         if (ImGui::Button("Third-Party Notices..."))
             showNotices_ = true;
         ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(110, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (showQuickStart_) {
+        ImGui::OpenPopup("Quick Start");
+        showQuickStart_ = false;
+        if (quickStartText_.empty()) {
+            std::ifstream in(findBesideExecutable("assets/help/quickstart.md"), std::ios::binary);
+            std::ostringstream buf;
+            buf << in.rdbuf();
+            quickStartText_ = in ? buf.str() : "The quick start guide was not found (assets/help).";
+        }
+    }
+    ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Quick Start", nullptr)) {
+        ImGui::BeginChild("##quickstart", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(quickStartText_.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
         if (ImGui::Button("Close", ImVec2(110, 0)))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();

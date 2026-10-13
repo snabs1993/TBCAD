@@ -255,6 +255,20 @@ struct PayloadWriter {
         str(d.utf8);
         w.vec2(d.textPos);
     }
+    void operator()(const RayData& d) {
+        w.vec2(d.origin);
+        w.vec2(d.dir);
+        w.u8(d.infinite ? 1 : 0);
+    }
+    void operator()(const MlineData& d) {
+        str(d.style);
+        w.f64(d.scale);
+        w.u8(static_cast<std::uint8_t>(d.justification));
+        w.u8(d.closed ? 1 : 0);
+        w.varint(d.v.size());
+        for (const Vec2& p : d.v)
+            w.vec2(p);
+    }
     void operator()(const TableData& d) {
         w.vec2(d.origin);
         w.f64(d.rotation);
@@ -599,6 +613,25 @@ struct PayloadReader {
             }
             case EntityKind::Proxy:
                 return proxy();
+            case EntityKind::Ray: {
+                RayData d;
+                d.origin = r.vec2();
+                d.dir = r.vec2();
+                d.infinite = r.boolean();
+                return make(d);
+            }
+            case EntityKind::MLine: {
+                MlineData d;
+                d.style = str();
+                d.scale = r.f64();
+                d.justification = r.u8();
+                d.closed = r.boolean();
+                std::size_t n = r.count(16);
+                d.v.resize(n);
+                for (Vec2& p : d.v)
+                    p = r.vec2();
+                return make(std::move(d));
+            }
             case EntityKind::Table: {
                 TableData d;
                 d.origin = r.vec2();
@@ -757,7 +790,7 @@ struct PayloadReader {
     }
 };
 
-constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::Table);
+constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::MLine);
 
 }  // namespace
 

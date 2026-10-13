@@ -18,6 +18,7 @@ struct AppPaths {
     std::filesystem::path settingsFile() const { return configDir / "settings.json"; }
     std::filesystem::path keybindingsFile() const { return configDir / "keybindings.json"; }
     std::filesystem::path autosaveDir() const { return dataDir / "autosave"; }
+    std::filesystem::path crashDir() const { return dataDir / "crashes"; }
 };
 
 // `lookup` returns an environment variable's value; defaults to the process environment. Taking
