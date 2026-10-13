@@ -148,6 +148,30 @@ TEST_CASE("ARC Continue starts at the end of the last line, tangent to it") {
     CHECK(closeAngle(a.endAngle, kPi / 2));
 }
 
+TEST_CASE("ARC Continue ignores lines on another level") {
+    Fixture f;
+    f.host.run("LINE", {"0,0", "10,0", ""});
+    f.host.run("LINE", {"0,0", "0,10", ""});
+    {  // the newer line moves to another level, which is dimmed while the first level is current
+        auto tx = f.doc.begin("level");
+        auto lv = tx.addLevel(Level{{}, "Upper", 3000});
+        REQUIRE(lv.ok());
+        EntityId newest = f.entities().back()->common.id;
+        REQUIRE(tx.modify(newest, [&](Entity& e) { e.common.level = lv.value(); }));
+        tx.commit();
+    }
+    auto r = f.host.run("ARC", {"", "10,10"});
+    CHECK(r.finished);
+    bool found = false;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* a = std::get_if<ArcData>(&e.data)) {
+            found = true;
+            CHECK(close(a->center, {10, 5}));  // continues from (10,0), not from (0,10)
+        }
+    });
+    CHECK(found);
+}
+
 TEST_CASE("ARC Continue after an arc keeps the tangent") {
     Fixture f;
     f.host.run("ARC", {"10,0", "C", "0,0", "0,10"});  // ends at (0,10) heading west
