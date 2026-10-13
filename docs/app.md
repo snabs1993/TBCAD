@@ -174,4 +174,4 @@ Opening a file over 8 MB from the menu, the file browser, a recent-files entry o
 "Opening <name> ..." message for one frame before the (blocking) load starts, so the window does not
 look frozen. A profile of opening a 20 MB drawing (Release, callgrind) put about a quarter of the load
 time in text shaping and layout, which runs twice per text entity (once for the index bounds, once for
-the display list); caching shaped runs is the next speed-up if text-heavy drawings feel slow.
+the display list); shaped runs are now cached by (font chain, direction, text), so repeated strings are shaped once.
