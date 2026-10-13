@@ -25,6 +25,7 @@ struct Viewport {
     double scaleN = 1;  // 1:N, 1 mm on the sheet = N model units
     bool on = true;
     std::vector<LayerId> frozen{};  // frozen in this viewport (their sub-layers too)
+    LevelId level{};                // shows only this level when set (0 = every visible level)
 };
 
 struct Layout {
@@ -66,6 +67,9 @@ Result<void> setViewportOn(Transaction& tx, const std::string& layout, int id, b
 // Freezes or thaws one layer in one viewport only; the layer table is not touched.
 Result<void> setViewportLayerFrozen(Transaction& tx, const std::string& layout, int id,
                                     LayerId layer, bool frozen);
+
+// Shows one level only in the viewport (an empty id shows every visible level again).
+Result<void> setViewportLevel(Transaction& tx, const std::string& layout, int id, LevelId level);
 
 // True when the layer, or one of its parents, is frozen in the viewport.
 bool frozenInViewport(const Document& doc, const Viewport& vp, LayerId layer);

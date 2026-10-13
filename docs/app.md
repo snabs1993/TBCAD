@@ -81,7 +81,7 @@ Owns the `Document`, `UndoStack`, `SpatialIndex` (kept current by `DocumentIndex
 
 ## The window (`apps/tbcad`)
 
-Layout: menu bar, tool strip, docked panels (Command at the bottom, Properties at the right, plus
+Layout: menu bar, tool strip, docked panels (Command at the bottom, Object Properties at the right, plus
 whatever modules register), status bar (cursor coordinates in the drawing's units, toggles,
 current layer, object and selection counts, fps). The drawing is rendered into an offscreen target
 that fills the central dock area. Layout is saved to `imgui.ini` in the settings folder. Light and
@@ -157,3 +157,14 @@ The tool strip is one row of 26 px icons in groups (File, Edit, Draw, Modify, Vi
 are our own line drawings (`apps/tbcad/src/icons.cpp`, a 20 x 20 grid drawn with line primitives), so they take
 the theme colour and stay sharp at every DPI. Commands that are not registered are left out. Right-click the
 strip to show or hide a group (settings `ui.toolgroup.<Group>`).
+
+## Speed, memory and crash reports
+
+Measured on a Release build (GCC) with a synthetic 100 MB DXF of 721,000 lines, circles, polylines and
+texts (`tools/gen_big_dxf.py`): import to `.tbcad` takes about 3.7 s, export back to DXF about 3.1 s, and
+the importer peaks at about 430 MB of memory. The window opens in about 0.2 s (Debug build, software
+OpenGL). The CI `perf` job repeats the large-file run and fails if either direction takes over a minute.
+
+If TBCAD crashes it writes `crash-<time>.txt` (signal or exception and a stack trace; on Windows also a
+`crash-<time>.dmp` minidump) into the `crashes` folder of the data directory. Nothing is uploaded. At the
+next start a dialog names the report and, when an automatic backup exists, offers to recover the drawings.

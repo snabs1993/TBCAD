@@ -1,0 +1,22 @@
+{
+  "description": "damaged proxy graphics: what can be read is kept, the rest is reported, nothing crashes",
+  "dxf": {
+    "ACAD_PROXY_ENTITY": 5,
+    "LINE": 1
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 1,
+    "Proxy": 5
+  },
+  "layers": [
+    "0"
+  ],
+  "proxy_items_min": 1,
+  "version": "AC1015",
+  "warnings_has": [
+    "dxf.reader.proxy_entity",
+    "dxf.reader.proxy_graphics_damaged"
+  ]
+}

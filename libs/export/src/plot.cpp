@@ -44,7 +44,7 @@ BBox2 extentsOf(const Document& doc) {
     BBox2 box;
     for (EntityId id : doc.modelSpace()) {
         const Entity* e = doc.find(id);
-        if (e && plottable(doc, *e))
+        if (e && plottable(doc, *e) && geom::countsForExtents(*e))
             box.merge(geom::bounds(*e, doc));
     }
     return box;

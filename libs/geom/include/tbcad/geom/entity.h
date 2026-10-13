@@ -60,6 +60,10 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
 BBox2 bounds(const Entity& e, const Document& doc);
 // Intrinsic geometry only (no registry): empty for kinds that need the document.
 BBox2 bounds(const Entity& e);
+// Rays and xlines go on without end, so zoom extents, plot extents and the like leave them out.
+inline bool countsForExtents(const Entity& e) {
+    return kind(e) != EntityKind::Ray;
+}
 
 // ---- Curves ----------------------------------------------------------------------------------
 

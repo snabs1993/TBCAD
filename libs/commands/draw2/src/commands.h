@@ -15,6 +15,8 @@ std::unique_ptr<cmd::Command> makeCenterMark();
 std::unique_ptr<cmd::Command> makeCenterLine();
 std::unique_ptr<cmd::Command> makeBoundary();
 std::unique_ptr<cmd::Command> makeSketch();
+std::unique_ptr<cmd::Command> makeRay();
+std::unique_ptr<cmd::Command> makeXline();
 std::unique_ptr<cmd::Command> makeRegion();
 std::unique_ptr<cmd::Command> makeUnion();
 std::unique_ptr<cmd::Command> makeSubtract();

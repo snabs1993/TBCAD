@@ -24,6 +24,10 @@ std::vector<const Tool*> ToolSet::list(DrawingSession& session) const {
 void registerDrawingTools(ToolSet& tools) {
     detail::registerReadTools(tools);
     detail::registerEditTools(tools);
+    detail::registerModifyTools(tools);
+    detail::registerLayoutTools(tools);
+    detail::registerBlockTools(tools);
+    detail::registerConstraintTools(tools);
     detail::registerLayerTools(tools);
     detail::registerLevelTools(tools);
     detail::registerCommandTools(tools);

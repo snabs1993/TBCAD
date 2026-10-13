@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iterator>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -446,6 +447,53 @@ TEST_CASE("end to end: a wipeout keeps hiding what is behind it through .tbcad a
     auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
     REQUIRE(imported.ok());
     CHECK(wipeouts(*imported.value().document) == 1);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("end to end: rays, xlines and multilines survive .tbcad and DXF round trips") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+
+    REQUIRE(host.run("RAY", {"10,10", "50,10", ""}).finished);
+    REQUIRE(host.run("XLINE", {"0,0", "100,100", ""}).finished);
+    REQUIRE(host.run("MLSTYLE", {"New", "WALL", "1 0 -1", "Both"}).finished);
+    REQUIRE(host.run("MLSTYLE", {"Current", "WALL"}).finished);
+    REQUIRE(host.run("MLINE", {"0,0", "200,0", "200,100", ""}).finished);
+    CHECK(countKind(doc, EntityKind::Ray) == 2);
+    CHECK(countKind(doc, EntityKind::MLine) == 1);
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_ray";
+    std::filesystem::create_directories(dir);
+    const auto file = dir / "ray.tbcad";
+    REQUIRE(io::writeTbcad(doc, file).ok());
+    io::IoReport ioReport;
+    auto back = io::readTbcad(file, ioReport);
+    REQUIRE(back.ok());
+    CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+
+    const auto dxfFile = (dir / "ray.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxfFile, "R2000"}).finished);
+    dxf::Report report;
+    auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
+    REQUIRE(imported.ok());
+    const Document& d2 = *imported.value().document;
+    CHECK(countKind(d2, EntityKind::Ray) == 2);
+    CHECK(countKind(d2, EntityKind::MLine) == 1);
+    // Entities and the multiline style come back as they went out (the header differs in
+    // DXF bookkeeping only).
+    auto entityLines = [](const Document& d) {
+        std::string out, line;
+        std::istringstream in(canonicalDump(d));
+        while (std::getline(in, line))
+            if (line.rfind("e", 0) == 0 || line.find("mlstyle.") != std::string::npos)
+                out += line + "\n";
+        return out;
+    };
+    CHECK(entityLines(d2) == entityLines(doc));
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);

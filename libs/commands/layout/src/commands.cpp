@@ -280,6 +280,44 @@ public:
     }
 };
 
+// VPLEVEL: show one level only in one viewport.
+class VpLevelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPLEVEL"; }
+    std::string_view description() const override {
+        return "Show one level only (or all levels) in a viewport of the current layout";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        auto vp = co_await ctx.getInteger("Viewport number");
+        if (!vp.ok())
+            co_return;
+        cmd::StringOptions so;
+        so.allowEmpty = true;
+        auto name = co_await ctx.getString("Level name (empty = all levels)", so);
+        if (!name.ok())
+            co_return;
+        LevelId level{};
+        if (!name.text.empty()) {
+            const Level* found = nullptr;
+            for (const auto& [id, l] : ctx.doc().levels())
+                if (lower(l.name) == lower(name.text) && !found)
+                    found = &l;
+            if (!found) {
+                ctx.message("No level named \"" + name.text + "\".");
+                co_return;
+            }
+            level = found->id;
+        }
+        report(ctx, layout::setViewportLevel(ctx.tx(), target, static_cast<int>(vp.value), level),
+               level.value == 0
+                   ? "Viewport " + std::to_string(vp.value) + " shows all levels."
+                   : "Viewport " + std::to_string(vp.value) + " shows only " + name.text + ".");
+    }
+};
+
 class TitleBlockCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "TITLEBLOCK"; }
@@ -333,6 +371,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<MviewCommand>());
     (void)registry.add(std::make_unique<VpScaleCommand>());
     (void)registry.add(std::make_unique<VpLayerCommand>());
+    (void)registry.add(std::make_unique<VpLevelCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
 }
 

@@ -14,6 +14,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makeCenterLine());
     (void)registry.add(detail::makeBoundary());
     (void)registry.add(detail::makeSketch());
+    (void)registry.add(detail::makeRay());
+    (void)registry.add(detail::makeXline());
     (void)registry.add(detail::makeRegion());
     (void)registry.add(detail::makeUnion());
     (void)registry.add(detail::makeSubtract());

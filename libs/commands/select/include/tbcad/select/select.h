@@ -35,7 +35,7 @@ struct PurgeCounts {
 PurgeCounts purgeUnused(const Document& doc, Transaction& tx,
                         unsigned kinds = static_cast<unsigned>(PurgeKind::All));
 
-enum class Property { Type, Layer, Color, Linetype, Lineweight };
+enum class Property { Type, Layer, Color, Linetype, Lineweight, Level };
 
 struct Query {
     Property property = Property::Type;

@@ -1,0 +1,12 @@
+{
+  "description": "ENTITIES before TABLES and an unclosed BLOCKS section at the end of the file",
+  "dxf_min": {
+    "LINE": 1
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds_min": {
+    "Line": 1
+  },
+  "version": "AC1015"
+}

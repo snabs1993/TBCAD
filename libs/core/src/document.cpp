@@ -350,6 +350,26 @@ struct Checker {
         p(d.textPos);
         dimStyleOk(d.style);
     }
+    void operator()(RayData& d) {
+        p(d.origin);
+        p(d.dir);
+        const double len = std::hypot(d.dir.x, d.dir.y);
+        if (!(len > 1e-12))
+            bad("ray direction must not be zero");
+        else
+            d.dir = {d.dir.x / len, d.dir.y / len};
+    }
+    void operator()(MlineData& d) {
+        for (const Vec2& a : d.v)
+            p(a);
+        finite(d.scale);
+        if (!(d.scale > 0))
+            bad("multiline scale must be positive");
+        if (d.justification < 0 || d.justification > 2)
+            bad("multiline justification must be 0, 1 or 2");
+        if (d.v.size() > 100000)
+            bad("multiline is too large");
+    }
     void operator()(TableData& d) {
         p(d.origin);
         finite(d.rotation);

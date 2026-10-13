@@ -55,7 +55,8 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
                 std::find(e.common.annoScales.begin(), e.common.annoScales.end(), vp.scaleN) ==
                     e.common.annoScales.end())
                 return true;  // made for other scales
-            return frozenInViewport(doc, vp, e.common.layer);
+            return frozenInViewport(doc, vp, e.common.layer) ||
+                   (vp.level.value != 0 && e.common.level != vp.level);
         });
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, false});
 

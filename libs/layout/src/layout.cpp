@@ -55,7 +55,7 @@ std::string serialize(const std::vector<Layout>& all) {
               << num(v.center.y) << '\t' << num(v.scaleN) << '\t' << (v.on ? 1 : 0) << '\t';
             for (std::size_t i = 0; i < v.frozen.size(); ++i)
                 o << (i ? "," : "") << v.frozen[i].value;
-            o << '\n';
+            o << '\t' << v.level.value << '\n';
         }
     }
     return o.str();
@@ -146,6 +146,9 @@ std::vector<Layout> layouts(const Document& doc) {
                 for (const std::string& id : split(f[10], ','))
                     v.frozen.push_back(
                         LayerId{static_cast<std::uint32_t>(std::strtoul(id.c_str(), nullptr, 10))});
+            if (f.size() > 11)
+                v.level =
+                    LevelId{static_cast<std::uint32_t>(std::strtoul(f[11].c_str(), nullptr, 10))};
             out.back().viewports.push_back(std::move(v));
         }
     }
@@ -344,6 +347,18 @@ Result<void> setViewportLayerFrozen(Transaction& tx, const std::string& layoutNa
         list.push_back(layer);
     else if (!frozen && it != list.end())
         list.erase(it);
+    return store(tx, ed.all);
+}
+
+Result<void> setViewportLevel(Transaction& tx, const std::string& layoutName, int id,
+                              LevelId level) {
+    if (level.value != 0 && !tx.document().level(level))
+        return err(ErrorCode::NotFound, "No such level");
+    auto e = openEdit(tx, layoutName, id);
+    if (!e)
+        return e.error();
+    Edit ed = std::move(e.value());
+    ed.vp->level = level;
     return store(tx, ed.all);
 }
 

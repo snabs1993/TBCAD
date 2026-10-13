@@ -1,0 +1,18 @@
+{
+  "description": "duplicate, non-hex, empty and enormous handles and owner pointers to nothing: handles are not needed to read the geometry",
+  "dxf_min": {
+    "LINE": 5
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds_min": {
+    "Line": 5
+  },
+  "layers": [
+    "0"
+  ],
+  "version": "AC1018",
+  "warnings_has": [
+    "dxf.reader.missing_block"
+  ]
+}

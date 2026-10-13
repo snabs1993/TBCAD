@@ -4,6 +4,7 @@
 
 #include "importer.h"
 #include "tbcad/geom/spline.h"
+#include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 
 namespace tbcad::dxf::detail {
@@ -308,6 +309,8 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         withFrame([&] { convMText(r, f, out); });
     } else if (t == "POINT") {
         convPoint(r, out);
+    } else if (t == "RAY" || t == "XLINE") {
+        convRay(r, t == "XLINE", out);
     } else if (t == "INSERT") {
         withFrame([&] { convInsert(r, rr, f, out); });
     } else if (t == "HATCH") {
@@ -320,7 +323,7 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convLeader(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
         convProxy(r, out);
-    } else {
+    } else if (!convForeign(r, out)) {
         return false;
     }
     return true;
@@ -331,6 +334,21 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
 
 bool Importer::convLine(const Record& r, std::vector<Entity>& out) {
     LineData d{P(r, 10, 20), P(r, 11, 21)};
+    out.push_back(makeEntity(d));
+    return true;
+}
+
+bool Importer::convRay(const Record& r, bool infinite, std::vector<Entity>& out) {
+    RayData d;
+    d.origin = P(r, 10, 20);
+    d.dir = P(r, 11, 21);
+    d.infinite = infinite;
+    const double len = std::hypot(d.dir.x, d.dir.y);
+    if (!(len > 1e-12) || !std::isfinite(len)) {
+        bad(r, infinite ? "XLINE" : "RAY", "direction must not be zero; skipped");
+        return false;
+    }
+    d.dir = {d.dir.x / len, d.dir.y / len};
     out.push_back(makeEntity(d));
     return true;
 }
@@ -703,6 +721,20 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
                 packed += dec(g.str());
             }
         }
+        if (packed.rfind("tbcad-mline", 0) == 0) {
+            if (auto m = mline::parse(packed)) {
+                if (r.integer(66) == 1) {
+                    Record skip;
+                    while (rr.next(skip) && skip.type != "SEQEND") {
+                    }
+                }
+                Entity e;
+                e.data = Indirect<MlineData>(std::move(m->data));
+                out.push_back(std::move(e));
+                (void)tx_->modifyHeader([&](Header& h) { mline::storeStyle(h, m->style); });
+                return true;
+            }
+        }
         if (packed.rfind("tbcad-table", 0) == 0) {
             if (auto t = table::parse(packed)) {
                 if (r.integer(66) == 1) {  // no attributes expected, but keep the stream in step
@@ -886,10 +918,68 @@ bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {
             }
         }
     }
+    std::vector<Entity> texts;
+    std::string problem;
+    std::vector<std::uint8_t> gfx = proxyGraphicsOf(r);
+    std::size_t unknown = 0;
+    if (!gfx.empty())
+        unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
+    if (!texts.empty())
+        stripProxyText(d.raw);
+    const bool drawn = !d.graphics.items.empty() || !texts.empty();
+    std::string cls(r.raw(2));
     report_.warn(code::kProxy,
-                 "ACAD_PROXY_ENTITY kept as a read-only placeholder (its graphics are not decoded)",
+                 drawn ? "ACAD_PROXY_ENTITY" + (cls.empty() ? "" : " (" + dec(cls) + ")") +
+                             " is shown from its proxy graphics and kept read-only"
+                       : "ACAD_PROXY_ENTITY kept as a read-only placeholder; it has no usable "
+                         "proxy graphics, so it displays nothing",
                  r.line, handleOf(r));
+    if (!problem.empty())
+        report_.warn(code::kProxyDamaged, "ACAD_PROXY_ENTITY: " + problem, r.line, handleOf(r));
+    if (unknown > 0) {
+        report_.info(code::kProxyUnknown,
+                     "ACAD_PROXY_ENTITY: " + std::to_string(unknown) +
+                         " proxy graphics record(s) of an unknown or unusable kind were skipped",
+                     r.line);
+    }
     out.push_back(makeEntity(std::move(d)));
+    for (Entity& t : texts)
+        out.push_back(std::move(t));
+    return true;
+}
+
+// An entity this importer has no reader for (AEC and Civil objects, 3DSOLID, REGION, SURFACE ...)
+// is kept when it carries proxy graphics: they are drawn as a read-only proxy named after the
+// DXF type. Without graphics it is skipped, as before.
+bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
+    std::vector<std::uint8_t> gfx = proxyGraphicsOf(r);
+    if (gfx.size() < 16)
+        return false;
+    ProxyData d;
+    d.originalType = std::string(r.type);
+    std::vector<Entity> texts;
+    std::string problem;
+    std::size_t unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
+    if (d.graphics.items.empty() && texts.empty())
+        return false;
+    std::string type(r.type);
+    if (foreignShown_.insert(type).second) {
+        report_.info(
+            code::kProxyGraphics,
+            type + ": no reader for this object; shown from its proxy graphics (read-only)",
+            r.line);
+    }
+    if (!problem.empty())
+        report_.warn(code::kProxyDamaged, type + ": " + problem, r.line, handleOf(r));
+    if (unknown > 0) {
+        report_.info(code::kProxyUnknown,
+                     type + ": " + std::to_string(unknown) +
+                         " proxy graphics record(s) of an unknown or unusable kind were skipped",
+                     r.line);
+    }
+    out.push_back(makeEntity(std::move(d)));
+    for (Entity& t : texts)
+        out.push_back(std::move(t));
     return true;
 }
 

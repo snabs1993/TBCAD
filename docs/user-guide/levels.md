@@ -45,3 +45,5 @@ settings across levels.
   (`dxf-export.md`, `dxf-import.md`). Other programs show all objects of all levels. A DXF from
   another program opens with everything on the first level.
 * Plots and PDF/SVG export draw every level that is visible, in the normal colours.
+* In a layout, `VPLEVEL` makes one viewport show a single level (for example one floor per viewport on a sheet); an empty name shows every visible level again. The choice is saved with the layout and used when plotting.
+* `QSELECT` and `FILTER` have a `Level` property. It also finds objects on dimmed levels, so you can select a floor by name.

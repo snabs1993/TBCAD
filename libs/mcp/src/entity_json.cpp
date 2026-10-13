@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "tbcad/core/units.h"
+#include "tbcad/dim/dim.h"
 
 namespace tbcad::mcp {
 
@@ -637,11 +638,238 @@ std::string kindName(EntityKind kind) {
             return "proxy";
         case EntityKind::Table:
             return "table";
+        case EntityKind::Ray:
+            return "ray";
+        case EntityKind::MLine:
+            return "mline";
     }
     return "proxy";
 }
 
 namespace {
+
+// ---- Hatch gradients, insert arrays, dimensions
+// ---------------------------------------------------
+
+const char* gradientKindName(GradientKind k) {
+    return k == GradientKind::Cylinder ? "cylinder" : "linear";
+}
+
+Json gradientToJson(const GradientData& g) {
+    return Json(Json::Object{{"type", gradientKindName(g.kind)},
+                             {"color1", colorToJson(g.color1)},
+                             {"color2", colorToJson(g.color2)},
+                             {"angle", g.angle}});
+}
+
+GradientData gradientFromJson(const Json& j) {
+    if (!j.isObject())
+        fail("gradient must be an object {type, color1, color2, angle}");
+    GradientData g;
+    std::string t = lower(strOr(j, "type", "linear"));
+    if (t == "linear")
+        g.kind = GradientKind::Linear;
+    else if (t == "cylinder")
+        g.kind = GradientKind::Cylinder;
+    else
+        fail("gradient type must be linear or cylinder");
+    if (const Json* c = j.find("color1"))
+        g.color1 = orFail(colorFromJson(*c, false));
+    if (const Json* c = j.find("color2"))
+        g.color2 = orFail(colorFromJson(*c, false));
+    g.angle = angOr(j, "angle", 0);
+    return g;
+}
+
+Json arrayToJson(const ArrayInfo& a) {
+    Json::Object o;
+    switch (a.kind) {
+        case ArrayInfo::Kind::Rectangular:
+            o["kind"] = "rectangular";
+            o["rows"] = a.rows;
+            o["columns"] = a.columns;
+            o["rowSpacing"] = a.rowSpacing;
+            o["columnSpacing"] = a.columnSpacing;
+            o["angle"] = a.angle;
+            break;
+        case ArrayInfo::Kind::Polar:
+            o["kind"] = "polar";
+            o["center"] = pointToJson(a.center);
+            o["count"] = a.count;
+            o["fillAngle"] = a.fillAngle;
+            o["rotateItems"] = a.rotateItems;
+            o["reference"] = pointToJson(a.reference);
+            break;
+        case ArrayInfo::Kind::Path:
+            o["kind"] = "path";
+            o["path"] = verticesToJson(a.path);
+            o["pathClosed"] = a.pathClosed;
+            o["count"] = a.count;
+            o["pathSpacing"] = a.pathSpacing;
+            o["rotateItems"] = a.rotateItems;
+            o["reference"] = pointToJson(a.reference);
+            break;
+    }
+    return Json(std::move(o));
+}
+
+ArrayInfo arrayFromJson(const Json& j) {
+    if (!j.isObject())
+        fail("array must be an object");
+    ArrayInfo a;
+    std::string k = lower(strOr(j, "kind"));
+    auto count = [&](const char* key, int fallback) {
+        const Json* v = j.find(key);
+        double n = v ? v->asNumber(fallback) : fallback;
+        if (!(n >= 1 && n <= 100000))
+            fail(std::string(key) + " must be between 1 and 100000");
+        return static_cast<int>(n);
+    };
+    if (k == "rectangular") {
+        a.kind = ArrayInfo::Kind::Rectangular;
+        a.rows = count("rows", 1);
+        a.columns = count("columns", 1);
+        a.rowSpacing = lenOr(j, "rowSpacing", 0);
+        a.columnSpacing = lenOr(j, "columnSpacing", 0);
+        a.angle = angOr(j, "angle", 0);
+    } else if (k == "polar") {
+        a.kind = ArrayInfo::Kind::Polar;
+        a.center = pt(j, "center");
+        a.count = count("count", 1);
+        a.fillAngle = angOr(j, "fillAngle", kTwoPi);
+        a.rotateItems = j.find("rotateItems") ? j.find("rotateItems")->asBool(true) : true;
+        if (j.find("reference"))
+            a.reference = pt(j, "reference");
+    } else if (k == "path") {
+        a.kind = ArrayInfo::Kind::Path;
+        a.path = verticesFrom(req(j, "path"));
+        a.pathClosed = j.find("pathClosed") ? j.find("pathClosed")->asBool(false) : false;
+        a.count = count("count", 1);
+        a.pathSpacing = lenOr(j, "pathSpacing", 0);
+        a.rotateItems = j.find("rotateItems") ? j.find("rotateItems")->asBool(true) : true;
+        if (j.find("reference"))
+            a.reference = pt(j, "reference");
+    } else {
+        fail("array kind must be rectangular, polar or path");
+    }
+    return a;
+}
+
+DimKind dimKindFromName(const std::string& n) {
+    std::string k = lower(n);
+    if (k == "linear")
+        return DimKind::Linear;
+    if (k == "aligned")
+        return DimKind::Aligned;
+    if (k == "radius")
+        return DimKind::Radius;
+    if (k == "diameter")
+        return DimKind::Diameter;
+    if (k == "angular" || k == "angular2line")
+        return DimKind::Angular2Line;
+    if (k == "angular3" || k == "angular3point")
+        return DimKind::Angular3Point;
+    fail("dimKind must be linear, aligned, radius, diameter, angular or angular3");
+}
+
+DimStyleId dimStyleFromJson(const Document& doc, const Json& j) {
+    std::string n = strOr(j, "dimStyle");
+    if (n.empty())
+        return {};
+    const DimStyle* st = doc.dimStyleByName(n);
+    if (!st)
+        fail("unknown dimension style \"" + n + "\"");
+    return st->id;
+}
+
+// Dimension from friendly fields (see entityJsonDoc) or from raw definitionPoints.
+DimensionData dimensionFromJson(const Document& doc, const Json& j) {
+    DimensionData d;
+    d.kind = dimKindFromName(strOr(j, "dimKind", "linear"));
+    d.style = dimStyleFromJson(doc, j);
+    d.textOverride = strOr(j, "text");
+    if (const Json* raw = j.find("definitionPoints")) {
+        auto pts = pointsFrom(*raw, "definitionPoints");
+        if (pts.size() > 4)
+            fail("definitionPoints has at most 4 points");
+        for (std::size_t i = 0; i < pts.size(); ++i)
+            d.defPts[i] = pts[i];
+    } else {
+        switch (d.kind) {
+            case DimKind::Linear:
+            case DimKind::Aligned:
+                d.defPts = {pt(j, "start"), pt(j, "end"), pt(j, "dimLine"), {}};
+                break;
+            case DimKind::Radius:
+            case DimKind::Diameter: {
+                Vec2 c = pt(j, "center");
+                double r = num(req(j, "radius"), "radius");
+                if (!(r > 0))
+                    fail("radius must be positive");
+                double a = angOr(j, "angle", 0);
+                Vec2 dir{std::cos(a), std::sin(a)};
+                d.defPts = d.kind == DimKind::Radius
+                               ? std::array<Vec2, 4>{c, c + dir * r, {}, {}}
+                               : std::array<Vec2, 4>{c - dir * r, c + dir * r, {}, {}};
+                break;
+            }
+            case DimKind::Angular2Line: {
+                const Json& lines = req(j, "lines");
+                if (!lines.isArray() || lines.asArray().size() != 2)
+                    fail("lines must be two lines [[a, b], [c, d]]");
+                auto l1 = pointsFrom(lines.asArray()[0], "lines[0]");
+                auto l2 = pointsFrom(lines.asArray()[1], "lines[1]");
+                if (l1.size() != 2 || l2.size() != 2)
+                    fail("each line in `lines` has two points");
+                d.defPts = {l1[0], l1[1], l2[0], l2[1]};
+                d.textPos = pt(j, "arcPoint");
+                break;
+            }
+            case DimKind::Angular3Point:
+                d.defPts = {pt(j, "first"), pt(j, "second"), pt(j, "vertex"), pt(j, "arcPoint")};
+                break;
+            case DimKind::ArcLength:
+                fail("arc length dimensions are not supported yet");
+        }
+    }
+    if (const Json* tp = j.find("textPosition")) {
+        d.textPos = orFail(pointFromJson(*tp));
+        const Json* fixed = j.find("textPositionFixed");
+        d.textPosUser = fixed ? fixed->asBool(true) : true;
+    }
+    if (d.kind == DimKind::Linear)
+        d.rotation = angOr(j, "rotation", 0);
+    if ((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) &&
+        distance(d.defPts[0], d.defPts[1]) < 1e-9)
+        fail("the two dimension points must differ");
+    dim::refresh(doc, d);
+    return d;
+}
+
+LeaderData leaderFromJson(const Document& doc, const Json& j) {
+    LeaderData l;
+    l.style = dimStyleFromJson(doc, j);
+    l.vertices = pointsFrom(req(j, "vertices"), "vertices");
+    if (l.vertices.size() < 2)
+        fail("a leader needs at least two vertices");
+    l.utf8 = strOr(j, "text");
+    if (const Json* tp = j.find("textPosition")) {
+        l.textPos = orFail(pointFromJson(*tp));
+    } else {
+        const DimStyle& st = dim::styleOf(doc, l.style);
+        const double k = st.overallScale > 0 ? st.overallScale : 1.0;
+        const Vec2 last = l.vertices.back(), prev = l.vertices[l.vertices.size() - 2];
+        const double sign = last.x >= prev.x ? 1 : -1;
+        l.textPos = last + Vec2{sign * (st.arrowSize + st.textGap) * k, 0};
+    }
+    return l;
+}
+
+std::string dimStyleName(const Document& doc, DimStyleId id) {
+    const DimStyle* s = id ? doc.dimStyle(id) : nullptr;
+    return s ? s->name : std::string();
+}
+
 std::string styleName(const Document& doc, TextStyleId id) {
     const TextStyle* s = id ? doc.textStyle(id) : nullptr;
     return s ? s->name : std::string();
@@ -716,6 +944,20 @@ Json entityToJson(const Document& doc, const Entity& e) {
                 o["widthFactor"] = d.widthFactor;
             if (d.oblique != 0)
                 o["oblique"] = d.oblique;
+            if (d.attdef) {
+                Json::Object ad{{"tag", d.attdef->tag},
+                                {"prompt", d.attdef->prompt},
+                                {"default", d.attdef->defaultValue}};
+                if (d.attdef->invisible)
+                    ad["invisible"] = true;
+                if (d.attdef->constant)
+                    ad["constant"] = true;
+                if (d.attdef->verify)
+                    ad["verify"] = true;
+                if (d.attdef->preset)
+                    ad["preset"] = true;
+                o["attdef"] = Json(std::move(ad));
+            }
         } else if constexpr (std::is_same_v<T, MTextData>) {
             o["position"] = pointToJson(d.position);
             o["height"] = d.height;
@@ -744,6 +986,18 @@ Json entityToJson(const Document& doc, const Entity& e) {
                 o["pattern"] = d.pattern;
                 o["scale"] = d.patternScale;
                 o["angle"] = d.patternAngle;
+                if (d.patternOrigin.x != 0 || d.patternOrigin.y != 0)
+                    o["patternOrigin"] = pointToJson(d.patternOrigin);
+            }
+            if (d.fill.kind != ColorKind::ByLayer)
+                o["fill"] = colorToJson(d.fill);
+            if (d.gradient)
+                o["gradient"] = gradientToJson(*d.gradient);
+            if (!d.sourceBoundary.empty()) {
+                Json::Array ids;
+                for (EntityId id : d.sourceBoundary)
+                    ids.emplace_back(std::to_string(id.value));
+                o["associativeWith"] = Json(std::move(ids));
             }
         } else if constexpr (std::is_same_v<T, InsertData>) {
             const BlockDef* b = doc.block(d.block);
@@ -751,6 +1005,20 @@ Json entityToJson(const Document& doc, const Entity& e) {
             o["position"] = pointToJson(d.position);
             o["scale"] = pointToJson(d.scale);
             o["rotation"] = d.rotation;
+            if (!d.attribs.empty()) {
+                Json::Object at;
+                for (const auto& a : d.attribs)
+                    at[a.tag] = a.value;
+                o["attributes"] = Json(std::move(at));
+            }
+            if (d.array)
+                o["array"] = arrayToJson(*d.array);
+            if (!d.dynValues.empty()) {
+                Json::Array dv;
+                for (double v : d.dynValues)
+                    dv.emplace_back(v);
+                o["dynamicValues"] = Json(std::move(dv));
+            }
         } else if constexpr (std::is_same_v<T, DimensionData>) {
             o["dimKind"] = dimKindName(d.kind);
             Json::Array pts;
@@ -758,11 +1026,14 @@ Json entityToJson(const Document& doc, const Entity& e) {
                 pts.push_back(pointToJson(p));
             o["definitionPoints"] = Json(std::move(pts));
             o["textPosition"] = pointToJson(d.textPos);
+            o["textPositionFixed"] = d.textPosUser;
             o["measurement"] = d.measurement;
             if (!d.textOverride.empty())
                 o["text"] = d.textOverride;
             if (d.kind == DimKind::Linear)
                 o["rotation"] = d.rotation;
+            if (d.style)
+                o["dimStyle"] = dimStyleName(doc, d.style);
         } else if constexpr (std::is_same_v<T, TableData>) {
             o["origin"] = pointToJson(d.origin);
             o["rotation"] = d.rotation;
@@ -772,7 +1043,19 @@ Json entityToJson(const Document& doc, const Entity& e) {
             for (const TableCell& c : d.cells)
                 cells.push_back(Json(c.utf8));
             o["cells"] = Json(std::move(cells));
+        } else if constexpr (std::is_same_v<T, RayData>) {
+            o["origin"] = pointToJson(d.origin);
+            o["direction"] = pointToJson(d.dir);
+            o["infinite"] = d.infinite;
+        } else if constexpr (std::is_same_v<T, MlineData>) {
+            o["style"] = d.style;
+            o["scale"] = d.scale;
+            o["justification"] = static_cast<double>(d.justification);
+            o["closed"] = d.closed;
+            o["vertices"] = pointsToJson(d.v);
         } else if constexpr (std::is_same_v<T, LeaderData>) {
+            if (d.style)
+                o["dimStyle"] = dimStyleName(doc, d.style);
             o["vertices"] = pointsToJson(d.vertices);
             if (!d.utf8.empty())
                 o["text"] = d.utf8;
@@ -879,6 +1162,26 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
                     fail("unknown text style \"" + st + "\"");
                 t.style = s->id;
             }
+            if (const Json* ad = j.find("attdef")) {
+                if (!ad->isObject())
+                    fail("attdef must be an object {tag, prompt, default, ...}");
+                AttDefInfo info;
+                info.tag = strOr(*ad, "tag");
+                for (char& c : info.tag)
+                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                if (info.tag.empty() || info.tag.find_first_of(" \t\r\n") != std::string::npos)
+                    fail("attdef.tag must be a name without spaces");
+                info.prompt = strOr(*ad, "prompt");
+                info.defaultValue = strOr(*ad, "default");
+                auto flag = [&](const char* key) {
+                    return ad->find(key) ? ad->find(key)->asBool(false) : false;
+                };
+                info.invisible = flag("invisible");
+                info.constant = flag("constant");
+                info.verify = flag("verify");
+                info.preset = flag("preset");
+                t.attdef = info;
+            }
             std::string h = lower(strOr(j, "hAlign", "left")),
                         v = lower(strOr(j, "vAlign", "baseline"));
             const char* hn[] = {"left", "center", "right", "aligned", "middle", "fit"};
@@ -950,6 +1253,15 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             h.patternAngle = angOr(j, "angle", 0);
             if (!(h.patternScale > 0))
                 fail("scale must be positive");
+            if (j.find("patternOrigin"))
+                h.patternOrigin = pt(j, "patternOrigin");
+            if (const Json* c = j.find("fill"))
+                h.fill = orFail(colorFromJson(*c, false));
+            if (const Json* g = j.find("gradient")) {
+                h.gradient = gradientFromJson(*g);
+                h.solid = true;  // a gradient replaces the pattern
+                h.pattern.clear();
+            }
             e.data = Indirect<HatchData>(std::move(h));
         } else if (k == "insert") {
             InsertData in;
@@ -966,11 +1278,28 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
                     in.scale = orFail(pointFromJson(*s));
             }
             in.rotation = angOr(j, "rotation", 0);
+            if (const Json* at = j.find("attributes")) {
+                if (!at->isObject())
+                    fail("attributes must be an object {TAG: value}");
+                for (const auto& [tag, v] : at->asObject()) {
+                    if (!v.isString())
+                        fail("attribute " + tag + " must be a string");
+                    in.attribs.push_back({tag, v.asString()});
+                }
+            }
+            if (const Json* ar = j.find("array"))
+                in.array = arrayFromJson(*ar);
+            if (const Json* dv = j.find("dynamicValues")) {
+                if (!dv->isArray())
+                    fail("dynamicValues must be an array of numbers");
+                for (const Json& v : dv->asArray())
+                    in.dynValues.push_back(num(v, "dynamicValues"));
+            }
             e.data = Indirect<InsertData>(std::move(in));
-        } else if (k == "dimension" || k == "leader") {
-            fail(
-                "dimensions and leaders are created with run_command (DIMLINEAR, DIMALIGNED, "
-                "DIMRADIUS, ... and LEADER), which own their geometry rules");
+        } else if (k == "dimension") {
+            e.data = Indirect<DimensionData>(dimensionFromJson(doc, j));
+        } else if (k == "leader") {
+            e.data = Indirect<LeaderData>(leaderFromJson(doc, j));
         } else if (k == "proxy") {
             fail("proxy entities are read-only");
         } else {

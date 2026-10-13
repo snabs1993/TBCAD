@@ -67,6 +67,26 @@ TEST_CASE("MVIEW, VPSCALE and VPLAYER edit the current layout") {
     CHECK(f.host->logContains("No layer named"));
 }
 
+TEST_CASE("VPLEVEL shows one level in a viewport") {
+    Fixture f;
+    LevelId upper;
+    {
+        auto tx = f.doc.begin("level");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "2500,1000"});
+    f.host->run("VPLEVEL", {"1", "upper"});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].level == upper);
+    f.host->run("VPLEVEL", {"1", ""});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].level.value == 0);
+    f.host->run("VPLEVEL", {"1", "Nope", cmd::ScriptItem::esc()});
+    CHECK(f.host->logContains("No level named"));
+}
+
 TEST_CASE("commands that need a layout say so; LAYOUT List, Rename, Paper and Delete work") {
     Fixture f;
     f.host->run("MVIEW", {});
