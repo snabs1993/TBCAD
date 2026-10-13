@@ -1,7 +1,7 @@
 include(deps/freetype)
 include(deps/harfbuzz)
 
-tbcad_add_library(font SOURCES src/font_library.cpp)
+tbcad_add_library(font SOURCES src/font_library.cpp src/stroke_font.cpp)
 target_link_libraries(tbcad_font PRIVATE freetype harfbuzz)
 target_compile_definitions(tbcad_font PRIVATE
   TBCAD_BUNDLED_FONT_DIR="${CMAKE_SOURCE_DIR}/assets/fonts")

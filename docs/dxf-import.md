@@ -32,7 +32,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | DXF | Result |
 |---|---|
 | HEADER | `$ACADVER`, `$DWGCODEPAGE` (encoding), `$INSUNITS` (units), `$LTSCALE`, `$CLAYER` |
-| TABLES | LAYER, LTYPE (dashes only), STYLE, DIMSTYLE (text height, arrow size, gaps, scale, decimals); VPORT, VIEW, UCS, APPID, BLOCK_RECORD are ignored |
+| TABLES | LAYER, LTYPE (dashes only), STYLE (an `.shx` font file becomes the TBCAD Stroke font, with an info message in the report), DIMSTYLE (text height, arrow size, gaps, scale, decimals); VPORT, VIEW, UCS, APPID, BLOCK_RECORD are ignored |
 | BLOCKS | `BlockDef` (name, base point, entities); `*Model_Space` and `*Paper_Space*` are skipped; anonymous blocks (`*D1`, `*U2`) are kept with `anonymous = true`; a block used before it is defined works |
 | ENTITIES | see below; paper space entities (group 67 = 1) are skipped and counted |
 | OBJECTS, CLASSES, THUMBNAILIMAGE | skipped |

@@ -251,6 +251,34 @@ TEST_CASE("text styles: width factor, oblique and font file are kept") {
     CHECK(texts[0]->style == s->id);
 }
 
+TEST_CASE("text styles: SHX fonts map to the TBCAD Stroke font and are reported") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 3);
+    p.g(0, "STYLE").g(2, "Standard").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "TXT.SHX");
+    p.g(0, "STYLE")
+        .g(2, "Jp")
+        .g(70, 0)
+        .g(40, 0.0)
+        .g(41, 1.0)
+        .g(3, "simplex.shx")
+        .g(4, "bigfont.shx");
+    p.g(0, "STYLE").g(2, "Win").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "arial.ttf");
+    p.g(0, "ENDTAB").end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const TextStyle* a = l.doc().textStyleByName("Standard");
+    const TextStyle* b = l.doc().textStyleByName("Jp");
+    const TextStyle* c = l.doc().textStyleByName("Win");
+    REQUIRE(a);
+    REQUIRE(b);
+    REQUIRE(c);
+    CHECK(a->fontFamily == "TBCAD Stroke");
+    CHECK(a->fontFile.empty());
+    CHECK(b->fontFamily == "TBCAD Stroke");
+    CHECK(c->fontFamily.empty());
+    CHECK(c->fontFile == "arial.ttf");
+    CHECK(l.report.countCode(code::kShxFont) == 2);
+}
+
 TEST_CASE("sub-layers: TBCAD XDATA restores the tree and the ByParent flags") {
     Loaded l = loadCorpus("xdata_sublayers.dxf");
     const Document& d = l.doc();

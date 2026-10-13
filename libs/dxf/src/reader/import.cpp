@@ -1,5 +1,6 @@
 // DXF import: file structure, header, tables, layers and blocks.
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <functional>
@@ -278,6 +279,17 @@ void Importer::readLinetype(const Record& r) {
     ltypeByRaw_[fold(r.raw(2))] = id.value();
 }
 
+namespace {
+bool endsWithNoCase(const std::string& s, std::string_view ext) {
+    if (s.size() < ext.size())
+        return false;
+    for (std::size_t i = 0; i < ext.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(s[s.size() - ext.size() + i])) != ext[i])
+            return false;
+    return true;
+}
+}  // namespace
+
 void Importer::readStyle(const Record& r) {
     std::string name = dec(r.raw(2));
     if (name.empty())
@@ -288,6 +300,18 @@ void Importer::readStyle(const Record& r) {
     TextStyle ts;
     ts.name = name;
     ts.fontFile = dec(r.raw(3));
+    if (endsWithNoCase(ts.fontFile, ".shx")) {
+        // AutoCAD compiled shape fonts are not read; the style gets TBCAD's own stroke font.
+        std::string shx = ts.fontFile;
+        std::string big = dec(r.raw(4));
+        ts.fontFile.clear();
+        ts.fontFamily = "TBCAD Stroke";
+        report_.info(code::kShxFont,
+                     "text style \"" + name + "\": SHX font \"" + shx +
+                         "\" is replaced by the TBCAD Stroke font" +
+                         (big.empty() ? std::string() : " (big font \"" + big + "\" dropped)"),
+                     r.line);
+    }
     double wf = r.num(41, 1);
     ts.widthFactor = (std::isfinite(wf) && wf > 0) ? wf : 1;
     ts.oblique = r.num(50, 0) * kPi / 180.0;
@@ -297,6 +321,7 @@ void Importer::readStyle(const Record& r) {
         TextStyleId id = old->id;
         (void)tx_->modifyTextStyle(id, [&](TextStyle& t) {
             t.fontFile = ts.fontFile;
+            t.fontFamily = ts.fontFamily;
             t.widthFactor = ts.widthFactor;
             t.oblique = ts.oblique;
         });

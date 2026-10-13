@@ -81,3 +81,35 @@ Both are fetched with `FetchContent`, pinned to an exact URL and SHA-256.
 * Variable-font axes are not exposed; the default instance is used.
 * `shape` takes one lock for the whole call, so threads shaping at the same time
   are serialised.
+
+## Single-stroke fonts (`.tbsf`)
+
+TBCAD ships its own single-stroke font, **TBCAD Stroke** (`assets/fonts/stroke/tbcad-stroke.tbsf`),
+designed by the TBCAD contributors (MIT). It is the replacement for AutoCAD's SHX fonts: text in it
+is drawn as open polylines, not filled outlines, so it renders quickly and plots as plain lines.
+Text height is the capital height, like every other font.
+
+Use it by naming the family `TBCAD Stroke` (case-insensitive) in a text style, or by pointing a
+style's font file at any `.tbsf` file. Characters the stroke font lacks fall back to the outline
+fonts. DXF import maps every text style whose font file ends in `.shx` to `TBCAD Stroke` and adds
+an info message (`dxf.reader.shx_font_mapped`) to the import report; big fonts are dropped.
+
+File format (UTF-8 text, `#` starts a comment, unknown keys are ignored):
+
+```
+tbsf 1
+family TBCAD Stroke      # default "TBCAD Stroke"
+upm 20                   # design units per em; every coordinate is divided by it
+cap 14  xheight 10  ascender 14  descender -4
+tonedrop 1               # Thai: how far a tone mark drops when no upper vowel is under it
+glyph 41 12              # hex code point, advance
+s 0 0 5 14 10 0          # one stroke: x y pairs
+s 2 5 8 5
+glyph E48 0 mark=tone    # Thai mark: zero advance, centred over the previous base glyph
+s ...
+```
+
+API: `FontLibrary::loadStroke(path)`, `loadStrokeFromMemory(text)`, `loadBundledStroke()`,
+`isStroke(id)` and `strokes(id, glyphId)` (the glyph id is the code point). `shape()` works on
+stroke fonts like on any other font; `outline()` is empty for them. The bundled font is regenerated
+with `python3 tools/fonts/make_stroke_font.py`.
