@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: windows-2022 (MSVC)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c # v1.13.0
+      - name: Configure
+        run: cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build --preset windows-msvc-release
+      - name: Test
+        run: ctest --preset windows-msvc-release
+      - name: Upload tbcad.exe
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tbcad-windows-release
+          path: build/windows-msvc-release/**/tbcad.exe
+          if-no-files-found: ignore
+
+  linux:
+    name: ubuntu-24.04 (clang)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang
+      - name: Configure
+        run: cmake --preset linux-clang-debug -DTBCAD_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build --preset linux-clang-debug
+      - name: Test
+        run: ctest --preset linux-clang-debug
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: tools/check_format.sh
+
+  license:
+    name: license notices
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Every dependency has a notice file
+        run: tools/check_notices.sh

@@ -1,0 +1,10 @@
+# Usage: cmake -DNOTICE_DIR=<dir> -DOUTPUT=<file> -P GenerateNotices.cmake
+file(GLOB _files "${NOTICE_DIR}/*.txt")
+list(SORT _files)
+set(_out "TBCAD third-party notices\n\nThis product includes the following third-party software.\n")
+foreach(_f IN LISTS _files)
+  get_filename_component(_n "${_f}" NAME_WE)
+  file(READ "${_f}" _text)
+  string(APPEND _out "\n================================================================\n${_n}\n================================================================\n\n${_text}\n")
+endforeach()
+file(WRITE "${OUTPUT}" "${_out}")

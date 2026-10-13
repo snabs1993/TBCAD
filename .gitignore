@@ -1,0 +1,14 @@
+/build/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+/.cache/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+*.user
+*.obj
+*.o
+*.pdb
