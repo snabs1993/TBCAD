@@ -215,8 +215,11 @@ std::vector<MapEntry> readObjectMap(Bytes file, const Locator& loc,
             const std::int64_t dl = r.mc();
             if (r.failed())
                 break;
-            lastHandle += static_cast<std::uint64_t>(dh < 0 ? -dh : dh);
-            lastLoc += dl;
+            // Unsigned arithmetic wraps instead of overflowing on garbage values.
+            const auto udh = static_cast<std::uint64_t>(dh);
+            lastHandle += dh < 0 ? (~udh + 1) : udh;
+            lastLoc = static_cast<std::int64_t>(static_cast<std::uint64_t>(lastLoc) +
+                                                static_cast<std::uint64_t>(dl));
             out.push_back({lastHandle, lastLoc});
             if (out.size() > 50'000'000)
                 return out;
