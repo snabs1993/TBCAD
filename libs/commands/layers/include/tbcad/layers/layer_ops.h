@@ -1,0 +1,80 @@
+#pragma once
+
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "tbcad/core/core.h"
+
+namespace tbcad::layers {
+
+// Headless layer and sub-layer operations. Every function takes the document (read side; it
+// already shows the transaction's pending edits) and edits through the caller's Transaction, so a command (or a test) decides what one undo step contains. Errors carry a
+// message that is fit to show to the user.
+
+inline constexpr char kPathSeparator = '~';  // S-FLOOR~edge, also used for DXF names
+
+// Full path of a layer: names joined by '~' from the top level down.
+std::string layerPath(const Document& doc, LayerId id);
+// Number of ancestors (0 for a top-level layer).
+int layerDepth(const Document& doc, LayerId id);
+// Direct children, sorted by name (case-insensitive).
+std::vector<LayerId> childrenOf(const Document& doc, LayerId parent);
+// Every layer, depth-first with parents before children and siblings sorted by name.
+std::vector<LayerId> layerTreeOrder(const Document& doc);
+// Number of entities (model space and block definitions) on the layer itself.
+std::size_t entityCount(const Document& doc, LayerId id);
+// `id` and all layers below it, parents first.
+std::vector<LayerId> branchOf(const Document& doc, LayerId id);
+
+// A layer reference: "#12" (id), "Walls" (top level) or "S-FLOOR~edge" (path). A bare name with
+// no separator also matches a unique sub-layer anywhere when no top-level layer has that name.
+Result<LayerId> resolveLayer(const Document& doc, std::string_view ref);
+// Comma separated list of references; "*" is every layer.
+Result<std::vector<LayerId>> resolveLayers(const Document& doc, std::string_view refs);
+
+// New layer or sub-layer (parent null = top level). Sub-layers start with ByParent colour,
+// linetype and lineweight; top-level layers start with white, Continuous, Default.
+Result<LayerId> createLayer(const Document& doc, Transaction& tx, std::string name, LayerId parent = {});
+Result<void> renameLayer(const Document& doc, Transaction& tx, LayerId id, std::string newName);
+// Moves `id` under `newParent` (null = top level). Refuses cycles, depth > 8, layer 0 and name
+// clashes among the new siblings. ByParent values follow the new parent, and become fixed values
+// (what the layer showed so far) when the layer goes top level.
+Result<void> reparentLayer(const Document& doc, Transaction& tx, LayerId id, LayerId newParent);
+
+enum class DeleteMode {
+    LeafOnly,        // fails when the layer has sub-layers
+    Branch,          // the layer and everything below it; every one of them must be empty
+    MoveChildrenUp,  // the layer only; its sub-layers move up one level and keep their look
+};
+// Fails (changing nothing) for layer 0, the current layer, a layer that still holds entities,
+// and, in LeafOnly mode, a layer with sub-layers.
+Result<void> deleteLayer(const Document& doc, Transaction& tx, LayerId id, DeleteMode mode);
+
+Result<void> setCurrentLayer(const Document& doc, Transaction& tx, LayerId id);
+Result<void> setOn(const Document& doc, Transaction& tx, LayerId id, bool on);
+Result<void> setFrozen(const Document& doc, Transaction& tx, LayerId id, bool frozen);
+Result<void> setLocked(const Document& doc, Transaction& tx, LayerId id, bool locked);
+Result<void> setPlot(const Document& doc, Transaction& tx, LayerId id, bool plot);
+// ByLayer and ByBlock are refused; ByParent only on sub-layers.
+Result<void> setLayerColor(const Document& doc, Transaction& tx, LayerId id, Color color);
+Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id, LinetypeId linetype);
+Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id, LineWeight weight);
+// Turns off every layer except `keep`, its ancestors and its descendants.
+Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep);
+// Turns every layer on.
+Result<void> showAllLayers(const Document& doc, Transaction& tx);
+
+// ---- text <-> value helpers shared by -LAYER, -PROP and the panels -------------------------------
+
+// "red".."white" (or "7"), "1".."255", "r,g,b", "ByLayer", "ByBlock", "ByParent" (case-insensitive).
+Result<Color> parseColor(std::string_view text);
+std::string colorName(Color c);
+// Millimetres ("0.25"), "Default", "ByLayer", "ByBlock", "ByParent".
+Result<LineWeight> parseLineweight(std::string_view text);
+std::string lineweightName(LineWeight w);
+// Linetype by name, "#id", "ByLayer", "ByBlock" or "ByParent".
+Result<LinetypeId> parseLinetype(const Document& doc, std::string_view text);
+std::string linetypeName(const Document& doc, LinetypeId id);
+
+}  // namespace tbcad::layers
