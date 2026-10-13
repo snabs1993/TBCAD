@@ -150,3 +150,10 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
 ## DXF as the main file
 
 File > Open and drag-and-drop accept `.dxf` as well as `.tbcad`. Save on a drawing that came from a `.dxf` writes DXF (R2000) back to the same file, keeping the old one as `.bak`; notices from the reader and writer (skipped or simplified objects) go to the command history. Tools > Settings > Files > "Default save format" chooses the extension for new drawings; `.tbcad` stays the default.
+
+## Tool strip icons
+
+The tool strip is one row of 26 px icons in groups (File, Edit, Draw, Modify, View) with tooltips. The icons
+are our own line drawings (`apps/tbcad/src/icons.cpp`, a 20 x 20 grid drawn with line primitives), so they take
+the theme colour and stay sharp at every DPI. Commands that are not registered are left out. Right-click the
+strip to show or hide a group (settings `ui.toolgroup.<Group>`).
