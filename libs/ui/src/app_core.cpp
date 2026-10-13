@@ -1070,6 +1070,53 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
         applyPick(ids, false);
 }
 
+void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
+    if (screenPath.size() < 3)
+        return;
+    std::vector<Vec2> poly;
+    poly.reserve(screenPath.size());
+    for (const Vec2& s : screenPath)
+        poly.push_back(camera_.screenToWorld(s));
+    const bool crossing = dragIsCrossing(screenPath.front().x, screenPath.back().x);
+    std::vector<EntityId> ids = selectInPolygon(session_->doc, session_->index, poly, crossing);
+    cmd::CommandRunner& run = runner();
+    if (run.active()) {
+        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
+            run.submit(cmd::Input::select(std::move(ids)));
+        return;
+    }
+    applyPick(ids, p.shift);
+}
+
+void AppCore::cycleClick(const PointerState& p) {
+    const Vec2 world = makeRaw(p).worldCursor;
+    const double aperture = apertureMm();
+    cmd::CommandRunner& run = runner();
+    const bool pickPrompt = prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Entity ||
+                                        prompt_->kind == cmd::PromptInfo::Kind::Selection);
+    if (run.active() && !pickPrompt)
+        return click(p);
+    // A new spot starts a new stack; the same spot goes on to the next object in it.
+    if (cycleStack_.empty() || distance(world, cycleAt_) > aperture) {
+        cycleStack_ = pickAllAt(session_->doc, session_->index, world, aperture);
+        cycleCurrent_.reset();
+        cycleAt_ = world;
+    }
+    auto id = cycleNext(cycleStack_, cycleCurrent_);
+    if (!id) {
+        if (!run.active() && !p.shift)
+            clearSelection();
+        return;
+    }
+    cycleCurrent_ = id;
+    if (run.active())
+        run.submit(cmd::Input::pick(*id, world, p.shift));
+    else if (p.shift)
+        applyPick({*id}, true);
+    else
+        setSelection({*id});  // cycling replaces the previous pick
+}
+
 // ---- selection ---------------------------------------------------------------------------------
 
 void AppCore::setSelection(std::vector<EntityId> ids) {
@@ -1162,7 +1209,17 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         overlay.selectionWindow(drag_->first, drag_->second, crossing, tone,
                                 ui::withAlpha(tone, 0.15));
     }
-    if (cursorInside_ && !drag_) {
+    if (lasso_.size() >= 2) {
+        const bool crossing = dragIsCrossing(lasso_.front().x, lasso_.back().x);
+        const Rgba tone = crossing ? theme_.crossing : theme_.select;
+        render::OverlayStyle st;
+        st.color = tone;
+        st.widthPx = 1.0;
+        st.dashPx = crossing ? 6 : 0;
+        st.gapPx = crossing ? 4 : 0;
+        overlay.polyline(render::Space::Screen, lasso_, false, st);
+    }
+    if (cursorInside_ && !drag_ && lasso_.empty()) {
         const Vec2 c = lastPointer_.screen;
         const double arm = std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;

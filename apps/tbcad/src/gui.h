@@ -100,6 +100,7 @@ private:
     void logWindow();
     std::string actionLabel(const std::string& action) const;
     void propertiesWindow();
+    void quickProperties(const ViewportRect& rect);
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
@@ -190,6 +191,7 @@ private:
     bool leftDown_ = false;
     bool doubleClick_ = false;
     bool dragging_ = false;
+    std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
     Vec2 pressPos_{};
     bool panning_ = false;
     double pendingNotches_ = 0;
