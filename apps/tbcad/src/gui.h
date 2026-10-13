@@ -107,7 +107,6 @@ private:
     void cursorHud(const ViewportRect& rect);
     void logWindow();
     std::string actionLabel(const std::string& action) const;
-    void propertiesWindow();
     void quickProperties(const ViewportRect& rect);
     void panels();
     void dialogs();
@@ -152,7 +151,6 @@ private:
     bool showAbout_ = false;
     bool showNotices_ = false;
     bool showCommandLine_ = true;
-    bool showProperties_ = true;
     bool layoutBuilt_ = false;
     ui::WorkspaceStore workspaces_;
     std::string workspaceName_{};  // the one last switched to or saved

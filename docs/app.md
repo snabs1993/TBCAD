@@ -81,7 +81,7 @@ Owns the `Document`, `UndoStack`, `SpatialIndex` (kept current by `DocumentIndex
 
 ## The window (`apps/tbcad`)
 
-Layout: menu bar, tool strip, docked panels (Command at the bottom, Properties at the right, plus
+Layout: menu bar, tool strip, docked panels (Command at the bottom, Object Properties at the right, plus
 whatever modules register), status bar (cursor coordinates in the drawing's units, toggles,
 current layer, object and selection counts, fps). The drawing is rendered into an offscreen target
 that fills the central dock area. Layout is saved to `imgui.ini` in the settings folder. Light and
