@@ -998,6 +998,14 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    // Active-only mode lives in the drawing (Header::activeOnly); the command that owns it is
+    // registered by the layers module, so this is a no-op in builds without it.
+    ui.addStatusToggle(
+        "activeonly", "ACTIVE", [this] { return document().header().activeOnly; },
+        [this](bool on) {
+            if (!prompt_)
+                submitText(on ? "ACTIVEONLY On" : "ACTIVEONLY Off");
+        });
     ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 

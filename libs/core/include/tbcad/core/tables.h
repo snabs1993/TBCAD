@@ -98,8 +98,11 @@ struct EffectiveLayer {
     LineWeight lineweight = LineWeight::defaultWeight();  // Default or a value
     bool on = true;
     bool frozen = false;
-    bool locked = false;
+    bool locked = false;  // includes `inactive`
     bool plot = true;
+    // Locked only because the document is in "active only" mode and this layer is outside the
+    // current layer's branch.
+    bool inactive = false;
 
     // Drawn at all: on and not frozen.
     bool visible() const { return on && !frozen; }
