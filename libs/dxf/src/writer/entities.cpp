@@ -9,6 +9,7 @@
 #include "tbcad/geom/entity.h"
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
+#include "tbcad/text/field.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -127,7 +128,11 @@ Props Writer::propsOf(const EntityCommon& c) {
     p.linetype = linetypeNameOf(c.linetype);
     p.color = c.color;
     p.lineweight = c.lineweight;
-    p.ltScale = c.linetypeScale;
+    {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.7g", static_cast<double>(c.linetypeScale));
+        p.ltScale = std::strtod(buf, nullptr);
+    }
     p.visible = c.visible;
     return p;
 }
@@ -337,10 +342,23 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
 // Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer
 // turns it back into the flag. Written after the last group of the record.
 void Writer::writeAnnotativeData(const Entity& e) {
-    if (!e.common.annotative)
+    if (!e.common.annotative && !e.common.wipeout)
         return;
     o_->raw(1001, "TBCAD");
+    if (e.common.wipeout)
+        o_->str(1000, "wipeout=1");
+    if (!e.common.annotative)
+        return;
     o_->str(1000, "annotative=1");
+    if (!e.common.annoScales.empty()) {
+        std::string s = "annoscales=";
+        for (double v : e.common.annoScales) {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.12g", v);
+            s += (s.back() == '=' ? "" : ",") + std::string(buf);
+        }
+        o_->str(1000, s);
+    }
 }
 
 // A table is an INSERT of an anonymous *T block that holds its drawn grid and texts, so any
@@ -632,7 +650,7 @@ void Writer::writeSpline(const Props& p, const SplineData& d, const Entity& e,
 // Text
 
 void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
-    writeTextRecord(p, d, owner, d.attdef ? "ATTDEF" : "TEXT", d.utf8);
+    writeTextRecord(p, d, owner, d.attdef ? "ATTDEF" : "TEXT", text::expandFields(doc_, d.utf8));
 }
 
 // TEXT, ATTDEF (inside a block) and ATTRIB (after an INSERT) share the text groups; only the
@@ -677,7 +695,7 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
 void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner) {
     if (r12_) {
         downgrade("MTEXT", "has no R12 form; written as one TEXT per line");
-        std::string plain = plainLines(d.utf8);
+        std::string plain = plainLines(text::expandFields(doc_, d.utf8));
         std::vector<std::string> lines;
         std::size_t pos = 0;
         while (true) {
@@ -719,7 +737,8 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
     o.d(41, d.width);
     o.i(71, static_cast<int>(d.attach) + 1);
     o.i(72, 1);
-    std::vector<std::string> parts = chunks(encodeText(toDxfMarkup(d.utf8), utf8_), 250);
+    std::vector<std::string> parts =
+        chunks(encodeText(toDxfMarkup(text::expandFields(doc_, d.utf8)), utf8_), 250);
     for (std::size_t i = 0; i + 1 < parts.size(); ++i)
         o.raw(3, parts[i]);
     o.raw(1, parts.back());

@@ -48,6 +48,9 @@ private:
     render::Scene& scene_;
     double pixelSizeMm_ = 0.1;
     std::unordered_set<LayerId> lockedLayers_{};
+    // Texts holding fields (%<...>%): they show other objects' values, so they are redrawn after
+    // every change.
+    std::unordered_set<EntityId> fieldTexts_{};
     // Block-space display lists shared by the Inserts of one block (dropped on every revision).
     blocks::BlockDisplayCache blockCache_{};
 };

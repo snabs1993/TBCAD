@@ -42,18 +42,58 @@ private:
     std::unique_ptr<T> p_{};
 };
 
+// A short list of annotation scales, held on the heap (deep copy) so that an entity stays small:
+// most have none.
+class ScaleList {
+public:
+    ScaleList() = default;
+    ScaleList(std::vector<double> v) {
+        if (!v.empty())
+            p_ = std::make_unique<std::vector<double>>(std::move(v));
+    }
+    ScaleList(const ScaleList& o) {
+        if (o.p_)
+            p_ = std::make_unique<std::vector<double>>(*o.p_);
+    }
+    ScaleList(ScaleList&&) noexcept = default;
+    ScaleList& operator=(const ScaleList& o) {
+        if (this != &o)
+            p_ = o.p_ ? std::make_unique<std::vector<double>>(*o.p_) : nullptr;
+        return *this;
+    }
+    ScaleList& operator=(ScaleList&&) noexcept = default;
+
+    bool empty() const { return !p_ || p_->empty(); }
+    std::size_t size() const { return p_ ? p_->size() : 0; }
+    double front() const { return p_->front(); }
+    const double* begin() const { return p_ ? p_->data() : nullptr; }
+    const double* end() const { return p_ ? p_->data() + p_->size() : nullptr; }
+    std::vector<double> get() const { return p_ ? *p_ : std::vector<double>{}; }
+    friend bool operator==(const ScaleList& a, const ScaleList& b) { return a.get() == b.get(); }
+
+private:
+    std::unique_ptr<std::vector<double>> p_{};
+};
+
 struct EntityCommon {
     EntityId id{};  // assigned by the document; ignored by Transaction::add
-    double linetypeScale = 1;
+    float linetypeScale = 1;
     LayerId layer{};  // null is replaced by the document's current layer on add
     LevelId level{};  // null is replaced by the document's current level on add
     LinetypeId linetype = kLinetypeByLayer;
     Color color = Color::byLayer();
     LineWeight lineweight = LineWeight::byLayer();
-    bool visible = true;
+    bool visible : 1 = true;
     // Annotative: text height, dimension sizes and table text follow the annotation scale
     // (Header custom "tbcad.annoscale", or the viewport's scale when plotting a layout).
-    bool annotative = false;
+    bool annotative : 1 = false;
+    // Wipeout: a closed polyline that hides the objects drawn before it, instead of showing its
+    // outline.
+    bool wipeout : 1 = false;
+    // Scales (N of 1:N) the annotative object is made for. Empty: it follows the drawing's current
+    // scale. Otherwise the first is the one it is drawn at in model space; a layout viewport shows
+    // it only when its scale is listed, and draws it at the viewport scale.
+    ScaleList annoScales{};
 };
 
 enum class EntityKind : std::uint8_t {

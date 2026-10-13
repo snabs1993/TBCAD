@@ -285,7 +285,15 @@ struct DataDumper {
 void common(Out& o, const EntityCommon& c) {
     o << "e" << c.id << " L" << c.layer << " V" << c.level << " lt" << c.linetype << " c" << c.color
       << " lw" << static_cast<int>(c.lineweight.v) << " ls" << c.linetypeScale << " vis"
-      << c.visible << (c.annotative ? " anno" : "") << " ";
+      << c.visible << (c.annotative ? " anno" : "") << (c.wipeout ? " wipeout" : "");
+    bool firstScale = true;
+    for (double v : c.annoScales) {
+        o << (firstScale ? "[" : ",") << v;
+        firstScale = false;
+    }
+    if (!firstScale)
+        o << "]";
+    o << " ";
 }
 
 }  // namespace

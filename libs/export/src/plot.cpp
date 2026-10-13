@@ -137,6 +137,8 @@ struct Builder {
 }  // namespace
 
 Rgba plotColor(Rgba c, ColorMode mode) {
+    if (isBackgroundColor(c))
+        return {255, 255, 255, 255};  // a wipeout hides what is behind it on the white sheet
     if (c.a < 255) {  // translucent tones (dense hatches) are mixed with the white sheet
         double k = c.a / 255.0;
         auto mix = [k](std::uint8_t v) {

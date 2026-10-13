@@ -361,6 +361,8 @@ TEST_CASE("end to end: annotative text and table keep their flag through .tbcad 
     REQUIRE(host.run("ANNOTATIVE", {ScriptItem::pick(ids[0], {0, 0}),
                                     ScriptItem::pick(ids[1], {20, -25}), ScriptItem::enter(), "On"})
                 .finished);
+    host.setSelection({ids[0]});
+    REQUIRE(host.run("ANNOTATIVE", {"Scales", "50,100"}).finished);
     REQUIRE(host.run("CANNOSCALE", {"50"}).finished);
     auto annotatives = [](const Document& d) {
         int n = 0;
@@ -385,6 +387,66 @@ TEST_CASE("end to end: annotative text and table keep their flag through .tbcad 
     auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
     REQUIRE(imported.ok());
     CHECK(annotatives(*imported.value().document) == 2);
+    // The scales an object is made for survive both formats.
+    auto scalesOf = [&](const Document& d) {
+        std::size_t n = 0;
+        d.forEachEntity([&](const Entity& e) { n += e.common.annoScales.size(); });
+        return n;
+    };
+    CHECK(scalesOf(doc) == 2);
+    CHECK(scalesOf(*back.value()) == 2);
+    CHECK(scalesOf(*imported.value().document) == 2);
+    // The current scale and the scale list travel in DXF too, as SCALE objects for R2007.
+    CHECK(currentAnnotationScale(imported.value().document->header()) == doctest::Approx(50));
+    REQUIRE(host.run("SCALELISTEDIT", {"Add", "40", "Done"}).finished);
+    const auto dxf2007 = (dir / "anno2007.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxf2007, "R2007"}).finished);
+    dxf::Report report2;
+    auto again = dxf::importDxf(readBytes(dxf2007), {}, report2);
+    REQUIRE(again.ok());
+    const Header& h2 = again.value().document->header();
+    CHECK(currentAnnotationScale(h2) == doctest::Approx(50));
+    auto list2 = annotationScaleList(h2);
+    CHECK(std::find(list2.begin(), list2.end(), 40.0) != list2.end());
+    {
+        auto bytes = readBytes(dxf2007);
+        std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        CHECK(text.find("ACAD_SCALELIST") != std::string::npos);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("end to end: a wipeout keeps hiding what is behind it through .tbcad and DXF") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    REQUIRE(host.run("WIPEOUT", {"Rectangle", "0,0", "40,20"}).finished);
+    auto wipeouts = [](const Document& d) {
+        int n = 0;
+        d.forEachEntity([&](const Entity& e) { n += e.common.wipeout ? 1 : 0; });
+        return n;
+    };
+    CHECK(wipeouts(doc) == 1);
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_wipeout";
+    std::filesystem::create_directories(dir);
+    const auto file = dir / "w.tbcad";
+    REQUIRE(io::writeTbcad(doc, file).ok());
+    io::IoReport ioReport;
+    auto back = io::readTbcad(file, ioReport);
+    REQUIRE(back.ok());
+    CHECK(wipeouts(*back.value()) == 1);
+    CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+
+    const auto dxfFile = (dir / "w.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxfFile, "R2000"}).finished);
+    dxf::Report report;
+    auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
+    REQUIRE(imported.ok());
+    CHECK(wipeouts(*imported.value().document) == 1);
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);

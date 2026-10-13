@@ -37,6 +37,23 @@ bool needsTessellation(const Entity& e) {
     }
 }
 
+bool mentionsField(const std::string& s) {
+    return s.find("%<") != std::string::npos;
+}
+
+bool holdsFields(const Entity& e) {
+    if (const auto* t = entityAs<TextData>(e))
+        return mentionsField(t->utf8);
+    if (const auto* m = entityAs<MTextData>(e))
+        return mentionsField(m->utf8);
+    if (const auto* tb = entityAs<TableData>(e)) {
+        for (const TableCell& c : tb->cells)
+            if (mentionsField(c.utf8))
+                return true;
+    }
+    return false;
+}
+
 std::uint32_t drawOrderOf(EntityId id) {
     return static_cast<std::uint32_t>(id.value);
 }
@@ -61,8 +78,13 @@ void SceneSync::upsertEntity(const Entity& e) {
     const EntityId id = e.common.id;
     if (!e.common.visible || doc_.ownerBlock(id) || hiddenByLevel(e)) {
         scene_.remove(id);
+        fieldTexts_.erase(id);
         return;
     }
+    if (holdsFields(e))
+        fieldTexts_.insert(id);
+    else
+        fieldTexts_.erase(id);
     geom::DisplayContext ctx;
     ctx.pixelSizeMm = pixelSizeMm_;
     DisplayList list;
@@ -134,6 +156,14 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         const Entity* live = doc_.find(after->common.id);
         if (live)
             upsertEntity(*live);
+    }
+    if (!fieldTexts_.empty() && (!cs.entities.empty() || cs.header)) {
+        std::vector<EntityId> ids(fieldTexts_.begin(), fieldTexts_.end());
+        for (EntityId id : ids)
+            if (const Entity* e = doc_.find(id))
+                upsertEntity(*e);
+            else
+                fieldTexts_.erase(id);
     }
     if (!cs.layers.empty() || cs.header)
         syncLayers();

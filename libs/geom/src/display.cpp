@@ -273,9 +273,26 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
             out.items.push_back(std::move(p));
             return;
         }
-        case EntityKind::Polyline:
-            polylineDisplay(*entityAs<PolylineData>(e), tol, resolveStyle(doc, e, ctx), out);
+        case EntityKind::Polyline: {
+            const auto& pl = *entityAs<PolylineData>(e);
+            if (e.common.wipeout && pl.closed && pl.v.size() >= 3) {
+                // A mask: filled with the background colour, no outline.
+                DisplayList outline;
+                polylineDisplay(pl, tol, resolveStyle(doc, e, ctx), outline);
+                for (auto& item : outline.items) {
+                    if (auto* line = std::get_if<DisplayPolyline>(&item)) {
+                        DisplayFill fill;
+                        fill.rings.push_back(std::move(line->pts));
+                        fill.style = line->style;
+                        fill.style.color = kBackgroundColor;
+                        out.items.push_back(std::move(fill));
+                    }
+                }
+                return;
+            }
+            polylineDisplay(pl, tol, resolveStyle(doc, e, ctx), out);
             return;
+        }
         case EntityKind::Point: {
             DisplayPoints p;
             p.pts = {entityAs<PointData>(e)->p};

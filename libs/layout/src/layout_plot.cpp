@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "tbcad/layout/layout.h"
 
 namespace tbcad::layout {
@@ -49,6 +51,10 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
 
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true});
         exportlib::appendEntities(sheet, doc, model, vl, s, [&](const Entity& e) {
+            if (e.common.annotative && !e.common.annoScales.empty() &&
+                std::find(e.common.annoScales.begin(), e.common.annoScales.end(), vp.scaleN) ==
+                    e.common.annoScales.end())
+                return true;  // made for other scales
             return frozenInViewport(doc, vp, e.common.layer) ||
                    (vp.level.value != 0 && e.common.level != vp.level);
         });

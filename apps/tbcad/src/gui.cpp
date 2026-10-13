@@ -915,6 +915,42 @@ void Gui::statusBar() {
                     "Level you work on. Ctrl+PageUp / Ctrl+PageDown steps through levels.");
         }
 
+        // Annotation scale for new objects, and whether new objects are annotative.
+        {
+            const double cur = currentAnnotationScale(doc.header());
+            char label[48];
+            std::snprintf(label, sizeof label, "1:%g", cur);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("  Scale");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(72);
+            if (ImGui::BeginCombo("##annoscale", label, ImGuiComboFlags_HeightLarge)) {
+                for (double v : annotationScaleList(doc.header())) {
+                    char item[48];
+                    std::snprintf(item, sizeof item, "1:%g", v);
+                    if (ImGui::Selectable(item, v == cur)) {
+                        core_.submitText("CANNOSCALE");
+                        std::snprintf(item, sizeof item, "%g", v);
+                        core_.submitText(item);
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            const bool autoOn = annotateNewObjects(doc.header());
+            if (autoOn)
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            if (ImGui::SmallButton("ANNO")) {
+                core_.submitText("ANNONEW");
+                core_.submitText(autoOn ? "Off" : "On");
+            }
+            if (autoOn)
+                ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("New text, dimensions, tables and symbols follow the scale");
+        }
+
         std::string right = std::to_string(doc.modelSpaceCount()) + " objects   " +
                             std::to_string(core_.selection().size()) + " selected   " +
                             std::to_string(static_cast<int>(fps_ + 0.5)) + " fps";

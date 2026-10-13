@@ -89,6 +89,7 @@ public:
         t.style = ctx.doc().header().currentTextStyle;
         Entity e;
         e.data = Indirect<TableData>(std::move(t));
+        applyAnnotativeDefault(ctx.doc().header(), e);
         auto id = ctx.tx().add(std::move(e));
         if (!id)
             ctx.message(id.error().message);

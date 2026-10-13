@@ -154,7 +154,7 @@ EntityCommon Importer::commonOf(const Record& r) {
     if (const Group* g = r.find(48)) {
         double s = g->number();
         if (std::isfinite(s) && s > 0)
-            c.linetypeScale = s;
+            c.linetypeScale = static_cast<float>(s);
     }
     c.visible = r.integer(60, 0) == 0;
     bool ours = false;
@@ -163,6 +163,25 @@ EntityCommon Importer::commonOf(const Record& r) {
             ours = g.str() == "TBCAD";
         else if (ours && g.code == 1000 && g.str() == "annotative=1")
             c.annotative = true;
+        else if (ours && g.code == 1000 && g.str() == "wipeout=1")
+            c.wipeout = true;
+        else if (ours && g.code == 1000 && g.str().rfind("annoscales=", 0) == 0) {
+            std::string list(g.str().substr(11));
+            std::vector<double> found;
+            std::size_t at = 0;
+            while (at <= list.size() && found.size() < 64) {
+                std::size_t comma = list.find(',', at);
+                std::string part = list.substr(at, comma == std::string::npos ? comma : comma - at);
+                char* end = nullptr;
+                double v = std::strtod(part.c_str(), &end);
+                if (end != part.c_str() && std::isfinite(v) && v > 0)
+                    found.push_back(v);
+                if (comma == std::string::npos)
+                    break;
+                at = comma + 1;
+            }
+            c.annoScales = ScaleList(std::move(found));
+        }
     }
     return c;
 }

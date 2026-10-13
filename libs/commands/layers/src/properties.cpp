@@ -89,7 +89,7 @@ CommonProps readCommon(const Document& doc, const std::vector<EntityId>& ids,
         accumulate(p.layer, first, c.layer);
         accumulate(p.color, first, c.color);
         accumulate(p.linetype, first, c.linetype);
-        accumulate(p.linetypeScale, first, c.linetypeScale);
+        accumulate(p.linetypeScale, first, static_cast<double>(c.linetypeScale));
         accumulate(p.lineweight, first, c.lineweight);
         ++p.count;
     }
@@ -122,7 +122,7 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
             if (edit.linetype)
                 x.common.linetype = *edit.linetype;
             if (edit.linetypeScale)
-                x.common.linetypeScale = *edit.linetypeScale;
+                x.common.linetypeScale = static_cast<float>(*edit.linetypeScale);
             if (edit.lineweight)
                 x.common.lineweight = *edit.lineweight;
         });
