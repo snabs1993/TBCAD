@@ -16,6 +16,18 @@ void commit(DrawingSession& s, Transaction& tx, const std::string& label) {
     s.undoStack().push(label, {std::move(cs)});
 }
 
+// Why an entity cannot be edited, empty when it can: locked layers (and, in "active only"
+// mode, every layer outside the current layer's branch) are read-only.
+std::string whyReadOnly(const Document& doc, const Entity& e) {
+    EffectiveLayer l = doc.effective(e.common.layer);
+    if (!l.locked)
+        return {};
+    const Layer* row = doc.layer(e.common.layer);
+    std::string name = row ? row->name : std::string("?");
+    return l.inactive ? "layer \"" + name + "\" is not the active layer (Active Only mode is on)"
+                      : "layer \"" + name + "\" is locked";
+}
+
 ToolResult addEntities(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;
     Document& doc = s.document();
@@ -50,6 +62,10 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
         auto e = entityFromJson(doc, list[i], opt);
         if (!e)
             return ToolResult::fail("entities[" + std::to_string(i) + "]: " + e.error().message);
+        if (EffectiveLayer l = doc.effective(e.value().common.layer); l.inactive)
+            return ToolResult::fail("entities[" + std::to_string(i) +
+                                    "]: that layer is not the active layer (Active Only mode is "
+                                    "on); make it current or turn Active Only off");
         auto id = tx.add(std::move(e.value()));
         if (!id)
             return ToolResult::fail("entities[" + std::to_string(i) + "]: " + id.error().message);
@@ -241,6 +257,8 @@ ToolResult modifyEntities(ToolContext& ctx, const Json& a) {
     auto tx = doc.begin(kModifyLabel);
     for (EntityId id : ids.value()) {
         Entity e = *doc.find(id);
+        if (std::string why = whyReadOnly(doc, e); !why.empty())
+            return ToolResult::fail("entity " + std::to_string(id.value) + ": " + why);
         if (set) {
             std::string err = applySet(doc, e, *set);
             if (!err.empty())
@@ -278,6 +296,9 @@ ToolResult deleteEntities(ToolContext& ctx, const Json& a) {
     std::set<EntityId> unique(ids.value().begin(), ids.value().end());
     auto tx = doc.begin(kDeleteLabel);
     for (EntityId id : unique) {
+        if (const Entity* e = doc.find(id))
+            if (std::string why = whyReadOnly(doc, *e); !why.empty())
+                return ToolResult::fail("entity " + std::to_string(id.value) + ": " + why);
         auto r = tx.erase(id);
         if (!r)
             return ToolResult::fail("entity " + std::to_string(id.value) + ": " +

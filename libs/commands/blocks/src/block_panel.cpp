@@ -1,9 +1,13 @@
 #include <cfloat>
+#include <filesystem>
+#include <map>
 #include <string>
+#include <vector>
 
 #include "commands.h"
 #include "tbcad/block_cmds/block_cmds.h"
 #include "tbcad/block_cmds/block_list.h"
+#include "tbcad/block_cmds/palette.h"
 
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
 #include <imgui.h>
@@ -16,16 +20,90 @@ namespace tbcad::block_cmds {
 
 namespace {
 
-// The block list: filter box, then one row per block with the number of objects and uses.
-// Double-click (or the Insert button) starts INSERT with that block.
-void drawBlockPanel(ui::PanelContext& ctx) {
-    if (!ctx.doc) {
-        ImGui::TextUnformatted("No drawing open");
+constexpr float kTile = 88.0f;  // width of one palette tile
+constexpr float kThumb = 64.0f;
+constexpr const char* kLibrarySetting = "block.library";
+
+// Draws the strokes of a thumbnail inside a square of `size` pixels at `topLeft`.
+void drawThumbnail(ImDrawList* dl, ImVec2 topLeft, float size, const Thumbnail& t, ImU32 color) {
+    if (t.empty())
         return;
+    const float ox = topLeft.x + (size - static_cast<float>(t.width) * size) / 2;
+    const float oy = topLeft.y + (size + static_cast<float>(t.height) * size) / 2;
+    std::vector<ImVec2> pts;
+    for (const auto& stroke : t.strokes) {
+        pts.clear();
+        for (Vec2 p : stroke)
+            pts.emplace_back(ox + static_cast<float>(p.x) * size,
+                             oy - static_cast<float>(p.y) * size);
+        dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), color, ImDrawFlags_None, 1.0f);
     }
+}
+
+std::string utf8(const std::filesystem::path& p) {
+    auto u = p.u8string();
+    return std::string(u.begin(), u.end());
+}
+
+struct TileResult {
+    bool clicked = false;
+    bool doubleClicked = false;
+    bool hovered = false;
+};
+
+// One palette tile: thumbnail, name, small caption. The caller adds popups after it.
+TileResult drawTile(const char* id, const std::string& name, const std::string& caption,
+                    const Thumbnail* thumb, bool selected) {
+    TileResult r;
+    ImGui::PushID(id);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    const float height = kThumb + 2 * ImGui::GetTextLineHeightWithSpacing() + 6;
+    ImGui::InvisibleButton("##tile", ImVec2(kTile, height));
+    r.hovered = ImGui::IsItemHovered();
+    r.clicked = ImGui::IsItemClicked(0);
+    r.doubleClicked = r.hovered && ImGui::IsMouseDoubleClicked(0);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (selected || r.hovered)
+        dl->AddRectFilled(pos, ImVec2(pos.x + kTile, pos.y + height),
+                          ImGui::GetColorU32(selected ? ImGuiCol_Header : ImGuiCol_HeaderHovered),
+                          4.0f);
+    const ImU32 ink = ImGui::GetColorU32(ImGuiCol_Text);
+    if (thumb)
+        drawThumbnail(dl, ImVec2(pos.x + (kTile - kThumb) / 2, pos.y + 3), kThumb, *thumb, ink);
+    else
+        dl->AddText(ImVec2(pos.x + 8, pos.y + 24), ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                    "loading");
+    dl->PushClipRect(ImVec2(pos.x + 2, pos.y), ImVec2(pos.x + kTile - 2, pos.y + height), true);
+    dl->AddText(ImVec2(pos.x + 4, pos.y + kThumb + 6), ink, name.c_str());
+    dl->AddText(ImVec2(pos.x + 4, pos.y + kThumb + 6 + ImGui::GetTextLineHeightWithSpacing()),
+                ImGui::GetColorU32(ImGuiCol_TextDisabled), caption.c_str());
+    dl->PopClipRect();
+    if (r.hovered)
+        ImGui::SetTooltip("%s", name.c_str());
+    ImGui::PopID();
+    return r;
+}
+
+struct DrawingTab {
+    const Document* doc = nullptr;
+    std::map<BlockId, std::pair<std::uint64_t, Thumbnail>> cache{};
+    BlockId selected{};
+};
+
+void drawDrawingTab(ui::PanelContext& ctx) {
+    static DrawingTab st;
     static std::string filter;
-    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (st.doc != ctx.doc) {
+        st = DrawingTab{};
+        st.doc = ctx.doc;
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN - 70);
     ImGui::InputTextWithHint("##blockfilter", "Filter blocks", &filter);
+    ImGui::SameLine();
+    if (ImGui::Button("Count") && ctx.runCommand)
+        ctx.runCommand("BLOCKCOUNT");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Count the inserts of each block (BLOCKCOUNT)");
     const auto rows = blockRows(*ctx.doc, filter);
     if (rows.empty()) {
         ImGui::Spacing();
@@ -33,35 +111,156 @@ void drawBlockPanel(ui::PanelContext& ctx) {
                                            : "No block matches the filter");
         return;
     }
-    if (ImGui::BeginTable("blocks", 3,
-                          ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
-                              ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp,
-                          ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3.0f);
-        ImGui::TableSetupColumn("Objects", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-        ImGui::TableSetupColumn("Used", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableHeadersRow();
-        static BlockId selected{};
-        for (const BlockRow& r : rows) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            const bool isSel = selected == r.id;
-            if (ImGui::Selectable(
-                    r.name.c_str(), isSel,
-                    ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
-                selected = r.id;
-                if (ImGui::IsMouseDoubleClicked(0) && ctx.runCommand)
-                    ctx.runCommand("INSERT " + r.name);
-            }
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%zu", r.objects);
-            ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%zu", r.references);
+    ImGui::BeginChild("##blocktiles", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()));
+    int made = 0;  // thumbnails built this frame
+    float used = 0;
+    for (const BlockRow& r : rows) {
+        auto& slot = st.cache[r.id];
+        const std::uint64_t rev = ctx.doc->revision();
+        if ((slot.first != rev + 1) && made < 4) {
+            slot = {rev + 1, thumbnailOfBlock(*ctx.doc, r.id)};
+            ++made;
         }
-        ImGui::EndTable();
+        const BlockDef* def = ctx.doc->block(r.id);
+        std::string caption =
+            def && !def->xrefPath.empty() ? "xref" : "x" + std::to_string(r.references);
+        TileResult t = drawTile(r.name.c_str(), r.name, caption,
+                                slot.first ? &slot.second : nullptr, st.selected == r.id);
+        if (t.clicked)
+            st.selected = r.id;
+        if (t.doubleClicked && ctx.runCommand)
+            ctx.runCommand("INSERT " + r.name);
+        if (ImGui::BeginPopupContextItem("##tilemenu")) {
+            st.selected = r.id;
+            if (ImGui::MenuItem("Insert") && ctx.runCommand)
+                ctx.runCommand("INSERT " + r.name);
+            if (def && !def->xrefPath.empty() && ctx.runCommand) {
+                if (ImGui::MenuItem("Reload xref")) {
+                    ctx.runCommand("XRELOAD");
+                    ctx.runCommand(r.name);
+                }
+                if (ImGui::MenuItem("Bind xref")) {
+                    ctx.runCommand("XBIND");
+                    ctx.runCommand(r.name);
+                }
+                if (ImGui::MenuItem("Detach xref")) {
+                    ctx.runCommand("XDETACH");
+                    ctx.runCommand(r.name);
+                }
+            }
+            ImGui::EndPopup();
+        }
+        used += kTile + ImGui::GetStyle().ItemSpacing.x;
+        if (used + kTile > ImGui::GetContentRegionAvail().x)
+            used = 0;
+        else
+            ImGui::SameLine();
     }
-    ImGui::TextDisabled("Double-click a block to insert it");
+    ImGui::EndChild();
+    ImGui::TextDisabled("Double-click a block to insert it; right-click for more");
+}
+
+struct LibraryTab {
+    std::string folder{};
+    bool folderRead = false;
+    std::string filter{};
+    std::vector<LibraryItem> items{};
+    std::string scannedFolder{};
+    std::string scannedFilter{};
+    double scannedAt = -1e9;
+    LibraryThumbnails thumbs{};
+    std::filesystem::path selected{};
+};
+
+void drawLibraryTab(ui::PanelContext& ctx) {
+    static LibraryTab st;
+    if (!st.folderRead) {
+        if (ctx.host)
+            if (auto f = ctx.host->setting(kLibrarySetting))
+                st.folder = *f;
+        st.folderRead = true;
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::InputTextWithHint("##libfolder", "Folder with .tbcad / .dxf files", &st.folder) &&
+        ctx.host)
+        ctx.host->setSetting(kLibrarySetting, st.folder);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##libfilter", "Filter files", &st.filter);
+
+    // Rescan when the folder or filter changed, and now and then for new files.
+    const double now = ImGui::GetTime();
+    if (st.scannedFolder != st.folder || st.scannedFilter != st.filter || now - st.scannedAt > 3) {
+        st.items = scanLibrary(
+            std::filesystem::path(std::u8string(st.folder.begin(), st.folder.end())), st.filter);
+        st.scannedFolder = st.folder;
+        st.scannedFilter = st.filter;
+        st.scannedAt = now;
+    }
+    if (st.folder.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("Type the folder where you keep drawings you reuse as blocks.");
+        return;
+    }
+    if (st.items.empty()) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("No .tbcad or .dxf files found");
+        return;
+    }
+    st.thumbs.loadNext(st.items);
+    ImGui::BeginChild("##libtiles", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()));
+    float used = 0;
+    for (const LibraryItem& item : st.items) {
+        const std::string path = utf8(item.path);
+        TileResult t = drawTile(path.c_str(), item.name,
+                                item.path.extension().string() == ".dxf" ? "dxf" : "tbcad",
+                                st.thumbs.find(item.path), st.selected == item.path);
+        if (t.clicked)
+            st.selected = item.path;
+        auto insert = [&] {
+            if (!ctx.runCommand || !ctx.host)
+                return;
+            ctx.host->setSetting("block.lastinsert", path);
+            ctx.runCommand("INSERT");
+            ctx.runCommand("");  // take the file as the answer
+        };
+        if (t.doubleClicked)
+            insert();
+        if (ImGui::BeginPopupContextItem("##libmenu")) {
+            if (ImGui::MenuItem("Insert as block"))
+                insert();
+            if (ImGui::MenuItem("Attach as xref") && ctx.runCommand) {
+                ctx.runCommand("XATTACH");
+                ctx.runCommand(path);
+            }
+            ImGui::EndPopup();
+        }
+        used += kTile + ImGui::GetStyle().ItemSpacing.x;
+        if (used + kTile > ImGui::GetContentRegionAvail().x)
+            used = 0;
+        else
+            ImGui::SameLine();
+    }
+    ImGui::EndChild();
+    ImGui::TextDisabled("Double-click to insert; right-click to attach as xref");
+}
+
+// The block palette: blocks of the drawing and a library folder, as tiles with thumbnails.
+void drawBlockPanel(ui::PanelContext& ctx) {
+    if (!ctx.doc) {
+        ImGui::TextUnformatted("No drawing open");
+        return;
+    }
+    if (ImGui::BeginTabBar("##blocktabs")) {
+        if (ImGui::BeginTabItem("Drawing")) {
+            drawDrawingTab(ctx);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Library")) {
+            drawLibraryTab(ctx);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 }
 
 }  // namespace

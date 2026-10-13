@@ -95,3 +95,23 @@ copy the current one and become current. Every command is one undo step.
 New dimensions take the current dimension style (`Header::currentDimStyle`) and the current
 layer. The Dimension Styles panel (application builds) lists the styles with a live preview and
 edits through the same command line; it is listed under the panels menu.
+
+## DIM and MLEADER (Q43)
+
+**DIM** dimensions whatever you pick, and keeps asking for the next object until Enter:
+
+| Pick | Result | Keywords while placing |
+| --- | --- | --- |
+| Line or polyline segment, axis aligned | Linear (horizontal or vertical by cursor side) | Text, Aligned, Angular (lines) |
+| Slanted line or segment | Aligned | Text, Linear, Angular (lines) |
+| Circle | Diameter | Text, Radius |
+| Arc | Radius | Text, Diameter |
+| Line, then **Angular**, then a second line | Angular between the lines | Text |
+
+The preview follows the cursor while the location is chosen. All dimensions of one DIM run are one undo step.
+
+**MLEADER** (alias MLD) takes an arrowhead point and a landing point, then any number of further arrowhead
+points (Enter to finish), then the content: **Text**, **Block** (an existing block, inserted at the landing
+point) or **None**. It uses the current dimension style for arrow and text. Each arrowhead is a `Leader`
+entity; the first one carries the note and the others end at the same landing point, so they move, erase
+and export to DXF like any other leaders. Everything from one MLEADER run is one undo step.

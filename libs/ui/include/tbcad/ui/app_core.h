@@ -238,6 +238,8 @@ private:
     class AppObserver;
 
     std::unique_ptr<Session> makeSession(std::unique_ptr<Document> doc, std::filesystem::path file);
+    Result<void> openDxf(const std::filesystem::path& path);
+    Result<void> saveDxf(const std::filesystem::path& path);
     void clearTransientState();
     // Replaces the active drawing.
     void installSession(std::unique_ptr<Document> doc, std::filesystem::path file);

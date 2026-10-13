@@ -25,7 +25,7 @@ namespace {
 void printUsage() {
     std::puts("TBCAD " TBCAD_VERSION
               "\n"
-              "Usage: tbcad [file.tbcad] [options]\n"
+              "Usage: tbcad [file.tbcad|file.dxf] [options]\n"
               "  --script \"CMD;CMD\"   run command lines after start\n"
               "  --frames N           draw N frames, then exit\n"
               "  --screenshot F.ppm   save the last frame\n"
@@ -352,6 +352,11 @@ int App::run() {
         applyTheme(gui_->theme(), total);
     }
     glfwSetWindowUserPointer(window_, gui_.get());
+    glfwSetDropCallback(window_, [](GLFWwindow* w, int count, const char** paths) {
+        auto* gui = static_cast<Gui*>(glfwGetWindowUserPointer(w));
+        for (int i = 0; i < count; ++i)
+            gui->queueDroppedFile(paths[i]);
+    });
     glfwSetWindowContentScaleCallback(window_, [](GLFWwindow* w, float xs, float) {
         static_cast<Gui*>(glfwGetWindowUserPointer(w))->setDpiScale(xs);
     });

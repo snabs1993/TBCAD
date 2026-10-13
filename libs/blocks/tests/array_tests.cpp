@@ -70,3 +70,52 @@ TEST_CASE("array refuses silly sizes") {
     CHECK_FALSE(arrayPolar(src, PolarArray{.count = 0}).ok());
     CHECK_FALSE(arrayPolar(src, PolarArray{.count = 5, .fillAngle = 0}).ok());
 }
+
+TEST_CASE("array item transforms: rectangular and polar include the original") {
+    ArrayInfo rect;
+    rect.rows = 2;
+    rect.columns = 2;
+    rect.rowSpacing = 10;
+    rect.columnSpacing = 5;
+    auto ts = arrayItemTransforms(rect);
+    REQUIRE(ts.size() == 4);
+    CHECK(near(ts[0].apply({0, 0}), {0, 0}));
+    CHECK(near(ts[3].apply({0, 0}), {5, 10}));
+
+    ArrayInfo polar;
+    polar.kind = ArrayInfo::Kind::Polar;
+    polar.count = 4;
+    polar.center = {0, 0};
+    polar.rotateItems = false;
+    polar.reference = {1, 0};
+    ts = arrayItemTransforms(polar);
+    REQUIRE(ts.size() == 4);
+    CHECK(near(ts[1].apply({1, 0}), {0, 1}));
+    CHECK(near(ts[1].apply({2, 0}), {1, 1}));  // not rotated: the item only moves
+}
+
+TEST_CASE("array item transforms: path items follow the curve and align to it") {
+    ArrayInfo path;
+    path.kind = ArrayInfo::Kind::Path;
+    path.count = 3;
+    path.path = {PolyVertex{{0, 0}}, PolyVertex{{10, 0}}, PolyVertex{{10, 10}}};
+    path.rotateItems = true;
+    path.reference = {0, 0};
+    auto ts = arrayItemTransforms(path);
+    REQUIRE(ts.size() == 3);
+    CHECK(near(ts[0].apply({0, 0}), {0, 0}));
+    CHECK(near(ts[1].apply({0, 0}), {10, 0}));
+    CHECK(near(ts[2].apply({0, 0}), {10, 10}));
+    // the last item has turned a quarter circle: its x axis points along the second leg
+    CHECK(near(ts[2].applyVector({1, 0}), {0, 1}, 1e-9));
+    CHECK(near(ts[0].applyVector({1, 0}), {1, 0}, 1e-9));
+
+    path.rotateItems = false;
+    ts = arrayItemTransforms(path);
+    CHECK(near(ts[2].applyVector({1, 0}), {1, 0}));
+
+    path.pathClosed = true;
+    path.count = 4;
+    ts = arrayItemTransforms(path);
+    REQUIRE(ts.size() == 4);
+}

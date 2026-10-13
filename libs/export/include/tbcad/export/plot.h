@@ -128,6 +128,9 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
 
 Result<void> writePdf(const PlotSheet& sheet, const std::string& path,
                       const std::string& title = "TBCAD drawing", bool compress = true);
+// One page per sheet, each with its own paper size.
+Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::string& path,
+                           const std::string& title = "TBCAD drawing", bool compress = true);
 // For tests: the whole PDF in memory.
 Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress = false);
 // SVG in millimetres: width/height in mm, viewBox in mm, y flipped (SVG y runs downwards).

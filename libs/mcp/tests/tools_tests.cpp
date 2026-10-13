@@ -453,3 +453,26 @@ TEST_CASE("a failed tool call leaves no undo entry") {
     r.fails("modify_entities", J(R"({"ids":["1"],"set":{"layer":"missing"}})"));
     CHECK(r.session.undoStack().undoCount() == n);
 }
+
+TEST_CASE("Active Only mode: MCP edits are limited to the current layer's branch") {
+    Rig r;
+    r.initialize();
+    Json added = r.ok("add_entities", fourWalls());
+    auto ids = added.find("ids")->asArray();
+    r.ok("set_active_only", J(R"({"on":true})"));  // the current layer is still "0"
+
+    std::string e = r.fails("modify_entities", J(R"({"ids":[")" + ids[0].asString() +
+                                                 R"("],"transform":{"move":[1,1]}})"));
+    CHECK(e.find("Active Only") != std::string::npos);
+    r.fails("delete_entities", J(R"({"ids":[")" + ids[0].asString() + R"("]})"));
+    r.fails("add_entities",
+            J(R"({"entities":[{"kind":"point","position":[0,0]}],"layer":"A-WALL"})"));
+    CHECK(r.session.document().modelSpaceCount() == 4);
+
+    // Making the layer current activates it.
+    r.ok("set_current_layer", J(R"({"path":"A-WALL"})"));
+    r.ok("modify_entities",
+         J(R"({"ids":[")" + ids[0].asString() + R"("],"transform":{"move":[1,1]}})"));
+    r.ok("delete_entities", J(R"({"ids":[")" + ids[1].asString() + R"("]})"));
+    r.ok("set_active_only", J(R"({"on":false})"));
+}

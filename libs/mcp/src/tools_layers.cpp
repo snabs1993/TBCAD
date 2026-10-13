@@ -255,6 +255,18 @@ ToolResult setCurrentLayer(ToolContext& ctx, const Json& a) {
     return ToolResult::ok(Json(Json::Object{{"currentLayer", layerPath(doc, id)}}));
 }
 
+ToolResult setActiveOnly(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    Document& doc = s.document();
+    bool on = argBool(a, "on");
+    auto tx = doc.begin(kLabelPrefix + "set_active_only");
+    auto m = tx.modifyHeader([&](Header& h) { h.activeOnly = on; });
+    if (!m)
+        return ToolResult::fail(m.error().message);
+    commit(s, tx, "set_active_only");
+    return ToolResult::ok(Json(Json::Object{{"activeOnly", on}}));
+}
+
 }  // namespace
 
 void registerLayerTools(ToolSet& tools) {
@@ -299,6 +311,12 @@ void registerLayerTools(ToolSet& tools) {
                "New entities drawn by the user and by commands go on this layer.",
                tObject({{"path", tString()}}, {"path"}), outSchema({"currentLayer"}),
                Edit::Document, false, true, true, setCurrentLayer});
+
+    tools.add({"set_active_only", "Set Active Only mode",
+               "When on, only the current layer and its sub-layers can be edited: entities on "
+               "other layers cannot be modified or deleted and nothing can be added to them.",
+               tObject({{"on", tBool()}}, {"on"}), outSchema({"activeOnly"}), Edit::Document, false,
+               true, true, setActiveOnly});
 }
 
 }  // namespace tbcad::mcp::detail

@@ -737,7 +737,7 @@ EffectiveLayer Document::effective(LayerId id) const {
     }
     auto hit = effectiveCache_.find(id);
     if (hit != effectiveCache_.end())
-        return hit->second;
+        return withActiveOnly(hit->second);
     EffectiveLayer e;
     const Layer* own = layer(id);
     if (!own)
@@ -763,6 +763,20 @@ EffectiveLayer Document::effective(LayerId id) const {
         }
     }
     effectiveCache_.emplace(id, e);
+    return withActiveOnly(e);
+}
+
+// The active-only override depends on the header, which the cache does not watch, so it is
+// applied on every lookup.
+EffectiveLayer Document::withActiveOnly(EffectiveLayer e) const {
+    if (!header_.activeOnly || !e.id)
+        return e;
+    for (const Layer* l = layer(e.id); l; l = l->parent ? layer(l->parent) : nullptr)
+        if (l->id == header_.currentLayer)
+            return e;
+    if (!e.locked)
+        e.inactive = true;
+    e.locked = true;
     return e;
 }
 

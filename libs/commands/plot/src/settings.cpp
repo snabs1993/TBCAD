@@ -126,6 +126,14 @@ void setLastFile(cmd::IHost& h, Format f, const std::string& path) {
     h.setSetting(f == Format::Pdf ? "plot.file.pdf" : "plot.file.svg", path);
 }
 
+std::string plotLayout(const cmd::IHost& host) {
+    return host.setting("plot.layout").value_or("");
+}
+
+void setPlotLayout(cmd::IHost& host, const std::string& name) {
+    host.setSetting("plot.layout", name);
+}
+
 std::string withExtension(std::string path, Format f) {
     const std::string ext = f == Format::Pdf ? ".pdf" : ".svg";
     auto slash = path.find_last_of("/\\");
