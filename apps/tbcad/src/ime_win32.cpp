@@ -34,7 +34,7 @@ void setImeData(ImGuiContext*, ImGuiViewport* viewport, ImGuiPlatformImeData* da
 }  // namespace
 
 void installImeHook(GLFWwindow*) {
-    ImGui::GetIO().PlatformSetImeDataFn = setImeData;
+    ImGui::GetPlatformIO().Platform_SetImeDataFn = setImeData;
 }
 
 }  // namespace tbcad::app
