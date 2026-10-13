@@ -10,6 +10,11 @@
 
 namespace tbcad::dwg::test {
 
+// When set, objects are written in the R2004 layout (extension dictionary flag, CMC colours).
+inline bool gR2004 = false;
+inline bool gR2007 = false;  // R2010 layout: string stream, no object size
+inline bool gR2013 = false;
+
 class BitWriter {
 public:
     void bits(std::uint64_t v, unsigned n) {
@@ -78,7 +83,16 @@ public:
         else
             dd(d);
     }
+    // Strings go to the string stream when one is attached (R2007 and later), as UTF-16.
+    BitWriter* strings = nullptr;
     void text(const std::string& s) {
+        if (strings) {
+            strings->bs(static_cast<int>(s.size()) + 1);
+            for (char c : s)
+                strings->rs(static_cast<unsigned char>(c));
+            strings->rs(0);
+            return;
+        }
         bs(static_cast<int>(s.size()) + 1);
         for (char c : s)
             rc(static_cast<unsigned char>(c));
@@ -154,12 +168,25 @@ inline void putMc(std::vector<std::uint8_t>& out, std::int64_t v) {
 class ObjectWriter {
 public:
     ObjectWriter(int type, std::uint64_t handle) : handle_(handle) {
-        main.bs(type);
-        sizePos_ = main.bitCount();
-        main.rl(0);
+        if (gR2007) {
+            // type form: BB 0 + RC below 0x1F0, BB 1 + RC for class numbers
+            if (type < 0x1F0) {
+                main.bb(0);
+                main.rc(static_cast<unsigned>(type));
+            } else {
+                main.bb(1);
+                main.rc(static_cast<unsigned>(type - 0x1F0));
+            }
+            main.strings = &strings;
+        } else {
+            main.bs(type);
+            sizePos_ = main.bitCount();
+            main.rl(0);
+        }
         main.handle(0, handle);
     }
-    BitWriter main;     // everything before the handle stream
+    BitWriter main;     // everything before the string stream
+    BitWriter strings;  // the string stream (R2007 and later)
     BitWriter handles;  // the handle stream
 
     // Extended data (none) + the entity common part.
@@ -167,21 +194,51 @@ public:
         main.bs(0);     // no extended data
         main.b(false);  // no graphic image
         main.bb(static_cast<unsigned>(entmode));
-        main.bl(0);    // reactors
-        main.b(true);  // links are the defaults
+        main.bl(0);  // reactors
+        if (gR2004)
+            main.b(true);  // no extension dictionary handle
+        if (gR2013)
+            main.b(false);  // no data in the data store
+        main.b(true);       // links are the defaults
         main.bs(color);
         main.bd(1.0);  // linetype scale
         main.bb(static_cast<unsigned>(ltFlags));
-        main.bb(0);   // plot style flags
+        main.bb(0);  // plot style flags
+        if (gR2007) {
+            main.bb(0);  // material flags
+            main.rc(0);  // shadow flags
+            main.b(false);
+            main.b(false);
+            main.b(false);  // visual style flags
+        }
         main.bs(0);   // visible
         main.rc(29);  // lineweight: by layer
     }
     void objectCommon() {
         main.bs(0);  // no extended data
         main.bl(0);  // reactors
+        if (gR2004)
+            main.b(true);  // no extension dictionary handle
+        if (gR2013)
+            main.b(false);  // no data in the data store
+    }
+    // The extension dictionary handle exists only before R2004.
+    void xdic() {
+        if (!gR2004)
+            handles.handle(3, 0);
+    }
+    // CMC colour: an index up to R2000, index + RGB word + flags from R2004.
+    void cmc(int index) {
+        main.bs(gR2004 ? 0 : index);
+        if (gR2004) {
+            main.bl(static_cast<int>(0xC3000000u | static_cast<unsigned>(index)));
+            main.rc(0);
+        }
     }
 
     std::vector<std::uint8_t> finish() {
+        if (gR2007)
+            return finish2007();
         main.patch32(sizePos_, static_cast<std::uint32_t>(main.bitCount()));
         BitWriter all;
         // Append the handle stream after the main data bit for bit.
@@ -203,6 +260,53 @@ public:
     }
 
 private:
+    static void appendBits(BitWriter& to, const BitWriter& from) {
+        const std::vector<std::uint8_t> a = from.bytes();
+        for (std::size_t i = 0; i < from.bitCount(); ++i)
+            to.b((a[i / 8] >> (7 - i % 8)) & 1);
+    }
+    // R2010 layout: handle stream size first, then the data, the string stream with its size and
+    // flag, and the handle stream at the end (padding counts as part of the handle stream).
+    std::vector<std::uint8_t> finish2007() {
+        BitWriter data;
+        appendBits(data, main);
+        const std::size_t strBits = strings.bitCount();
+        if (strBits) {
+            appendBits(data, strings);
+            data.rs(static_cast<unsigned>(strBits));
+            data.b(true);
+        } else {
+            data.b(false);
+        }
+        std::vector<std::uint8_t> mc;
+        std::size_t handleBits = handles.bitCount();
+        std::size_t total = 0;
+        for (int pass = 0; pass < 3; ++pass) {  // the MC length depends on the padded size
+            mc.clear();
+            std::size_t v = handleBits;
+            do {
+                std::uint8_t byte = v & 0x7f;
+                v >>= 7;
+                mc.push_back(static_cast<std::uint8_t>(byte | (v ? 0x80 : 0)));
+            } while (v);
+            total = mc.size() * 8 + data.bitCount() + handles.bitCount();
+            handleBits = handles.bitCount() + ((8 - total % 8) % 8);
+        }
+        BitWriter all;
+        for (std::uint8_t b : mc)
+            all.rc(b);
+        appendBits(all, data);
+        appendBits(all, handles);
+        std::vector<std::uint8_t> body = all.bytes();
+        BitWriter size;
+        size.ms(static_cast<std::uint32_t>(body.size()));
+        std::vector<std::uint8_t> out = size.bytes();
+        out.insert(out.end(), body.begin(), body.end());
+        out.push_back(0);
+        out.push_back(0);
+        return out;
+    }
+
     std::uint64_t handle_;
     std::size_t sizePos_ = 0;
 };
@@ -218,6 +322,36 @@ public:
     int addClass(const std::string& dxfName) {
         classes_.push_back(dxfName);
         return 499 + static_cast<int>(classes_.size());
+    }
+
+    // The R2004+ forms: every object concatenated (offsets count from the section start) and the
+    // object map in the same format as R2000, without its leading size or CRC handling changes.
+    void sections(std::vector<std::uint8_t>& objects, std::vector<std::uint8_t>& handles) const {
+        std::vector<std::pair<std::uint64_t, std::int64_t>> map;
+        for (const auto& [h, bytes] : objects_) {
+            map.emplace_back(h, static_cast<std::int64_t>(objects.size()));
+            objects.insert(objects.end(), bytes.begin(), bytes.end());
+        }
+        std::sort(map.begin(), map.end());
+        std::vector<std::uint8_t> sec;
+        std::uint64_t lastH = 0;
+        std::int64_t lastL = 0;
+        for (auto& [h, l] : map) {
+            putMc(sec, static_cast<std::int64_t>(h - lastH));
+            putMc(sec, l - lastL);
+            lastH = h;
+            lastL = l;
+        }
+        const std::size_t total = sec.size() + 2;
+        handles.push_back(static_cast<std::uint8_t>(total >> 8));
+        handles.push_back(static_cast<std::uint8_t>(total & 0xff));
+        handles.insert(handles.end(), sec.begin(), sec.end());
+        handles.push_back(0);
+        handles.push_back(0);
+        handles.push_back(0);  // empty last section (size 2)
+        handles.push_back(2);
+        handles.push_back(0);
+        handles.push_back(0);
     }
 
     std::vector<std::uint8_t> build(const char* version = "AC1015") const {
@@ -299,6 +433,191 @@ public:
 private:
     std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> objects_{};
     std::vector<std::string> classes_{};
+};
+
+// Compresses by storing everything as one literal run (valid input for the decompressor).
+inline std::vector<std::uint8_t> lzLiteral(const std::vector<std::uint8_t>& data) {
+    std::vector<std::uint8_t> out;
+    const std::size_t n = data.size();
+    if (n >= 4) {
+        const std::size_t v = n - 3;
+        if (v <= 0x0F) {
+            out.push_back(static_cast<std::uint8_t>(v));
+        } else {
+            out.push_back(0);
+            const std::size_t rem = v - 0x0F;
+            const std::size_t zeros = (rem - 1) / 0xFF;
+            for (std::size_t i = 0; i < zeros; ++i)
+                out.push_back(0);
+            out.push_back(static_cast<std::uint8_t>(rem - zeros * 0xFF));
+        }
+    } else {
+        // Shorter data would need a different form; pad callers to at least four bytes.
+        out.push_back(1);
+    }
+    out.insert(out.end(), data.begin(), data.end());
+    if (n < 4)
+        out.insert(out.end(), 4 - n, 0);
+    out.push_back(0x11);
+    return out;
+}
+
+// Writes R2004-style files: encrypted file header, compressed pages, page map and section map
+// (ODA spec section 4), from the same reading of the spec as the reader. Self-consistency only.
+class Dwg2004File {
+public:
+    void section(const std::string& name, std::vector<std::uint8_t> data,
+                 std::uint32_t maxPage = 0x7400, bool compressed = true) {
+        sections_.push_back({name, std::move(data), maxPage, compressed});
+    }
+
+    std::vector<std::uint8_t> build(const char* version = "AC1018", int maintenance = 0) const {
+        std::vector<std::uint8_t> out(0x100, 0);
+        struct PageInfo {
+            std::uint32_t number;
+            std::uint32_t extent;
+        };
+        std::vector<PageInfo> pages;
+        std::uint32_t nextPage = 1;
+        std::vector<std::uint8_t> desc;
+        put32(desc, static_cast<std::uint32_t>(sections_.size()));
+        put32(desc, 2);
+        put32(desc, 0x7400);
+        put32(desc, 0);
+        put32(desc, static_cast<std::uint32_t>(sections_.size()));
+        std::uint32_t sectionId = 0;
+        for (const Section& sec : sections_) {
+            struct Rec {
+                std::uint32_t page, size;
+                std::uint64_t start;
+            };
+            std::vector<Rec> recs;
+            for (std::size_t start = 0; start < sec.data.size() || recs.empty();
+                 start += sec.maxPage) {
+                std::vector<std::uint8_t> chunk(sec.maxPage, 0);
+                const std::size_t n = std::min<std::size_t>(sec.maxPage, sec.data.size() - start);
+                std::copy_n(sec.data.begin() + static_cast<std::ptrdiff_t>(start), n,
+                            chunk.begin());
+                const std::vector<std::uint8_t> payload = sec.compressed ? lzLiteral(chunk) : chunk;
+                const std::uint32_t extent =
+                    (32 + static_cast<std::uint32_t>(payload.size()) + 31) & ~31u;
+                std::vector<std::uint8_t> hdr;
+                put32(hdr, 0x4163043B);
+                put32(hdr, sectionId);
+                put32(hdr, static_cast<std::uint32_t>(payload.size()));
+                put32(hdr, extent);
+                put32(hdr, static_cast<std::uint32_t>(start));
+                put32(hdr, 0);
+                put32(hdr, 0);
+                put32(hdr, 0);
+                const std::uint32_t mask = 0x4164536Bu ^ static_cast<std::uint32_t>(out.size());
+                for (std::size_t i = 0; i < 8; ++i)
+                    for (int b = 0; b < 4; ++b)
+                        hdr[i * 4 + static_cast<std::size_t>(b)] ^=
+                            static_cast<std::uint8_t>(mask >> (8 * b));
+                out.insert(out.end(), hdr.begin(), hdr.end());
+                out.insert(out.end(), payload.begin(), payload.end());
+                out.resize(out.size() + (extent - 32 - payload.size()), 0);
+                recs.push_back({nextPage, static_cast<std::uint32_t>(payload.size()), start});
+                pages.push_back({nextPage, extent});
+                ++nextPage;
+                if (start + sec.maxPage >= sec.data.size())
+                    break;
+            }
+            put64(desc, sec.data.size());
+            put32(desc, static_cast<std::uint32_t>(recs.size()));
+            put32(desc, sec.maxPage);
+            put32(desc, 0);
+            put32(desc, sec.compressed ? 2 : 1);
+            put32(desc, sectionId + 1);
+            put32(desc, 0);
+            std::vector<std::uint8_t> name(64, 0);
+            std::copy(sec.name.begin(), sec.name.end(), name.begin());
+            desc.insert(desc.end(), name.begin(), name.end());
+            for (const Rec& r : recs) {
+                put32(desc, r.page);
+                put32(desc, r.size);
+                put64(desc, r.start);
+            }
+            ++sectionId;
+        }
+        // Section map page, then the page map page; the page map also lists the section map.
+        const std::uint32_t sectionMapNo = nextPage++;
+        const std::uint32_t pageMapNo = nextPage++;
+        const std::size_t sectionMapAt = out.size();
+        const std::uint32_t sectionMapExtent = systemPage(out, 0x4163003B, desc);
+        pages.push_back({sectionMapNo, sectionMapExtent});
+        auto mapBytes = [&](std::uint32_t ownExtent) {
+            std::vector<std::uint8_t> m;
+            for (const PageInfo& p : pages) {
+                put32(m, p.number);
+                put32(m, p.extent);
+            }
+            put32(m, pageMapNo);
+            put32(m, ownExtent);
+            return m;
+        };
+        std::vector<std::uint8_t> probe;
+        const std::uint32_t pageMapExtent = systemPage(probe, 0x41630E3B, mapBytes(0));
+        const std::size_t pageMapAt = out.size();
+        systemPage(out, 0x41630E3B, mapBytes(pageMapExtent));
+        (void)sectionMapAt;
+
+        // The file header: 0x80 plain bytes, then 0x6C bytes XORed with the fixed sequence.
+        std::memcpy(out.data(), version, 6);
+        out[0x0B] = static_cast<std::uint8_t>(maintenance);
+        out[0x13] = 30;
+        std::vector<std::uint8_t> head(0x6C, 0);
+        std::memcpy(head.data(), "AcFssFcAJMB", 11);
+        auto set32 = [&](std::size_t at, std::uint32_t v) {
+            for (int i = 0; i < 4; ++i)
+                head[at + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(v >> (8 * i));
+        };
+        set32(0x50, pageMapNo);
+        set32(0x54, static_cast<std::uint32_t>(pageMapAt - 0x100));
+        set32(0x5C, sectionMapNo);
+        set32(0x60, static_cast<std::uint32_t>(pages.size()));
+        std::uint32_t seed = 1;
+        for (std::size_t i = 0; i < head.size(); ++i) {
+            seed = seed * 0x343FDu + 0x269EC3u;
+            out[0x80 + i] =
+                static_cast<std::uint8_t>(head[i] ^ static_cast<std::uint8_t>(seed >> 16));
+        }
+        return out;
+    }
+
+private:
+    struct Section {
+        std::string name;
+        std::vector<std::uint8_t> data;
+        std::uint32_t maxPage;
+        bool compressed;
+    };
+    static void put32(std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int i = 0; i < 4; ++i)
+            v.push_back(static_cast<std::uint8_t>(x >> (8 * i)));
+    }
+    static void put64(std::vector<std::uint8_t>& v, std::uint64_t x) {
+        put32(v, static_cast<std::uint32_t>(x));
+        put32(v, static_cast<std::uint32_t>(x >> 32));
+    }
+    // A system page: 0x14 byte header and compressed data, padded to 0x20. Returns its extent.
+    static std::uint32_t systemPage(std::vector<std::uint8_t>& out, std::uint32_t type,
+                                    const std::vector<std::uint8_t>& data) {
+        const std::vector<std::uint8_t> comp = lzLiteral(data);
+        std::vector<std::uint8_t> page;
+        put32(page, type);
+        put32(page, static_cast<std::uint32_t>(data.size()));
+        put32(page, static_cast<std::uint32_t>(comp.size()));
+        put32(page, 2);
+        put32(page, 0);
+        page.insert(page.end(), comp.begin(), comp.end());
+        const auto extent = static_cast<std::uint32_t>((page.size() + 31) & ~std::size_t{31});
+        page.resize(extent, 0);
+        out.insert(out.end(), page.begin(), page.end());
+        return extent;
+    }
+    std::vector<Section> sections_{};
 };
 
 }  // namespace tbcad::dwg::test

@@ -28,8 +28,9 @@ struct Group {
 struct LayerRec {
     std::uint64_t handle = 0;
     std::string name{};
-    int flags = 0;  // DXF 70
-    int color = 7;  // ACI; negative = off
+    int flags = 0;       // DXF 70
+    int color = 7;       // ACI; negative = off
+    int trueColor = -1;  // 0xRRGGBB when the colour is not an index
     bool frozen = false;
     bool locked = false;
     bool plot = true;
@@ -84,8 +85,10 @@ struct EntityRec {
     std::uint64_t dimStyle = 0;     // DIMENSION and LEADER
     // POLYLINE (vertices) and INSERT (attributes): the first and last owned object handle.
     std::uint64_t firstChild = 0, lastChild = 0;
-    bool hasChildren = false;  // INSERT: the attribute bit was set
-    int color = 256;           // ACI, 256 = by layer
+    bool hasChildren = false;                   // INSERT: the attribute bit was set
+    std::vector<std::uint64_t> childHandles{};  // R2004+: the owned records, in order
+    int color = 256;                            // ACI, 256 = by layer
+    int trueColor = -1;                         // 0xRRGGBB when set
     double ltScale = 1;
     bool invisible = false;
     int lineweight = 29;  // DWG lineweight code (29 = by layer)
@@ -94,6 +97,7 @@ struct EntityRec {
 
 struct Drawing {
     int codepage = 0;
+    bool unicode = false;  // strings were UTF-16 (R2007 and later): write UTF-8 DXF
     bool unitsKnown = false;
     int insunits = 0;
     double ltscale = 1;

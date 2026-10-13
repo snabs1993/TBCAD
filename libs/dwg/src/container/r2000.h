@@ -7,7 +7,12 @@
 #include <string>
 #include <vector>
 
+#include "format.h"
 #include "tbcad/core/core.h"
+
+namespace tbcad::dwg {
+class BitReader;
+}
 
 namespace tbcad::dwg::detail {
 
@@ -57,5 +62,16 @@ struct HeaderVars {
 // The few system variables the importer uses, read from the header section (section 9 of the
 // spec lists about two hundred in one bit stream, so everything before INSUNITS is stepped over).
 HeaderVars readHeaderVars(Bytes file, const Locator& loc, std::vector<std::string>& notes);
+
+// Steps through the system variables (spec section 9) up to INSUNITS for the given layout.
+// `r` starts at the first variable. From R2007 the strings are taken from the reader's string
+// stream and the handles (except HANDSEED) are not in this stream.
+void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
+                          std::vector<std::string>& notes);
+
+// The handle -> offset table from a buffer holding only that table (R2004 and later sections,
+// where offsets count from the start of the object section).
+std::vector<MapEntry> readObjectMapData(Bytes data, std::size_t start, std::size_t end,
+                                        std::vector<std::string>& notes);
 
 }  // namespace tbcad::dwg::detail

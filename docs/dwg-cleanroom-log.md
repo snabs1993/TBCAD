@@ -22,6 +22,13 @@ Drawings/Teigha, RealDWG or any other DWG library or its tests, and nobody has d
 | 2026-10-13 | Q26 | HATCH layout (boundary paths of polyline and edge kind, pattern lines, seed points) and that it is a class-based object (type number from 500 up, DXF name in the class table). | ODA spec, 20.4.75; class table (section 2) |
 | 2026-10-13 | Q26 | Common dimension data and the seven DIMENSION layouts; DIMSTYLE variable order; LEADER layout. | ODA spec, 20.4.22 to 20.4.29, 20.4.47, 20.4.68 |
 | 2026-10-13 | Q26 | Assumed, not confirmed by any file: hatch and pattern angles are radians; DIMSTYLE group 70 bits; dimension type flag composition (flags 1 bit 0 = opposite of 128, bit 1 = 32); polyline and vertex flag bits equal the DXF ones. | general knowledge; Autodesk public DXF Reference |
+| 2026-10-13 | Q27 | R2004 file header: 0x6C bytes at 0x80 XORed with a fixed byte sequence from a linear congruential generator; file ID string; page map id and address, section map id. | ODA spec section 4 (R2004 file structure) |
+| 2026-10-13 | Q27 | System pages (page map, section map): 0x14-byte header (type, sizes, compression type, checksum) and LZ77 data; page map entries (number, size) with a gap record carrying extra fields; page addresses are cumulative from 0x100. | ODA spec section 4 |
+| 2026-10-13 | Q27 | Section map description records and per-page records; data page header 32 bytes, masked by an XOR with a value built from the page address. | ODA spec section 4 |
+| 2026-10-13 | Q27 | LZ77 variant used by R2004+ (literal run lengths, the two-byte and long offset opcodes, the end marker). | ODA spec section 4.7 |
+| 2026-10-13 | Q27 | Section contents: header variables, class table, handle map (same layout as R2000 object map) with offsets into the objects section. | ODA spec sections 4, 5, 9 |
+| 2026-10-13 | Q27 | Object differences for R2004 (colour with colour-book handle, extension-dictionary-missing bit, owned-object lists, hatch gradient prefix), R2007+ (string stream, material and shadow flags, UTF-16), R2010+ (handle-stream size at the start, new type encoding, vertex ids, version bytes), R2013+ (data-store bit, spline flags), R2018+ (attribute kind). | ODA spec per-object sections and the version tables |
+| 2026-10-13 | Q27 | Assumed, not confirmed by any file: LZ77 distance bias (tries +1 then +0); where the string stream starts (flag at the last data bit, 16-bit size before it); true-colour value is a 32-bit word; layer off only from a negative colour index; header variable string layout for R2007+; polyline owned-object counts always present; code page mapping for non-Unicode output. To be checked against real files. | general knowledge |
 
 ## ODA specification terms
 
