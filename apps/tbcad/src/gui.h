@@ -77,6 +77,7 @@ private:
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void readOnlyBanner();
     void statusBar();
     void dockLayout(ImGuiID dockspace);
     void commandWindow();

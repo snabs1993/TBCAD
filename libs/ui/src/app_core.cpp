@@ -1,5 +1,6 @@
 #include "tbcad/ui/app_core.h"
 
+#include <cctype>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -76,6 +77,7 @@ struct AppCore::Session {
     std::unique_ptr<cmd::CommandRunner> runner{};
     fs::path file{};
     std::uint64_t savedRevision = 0;
+    std::string readOnlyFormat{};  // "DWG" while the drawing came from a read-only format
 };
 
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
@@ -269,7 +271,61 @@ void AppCore::newDocument() {
     installSession(std::make_unique<Document>(), {});
 }
 
+namespace {
+std::string lowerExtension(const fs::path& p) {
+    std::string e = p.extension().string();
+    for (char& c : e)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return e;
+}
+}  // namespace
+
+void AppCore::setForeignReader(std::string extension, ForeignReadFn read, bool readOnly) {
+    foreignReaders_[std::move(extension)] = ForeignReader{std::move(read), readOnly};
+}
+
+bool AppCore::canOpenExtension(std::string_view e) const {
+    return e == ".tbcad" || foreignReaders_.find(e) != foreignReaders_.end();
+}
+
+bool AppCore::readOnlyOrigin() const {
+    return !session_->readOnlyFormat.empty();
+}
+
+std::string AppCore::readOnlyBanner() const {
+    if (!readOnlyOrigin())
+        return {};
+    return session_->readOnlyFormat +
+           " opened read-only. Use Save As to keep a copy as .tbcad or .dxf.";
+}
+
 Result<void> AppCore::openFile(const fs::path& path) {
+    if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
+        auto res = it->second.read(path);
+        if (!res) {
+            print("Cannot open " + path.string() + ": " + res.error().message);
+            settings_.removeRecentFile(platform::pathToUtf8(path));
+            return res.error();
+        }
+        ForeignOpenResult& r = res.value();
+        removeAutosaveFiles();
+        installSession(std::move(r.document), path);
+        if (it->second.readOnly) {
+            std::string fmt = it->first.size() > 1 ? it->first.substr(1) : it->first;
+            for (char& c : fmt)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            session_->readOnlyFormat = fmt;
+        }
+        for (const auto& m : r.messages)
+            print(m);
+        settings_.addRecentFile(platform::pathToUtf8(path));
+        (void)settings_.save(paths_.settingsFile());
+        print("Opened " + path.string() + (r.format.empty() ? "" : " (" + r.format + ")") +
+              (it->second.readOnly ? " read-only" : ""));
+        if (it->second.readOnly)
+            print(readOnlyBanner());
+        return {};
+    }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
@@ -291,6 +347,9 @@ Result<void> AppCore::openFile(const fs::path& path) {
 }
 
 Result<void> AppCore::save() {
+    if (readOnlyOrigin())
+        return makeError(ErrorCode::Conflict,
+                         session_->readOnlyFormat + " files are read-only: use Save As.");
     if (session_->file.empty())
         return makeError(ErrorCode::InvalidArgument, "This drawing has no file name yet.");
     return saveAs(session_->file);
@@ -304,12 +363,32 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         print("Finish the current command first.");
         return makeError(ErrorCode::Conflict, "A command is running.");
     }
+    const std::string ext = lowerExtension(path);
+    if (ext != ".tbcad" && ext != ".dxf") {
+        return makeError(ErrorCode::Unsupported,
+                         "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
+    }
+    if (ext == ".dxf") {
+        if (!dxfWriter_)
+            return makeError(ErrorCode::Unsupported, "DXF export is not available.");
+        auto w = dxfWriter_(session_->doc, path);
+        if (!w) {
+            print("Cannot save " + path.string() + ": " + w.error().message);
+            return w.error();
+        }
+        for (const auto& m : w.value())
+            print(m);
+        // A DXF is an export copy: the drawing keeps its current name and saved state.
+        print("Exported " + path.string());
+        return {};
+    }
     auto r = io::writeTbcad(session_->doc, path);
     if (!r) {
         print("Cannot save " + path.string() + ": " + r.error().message);
         return r;
     }
     session_->file = path;
+    session_->readOnlyFormat.clear();
     session_->savedRevision = session_->doc.revision();
     removeAutosaveFiles();
     settings_.addRecentFile(platform::pathToUtf8(path));
@@ -319,7 +398,9 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
 }
 
 std::string AppCore::displayName() const {
-    return session_->file.empty() ? std::string("Untitled") : session_->file.filename().string();
+    std::string name =
+        session_->file.empty() ? std::string("Untitled") : session_->file.filename().string();
+    return readOnlyOrigin() ? name + " [Read-only]" : name;
 }
 
 std::string AppCore::windowTitle() const {

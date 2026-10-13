@@ -30,8 +30,17 @@ namespace {
 
 constexpr ImGuiID kDockId = 0x7BC4D001u;
 
-const std::vector<platform::FileFilter>& drawingFilters() {
-    static const std::vector<platform::FileFilter> f = {{"TBCAD drawings", "*.tbcad"}};
+const std::vector<platform::FileFilter>& openFilters() {
+    static const std::vector<platform::FileFilter> f = {
+        {"Drawings (.tbcad, .dwg)", "*.tbcad;*.dwg"},
+        {"TBCAD drawings", "*.tbcad"},
+        {"DWG drawings (read-only)", "*.dwg"}};
+    return f;
+}
+
+const std::vector<platform::FileFilter>& saveFilters() {
+    static const std::vector<platform::FileFilter> f = {{"TBCAD drawings", "*.tbcad"},
+                                                        {"DXF drawings", "*.dxf"}};
     return f;
 }
 
@@ -263,14 +272,14 @@ bool Gui::requestClose() {
 
 void Gui::doOpen() {
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), drawingFilters(), "Open drawing"))
+        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing"))
             doOpenPath(platform::pathToUtf8(*p));
         return;
     }
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::Open;
-    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad");
+    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dwg");
 }
 
 void Gui::doOpenPath(const std::string& path) {
@@ -280,7 +289,7 @@ void Gui::doOpenPath(const std::string& path) {
 }
 
 void Gui::doSave() {
-    if (!core_.hasFile()) {
+    if (!core_.hasFile() || core_.readOnlyOrigin()) {
         doSaveAs();
         return;
     }
@@ -291,8 +300,10 @@ void Gui::doSave() {
 
 void Gui::doSaveAs() {
     std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1.tbcad";
+    if (core_.readOnlyOrigin())  // never suggest the original (read-only) name
+        suggested = core_.file().stem().string() + ".tbcad";
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(), "Save drawing as",
+        if (auto p = platform::showSaveDialog(nativeHandle(), saveFilters(), "Save drawing as",
                                               "tbcad", suggested)) {
             auto r = core_.saveAs(*p);
             if (!r)
@@ -306,7 +317,7 @@ void Gui::doSaveAs() {
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::SaveAs;
-    browser_.open(FileBrowser::Mode::Save, start, suggested, ".tbcad");
+    browser_.open(FileBrowser::Mode::Save, start, suggested, ".tbcad;.dxf");
 }
 
 // ---- shortcuts ---------------------------------------------------------------------------------
@@ -537,6 +548,24 @@ void Gui::toolStrip() {
         if (button("Zoom Extents"))
             core_.zoomExtents();
         ImGui::NewLine();
+    }
+    ImGui::End();
+}
+
+void Gui::readOnlyBanner() {
+    const std::string text = core_.readOnlyBanner();
+    if (text.empty())
+        return;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    if (ImGui::BeginViewportSideBar("##readonlybanner", vp, ImGuiDir_Up, h, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Save As..."))
+            runAction("file.saveAs");
     }
     ImGui::End();
 }
@@ -910,6 +939,7 @@ ViewportRect Gui::frame() {
     if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
         menuBar();
         toolStrip();
+        readOnlyBanner();
         statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();

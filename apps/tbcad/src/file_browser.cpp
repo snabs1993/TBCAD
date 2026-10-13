@@ -1,3 +1,4 @@
+#include <cctype>
 #include "file_browser.h"
 
 #include <imgui.h>
@@ -26,6 +27,24 @@ void FileBrowser::open(Mode mode, fs::path startDir, std::string suggestedName,
     refresh();
 }
 
+// extension_ is one extension (".tbcad") or several separated by ';' (".tbcad;.dwg"),
+// compared ignoring case.
+bool FileBrowser::matchesExtension(const fs::path& p) const {
+    std::string e = p.extension().string();
+    for (char& c : e)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::size_t start = 0;
+    while (start <= extension_.size()) {
+        std::size_t end = extension_.find(';', start);
+        if (end == std::string::npos)
+            end = extension_.size();
+        if (extension_.compare(start, end - start, e) == 0)
+            return true;
+        start = end + 1;
+    }
+    return false;
+}
+
 void FileBrowser::refresh() {
     items_.clear();
     error_.clear();
@@ -37,7 +56,7 @@ void FileBrowser::refresh() {
         std::string name = it->path().filename().string();
         if (!name.empty() && name[0] == '.')
             continue;
-        if (!isDir && !extension_.empty() && it->path().extension() != extension_)
+        if (!isDir && !extension_.empty() && !matchesExtension(it->path()))
             continue;
         items_.push_back({name, isDir});
     }

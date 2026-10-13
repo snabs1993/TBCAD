@@ -577,3 +577,57 @@ TEST_CASE("SETTINGS asks the window to open the dialog") {
     CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
     CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
+
+TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, never .dwg") {
+    Fixture f("foreign");
+    fs::path src = f.dir / "plan.dwg";
+    { std::ofstream(src, std::ios::binary) << "original bytes"; }
+    f.core->setForeignReader(
+        ".dwg",
+        [](const fs::path&) -> Result<ForeignOpenResult> {
+            ForeignOpenResult r;
+            r.document = std::make_unique<Document>();
+            auto tx = r.document->begin("fake");
+            (void)tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}});
+            tx.commit();
+            r.format = "DWG R2000";
+            r.messages = {"fake summary"};
+            return r;
+        },
+        true);
+    std::vector<fs::path> dxfWrites;
+    f.core->setDxfWriter([&](const Document&, const fs::path& p) -> Result<std::vector<std::string>> {
+        dxfWrites.push_back(p);
+        return std::vector<std::string>{};
+    });
+
+    CHECK(f.core->canOpenExtension(".dwg"));
+    REQUIRE(f.core->openFile(src).ok());
+    CHECK(f.core->readOnlyOrigin());
+    CHECK(f.core->document().modelSpaceCount() == 1);
+    CHECK(f.core->displayName() == "plan.dwg [Read-only]");
+    CHECK(f.core->readOnlyBanner().find("Save As") != std::string::npos);
+    CHECK_FALSE(f.core->modified());
+
+    f.line("0,0", "5,5");
+    CHECK(f.core->modified());
+    CHECK_FALSE(f.core->save().ok());                       // Ctrl+S never writes the .dwg
+    CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());      // nor any .dwg
+    CHECK_FALSE(fs::exists(f.dir / "x.dwg"));
+
+    REQUIRE(f.core->saveAs(f.dir / "copy.dxf").ok());
+    REQUIRE(dxfWrites.size() == 1);
+    CHECK(f.core->readOnlyOrigin());  // a DXF is only an export copy
+    CHECK(f.core->modified());
+
+    REQUIRE(f.core->saveAs(f.dir / "plan.tbcad").ok());
+    CHECK_FALSE(f.core->readOnlyOrigin());
+    CHECK_FALSE(f.core->modified());
+    CHECK(f.core->readOnlyBanner().empty());
+    CHECK(f.core->displayName() == "plan.tbcad");
+    REQUIRE(f.core->save().ok());
+
+    std::ifstream in(src, std::ios::binary);
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content == "original bytes");
+}
