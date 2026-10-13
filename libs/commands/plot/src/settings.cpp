@@ -50,10 +50,21 @@ PlotSettings loadSettings(const cmd::IHost& h) {
             s.area = PlotArea::Window;
     }
     if (auto v = h.setting("plot.window"); v && !v->empty()) {
-        double a = 0, b = 0, c = 0, d = 0;
-        if (std::sscanf(v->c_str(), "%lf,%lf,%lf,%lf", &a, &b, &c, &d) == 4) {
-            s.window.min = {a, b};
-            s.window.max = {c, d};
+        double vals[4] = {};
+        const char* p = v->c_str();
+        int n = 0;
+        for (; n < 4; ++n) {
+            char* end = nullptr;
+            vals[n] = std::strtod(p, &end);
+            if (end == p)
+                break;
+            p = end;
+            if (*p == ',')
+                ++p;
+        }
+        if (n == 4) {
+            s.window.min = {vals[0], vals[1]};
+            s.window.max = {vals[2], vals[3]};
         }
     }
     s.fitToPaper = getB(h, "plot.fit", s.fitToPaper);
