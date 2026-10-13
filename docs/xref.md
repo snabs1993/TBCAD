@@ -39,7 +39,7 @@ unsaved drawing uses the current folder. The stored path is the text the user ty
 An **attached** xref travels with its drawing: if drawing B attaches A and drawing C attaches B, C
 shows A too. An **overlay** xref is shown in the drawing that holds it but is left out when that
 drawing is used as an xref (so two drawings can overlay each other without a loop). `XLIST` marks
-overlays. The flag is stored in the `XRFO` chunk (format 1.4).
+overlays. The flag is stored in the `XRFO` chunk (format 1.5).
 
 ## Paths
 

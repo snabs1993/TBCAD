@@ -214,3 +214,49 @@ TEST_CASE("the hot grip is set while GRIPEDIT waits and cleared afterwards") {
     f.host.feed({cmd::ScriptItem::esc()});
     CHECK_FALSE(tf::hotGrip().has_value());
 }
+
+TEST_CASE("a dynamic block insert offers the handle of its linear parameter") {
+    Fixture f;
+    BlockId block;
+    {
+        auto tx = f.doc.begin("block");
+        block = tx.addBlock(BlockDef{.name = "Bar"}).value();
+        Entity l;
+        l.data = LineData{{0, 0}, {10, 0}};
+        REQUIRE(tx.add(std::move(l), block).ok());
+        DynamicDef def;
+        DynParam w;
+        w.name = "Length";
+        w.base = {0, 0};
+        w.end = {10, 0};
+        def.params.push_back(w);
+        DynAction stretch;
+        stretch.kind = DynAction::Kind::Stretch;
+        stretch.frameMin = {9, -1};
+        stretch.frameMax = {11, 1};
+        def.actions.push_back(stretch);
+        REQUIRE(tx.modifyBlock(block, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok());
+        tx.commit();
+    }
+    // the action must name the line; set it now that the entity exists
+    {
+        auto tx = f.doc.begin("action");
+        std::vector<EntityId> members = f.doc.block(block)->entities;
+        REQUIRE(tx.modifyBlock(block, [&](BlockDef& d) {
+                      d.dynamic->actions[0].objects = members;
+                  }).ok());
+        tx.commit();
+    }
+    auto ins = add(f.doc, InsertData{block, {50, 0}, {1, 1}, 0});
+    std::vector<EntityId> ids{ins};
+    auto grips = tf::collectGrips(f.doc, ids);
+    REQUIRE(grips.size() == 2);  // the position and the Length handle
+    CHECK(grips[1].index == tf::kDynGripBase);
+    CHECK(near(grips[1].pos, {60, 0}));
+
+    tf::Grip hot = grips[1];
+    std::string error;
+    auto moved = tf::stretchResults(f.doc, grips, hot, {5, 0}, &error);
+    REQUIRE(moved.size() == 1);
+    CHECK(entityAs<InsertData>(moved[0].second)->dynValues == std::vector<double>{15});
+}

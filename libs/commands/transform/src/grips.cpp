@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "tbcad/blocks/dynamic.h"
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::transform {
@@ -51,6 +52,8 @@ std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> id
         auto pts = geom::gripPoints(*e);
         for (std::size_t i = 0; i < pts.size(); ++i)
             out.push_back({id, static_cast<int>(i), pts[i]});
+        for (const blocks::DynHandle& h : blocks::dynHandles(doc, *e))
+            out.push_back({id, kDynGripBase + h.param, h.world});
     }
     return out;
 }
@@ -123,7 +126,9 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
         Entity cur = *src;
         bool ok = true;
         for (int idx : indices[k]) {
-            auto moved = geom::moveGrip(cur, idx, hot.pos + delta);
+            auto moved = idx >= kDynGripBase
+                             ? blocks::dynDrag(doc, cur, idx - kDynGripBase, hot.pos + delta)
+                             : geom::moveGrip(cur, idx, hot.pos + delta);
             if (!moved) {
                 ok = false;
                 if (error && error->empty())

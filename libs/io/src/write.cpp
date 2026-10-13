@@ -166,7 +166,7 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             xrfs.i64(r.xrefStamp);
         }
 
-        // Overlay flags of xrefs (since 1.4); only when at least one xref is an overlay.
+        // Overlay flags of xrefs (since 1.5); only when at least one xref is an overlay.
         ByteWriter xrfo;
         std::size_t overlayCount = 0;
         for (const auto& [id, r] : doc.blocks())
@@ -175,6 +175,46 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         for (const auto& [id, r] : doc.blocks())
             if (!r.xrefPath.empty() && r.xrefOverlay)
                 xrfo.varint(id.value);
+
+        // Dynamic block definitions (format 1.4).
+        ByteWriter dynb;
+        std::size_t dynCount = 0;
+        for (const auto& [id, r] : doc.blocks())
+            dynCount += r.dynamic ? 1 : 0;
+        dynb.varint(dynCount);
+        for (const auto& [id, r] : doc.blocks()) {
+            if (!r.dynamic)
+                continue;
+            dynb.varint(id.value);
+            dynb.varint(r.dynamic->params.size());
+            for (const DynParam& p : r.dynamic->params) {
+                dynb.u8(static_cast<std::uint8_t>(p.kind));
+                dynb.varint(st.intern(p.name));
+                dynb.vec2(p.base);
+                dynb.vec2(p.end);
+                dynb.f64(p.min);
+                dynb.f64(p.max);
+                dynb.varint(p.states.size());
+                for (std::size_t i = 0; i < p.states.size(); ++i) {
+                    dynb.varint(st.intern(p.states[i]));
+                    const auto none = std::vector<EntityId>{};
+                    const auto& objs = i < p.stateObjects.size() ? p.stateObjects[i] : none;
+                    dynb.varint(objs.size());
+                    for (EntityId e : objs)
+                        dynb.varint(e.value);
+                }
+            }
+            dynb.varint(r.dynamic->actions.size());
+            for (const DynAction& a : r.dynamic->actions) {
+                dynb.u8(static_cast<std::uint8_t>(a.kind));
+                dynb.varint(static_cast<std::uint64_t>(std::max(a.param, 0)));
+                dynb.vec2(a.frameMin);
+                dynb.vec2(a.frameMax);
+                dynb.varint(a.objects.size());
+                for (EntityId e : a.objects)
+                    dynb.varint(e.value);
+            }
+        }
 
         // Entities in id order, split over ENTS chunks of about 8 MiB.
         std::vector<const Entity*> ents;
@@ -248,6 +288,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
         if (overlayCount > 0)
             appendChunk(out, kXrfo, xrfo.bytes(), options.compress);
+        if (dynCount > 0)
+            appendChunk(out, kDynb, dynb.bytes(), options.compress);
         for (const auto& c : entChunks)
             appendChunk(out, kEnts, c, options.compress);
         if (ordr.size() != 0)

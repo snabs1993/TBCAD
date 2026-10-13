@@ -350,6 +350,66 @@ TEST_CASE("round trip: associative arrays of every kind") {
     CHECK(arrays == 3);
 }
 
+TEST_CASE("round trip: dynamic block definitions and values") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("dynamic");
+        BlockId blk = tx.addBlock(BlockDef{.name = "Door"}).value();
+        Entity a;
+        a.data = LineData{{0, 0}, {10, 0}};
+        EntityId first = tx.add(std::move(a), blk).value();
+        Entity b;
+        b.data = CircleData{{5, 5}, 1};
+        EntityId second = tx.add(std::move(b), blk).value();
+        DynamicDef def;
+        DynParam w;
+        w.name = "Width";
+        w.base = {0, 0};
+        w.end = {10, 0};
+        w.min = 5;
+        w.max = 30;
+        def.params.push_back(w);
+        DynParam v;
+        v.kind = DynParam::Kind::Visibility;
+        v.name = "Style";
+        v.states = {"Open", "ปิด"};
+        v.stateObjects = {{first}, {second}};
+        def.params.push_back(v);
+        DynAction act;
+        act.kind = DynAction::Kind::Stretch;
+        act.param = 0;
+        act.frameMin = {9, -1};
+        act.frameMax = {11, 1};
+        act.objects = {first};
+        def.actions.push_back(act);
+        REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok());
+        Entity ins;
+        InsertData data{blk, {3, 3}, {1, 1}, 0};
+        data.dynValues = {14, 1};
+        ins.data = Indirect<InsertData>(std::move(data));
+        (void)tx.add(std::move(ins));
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    const BlockDef* def = back->blockByName("Door");
+    REQUIRE((def && def->dynamic));
+    CHECK(def->dynamic->params.size() == 2);
+    CHECK(def->dynamic->params[1].states[1] == "ปิด");
+    CHECK(def->dynamic->params[0].max == 30);
+    REQUIRE(def->dynamic->actions.size() == 1);
+    CHECK(def->dynamic->actions[0].objects.size() == 1);
+    int values = 0;
+    back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e)) {
+            ++values;
+            CHECK(i->dynValues == std::vector<double>{14, 1});
+        }
+    });
+    CHECK(values == 1);
+}
+
 TEST_CASE("round trip: external reference fields of a block") {
     Document doc;
     {
