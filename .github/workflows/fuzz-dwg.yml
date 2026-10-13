@@ -1,0 +1,49 @@
+name: Fuzz DWG reader
+
+# 30 s on every pull request that touches the DWG code, 5 min every night.
+on:
+  pull_request:
+    paths:
+      - "libs/dwg/**"
+      - ".github/workflows/fuzz-dwg.yml"
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-dwg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: libFuzzer DWG (clang, ASan + UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang libclang-rt-18-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build/fuzz -G Ninja
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DWG_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
+      - name: Build
+        run: cmake --build build/fuzz --target tbcad_dwg_fuzz_dwg
+      - name: Fuzz
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
+          mkdir -p build/fuzz-corpus-dwg artifacts
+          printf 'AC1015\0\0\0\0\0\0\0' > build/fuzz-corpus-dwg/header
+          build/fuzz/libs/dwg/tbcad_dwg_fuzz_dwg build/fuzz-corpus-dwg \
+            -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=artifacts/
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dwg-fuzz-crashes
+          path: artifacts/
+          if-no-files-found: ignore
