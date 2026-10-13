@@ -85,8 +85,7 @@ private:
     pdf::LineCap cap_ = pdf::LineCap::Butt;
 };
 
-void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, const std::string& title) {
-    doc.setInfo(title, "TBCAD");
+void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
     const PlotLayout& lay = sheet.layout;
     pdf::Page& page = doc.addPage(lay.pageWidthMm, lay.pageHeightMm);
     page.save();
@@ -122,9 +121,16 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, const std::string& tit
 
 Result<void> writePdf(const PlotSheet& sheet, const std::string& path, const std::string& title,
                       bool compress) {
+    return writePdfPages({sheet}, path, title, compress);
+}
+
+Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::string& path,
+                           const std::string& title, bool compress) {
     pdf::PdfDocument doc;
     doc.setCompression(compress);
-    paint(sheet, doc, title);
+    doc.setInfo(title, "TBCAD");
+    for (const PlotSheet& sheet : sheets)
+        paint(sheet, doc);
     pdf::Result r = doc.writeFile(path);
     if (!r)
         return Error{ErrorCode::Io, r.error};
@@ -134,7 +140,8 @@ Result<void> writePdf(const PlotSheet& sheet, const std::string& path, const std
 Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
     pdf::PdfDocument doc;
     doc.setCompression(compress);
-    paint(sheet, doc, "TBCAD drawing");
+    doc.setInfo("TBCAD drawing", "TBCAD");
+    paint(sheet, doc);
     std::ostringstream out;
     pdf::Result r = doc.write(out);
     if (!r)

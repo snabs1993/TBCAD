@@ -8,7 +8,8 @@ endif()
 
 tbcad_add_library(plot
   SOURCES ${_plot_sources}
-  DEPENDS tbcad::cmd tbcad::core tbcad::geom tbcad::export tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::core tbcad::geom tbcad::export tbcad::ui tbcad::layout
+          tbcad::sheets)
 if(TBCAD_BUILD_APP)
   target_link_libraries(tbcad_plot PRIVATE tbcad::imgui)
   target_compile_definitions(tbcad_plot PRIVATE TBCAD_PLOT_WITH_IMGUI=1)
