@@ -7,6 +7,7 @@
 #include "internal.h"
 #include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
+#include "tbcad/blocks/dynamic.h"
 
 namespace tbcad::blocks {
 
@@ -124,9 +125,9 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
     BBox2 box;
     if (depth > kMaxNesting)
         return box;
-    for (EntityId id : def.entities) {
-        const Entity* e = doc.find(id);
-        if (!e || !e->common.visible)
+    std::vector<Entity> storage;
+    for (const Entity* e : blockItems(doc, def, owner, storage)) {
+        if (!e->common.visible)
             continue;
         if (const auto* ins = entityAs<InsertData>(*e)) {
             if (const BlockDef* inner = doc.block(ins->block))

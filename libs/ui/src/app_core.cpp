@@ -112,6 +112,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("edit.redo", "Ctrl+Y");
     keybindings_.declare("edit.selectAll", "Ctrl+A");
     keybindings_.declare("edit.deselect", "Escape");
+    keybindings_.declare("edit.delete", "Delete");
     keybindings_.declare("view.zoomExtents", "");
     keybindings_.declare("view.toggleCommandLine", "");
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");

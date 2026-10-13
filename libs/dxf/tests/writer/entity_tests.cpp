@@ -660,6 +660,36 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
     CHECK(attribs == 2);
 }
 
+TEST_CASE("a dynamic block is exported as its current geometry") {
+    Document doc;
+    {
+        auto tx = doc.begin("dynamic");
+        BlockId b = tx.addBlock(BlockDef{.name = "BAR"}).value();
+        EntityId line = tx.add(make(LineData{{0, 0}, {10, 0}}), b).value();
+        DynamicDef def;
+        DynParam w;
+        w.name = "Length";
+        w.base = {0, 0};
+        w.end = {10, 0};
+        def.params.push_back(w);
+        DynAction move;
+        move.kind = DynAction::Kind::Move;
+        move.objects = {line};
+        def.actions.push_back(move);
+        REQUIRE(tx.modifyBlock(b, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok());
+        InsertData ins{b, {100, 0}, {1, 1}, 0};
+        ins.dynValues = {13};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    std::string text = rt.bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    // no INSERT of the dynamic block; the line of the current state is in the model space
+    CHECK(text.find("\nINSERT\n") == std::string::npos);
+    CHECK(text.find("\n10\n103.0") != std::string::npos);
+}
+
 TEST_CASE("an associative array is exported as one INSERT per item") {
     Document doc;
     {

@@ -82,7 +82,7 @@ public:
 
 private:
     enum class Pending { None, Close, Exit };
-    enum class BrowserPurpose { Open, SaveAs };
+    enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf };
 
     void shortcuts();
     void menuBar();
@@ -111,6 +111,9 @@ private:
     void doNew();
     void doOpen();
     void doOpenPath(const std::string& path);
+    void doImportDxf();
+    void doExportDxf();
+    void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
     void doSave();
     void doSaveAs();
     void afterSavePrompt(bool saved);

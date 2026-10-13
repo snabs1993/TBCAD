@@ -5,6 +5,7 @@
 #include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/display.h"
+#include "tbcad/blocks/dynamic.h"
 
 namespace tbcad::blocks {
 
@@ -56,9 +57,9 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
                                              const Entity& insert,
                                              const geom::DisplayContext& child) {
     auto list = std::make_shared<DisplayList>();
-    for (EntityId id : def.entities) {
-        const Entity* e = doc.find(id);
-        if (!e || !e->common.visible)
+    std::vector<Entity> storage;
+    for (const Entity* e : blockItems(doc, def, entityAs<InsertData>(insert), storage)) {
+        if (!e->common.visible)
             continue;
         // Attribute definitions show per-insert values and are added by buildInsertDisplay.
         if (const auto* t = entityAs<TextData>(*e); t && t->attdef)
@@ -136,7 +137,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     const double stretch = std::max(maxStretch(t), 1e-12);
     child.chordTolMm = quantizeTolerance(ctx.tolerance() / stretch);
 
-    BlockDisplayCache* cache = g_active;
+    // A dynamic block looks different for every set of values, so it is not shared.
+    BlockDisplayCache* cache = def->dynamic ? nullptr : g_active;
     std::shared_ptr<const DisplayList> blockSpace;
     BlockDisplayCache::Key key;
     if (cache) {
