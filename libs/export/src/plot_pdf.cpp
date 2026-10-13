@@ -131,10 +131,7 @@ Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::stri
     doc.setInfo(title, "TBCAD");
     for (const PlotSheet& sheet : sheets)
         paint(sheet, doc);
-    pdf::Result r = doc.writeFile(path);
-    if (!r)
-        return Error{ErrorCode::Io, r.error};
-    return {};
+    return doc.writeFile(path);
 }
 
 Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
@@ -143,9 +140,9 @@ Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
     doc.setInfo("TBCAD drawing", "TBCAD");
     paint(sheet, doc);
     std::ostringstream out;
-    pdf::Result r = doc.write(out);
+    Result<void> r = doc.write(out);
     if (!r)
-        return Error{ErrorCode::Io, r.error};
+        return r.error();
     return out.str();
 }
 

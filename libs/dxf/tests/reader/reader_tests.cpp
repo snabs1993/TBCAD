@@ -472,7 +472,9 @@ TEST_CASE("inserts: a block defined after its first use is resolved") {
 }
 
 TEST_CASE("dimensions: definition points and the drawn graphics") {
-    Loaded l = loadCorpus("r2000_dimensions.dxf");
+    ImportOptions withGraphics;
+    withGraphics.dimensionGraphics = true;
+    Loaded l = loadCorpus("r2000_dimensions.dxf", withGraphics);
     const Document& d = l.doc();
     auto dims = modelEntities<DimensionData>(d);
     REQUIRE(dims.size() == 6);
@@ -501,10 +503,8 @@ TEST_CASE("dimensions: definition points and the drawn graphics") {
     }
 }
 
-TEST_CASE("dimensions: graphics can be switched off") {
-    ImportOptions opt;
-    opt.dimensionGraphics = false;
-    Loaded l = loadCorpus("r2000_dimensions.dxf", opt);
+TEST_CASE("dimensions: the drawn graphics are not kept by default") {
+    Loaded l = loadCorpus("r2000_dimensions.dxf");
     CHECK(modelEntities<DimensionData>(l.doc()).size() == 6);
     CHECK(modelEntities<ProxyData>(l.doc()).empty());
 }

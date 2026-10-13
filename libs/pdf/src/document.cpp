@@ -102,7 +102,7 @@ Page& PdfDocument::addPage(double widthMm, double heightMm) {
     return pages_.back();
 }
 
-Result PdfDocument::write(std::ostream& out) const {
+Result<void> PdfDocument::write(std::ostream& out) const {
     // Object numbering: 1 catalog, 2 pages, 3 info, then (page, content) pairs.
     const size_t pageObj0 = 4;
     std::string buf;
@@ -160,7 +160,7 @@ Result PdfDocument::write(std::ostream& out) const {
                                   reinterpret_cast<const unsigned char*>(raw.data()),
                                   static_cast<mz_ulong>(raw.size()), 6);
             if (rc != MZ_OK)
-                return Result::failure("deflate failed");
+                return makeError(ErrorCode::Io, "deflate failed");
             z.resize(zlen);
             payload = std::move(z);
             deflated = true;
@@ -183,22 +183,22 @@ Result PdfDocument::write(std::ostream& out) const {
 
     out.write(buf.data(), static_cast<std::streamsize>(buf.size()));
     if (!out)
-        return Result::failure("write to stream failed");
-    return Result::success();
+        return makeError(ErrorCode::Io, "write to stream failed");
+    return {};
 }
 
-Result PdfDocument::writeFile(const std::string& path) const {
+Result<void> PdfDocument::writeFile(const std::string& path) const {
     const std::u8string u8(path.begin(), path.end());
     std::ofstream f(std::filesystem::path(u8), std::ios::binary | std::ios::trunc);
     if (!f)
-        return Result::failure("cannot open for writing: " + path);
-    Result r = write(f);
+        return makeError(ErrorCode::Io, "cannot open for writing: " + path);
+    Result<void> r = write(f);
     if (!r)
         return r;
     f.close();
     if (!f)
-        return Result::failure("write failed: " + path);
-    return Result::success();
+        return makeError(ErrorCode::Io, "write failed: " + path);
+    return {};
 }
 
 }  // namespace tbcad::pdf
