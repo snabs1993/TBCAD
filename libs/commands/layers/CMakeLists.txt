@@ -9,6 +9,8 @@ configure_file(src/builtin_linetypes.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/builtin
 
 set(_layers_sources
   src/layer_ops.cpp
+  src/layer_states.cpp
+  src/state_commands.cpp
   src/linetype_file.cpp
   src/properties.cpp
   src/layer_commands.cpp
@@ -38,9 +40,10 @@ tbcad_add_tests(layers
     tests/main.cpp
     tests/layer_ops_tests.cpp
     tests/layer_command_tests.cpp
+    tests/layer_state_tests.cpp
     tests/linetype_tests.cpp
     tests/properties_tests.cpp
-  DEPENDS tbcad_layers tbcad_command_registry)
+  DEPENDS tbcad_layers tbcad_command_registry tbcad::io)
 if(TARGET tbcad_layers_tests)
   target_compile_definitions(tbcad_layers_tests PRIVATE TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 endif()
