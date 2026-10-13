@@ -23,13 +23,13 @@ TEST_CASE("wheel opens only after the delay") {
 }
 
 TEST_CASE("wheel slices are clockwise from the top") {
-    CHECK(wheelSliceAt(0, -100, 20) == 0);    // up
-    CHECK(wheelSliceAt(100, 0, 20) == 2);     // right
-    CHECK(wheelSliceAt(0, 100, 20) == 4);     // down
-    CHECK(wheelSliceAt(-100, 0, 20) == 6);    // left
-    CHECK(wheelSliceAt(70, -70, 20) == 1);    // up-right
-    CHECK(wheelSliceAt(-1, -100, 20) == 0);   // just left of up is still slice 0
-    CHECK(wheelSliceAt(5, 5, 20) == -1);      // dead zone
+    CHECK(wheelSliceAt(0, -100, 20) == 0);   // up
+    CHECK(wheelSliceAt(100, 0, 20) == 2);    // right
+    CHECK(wheelSliceAt(0, 100, 20) == 4);    // down
+    CHECK(wheelSliceAt(-100, 0, 20) == 6);   // left
+    CHECK(wheelSliceAt(70, -70, 20) == 1);   // up-right
+    CHECK(wheelSliceAt(-1, -100, 20) == 0);  // just left of up is still slice 0
+    CHECK(wheelSliceAt(5, 5, 20) == -1);     // dead zone
     CHECK(wheelSliceAt(0, -100, 20, 0) == -1);
     CHECK(wheelSliceAt(0, -100, 20, 4) == 0);
     CHECK(wheelSliceAt(100, 0, 20, 4) == 1);

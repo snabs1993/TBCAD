@@ -15,12 +15,12 @@
 
 #include "icons.h"
 #include "key_map.h"
-#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
 #include "tbcad/ui/drag_payload.h"
+#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -1829,8 +1829,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
             const double heldMs = io.MouseDownDuration[ImGuiMouseButton_Right] * 1000.0;
             if (!wheel_.isOpen() && !core_.runner().active() &&
-                ui::wheelShouldOpen(heldMs, core_.settings().getNumber(
-                                                "ui.wheel.delayMs", ui::kWheelDefaultDelayMs)))
+                ui::wheelShouldOpen(heldMs, core_.settings().getNumber("ui.wheel.delayMs",
+                                                                       ui::kWheelDefaultDelayMs)))
                 wheel_.open(io.MouseClickedPos[ImGuiMouseButton_Right],
                             ui::parseWheelTools(core_.settings().getString("ui.wheel.tools", "")));
         } else {
@@ -1845,8 +1845,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         }
     }
     if (wheel_.isOpen())
-        wheel_.draw(io.MousePos, dpiScale_ * static_cast<float>(core_.settings().getNumber(
-                                                 "ui.scale", 1.0)),
+        wheel_.draw(io.MousePos,
+                    dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)),
                     theme_);
     viewportMenu();
 

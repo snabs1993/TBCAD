@@ -17,15 +17,30 @@ ImU32 colour(Rgba c) {
 
 // Tools that have a tool-strip icon; the rest show their name only.
 const std::map<std::string, Icon>& iconFor() {
-    static const std::map<std::string, Icon> m = {
-        {"LINE", Icon::Line},         {"POLYLINE", Icon::Polyline}, {"CIRCLE", Icon::Circle},
-        {"ARC", Icon::Arc},           {"RECTANGLE", Icon::Rectangle}, {"HATCH", Icon::Hatch},
-        {"TEXT", Icon::Text},         {"MOVE", Icon::Move},         {"COPY", Icon::Copy},
-        {"ROTATE", Icon::Rotate},     {"SCALE", Icon::Scale},       {"MIRROR", Icon::Mirror},
-        {"STRETCH", Icon::Stretch},   {"TRIM", Icon::Trim},         {"OFFSET", Icon::Offset},
-        {"FILLET", Icon::Fillet},     {"ERASE", Icon::Erase},       {"UNDO", Icon::Undo},
-        {"REDO", Icon::Redo},         {"SAVE", Icon::Save},         {"QSAVE", Icon::Save},
-        {"OPEN", Icon::Open},         {"NEW", Icon::New},           {"ZOOM", Icon::ZoomExtents}};
+    static const std::map<std::string, Icon> m = {{"LINE", Icon::Line},
+                                                  {"POLYLINE", Icon::Polyline},
+                                                  {"CIRCLE", Icon::Circle},
+                                                  {"ARC", Icon::Arc},
+                                                  {"RECTANGLE", Icon::Rectangle},
+                                                  {"HATCH", Icon::Hatch},
+                                                  {"TEXT", Icon::Text},
+                                                  {"MOVE", Icon::Move},
+                                                  {"COPY", Icon::Copy},
+                                                  {"ROTATE", Icon::Rotate},
+                                                  {"SCALE", Icon::Scale},
+                                                  {"MIRROR", Icon::Mirror},
+                                                  {"STRETCH", Icon::Stretch},
+                                                  {"TRIM", Icon::Trim},
+                                                  {"OFFSET", Icon::Offset},
+                                                  {"FILLET", Icon::Fillet},
+                                                  {"ERASE", Icon::Erase},
+                                                  {"UNDO", Icon::Undo},
+                                                  {"REDO", Icon::Redo},
+                                                  {"SAVE", Icon::Save},
+                                                  {"QSAVE", Icon::Save},
+                                                  {"OPEN", Icon::Open},
+                                                  {"NEW", Icon::New},
+                                                  {"ZOOM", Icon::ZoomExtents}};
     return m;
 }
 

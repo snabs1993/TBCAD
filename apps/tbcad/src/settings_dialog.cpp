@@ -11,10 +11,10 @@
 
 #include "key_map.h"
 #include "tbcad/cmd/input.h"
-#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
+#include "tbcad/ui/radial_wheel.h"
 
 namespace tbcad::app {
 
@@ -116,12 +116,13 @@ void SettingsDialog::wheel(ui::AppCore& core) {
         s.setNumber("ui.wheel.delayMs", delay);
 
     static const char* const kChoices[] = {
-        "LINE",   "POLYLINE", "CIRCLE", "ARC",    "RECTANGLE", "HATCH",  "TEXT",    "MOVE",
-        "COPY",   "ROTATE",   "SCALE",  "MIRROR", "STRETCH",   "TRIM",   "OFFSET",  "FILLET",
-        "ERASE",  "EXTEND",   "DIM",    "UNDO",   "REDO",      "ZOOM",   "LAYER",   "ORTHO"};
+        "LINE",  "POLYLINE", "CIRCLE", "ARC",    "RECTANGLE", "HATCH", "TEXT",   "MOVE",
+        "COPY",  "ROTATE",   "SCALE",  "MIRROR", "STRETCH",   "TRIM",  "OFFSET", "FILLET",
+        "ERASE", "EXTEND",   "DIM",    "UNDO",   "REDO",      "ZOOM",  "LAYER",  "ORTHO"};
     std::vector<std::string> tools = ui::parseWheelTools(s.getString("ui.wheel.tools", ""));
     bool changed = false;
-    ImGui::TextDisabled("Slots run clockwise from the top. Pick a tool, or type any command or alias.");
+    ImGui::TextDisabled(
+        "Slots run clockwise from the top. Pick a tool, or type any command or alias.");
     for (int i = 0; i < ui::kWheelSlots; ++i) {
         std::string& t = tools[static_cast<std::size_t>(i)];
         ImGui::PushID(i);

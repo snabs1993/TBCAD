@@ -10,13 +10,13 @@
 
 #include "file_browser.h"
 #include "settings_dialog.h"
-#include "wheel_menu.h"
 #include "tbcad/core/color.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/ui/workspace.h"
+#include "wheel_menu.h"
 
 struct GLFWwindow;
 
