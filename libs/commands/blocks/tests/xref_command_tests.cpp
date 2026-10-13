@@ -276,7 +276,7 @@ TEST_CASE("UNDERLAYFADE changes the fade of a picture and of a PDF page") {
     f.host->run("UNDERLAYFADE", {"pg", "20"});
     const BlockDef* def = f.doc.blockByName("pg");
     REQUIRE(def);
-    CHECK(def->xrefPath == pdf.string() + "#fade=20");
+    CHECK(def->xrefPath == pdf.generic_string() + "#fade=20");
     CHECK(f.doc.find(def->entities[0])->common.color == Color::rgb(32, 32, 32));
 }
 
