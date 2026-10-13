@@ -28,6 +28,7 @@ struct Options {
     bool gate = false;         // run the performance gate and exit
     bool vsync = true;
     bool help = false;
+    std::string listCommands{};  // --list-commands F: write the command list (Markdown) and exit
 };
 
 Options parseOptions(int argc, char** argv);

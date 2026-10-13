@@ -125,6 +125,8 @@ public:
     void zoomToEntities(const std::vector<EntityId>& ids);
     // Tessellate for the current zoom when it changed enough; call once per frame.
     void updateFrame(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+    // Snap / tracking feedback of the point prompt in progress (tooltip text for the window).
+    const cmd::FilterFeedback& feedback() const { return feedback_; }
     // Pixel position of the status-bar coordinates.
     Vec2 cursorWorld() const { return cursorWorld_; }
 
@@ -164,7 +166,9 @@ public:
     platform::Keybindings& keybindings() { return keybindings_; }
     const platform::AppPaths& paths() const { return paths_; }
     // Declares the default chords of the modules' menu items, then re-reads keybindings.json so
-    // the user's choices win. Call once after registerAllUi.
+    // the user's choices win. Also installs the registry's point filters and line parser into the
+    // command runner (now and for every document opened later). Call once after registerAllUi;
+    // the registry must outlive this object.
     void applyUiKeybindings(const UiRegistry& ui);
     // Adds the SNAP / GRID / ORTHO / POLAR / OSNAP toggles (stored in settings, readable by
     // drafting aids through IHost::setting("drafting.snap") ...).
@@ -195,8 +199,12 @@ private:
     void updateHover(const PointerState& p);
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
+    void notifySessionHooks();
 
     cmd::Registry& registry_;
+    cmd::PointFilterChain filterChain_{};
+    cmd::CommandLineParser* lineParser_ = nullptr;
+    const UiRegistry* ui_ = nullptr;
     platform::AppPaths paths_;
     platform::Settings settings_;
     platform::Keybindings keybindings_;

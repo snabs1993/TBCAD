@@ -903,3 +903,19 @@ TEST_CASE("sub-layer depth is limited to 8 levels") {
     CHECK(tx.modifyLayer(chain[7], [&](Layer& l) { l.parent = chain[6]; }));
     tx.commit();
 }
+
+TEST_CASE("touchedEntities lists modified and erased pre-existing entities only") {
+    Document doc;
+    EntityId a = addLine(doc, 0), b = addLine(doc, 10), c = addLine(doc, 20);
+    Transaction tx = doc.begin("edit");
+    CHECK(tx.touchedEntities().empty());
+    EntityId fresh = tx.add(line(0, 0, 1, 1)).value();
+    REQUIRE(tx.modify(fresh, [](Entity& e) { std::get<LineData>(e.data).b.x = 5; }));
+    CHECK(tx.touchedEntities().empty());  // added in this transaction
+    REQUIRE(tx.modify(c, [](Entity& e) { std::get<LineData>(e.data).b.x = 5; }));
+    REQUIRE(tx.erase(a));
+    REQUIRE(tx.modify(c, [](Entity& e) { std::get<LineData>(e.data).b.y = 7; }));
+    CHECK(tx.touchedEntities() == std::vector<EntityId>{a, c});  // sorted, each once, b untouched
+    (void)b;
+    tx.rollback();
+}

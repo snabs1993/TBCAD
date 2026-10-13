@@ -2,6 +2,7 @@ tbcad_add_library(cmd
   SOURCES
     src/builtin.cpp
     src/context.cpp
+    src/describe.cpp
     src/input.cpp
     src/registry.cpp
     src/runner.cpp
@@ -17,5 +18,6 @@ tbcad_add_tests(cmd
   SOURCES
     tests/main.cpp
     tests/alias_tests.cpp
+    tests/describe_tests.cpp
     tests/runner_tests.cpp
     tests/undo_tests.cpp)
