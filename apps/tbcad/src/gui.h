@@ -98,7 +98,6 @@ private:
     void cursorHud(const ViewportRect& rect);
     void logWindow();
     std::string actionLabel(const std::string& action) const;
-    void propertiesWindow();
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
@@ -131,7 +130,6 @@ private:
     bool showAbout_ = false;
     bool showNotices_ = false;
     bool showCommandLine_ = true;
-    bool showProperties_ = true;
     bool layoutBuilt_ = false;
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;

@@ -32,6 +32,9 @@ struct PanelContext {
     double apertureMm = 0;
     // A command is waiting for input (property panels may disable their edits meanwhile).
     bool commandActive = false;
+    // Draws the property sections other modules registered for this entity's kind (dimensions,
+    // hatch ...). Set by the application; empty in tests.
+    std::function<void(EntityId)> drawPropertySections{};
 };
 
 // The drawing a command module works on. Passed to the session hooks whenever a different

@@ -527,7 +527,6 @@ void Gui::menuBar() {
         ImGui::Separator();
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
-        ImGui::MenuItem("Properties", nullptr, &showProperties_);
         if (ImGui::MenuItem("Command Log", keys.label("view.expandLog").c_str(), logExpanded_))
             logExpanded_ = !logExpanded_;
         if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
@@ -665,7 +664,6 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.22f, nullptr, &center);
     ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
-    ImGui::DockBuilderDockWindow("Properties", right);
     for (const auto& p : registry_.panels())
         ImGui::DockBuilderDockWindow(p.title.c_str(), right);
     ImGui::DockBuilderFinish(ds);
@@ -1133,45 +1131,6 @@ void Gui::startPage(const ViewportRect& rect) {
     ImGui::PopStyleVar();
 }
 
-void Gui::propertiesWindow() {
-    if (!showProperties_)
-        return;
-    ImGui::SetNextWindowSize(ImVec2(280, 400), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Properties", &showProperties_)) {
-        const auto& sel = core_.selection();
-        const Document& doc = core_.document();
-        if (sel.empty()) {
-            ImGui::TextDisabled("Nothing selected");
-        } else if (sel.size() == 1) {
-            const Entity* e = doc.find(sel[0]);
-            if (e) {
-                ImGui::TextUnformatted(kindName(kind(*e)));
-                const Layer* layer = doc.layer(e->common.layer);
-                ImGui::Text("Layer: %s", layer ? layer->name.c_str() : "?");
-                ui::PanelContext pc;
-                pc.doc = &core_.document();
-                pc.host = &core_;
-                pc.selection = &sel;
-                pc.camera = &core_.camera();
-                pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
-                for (const auto* section : registry_.sectionsFor(kind(*e))) {
-                    ImGui::Separator();
-                    section->draw(pc, sel[0]);
-                }
-            }
-        } else {
-            std::map<std::string, int> counts;
-            for (EntityId id : sel)
-                if (const Entity* e = doc.find(id))
-                    ++counts[kindName(kind(*e))];
-            ImGui::Text("%zu objects selected", sel.size());
-            for (const auto& [name, n] : counts)
-                ImGui::BulletText("%s: %d", name.c_str(), n);
-        }
-    }
-    ImGui::End();
-}
-
 void Gui::panels() {
     ui::PanelContext pc;
     pc.doc = &core_.document();
@@ -1179,6 +1138,16 @@ void Gui::panels() {
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
     pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    pc.commandActive = core_.runner().active();
+    pc.drawPropertySections = [this, &pc](EntityId id) {
+        const Entity* e = core_.document().find(id);
+        if (!e)
+            return;
+        for (const auto* section : registry_.sectionsFor(kind(*e))) {
+            ImGui::Separator();
+            section->draw(pc, id);
+        }
+    };
     for (const std::string& id : core_.takePanelRequests())
         panelOpen_[id] = true;
     for (const auto& p : registry_.panels()) {
@@ -1298,7 +1267,6 @@ ViewportRect Gui::frame() {
     dockLayout(kDockId);
     commandWindow();
     if (!cleanScreen_) {
-        propertiesWindow();
         panels();
     }
     logWindow();
