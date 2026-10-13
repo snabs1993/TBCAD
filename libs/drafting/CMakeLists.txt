@@ -7,6 +7,7 @@ tbcad_add_library(drafting
     src/point_parser.cpp
     src/snap_geometry.cpp
     src/osnap.cpp
+    src/dyninput.cpp
     src/filters.cpp
     src/grid.cpp
     src/ucs.cpp
@@ -19,5 +20,6 @@ tbcad_add_tests(drafting
     tests/parser_tests.cpp
     tests/osnap_tests.cpp
     tests/tracking_tests.cpp
+    tests/dyninput_tests.cpp
     tests/grid_tests.cpp
     tests/ucs_tests.cpp)

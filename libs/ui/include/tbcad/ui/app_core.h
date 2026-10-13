@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include "tbcad/render/camera.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
+#include "tbcad/ui/foreign_files.h"
 #include "tbcad/ui/scene_sync.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
@@ -64,8 +66,12 @@ public:
     // Problems found while reading settings, keybindings and aliases (shown in the history).
     const std::vector<std::string>& startupWarnings() const { return startupWarnings_; }
     // Autosaves from a crashed session, if any.
+    // Unsaved drawings found in the autosave folder (one entry per drawing), and the first of them.
+    std::vector<Recovery> pendingRecoveries() const;
     std::optional<Recovery> pendingRecovery() const;
     Result<void> recover(const Recovery& r);
+    // Opens every pending recovery (the first replaces the untouched drawing, the rest get tabs).
+    Result<void> recoverAll();
     void discardRecovery();
     // Writes settings; removes the autosave. Call on a normal exit.
     void shutdown();
@@ -108,6 +114,14 @@ public:
     Result<void> saveAs(const std::filesystem::path& path);
     bool hasFile() const;
     const std::filesystem::path& file() const;
+    // Foreign formats. `extension` is lower case with the dot (".dwg"). A read-only format
+    // opens as a copy: Save always asks for a new name and never writes the original.
+    void setForeignReader(std::string extension, ForeignReadFn read, bool readOnly);
+    bool canOpenExtension(std::string_view lowerExtension) const;
+    // True while the drawing came from a read-only format and has not been saved as .tbcad.
+    bool readOnlyOrigin() const;
+    // One-line banner for a read-only drawing; empty otherwise.
+    std::string readOnlyBanner() const;
     bool modified() const;
     // "Untitled" or the file name.
     std::string displayName() const;
@@ -186,6 +200,9 @@ public:
     // Crosshair, pick box, command preview, snap marker, selection rectangle and the overlay
     // drawers modules registered. Cleared first.
     void buildOverlay(render::Overlay& overlay, const UiRegistry* ui = nullptr);
+    // What lies under the drawing (the grid): the modules' underlay drawers. Cleared first; the
+    // window draws it before the scene.
+    void buildUnderlay(render::Overlay& underlay, const UiRegistry* ui = nullptr);
 
     // ---- notices -----------------------------------------------------------------------------
     const std::optional<OutOfAreaNotice>& outOfAreaNotice() const { return outOfArea_; }
@@ -211,7 +228,7 @@ public:
     // Once every couple of seconds: when an external reference changed on disk and no command is
     // running, reloads it (XRELOAD). The window calls it every frame.
     void tickXrefs(std::chrono::steady_clock::time_point now);
-    // Writes the autosave now when the drawing has unsaved changes. True if one was written.
+    // Writes the autosave of every open drawing that has unsaved changes. True if any was written.
     bool autosaveNow();
 
     // ---- cmd::IHost --------------------------------------------------------------------------
@@ -250,12 +267,18 @@ private:
     std::optional<std::size_t> slotOfFile(const std::filesystem::path& path) const;
     void resetSessionState();
     void removeAutosaveFiles();
+    void removeAutosaveOf(std::uint64_t slotId);
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
     void notifySessionHooks();
 
+    struct ForeignReader {
+        ForeignReadFn read{};
+        bool readOnly = true;
+    };
+    std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
@@ -294,7 +317,6 @@ private:
     std::optional<std::string> clipboardOut_{};
 
     std::chrono::steady_clock::time_point lastAutosave_{};
-    std::uint64_t autosavedRevision_ = ~std::uint64_t{0};
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
 };

@@ -155,7 +155,9 @@ public:
         if (!at.ok())
             co_return;
         for (EntityData& d : buildAreaTable(ctx.doc(), shapes, at.point, opt)) {
-            auto id = ctx.tx().add(Entity{{}, std::move(d)});
+            Entity created{{}, std::move(d)};
+            applyCurrentProperties(ctx.doc().header(), created);
+            auto id = ctx.tx().add(std::move(created));
             if (!id) {
                 ctx.message(id.error().message);
                 co_return;

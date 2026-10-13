@@ -149,6 +149,7 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
     s.snap = boolOf(keys::snap, false);
     s.dynUcs = boolOf(keys::dynUcs, false);
     s.grid = boolOf(keys::grid, false);
+    s.dynInput = boolOf(keys::dynInput, true);
     if (auto m = get(keys::osnapModes))
         if (auto mask = parseSnapModes(*m))
             s.modes = *mask;

@@ -88,3 +88,12 @@ TEST_CASE("point filters and the line parser are stored for AppCore to install")
     ui.setLineParser(&p);
     CHECK(ui.lineParser() == &p);
 }
+
+TEST_CASE("underlay drawers are kept apart from overlay drawers") {
+    UiRegistry ui;
+    ui.addUnderlayDrawer(nullptr);
+    CHECK(ui.underlayDrawers().empty());
+    ui.addUnderlayDrawer([](PanelContext&, render::Overlay&) {});
+    CHECK(ui.underlayDrawers().size() == 1);
+    CHECK(ui.overlayDrawers().empty());
+}

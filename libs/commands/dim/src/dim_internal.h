@@ -13,6 +13,9 @@ namespace tbcad::dimcmd {
 std::unique_ptr<cmd::Command> makeDimStyleCommand();
 std::unique_ptr<cmd::Command> makeSmartDimCommand();
 std::unique_ptr<cmd::Command> makeMLeaderCommand();
+std::unique_ptr<cmd::Command> makeContinueCommand();
+std::unique_ptr<cmd::Command> makeBaselineCommand();
+std::unique_ptr<cmd::Command> makeTextEditCommand();
 
 // Shared by the dimension commands (dim_helpers.cpp).
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out);

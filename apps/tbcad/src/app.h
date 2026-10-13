@@ -81,6 +81,7 @@ private:
     ViewportTarget target_;
     ViewportTarget captureTarget_;
     std::atomic<bool> windowReady_{false};  // glfwPostEmptyEvent is only legal after glfwInit
+    render::Overlay underlay_;
     render::Overlay overlay_;
     std::string iniPath_{};
     bool imguiReady_ = false;

@@ -1,6 +1,7 @@
 #pragma once
 
 // Umbrella header of the drafting aids library.
+#include "tbcad/drafting/dyninput.h"
 #include "tbcad/drafting/env.h"
 #include "tbcad/drafting/filters.h"
 #include "tbcad/drafting/grid.h"
