@@ -183,6 +183,7 @@ public:
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
     cmd::ViewState view() const override;
+    std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
     void promptChanged(const cmd::PromptInfo* prompt) override;

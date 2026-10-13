@@ -529,3 +529,20 @@ TEST_CASE(
     CHECK(calls == 2);
     CHECK(f.core->selection().empty());
 }
+
+TEST_CASE("the window query is answered by the spatial index") {
+    Fixture f("window");
+    f.line("0,0", "10,0");
+    f.line("500,500", "510,500");
+    auto near = f.core->entitiesInWindow(BBox2{{-5, -5}, {20, 5}});
+    REQUIRE(near.has_value());
+    CHECK(near->size() == 1);
+    auto both = f.core->entitiesInWindow(BBox2{{-5, -5}, {600, 600}});
+    REQUIRE(both.has_value());
+    CHECK(both->size() == 2);
+    // Edits are picked up: undo removes the second line from the index.
+    f.core->undo();
+    both = f.core->entitiesInWindow(BBox2{{-5, -5}, {600, 600}});
+    REQUIRE(both.has_value());
+    CHECK(both->size() == 1);
+}
