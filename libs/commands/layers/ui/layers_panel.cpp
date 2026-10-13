@@ -342,7 +342,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                     continue;
                 EffectiveLayer eff = doc.effective(row.id);
                 // Greyed when an ancestor (not the layer itself) hides or freezes it.
-                bool dimmed = !eff.visible() && l->on && !l->frozen;
+                bool dimmed = (!eff.visible() && l->on && !l->frozen) || eff.inactive;
                 ImGui::PushID(static_cast<int>(row.id.value));
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
@@ -409,6 +409,17 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             }
         }
         ImGui::EndTable();
+    }
+
+    {
+        bool ao = doc.header().activeOnly;
+        // The command finishes after its one answer: no closing empty line (it would repeat it).
+        if (ImGui::Checkbox("Active layer only", &ao) && ctx.runCommand)
+            ctx.runCommand(ao ? "ACTIVEONLY On" : "ACTIVEONLY Off");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Only the current layer and its sub-layers can be drawn on,\n"
+                "picked or edited. Other layers stay visible but are locked.");
     }
 
     // Dropping on the empty space under the list moves a layer to the top level.

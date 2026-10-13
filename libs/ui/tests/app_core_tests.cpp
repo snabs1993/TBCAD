@@ -408,7 +408,7 @@ TEST_CASE("host settings are typed by what is stored; toggles live in the UI reg
 
     UiRegistry ui;
     f.core->registerBuiltinUi(ui);
-    REQUIRE(ui.statusToggles().size() == 5);
+    REQUIRE(ui.statusToggles().size() == 6);
     CHECK(ui.statusToggles()[0].label == "SNAP");
     CHECK(ui.statusToggles()[0].get());
     ui.statusToggles()[0].set(false);

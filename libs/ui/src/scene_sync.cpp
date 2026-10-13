@@ -129,7 +129,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         if (live)
             upsertEntity(*live);
     }
-    if (!cs.layers.empty())
+    if (!cs.layers.empty() || cs.header)
         syncLayers();
     if (blockTouched) {
         // Inserts show the contents of their block: redraw them.
