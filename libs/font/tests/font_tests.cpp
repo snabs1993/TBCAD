@@ -57,6 +57,25 @@ TEST_CASE("Latin text shapes to one glyph per letter with positive advances") {
     }
 }
 
+TEST_CASE("Shaping the same text twice gives the same runs (cached)") {
+    Fonts f;
+    auto a = f.lib.shape(f.sarabun, "Label 42 สวัสดี");
+    auto b = f.lib.shape(f.sarabun, "Label 42 สวัสดี");
+    auto c = f.lib.shape(f.lato, "Label 42 สวัสดี");
+    REQUIRE(a.size() == b.size());
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].font == b[i].font);
+        REQUIRE(a[i].glyphs.size() == b[i].glyphs.size());
+        for (std::size_t g = 0; g < a[i].glyphs.size(); ++g) {
+            CHECK(a[i].glyphs[g].glyphId == b[i].glyphs[g].glyphId);
+            CHECK(a[i].glyphs[g].xAdvance == b[i].glyphs[g].xAdvance);
+        }
+    }
+    // A different font is a different cache entry.
+    CHECK(c.front().font == f.lato);
+    CHECK(a.front().font == f.sarabun);
+}
+
 TEST_CASE("Thai tone mark and vowel stack on the base letter") {
     Fonts f;
     const auto upem = f.lib.metrics(f.sarabun).unitsPerEm;

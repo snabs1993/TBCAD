@@ -207,6 +207,9 @@ struct FontLibrary::Impl {
     };
 
     std::mutex mutex;
+    // Shaped text by (fallback chain, direction, text): drawings repeat their strings and the
+    // layout shapes every string more than once (index bounds, display list, hit tests).
+    std::unordered_map<std::string, std::vector<ShapedRun>> shapeCache;
     FT_Library ftLib = nullptr;
     std::vector<std::unique_ptr<Face>> faces;
     std::map<std::pair<std::string, int>, FontId> byPath;
@@ -538,6 +541,15 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
         }
     }
 
+    std::string cacheKey;
+    cacheKey.reserve(utf8.size() + chain.size() * sizeof(FontId::value) + 1);
+    for (FontId id : chain)
+        cacheKey.append(reinterpret_cast<const char*>(&id.value), sizeof id.value);
+    cacheKey.push_back(direction == Direction::RTL ? 'r' : 'l');
+    cacheKey.append(utf8);
+    if (auto hit = impl_->shapeCache.find(cacheKey); hit != impl_->shapeCache.end())
+        return hit->second;
+
     // Pick a font for every code point, then group equal neighbours.
     const std::vector<Cp> cps = decodeUtf8(utf8);
     std::vector<std::size_t> pick(cps.size(), 0);
@@ -596,6 +608,9 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
     hb_buffer_destroy(buf);
     if (direction == Direction::RTL)
         std::reverse(runs.begin(), runs.end());
+    if (impl_->shapeCache.size() >= 50000)
+        impl_->shapeCache.clear();
+    impl_->shapeCache.emplace(std::move(cacheKey), runs);
     return runs;
 }
 
