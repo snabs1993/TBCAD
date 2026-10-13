@@ -50,8 +50,7 @@ const SnapGeometryProvider* SnapGeometryRegistry::find(EntityKind k) const {
     return p ? &p : nullptr;
 }
 
-bool SnapGeometryRegistry::collect(const Document& doc, const Entity& e,
-                                   SnapGeometry& out) const {
+bool SnapGeometryRegistry::collect(const Document& doc, const Entity& e, SnapGeometry& out) const {
     const SnapGeometryProvider* p = find(kind(e));
     if (!p)
         return false;

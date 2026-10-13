@@ -102,7 +102,8 @@ TEST_CASE("snap mode names parse, including prefixes") {
     CHECK(parseSnapMode("cen") == SnapMode::Center);
     CHECK(parseSnapMode("per") == SnapMode::Perpendicular);
     CHECK_FALSE(parseSnapMode("n"));  // nearest or node
-    CHECK(parseSnapModes("endpoint, midpoint") == (maskOf(SnapMode::Endpoint) | maskOf(SnapMode::Midpoint)));
+    CHECK(parseSnapModes("endpoint, midpoint") ==
+          (maskOf(SnapMode::Endpoint) | maskOf(SnapMode::Midpoint)));
     CHECK(parseSnapModes("all") == kAllSnapModes);
     CHECK(parseSnapModes("none") == SnapModeMask{0});
     CHECK_FALSE(parseSnapModes("endpoint,bogus"));

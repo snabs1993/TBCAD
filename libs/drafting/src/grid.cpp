@@ -50,8 +50,7 @@ void buildGrid(render::Overlay& overlay, const render::Camera2D& camera, const G
     if (style.lines) {
         for (double x = x0; x <= vis.max.x + s; x += s) {
             const auto idx = std::llround(x / s);
-            overlay.line(render::Space::World, {x, y0}, {x, vis.max.y + s},
-                         styleFor(idx % 5 == 0));
+            overlay.line(render::Space::World, {x, y0}, {x, vis.max.y + s}, styleFor(idx % 5 == 0));
         }
     }
 }

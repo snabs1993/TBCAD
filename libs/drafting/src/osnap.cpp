@@ -9,8 +9,8 @@ namespace {
 
 constexpr double kTieMm = 1e-6;
 
-void add(std::vector<SnapCandidate>& out, const SnapRequest& rq, SnapMode mode, Vec2 p,
-         EntityId id, EntityId id2 = {}) {
+void add(std::vector<SnapCandidate>& out, const SnapRequest& rq, SnapMode mode, Vec2 p, EntityId id,
+         EntityId id2 = {}) {
     if (!(rq.modes & maskOf(mode)))
         return;
     const double d = distance(rq.cursor, p);
@@ -104,10 +104,9 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
         double dy = std::max({box.min.y - rq.cursor.y, 0.0, rq.cursor.y - box.max.y});
         near.push_back({id, std::hypot(dx, dy)});
     });
-    std::stable_sort(near.begin(), near.end(),
-                     [](const index::Neighbor& a, const index::Neighbor& b) {
-                         return a.distance < b.distance;
-                     });
+    std::stable_sort(
+        near.begin(), near.end(),
+        [](const index::Neighbor& a, const index::Neighbor& b) { return a.distance < b.distance; });
     if (near.size() > rq.maxEntities)
         near.resize(rq.maxEntities);
 

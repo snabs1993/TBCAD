@@ -27,12 +27,11 @@ std::optional<Vec2> OsnapFilter::filter(const cmd::PointQuery& query, Vec2 raw,
     std::vector<SnapCandidate> found =
         findSnapCandidates(*env_->doc, *env_->index, rq, *providers_);
     // A different set of candidates starts the Tab cycle over.
-    const bool same =
-        found.size() == candidates_.size() &&
-        std::equal(found.begin(), found.end(), candidates_.begin(),
-                   [](const SnapCandidate& a, const SnapCandidate& b) {
-                       return a.mode == b.mode && a.point == b.point;
-                   });
+    const bool same = found.size() == candidates_.size() &&
+                      std::equal(found.begin(), found.end(), candidates_.begin(),
+                                 [](const SnapCandidate& a, const SnapCandidate& b) {
+                                     return a.mode == b.mode && a.point == b.point;
+                                 });
     if (!same)
         cycle_ = 0;
     candidates_ = std::move(found);
@@ -123,13 +122,12 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     feedback.tooltip = std::string(s.ortho ? "Ortho: " : "Polar: ") + formatDistance(*env_, d) +
                        " < " + ang + "\xC2\xB0";
     const double reach = std::max(d, 1.0) + 4000.0 * std::max(query.pixelSize, 1e-9);
-    feedback.guide = std::make_pair(base - dir * (4000.0 * std::max(query.pixelSize, 1e-9)),
-                                    base + dir * reach);
+    feedback.guide =
+        std::make_pair(base - dir * (4000.0 * std::max(query.pixelSize, 1e-9)), base + dir * reach);
     return p;
 }
 
-std::optional<Vec2> GridSnapFilter::filter(const cmd::PointQuery&, Vec2 raw,
-                                           cmd::FilterFeedback&) {
+std::optional<Vec2> GridSnapFilter::filter(const cmd::PointQuery&, Vec2 raw, cmd::FilterFeedback&) {
     if (!env_ || !env_->host)
         return std::nullopt;
     const DraftingSettings s = DraftingSettings::read(*env_->host);

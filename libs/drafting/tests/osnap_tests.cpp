@@ -181,8 +181,8 @@ TEST_CASE("the aperture scales with the pixel size") {
     w.line({0, 0}, {100, 0});
     w.set(keys::osnap, "1");
     w.set(keys::osnapModes, "endpoint");
-    CHECK(near(w.hover({105, 5}, std::nullopt, 1.0), {100, 0}));      // 7 mm away, aperture 10
-    CHECK(near(w.hover({105, 5}, std::nullopt, 0.1), {105, 5}));      // aperture 1 mm
+    CHECK(near(w.hover({105, 5}, std::nullopt, 1.0), {100, 0}));  // 7 mm away, aperture 10
+    CHECK(near(w.hover({105, 5}, std::nullopt, 0.1), {105, 5}));  // aperture 1 mm
 }
 
 TEST_CASE("at most 200 entities are examined, nearest first") {
@@ -191,8 +191,8 @@ TEST_CASE("at most 200 entities are examined, nearest first") {
         w.line({0.0, 5.0 + i * 0.01}, {100, 5.0 + i * 0.01});  // all within the aperture
     // The marker line is the nearest of all and must be among the examined ones.
     w.line({0, 0.1}, {100, 0.1});
-    auto res = findSnapCandidates(w.doc, w.idx,
-                                  SnapRequest{{0, 0.2}, std::nullopt, 10, maskOf(SnapMode::Endpoint), 200});
+    auto res = findSnapCandidates(
+        w.doc, w.idx, SnapRequest{{0, 0.2}, std::nullopt, 10, maskOf(SnapMode::Endpoint), 200});
     REQUIRE_FALSE(res.empty());
     CHECK(near(res.front().point, {0, 0.1}));
 }
@@ -218,8 +218,8 @@ TEST_CASE("a geometry provider registered for another kind is used (blocks, late
     reg.set(EntityKind::Point, [](const Document&, const Entity&, SnapGeometry& out) {
         out.endpoints.push_back({8, 8});
     });
-    auto res = findSnapCandidates(doc, idx,
-                                  SnapRequest{{7, 7}, std::nullopt, 5, maskOf(SnapMode::Endpoint)}, reg);
+    auto res = findSnapCandidates(
+        doc, idx, SnapRequest{{7, 7}, std::nullopt, 5, maskOf(SnapMode::Endpoint)}, reg);
     REQUIRE(res.size() == 1);
     CHECK(near(res[0].point, {8, 8}));
     CHECK(res[0].entity == id);

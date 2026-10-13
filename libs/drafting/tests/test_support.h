@@ -36,7 +36,8 @@ public:
 struct World {
     Document doc;
     index::SpatialIndex idx;
-    index::DocumentIndexer indexer{doc, idx, [this](const Entity& e) { return geom::bounds(e, doc); }};
+    index::DocumentIndexer indexer{doc, idx,
+                                   [this](const Entity& e) { return geom::bounds(e, doc); }};
     cmd::Registry reg;
     cmd::ScriptHost host;
     DraftingEnv env;

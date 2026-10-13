@@ -30,10 +30,9 @@ struct SnapCandidate {
 // All snap points within the aperture, best first: smaller distance wins; equal distances (within
 // 1e-6 mm) go to the mode that comes first in SnapMode. Entities on layers that are off or
 // frozen and entities marked invisible never snap. The best candidate is front().
-std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::SpatialIndex& index,
-                                              const SnapRequest& request,
-                                              const SnapGeometryRegistry& providers =
-                                                  SnapGeometryRegistry::instance());
+std::vector<SnapCandidate> findSnapCandidates(
+    const Document& doc, const index::SpatialIndex& index, const SnapRequest& request,
+    const SnapGeometryRegistry& providers = SnapGeometryRegistry::instance());
 
 // Snap candidates of a set of curves, for tests and for modules that snap to their own geometry.
 void curveSnapPoints(const geom::CurveRef& curve, const SnapRequest& request,
