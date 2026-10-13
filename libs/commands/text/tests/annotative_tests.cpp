@@ -44,6 +44,12 @@ TEST_CASE("annotation scale list and current scale are stored in the drawing") {
     CHECK(currentAnnotationScale(f.doc.header()) == doctest::Approx(50));
     f.host.undo();
     CHECK(currentAnnotationScale(f.doc.header()) == doctest::Approx(1));
+    f.host.run("CANNOSCALE", {"1:20"});  // the form people actually type
+    CHECK(currentAnnotationScale(f.doc.header()) == doctest::Approx(20));
+    f.host.run("CANNOSCALE", {"abc"});  // rejected, unchanged
+    CHECK(currentAnnotationScale(f.doc.header()) == doctest::Approx(20));
+    f.host.undo();
+    CHECK(currentAnnotationScale(f.doc.header()) == doctest::Approx(1));
 
     f.host.run("SCALELISTEDIT", {"Add", "40", "Delete", "1000", "List", "Done"});
     auto list = annotationScaleList(f.doc.header());

@@ -1247,7 +1247,8 @@ void Gui::commandWindow() {
         std::string prompt = core_.promptText();
         if (chips && info) {
             prompt = info->text;
-            if (info->defaultText)
+            if (info->defaultText &&
+                info->text.find("<" + *info->defaultText + ">") == std::string::npos)
                 prompt += " <" + *info->defaultText + ">";
             prompt += ": ";
         }
