@@ -75,9 +75,9 @@ TEST_CASE("end to end: open DXF, draw, hatch, move, save, reload, undo") {
     CHECK(canonicalDump(doc) != beforeMove);
 
     // 5. Optional commands from later workstreams.
-    for (const char* name : {"DIMLINEAR", "PLOT", "BLOCK", "OFFSET", "TRIM"})
-        MESSAGE(name << (reg.find(name) ? std::string(": registered")
-                                        : std::string(": not on main yet")));
+    for (const char* name : {"DIMLINEAR", "PLOT", "OFFSET", "TRIM"})
+        MESSAGE(std::string(name) << (reg.find(name) ? std::string(": registered")
+                                                     : std::string(": not on main yet")));
 
     // 6. Save and reload: the canonical dump must match.
     auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_smoke";
@@ -93,6 +93,80 @@ TEST_CASE("end to end: open DXF, draw, hatch, move, save, reload, undo") {
     while (host.undo()) {
     }
     CHECK(canonicalDump(doc) == importedDump);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("end to end: Thai text, blocks, move, DXF export and re-import") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+
+    // Thai text and a plain text.
+    REQUIRE(host.run("TEXT", {"0,0", "10", "0", "TBCAD"}).finished);
+    REQUIRE(host.run("TEXT", {"0,20", "10", "0", "สวัสดี"}).finished);
+    CHECK(countKind(doc, EntityKind::Text) == 2);
+
+    // Geometry, turned into a block, inserted twice, exploded once.
+    REQUIRE(host.run("RECTANGLE", {"100,0", "140,20"}).finished);
+    REQUIRE(host.run("CIRCLE", {"120,10", "5"}).finished);
+    std::vector<EntityId> shapes;
+    doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Polyline || kind(e) == EntityKind::Circle)
+            shapes.push_back(e.common.id);
+    });
+    REQUIRE(shapes.size() == 2);
+    host.setSelection(shapes);
+    REQUIRE(host.run("BLOCK", {"Door", "100,0", "C"}).finished);
+    CHECK(countKind(doc, EntityKind::Insert) == 1);
+    REQUIRE(host.run("INSERT", {"Door", "200,0"}).finished);
+    CHECK(countKind(doc, EntityKind::Insert) == 2);
+
+    // Move a text with a typed base and target point.
+    std::vector<EntityId> texts;
+    doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Text)
+            texts.push_back(e.common.id);
+    });
+    host.setSelection(texts);
+    REQUIRE(host.run("MOVE", {"0,0", "0,-50"}).finished);
+
+    // DXF export, then import into a fresh document: same counts of the main kinds.
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_dxf";
+    std::filesystem::create_directories(dir);
+    const auto dxfFile = (dir / "out.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxfFile, "R2000"}).finished);
+    REQUIRE(std::filesystem::exists(dxfFile));
+
+    dxf::Report report;
+    auto back = dxf::importDxf(readBytes(dxfFile), {}, report);
+    REQUIRE(back.ok());
+    const Document& d2 = *back.value().document;
+    CHECK(countKind(d2, EntityKind::Text) == 2);
+    CHECK(countKind(d2, EntityKind::Insert) == 2);
+    CHECK(d2.blocks().size() == doc.blocks().size());
+
+    // The Thai text survives the round trip.
+    bool thai = false;
+    d2.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TextData>(e); t && t->utf8 == "สวัสดี")
+            thai = true;
+    });
+    CHECK(thai);
+
+    // Explode one insert, then undo it.
+    std::vector<EntityId> inserts;
+    doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Insert)
+            inserts.push_back(e.common.id);
+    });
+    host.setSelection({inserts.front()});
+    REQUIRE(host.run("EXPLODE", {}).finished);
+    CHECK(countKind(doc, EntityKind::Insert) == 1);
+    CHECK(host.undo());
+    CHECK(countKind(doc, EntityKind::Insert) == 2);
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
