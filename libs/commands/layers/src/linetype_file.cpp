@@ -109,10 +109,9 @@ Result<std::vector<std::string>> loadLinetypes(const Document& doc, Transaction&
             chosen.push_back(&lt);
     } else {
         for (const std::string& n : names) {
-            auto it = std::find_if(file.linetypes.begin(), file.linetypes.end(),
-                                   [&](const Linetype& lt) {
-                                       return lowerAscii(lt.name) == lowerAscii(n);
-                                   });
+            auto it = std::find_if(
+                file.linetypes.begin(), file.linetypes.end(),
+                [&](const Linetype& lt) { return lowerAscii(lt.name) == lowerAscii(n); });
             if (it == file.linetypes.end())
                 return makeError(ErrorCode::NotFound, "Linetype \"" + n + "\" is not in the file.");
             chosen.push_back(&*it);

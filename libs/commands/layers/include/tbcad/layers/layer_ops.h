@@ -9,8 +9,9 @@
 namespace tbcad::layers {
 
 // Headless layer and sub-layer operations. Every function takes the document (read side; it
-// already shows the transaction's pending edits) and edits through the caller's Transaction, so a command (or a test) decides what one undo step contains. Errors carry a
-// message that is fit to show to the user.
+// already shows the transaction's pending edits) and edits through the caller's Transaction, so a
+// command (or a test) decides what one undo step contains. Errors carry a message that is fit to
+// show to the user.
 
 inline constexpr char kPathSeparator = '~';  // S-FLOOR~edge, also used for DXF names
 
@@ -35,11 +36,15 @@ Result<std::vector<LayerId>> resolveLayers(const Document& doc, std::string_view
 
 // New layer or sub-layer (parent null = top level). Sub-layers start with ByParent colour,
 // linetype and lineweight; top-level layers start with white, Continuous, Default.
-Result<LayerId> createLayer(const Document& doc, Transaction& tx, std::string name, LayerId parent = {});
+Result<LayerId> createLayer(const Document& doc, Transaction& tx, std::string name,
+                            LayerId parent = {});
 Result<void> renameLayer(const Document& doc, Transaction& tx, LayerId id, std::string newName);
 // Moves `id` under `newParent` (null = top level). Refuses cycles, depth > 8, layer 0 and name
 // clashes among the new siblings. ByParent values follow the new parent, and become fixed values
 // (what the layer showed so far) when the layer goes top level.
+// Empty when `id` can move under `newParent` (null = top level); otherwise the reason, fit to show
+// to the user (cycle, layer 0, depth limit, name clash, already there). Reads only.
+std::string whyCannotReparent(const Document& doc, LayerId id, LayerId newParent);
 Result<void> reparentLayer(const Document& doc, Transaction& tx, LayerId id, LayerId newParent);
 
 enum class DeleteMode {
@@ -58,16 +63,20 @@ Result<void> setLocked(const Document& doc, Transaction& tx, LayerId id, bool lo
 Result<void> setPlot(const Document& doc, Transaction& tx, LayerId id, bool plot);
 // ByLayer and ByBlock are refused; ByParent only on sub-layers.
 Result<void> setLayerColor(const Document& doc, Transaction& tx, LayerId id, Color color);
-Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id, LinetypeId linetype);
-Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id, LineWeight weight);
+Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id,
+                              LinetypeId linetype);
+Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id,
+                                LineWeight weight);
 // Turns off every layer except `keep`, its ancestors and its descendants.
 Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep);
 // Turns every layer on.
 Result<void> showAllLayers(const Document& doc, Transaction& tx);
 
-// ---- text <-> value helpers shared by -LAYER, -PROP and the panels -------------------------------
+// ---- text <-> value helpers shared by -LAYER, -PROP and the panels
+// -------------------------------
 
-// "red".."white" (or "7"), "1".."255", "r,g,b", "ByLayer", "ByBlock", "ByParent" (case-insensitive).
+// "red".."white" (or "7"), "1".."255", "r,g,b", "ByLayer", "ByBlock", "ByParent"
+// (case-insensitive).
 Result<Color> parseColor(std::string_view text);
 std::string colorName(Color c);
 // Millimetres ("0.25"), "Default", "ByLayer", "ByBlock", "ByParent".

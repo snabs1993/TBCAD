@@ -78,10 +78,10 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"New",   "NewSub", "Parent",   "Set",       "On",       "Off",
-                         "Freeze", "Thaw",   "Lock",     "Unlock",    "Color",    "Linetype",
-                         "Lineweight", "Plot", "NoPlot", "Rename",    "Delete",   "Isolate",
-                         "ShowAll", "List"};
+        opts.keywords = {"New",    "NewSub",   "Parent",     "Set",     "On",
+                         "Off",    "Freeze",   "Thaw",       "Lock",    "Unlock",
+                         "Color",  "Linetype", "Lineweight", "Plot",    "NoPlot",
+                         "Rename", "Delete",   "Isolate",    "ShowAll", "List"};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
             if (!k.ok())
@@ -171,14 +171,22 @@ private:
                 co_return;
             for (LayerId id : ids) {
                 Result<void> r;
-                if (option == "On") r = setOn(doc, ctx.tx(), id, true);
-                else if (option == "Off") r = setOn(doc, ctx.tx(), id, false);
-                else if (option == "Freeze") r = setFrozen(doc, ctx.tx(), id, true);
-                else if (option == "Thaw") r = setFrozen(doc, ctx.tx(), id, false);
-                else if (option == "Lock") r = setLocked(doc, ctx.tx(), id, true);
-                else if (option == "Unlock") r = setLocked(doc, ctx.tx(), id, false);
-                else if (option == "Plot") r = setPlot(doc, ctx.tx(), id, true);
-                else r = setPlot(doc, ctx.tx(), id, false);
+                if (option == "On")
+                    r = setOn(doc, ctx.tx(), id, true);
+                else if (option == "Off")
+                    r = setOn(doc, ctx.tx(), id, false);
+                else if (option == "Freeze")
+                    r = setFrozen(doc, ctx.tx(), id, true);
+                else if (option == "Thaw")
+                    r = setFrozen(doc, ctx.tx(), id, false);
+                else if (option == "Lock")
+                    r = setLocked(doc, ctx.tx(), id, true);
+                else if (option == "Unlock")
+                    r = setLocked(doc, ctx.tx(), id, false);
+                else if (option == "Plot")
+                    r = setPlot(doc, ctx.tx(), id, true);
+                else
+                    r = setPlot(doc, ctx.tx(), id, false);
                 report(ctx, r);
             }
         } else if (option == "Color" || option == "Linetype" || option == "Lineweight") {

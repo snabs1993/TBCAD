@@ -50,12 +50,13 @@ public:
         cmd::KeywordOptions opts;
         opts.keywords = {"Only", "Layer", "Color", "Linetype", "LTScale", "Lineweight", "Set"};
         while (true) {
-            auto k = co_await ctx.getKeyword("Property [Only/Layer/Color/Linetype/LTScale/"
-                                             "Lineweight/Set]",
-                                             opts);
+            auto k = co_await ctx.getKeyword(
+                "Property [Only/Layer/Color/Linetype/LTScale/"
+                "Lineweight/Set]",
+                opts);
             if (!k.ok())
                 co_return;
-            auto v = co_await ctx.getString(k.keyword == "Only" ? "Object type"
+            auto v = co_await ctx.getString(k.keyword == "Only"  ? "Object type"
                                             : k.keyword == "Set" ? "Field name"
                                                                  : "New value");
             if (!v.ok())
@@ -82,26 +83,38 @@ public:
             if (k.keyword == "Layer") {
                 auto l = resolveLayer(ctx.doc(), v.text);
                 good = bool(l);
-                if (good) edit.layer = l.value(); else ctx.message(l.error().message);
+                if (good)
+                    edit.layer = l.value();
+                else
+                    ctx.message(l.error().message);
             } else if (k.keyword == "Color") {
                 auto c = parseColor(v.text);
                 good = bool(c) && c.value().kind != ColorKind::ByParent;
-                if (good) edit.color = c.value();
-                else ctx.message(c ? "ByParent applies to layers only." : c.error().message);
+                if (good)
+                    edit.color = c.value();
+                else
+                    ctx.message(c ? "ByParent applies to layers only." : c.error().message);
             } else if (k.keyword == "Linetype") {
                 auto lt = parseLinetype(ctx.doc(), v.text);
                 good = bool(lt) && lt.value() != kLinetypeByParent;
-                if (good) edit.linetype = lt.value();
-                else ctx.message(lt ? "ByParent applies to layers only." : lt.error().message);
+                if (good)
+                    edit.linetype = lt.value();
+                else
+                    ctx.message(lt ? "ByParent applies to layers only." : lt.error().message);
             } else if (k.keyword == "LTScale") {
                 auto n = parseNumberExpr(v.text, /*plain=*/true);
                 good = bool(n);
-                if (good) edit.linetypeScale = n.value(); else ctx.message(n.error().message);
+                if (good)
+                    edit.linetypeScale = n.value();
+                else
+                    ctx.message(n.error().message);
             } else {
                 auto lw = parseLineweight(v.text);
                 good = bool(lw) && !lw.value().isByParent();
-                if (good) edit.lineweight = lw.value();
-                else ctx.message(lw ? "ByParent applies to layers only." : lw.error().message);
+                if (good)
+                    edit.lineweight = lw.value();
+                else
+                    ctx.message(lw ? "ByParent applies to layers only." : lw.error().message);
             }
             if (!good)
                 continue;
@@ -219,9 +232,9 @@ public:
                 ctx.message(r.error().message);
                 continue;
             }
-            ctx.message(r.value().empty() ? "Nothing to load: those linetypes are already loaded."
-                                          : "Loaded " + std::to_string(r.value().size()) +
-                                                " linetype(s).");
+            ctx.message(r.value().empty()
+                            ? "Nothing to load: those linetypes are already loaded."
+                            : "Loaded " + std::to_string(r.value().size()) + " linetype(s).");
         }
     }
 };

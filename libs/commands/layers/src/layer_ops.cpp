@@ -134,9 +134,8 @@ Result<LayerId> resolveLayer(const Document& doc, std::string_view ref) {
     std::size_t pos = 0;
     while (true) {
         std::size_t next = ref.find(kPathSeparator, pos);
-        std::string_view part = trimView(ref.substr(pos, next == std::string_view::npos
-                                                             ? std::string_view::npos
-                                                             : next - pos));
+        std::string_view part = trimView(
+            ref.substr(pos, next == std::string_view::npos ? std::string_view::npos : next - pos));
         const Layer* l = doc.layerByName(parent, part);
         if (!l) {
             // A bare name that is not top level: accept it when exactly one sub-layer has it.
@@ -155,8 +154,7 @@ Result<LayerId> resolveLayer(const Document& doc, std::string_view ref) {
                                "Several sub-layers are called " + quoted(std::string(part)) +
                                    "; use the full path (Parent" + kPathSeparator + "Child).");
             }
-            return err(ErrorCode::NotFound,
-                       "No layer " + quoted(std::string(ref)) + ".");
+            return err(ErrorCode::NotFound, "No layer " + quoted(std::string(ref)) + ".");
         }
         parent = l->id;
         if (next == std::string_view::npos)
@@ -173,9 +171,8 @@ Result<std::vector<LayerId>> resolveLayers(const Document& doc, std::string_view
         return err(ErrorCode::InvalidArgument, "Layer name is empty.");
     while (pos <= refs.size()) {
         std::size_t next = refs.find(',', pos);
-        std::string_view part =
-            trimView(refs.substr(pos, next == std::string_view::npos ? std::string_view::npos
-                                                                      : next - pos));
+        std::string_view part = trimView(
+            refs.substr(pos, next == std::string_view::npos ? std::string_view::npos : next - pos));
         if (part == "*") {
             for (const auto& [id, l] : doc.layers())
                 out.push_back(id);
@@ -215,6 +212,33 @@ Result<void> renameLayer(const Document&, Transaction& tx, LayerId id, std::stri
     auto r = tx.modifyLayer(id, [&](Layer& l) { l.name = std::move(newName); });
     if (!r)
         return err(r.error().code, "Cannot rename layer: " + r.error().message);
+    return {};
+}
+
+std::string whyCannotReparent(const Document& doc, LayerId id, LayerId newParent) {
+    const Layer* l = doc.layer(id);
+    if (!l)
+        return "No such layer.";
+    if (id == kLayerZero)
+        return "Layer 0 cannot be moved.";
+    if (newParent == kLayerZero)
+        return "Layer 0 cannot have sub-layers.";
+    if (newParent && !doc.layer(newParent))
+        return "No such parent layer.";
+    if (l->parent == newParent)
+        return "It is already there.";
+    for (LayerId p = newParent; p; p = doc.layer(p)->parent)
+        if (p == id)
+            return "A layer cannot move under itself or one of its own sub-layers (cycle).";
+    if (doc.layerByName(newParent, l->name))
+        return "A layer called " + quoted(l->name) + " already exists there.";
+    // Levels below `id` (0 for a leaf) plus the new position must stay within 8 levels.
+    int height = 0;
+    for (LayerId b : branchOf(doc, id))
+        height = std::max(height, layerDepth(doc, b) - layerDepth(doc, id));
+    int newDepth = newParent ? layerDepth(doc, newParent) + 1 : 0;
+    if (newDepth + height > 7)
+        return "Sub-layers nest at most 8 levels deep.";
     return {};
 }
 
@@ -266,8 +290,8 @@ Result<void> deleteLayer(const Document& doc, Transaction& tx, LayerId id, Delet
     if (mode == DeleteMode::LeafOnly && !kids.empty())
         return err(ErrorCode::Conflict, "Layer " + quoted(layerPath(doc, id)) +
                                             " has sub-layers; delete the branch or move them up.");
-    std::vector<LayerId> doomed = mode == DeleteMode::Branch ? branchOf(doc, id)
-                                                             : std::vector<LayerId>{id};
+    std::vector<LayerId> doomed =
+        mode == DeleteMode::Branch ? branchOf(doc, id) : std::vector<LayerId>{id};
     // Check everything first so a refusal changes nothing.
     for (LayerId d : doomed)
         if (std::string why = whyNotEmpty(doc, d); !why.empty())
@@ -277,9 +301,10 @@ Result<void> deleteLayer(const Document& doc, Transaction& tx, LayerId id, Delet
         for (LayerId c : kids) {
             const Layer* cl = doc.layer(c);
             if (doc.layerByName(self->parent, cl->name))
-                return err(ErrorCode::Conflict,
-                           "Cannot move " + quoted(cl->name) + " up: a layer with that name already "
-                           "exists next to " + quoted(self->name) + ".");
+                return err(ErrorCode::Conflict, "Cannot move " + quoted(cl->name) +
+                                                    " up: a layer with that name already "
+                                                    "exists next to " +
+                                                    quoted(self->name) + ".");
         }
         // Children that inherit from the deleted layer keep their look by taking its values.
         EffectiveLayer eff = doc.effective(id);
@@ -315,8 +340,8 @@ Result<void> setCurrentLayer(const Document& doc, Transaction& tx, LayerId id) {
         return err(ErrorCode::NotFound, "No such layer.");
     EffectiveLayer eff = doc.effective(id);
     if (eff.frozen)
-        return err(ErrorCode::Conflict, "Cannot make frozen layer " +
-                                            quoted(layerPath(doc, id)) + " current.");
+        return err(ErrorCode::Conflict,
+                   "Cannot make frozen layer " + quoted(layerPath(doc, id)) + " current.");
     auto r = tx.modifyHeader([&](Header& h) { h.currentLayer = id; });
     if (!r)
         return err(r.error().code, r.error().message);
@@ -425,7 +450,8 @@ Result<Color> parseColor(std::string_view text) {
         return Color::byBlock();
     if (t == "byparent")
         return Color::byParent();
-    static const char* const names[] = {"red", "yellow", "green", "cyan", "blue", "magenta", "white"};
+    static const char* const names[] = {"red",  "yellow",  "green", "cyan",
+                                        "blue", "magenta", "white"};
     for (int i = 0; i < 7; ++i)
         if (t == names[i])
             return Color::index(static_cast<std::uint8_t>(i + 1));
@@ -460,7 +486,7 @@ std::string colorName(Color c) {
         case ColorKind::ByParent:
             return "ByParent";
         case ColorKind::Index: {
-            static const char* const names[] = {"red", "yellow", "green", "cyan",
+            static const char* const names[] = {"red",  "yellow",  "green", "cyan",
                                                 "blue", "magenta", "white"};
             if (c.indexValue() >= 1 && c.indexValue() <= 7)
                 return names[c.indexValue() - 1];
@@ -521,8 +547,8 @@ Result<LinetypeId> parseLinetype(const Document& doc, std::string_view text) {
     }
     if (const Linetype* lt = doc.linetypeByName(text))
         return lt->id;
-    return err(ErrorCode::NotFound, "Linetype " + quoted(std::string(text)) +
-                                        " is not loaded (see -LINETYPE Load).");
+    return err(ErrorCode::NotFound,
+               "Linetype " + quoted(std::string(text)) + " is not loaded (see -LINETYPE Load).");
 }
 
 std::string linetypeName(const Document& doc, LinetypeId id) {

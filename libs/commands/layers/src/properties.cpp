@@ -36,20 +36,34 @@ double rad(double d) {
 
 const char* kindLabel(EntityKind k) {
     switch (k) {
-        case EntityKind::Line: return "Line";
-        case EntityKind::Circle: return "Circle";
-        case EntityKind::Arc: return "Arc";
-        case EntityKind::Polyline: return "Polyline";
-        case EntityKind::Point: return "Point";
-        case EntityKind::Ellipse: return "Ellipse";
-        case EntityKind::Spline: return "Spline";
-        case EntityKind::Text: return "Text";
-        case EntityKind::MText: return "MText";
-        case EntityKind::Hatch: return "Hatch";
-        case EntityKind::Insert: return "Block";
-        case EntityKind::Dimension: return "Dimension";
-        case EntityKind::Leader: return "Leader";
-        case EntityKind::Proxy: return "Proxy";
+        case EntityKind::Line:
+            return "Line";
+        case EntityKind::Circle:
+            return "Circle";
+        case EntityKind::Arc:
+            return "Arc";
+        case EntityKind::Polyline:
+            return "Polyline";
+        case EntityKind::Point:
+            return "Point";
+        case EntityKind::Ellipse:
+            return "Ellipse";
+        case EntityKind::Spline:
+            return "Spline";
+        case EntityKind::Text:
+            return "Text";
+        case EntityKind::MText:
+            return "MText";
+        case EntityKind::Hatch:
+            return "Hatch";
+        case EntityKind::Insert:
+            return "Block";
+        case EntityKind::Dimension:
+            return "Dimension";
+        case EntityKind::Leader:
+            return "Leader";
+        case EntityKind::Proxy:
+            return "Proxy";
     }
     return "Object";
 }
@@ -126,8 +140,8 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         num("endx", "End X", l->b.x);
         num("endy", "End Y", l->b.y);
         num("length", "Length", std::hypot(d.x, d.y));
-        out.push_back({"angle", "Angle", FieldType::Angle, true,
-                       deg(normalizeAngle(std::atan2(d.y, d.x)))});
+        out.push_back(
+            {"angle", "Angle", FieldType::Angle, true, deg(normalizeAngle(std::atan2(d.y, d.x)))});
     } else if (const auto* c = entityAs<CircleData>(e)) {
         num("centerx", "Center X", c->center.x);
         num("centery", "Center Y", c->center.y);
@@ -145,8 +159,8 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         out.push_back({"totalangle", "Total angle", FieldType::Angle, false, deg(sweep)});
         num("length", "Length", a->radius * sweep, false);
     } else if (const auto* p = entityAs<PolylineData>(e)) {
-        out.push_back({"vertices", "Vertices", FieldType::Count, false,
-                       static_cast<double>(p->v.size())});
+        out.push_back(
+            {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(p->v.size())});
         out.push_back({"closed", "Closed", FieldType::Flag, true, p->closed ? 1.0 : 0.0});
         num("length", "Length", geom::length(*p), false);
         num("area", "Area", geom::area(*p), false);
@@ -166,30 +180,43 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
             Vec2 d = l->b - l->a;
             double len = std::hypot(d.x, d.y);
             double ang = std::atan2(d.y, d.x);
-            if (f == "startx") l->a.x = v;
-            else if (f == "starty") l->a.y = v;
-            else if (f == "endx") l->b.x = v;
-            else if (f == "endy") l->b.y = v;
+            if (f == "startx")
+                l->a.x = v;
+            else if (f == "starty")
+                l->a.y = v;
+            else if (f == "endx")
+                l->b.x = v;
+            else if (f == "endy")
+                l->b.y = v;
             else if (f == "length") {
-                if (v <= 0) return fail(bad("Length must be greater than zero."));
+                if (v <= 0)
+                    return fail(bad("Length must be greater than zero."));
                 l->b = l->a + Vec2{std::cos(ang) * v, std::sin(ang) * v};
             } else if (f == "angle") {
                 double a = rad(v);
                 l->b = l->a + Vec2{std::cos(a) * len, std::sin(a) * len};
-            } else return fail(bad("A line has no editable field \"" + f + "\"."));
+            } else
+                return fail(bad("A line has no editable field \"" + f + "\"."));
         } else if (auto* c = entityAs<CircleData>(e)) {
-            if (f == "centerx") c->center.x = v;
-            else if (f == "centery") c->center.y = v;
+            if (f == "centerx")
+                c->center.x = v;
+            else if (f == "centery")
+                c->center.y = v;
             else if (f == "radius" || f == "diameter") {
                 double r2 = f == "radius" ? v : v / 2;
-                if (r2 <= 0) return fail(bad("Radius must be greater than zero."));
+                if (r2 <= 0)
+                    return fail(bad("Radius must be greater than zero."));
                 c->radius = r2;
-            } else return fail(bad("A circle has no editable field \"" + f + "\"."));
+            } else
+                return fail(bad("A circle has no editable field \"" + f + "\"."));
         } else if (auto* a = entityAs<ArcData>(e)) {
-            if (f == "centerx") a->center.x = v;
-            else if (f == "centery") a->center.y = v;
+            if (f == "centerx")
+                a->center.x = v;
+            else if (f == "centery")
+                a->center.y = v;
             else if (f == "radius") {
-                if (v <= 0) return fail(bad("Radius must be greater than zero."));
+                if (v <= 0)
+                    return fail(bad("Radius must be greater than zero."));
                 a->radius = v;
             } else if (f == "startangle" || f == "endangle") {
                 double n = normalizeAngle(rad(v));
@@ -199,13 +226,17 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                     return fail(bad("An arc needs different start and end angles."));
                 a->startAngle = s;
                 a->endAngle = en;
-            } else return fail(bad("An arc has no editable field \"" + f + "\"."));
+            } else
+                return fail(bad("An arc has no editable field \"" + f + "\"."));
         } else if (auto* p = entityAs<PolylineData>(e)) {
-            if (f == "closed") p->closed = v != 0;
+            if (f == "closed")
+                p->closed = v != 0;
             else if (f == "width") {
-                if (v < 0) return fail(bad("Width cannot be negative."));
+                if (v < 0)
+                    return fail(bad("Width cannot be negative."));
                 p->constantWidth = v;
-            } else return fail(bad("A polyline has no editable field \"" + f + "\"."));
+            } else
+                return fail(bad("A polyline has no editable field \"" + f + "\"."));
         } else {
             fail(bad("This kind of object has no geometry fields."));
         }
@@ -231,8 +262,8 @@ public:
         double v = expr();
         skip();
         if (!err_.empty() || pos_ != s_.size())
-            return makeError(ErrorCode::Parse, err_.empty() ? "Cannot read \"" + s_ + "\" as a number."
-                                                            : err_);
+            return makeError(ErrorCode::Parse,
+                             err_.empty() ? "Cannot read \"" + s_ + "\" as a number." : err_);
         if (!std::isfinite(v))
             return makeError(ErrorCode::Parse, "The result is not a finite number.");
         return v;
@@ -254,16 +285,20 @@ private:
     double expr() {
         double v = term();
         while (err_.empty()) {
-            if (eat('+')) v += term();
-            else if (eat('-')) v -= term();
-            else break;
+            if (eat('+'))
+                v += term();
+            else if (eat('-'))
+                v -= term();
+            else
+                break;
         }
         return v;
     }
     double term() {
         double v = unary();
         while (err_.empty()) {
-            if (eat('*')) v *= unary();
+            if (eat('*'))
+                v *= unary();
             else if (eat('/')) {
                 double d = unary();
                 if (d == 0) {
@@ -271,13 +306,16 @@ private:
                     return 0;
                 }
                 v /= d;
-            } else break;
+            } else
+                break;
         }
         return v;
     }
     double unary() {
-        if (eat('-')) return -unary();
-        if (eat('+')) return unary();
+        if (eat('-'))
+            return -unary();
+        if (eat('+'))
+            return unary();
         return primary();
     }
     double primary() {
@@ -306,11 +344,16 @@ private:
             for (char& c : unit)
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             double f = 0;
-            if (unit == "mm") f = 1;
-            else if (unit == "cm") f = 10;
-            else if (unit == "m") f = 1000;
-            else if (unit == "in") f = 25.4;
-            else if (unit == "ft") f = 304.8;
+            if (unit == "mm")
+                f = 1;
+            else if (unit == "cm")
+                f = 10;
+            else if (unit == "m")
+                f = 1000;
+            else if (unit == "in")
+                f = 25.4;
+            else if (unit == "ft")
+                f = 304.8;
             else {
                 err_ = "Unknown unit \"" + unit + "\".";
                 return 0;

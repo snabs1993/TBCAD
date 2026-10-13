@@ -1,7 +1,6 @@
-#include "tbcad/layers/layers.h"
-
 #include "commands.h"
 #include "panels.h"
+#include "tbcad/layers/layers.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::layers {

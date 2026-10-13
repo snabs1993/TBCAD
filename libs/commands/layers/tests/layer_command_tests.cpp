@@ -71,7 +71,8 @@ TEST_CASE("-LAYER New and NewSub create layers and sub-layers, one undo step") {
 TEST_CASE("-LAYER: On, Off, Freeze, Thaw, Lock, Unlock, Plot with lists and *") {
     Fixture f;
     f.run("-LAYER", {"New", "A,B,C", cmd::ScriptItem::enter()});
-    f.run("-LAYER", {"Off", "A,B", "Freeze", "C", "Lock", "A", "NoPlot", "B", cmd::ScriptItem::enter()});
+    f.run("-LAYER",
+          {"Off", "A,B", "Freeze", "C", "Lock", "A", "NoPlot", "B", cmd::ScriptItem::enter()});
     CHECK_FALSE(f.layer("A")->on);
     CHECK_FALSE(f.layer("B")->on);
     CHECK(f.layer("C")->frozen);
@@ -144,8 +145,8 @@ TEST_CASE("-LAYER: Parent re-parents, refuses cycles, None moves to top level") 
 
 TEST_CASE("-LAYER: Rename, and Delete with the Branch / MoveUp choice") {
     Fixture f;
-    f.run("-LAYER", {"New", "A", "NewSub", "A", "A1,A2", "NewSub", "A~A1", "deep",
-                     cmd::ScriptItem::enter()});
+    f.run("-LAYER",
+          {"New", "A", "NewSub", "A", "A1,A2", "NewSub", "A~A1", "deep", cmd::ScriptItem::enter()});
     f.run("-LAYER", {"Rename", "A", "Z", cmd::ScriptItem::enter()});
     CHECK(f.layer("Z~A1") != nullptr);
 
@@ -205,4 +206,93 @@ TEST_CASE("LAYERCURRENT takes the layer of a picked object") {
     REQUIRE(f.doc.header().currentLayer == kLayerZero);
     f.run("LAYERCURRENT", {cmd::ScriptItem::pick(line)});
     CHECK(f.doc.header().currentLayer == f.layer("Walls")->id);
+}
+
+namespace {
+
+// Does what the application does for a panel edit (see ui/panel_util.h): the first line is split
+// into words, the command name starts it and the rest answer prompts; later lines are one answer
+// each; an empty line ends the command.
+void panelExec(cmd::ScriptHost& host, const std::vector<std::string>& lines) {
+    std::vector<std::string> words;
+    std::string w;
+    for (char c : lines.at(0)) {
+        if (c == ' ') {
+            if (!w.empty())
+                words.push_back(w);
+            w.clear();
+        } else {
+            w += c;
+        }
+    }
+    if (!w.empty())
+        words.push_back(w);
+    std::vector<cmd::ScriptItem> items;
+    for (std::size_t i = 1; i < words.size(); ++i)
+        items.emplace_back(words[i]);
+    for (std::size_t i = 1; i < lines.size(); ++i)
+        items.emplace_back(lines[i]);
+    items.push_back(cmd::ScriptItem::enter());
+    auto r = host.run(words[0], items);
+    REQUIRE(r.finished);
+}
+
+}  // namespace
+
+TEST_CASE("the exact command sequences the layer panel sends work, names with spaces included") {
+    Fixture f;
+    panelExec(f.host, {"-LAYER New", "Walls and doors"});
+    const Layer* walls = f.layer("Walls and doors");
+    REQUIRE(walls != nullptr);
+    std::string wallsRef = "#" + std::to_string(walls->id.value);
+
+    panelExec(f.host, {"-LAYER NewSub " + wallsRef, "Floor hidden"});
+    const Layer* sub = f.layer("Walls and doors~Floor hidden");
+    REQUIRE(sub != nullptr);
+    std::string subRef = "#" + std::to_string(sub->id.value);
+
+    panelExec(f.host, {"-LAYER Rename " + subRef, "Hidden floor"});
+    CHECK(f.layer("Walls and doors~Hidden floor") != nullptr);
+
+    panelExec(f.host, {"-LAYER Off " + wallsRef});
+    CHECK_FALSE(f.layer("Walls and doors")->on);
+    CHECK_FALSE(f.doc.effective(sub->id).on);
+    panelExec(f.host, {"-LAYER On " + wallsRef});
+
+    panelExec(f.host, {"-LAYER Color 12,34,56", subRef});
+    CHECK(f.doc.effective(sub->id).color == Color::rgb(12, 34, 56));
+    panelExec(f.host, {"-LAYER Lineweight 0.35", subRef});
+    CHECK(f.doc.layer(sub->id)->lineweight == LineWeight::mm(0.35));
+
+    // Drag the sub-layer out to the top level, then back under its old parent.
+    panelExec(f.host, {"-LAYER Parent " + subRef, "None"});
+    CHECK(f.layer("Hidden floor") != nullptr);
+    panelExec(f.host, {"-LAYER Parent " + subRef, wallsRef});
+    CHECK(f.layer("Walls and doors~Hidden floor") != nullptr);
+
+    panelExec(f.host, {"-LAYER Delete " + wallsRef, "MoveUp"});
+    CHECK(f.layer("Walls and doors") == nullptr);
+    CHECK(f.layer("Hidden floor") != nullptr);
+    CHECK(f.doc.layer(sub->id)->parent == LayerId{});
+}
+
+TEST_CASE("the exact command sequences the properties panel sends work") {
+    Fixture f;
+    EntityId c1, c2;
+    {
+        auto tx = f.doc.begin("make");
+        c1 = tx.add(Entity{{}, CircleData{{0, 0}, 1}}).value();
+        c2 = tx.add(Entity{{}, LineData{{0, 0}, {1, 0}}}).value();
+        tx.commit();
+    }
+    f.host.setSelection({c1, c2});
+    panelExec(f.host, {"-PROP Only Circle LTScale", "2 * 1.5"});
+    CHECK(f.doc.find(c1)->common.linetypeScale == doctest::Approx(3));
+    CHECK(f.doc.find(c2)->common.linetypeScale == doctest::Approx(1));
+    panelExec(f.host, {"-PROP Only Circle Set radius", "10 / 4"});
+    CHECK(entityAs<CircleData>(*f.doc.find(c1))->radius == doctest::Approx(2.5));
+    panelExec(f.host, {"-PROP Color", "ByBlock"});
+    CHECK(f.doc.find(c2)->common.color == Color::byBlock());
+    CHECK(f.host.undo());
+    CHECK(f.doc.find(c2)->common.color == Color::byLayer());
 }

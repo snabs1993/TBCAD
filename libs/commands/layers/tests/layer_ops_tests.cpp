@@ -376,3 +376,30 @@ TEST_CASE("text parsing helpers") {
     CHECK_FALSE(parseLineweight("9").ok());
     CHECK(lineweightName(LineWeight::mm(0.25)) == "0.25 mm");
 }
+
+TEST_CASE("whyCannotReparent explains each refusal and agrees with reparentLayer") {
+    Document doc;
+    LayerId a = mk(doc, "A");
+    LayerId b = mk(doc, "B", a);
+    LayerId c = mk(doc, "C", b);
+    mk(doc, "B");
+    LayerId d = mk(doc, "D");
+    CHECK(whyCannotReparent(doc, a, c).find("cycle") != std::string::npos);
+    CHECK(whyCannotReparent(doc, kLayerZero, a).find("Layer 0") != std::string::npos);
+    CHECK(whyCannotReparent(doc, d, kLayerZero).find("Layer 0") != std::string::npos);
+    CHECK(whyCannotReparent(doc, c, b).find("already") != std::string::npos);
+    CHECK(whyCannotReparent(doc, doc.layerByName("B")->id, a).find("already exists") !=
+          std::string::npos);
+    CHECK(whyCannotReparent(doc, d, a).empty());
+    CHECK(whyCannotReparent(doc, c, {}).empty());
+
+    LayerId bottom = mk(doc, "L0");
+    for (int i = 1; i < 8; ++i)
+        bottom = mk(doc, "L" + std::to_string(i), bottom);
+    CHECK(whyCannotReparent(doc, d, bottom).find("8 levels") != std::string::npos);
+    LayerId deepParent = bottom;
+    // One level above the bottom still has room for a leaf only if it is not the 9th level.
+    auto tx = doc.begin("check");
+    CHECK_FALSE(reparentLayer(doc, tx, d, deepParent).ok());
+    tx.rollback();
+}

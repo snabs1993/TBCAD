@@ -59,10 +59,18 @@ TEST_CASE("editing the colour of 1,000 mixed entities is one undo step") {
         for (int i = 0; i < 1000; ++i) {
             Entity e;
             switch (i % 4) {
-                case 0: e.data = LineData{{0, 0}, {double(i + 1), 0}}; break;
-                case 1: e.data = CircleData{{0, double(i)}, 2}; break;
-                case 2: e.data = ArcData{{0, 0}, 3, 0, 1}; break;
-                default: e.data = PolylineData{{{{0, 0}, 0, 0, 0}, {{1, double(i)}, 0, 0, 0}}, false, 0}; break;
+                case 0:
+                    e.data = LineData{{0, 0}, {double(i + 1), 0}};
+                    break;
+                case 1:
+                    e.data = CircleData{{0, double(i)}, 2};
+                    break;
+                case 2:
+                    e.data = ArcData{{0, 0}, 3, 0, 1};
+                    break;
+                default:
+                    e.data = PolylineData{{{{0, 0}, 0, 0, 0}, {{1, double(i)}, 0, 0, 0}}, false, 0};
+                    break;
             }
             ids.push_back(tx.add(std::move(e)).value());
         }
@@ -84,7 +92,9 @@ TEST_CASE("editing the colour of 1,000 mixed entities is one undo step") {
     CHECK(doc.find(ids[17])->common.color == Color::index(1));
 }
 
-TEST_CASE("-PROP: several properties in one command, Only narrows the target, locked layers are skipped") {
+TEST_CASE(
+    "-PROP: several properties in one command, Only narrows the target, locked layers are "
+    "skipped") {
     Document doc;
     cmd::Registry reg;
     registerAllCommands(reg);
@@ -155,9 +165,11 @@ TEST_CASE("geometry fields of circle, arc and polyline") {
     Document doc;
     EntityId c = addEntity(doc, CircleData{{1, 2}, 5});
     EntityId a = addEntity(doc, ArcData{{0, 0}, 10, 0, kPi / 2});
-    EntityId p = addEntity(doc, PolylineData{{{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0},
-                                              {{0, 10}, 0, 0, 0}},
-                                             true, 0});
+    EntityId p = addEntity(
+        doc, PolylineData{
+                 {{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0}, {{0, 10}, 0, 0, 0}},
+                 true,
+                 0});
     auto find = [](const std::vector<GeometryField>& fs, const char* id) {
         for (auto& f : fs)
             if (f.id == id)

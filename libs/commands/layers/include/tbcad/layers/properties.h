@@ -9,7 +9,8 @@
 
 namespace tbcad::layers {
 
-// ---- Common properties ---------------------------------------------------------------------------
+// ---- Common properties
+// ---------------------------------------------------------------------------
 
 // A value shared by the whole selection, or "varies".
 template <class T>
@@ -39,9 +40,7 @@ struct CommonEdit {
     std::optional<LinetypeId> linetype{};
     std::optional<double> linetypeScale{};
     std::optional<LineWeight> lineweight{};
-    bool empty() const {
-        return !layer && !color && !linetype && !linetypeScale && !lineweight;
-    }
+    bool empty() const { return !layer && !color && !linetype && !linetypeScale && !lineweight; }
 };
 
 // Applies the edit to every entity in `ids` (optionally only one kind). Entities on locked
@@ -54,7 +53,8 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
                                 const std::vector<EntityId>& ids, const CommonEdit& edit,
                                 std::optional<EntityKind> only = std::nullopt);
 
-// ---- Geometry fields -----------------------------------------------------------------------------
+// ---- Geometry fields
+// -----------------------------------------------------------------------------
 
 enum class FieldType { Number, Angle, Count, Flag };
 
