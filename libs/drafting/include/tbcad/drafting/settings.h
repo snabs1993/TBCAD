@@ -53,6 +53,7 @@ inline constexpr const char* osnap = "drafting.osnap";                   // bool
 inline constexpr const char* ortho = "drafting.ortho";                   // bool
 inline constexpr const char* polar = "drafting.polar";                   // bool
 inline constexpr const char* snap = "drafting.snap";                     // bool
+inline constexpr const char* dynUcs = "drafting.dynucs";                 // bool
 inline constexpr const char* grid = "view.grid";                         // bool
 inline constexpr const char* dynInput = "drafting.dynInput";             // bool, on by default
 inline constexpr const char* osnapModes = "drafting.osnap.modes";        // "endpoint,midpoint,..."
@@ -70,6 +71,7 @@ struct DraftingSettings {
     bool ortho = false;
     bool polar = false;
     bool snap = false;
+    bool dynUcs = false;  // dynamic UCS: ortho, polar and snap follow the edge under the cursor
     bool grid = false;
     bool dynInput = true;
     SnapModeMask modes = kDefaultSnapModes;

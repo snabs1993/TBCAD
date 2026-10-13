@@ -564,11 +564,23 @@ TextLayout layoutMText(const Document& doc, const MTextData& d) {
     return out;
 }
 
-TextLayout layoutEntity(const Document& doc, const Entity& e) {
-    if (const auto* t = entityAs<TextData>(e))
-        return layoutText(doc, *t);
-    if (const auto* m = entityAs<MTextData>(e))
-        return layoutMText(doc, *m);
+TextLayout layoutEntity(const Document& doc, const Entity& e, double annoScale) {
+    const double f = annotationFactor(doc.header(), e.common, annoScale);
+    if (const auto* t = entityAs<TextData>(e)) {
+        if (f == 1.0)
+            return layoutText(doc, *t);
+        TextData c = *t;
+        c.height *= f;
+        return layoutText(doc, c);
+    }
+    if (const auto* m = entityAs<MTextData>(e)) {
+        if (f == 1.0)
+            return layoutMText(doc, *m);
+        MTextData c = *m;
+        c.height *= f;
+        c.width *= f;
+        return layoutMText(doc, c);
+    }
     return {};
 }
 

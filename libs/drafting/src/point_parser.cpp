@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "tbcad/core/units.h"
+#include "tbcad/drafting/ucs.h"
 
 namespace tbcad::drafting {
 
@@ -31,7 +32,7 @@ std::optional<double> angle(std::string_view s, AngleUnit unit) {
 }  // namespace
 
 std::optional<Vec2> parseTypedPoint(std::string_view text, const cmd::PointParseContext& ctx,
-                                    std::optional<Vec2> direction) {
+                                    std::optional<Vec2> direction, const Ucs& ucs) {
     std::string t = cmd::trim(text);
     if (t.empty())
         return std::nullopt;
@@ -49,14 +50,16 @@ std::optional<Vec2> parseTypedPoint(std::string_view text, const cmd::PointParse
     t = cmd::trim(t);
     if (t.empty())
         return std::nullopt;
-    const Vec2 origin = relative ? ctx.lastPoint : Vec2{};
+    // Typed numbers are in the current UCS: absolute points start at its origin, relative ones
+    // at the last point, and both are turned by its rotation.
+    const Vec2 origin = relative ? ctx.lastPoint : ucs.origin;
 
     if (auto lt = t.find('<'); lt != std::string::npos) {
         auto d = length(std::string_view(t).substr(0, lt), ctx.unit);
         auto a = angle(std::string_view(t).substr(lt + 1), ctx.angleUnit);
         if (!d || !a)
             return std::nullopt;
-        return origin + Vec2{std::cos(*a), std::sin(*a)} * *d;
+        return origin + ucs.dirToWorld(Vec2{std::cos(*a), std::sin(*a)} * *d);
     }
     if (auto comma = t.find(','); comma != std::string::npos) {
         if (t.find(',', comma + 1) != std::string::npos)
@@ -65,7 +68,7 @@ std::optional<Vec2> parseTypedPoint(std::string_view text, const cmd::PointParse
         auto y = length(std::string_view(t).substr(comma + 1), ctx.unit);
         if (!x || !y)
             return std::nullopt;
-        return origin + Vec2{*x, *y};
+        return origin + ucs.dirToWorld(Vec2{*x, *y});
     }
     // A single number is a distance from the base point, only when typed without @ or #.
     if (relative || forced || !ctx.base)
@@ -89,7 +92,7 @@ std::optional<Vec2> TypedPointParser::parsePoint(std::string_view text,
     if (env_ && env_->tracking && ctx.base && env_->tracking->base == *ctx.base &&
         env_->tracking->rawCursor == ctx.cursor)
         dir = env_->tracking->direction;
-    return parseTypedPoint(text, ctx, dir);
+    return parseTypedPoint(text, ctx, dir, env_ ? currentUcs(env_->doc, env_->host) : Ucs{});
 }
 
 }  // namespace tbcad::drafting

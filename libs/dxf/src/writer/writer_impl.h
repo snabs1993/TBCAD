@@ -168,6 +168,8 @@ private:
     void writeMText(const Props& p, const MTextData& d, std::uint64_t owner);
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
     void writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner);
+    void writeTable(const Props& p, const Entity& e, std::uint64_t owner);
+    void writeAnnotativeData(const Entity& e);
     void writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner);
     void writeSolid(const Props& p, const std::vector<Vec2>& ring, std::uint64_t owner);
     void writeCurveFallback(const Entity& e, const Props& p, std::uint64_t owner);

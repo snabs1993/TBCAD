@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <numeric>
 
 #include "tbcad/modify/break_join.h"
+#include "tbcad/modify/trim.h"
 
 namespace tbcad::modify {
 
@@ -701,6 +703,368 @@ Result<EntityEdit> setPolylineWidth(const Entity& e, double width) {
         v.startWidth = v.endWidth = width;
     EntityEdit r;
     r.modified = withData(e, std::move(out));
+    return r;
+}
+
+// ---- EXTRIM -------------------------------------------------------------------------------------
+
+namespace {
+
+bool insidePolygon(const std::vector<Vec2>& poly, Vec2 p) {
+    bool in = false;
+    for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+        const Vec2 &a = poly[i], &b = poly[j];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    }
+    return in;
+}
+
+// Which side of the edge a point is on: +1 / -1, or 0 for "on the edge". Fails for edges without
+// two sides.
+std::optional<std::function<int(Vec2)>> sideFunction(const Entity& edge) {
+    if (const auto* l = entityAs<LineData>(edge)) {
+        if (samePoint(l->a, l->b))
+            return std::nullopt;
+        Vec2 a = l->a, d = l->b - l->a;
+        return std::function<int(Vec2)>([a, d](Vec2 p) {
+            double c = cross(d, p - a);
+            return std::abs(c) < 1e-12 ? 0 : (c > 0 ? 1 : -1);
+        });
+    }
+    auto radial = [](Vec2 c, double r) {
+        return std::function<int(Vec2)>([c, r](Vec2 p) {
+            double d = distance(p, c) - r;
+            return std::abs(d) < 1e-12 ? 0 : (d > 0 ? 1 : -1);
+        });
+    };
+    if (const auto* c = entityAs<CircleData>(edge))
+        return radial(c->center, c->radius);
+    if (const auto* a = entityAs<ArcData>(edge))
+        return radial(a->center, a->radius);
+    if (const auto* p = entityAs<PolylineData>(edge); p && p->closed) {
+        std::vector<Vec2> pts;
+        bool closed = false;
+        if (!pathOf(edge, pts, closed) || pts.size() < 3)
+            return std::nullopt;
+        return std::function<int(Vec2)>([pts](Vec2 q) { return insidePolygon(pts, q) ? -1 : 1; });
+    }
+    return std::nullopt;
+}
+
+// Midpoints of the pieces of `e` that its crossings with the edge cut out.
+std::vector<Vec2> pieceMidpoints(const Entity& e, const std::vector<CurveRef>& edgeCurves) {
+    std::vector<Vec2> mids;
+    auto built = buildPath(e);
+    if (!built)
+        return mids;
+    const auto& [path, closed] = built.value();
+    std::vector<CurveRef> mine;
+    if (!geom::curvesOf(e, mine))
+        return mids;
+    std::vector<double> cuts;
+    for (const CurveRef& a : mine) {
+        for (const CurveRef& b : edgeCurves) {
+            std::vector<geom::Intersection> xs;
+            geom::intersect(a, b, xs, false, true);
+            for (const auto& x : xs) {
+                // Arclength of the closest path vertex pair projection.
+                double best = 1e300, bs = 0;
+                for (std::size_t i = 1; i < path.pts.size(); ++i) {
+                    Vec2 d = path.pts[i] - path.pts[i - 1];
+                    double l2 = dot(d, d);
+                    double u =
+                        l2 > 0 ? std::clamp(dot(x.p - path.pts[i - 1], d) / l2, 0.0, 1.0) : 0.0;
+                    double dist = distance(path.pts[i - 1] + d * u, x.p);
+                    if (dist < best) {
+                        best = dist;
+                        bs = path.cum[i - 1] + u * std::sqrt(l2);
+                    }
+                }
+                cuts.push_back(bs);
+            }
+        }
+    }
+    std::sort(cuts.begin(), cuts.end());
+    cuts.erase(std::unique(cuts.begin(), cuts.end(),
+                           [](double a, double b) { return std::abs(a - b) < 1e-7; }),
+               cuts.end());
+    if (cuts.empty())
+        return mids;
+    double len = path.length();
+    std::vector<double> bounds;
+    if (!closed)
+        bounds.push_back(0.0);
+    for (double c : cuts)
+        bounds.push_back(c);
+    if (!closed)
+        bounds.push_back(len);
+    for (std::size_t i = 0; i + 1 < bounds.size(); ++i) {
+        if (bounds[i + 1] - bounds[i] > 1e-7)
+            mids.push_back(path.at(0.5 * (bounds[i] + bounds[i + 1])));
+    }
+    if (closed && cuts.size() >= 1) {
+        double a = cuts.back(), b = cuts.front() + len;
+        if (b - a > 1e-7) {
+            double m = 0.5 * (a + b);
+            mids.push_back(path.at(m > len ? m - len : m));
+        }
+    }
+    return mids;
+}
+
+}  // namespace
+
+Result<EntityEdit> extrimEntity(const Entity& target, const Entity& edge, Vec2 side) {
+    auto sideOf = sideFunction(edge);
+    if (!sideOf)
+        return err("The cutting edge must be a line, circle, arc or closed polyline.");
+    int want = (*sideOf)(side);
+    if (want == 0)
+        return err("Pick a point that is not on the cutting edge.");
+    std::vector<CurveRef> edgeCurves;
+    if (!geom::curvesOf(edge, edgeCurves) || edgeCurves.empty())
+        return err("The cutting edge has no geometry.");
+
+    std::vector<Entity> work{target};
+    std::vector<Entity> done;
+    bool changed = false;
+    for (int guard = 0; !work.empty() && guard < 256; ++guard) {
+        Entity cur = std::move(work.back());
+        work.pop_back();
+        std::optional<Vec2> doomed;
+        for (Vec2 m : pieceMidpoints(cur, edgeCurves)) {
+            if ((*sideOf)(m) == want) {
+                doomed = m;
+                break;
+            }
+        }
+        if (!doomed) {
+            done.push_back(std::move(cur));
+            continue;
+        }
+        auto edit = trimEntity(cur, *doomed, {&edge}, TrimOptions{true});
+        if (!edit)
+            return edit.error();
+        changed = true;
+        if (edit.value().eraseSource)
+            continue;
+        if (edit.value().modified)
+            work.push_back(std::move(*edit.value().modified));
+        for (Entity& a : edit.value().added)
+            work.push_back(std::move(a));
+    }
+    EntityEdit r;
+    if (!changed)
+        return r;  // nothing on that side
+    if (done.empty()) {
+        r.eraseSource = true;
+        return r;
+    }
+    r.modified = std::move(done.front());
+    for (std::size_t i = 1; i < done.size(); ++i)
+        r.added.push_back(std::move(done[i]));
+    return r;
+}
+
+// ---- BLEND --------------------------------------------------------------------------------------
+
+namespace {
+
+struct EndInfo {
+    Vec2 p{};
+    Vec2 out{};  // unit tangent leaving the curve at this end
+};
+
+Result<EndInfo> endNearest(const Entity& e, Vec2 pick) {
+    if (auto segs = openSegs(e)) {
+        bool atEnd = nearerToEnd(*segs, pick);
+        if (atEnd) {
+            const Seg& s = segs->back();
+            return EndInfo{s.p1, segTangent(s, 1.0)};
+        }
+        const Seg& s = segs->front();
+        Vec2 t = segTangent(s, 0.0);
+        return EndInfo{s.p0, t * -1.0};
+    }
+    if (const auto* sp = entityAs<SplineData>(e); sp && !sp->closed && !sp->periodic) {
+        std::vector<CurveRef> cs;
+        if (geom::curvesOf(e, cs) && !cs.empty()) {
+            const CurveRef& f = cs.front();
+            const CurveRef& l = cs.back();
+            double t0 = f.t0(), t1 = l.t0() + l.sweep();
+            Vec2 a = f.pointAt(t0), b = l.pointAt(t1);
+            if (distance(pick, b) < distance(pick, a))
+                return EndInfo{b, normalized(l.tangentAt(t1))};
+            return EndInfo{a, normalized(f.tangentAt(t0)) * -1.0};
+        }
+    }
+    return err("BLEND works on lines, arcs and open polylines and splines.");
+}
+
+}  // namespace
+
+Result<Entity> blendCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB) {
+    auto ea = endNearest(a, pickA);
+    if (!ea)
+        return ea.error();
+    auto eb = endNearest(b, pickB);
+    if (!eb)
+        return eb.error();
+    double chord = distance(ea.value().p, eb.value().p);
+    if (chord < 1e-6)
+        return err("The two ends already meet.");
+    geom::InterpolateOptions io;
+    io.startTangent = ea.value().out * chord;
+    io.endTangent = eb.value().out * -chord;
+    // A cubic needs a third point to honour both end tangents: the Hermite curve's midpoint.
+    Vec2 mid = (ea.value().p + eb.value().p) * 0.5 +
+               (io.startTangent.value() - io.endTangent.value()) * 0.125;
+    Vec2 pts[3] = {ea.value().p, mid, eb.value().p};
+    auto sp = geom::interpolateSpline(pts, io);
+    if (!sp)
+        return err("The blend could not be fitted: " + sp.error().message);
+    return withData(a, Indirect<SplineData>(std::move(sp.value())));
+}
+
+// ---- PEDIT vertices -----------------------------------------------------------------------------
+
+namespace {
+
+std::size_t nearestVertex(const PolylineData& p, Vec2 q) {
+    std::size_t best = 0;
+    double bd = 1e300;
+    for (std::size_t i = 0; i < p.v.size(); ++i) {
+        double d = distance(p.v[i].p, q);
+        if (d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+}  // namespace
+
+Result<EntityEdit> insertPolylineVertex(const Entity& e, Vec2 p) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    PolylineData clean = cleanPolyline(*pl);
+    std::vector<Seg> segs = polylineSegs(clean);
+    if (segs.empty())
+        return err("The polyline has no segments.");
+    double g = closestGlobalParam(segs, p);
+    auto i = static_cast<std::size_t>(std::min<double>(std::floor(g), segs.size() - 1.0));
+    double u = std::clamp(g - static_cast<double>(i), 0.0, 1.0);
+    if (u < 1e-9 || u > 1.0 - 1e-9)
+        return err("There is already a vertex there.");
+    std::vector<Seg> chain(segs.begin(), segs.begin() + static_cast<std::ptrdiff_t>(i));
+    chain.push_back(segSub(segs[i], 0.0, u));
+    chain.push_back(segSub(segs[i], u, 1.0));
+    chain.insert(chain.end(), segs.begin() + static_cast<std::ptrdiff_t>(i) + 1, segs.end());
+    EntityEdit r;
+    r.modified = withData(e, polylineFromSegs(chain, clean.closed, &clean));
+    return r;
+}
+
+Result<EntityEdit> removePolylineVertex(const Entity& e, Vec2 near) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    std::size_t minCount = pl->closed ? 4 : 3;
+    if (pl->v.size() < minCount)
+        return err("The polyline would have too few vertices.");
+    PolylineData out = *pl;
+    std::size_t i = nearestVertex(out, near);
+    if (pl->closed || i > 0) {
+        // The segment that ended here and the one that started here become one straight segment.
+        std::size_t prev = (i + out.v.size() - 1) % out.v.size();
+        out.v[prev].bulge = 0;
+    }
+    out.v.erase(out.v.begin() + static_cast<std::ptrdiff_t>(i));
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+Result<EntityEdit> movePolylineVertex(const Entity& e, Vec2 near, Vec2 to) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    PolylineData out = *pl;
+    out.v[nearestVertex(out, near)].p = to;
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+// ---- SPLINEDIT ----------------------------------------------------------------------------------
+
+Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b) {
+    const auto* sp = entityAs<SplineData>(e);
+    if (!sp)
+        return err("Select a spline.");
+    if (sp->fit.size() < 2)
+        return err("This spline has no fit points to edit.");
+    std::vector<Vec2> fit = sp->fit;
+    bool closed = sp->closed;
+    auto nearest = [&](Vec2 q) {
+        std::size_t best = 0;
+        for (std::size_t i = 1; i < fit.size(); ++i) {
+            if (distance(fit[i], q) < distance(fit[best], q))
+                best = i;
+        }
+        return best;
+    };
+    switch (op) {
+        case SplineFitOp::Add: {
+            std::vector<CurveRef> cs;
+            if (!geom::curvesOf(e, cs) || cs.empty())
+                return err("The spline has no geometry.");
+            Vec2 on = cs.front().closestPoint(a);
+            std::size_t segCount = closed ? fit.size() : fit.size() - 1;
+            std::size_t at = 0;
+            double bd = 1e300;
+            for (std::size_t i = 0; i < segCount; ++i) {
+                Vec2 p0 = fit[i], p1 = fit[(i + 1) % fit.size()];
+                Vec2 d = p1 - p0;
+                double l2 = dot(d, d);
+                double u = l2 > 0 ? std::clamp(dot(on - p0, d) / l2, 0.0, 1.0) : 0.0;
+                double dist = distance(p0 + d * u, on);
+                if (dist < bd) {
+                    bd = dist;
+                    at = i;
+                }
+            }
+            fit.insert(fit.begin() + static_cast<std::ptrdiff_t>(at) + 1, on);
+            break;
+        }
+        case SplineFitOp::Delete:
+            if (fit.size() <= (closed ? 3u : 2u))
+                return err("The spline would have too few fit points.");
+            fit.erase(fit.begin() + static_cast<std::ptrdiff_t>(nearest(a)));
+            break;
+        case SplineFitOp::Move:
+            fit[nearest(a)] = b;
+            break;
+        case SplineFitOp::Close:
+            if (fit.size() < 3)
+                return err("A closed spline needs at least three fit points.");
+            closed = true;
+            break;
+        case SplineFitOp::Open:
+            closed = false;
+            break;
+    }
+    geom::InterpolateOptions io;
+    io.degree = sp->degree;
+    io.closed = closed;
+    auto fitted = geom::interpolateSpline(fit, io);
+    if (!fitted)
+        return err("The spline could not be fitted: " + fitted.error().message);
+    EntityEdit r;
+    r.modified = withData(e, Indirect<SplineData>(std::move(fitted.value())));
     return r;
 }
 

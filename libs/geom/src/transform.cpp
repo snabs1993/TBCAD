@@ -389,6 +389,22 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
             o.textPos = t.apply(o.textPos);
             return out;
         }
+        case EntityKind::Table: {
+            if (!uniform)
+                return makeError(ErrorCode::Unsupported, "tables cannot be scaled non-uniformly");
+            if (mirror)
+                return makeError(ErrorCode::Unsupported, "tables cannot be mirrored");
+            auto& o = *entityAs<TableData>(out);
+            o.origin = t.apply(o.origin);
+            o.rotation = rotationOf(t, o.rotation);
+            for (double& w : o.colWidths)
+                w *= s;
+            for (double& h : o.rowHeights)
+                h *= s;
+            o.textHeight *= s;
+            o.margin *= s;
+            return out;
+        }
         case EntityKind::Proxy: {
             auto& o = *entityAs<ProxyData>(out);
             for (DisplayItem& it : o.graphics.items) {

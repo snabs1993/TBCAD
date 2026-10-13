@@ -47,7 +47,7 @@ bool hasCurveOrPoint(EntityKind k) {
 
 bool needsUniformScale(EntityKind k) {
     return k == EntityKind::Text || k == EntityKind::MText || k == EntityKind::Dimension ||
-           k == EntityKind::Leader;
+           k == EntityKind::Leader || k == EntityKind::Table;
 }
 
 // Rotation-and-uniform-scale approximation of t (a mirror is kept), with the same translation as
@@ -146,7 +146,7 @@ namespace {
 
 struct HookTable {
     std::mutex mutex;
-    std::array<ExplodeFn, 14> fns{};
+    std::array<ExplodeFn, static_cast<std::size_t>(EntityKind::Table) + 1> fns{};
 };
 
 HookTable& hooks() {

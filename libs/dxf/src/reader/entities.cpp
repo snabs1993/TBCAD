@@ -4,6 +4,7 @@
 
 #include "importer.h"
 #include "tbcad/geom/spline.h"
+#include "tbcad/table/table.h"
 
 namespace tbcad::dxf::detail {
 
@@ -154,6 +155,13 @@ EntityCommon Importer::commonOf(const Record& r) {
             c.linetypeScale = s;
     }
     c.visible = r.integer(60, 0) == 0;
+    bool ours = false;
+    for (const Group& g : r.g) {
+        if (g.code == 1001)
+            ours = g.str() == "TBCAD";
+        else if (ours && g.code == 1000 && g.str() == "annotative=1")
+            c.annotative = true;
+    }
     return c;
 }
 
@@ -664,6 +672,31 @@ bool Importer::blockHasAttDef(BlockId block, const std::string& tag) const {
 
 bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
                           std::vector<Entity>& out) {
+    // Our own table export: an INSERT of an anonymous block with the table in extended data.
+    {
+        std::string packed;
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                ours = g.str() == "TBCAD";
+            } else if (ours && g.code == 1000) {
+                packed += dec(g.str());
+            }
+        }
+        if (packed.rfind("tbcad-table", 0) == 0) {
+            if (auto t = table::parse(packed)) {
+                if (r.integer(66) == 1) {  // no attributes expected, but keep the stream in step
+                    Record skip;
+                    while (rr.next(skip) && skip.type != "SEQEND") {
+                    }
+                }
+                Entity e;
+                e.data = Indirect<TableData>(std::move(*t));
+                out.push_back(std::move(e));
+                return true;
+            }
+        }
+    }
     // An INSERT with group 66 = 1 is followed by its ATTRIB records up to SEQEND.
     std::vector<Record> attribs;
     if (r.integer(66) == 1) {

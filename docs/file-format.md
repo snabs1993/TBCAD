@@ -1,6 +1,6 @@
 # The .tbcad file format
 
-Format version **1.4** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, below). This document is the specification; the reference implementation is
+Format version **1.5** (older files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 the `XRFS` chunk for external references, 1.3 an array to Insert, 1.4 dynamic blocks: the `DYNB` chunk and parameter values on Insert, 1.5 the `XRFO` chunk for overlay xrefs, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
 `libs/io/tools`) prints any file as text.
 
@@ -54,6 +54,7 @@ error, an unknown chunk is kept whatever its flags.
 | `BLKS` | block definitions | 0..1 |
 | `XRFS` | external references of blocks (since 1.2) | 0..1, only when a block is an xref |
 | `DYNB` | dynamic block parameters and actions (since 1.4) | 0..1, only when a block is dynamic |
+| `XRFO` | overlay flags of xrefs (since 1.5) | 0..1, only when an xref is an overlay |
 | `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
@@ -128,6 +129,8 @@ entities are stored as for any block, so a drawing opens and plots without the s
 `varint actionCount`, per action `u8 kind` (0 stretch, 1 move, 2 scale, 3 rotate, 4 flip), `varint parameter`
 (index), `v2 frameMin`, `v2 frameMax`, `varint n`, `n` x `varint entityId`. Entity ids are those of the
 block's own entities. Older readers keep the chunk as an unknown chunk.
+
+**XRFO** (since 1.5): `varint n`, then `n` × `varint block`: the xref blocks that are *overlays* (shown here, but not carried along when this drawing is itself used as an xref). Older readers keep the chunk and treat the xref as an ordinary attach.
 
 A **colour** is 4 bytes: `u8 kind` (0 ByLayer, 1 ByBlock, 2 Index, 3 Rgb, 4 ByParent), then
 `r g b` (for Index the palette index is in `r`).

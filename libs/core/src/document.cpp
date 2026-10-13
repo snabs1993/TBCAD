@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <new>
 #include <stdexcept>
@@ -346,6 +347,40 @@ struct Checker {
             p(q);
         p(d.textPos);
         dimStyleOk(d.style);
+    }
+    void operator()(TableData& d) {
+        p(d.origin);
+        finite(d.rotation);
+        finite(d.textHeight);
+        finite(d.margin);
+        if (d.colWidths.empty() || d.rowHeights.empty() ||
+            d.cells.size() != d.colWidths.size() * d.rowHeights.size()) {
+            bad("table cells do not match its rows and columns");
+            return;
+        }
+        if (d.colWidths.size() > 1000 || d.rowHeights.size() > 100000) {
+            bad("table is too large");
+            return;
+        }
+        for (double w : d.colWidths) {
+            finite(w);
+            if (!(w > 0))
+                bad("table column width must be positive");
+        }
+        for (double h : d.rowHeights) {
+            finite(h);
+            if (!(h > 0))
+                bad("table row height must be positive");
+        }
+        if (!(d.textHeight > 0))
+            bad("table text height must be positive");
+        const std::size_t cols = d.colWidths.size(), rows = d.rowHeights.size();
+        for (std::size_t i = 0; i < d.cells.size(); ++i) {
+            const TableCell& c = d.cells[i];
+            if (c.colSpan < 1 || c.rowSpan < 1 || i % cols + c.colSpan > cols ||
+                i / cols + c.rowSpan > rows)
+                bad("table cell merge goes outside the table");
+        }
     }
     void operator()(ProxyData& d) {
         for (const auto& item : d.graphics.items) {
@@ -1550,6 +1585,44 @@ void Transaction::rollback() {
     }
     d.active_ = nullptr;
     doc_ = nullptr;
+}
+
+double currentAnnotationScale(const Header& h) {
+    auto it = h.custom.find(kAnnoScaleKey);
+    if (it == h.custom.end())
+        return 1.0;
+    char* end = nullptr;
+    double v = std::strtod(it->second.c_str(), &end);
+    return end != it->second.c_str() && std::isfinite(v) && v > 0 ? v : 1.0;
+}
+
+std::vector<double> annotationScaleList(const Header& h) {
+    std::vector<double> out;
+    auto it = h.custom.find(kAnnoScaleListKey);
+    if (it != h.custom.end()) {
+        const std::string& s = it->second;
+        std::size_t at = 0;
+        while (at <= s.size()) {
+            std::size_t comma = s.find(',', at);
+            std::string part = s.substr(at, comma == std::string::npos ? comma : comma - at);
+            char* end = nullptr;
+            double v = std::strtod(part.c_str(), &end);
+            if (end != part.c_str() && std::isfinite(v) && v > 0)
+                out.push_back(v);
+            if (comma == std::string::npos)
+                break;
+            at = comma + 1;
+        }
+    }
+    if (out.empty())
+        out = {1, 2, 5, 10, 20, 25, 50, 75, 100, 200, 250, 500, 1000};
+    return out;
+}
+
+double annotationFactor(const Header& h, const EntityCommon& c, double override) {
+    if (!c.annotative)
+        return 1.0;
+    return override > 0 ? override : currentAnnotationScale(h);
 }
 
 }  // namespace tbcad

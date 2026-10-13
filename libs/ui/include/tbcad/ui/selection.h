@@ -20,6 +20,19 @@ bool isVisible(const Document& doc, const Entity& e);
 std::optional<EntityId> pickEntity(const Document& doc, const index::SpatialIndex& index, Vec2 p,
                                    double apertureMm);
 
+// Every selectable entity within `apertureMm` of `p`, nearest first (ties: larger id first).
+std::vector<EntityId> pickAllAt(const Document& doc, const index::SpatialIndex& index, Vec2 p,
+                                double apertureMm);
+// Selection cycling: the entity after `current` in `stack` (wrapping round); the first one when
+// `current` is not in it. Nullopt for an empty stack.
+std::optional<EntityId> cycleNext(const std::vector<EntityId>& stack,
+                                  std::optional<EntityId> current);
+
+// Lasso (freeform) selection along the closed `polygon`: window == entities lying completely
+// inside it, crossing == entities that touch or lie inside it. Ascending id order.
+std::vector<EntityId> selectInPolygon(const Document& doc, const index::SpatialIndex& index,
+                                      const std::vector<Vec2>& polygon, bool crossing);
+
 // Window selection (crossing == false): entities lying completely inside the box. Crossing
 // selection: entities that touch or lie inside it. Ascending id order.
 std::vector<EntityId> selectInBox(const Document& doc, const index::SpatialIndex& index,

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -24,7 +25,23 @@ struct Source {
     std::unique_ptr<Document> doc{};
     std::int64_t stamp = 0;  // last-write time in nanoseconds since the Unix epoch
     std::size_t warnings = 0;
+    std::filesystem::path file{};  // where it was read from
 };
+
+// How the path of an xref is stored in the drawing.
+enum class PathType {
+    Relative,  // from the folder of the host drawing (falls back to Absolute when not possible)
+    Absolute,
+    None,  // only the file name: looked up in the folder of the host drawing
+};
+// The text to store for `file` seen from the drawing `hostFile` (empty = not saved yet).
+std::string storedPath(const std::filesystem::path& file, const std::filesystem::path& hostFile,
+                       PathType type);
+
+// Readers for source formats beyond .tbcad and .dxf (the DWG reader registers ".dwg").
+// `extension` is lower case with the dot.
+using Loader = std::function<Result<Source>(const std::filesystem::path&)>;
+void registerLoader(std::string extension, Loader loader);
 
 // What a fill did.
 struct Summary {
@@ -48,13 +65,17 @@ std::int64_t fileStamp(const std::filesystem::path& file);
 // A block name for a file: its stem with characters a block name cannot hold replaced.
 std::string defaultName(const std::filesystem::path& file);
 
-// Reads a .tbcad or .dxf file by its extension.
+// Reads a .tbcad, .dxf or registered file by its extension. Xrefs inside the source are
+// reloaded from their own files first (relative to the source), so nested xrefs stay live; one
+// that cannot be read keeps its snapshot. A reference loop is cut where it closes.
 Result<Source> loadSource(const std::filesystem::path& file);
 
 // Creates the block `name` as an xref of `stored` (the path as the user typed it) and fills it
-// from `source`. The block name must be free. Returns the new block.
+// from `source`. The block name must be free. `overlay`: an overlay xref is left out when this
+// drawing is used as an xref by another one. Returns the new block.
 Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
-                       std::string_view stored, const Source& source, Summary* summary = nullptr);
+                       std::string_view stored, const Source& source, Summary* summary = nullptr,
+                       bool overlay = false);
 // Creates an ordinary block `name` from the model space of `source` (a drawing file used as a
 // block, as in the block library). Layers are matched by name with the host's own and created
 // when missing; layer 0 stays layer 0. The block name must be free.

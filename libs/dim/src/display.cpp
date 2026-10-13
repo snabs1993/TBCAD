@@ -32,6 +32,7 @@ Color roleColor(const DimStyle& st, Role r) {
 EntityCommon commonFor(const Entity& e, const DimStyle& st, Role role) {
     EntityCommon c = e.common;
     c.id = {};
+    c.annotative = false;  // parts are drawn at the scaled size already
     Color col = roleColor(st, role);
     if (col.kind != ColorKind::ByBlock)
         c.color = col;
@@ -68,11 +69,12 @@ TextStyleId textStyleOf(const DimStyle& st) {
     return st.textStyle;
 }
 
-Layout layoutOf(const Document& doc, const Entity& e, double tol) {
+Layout layoutOf(const Document& doc, const Entity& e, double tol, double annoScale = 0) {
+    const double f = annotationFactor(doc.header(), e.common, annoScale);
     if (const auto* d = entityAs<DimensionData>(e))
-        return layoutDimension(doc, *d, tol);
+        return layoutDimension(doc, *d, tol, f);
     if (const auto* l = entityAs<LeaderData>(e))
-        return layoutLeader(doc, *l, tol);
+        return layoutLeader(doc, *l, tol, f);
     return {};
 }
 
@@ -82,7 +84,7 @@ void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::Dis
                            DisplayList& out) {
     const DimStyle& st = styleForEntity(doc, e);
     const double tol = ctx.tolerance();
-    Layout L = layoutOf(doc, e, tol);
+    Layout L = layoutOf(doc, e, tol, ctx.annoScale);
 
     auto styleOfRole = [&](Role r) {
         Entity tmp;

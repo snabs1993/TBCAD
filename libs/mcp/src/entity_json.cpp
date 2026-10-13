@@ -635,6 +635,8 @@ std::string kindName(EntityKind kind) {
             return "leader";
         case EntityKind::Proxy:
             return "proxy";
+        case EntityKind::Table:
+            return "table";
     }
     return "proxy";
 }
@@ -754,6 +756,15 @@ Json entityToJson(const Document& doc, const Entity& e) {
                 o["text"] = d.textOverride;
             if (d.kind == DimKind::Linear)
                 o["rotation"] = d.rotation;
+        } else if constexpr (std::is_same_v<T, TableData>) {
+            o["origin"] = pointToJson(d.origin);
+            o["rotation"] = d.rotation;
+            o["rows"] = static_cast<double>(d.rowHeights.size());
+            o["columns"] = static_cast<double>(d.colWidths.size());
+            Json::Array cells;
+            for (const TableCell& c : d.cells)
+                cells.push_back(Json(c.utf8));
+            o["cells"] = Json(std::move(cells));
         } else if constexpr (std::is_same_v<T, LeaderData>) {
             o["vertices"] = pointsToJson(d.vertices);
             if (!d.utf8.empty())

@@ -7,6 +7,7 @@
 #include "tbcad/blocks/explode.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/table/table.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -229,6 +230,7 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
         }
         if (entityAs<DimensionData>(*e)) {
             i += writeDimension(ids, i, owner);
+            writeAnnotativeData(*e);
             continue;
         }
         writeEntity(*e, owner);
@@ -300,7 +302,61 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
         case EntityKind::Proxy:
             writeProxy(p, *entityAs<ProxyData>(e), owner);
             break;
+        case EntityKind::Table:
+            writeTable(p, e, owner);
+            break;
     }
+    if (kind(e) != EntityKind::Insert)
+        writeAnnotativeData(e);
+}
+
+// Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer
+// turns it back into the flag. Written after the last group of the record.
+void Writer::writeAnnotativeData(const Entity& e) {
+    if (!e.common.annotative)
+        return;
+    o_->raw(1001, "TBCAD");
+    o_->str(1000, "annotative=1");
+}
+
+// A table is an INSERT of an anonymous *T block that holds its drawn grid and texts, so any
+// program shows it. Our own extended data carries the table itself; the importer rebuilds the
+// table from it.
+void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
+    const TableData& t = *entityAs<TableData>(e);
+    DimBlock block;
+    do {
+        block.name = "*T" + std::to_string(++dimCounter_);
+    } while (blockSet_.has(block.name));
+    blockSet_.add(block.name);
+    block.rec = newHandle();
+    {
+        Out bo(utf8_, r12_);
+        Out* saved = o_;
+        o_ = &bo;
+        auto parts = table::explodeTable(doc_, e);
+        if (parts) {
+            for (const Entity& part : parts.value())
+                writeEntity(part, block.rec);
+        }
+        o_ = saved;
+        block.body = std::move(bo.buf);
+    }
+    const std::string blockName = block.name;
+    dimBlocks_.push_back(std::move(block));
+
+    head("INSERT", p, owner, "AcDbBlockReference");
+    Out& o = *o_;
+    o.str(2, blockName);
+    o.pt(10, Vec2{0, 0});
+    o.d(41, 1);
+    o.d(42, 1);
+    o.d(43, 1);
+    count("INSERT");
+    o.raw(1001, "TBCAD");
+    const std::string text = table::serialize(t);
+    for (std::size_t at = 0; at < text.size(); at += 200)
+        o.str(1000, text.substr(at, 200));
 }
 
 // ---------------------------------------------------------------------------------------------
