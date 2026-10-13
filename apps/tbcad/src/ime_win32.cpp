@@ -1,7 +1,6 @@
 // Moves the input method's composition and candidate windows to the text cursor of the
 // command line, so Thai (and any other IME) input appears where the user is typing.
 #include <imgui.h>
-#include <imm.h>
 #include <windows.h>
 
 #include "gui.h"
