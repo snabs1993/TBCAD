@@ -187,9 +187,9 @@ public:
         applyCurrentProperties(ctx.doc().header(), e);
         // Symbols drawn at 1:1 are sized for the current annotation scale when the drawing asks.
         if (annotateNewObjects(ctx.doc().header())) {
-            const BlockDef* def = ctx.doc().block(data.block);
+            const BlockDef* annoDef = ctx.doc().block(data.block);
             const double n = currentAnnotationScale(ctx.doc().header());
-            if (def && def->xrefPath.empty() && !data.array) {
+            if (annoDef && annoDef->xrefPath.empty() && !data.array) {
                 e.common.annotative = true;
                 e.common.annoScales = ScaleList(std::vector<double>{n});
                 if (auto* ins = entityAs<InsertData>(e))
