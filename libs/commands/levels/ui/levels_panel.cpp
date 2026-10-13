@@ -143,8 +143,8 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
             {
                 double v = l->elevation;
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::InputDouble("##elev", &v, 0, 0, "%.0f",
-                                       ImGuiInputTextFlags_EnterReturnsTrue)) {
+                ImGui::InputDouble("##elev", &v, 0, 0, "%.0f");
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
                     char buf[48];
                     std::snprintf(buf, sizeof buf, "%.15g", v);
                     exec(ctx, {"-LEVEL Elevation " + idRef(l->id), buf});
