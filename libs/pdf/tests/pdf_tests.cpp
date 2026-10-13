@@ -107,8 +107,29 @@ struct Interp {
 
 constexpr double kMmPerPt = 25.4 / 72.0;
 
+#ifdef _WIN32
+constexpr const char* kNull = "NUL";
+#else
+constexpr const char* kNull = "/dev/null";
+#endif
+
+bool requireQpdf() {
+    std::string v;
+#ifdef _WIN32
+    size_t n = 0;
+    char* buf = nullptr;
+    if (_dupenv_s(&buf, &n, "TBCAD_REQUIRE_QPDF") == 0 && buf)
+        v = buf;
+    std::free(buf);
+#else
+    if (const char* e = std::getenv("TBCAD_REQUIRE_QPDF"))
+        v = e;
+#endif
+    return !v.empty();
+}
+
 bool haveQpdf() {
-    return std::system("qpdf --version > /dev/null 2>&1") == 0;
+    return std::system((std::string("qpdf --version > ") + kNull + " 2>&1").c_str()) == 0;
 }
 
 // Runs `qpdf --check`. Skips (with a message) when qpdf is missing, unless
@@ -116,7 +137,7 @@ bool haveQpdf() {
 void checkWithQpdf(const PdfDocument& doc, const char* name) {
     static const bool available = haveQpdf();
     if (!available) {
-        if (std::getenv("TBCAD_REQUIRE_QPDF"))
+        if (requireQpdf())
             FAIL("qpdf not installed but TBCAD_REQUIRE_QPDF is set");
         MESSAGE("qpdf not found, skipping check for ", name);
         return;
@@ -124,7 +145,7 @@ void checkWithQpdf(const PdfDocument& doc, const char* name) {
     auto path =
         std::filesystem::temp_directory_path() / (std::string("tbcad_pdf_test_") + name + ".pdf");
     REQUIRE(doc.writeFile(path.string()).ok);
-    std::string cmd = "qpdf --check \"" + path.string() + "\" > /dev/null 2>&1";
+    std::string cmd = "qpdf --check \"" + path.string() + "\" > " + kNull + " 2>&1";
     int rc = std::system(cmd.c_str());
     std::filesystem::remove(path);
     CHECK_MESSAGE(rc == 0, "qpdf --check failed for ", name);
