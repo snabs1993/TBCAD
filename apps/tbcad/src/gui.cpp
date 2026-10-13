@@ -84,6 +84,10 @@ const char* kindName(EntityKind k) {
             return "Proxy object";
         case EntityKind::Table:
             return "Table";
+        case EntityKind::Ray:
+            return "Ray";
+        case EntityKind::MLine:
+            return "Multiline";
     }
     return "Object";
 }

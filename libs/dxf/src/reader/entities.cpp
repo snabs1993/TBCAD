@@ -4,6 +4,7 @@
 
 #include "importer.h"
 #include "tbcad/geom/spline.h"
+#include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 
 namespace tbcad::dxf::detail {
@@ -289,6 +290,8 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         withFrame([&] { convMText(r, f, out); });
     } else if (t == "POINT") {
         convPoint(r, out);
+    } else if (t == "RAY" || t == "XLINE") {
+        convRay(r, t == "XLINE", out);
     } else if (t == "INSERT") {
         withFrame([&] { convInsert(r, rr, f, out); });
     } else if (t == "HATCH") {
@@ -312,6 +315,21 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
 
 bool Importer::convLine(const Record& r, std::vector<Entity>& out) {
     LineData d{P(r, 10, 20), P(r, 11, 21)};
+    out.push_back(makeEntity(d));
+    return true;
+}
+
+bool Importer::convRay(const Record& r, bool infinite, std::vector<Entity>& out) {
+    RayData d;
+    d.origin = P(r, 10, 20);
+    d.dir = P(r, 11, 21);
+    d.infinite = infinite;
+    const double len = std::hypot(d.dir.x, d.dir.y);
+    if (!(len > 1e-12) || !std::isfinite(len)) {
+        bad(r, infinite ? "XLINE" : "RAY", "direction must not be zero; skipped");
+        return false;
+    }
+    d.dir = {d.dir.x / len, d.dir.y / len};
     out.push_back(makeEntity(d));
     return true;
 }
@@ -682,6 +700,20 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
                 ours = g.str() == "TBCAD";
             } else if (ours && g.code == 1000) {
                 packed += dec(g.str());
+            }
+        }
+        if (packed.rfind("tbcad-mline", 0) == 0) {
+            if (auto m = mline::parse(packed)) {
+                if (r.integer(66) == 1) {
+                    Record skip;
+                    while (rr.next(skip) && skip.type != "SEQEND") {
+                    }
+                }
+                Entity e;
+                e.data = Indirect<MlineData>(std::move(m->data));
+                out.push_back(std::move(e));
+                (void)tx_->modifyHeader([&](Header& h) { mline::storeStyle(h, m->style); });
+                return true;
             }
         }
         if (packed.rfind("tbcad-table", 0) == 0) {

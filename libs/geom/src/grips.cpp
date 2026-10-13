@@ -94,6 +94,12 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             g.push_back(d.textPos);
             break;
         }
+        case EntityKind::Ray:
+            g = {entityAs<RayData>(e)->origin};
+            break;
+        case EntityKind::MLine:
+            g = entityAs<MlineData>(e)->v;
+            break;
         case EntityKind::Table: {
             const auto& d = *entityAs<TableData>(e);
             g.push_back(d.origin);
@@ -290,6 +296,19 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
                 d.textPos = to;
             else
                 return badGrip();
+            return out;
+        }
+        case EntityKind::Ray: {
+            if (index != 0)
+                return badGrip();
+            entityAs<RayData>(out)->origin = to;
+            return out;
+        }
+        case EntityKind::MLine: {
+            auto& d = *entityAs<MlineData>(out);
+            if (index < 0 || static_cast<std::size_t>(index) >= d.v.size())
+                return badGrip();
+            d.v[static_cast<std::size_t>(index)] = to;
             return out;
         }
         case EntityKind::Table: {
