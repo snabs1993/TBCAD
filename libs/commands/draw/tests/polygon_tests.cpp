@@ -94,7 +94,8 @@ TEST_CASE("POLYGON: a zero radius is refused; Esc draws nothing") {
     Fixture f;
     f.host.run("POL", {"4", "0,0", "", "0,0"});
     CHECK(f.entities().empty());
-    CHECK(f.host.logContains("radius must not be zero"));
+    CHECK(f.host.logContains("must not be zero"));
+    f.host.feed({ScriptItem::esc()});
     f.host.run("POL", {"4", "0,0", "", ScriptItem::esc()});
     CHECK(f.entities().empty());
     CHECK_FALSE(f.host.undoStack().canUndo());

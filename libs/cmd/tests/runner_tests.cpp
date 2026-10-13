@@ -583,7 +583,7 @@ public:
 TEST_CASE("CommandContext::lastPoint is the click that answered a distance prompt") {
     Document doc;
     Registry reg;
-    reg.add(std::make_unique<LastPointProbe>());
+    (void)reg.add(std::make_unique<LastPointProbe>());
     ScriptHost host(doc, reg);
     host.run("LASTPOINTPROBE", {ScriptItem::click({3, 4})});
     CHECK(host.logContains("last=3.000000,4.000000"));
