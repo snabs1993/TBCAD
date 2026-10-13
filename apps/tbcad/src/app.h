@@ -1,0 +1,81 @@
+#pragma once
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "tbcad/cmd/registry.h"
+#include "tbcad/platform/paths.h"
+#include "tbcad/render/renderer.h"
+#include "tbcad/ui/app_core.h"
+#include "tbcad/ui/ui_registry.h"
+#include "viewport_target.h"
+
+struct GLFWwindow;
+
+namespace tbcad::app {
+
+class Gui;
+
+struct Options {
+    std::string openFile{};    // drawing to open at start
+    std::string script{};      // command lines run after start, separated by ';'
+    std::string screenshot{};  // write the last frame to this .ppm
+    std::string report{};      // --gate: also write the report here
+    int frames = 0;            // > 0: draw this many frames, then exit
+    int gateLines = 1000000;   // --gate: how many lines DEVGEN makes
+    bool selfTest = false;     // hidden window, exit code 77 when no display / OpenGL
+    bool gate = false;         // run the performance gate and exit
+    bool vsync = true;
+    bool help = false;
+};
+
+Options parseOptions(int argc, char** argv);
+
+// The program: window, renderer, Dear ImGui, the main loop.
+class App {
+public:
+    explicit App(Options options);
+    ~App();
+    App(const App&) = delete;
+    App& operator=(const App&) = delete;
+
+    int run();
+
+    // Used by the gate.
+    ui::AppCore& core() { return *core_; }
+    render::Renderer& renderer() { return renderer_; }
+    // Draws the drawing into the viewport target (no UI) and waits for the GPU.
+    void renderDrawingOnce(bool finish);
+    ViewportTarget& target() { return target_; }
+    GLFWwindow* window() { return window_; }
+
+private:
+    bool initWindow(std::string& why);
+    void shutdownWindow();
+    void runScript(const std::string& script);
+    void frame();
+    void drawScene();
+    int runGate();
+    bool saveScreenshot(const std::string& path);
+
+    Options options_;
+    platform::AppPaths paths_;
+    std::unique_ptr<cmd::Registry> registry_;
+    std::unique_ptr<ui::UiRegistry> uiRegistry_;
+    std::unique_ptr<ui::AppCore> core_;
+    std::unique_ptr<Gui> gui_;
+    GLFWwindow* window_ = nullptr;
+    render::Renderer renderer_;
+    ViewportTarget target_;
+    render::Overlay overlay_;
+    std::string iniPath_{};
+    bool imguiReady_ = false;
+    int framebufferW_ = 0;
+    int framebufferH_ = 0;
+    std::string lastTitle_{};
+    double smoothedFps_ = 0;
+    double lastFrameStart_ = 0;
+};
+
+}  // namespace tbcad::app
