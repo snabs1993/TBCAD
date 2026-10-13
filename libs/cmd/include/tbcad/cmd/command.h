@@ -74,6 +74,7 @@ struct PromptAnswer {
     std::string keyword{};
     EntityId entity{};
     std::vector<EntityId> ids{};
+    bool shift = false;
 };
 
 template <class R>
@@ -100,7 +101,7 @@ inline KeywordResult toResult<KeywordResult>(PromptAnswer&& a) {
 }
 template <>
 inline EntityResult toResult<EntityResult>(PromptAnswer&& a) {
-    return {a.status, a.entity, a.point, std::move(a.keyword)};
+    return {a.status, a.entity, a.point, std::move(a.keyword), a.shift};
 }
 template <>
 inline SelectionResult toResult<SelectionResult>(PromptAnswer&& a) {
