@@ -111,6 +111,10 @@ Editing tools (one undo step each, `AI: <tool>`):
   `set_draw_order`, `clipboard` (copy, cut, paste, paste_block, paste_original; the clip is kept by the server),
   `copy_to_level`, `region_op` (region, union, subtract, intersect). They run the real command, so problems the
   command reports come back as tool errors.
+- Plot: `export_pdf` and `export_image` (PNG/JPEG at `dpi`) take `style` (plot style table); `plot_style` lists,
+  selects or imports tables (.ctb); `page_setup` lists, saves, applies, assigns, renames and deletes page setups.
+- Annotation: `annotation` reads and sets the annotation scale, the scale list, whether new objects start
+  annotative, and makes objects annotative with chosen scales. Entities show `annotative` and `annotativeScales`.
 - Layers: `set_active_only`, `layer_state` (list, save, restore with `parts`, rename, delete).
 - Constraints: `list_constraints`, `add_constraint` (Coincident, Horizontal, Vertical, Parallel,
   Perpendicular, Equal, Tangent, Fix, Distance, Radius, Angle in degrees; solves and moves the geometry; a

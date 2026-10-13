@@ -375,3 +375,43 @@ TEST_CASE("annotation scale: settings, annotative text") {
     f.ok("annotation", R"({"action":"new_objects","on":true})");
     CHECK(f.ok("annotation").find("newObjectsAnnotative")->asBool());
 }
+
+TEST_CASE("plot: page setups, plot style tables and image export") {
+    Full f;
+    f.ok("add_entities", R"({"entities":[{"kind":"line","start":[0,0],"end":[100,50]}]})");
+    CHECK(f.ok("page_setup").find("pageSetups")->asArray().empty());
+    f.ok("page_setup", R"({"action":"save","name":"A3 mono"})");
+    f.ok("create_layout", R"({"name":"Sheet 1","paper":"A4"})");
+    Json as = f.ok("page_setup", R"({"action":"assign","name":"A3 mono","layout":"Sheet 1"})");
+    CHECK(as.find("pageSetups")->asArray()[0].find("usedBy")->asArray().size() == 1);
+    f.ok("page_setup", R"({"action":"rename","name":"A3 mono","new_name":"Mono"})");
+    CHECK(f.fails("page_setup", R"({"action":"apply","name":"Nope"})").size() > 0);
+    f.ok("page_setup", R"({"action":"delete","name":"Mono"})");
+    CHECK(f.ok("page_setup").find("pageSetups")->asArray().empty());
+
+    CHECK(f.ok("plot_style").find("messages")->asArray().size() >= 3);
+    f.ok("plot_style", R"({"action":"select","name":"grayscale.ctb"})");
+    CHECK(f.fails("plot_style", R"({"action":"select","name":"no-such-table"})").size() > 0);
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_image";
+    std::filesystem::create_directories(dir);
+    auto png = dir / "plot.png";
+    f.ok("export_image", "{\"path\":\"" + png.generic_string() + "\",\"dpi\":72,\"paper\":\"A5\"}");
+    {
+        std::ifstream in(png, std::ios::binary);
+        std::string head(8, ' ');
+        in.read(head.data(), 8);
+        CHECK(head.substr(1, 3) == "PNG");
+    }
+    auto jpg = dir / "plot.jpg";
+    f.ok("export_image",
+         "{\"path\":\"" + jpg.generic_string() + "\",\"dpi\":72,\"style\":\"none\"}");
+    CHECK(std::filesystem::exists(jpg));
+    CHECK(
+        f.fails("export_image", "{\"path\":\"" + (dir / "x.bmp").generic_string() + "\"}").size() >
+        0);
+    f.ok("export_pdf",
+         "{\"path\":\"" + (dir / "s.pdf").generic_string() + "\",\"style\":\"monochrome.ctb\"}");
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}

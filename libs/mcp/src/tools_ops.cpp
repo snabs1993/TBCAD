@@ -3,6 +3,8 @@
 // tool does exactly what the typed command does.
 
 #include "tbcad/core/groups.h"
+#include "tbcad/layout/layout.h"
+#include "tbcad/layout/pagesetup.h"
 #include "tools_common.h"
 
 namespace tbcad::mcp::detail {
@@ -235,6 +237,96 @@ ToolResult regionOp(ToolContext& ctx, const Json& a) {
     return ToolResult::fail("op must be region, union, subtract or intersect");
 }
 
+// ---- page setups and plot style tables --------------------------------------------------------
+
+Json pageSetupJson(const Document& doc, const layout::PageSetup& p) {
+    Json::Array users;
+    if (p.name == layout::modelPageSetup(doc))
+        users.emplace_back("Model");
+    for (const auto& l : layout::layouts(doc))
+        if (l.pageSetup == p.name)
+            users.emplace_back(l.name);
+    return Json(Json::Object{{"name", p.name},
+                             {"paper", p.settings.paperName},
+                             {"landscape", p.settings.landscape},
+                             {"styleTable", p.styleName},
+                             {"usedBy", Json(std::move(users))}});
+}
+
+ToolResult pageSetup(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    Document& doc = s.document();
+    std::string action = argString(a, "action", "list");
+    std::string name = argString(a, "name");
+    if (action == "list") {
+        Json::Array all;
+        for (const auto& p : layout::pageSetups(doc))
+            all.push_back(pageSetupJson(doc, p));
+        return ToolResult::ok(Json(Json::Object{{"pageSetups", Json(std::move(all))}}));
+    }
+    std::vector<Json> in;
+    if (action == "save") {
+        in = {Json("Save"), Json(name)};
+    } else if (action == "apply") {
+        in = {Json("Apply"), Json(name)};
+    } else if (action == "assign") {
+        in = {Json("Assign"), Json(name), Json(argString(a, "layout", "Model"))};
+    } else if (action == "rename") {
+        std::string to = argString(a, "new_name");
+        if (to.empty())
+            return ToolResult::fail("new_name is required");
+        in = {Json("Rename"), Json(name), Json(to)};
+    } else if (action == "delete") {
+        in = {Json("Delete"), Json(name)};
+    } else {
+        return ToolResult::fail("action must be list, save, apply, assign, rename or delete");
+    }
+    if (name.empty() && action != "assign")
+        return ToolResult::fail("name is required for " + action);
+    ToolResult r = failOnProblem(runChecked(s, "PAGESETUP", in));
+    if (r.isError)
+        return r;
+    // The command reports a missing setup or layout as a message.
+    for (const Json& m : r.data.find("messages")->asArray())
+        if (m.asString().rfind("No page setup", 0) == 0 ||
+            m.asString().find("no layout") != std::string::npos)
+            return ToolResult::fail(m.asString());
+    Json::Array all;
+    for (const auto& p : layout::pageSetups(doc))
+        all.push_back(pageSetupJson(doc, p));
+    return ToolResult::ok(Json(Json::Object{{"pageSetups", Json(std::move(all))},
+                                            {"messages", *r.data.find("messages")}}));
+}
+
+ToolResult plotStyle(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    std::string action = argString(a, "action", "list");
+    std::vector<Json> in;
+    if (action == "list") {
+        in = {Json("List")};
+    } else if (action == "select") {
+        in = {Json("Select"), Json(Json::Object{{"text", argString(a, "name")}})};
+    } else if (action == "import") {
+        std::string path = argString(a, "path");
+        if (path.empty())
+            return ToolResult::fail("path of the .ctb file is required");
+        in = {Json("Import"), Json(path)};
+    } else {
+        return ToolResult::fail("action must be list, select or import");
+    }
+    ToolResult r = runChecked(s, "PLOTSTYLE", in);
+    if (r.isError || action == "list")
+        return r;
+    for (const Json& m : r.data.find("messages")->asArray()) {
+        const std::string& t = m.asString();
+        if (t.find("not ") != std::string::npos || t.find("annot") != std::string::npos ||
+            t.find("rror") != std::string::npos || t.find("no ") != std::string::npos ||
+            t.find("There is") != std::string::npos)
+            return ToolResult::fail(t);
+    }
+    return r;
+}
+
 // ---- annotation scale -------------------------------------------------------------------------
 
 ToolResult annotation(ToolContext& ctx, const Json& a) {
@@ -365,6 +457,26 @@ void registerOpsTools(ToolSet& tools) {
             "Copies entities to another level at the same position (COPYTOLEVEL).",
             tObject({{"ids", ids}, {"level", tString("level name")}}, {"ids", "level"}),
             outSchema({"messages", "created"}), false, "COPYTOLEVEL", copyToLevel);
+    cmdTool("page_setup", "Page setups",
+            "Named bundles of plot options saved in the drawing. list (default) shows them and "
+            "which layouts use each; save stores the current plot options under `name`; apply "
+            "makes one the current plot options; assign gives it to `layout` (\"Model\" for model "
+            "space; an empty `name` removes it); rename; delete.",
+            tObject({{"action", tEnum({"list", "save", "apply", "assign", "rename", "delete"})},
+                     {"name", tString()},
+                     {"new_name", tString("for rename")},
+                     {"layout", tString("for assign; default Model")}},
+                    {}),
+            outSchema({"pageSetups"}), false, "PAGESETUP", pageSetup);
+    cmdTool("plot_style", "Plot style tables",
+            "list the available plot style tables (the current one is marked *), select one by "
+            "name, file path or None, or import a .ctb file. The selection applies to export_pdf "
+            "and export_image unless they pass `style`.",
+            tObject({{"action", tEnum({"list", "select", "import"})},
+                     {"name", tString("table name, file or None")},
+                     {"path", tString("absolute path of a .ctb file, for import")}},
+                    {}),
+            outMsg, false, "PLOTSTYLE", plotStyle);
     cmdTool("annotation", "Annotation scale",
             "get: current annotation scale, whether new text/dimensions start annotative, and the "
             "scale list. set_scale (CANNOSCALE), new_objects on/off (ANNONEW), add_scale / "

@@ -200,10 +200,19 @@ bool pathEndsWith(const std::string& p, const char* ext) {
     return true;
 }
 
-ToolResult exportPdf(ToolContext& ctx, const Json& a) {
+ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& command, bool image) {
     std::string path = argString(a, "path");
-    if (!pathEndsWith(path, ".pdf"))
+    std::string cmdName = command;
+    if (image) {
+        if (pathEndsWith(path, ".png"))
+            cmdName = "EXPORTPNG";
+        else if (pathEndsWith(path, ".jpg") || pathEndsWith(path, ".jpeg"))
+            cmdName = "EXPORTJPG";
+        else
+            return ToolResult::fail("path must end with .png, .jpg or .jpeg");
+    } else if (!pathEndsWith(path, ".pdf")) {
         return ToolResult::fail("path must end with .pdf");
+    }
     std::vector<Json> inputs;
     auto option = [&](const char* arg, const char* keyword) {
         if (const Json* v = a.find(arg); v && v->isString() && !v->asString().empty()) {
@@ -216,12 +225,30 @@ ToolResult exportPdf(ToolContext& ctx, const Json& a) {
     option("scale", "Scale");
     option("area", "Area");
     option("color", "Color");
+    if (const Json* st = a.find("style"); st && st->isString()) {
+        inputs.emplace_back("Style");
+        inputs.push_back(Json(Json::Object{{"text", st->asString()}}));
+    }
+    if (image) {
+        if (const Json* d = a.find("dpi"); d && d->isNumber()) {
+            inputs.emplace_back("Resolution");
+            inputs.emplace_back(formatDouble(d->asNumber()));
+        }
+    }
     // Always set the layout so an earlier call's choice does not stick: "" = model space.
     inputs.emplace_back("Layout");
     inputs.push_back(Json(Json::Object{{"text", argString(a, "layout")}}));
     inputs.emplace_back("Export");
     inputs.emplace_back(path);
-    return runWith(ctx, "EXPORTPDF", inputs, false);
+    return runWith(ctx, cmdName, inputs, false);
+}
+
+ToolResult exportPdf(ToolContext& ctx, const Json& a) {
+    return exportPlot(ctx, a, "EXPORTPDF", false);
+}
+
+ToolResult exportImage(ToolContext& ctx, const Json& a) {
+    return exportPlot(ctx, a, "EXPORTPNG", true);
 }
 
 ToolResult exportDxf(ToolContext& ctx, const Json& a) {
@@ -264,6 +291,7 @@ void registerCommandTools(ToolSet& tools) {
                  {"scale", tString("Fit or 1:N, e.g. 1:100")},
                  {"area", tString("Extents or Display")},
                  {"color", tString("Color, Monochrome or Greyscale")},
+                 {"style", tString("plot style table (name, file or None); see plot_style")},
                  {"layout", tString("name of a layout to plot; default: model space")}},
                 {"path"}),
         outSchema({"finished", "messages"}),
@@ -274,6 +302,30 @@ void registerCommandTools(ToolSet& tools) {
         exportPdf};
     pdf.available = [](DrawingSession& s) { return s.registry().find("EXPORTPDF") != nullptr; };
     tools.add(std::move(pdf));
+
+    Tool image{"export_image",
+               "Export PNG or JPEG",
+               "Plots the drawing, or one of its layouts, to a PNG or JPEG picture (EXPORTPNG / "
+               "EXPORTJPG). The picture is the paper size at `dpi` (10 to 2400, default 300); same "
+               "options as export_pdf. Use PNG for line drawings.",
+               tObject({{"path", tString("absolute path ending in .png, .jpg or .jpeg")},
+                        {"dpi", tNumber("10 to 2400")},
+                        {"paper", tString("A0..A4, ANSI A..E")},
+                        {"orientation", tString("Portrait or Landscape")},
+                        {"scale", tString("Fit or 1:N, e.g. 1:100")},
+                        {"area", tString("Extents or Display")},
+                        {"color", tString("Color, Monochrome or Greyscale")},
+                        {"style", tString("plot style table (name, file or None)")},
+                        {"layout", tString("name of a layout to plot; default: model space")}},
+                       {"path"}),
+               outSchema({"finished", "messages"}),
+               Edit::Session,
+               false,
+               false,
+               true,
+               exportImage};
+    image.available = [](DrawingSession& s) { return s.registry().find("EXPORTPNG") != nullptr; };
+    tools.add(std::move(image));
 
     Tool dxf{"export_dxf",
              "Export DXF",
