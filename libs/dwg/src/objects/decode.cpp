@@ -518,6 +518,23 @@ private:
     }
 
     static void add(EntityRec& e, int code, Value v) { e.groups.push_back({code, std::move(v)}); }
+    // Numeric groups are built in place (avoids a GCC maybe-uninitialized false positive on the
+    // variant move).
+    static void add(EntityRec& e, int code, double v) {
+        Group& g = e.groups.emplace_back();
+        g.code = code;
+        g.value.v.emplace<double>(v);
+    }
+    static void add(EntityRec& e, int code, int v) {
+        Group& g = e.groups.emplace_back();
+        g.code = code;
+        g.value.v.emplace<long long>(v);
+    }
+    static void add(EntityRec& e, int code, long long v) {
+        Group& g = e.groups.emplace_back();
+        g.code = code;
+        g.value.v.emplace<long long>(v);
+    }
 
     static void point3(EntityRec& e, int code, const Vec3& p) {
         add(e, code, p.x);
