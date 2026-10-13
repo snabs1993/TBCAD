@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -273,6 +274,36 @@ TEST_CASE("end to end: room plan with OFFSET, TRIM, DIMLINEAR, PDF, save and DXF
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("end to end: current colour and lineweight reach what every drawing command creates") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+
+    REQUIRE(
+        host.run("-CURRENT", {"Color", "red", "Lineweight", "0.5", ScriptItem::enter()}).finished);
+    const Color red = doc.header().currentColor;
+    const LineWeight half = doc.header().currentLineweight;
+    REQUIRE(red != Color::byLayer());
+    REQUIRE(half != LineWeight::byLayer());
+
+    REQUIRE(host.run("LINE", {"0,0", "100,0", "100,60", "0,60", "C"}).finished);
+    REQUIRE(host.run("DONUT", {"5", "10", "200,0", ScriptItem::enter()}).finished);
+    REQUIRE(host.run("TEXT", {"0,100", "10", "0", "TBCAD"}).finished);
+    REQUIRE(host.run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    REQUIRE(host.run("HATCH", {"50,30", ScriptItem::enter()}).finished);
+
+    std::set<EntityKind> seen;
+    doc.forEachEntity([&](const Entity& e) {
+        seen.insert(kind(e));
+        INFO("entity kind " << static_cast<int>(kind(e)));
+        CHECK(e.common.color == red);
+        CHECK(e.common.lineweight == half);
+    });
+    // Lines, a ring, text, a dimension and a hatch were all created.
+    CHECK(seen.size() >= 5);
 }
 
 TEST_CASE("end to end: table with merged title, save, reload, DXF export and re-import") {

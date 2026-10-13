@@ -10,6 +10,7 @@ struct ModuleState {
     drafting::TypedPointParser parser{&env};
     // Owned by the UiRegistry; reset by registerUi. Null before that (headless tests).
     drafting::OsnapFilter* osnap = nullptr;
+    drafting::DynamicInput* dyn = nullptr;
 };
 
 ModuleState& moduleState();

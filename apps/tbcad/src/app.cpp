@@ -15,6 +15,7 @@
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
 
@@ -167,6 +168,8 @@ void App::drawScene() {
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
     renderer_.beginFrame();
+    core_->buildUnderlay(underlay_, uiRegistry_.get());
+    renderer_.draw(underlay_);
     renderer_.draw(core_->scene());
     core_->buildOverlay(overlay_, uiRegistry_.get());
     renderer_.draw(overlay_);
@@ -299,6 +302,7 @@ int App::run() {
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);
+    dwgopen::registerForeignFormats(*core_);
     if (!options_.listCommands.empty()) {
         const std::string table = cmd::commandListMarkdown(*registry_);
         if (options_.listCommands == "-") {
