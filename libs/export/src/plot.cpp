@@ -214,6 +214,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
 
     geom::DisplayContext ctx;
     ctx.chordTolMm = s.chordTolMm / lay.paperPerUnit;
+    ctx.annoScale = lay.annoScale;
     // A "pixel" on paper is a hairline: hatches denser than that are drawn as a tone.
     ctx.pixelSizeMm = s.hairlineMm / lay.paperPerUnit;
     ctx.defaultLineweightMm = 0.25;

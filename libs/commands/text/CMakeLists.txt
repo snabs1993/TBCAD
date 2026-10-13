@@ -1,4 +1,5 @@
 set(_textcmd_sources
+  src/annotative_command.cpp
   src/editable.cpp
   src/style_command.cpp
   src/style_manager.cpp
@@ -27,5 +28,6 @@ tbcad_add_tests(textcmd
     tests/editable_tests.cpp
     tests/text_command_tests.cpp
     tests/style_command_tests.cpp
+    tests/annotative_tests.cpp
     tests/style_manager_tests.cpp
   DEPENDS tbcad_command_registry)

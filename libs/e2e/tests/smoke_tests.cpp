@@ -346,3 +346,45 @@ TEST_CASE("end to end: table with merged title, save, reload, DXF export and re-
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
 }
+
+TEST_CASE("end to end: annotative text and table keep their flag through .tbcad and DXF") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    REQUIRE(host.run("TEXT", {"0,0", "2.5", "0", "Note"}).finished);
+    REQUIRE(host.run("TABLE", {"2", "2", "40", "10", "", "0,-20"}).finished);
+    std::vector<EntityId> ids;
+    doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    REQUIRE(ids.size() == 2);
+    REQUIRE(host.run("ANNOTATIVE", {ScriptItem::pick(ids[0], {0, 0}),
+                                    ScriptItem::pick(ids[1], {20, -25}), ScriptItem::enter(), "On"})
+                .finished);
+    REQUIRE(host.run("CANNOSCALE", {"50"}).finished);
+    auto annotatives = [](const Document& d) {
+        int n = 0;
+        d.forEachEntity([&](const Entity& e) { n += e.common.annotative ? 1 : 0; });
+        return n;
+    };
+    CHECK(annotatives(doc) == 2);
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_anno";
+    std::filesystem::create_directories(dir);
+    const auto file = dir / "anno.tbcad";
+    REQUIRE(io::writeTbcad(doc, file).ok());
+    io::IoReport ioReport;
+    auto back = io::readTbcad(file, ioReport);
+    REQUIRE(back.ok());
+    CHECK(annotatives(*back.value()) == 2);
+    CHECK(currentAnnotationScale(back.value()->header()) == doctest::Approx(50));
+
+    const auto dxfFile = (dir / "anno.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxfFile, "R2000"}).finished);
+    dxf::Report report;
+    auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
+    REQUIRE(imported.ok());
+    CHECK(annotatives(*imported.value().document) == 2);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
