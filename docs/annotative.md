@@ -39,3 +39,21 @@ turns it back into an ordinary polyline. It is filled with the background colour
 (or the white sheet when plotted) and shows no outline; what is drawn after it stays on top.
 It is saved in `.tbcad`; DXF files carry an ordinary polyline plus a TBCAD note, so other
 programs show the outline only.
+
+## Symbols
+
+Drawn at paper size and put in as annotative blocks at the current annotation scale (Draw >
+Symbols). Each asks for a point, a rotation and its attribute values; the block (`TB_...`) is
+made in the drawing the first time and can be edited like any block.
+
+| Command (alias) | Block | Attributes |
+| --- | --- | --- |
+| `NORTHARROW` (`NA`) | `TB_NORTH` | none |
+| `GRIDBUBBLE` (`GB`) | `TB_GRID` | `ID` (grid letter or number) |
+| `LEVELMARK` (`LM`) | `TB_LEVEL` | `LEVEL` (e.g. `+3.20`) |
+| `SECTIONMARK` (`SM`) | `TB_SECTION` | `SECTION`, `SHEET` |
+| `ELEVATIONMARK` (`EM`) | `TB_ELEVATION` | `VIEW`, `SHEET` |
+| `DETAILMARK` (`DM`) | `TB_DETAIL` | `DETAIL`, `SHEET` |
+
+Sizes follow common Thai / ISO 128 practice on the sheet: grid bubbles 8 mm across with 3.5 mm
+figures, markers 10 mm across, notes 2.5 mm.
