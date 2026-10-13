@@ -63,3 +63,28 @@ TEST_CASE("menu items carry an action id and a default chord") {
     CHECK(ui.menuItems()[0].actionId == "draw.line");
     CHECK(ui.menuItems()[0].defaultChord == "L");
 }
+
+namespace {
+struct NullFilter : cmd::PointFilter {
+    std::optional<Vec2> filter(const cmd::PointQuery&, Vec2, cmd::FilterFeedback&) override {
+        return std::nullopt;
+    }
+};
+struct NullParser : cmd::CommandLineParser {
+    std::optional<Vec2> parsePoint(std::string_view, const cmd::PointParseContext&) override {
+        return std::nullopt;
+    }
+};
+}  // namespace
+
+TEST_CASE("point filters and the line parser are stored for AppCore to install") {
+    UiRegistry ui;
+    ui.addPointFilter(10, std::make_unique<NullFilter>());
+    ui.addPointFilter(20, nullptr);  // ignored
+    REQUIRE(ui.pointFilters().size() == 1);
+    CHECK(ui.pointFilters()[0].order == 10);
+    CHECK(ui.lineParser() == nullptr);
+    NullParser p;
+    ui.setLineParser(&p);
+    CHECK(ui.lineParser() == &p);
+}
