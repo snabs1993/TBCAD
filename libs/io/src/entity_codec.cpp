@@ -17,7 +17,9 @@ constexpr std::uint8_t kCfLtScale = 8;
 constexpr std::uint8_t kCfHidden = 16;
 constexpr std::uint8_t kCfOwner = 32;
 constexpr std::uint8_t kCfAnnotative = 64;
-constexpr std::uint8_t kCfAnnoScales = 128;  // list of scales follows the owner
+constexpr std::uint8_t kCfExt = 128;        // an extension byte follows the owner
+constexpr std::uint8_t kExtAnnoScales = 1;  // ... a list of annotation scales follows it
+constexpr std::uint8_t kExtWipeout = 2;
 constexpr std::uint8_t kCfKnownMask = 255;
 
 // ---------------------------------------------------------------- writing
@@ -768,8 +770,13 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         flags |= kCfHidden;
     if (c.annotative)
         flags |= kCfAnnotative;
+    std::uint8_t ext = 0;
     if (c.annotative && !c.annoScales.empty())
-        flags |= kCfAnnoScales;
+        ext |= kExtAnnoScales;
+    if (c.wipeout)
+        ext |= kExtWipeout;
+    if (ext)
+        flags |= kCfExt;
     if (owner)
         flags |= kCfOwner;
     w.varint(c.id.value);
@@ -789,10 +796,13 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         w.f64(c.linetypeScale);
     if (flags & kCfOwner)
         w.varint(owner.value);
-    if (flags & kCfAnnoScales) {
-        w.varint(c.annoScales.size());
-        for (double v : c.annoScales)
-            w.f64(v);
+    if (flags & kCfExt) {
+        w.u8(ext);
+        if (ext & kExtAnnoScales) {
+            w.varint(c.annoScales.size());
+            for (double v : c.annoScales)
+                w.f64(v);
+        }
     }
 
     if (unknown) {
@@ -830,17 +840,23 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
     c.annotative = (flags & kCfAnnotative) != 0;
     if (flags & kCfOwner)
         out.owner = pr.id<BlockId>();
-    if (flags & kCfAnnoScales) {
-        const std::uint64_t n = r.varint();
-        if (n > 64)
-            bad("too many annotation scales");
-        std::vector<double> found;
-        for (std::uint64_t i = 0; i < n; ++i) {
-            double v = r.f64();
-            if (std::isfinite(v) && v > 0)
-                found.push_back(v);
+    if (flags & kCfExt) {
+        const std::uint8_t ext = r.u8();
+        if (ext & ~(kExtAnnoScales | kExtWipeout))
+            bad("unknown entity extension flags");
+        c.wipeout = (ext & kExtWipeout) != 0;
+        if (ext & kExtAnnoScales) {
+            const std::uint64_t n = r.varint();
+            if (n > 64)
+                bad("too many annotation scales");
+            std::vector<double> found;
+            for (std::uint64_t i = 0; i < n; ++i) {
+                double v = r.f64();
+                if (std::isfinite(v) && v > 0)
+                    found.push_back(v);
+            }
+            c.annoScales = ScaleList(std::move(found));
         }
-        c.annoScales = ScaleList(std::move(found));
     }
     if (!c.id)
         bad("entity id 0");

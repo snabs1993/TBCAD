@@ -30,3 +30,12 @@ and sized for a plot scale afterwards.
 - DXF keeps the same in TBCAD's extended data (per object) and in an `XRECORD` in the root
   dictionary (current scale and list). R2007 files also get real `ACAD_SCALELIST` / `SCALE`
   objects. Other programs show the objects at the size last drawn.
+
+## Wipeout
+
+`WIPEOUT` (`WO`) makes a closed shape that hides what was drawn before it: pick points (Enter
+closes), a `Rectangle`, or turn a closed `Polyline` (a revision cloud too) into one. `Remove`
+turns it back into an ordinary polyline. It is filled with the background colour of the screen
+(or the white sheet when plotted) and shows no outline; what is drawn after it stays on top.
+It is saved in `.tbcad`; DXF files carry an ordinary polyline plus a TBCAD note, so other
+programs show the outline only.

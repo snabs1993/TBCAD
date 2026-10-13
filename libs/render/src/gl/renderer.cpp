@@ -201,7 +201,9 @@ struct Renderer::Impl {
     }
 
     void setColor(const Program& p, Rgba c, bool adapt) {
-        if (adapt)
+        if (isBackgroundColor(c))
+            c = Rgba{background.r, background.g, background.b, 255};
+        else if (adapt)
             c = adaptToBackground(c, background);
         glUniform4f(p.color, c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, c.a / 255.0f);
     }

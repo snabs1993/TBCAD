@@ -335,9 +335,13 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
 // Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer
 // turns it back into the flag. Written after the last group of the record.
 void Writer::writeAnnotativeData(const Entity& e) {
-    if (!e.common.annotative)
+    if (!e.common.annotative && !e.common.wipeout)
         return;
     o_->raw(1001, "TBCAD");
+    if (e.common.wipeout)
+        o_->str(1000, "wipeout=1");
+    if (!e.common.annotative)
+        return;
     o_->str(1000, "annotative=1");
     if (!e.common.annoScales.empty()) {
         std::string s = "annoscales=";

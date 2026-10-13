@@ -9,6 +9,13 @@
 
 namespace tbcad {
 
+// A fill in this colour is drawn in the background colour of whatever shows it (screen theme or
+// white paper): what WIPEOUT uses to hide the objects behind it.
+inline constexpr Rgba kBackgroundColor{0, 0, 0, 1};
+inline bool isBackgroundColor(Rgba c) {
+    return c.a == 1 && c.r == 0 && c.g == 0 && c.b == 0;
+}
+
 // Fully resolved drawing style (ByLayer/ByBlock already applied by whoever builds the list).
 struct DisplayStyle {
     Rgba color{};

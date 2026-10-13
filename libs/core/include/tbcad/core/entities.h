@@ -83,10 +83,13 @@ struct EntityCommon {
     LinetypeId linetype = kLinetypeByLayer;
     Color color = Color::byLayer();
     LineWeight lineweight = LineWeight::byLayer();
-    bool visible = true;
+    bool visible : 1 = true;
     // Annotative: text height, dimension sizes and table text follow the annotation scale
     // (Header custom "tbcad.annoscale", or the viewport's scale when plotting a layout).
-    bool annotative = false;
+    bool annotative : 1 = false;
+    // Wipeout: a closed polyline that hides the objects drawn before it, instead of showing its
+    // outline.
+    bool wipeout : 1 = false;
     // Scales (N of 1:N) the annotative object is made for. Empty: it follows the drawing's current
     // scale. Otherwise the first is the one it is drawn at in model space; a layout viewport shows
     // it only when its scale is listed, and draws it at the viewport scale.

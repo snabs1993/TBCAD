@@ -9,6 +9,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makePointType());
     (void)registry.add(detail::makeDonut());
     (void)registry.add(detail::makeRevCloud());
+    (void)registry.add(detail::makeWipeout());
     (void)registry.add(detail::makeCenterMark());
     (void)registry.add(detail::makeCenterLine());
     (void)registry.add(detail::makeBoundary());
