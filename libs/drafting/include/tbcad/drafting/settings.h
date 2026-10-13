@@ -54,6 +54,7 @@ inline constexpr const char* ortho = "drafting.ortho";                   // bool
 inline constexpr const char* polar = "drafting.polar";                   // bool
 inline constexpr const char* snap = "drafting.snap";                     // bool
 inline constexpr const char* grid = "view.grid";                         // bool
+inline constexpr const char* dynInput = "drafting.dynInput";             // bool, on by default
 inline constexpr const char* osnapModes = "drafting.osnap.modes";        // "endpoint,midpoint,..."
 inline constexpr const char* osnapAperture = "drafting.osnap.aperture";  // pixels
 inline constexpr const char* snapSpacing = "drafting.snap.spacing";      // mm
@@ -70,6 +71,7 @@ struct DraftingSettings {
     bool polar = false;
     bool snap = false;
     bool grid = false;
+    bool dynInput = true;
     SnapModeMask modes = kDefaultSnapModes;
     double apertureMm = 0;  // unused by read(); filled from aperturePx and the pixel size
     double aperturePx = 10;

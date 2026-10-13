@@ -42,6 +42,11 @@ void UiRegistry::addOverlayDrawer(OverlayDrawFn fn) {
         overlays_.push_back(std::move(fn));
 }
 
+void UiRegistry::addUnderlayDrawer(OverlayDrawFn fn) {
+    if (fn)
+        underlays_.push_back(std::move(fn));
+}
+
 void UiRegistry::addPropertySection(EntityKind kind, PropertyDrawFn draw) {
     if (draw)
         sections_.push_back({kind, std::move(draw)});
