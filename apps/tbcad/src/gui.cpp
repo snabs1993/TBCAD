@@ -15,6 +15,7 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
@@ -1807,12 +1808,46 @@ void Gui::viewportInput(const ViewportRect& rect) {
     }
 
     // Right button: context menu, or Enter for users who set ui.rightClick = enter.
+    // With the wheel on, holding the button past ui.wheel.delayMs shows the tool wheel and
+    // releasing over a slice runs it; a shorter press opens the menu on release. The wheel is
+    // for starting commands, so it stays closed while one is running (hold then gives the menu).
+    const bool rightIsEnter = core_.settings().getString("ui.rightClick", "menu") == "enter";
+    const bool wheelOn = !rightIsEnter && core_.settings().getBool("ui.wheel.enabled", true);
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        if (core_.settings().getString("ui.rightClick", "menu") == "enter")
+        if (rightIsEnter)
             core_.submitText("");
+        else if (wheelOn)
+            rightDown_ = true;
         else
             ImGui::OpenPopup("##viewportMenu");
     }
+    if (rightDown_) {
+        anyActivity_ = true;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            wheel_.close();
+            rightDown_ = false;
+        } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+            const double heldMs = io.MouseDownDuration[ImGuiMouseButton_Right] * 1000.0;
+            if (!wheel_.isOpen() && !core_.runner().active() &&
+                ui::wheelShouldOpen(heldMs, core_.settings().getNumber(
+                                                "ui.wheel.delayMs", ui::kWheelDefaultDelayMs)))
+                wheel_.open(io.MouseClickedPos[ImGuiMouseButton_Right],
+                            ui::parseWheelTools(core_.settings().getString("ui.wheel.tools", "")));
+        } else {
+            const bool wasOpen = wheel_.isOpen();
+            const std::string chosen = wheel_.hovered();
+            wheel_.close();
+            rightDown_ = false;
+            if (!wasOpen)
+                ImGui::OpenPopup("##viewportMenu");
+            else if (!chosen.empty())
+                core_.submitText(chosen);
+        }
+    }
+    if (wheel_.isOpen())
+        wheel_.draw(io.MousePos, dpiScale_ * static_cast<float>(core_.settings().getNumber(
+                                                 "ui.scale", 1.0)),
+                    theme_);
     viewportMenu();
 
     if (hovered || leftDown_ || panning_)

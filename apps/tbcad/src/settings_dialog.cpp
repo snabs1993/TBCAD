@@ -10,6 +10,8 @@
 #include <iterator>
 
 #include "key_map.h"
+#include "tbcad/cmd/input.h"
+#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
@@ -96,6 +98,60 @@ void SettingsDialog::general(ui::AppCore& core) {
     bool lw = s.getBool("view.lineweights", true);
     if (ImGui::Checkbox("Show line weights", &lw))
         s.setBool("view.lineweights", lw);
+    wheel(core);
+}
+
+// The radial tool wheel: hold the right mouse button in the drawing to show it.
+void SettingsDialog::wheel(ui::AppCore& core) {
+    auto& s = core.settings();
+    ImGui::SeparatorText("Tool wheel (hold right-click)");
+    bool on = s.getBool("ui.wheel.enabled", true);
+    if (ImGui::Checkbox("Show the tool wheel when right-click is held", &on))
+        s.setBool("ui.wheel.enabled", on);
+    ImGui::SameLine();
+    ImGui::TextDisabled("(a short click still opens the menu)");
+    int delay = static_cast<int>(s.getNumber("ui.wheel.delayMs", ui::kWheelDefaultDelayMs));
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::SliderInt("Hold time (ms)", &delay, 100, 800))
+        s.setNumber("ui.wheel.delayMs", delay);
+
+    static const char* const kChoices[] = {
+        "LINE",   "POLYLINE", "CIRCLE", "ARC",    "RECTANGLE", "HATCH",  "TEXT",    "MOVE",
+        "COPY",   "ROTATE",   "SCALE",  "MIRROR", "STRETCH",   "TRIM",   "OFFSET",  "FILLET",
+        "ERASE",  "EXTEND",   "DIM",    "UNDO",   "REDO",      "ZOOM",   "LAYER",   "ORTHO"};
+    std::vector<std::string> tools = ui::parseWheelTools(s.getString("ui.wheel.tools", ""));
+    bool changed = false;
+    ImGui::TextDisabled("Slots run clockwise from the top. Pick a tool, or type any command or alias.");
+    for (int i = 0; i < ui::kWheelSlots; ++i) {
+        std::string& t = tools[static_cast<std::size_t>(i)];
+        ImGui::PushID(i);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Slot %d", i + 1);
+        ImGui::SameLine(90);
+        ImGui::SetNextItemWidth(180);
+        if (ImGui::InputText("##tool", &t)) {
+            t = cmd::toUpperAscii(cmd::trim(t));
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::BeginCombo("##pick", "Choose...", ImGuiComboFlags_WidthFitPreview)) {
+            for (const char* c : kChoices)
+                if (ImGui::Selectable(c)) {
+                    t = c;
+                    changed = true;
+                }
+            if (ImGui::Selectable("(empty slot)")) {
+                t.clear();
+                changed = true;
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::PopID();
+    }
+    if (changed)
+        s.setString("ui.wheel.tools", ui::formatWheelTools(tools));
+    if (ImGui::Button("Reset wheel"))
+        s.setString("ui.wheel.tools", ui::formatWheelTools(ui::defaultWheelTools()));
 }
 
 void SettingsDialog::display(ui::AppCore& core) {

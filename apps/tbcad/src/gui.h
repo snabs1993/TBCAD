@@ -10,6 +10,7 @@
 
 #include "file_browser.h"
 #include "settings_dialog.h"
+#include "wheel_menu.h"
 #include "tbcad/core/color.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
@@ -213,6 +214,8 @@ private:
     std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
     Vec2 pressPos_{};
     bool panning_ = false;
+    bool rightDown_ = false;  // right button pressed in the drawing, wheel or menu pending
+    WheelMenu wheel_;
     double pendingNotches_ = 0;
     Vec2 zoomAnchor_{};
     int activityFrames_ = 0;

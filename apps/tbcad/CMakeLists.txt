@@ -6,6 +6,7 @@ set(_tbcad_app_sources
   src/app.cpp
   src/gui.cpp
   src/gui_style.cpp
+  src/wheel_menu.cpp
   src/icons.cpp
   src/key_map.cpp
   src/settings_dialog.cpp
