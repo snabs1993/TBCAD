@@ -536,3 +536,48 @@ TEST_CASE("SPLINEDIT adds and removes fit points") {
     f.host.undo();
     CHECK(entityAs<SplineData>(f.get(id))->fit.size() == 4);
 }
+
+TEST_CASE("GROUP makes a pick select the whole group; UNGROUP dissolves it") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 2}, {1, 2}});
+    EntityId c = f.add(LineData{{0, 4}, {1, 4}});
+    f.host.run("GROUP", {ScriptItem::select({a, b}), ScriptItem::enter(), "pair"});
+    REQUIRE(readGroups(f.doc).size() == 1);
+    CHECK(f.host.undoStack().undoLabel() == "GROUP");
+
+    // Erasing one member by a pick removes both.
+    f.host.run("ERASE", {ScriptItem::pick(a, {0.5, 0}), ScriptItem::enter()});
+    CHECK(f.doc.find(a) == nullptr);
+    CHECK(f.doc.find(b) == nullptr);
+    CHECK(f.doc.find(c) != nullptr);
+    f.host.undo();
+    CHECK(f.doc.find(b) != nullptr);
+
+    f.host.run("UNGROUP", {ScriptItem::pick(a, {0.5, 0})});
+    CHECK(readGroups(f.doc).empty());
+    f.host.run("ERASE", {ScriptItem::pick(a, {0.5, 0}), ScriptItem::enter()});
+    CHECK(f.doc.find(a) == nullptr);
+    CHECK(f.doc.find(b) != nullptr);
+}
+
+TEST_CASE("DRAWORDER front, back and above/below an object") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 1}, {1, 1}});
+    EntityId c = f.add(LineData{{0, 2}, {1, 2}});
+    auto order = [&] { return f.doc.modelSpace(); };
+    CHECK(order() == std::vector<EntityId>{a, b, c});
+    f.host.run("DRAWORDER", {ScriptItem::select({a}), ScriptItem::enter(), "Front"});
+    CHECK(order() == std::vector<EntityId>{b, c, a});
+    f.host.run("DRAWORDER", {ScriptItem::select({a}), ScriptItem::enter(), "Back"});
+    CHECK(order() == std::vector<EntityId>{a, b, c});
+    f.host.run("DRAWORDER",
+               {ScriptItem::select({a}), ScriptItem::enter(), "Above", ScriptItem::pick(b)});
+    CHECK(order() == std::vector<EntityId>{b, a, c});
+    f.host.run("DRAWORDER",
+               {ScriptItem::select({c}), ScriptItem::enter(), "Below", ScriptItem::pick(b)});
+    CHECK(order() == std::vector<EntityId>{c, b, a});
+    f.host.undo();
+    CHECK(order() == std::vector<EntityId>{b, a, c});
+}

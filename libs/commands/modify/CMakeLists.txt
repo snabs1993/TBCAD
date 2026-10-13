@@ -2,6 +2,7 @@ tbcad_add_library(modify_commands
   SOURCES
     src/break_join.cpp
     src/fillet.cpp
+    src/group_order.cpp
     src/misc.cpp
     src/misc2.cpp
     src/offset.cpp

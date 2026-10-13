@@ -1067,7 +1067,9 @@ void AppCore::pointerLeft() {
     scene_.setHighlighted({});
 }
 
-void AppCore::applyPick(const std::vector<EntityId>& ids, bool remove) {
+void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
+    // A picked member brings its whole group along (GROUP).
+    const std::vector<EntityId> ids = expandGroups(session_->doc, picked);
     std::vector<EntityId> sel;
     if (remove) {
         std::unordered_set<EntityId> drop(ids.begin(), ids.end());

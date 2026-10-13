@@ -3,6 +3,7 @@ tbcad_add_library(core
     src/color.cpp
     src/document.cpp
     src/dump.cpp
+    src/groups.cpp
     src/math.cpp
     src/units.cpp)
 tbcad_add_tests(core
@@ -11,5 +12,6 @@ tbcad_add_tests(core
     tests/math_tests.cpp
     tests/units_tests.cpp
     tests/color_tests.cpp
+    tests/groups_tests.cpp
     tests/document_tests.cpp
     tests/scale_tests.cpp)

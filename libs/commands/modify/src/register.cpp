@@ -21,6 +21,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeOverkill());
     (void)registry.add(makePedit());
     (void)registry.add(makeBlend());
+    (void)registry.add(makeGroup());
+    (void)registry.add(makeUngroup());
+    (void)registry.add(makeDrawOrder());
     (void)registry.add(makeJustifyText());
     (void)registry.add(makeSplineEdit());
     (void)registry.add(makeExtrim());
