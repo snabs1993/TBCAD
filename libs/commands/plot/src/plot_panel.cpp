@@ -118,7 +118,7 @@ void draw(ui::PanelContext& pc) {
     if (!st.loaded) {
         st.settings = loadSettings(*pc.host);
         st.scaleInput = scaleText(st.settings);
-        st.fileInput = lastFile(*pc.host, st.format);
+        st.fileInput = defaultFile(*pc.host, st.format);
         st.loaded = true;
     }
     PlotSettings& s = st.settings;
@@ -234,7 +234,7 @@ void draw(ui::PanelContext& pc) {
     ImGui::InputText("File", &st.fileInput);
     auto doExport = [&](Format f) {
         st.format = f;
-        std::string path = st.fileInput.empty() ? lastFile(*pc.host, f) : st.fileInput;
+        std::string path = st.fileInput.empty() ? defaultFile(*pc.host, f) : st.fileInput;
         PlotSettings run = s;
         auto r = exportFile(*pc.doc, *pc.host, run, f, path);
         st.message = r ? r.value() : r.error().message;

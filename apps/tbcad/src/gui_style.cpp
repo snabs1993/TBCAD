@@ -56,10 +56,6 @@ std::string findBesideExecutable(const std::string& name) {
     return {};
 }
 
-Rgba backgroundFor(bool dark) {
-    return dark ? Rgba{33, 40, 48, 255} : Rgba{255, 255, 255, 255};
-}
-
 void buildFonts(float scale) {
     ImGuiIO& io = ImGui::GetIO();
     ImGui_ImplOpenGL3_DestroyFontsTexture();
@@ -96,45 +92,98 @@ void buildFonts(float scale) {
     ImGui_ImplOpenGL3_CreateFontsTexture();
 }
 
-void applyTheme(bool dark, float scale) {
+namespace {
+
+ImVec4 toVec(Rgba c, double alpha = 1.0) {
+    return ImVec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f,
+                  static_cast<float>(c.a / 255.0 * alpha));
+}
+
+}  // namespace
+
+bool systemPrefersDark() {
+#if defined(_WIN32)
+    DWORD value = 1;
+    DWORD size = sizeof value;
+    if (RegGetValueW(
+            HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS)
+        return value == 0;
+#endif
+    return true;
+}
+
+void applyTheme(const ui::Theme& t, float scale) {
     ImGuiStyle style;  // fresh defaults, so repeated calls do not accumulate scaling
-    if (dark)
-        ImGui::StyleColorsDark(&style);
-    else
-        ImGui::StyleColorsLight(&style);
-    style.WindowRounding = 3.0f;
-    style.FrameRounding = 3.0f;
-    style.PopupRounding = 3.0f;
-    style.ScrollbarRounding = 3.0f;
-    style.TabRounding = 3.0f;
+    style.WindowRounding = 6.0f;
+    style.PopupRounding = 6.0f;
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.TabRounding = 4.0f;
     style.FrameBorderSize = 0.0f;
     style.WindowBorderSize = 1.0f;
-    style.WindowPadding = ImVec2(8, 6);
-    style.ItemSpacing = ImVec2(8, 5);
+    style.PopupBorderSize = 1.0f;
+    style.WindowPadding = ImVec2(8, 8);
+    style.FramePadding = ImVec2(6, 4);
+    style.ItemSpacing = ImVec2(6, 6);
     style.DockingSeparatorSize = 2.0f;
+
+    const Rgba frame = ui::mix(t.bgPanel, t.bgViewport, 0.6);
+    const Rgba hover = ui::mix(t.bgPanel, t.accent, 0.35);
+    const Rgba active = ui::mix(t.bgPanel, t.accent, 0.55);
+    const Rgba button = ui::mix(t.bgPanel, t.text, 0.10);
     ImVec4* c = style.Colors;
-    if (dark) {
-        c[ImGuiCol_WindowBg] = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-        c[ImGuiCol_ChildBg] = ImVec4(0.11f, 0.12f, 0.13f, 1.00f);
-        c[ImGuiCol_MenuBarBg] = ImVec4(0.10f, 0.11f, 0.12f, 1.00f);
-        c[ImGuiCol_TitleBg] = ImVec4(0.10f, 0.11f, 0.12f, 1.00f);
-        c[ImGuiCol_TitleBgActive] = ImVec4(0.14f, 0.16f, 0.19f, 1.00f);
-        c[ImGuiCol_Tab] = ImVec4(0.12f, 0.13f, 0.15f, 1.00f);
-        c[ImGuiCol_TabHovered] = ImVec4(0.26f, 0.42f, 0.66f, 1.00f);
-        c[ImGuiCol_TabSelected] = ImVec4(0.20f, 0.33f, 0.52f, 1.00f);
-        c[ImGuiCol_Header] = ImVec4(0.20f, 0.33f, 0.52f, 0.55f);
-        c[ImGuiCol_Button] = ImVec4(0.20f, 0.23f, 0.28f, 1.00f);
-        c[ImGuiCol_ButtonHovered] = ImVec4(0.27f, 0.40f, 0.60f, 1.00f);
-        c[ImGuiCol_ButtonActive] = ImVec4(0.22f, 0.36f, 0.56f, 1.00f);
-        c[ImGuiCol_FrameBg] = ImVec4(0.08f, 0.09f, 0.10f, 1.00f);
-    } else {
-        c[ImGuiCol_WindowBg] = ImVec4(0.94f, 0.95f, 0.96f, 1.00f);
-        c[ImGuiCol_ChildBg] = ImVec4(0.98f, 0.98f, 0.99f, 1.00f);
-        c[ImGuiCol_MenuBarBg] = ImVec4(0.90f, 0.91f, 0.93f, 1.00f);
-        c[ImGuiCol_Button] = ImVec4(0.84f, 0.87f, 0.91f, 1.00f);
-        c[ImGuiCol_ButtonHovered] = ImVec4(0.66f, 0.77f, 0.92f, 1.00f);
-        c[ImGuiCol_FrameBg] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-    }
+    c[ImGuiCol_Text] = toVec(t.text);
+    c[ImGuiCol_TextDisabled] = toVec(t.textMuted);
+    c[ImGuiCol_WindowBg] = toVec(t.bgPanel);
+    c[ImGuiCol_ChildBg] = toVec(t.bgPanel, 0.0);
+    c[ImGuiCol_PopupBg] = toVec(t.bgPanel);
+    c[ImGuiCol_Border] = toVec(t.border);
+    c[ImGuiCol_BorderShadow] = toVec(t.border, 0.0);
+    c[ImGuiCol_FrameBg] = toVec(frame);
+    c[ImGuiCol_FrameBgHovered] = toVec(hover, 0.6);
+    c[ImGuiCol_FrameBgActive] = toVec(active, 0.7);
+    c[ImGuiCol_TitleBg] = toVec(t.bgApp);
+    c[ImGuiCol_TitleBgActive] = toVec(t.bgApp);
+    c[ImGuiCol_TitleBgCollapsed] = toVec(t.bgApp);
+    c[ImGuiCol_MenuBarBg] = toVec(t.bgApp);
+    c[ImGuiCol_ScrollbarBg] = toVec(t.bgPanel, 0.0);
+    c[ImGuiCol_ScrollbarGrab] = toVec(t.border);
+    c[ImGuiCol_ScrollbarGrabHovered] = toVec(t.textMuted);
+    c[ImGuiCol_ScrollbarGrabActive] = toVec(t.accent);
+    c[ImGuiCol_CheckMark] = toVec(t.accent);
+    c[ImGuiCol_SliderGrab] = toVec(t.accent);
+    c[ImGuiCol_SliderGrabActive] = toVec(t.select);
+    c[ImGuiCol_Button] = toVec(button);
+    c[ImGuiCol_ButtonHovered] = toVec(hover);
+    c[ImGuiCol_ButtonActive] = toVec(active);
+    c[ImGuiCol_Header] = toVec(t.accent, 0.35);
+    c[ImGuiCol_HeaderHovered] = toVec(t.accent, 0.5);
+    c[ImGuiCol_HeaderActive] = toVec(t.accent, 0.65);
+    c[ImGuiCol_Separator] = toVec(t.border);
+    c[ImGuiCol_SeparatorHovered] = toVec(t.accent);
+    c[ImGuiCol_SeparatorActive] = toVec(t.select);
+    c[ImGuiCol_ResizeGrip] = toVec(t.border);
+    c[ImGuiCol_ResizeGripHovered] = toVec(t.accent);
+    c[ImGuiCol_ResizeGripActive] = toVec(t.select);
+    c[ImGuiCol_Tab] = toVec(t.bgApp);
+    c[ImGuiCol_TabHovered] = toVec(hover);
+    c[ImGuiCol_TabSelected] = toVec(t.bgPanel);
+    c[ImGuiCol_TabSelectedOverline] = toVec(t.accent);
+    c[ImGuiCol_TabDimmed] = toVec(t.bgApp);
+    c[ImGuiCol_TabDimmedSelected] = toVec(t.bgPanel);
+    c[ImGuiCol_TabDimmedSelectedOverline] = toVec(t.border);
+    c[ImGuiCol_DockingPreview] = toVec(t.accent, 0.5);
+    c[ImGuiCol_DockingEmptyBg] = toVec(t.bgViewport);
+    c[ImGuiCol_TextSelectedBg] = toVec(t.accent, 0.4);
+    c[ImGuiCol_NavCursor] = toVec(t.accent);
+    c[ImGuiCol_DragDropTarget] = toVec(t.snap);
+    c[ImGuiCol_TableHeaderBg] = toVec(t.bgApp);
+    c[ImGuiCol_TableBorderStrong] = toVec(t.border);
+    c[ImGuiCol_TableBorderLight] = toVec(t.border, 0.6);
+    c[ImGuiCol_TableRowBgAlt] = toVec(t.text, 0.03);
+    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.45f);
     style.ScaleAllSizes(scale);
     ImGui::GetStyle() = style;
 }

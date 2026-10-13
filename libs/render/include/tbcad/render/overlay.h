@@ -56,6 +56,8 @@ public:
     // blue border over a translucent blue fill; a crossing selection (right to left) is a
     // dashed green border over a translucent green fill.
     void selectionWindow(Vec2 cornerA, Vec2 cornerB, bool crossing);
+    // Same box with the colours chosen by the caller (theme tokens).
+    void selectionWindow(Vec2 cornerA, Vec2 cornerB, bool crossing, Rgba border, Rgba fill);
 
     OverlayMesh build(const Camera2D& camera) const;
 

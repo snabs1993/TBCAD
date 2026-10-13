@@ -96,13 +96,13 @@ void SettingsDialog::general(ui::AppCore& core) {
 
 void SettingsDialog::display(ui::AppCore& core) {
     auto& s = core.settings();
-    const bool dark = hooks_.dark ? hooks_.dark() : true;
+    static const char* const kThemes[] = {"Dark", "Light", "Follow Windows"};
+    const int mode = hooks_.themeMode ? hooks_.themeMode() : 0;
     ImGui::SetNextItemWidth(260);
-    if (ImGui::BeginCombo("Theme", dark ? "Dark" : "Light")) {
-        if (ImGui::Selectable("Dark", dark) && hooks_.setDark)
-            hooks_.setDark(true);
-        if (ImGui::Selectable("Light", !dark) && hooks_.setDark)
-            hooks_.setDark(false);
+    if (ImGui::BeginCombo("Theme", kThemes[std::clamp(mode, 0, 2)])) {
+        for (int i = 0; i < 3; ++i)
+            if (ImGui::Selectable(kThemes[i], i == mode) && hooks_.setThemeMode)
+                hooks_.setThemeMode(i);
         ImGui::EndCombo();
     }
     int percent = static_cast<int>(std::lround(s.getNumber("ui.scale", 1.0) * 100.0));
