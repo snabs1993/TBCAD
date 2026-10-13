@@ -216,6 +216,16 @@ Result<std::map<std::string, std::string>> parseAliasJson(std::string_view text)
 Registry::Registry() = default;
 Registry::~Registry() = default;
 
+void Registry::addCommitHook(CommitHook hook) {
+    if (hook)
+        commitHooks_.push_back(std::move(hook));
+}
+
+void Registry::runCommitHooks(Document& doc, Transaction& tx) const {
+    for (const CommitHook& hook : commitHooks_)
+        hook(doc, tx);
+}
+
 Result<void> Registry::add(std::unique_ptr<Command> command) {
     if (!command)
         return makeError(ErrorCode::InvalidArgument, "null command");

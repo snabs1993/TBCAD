@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 
+#include "tbcad/blocks/display.h"
 #include "tbcad/core/core.h"
 #include "tbcad/render/scene.h"
 
@@ -46,6 +47,8 @@ private:
     render::Scene& scene_;
     double pixelSizeMm_ = 0.1;
     std::unordered_set<LayerId> lockedLayers_{};
+    // Block-space display lists shared by the Inserts of one block (dropped on every revision).
+    blocks::BlockDisplayCache blockCache_{};
 };
 
 }  // namespace tbcad::ui

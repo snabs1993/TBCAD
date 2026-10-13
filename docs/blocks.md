@@ -89,3 +89,13 @@ the `DocumentIndexer`.
 `Blocks` dockable panel (hidden by default): filter box and a table of name, object count and
 number of uses; double-click inserts. The rows come from `block_cmds::blockRows`, which is tested
 without a window. The ImGui part is compiled only when `TBCAD_BUILD_APP` is on.
+
+## Wiring in the application
+
+`AppCore` creates a `BlockIndexRefresher` right after each session's `DocumentIndexer`, and
+`SceneSync` owns a `BlockDisplayCache` and opens a `BlockDisplayScope` around every display build,
+so Inserts of one block are tessellated once per document revision. Measured in a Debug build on a
+Linux container: 10,000 inserts of a 21-entity block, display lists alone 0.81 s without the cache
+and 0.18 s with it (one block-space build); `SceneSync::rebuildAll` including the scene upload
+1.9 s. The test `perf: 10,000 inserts ...` in `libs/ui/tests/block_scene_tests.cpp` prints the
+numbers and checks the cache is faster.
