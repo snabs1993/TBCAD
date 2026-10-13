@@ -111,7 +111,7 @@ std::optional<Continuation> lastLineOrArc(const Document& doc) {
         const EntityKind k = kind(e);
         if (k != EntityKind::Line && k != EntityKind::Arc)
             return;
-        if (doc.ownerBlock(e.common.id))
+        if (doc.ownerBlock(e.common.id) || !doc.effective(e.common).live())
             return;
         if (!best || e.common.id.value > best->common.id.value)
             best = &e;
