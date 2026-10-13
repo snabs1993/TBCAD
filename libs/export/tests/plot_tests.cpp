@@ -508,9 +508,5 @@ TEST_CASE("JPEG: markers, dimensions and density; files are written") {
     CHECK(writeJpeg(sheet, (dir / "a.jpg").string(), 72, 80).ok());
     CHECK(std::filesystem::file_size(dir / "a.png") > 100);
     CHECK(std::filesystem::file_size(dir / "a.jpg") > 100);
-    if (const char* keep = std::getenv("TBCAD_RASTER_OUT")) {  // for a manual look
-        (void)writePng(sheet, std::string(keep) + "/out.png", 150);
-        (void)writeJpeg(sheet, std::string(keep) + "/out.jpg", 150, 90);
-    }
     std::filesystem::remove_all(dir);
 }

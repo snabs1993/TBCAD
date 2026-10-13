@@ -188,7 +188,7 @@ std::string pngBytes(const RasterImage& img) {
         const std::uint8_t* row = img.rgb.data() + y * w * 3;
         dst[0] = 2;
         for (std::size_t i = 0; i < w * 3; ++i) {
-            const std::uint8_t above = y ? row[i - w * 3] : 0;
+            const std::uint8_t above = y ? img.rgb[(y - 1) * w * 3 + i] : 0;
             dst[1 + i] = static_cast<char>(static_cast<std::uint8_t>(row[i] - above));
         }
     }
