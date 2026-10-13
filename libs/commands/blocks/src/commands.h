@@ -14,6 +14,9 @@ std::unique_ptr<cmd::Command> makeBlockCommand();
 std::unique_ptr<cmd::Command> makeInsertCommand();
 std::unique_ptr<cmd::Command> makeExplodeCommand();
 std::unique_ptr<cmd::Command> makeArrayCommand();
+std::unique_ptr<cmd::Command> makeAttDefCommand();
+std::unique_ptr<cmd::Command> makeAttEditCommand();
+std::unique_ptr<cmd::Command> makeAttSyncCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
 
 namespace detail {

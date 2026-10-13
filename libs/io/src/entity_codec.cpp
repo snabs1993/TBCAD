@@ -101,6 +101,15 @@ struct PayloadWriter {
         w.u8(static_cast<std::uint8_t>(d.h));
         w.u8(static_cast<std::uint8_t>(d.v));
         str(d.utf8);
+        // Trailing field (format 1.1): attribute definition.
+        if (d.attdef) {
+            const AttDefInfo& a = *d.attdef;
+            w.u8(static_cast<std::uint8_t>((a.invisible ? 1 : 0) | (a.constant ? 2 : 0) |
+                                           (a.verify ? 4 : 0) | (a.preset ? 8 : 0) | 128));
+            str(a.tag);
+            str(a.prompt);
+            str(a.defaultValue);
+        }
     }
     void operator()(const MTextData& d) {
         w.vec2(d.position);
@@ -165,6 +174,14 @@ struct PayloadWriter {
         w.vec2(d.position);
         w.vec2(d.scale);
         w.f64(d.rotation);
+        // Trailing field (format 1.1): attribute values.
+        if (!d.attribs.empty()) {
+            w.varint(d.attribs.size());
+            for (const AttribValue& a : d.attribs) {
+                str(a.tag);
+                str(a.value);
+            }
+        }
     }
     void operator()(const DimensionData& d) {
         w.u8(static_cast<std::uint8_t>(d.kind));
@@ -374,6 +391,20 @@ struct PayloadReader {
                 d.h = enumeration<HAlign>(static_cast<std::uint8_t>(HAlign::Fit));
                 d.v = enumeration<VAlign>(static_cast<std::uint8_t>(VAlign::Top));
                 d.utf8 = str();
+                if (r.remaining() > 0) {
+                    std::uint8_t f = r.u8();
+                    if (f & 128) {
+                        AttDefInfo a;
+                        a.invisible = f & 1;
+                        a.constant = f & 2;
+                        a.verify = f & 4;
+                        a.preset = f & 8;
+                        a.tag = str();
+                        a.prompt = str();
+                        a.defaultValue = str();
+                        d.attdef = std::move(a);
+                    }
+                }
                 return make(std::move(d));
             }
             case EntityKind::MText: {
@@ -396,7 +427,17 @@ struct PayloadReader {
                 d.position = r.vec2();
                 d.scale = r.vec2();
                 d.rotation = r.f64();
-                return make(d);
+                if (r.remaining() > 0) {
+                    std::size_t n = r.count(2);
+                    d.attribs.reserve(n);
+                    for (std::size_t i = 0; i < n; ++i) {
+                        AttribValue a;
+                        a.tag = str();
+                        a.value = str();
+                        d.attribs.push_back(std::move(a));
+                    }
+                }
+                return make(std::move(d));
             }
             case EntityKind::Dimension: {
                 DimensionData d;
