@@ -15,8 +15,8 @@ namespace tbcad::app {
 class SettingsDialog {
 public:
     struct Hooks {
-        std::function<bool()> dark{};
-        std::function<void(bool)> setDark{};
+        std::function<int()> themeMode{};  // 0 dark, 1 light, 2 follow Windows
+        std::function<void(int)> setThemeMode{};
         std::function<void()> scaleChanged{};
         // Label for a key binding action ("file.save" -> "File > Save"); falls back to the id.
         std::function<std::string(const std::string&)> actionLabel{};

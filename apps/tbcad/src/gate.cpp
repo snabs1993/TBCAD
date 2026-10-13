@@ -159,6 +159,7 @@ int App::runGate() {
         auto saved = core.saveAs(file);
         double saveMs = msSince(t0);
         rep.line("save", saveMs, "ms", "< 3000", saved.ok() && saveMs < 3000);
+        core.closeDocument(core.activeDocument());  // otherwise the open drawing is just activated
         t0 = Clock::now();
         auto opened = core.openFile(file);
         double openMs = msSince(t0);

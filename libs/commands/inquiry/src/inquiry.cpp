@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <memory>
 
+#include "extra.h"
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::inquiry {
@@ -348,6 +349,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<Angle>());
     (void)registry.add(std::make_unique<List>());
     (void)registry.add(std::make_unique<CopyResult>());
+    (void)registry.add(makeQuickMeasure());
+    (void)registry.add(makeAreaTable());
 }
 
 }  // namespace tbcad::inquiry
