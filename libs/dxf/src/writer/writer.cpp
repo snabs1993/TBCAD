@@ -434,7 +434,7 @@ void Writer::writeBlockRecords(Out& o, std::uint64_t table) {
 }
 
 void Writer::blockBegin(Out& o, const std::string& name, std::uint64_t rec, Vec2 base, int flags,
-                        bool paperSpace) {
+                        bool paperSpace, const BlockDef* xref) {
     o.zero("BLOCK");
     if (!r12_) {
         o.h(5, newHandle());
@@ -451,6 +451,14 @@ void Writer::blockBegin(Out& o, const std::string& name, std::uint64_t rec, Vec2
     o.pt(10, base);
     o.str(3, name);
     o.raw(1, "");
+    if (xref && !xref->xrefPath.empty()) {
+        // The block is written with its content (the snapshot), as an ordinary block; TBCAD
+        // restores the external reference from this XDATA.
+        o.raw(1001, "TBCAD");
+        o.str(1000, "xref=" + xref->xrefPath);
+        o.str(1000, "stamp=" + std::to_string(xref->xrefStamp));
+        o.i(1070, xref->xrefOverlay ? 1 : 0);
+    }
 }
 
 void Writer::blockEnd(Out& o, std::uint64_t rec, bool paperSpace) {
@@ -809,7 +817,7 @@ Result<ExportResult> Writer::run() {
             const BlockDef& def = *doc_.block(id);
             std::uint64_t rec = blockRec_[id.value];
             bool anon = blockName_[id.value][0] == '*';
-            blockBegin(o, blockName_[id.value], rec, def.base, anon ? 1 : 0, false);
+            blockBegin(o, blockName_[id.value], rec, def.base, anon ? 1 : 0, false, &def);
             Out* saved = o_;
             o_ = &o;
             writeEntityList(def.entities, rec);

@@ -489,3 +489,44 @@ TEST_CASE("stored path types and extra loaders") {
     CHECK(loaded.value().file == dir / "t.zzz");
     fs::remove_all(dir);
 }
+
+TEST_CASE("unload empties the xref, keeps inserts and layer states, reload brings it back") {
+    Document host;
+    BlockId b;
+    EntityId insertId;
+    {
+        Source src = sourceOf(makeSource(), 5);
+        Transaction tx = host.begin("attach");
+        b = attach(tx, host, "site", "site.tbcad", src).value();
+        Entity ins;
+        ins.data = Indirect<InsertData>(InsertData{b, {100, 0}, {1, 1}, 0});
+        insertId = tx.add(ins).value();
+        tx.commit();
+    }
+    // Hide a layer of the xref: the state must survive unload and reload (VISRETAIN).
+    LayerId walls = host.layerByName(host.layerByName("site")->id, "walls")->id;
+    {
+        Transaction tx = host.begin("hide");
+        REQUIRE(tx.modifyLayer(walls, [](Layer& l) { l.on = false; }).ok());
+        tx.commit();
+    }
+    {
+        Transaction tx = host.begin("unload");
+        REQUIRE(unload(tx, host, b).ok());
+        tx.commit();
+    }
+    CHECK(host.block(b)->entities.empty());
+    CHECK(host.block(b)->xrefPath == "site.tbcad");
+    CHECK(host.find(insertId) != nullptr);
+    CHECK(state(host, b, {}) == State::Unloaded);
+    {
+        Source src = sourceOf(makeSource(), 5);
+        Transaction tx = host.begin("reload");
+        REQUIRE(reload(tx, host, b, src).ok());
+        tx.commit();
+    }
+    CHECK(host.block(b)->entities.size() == 4);
+    CHECK_FALSE(host.layer(walls)->on);
+    Transaction tx = host.begin("bad");
+    CHECK_FALSE(unload(tx, host, BlockId{9999}).ok());
+}

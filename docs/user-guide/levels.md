@@ -40,7 +40,7 @@ settings across levels.
 ## Files
 
 * `.tbcad` stores levels in the `LVLS` chunk and each object's level in `ELVL`
-  (`file-format.md`, format 1.6). Older programs keep both chunks and put everything on one level.
+  (`file-format.md`, format 1.7). Older programs keep both chunks and put everything on one level.
 * DXF: TBCAD writes the level table and each object's level as XDATA and reads it back
   (`dxf-export.md`, `dxf-import.md`). Other programs show all objects of all levels. A DXF from
   another program opens with everything on the first level.

@@ -530,6 +530,18 @@ void Gui::menuBar() {
     if (ImGui::BeginMenu("File")) {
         if (ImGui::MenuItem("New", keys.label("file.new").c_str()))
             runAction("file.new");
+        if (ImGui::BeginMenu("New from Template")) {
+            for (const std::string& name : core_.templateNames()) {
+                if (ImGui::MenuItem(name.c_str())) {
+                    const std::string err = core_.newFromTemplate(name);
+                    if (err.empty())
+                        startPage_ = false;
+                    else
+                        core_.print(err);
+                }
+            }
+            ImGui::EndMenu();
+        }
         if (ImGui::MenuItem("Open...", keys.label("file.open").c_str()))
             runAction("file.open");
         if (ImGui::BeginMenu("Open Recent", !core_.recentFiles().empty())) {
@@ -1757,6 +1769,13 @@ ViewportRect Gui::frame() {
             settings_.open();
         else if (what.rfind("settings:", 0) == 0)
             settings_.open(what.substr(9));
+        else if (what.rfind("newfrom:", 0) == 0) {
+            const std::string err = core_.newFromTemplate(what.substr(8));
+            if (err.empty())
+                startPage_ = false;
+            else
+                core_.print(err);
+        }
     }
     if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
         menuBar();

@@ -23,7 +23,7 @@ at 1:1 on its paper; leave it empty to plot model space (the setting is `plot.la
 
 ## Sheet lists (`libs/sheets`)
 
-`PLOTSET` (alias `BATCHPLOT`) reads a text file and writes one multi-page PDF, one page per line:
+`PLOTSET` (aliases `BATCHPLOT`, `PUBLISH`) reads a text file and writes one multi-page PDF, one page per line:
 
 ```
 # comment
