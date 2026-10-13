@@ -6,8 +6,8 @@ namespace tbcad::modifycmd {
 namespace {
 
 bool unlocked(const Document& doc, const Entity& e) {
-    const Layer* l = doc.layer(e.common.layer);
-    return !l || !l->locked;
+    const EffectiveLayer l = doc.effective(e.common);
+    return !l.locked && !l.otherLevel;
 }
 
 class BreakCommand final : public cmd::Command {
