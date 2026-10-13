@@ -379,10 +379,12 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LeaderCommand>());
     (void)registry.add(makeSmartDimCommand());
     (void)registry.add(makeMLeaderCommand());
+    (void)registry.add(makeMLeaderStyleCommand());
     (void)registry.add(makeContinueCommand());
     (void)registry.add(makeBaselineCommand());
     (void)registry.add(makeTextEditCommand());
     (void)registry.add(makeDimStyleCommand());
+    (void)registry.add(makeDimStylesPanelCommand());
 }
 
 }  // namespace tbcad::dimcmd

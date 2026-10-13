@@ -183,6 +183,8 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
+        const MLeaderStyle mls = currentMLeaderStyle(ctx.doc());
+        const DimStyleId sid = mls.dim;
         auto tip = co_await ctx.getPoint("Specify arrowhead location");
         if (!tip.ok())
             co_return;
@@ -192,9 +194,9 @@ public:
         po.base = tip.point;
         auto* c = &ctx;
         const Vec2 t0 = tip.point;
-        po.preview = [c, t0](Vec2 cursor, DisplayList& out) {
+        po.preview = [c, t0, sid](Vec2 cursor, DisplayList& out) {
             Entity e;
-            e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t0, cursor}, ""));
+            e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t0, cursor}, "", sid));
             previewEntity(*c, std::move(e), out);
         };
         auto land = co_await ctx.getPoint("Specify landing location", po);
@@ -206,14 +208,14 @@ public:
             cmd::PointOptions more;
             more.base = landing;
             std::vector<Vec2> shown = tips;
-            more.preview = [c, shown, landing](Vec2 cursor, DisplayList& out) {
+            more.preview = [c, shown, landing, sid](Vec2 cursor, DisplayList& out) {
                 for (Vec2 t : shown) {
                     Entity e;
-                    e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t, landing}, ""));
+                    e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t, landing}, "", sid));
                     previewEntity(*c, std::move(e), out);
                 }
                 Entity e;
-                e.data = Indirect<LeaderData>(leaderOf(c->doc(), {cursor, landing}, ""));
+                e.data = Indirect<LeaderData>(leaderOf(c->doc(), {cursor, landing}, "", sid));
                 previewEntity(*c, std::move(e), out);
             };
             auto next =
@@ -228,8 +230,9 @@ public:
 
         cmd::KeywordOptions ko;
         ko.keywords = {"Text", "Block", "None"};
-        ko.defaultKeyword = "Text";
-        auto content = co_await ctx.getKeyword("Content type [Text/Block/None] <Text>", ko);
+        ko.defaultKeyword = mls.content;
+        auto content =
+            co_await ctx.getKeyword("Content type [Text/Block/None] <" + mls.content + ">", ko);
         if (!content.ok())
             co_return;
 
@@ -260,7 +263,8 @@ public:
         bool firstBranch = true;
         Vec2 contentPos = landing;
         for (Vec2 t : tips) {
-            LeaderData l = leaderOf(ctx.doc(), {t, landing}, firstBranch ? text : std::string());
+            LeaderData l =
+                leaderOf(ctx.doc(), {t, landing}, firstBranch ? text : std::string(), sid);
             if (firstBranch)
                 contentPos = l.textPos;
             firstBranch = false;
