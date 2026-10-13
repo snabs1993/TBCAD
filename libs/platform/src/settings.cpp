@@ -35,9 +35,11 @@ Result<void> Settings::load(const std::filesystem::path& file) {
     buf << in.rdbuf();
     auto parsed = parseJson(buf.str());
     if (!parsed)
-        return makeError(ErrorCode::Parse, file.filename().string() + ": " + parsed.error().message);
+        return makeError(ErrorCode::Parse,
+                         file.filename().string() + ": " + parsed.error().message);
     if (!parsed.value().isObject())
-        return makeError(ErrorCode::Parse, file.filename().string() + " must contain a JSON object");
+        return makeError(ErrorCode::Parse,
+                         file.filename().string() + " must contain a JSON object");
     for (const auto& [k, v] : parsed.value().asObject())
         root_.object()[k] = v;
     return {};

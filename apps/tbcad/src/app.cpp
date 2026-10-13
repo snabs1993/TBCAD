@@ -1,35 +1,36 @@
 #include "app.h"
 
+#include <GLFW/glfw3.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
-#include <imgui.h>
-
 #include <glad/gl.h>
-#include <GLFW/glfw3.h>
+#include <imgui.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 
 #include "gui.h"
-#include "tbcad/platform/paths.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::app {
 
 namespace {
 
 void printUsage() {
-    std::puts(
-        "TBCAD " TBCAD_VERSION "\n"
-        "Usage: tbcad [file.tbcad] [options]\n"
-        "  --script \"CMD;CMD\"   run command lines after start\n"
-        "  --frames N           draw N frames, then exit\n"
-        "  --screenshot F.ppm   save the last frame\n"
-        "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
-        "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
-        "  --no-vsync           do not wait for the monitor\n");
+    std::puts("TBCAD " TBCAD_VERSION
+              "\n"
+              "Usage: tbcad [file.tbcad] [options]\n"
+              "  --script \"CMD;CMD\"   run command lines after start\n"
+              "  --frames N           draw N frames, then exit\n"
+              "  --screenshot F.ppm   save the last frame\n"
+              "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
+              "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
+              "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
+              "  --no-vsync           do not wait for the monitor\n");
 }
 
 void glfwError(int code, const char* description) {
@@ -43,15 +44,24 @@ Options parseOptions(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : std::string{}; };
-        if (a == "--script") o.script = next();
-        else if (a == "--frames") o.frames = std::atoi(next().c_str());
-        else if (a == "--screenshot") o.screenshot = next();
-        else if (a == "--report") o.report = next();
-        else if (a == "--gate") o.gate = true;
-        else if (a == "--self-test") o.selfTest = true;
-        else if (a == "--no-vsync") o.vsync = false;
-        else if (a == "--help" || a == "-h") o.help = true;
-        else if (!a.empty() && a[0] != '-') o.openFile = a;
+        if (a == "--script")
+            o.script = next();
+        else if (a == "--frames")
+            o.frames = std::atoi(next().c_str());
+        else if (a == "--screenshot")
+            o.screenshot = next();
+        else if (a == "--report")
+            o.report = next();
+        else if (a == "--gate")
+            o.gate = true;
+        else if (a == "--self-test")
+            o.selfTest = true;
+        else if (a == "--no-vsync")
+            o.vsync = false;
+        else if (a == "--help" || a == "-h")
+            o.help = true;
+        else if (!a.empty() && a[0] != '-')
+            o.openFile = a;
     }
     return o;
 }
@@ -125,7 +135,8 @@ void App::runScript(const std::string& script) {
     std::size_t start = 0;
     while (start <= script.size()) {
         std::size_t end = script.find(';', start);
-        std::string line = script.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        std::string line =
+            script.substr(start, end == std::string::npos ? std::string::npos : end - start);
         core_->submitText(line);
         if (end == std::string::npos)
             break;
@@ -202,7 +213,9 @@ bool App::saveScreenshot(const std::string& path) {
     for (int y = framebufferH_ - 1; y >= 0; --y)
         for (int x = 0; x < framebufferW_; ++x) {
             const unsigned char* p = &px[(static_cast<std::size_t>(y) * framebufferW_ + x) * 4];
-            out.put(static_cast<char>(p[0])).put(static_cast<char>(p[1])).put(static_cast<char>(p[2]));
+            out.put(static_cast<char>(p[0]))
+                .put(static_cast<char>(p[1]))
+                .put(static_cast<char>(p[2]));
         }
     return static_cast<bool>(out);
 }
@@ -224,11 +237,14 @@ int App::run() {
     std::string why;
     if (!initWindow(why)) {
         std::fprintf(stderr, "tbcad: %s\n", why.c_str());
-        return options_.selfTest ? 77 : 1;  // 77 = skipped for ctest
+        // 77 = skipped for ctest, unless the CI job says a display must be there.
+        const bool required = platform::processEnvironment("TBCAD_REQUIRE_GUI").has_value();
+        return options_.selfTest && !required ? 77 : 1;
     }
     gui_ = std::make_unique<Gui>(*core_, *uiRegistry_, window_);
     {
-        const float total = gui_->dpiScale() * static_cast<float>(core_->settings().getNumber("ui.scale", 1.0));
+        const float total =
+            gui_->dpiScale() * static_cast<float>(core_->settings().getNumber("ui.scale", 1.0));
         buildFonts(total);
         applyTheme(gui_->dark(), total);
     }

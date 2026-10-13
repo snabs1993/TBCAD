@@ -69,9 +69,7 @@ TEST_CASE("a missing keybindings file is fine; a broken one is an error") {
     Keybindings kb;
     kb.declare("a", "F1");
     CHECK(kb.load(dir / "missing.json").ok());
-    {
-        std::ofstream(dir / "bad.json") << "[1,2";
-    }
+    { std::ofstream(dir / "bad.json") << "[1,2"; }
     CHECK_FALSE(kb.load(dir / "bad.json").ok());
     CHECK(kb.label("a") == "F1");
 }

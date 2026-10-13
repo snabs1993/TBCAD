@@ -229,7 +229,8 @@ bool AppCore::autosaveNow() {
     {
         platform::Json::Object o;
         o["original"] = platform::pathToUtf8(session_->file);
-        std::ofstream out(paths_.autosaveDir() / "recovery.json", std::ios::binary | std::ios::trunc);
+        std::ofstream out(paths_.autosaveDir() / "recovery.json",
+                          std::ios::binary | std::ios::trunc);
         out << platform::toJson(platform::Json(std::move(o)));
     }
     autosavedRevision_ = session_->doc.revision();
@@ -348,7 +349,8 @@ std::string AppCore::redoLabel() const {
 void AppCore::print(std::string_view message) {
     history_.emplace_back(message);
     if (history_.size() > kMaxHistory)
-        history_.erase(history_.begin(), history_.begin() + static_cast<std::ptrdiff_t>(kMaxHistory / 4));
+        history_.erase(history_.begin(),
+                       history_.begin() + static_cast<std::ptrdiff_t>(kMaxHistory / 4));
 }
 
 std::string AppCore::promptText() const {
@@ -484,9 +486,9 @@ cmd::RawInput AppCore::makeRaw(const PointerState& p) const {
 
 void AppCore::updateHover(const PointerState& p) {
     std::vector<EntityId> hover;
-    bool wantsHover = !runner().active() ||
-                      (prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Selection ||
-                                   prompt_->kind == cmd::PromptInfo::Kind::Entity));
+    bool wantsHover =
+        !runner().active() || (prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Selection ||
+                                           prompt_->kind == cmd::PromptInfo::Kind::Entity));
     if (wantsHover) {
         Vec2 w = camera_.screenToWorld(p.screen);
         if (auto id = pickEntity(session_->doc, session_->index, w, apertureMm()))
@@ -666,7 +668,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         }
     }
     if (drag_) {
-        overlay.selectionWindow(drag_->first, drag_->second, dragIsCrossing(drag_->first.x, drag_->second.x));
+        overlay.selectionWindow(drag_->first, drag_->second,
+                                dragIsCrossing(drag_->first.x, drag_->second.x));
     }
     if (cursorInside_ && !drag_) {
         const Vec2 c = lastPointer_.screen;
@@ -682,7 +685,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
                                              prompt_->kind == cmd::PromptInfo::Kind::Angle);
         if (!pointPrompt) {
             double h = settings_.getNumber("pick.aperturePx", 6);
-            Vec2 box[4] = {{c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}};
+            Vec2 box[4] = {
+                {c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}};
             render::OverlayStyle pb;
             pb.color = {230, 230, 230, 220};
             overlay.polyline(render::Space::Screen, box, true, pb);
@@ -700,7 +704,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     }
 }
 
-// ---- notices -------------------------------------------------------------------------------------
+// ---- notices
+// -------------------------------------------------------------------------------------
 
 void AppCore::outOfAreaZoomTo() {
     if (outOfArea_)

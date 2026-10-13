@@ -21,6 +21,7 @@ target_compile_features(tbcad PRIVATE cxx_std_20)
 tbcad_set_warnings(tbcad)
 target_include_directories(tbcad PRIVATE src)
 target_compile_definitions(tbcad PRIVATE
+  GLFW_INCLUDE_NONE
   TBCAD_VERSION="${PROJECT_VERSION}"
   TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 target_link_libraries(tbcad PRIVATE

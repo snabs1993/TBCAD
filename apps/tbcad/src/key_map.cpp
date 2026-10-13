@@ -21,11 +21,14 @@ std::optional<ImGuiKey> imguiKeyFor(const std::string& k) {
         return std::nullopt;
     }
     static const std::map<std::string, ImGuiKey> names = {
-        {"ESCAPE", ImGuiKey_Escape}, {"ENTER", ImGuiKey_Enter},       {"DELETE", ImGuiKey_Delete},
-        {"TAB", ImGuiKey_Tab},       {"SPACE", ImGuiKey_Space},       {"HOME", ImGuiKey_Home},
-        {"END", ImGuiKey_End},       {"LEFT", ImGuiKey_LeftArrow},    {"RIGHT", ImGuiKey_RightArrow},
-        {"UP", ImGuiKey_UpArrow},    {"DOWN", ImGuiKey_DownArrow},    {"PAGEUP", ImGuiKey_PageUp},
-        {"PAGEDOWN", ImGuiKey_PageDown}, {"BACKSPACE", ImGuiKey_Backspace}, {"INSERT", ImGuiKey_Insert}};
+        {"ESCAPE", ImGuiKey_Escape},     {"ENTER", ImGuiKey_Enter},
+        {"DELETE", ImGuiKey_Delete},     {"TAB", ImGuiKey_Tab},
+        {"SPACE", ImGuiKey_Space},       {"HOME", ImGuiKey_Home},
+        {"END", ImGuiKey_End},           {"LEFT", ImGuiKey_LeftArrow},
+        {"RIGHT", ImGuiKey_RightArrow},  {"UP", ImGuiKey_UpArrow},
+        {"DOWN", ImGuiKey_DownArrow},    {"PAGEUP", ImGuiKey_PageUp},
+        {"PAGEDOWN", ImGuiKey_PageDown}, {"BACKSPACE", ImGuiKey_Backspace},
+        {"INSERT", ImGuiKey_Insert}};
     auto it = names.find(k);
     if (it == names.end())
         return std::nullopt;

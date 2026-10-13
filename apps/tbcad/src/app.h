@@ -18,13 +18,14 @@ namespace tbcad::app {
 class Gui;
 
 struct Options {
-    std::string openFile{};        // drawing to open at start
-    std::string script{};          // command lines run after start, separated by ';'
-    std::string screenshot{};      // write the last frame to this .ppm
-    std::string report{};          // --gate: also write the report here
-    int frames = 0;                // > 0: draw this many frames, then exit
-    bool selfTest = false;         // hidden window, exit code 77 when no display / OpenGL
-    bool gate = false;             // run the performance gate and exit
+    std::string openFile{};    // drawing to open at start
+    std::string script{};      // command lines run after start, separated by ';'
+    std::string screenshot{};  // write the last frame to this .ppm
+    std::string report{};      // --gate: also write the report here
+    int frames = 0;            // > 0: draw this many frames, then exit
+    int gateLines = 1000000;   // --gate: how many lines DEVGEN makes
+    bool selfTest = false;     // hidden window, exit code 77 when no display / OpenGL
+    bool gate = false;         // run the performance gate and exit
     bool vsync = true;
     bool help = false;
 };

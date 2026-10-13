@@ -1,10 +1,9 @@
 #include "gui.h"
 
+#include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
-
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cmath>
@@ -35,20 +34,34 @@ const std::vector<platform::FileFilter>& drawingFilters() {
 
 const char* kindName(EntityKind k) {
     switch (k) {
-        case EntityKind::Line: return "Line";
-        case EntityKind::Circle: return "Circle";
-        case EntityKind::Arc: return "Arc";
-        case EntityKind::Polyline: return "Polyline";
-        case EntityKind::Point: return "Point";
-        case EntityKind::Ellipse: return "Ellipse";
-        case EntityKind::Spline: return "Spline";
-        case EntityKind::Text: return "Text";
-        case EntityKind::MText: return "Multiline text";
-        case EntityKind::Hatch: return "Hatch";
-        case EntityKind::Insert: return "Block reference";
-        case EntityKind::Dimension: return "Dimension";
-        case EntityKind::Leader: return "Leader";
-        case EntityKind::Proxy: return "Proxy object";
+        case EntityKind::Line:
+            return "Line";
+        case EntityKind::Circle:
+            return "Circle";
+        case EntityKind::Arc:
+            return "Arc";
+        case EntityKind::Polyline:
+            return "Polyline";
+        case EntityKind::Point:
+            return "Point";
+        case EntityKind::Ellipse:
+            return "Ellipse";
+        case EntityKind::Spline:
+            return "Spline";
+        case EntityKind::Text:
+            return "Text";
+        case EntityKind::MText:
+            return "Multiline text";
+        case EntityKind::Hatch:
+            return "Hatch";
+        case EntityKind::Insert:
+            return "Block reference";
+        case EntityKind::Dimension:
+            return "Dimension";
+        case EntityKind::Leader:
+            return "Leader";
+        case EntityKind::Proxy:
+            return "Proxy object";
     }
     return "Object";
 }
@@ -130,18 +143,27 @@ bool Gui::consumeActivity() {
 // ---- actions -----------------------------------------------------------------------------------
 
 void Gui::runAction(const std::string& action) {
-    if (action == "file.new") requestAction(Pending::New);
-    else if (action == "file.open") requestAction(Pending::Open);
-    else if (action == "file.save") doSave();
-    else if (action == "file.saveAs") doSaveAs();
-    else if (action == "edit.undo") core_.undo();
-    else if (action == "edit.redo") core_.redo();
-    else if (action == "edit.selectAll") core_.selectAll();
+    if (action == "file.new")
+        requestAction(Pending::New);
+    else if (action == "file.open")
+        requestAction(Pending::Open);
+    else if (action == "file.save")
+        doSave();
+    else if (action == "file.saveAs")
+        doSaveAs();
+    else if (action == "edit.undo")
+        core_.undo();
+    else if (action == "edit.redo")
+        core_.redo();
+    else if (action == "edit.selectAll")
+        core_.selectAll();
     else if (action == "edit.deselect") {
         core_.pressEscape();
         input_.clear();
-    } else if (action == "view.zoomExtents") core_.zoomExtents();
-    else if (action == "view.toggleCommandLine") showCommandLine_ = !showCommandLine_;
+    } else if (action == "view.zoomExtents")
+        core_.zoomExtents();
+    else if (action == "view.toggleCommandLine")
+        showCommandLine_ = !showCommandLine_;
     else {
         for (const auto& item : registry_.menuItems())
             if (item.actionId == action) {
@@ -195,7 +217,8 @@ void Gui::doOpen() {
             doOpenPath(platform::pathToUtf8(*p));
         return;
     }
-    std::filesystem::path start = core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
+    std::filesystem::path start =
+        core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::Open;
     browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad");
 }
@@ -230,7 +253,8 @@ void Gui::doSaveAs() {
         saveThenPending_ = false;
         return;
     }
-    std::filesystem::path start = core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
+    std::filesystem::path start =
+        core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::SaveAs;
     browser_.open(FileBrowser::Mode::Save, start, suggested, ".tbcad");
 }
@@ -250,13 +274,23 @@ void Gui::shortcuts() {
             break;
         }
 
-    const bool modal = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    const bool modal =
+        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     if (modal)
         return;
 
-    // Typing anywhere goes to the command line.
-    if (!ImGui::IsAnyItemActive() && io.InputQueueCharacters.Size > 0 && !io.KeyCtrl && !io.KeyAlt)
+    // Typing anywhere goes to the command line: keep the characters, focus the field, and hand
+    // the characters back to it once it is active (the first one would be lost otherwise).
+    if (!ImGui::IsAnyItemActive() && io.InputQueueCharacters.Size > 0 && !io.KeyCtrl &&
+        !io.KeyAlt) {
+        for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
+            char utf8[5] = {};
+            ImTextCharToUtf8(utf8, io.InputQueueCharacters[i]);
+            typedWhileUnfocused_ += utf8;
+        }
+        io.InputQueueCharacters.resize(0);
         refocusInput_ = true;
+    }
 
     for (const auto& action : core_.keybindings().actions()) {
         auto chord = core_.keybindings().chordOf(action);
@@ -289,7 +323,8 @@ namespace {
 void drawNode(const MenuNode& node, ui::AppCore& core, const platform::Keybindings& keys) {
     for (const MenuNode& child : node.children) {
         if (child.item) {
-            std::string shortcut = child.item->actionId.empty() ? "" : keys.label(child.item->actionId);
+            std::string shortcut =
+                child.item->actionId.empty() ? "" : keys.label(child.item->actionId);
             if (ImGui::MenuItem(child.name.c_str(), shortcut.c_str()))
                 core.submitText(child.item->command);
         } else if (ImGui::BeginMenu(child.name.c_str())) {
@@ -369,9 +404,11 @@ void Gui::menuBar() {
         if (ImGui::MenuItem("Zoom In"))
             core_.zoomAtScreen({core_.camera().viewportW / 2.0, core_.camera().viewportH / 2.0}, 1);
         if (ImGui::MenuItem("Zoom Out"))
-            core_.zoomAtScreen({core_.camera().viewportW / 2.0, core_.camera().viewportH / 2.0}, -1);
+            core_.zoomAtScreen({core_.camera().viewportW / 2.0, core_.camera().viewportH / 2.0},
+                               -1);
         ImGui::Separator();
-        ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(), &showCommandLine_);
+        ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
+                        &showCommandLine_);
         ImGui::MenuItem("Properties", nullptr, &showProperties_);
         for (const auto& p : registry_.panels())
             ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
@@ -429,16 +466,22 @@ void Gui::toolStrip() {
             ImGui::SameLine();
             return pressed;
         };
-        if (button("New")) runAction("file.new");
-        if (button("Open")) runAction("file.open");
-        if (button("Save")) runAction("file.save");
+        if (button("New"))
+            runAction("file.new");
+        if (button("Open"))
+            runAction("file.open");
+        if (button("Save"))
+            runAction("file.save");
         ImGui::TextDisabled("|");
         ImGui::SameLine();
-        if (button("Undo", !core_.undoLabel().empty())) core_.undo();
-        if (button("Redo", !core_.redoLabel().empty())) core_.redo();
+        if (button("Undo", !core_.undoLabel().empty()))
+            core_.undo();
+        if (button("Redo", !core_.redoLabel().empty()))
+            core_.redo();
         ImGui::TextDisabled("|");
         ImGui::SameLine();
-        if (button("Zoom Extents")) core_.zoomExtents();
+        if (button("Zoom Extents"))
+            core_.zoomExtents();
         ImGui::NewLine();
     }
     ImGui::End();
@@ -460,7 +503,8 @@ void Gui::statusBar() {
             ImGui::SameLine();
             bool on = t.get();
             if (on)
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             if (ImGui::SmallButton(t.label.c_str()))
                 t.set(!on);
             if (on)
@@ -531,14 +575,16 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
                 if (historyPos_ >= static_cast<int>(inputHistory_.size()))
                     historyPos_ = -1;
             }
-            const std::string& text =
-                historyPos_ < 0 ? std::string() : inputHistory_[static_cast<std::size_t>(historyPos_)];
+            const std::string& text = historyPos_ < 0
+                                          ? std::string()
+                                          : inputHistory_[static_cast<std::size_t>(historyPos_)];
             d->DeleteChars(0, d->BufTextLen);
             d->InsertChars(0, text.c_str());
             return 0;
         }
         case ImGuiInputTextFlags_CallbackCompletion: {
-            auto matches = core_.complete(std::string(d->Buf, static_cast<std::size_t>(d->BufTextLen)));
+            auto matches =
+                core_.complete(std::string(d->Buf, static_cast<std::size_t>(d->BufTextLen)));
             if (matches.empty())
                 return 0;
             d->DeleteChars(0, d->BufTextLen);
@@ -562,7 +608,8 @@ void Gui::commandWindow() {
     ImGui::SetNextWindowSize(ImVec2(700, 160), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Command", &showCommandLine_)) {
         const float footer = ImGui::GetFrameHeightWithSpacing() + 2;
-        ImGui::BeginChild("##history", ImVec2(0, -footer), false, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::BeginChild("##history", ImVec2(0, -footer), false,
+                          ImGuiWindowFlags_HorizontalScrollbar);
         const auto& lines = core_.history();
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(lines.size()));
@@ -584,10 +631,9 @@ void Gui::commandWindow() {
             ImGui::SetKeyboardFocusHere();
             refocusInput_ = false;
         }
-        const ImGuiInputTextFlags flags = ImGuiInputTextFlags_EnterReturnsTrue |
-                                          ImGuiInputTextFlags_CallbackHistory |
-                                          ImGuiInputTextFlags_CallbackCompletion |
-                                          ImGuiInputTextFlags_CallbackCharFilter;
+        const ImGuiInputTextFlags flags =
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
+            ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackCharFilter;
         if (ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this)) {
             std::string line = input_;
             input_.clear();
@@ -599,6 +645,10 @@ void Gui::commandWindow() {
             anyActivity_ = true;
         }
         inputId_ = ImGui::GetItemID();
+        if (!typedWhileUnfocused_.empty() && ImGui::IsItemActive()) {
+            ImGui::GetIO().AddInputCharactersUTF8(typedWhileUnfocused_.c_str());
+            typedWhileUnfocused_.clear();
+        }
         if (spaceAsEnter_) {
             spaceAsEnter_ = false;
             core_.submitText("");
@@ -707,10 +757,9 @@ void Gui::viewportInput(const ViewportRect& rect) {
 
     // Left button: click, or drag a selection rectangle.
     const auto* prompt = core_.runner().prompt();
-    const bool pointPrompt =
-        prompt && (prompt->kind == cmd::PromptInfo::Kind::Point ||
-                   prompt->kind == cmd::PromptInfo::Kind::Distance ||
-                   prompt->kind == cmd::PromptInfo::Kind::Angle);
+    const bool pointPrompt = prompt && (prompt->kind == cmd::PromptInfo::Kind::Point ||
+                                        prompt->kind == cmd::PromptInfo::Kind::Distance ||
+                                        prompt->kind == cmd::PromptInfo::Kind::Angle);
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         leftDown_ = true;
         dragging_ = false;
@@ -768,7 +817,8 @@ ViewportRect Gui::frame() {
         ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w * 0.5f, rect.y + 12), ImGuiCond_Always,
                                 ImVec2(0.5f, 0.0f));
         ImGui::SetNextWindowBgAlpha(0.92f);
-        const ImGuiWindowFlags nf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        const ImGuiWindowFlags nf = ImGuiWindowFlags_NoDecoration |
+                                    ImGuiWindowFlags_AlwaysAutoResize |
                                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
                                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
         if (ImGui::Begin("##outofarea", nullptr, nf)) {
@@ -919,7 +969,8 @@ void Gui::dialogs() {
             std::ifstream in(path, std::ios::binary);
             std::ostringstream buf;
             buf << in.rdbuf();
-            noticesText_ = in ? buf.str() : "THIRD_PARTY_NOTICES.txt was not found next to the program.";
+            noticesText_ =
+                in ? buf.str() : "THIRD_PARTY_NOTICES.txt was not found next to the program.";
         }
     }
     ImGui::SetNextWindowSize(ImVec2(720, 480), ImGuiCond_Appearing);

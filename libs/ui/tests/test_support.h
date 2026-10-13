@@ -7,9 +7,9 @@
 #include "tbcad/cmd/command.h"
 #include "tbcad/cmd/registry.h"
 #include "tbcad/core/core.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/index/document_indexer.h"
 #include "tbcad/index/spatial_index.h"
-#include "tbcad/geom/entity.h"
 
 namespace tbcad::ui::test {
 

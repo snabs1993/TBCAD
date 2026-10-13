@@ -2,10 +2,10 @@
 // framework and the .tbcad library, which is what the window code builds on.
 #include <doctest/doctest.h>
 
-#include "test_support.h"
 #include "tbcad/cmd/script_host.h"
 #include "tbcad/core/dump.h"
 #include "tbcad/io/tbcad.h"
+#include "test_support.h"
 
 using namespace tbcad;
 using namespace tbcad::ui::test;

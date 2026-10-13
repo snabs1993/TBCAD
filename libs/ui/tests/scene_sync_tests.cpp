@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "test_support.h"
 #include "tbcad/cmd/undo.h"
 #include "tbcad/ui/scene_sync.h"
+#include "test_support.h"
 
 using namespace tbcad;
 using namespace tbcad::ui;
@@ -58,7 +58,10 @@ TEST_CASE("layer visibility goes through the effective state") {
     modifyLayer(doc, parent, [](Layer& l) { l.on = false; });
     CHECK_FALSE(scene.layerVisible(parent));
     CHECK_FALSE(scene.layerVisible(child));
-    modifyLayer(doc, parent, [](Layer& l) { l.on = true; l.frozen = true; });
+    modifyLayer(doc, parent, [](Layer& l) {
+        l.on = true;
+        l.frozen = true;
+    });
     CHECK_FALSE(scene.layerVisible(child));
     modifyLayer(doc, parent, [](Layer& l) { l.frozen = false; });
     CHECK(scene.layerVisible(child));

@@ -36,14 +36,14 @@ struct PanelInfo {
 };
 
 struct MenuItemInfo {
-    std::string path{};     // "Draw/Line" ; the last element is the label
-    std::string command{};  // command line to run
+    std::string path{};          // "Draw/Line" ; the last element is the label
+    std::string command{};       // command line to run
     std::string actionId{};      // keybinding action id; empty = none
     std::string defaultChord{};  // "Ctrl+Shift+L" ; empty = unbound by default
 };
 
 struct StatusToggle {
-    std::string id{};  // "snap"
+    std::string id{};     // "snap"
     std::string label{};  // "SNAP"
     std::function<bool()> get{};
     std::function<void(bool)> set{};

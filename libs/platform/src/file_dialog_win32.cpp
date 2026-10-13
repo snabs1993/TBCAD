@@ -1,7 +1,6 @@
 // Windows IFileDialog wrapper. The only place outside apps/ that includes Windows headers.
-#include <windows.h>
-
 #include <shobjidl.h>
+#include <windows.h>
 
 #include "tbcad/platform/file_dialog.h"
 

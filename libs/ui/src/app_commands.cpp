@@ -64,7 +64,8 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
         opts.keywords = {"Extents", "Window", "In", "Out"};
-        auto first = co_await ctx.getPoint("Specify first corner of the window or [Extents/Window/In/Out]", opts);
+        auto first = co_await ctx.getPoint(
+            "Specify first corner of the window or [Extents/Window/In/Out]", opts);
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
             render::Camera2D cam = cameraOf(v);

@@ -1,5 +1,5 @@
-#include <imgui.h>
 #include <backends/imgui_impl_opengl3.h>
+#include <imgui.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -68,7 +68,8 @@ void buildFonts(float scale) {
     ImFontGlyphRangesBuilder builder;
     builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
     builder.AddRanges(io.Fonts->GetGlyphRangesThai());
-    builder.AddText("\xC2\xA9\xC2\xB0\xC2\xB1\xE2\x80\x93\xE2\x80\x94\xE2\x80\xA6");  // (c) deg +- – — …
+    builder.AddText(
+        "\xC2\xA9\xC2\xB0\xC2\xB1\xE2\x80\x93\xE2\x80\x94\xE2\x80\xA6");  // (c) deg +- – — …
     static ImVector<ImWchar> ranges;
     ranges.clear();
     builder.BuildRanges(&ranges);

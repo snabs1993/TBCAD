@@ -31,7 +31,8 @@ private:
     static constexpr int kMaxDepth = 64;
 
     Error fail(const std::string& what) const {
-        return makeError(ErrorCode::Parse, "JSON error at offset " + std::to_string(pos_) + ": " + what);
+        return makeError(ErrorCode::Parse,
+                         "JSON error at offset " + std::to_string(pos_) + ": " + what);
     }
     void skipSpace() {
         while (pos_ < s_.size() &&
@@ -82,9 +83,9 @@ private:
         std::size_t start = pos_;
         if (pos_ < s_.size() && s_[pos_] == '-')
             ++pos_;
-        while (pos_ < s_.size() && ((s_[pos_] >= '0' && s_[pos_] <= '9') || s_[pos_] == '.' ||
-                                    s_[pos_] == 'e' || s_[pos_] == 'E' || s_[pos_] == '+' ||
-                                    s_[pos_] == '-'))
+        while (pos_ < s_.size() &&
+               ((s_[pos_] >= '0' && s_[pos_] <= '9') || s_[pos_] == '.' || s_[pos_] == 'e' ||
+                s_[pos_] == 'E' || s_[pos_] == '+' || s_[pos_] == '-'))
             ++pos_;
         if (pos_ == start)
             return fail("unexpected character");
@@ -152,14 +153,30 @@ private:
                 break;
             char e = s_[pos_++];
             switch (e) {
-                case '"': out += '"'; break;
-                case '\\': out += '\\'; break;
-                case '/': out += '/'; break;
-                case 'b': out += '\b'; break;
-                case 'f': out += '\f'; break;
-                case 'n': out += '\n'; break;
-                case 'r': out += '\r'; break;
-                case 't': out += '\t'; break;
+                case '"':
+                    out += '"';
+                    break;
+                case '\\':
+                    out += '\\';
+                    break;
+                case '/':
+                    out += '/';
+                    break;
+                case 'b':
+                    out += '\b';
+                    break;
+                case 'f':
+                    out += '\f';
+                    break;
+                case 'n':
+                    out += '\n';
+                    break;
+                case 'r':
+                    out += '\r';
+                    break;
+                case 't':
+                    out += '\t';
+                    break;
                 case 'u': {
                     unsigned cp = 0;
                     if (!hex4(cp))
@@ -242,11 +259,21 @@ void writeString(std::string& out, const std::string& s) {
     for (char ch : s) {
         auto c = static_cast<unsigned char>(ch);
         switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
             default:
                 if (c < 0x20) {
                     char buf[8];

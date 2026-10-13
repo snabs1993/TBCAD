@@ -39,9 +39,9 @@ bool validKey(const std::string& k) {
         }
         return n >= 1 && n <= 24;
     }
-    static const char* names[] = {"ESCAPE", "ENTER", "DELETE", "TAB",   "SPACE", "HOME", "END",
-                                  "LEFT",   "RIGHT", "UP",     "DOWN",  "PAGEUP", "PAGEDOWN",
-                                  "BACKSPACE", "INSERT"};
+    static const char* names[] = {"ESCAPE", "ENTER",  "DELETE",   "TAB",       "SPACE",
+                                  "HOME",   "END",    "LEFT",     "RIGHT",     "UP",
+                                  "DOWN",   "PAGEUP", "PAGEDOWN", "BACKSPACE", "INSERT"};
     return std::find(std::begin(names), std::end(names), k) != std::end(names);
 }
 
@@ -122,9 +122,11 @@ Result<std::vector<std::string>> Keybindings::load(const std::filesystem::path& 
     buf << in.rdbuf();
     auto parsed = parseJson(buf.str());
     if (!parsed)
-        return makeError(ErrorCode::Parse, file.filename().string() + ": " + parsed.error().message);
+        return makeError(ErrorCode::Parse,
+                         file.filename().string() + ": " + parsed.error().message);
     if (!parsed.value().isObject())
-        return makeError(ErrorCode::Parse, file.filename().string() + " must contain a JSON object");
+        return makeError(ErrorCode::Parse,
+                         file.filename().string() + " must contain a JSON object");
     overrides_.clear();
     for (const auto& [action, value] : parsed.value().asObject()) {
         if (!value.isString()) {

@@ -123,6 +123,7 @@ private:
     int historyPos_ = -1;
     bool refocusInput_ = false;
     bool spaceAsEnter_ = false;
+    std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;
     ImGuiID inputId_ = 0;
 

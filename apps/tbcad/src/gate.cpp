@@ -1,7 +1,7 @@
 // The M1 gate: 1 000 000 random lines, zoom, pan, pick, window/crossing selection, save, reopen.
 // Prints one line per measurement and PASS/FAIL against the milestone limits.
-#include <glad/gl.h>
 #include <GLFW/glfw3.h>
+#include <glad/gl.h>
 
 #include <algorithm>
 #include <chrono>
@@ -63,13 +63,15 @@ int App::runGate() {
 
     // 1. Generate.
     auto t0 = Clock::now();
-    core.submitText("DEVGEN LINES 1000000");
+    core.submitText("DEVGEN LINES " + std::to_string(options_.gateLines));
     double genMs = msSince(t0);
     const std::size_t count = core.document().modelSpaceCount();
-    rep.line("generate 1 000 000 lines", genMs, "ms", "info", count == 1'000'000);
-    rep.info("lines in drawing: " + std::to_string(count) + ", in index: " +
-             std::to_string(core.spatialIndex().size()) + ", in scene: " +
-             std::to_string(core.scene().entityCount()));
+    rep.line("generate " + std::to_string(options_.gateLines) + " lines", genMs, "ms", "info",
+             count == static_cast<std::size_t>(options_.gateLines));
+    std::fprintf(stderr, "gate: drawing generated in %.0f ms\n", genMs);
+    rep.info("lines in drawing: " + std::to_string(count) +
+             ", in index: " + std::to_string(core.spatialIndex().size()) +
+             ", in scene: " + std::to_string(core.scene().entityCount()));
 
     // 2. Zoom extents, then draw.
     t0 = Clock::now();
@@ -100,13 +102,14 @@ int App::runGate() {
     }
     double medianMs = percentile(frames, 0.5);
     double p95Ms = percentile(frames, 0.95);
-    rep.line("pan/zoom, median fps", 1000.0 / medianMs, "fps", ">= 30 (60 goal)", 1000.0 / medianMs >= 30);
+    rep.line("pan/zoom, median fps", 1000.0 / medianMs, "fps", ">= 30 (60 goal)",
+             1000.0 / medianMs >= 30);
     rep.line("pan/zoom, 5% worst frame fps", 1000.0 / p95Ms, "fps", ">= 20", 1000.0 / p95Ms >= 20);
     core.setCamera(start);
 
     // 4. Click selects the line under the cursor.
     {
-        EntityId target = core.document().modelSpace()[500'000];
+        EntityId target = core.document().modelSpace()[count / 2];
         const Entity* e = core.document().find(target);
         const auto* line = entityAs<LineData>(*e);
         Vec2 mid = (line->a + line->b) * 0.5;
@@ -160,7 +163,8 @@ int App::runGate() {
         auto opened = core.openFile(file);
         double openMs = msSince(t0);
         const bool same = opened.ok() && canonicalDump(core.document()) == before;
-        rep.line("reopen (includes building the view)", openMs, "ms", "< 3000", opened.ok() && openMs < 3000);
+        rep.line("reopen (includes building the view)", openMs, "ms", "< 3000",
+                 opened.ok() && openMs < 3000);
         rep.line("reopened drawing is identical", same ? 1 : 0, "", "1", same);
         std::error_code ec;
         std::filesystem::remove(file, ec);

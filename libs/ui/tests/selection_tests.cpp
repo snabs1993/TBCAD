@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "test_support.h"
 #include "tbcad/ui/selection.h"
+#include "test_support.h"
 
 using namespace tbcad;
 using namespace tbcad::ui;
@@ -84,11 +84,17 @@ TEST_CASE("sub-layers follow the effective state of their parents") {
     CHECK_FALSE(pickEntity(d.doc, d.idx, {5, 0}, 1).has_value());  // ... but it is frozen in effect
     CHECK_FALSE(isVisible(d.doc, *d.doc.find(e)));
 
-    modifyLayer(d.doc, parent, [](Layer& l) { l.frozen = false; l.locked = true; });
+    modifyLayer(d.doc, parent, [](Layer& l) {
+        l.frozen = false;
+        l.locked = true;
+    });
     CHECK(isVisible(d.doc, *d.doc.find(e)));
     CHECK_FALSE(pickEntity(d.doc, d.idx, {5, 0}, 1).has_value());
 
-    modifyLayer(d.doc, parent, [](Layer& l) { l.locked = false; l.on = false; });
+    modifyLayer(d.doc, parent, [](Layer& l) {
+        l.locked = false;
+        l.on = false;
+    });
     CHECK_FALSE(isVisible(d.doc, *d.doc.find(e)));
 }
 

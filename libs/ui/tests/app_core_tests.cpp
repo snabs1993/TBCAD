@@ -3,9 +3,9 @@
 #include <chrono>
 #include <fstream>
 
-#include "test_support.h"
 #include "tbcad/core/dump.h"
 #include "tbcad/ui/app_core.h"
+#include "test_support.h"
 
 using namespace tbcad;
 using namespace tbcad::ui;
@@ -139,8 +139,8 @@ TEST_CASE("click selects, shift removes, empty click clears") {
 
 TEST_CASE("drag left to right selects inside, right to left selects touching") {
     Fixture f("dragsel");
-    f.line("10,10", "40,10");     // inside the rectangle below
-    f.line("40,40", "140,40");    // sticks out
+    f.line("10,10", "40,10");   // inside the rectangle below
+    f.line("40,40", "140,40");  // sticks out
     Vec2 a = f.core->camera().worldToScreen({0, 0});
     Vec2 b = f.core->camera().worldToScreen({100, 100});
     f.core->dragSelect(a, b, PointerState{b, false, false});
@@ -177,7 +177,10 @@ TEST_CASE("hidden, frozen and locked layers cannot be picked, and the selection 
     CHECK(f.core->selection().empty());
     f.core->click(f.at({50, 0}));
     CHECK(f.core->selection().empty());
-    modifyLayer(f.core->document(), layer, [](Layer& l) { l.locked = false; l.frozen = true; });
+    modifyLayer(f.core->document(), layer, [](Layer& l) {
+        l.locked = false;
+        l.frozen = true;
+    });
     f.core->click(f.at({50, 0}));
     CHECK(f.core->selection().empty());
 }
@@ -314,9 +317,7 @@ TEST_CASE("opening a missing or corrupt file reports and keeps the current drawi
     Fixture f("badopen");
     f.line("0,0", "100,0");
     CHECK_FALSE(f.core->openFile(f.dir / "nope.tbcad").ok());
-    {
-        std::ofstream(f.dir / "junk.tbcad") << "this is not a drawing";
-    }
+    { std::ofstream(f.dir / "junk.tbcad") << "this is not a drawing"; }
     CHECK_FALSE(f.core->openFile(f.dir / "junk.tbcad").ok());
     CHECK(f.core->document().modelSpaceCount() == 1);
     CHECK(f.core->history().back().find("Cannot open") != std::string::npos);
@@ -417,9 +418,7 @@ TEST_CASE("host settings are typed by what is stored; toggles live in the UI reg
 TEST_CASE("user aliases are loaded from the settings folder") {
     fs::path dir = tempDir("aliases");
     fs::create_directories(dir / "cfg");
-    {
-        std::ofstream(dir / "cfg" / "aliases.json") << R"({"QQ": "TESTLINE"})";
-    }
+    { std::ofstream(dir / "cfg" / "aliases.json") << R"({"QQ": "TESTLINE"})"; }
     auto registry = makeRegistry();
     AppCore core(*registry, platform::AppPaths{dir / "cfg", dir / "data"});
     CHECK(registry->find("QQ") != nullptr);

@@ -43,9 +43,7 @@ TEST_CASE("settings: missing file is fine, broken file reports and keeps default
     fs::path dir = tempDir("settings_bad");
     Settings s = Settings::withDefaults();
     CHECK(s.load(dir / "none.json").ok());
-    {
-        std::ofstream(dir / "bad.json") << "{ not json";
-    }
+    { std::ofstream(dir / "bad.json") << "{ not json"; }
     auto r = s.load(dir / "bad.json");
     REQUIRE_FALSE(r.ok());
     CHECK(r.error().message.find("bad.json") != std::string::npos);
@@ -54,9 +52,7 @@ TEST_CASE("settings: missing file is fine, broken file reports and keeps default
 
 TEST_CASE("settings keep unknown keys when saving") {
     fs::path dir = tempDir("settings_unknown");
-    {
-        std::ofstream(dir / "s.json") << R"({"future.option": 42, "ui.theme": "light"})";
-    }
+    { std::ofstream(dir / "s.json") << R"({"future.option": 42, "ui.theme": "light"})"; }
     Settings s;
     REQUIRE(s.load(dir / "s.json").ok());
     REQUIRE(s.save(dir / "t.json").ok());

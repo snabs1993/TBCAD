@@ -20,7 +20,8 @@ std::optional<std::string> fake(std::string_view name) {
 }  // namespace
 
 TEST_CASE("windows paths use APPDATA and LOCALAPPDATA") {
-    fakeEnv() = {{"APPDATA", "C:/Users/a/AppData/Roaming"}, {"LOCALAPPDATA", "C:/Users/a/AppData/Local"}};
+    fakeEnv() = {{"APPDATA", "C:/Users/a/AppData/Roaming"},
+                 {"LOCALAPPDATA", "C:/Users/a/AppData/Local"}};
     AppPaths p = defaultAppPaths(fake, true);
     CHECK(p.configDir == std::filesystem::path("C:/Users/a/AppData/Roaming/TBCAD"));
     CHECK(p.settingsFile().filename() == "settings.json");
