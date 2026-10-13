@@ -99,3 +99,27 @@ Linux container: 10,000 inserts of a 21-entity block, display lists alone 0.81 s
 and 0.18 s with it (one block-space build); `SceneSync::rebuildAll` including the scene upload
 1.9 s. The test `perf: 10,000 inserts ...` in `libs/ui/tests/block_scene_tests.cpp` prints the
 numbers and checks the cache is faster.
+
+## Attributes
+
+An attribute definition is a `Text` inside a block with `TextData::attdef` set (`AttDefInfo`: tag,
+prompt, default value, and the Invisible / Constant / Verify / Preset flags). Each Insert carries
+its own values in `InsertData::attribs` (tag + value). No new entity kind is involved, so older
+readers see an ATTDEF as plain text showing its tag.
+
+* `ATTDEF` (`ATT`): mode keywords (`Invisible`, `Constant`, `Verify`, `Preset`, `Done`), tag
+  (upper-cased, no spaces), prompt, default value, point, height, rotation.
+* `BLOCK` keeps the definitions, refuses two with the same tag, gives a converted insert the
+  default values, and when it redefines a block it updates that block's inserts (`syncInserts`).
+* `INSERT` asks for each attribute that is not constant or preset (twice for Verify). Setting
+  `block.attreq` = `0` skips the questions and keeps the defaults.
+* `ATTEDIT` (`ATE`) changes the values of one insert; `ATTSYNC` brings every insert of a block in
+  line with its current definitions (new tags get the default, removed tags are dropped).
+* Display: the block's shared display cache leaves definitions out; `buildInsertDisplay` draws
+  each visible attribute with the insert's value, on the definition's own layer rules. Bounds
+  include the attribute text. `EXPLODE` turns attributes into plain text with the values
+  (invisible ones disappear).
+* `.tbcad` version 1.1 stores the extra fields (see `docs/file-format.md`); DXF: ATTDEF and INSERT + ATTRIB + SEQEND
+  map to definitions and insert values (see `docs/dxf-import.md`, `docs/dxf-export.md`). An exported
+  ATTRIB sits where the definition lands after the insert transform; text is never stretched, so
+  its height follows the Y scale.

@@ -99,10 +99,12 @@ private:
     bool convPolyline(const Record& r, RecordReader& rr, const Frame& f, std::vector<Entity>& out);
     bool convEllipse(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convSpline(const Record& r, std::vector<Entity>& out);
-    bool convText(const Record& r, const Frame& f, bool attrib, std::vector<Entity>& out);
+    enum class TextKind { Text, Attrib, AttDef };
+    bool convText(const Record& r, const Frame& f, TextKind kind, std::vector<Entity>& out);
     bool convMText(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convPoint(const Record& r, std::vector<Entity>& out);
-    bool convInsert(const Record& r, const Frame& f, std::vector<Entity>& out);
+    bool convInsert(const Record& r, RecordReader& rr, const Frame& f, std::vector<Entity>& out);
+    bool blockHasAttDef(BlockId block, const std::string& tag) const;
     bool convSolid(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convLeader(const Record& r, std::vector<Entity>& out);
     bool convProxy(const Record& r, std::vector<Entity>& out);
@@ -148,7 +150,6 @@ private:
     std::size_t flattened_ = 0;
     std::size_t paperSpace_ = 0;
     int firstFlattenedLine_ = 0;
-    std::size_t attdefs_ = 0;
     std::size_t mirroredText_ = 0;
     int firstMirroredLine_ = 0;
 };

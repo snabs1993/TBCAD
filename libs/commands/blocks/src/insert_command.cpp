@@ -8,6 +8,8 @@ namespace tbcad::block_cmds {
 namespace {
 
 constexpr const char* kLastBlockSetting = "block.lastinsert";
+// "0": INSERT does not ask for attribute values and keeps the defaults.
+constexpr const char* kAttReqSetting = "block.attreq";
 
 std::string blockNames(const Document& doc) {
     std::string s;
@@ -59,6 +61,7 @@ public:
 
         // Placement. Scale and rotation can be changed before the point is picked.
         InsertData data{block, {}, {1, 1}, 0};
+        data.attribs = blocks::defaultAttribs(doc, block);
         for (;;) {
             cmd::PointOptions po;
             po.keywords = {"Scale", "X", "Y", "Rotate"};
@@ -107,6 +110,34 @@ public:
                 if (!a.ok())
                     co_return;
                 data.rotation = normalizeAngle(a.value);
+            }
+        }
+
+        // Attribute values. Preset and constant attributes are not asked for.
+        if (ctx.host().setting(kAttReqSetting).value_or("1") != "0") {
+            for (const Entity* ad : blocks::attributeDefinitions(doc, block)) {
+                const AttDefInfo& info = *entityAs<TextData>(*ad)->attdef;
+                if (info.constant || info.preset)
+                    continue;
+                for (AttribValue& v : data.attribs) {
+                    if (v.tag != info.tag)
+                        continue;
+                    const std::string label = info.prompt.empty() ? info.tag : info.prompt;
+                    auto r = co_await ctx.getString(
+                        "Enter attribute value for " + label + " <" + v.value + ">",
+                        cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                    if (!r.ok())
+                        co_return;
+                    v.value = r.text;
+                    if (info.verify) {
+                        auto again = co_await ctx.getString(
+                            "Verify attribute value for " + label + " <" + v.value + ">",
+                            cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                        if (!again.ok())
+                            co_return;
+                        v.value = again.text;
+                    }
+                }
             }
         }
 

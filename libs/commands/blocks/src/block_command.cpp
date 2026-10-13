@@ -72,6 +72,20 @@ public:
                     }
         }
 
+        // Attribute tags must be unique inside one block.
+        {
+            std::vector<const Entity*> defs;
+            for (EntityId id : ids)
+                if (const auto* t = entityAs<TextData>(*doc.find(id)); t && t->attdef)
+                    defs.push_back(doc.find(id));
+            std::string dup = blocks::duplicateTag(defs);
+            if (!dup.empty()) {
+                ctx.message("Two attributes in the block have the tag " + dup +
+                            ". Give each attribute its own tag.");
+                co_return;
+            }
+        }
+
         // 5. What happens to the originals.
         auto what =
             co_await ctx.getKeyword("Original objects [Retain/Convert/Delete] <Convert>",
@@ -115,9 +129,17 @@ public:
             for (EntityId id : ids)
                 (void)tx.erase(id);
         }
+        if (existing) {
+            std::size_t synced = blocks::syncInserts(tx, doc, block);
+            if (synced > 0)
+                ctx.message("Attributes of " + std::to_string(synced) +
+                            " existing inserts updated");
+        }
         if (what.keyword == "Convert") {
+            InsertData data{block, basePoint, {1, 1}, 0};
+            data.attribs = blocks::defaultAttribs(doc, block);
             Entity ins;
-            ins.data = Indirect<InsertData>(InsertData{block, basePoint, {1, 1}, 0});
+            ins.data = Indirect<InsertData>(std::move(data));
             auto r = tx.add(std::move(ins));
             if (r)
                 selection.push_back(r.value());

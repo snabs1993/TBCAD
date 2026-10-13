@@ -574,4 +574,81 @@ TEST_CASE("non-finite coordinates are written as zero with a warning") {
     CHECK_MESSAGE(rt.diff.empty(), rt.diff);
 }
 
+TEST_CASE("attribute definitions and values survive an export and re-import") {
+    Document doc;
+    {
+        auto tx = doc.begin("attributes");
+        BlockId b = tx.addBlock(BlockDef{.name = "TAGGED", .base = {1, 1}}).value();
+        TextData def;
+        def.position = {2, 3};
+        def.alignPoint = def.position;
+        def.height = 2;
+        def.utf8 = "ROOM";
+        def.attdef = AttDefInfo{"ROOM", "Room name", "none", false, false, true, false};
+        REQUIRE(tx.add(make(def), b).ok());
+        TextData hidden;
+        hidden.position = {2, 5};
+        hidden.alignPoint = hidden.position;
+        hidden.utf8 = "ID";
+        hidden.attdef = AttDefInfo{"ID", "", "x", true, false, false, true};
+        REQUIRE(tx.add(make(hidden), b).ok());
+        TextData fixed;
+        fixed.position = {2, 7};
+        fixed.alignPoint = fixed.position;
+        fixed.utf8 = "K";
+        fixed.attdef = AttDefInfo{"K", "", "const", false, true, false, false};
+        REQUIRE(tx.add(make(fixed), b).ok());
+        InsertData ins{b, {10, 10}, {1, 1}, 0};
+        ins.attribs = {{"ROOM", "Kitchen"}, {"ID", "42"}};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    // The exported INSERT is followed by one ATTRIB per non-constant attribute and a SEQEND.
+    std::size_t attribs = 0;
+    for (std::size_t at = rt.bytes.find("ATTRIB"); at != std::string::npos;
+         at = rt.bytes.find("ATTRIB", at + 1))
+        ++attribs;
+    CHECK(attribs == 2);
+}
+
+TEST_CASE("exported ATTRIB records sit at the inserted position, scaled and turned") {
+    Document doc;
+    BlockId b;
+    {
+        auto tx = doc.begin("attributes");
+        b = tx.addBlock(BlockDef{.name = "B", .base = {0, 0}}).value();
+        TextData def;
+        def.position = {1, 0};
+        def.height = 1;
+        def.utf8 = "T";
+        def.attdef = AttDefInfo{"T", "", "d", false, false, false, false};
+        REQUIRE(tx.add(make(def), b).ok());
+        InsertData ins{b, {10, 0}, {2, 2}, kPi / 2};
+        ins.attribs = {{"T", "v"}};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    Report rep;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, rep);
+    REQUIRE(out.ok());
+    Report back;
+    Result<ImportResult> in = importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, back);
+    REQUIRE(in.ok());
+    // The definition (1,0) is scaled to (2,0), turned 90 degrees to (0,2) and moved to (10,2).
+    // The attribute has a matching ATTDEF in the block, so it comes back as an insert value; check
+    // the raw record through the text instead.
+    std::string text = out.value().bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    std::size_t at = text.find("\nATTRIB\n");
+    REQUIRE(at != std::string::npos);
+    std::size_t end = text.find("\nSEQEND\n", at);
+    REQUIRE(end != std::string::npos);
+    std::string rec = text.substr(at, end - at);
+    CHECK(rec.find("\n10\n10") != std::string::npos);
+    CHECK(rec.find("\n40\n2.0\n") != std::string::npos);
+    CHECK(rec.find("\n50\n90") != std::string::npos);
+}
+
 }  // namespace tbcad::dxf

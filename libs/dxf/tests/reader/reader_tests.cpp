@@ -581,4 +581,59 @@ TEST_CASE("the JSON report lists counts, units, encoding and diagnostics") {
     CHECK(json.find("dxf.reader.skipped_entity") != std::string::npos);
 }
 
+TEST_CASE("attributes: ATTDEF becomes an attribute definition and ATTRIB values go to the insert") {
+    Loaded l = loadCorpus("r2013_blocks.dxf");
+    const Document& d = l.doc();
+    bool foundDef = false;
+    d.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TextData>(e); t && t->attdef) {
+            foundDef = true;
+            CHECK(t->attdef->tag == "TAG");
+            CHECK(t->attdef->defaultValue == "default");
+        }
+    });
+    CHECK(foundDef);
+    std::vector<std::string> values;
+    for (const InsertData* i : modelEntities<InsertData>(d))
+        for (const AttribValue& v : i->attribs)
+            values.push_back(v.tag + "=" + v.value);
+    REQUIRE(values.size() == 1);
+    CHECK(values[0] == "TAG=V1");
+    CHECK(modelEntities<TextData>(d).empty());  // the value is no longer a loose text
+}
+
+TEST_CASE("attributes: flags, prompt, an unknown tag stays visible as text") {
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "B").g(70, 0).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "ATTDEF").g(8, "0").g(10, 1.0).g(20, 2.0).g(40, 2.5).g(1, "dflt").g(3, "Name?");
+    p.g(2, "nm").g(70, 5);
+    p.g(0, "ENDBLK").end();
+    p.section("ENTITIES").g(0, "INSERT").g(8, "0").g(66, 1).g(2, "B").g(10, 5.0).g(20, 5.0);
+    p.g(0, "ATTRIB").g(8, "0").g(10, 6.0).g(20, 7.0).g(40, 2.5).g(1, "Bob").g(2, "NM").g(70, 0);
+    p.g(0, "ATTRIB").g(8, "0").g(10, 8.0).g(20, 9.0).g(40, 2.5).g(1, "stray").g(2, "OTHER");
+    p.g(70, 0).g(0, "SEQEND").g(8, "0").end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const Document& d = l.doc();
+    const BlockDef* b = d.blockByName("B");
+    REQUIRE(b);
+    REQUIRE(b->entities.size() == 1);
+    const auto* def = entityAs<TextData>(*d.find(b->entities[0]));
+    REQUIRE(def);
+    REQUIRE(def->attdef);
+    CHECK(def->attdef->tag == "NM");  // upper-cased
+    CHECK(def->attdef->prompt == "Name?");
+    CHECK(def->attdef->invisible);
+    CHECK(def->attdef->verify);
+    CHECK_FALSE(def->attdef->constant);
+    auto inserts = modelEntities<InsertData>(d);
+    REQUIRE(inserts.size() == 1);
+    REQUIRE(inserts[0]->attribs.size() == 1);
+    CHECK(inserts[0]->attribs[0].tag == "NM");
+    CHECK(inserts[0]->attribs[0].value == "Bob");
+    auto texts = modelEntities<TextData>(d);
+    REQUIRE(texts.size() == 1);
+    CHECK(texts[0]->utf8 == "stray");
+    CHECK_FALSE(texts[0]->attdef.has_value());
+}
+
 }  // namespace tbcad::dxf

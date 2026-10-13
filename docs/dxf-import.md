@@ -43,7 +43,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines, meshes and polyface meshes are skipped with a warning |
 | ELLIPSE | `EllipseData` (a ratio above 1 swaps the axes) |
 | SPLINE | `SplineData`; fit-point-only splines are interpolated with `geom::interpolateSpline`, the fit points stay in `fit`; a knot vector that does not fit is replaced by a uniform one with a warning |
-| TEXT, ATTRIB | `TextData` (`position` = group 10, `alignPoint` = group 11 when the alignment is not left/baseline, else equal to `position`); `%%c %%d %%p` are replaced; ATTRIB values become plain text, invisible attributes are dropped; ATTDEF is not imported (one info line) |
+| TEXT, ATTRIB | `TextData` (`position` = group 10, `alignPoint` = group 11 when the alignment is not left/baseline, else equal to `position`); `%%c %%d %%p` are replaced; ATTDEF becomes a text with attribute-definition info (`TextData::attdef`: tag upper-cased, prompt, default, flags in group 70: 1 invisible, 2 constant, 4 verify, 8 preset) and shows its tag; the ATTRIB records after an INSERT (group 66 = 1, up to SEQEND) become that insert's `attribs` when the block has a matching non-constant definition, so the position and style of the definition win; any other ATTRIB stays a plain text (invisible ones are dropped) |
 | MTEXT | `MTextData` with TBCAD markup, see below |
 | INSERT | `InsertData`; MINSERT arrays are expanded into one insert per cell (up to 100 000) |
 | HATCH | `HatchData`: polyline boundaries with bulges, line/arc/ellipse/spline edges, islands (`outer = false` for non-external paths), pattern name, scale and angle; the pattern definition lines are not kept; gradient fills become solid fills (info) |
@@ -192,5 +192,5 @@ Speed: a 50 MB synthetic DXF (about 480 000 entities) imports in 0.65 s and conv
 ## Not done yet
 
 OBJECTS (layouts, groups, dictionaries), paper space and viewports, xrefs (the block stays empty),
-attribute definitions, proxy graphics, complex linetype elements (text/shape), gradient colours,
+proxy graphics, complex linetype elements (text/shape), gradient colours,
 3D entities, mirrored text, DIMSTYLE variables beyond the basic ones.

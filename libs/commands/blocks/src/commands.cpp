@@ -23,6 +23,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeArrayCommand());
+    (void)registry.add(makeAttDefCommand());
+    (void)registry.add(makeAttEditCommand());
+    (void)registry.add(makeAttSyncCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
