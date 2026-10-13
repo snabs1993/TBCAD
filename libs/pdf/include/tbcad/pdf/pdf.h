@@ -14,17 +14,9 @@
 #include <utility>
 #include <vector>
 
-namespace tbcad::pdf {
+#include "tbcad/core/result.h"
 
-// Minimal success/failure result. To be replaced by tbcad::Result<void> once
-// libs/core lands; the shape (`ok`, `error`, bool conversion) is kept compatible.
-struct Result {
-    bool ok = true;
-    std::string error;
-    explicit operator bool() const { return ok; }
-    static Result success() { return {}; }
-    static Result failure(std::string message) { return {false, std::move(message)}; }
-};
+namespace tbcad::pdf {
 
 enum class FillRule { NonZero, EvenOdd };
 enum class LineCap { Butt = 0, Round = 1, Square = 2 };
@@ -102,8 +94,8 @@ public:
     Page& addPage(double widthMm, double heightMm);
     size_t pageCount() const { return pages_.size(); }
 
-    Result write(std::ostream& out) const;
-    Result writeFile(const std::string& path) const;  // UTF-8 path
+    Result<void> write(std::ostream& out) const;
+    Result<void> writeFile(const std::string& path) const;  // UTF-8 path
 
 private:
     std::string title_;

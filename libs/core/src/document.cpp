@@ -535,6 +535,8 @@ bool inUse(const Document& d, LayerId id) {
     return used;
 }
 bool inUse(const Document& d, LinetypeId id) {
+    if (d.header().currentLinetype == id)
+        return true;
     for (const auto& [lid, l] : d.layers()) {
         if (l.linetype == id)
             return true;
@@ -1155,6 +1157,15 @@ Result<void> Transaction::modifyHeader(const std::function<void(Header&)>& fn) {
     }
     if (!d.layer(work.currentLayer))
         return invalid("unknown current layer");
+    if (work.currentColor.kind == ColorKind::ByParent)
+        return invalid("the current colour cannot be ByParent");
+    if (work.currentColor.kind == ColorKind::Index && work.currentColor.indexValue() == 0)
+        return invalid("color index 0 is not valid");
+    if (work.currentLinetype != kLinetypeByLayer && work.currentLinetype != kLinetypeByBlock &&
+        !d.linetype(work.currentLinetype))
+        return invalid("unknown current linetype");
+    if (work.currentLineweight.v < -3)
+        return invalid("invalid current lineweight");
     if (!d.textStyle(work.currentTextStyle))
         return invalid("unknown current text style");
     if (!d.dimStyle(work.currentDimStyle))

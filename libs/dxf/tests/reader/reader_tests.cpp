@@ -251,6 +251,34 @@ TEST_CASE("text styles: width factor, oblique and font file are kept") {
     CHECK(texts[0]->style == s->id);
 }
 
+TEST_CASE("text styles: SHX fonts map to the TBCAD Stroke font and are reported") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 3);
+    p.g(0, "STYLE").g(2, "Standard").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "TXT.SHX");
+    p.g(0, "STYLE")
+        .g(2, "Jp")
+        .g(70, 0)
+        .g(40, 0.0)
+        .g(41, 1.0)
+        .g(3, "simplex.shx")
+        .g(4, "bigfont.shx");
+    p.g(0, "STYLE").g(2, "Win").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "arial.ttf");
+    p.g(0, "ENDTAB").end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const TextStyle* a = l.doc().textStyleByName("Standard");
+    const TextStyle* b = l.doc().textStyleByName("Jp");
+    const TextStyle* c = l.doc().textStyleByName("Win");
+    REQUIRE(a);
+    REQUIRE(b);
+    REQUIRE(c);
+    CHECK(a->fontFamily == "TBCAD Stroke");
+    CHECK(a->fontFile.empty());
+    CHECK(b->fontFamily == "TBCAD Stroke");
+    CHECK(c->fontFamily.empty());
+    CHECK(c->fontFile == "arial.ttf");
+    CHECK(l.report.countCode(code::kShxFont) == 2);
+}
+
 TEST_CASE("sub-layers: TBCAD XDATA restores the tree and the ByParent flags") {
     Loaded l = loadCorpus("xdata_sublayers.dxf");
     const Document& d = l.doc();
@@ -472,7 +500,9 @@ TEST_CASE("inserts: a block defined after its first use is resolved") {
 }
 
 TEST_CASE("dimensions: definition points and the drawn graphics") {
-    Loaded l = loadCorpus("r2000_dimensions.dxf");
+    ImportOptions withGraphics;
+    withGraphics.dimensionGraphics = true;
+    Loaded l = loadCorpus("r2000_dimensions.dxf", withGraphics);
     const Document& d = l.doc();
     auto dims = modelEntities<DimensionData>(d);
     REQUIRE(dims.size() == 6);
@@ -501,10 +531,8 @@ TEST_CASE("dimensions: definition points and the drawn graphics") {
     }
 }
 
-TEST_CASE("dimensions: graphics can be switched off") {
-    ImportOptions opt;
-    opt.dimensionGraphics = false;
-    Loaded l = loadCorpus("r2000_dimensions.dxf", opt);
+TEST_CASE("dimensions: the drawn graphics are not kept by default") {
+    Loaded l = loadCorpus("r2000_dimensions.dxf");
     CHECK(modelEntities<DimensionData>(l.doc()).size() == 6);
     CHECK(modelEntities<ProxyData>(l.doc()).empty());
 }

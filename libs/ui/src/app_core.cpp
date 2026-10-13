@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <unordered_set>
 
@@ -13,6 +14,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
 
@@ -78,6 +80,9 @@ struct AppCore::Session {
     fs::path file{};
     std::uint64_t savedRevision = 0;
     std::string readOnlyFormat{};  // "DWG" while the drawing came from a read-only format
+    // File stamp of each xref that a reload was already tried for (a failed reload is not retried
+    // until the file changes again).
+    std::map<BlockId, std::int64_t> xrefTried{};
 };
 
 struct AppCore::DocSlot {
@@ -688,8 +693,35 @@ void AppCore::zoomToEntities(const std::vector<EntityId>& ids) {
     zoomToBox(box);
 }
 
+void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
+    using namespace std::chrono_literals;
+    if (now - lastXrefCheck_ < 2s)
+        return;
+    lastXrefCheck_ = now;
+    if (!session_ || session_->runner->active())
+        return;
+    bool stale = false;
+    for (BlockId id : xref::xrefs(session_->doc)) {
+        if (xref::state(session_->doc, id, session_->file) != xref::State::Changed)
+            continue;
+        const BlockDef* def = session_->doc.block(id);
+        std::int64_t stamp = xref::fileStamp(xref::resolvePath(def->xrefPath, session_->file));
+        auto tried = session_->xrefTried.find(id);
+        if (tried != session_->xrefTried.end() && tried->second == stamp)
+            continue;
+        session_->xrefTried[id] = stamp;
+        stale = true;
+    }
+    if (!stale || !registry_.find("XRELOAD"))
+        return;
+    print("External reference changed on disk; reloading");
+    submitText("XRELOAD");
+    submitText("");
+}
+
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     tickAutosave(now);
+    tickXrefs(now);
     if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
@@ -787,6 +819,7 @@ PanelContext AppCore::makePanelContext() {
     pc.feedback = &feedback_;
     pc.cursorWorld = cursorWorld_;
     pc.apertureMm = apertureMm();
+    pc.commandActive = runner().active();
     pc.runCommand = [this](const std::string& line) { submitText(line); };
     return pc;
 }
@@ -807,7 +840,7 @@ void AppCore::click(const PointerState& p) {
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:
                 if (auto id = pickEntity(session_->doc, session_->index, world, apertureMm()))
-                    run.submit(cmd::Input::pick(*id, world));
+                    run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
             default:
                 break;

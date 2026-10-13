@@ -75,7 +75,7 @@ std::vector<std::string> lex(std::span<const std::byte> bytes) {
     auto lx = Lexer::open(bytes, report);
     std::vector<std::string> lines;
     REQUIRE(lx.ok());
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         lines.push_back(describe(*g));
     }
     for (const Diagnostic& d : report.diagnostics()) {

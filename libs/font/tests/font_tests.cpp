@@ -277,3 +277,95 @@ TEST_CASE("Corrupt font data returns an error and never crashes (1000 mutations)
     MESSAGE("loaded " << loaded << ", rejected " << rejected);
     CHECK(rejected > 0);
 }
+
+// ---- single-stroke fonts (.tbsf) -------------------------------------------------------------
+
+namespace {
+const char* kTinyStroke =
+    "tbsf 1\nfamily Test\nupm 10\ncap 7\nxheight 5\nascender 7\ndescender -2\ntonedrop 1\n"
+    "# comment\nunknownkey 3\n"
+    "glyph 41 6\ns 0 0 3 7 6 0\ns 1 3 5 3\n"
+    "glyph 42 5\ns 0 0 0 7\n"
+    "glyph E34 0 mark=upper\ns 0 8 2 9\n"
+    "glyph E48 0 mark=tone\ns 0 8 1 9\n";
+}
+
+TEST_CASE("stroke font: parse, metrics and strokes are scaled to em units") {
+    FontLibrary lib;
+    auto r = lib.loadStrokeFromMemory(kTinyStroke);
+    REQUIRE(r.ok());
+    FontId f = r.value();
+    CHECK(lib.isStroke(f));
+    FontMetrics m = lib.metrics(f);
+    CHECK(m.capHeight == doctest::Approx(0.7));
+    CHECK(m.descender == doctest::Approx(-0.2));
+    const StrokeGlyph& a = lib.strokes(f, 'A');
+    REQUIRE(a.paths.size() == 2);
+    CHECK(a.paths[0].points.size() == 3);
+    CHECK(a.paths[0].points[1].x == doctest::Approx(0.3));
+    CHECK(a.paths[0].points[1].y == doctest::Approx(0.7));
+    CHECK(lib.strokes(f, 'Z').paths.empty());
+    CHECK(lib.outline(f, 'A').contours.empty());
+}
+
+TEST_CASE("stroke font: malformed input reports an error") {
+    FontLibrary lib;
+    CHECK_FALSE(lib.loadStrokeFromMemory("").ok());
+    CHECK_FALSE(lib.loadStrokeFromMemory("glyph 41 5\ns 0 0 1 1\n").ok());        // no header
+    CHECK_FALSE(lib.loadStrokeFromMemory("tbsf 1\nupm 10\n").ok());               // no glyphs
+    CHECK_FALSE(lib.loadStrokeFromMemory("tbsf 1\nglyph 41 5\ns 0 0 1\n").ok());  // odd coordinate
+    CHECK_FALSE(lib.loadStrokeFromMemory("tbsf 1\nglyph zz 5\n").ok());
+}
+
+TEST_CASE("stroke font: shaping advances and centres marks over the base glyph") {
+    FontLibrary lib;
+    FontId f = lib.loadStrokeFromMemory(kTinyStroke).value();
+    // U+0E01 is absent from the tiny font, so only A + upper vowel + tone are used.
+    auto runs = lib.shape(f, "A\xE0\xB8\xB4\xE0\xB9\x88");
+    auto g = flat(runs);
+    REQUIRE(g.size() == 3);
+    CHECK(g[0].glyphId == 'A');
+    CHECK(g[0].xAdvance == doctest::Approx(0.6 * runs[0].unitsPerEm).epsilon(0.01));
+    CHECK(g[1].xAdvance == 0);
+    CHECK(g[1].xOffset == doctest::Approx(-0.3 * runs[0].unitsPerEm).epsilon(0.01));
+    CHECK(g[2].xAdvance == 0);
+    CHECK(g[2].yOffset == 0);
+}
+
+TEST_CASE("stroke font: a tone mark with no upper vowel under it drops down") {
+    FontLibrary lib;
+    FontId f = lib.loadStrokeFromMemory(kTinyStroke).value();
+    auto g = flat(lib.shape(f, "A\xE0\xB9\x88"));  // A + mai ek
+    REQUIRE(g.size() == 2);
+    CHECK(g[1].glyphId == 0xE48);
+    CHECK(g[1].yOffset < 0);
+    auto h = flat(lib.shape(f, "A\xE0\xB8\xB4\xE0\xB9\x88"));
+    CHECK(h[2].yOffset == 0);
+}
+
+TEST_CASE("bundled stroke font loads and covers ASCII") {
+    FontLibrary lib;
+    auto r = lib.loadBundledStroke();
+    REQUIRE_MESSAGE(r.ok(), "bundled tbcad-stroke.tbsf missing");
+    for (char32_t c = 0x21; c < 0x7F; ++c)
+        CHECK_MESSAGE(lib.strokes(r.value(), c).paths.size() > 0, "missing U+" << (unsigned)c);
+}
+
+TEST_CASE("bundled stroke font covers the Thai block and places marks") {
+    FontLibrary lib;
+    FontId f = lib.loadBundledStroke().value();
+    for (char32_t c = 0x0E01; c <= 0x0E2E; ++c)
+        CHECK_MESSAGE(lib.hasGlyph(f, c), "missing consonant U+" << std::hex << (unsigned)c);
+    for (char32_t c : {0xE2F, 0xE30, 0xE31, 0xE32, 0xE33, 0xE34, 0xE35, 0xE36, 0xE37, 0xE38,
+                       0xE39, 0xE3A, 0xE3F, 0xE40, 0xE41, 0xE42, 0xE43, 0xE44, 0xE45, 0xE46,
+                       0xE47, 0xE48, 0xE49, 0xE4A, 0xE4B, 0xE4C, 0xE4D, 0xE4E, 0xE50, 0xE59})
+        CHECK_MESSAGE(lib.hasGlyph(f, c), "missing U+" << std::hex << (unsigned)c);
+    // "ก้อง": the tone mark sits on the consonant, so it drops to the vowel-less height
+    auto runs = lib.shape(f, "\xE0\xB8\x81\xE0\xB9\x89\xE0\xB8\xAD\xE0\xB8\x87");
+    auto g = flat(runs);
+    REQUIRE(g.size() == 4);
+    CHECK(g[1].xAdvance == 0);
+    CHECK(g[1].yOffset < 0);
+    CHECK(g[2].xAdvance > 0);
+    CHECK(runs.size() == 1);  // no fallback font was needed
+}

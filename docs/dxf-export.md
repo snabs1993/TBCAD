@@ -42,7 +42,7 @@ Lines end with CRLF. Numbers are written as the shortest text that reads back as
   `$DIMSTYLE`, `$INSUNITS = 4` (millimetres), `$MEASUREMENT = 1`, units/precision variables.
 * **CLASSES**: empty.
 * **TABLES**: VPORT (`*Active`, zoomed to the extents), LTYPE (`ByBlock`, `ByLayer`,
-  `Continuous` first, then the document's), LAYER, STYLE, VIEW and UCS (empty), APPID (`ACAD`,
+  `Continuous` first, then the document's), LAYER, STYLE (text styles that use the TBCAD Stroke font are written with `txt.shx`, AutoCAD's own stand-in; TBCAD reads it back as the stroke font), VIEW and UCS (empty), APPID (`ACAD`,
   `TBCAD`), DIMSTYLE, BLOCK_RECORD (`*Model_Space`, `*Paper_Space`, then every block).
 * **BLOCKS**: `*Model_Space`, `*Paper_Space`, the document's blocks in id order, then one
   anonymous `*D<n>` block per dimension.
@@ -116,15 +116,15 @@ hatch's scale and angle applied, so other programs draw them; `SOLID` needs no l
 
 ### Dimensions
 
-Until W5-5 gives `DimensionData` its own display generator, an imported dimension is followed in
-model space by its drawn graphics (a `ProxyData` "DIMENSION" plus the loose text entities; see
-`dxf-import.md`). The exporter writes a `DIMENSION` entity and puts exactly those graphics, in
-order, into a fresh `*D<n>` block that it references. Text entities directly after the proxy are
-taken into the block when they lie next to the dimension (inside its bounding box, grown by three
-text heights). The `*D` blocks that came with the imported document are not copied. A dimension
-without such graphics gets an empty block and the warning `dxf.writer.dimension_graphics_missing`:
-programs that regenerate dimensions (AutoCAD does when it needs to) are fine, others show nothing.
-`TODO(W5-5)`: build the block from the display generator instead.
+The exporter writes a `DIMENSION` entity (definition points, text position `11`, measurement `42`,
+text override, style name, flag 128 when the user placed the text) and a fresh anonymous `*D<n>`
+block that it references. The block is drawn by the dimension generator (`dim::explodeDimension`):
+extension and dimension lines, arcs, solid arrowheads (as HATCH) and the text, so programs that do
+not regenerate dimensions still show them. Group `11` is the middle of that text. Two-line angular
+dimensions also write group `16`, the point on the arc; three-point ones write `13`, `14`, vertex
+`15` and arc point `10`. Arc length dimensions are skipped with a warning. The `*D` blocks that
+came with an imported document are never copied; `dxf.writer.dimension_graphics_missing` is no
+longer reported.
 
 ## Command line
 

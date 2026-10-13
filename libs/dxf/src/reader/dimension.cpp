@@ -83,6 +83,9 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
             return true;
     }
     d.textPos = P(r, 11, 21);
+    // Two-line angular dimensions keep the point on their arc in textPos (see docs/dim.md).
+    if ((flags & 7) == 2 && r.has(16))
+        d.textPos = P(r, 16, 26);
     d.textPosUser = (flags & 128) != 0;
     std::string text = stripMText(dec(r.raw(1)));
     if (text != "<>")

@@ -174,6 +174,9 @@ struct DataDumper {
           << " fill" << d.fill << " src";
         for (EntityId e : d.sourceBoundary)
             o << " " << e;
+        if (d.gradient)
+            o << " grad" << static_cast<int>(d.gradient->kind) << " " << d.gradient->color1 << " "
+              << d.gradient->color2 << " ang" << d.gradient->angle;
         for (const auto& loop : d.loops) {
             o << " loop(outer" << loop.outer;
             for (const auto& e : loop.edges) {
@@ -254,8 +257,11 @@ std::string canonicalDump(const Document& doc) {
     Out o;
     const Header& h = doc.header();
     o << "header units" << static_cast<int>(h.units) << " workArea" << h.workArea << " ltScale"
-      << h.ltScale << " layer" << h.currentLayer << " textStyle" << h.currentTextStyle
-      << " dimStyle" << h.currentDimStyle << " createdBy=";
+      << h.ltScale << " layer" << h.currentLayer << " color"
+      << static_cast<int>(h.currentColor.kind) << ":" << static_cast<int>(h.currentColor.r) << ","
+      << static_cast<int>(h.currentColor.g) << "," << static_cast<int>(h.currentColor.b)
+      << " linetype" << h.currentLinetype.value << " lineweight" << h.currentLineweight.v
+      << " textStyle" << h.currentTextStyle << " dimStyle" << h.currentDimStyle << " createdBy=";
     o.quoted(h.createdBy);
     o << "\n";
     for (const auto& [k, v] : h.custom) {

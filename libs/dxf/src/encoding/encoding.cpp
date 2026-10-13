@@ -27,11 +27,11 @@ constexpr NamedEncoding kNames[] = {
     {"UTF-8", Encoding::Utf8},       {"ANSI_874", Encoding::Cp874},
     {"ANSI_932", Encoding::Cp932},   {"ANSI_936", Encoding::Cp936},
     {"ANSI_949", Encoding::Cp949},   {"ANSI_950", Encoding::Cp950},
-    {"ANSI_1250", Encoding::Cp1250}, {"ANSI_1251", Encoding::Cp1251},
-    {"ANSI_1252", Encoding::Cp1252}, {"ANSI_1253", Encoding::Cp1253},
-    {"ANSI_1254", Encoding::Cp1254}, {"ANSI_1255", Encoding::Cp1255},
-    {"ANSI_1256", Encoding::Cp1256}, {"ANSI_1257", Encoding::Cp1257},
-    {"ANSI_1258", Encoding::Cp1258},
+    {"ANSI_1361", Encoding::Cp1361}, {"ANSI_1250", Encoding::Cp1250},
+    {"ANSI_1251", Encoding::Cp1251}, {"ANSI_1252", Encoding::Cp1252},
+    {"ANSI_1253", Encoding::Cp1253}, {"ANSI_1254", Encoding::Cp1254},
+    {"ANSI_1255", Encoding::Cp1255}, {"ANSI_1256", Encoding::Cp1256},
+    {"ANSI_1257", Encoding::Cp1257}, {"ANSI_1258", Encoding::Cp1258},
 };
 
 std::string upper(std::string_view s) {
@@ -79,6 +79,8 @@ const DoubleByteTable* doubleTable(Encoding e) {
             return &detail::kCp949;
         case Encoding::Cp950:
             return &detail::kCp950;
+        case Encoding::Cp1361:
+            return &detail::kCp1361;
         default:
             return nullptr;
     }
@@ -386,12 +388,13 @@ std::string decodeText(std::string_view raw, Encoding from) {
                 continue;
             }
             if (i + 8 <= n && raw[i + 1] == 'M' && raw[i + 2] == '+' && raw[i + 3] >= '1' &&
-                raw[i + 3] <= '5' && raw[i + 3] != '4') {
+                raw[i + 3] <= '5') {
                 std::uint32_t pair = 0;
                 if (hex(i + 4, 4, pair)) {
                     const Encoding enc = raw[i + 3] == '1'   ? Encoding::Cp932
                                          : raw[i + 3] == '2' ? Encoding::Cp950
                                          : raw[i + 3] == '3' ? Encoding::Cp949
+                                         : raw[i + 3] == '4' ? Encoding::Cp1361
                                                              : Encoding::Cp936;
                     const DoubleByteTable* t = doubleTable(enc);
                     const unsigned lead = pair >> 8;

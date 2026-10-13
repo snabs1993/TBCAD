@@ -219,6 +219,9 @@ public:
     void registerBuiltinUi(UiRegistry& ui);
     // The seconds-based autosave check; the window calls it every frame.
     void tickAutosave(std::chrono::steady_clock::time_point now);
+    // Once every couple of seconds: when an external reference changed on disk and no command is
+    // running, reloads it (XRELOAD). The window calls it every frame.
+    void tickXrefs(std::chrono::steady_clock::time_point now);
     // Writes the autosave now when the drawing has unsaved changes. True if one was written.
     bool autosaveNow();
 
@@ -308,6 +311,7 @@ private:
     std::chrono::steady_clock::time_point lastAutosave_{};
     std::uint64_t autosavedRevision_ = ~std::uint64_t{0};
     bool autosaveClockStarted_ = false;
+    std::chrono::steady_clock::time_point lastXrefCheck_{};
 };
 
 }  // namespace tbcad::ui

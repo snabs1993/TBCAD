@@ -4,7 +4,9 @@
 #include <fstream>
 
 #include "tbcad/core/dump.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/xref/xref.h"
 #include "test_support.h"
 
 using namespace tbcad;
@@ -661,6 +663,22 @@ TEST_CASE(
     CHECK(f.core->selection().empty());
 }
 
+TEST_CASE("PanelContext reports whether a command is running") {
+    Fixture f("panel_ctx_active");
+    UiRegistry ui;
+    bool seen = false;
+    ui.addOverlayDrawer([&](PanelContext& pc, render::Overlay&) { seen = pc.commandActive; });
+    render::Overlay overlay;
+    f.core->buildOverlay(overlay, &ui);
+    CHECK_FALSE(seen);
+    f.core->submitText("TESTLINE");
+    f.core->buildOverlay(overlay, &ui);
+    CHECK(seen);
+    f.core->pressEscape();
+    f.core->buildOverlay(overlay, &ui);
+    CHECK_FALSE(seen);
+}
+
 TEST_CASE("the window query is answered by the spatial index") {
     Fixture f("window");
     f.line("0,0", "10,0");
@@ -743,4 +761,56 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, 
     std::ifstream in(src, std::ios::binary);
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(content == "original bytes");
+}
+
+namespace {
+
+int gFakeXReloadRuns = 0;
+
+// Stands in for the XRELOAD of the blocks module, which appcore tests do not link.
+class FakeXReload final : public cmd::Command {
+public:
+    std::string_view name() const override { return "XRELOAD"; }
+    std::string_view description() const override { return "test"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto n = co_await ctx.getString("Enter xref name or [All] <All>",
+                                        cmd::StringOptions{.defaultValue = "All"});
+        if (n.ok())
+            ++gFakeXReloadRuns;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
+    Fixture f("xrefwatch");
+    (void)f.registry->add(std::make_unique<FakeXReload>());
+    gFakeXReloadRuns = 0;
+
+    fs::path source = f.dir / "src.tbcad";
+    {
+        Document d;
+        auto tx = d.begin("s");
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {1, 1}}});
+        tx.commit();
+        REQUIRE(io::writeTbcad(d, source, io::WriteOptions{.keepBackup = false}).ok());
+    }
+    {
+        auto loaded = xref::loadSource(source);
+        REQUIRE(loaded.ok());
+        auto tx = f.core->document().begin("attach");
+        REQUIRE(xref::attach(tx, f.core->document(), "src", source.string(), loaded.value()).ok());
+        tx.commit();
+    }
+    auto now = std::chrono::steady_clock::now();
+    f.core->tickXrefs(now);
+    CHECK(gFakeXReloadRuns == 0);  // nothing changed
+
+    fs::last_write_time(source, fs::last_write_time(source) + std::chrono::seconds(10));
+    f.core->tickXrefs(now + std::chrono::seconds(1));  // too soon after the last check
+    CHECK(gFakeXReloadRuns == 0);
+    f.core->tickXrefs(now + std::chrono::seconds(3));
+    CHECK(gFakeXReloadRuns == 1);
+    f.core->tickXrefs(now + std::chrono::seconds(6));  // the fake did not reload; no second try
+    CHECK(gFakeXReloadRuns == 1);
 }

@@ -47,6 +47,15 @@ struct GlyphOutline {
     std::vector<Contour> contours;
 };
 
+// One pen stroke of a single-stroke font: an open polyline in em units, y up. Strokes are drawn
+// as lines, not filled.
+struct StrokePath {
+    std::vector<FPoint> points;
+};
+struct StrokeGlyph {
+    std::vector<StrokePath> paths;
+};
+
 // Vertical metrics in em units.
 struct FontMetrics {
     int unitsPerEm = 1000;

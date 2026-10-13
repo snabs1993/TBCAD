@@ -1,5 +1,6 @@
 // DXF export: file structure (header, tables, blocks, objects) and names.
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 
@@ -335,6 +336,20 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
     tableEnd(o);
 }
 
+namespace {
+bool isStrokeFont(const TextStyle& ts) {
+    auto lower = [](std::string v) {
+        for (char& c : v)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return v;
+    };
+    const std::string file = lower(ts.fontFile);
+    if (file.size() >= 5 && file.compare(file.size() - 5, 5, ".tbsf") == 0)
+        return true;
+    return ts.fontFile.empty() && lower(ts.fontFamily) == "tbcad stroke";
+}
+}  // namespace
+
 void Writer::writeStyles(Out& o, std::uint64_t table) {
     tableBegin(o, "STYLE", table, doc_.textStyles().size());
     for (const auto& [id, ts] : doc_.textStyles()) {
@@ -348,6 +363,10 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
         std::string font = ts.fontFile;
         if (font.empty())
             font = ts.fontFamily.empty() ? "txt" : ts.fontFamily + ".ttf";
+        // TBCAD's own stroke font has no AutoCAD counterpart; txt.shx is AutoCAD's stand-in and
+        // reads back as the TBCAD Stroke font.
+        if (isStrokeFont(ts))
+            font = "txt.shx";
         o.str(3, font);
         o.str(4, "");
     }
@@ -702,13 +721,13 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
 
 Result<ExportResult> Writer::run() {
     if (opt_.layerSeparator.empty()) {
-        return Error{"the layer separator must not be empty", 0};
+        return makeError(ErrorCode::InvalidArgument, "the layer separator must not be empty");
     }
     for (char c : opt_.layerSeparator) {
         if (c == '|' || c == '$' || isInvalidNameChar(c)) {
-            return Error{std::string("the character '") + c +
-                             "' cannot be used in a layer separator (DXF reserves it)",
-                         0};
+            return makeError(ErrorCode::InvalidArgument,
+                             std::string("the character '") + c +
+                                 "' cannot be used in a layer separator (DXF reserves it)");
         }
     }
 
