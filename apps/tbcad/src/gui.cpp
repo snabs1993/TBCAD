@@ -405,6 +405,41 @@ void Gui::doExportDxf() {
 }
 
 void Gui::doOpenPath(const std::string& path) {
+    // A big file blocks the window for seconds: show "Opening ..." for one frame first so the
+    // program does not look frozen.
+    std::error_code ec;
+    auto size = std::filesystem::file_size(platform::pathFromUtf8(path), ec);
+    if (!ec && size > (8u << 20) && pendingOpen_.empty()) {
+        pendingOpen_ = path;
+        pendingOpenShown_ = false;
+        anyActivity_ = true;
+        return;
+    }
+    auto r = core_.openFile(platform::pathFromUtf8(path));
+    if (!r)
+        lastError_ = r.error().message;
+}
+
+void Gui::openPending() {
+    if (pendingOpen_.empty())
+        return;
+    if (!pendingOpenShown_) {
+        pendingOpenShown_ = true;
+        anyActivity_ = true;  // draw one more frame with the message before blocking
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (ImGui::Begin("##opening", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+            ImGui::Text(
+                "Opening %s ...",
+                platform::pathToUtf8(platform::pathFromUtf8(pendingOpen_).filename()).c_str());
+        }
+        ImGui::End();
+        return;
+    }
+    std::string path = std::move(pendingOpen_);
+    pendingOpen_.clear();
     auto r = core_.openFile(platform::pathFromUtf8(path));
     if (!r)
         lastError_ = r.error().message;
@@ -2007,6 +2042,7 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
 // ---- dialogs -----------------------------------------------------------------------------------
 
 void Gui::dialogs() {
+    openPending();
     settings_.draw(core_);
     workspaceDialog();
     if (openRecoveryPrompt_) {
