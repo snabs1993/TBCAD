@@ -57,68 +57,6 @@ public:
     }
 };
 
-// ---- RENAME -------------------------------------------------------------------------------------
-
-class RenameCommand final : public cmd::Command {
-public:
-    std::string_view name() const override { return "RENAME"; }
-    std::vector<std::string> defaultAliases() const override { return {"REN"}; }
-    std::string_view description() const override {
-        return "Rename a layer, block, text style or dimension style";
-    }
-
-    cmd::Task run(cmd::CommandContext& ctx) override {
-        ctx.setUndoLabel("RENAME");
-        cmd::KeywordOptions ko;
-        ko.keywords = {"Layer", "Block", "TextStyle", "DimStyle"};
-        auto kind = co_await ctx.getKeyword("Rename [Layer/Block/TextStyle/DimStyle]", ko);
-        if (!kind.ok())
-            co_return;
-        auto from = co_await ctx.getString("Old name");
-        if (!from.ok() || from.text.empty())
-            co_return;
-        auto to = co_await ctx.getString("New name");
-        if (!to.ok() || to.text.empty())
-            co_return;
-        const Document& doc = ctx.doc();
-        Result<void> r =
-            Error{ErrorCode::NotFound, "No " + kind.keyword + " named \"" + from.text + "\"."};
-        const std::string& n = to.text;
-        if (kind.keyword == "Layer") {
-            if (const Layer* l = doc.layerByName(from.text)) {
-                if (l->name == "0" && !l->parent)
-                    r = Error{ErrorCode::Conflict, "Layer 0 cannot be renamed."};
-                else if (doc.layerByName(l->parent, n))
-                    r = Error{ErrorCode::Conflict, "A layer named \"" + n + "\" already exists."};
-                else
-                    r = ctx.tx().modifyLayer(l->id, [&](Layer& x) { x.name = n; });
-            }
-        } else if (kind.keyword == "Block") {
-            if (const BlockDef* b = doc.blockByName(from.text)) {
-                if (doc.blockByName(n))
-                    r = Error{ErrorCode::Conflict, "A block named \"" + n + "\" already exists."};
-                else
-                    r = ctx.tx().modifyBlock(b->id, [&](BlockDef& x) { x.name = n; });
-            }
-        } else if (kind.keyword == "TextStyle") {
-            if (const TextStyle* s = doc.textStyleByName(from.text)) {
-                if (doc.textStyleByName(n))
-                    r = Error{ErrorCode::Conflict, "A text style named \"" + n + "\" exists."};
-                else
-                    r = ctx.tx().modifyTextStyle(s->id, [&](TextStyle& x) { x.name = n; });
-            }
-        } else {
-            if (const DimStyle* s = doc.dimStyleByName(from.text)) {
-                if (doc.dimStyleByName(n))
-                    r = Error{ErrorCode::Conflict, "A dimension style named \"" + n + "\" exists."};
-                else
-                    r = ctx.tx().modifyDimStyle(s->id, [&](DimStyle& x) { x.name = n; });
-            }
-        }
-        ctx.message(r ? "Renamed " + from.text + " to " + n + "." : r.error().message);
-    }
-};
-
 // ---- COPYTOLAYER --------------------------------------------------------------------------------
 
 class CopyToLayerCommand final : public cmd::Command {
@@ -158,9 +96,6 @@ public:
 
 std::unique_ptr<cmd::Command> makeFind() {
     return std::make_unique<FindCommand>();
-}
-std::unique_ptr<cmd::Command> makeRename() {
-    return std::make_unique<RenameCommand>();
 }
 std::unique_ptr<cmd::Command> makeCopyToLayer() {
     return std::make_unique<CopyToLayerCommand>();
