@@ -9,6 +9,7 @@
 namespace tbcad::drafting {
 
 // Order values for PointFilterChain / UiRegistry::addPointFilter: osnap > polar/ortho > grid.
+inline constexpr int kDynamicInputOrder = 50;  // typed field values beat every snap
 inline constexpr int kOsnapOrder = 100;
 inline constexpr int kPolarOrder = 200;
 inline constexpr int kGridSnapOrder = 300;

@@ -348,6 +348,7 @@ public:
         ctx.setUndoLabel("LEADER");
         Entity e;
         e.data = Indirect<LeaderData>(leaderOf(ctx.doc(), std::move(pts), text));
+        applyCurrentProperties(ctx.doc().header(), e);
         auto id = ctx.tx().add(std::move(e));
         if (!id)
             ctx.message(id.error().message);
@@ -379,6 +380,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LeaderCommand>());
     (void)registry.add(makeSmartDimCommand());
     (void)registry.add(makeMLeaderCommand());
+    (void)registry.add(makeContinueCommand());
+    (void)registry.add(makeBaselineCommand());
+    (void)registry.add(makeTextEditCommand());
     (void)registry.add(makeDimStyleCommand());
 }
 

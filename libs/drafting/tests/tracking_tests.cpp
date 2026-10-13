@@ -123,3 +123,31 @@ TEST_CASE("the toggles from the status bar settings reach a running command") {
     w.doc.forEachEntity([&](const Entity& x) { e = &x; });
     CHECK(near(entityAs<LineData>(*e)->b, {80, 0}));
 }
+
+TEST_CASE("Shift gives temporary ortho while ORTHO is off") {
+    World w;
+    cmd::FilterFeedback fb;
+    CHECK(near(w.hover({53, 12}, Vec2{10, 10}, 1, &fb, true), {53, 10}));
+    CHECK(fb.tooltip.rfind("Ortho:", 0) == 0);
+    // Released again: the cursor moves freely.
+    CHECK(near(w.hover({53, 12}, Vec2{10, 10}, 1, nullptr, false), {53, 12}));
+    // No base point: Shift changes nothing.
+    CHECK(near(w.hover({53, 12}, std::nullopt, 1, nullptr, true), {53, 12}));
+}
+
+TEST_CASE("Shift beats polar tracking with ortho") {
+    World w;
+    w.set(keys::polar, "1");
+    w.set(keys::polarIncrement, "30");
+    // 31 degrees snaps to 30 under polar; Shift forces the nearest axis instead.
+    const Vec2 raw = dirDeg(31, 50);
+    CHECK(near(w.hover(raw, Vec2{0, 0}), dirDeg(30, 50), 1e-6));
+    CHECK(near(w.hover(raw, Vec2{0, 0}, 1, nullptr, true), {raw.x, 0}));
+}
+
+TEST_CASE("Shift turns ORTHO off while it is held") {
+    World w;
+    w.set(keys::ortho, "1");
+    CHECK(near(w.hover({53, 12}, Vec2{10, 10}), {53, 10}));
+    CHECK(near(w.hover({53, 12}, Vec2{10, 10}, 1, nullptr, true), {53, 12}));
+}

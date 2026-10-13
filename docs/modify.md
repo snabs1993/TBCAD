@@ -91,3 +91,18 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
 * Polylines are handled on a cleaned copy (`cleanPolyline` drops coincident vertices), so vertex
   indices of `filletPolylineVertex` refer to that copy. Per-vertex widths are not kept by the editing
   operations (the constant width is).
+
+## More modify commands (Q70)
+
+| Command | Alias | What it does |
+| --- | --- | --- |
+| `LENGTHEN` | `LEN` | Delta, Percent, Total or Dynamic change of a line, arc or open polyline at the end nearest the pick. Shortening may drop whole trailing polyline segments. |
+| `REVERSE` | | Reverses lines, polylines and splines (arcs and circles have no direction here). |
+| `DIVIDE` | `DIV` | Points that split an object into N equal parts (N-1 points on an open curve, N on a closed one). |
+| `MEASURE` | `ME` | Points every L mm, starting at the end nearest the pick. |
+| `ALIGN` | `AL` | One or two source/destination point pairs, optional scaling for the second pair. |
+| `MATCHPROP` | `MA` | Copies layer, colour, linetype, linetype scale and lineweight, plus text height/style and polyline width, from one object to others. |
+| `OVERKILL` | | Deletes duplicates (lines, circles, arcs, points, ellipses, polylines, also reversed) and merges overlapping or touching collinear lines and arcs of one circle. Settings: `overkill.tolerance`, `overkill.ignoreproperties`, `overkill.overlapping`, `overkill.endtoend`. |
+| `PEDIT` | `PE` | Turn a line or arc into a polyline, Close/Open, Join, Width, Reverse, Spline (polyline to spline entity) and Decurve (spline to polyline). Per-vertex editing is not included yet. |
+
+The algorithms live in `libs/modify/extra.h`. POINT objects made by DIVIDE and MEASURE take the layer of the source object.

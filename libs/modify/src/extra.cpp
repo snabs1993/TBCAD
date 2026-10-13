@@ -1,0 +1,707 @@
+#include "tbcad/modify/extra.h"
+
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <numeric>
+
+#include "tbcad/modify/break_join.h"
+
+namespace tbcad::modify {
+
+using geom::CurveRef;
+
+namespace {
+
+Error err(std::string m) {
+    return Error{ErrorCode::InvalidArgument, std::move(m)};
+}
+
+Seg arcToSeg(const ArcData& a) {
+    double sweep = normalizeAngle(a.endAngle - a.startAngle);
+    if (sweep <= 0)
+        sweep = kTwoPi;
+    Seg s;
+    s.p0 = a.center + Vec2{std::cos(a.startAngle), std::sin(a.startAngle)} * a.radius;
+    s.p1 = a.center + Vec2{std::cos(a.endAngle), std::sin(a.endAngle)} * a.radius;
+    s.bulge = std::tan(sweep / 4);
+    return s;
+}
+
+// Travel-direction segments of an open line, arc or polyline; nullopt for anything else.
+std::optional<std::vector<Seg>> openSegs(const Entity& e) {
+    if (const auto* l = entityAs<LineData>(e)) {
+        if (samePoint(l->a, l->b))
+            return std::nullopt;
+        return std::vector<Seg>{Seg{l->a, l->b, 0}};
+    }
+    if (const auto* a = entityAs<ArcData>(e))
+        return std::vector<Seg>{arcToSeg(*a)};
+    if (const auto* p = entityAs<PolylineData>(e)) {
+        if (p->closed)
+            return std::nullopt;
+        auto segs = polylineSegs(cleanPolyline(*p));
+        if (segs.empty())
+            return std::nullopt;
+        return segs;
+    }
+    return std::nullopt;
+}
+
+std::vector<Seg> reversedSegs(const std::vector<Seg>& segs) {
+    std::vector<Seg> out;
+    out.reserve(segs.size());
+    for (auto it = segs.rbegin(); it != segs.rend(); ++it)
+        out.push_back(segReversed(*it));
+    return out;
+}
+
+double totalLength(const std::vector<Seg>& segs) {
+    double t = 0;
+    for (const Seg& s : segs)
+        t += segLength(s);
+    return t;
+}
+
+// Same entity kind as `src` built from a segment chain.
+Result<EntityEdit> fromSegs(const Entity& src, const std::vector<Seg>& segs) {
+    if (segs.empty())
+        return err("Nothing would be left of the object.");
+    EntityEdit r;
+    if (entityAs<PolylineData>(src)) {
+        r.modified = withData(src, polylineFromSegs(segs, false, entityAs<PolylineData>(src)));
+    } else {
+        auto d = dataFromCurve(segCurve(segs.front()));
+        if (!d)
+            return err("The object cannot be changed.");
+        r.modified = withData(src, std::move(*d));
+    }
+    return r;
+}
+
+// Changes the last segment's end by `delta` mm of arc length.
+Result<std::vector<Seg>> changeEnd(std::vector<Seg> segs, double delta) {
+    if (std::abs(delta) < 1e-12)
+        return segs;
+    if (delta > 0) {
+        Seg& s = segs.back();
+        double len = segLength(s);
+        double u = (len + delta) / len;
+        if (s.isArc()) {
+            auto g = arcGeom(s);
+            if (!g || std::abs(g->theta) * u >= kTwoPi - 1e-6)
+                return err("The arc would become a full circle.");
+        }
+        s = segWithEnd(s, segPoint(s, u));
+        return segs;
+    }
+    double rem = -delta;
+    if (rem >= totalLength(segs) - 1e-9)
+        return err("The object would disappear.");
+    while (!segs.empty()) {
+        double len = segLength(segs.back());
+        if (rem < len - 1e-9) {
+            segs.back() = segSub(segs.back(), 0.0, (len - rem) / len);
+            break;
+        }
+        rem -= len;
+        segs.pop_back();
+        if (rem <= 1e-9)
+            break;
+    }
+    return segs;
+}
+
+// Index 0 = start end, 1 = end end: the end of the segment chain closest to the pick.
+bool nearerToEnd(const std::vector<Seg>& segs, Vec2 pick) {
+    double total = totalLength(segs);
+    double g = closestGlobalParam(segs, pick);
+    auto idx = static_cast<std::size_t>(std::min<double>(std::floor(g), segs.size() - 1.0));
+    double before = 0;
+    for (std::size_t i = 0; i < idx; ++i)
+        before += segLength(segs[i]);
+    double at = before + (g - static_cast<double>(idx)) * segLength(segs[idx]);
+    return at >= total / 2;
+}
+
+Result<EntityEdit> lengthenBy(const Entity& e, Vec2 pick, double delta) {
+    auto segs = openSegs(e);
+    if (!segs)
+        return err("Only lines, arcs and open polylines can be lengthened.");
+    bool atEnd = nearerToEnd(*segs, pick);
+    std::vector<Seg> work = atEnd ? *segs : reversedSegs(*segs);
+    auto changed = changeEnd(std::move(work), delta);
+    if (!changed)
+        return changed.error();
+    std::vector<Seg> out = atEnd ? std::move(changed.value()) : reversedSegs(changed.value());
+    return fromSegs(e, out);
+}
+
+// Flattened path of a curve entity, in travel order.
+bool pathOf(const Entity& e, std::vector<Vec2>& pts, bool& closed) {
+    pts.clear();
+    closed = false;
+    std::vector<CurveRef> curves;
+    if (!geom::curvesOf(e, curves) || curves.empty())
+        return false;
+    constexpr double kFlat = 1e-6;
+    if (const auto* p = entityAs<PolylineData>(e)) {
+        closed = p->closed;
+    } else if (kind(e) == EntityKind::Circle) {
+        closed = true;
+    } else if (const auto* el = entityAs<EllipseData>(e)) {
+        closed = std::abs(el->endParam - el->startParam) >= kTwoPi - 1e-9;
+    } else if (const auto* sp = entityAs<SplineData>(e)) {
+        closed = sp->closed || sp->periodic;
+    }
+    for (const CurveRef& c : curves) {
+        std::vector<Vec2> part;
+        geom::flatten(c, kFlat, part);
+        for (Vec2 q : part) {
+            if (pts.empty() || !samePoint(pts.back(), q, 1e-12))
+                pts.push_back(q);
+        }
+    }
+    if (closed && pts.size() > 1 && samePoint(pts.front(), pts.back(), 1e-9))
+        pts.pop_back();
+    return pts.size() >= 2;
+}
+
+struct Path {
+    std::vector<Vec2> pts;  // closed paths repeat the first point at the end
+    std::vector<double> cum;
+    double length() const { return cum.empty() ? 0.0 : cum.back(); }
+    Vec2 at(double s) const {
+        s = std::clamp(s, 0.0, length());
+        auto it = std::upper_bound(cum.begin(), cum.end(), s);
+        std::size_t i = std::min<std::size_t>(it - cum.begin(), cum.size() - 1);
+        if (i == 0)
+            return pts.front();
+        double seg = cum[i] - cum[i - 1];
+        double u = seg > 0 ? (s - cum[i - 1]) / seg : 0.0;
+        return pts[i - 1] + (pts[i] - pts[i - 1]) * u;
+    }
+};
+
+Result<std::pair<Path, bool>> buildPath(const Entity& e) {
+    std::vector<Vec2> pts;
+    bool closed = false;
+    if (!pathOf(e, pts, closed))
+        return err("This object cannot be divided or measured.");
+    if (closed)
+        pts.push_back(pts.front());
+    Path p;
+    p.pts = std::move(pts);
+    p.cum.assign(p.pts.size(), 0.0);
+    for (std::size_t i = 1; i < p.pts.size(); ++i)
+        p.cum[i] = p.cum[i - 1] + distance(p.pts[i - 1], p.pts[i]);
+    if (p.length() <= 0)
+        return err("The object has no length.");
+    return std::make_pair(std::move(p), closed);
+}
+
+// ---- overkill helpers ---------------------------------------------------------------------------
+
+bool sameProps(const EntityCommon& a, const EntityCommon& b) {
+    return a.layer == b.layer && a.linetype == b.linetype && a.color == b.color &&
+           a.lineweight == b.lineweight && std::abs(a.linetypeScale - b.linetypeScale) < 1e-9;
+}
+
+bool angleNear(double a, double b, double tol) {
+    double d = std::abs(normalizeAngle(a - b));
+    return std::min(d, kTwoPi - d) <= tol;
+}
+
+bool sameGeometry(const Entity& a, const Entity& b, double tol) {
+    if (kind(a) != kind(b))
+        return false;
+    switch (kind(a)) {
+        case EntityKind::Line: {
+            const auto& x = *entityAs<LineData>(a);
+            const auto& y = *entityAs<LineData>(b);
+            return (samePoint(x.a, y.a, tol) && samePoint(x.b, y.b, tol)) ||
+                   (samePoint(x.a, y.b, tol) && samePoint(x.b, y.a, tol));
+        }
+        case EntityKind::Circle: {
+            const auto& x = *entityAs<CircleData>(a);
+            const auto& y = *entityAs<CircleData>(b);
+            return samePoint(x.center, y.center, tol) && std::abs(x.radius - y.radius) <= tol;
+        }
+        case EntityKind::Arc: {
+            const auto& x = *entityAs<ArcData>(a);
+            const auto& y = *entityAs<ArcData>(b);
+            double angTol = tol / std::max(x.radius, 1e-9);
+            return samePoint(x.center, y.center, tol) && std::abs(x.radius - y.radius) <= tol &&
+                   angleNear(x.startAngle, y.startAngle, angTol) &&
+                   angleNear(x.endAngle, y.endAngle, angTol);
+        }
+        case EntityKind::Point:
+            return samePoint(entityAs<PointData>(a)->p, entityAs<PointData>(b)->p, tol);
+        case EntityKind::Ellipse: {
+            const auto& x = *entityAs<EllipseData>(a);
+            const auto& y = *entityAs<EllipseData>(b);
+            return samePoint(x.center, y.center, tol) && samePoint(x.majorAxis, y.majorAxis, tol) &&
+                   std::abs(x.ratio - y.ratio) <= 1e-9 &&
+                   std::abs(x.startParam - y.startParam) <= 1e-9 &&
+                   std::abs(x.endParam - y.endParam) <= 1e-9;
+        }
+        case EntityKind::Polyline: {
+            const auto& x = *entityAs<PolylineData>(a);
+            const auto& y = *entityAs<PolylineData>(b);
+            if (x.closed != y.closed || x.v.size() != y.v.size() || x.v.empty())
+                return false;
+            std::size_t n = x.v.size();
+            auto matches = [&](bool reversed, std::size_t shift) {
+                for (std::size_t i = 0; i < n; ++i) {
+                    std::size_t j = reversed ? (shift + n - i) % n : (shift + i) % n;
+                    if (!x.closed && (reversed ? j != n - 1 - i : j != i))
+                        return false;
+                    if (!samePoint(x.v[i].p, y.v[j].p, tol))
+                        return false;
+                    // Bulge of the segment starting here; reversed travel flips it onto the
+                    // previous vertex.
+                    if (i + 1 < n || x.closed) {
+                        double bx = x.v[i].bulge;
+                        double by;
+                        if (!reversed) {
+                            by = y.v[j].bulge;
+                        } else {
+                            std::size_t jn = (j + n - 1) % n;
+                            if (!x.closed && j == 0)
+                                return false;
+                            by = -y.v[jn].bulge;
+                        }
+                        if (std::abs(bx - by) > 1e-9)
+                            return false;
+                    }
+                }
+                return true;
+            };
+            if (!x.closed)
+                return matches(false, 0) || matches(true, n - 1);
+            for (std::size_t s = 0; s < n; ++s) {
+                if (matches(false, s) || matches(true, s))
+                    return true;
+            }
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
+bool takesPart(const Entity& e) {
+    switch (kind(e)) {
+        case EntityKind::Line:
+        case EntityKind::Circle:
+        case EntityKind::Arc:
+        case EntityKind::Point:
+        case EntityKind::Ellipse:
+        case EntityKind::Polyline:
+            return true;
+        default:
+            return false;
+    }
+}
+
+double minX(const Entity& e) {
+    std::vector<CurveRef> cs;
+    if (const auto* p = entityAs<PointData>(e))
+        return p->p.x;
+    if (!geom::curvesOf(e, cs) || cs.empty())
+        return 0;
+    double m = cs.front().bounds().min.x;
+    for (const CurveRef& c : cs)
+        m = std::min(m, c.bounds().min.x);
+    return m;
+}
+
+}  // namespace
+
+// ---- LENGTHEN -----------------------------------------------------------------------------------
+
+std::optional<double> lengthenableLength(const Entity& e) {
+    auto segs = openSegs(e);
+    if (!segs)
+        return std::nullopt;
+    return totalLength(*segs);
+}
+
+Result<EntityEdit> lengthenEntity(const Entity& e, Vec2 pick, LengthenMode mode, double value) {
+    auto len = lengthenableLength(e);
+    if (!len)
+        return err("Only lines, arcs and open polylines can be lengthened.");
+    switch (mode) {
+        case LengthenMode::Delta:
+            return lengthenBy(e, pick, value);
+        case LengthenMode::Percent:
+            if (value <= 0)
+                return err("The percentage must be positive.");
+            return lengthenBy(e, pick, *len * (value / 100.0 - 1.0));
+        case LengthenMode::Total:
+            if (value <= 0)
+                return err("The length must be positive.");
+            return lengthenBy(e, pick, value - *len);
+    }
+    return err("Unknown lengthen mode.");
+}
+
+Result<EntityEdit> lengthenToPoint(const Entity& e, Vec2 pick, Vec2 target) {
+    auto segs = openSegs(e);
+    if (!segs)
+        return err("Only lines, arcs and open polylines can be lengthened.");
+    bool atEnd = nearerToEnd(*segs, pick);
+    const Seg& s = atEnd ? segs->back() : segReversed(segs->front());
+    double u = segParamUnbounded(s, target);
+    return lengthenBy(e, pick, (u - 1.0) * segLength(s));
+}
+
+// ---- REVERSE ------------------------------------------------------------------------------------
+
+Result<EntityEdit> reverseEntity(const Entity& e) {
+    EntityEdit r;
+    if (const auto* l = entityAs<LineData>(e)) {
+        r.modified = withData(e, LineData{l->b, l->a});
+        return r;
+    }
+    if (const auto* p = entityAs<PolylineData>(e)) {
+        PolylineData out;
+        out.closed = p->closed;
+        out.constantWidth = p->constantWidth;
+        std::size_t n = p->v.size();
+        out.v.resize(n);
+        for (std::size_t j = 0; j < n; ++j) {
+            out.v[j].p = p->v[n - 1 - j].p;
+            bool hasSeg = p->closed || j + 1 < n;
+            if (!hasSeg)
+                continue;
+            const PolyVertex& old = p->v[(n - 2 - j + n) % n];
+            out.v[j].bulge = -old.bulge;
+            out.v[j].startWidth = old.endWidth;
+            out.v[j].endWidth = old.startWidth;
+        }
+        r.modified = withData(e, std::move(out));
+        return r;
+    }
+    if (const auto* sp = entityAs<SplineData>(e)) {
+        SplineData out = *sp;
+        std::reverse(out.control.begin(), out.control.end());
+        std::reverse(out.weights.begin(), out.weights.end());
+        std::reverse(out.fit.begin(), out.fit.end());
+        if (!out.knots.empty()) {
+            double lo = out.knots.front(), hi = out.knots.back();
+            for (double& k : out.knots)
+                k = lo + hi - k;
+            std::reverse(out.knots.begin(), out.knots.end());
+        }
+        r.modified = withData(e, Indirect<SplineData>(std::move(out)));
+        return r;
+    }
+    return err("This object has no direction to reverse.");
+}
+
+// ---- DIVIDE / MEASURE ---------------------------------------------------------------------------
+
+Result<std::vector<Vec2>> dividePoints(const Entity& e, int count) {
+    if (count < 2 || count > 32767)
+        return err("The number of segments must be between 2 and 32767.");
+    auto built = buildPath(e);
+    if (!built)
+        return built.error();
+    const auto& [path, closed] = built.value();
+    std::vector<Vec2> out;
+    double step = path.length() / count;
+    for (int k = closed ? 0 : 1; k < count; ++k)
+        out.push_back(path.at(step * k));
+    return out;
+}
+
+Result<std::vector<Vec2>> measurePoints(const Entity& e, double segment, bool fromEnd) {
+    if (segment <= 0)
+        return err("The segment length must be positive.");
+    auto built = buildPath(e);
+    if (!built)
+        return built.error();
+    const auto& [path, closed] = built.value();
+    double len = path.length();
+    if (len / segment > 100000)
+        return err("That would create more than 100000 points.");
+    std::vector<Vec2> out;
+    for (int k = 1;; ++k) {
+        double s = segment * k;
+        if (s > len + 1e-5 || (closed && s >= len - 1e-5))
+            break;
+        out.push_back(path.at(fromEnd ? len - s : s));
+    }
+    return out;
+}
+
+// ---- ALIGN --------------------------------------------------------------------------------------
+
+Result<Transform2> alignTransform(Vec2 src1, Vec2 dst1, std::optional<Vec2> src2,
+                                  std::optional<Vec2> dst2, bool scale) {
+    if (!src2 || !dst2)
+        return Transform2::translate(dst1 - src1);
+    Vec2 sv = *src2 - src1, dv = *dst2 - dst1;
+    double sl = length(sv), dl = length(dv);
+    if (sl < 1e-9 || dl < 1e-9)
+        return err("The two points of a pair must differ.");
+    double angle = std::atan2(dv.y, dv.x) - std::atan2(sv.y, sv.x);
+    double f = scale ? dl / sl : 1.0;
+    Transform2 t = Transform2::scale(f, f, src1);
+    t = compose(Transform2::rotate(angle, src1), t);
+    t = compose(Transform2::translate(dst1 - src1), t);
+    return t;
+}
+
+// ---- OVERKILL -----------------------------------------------------------------------------------
+
+OverkillResult overkill(const std::vector<const Entity*>& entities, const OverkillOptions& o) {
+    OverkillResult res;
+    std::vector<std::size_t> order;
+    for (std::size_t i = 0; i < entities.size(); ++i) {
+        if (entities[i] && takesPart(*entities[i]))
+            order.push_back(i);
+    }
+    std::vector<double> mx(entities.size(), 0.0);
+    for (std::size_t i : order)
+        mx[i] = minX(*entities[i]);
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        if (kind(*entities[a]) != kind(*entities[b]))
+            return kind(*entities[a]) < kind(*entities[b]);
+        return mx[a] < mx[b];
+    });
+    std::vector<bool> gone(entities.size(), false);
+
+    // 1. Exact duplicates: the earliest entity in the input stays.
+    for (std::size_t oi = 0; oi < order.size(); ++oi) {
+        std::size_t i = order[oi];
+        for (std::size_t oj = oi + 1; oj < order.size(); ++oj) {
+            std::size_t j = order[oj];
+            if (kind(*entities[j]) != kind(*entities[i]) || mx[j] - mx[i] > o.tolerance * 4 + 1e-9)
+                break;
+            std::size_t keep = std::min(i, j), drop = std::max(i, j);
+            if (gone[i] || gone[j])
+                continue;
+            if (!o.ignoreProperties && !sameProps(entities[i]->common, entities[j]->common))
+                continue;
+            if (sameGeometry(*entities[i], *entities[j], o.tolerance)) {
+                gone[drop] = true;
+                res.erased.push_back(drop);
+                ++res.duplicates;
+                (void)keep;
+                if (drop == i)
+                    break;
+            }
+        }
+    }
+
+    // 2. Overlapping collinear lines.
+    if (o.combineOverlapping || o.combineEndToEnd) {
+        struct L {
+            std::size_t idx;
+            Vec2 a, b;
+        };
+        std::vector<L> lines;
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            if (!entities[i] || gone[i])
+                continue;
+            if (const auto* l = entityAs<LineData>(*entities[i]); l && !samePoint(l->a, l->b))
+                lines.push_back({i, l->a, l->b});
+        }
+        std::vector<bool> used(lines.size(), false);
+        auto canonical = [](const L& l) {
+            Vec2 d = l.b - l.a;
+            return (d.x < 0 || (d.x == 0 && d.y < 0)) ? d * -1.0 : d;
+        };
+        std::vector<std::size_t> idxs(lines.size());
+        std::iota(idxs.begin(), idxs.end(), std::size_t{0});
+        std::sort(idxs.begin(), idxs.end(), [&](std::size_t a, std::size_t b) {
+            Vec2 da = canonical(lines[a]), db = canonical(lines[b]);
+            return std::atan2(da.y, da.x) < std::atan2(db.y, db.x);
+        });
+        for (std::size_t ai = 0; ai < idxs.size(); ++ai) {
+            std::size_t a = idxs[ai];
+            if (used[a])
+                continue;
+            Vec2 d = canonical(lines[a]);
+            double dl = length(d);
+            d = d * (1.0 / dl);
+            double ang = std::atan2(d.y, d.x);
+            std::vector<std::size_t> group{a};
+            for (std::size_t bi = ai + 1; bi < idxs.size(); ++bi) {
+                std::size_t b = idxs[bi];
+                Vec2 db = canonical(lines[b]);
+                if (std::atan2(db.y, db.x) - ang > 1e-4)
+                    break;
+                if (used[b])
+                    continue;
+                if (!o.ignoreProperties &&
+                    !sameProps(entities[lines[a].idx]->common, entities[lines[b].idx]->common))
+                    continue;
+                auto off = [&](Vec2 p) { return std::abs(cross(d, p - lines[a].a)); };
+                if (off(lines[b].a) <= o.tolerance && off(lines[b].b) <= o.tolerance)
+                    group.push_back(b);
+            }
+            if (group.size() < 2)
+                continue;
+            struct Iv {
+                double lo, hi;
+                std::size_t k;
+            };
+            std::vector<Iv> iv;
+            for (std::size_t k : group) {
+                double t0 = dot(d, lines[k].a - lines[a].a), t1 = dot(d, lines[k].b - lines[a].a);
+                iv.push_back({std::min(t0, t1), std::max(t0, t1), k});
+            }
+            std::sort(iv.begin(), iv.end(), [](const Iv& x, const Iv& y) { return x.lo < y.lo; });
+            for (std::size_t s = 0; s < iv.size();) {
+                double lo = iv[s].lo, hi = iv[s].hi;
+                std::vector<std::size_t> members{iv[s].k};
+                std::size_t e2 = s + 1;
+                while (e2 < iv.size()) {
+                    bool overlap = iv[e2].lo < hi - o.tolerance;
+                    bool touch = iv[e2].lo <= hi + o.tolerance;
+                    if (!(overlap ? o.combineOverlapping || o.combineEndToEnd
+                                  : (touch && o.combineEndToEnd)))
+                        break;
+                    hi = std::max(hi, iv[e2].hi);
+                    members.push_back(iv[e2].k);
+                    ++e2;
+                }
+                if (members.size() > 1) {
+                    std::size_t first = lines[members.front()].idx;
+                    for (std::size_t k : members)
+                        first = std::min(first, lines[k].idx);
+                    for (std::size_t k : members) {
+                        used[k] = true;
+                        gone[lines[k].idx] = true;
+                        res.erased.push_back(lines[k].idx);
+                    }
+                    res.created.push_back(withData(
+                        *entities[first], LineData{lines[a].a + d * lo, lines[a].a + d * hi}));
+                }
+                s = e2;
+            }
+        }
+    }
+
+    // 3. Arcs of one circle: let JOIN fuse each cluster.
+    if (o.combineOverlapping || o.combineEndToEnd) {
+        std::vector<std::size_t> arcs;
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            if (entities[i] && !gone[i] && kind(*entities[i]) == EntityKind::Arc)
+                arcs.push_back(i);
+        }
+        std::vector<bool> done(arcs.size(), false);
+        for (std::size_t ai = 0; ai < arcs.size(); ++ai) {
+            if (done[ai])
+                continue;
+            const auto& a = *entityAs<ArcData>(*entities[arcs[ai]]);
+            std::vector<std::size_t> cluster{ai};
+            for (std::size_t bi = ai + 1; bi < arcs.size(); ++bi) {
+                const auto& b = *entityAs<ArcData>(*entities[arcs[bi]]);
+                if (done[bi] || !samePoint(a.center, b.center, o.tolerance) ||
+                    std::abs(a.radius - b.radius) > o.tolerance)
+                    continue;
+                if (!o.ignoreProperties &&
+                    !sameProps(entities[arcs[ai]]->common, entities[arcs[bi]]->common))
+                    continue;
+                cluster.push_back(bi);
+            }
+            if (cluster.size() < 2)
+                continue;
+            std::vector<const Entity*> in;
+            for (std::size_t k : cluster)
+                in.push_back(entities[arcs[k]]);
+            JoinResult jr = joinEntities(in, std::max(o.tolerance, 1e-9));
+            for (std::size_t c : jr.consumed) {
+                done[cluster[c]] = true;
+                res.erased.push_back(arcs[cluster[c]]);
+            }
+            for (Entity& n : jr.created)
+                res.created.push_back(std::move(n));
+        }
+    }
+    std::sort(res.erased.begin(), res.erased.end());
+    res.erased.erase(std::unique(res.erased.begin(), res.erased.end()), res.erased.end());
+    return res;
+}
+
+// ---- PEDIT --------------------------------------------------------------------------------------
+
+Result<Entity> toPolylineEntity(const Entity& e) {
+    if (entityAs<PolylineData>(e))
+        return e;
+    auto segs = openSegs(e);
+    if (!segs || kind(e) == EntityKind::Polyline)
+        return err("Only lines, arcs and polylines can be turned into polylines.");
+    Entity out = withData(e, polylineFromSegs(*segs, false));
+    return out;
+}
+
+Result<Entity> polylineToSpline(const Entity& e) {
+    const auto* p = entityAs<PolylineData>(e);
+    if (!p)
+        return err("Select a polyline.");
+    PolylineData clean = cleanPolyline(*p);
+    std::vector<Vec2> pts;
+    std::vector<Seg> segs = polylineSegs(clean);
+    for (const Seg& s : segs) {
+        int n =
+            s.isArc() ? std::max(2, static_cast<int>(std::abs(std::atan(s.bulge) * 4) / 0.3)) : 1;
+        for (int k = 0; k < n; ++k)
+            pts.push_back(segPoint(s, static_cast<double>(k) / n));
+    }
+    if (!clean.closed && !segs.empty())
+        pts.push_back(segs.back().p1);
+    if (pts.size() < 3)
+        return err("A spline needs at least three points.");
+    geom::InterpolateOptions io;
+    io.closed = clean.closed;
+    auto sp = geom::interpolateSpline(pts, io);
+    if (!sp)
+        return err("The spline could not be fitted: " + sp.error().message);
+    return withData(e, Indirect<SplineData>(std::move(sp.value())));
+}
+
+Result<Entity> splineToPolyline(const Entity& e, double tolerance) {
+    if (!entityAs<SplineData>(e))
+        return err("Select a spline.");
+    std::vector<CurveRef> curves;
+    if (!geom::curvesOf(e, curves) || curves.empty())
+        return err("The spline has no geometry.");
+    std::vector<Vec2> pts;
+    for (const CurveRef& c : curves) {
+        std::vector<Vec2> part;
+        geom::flatten(c, std::max(tolerance, 1e-6), part);
+        for (Vec2 q : part) {
+            if (pts.empty() || !samePoint(pts.back(), q, 1e-12))
+                pts.push_back(q);
+        }
+    }
+    PolylineData pl;
+    pl.closed = pts.size() > 2 && samePoint(pts.front(), pts.back(), 1e-9);
+    if (pl.closed)
+        pts.pop_back();
+    for (Vec2 q : pts)
+        pl.v.push_back({q, 0, 0, 0});
+    return withData(e, std::move(pl));
+}
+
+Result<EntityEdit> setPolylineWidth(const Entity& e, double width) {
+    const auto* p = entityAs<PolylineData>(e);
+    if (!p)
+        return err("Select a polyline.");
+    if (width < 0)
+        return err("The width cannot be negative.");
+    PolylineData out = *p;
+    out.constantWidth = width;
+    for (PolyVertex& v : out.v)
+        v.startWidth = v.endWidth = width;
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+}  // namespace tbcad::modify
