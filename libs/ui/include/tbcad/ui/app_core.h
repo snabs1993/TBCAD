@@ -125,6 +125,8 @@ public:
     void zoomToEntities(const std::vector<EntityId>& ids);
     // Tessellate for the current zoom when it changed enough; call once per frame.
     void updateFrame(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+    // Snap / tracking feedback of the point prompt in progress (tooltip text for the window).
+    const cmd::FilterFeedback& feedback() const { return feedback_; }
     // Pixel position of the status-bar coordinates.
     Vec2 cursorWorld() const { return cursorWorld_; }
 

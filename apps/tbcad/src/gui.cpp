@@ -838,6 +838,15 @@ ViewportRect Gui::frame() {
         }
         ImGui::End();
     }
+    // Label of the active snap point or tracking ray, next to the cursor.
+    if (inside && core_.feedback().active && !core_.feedback().tooltip.empty()) {
+        ImDrawList* fg = ImGui::GetForegroundDrawList();
+        const ImVec2 at(io.MousePos.x + 16, io.MousePos.y + 20);
+        const ImVec2 size = ImGui::CalcTextSize(core_.feedback().tooltip.c_str());
+        fg->AddRectFilled(ImVec2(at.x - 4, at.y - 2), ImVec2(at.x + size.x + 4, at.y + size.y + 2),
+                          IM_COL32(24, 26, 30, 220), 3.0f);
+        fg->AddText(at, IM_COL32(242, 169, 59, 255), core_.feedback().tooltip.c_str());
+    }
     dialogs();
     return rect;
 }
