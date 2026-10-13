@@ -169,3 +169,9 @@ OpenGL). The CI `perf` job repeats the large-file run and fails if either direct
 If TBCAD crashes it writes `crash-<time>.txt` (signal or exception and a stack trace; on Windows also a
 `crash-<time>.dmp` minidump) into the `crashes` folder of the data directory. Nothing is uploaded. At the
 next start a dialog names the report and, when an automatic backup exists, offers to recover the drawings.
+
+Opening a file over 8 MB from the menu, the file browser, a recent-files entry or a drop shows an
+"Opening <name> ..." message for one frame before the (blocking) load starts, so the window does not
+look frozen. A profile of opening a 20 MB drawing (Release, callgrind) put about a quarter of the load
+time in text shaping and layout, which runs twice per text entity (once for the index bounds, once for
+the display list); caching shaped runs is the next speed-up if text-heavy drawings feel slow.

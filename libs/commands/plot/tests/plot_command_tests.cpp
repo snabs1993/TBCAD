@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/ui/ui_registry.h"
@@ -202,4 +203,159 @@ TEST_CASE("the Layout option plots a layout at 1:1 instead of model space") {
     auto bad = f.path("bad.pdf");
     f.host->run("EXPORTPDF", {"Layout", "Nope", "", bad});
     CHECK_FALSE(std::filesystem::exists(bad));
+}
+
+TEST_CASE("PLOTSTYLE selects a table; the default is monochrome and None plots as drawn") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("red");
+        Entity e;
+        e.data = LineData{{0, 50}, {10000, 50}};
+        e.common.color = Color::index(1);
+        REQUIRE(tx.add(e).ok());
+        tx.commit();
+    }
+    CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
+    auto mono = f.path("mono.svg");
+    f.host->run("EXPORTSVG", {"", mono});
+    REQUIRE(std::filesystem::exists(mono));
+    auto svgMono = slurp(mono);
+    CHECK(svgMono.find("#ff0000") == std::string::npos);
+
+    f.host->run("PLOTSTYLE", {"Select", "none"});
+    CHECK(plot::plotStyleName(*f.host) == "none");
+    auto drawn = f.path("drawn.svg");
+    f.host->run("EXPORTSVG", {"", drawn});
+    CHECK(slurp(drawn).find("#ff0000") != std::string::npos);
+
+    f.host->run("PLOTSTYLE", {"Select", "grayscale.ctb"});
+    CHECK(plot::plotStyleName(*f.host) == "grayscale.ctb");
+    f.host->run("PLOTSTYLE", {"Select", "missing-table.ctb"});
+    CHECK(f.host->logContains("missing-table.ctb"));
+    CHECK(plot::plotStyleName(*f.host) == "grayscale.ctb");  // unchanged
+    f.host->run("PLOTSTYLE", {"List"});
+    CHECK(f.host->logContains("* grayscale.ctb"));
+    CHECK(f.host->logContains("  monochrome.ctb"));
+}
+
+TEST_CASE("EXPORTPNG and EXPORTJPG write images at the chosen resolution") {
+    Fixture f;
+    CHECK(f.reg.find("EXPORTPNG") != nullptr);
+    CHECK(f.reg.find("EXPORTJPEG") == f.reg.find("EXPORTJPG"));
+    auto png = f.path("a4.png");
+    auto r = f.host->run("EXPORTPNG", {"Paper", "A4", "Resolution", "50", "", png});
+    CHECK(r.finished);
+    std::string bytes = slurp(png);
+    REQUIRE(bytes.size() > 50);
+    CHECK(bytes.compare(1, 3, "PNG") == 0);
+    CHECK(f.host->logContains("50 dpi"));
+    CHECK(plot::plotDpi(*f.host) == doctest::Approx(50));
+    // PNG header width / height: A4 landscape at 50 dpi is 585 x 413.
+    auto be32 = [&](std::size_t at) {
+        return (static_cast<unsigned>(static_cast<unsigned char>(bytes[at])) << 24) |
+               (static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 1])) << 16) |
+               (static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 2])) << 8) |
+               static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 3]));
+    };
+    CHECK(be32(16) == 585u);
+    CHECK(be32(20) == 413u);
+
+    auto jpg = f.path("a4.jpg");
+    r = f.host->run("EXPORTJPG", {"", jpg});
+    CHECK(r.finished);
+    bytes = slurp(jpg);
+    REQUIRE(bytes.size() > 50);
+    CHECK(static_cast<unsigned char>(bytes[0]) == 0xFF);
+    CHECK(static_cast<unsigned char>(bytes[1]) == 0xD8);
+
+    // Absurd resolutions are refused, not attempted.
+    auto bad =
+        f.host->run("EXPORTPNG", {"Resolution", "100000", "Resolution", "50", "", f.path("x.png")});
+    CHECK(bad.finished);
+}
+
+TEST_CASE("forFormat swaps an export extension; dpi and quality have defaults") {
+    CHECK(plot::forFormat("a.pdf", plot::Format::Png) == "a.png");
+    CHECK(plot::forFormat("dir.x/a", plot::Format::Jpeg) == "dir.x/a.jpg");
+    CHECK(plot::forFormat("a.JPEG", plot::Format::Svg) == "a.svg");
+    CHECK(plot::forFormat("a.txt", plot::Format::Pdf) == "a.txt");
+    Fixture f;
+    CHECK(plot::plotDpi(*f.host) == doctest::Approx(300));
+    CHECK(plot::jpegQuality(*f.host) == 90);
+}
+
+TEST_CASE("PAGESETUP saves the plot options, applies them and assigns them to layouts") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Plan", "A4", true).ok());
+        REQUIRE(layout::createLayout(tx, "Detail", "A3", true).ok());
+        tx.commit();
+    }
+    // Plot options as the user has them now.
+    CHECK(f.host
+              ->run("EXPORTSVG", {"Paper", "A2", "Orientation", "Portrait", "Scale", "1:50",
+                                  "Color", "Monochrome", "Style", "none", "", f.path("x.svg")})
+              .finished);
+    CHECK(f.host->run("PAGESETUP", {"Save", "Big sheet"}).finished);
+    auto saved = layout::findPageSetup(f.doc, "big sheet");
+    REQUIRE(saved);
+    CHECK(saved->settings.paperName == "A2");
+    CHECK_FALSE(saved->settings.landscape);
+    CHECK(saved->settings.scaleN == doctest::Approx(50));
+    CHECK(saved->settings.color == exportlib::ColorMode::Monochrome);
+    CHECK(saved->styleName == "none");
+
+    // Change the options, then apply the setup: they come back.
+    CHECK(f.host->run("EXPORTSVG", {"Paper", "A4", "Scale", "Fit", "", f.path("y.svg")}).finished);
+    CHECK(plot::loadSettings(*f.host).paperName == "A4");
+    CHECK(f.host->run("PAGESETUP", {"Apply", "Big sheet"}).finished);
+    auto s = plot::loadSettings(*f.host);
+    CHECK(s.paperName == "A2");
+    CHECK(s.scaleN == doctest::Approx(50));
+    CHECK_FALSE(s.styleTable);
+
+    // Assign to a layout: it takes the paper; choosing that layout for plotting applies the
+    // options.
+    CHECK(f.host->run("PAGESETUP", {"Assign", "Big sheet", "Detail"}).finished);
+    auto detail = layout::findLayout(f.doc, "Detail");
+    REQUIRE(detail);
+    CHECK(detail->pageSetup == "Big sheet");
+    CHECK(detail->paperName == "A2");
+    CHECK_FALSE(detail->landscape);
+    plot::setPlotLayout(*f.host, "");
+    CHECK(f.host->run("EXPORTSVG", {"Layout", "Detail", "Export", f.path("z.svg")}).finished);
+    CHECK(f.host->logContains("Page setup \"Big sheet\" applied"));
+
+    // Model space can have one too; List shows who uses it.
+    CHECK(f.host->run("PAGESETUP", {"Assign", "Big sheet", "Model"}).finished);
+    CHECK(layout::modelPageSetup(f.doc) == "Big sheet");
+    CHECK(f.host->run("PAGESETUP", {"List"}).finished);
+    CHECK(f.host->logContains("[model, Detail]"));
+
+    CHECK(f.host->run("PAGESETUP", {"Rename", "Big sheet", "Poster"}).finished);
+    CHECK(layout::findLayout(f.doc, "Detail")->pageSetup == "Poster");
+    CHECK(f.host->run("PAGESETUP", {"Delete", "Poster"}).finished);
+    CHECK(layout::pageSetups(f.doc).empty());
+    CHECK(layout::findLayout(f.doc, "Detail")->pageSetup.empty());
+    CHECK(f.host->run("PAGESETUP", {"Apply", "Nope"}).finished);
+    CHECK(f.host->logContains("No page setup named \"Nope\""));
+}
+
+TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {
+    Fixture f;
+    REQUIRE(io::writeTbcad(f.doc, f.dir / "d.tbcad").ok());
+    {
+        std::ofstream list(f.dir / "list.txt");
+        list << "d.tbcad\nd.tbcad\n";
+    }
+    CHECK(f.reg.find("PUBLISH") == f.reg.find("PLOTSET"));
+    const auto out = f.path("set.pdf");
+    CHECK(f.host->run("PUBLISH", {f.path("list.txt"), out}).finished);
+    CHECK(f.host->logContains("Plotted 2 sheets"));
+    CHECK(std::filesystem::exists(out));
+    if (!print::available()) {  // never send a test job to a real printer
+        CHECK(f.host->run("PLOTSET", {f.path("list.txt"), "Printer"}).finished);
+        CHECK(f.host->logContains("Printing is only available"));
+    }
 }

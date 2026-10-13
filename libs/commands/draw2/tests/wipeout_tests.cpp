@@ -1,0 +1,53 @@
+#include "test_util.h"
+
+using namespace tbcad;
+using namespace tbcad::draw2::test;
+using cmd::ScriptItem;
+
+namespace {
+bool drawsAsMask(const Document& doc, const Entity& e) {
+    DisplayList d;
+    geom::buildDisplay(doc, e, geom::DisplayContext{}, d);
+    if (d.items.size() != 1)
+        return false;
+    const auto* f = std::get_if<DisplayFill>(&d.items[0]);
+    return f && isBackgroundColor(f->style.color);
+}
+}  // namespace
+
+TEST_CASE("WIPEOUT from a rectangle makes a closed polyline that draws as a background mask") {
+    Fixture f;
+    REQUIRE(f.host.run("WIPEOUT", {"Rectangle", "0,0", "40,20"}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
+    CHECK(pl.closed);
+    CHECK(pl.v.size() == 4);
+    CHECK(es[0]->common.wipeout);
+    CHECK(drawsAsMask(f.doc, *es[0]));
+    f.host.undo();
+    CHECK(f.entities().empty());
+}
+
+TEST_CASE("WIPEOUT from points closes with Enter and needs three") {
+    Fixture f;
+    REQUIRE(f.host.run("WO", {"Polygon", "0,0", "10,0", "10,10", ""}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    CHECK(as<PolylineData>(es[0]).v.size() == 3);
+}
+
+TEST_CASE("WIPEOUT Polyline and Remove switch an existing closed polyline") {
+    Fixture f;
+    PolylineData pl;
+    pl.closed = true;
+    pl.v = {{.p = {0, 0}}, {.p = {10, 0}}, {.p = {10, 10}}};
+    EntityId id = f.addEntity(pl);
+    f.host.setSelection({id});
+    REQUIRE(f.host.run("WIPEOUT", {"Polyline"}).finished);
+    CHECK(f.doc.find(id)->common.wipeout);
+    f.host.setSelection({id});
+    REQUIRE(f.host.run("WIPEOUT", {"Remove"}).finished);
+    CHECK_FALSE(f.doc.find(id)->common.wipeout);
+    CHECK_FALSE(drawsAsMask(f.doc, *f.doc.find(id)));
+}

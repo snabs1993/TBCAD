@@ -98,7 +98,7 @@ public:
                     ctx.message("The linetype scale must be a positive number.");
                     continue;
                 }
-                apply = [scale](EntityCommon& x) { x.linetypeScale = scale; };
+                apply = [scale](EntityCommon& x) { x.linetypeScale = static_cast<float>(scale); };
             }
             ctx.checkpoint();
             int n = 0;

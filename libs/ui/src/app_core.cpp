@@ -168,6 +168,7 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     s->runner->setLineParser(lineParser_);
     s->undo.setMessageSink([this](std::string m) { print(m); });
     s->file = std::move(file);
+    d.setFilePath(platform::pathToUtf8(s->file));
     s->savedRevision = d.revision();
     return s;
 }
@@ -809,6 +810,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         return r;
     }
     session_->file = path;
+    session_->doc.setFilePath(platform::pathToUtf8(path));
     session_->readOnlyFormat.clear();
     session_->savedRevision = session_->doc.revision();
     removeAutosaveOf(slots_[active_].id);

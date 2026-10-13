@@ -87,10 +87,28 @@ struct Builder {
     const PlotSettings& s;
     const PlotLayout& layout;
 
+    // Plotted colour: the style table's entry for palette colours, then the global colour mode.
+    Rgba color(Rgba c) const {
+        if (s.styleTable) {
+            if (int aci = plotstyle::paletteIndexOf(c)) {
+                const plotstyle::PlotStyleEntry& e = s.styleTable->forIndex(aci);
+                Rgba shaded = plotstyle::applyEntry(e, plotColor(c, ColorMode::AsDisplayed));
+                if (s.color == ColorMode::AsDisplayed)
+                    return shaded;
+                return plotColor(shaded, s.color);
+            }
+        }
+        return plotColor(c, s.color);
+    }
+    double weight(Rgba c, double objectMm) const {
+        return s.styleTable ? plotstyle::mapLineweight(*s.styleTable, c, objectMm) : objectMm;
+    }
+
     PlotStyle style(const DisplayStyle& ds) const {
         PlotStyle p;
-        p.color = plotColor(ds.color, s.color);
-        p.widthMm = (!s.lineweights || !(ds.lineweight > 0)) ? s.hairlineMm : ds.lineweight;
+        p.color = color(ds.color);
+        const double mm = weight(ds.color, ds.lineweight);
+        p.widthMm = (!s.lineweights || !(mm > 0)) ? s.hairlineMm : mm;
         if (ds.pattern && !ds.pattern->empty())
             p.dashMm = dashArray(*ds.pattern, ds.patternScale * layout.paperPerUnit, p.widthMm);
         return p;
@@ -110,7 +128,7 @@ struct Builder {
             out.emplace_back(std::move(path));
         } else if (const auto* f = std::get_if<DisplayFill>(&it)) {
             PlotFill fill;
-            fill.color = plotColor(f->style.color, s.color);
+            fill.color = color(f->style.color);
             for (const auto& ring : f->rings) {
                 if (ring.size() < 3)
                     continue;
@@ -137,6 +155,8 @@ struct Builder {
 }  // namespace
 
 Rgba plotColor(Rgba c, ColorMode mode) {
+    if (isBackgroundColor(c))
+        return {255, 255, 255, 255};  // a wipeout hides what is behind it on the white sheet
     if (c.a < 255) {  // translucent tones (dense hatches) are mixed with the white sheet
         double k = c.a / 255.0;
         auto mix = [k](std::uint8_t v) {

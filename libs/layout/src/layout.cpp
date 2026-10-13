@@ -48,7 +48,7 @@ std::string serialize(const std::vector<Layout>& all) {
     for (const Layout& l : all) {
         o << "L\t" << l.uid << '\t' << l.name << '\t' << l.paperName << '\t'
           << (l.landscape ? 1 : 0) << '\t' << num(l.widthMm) << '\t' << num(l.heightMm) << '\t'
-          << l.content.value << '\n';
+          << l.content.value << '\t' << l.pageSetup << '\n';
         for (const Viewport& v : l.viewports) {
             o << "V\t" << v.id << '\t' << num(v.paper.min.x) << '\t' << num(v.paper.min.y) << '\t'
               << num(v.paper.max.x) << '\t' << num(v.paper.max.y) << '\t' << num(v.center.x) << '\t'
@@ -133,6 +133,8 @@ std::vector<Layout> layouts(const Document& doc) {
             l.heightMm = toD(f[6]);
             l.content =
                 BlockId{static_cast<std::uint32_t>(std::strtoul(f[7].c_str(), nullptr, 10))};
+            if (f.size() > 8)
+                l.pageSetup = f[8];
             out.push_back(std::move(l));
         } else if (f.size() >= 10 && f[0] == "V" && !out.empty()) {
             Viewport v;
@@ -222,6 +224,16 @@ Result<void> renameLayout(Transaction& tx, const std::string& name, const std::s
     if (!l)
         return err(ErrorCode::NotFound, "No layout named \"" + name + "\"");
     l->name = newName;
+    return store(tx, all);
+}
+
+Result<void> setLayoutPageSetupName(Transaction& tx, const std::string& name,
+                                    const std::string& pageSetup) {
+    std::vector<Layout> all = current(tx, tx.document());
+    Layout* l = pick(all, name);
+    if (!l)
+        return err(ErrorCode::NotFound, "No layout named \"" + name + "\"");
+    l->pageSetup = pageSetup;
     return store(tx, all);
 }
 

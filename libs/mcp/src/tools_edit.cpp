@@ -145,7 +145,7 @@ std::string applySet(const Document& doc, Entity& e, const Json& set) {
         e.common.lineweight = r.value();
     }
     if (const Json* v = set.find("linetypeScale"))
-        e.common.linetypeScale = v->asNumber(1);
+        e.common.linetypeScale = static_cast<float>(v->asNumber(1));
     if (const Json* v = set.find("visible"))
         e.common.visible = v->asBool(true);
 

@@ -58,6 +58,8 @@ struct Header {
 // saved with the drawing. Always positive; 1 when unset or damaged.
 inline constexpr const char* kAnnoScaleKey = "tbcad.annoscale";
 inline constexpr const char* kAnnoScaleListKey = "tbcad.scalelist";
+// "1": new text, dimensions, leaders and tables are made annotative at the current scale.
+inline constexpr const char* kAnnoNewKey = "tbcad.annonew";
 double currentAnnotationScale(const Header& h);
 // The scales offered for annotation, as N of 1:N. Default list when none is stored.
 std::vector<double> annotationScaleList(const Header& h);
@@ -204,6 +206,10 @@ public:
     Document& operator=(const Document&) = delete;
 
     const Header& header() const { return header_; }
+    // Where the drawing lives on disk, for fields such as %<filename>%. Session state: not part
+    // of the drawing, not undoable, not saved.
+    const std::string& filePath() const { return filePath_; }
+    void setFilePath(std::string p) { filePath_ = std::move(p); }
 
     // Entities. Pointers are valid until the next mutation of the document.
     const Entity* find(EntityId id) const;
@@ -323,6 +329,7 @@ private:
     EffectiveLayer withActiveOnly(EffectiveLayer e) const;
     mutable std::unordered_map<LayerId, EffectiveLayer> effectiveCache_{};
     mutable std::uint64_t effectiveVersion_ = 0;
+    std::string filePath_{};
 
     std::vector<DocumentObserver*> observers_{};
     Transaction* active_ = nullptr;
@@ -430,11 +437,26 @@ private:
 
 // New objects the user draws take the layer and the current colour, linetype and lineweight of the
 // drawing (Header::current*). Commands that copy or edit existing objects keep their own.
+// Kinds whose size can follow the annotation scale on their own.
+inline bool canScaleAnnotatively(EntityKind k) {
+    return k == EntityKind::Text || k == EntityKind::MText || k == EntityKind::Dimension ||
+           k == EntityKind::Leader || k == EntityKind::Table;
+}
+bool annotateNewObjects(const Header& h);
+// New objects start annotative at the current scale when the drawing asks for it.
+inline void applyAnnotativeDefault(const Header& h, Entity& e) {
+    if (canScaleAnnotatively(kind(e)) && annotateNewObjects(h)) {
+        e.common.annotative = true;
+        e.common.annoScales = ScaleList(std::vector<double>{currentAnnotationScale(h)});
+    }
+}
+
 inline void applyCurrentProperties(const Header& h, Entity& e) {
     e.common.layer = h.currentLayer;
     e.common.color = h.currentColor;
     e.common.linetype = h.currentLinetype;
     e.common.lineweight = h.currentLineweight;
+    applyAnnotativeDefault(h, e);
 }
 
 }  // namespace tbcad

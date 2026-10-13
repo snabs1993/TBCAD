@@ -1,5 +1,6 @@
 set(_textcmd_sources
   src/annotative_command.cpp
+  src/field_command.cpp
   src/editable.cpp
   src/style_command.cpp
   src/style_manager.cpp
@@ -9,7 +10,7 @@ set(_textcmd_sources
 # The editor panel needs Dear ImGui, which is only fetched when the application is built.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp)
+  list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp ui/annotation_section.cpp)
 endif()
 
 tbcad_add_library(textcmd
@@ -29,5 +30,6 @@ tbcad_add_tests(textcmd
     tests/text_command_tests.cpp
     tests/style_command_tests.cpp
     tests/annotative_tests.cpp
+    tests/field_tests.cpp
     tests/style_manager_tests.cpp
   DEPENDS tbcad_command_registry)

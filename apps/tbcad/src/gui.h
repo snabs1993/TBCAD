@@ -16,6 +16,7 @@
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/ui/workspace.h"
+#include "wheel_menu.h"
 
 struct GLFWwindow;
 
@@ -120,6 +121,7 @@ private:
     void doNew();
     void doOpen();
     void doOpenPath(const std::string& path);
+    void openPending();
     void doImportDxf();
     void doExportDxf();
     void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
@@ -163,6 +165,8 @@ private:
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
     std::size_t recoveryCount_ = 0;
+    std::string pendingOpen_{};  // big file waiting for the "Opening ..." message to be shown
+    bool pendingOpenShown_ = false;
     std::string crashReport_{};  // newest unacknowledged crash report file, if any
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
@@ -214,6 +218,8 @@ private:
     std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
     Vec2 pressPos_{};
     bool panning_ = false;
+    bool rightDown_ = false;  // right button pressed in the drawing, wheel or menu pending
+    WheelMenu wheel_;
     double pendingNotches_ = 0;
     Vec2 zoomAnchor_{};
     int activityFrames_ = 0;

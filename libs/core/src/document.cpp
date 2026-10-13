@@ -1711,7 +1711,16 @@ std::vector<double> annotationScaleList(const Header& h) {
 double annotationFactor(const Header& h, const EntityCommon& c, double override) {
     if (!c.annotative)
         return 1.0;
-    return override > 0 ? override : currentAnnotationScale(h);
+    if (override > 0)
+        return override;
+    if (!c.annoScales.empty() && c.annoScales.front() > 0)
+        return c.annoScales.front();
+    return currentAnnotationScale(h);
+}
+
+bool annotateNewObjects(const Header& h) {
+    auto it = h.custom.find(kAnnoNewKey);
+    return it != h.custom.end() && it->second == "1";
 }
 
 }  // namespace tbcad

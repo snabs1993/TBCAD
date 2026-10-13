@@ -11,6 +11,7 @@ tbcad_add_library(draw2
     src/revcloud.cpp
     src/sketch.cpp
     src/ui.cpp
+    src/wipeout.cpp
   DEPENDS tbcad::ui tbcad::cmd tbcad::core tbcad::geom tbcad::hatch)
 
 tbcad_add_tests(draw2
@@ -24,5 +25,6 @@ tbcad_add_tests(draw2
     tests/region_tests.cpp
     tests/revcloud_tests.cpp
     tests/sketch_tests.cpp
+    tests/wipeout_tests.cpp
     tests/test_util.h
   DEPENDS tbcad::cmd)

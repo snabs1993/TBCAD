@@ -20,6 +20,7 @@
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
 #include "tbcad/ui/drag_payload.h"
+#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 
 #if defined(_WIN32)
@@ -405,6 +406,41 @@ void Gui::doExportDxf() {
 }
 
 void Gui::doOpenPath(const std::string& path) {
+    // A big file blocks the window for seconds: show "Opening ..." for one frame first so the
+    // program does not look frozen.
+    std::error_code ec;
+    auto size = std::filesystem::file_size(platform::pathFromUtf8(path), ec);
+    if (!ec && size > (8u << 20) && pendingOpen_.empty()) {
+        pendingOpen_ = path;
+        pendingOpenShown_ = false;
+        anyActivity_ = true;
+        return;
+    }
+    auto r = core_.openFile(platform::pathFromUtf8(path));
+    if (!r)
+        lastError_ = r.error().message;
+}
+
+void Gui::openPending() {
+    if (pendingOpen_.empty())
+        return;
+    if (!pendingOpenShown_) {
+        pendingOpenShown_ = true;
+        anyActivity_ = true;  // draw one more frame with the message before blocking
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (ImGui::Begin("##opening", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+            ImGui::Text(
+                "Opening %s ...",
+                platform::pathToUtf8(platform::pathFromUtf8(pendingOpen_).filename()).c_str());
+        }
+        ImGui::End();
+        return;
+    }
+    std::string path = std::move(pendingOpen_);
+    pendingOpen_.clear();
     auto r = core_.openFile(platform::pathFromUtf8(path));
     if (!r)
         lastError_ = r.error().message;
@@ -878,6 +914,42 @@ void Gui::statusBar() {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
                     "Level you work on. Ctrl+PageUp / Ctrl+PageDown steps through levels.");
+        }
+
+        // Annotation scale for new objects, and whether new objects are annotative.
+        {
+            const double cur = currentAnnotationScale(doc.header());
+            char label[48];
+            std::snprintf(label, sizeof label, "1:%g", cur);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("  Scale");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(72);
+            if (ImGui::BeginCombo("##annoscale", label, ImGuiComboFlags_HeightLarge)) {
+                for (double v : annotationScaleList(doc.header())) {
+                    char item[48];
+                    std::snprintf(item, sizeof item, "1:%g", v);
+                    if (ImGui::Selectable(item, v == cur)) {
+                        core_.submitText("CANNOSCALE");
+                        std::snprintf(item, sizeof item, "%g", v);
+                        core_.submitText(item);
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            const bool autoOn = annotateNewObjects(doc.header());
+            if (autoOn)
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            if (ImGui::SmallButton("ANNO")) {
+                core_.submitText("ANNONEW");
+                core_.submitText(autoOn ? "Off" : "On");
+            }
+            if (autoOn)
+                ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("New text, dimensions, tables and symbols follow the scale");
         }
 
         std::string right = std::to_string(doc.modelSpaceCount()) + " objects   " +
@@ -1839,12 +1911,46 @@ void Gui::viewportInput(const ViewportRect& rect) {
     }
 
     // Right button: context menu, or Enter for users who set ui.rightClick = enter.
+    // With the wheel on, holding the button past ui.wheel.delayMs shows the tool wheel and
+    // releasing over a slice runs it; a shorter press opens the menu on release. The wheel is
+    // for starting commands, so it stays closed while one is running (hold then gives the menu).
+    const bool rightIsEnter = core_.settings().getString("ui.rightClick", "menu") == "enter";
+    const bool wheelOn = !rightIsEnter && core_.settings().getBool("ui.wheel.enabled", true);
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        if (core_.settings().getString("ui.rightClick", "menu") == "enter")
+        if (rightIsEnter)
             core_.submitText("");
+        else if (wheelOn)
+            rightDown_ = true;
         else
             ImGui::OpenPopup("##viewportMenu");
     }
+    if (rightDown_) {
+        anyActivity_ = true;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            wheel_.close();
+            rightDown_ = false;
+        } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+            const double heldMs = io.MouseDownDuration[ImGuiMouseButton_Right] * 1000.0;
+            if (!wheel_.isOpen() && !core_.runner().active() &&
+                ui::wheelShouldOpen(heldMs, core_.settings().getNumber("ui.wheel.delayMs",
+                                                                       ui::kWheelDefaultDelayMs)))
+                wheel_.open(io.MouseClickedPos[ImGuiMouseButton_Right],
+                            ui::parseWheelTools(core_.settings().getString("ui.wheel.tools", "")));
+        } else {
+            const bool wasOpen = wheel_.isOpen();
+            const std::string chosen = wheel_.hovered();
+            wheel_.close();
+            rightDown_ = false;
+            if (!wasOpen)
+                ImGui::OpenPopup("##viewportMenu");
+            else if (!chosen.empty())
+                core_.submitText(chosen);
+        }
+    }
+    if (wheel_.isOpen())
+        wheel_.draw(io.MousePos,
+                    dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)),
+                    theme_);
     viewportMenu();
 
     if (hovered || leftDown_ || panning_)
@@ -2039,6 +2145,7 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
 // ---- dialogs -----------------------------------------------------------------------------------
 
 void Gui::dialogs() {
+    openPending();
     settings_.draw(core_);
     workspaceDialog();
     if (openRecoveryPrompt_) {

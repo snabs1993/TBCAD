@@ -185,6 +185,17 @@ public:
         Entity e;
         e.data = Indirect<InsertData>(data);
         applyCurrentProperties(ctx.doc().header(), e);
+        // Symbols drawn at 1:1 are sized for the current annotation scale when the drawing asks.
+        if (annotateNewObjects(ctx.doc().header())) {
+            const BlockDef* annoDef = ctx.doc().block(data.block);
+            const double n = currentAnnotationScale(ctx.doc().header());
+            if (annoDef && annoDef->xrefPath.empty() && !data.array) {
+                e.common.annotative = true;
+                e.common.annoScales = ScaleList(std::vector<double>{n});
+                if (auto* ins = entityAs<InsertData>(e))
+                    ins->scale = ins->scale * n;
+            }
+        }
         auto added = ctx.tx().add(std::move(e));
         if (!added) {
             ctx.message(added.error().message);

@@ -8,6 +8,7 @@ tbcad_add_library(text
     src/thai_break.cpp
     src/layout.cpp
     src/display.cpp
+    src/field.cpp
   DEPENDS tbcad::core tbcad::geom tbcad::font)
 target_compile_definitions(tbcad_text PRIVATE
   TBCAD_TEXT_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets/dictionaries")

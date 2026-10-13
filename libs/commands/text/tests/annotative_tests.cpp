@@ -81,3 +81,62 @@ TEST_CASE("annotative text grows with the scale; ordinary text does not") {
     CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[0]), 10) ==
           doctest::Approx(h1 * 10).epsilon(0.01));
 }
+
+TEST_CASE("an object keeps its own scales; new objects follow ANNONEW") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "Hi"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    const double h1 = textHeightOnScreen(f.doc, *f.doc.find(id));
+    f.host.run("ANNOTATIVE",
+               {cmd::ScriptItem::pick(id, {0, 0}), cmd::ScriptItem::enter(), "Scales", "50,100"});
+    const Entity* e = f.doc.find(id);
+    REQUIRE(e);
+    CHECK(e->common.annotative);
+    REQUIRE(e->common.annoScales.size() == 2);
+    // Drawn at its first scale whatever the drawing's current scale is.
+    f.host.run("CANNOSCALE", {"200"});
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(id)) == doctest::Approx(h1 * 50).epsilon(0.01));
+    f.host.undo();
+    f.host.undo();
+
+    f.host.run("ANNONEW", {"On"});
+    f.host.run("CANNOSCALE", {"20"});
+    f.host.run("TEXT", {"0,10", "2.5", "0", "New"});
+    EntityId made{};
+    f.doc.forEachEntity([&](const Entity& x) {
+        if (x.common.id != id)
+            made = x.common.id;
+    });
+    REQUIRE(made != EntityId{});
+    const Entity* n = f.doc.find(made);
+    CHECK(n->common.annotative);
+    REQUIRE(n->common.annoScales.size() == 1);
+    CHECK(n->common.annoScales.front() == doctest::Approx(20));
+}
+
+TEST_CASE("a symbol is rescaled when its annotation scale changes") {
+    Fixture f;
+    f.host.run("LINE", {"0,0", "1,0", ""});
+    EntityId line{};
+    f.doc.forEachEntity([&](const Entity& e) { line = e.common.id; });
+    f.host.setSelection({line});
+    f.host.run("BLOCK", {"Mark", "0,0", "D"});
+    f.host.run("INSERT", {"Mark", "10,0"});
+    EntityId ins{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Insert)
+            ins = e.common.id;
+    });
+    REQUIRE(ins != EntityId{});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(1));
+    f.host.setSelection({ins});
+    f.host.run("ANNOTATIVE", {"Scales", "50"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(50));
+    f.host.setSelection({ins});
+    f.host.run("ANNOTATIVE", {"Scales", "100"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(100));
+    f.host.setSelection({ins});
+    f.host.run("ANNOTATIVE", {"Off"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(1));
+}
