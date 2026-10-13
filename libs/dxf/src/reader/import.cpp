@@ -626,6 +626,10 @@ void Importer::processBlocks(RecordReader& rr) {
             inBlock_ = true;
             curBlock_ = BlockId{};
             skipBlock_ = isLayoutBlock(f);
+            // The drawn dimension (*D<n>) is regenerated from the definition points; its parts
+            // are kept only when the caller asks for the graphics.
+            if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
+                skipBlock_ = true;
             if (!skipBlock_) {
                 BlockId id = blockFor(rawName);
                 if (!id) {
