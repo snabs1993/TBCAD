@@ -67,7 +67,8 @@ Result<std::vector<SheetEntry>> readSheetList(const std::filesystem::path& listF
 
 Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
                                      const exportlib::PlotSettings& base,
-                                     const std::filesystem::path& pdfFile) {
+                                     const std::filesystem::path& pdfFile,
+                                     const layout::StyleResolver& styles) {
     std::map<std::filesystem::path, std::unique_ptr<Document>> docs;
     std::vector<exportlib::PlotSheet> sheets;
     SheetSetReport report;
@@ -82,8 +83,11 @@ Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
                 return Error{doc.error().code, what + ": " + doc.error().message};
             it = docs.emplace(e.file, std::move(doc.value())).first;
         }
-        auto sheet = e.layout.empty() ? exportlib::buildSheet(*it->second, base)
-                                      : layout::buildLayoutSheet(*it->second, e.layout, base);
+        const auto setup = e.layout.empty() ? layout::pageSetupOfModel(*it->second)
+                                            : layout::pageSetupOfLayout(*it->second, e.layout);
+        const exportlib::PlotSettings s = setup ? layout::settingsFor(base, *setup, styles) : base;
+        auto sheet = e.layout.empty() ? exportlib::buildSheet(*it->second, s)
+                                      : layout::buildLayoutSheet(*it->second, e.layout, s);
         if (!sheet)
             return Error{sheet.error().code, what + ": " + sheet.error().message};
         if (sheet.value().layout.overflows)

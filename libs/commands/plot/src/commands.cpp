@@ -213,8 +213,13 @@ public:
                 cmd::StringOptions so;
                 so.defaultValue = plotLayout(ctx.host());
                 auto r = co_await ctx.getString("Layout to plot (empty = model space)", so);
-                if (r.ok())
+                if (r.ok()) {
                     setPlotLayout(ctx.host(), r.text);
+                    if (const auto m = applyAssignedPageSetup(ctx.doc(), ctx.host()); !m.empty()) {
+                        s = loadSettings(ctx.host());
+                        ctx.message(m);
+                    }
+                }
             } else if (kw == "Format") {
                 KeywordOptions ko;
                 ko.keywords = {"Pdf", "Svg", "Png", "Jpeg"};
@@ -288,7 +293,8 @@ public:
             co_return;
         }
         auto out = withExtension(file.text, Format::Pdf);
-        auto r = sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out);
+        auto r = sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out,
+                                       styleResolver(ctx.host()));
         if (!r) {
             ctx.message(r.error().message);
             co_return;
@@ -392,6 +398,97 @@ public:
     }
 };
 
+// PAGESETUP: named page setups saved in the drawing.
+class PageSetupCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PAGESETUP"; }
+    std::vector<std::string> defaultAliases() const override { return {}; }
+    std::string_view description() const override {
+        return "Save, apply and assign named page setups (plot options kept in the drawing)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        KeywordOptions menu;
+        menu.keywords = {"List", "Save", "Apply", "Assign", "Rename", "Delete"};
+        menu.defaultKeyword = "List";
+        auto choice = co_await ctx.getKeyword("Page setup", menu);
+        if (!choice.ok())
+            co_return;
+        const std::string& kw = choice.keyword;
+        if (kw == "List") {
+            const auto all = layout::pageSetups(ctx.doc());
+            if (all.empty())
+                ctx.message("This drawing has no page setups. Use Save to create one.");
+            const std::string model = layout::modelPageSetup(ctx.doc());
+            for (const auto& p : all) {
+                std::string line = "  " + p.name + ": " + p.settings.paperName +
+                                   (p.settings.landscape ? " landscape" : " portrait") + ", " +
+                                   scaleText(p.settings) + ", " +
+                                   (p.styleName.empty() ? "no style" : p.styleName);
+                std::string users;
+                if (p.name == model)
+                    users = "model";
+                for (const auto& l : layout::layouts(ctx.doc()))
+                    if (l.pageSetup == p.name)
+                        users += (users.empty() ? "" : ", ") + l.name;
+                if (!users.empty())
+                    line += "  [" + users + "]";
+                ctx.message(line);
+            }
+            co_return;
+        }
+        cmd::StringOptions so;
+        if (kw == "Save") {
+            so.defaultValue = layout::modelPageSetup(ctx.doc());
+            auto n =
+                co_await ctx.getString("Name for the page setup (the current plot options)", so);
+            if (!n.ok() || n.text.empty())
+                co_return;
+            const auto p = currentPageSetup(ctx.host(), n.text);
+            auto r = layout::savePageSetup(ctx.tx(), p);
+            ctx.message(r ? "Page setup \"" + n.text + "\" saved." : r.error().message);
+            co_return;
+        }
+        auto n = co_await ctx.getString(
+            kw == "Assign" ? "Page setup to assign (empty = none)" : "Page setup name", so);
+        if (!n.ok())
+            co_return;
+        if (kw == "Apply") {
+            auto p = layout::findPageSetup(ctx.doc(), n.text);
+            if (!p) {
+                ctx.message("No page setup named \"" + n.text + "\".");
+                co_return;
+            }
+            applyPageSetup(ctx.host(), *p);
+            ctx.message("Page setup \"" + p->name + "\" is now the current plot options.");
+        } else if (kw == "Assign") {
+            cmd::StringOptions lo;
+            lo.defaultValue = plotLayout(ctx.host()).empty() ? "Model" : plotLayout(ctx.host());
+            auto l = co_await ctx.getString("Layout (Model = model space)", lo);
+            if (!l.ok())
+                co_return;
+            const bool model = l.text.empty() || lower(l.text) == "model";
+            auto r = model ? layout::assignModelPageSetup(ctx.tx(), n.text)
+                           : layout::assignPageSetup(ctx.tx(), l.text, n.text);
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            ctx.message(std::string(n.text.empty() ? "Page setup removed from "
+                                                   : "Page setup assigned to ") +
+                        (model ? "model space." : "layout \"" + l.text + "\"."));
+        } else if (kw == "Rename") {
+            auto nn = co_await ctx.getString("New name");
+            if (!nn.ok())
+                co_return;
+            auto r = layout::renamePageSetup(ctx.tx(), n.text, nn.text);
+            ctx.message(r ? "Renamed to \"" + nn.text + "\"." : r.error().message);
+        } else if (kw == "Delete") {
+            auto r = layout::deletePageSetup(ctx.tx(), n.text);
+            ctx.message(r ? "Page setup \"" + n.text + "\" deleted." : r.error().message);
+        }
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -411,6 +508,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PlotPanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
     (void)registry.add(std::make_unique<PlotStyleCommand>());
+    (void)registry.add(std::make_unique<PageSetupCommand>());
 }
 
 }  // namespace tbcad::plot

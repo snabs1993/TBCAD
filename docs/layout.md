@@ -21,6 +21,8 @@ A viewport plots the model through its own scale, clipped to its rectangle.
 `PLOT`, `EXPORTPDF`, `EXPORTSVG`, `EXPORTPNG` and `EXPORTJPG` have a **Layout** option (and the Plot panel a "Plot" drop-down with live preview). Give a layout name to plot that sheet
 at 1:1 on its paper; leave it empty to plot model space (the setting is `plot.layout`).
 
+A layout can have a named page setup (paper plus plot options), see [page setups](pagesetup.md).
+
 ## Sheet lists (`libs/sheets`)
 
 `PLOTSET` (aliases `BATCHPLOT`, `PUBLISH`) reads a text file and writes one multi-page PDF, one page per line:

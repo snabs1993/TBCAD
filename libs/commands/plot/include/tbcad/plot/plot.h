@@ -9,6 +9,7 @@
 #include "tbcad/cmd/registry.h"
 #include "tbcad/core/core.h"
 #include "tbcad/export/plot.h"
+#include "tbcad/layout/pagesetup.h"
 #include "tbcad/plotstyle/plotstyle.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -55,6 +56,19 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(const
                                                                            const std::string& name);
 // Built-in names, then the files of the user folder.
 std::vector<std::string> listStyleTables(const cmd::IHost& host);
+
+// ---- page setups (named plot options saved in the drawing, see layout/pagesetup.h)
+// ----------------
+
+// Finds style tables for settingsFor / plotSheetList through resolveStyleTable.
+layout::StyleResolver styleResolver(const cmd::IHost& host);
+// The current plot settings (host settings and style table) as a named page setup.
+layout::PageSetup currentPageSetup(const cmd::IHost& host, const std::string& name);
+// Makes the setup the current plot settings (settings, style table choice).
+void applyPageSetup(cmd::IHost& host, const layout::PageSetup& setup);
+// When the layout chosen for plotting (or model space) has a page setup assigned, applies it and
+// returns a line for the command line; empty otherwise.
+std::string applyAssignedPageSetup(const Document& doc, cmd::IHost& host);
 
 // Adds the extension for the format when the path has none.
 std::string withExtension(std::string path, Format format);

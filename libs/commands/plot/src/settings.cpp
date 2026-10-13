@@ -314,4 +314,33 @@ std::string scaleText(const PlotSettings& s) {
     return s.fitToPaper ? "Fit" : "1:" + fmt(s.scaleN);
 }
 
+layout::StyleResolver styleResolver(const cmd::IHost& host) {
+    return [&host](const std::string& name) -> std::shared_ptr<const plotstyle::PlotStyleTable> {
+        auto t = resolveStyleTable(host, name);
+        return t ? t.value() : nullptr;
+    };
+}
+
+layout::PageSetup currentPageSetup(const cmd::IHost& host, const std::string& name) {
+    return layout::makePageSetup(name, loadSettings(host), plotStyleName(host));
+}
+
+void applyPageSetup(cmd::IHost& host, const layout::PageSetup& setup) {
+    const exportlib::PlotSettings now = loadSettings(host);
+    exportlib::PlotSettings s = layout::settingsFor(now, setup, styleResolver(host));
+    saveSettings(host, s);
+    setPlotStyleName(host, setup.styleName.empty() ? "none" : setup.styleName);
+}
+
+std::string applyAssignedPageSetup(const Document& doc, cmd::IHost& host) {
+    const std::string layoutName = plotLayout(host);
+    const auto setup = layoutName.empty() ? layout::pageSetupOfModel(doc)
+                                          : layout::pageSetupOfLayout(doc, layoutName);
+    if (!setup)
+        return {};
+    applyPageSetup(host, *setup);
+    return "Page setup \"" + setup->name + "\" applied" +
+           (layoutName.empty() ? " (model space)." : " (layout " + layoutName + ").");
+}
+
 }  // namespace tbcad::plot

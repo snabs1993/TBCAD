@@ -34,6 +34,7 @@ struct Layout {
     bool landscape = true;
     double widthMm = 0, heightMm = 0;  // as oriented
     BlockId content{};                 // block holding the sheet's own objects
+    std::string pageSetup{};           // name of the assigned page setup (pagesetup.h), or empty
     std::vector<Viewport> viewports{};
 
     const Viewport* findViewport(int id) const;
@@ -53,6 +54,9 @@ Result<void> createLayout(Transaction& tx, const std::string& name,
 Result<void> deleteLayout(Transaction& tx, const std::string& name);
 Result<void> renameLayout(Transaction& tx, const std::string& name, const std::string& newName);
 // Changes the sheet; viewports and objects stay where they are (in millimetres).
+// Sets only the name of the page setup the layout uses (see pagesetup.h; use assignPageSetup).
+Result<void> setLayoutPageSetupName(Transaction& tx, const std::string& name,
+                                    const std::string& pageSetup);
 Result<void> setLayoutPaper(Transaction& tx, const std::string& name, const std::string& paperName,
                             bool landscape, double customWidthMm = 0, double customHeightMm = 0);
 

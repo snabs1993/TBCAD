@@ -30,6 +30,8 @@ struct PanelState {
     std::uint64_t builtRevision = ~0ull;
     std::string builtKey{};
     std::string styleLoaded{};
+    std::string setupName{};      // text field of "Save as"
+    bool reloadWhenIdle = false;  // a command changed the host settings; read them again
 };
 
 PanelState& state() {
@@ -117,6 +119,11 @@ void draw(ui::PanelContext& pc) {
     PanelState& st = state();
     if (!pc.doc || !pc.host)
         return;
+    if (st.reloadWhenIdle && !pc.commandActive) {
+        st.loaded = false;
+        st.reloadWhenIdle = false;
+        st.styleLoaded.clear();
+    }
     if (!st.loaded) {
         st.settings = loadSettings(*pc.host);
         st.scaleInput = scaleText(st.settings);
@@ -129,12 +136,58 @@ void draw(ui::PanelContext& pc) {
     // What to plot: model space, or one of the drawing's layouts (which brings its own paper).
     const std::string layoutName = plotLayout(*pc.host);
     if (ImGui::BeginCombo("Plot", layoutName.empty() ? "Model" : layoutName.c_str())) {
-        if (ImGui::Selectable("Model", layoutName.empty()))
+        bool picked = false;
+        if (ImGui::Selectable("Model", layoutName.empty())) {
             setPlotLayout(*pc.host, "");
+            picked = true;
+        }
         for (const auto& l : layout::layouts(*pc.doc))
-            if (ImGui::Selectable(l.name.c_str(), l.name == layoutName))
+            if (ImGui::Selectable(l.name.c_str(), l.name == layoutName)) {
                 setPlotLayout(*pc.host, l.name);
+                picked = true;
+            }
         ImGui::EndCombo();
+        if (picked) {  // a layout with a page setup brings its options along
+            st.message = applyAssignedPageSetup(*pc.doc, *pc.host);
+            st.loaded = false;
+            st.styleLoaded.clear();
+            return;
+        }
+    }
+
+    // Page setups saved in the drawing.
+    {
+        const auto setups = layout::pageSetups(*pc.doc);
+        const auto assigned = layoutName.empty() ? layout::pageSetupOfModel(*pc.doc)
+                                                 : layout::pageSetupOfLayout(*pc.doc, layoutName);
+        if (ImGui::BeginCombo("Page setup", assigned ? assigned->name.c_str() : "<none>")) {
+            for (const auto& p : setups)
+                if (ImGui::Selectable(p.name.c_str(), assigned && assigned->name == p.name)) {
+                    pc.runCommand("PAGESETUP");
+                    pc.runCommand("Apply");
+                    pc.runCommand(p.name);
+                    pc.runCommand("PAGESETUP");
+                    pc.runCommand("Assign");
+                    pc.runCommand(p.name);
+                    pc.runCommand("");  // the layout being plotted
+                    st.reloadWhenIdle = true;
+                }
+            if (ImGui::Selectable("<none>", !assigned) && assigned) {
+                pc.runCommand("PAGESETUP");
+                pc.runCommand("Assign");
+                pc.runCommand("");
+                pc.runCommand("");
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::InputText("Save current options as", &st.setupName);
+        ImGui::SameLine();
+        if (ImGui::Button("Save") && !st.setupName.empty()) {
+            saveSettings(*pc.host, st.settings);
+            pc.runCommand("PAGESETUP");
+            pc.runCommand("Save");
+            pc.runCommand(st.setupName);
+        }
     }
 
     // Plot style table.

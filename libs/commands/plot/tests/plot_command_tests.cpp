@@ -282,3 +282,61 @@ TEST_CASE("forFormat swaps an export extension; dpi and quality have defaults") 
     CHECK(plot::plotDpi(*f.host) == doctest::Approx(300));
     CHECK(plot::jpegQuality(*f.host) == 90);
 }
+
+TEST_CASE("PAGESETUP saves the plot options, applies them and assigns them to layouts") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Plan", "A4", true).ok());
+        REQUIRE(layout::createLayout(tx, "Detail", "A3", true).ok());
+        tx.commit();
+    }
+    // Plot options as the user has them now.
+    CHECK(f.host
+              ->run("EXPORTSVG", {"Paper", "A2", "Orientation", "Portrait", "Scale", "1:50",
+                                  "Color", "Monochrome", "Style", "none", "", f.path("x.svg")})
+              .finished);
+    CHECK(f.host->run("PAGESETUP", {"Save", "Big sheet"}).finished);
+    auto saved = layout::findPageSetup(f.doc, "big sheet");
+    REQUIRE(saved);
+    CHECK(saved->settings.paperName == "A2");
+    CHECK_FALSE(saved->settings.landscape);
+    CHECK(saved->settings.scaleN == doctest::Approx(50));
+    CHECK(saved->settings.color == exportlib::ColorMode::Monochrome);
+    CHECK(saved->styleName == "none");
+
+    // Change the options, then apply the setup: they come back.
+    CHECK(f.host->run("EXPORTSVG", {"Paper", "A4", "Scale", "Fit", "", f.path("y.svg")}).finished);
+    CHECK(plot::loadSettings(*f.host).paperName == "A4");
+    CHECK(f.host->run("PAGESETUP", {"Apply", "Big sheet"}).finished);
+    auto s = plot::loadSettings(*f.host);
+    CHECK(s.paperName == "A2");
+    CHECK(s.scaleN == doctest::Approx(50));
+    CHECK_FALSE(s.styleTable);
+
+    // Assign to a layout: it takes the paper; choosing that layout for plotting applies the
+    // options.
+    CHECK(f.host->run("PAGESETUP", {"Assign", "Big sheet", "Detail"}).finished);
+    auto detail = layout::findLayout(f.doc, "Detail");
+    REQUIRE(detail);
+    CHECK(detail->pageSetup == "Big sheet");
+    CHECK(detail->paperName == "A2");
+    CHECK_FALSE(detail->landscape);
+    plot::setPlotLayout(*f.host, "");
+    CHECK(f.host->run("EXPORTSVG", {"Layout", "Detail", "Export", f.path("z.svg")}).finished);
+    CHECK(f.host->logContains("Page setup \"Big sheet\" applied"));
+
+    // Model space can have one too; List shows who uses it.
+    CHECK(f.host->run("PAGESETUP", {"Assign", "Big sheet", "Model"}).finished);
+    CHECK(layout::modelPageSetup(f.doc) == "Big sheet");
+    CHECK(f.host->run("PAGESETUP", {"List"}).finished);
+    CHECK(f.host->logContains("[model, Detail]"));
+
+    CHECK(f.host->run("PAGESETUP", {"Rename", "Big sheet", "Poster"}).finished);
+    CHECK(layout::findLayout(f.doc, "Detail")->pageSetup == "Poster");
+    CHECK(f.host->run("PAGESETUP", {"Delete", "Poster"}).finished);
+    CHECK(layout::pageSetups(f.doc).empty());
+    CHECK(layout::findLayout(f.doc, "Detail")->pageSetup.empty());
+    CHECK(f.host->run("PAGESETUP", {"Apply", "Nope"}).finished);
+    CHECK(f.host->logContains("No page setup named \"Nope\""));
+}

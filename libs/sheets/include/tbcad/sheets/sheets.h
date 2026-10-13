@@ -14,6 +14,7 @@
 
 #include "tbcad/core/result.h"
 #include "tbcad/export/plot.h"
+#include "tbcad/layout/pagesetup.h"
 
 namespace tbcad::sheets {
 
@@ -33,10 +34,13 @@ struct SheetSetReport {
     std::vector<std::string> warnings{};  // sheets that overflow their paper
 };
 
+// A layout (or model space) with a page setup is plotted with that setup instead of `base`;
+// `styles` finds the setup's plot style table.
 // Builds one sheet per entry (each drawing is loaded once) and writes them as the pages of one PDF.
 // Nothing is written if any sheet fails; the error names the entry.
 Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
                                      const exportlib::PlotSettings& base,
-                                     const std::filesystem::path& pdfFile);
+                                     const std::filesystem::path& pdfFile,
+                                     const layout::StyleResolver& styles = {});
 
 }  // namespace tbcad::sheets
