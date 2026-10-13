@@ -38,6 +38,20 @@
       }
     },
     {
+      "name": "linux-clang-asan",
+      "displayName": "Linux Clang Debug + ASan/UBSan",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
       "name": "linux-gcc-release",
       "displayName": "Linux GCC Release",
       "inherits": "base",
@@ -52,6 +66,7 @@
     { "name": "windows-msvc-debug", "configurePreset": "windows-msvc-debug" },
     { "name": "windows-msvc-release", "configurePreset": "windows-msvc-release" },
     { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
+    { "name": "linux-clang-asan", "configurePreset": "linux-clang-asan" },
     { "name": "linux-gcc-release", "configurePreset": "linux-gcc-release" }
   ],
   "testPresets": [
@@ -69,6 +84,15 @@
       "name": "linux-clang-debug",
       "configurePreset": "linux-clang-debug",
       "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-clang-asan",
+      "configurePreset": "linux-clang-asan",
+      "output": { "outputOnFailure": true },
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:strict_string_checks=1:detect_stack_use_after_return=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
     },
     {
       "name": "linux-gcc-release",
