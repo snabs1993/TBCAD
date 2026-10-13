@@ -41,40 +41,6 @@ const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
     return dxfFirst ? dxfFirstList : tbcadFirst;
 }
 
-const char* kindName(EntityKind k) {
-    switch (k) {
-        case EntityKind::Line:
-            return "Line";
-        case EntityKind::Circle:
-            return "Circle";
-        case EntityKind::Arc:
-            return "Arc";
-        case EntityKind::Polyline:
-            return "Polyline";
-        case EntityKind::Point:
-            return "Point";
-        case EntityKind::Ellipse:
-            return "Ellipse";
-        case EntityKind::Spline:
-            return "Spline";
-        case EntityKind::Text:
-            return "Text";
-        case EntityKind::MText:
-            return "Multiline text";
-        case EntityKind::Hatch:
-            return "Hatch";
-        case EntityKind::Insert:
-            return "Block reference";
-        case EntityKind::Dimension:
-            return "Dimension";
-        case EntityKind::Leader:
-            return "Leader";
-        case EntityKind::Proxy:
-            return "Proxy object";
-    }
-    return "Object";
-}
-
 // A tree of registered menu items ("Draw/Circle/Center, Radius").
 struct MenuNode {
     std::string name;
