@@ -1,0 +1,58 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$DWGCODEPAGE
+  3
+ANSI_1252
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+999
+made by hand
+  0
+CIRCLE
+  5
+1F
+100
+AcDbEntity
+  8
+WALL
+ 62
+3
+370
+-1
+100
+AcDbCircle
+ 10
+12.5
+ 20
+-7.25
+ 30
+0.0
+ 40
+3.0
+ 90
+70000
+160
+5000000000
+290
+1
+310
+0001ABFF
+1000
+xdata text
+1071
+7
+  0
+ENDSEC
+  0
+EOF
