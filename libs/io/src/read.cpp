@@ -86,6 +86,7 @@ public:
         loadDimStyles(tx);
         loadLayers(tx);
         loadBlocks(tx);
+        loadXrefs(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
         loadOrder(tx);
@@ -104,6 +105,7 @@ private:
                 case kDsty:
                 case kLayr:
                 case kBlks:
+                case kXrfs:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
                         bad("duplicate chunk " + fourccName(c.type));
@@ -419,6 +421,27 @@ private:
                 bad("internal id mismatch");
             ++next;
         });
+    }
+
+    void loadXrefs(Transaction& tx) {
+        const RawChunk* c = find(kXrfs);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(3);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            std::string path = str(r);
+            std::int64_t stamp = r.i64();
+            if (!tx.modifyBlock(b, [&](BlockDef& d) {
+                       d.xrefPath = path;
+                       d.xrefStamp = stamp;
+                   }).ok())
+                bad("external reference names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in XRFS");
     }
 
     void loadEntities(Transaction& tx) {
