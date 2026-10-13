@@ -1,0 +1,15 @@
+tbcad_add_library(core
+  SOURCES
+    src/color.cpp
+    src/document.cpp
+    src/dump.cpp
+    src/math.cpp
+    src/units.cpp)
+tbcad_add_tests(core
+  SOURCES
+    tests/main.cpp
+    tests/math_tests.cpp
+    tests/units_tests.cpp
+    tests/color_tests.cpp
+    tests/document_tests.cpp
+    tests/scale_tests.cpp)

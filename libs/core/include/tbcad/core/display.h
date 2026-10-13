@@ -1,0 +1,46 @@
+#pragma once
+
+#include <variant>
+#include <vector>
+
+#include "tbcad/core/color.h"
+#include "tbcad/core/ids.h"
+#include "tbcad/core/math.h"
+
+namespace tbcad {
+
+// Fully resolved drawing style (ByLayer/ByBlock already applied by whoever builds the list).
+struct DisplayStyle {
+    Rgba color{};
+    double lineweight = 0;  // mm; 0 = thinnest line
+    // Dash pattern in mm (+ dash, - gap, 0 dot); null or empty = continuous. Points into the
+    // document's linetype table and is valid while that linetype exists.
+    const std::vector<double>* pattern = nullptr;
+    double patternScale = 1;
+    LayerId layer{};
+};
+
+struct DisplayPolyline {
+    std::vector<Vec2> pts{};
+    bool closed = false;
+    DisplayStyle style{};
+};
+
+// Even-odd filled area: outer ring(s) plus holes.
+struct DisplayFill {
+    std::vector<std::vector<Vec2>> rings{};
+    DisplayStyle style{};
+};
+
+struct DisplayPoints {
+    std::vector<Vec2> pts{};
+    DisplayStyle style{};
+};
+
+using DisplayItem = std::variant<DisplayPolyline, DisplayFill, DisplayPoints>;
+
+struct DisplayList {
+    std::vector<DisplayItem> items{};
+};
+
+}  // namespace tbcad

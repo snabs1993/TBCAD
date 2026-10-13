@@ -1,0 +1,322 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+#include "tbcad/core/entities.h"
+#include "tbcad/core/result.h"
+#include "tbcad/core/tables.h"
+
+namespace tbcad {
+
+// Half-extent of the default working area (+-100 km) and the hard coordinate cap, in mm.
+inline constexpr double kDefaultWorkArea = 1e8;
+inline constexpr double kHardCap = 1e10;
+
+// Rows every document has. They can be edited (except as noted) but never deleted.
+inline constexpr LayerId kLayerZero{1};  // name and id are fixed
+inline constexpr LinetypeId kLinetypeContinuous{1};
+inline constexpr TextStyleId kTextStyleStandard{1};
+inline constexpr DimStyleId kDimStyleStandard{1};
+
+struct Header {
+    LengthUnit units = LengthUnit::Millimeter;
+    double workArea = kDefaultWorkArea;  // geometry beyond +-workArea is flagged, not rejected
+    double ltScale = 1;
+    LayerId currentLayer = kLayerZero;
+    TextStyleId currentTextStyle = kTextStyleStandard;
+    DimStyleId currentDimStyle = kDimStyleStandard;
+    std::string createdBy{};
+    std::map<std::string, std::string> custom{};  // settings stored in the file
+};
+
+enum class Direction { Undo, Redo };
+
+template <class Row>
+struct RowChange {
+    std::optional<Row> before{};
+    std::optional<Row> after{};
+};
+
+struct HeaderChange {
+    Header before{};
+    Header after{};
+};
+
+// Draw-order override (bring to front / send to back). Without an override an entity's key is its
+// id, so draw order is creation order.
+struct OrderChange {
+    EntityId id{};
+    std::optional<std::int64_t> before{};
+    std::optional<std::int64_t> after{};
+};
+
+inline constexpr std::uint32_t kNoSnapshot = 0xFFFFFFFFu;
+
+// Index pair into ChangeSet::snapshots. before == kNoSnapshot: the entity was added;
+// after == kNoSnapshot: it was erased.
+struct EntityChange {
+    std::uint32_t before = kNoSnapshot;
+    std::uint32_t after = kNoSnapshot;
+};
+
+// A state transition from "before" to "after" for everything one commit touched. Undoing is
+// applying inverted().
+struct ChangeSet {
+    std::string name{};
+    std::shared_ptr<const std::vector<Entity>> snapshots = std::make_shared<std::vector<Entity>>();
+    std::vector<EntityChange> entities{};
+    std::vector<RowChange<Layer>> layers{};
+    std::vector<RowChange<Linetype>> linetypes{};
+    std::vector<RowChange<TextStyle>> textStyles{};
+    std::vector<RowChange<DimStyle>> dimStyles{};
+    std::vector<RowChange<BlockDef>> blocks{};
+    std::optional<HeaderChange> header{};
+    std::vector<OrderChange> order{};
+    // Entities (added or modified) lying outside the working area, for the app to warn about.
+    std::vector<EntityId> outOfArea{};
+
+    const Entity* before(const EntityChange& c) const {
+        return c.before == kNoSnapshot ? nullptr : &(*snapshots)[c.before];
+    }
+    const Entity* after(const EntityChange& c) const {
+        return c.after == kNoSnapshot ? nullptr : &(*snapshots)[c.after];
+    }
+    // Id of the entity a change refers to.
+    EntityId idOf(const EntityChange& c) const {
+        const Entity* e = c.after != kNoSnapshot ? after(c) : before(c);
+        return e->common.id;
+    }
+    bool empty() const;
+    ChangeSet inverted() const;
+};
+
+// Called once per commit, undo and redo, after the document has changed. The ChangeSet always
+// describes the transition that just happened (for an undo it is the inverted set).
+class DocumentObserver {
+public:
+    virtual ~DocumentObserver() = default;
+    virtual void onChanged(const ChangeSet& changes) = 0;
+};
+
+namespace detail {
+
+// Chunked storage with stable addresses while the entity count only grows.
+class EntityStore {
+public:
+    EntityStore() = default;
+    EntityStore(const EntityStore&) = delete;
+    EntityStore& operator=(const EntityStore&) = delete;
+    ~EntityStore();
+
+    std::size_t size() const { return size_; }
+    Entity& at(std::size_t i) { return chunks_[i / kChunk][i % kChunk]; }
+    const Entity& at(std::size_t i) const { return chunks_[i / kChunk][i % kChunk]; }
+    std::size_t pushBack(Entity&& e);
+    void popBack();
+
+    template <class Fn>
+    void forEach(Fn&& fn) const {
+        for (std::size_t i = 0; i < size_; ++i)
+            fn(at(i));
+    }
+
+private:
+    static constexpr std::size_t kChunk = 4096;
+    std::vector<Entity*> chunks_{};
+    std::size_t size_ = 0;
+};
+
+template <class Row, class IdT>
+struct Table {
+    std::map<IdT, Row> rows{};
+    std::unordered_map<std::string, IdT> byName{};  // ASCII case-folded names
+    std::uint32_t next = 1;
+
+    const Row* find(IdT id) const {
+        auto it = rows.find(id);
+        return it == rows.end() ? nullptr : &it->second;
+    }
+    const Row* findByName(std::string_view name) const;
+};
+
+}  // namespace detail
+
+class Transaction;
+
+class Document {
+public:
+    Document();
+    ~Document();
+    Document(const Document&) = delete;
+    Document& operator=(const Document&) = delete;
+
+    const Header& header() const { return header_; }
+
+    // Entities. Pointers are valid until the next mutation of the document.
+    const Entity* find(EntityId id) const;
+    bool contains(EntityId id) const { return find(id) != nullptr; }
+    // All entities including those inside block definitions.
+    std::size_t entityCount() const { return store_.size(); }
+    // In storage order (not draw order).
+    template <class Fn>
+    void forEachEntity(Fn&& fn) const {
+        store_.forEach(fn);
+    }
+    // Model-space entity ids in draw order (back to front).
+    std::vector<EntityId> modelSpace() const;
+    std::size_t modelSpaceCount() const { return store_.size() - owner_.size(); }
+    // Block that owns the entity; null for model space.
+    BlockId ownerBlock(EntityId id) const;
+
+    // Tables.
+    const std::map<LayerId, Layer>& layers() const { return layers_.rows; }
+    const std::map<LinetypeId, Linetype>& linetypes() const { return linetypes_.rows; }
+    const std::map<TextStyleId, TextStyle>& textStyles() const { return textStyles_.rows; }
+    const std::map<DimStyleId, DimStyle>& dimStyles() const { return dimStyles_.rows; }
+    const std::map<BlockId, BlockDef>& blocks() const { return blocks_.rows; }
+    const Layer* layer(LayerId id) const { return layers_.find(id); }
+    const Linetype* linetype(LinetypeId id) const { return linetypes_.find(id); }
+    const TextStyle* textStyle(TextStyleId id) const { return textStyles_.find(id); }
+    const DimStyle* dimStyle(DimStyleId id) const { return dimStyles_.find(id); }
+    const BlockDef* block(BlockId id) const { return blocks_.find(id); }
+    // Names compare ASCII case-insensitively.
+    const Layer* layerByName(std::string_view name) const { return layers_.findByName(name); }
+    const Linetype* linetypeByName(std::string_view n) const { return linetypes_.findByName(n); }
+    const TextStyle* textStyleByName(std::string_view n) const { return textStyles_.findByName(n); }
+    const DimStyle* dimStyleByName(std::string_view n) const { return dimStyles_.findByName(n); }
+    const BlockDef* blockByName(std::string_view name) const { return blocks_.findByName(name); }
+
+    // Starts the only mutation path. Throws std::logic_error if a transaction is already open.
+    Transaction begin(std::string name);
+    // Reverts or reapplies a committed change set. Throws std::logic_error during a transaction.
+    void apply(const ChangeSet& changes, Direction direction);
+
+    void addObserver(DocumentObserver* observer);
+    void removeObserver(DocumentObserver* observer);
+
+    // Incremented by every commit, undo and redo.
+    std::uint64_t revision() const { return revision_; }
+
+private:
+    friend class Transaction;
+
+    void applyForward(const ChangeSet& cs);
+    void notify(const ChangeSet& cs);
+    Entity* findMutable(EntityId id);
+    void insertEntity(Entity&& e);  // e.common.id must be set
+    void removeEntity(EntityId id);
+    void setBlockRow(const BlockDef* oldRow, const BlockDef* newRow);
+    std::int64_t orderKey(EntityId id) const;
+
+    Header header_{};
+    detail::EntityStore store_{};
+    std::vector<std::uint32_t> posOf_{};  // indexed by EntityId::value
+    std::uint64_t nextEntityId_ = 1;
+    std::unordered_map<EntityId, BlockId> owner_{};  // entities that live in a block definition
+    std::map<EntityId, std::int64_t> orderOverride_{};
+
+    detail::Table<Layer, LayerId> layers_{};
+    detail::Table<Linetype, LinetypeId> linetypes_{};
+    detail::Table<TextStyle, TextStyleId> textStyles_{};
+    detail::Table<DimStyle, DimStyleId> dimStyles_{};
+    detail::Table<BlockDef, BlockId> blocks_{};
+
+    std::vector<DocumentObserver*> observers_{};
+    Transaction* active_ = nullptr;
+    std::uint64_t revision_ = 0;
+};
+
+// All edits of a Document go through a Transaction. Edits are applied immediately (reads inside
+// the transaction see them) but observers are told only on commit(). A transaction that is
+// destroyed without commit() rolls everything back.
+class Transaction {
+public:
+    Transaction(Transaction&& other) noexcept;
+    Transaction& operator=(Transaction&&) = delete;
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+    ~Transaction();
+
+    // Entities. `owner` null = model space, otherwise the block definition that gets the entity.
+    Result<EntityId> add(Entity entity, BlockId owner = {});
+    Result<void> modify(EntityId id, const std::function<void(Entity&)>& fn);
+    Result<void> erase(EntityId id);
+    Result<void> bringToFront(EntityId id);
+    Result<void> sendToBack(EntityId id);
+
+    // Tables. `add*` ignores the row's id and returns the assigned one.
+    Result<LayerId> addLayer(Layer row);
+    Result<void> modifyLayer(LayerId id, const std::function<void(Layer&)>& fn);
+    Result<void> eraseLayer(LayerId id);
+    Result<LinetypeId> addLinetype(Linetype row);
+    Result<void> modifyLinetype(LinetypeId id, const std::function<void(Linetype&)>& fn);
+    Result<void> eraseLinetype(LinetypeId id);
+    Result<TextStyleId> addTextStyle(TextStyle row);
+    Result<void> modifyTextStyle(TextStyleId id, const std::function<void(TextStyle&)>& fn);
+    Result<void> eraseTextStyle(TextStyleId id);
+    Result<DimStyleId> addDimStyle(DimStyle row);
+    Result<void> modifyDimStyle(DimStyleId id, const std::function<void(DimStyle&)>& fn);
+    Result<void> eraseDimStyle(DimStyleId id);
+    // The entity list of a block is changed through add(..., owner) and erase(); modifyBlock
+    // ignores edits to `entities`. eraseBlock also erases the block's entities and fails while an
+    // Insert references the block.
+    Result<BlockId> addBlock(BlockDef row);
+    Result<void> modifyBlock(BlockId id, const std::function<void(BlockDef&)>& fn);
+    Result<void> eraseBlock(BlockId id);
+
+    Result<void> modifyHeader(const std::function<void(Header&)>& fn);
+
+    // Finishes the transaction. Observers are notified once unless nothing changed.
+    ChangeSet commit();
+    // Undoes everything done so far and ends the transaction.
+    void rollback();
+
+private:
+    friend class Document;
+    Transaction(Document* doc, std::string name);
+
+    template <class Row, class IdT>
+    struct Pending {
+        std::map<IdT, RowChange<Row>> rows{};
+    };
+
+    template <class Row, class IdT>
+    Result<IdT> addRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, Row row);
+    template <class Row, class IdT>
+    Result<void> modifyRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id,
+                           const std::function<void(Row&)>& fn);
+    template <class Row, class IdT>
+    Result<void> eraseRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id);
+    template <class Row, class IdT>
+    void touchRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id);
+
+    void touchEntity(EntityId id);
+    void touchBlock(BlockId id);
+    void touchOrder(EntityId id);
+    Document& doc() const;
+    Result<void> eraseEntityInternal(EntityId id);
+
+    Document* doc_ = nullptr;
+    std::string name_{};
+    std::uint64_t startNextId_ = 0;
+    std::vector<Entity> beforeSnaps_{};                      // pre-existing entities touched
+    std::unordered_map<EntityId, std::uint32_t> touched_{};  // id -> index into beforeSnaps_
+    std::vector<EntityId> outOfArea_{};
+    std::optional<Header> headerBefore_{};
+    std::map<EntityId, OrderChange> order_{};
+    Pending<Layer, LayerId> pLayers_{};
+    Pending<Linetype, LinetypeId> pLinetypes_{};
+    Pending<TextStyle, TextStyleId> pTextStyles_{};
+    Pending<DimStyle, DimStyleId> pDimStyles_{};
+    Pending<BlockDef, BlockId> pBlocks_{};
+};
+
+}  // namespace tbcad
