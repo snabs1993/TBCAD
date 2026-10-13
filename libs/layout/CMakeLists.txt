@@ -2,10 +2,10 @@
 # plotted through libs/export. See docs/layout.md.
 tbcad_add_library(layout
   SOURCES src/layout.cpp src/layout_plot.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::export)
+  DEPENDS tbcad::core tbcad::geom tbcad::export tbcad::blocks)
 
 tbcad_add_tests(layout
   SOURCES
     tests/main.cpp
     tests/layout_tests.cpp
-  DEPENDS tbcad::pdf tbcad::io)
+  DEPENDS tbcad::pdf tbcad::io tbcad::blocks)

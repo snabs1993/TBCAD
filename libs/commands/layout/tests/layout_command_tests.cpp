@@ -95,6 +95,15 @@ TEST_CASE("TITLEBLOCK adds objects to the sheet") {
     auto l = layout::findLayout(f.doc, "S");
     const BlockDef* def = f.doc.block(l->content);
     REQUIRE(def != nullptr);
-    CHECK(def->entities.size() >= 11);    // 7 lines, 4 labels, a date
+    // One Insert of the TITLEBLOCK block, whose values are attributes.
+    REQUIRE(def->entities.size() == 1);
+    const auto* ins = entityAs<InsertData>(*f.doc.find(def->entities.front()));
+    REQUIRE(ins != nullptr);
+    std::string project;
+    for (const auto& a : ins->attribs)
+        if (a.tag == "PROJECT")
+            project = a.value;
+    CHECK(project == "Tower");
+    CHECK(f.doc.blockByName("TITLEBLOCK") != nullptr);
     CHECK(f.doc.modelSpaceCount() == 0);  // nothing leaked into model space
 }
