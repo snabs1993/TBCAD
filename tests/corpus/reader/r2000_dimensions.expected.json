@@ -1,0 +1,14 @@
+{
+  "description": "R2000 with six dimensions and their *D blocks",
+  "dxf_min": {
+    "DIMENSION": 6
+  },
+  "encoding": "ANSI_1252",
+  "exit": 0,
+  "kinds_min": {
+    "Circle": 2,
+    "Dimension": 6
+  },
+  "version": "AC1015",
+  "warnings": []
+}

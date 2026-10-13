@@ -1,0 +1,26 @@
+{
+  "description": "R2018 (AC1032) basic drawing",
+  "dxf": {
+    "CIRCLE": 1,
+    "LINE": 1,
+    "LWPOLYLINE": 1,
+    "TEXT": 1
+  },
+  "encoding": "UTF-8",
+  "exit": 0,
+  "kinds": {
+    "Circle": 1,
+    "Line": 1,
+    "Polyline": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "Defpoints"
+  ],
+  "texts": [
+    "R2018"
+  ],
+  "version": "AC1032",
+  "warnings": []
+}

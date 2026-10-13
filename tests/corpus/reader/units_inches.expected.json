@@ -1,0 +1,24 @@
+{
+  "description": "$INSUNITS = 1: every length is multiplied by 25.4",
+  "dxf": {
+    "CIRCLE": 1,
+    "LINE": 1,
+    "TEXT": 1
+  },
+  "exit": 0,
+  "ezdxf": false,
+  "kinds": {
+    "Circle": 1,
+    "Line": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0"
+  ],
+  "texts": [
+    "in"
+  ],
+  "unitScale": 25.4,
+  "version": "AC1015",
+  "warnings": []
+}

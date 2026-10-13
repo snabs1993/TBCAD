@@ -1,0 +1,50 @@
+{
+  "description": "R2000 with every mapped entity type",
+  "dxf": {
+    "ARC": 1,
+    "CIRCLE": 1,
+    "ELLIPSE": 2,
+    "HATCH": 3,
+    "INSERT": 1,
+    "LEADER": 1,
+    "LINE": 4,
+    "LWPOLYLINE": 2,
+    "MTEXT": 1,
+    "POINT": 1,
+    "POLYLINE": 1,
+    "SOLID": 1,
+    "SPLINE": 2,
+    "TEXT": 2,
+    "TRACE": 1
+  },
+  "encoding": "ANSI_1252",
+  "exit": 0,
+  "kinds": {
+    "Arc": 1,
+    "Circle": 1,
+    "Ellipse": 2,
+    "Hatch": 5,
+    "Insert": 1,
+    "Leader": 1,
+    "Line": 2,
+    "MText": 1,
+    "Point": 1,
+    "Polyline": 3,
+    "Spline": 2,
+    "Text": 2
+  },
+  "layers": [
+    "0",
+    "A",
+    "B",
+    "Defpoints"
+  ],
+  "texts": [
+    "Centered",
+    "First\nSecond line",
+    "Plain text"
+  ],
+  "unitScale": 1.0,
+  "version": "AC1015",
+  "warnings": []
+}

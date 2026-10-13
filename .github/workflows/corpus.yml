@@ -1,0 +1,29 @@
+name: DXF corpus
+
+# Checks that the expected.json files of tests/corpus/reader describe the DXF files correctly,
+# using ezdxf (MIT, Python) as an independent reader. ezdxf is used here only; it is never linked
+# into TBCAD.
+on:
+  pull_request:
+    paths:
+      - "tests/corpus/**"
+      - ".github/workflows/corpus.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: corpus-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ezdxf:
+    name: ezdxf cross-check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install ezdxf
+        run: python3 -m venv .venv && .venv/bin/pip install ezdxf==1.4.4
+      - name: Cross-check the corpus
+        run: .venv/bin/python tests/corpus/gen/check_corpus_ezdxf.py

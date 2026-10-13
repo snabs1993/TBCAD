@@ -1,0 +1,5 @@
+{
+  "description": "plain text is rejected",
+  "exit": 2,
+  "ezdxf": false
+}

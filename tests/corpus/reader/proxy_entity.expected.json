@@ -1,0 +1,21 @@
+{
+  "binary": true,
+  "description": "ACAD_PROXY_ENTITY is kept as a read-only proxy",
+  "dxf": {
+    "ACAD_PROXY_ENTITY": 1,
+    "LINE": 1
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 1,
+    "Proxy": 1
+  },
+  "layers": [
+    "0"
+  ],
+  "version": "AC1015",
+  "warnings": [
+    "dxf.reader.proxy_entity"
+  ]
+}

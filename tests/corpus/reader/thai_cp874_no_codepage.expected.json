@@ -1,0 +1,26 @@
+{
+  "description": "cp874 bytes without $DWGCODEPAGE: encoding is guessed",
+  "dxf": {
+    "MTEXT": 1,
+    "TEXT": 1
+  },
+  "encoding": "ANSI_874",
+  "encodingGuessed": true,
+  "exit": 0,
+  "ezdxf": false,
+  "kinds": {
+    "MText": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "Defpoints",
+    "ผนัง"
+  ],
+  "texts": [
+    "สวัสดี CAD",
+    "ห้องนอน\nห้องน้ำ"
+  ],
+  "version": "AC1015",
+  "warnings": []
+}

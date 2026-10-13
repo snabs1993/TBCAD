@@ -1,0 +1,158 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$INSUNITS
+ 70
+4
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LAYER
+ 70
+1
+  0
+LAYER
+  2
+0
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+0.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+Line1\PLine2
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+5.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+{\fArial|b1|i0|c0|p34;Bold} plain
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+10.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+{\H5;Big} {\H2x;Rel}
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+15.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+{\C1;Red}
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+20.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+\S1/2; and \Lunder\l
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+25.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+Dia %%c25 \\ \{x\}
+  0
+MTEXT
+  8
+0
+ 10
+0.0
+ 20
+30.0
+ 30
+0.0
+ 40
+2.5
+ 71
+1
+  1
+{\Qc;\W0.8;plain}
+  0
+ENDSEC
+  0
+EOF

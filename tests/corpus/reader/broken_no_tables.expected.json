@@ -1,0 +1,20 @@
+{
+  "description": "no TABLES section: layers used by entities are created",
+  "dxf": {
+    "LINE": 3
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 3
+  },
+  "layers": [
+    "0",
+    "ALSO",
+    "STRAY"
+  ],
+  "version": "AC1009",
+  "warnings": [
+    "dxf.reader.missing_layer"
+  ]
+}

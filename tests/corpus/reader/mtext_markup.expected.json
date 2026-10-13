@@ -1,0 +1,25 @@
+{
+  "description": "MTEXT formatting codes: kept, flattened or dropped",
+  "dxf": {
+    "MTEXT": 7
+  },
+  "exit": 0,
+  "ezdxf": false,
+  "kinds": {
+    "MText": 7
+  },
+  "layers": [
+    "0"
+  ],
+  "texts": [
+    "1/2 and under",
+    "Dia ⌀25 \\\\ \\{x\\}",
+    "Line1\nLine2",
+    "plain",
+    "{\\C1;Red}",
+    "{\\H5;Big} {\\H2x;Rel}",
+    "{\\b1;Bold} plain"
+  ],
+  "version": "AC1015",
+  "warnings": []
+}

@@ -1,0 +1,12 @@
+{
+  "description": "blank lines, junk text and a decimal comma inside the entities",
+  "dxf_min": {
+    "LINE": 3
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds_min": {
+    "Line": 3
+  },
+  "version": "AC1015"
+}

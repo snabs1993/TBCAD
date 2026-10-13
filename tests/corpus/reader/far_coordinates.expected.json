@@ -1,0 +1,20 @@
+{
+  "description": "one line beyond the working area (kept), one beyond the hard cap (dropped)",
+  "dxf": {
+    "LINE": 3
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 2
+  },
+  "layers": [
+    "0"
+  ],
+  "unitScale": 1.0,
+  "version": "AC1015",
+  "warnings": [
+    "dxf.reader.beyond_hard_cap",
+    "dxf.reader.outside_work_area"
+  ]
+}

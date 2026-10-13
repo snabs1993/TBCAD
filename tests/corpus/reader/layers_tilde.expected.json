@@ -1,0 +1,21 @@
+{
+  "description": "names with ~ stay flat without --split-layers",
+  "dxf": {
+    "LINE": 4
+  },
+  "encoding": "ANSI_1252",
+  "exit": 0,
+  "kinds": {
+    "Line": 4
+  },
+  "layers": [
+    "0",
+    "Defpoints",
+    "S-FLOOR",
+    "S-FLOOR~Floor hidden",
+    "S-FLOOR~edge",
+    "X~y~z"
+  ],
+  "version": "AC1018",
+  "warnings": []
+}

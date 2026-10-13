@@ -1,0 +1,5 @@
+{
+  "description": "an empty file is rejected",
+  "exit": 2,
+  "ezdxf": false
+}
