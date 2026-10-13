@@ -1,6 +1,6 @@
 // End-to-end smoke test: open a DXF, draw, edit, hatch, save .tbcad, reload, undo everything.
 // Runs headless through ScriptHost with every command module on main. Commands that belong to
-// workstreams not merged yet (dimensions, plot) are exercised only when they are registered.
+// workstreams not merged yet are exercised only when they are registered.
 #include <doctest/doctest.h>
 
 #include <filesystem>
@@ -74,10 +74,9 @@ TEST_CASE("end to end: open DXF, draw, hatch, move, save, reload, undo") {
     REQUIRE(host.run("MOVE", {"0,0", "10,10"}).finished);
     CHECK(canonicalDump(doc) != beforeMove);
 
-    // 5. Optional commands from later workstreams.
+    // 5. The commands of the later workstreams are real steps in the room-plan test below.
     for (const char* name : {"DIMLINEAR", "PLOT", "OFFSET", "TRIM"})
-        MESSAGE(std::string(name) << (reg.find(name) ? std::string(": registered")
-                                                     : std::string(": not on main yet")));
+        CHECK(reg.find(name) != nullptr);
 
     // 6. Save and reload: the canonical dump must match.
     auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_smoke";
@@ -167,6 +166,110 @@ TEST_CASE("end to end: Thai text, blocks, move, DXF export and re-import") {
     CHECK(countKind(doc, EntityKind::Insert) == 1);
     CHECK(host.undo());
     CHECK(countKind(doc, EntityKind::Insert) == 2);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("end to end: room plan with OFFSET, TRIM, DIMLINEAR, PDF, save and DXF") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+
+    // Four walls of a 6 m x 4 m room, drawn as lines.
+    REQUIRE(host.run("LINE", {"0,0", "6000,0", "6000,4000", "0,4000", "C"}).finished);
+    auto lines = [&] {
+        std::vector<EntityId> out;
+        doc.forEachEntity([&](const Entity& e) {
+            if (kind(e) == EntityKind::Line)
+                out.push_back(e.common.id);
+        });
+        return out;
+    };
+    REQUIRE(lines().size() == 4);
+    auto wallAt = [&](Vec2 p) {
+        for (EntityId id : lines()) {
+            const auto* l = entityAs<LineData>(*doc.find(id));
+            Vec2 d = l->b - l->a;
+            double t = dot(p - l->a, d) / lengthSquared(d);
+            if (t >= 0 && t <= 1 && distance(l->a + d * t, p) < 1e-6)
+                return id;
+        }
+        return EntityId{};
+    };
+
+    // OFFSET: a partition 2 m inside the left wall.
+    EntityId left = wallAt({0, 2000});
+    REQUIRE(left != EntityId{});
+    REQUIRE(host.run("OFFSET",
+                     {"2000", ScriptItem::pick(left, {0, 2000}), "100,2000", ScriptItem::enter()})
+                .finished);
+    CHECK(lines().size() == 5);
+    bool partition = false;
+    for (EntityId id : lines()) {
+        const auto* l = entityAs<LineData>(*doc.find(id));
+        if (std::abs(l->a.x - 2000) < 1e-6 && std::abs(l->b.x - 2000) < 1e-6)
+            partition = true;
+    }
+    CHECK(partition);
+
+    // TRIM: a door opening in the bottom wall between two cutting lines.
+    REQUIRE(host.run("LINE", {"2500,-100", "2500,100", ScriptItem::enter()}).finished);
+    REQUIRE(host.run("LINE", {"3500,-100", "3500,100", ScriptItem::enter()}).finished);
+    EntityId bottom = wallAt({4500, 0});
+    REQUIRE(bottom != EntityId{});
+    const std::size_t before = lines().size();
+    REQUIRE(host.run("TRIM", {ScriptItem::enter(), ScriptItem::pick(bottom, {3000, 0}),
+                              ScriptItem::enter()})
+                .finished);
+    CHECK(lines().size() == before + 1);  // the wall became two pieces
+    CHECK(wallAt({3000, 0}) == EntityId{});
+
+    // DIMLINEAR: the room width.
+    REQUIRE(host.run("DIMLINEAR", {"0,0", "6000,0", "3000,-600"}).finished);
+    const DimensionData* dim = nullptr;
+    doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e))
+            dim = d;
+    });
+    REQUIRE(dim);
+    CHECK(dim->kind == DimKind::Linear);
+    CHECK(dim->measurement == doctest::Approx(6000));
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_e2e_room";
+    std::filesystem::create_directories(dir);
+
+    // PLOT to a PDF at 1:100.
+    const auto pdf = (dir / "room.pdf").string();
+    REQUIRE(host.run("EXPORTPDF", {"Scale", "1:100", "", pdf}).finished);
+    REQUIRE(std::filesystem::exists(pdf));
+    auto pdfBytes = readBytes(pdf);
+    REQUIRE(pdfBytes.size() > 100);
+    CHECK(static_cast<char>(pdfBytes[0]) == '%');
+    CHECK(static_cast<char>(pdfBytes[1]) == 'P');
+
+    // Save and reload: the dimension and the edited walls survive.
+    const auto file = dir / "room.tbcad";
+    REQUIRE(io::writeTbcad(doc, file).ok());
+    io::IoReport ioReport;
+    auto back = io::readTbcad(file, ioReport);
+    REQUIRE(back.ok());
+    CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+
+    // DXF export and re-import keep the dimension and its measurement.
+    const auto dxfFile = (dir / "room.dxf").string();
+    REQUIRE(host.run("EXPORTDXF", {dxfFile, "R2000"}).finished);
+    dxf::Report report;
+    auto imported = dxf::importDxf(readBytes(dxfFile), {}, report);
+    REQUIRE(imported.ok());
+    CHECK(countKind(*imported.value().document, EntityKind::Dimension) == 1);
+    CHECK(countKind(*imported.value().document, EntityKind::Line) == lines().size());
+
+    // One undo per command, back to an empty drawing.
+    while (host.undo()) {
+    }
+    CHECK(doc.modelSpaceCount() == 0);
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
