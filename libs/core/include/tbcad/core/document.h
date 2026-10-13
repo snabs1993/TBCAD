@@ -31,6 +31,10 @@ struct Header {
     double workArea = kDefaultWorkArea;  // geometry beyond +-workArea is flagged, not rejected
     double ltScale = 1;
     LayerId currentLayer = kLayerZero;
+    // Properties new objects get from the drawing commands (ByLayer unless the user sets them).
+    Color currentColor = Color::byLayer();  // never ByParent
+    LinetypeId currentLinetype = kLinetypeByLayer;
+    LineWeight currentLineweight = LineWeight::byLayer();
     TextStyleId currentTextStyle = kTextStyleStandard;
     DimStyleId currentDimStyle = kDimStyleStandard;
     std::string createdBy{};
@@ -154,6 +158,17 @@ struct Table {
 
 }  // namespace detail
 
+// The next id each id space will hand out. Ids are never reused, so a document that is saved
+// must also keep these: the highest id still in use can be lower than the highest id ever given.
+struct NextIds {
+    std::uint64_t entity = 1;
+    std::uint32_t layer = 1;
+    std::uint32_t linetype = 1;
+    std::uint32_t textStyle = 1;
+    std::uint32_t dimStyle = 1;
+    std::uint32_t block = 1;
+};
+
 class Transaction;
 
 class Document {
@@ -212,6 +227,13 @@ public:
 
     void addObserver(DocumentObserver* observer);
     void removeObserver(DocumentObserver* observer);
+
+    // The next free id of each id space.
+    NextIds nextIds() const;
+    // Raises the next free ids to at least `ids` (a field that is lower than the current value is
+    // left alone). Used by file readers to restore ids that were handed out before the file was
+    // saved. Not undoable; fails while a transaction is open.
+    Result<void> reserveIds(const NextIds& ids);
 
     // Incremented by every commit, undo and redo.
     std::uint64_t revision() const { return revision_; }
@@ -292,6 +314,9 @@ public:
     // by it so far (entities added in this transaction are not listed). Sorted by id. Lets
     // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
     std::vector<EntityId> touchedEntities() const;
+
+    // The document this transaction edits; reads see the edits made so far.
+    const Document& document() const { return *doc_; }
 
     // Finishes the transaction. Observers are notified once unless nothing changed.
     ChangeSet commit();

@@ -67,7 +67,7 @@ int runExport(const ExportArgs& args, std::ostream& out, std::ostream& err) {
         return fail("cannot read " + args.input + ": " + doc.error().message);
 
     dxf::Report report;
-    dxf::Result<dxf::ExportResult> result = dxf::exportDxf(*doc.value(), args.options, report);
+    Result<dxf::ExportResult> result = dxf::exportDxf(*doc.value(), args.options, report);
     if (!result)
         return fail(result.error().message);
 

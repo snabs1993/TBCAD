@@ -904,6 +904,36 @@ TEST_CASE("sub-layer depth is limited to 8 levels") {
     tx.commit();
 }
 
+TEST_CASE("current colour, linetype and lineweight are validated and undoable") {
+    Document doc;
+    CHECK(doc.header().currentColor == Color::byLayer());
+    CHECK(doc.header().currentLinetype == kLinetypeByLayer);
+    CHECK(doc.header().currentLineweight == LineWeight::byLayer());
+
+    Linetype lt;
+    lt.name = "Dashed";
+    lt.pattern = {12, -6};
+    LinetypeId id;
+    {
+        auto tx = doc.begin("setup");
+        id = tx.addLinetype(lt).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+            h.currentColor = Color::index(3);
+            h.currentLinetype = id;
+        }));
+        tx.commit();
+    }
+    CHECK(doc.header().currentLinetype == id);
+    {
+        auto tx = doc.begin("bad");
+        CHECK_FALSE(tx.modifyHeader([](Header& h) { h.currentColor = Color::byParent(); }));
+        CHECK_FALSE(tx.modifyHeader([](Header& h) { h.currentLinetype = LinetypeId{999}; }));
+        CHECK_FALSE(tx.eraseLinetype(id));  // it is the current linetype
+        tx.rollback();
+    }
+    CHECK(doc.header().currentColor == Color::index(3));
+}
+
 TEST_CASE("touchedEntities lists modified and erased pre-existing entities only") {
     Document doc;
     EntityId a = addLine(doc, 0), b = addLine(doc, 10), c = addLine(doc, 20);
@@ -918,4 +948,25 @@ TEST_CASE("touchedEntities lists modified and erased pre-existing entities only"
     CHECK(tx.touchedEntities() == std::vector<EntityId>{a, c});  // sorted, each once, b untouched
     (void)b;
     tx.rollback();
+}
+
+TEST_CASE("reserveIds only raises the next free ids") {
+    Document doc;
+    NextIds n = doc.nextIds();
+    NextIds want = n;
+    want.entity = 100;
+    want.layer = 50;
+    REQUIRE(doc.reserveIds(want));
+    CHECK(doc.nextIds().entity == 100);
+    CHECK(doc.nextIds().layer == 50);
+    NextIds low;  // all ones: never lowers
+    REQUIRE(doc.reserveIds(low));
+    CHECK(doc.nextIds().entity == 100);
+    Transaction tx = doc.begin("t");
+    Entity e;
+    e.data = PointData{};
+    CHECK(tx.add(e).value().value == 100);
+    CHECK(tx.addLayer(Layer{.name = "L"}).value().value == 50);
+    CHECK_FALSE(doc.reserveIds(want));  // refused while a transaction is open
+    tx.commit();
 }

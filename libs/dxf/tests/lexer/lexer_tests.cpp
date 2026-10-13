@@ -14,7 +14,7 @@ std::vector<Group> lexAll(std::string_view text, Report& report) {
     auto lx = Lexer::open(keep, report);
     REQUIRE(lx.ok());
     std::vector<Group> out;
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         out.push_back(*g);
     }
     return out;
@@ -53,7 +53,7 @@ TEST_CASE("open rejects input that cannot be DXF") {
     const auto text = testing::bytesOf("hello world\nthis is not dxf\n");
     auto bad = Lexer::open(text, r);
     REQUIRE_FALSE(bad.ok());
-    CHECK(bad.error().line == 1);
+    CHECK_FALSE(bad.error().message.empty());
     const auto onlyBlank = testing::bytesOf("\n\n  \n");
     CHECK_FALSE(Lexer::open(onlyBlank, r).ok());
     const auto badBinary = testing::bytesOf(std::string("AutoCAD Binary DXF\r\n\x1a\0", 22) + "xx");

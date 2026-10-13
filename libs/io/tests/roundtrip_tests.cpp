@@ -216,6 +216,27 @@ TEST_CASE("compression shrinks repetitive data and is optional") {
     CHECK(canonicalDump(*readOrFail(small)) == canonicalDump(*readOrFail(big)));
 }
 
+TEST_CASE("round trip: the current colour, linetype and lineweight survive") {
+    auto doc = makeRichDocument();
+    LinetypeId lt = kLinetypeContinuous;
+    for (const auto& [id, row] : doc->linetypes())
+        lt = id;
+    {
+        auto tx = doc->begin("current");
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+            h.currentColor = Color::rgb(12, 200, 255);
+            h.currentLinetype = lt;
+            h.currentLineweight = LineWeight::mm(0.35);
+        }));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(*doc));
+    CHECK(back->header().currentColor == Color::rgb(12, 200, 255));
+    CHECK(back->header().currentLinetype == lt);
+    CHECK(back->header().currentLineweight == LineWeight::mm(0.35));
+    CHECK(canonicalDump(*back) == canonicalDump(*doc));
+}
+
 TEST_CASE("round trip: attribute definitions and attribute values") {
     Document doc;
     BlockId blk;
@@ -262,4 +283,60 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
         }
     });
     CHECK(withAttribs == 1);
+}
+
+TEST_CASE("round trip: external reference fields of a block") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("blocks");
+        BlockId plain = tx.addBlock(BlockDef{.name = "plain"}).value();
+        BlockId ref = tx.addBlock(BlockDef{.name = "ref"}).value();
+        REQUIRE(tx.modifyBlock(ref, [](BlockDef& d) {
+                      d.xrefPath = "..\\plans\\site.tbcad";
+                      d.xrefStamp = 1760000000123456789;
+                  }).ok());
+        (void)plain;
+        tx.commit();
+    }
+    auto bytes = io::writeTbcadToMemory(doc);
+    REQUIRE(bytes.ok());
+    io::IoReport rep;
+    auto back = io::readTbcad(bytes.value(), rep);
+    REQUIRE(back.ok());
+    CHECK(back.value()->blockByName("plain")->xrefPath.empty());
+    const BlockDef* ref = back.value()->blockByName("ref");
+    REQUIRE(ref);
+    CHECK(ref->xrefPath == "..\\plans\\site.tbcad");
+    CHECK(ref->xrefStamp == 1760000000123456789);
+    CHECK(rep.unknownChunks == 0);
+}
+
+TEST_CASE("round trip: ids freed after the highest saved id are not reused after a reload") {
+    Document doc;
+    EntityId lastEntity;
+    LayerId lastLayer;
+    {
+        Transaction tx = doc.begin("setup");
+        Entity a;
+        a.data = LineData{{0, 0}, {1, 0}};
+        (void)tx.add(a);
+        lastEntity = tx.add(a).value();
+        lastLayer = tx.addLayer(Layer{.name = "temp"}).value();
+        tx.commit();
+    }
+    {
+        Transaction tx = doc.begin("delete");
+        (void)tx.erase(lastEntity);
+        (void)tx.eraseLayer(lastLayer);
+        tx.commit();
+    }
+    NextIds before = doc.nextIds();
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(back->nextIds().entity == before.entity);
+    CHECK(back->nextIds().layer == before.layer);
+    Transaction tx = back->begin("more");
+    Entity b;
+    b.data = LineData{{0, 0}, {2, 0}};
+    CHECK(tx.add(b).value().value > lastEntity.value);
+    CHECK(tx.addLayer(Layer{.name = "again"}).value().value > lastLayer.value);
 }

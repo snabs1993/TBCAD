@@ -16,8 +16,17 @@ std::string promptWith(std::string_view text, const std::vector<std::string>& ke
     return s;
 }
 
+// New objects take the layer and the current colour, linetype and lineweight from the header.
+void applyCurrentProperties(const Document& doc, Entity& e) {
+    const Header& h = doc.header();
+    e.common.layer = h.currentLayer;
+    e.common.color = h.currentColor;
+    e.common.linetype = h.currentLinetype;
+    e.common.lineweight = h.currentLineweight;
+}
+
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out) {
-    e.common.layer = ctx.doc().header().currentLayer;
+    applyCurrentProperties(ctx.doc(), e);
     geom::DisplayContext dc;
     const double scale = ctx.host().view().scale;
     if (scale > 0)
@@ -34,7 +43,9 @@ void previewLine(cmd::CommandContext& ctx, Vec2 a, Vec2 b, DisplayList& out) {
 }
 
 bool addEntity(cmd::CommandContext& ctx, EntityData data) {
-    auto id = ctx.tx().add(Entity{{}, std::move(data)});
+    Entity e{{}, std::move(data)};
+    applyCurrentProperties(ctx.doc(), e);
+    auto id = ctx.tx().add(std::move(e));
     if (!id) {
         ctx.message(id.error().message);
         return false;

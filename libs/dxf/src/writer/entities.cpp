@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
 #include "writer_impl.h"
 
@@ -791,59 +792,9 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     }
     Props p = propsOf(e->common);
 
-    // Imported dimensions are followed by their drawn graphics (a DIMENSION proxy) and the loose
-    // text of the dimension. They belong into the dimension's anonymous block.
-    // TODO(W5-5): once DimensionData has its own display generator, build the *D block from it
-    // instead of from these imported graphics.
-    const ProxyData* proxy = nullptr;
-    std::vector<const Entity*> texts;
-    std::size_t j = index + 1;
-    if (j < ids.size()) {
-        const Entity* n = doc_.find(ids[j]);
-        const ProxyData* pd = n ? entityAs<ProxyData>(*n) : nullptr;
-        if (pd && pd->originalType == "DIMENSION") {
-            proxy = pd;
-            ++j;
-        }
-    }
-    if (proxy) {
-        BBox2 box;
-        for (Vec2 pt : d.defPts)
-            box.expand(pt);
-        box.expand(d.textPos);
-        for (const DisplayItem& item : proxy->graphics.items) {
-            if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
-                for (Vec2 pt : pl->pts)
-                    box.expand(pt);
-            } else if (const auto* fl = std::get_if<DisplayFill>(&item)) {
-                for (const auto& ring : fl->rings) {
-                    for (Vec2 pt : ring)
-                        box.expand(pt);
-                }
-            }
-        }
-        while (j < ids.size() && texts.size() < 8) {
-            const Entity* n = doc_.find(ids[j]);
-            if (!n || n->common.layer != e->common.layer)
-                break;
-            Vec2 at;
-            double h = 0;
-            if (const auto* t = entityAs<TextData>(*n)) {
-                at = t->position;
-                h = t->height;
-            } else if (const auto* m = entityAs<MTextData>(*n)) {
-                at = m->position;
-                h = m->height;
-            } else {
-                break;
-            }
-            if (!box.inflated(3 * std::max(h, 1.0)).contains(at))
-                break;
-            texts.push_back(n);
-            ++j;
-        }
-    }
-
+    // The anonymous *D block is generated from the dimension generator, so every dimension
+    // carries drawn graphics that other programs can show without regenerating anything.
+    const dim::Layout layout = dim::layoutDimension(doc_, d);
     DimBlock block;
     do {
         block.name = "*D" + std::to_string(++dimCounter_);
@@ -854,18 +805,13 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
         Out bo(utf8_, r12_);
         Out* saved = o_;
         o_ = &bo;
-        if (proxy)
-            writeDisplayList(proxy->graphics, p.layer, block.rec);
-        for (const Entity* t : texts)
-            writeEntity(*t, block.rec);
+        auto parts = dim::explodeDimension(doc_, *e);
+        if (parts) {
+            for (const Entity& part : parts.value())
+                writeEntity(part, block.rec);
+        }
         o_ = saved;
         block.body = std::move(bo.buf);
-    }
-    if (!proxy) {
-        ++summary_.downgraded;
-        rep_.warn(wcode::kNoDimensionGraphics,
-                  "a dimension has no drawn graphics; its block is empty, so programs that do not "
-                  "regenerate dimensions will show nothing (the dimension generator is W5-5)");
     }
     std::string blockName = block.name;
     dimBlocks_.push_back(std::move(block));
@@ -932,13 +878,13 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             o.pt(10, d.defPts[3]);
             break;
     }
-    o.pt(11, d.textPos);
-    o.i(70, type);
+    o.pt(11, layout.text.valid() ? layout.text.center : d.textPos);
+    o.i(70, type | (d.textPosUser ? 128 : 0));
     o.i(71, 5);
     if (!d.textOverride.empty())
         o.str(1, d.textOverride);
     o.str(3, dimStyleNameOf(d.style));
-    o.d(42, d.measurement);
+    o.d(42, dim::measurement(d));
     sub(subclass);
     switch (d.kind) {
         case DimKind::Linear:
@@ -959,7 +905,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             o.pt(13, d.defPts[0]);
             o.pt(14, d.defPts[1]);
             o.pt(15, d.defPts[2]);
-            o.pt(16, d.defPts[3]);
+            o.pt(16, d.textPos);  // a point on the dimension arc
             break;
         case DimKind::Angular3Point:
             o.pt(13, d.defPts[0]);
@@ -970,7 +916,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             break;
     }
     count("DIMENSION");
-    return j - index;
+    return 1;
 }
 
 }  // namespace tbcad::dxf::detail

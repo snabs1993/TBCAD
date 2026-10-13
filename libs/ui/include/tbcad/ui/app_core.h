@@ -208,6 +208,9 @@ public:
     void registerBuiltinUi(UiRegistry& ui);
     // The seconds-based autosave check; the window calls it every frame.
     void tickAutosave(std::chrono::steady_clock::time_point now);
+    // Once every couple of seconds: when an external reference changed on disk and no command is
+    // running, reloads it (XRELOAD). The window calls it every frame.
+    void tickXrefs(std::chrono::steady_clock::time_point now);
     // Writes the autosave now when the drawing has unsaved changes. True if one was written.
     bool autosaveNow();
 
@@ -220,6 +223,7 @@ public:
     // Panels asked for since the last call (the window opens them).
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
+    std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
     void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
@@ -292,6 +296,7 @@ private:
     std::chrono::steady_clock::time_point lastAutosave_{};
     std::uint64_t autosavedRevision_ = ~std::uint64_t{0};
     bool autosaveClockStarted_ = false;
+    std::chrono::steady_clock::time_point lastXrefCheck_{};
 };
 
 }  // namespace tbcad::ui

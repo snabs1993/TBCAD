@@ -165,7 +165,7 @@ TEST_CASE("corpus: cp874 Thai without $DWGCODEPAGE decodes to the Thai word") {
     auto lx = Lexer::open(bytes, r);
     REQUIRE(lx.ok());
     std::string text;
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         if (g->code == 1)
             text = decodeText(g->str(), enc);
     }
@@ -184,7 +184,7 @@ TEST_CASE("corpus: R2013 UTF-8 Thai with a stale ANSI_1252 header") {
     auto lx = Lexer::open(bytes, r);
     REQUIRE(lx.ok());
     std::string text;
-    while (auto g = lx->next()) {
+    while (auto g = lx.value().next()) {
         if (g->code == 1)
             text = decodeText(g->str(), enc);
     }

@@ -106,24 +106,25 @@ allows (0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 10
 
 ### Hatch patterns
 
-Our own patterns are designed from scratch and embedded as definition lines (group codes
-53/43/44/45/46/79/49) with the hatch's scale and angle applied, so other programs draw them:
-`LINE0`, `LINE45`, `CROSS45`, `GRID`, `BRICK`, `DOTS`, `SAND`, `EARTH` (`SOLID` needs no lines).
-`ExportOptions::patterns` lets the pattern library of W5-4 (`assets/patterns/tbcad.patterns`)
-provide any other name; a name nobody knows is written without lines (AutoCAD draws its own
-`ANSI31` and friends by name) and reported as `dxf.writer.unknown_pattern` (info).
+Pattern definitions come from the W5-4 library (`tbcad::hatch::PatternRegistry`: the built-in
+`LINE0`, `LINE45`, `CROSS45`, `GRID`, `BRICK`, `DOTS`, `SAND`, `EARTH` and the user's own
+patterns). They are embedded as definition lines (group codes 53/43/44/45/46/79/49) with the
+hatch's scale and angle applied, so other programs draw them; `SOLID` needs no lines.
+`ExportOptions::patterns`, when set, is asked first. A name nobody knows is written without lines
+(AutoCAD draws its own `ANSI31` and friends by name) and reported as `dxf.writer.unknown_pattern`
+(info). The reader keeps only the pattern name; the definition comes from the library on display.
 
 ### Dimensions
 
-Until W5-5 gives `DimensionData` its own display generator, an imported dimension is followed in
-model space by its drawn graphics (a `ProxyData` "DIMENSION" plus the loose text entities; see
-`dxf-import.md`). The exporter writes a `DIMENSION` entity and puts exactly those graphics, in
-order, into a fresh `*D<n>` block that it references. Text entities directly after the proxy are
-taken into the block when they lie next to the dimension (inside its bounding box, grown by three
-text heights). The `*D` blocks that came with the imported document are not copied. A dimension
-without such graphics gets an empty block and the warning `dxf.writer.dimension_graphics_missing`:
-programs that regenerate dimensions (AutoCAD does when it needs to) are fine, others show nothing.
-`TODO(W5-5)`: build the block from the display generator instead.
+The exporter writes a `DIMENSION` entity (definition points, text position `11`, measurement `42`,
+text override, style name, flag 128 when the user placed the text) and a fresh anonymous `*D<n>`
+block that it references. The block is drawn by the dimension generator (`dim::explodeDimension`):
+extension and dimension lines, arcs, solid arrowheads (as HATCH) and the text, so programs that do
+not regenerate dimensions still show them. Group `11` is the middle of that text. Two-line angular
+dimensions also write group `16`, the point on the arc; three-point ones write `13`, `14`, vertex
+`15` and arc point `10`. Arc length dimensions are skipped with a warning. The `*D` blocks that
+came with an imported document are never copied; `dxf.writer.dimension_graphics_missing` is no
+longer reported.
 
 ## Command line
 

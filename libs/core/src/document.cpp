@@ -535,6 +535,8 @@ bool inUse(const Document& d, LayerId id) {
     return used;
 }
 bool inUse(const Document& d, LinetypeId id) {
+    if (d.header().currentLinetype == id)
+        return true;
     for (const auto& [lid, l] : d.layers()) {
         if (l.linetype == id)
             return true;
@@ -600,6 +602,29 @@ void replaceRow(detail::Table<Row, IdT>& t, IdT id, const std::optional<Row>& ne
 
 // ---------------------------------------------------------------------------------------------
 // Document
+
+NextIds Document::nextIds() const {
+    NextIds n;
+    n.entity = nextEntityId_;
+    n.layer = layers_.next;
+    n.linetype = linetypes_.next;
+    n.textStyle = textStyles_.next;
+    n.dimStyle = dimStyles_.next;
+    n.block = blocks_.next;
+    return n;
+}
+
+Result<void> Document::reserveIds(const NextIds& ids) {
+    if (active_)
+        return makeError(ErrorCode::Conflict, "cannot reserve ids while a transaction is open");
+    nextEntityId_ = std::max(nextEntityId_, ids.entity);
+    layers_.next = std::max(layers_.next, ids.layer);
+    linetypes_.next = std::max(linetypes_.next, ids.linetype);
+    textStyles_.next = std::max(textStyles_.next, ids.textStyle);
+    dimStyles_.next = std::max(dimStyles_.next, ids.dimStyle);
+    blocks_.next = std::max(blocks_.next, ids.block);
+    return {};
+}
 
 Document::Document() {
     Linetype cont;
@@ -1132,6 +1157,15 @@ Result<void> Transaction::modifyHeader(const std::function<void(Header&)>& fn) {
     }
     if (!d.layer(work.currentLayer))
         return invalid("unknown current layer");
+    if (work.currentColor.kind == ColorKind::ByParent)
+        return invalid("the current colour cannot be ByParent");
+    if (work.currentColor.kind == ColorKind::Index && work.currentColor.indexValue() == 0)
+        return invalid("color index 0 is not valid");
+    if (work.currentLinetype != kLinetypeByLayer && work.currentLinetype != kLinetypeByBlock &&
+        !d.linetype(work.currentLinetype))
+        return invalid("unknown current linetype");
+    if (work.currentLineweight.v < -3)
+        return invalid("invalid current lineweight");
     if (!d.textStyle(work.currentTextStyle))
         return invalid("unknown current text style");
     if (!d.dimStyle(work.currentDimStyle))

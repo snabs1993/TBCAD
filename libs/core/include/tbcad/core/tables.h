@@ -77,6 +77,12 @@ struct BlockDef {
     Vec2 base{};
     std::vector<EntityId> entities{};
     bool anonymous = false;
+    // External reference: the block's entities are a snapshot of the model space of another
+    // drawing (.tbcad or .dxf) at `xrefPath`, as typed by the user (relative paths are resolved
+    // against the host drawing). Empty = an ordinary block. `xrefStamp` is the source file's
+    // last-write time (nanoseconds since the Unix epoch) when the snapshot was taken.
+    std::string xrefPath{};
+    std::int64_t xrefStamp = 0;
 };
 
 }  // namespace tbcad
