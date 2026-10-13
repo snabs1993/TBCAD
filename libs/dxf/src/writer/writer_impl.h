@@ -134,7 +134,7 @@ private:
     void writeDimStyles(Out& o, std::uint64_t table);
     void writeBlockRecords(Out& o, std::uint64_t table);
     void blockBegin(Out& o, const std::string& name, std::uint64_t rec, Vec2 base, int flags,
-                    bool paperSpace);
+                    bool paperSpace, const BlockDef* xref = nullptr);
     void blockEnd(Out& o, std::uint64_t rec, bool paperSpace);
 
     // ---- entities.cpp --------------------------------------------------------------------

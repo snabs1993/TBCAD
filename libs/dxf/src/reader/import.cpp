@@ -671,12 +671,36 @@ void Importer::processBlocks(RecordReader& rr) {
                     blockDefined_.insert(id);
                     curBlock_ = id;
                     Vec2 base = P(r, 10, 20);
+                    // TBCAD XDATA: the block is an external reference (its content is the
+                    // snapshot).
+                    std::string xrefPath;
+                    std::int64_t xrefStamp = 0;
+                    bool xrefOverlay = false;
+                    bool inOurs = false;
+                    for (const Group& g : r.g) {
+                        if (g.code == 1001) {
+                            inOurs = g.str() == "TBCAD";
+                        } else if (inOurs && g.code == 1000) {
+                            std::string v = dec(g.str());
+                            if (v.rfind("xref=", 0) == 0)
+                                xrefPath = v.substr(5);
+                            else if (v.rfind("stamp=", 0) == 0)
+                                xrefStamp = std::strtoll(v.c_str() + 6, nullptr, 10);
+                        } else if (inOurs && g.code == 1070) {
+                            xrefOverlay = g.integer() != 0;
+                        }
+                    }
                     (void)tx_->modifyBlock(id, [&](BlockDef& b) {
                         b.base = base;
                         b.anonymous = (r.integer(70) & 1) != 0 || name[0] == '*';
+                        if (!xrefPath.empty()) {
+                            b.xrefPath = xrefPath;
+                            b.xrefStamp = xrefStamp;
+                            b.xrefOverlay = xrefOverlay;
+                        }
                     });
                     ++sum_.blocks;
-                    if (r.integer(70) & 4) {
+                    if ((r.integer(70) & 4) && xrefPath.empty()) {
                         report_.warn(code::kXref,
                                      "external reference block \"" + name +
                                          "\" is not supported; the block is empty",

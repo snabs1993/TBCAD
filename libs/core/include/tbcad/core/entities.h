@@ -276,6 +276,10 @@ struct InsertData {
     std::optional<ArrayInfo> array{};    // set: shown once per array item
     // Values of the block's dynamic parameters, in parameter order (missing = the default).
     std::vector<double> dynValues{};
+    // Clipping boundary (XCLIP): a closed polygon in the block's own coordinates, so it follows
+    // the insert when that is moved, rotated or scaled. Fewer than 3 points = not clipped.
+    std::vector<Vec2> clip{};
+    bool clipOn = true;  // false: the boundary is kept but the whole block shows
 };
 
 enum class DimKind : std::uint8_t {

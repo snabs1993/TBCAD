@@ -52,8 +52,9 @@ struct Summary {
 
 enum class State {
     UpToDate,
-    Changed,  // the file is newer (or older) than the snapshot
-    Missing,  // the file cannot be found
+    Changed,   // the file is newer (or older) than the snapshot
+    Missing,   // the file cannot be found
+    Unloaded,  // unloaded on purpose: the block is empty until the next reload
     NotXref,
 };
 
@@ -86,6 +87,9 @@ Result<void> reload(Transaction& tx, Document& doc, BlockId block, const Source&
                     Summary* summary = nullptr);
 // Removes the xref: its inserts, its block, the nested blocks and the layers no entity uses.
 Result<void> detach(Transaction& tx, Document& doc, BlockId block);
+// Drops the snapshot of the xref but keeps the block, its path and its inserts (XRELOAD brings
+// it back). Layers stay, so their states survive the next reload.
+Result<void> unload(Transaction& tx, Document& doc, BlockId block);
 // Turns the xref into an ordinary block (and its nested blocks and layers into ordinary ones).
 Result<void> bind(Transaction& tx, Document& doc, BlockId block);
 

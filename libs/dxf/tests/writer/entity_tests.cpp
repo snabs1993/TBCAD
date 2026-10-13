@@ -793,4 +793,37 @@ TEST_CASE("a dimension is exported with a drawn *D block that other programs can
     CHECK(texts >= 1);
 }
 
+TEST_CASE("an xref block and an insert clipping boundary survive the DXF round trip") {
+    Document doc;
+    BlockId b;
+    {
+        auto tx = doc.begin("xref");
+        b = tx.addBlock(BlockDef{.name = "site", .base = {0, 0}}).value();
+        REQUIRE(tx.add(make(LineData{{0, 0}, {10, 0}}), b).ok());
+        REQUIRE(tx.modifyBlock(b, [](BlockDef& d) {
+                      d.xrefPath = "../plans/site.tbcad";
+                      d.xrefStamp = 123456789;
+                      d.xrefOverlay = true;
+                  }).ok());
+        InsertData ins{b, {5, 5}, {1, 1}, 0};
+        ins.clip = {{0, 0}, {4, 0}, {4, 4}, {0, 4}};
+        ins.clipOn = false;
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const BlockDef* back = rt.back->blockByName("site");
+    REQUIRE(back);
+    CHECK(back->xrefPath == "../plans/site.tbcad");
+    CHECK(back->xrefStamp == 123456789);
+    CHECK(back->xrefOverlay);
+    CHECK(back->entities.size() == 1);
+    REQUIRE(rt.back->modelSpace().size() == 1);
+    const auto* ins = entityAs<InsertData>(*rt.back->find(rt.back->modelSpace()[0]));
+    REQUIRE(ins);
+    CHECK(ins->clip.size() == 4);
+    CHECK_FALSE(ins->clipOn);
+    CHECK(ins->clip[2] == Vec2{4, 4});
+}
+
 }  // namespace tbcad::dxf

@@ -501,3 +501,28 @@ TEST_CASE("round trip: a gradient hatch keeps its gradient") {
     CHECK(h->gradient->angle == doctest::Approx(0.75));
     CHECK_FALSE(entityAs<HatchData>(*back->find(EntityId{2}))->gradient.has_value());
 }
+
+TEST_CASE("round trip: insert clipping boundary") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("clip");
+        BlockId blk = tx.addBlock(BlockDef{.name = "Plan"}).value();
+        Entity a;
+        a.data = LineData{{0, 0}, {10, 0}};
+        (void)tx.add(std::move(a), blk);
+        Entity ins;
+        InsertData data{blk, {3, 3}, {1, 1}, 0};
+        data.clip = {{0, 0}, {5, 0}, {5, 5}, {0, 5}};
+        data.clipOn = false;
+        ins.data = Indirect<InsertData>(std::move(data));
+        (void)tx.add(std::move(ins));
+        Entity plain;
+        plain.data = Indirect<InsertData>(InsertData{blk, {50, 0}, {1, 1}, 0});
+        (void)tx.add(std::move(plain));
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    CHECK(before.find("CLIPoff") != std::string::npos);
+}
