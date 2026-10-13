@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "tbcad/cmd/command.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/render/camera.h"
 
 namespace tbcad::ui {
@@ -29,27 +30,12 @@ cmd::ViewState viewOf(const render::Camera2D& cam, const cmd::ViewState& like) {
 
 BBox2 boxOfEntities(const Document& doc) {
     BBox2 box;
-    // Extents are computed by the host's index when available; commands only have the document,
-    // so fall back to a coarse scan of line-like data.
+    // Every kind counts (text, hatches, dimensions, inserts ...), so ZOOM Extents agrees with the
+    // toolbar button, which uses the spatial index built from the same bounds.
     doc.forEachEntity([&](const Entity& e) {
-        visitEntity(e, [&](const auto& d) {
-            using T = std::decay_t<decltype(d)>;
-            if constexpr (std::is_same_v<T, LineData>) {
-                box.expand(d.a);
-                box.expand(d.b);
-            } else if constexpr (std::is_same_v<T, CircleData>) {
-                box.expand({d.center.x - d.radius, d.center.y - d.radius});
-                box.expand({d.center.x + d.radius, d.center.y + d.radius});
-            } else if constexpr (std::is_same_v<T, ArcData>) {
-                box.expand({d.center.x - d.radius, d.center.y - d.radius});
-                box.expand({d.center.x + d.radius, d.center.y + d.radius});
-            } else if constexpr (std::is_same_v<T, PointData>) {
-                box.expand(d.p);
-            } else if constexpr (std::is_same_v<T, PolylineData>) {
-                for (const auto& v : d.v)
-                    box.expand(v.p);
-            }
-        });
+        BBox2 b = geom::bounds(e, doc);
+        if (!b.empty())
+            box.merge(b);
     });
     return box;
 }
