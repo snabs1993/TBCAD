@@ -85,7 +85,7 @@ CommonProps readCommon(const Document& doc, const std::vector<EntityId>& ids,
         accumulate(p.layer, first, c.layer);
         accumulate(p.color, first, c.color);
         accumulate(p.linetype, first, c.linetype);
-        accumulate(p.linetypeScale, first, c.linetypeScale);
+        accumulate(p.linetypeScale, first, static_cast<double>(c.linetypeScale));
         accumulate(p.lineweight, first, c.lineweight);
         ++p.count;
     }

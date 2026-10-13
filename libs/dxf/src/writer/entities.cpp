@@ -127,7 +127,11 @@ Props Writer::propsOf(const EntityCommon& c) {
     p.linetype = linetypeNameOf(c.linetype);
     p.color = c.color;
     p.lineweight = c.lineweight;
-    p.ltScale = c.linetypeScale;
+    {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.7g", static_cast<double>(c.linetypeScale));
+        p.ltScale = std::strtod(buf, nullptr);
+    }
     p.visible = c.visible;
     return p;
 }
