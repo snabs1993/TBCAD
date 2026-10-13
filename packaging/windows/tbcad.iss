@@ -61,6 +61,7 @@ Source: "{#BuildDir}\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreve
 Source: "{#RepoDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tbcad-open-dxf.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\docs\user-guide\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#RepoDir}\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\TBCAD"; Filename: "{app}\tbcad.exe"
