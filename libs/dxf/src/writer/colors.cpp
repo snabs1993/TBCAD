@@ -41,8 +41,8 @@ Rgb3 hsv(double hueDeg, double s, double v) {
 Rgb3 aciRgb(int i) {
     static constexpr double kValue[10] = {1.0, 1.0, 0.8, 0.8, 0.6, 0.6, 0.5, 0.5, 0.3, 0.3};
     static constexpr double kGray[6] = {0x33, 0x50, 0x69, 0x82, 0xBE, 0xFF};
-    static constexpr Rgb3 kBasic[8] = {{0, 0, 0},     {255, 0, 0},   {255, 255, 0},  {0, 255, 0},
-                                       {0, 255, 255}, {0, 0, 255},   {255, 0, 255},  {255, 255, 255}};
+    static constexpr Rgb3 kBasic[8] = {{0, 0, 0},     {255, 0, 0}, {255, 255, 0}, {0, 255, 0},
+                                       {0, 255, 255}, {0, 0, 255}, {255, 0, 255}, {255, 255, 255}};
     if (i >= 1 && i <= 7)
         return kBasic[i];
     if (i == 8)

@@ -57,8 +57,8 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
         REQUIRE_MESSAGE(second.ok(), (second.ok() ? "" : second.error().message));
         const Document& doc2 = *second.value().document;
 
-        std::string diff = testing::SemanticDump::diff(testing::SemanticDump(doc1),
-                                                       testing::SemanticDump(doc2));
+        std::string diff =
+            testing::SemanticDump::diff(testing::SemanticDump(doc1), testing::SemanticDump(doc2));
         CHECK_MESSAGE(diff.empty(), diff);
 
         // A second export of the re-imported document is byte for byte the same file.
@@ -72,10 +72,10 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
             while (i < a.size() && i < b.size() && a[i] == b[i])
                 ++i;
             std::size_t from = a.rfind('\n', i > 80 ? i - 80 : 0);
-            FAIL_CHECK("second export differs at byte " << i << ":\n"
-                                                         << a.substr(from == std::string::npos ? 0 : from, 200)
-                                                         << "\n----\n"
-                                                         << b.substr(from == std::string::npos ? 0 : from, 200));
+            FAIL_CHECK("second export differs at byte "
+                       << i << ":\n"
+                       << a.substr(from == std::string::npos ? 0 : from, 200) << "\n----\n"
+                       << b.substr(from == std::string::npos ? 0 : from, 200));
         }
         ++roundTripped;
     }

@@ -53,8 +53,7 @@ private:
         return "; extra line:\n  " + longer[n];
     }
 
-    static bool sameLine(const std::string& x, const std::string& y, double relTol,
-                         double absTol) {
+    static bool sameLine(const std::string& x, const std::string& y, double relTol, double absTol) {
         static const std::regex number(R"(-?\d+(\.\d+)?([eE][-+]?\d+)?)");
         auto split = [&](const std::string& s, std::string& skeleton, std::vector<double>& nums) {
             auto begin = std::sregex_iterator(s.begin(), s.end(), number);
@@ -252,12 +251,12 @@ private:
 
         std::vector<std::string> rows;
         for (const auto& [id, l] : doc_.layers()) {
-            std::string r = "layer " + layerPath(id) + " color " + std::to_string(int(l.color.kind)) +
-                            ":" + std::to_string(l.color.r) + "." + std::to_string(l.color.g) + "." +
-                            std::to_string(l.color.b) + " lt " + ltName(l.linetype) + " lw " +
-                            std::to_string(l.lineweight.v) + " on" + std::to_string(l.on) +
-                            " frozen" + std::to_string(l.frozen) + " locked" +
-                            std::to_string(l.locked) + " plot" + std::to_string(l.plot);
+            std::string r = "layer " + layerPath(id) + " color " +
+                            std::to_string(int(l.color.kind)) + ":" + std::to_string(l.color.r) +
+                            "." + std::to_string(l.color.g) + "." + std::to_string(l.color.b) +
+                            " lt " + ltName(l.linetype) + " lw " + std::to_string(l.lineweight.v) +
+                            " on" + std::to_string(l.on) + " frozen" + std::to_string(l.frozen) +
+                            " locked" + std::to_string(l.locked) + " plot" + std::to_string(l.plot);
             rows.push_back(r);
         }
         std::sort(rows.begin(), rows.end());

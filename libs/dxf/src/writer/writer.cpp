@@ -75,9 +75,8 @@ std::string Writer::cleanName(const std::string& name, const char* what) {
         out.resize(cut);
     }
     if (out != name) {
-        rep_.info(wcode::kNameChanged,
-                  std::string(what) + " name \"" + name + "\" is not valid in DXF; written as \"" +
-                      out + "\"");
+        rep_.info(wcode::kNameChanged, std::string(what) + " name \"" + name +
+                                           "\" is not valid in DXF; written as \"" + out + "\"");
     }
     return out;
 }
@@ -390,7 +389,6 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
     }
     tableEnd(o);
 }
-
 
 void Writer::writeBlockRecords(Out& o, std::uint64_t table) {
     tableBegin(o, "BLOCK_RECORD", table, userBlocks_.size() + dimBlocks_.size() + 2);

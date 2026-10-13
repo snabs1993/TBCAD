@@ -143,7 +143,9 @@ private:
     void head(std::string_view type, const Props& p, std::uint64_t owner,
               std::string_view subclass);
     void sub(std::string_view subclass);
-    void count(std::string_view type, std::size_t n = 1) { summary_.entities[std::string(type)] += n; }
+    void count(std::string_view type, std::size_t n = 1) {
+        summary_.entities[std::string(type)] += n;
+    }
     void skipEntity(std::string_view what, const std::string& why);
     void downgrade(std::string_view what, const std::string& why);
 

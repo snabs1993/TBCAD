@@ -51,8 +51,8 @@ std::string toDxfMarkup(std::string_view s) {
             ++i;
         } else if (c == '\\' && i + 1 < s.size()) {
             char k = s[i + 1];
-            if ((k == 'b' || k == 'i') && i + 3 < s.size() + 0 && (s[i + 2] == '0' || s[i + 2] == '1') &&
-                s[i + 3] == ';') {
+            if ((k == 'b' || k == 'i') && i + 3 < s.size() + 0 &&
+                (s[i + 2] == '0' || s[i + 2] == '1') && s[i + 3] == ';') {
                 // Gather adjacent bold/italic codes into one font code.
                 bool bold = false, italic = false;
                 while (i + 3 < s.size() && s[i] == '\\' && (s[i + 1] == 'b' || s[i + 1] == 'i') &&
@@ -60,8 +60,8 @@ std::string toDxfMarkup(std::string_view s) {
                     (s[i + 1] == 'b' ? bold : italic) = s[i + 2] == '1';
                     i += 4;
                 }
-                out += std::string("\\fArial|b") + (bold ? "1" : "0") + "|i" + (italic ? "1" : "0") +
-                       "|c0|p0;";
+                out += std::string("\\fArial|b") + (bold ? "1" : "0") + "|i" +
+                       (italic ? "1" : "0") + "|c0|p0;";
             } else if (k == 'C') {
                 std::size_t semi = s.find(';', i);
                 if (semi == std::string_view::npos) {
