@@ -30,6 +30,14 @@ namespace {
 
 constexpr ImGuiID kDockId = 0x7BC4D001u;
 
+const std::vector<platform::FileFilter>& openFilters() {
+    static const std::vector<platform::FileFilter> f = {{"All drawings", "*.tbcad;*.dxf;*.dwg"},
+                                                        {"TBCAD drawings", "*.tbcad"},
+                                                        {"DXF drawings", "*.dxf"},
+                                                        {"DWG drawings (read-only)", "*.dwg"}};
+    return f;
+}
+
 const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
     static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
                                                                  {"DXF drawings", "*.dxf"},
@@ -312,14 +320,14 @@ bool Gui::requestClose() {
 
 void Gui::doOpen() {
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), drawingFilters(), "Open drawing"))
+        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing"))
             doOpenPath(platform::pathToUtf8(*p));
         return;
     }
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::Open;
-    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf");
+    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf;.dwg");
 }
 
 void Gui::doOpenPath(const std::string& path) {
@@ -329,7 +337,7 @@ void Gui::doOpenPath(const std::string& path) {
 }
 
 void Gui::doSave() {
-    if (!core_.hasFile()) {
+    if (!core_.hasFile() || core_.readOnlyOrigin()) {
         doSaveAs();
         return;
     }
@@ -352,6 +360,10 @@ void Gui::doSaveAs() {
             ext = "tbcad";
     }
     std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1." + ext;
+    if (core_.readOnlyOrigin()) {  // never suggest the original (read-only) name
+        ext = "tbcad";
+        suggested = core_.file().stem().string() + ".tbcad";
+    }
     if (platform::nativeDialogsAvailable()) {
         if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
                                               "Save drawing as", ext, suggested)) {
@@ -610,6 +622,24 @@ void Gui::toolStrip() {
         if (button("Zoom Extents"))
             core_.zoomExtents();
         ImGui::NewLine();
+    }
+    ImGui::End();
+}
+
+void Gui::readOnlyBanner() {
+    const std::string text = core_.readOnlyBanner();
+    if (text.empty())
+        return;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    if (ImGui::BeginViewportSideBar("##readonlybanner", vp, ImGuiDir_Up, h, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Save As..."))
+            runAction("file.saveAs");
     }
     ImGui::End();
 }
@@ -1376,6 +1406,7 @@ ViewportRect Gui::frame() {
         menuBar();
         toolStrip();
         docTabs();
+        readOnlyBanner();
         statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();

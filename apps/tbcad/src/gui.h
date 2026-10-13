@@ -87,6 +87,7 @@ private:
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void readOnlyBanner();
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();

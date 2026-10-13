@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include "tbcad/render/camera.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
+#include "tbcad/ui/foreign_files.h"
 #include "tbcad/ui/scene_sync.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
@@ -108,6 +110,14 @@ public:
     Result<void> saveAs(const std::filesystem::path& path);
     bool hasFile() const;
     const std::filesystem::path& file() const;
+    // Foreign formats. `extension` is lower case with the dot (".dwg"). A read-only format
+    // opens as a copy: Save always asks for a new name and never writes the original.
+    void setForeignReader(std::string extension, ForeignReadFn read, bool readOnly);
+    bool canOpenExtension(std::string_view lowerExtension) const;
+    // True while the drawing came from a read-only format and has not been saved as .tbcad.
+    bool readOnlyOrigin() const;
+    // One-line banner for a read-only drawing; empty otherwise.
+    std::string readOnlyBanner() const;
     bool modified() const;
     // "Untitled" or the file name.
     std::string displayName() const;
@@ -259,6 +269,11 @@ private:
     void pruneSelection();
     void notifySessionHooks();
 
+    struct ForeignReader {
+        ForeignReadFn read{};
+        bool readOnly = true;
+    };
+    std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;

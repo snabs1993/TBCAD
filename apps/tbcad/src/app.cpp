@@ -15,6 +15,7 @@
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
 
@@ -301,6 +302,7 @@ int App::run() {
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);
+    dwgopen::registerForeignFormats(*core_);
     if (!options_.listCommands.empty()) {
         const std::string table = cmd::commandListMarkdown(*registry_);
         if (options_.listCommands == "-") {
