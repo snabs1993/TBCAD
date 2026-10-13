@@ -1,0 +1,26 @@
+{
+  "description": "ACAD_PROXY_ENTITY with proxy graphics is drawn from them (read-only); text in cp874",
+  "dxf": {
+    "ACAD_PROXY_ENTITY": 1,
+    "LINE": 1
+  },
+  "encoding": "ANSI_874",
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 1,
+    "Proxy": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0"
+  ],
+  "proxy_items_min": 5,
+  "texts": [
+    "ผนัง"
+  ],
+  "version": "AC1015",
+  "warnings": [
+    "dxf.reader.proxy_entity"
+  ]
+}

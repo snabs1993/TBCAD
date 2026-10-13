@@ -161,9 +161,12 @@ void checkFile(const std::filesystem::path& dxfPath) {
 
     std::map<std::string, std::size_t> kinds;
     std::vector<std::string> texts;
+    std::size_t proxyItems = 0;
     for (EntityId id : doc.modelSpace()) {
         const Entity* e = doc.find(id);
         ++kinds[kindName(kind(*e))];
+        if (const auto* p = entityAs<ProxyData>(*e))
+            proxyItems += p->graphics.items.size();
         if (const auto* t = entityAs<TextData>(*e))
             texts.push_back(t->utf8);
         if (const auto* t = entityAs<MTextData>(*e))
@@ -179,6 +182,9 @@ void checkFile(const std::filesystem::path& dxfPath) {
         for (const auto& [k, n] : exp.at("kinds_min").o)
             CHECK_MESSAGE(kinds[k] >= static_cast<std::size_t>(n.n), "model space kind " << k);
     }
+    if (exp.has("proxy_items_min"))
+        CHECK_MESSAGE(proxyItems >= static_cast<std::size_t>(exp.at("proxy_items_min").n),
+                      "proxy display items " << proxyItems);
     if (exp.has("layers")) {
         std::vector<std::string> layers;
         for (const auto& [id, l] : doc.layers())

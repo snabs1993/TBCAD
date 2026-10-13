@@ -1,0 +1,30 @@
+{
+  "description": "AEC/Civil/ACIS objects carry proxy graphics and are shown read-only; one without graphics is skipped",
+  "dxf": {
+    "3DSOLID": 1,
+    "AECC_ALIGNMENT": 1,
+    "AEC_OPENING": 1,
+    "AEC_WALL": 1,
+    "LINE": 1
+  },
+  "encoding": "UTF-8",
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 1,
+    "Proxy": 3,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "A-WALL"
+  ],
+  "proxy_items_min": 4,
+  "texts": [
+    "สถานี 0+000"
+  ],
+  "version": "AC1027",
+  "warnings": [
+    "dxf.reader.skipped_entity"
+  ]
+}

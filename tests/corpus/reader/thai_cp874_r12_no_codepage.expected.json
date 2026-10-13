@@ -1,0 +1,17 @@
+{
+  "description": "R12 file without $DWGCODEPAGE whose text is Thai cp874: the guess is Thai and is reported",
+  "dxf": {
+    "TEXT": 1
+  },
+  "encoding": "ANSI_874",
+  "encodingGuessed": true,
+  "exit": 0,
+  "ezdxf": false,
+  "kinds": {
+    "Text": 1
+  },
+  "texts": [
+    "ห้องนอน"
+  ],
+  "version": "AC1009"
+}

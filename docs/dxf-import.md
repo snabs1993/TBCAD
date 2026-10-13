@@ -50,7 +50,8 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | SOLID, TRACE | solid `HatchData` with one closed polyline loop (corner order 1, 2, 4, 3 as DXF stores it) |
 | DIMENSION | see below |
 | LEADER | `LeaderData` (vertices, dimension style); the annotation is a separate MTEXT/TEXT entity in the file and is imported as such |
-| ACAD_PROXY_ENTITY | read-only `ProxyData` (`originalType = "ACAD_PROXY_ENTITY"`, `raw` = the 310 data bytes); the proxy graphics are not decoded, so it displays nothing; always a warning |
+| ACAD_PROXY_ENTITY | read-only `ProxyData` (`originalType = "ACAD_PROXY_ENTITY"`, `raw` = the 310 data bytes, without text records); the proxy graphics are decoded into its display list (see "Proxy graphics"); always a warning |
+| AEC_*, AECC_*, 3DSOLID, REGION, SURFACE ... (no reader) | read-only `ProxyData` named after the DXF type when the object carries proxy graphics (groups 160/92 + 310), else skipped as before; one `dxf.reader.proxy_graphics` info per type |
 | everything else (3DSOLID, REGION, IMAGE, MLINE, RAY, XLINE, MLEADER, WIPEOUT, 3DFACE, ...) | skipped; one warning per type with the number of entities |
 
 `ImportSummary::entities` counts, per DXF type, the records read (model space and block
@@ -184,9 +185,30 @@ unless `-q`, and listed in the report), **2** failed (not a DXF file, unsupporte
 read or write a file, bad command line). The `.tbcad` file is written atomically by `libs/io`. With
 `--report` a report is also written for a failed run (`{"failed":true,"error":"..."}`).
 
+## Proxy graphics
+
+AutoCAD stores a drawing of each object it cannot rebuild (ACAD_PROXY_ENTITY, AEC walls, Civil 3D
+alignments, ACIS solids) as a binary record stream: an 8-byte header (total size, record count) and
+records `size, type, payload`. `libs/dxf/src/reader/proxy.cpp` reads circles, arcs, ellipse arcs,
+polylines, polygons, shells, meshes, triangles, text (ANSI in the file codepage and Unicode),
+colour (ACI and true colour), lineweight, fill and matrix records. It is bounds checked: a
+record with an impossible size ends decoding (`dxf.reader.proxy_graphics_damaged`), a record of
+an unknown kind is counted in `dxf.reader.proxy_graphics_unknown_records`, and counts, point numbers and
+non-finite values are limited. The result is shown as a read-only `Proxy` entity; its texts become
+ordinary Text entities (and are removed from `raw`, so exporting does not draw them twice). The
+DXF exporter writes an ACAD_PROXY_ENTITY back unchanged and writes other foreign objects as the
+plain geometry of their graphics.
+
+## Hostile files
+
+The corpus also covers: invalid UTF-8 in R2018 files, cp874 files without `$DWGCODEPAGE`, NaN,
+infinite, comma-decimal and empty numbers, broken and duplicate handles, tables that are missing
+(layer, linetype, style, block record) and files without HEADER or TABLES, swapped and unclosed
+sections. Each is reported and imported as far as it can be.
+
 ## Test corpus
 
-`tests/corpus/reader/` holds about 30 DXF files made by `tests/corpus/gen/gen_corpus.py` (R12,
+`tests/corpus/reader/` holds about 80 DXF files made by `tests/corpus/gen/gen_corpus.py` (ezdxf) and `gen_hardening.py` (plain Python: proxy graphics, AEC objects, bad encodings, hostile numbers, broken handles, missing tables) (R12,
 R2000, R2004, R2007/R2013/R2018, Thai in cp874 and UTF-8, binary, extrusion -Z, far coordinates,
 proxy, unknown entities, sub-layers, MTEXT markup, hatch variants, dimensions and several broken
 files), each with an `.expected.json`. `libs/dxf/tests/reader/corpus_tests.cpp` checks entity counts
@@ -201,7 +223,7 @@ Speed: a 50 MB synthetic DXF (about 480 000 entities) imports in 0.65 s and conv
 ## Not done yet
 
 OBJECTS (layouts, groups, dictionaries), paper space and viewports, xrefs (the block stays empty),
-proxy graphics, complex linetype elements (text/shape), gradient colours,
+proxy graphics records for 3D mesh/shell lighting, images and rich text frames, complex linetype elements (text/shape), gradient colours,
 3D entities, mirrored text, DIMSTYLE variables beyond the basic ones.
 
 ## Codepages
