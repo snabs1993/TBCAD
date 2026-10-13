@@ -31,6 +31,10 @@ struct Header {
     double workArea = kDefaultWorkArea;  // geometry beyond +-workArea is flagged, not rejected
     double ltScale = 1;
     LayerId currentLayer = kLayerZero;
+    // Properties new objects get from the drawing commands (ByLayer unless the user sets them).
+    Color currentColor = Color::byLayer();  // never ByParent
+    LinetypeId currentLinetype = kLinetypeByLayer;
+    LineWeight currentLineweight = LineWeight::byLayer();
     TextStyleId currentTextStyle = kTextStyleStandard;
     DimStyleId currentDimStyle = kDimStyleStandard;
     std::string createdBy{};

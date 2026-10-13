@@ -215,3 +215,24 @@ TEST_CASE("compression shrinks repetitive data and is optional") {
     CHECK(small.size() < big.size());
     CHECK(canonicalDump(*readOrFail(small)) == canonicalDump(*readOrFail(big)));
 }
+
+TEST_CASE("round trip: the current colour, linetype and lineweight survive") {
+    auto doc = makeRichDocument();
+    LinetypeId lt = kLinetypeContinuous;
+    for (const auto& [id, row] : doc->linetypes())
+        lt = id;
+    {
+        auto tx = doc->begin("current");
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+            h.currentColor = Color::rgb(12, 200, 255);
+            h.currentLinetype = lt;
+            h.currentLineweight = LineWeight::mm(0.35);
+        }));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(*doc));
+    CHECK(back->header().currentColor == Color::rgb(12, 200, 255));
+    CHECK(back->header().currentLinetype == lt);
+    CHECK(back->header().currentLineweight == LineWeight::mm(0.35));
+    CHECK(canonicalDump(*back) == canonicalDump(*doc));
+}

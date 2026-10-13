@@ -12,6 +12,7 @@ Command module `layers`. Registers through `module.cmake`; nothing outside this 
 | `LAYERCURRENT` | `LAYCUR` | Makes the layer of a picked object current. |
 | `-PROP` | `-PR` | Changes properties of the selection: `Only <type>`, `Layer`, `Color`, `Linetype`, `LTScale`, `Lineweight`, `Set <field> <value>`. The whole command is one undo step. |
 | `-LINETYPE` | `-LT` | `Load <names or *>`, `File <path>`, `List`. |
+| `-CURRENT` | `-CUR` | Sets the colour, linetype and lineweight new objects get (stored in the document header; the draw commands apply them). |
 
 Layers are named by path (`S-FLOOR~edge`), by bare name when only one sub-layer has it, or by
 `#<id>` (what the panels send). Lists use commas, `*` means every layer. A sub-layer starts

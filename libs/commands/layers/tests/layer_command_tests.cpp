@@ -297,3 +297,37 @@ TEST_CASE("the exact command sequences the properties panel sends work") {
     CHECK(f.host.undo());
     CHECK(f.doc.find(c2)->common.color == Color::byLayer());
 }
+
+TEST_CASE("-CURRENT sets the colour, linetype and lineweight that new objects get") {
+    Fixture f;
+    f.run("-LINETYPE", {"Load", "Dashed", cmd::ScriptItem::enter()});
+    f.run("-CURRENT", {"Color", "red", "Linetype", "Dashed", "Lineweight", "0.5", "List",
+                       cmd::ScriptItem::enter()});
+    CHECK(f.host.logContains("Colour red, linetype Dashed, lineweight 0.50 mm"));
+    CHECK(f.doc.header().currentColor == Color::index(1));
+    CHECK(f.doc.header().currentLineweight == LineWeight::mm(0.5));
+
+    // The draw commands pick the current properties up.
+    auto r = f.run("LINE", {"0,0", "10,0", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    std::size_t lines = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<LineData>(e)) {
+            ++lines;
+            CHECK(e.common.color == Color::index(1));
+            CHECK(f.doc.linetype(e.common.linetype)->name == "Dashed");
+            CHECK(e.common.lineweight == LineWeight::mm(0.5));
+        }
+    });
+    CHECK(lines == 1);
+
+    // Back to ByLayer; a linetype that is in use as the current one cannot be erased by accident.
+    f.run("-CURRENT", {"Color", "ByLayer", "Linetype", "ByLayer", "Lineweight", "ByLayer",
+                       cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().currentColor == Color::byLayer());
+    CHECK(f.doc.header().currentLinetype == kLinetypeByLayer);
+    f.host.clearLog();
+    f.run("-CURRENT", {"Color", "ByParent", "Linetype", "Nope", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().currentColor == Color::byLayer());
+    CHECK(f.host.log().size() >= 2);
+}

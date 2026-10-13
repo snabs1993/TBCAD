@@ -44,6 +44,12 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     headReal(body, st, "workArea", h.workArea), bump();
     headReal(body, st, "ltScale", h.ltScale), bump();
     headInt(body, st, "currentLayer", h.currentLayer.value), bump();
+    headInt(body, st, "currentColor",
+            (static_cast<std::int64_t>(h.currentColor.kind) << 24) | (h.currentColor.r << 16) |
+                (h.currentColor.g << 8) | h.currentColor.b),
+        bump();
+    headInt(body, st, "currentLinetype", h.currentLinetype.value), bump();
+    headInt(body, st, "currentLineweight", h.currentLineweight.v), bump();
     headInt(body, st, "currentTextStyle", h.currentTextStyle.value), bump();
     headInt(body, st, "currentDimStyle", h.currentDimStyle.value), bump();
     headString(body, st, "createdBy", h.createdBy), bump();

@@ -239,8 +239,72 @@ public:
     }
 };
 
+// -CURRENT: the colour, linetype and lineweight that new objects get (ByLayer by default).
+//   -CURRENT Color <c> | Linetype <name> | Lineweight <w> | List
+class CurrentCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-CURRENT"; }
+    std::vector<std::string> defaultAliases() const override { return {"-CUR"}; }
+    std::string_view description() const override {
+        return "Set the colour, linetype and lineweight of new objects";
+    }
+
+    Task run(CommandContext& ctx) override {
+        ctx.commitOnCancel();
+        ctx.setUndoLabel("CURRENT PROPERTIES");
+        cmd::KeywordOptions opts;
+        opts.keywords = {"Color", "Linetype", "Lineweight", "List"};
+        while (true) {
+            auto k = co_await ctx.getKeyword("Current property", opts);
+            if (!k.ok())
+                co_return;
+            if (k.keyword == "List") {
+                const Header& h = ctx.doc().header();
+                ctx.message("Colour " + colorName(h.currentColor) + ", linetype " +
+                            linetypeName(ctx.doc(), h.currentLinetype) + ", lineweight " +
+                            lineweightName(h.currentLineweight));
+                continue;
+            }
+            auto v = co_await ctx.getString(
+                k.keyword == "Color"      ? "Colour (ByLayer, ByBlock, name, 1-255 or r,g,b)"
+                : k.keyword == "Linetype" ? "Linetype (ByLayer, ByBlock or a loaded name)"
+                                          : "Lineweight (ByLayer, ByBlock, Default or mm)");
+            if (!v.ok())
+                co_return;
+            Result<void> r;
+            if (k.keyword == "Color") {
+                auto c = parseColor(v.text);
+                if (!c) {
+                    ctx.message(c.error().message);
+                    continue;
+                }
+                r = ctx.tx().modifyHeader([&](Header& h) { h.currentColor = c.value(); });
+            } else if (k.keyword == "Linetype") {
+                auto lt = parseLinetype(ctx.doc(), v.text);
+                if (!lt) {
+                    ctx.message(lt.error().message);
+                    continue;
+                }
+                r = ctx.tx().modifyHeader([&](Header& h) { h.currentLinetype = lt.value(); });
+            } else {
+                auto lw = parseLineweight(v.text);
+                if (!lw) {
+                    ctx.message(lw.error().message);
+                    continue;
+                }
+                r = ctx.tx().modifyHeader([&](Header& h) { h.currentLineweight = lw.value(); });
+            }
+            if (!r)
+                ctx.message(r.error().message);
+        }
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeCurrentCommand() {
+    return std::make_unique<CurrentCommand>();
+}
 std::unique_ptr<cmd::Command> makePropCommand() {
     return std::make_unique<PropCommand>();
 }
