@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -21,6 +22,13 @@ struct AliasReport {
     bool clean() const { return errors.empty() && warnings.empty(); }
 };
 
+// Runs just before a command's open transaction is committed, in the same transaction, so that
+// whatever it edits joins the command's undo step. Lets a module keep dependent objects in step
+// (an associative hatch following its boundary): look at tx.touchedEntities() and edit through
+// `tx`. It runs for every commit a command makes (also at each checkpoint) but never for a command
+// that is cancelled or fails. Hooks must be cheap when nothing they care about was touched.
+using CommitHook = std::function<void(Document&, Transaction&)>;
+
 class Registry {
 public:
     Registry();
@@ -36,6 +44,10 @@ public:
     Command* find(std::string_view nameOrAlias) const;
     // Commands sorted by name.
     std::vector<Command*> list() const;
+
+    // Hooks run in registration order.
+    void addCommitHook(CommitHook hook);
+    void runCommitHooks(Document& doc, Transaction& tx) const;
 
     // Effective alias -> command name table (upper case).
     const std::map<std::string, std::string>& aliases() const { return aliases_; }
@@ -54,6 +66,7 @@ private:
     AliasReport rebuild();
 
     std::map<std::string, std::unique_ptr<Command>> commands_{};
+    std::vector<CommitHook> commitHooks_{};
     std::map<std::string, std::string> user_{};  // alias -> command, as given by the user
     std::map<std::string, std::string> aliases_{};
     std::vector<std::string> conflicts_{};
