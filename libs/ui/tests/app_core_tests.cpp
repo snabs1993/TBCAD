@@ -675,16 +675,31 @@ TEST_CASE("PanelContext reports whether a command is running") {
     f.core->pressEscape();
     f.core->buildOverlay(overlay, &ui);
     CHECK_FALSE(seen);
-}
+    TEST_CASE("the window query is answered by the spatial index") {
+        Fixture f("window");
+        f.line("0,0", "10,0");
+        f.line("500,500", "510,500");
+        auto near = f.core->entitiesInWindow(BBox2{{-5, -5}, {20, 5}});
+        REQUIRE(near.has_value());
+        CHECK(near->size() == 1);
+        auto both = f.core->entitiesInWindow(BBox2{{-5, -5}, {600, 600}});
+        REQUIRE(both.has_value());
+        CHECK(both->size() == 2);
+        // Edits are picked up: undo removes the second line from the index.
+        f.core->undo();
+        both = f.core->entitiesInWindow(BBox2{{-5, -5}, {600, 600}});
+        REQUIRE(both.has_value());
+        CHECK(both->size() == 1);
+    }
 
-TEST_CASE("SETTINGS asks the window to open the dialog") {
-    Fixture f("settings_cmd");
-    f.core->submitText("op");  // alias
-    auto req = f.core->takeUiRequests();
-    REQUIRE(req.size() == 1);
-    CHECK(req[0] == "settings");
-    CHECK(f.core->takeUiRequests().empty());
-    CHECK_FALSE(f.core->runner().active());
-    CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
-    CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
-}
+    TEST_CASE("SETTINGS asks the window to open the dialog") {
+        Fixture f("settings_cmd");
+        f.core->submitText("op");  // alias
+        auto req = f.core->takeUiRequests();
+        REQUIRE(req.size() == 1);
+        CHECK(req[0] == "settings");
+        CHECK(f.core->takeUiRequests().empty());
+        CHECK_FALSE(f.core->runner().active());
+        CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
+        CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
+    }

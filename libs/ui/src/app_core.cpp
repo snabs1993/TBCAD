@@ -616,6 +616,10 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     }
 }
 
+std::optional<std::vector<EntityId>> AppCore::entitiesInWindow(const BBox2& window) const {
+    return spatialIndex().queryIds(window);
+}
+
 cmd::ViewState AppCore::view() const {
     cmd::ViewState v;
     v.center = camera_.center;

@@ -26,7 +26,7 @@ files appear as the `tbcad-windows-release` artifact and no release is created.
 - Uninstall removes everything it installed and the registry entries. Settings
   (`%APPDATA%\TBCAD`) and drawings are left alone.
 
-Files shipped: `tbcad.exe`, `tbcad-convert.exe`, `assets\` (fonts, patterns), `LICENSE`,
+Files shipped: `tbcad.exe`, `tbcad-convert.exe`, `tbcad-mcp.exe`, `assets\` (fonts, patterns), `LICENSE`,
 `THIRD_PARTY_NOTICES.txt` (generated at build time from `third_party/notices`), and the user
 guide in `docs\`.
 
