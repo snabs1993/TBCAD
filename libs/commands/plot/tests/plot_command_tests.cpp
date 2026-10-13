@@ -354,7 +354,8 @@ TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unav
     CHECK(f.host->run("PUBLISH", {f.path("list.txt"), out}).finished);
     CHECK(f.host->logContains("Plotted 2 sheets"));
     CHECK(std::filesystem::exists(out));
-    CHECK(f.host->run("PLOTSET", {f.path("list.txt"), "Printer"}).finished);
-    if (!print::available())
+    if (!print::available()) {  // never send a test job to a real printer
+        CHECK(f.host->run("PLOTSET", {f.path("list.txt"), "Printer"}).finished);
         CHECK(f.host->logContains("Printing is only available"));
+    }
 }
