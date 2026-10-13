@@ -162,7 +162,8 @@ strip to show or hide a group (settings `ui.toolgroup.<Group>`).
 
 Measured on a Release build (GCC) with a synthetic 100 MB DXF of 721,000 lines, circles, polylines and
 texts (`tools/gen_big_dxf.py`): import to `.tbcad` takes about 3.7 s, export back to DXF about 3.1 s, and
-the importer peaks at about 430 MB of memory. The window opens in about 0.2 s (Debug build, software
+the importer peaks at about 430 MB of memory. Inside the window, IMPORTDXF of the same file takes about
+8.6 s (index, undo and display lists included). The window opens in about 0.2 s (Debug build, software
 OpenGL). The CI `perf` job repeats the large-file run and fails if either direction takes over a minute.
 
 If TBCAD crashes it writes `crash-<time>.txt` (signal or exception and a stack trace; on Windows also a
