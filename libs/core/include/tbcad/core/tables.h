@@ -127,6 +127,9 @@ struct BlockDef {
     // last-write time (nanoseconds since the Unix epoch) when the snapshot was taken.
     std::string xrefPath{};
     std::int64_t xrefStamp = 0;
+    // Overlay xref: shown in this drawing but left out when this drawing is itself used as an
+    // xref by another one (an attached xref is carried along, an overlay is not).
+    bool xrefOverlay = false;
     std::optional<DynamicDef> dynamic{};
 };
 

@@ -61,6 +61,7 @@ public:
 
         xref::Source source;
         std::string stored;
+        std::filesystem::path resolved;
         for (;;) {
             auto f = co_await ctx.getString("Enter the .tbcad or .dxf file to attach");
             if (!f.ok())
@@ -68,13 +69,33 @@ public:
             stored = cmd::trim(f.text);
             if (stored.size() >= 2 && stored.front() == '"' && stored.back() == '"')
                 stored = stored.substr(1, stored.size() - 2);
-            auto loaded = xref::loadSource(xref::resolvePath(stored, hostFile));
+            resolved = xref::resolvePath(stored, hostFile);
+            auto loaded = xref::loadSource(resolved);
             if (loaded.ok()) {
                 source = std::move(loaded.value());
                 break;
             }
             ctx.message(loaded.error().message);
         }
+
+        auto kind = co_await ctx.getKeyword(
+            "Reference type [Attach/Overlay] <Attach>",
+            cmd::KeywordOptions{.keywords = {"Attach", "Overlay"}, .defaultKeyword = "Attach"});
+        if (!kind.ok())
+            co_return;
+        const bool overlay = kind.keyword == "Overlay";
+        auto pathKind = co_await ctx.getKeyword(
+            "Path type [Relative/Absolute/None] <Relative>",
+            cmd::KeywordOptions{.keywords = {"Relative", "Absolute", "None"},
+                                .defaultKeyword = "Relative"});
+        if (!pathKind.ok())
+            co_return;
+        xref::PathType pathType = pathKind.keyword == "Absolute" ? xref::PathType::Absolute
+                                  : pathKind.keyword == "None"   ? xref::PathType::None
+                                                                 : xref::PathType::Relative;
+        if (pathType == xref::PathType::Relative && hostFile.empty())
+            ctx.message("The drawing is not saved yet: the full path is stored.");
+        stored = xref::storedPath(resolved, hostFile, pathType);
 
         std::string blockName;
         const std::string suggested = xref::defaultName(xref::resolvePath(stored, hostFile));
@@ -94,7 +115,7 @@ public:
 
         // Attach first so the preview can show the real content; Esc rolls it back.
         xref::Summary sum;
-        auto attached = xref::attach(ctx.tx(), doc, blockName, stored, source, &sum);
+        auto attached = xref::attach(ctx.tx(), doc, blockName, stored, source, &sum, overlay);
         if (!attached) {
             ctx.message(attached.error().message);
             co_return;
@@ -151,8 +172,9 @@ public:
         }
         ctx.host().setSelection({added.value()});
         ctx.setUndoLabel("Attach " + blockName);
-        ctx.message("Attached \"" + blockName + "\": " + std::to_string(sum.entities) +
-                    " objects, " + std::to_string(sum.layers) + " layers");
+        ctx.message((overlay ? "Overlaid \"" : "Attached \"") + blockName +
+                    "\": " + std::to_string(sum.entities) + " objects, " +
+                    std::to_string(sum.layers) + " layers");
     }
 };
 
@@ -293,6 +315,7 @@ public:
         for (BlockId id : ids) {
             const BlockDef* def = doc.block(id);
             ctx.message(def->name + "  " + def->xrefPath + "  [" +
+                        (def->xrefOverlay ? "overlay, " : "") +
                         stateText(xref::state(doc, id, hostFile)) + ", " +
                         std::to_string(xref::useCount(doc, id)) + " inserted]");
         }
