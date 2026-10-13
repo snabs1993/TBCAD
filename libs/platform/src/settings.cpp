@@ -21,6 +21,7 @@ Settings Settings::withDefaults() {
     o["drafting.polar"] = false;
     o["drafting.osnap"] = true;
     o["pick.aperturePx"] = 6;
+    o["files.defaultFormat"] = "tbcad";
     return s;
 }
 
