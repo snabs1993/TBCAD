@@ -57,3 +57,19 @@ TEST_CASE("the grid overlay is built for the visible area and stays small when z
     CHECK_FALSE(lines.empty());
     CHECK_FALSE(dots.empty());
 }
+
+TEST_CASE("every snap mode has a marker and unknown names are refused") {
+    render::Camera2D cam;
+    cam.viewportW = 400;
+    cam.viewportH = 300;
+    for (int i = 0; i < kSnapModeCount; ++i) {
+        render::Overlay ov;
+        auto mode = static_cast<SnapMode>(i);
+        CHECK(drawSnapMarker(ov, cam, {0, 0}, snapModeName(mode)));
+        CHECK_FALSE(ov.empty());
+    }
+    render::Overlay ov;
+    CHECK_FALSE(drawSnapMarker(ov, cam, {0, 0}, "end"));  // prefixes are not marker names
+    CHECK_FALSE(drawSnapMarker(ov, cam, {0, 0}, ""));
+    CHECK(ov.empty());
+}

@@ -4,6 +4,7 @@
 #include "tbcad/drafting/env.h"
 #include "tbcad/drafting/filters.h"
 #include "tbcad/drafting/grid.h"
+#include "tbcad/drafting/markers.h"
 #include "tbcad/drafting/osnap.h"
 #include "tbcad/drafting/point_parser.h"
 #include "tbcad/drafting/settings.h"

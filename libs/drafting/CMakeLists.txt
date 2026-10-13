@@ -9,6 +9,7 @@ tbcad_add_library(drafting
     src/osnap.cpp
     src/filters.cpp
     src/grid.cpp
+    src/markers.cpp
   DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::cmd tbcad::render)
 
 tbcad_add_tests(drafting
