@@ -24,7 +24,7 @@ jobs:
       - name: Build
         run: cmake --build --preset windows-msvc-release
       - name: Test
-        run: ctest --preset windows-msvc-release
+        run: ctest --preset windows-msvc-release --output-on-failure
       - name: Upload tbcad.exe
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

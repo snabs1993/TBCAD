@@ -1,0 +1,79 @@
+# Text (W4-4)
+
+Libraries: `libs/text` (`tbcad::text`: layout, wrapping, display) and `libs/commands/text`
+(module `textcmd`: TEXT, MTEXT, STYLE, TEXTEDIT and the editor panel). Fonts come from `libs/font`
+(FreeType + HarfBuzz); the bundled Sarabun covers Thai and Latin.
+
+## Sizes
+
+Text height means **capital height**: the layout scale is `height / capHeight(font)`, so 2.5 mm
+text has 2.5 mm capitals. A style's width factor and oblique angle combine with the entity's own
+(`widthFactor = style * entity`, `oblique = style + entity`).
+
+## TEXT alignment
+
+`TextData::position` is the insertion point. For every alignment except Left/Baseline the
+alignment point is `alignPoint` (the DXF importer stores it that way; the TEXT command sets both
+points equal for Left/Baseline). Vertical: Baseline, Bottom (the descender line sits on the
+point), Middle (half a capital height below the cap line), Top. `Middle` (horizontal) centres on
+both axes. **Aligned** and **Fit** run the baseline from `position` to `alignPoint`: Aligned
+scales width and height together, Fit keeps the height and changes the width factor. The entity's
+rotation is ignored for those two.
+
+## MTEXT
+
+* Markup: `\P` new paragraph, `\\ \{ \}` literals, `{\b1;..}` bold, `{\i1;..}` italic,
+  `{\H<h>;..}` height in mm (`{\H2x;..}` relative to the surrounding height), `{\C<i>;..}` palette
+  colour. Anything else after a backslash is kept as typed; unmatched braces are ignored.
+  `text::markupFromPlain` / `plainText` convert to and from plain text.
+* Bold and italic use an installed bold/italic face of the style's family when there is one. With
+  only the bundled regular face, italic is synthesised (12° shear) and bold is not.
+* Line pitch is 5/3 of the line's capital height (`kLineSpacing`); the first baseline is one
+  capital height below the top of the frame. Lines are left aligned; `attach` chooses which point
+  of the frame sits at `position`. `width = 0` means no wrapping.
+
+### Wrapping and Thai
+
+There is no dictionary, so Thai text (written without spaces) is wrapped like this:
+
+1. Break opportunities are spaces and the zero-width space U+200B (insert one by hand where a
+   Thai word boundary is wanted; U+200B is not drawn).
+2. A run of text that is wider than the whole width is filled **grapheme cluster by cluster**.
+   A cluster is a base character with its combining marks (Thai vowels and tone marks above and
+   below, SARA AM, ZWJ/ZWNJ) plus a Thai leading vowel (U+0E40..0E44) with the consonant that
+   follows it. A cluster is never split, even if it alone is wider than the width.
+3. Words wider than the width start on a new line first, then are filled the same way.
+
+This means a Thai paragraph wraps at the right margin but may break inside a word. Real Thai
+word breaking (dictionary) is future work.
+
+## Display
+
+`registerDisplay()` (called by the module's `registerCommands`) installs the generators for
+`EntityKind::Text` and `MText` in `geom::DisplayRegistry`:
+
+* one `DisplayFill` per glyph, holding all of its contours (even-odd), colour from the entity's
+  resolved style or from `\C` overrides; outline flattening tolerance follows the zoom
+  (`DisplayContext::tolerance()`, quantised to powers of two so the font library's per-tolerance
+  outline cache stays small);
+* when the capital height is below 3 pixels (`kPlaceholderPixels`) one closed box per line is
+  drawn instead;
+* bounds are the transformed layout box united with the glyph outlines, so Thai marks above the
+  capital line are included; `text::hitTest` tests the layout frame (grown by the aperture).
+
+Glyph outlines are cached in em space by `libs/font` per (font, glyph, tolerance). Triangulation
+is done by the renderer from the rings.
+
+## Commands
+
+| Command | Aliases | Notes |
+|---|---|---|
+| `TEXT` | `T`, `DT` | start point `[Justify/Style]`, height, rotation, text. Height and justification are remembered |
+| `MTEXT` | `MT` | first corner `[Height/Justify/Rotation/Style/Width]`, opposite corner (rectangle preview), text (type `\P` for a new line) |
+| `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle; makes it current |
+| `TEXTEDIT` | `ED`, `DDEDIT` | selected text (pre-selection works), new text; the old text is the default |
+
+The **Text** panel (View > panels) edits the single selected text object in a multiline input
+with B / I / Height buttons that wrap the selected text in markup. Apply runs `TEXTEDIT`, so an
+edit is one undo step. It uses the ordinary ImGui text input, so the Windows IME works as it does
+in the command line.
