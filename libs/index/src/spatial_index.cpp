@@ -1,9 +1,11 @@
 #include "tbcad/index/spatial_index.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <queue>
 
 #include "hilbert.h"
@@ -249,7 +251,36 @@ struct SpatialIndex::Impl {
     std::uint32_t root = kNil;
     std::size_t treeCount = 0;
     std::vector<IdBox> large;
-    IdMap map;
+    // EntityId -> leaf. After bulkLoad with strictly increasing ids it is left unbuilt (no
+    // duplicates to catch) and filled on first use: loading is the hot path, id lookups only
+    // come with the first edit. `ids()` is the access that builds it.
+    mutable IdMap map;
+    mutable std::atomic<bool> mapReady{true};
+    mutable std::mutex mapMutex;
+
+    IdMap& ids() const {
+        if (!mapReady.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lock(mapMutex);
+            if (!mapReady.load(std::memory_order_relaxed)) {
+                buildMap();
+                mapReady.store(true, std::memory_order_release);
+            }
+        }
+        return map;
+    }
+    void buildMap() const {
+        map.clear();
+        map.reserve(treeCount + large.size());
+        for (std::uint32_t n = 0; n < nodes.size(); ++n) {
+            const Node& nd = nodes[n];
+            if (nd.level != 0)
+                continue;
+            for (std::uint32_t i = 0; i < nd.count; ++i)
+                map.set(nd.e[i].ref, n);
+        }
+        for (const IdBox& l : large)
+            map.set(l.first.value, kInLarge);
+    }
 
     std::size_t size() const { return treeCount + large.size(); }
 
@@ -260,6 +291,7 @@ struct SpatialIndex::Impl {
         treeCount = 0;
         large.clear();
         map.clear();
+        mapReady.store(true, std::memory_order_relaxed);
     }
 
     std::uint32_t allocNode(std::uint16_t level) {
@@ -547,10 +579,11 @@ struct SpatialIndex::Impl {
     }
 
     bool removeId(EntityId id) {
-        std::uint32_t loc = map.find(id.value);
+        IdMap& m = ids();
+        std::uint32_t loc = m.find(id.value);
         if (loc == kNil)
             return false;
-        map.erase(id.value);
+        m.erase(id.value);
         if (loc == kInLarge) {
             for (std::size_t i = 0; i < large.size(); ++i) {
                 if (large[i].first == id) {
@@ -573,7 +606,7 @@ struct SpatialIndex::Impl {
     }
 
     bool insertId(EntityId id, const BBox2& box) {
-        if (!id || !validBox(box) || map.find(id.value) != kNil)
+        if (!id || !validBox(box) || ids().find(id.value) != kNil)
             return false;
         if (isLarge(box)) {
             large.emplace_back(id, box);
@@ -592,18 +625,36 @@ struct SpatialIndex::Impl {
         // Valid items and the extent of their boxes.
         std::vector<std::uint32_t> keep;
         keep.reserve(items.size());
-        map.reserve(items.size());
         BBox2 extent;
+        // Strictly increasing ids cannot repeat, so the id table is not needed to catch repeats.
+        bool increasing = true;
+        std::uint64_t prevId = 0;
         for (std::size_t i = 0; i < items.size(); ++i) {
             if (!items[i].first || !validBox(items[i].second))
                 continue;
-            if (i + 16 < items.size())
-                map.prefetch(items[i + 16].first.value);
-            if (!map.insertNew(items[i].first.value, kInLarge))
-                continue;  // repeated id: the first occurrence is kept
+            if (items[i].first.value <= prevId)
+                increasing = false;
+            prevId = items[i].first.value;
             keep.push_back(static_cast<std::uint32_t>(i));
             extent = unite(extent, items[i].second);
         }
+        if (!increasing) {
+            map.reserve(keep.size());
+            std::vector<std::uint32_t> unique;
+            unique.reserve(keep.size());
+            extent = BBox2{};
+            for (std::size_t k = 0; k < keep.size(); ++k) {
+                if (k + 16 < keep.size())
+                    map.prefetch(items[keep[k + 16]].first.value);
+                std::uint32_t i = keep[k];
+                if (!map.insertNew(items[i].first.value, kInLarge))
+                    continue;  // repeated id: the first occurrence is kept
+                unique.push_back(i);
+                extent = unite(extent, items[i].second);
+            }
+            keep = std::move(unique);
+        }
+        mapReady.store(!increasing, std::memory_order_relaxed);
 
         // Peel off the large boxes, then measure the rest again so the curve covers only them.
         std::vector<std::uint32_t> tree;
@@ -672,10 +723,11 @@ struct SpatialIndex::Impl {
                 for (std::size_t j = 0; j < cnt; ++j, ++pos) {
                     if (pos + 32 < keyed.size())
                         prefetch(&items[keyed[pos + 32].index]);
-                    if (pos + 16 < keyed.size())
+                    if (!increasing && pos + 16 < keyed.size())
                         map.prefetch(items[keyed[pos + 16].index].first.value);
                     const IdBox& it = items[keyed[pos].index];
-                    map.set(it.first.value, idx);
+                    if (!increasing)
+                        map.set(it.first.value, idx);
                     node.e[node.count++] = Entry{it.second, it.first.value};
                     box = unite(box, it.second);
                 }
@@ -769,7 +821,7 @@ bool SpatialIndex::update(EntityId id, const BBox2& newBox) {
         im.removeId(id);
         return false;
     }
-    std::uint32_t loc = im.map.find(id.value);
+    std::uint32_t loc = im.ids().find(id.value);
     if (loc == kNil)
         return im.insertId(id, newBox);
     if (loc == kInLarge) {
@@ -798,12 +850,12 @@ bool SpatialIndex::update(EntityId id, const BBox2& newBox) {
 }
 
 bool SpatialIndex::contains(EntityId id) const {
-    return id && impl_->map.find(id.value) != kNil;
+    return id && impl_->ids().find(id.value) != kNil;
 }
 
 BBox2 SpatialIndex::boxOf(EntityId id) const {
     const Impl& im = *impl_;
-    std::uint32_t loc = id ? im.map.find(id.value) : kNil;
+    std::uint32_t loc = id ? im.ids().find(id.value) : kNil;
     if (loc == kNil)
         return BBox2{};
     if (loc == kInLarge) {
@@ -968,7 +1020,7 @@ bool SpatialIndex::validate() const {
             for (std::uint32_t i = 0; i < node.count; ++i) {
                 const Impl::Entry& e = node.e[i];
                 if (node.level == 0) {
-                    if (im.map.find(e.ref) != n)
+                    if (im.ids().find(e.ref) != n)
                         return false;
                     ++leafEntries;
                 } else {
@@ -986,9 +1038,9 @@ bool SpatialIndex::validate() const {
     if (leafEntries != im.treeCount)
         return false;
     for (const IdBox& l : im.large)
-        if (im.map.find(l.first.value) != kInLarge)
+        if (im.ids().find(l.first.value) != kInLarge)
             return false;
-    return im.map.size() == im.treeCount + im.large.size();
+    return im.ids().size() == im.treeCount + im.large.size();
 }
 
 }  // namespace tbcad::index

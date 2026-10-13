@@ -398,3 +398,40 @@ TEST_CASE("move keeps the index usable") {
     a = std::move(b);
     CHECK(a.contains(id(1)));
 }
+
+TEST_CASE("bulk load leaves the id table to the first lookup, sorted ids or not") {
+    for (bool sorted : {true, false}) {
+        std::vector<IdBox> items;
+        for (std::uint64_t i = 1; i <= 5000; ++i)
+            items.emplace_back(id(sorted ? i : 5001 - i),
+                               box(double(i % 100), double(i / 100), double(i % 100) + 0.5,
+                                   double(i / 100) + 0.5));
+        items.emplace_back(id(9000), box(-1e5, -1e5, 1e5, 1e5));  // a large box
+        SpatialIndex idx;
+        idx.bulkLoad(items);
+        CHECK(idx.size() == items.size());
+        // Queries do not need the table; every lookup below builds it on first use.
+        CHECK(idx.queryIds(box(0, 0, 100, 50)).size() == 5001);
+        CHECK(idx.contains(id(9000)));
+        CHECK(idx.boxOf(id(9000)).max.x == 1e5);
+        CHECK(idx.contains(id(1)));
+        CHECK_FALSE(idx.contains(id(5001)));
+        CHECK(idx.remove(id(1)));
+        CHECK(idx.remove(id(9000)));
+        CHECK(idx.update(id(2), box(500, 500, 501, 501)));
+        CHECK(idx.insert(id(7000), box(1, 1, 2, 2)));
+        CHECK(idx.size() == 5000);
+        CHECK(idx.validate());
+    }
+}
+
+TEST_CASE("an edit right after bulk load works without any lookup first") {
+    std::vector<IdBox> items;
+    for (std::uint64_t i = 1; i <= 3000; ++i)
+        items.emplace_back(id(i), box(double(i), 0, double(i) + 1, 1));
+    SpatialIndex idx;
+    idx.bulkLoad(items);
+    CHECK_FALSE(idx.insert(id(10), box(0, 0, 1, 1)));  // exists: found through the lazy table
+    CHECK(idx.size() == 3000);
+    CHECK(idx.validate());
+}
