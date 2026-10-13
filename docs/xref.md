@@ -1,7 +1,7 @@
-# External references (xref)
+#External references(xref)
 
-An xref shows another drawing inside the current one without copying it by hand, and follows that
-file when it changes. Library: `libs/xref`; commands in `libs/commands/blocks`.
+An xref shows another drawing inside the current one without copying it by hand,
+    and follows that file when it changes.Library : `libs / xref`; commands in `libs/commands/blocks`.
 
 ## What it is
 
@@ -78,7 +78,19 @@ automatic reload is silent, and `XRELOAD` reports the error and leaves the drawi
 The xref fields travel in the `XRFS` chunk added in format 1.2 (`docs/file-format.md`); older
 readers keep it as an unknown chunk and still show the snapshot.
 
-## Not done
+## Clipping (XCLIP)
 
-* Clipping boundaries (XCLIP).
-* DXF export writes an xref as an ordinary block (no `XREF` flag in group 70).
+`XCLIP [XC]` picks an inserted block or xref and sets **New** (rectangular or polygonal), **ON**,
+**OFF** or **Delete**. The boundary is stored on the insert in the block's own coordinates
+(`InsertData::clip`, file format 1.6), so it follows the insert when that is moved, turned or
+scaled. Display, bounds and plots show only the inside; lines are cut exactly at the boundary,
+filled areas are cut exactly for a convex boundary (a concave one may leave zero-width slivers).
+Snapping and picking still see the whole block. `EXPLODE` drops the boundary and says so.
+
+## DXF
+
+DXF has no external reference with a snapshot, so the export writes the xref as an ordinary block
+(content included) with TBCAD XDATA on the `BLOCK` record (`xref=<path>`, `stamp=`, overlay flag);
+TBCAD restores the xref from it. A clipping boundary is written as XDATA on the `INSERT` (`clip=1|0`
+and one `1010` point per corner); other programs show the whole block and the export report says so.
+An `xref` block from another program (flag 4) is still imported as an empty block with a warning.

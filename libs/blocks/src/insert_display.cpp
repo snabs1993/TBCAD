@@ -4,6 +4,7 @@
 #include "internal.h"
 #include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
+#include "tbcad/blocks/clip.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/blocks/dynamic.h"
 
@@ -154,8 +155,20 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             cache->put(key, blockSpace);
         }
     }
-    for (const Transform2& it : items)
-        transformList(*blockSpace, it, out);
+    const bool clipped = ins->clipOn && ins->clip.size() >= 3;
+    if (clipped) {
+        // The boundary is in block coordinates; array items act in block space before it.
+        for (const Transform2& it : items) {
+            std::vector<Vec2> boundary;
+            boundary.reserve(ins->clip.size());
+            for (const Vec2& p : ins->clip)
+                boundary.push_back(p);
+            transformList(clipDisplay(*blockSpace, boundary), it, out);
+        }
+    } else {
+        for (const Transform2& it : items)
+            transformList(*blockSpace, it, out);
+    }
 
     // Attribute values differ per insert, so they are built here and not shared.
     for (EntityId id : def->entities) {
@@ -169,6 +182,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             text->common.layer = insert.common.layer;
         DisplayList own;
         geom::buildDisplay(doc, *text, child, own);
+        if (clipped)
+            own = clipDisplay(own, ins->clip);
         for (const Transform2& it : items)
             transformList(own, it, out);
     }
