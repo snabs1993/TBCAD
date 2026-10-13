@@ -23,6 +23,9 @@ void putFlag(cmd::IHost& host, std::string_view key, bool value);
 // frozen and not locked (sources) and visible.
 bool isEditable(const Document& doc, const Entity& e);
 bool isUsableEdge(const Document& doc, const Entity& e);
+// Any entity kind on a layer that is on, thawed and unlocked (for commands that do not need curve
+// geometry: ALIGN, MATCHPROP, SETBYLAYER, SCALETEXT).
+bool isModifiable(const Document& doc, const Entity& e);
 
 // Applies an algorithm's edit to the entity `id` in the command's transaction. Returns the ids of
 // the entities now standing for the source (the modified one first, then the added ones).

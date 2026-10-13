@@ -16,6 +16,10 @@ cmd::EntityFilterFn editableFilter(const Document& doc) {
     return [&doc](const Entity& e) { return selectable(doc, e); };
 }
 
+cmd::EntityFilterFn modifiableFilter(const Document& doc) {
+    return [&doc](const Entity& e) { return isModifiable(doc, e); };
+}
+
 std::string plural(std::size_t n, const char* one, const char* many) {
     return std::to_string(n) + " " + (n == 1 ? one : many);
 }
@@ -269,7 +273,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
-        so.filter = editableFilter(ctx.doc());
+        so.filter = modifiableFilter(ctx.doc());
         auto sel = co_await ctx.getSelection("Select objects to align", so);
         if (!sel.ok())
             co_return;
@@ -378,7 +382,7 @@ public:
         std::size_t done = 0;
         for (;;) {
             cmd::EntityOptions to;
-            to.filter = editableFilter(ctx.doc());
+            to.filter = modifiableFilter(ctx.doc());
             auto dst = co_await ctx.getEntity("Select destination object(s)", to);
             if (!dst.ok())
                 break;

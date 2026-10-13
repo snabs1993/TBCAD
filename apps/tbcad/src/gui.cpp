@@ -13,6 +13,7 @@
 #include <map>
 #include <sstream>
 
+#include "icons.h"
 #include "key_map.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
@@ -645,35 +646,105 @@ void Gui::menuBar() {
 }
 
 void Gui::toolStrip() {
+    struct Tool {
+        Icon icon;
+        const char* tip;
+        const char* action;   // built-in action id, or nullptr
+        const char* command;  // command line to run, or nullptr
+    };
+    struct Group {
+        const char* name;
+        std::vector<Tool> tools;
+    };
+    static const std::vector<Group> groups = {
+        {"File",
+         {{Icon::New, "New (Ctrl+N)", "file.new", nullptr},
+          {Icon::Open, "Open (Ctrl+O)", "file.open", nullptr},
+          {Icon::Save, "Save (Ctrl+S)", "file.save", nullptr}}},
+        {"Edit",
+         {{Icon::Undo, "Undo", "edit.undo", nullptr}, {Icon::Redo, "Redo", "edit.redo", nullptr}}},
+        {"Draw",
+         {{Icon::Line, "Line", nullptr, "LINE"},
+          {Icon::Polyline, "Polyline", nullptr, "POLYLINE"},
+          {Icon::Circle, "Circle", nullptr, "CIRCLE"},
+          {Icon::Arc, "Arc", nullptr, "ARC"},
+          {Icon::Rectangle, "Rectangle", nullptr, "RECTANGLE"},
+          {Icon::Hatch, "Hatch", nullptr, "HATCH"},
+          {Icon::Text, "Text", nullptr, "TEXT"}}},
+        {"Modify",
+         {{Icon::Move, "Move", nullptr, "MOVE"},
+          {Icon::Copy, "Copy", nullptr, "COPY"},
+          {Icon::Rotate, "Rotate", nullptr, "ROTATE"},
+          {Icon::Scale, "Scale", nullptr, "SCALE"},
+          {Icon::Mirror, "Mirror", nullptr, "MIRROR"},
+          {Icon::Stretch, "Stretch", nullptr, "STRETCH"},
+          {Icon::Trim, "Trim", nullptr, "TRIM"},
+          {Icon::Offset, "Offset", nullptr, "OFFSET"},
+          {Icon::Fillet, "Fillet", nullptr, "FILLET"},
+          {Icon::Erase, "Erase", nullptr, "ERASE"}}},
+        {"View", {{Icon::ZoomExtents, "Zoom Extents", "view.zoomExtents", nullptr}}}};
+
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking;
-    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 1.2f;
+    const float iconSize = std::round(
+        26.0f * dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
+    const float h = iconSize + ImGui::GetStyle().WindowPadding.y * 2.0f;
     if (ImGui::BeginViewportSideBar("##toolstrip", vp, ImGuiDir_Up, h, flags)) {
-        auto button = [&](const char* label, bool enabled = true) {
-            ImGui::BeginDisabled(!enabled);
-            bool pressed = ImGui::Button(label);
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            return pressed;
-        };
-        if (button("New"))
-            runAction("file.new");
-        if (button("Open"))
-            runAction("file.open");
-        if (button("Save"))
-            runAction("file.save");
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-        if (button("Undo", !core_.undoLabel().empty()))
-            core_.undo();
-        if (button("Redo", !core_.redoLabel().empty()))
-            core_.redo();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-        if (button("Zoom Extents"))
-            core_.zoomExtents();
-        ImGui::NewLine();
+        bool first = true;
+        for (const Group& group : groups) {
+            const std::string key = std::string("ui.toolgroup.") + group.name;
+            if (!core_.settings().getBool(key, true))
+                continue;
+            bool any = false;
+            for (const Tool& t : group.tools)
+                any = any || t.action || core_.registry().find(t.command);
+            if (!any)
+                continue;
+            if (!first) {
+                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
+                const ImVec2 p = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddLine(
+                    ImVec2(p.x - ImGui::GetStyle().ItemSpacing.x, p.y + 3),
+                    ImVec2(p.x - ImGui::GetStyle().ItemSpacing.x, p.y + iconSize - 3),
+                    ImGui::GetColorU32(ImGuiCol_Separator));
+            }
+            first = false;
+            bool firstInGroup = true;
+            for (const Tool& t : group.tools) {
+                if (t.command && !core_.registry().find(t.command))
+                    continue;
+                if (!firstInGroup)
+                    ImGui::SameLine(0, 2);
+                firstInGroup = false;
+                bool enabled = true;
+                if (t.action && std::string(t.action) == "edit.undo")
+                    enabled = !core_.undoLabel().empty();
+                if (t.action && std::string(t.action) == "edit.redo")
+                    enabled = !core_.redoLabel().empty();
+                ImGui::PushID(t.tip);
+                if (iconButton("##tool", t.icon, iconSize, enabled)) {
+                    if (t.action)
+                        runAction(t.action);
+                    else
+                        core_.submitText(t.command);
+                }
+                ImGui::PopID();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort |
+                                         ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("%s", t.tip);
+            }
+        }
+        // Right-click the strip to show or hide a group.
+        if (ImGui::BeginPopupContextWindow("##toolstripMenu")) {
+            for (const Group& group : groups) {
+                const std::string key = std::string("ui.toolgroup.") + group.name;
+                bool shown = core_.settings().getBool(key, true);
+                if (ImGui::MenuItem(group.name, nullptr, &shown))
+                    core_.settings().setBool(key, shown);
+            }
+            ImGui::EndPopup();
+        }
     }
     ImGui::End();
 }

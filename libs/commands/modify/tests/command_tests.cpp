@@ -435,3 +435,61 @@ TEST_CASE("PEDIT converts a line, closes, widens and joins") {
         }
     });
 }
+
+TEST_CASE("EXTRIM cuts several objects on one side of an edge") {
+    Fixture f;
+    EntityId edge = f.add(LineData{{5, -10}, {5, 10}});
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 3}, {10, 3}});
+    f.add(LineData{{0, 20}, {4, 20}});
+    auto r = f.host.run("EXTRIM", {ScriptItem::pick(edge, {5, 0}), "8,0",
+                                   ScriptItem::select({a, b}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(near(entityAs<LineData>(f.get(a))->b, {5, 0}));
+    CHECK(near(entityAs<LineData>(f.get(b))->b, {5, 3}));
+    CHECK(f.host.undoStack().undoLabel() == "EXTRIM");
+    f.host.undo();
+    CHECK(near(entityAs<LineData>(f.get(a))->b, {10, 0}));
+}
+
+TEST_CASE("BLEND adds a spline between two line ends") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{30, 10}, {20, 10}});
+    f.host.run("BLEND", {ScriptItem::pick(a, {9, 0}), ScriptItem::pick(b, {21, 10})});
+    CHECK(f.count(EntityKind::Spline) == 1);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Spline) == 0);
+}
+
+TEST_CASE("SCALETEXT and SETBYLAYER") {
+    Fixture f;
+    TextData t;
+    t.height = 2;
+    t.utf8 = "abc";
+    EntityId id = f.add(Indirect<TextData>(t));
+    f.host.run("SCALETEXT", {ScriptItem::select({id}), ScriptItem::enter(), "3"});
+    CHECK(entityAs<TextData>(f.get(id))->height == doctest::Approx(6));
+    f.host.run("SCALETEXT", {ScriptItem::select({id}), ScriptItem::enter(), "New height", "5"});
+    CHECK(entityAs<TextData>(f.get(id))->height == doctest::Approx(5));
+
+    EntityId l = f.add(LineData{{0, 0}, {1, 0}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(l, [](Entity& e) { e.common.lineweight = LineWeight::mm(0.5); }));
+        tx.commit();
+    }
+    f.host.run("SETBYLAYER", {ScriptItem::select({l}), ScriptItem::enter()});
+    CHECK(f.get(l).common.lineweight == LineWeight::byLayer());
+}
+
+TEST_CASE("ALIGN and MATCHPROP also work on text") {
+    Fixture f;
+    TextData t;
+    t.position = {1, 1};
+    t.utf8 = "x";
+    EntityId id = f.add(Indirect<TextData>(t));
+    f.host.run("ALIGN", {ScriptItem::select({id}), ScriptItem::enter(), "0,0", "10,10",
+                         ScriptItem::enter()});
+    CHECK(near(entityAs<TextData>(f.get(id))->position, {11, 11}));
+}
