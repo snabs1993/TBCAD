@@ -1,0 +1,20 @@
+tbcad_add_library(geom
+  SOURCES
+    src/curve.cpp
+    src/display.cpp
+    src/entity_ops.cpp
+    src/grips.cpp
+    src/intersect.cpp
+    src/spline.cpp
+    src/transform.cpp
+  DEPENDS tbcad::core)
+tbcad_add_tests(geom
+  SOURCES
+    tests/main.cpp
+    tests/curve_tests.cpp
+    tests/display_tests.cpp
+    tests/entity_tests.cpp
+    tests/intersect_tests.cpp
+    tests/spline_tests.cpp
+    tests/transform_tests.cpp
+    tests/bench_tests.cpp)
