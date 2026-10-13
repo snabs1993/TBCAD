@@ -13,6 +13,7 @@ endif()
 tbcad_add_library(textcmd
   SOURCES ${_textcmd_sources}
   DEPENDS tbcad::cmd tbcad::text tbcad::geom tbcad::ui)
+target_include_directories(tbcad_textcmd PRIVATE src)
 if(TBCAD_BUILD_APP)
   target_link_libraries(tbcad_textcmd PRIVATE tbcad::imgui)
   target_compile_definitions(tbcad_textcmd PRIVATE TBCAD_TEXTCMD_IMGUI=1)
