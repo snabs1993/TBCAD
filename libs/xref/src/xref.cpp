@@ -62,6 +62,26 @@ public:
         return failure_.empty() ? Result<void>{} : makeError(ErrorCode::InvalidArgument, failure_);
     }
 
+    // Used by importContent: copy one row (and what it needs) from the source.
+    LayerId importLayer(LayerId id) { return mapLayer(id); }
+    LinetypeId importLinetype(LinetypeId id) { return mapLinetype(id); }
+    TextStyleId importTextStyle(TextStyleId id) { return mapTextStyle(id); }
+    DimStyleId importDimStyle(DimStyleId id) { return mapDimStyle(id); }
+    // Copies the entities of the source block `sb` into the new host block `into`.
+    Result<void> runBlock(const BlockDef& sb, BlockId into) {
+        std::vector<EntityId> members = sb.entities;
+        for (EntityId id : members) {
+            const Entity* e = src_.find(id);
+            if (!e)
+                continue;
+            auto added = tx_.add(remap(*e, 0), into);
+            if (!added)
+                return added.error();
+            ++sum_.entities;
+        }
+        return failure_.empty() ? Result<void>{} : makeError(ErrorCode::InvalidArgument, failure_);
+    }
+
 private:
     Result<LayerId> rootLayer() {
         if (const Layer* l = host_.layerByName(name_))
@@ -349,7 +369,7 @@ Result<Source> loadOne(const std::filesystem::path& file) {
     Source out;
     out.stamp = fileStamp(file);
     out.file = file;
-    if (ext == ".tbcad") {
+    if (ext == ".tbcad" || ext == ".tbt") {  // a template is a .tbcad file
         io::IoReport report;
         auto doc = io::readTbcad(file, report);
         if (!doc)
@@ -381,7 +401,7 @@ Result<Source> loadOne(const std::filesystem::path& file) {
             res.value().stamp = out.stamp;
         return res;
     }
-    return makeError(ErrorCode::Unsupported, "Only .tbcad and .dxf files can be attached");
+    return makeError(ErrorCode::Unsupported, "Only .tbcad, .tbt and .dxf files can be attached");
 }
 
 // Reads `file` and refreshes the xrefs inside it from their own files. `chain` holds the files
@@ -538,6 +558,156 @@ Result<void> bind(Transaction& tx, Document& doc, BlockId block) {
         d.xrefStamp = 0;
         d.xrefOverlay = false;
     });
+}
+
+namespace {
+
+std::string layerPathOf(const Document& doc, LayerId id) {
+    std::vector<std::string> parts;
+    for (int guard = 0; id && guard < 16; ++guard) {
+        const Layer* l = doc.layer(id);
+        if (!l)
+            break;
+        parts.push_back(l->name);
+        id = l->parent;
+    }
+    std::string out;
+    for (auto it = parts.rbegin(); it != parts.rend(); ++it)
+        out += (out.empty() ? "" : "~") + *it;
+    return out;
+}
+
+// The layer with this parent~child path, or null.
+const Layer* layerByPath(const Document& doc, const std::string& path) {
+    for (const auto& [id, l] : doc.layers())
+        if (layerPathOf(doc, id) == path)
+            return &l;
+    return nullptr;
+}
+
+}  // namespace
+
+std::vector<ContentItem> listContent(const Document& src) {
+    std::vector<ContentItem> out;
+    auto sorted = [&](ContentKind kind, std::vector<std::string> names) {
+        std::sort(names.begin(), names.end(),
+                  [](const std::string& a, const std::string& b) { return lower(a) < lower(b); });
+        for (std::string& n : names)
+            out.push_back({kind, std::move(n)});
+    };
+    std::vector<std::string> names;
+    for (const auto& [id, b] : src.blocks())
+        if (!b.anonymous && b.xrefPath.empty() && !b.name.empty() && b.name.front() != '*')
+            names.push_back(b.name);
+    sorted(ContentKind::Block, std::move(names));
+    names.clear();
+    for (const auto& [id, l] : src.layers())
+        if (id != kLayerZero)
+            names.push_back(layerPathOf(src, id));
+    sorted(ContentKind::Layer, std::move(names));
+    names.clear();
+    for (const auto& [id, lt] : src.linetypes())
+        if (id != kLinetypeContinuous)
+            names.push_back(lt.name);
+    sorted(ContentKind::Linetype, std::move(names));
+    names.clear();
+    for (const auto& [id, ts] : src.textStyles())
+        if (id != kTextStyleStandard)
+            names.push_back(ts.name);
+    sorted(ContentKind::TextStyle, std::move(names));
+    names.clear();
+    for (const auto& [id, ds] : src.dimStyles())
+        if (id != kDimStyleStandard)
+            names.push_back(ds.name);
+    sorted(ContentKind::DimStyle, std::move(names));
+    return out;
+}
+
+Result<void> importContent(Transaction& tx, Document& doc, const Source& source,
+                           const std::vector<ContentItem>& items, ImportReport& report) {
+    if (!source.doc)
+        return makeError(ErrorCode::InvalidArgument, "There is nothing to import from");
+    const Document& src = *source.doc;
+    Summary summary;
+    Filler fill(tx, doc, src, "content", summary, true);
+    for (const ContentItem& item : items) {
+        auto skip = [&](const std::string& why) {
+            report.skipped.push_back(item.name + ": " + why);
+        };
+        switch (item.kind) {
+            case ContentKind::Block: {
+                const BlockDef* sb = src.blockByName(item.name);
+                if (!sb) {
+                    skip("not in the file");
+                    break;
+                }
+                if (auto ok = blocks::validateBlockName(doc, item.name); !ok) {
+                    skip(ok.error().message);
+                    break;
+                }
+                BlockDef row;
+                row.name = sb->name;
+                row.base = sb->base;
+                auto block = tx.addBlock(std::move(row));
+                if (!block)
+                    return block.error();
+                if (auto r = fill.runBlock(*sb, block.value()); !r)
+                    return r;
+                ++report.added;
+                break;
+            }
+            case ContentKind::Layer: {
+                const Layer* sl = layerByPath(src, item.name);
+                if (!sl) {
+                    skip("not in the file");
+                } else if (layerByPath(doc, item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    const std::size_t before = summary.layers;
+                    (void)fill.importLayer(sl->id);
+                    report.added += summary.layers - before;
+                }
+                break;
+            }
+            case ContentKind::Linetype: {
+                const Linetype* sl = src.linetypeByName(item.name);
+                if (!sl) {
+                    skip("not in the file");
+                } else if (doc.linetypeByName(item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    (void)fill.importLinetype(sl->id);
+                    ++report.added;
+                }
+                break;
+            }
+            case ContentKind::TextStyle: {
+                const TextStyle* sts = src.textStyleByName(item.name);
+                if (!sts) {
+                    skip("not in the file");
+                } else if (doc.textStyleByName(item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    (void)fill.importTextStyle(sts->id);
+                    ++report.added;
+                }
+                break;
+            }
+            case ContentKind::DimStyle: {
+                const DimStyle* sds = src.dimStyleByName(item.name);
+                if (!sds) {
+                    skip("not in the file");
+                } else if (doc.dimStyleByName(item.name)) {
+                    skip("already in the drawing");
+                } else {
+                    (void)fill.importDimStyle(sds->id);
+                    ++report.added;
+                }
+                break;
+            }
+        }
+    }
+    return {};
 }
 
 State state(const Document& doc, BlockId block, const std::filesystem::path& hostFile) {
