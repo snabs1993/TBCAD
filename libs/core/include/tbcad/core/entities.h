@@ -204,6 +204,18 @@ struct HatchLoop {
     bool outer = true;
 };
 
+// A gradient fill: the colour runs from `color1` to `color2` across the hatch, along `angle`
+// (radians, direction of the colour change). Linear goes colour 1 -> colour 2; Cylinder goes
+// 1 -> 2 -> 1 (brightest in the middle). A hatch with a gradient is solid (`HatchData::solid`).
+enum class GradientKind : std::uint8_t { Linear = 1, Cylinder = 2 };
+
+struct GradientData {
+    GradientKind kind = GradientKind::Linear;
+    Color color1 = Color::rgb(30, 60, 200);
+    Color color2 = Color::rgb(190, 220, 255);
+    double angle = 0;
+};
+
 struct HatchData {
     std::vector<HatchLoop> loops{};
     bool solid = true;
@@ -213,6 +225,7 @@ struct HatchData {
     Vec2 patternOrigin{};
     Color fill = Color::byLayer();
     std::vector<EntityId> sourceBoundary{};  // for later associativity
+    std::optional<GradientData> gradient{};  // set: fill with a colour gradient
 };
 
 // Value of one attribute of an Insert, matched to the block's attribute definition by tag.
