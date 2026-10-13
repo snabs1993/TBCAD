@@ -32,8 +32,11 @@ TEST_CASE("writeDxfFile writes a DXF") {
         tx.commit();
     }
     REQUIRE(dwgopen::writeDxfFile(doc, dir / "a.dxf").ok());
-    std::ifstream in(dir / "a.dxf", std::ios::binary);
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string text;
+    {  // closed before remove_all (Windows)
+        std::ifstream in(dir / "a.dxf", std::ios::binary);
+        text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    }
     CHECK(text.find("LINE") != std::string::npos);
     fs::remove_all(dir);
 }
