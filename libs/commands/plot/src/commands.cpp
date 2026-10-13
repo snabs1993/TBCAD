@@ -2,6 +2,7 @@
 #include <cctype>
 
 #include "tbcad/plot/plot.h"
+#include "tbcad/sheets/sheets.h"
 
 namespace tbcad::plot {
 
@@ -49,7 +50,7 @@ public:
         for (;;) {
             KeywordOptions menu;
             menu.keywords = {"Paper",  "Orientation", "Area",  "Scale",  "Center", "Offset",
-                             "Margin", "LineWeights", "Color", "Format", "Export"};
+                             "Margin", "LineWeights", "Color", "Format", "Layout", "Export"};
             menu.defaultKeyword = "Export";
             auto choice = co_await ctx.getKeyword("Plot " + summary(s, format), menu);
             if (choice.status == Status::Cancel)
@@ -185,6 +186,12 @@ public:
                     s.color = r.keyword == "Monochrome"  ? ColorMode::Monochrome
                               : r.keyword == "Greyscale" ? ColorMode::Greyscale
                                                          : ColorMode::AsDisplayed;
+            } else if (kw == "Layout") {
+                cmd::StringOptions so;
+                so.defaultValue = plotLayout(ctx.host());
+                auto r = co_await ctx.getString("Layout to plot (empty = model space)", so);
+                if (r.ok())
+                    setPlotLayout(ctx.host(), r.text);
             } else if (kw == "Format") {
                 KeywordOptions ko;
                 ko.keywords = {"Pdf", "Svg"};
@@ -215,6 +222,46 @@ public:
     }
 };
 
+// PLOTSET: plots every sheet of a sheet list (see tbcad/sheets/sheets.h) into one PDF.
+class PlotSetCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLOTSET"; }
+    std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT"}; }
+    std::string_view description() const override {
+        return "Plot a list of layouts from several drawings into one PDF";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions lo;
+        auto list = co_await ctx.getString("Sheet list file", lo);
+        if (!list.ok())
+            co_return;
+        cmd::StringOptions fo;
+        {
+            auto dot = list.text.rfind('.');
+            auto slash = list.text.find_last_of("/\\");
+            bool hasExt = dot != std::string::npos && (slash == std::string::npos || dot > slash);
+            fo.defaultValue = (hasExt ? list.text.substr(0, dot) : list.text) + ".pdf";
+        }
+        auto file = co_await ctx.getString("Output PDF file", fo);
+        if (!file.ok())
+            co_return;
+        auto entries = sheets::readSheetList(list.text);
+        if (!entries) {
+            ctx.message(entries.error().message);
+            co_return;
+        }
+        auto out = withExtension(file.text, Format::Pdf);
+        auto r = sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out);
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        for (const auto& w : r.value().warnings)
+            ctx.message("Warning: " + w);
+        ctx.message("Plotted " + std::to_string(r.value().pages) + " sheets to " + out);
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -225,6 +272,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
     (void)registry.add(std::make_unique<PlotPanelCommand>());
+    (void)registry.add(std::make_unique<PlotSetCommand>());
 }
 
 }  // namespace tbcad::plot

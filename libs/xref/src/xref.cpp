@@ -31,14 +31,19 @@ std::string lower(std::string s) {
 // Copies the model space and the blocks it uses of `src` into the host document.
 class Filler {
 public:
-    Filler(Transaction& tx, Document& host, const Document& src, std::string name, Summary& summary)
-        : tx_(tx), host_(host), src_(src), name_(std::move(name)), sum_(summary) {}
+    // `merge`: the source's layers are matched by name with the host's own (a file used as a
+    // block) instead of being hung below a layer named like the xref.
+    Filler(Transaction& tx, Document& host, const Document& src, std::string name, Summary& summary,
+           bool merge = false)
+        : tx_(tx), host_(host), src_(src), name_(std::move(name)), sum_(summary), merge_(merge) {}
 
     Result<void> run(BlockId into) {
-        auto root = rootLayer();
-        if (!root)
-            return root.error();
-        root_ = root.value();
+        if (!merge_) {
+            auto root = rootLayer();
+            if (!root)
+                return root.error();
+            root_ = root.value();
+        }
         for (EntityId id : src_.modelSpace()) {
             const Entity* e = src_.find(id);
             if (!e)
@@ -131,6 +136,8 @@ private:
     LayerId mapLayer(LayerId id) {
         if (!id)
             id = kLayerZero;
+        if (merge_ && id == kLayerZero)
+            return kLayerZero;  // layer 0 keeps meaning "the layer of the insert"
         auto hit = layers_.find(id);
         if (hit != layers_.end())
             return hit->second;
@@ -217,6 +224,7 @@ private:
     const Document& src_;
     std::string name_;
     Summary& sum_;
+    bool merge_ = false;
     LayerId root_{};
     std::string failure_{};
     std::unordered_map<LayerId, LayerId> layers_{};
@@ -426,6 +434,24 @@ Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
         return block.error();
     Summary local;
     Filler fill(tx, doc, *source.doc, std::string(name), summary ? *summary : local);
+    if (auto r = fill.run(block.value()); !r)
+        return r.error();
+    return block.value();
+}
+
+Result<BlockId> importAsBlock(Transaction& tx, Document& doc, std::string_view name,
+                              const Source& source, Summary* summary) {
+    if (!source.doc)
+        return makeError(ErrorCode::InvalidArgument, "There is nothing to import");
+    if (auto ok = blocks::validateBlockName(doc, name); !ok)
+        return ok.error();
+    BlockDef row;
+    row.name = std::string(name);
+    auto block = tx.addBlock(std::move(row));
+    if (!block)
+        return block.error();
+    Summary local;
+    Filler fill(tx, doc, *source.doc, std::string(name), summary ? *summary : local, true);
     if (auto r = fill.run(block.value()); !r)
         return r.error();
     return block.value();

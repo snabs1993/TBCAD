@@ -63,6 +63,11 @@ bool isUnderlay(const Document& doc, BlockId block);
 // from `source`. The block name must be free. Returns the new block.
 Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
                        std::string_view stored, const Source& source, Summary* summary = nullptr);
+// Creates an ordinary block `name` from the model space of `source` (a drawing file used as a
+// block, as in the block library). Layers are matched by name with the host's own and created
+// when missing; layer 0 stays layer 0. The block name must be free.
+Result<BlockId> importAsBlock(Transaction& tx, Document& doc, std::string_view name,
+                              const Source& source, Summary* summary = nullptr);
 // Replaces the content of an xref block by `source`; inserts of the block stay where they are.
 Result<void> reload(Transaction& tx, Document& doc, BlockId block, const Source& source,
                     Summary* summary = nullptr);
