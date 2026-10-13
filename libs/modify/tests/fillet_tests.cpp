@@ -89,7 +89,8 @@ TEST_CASE("fillet line and arc, arc and arc: tangent to both") {
     REQUIRE(r.value().added.size() == 1);
     const auto& f = as<ArcData>(r.value().added[0]);
     CHECK(near(f.radius, 3));
-    // Tangent to the line: centre at height R. Tangent to the circle: centres R + r apart or |R - r|.
+    // Tangent to the line: centre at height R. Tangent to the circle: centres R + r apart or |R -
+    // r|.
     CHECK(near(std::abs(f.center.y), 3, 1e-6));
     double dc = distance(f.center, {0, 8});
     CHECK((near(dc, 8, 1e-6) || near(dc, 2, 1e-6)));
@@ -207,8 +208,7 @@ TEST_CASE("chamfer a polyline corner and all corners") {
     o.distance2 = 2;
     auto one = chamferPolylineVertex(rect, 2, o);
     REQUIRE(one.ok());
-    CHECK(sameVertexSet(verts(one.value()),
-                        {{0, 0}, {10, 0}, {10, 4}, {8, 6}, {0, 6}}));
+    CHECK(sameVertexSet(verts(one.value()), {{0, 0}, {10, 0}, {10, 4}, {8, 6}, {0, 6}}));
     auto all = chamferPolyline(rect, o);
     REQUIRE(all.ok());
     CHECK(as<PolylineData>(all.value()).v.size() == 8);

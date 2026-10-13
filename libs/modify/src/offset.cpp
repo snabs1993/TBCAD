@@ -116,8 +116,7 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
             double bestD = std::numeric_limits<double>::infinity();
             std::optional<Vec2> mitre;
             for (const auto& x : xs) {
-                if (segParamUnbounded(a.s, x.p) < 1.0 - 1e-9 ||
-                    segParamUnbounded(b.s, x.p) > 1e-9)
+                if (segParamUnbounded(a.s, x.p) < 1.0 - 1e-9 || segParamUnbounded(b.s, x.p) > 1e-9)
                     continue;
                 double dv = distance(x.p, v);
                 if (dv < bestD) {
@@ -188,9 +187,11 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
                 continue;  // inside the offset distance: part of a loop that gets cut away
             // Two raw segments can run over the same stretch (a vanishing bridge): keep it once.
             bool duplicate = std::any_of(valid.begin(), valid.end(), [&](const Seg& v) {
-                return (samePoint(v.p0, piece.p0, kJoinTol) && samePoint(v.p1, piece.p1, kJoinTol) &&
+                return (samePoint(v.p0, piece.p0, kJoinTol) &&
+                        samePoint(v.p1, piece.p1, kJoinTol) &&
                         std::abs(v.bulge - piece.bulge) < 1e-7) ||
-                       (samePoint(v.p0, piece.p1, kJoinTol) && samePoint(v.p1, piece.p0, kJoinTol) &&
+                       (samePoint(v.p0, piece.p1, kJoinTol) &&
+                        samePoint(v.p1, piece.p0, kJoinTol) &&
                         std::abs(v.bulge + piece.bulge) < 1e-7);
             });
             if (!duplicate)

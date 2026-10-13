@@ -67,7 +67,8 @@ std::vector<Seg> sliceCyclic(const std::vector<Seg>& segs, double s0, double s1)
 // Global parameter (segment index + u) of the point of the segment list closest to p.
 double closestGlobalParam(const std::vector<Seg>& segs, Vec2 p);
 
-// ---- Entities --------------------------------------------------------------------------------------
+// ---- Entities
+// --------------------------------------------------------------------------------------
 
 // A new entity of the same properties as `like` (the id is cleared).
 Entity withData(const Entity& like, EntityData data);

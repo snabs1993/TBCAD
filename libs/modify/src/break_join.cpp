@@ -94,8 +94,8 @@ Result<EntityEdit> breakCurve(const Entity& e, Vec2 p1, std::optional<Vec2> p2) 
     if (!geom::curvesOf(e, cs) || cs.size() != 1)
         return err("This kind of object cannot be broken.");
     const CurveRef& c = cs[0];
-    const bool periodic = !c.isLine() && c.kind() != CurveRef::Kind::Spline &&
-                          c.sweep() >= kTwoPi - 1e-9;
+    const bool periodic =
+        !c.isLine() && c.kind() != CurveRef::Kind::Spline && c.sweep() >= kTwoPi - 1e-9;
     if (periodic) {
         if (!p2)
             return err("A circle needs two break points.");
@@ -251,8 +251,8 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
                 lines.push_back({l->a, l->b, {i}});
         } else if (const auto* a = entityAs<ArcData>(*e)) {
             double sweep = normalizeAngle(a->endAngle - a->startAngle);
-            arcs.push_back({a->center, a->radius, a->startAngle, sweep < 1e-12 ? kTwoPi : sweep,
-                            {i}});
+            arcs.push_back(
+                {a->center, a->radius, a->startAngle, sweep < 1e-12 ? kTwoPi : sweep, {i}});
         } else if (const auto* p = entityAs<PolylineData>(*e)) {
             PolylineData pl = cleanPolyline(*p);
             if (!pl.closed && pl.v.size() >= 2) {

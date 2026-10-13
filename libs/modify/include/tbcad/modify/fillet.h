@@ -40,9 +40,9 @@ Result<Entity> filletPolyline(const Entity& polyline, double radius);
 
 struct ChamferOptions {
     double distance1 = 0;
-    double distance2 = 0;       // distance-distance method
-    bool byAngle = false;       // distance-angle: distance1 along the first line + angle
-    double angle = 0;           // radians, between the chamfer and the first line
+    double distance2 = 0;  // distance-distance method
+    bool byAngle = false;  // distance-angle: distance1 along the first line + angle
+    double angle = 0;      // radians, between the chamfer and the first line
     bool trim = true;
 };
 

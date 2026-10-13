@@ -71,8 +71,8 @@ TEST_CASE("break an arc and a polyline") {
     REQUIRE(cb.ok());
     CHECK(cb.value().added.empty());
     CHECK_FALSE(as<PolylineData>(*cb.value().modified).closed);
-    CHECK(sameVertexSet(verts(*cb.value().modified),
-                        {{5, 10}, {0, 10}, {0, 0}, {10, 0}, {5, 0}}) == false);
+    CHECK(sameVertexSet(verts(*cb.value().modified), {{5, 10}, {0, 10}, {0, 0}, {10, 0}, {5, 0}}) ==
+          false);
     // Removed: the part from (5,0) to (5,10) along the way the vertices run (right side); what
     // is left runs from (5,10) over (0,10), (0,0) to (5,0).
     CHECK(sameVertexSet(verts(*cb.value().modified), {{5, 10}, {0, 10}, {0, 0}, {5, 0}}));
@@ -111,9 +111,9 @@ TEST_CASE("join arcs on one circle, and a closing pair makes a circle") {
 
 TEST_CASE("join a chain of mixed lines, arcs and polylines into one polyline") {
     std::vector<Entity> v{
-        line({10, 0}, {10, 4}),                                   // 2nd, reversed direction below
-        line({0, 0}, {10, 0}),                                    // 1st
-        arc({10, 6}, 2, 3 * kPi / 2, 0),                          // wait: from (10,4) to (12,6)
+        line({10, 0}, {10, 4}),           // 2nd, reversed direction below
+        line({0, 0}, {10, 0}),            // 1st
+        arc({10, 6}, 2, 3 * kPi / 2, 0),  // wait: from (10,4) to (12,6)
         poly(pts({{12, 6}, {12, 10}, {20, 10}}), false),
     };
     auto r = joinEntities(ptrs(v));

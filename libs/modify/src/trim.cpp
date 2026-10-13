@@ -230,8 +230,8 @@ Result<EntityEdit> extendSeg(const Entity& target, Seg seg, bool atEnd,
                              Seg& result) {
     CurveRef c = segCurve(seg);
     std::optional<Vec2> best;
-    double bestU = atEnd ? std::numeric_limits<double>::infinity()
-                         : -std::numeric_limits<double>::infinity();
+    double bestU =
+        atEnd ? std::numeric_limits<double>::infinity() : -std::numeric_limits<double>::infinity();
     for (const CurveRef& e : edges) {
         std::vector<geom::Intersection> xs;
         geom::intersect(c, e, xs, true, opt.extendEdges);

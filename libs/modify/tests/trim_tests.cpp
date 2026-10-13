@@ -98,8 +98,7 @@ TEST_CASE("trim a polyline and open a closed one") {
     REQUIRE(o.value().added.empty());
     const auto& res = as<PolylineData>(*o.value().modified);
     CHECK_FALSE(res.closed);
-    CHECK(sameVertexSet(verts(*o.value().modified),
-                        {{5, 0}, {10, 0}, {10, 10}, {0, 10}, {0, 5}}));
+    CHECK(sameVertexSet(verts(*o.value().modified), {{5, 0}, {10, 0}, {10, 10}, {0, 10}, {0, 5}}));
 }
 
 TEST_CASE("extend a line to a line, an arc, and a line to the nearest boundary") {
@@ -146,10 +145,10 @@ TEST_CASE("property: trimming never produces a zero-length entity") {
     std::uniform_real_distribution<double> coord(-20, 20);
     int trimmed = 0;
     for (int iter = 0; iter < 400; ++iter) {
-        Entity target = (iter % 3 == 0)   ? line({coord(rng), coord(rng)}, {coord(rng), coord(rng)})
-                        : (iter % 3 == 1) ? circle({coord(rng), coord(rng)}, 3 + std::abs(coord(rng)))
-                                          : arc({coord(rng), coord(rng)}, 3 + std::abs(coord(rng)),
-                                                0.3, 4.0);
+        Entity target = (iter % 3 == 0) ? line({coord(rng), coord(rng)}, {coord(rng), coord(rng)})
+                        : (iter % 3 == 1)
+                            ? circle({coord(rng), coord(rng)}, 3 + std::abs(coord(rng)))
+                            : arc({coord(rng), coord(rng)}, 3 + std::abs(coord(rng)), 0.3, 4.0);
         std::vector<Entity> edges;
         for (int k = 0; k < 4; ++k)
             edges.push_back(line({coord(rng), coord(rng)}, {coord(rng), coord(rng)}));

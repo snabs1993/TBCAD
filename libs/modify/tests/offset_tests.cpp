@@ -128,8 +128,7 @@ TEST_CASE("concave L-shape offsets") {
     auto in = offsetEntity(lShape(), 1, sharp());
     REQUIRE(in.ok());
     REQUIRE(in.value().size() == 1);
-    CHECK(sameVertexSet(verts(in.value()[0]),
-                        {{1, 1}, {9, 1}, {9, 3}, {3, 3}, {3, 9}, {1, 9}}));
+    CHECK(sameVertexSet(verts(in.value()[0]), {{1, 1}, {9, 1}, {9, 3}, {3, 3}, {3, 9}, {1, 9}}));
 
     auto out = offsetEntity(lShape(), -1, sharp());
     REQUIRE(out.ok());
@@ -137,7 +136,8 @@ TEST_CASE("concave L-shape offsets") {
     CHECK(sameVertexSet(verts(out.value()[0]),
                         {{-1, -1}, {11, -1}, {11, 5}, {5, 5}, {5, 11}, {-1, 11}}));
 
-    // Rounded inward: the reflex corner of the L is where the offset curves part, so it gets the arc.
+    // Rounded inward: the reflex corner of the L is where the offset curves part, so it gets the
+    // arc.
     auto inRound = offsetEntity(lShape(), 1);
     REQUIRE(inRound.ok());
     REQUIRE(inRound.value().size() == 1);
@@ -157,8 +157,18 @@ TEST_CASE("concave L-shape offsets") {
 TEST_CASE("an offset that pinches off splits into several polylines") {
     // A dumbbell: two wide squares joined by a thin bridge. Offsetting inward by more than the
     // bridge half-width removes the bridge and leaves two squares.
-    Entity d = poly(pts({{0, 0}, {4, 0}, {4, 1.8}, {6, 1.8}, {6, 0}, {10, 0}, {10, 4}, {6, 4},
-                         {6, 2.2}, {4, 2.2}, {4, 4}, {0, 4}}),
+    Entity d = poly(pts({{0, 0},
+                         {4, 0},
+                         {4, 1.8},
+                         {6, 1.8},
+                         {6, 0},
+                         {10, 0},
+                         {10, 4},
+                         {6, 4},
+                         {6, 2.2},
+                         {4, 2.2},
+                         {4, 4},
+                         {0, 4}}),
                     true);
     auto r = offsetEntity(d, 0.5, sharp());
     REQUIRE(r.ok());
@@ -184,8 +194,8 @@ TEST_CASE("open polyline offset: square ends, rounded outside corner") {
 
 TEST_CASE("polyline with an arc segment") {
     // Half a stadium: line, semicircle, line.
-    std::vector<PolyVertex> v{{{0, 0}, 0, 0, 0}, {{5, 0}, 1.0, 0, 0}, {{5, 4}, 0, 0, 0},
-                              {{0, 4}, 0, 0, 0}};
+    std::vector<PolyVertex> v{
+        {{0, 0}, 0, 0, 0}, {{5, 0}, 1.0, 0, 0}, {{5, 4}, 0, 0, 0}, {{0, 4}, 0, 0, 0}};
     Entity p = poly(v, false);
     auto r = offsetEntity(p, -1);  // outside of the semicircle
     REQUIRE(r.ok());

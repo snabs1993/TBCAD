@@ -131,8 +131,7 @@ CurveRef segCurve(const Seg& s) {
         return CurveRef::line(s.p0, s.p1);
     if (g->theta > 0)
         return CurveRef::arc(g->center, g->radius, normalizeAngle(g->startAngle), g->theta);
-    return CurveRef::arc(g->center, g->radius, normalizeAngle(g->startAngle + g->theta),
-                         -g->theta);
+    return CurveRef::arc(g->center, g->radius, normalizeAngle(g->startAngle + g->theta), -g->theta);
 }
 
 PolylineData cleanPolyline(const PolylineData& pl) {
@@ -164,7 +163,8 @@ std::vector<Seg> polylineSegs(const PolylineData& pl) {
     return out;
 }
 
-PolylineData polylineFromSegs(const std::vector<Seg>& chain, bool closed, const PolylineData* like) {
+PolylineData polylineFromSegs(const std::vector<Seg>& chain, bool closed,
+                              const PolylineData* like) {
     PolylineData pl;
     if (like)
         pl.constantWidth = like->constantWidth;

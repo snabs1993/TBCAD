@@ -269,7 +269,8 @@ Result<PairEdit> filletEntities(const Entity& a, Vec2 pickA, const Entity& b, Ve
     return out;
 }
 
-// ---- Polylines ------------------------------------------------------------------------------------
+// ---- Polylines
+// ------------------------------------------------------------------------------------
 
 std::size_t nearestSegmentIndex(const PolylineData& polyline, Vec2 p) {
     auto segs = polylineSegs(cleanPolyline(polyline));
@@ -436,7 +437,8 @@ Result<Entity> chamferPolyline(const Entity& polyline, const ChamferOptions& opt
     return rebuildCorners(polyline, allCorners(*pl), chamferSolver(options), false);
 }
 
-// ---- Chamfer of two lines ---------------------------------------------------------------------------
+// ---- Chamfer of two lines
+// ---------------------------------------------------------------------------
 
 Result<PairEdit> chamferEntities(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
                                  const ChamferOptions& opt) {
