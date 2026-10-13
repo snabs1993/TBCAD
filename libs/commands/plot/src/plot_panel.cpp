@@ -263,9 +263,16 @@ void draw(ui::PanelContext& pc) {
 
     // Export
     ImGui::InputText("File", &st.fileInput);
+    {
+        float dpi = static_cast<float>(plotDpi(*pc.host));
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::InputFloat("Image resolution (dpi)", &dpi, 0, 0, "%.0f"))
+            setPlotDpi(*pc.host, std::clamp<double>(dpi, 10, 2400));
+    }
     auto doExport = [&](Format f) {
         st.format = f;
-        std::string path = st.fileInput.empty() ? defaultFile(*pc.host, f) : st.fileInput;
+        std::string path =
+            st.fileInput.empty() ? defaultFile(*pc.host, f) : forFormat(st.fileInput, f);
         PlotSettings run = s;
         auto r = exportFile(*pc.doc, *pc.host, run, f, path);
         st.message = r ? r.value() : r.error().message;
@@ -278,6 +285,12 @@ void draw(ui::PanelContext& pc) {
     ImGui::SameLine();
     if (ImGui::Button("Export SVG"))
         doExport(Format::Svg);
+    ImGui::SameLine();
+    if (ImGui::Button("Export PNG"))
+        doExport(Format::Png);
+    ImGui::SameLine();
+    if (ImGui::Button("Export JPEG"))
+        doExport(Format::Jpeg);
     if (!st.message.empty())
         ImGui::TextWrapped("%s", st.message.c_str());
 }

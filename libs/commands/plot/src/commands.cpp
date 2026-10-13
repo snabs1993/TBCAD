@@ -26,8 +26,10 @@ std::string styleLabel(const PlotSettings& s) {
     return s.styleTable ? (s.styleTable->name.empty() ? "styled" : s.styleTable->name) : "no style";
 }
 
-std::string summary(const PlotSettings& s, Format format) {
-    std::string t = format == Format::Pdf ? "PDF" : "SVG";
+std::string summary(const cmd::IHost& host, const PlotSettings& s, Format format) {
+    std::string t = formatName(format);
+    if (format == Format::Png || format == Format::Jpeg)
+        t += " " + std::to_string(static_cast<int>(plotDpi(host) + 0.5)) + " dpi";
     t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
     t += s.area == PlotArea::Extents   ? ", Extents"
          : s.area == PlotArea::Display ? ", Display"
@@ -58,9 +60,9 @@ public:
             KeywordOptions menu;
             menu.keywords = {"Paper",  "Orientation", "Area",        "Scale", "Center",
                              "Offset", "Margin",      "LineWeights", "Color", "Style",
-                             "Format", "Layout",      "Export"};
+                             "Format", "Resolution",  "Layout",      "Export"};
             menu.defaultKeyword = "Export";
-            auto choice = co_await ctx.getKeyword("Plot " + summary(s, format), menu);
+            auto choice = co_await ctx.getKeyword("Plot " + summary(ctx.host(), s, format), menu);
             if (choice.status == Status::Cancel)
                 co_return;
             const std::string& kw = choice.keyword;
@@ -215,11 +217,25 @@ public:
                     setPlotLayout(ctx.host(), r.text);
             } else if (kw == "Format") {
                 KeywordOptions ko;
-                ko.keywords = {"Pdf", "Svg"};
-                ko.defaultKeyword = format == Format::Pdf ? "Pdf" : "Svg";
+                ko.keywords = {"Pdf", "Svg", "Png", "Jpeg"};
+                ko.defaultKeyword = format == Format::Pdf   ? "Pdf"
+                                    : format == Format::Svg ? "Svg"
+                                    : format == Format::Png ? "Png"
+                                                            : "Jpeg";
                 auto r = co_await ctx.getKeyword("Output format", ko);
                 if (r.ok())
-                    format = r.keyword == "Pdf" ? Format::Pdf : Format::Svg;
+                    format = r.keyword == "Pdf"   ? Format::Pdf
+                             : r.keyword == "Svg" ? Format::Svg
+                             : r.keyword == "Png" ? Format::Png
+                                                  : Format::Jpeg;
+            } else if (kw == "Resolution") {
+                cmd::RealOptions ro;
+                ro.min = 10;
+                ro.max = 2400;
+                ro.defaultValue = plotDpi(ctx.host());
+                auto r = co_await ctx.getReal("Resolution of PNG / JPEG output in dpi", ro);
+                if (r.ok())
+                    setPlotDpi(ctx.host(), r.value);
             }
             saveSettings(ctx.host(), s);  // preferences stick even if the plot is cancelled
         }
@@ -379,13 +395,19 @@ public:
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
-    (void)registry.add(std::make_unique<PlotCommand>(
-        "PLOT", std::vector<std::string>{"PRINT"}, "Plot the drawing to PDF or SVG", Format::Pdf));
+    (void)registry.add(std::make_unique<PlotCommand>("PLOT", std::vector<std::string>{"PRINT"},
+                                                     "Plot the drawing to PDF, SVG, PNG or JPEG",
+                                                     Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTPDF", std::vector<std::string>{}, "Export the drawing to a PDF file", Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
     (void)registry.add(makePrinterCommand());
+    (void)registry.add(std::make_unique<PlotCommand>(
+        "EXPORTPNG", std::vector<std::string>{}, "Export the drawing to a PNG image", Format::Png));
+    (void)registry.add(
+        std::make_unique<PlotCommand>("EXPORTJPG", std::vector<std::string>{"EXPORTJPEG"},
+                                      "Export the drawing to a JPEG image", Format::Jpeg));
     (void)registry.add(std::make_unique<PlotPanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
     (void)registry.add(std::make_unique<PlotStyleCommand>());

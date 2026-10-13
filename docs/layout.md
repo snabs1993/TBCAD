@@ -18,7 +18,7 @@ A viewport plots the model through its own scale, clipped to its rectangle.
 
 ## Plotting a layout
 
-`PLOT`, `EXPORTPDF` and `EXPORTSVG` have a **Layout** option (and the Plot panel a "Plot" drop-down with live preview). Give a layout name to plot that sheet
+`PLOT`, `EXPORTPDF`, `EXPORTSVG`, `EXPORTPNG` and `EXPORTJPG` have a **Layout** option (and the Plot panel a "Plot" drop-down with live preview). Give a layout name to plot that sheet
 at 1:1 on its paper; leave it empty to plot model space (the setting is `plot.layout`).
 
 ## Sheet lists (`libs/sheets`)

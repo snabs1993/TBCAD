@@ -236,3 +236,49 @@ TEST_CASE("PLOTSTYLE selects a table; the default is monochrome and None plots a
     CHECK(f.host->logContains("* grayscale.ctb"));
     CHECK(f.host->logContains("  monochrome.ctb"));
 }
+
+TEST_CASE("EXPORTPNG and EXPORTJPG write images at the chosen resolution") {
+    Fixture f;
+    CHECK(f.reg.find("EXPORTPNG") != nullptr);
+    CHECK(f.reg.find("EXPORTJPEG") == f.reg.find("EXPORTJPG"));
+    auto png = f.path("a4.png");
+    auto r = f.host->run("EXPORTPNG", {"Paper", "A4", "Resolution", "50", "", png});
+    CHECK(r.finished);
+    std::string bytes = slurp(png);
+    REQUIRE(bytes.size() > 50);
+    CHECK(bytes.compare(1, 3, "PNG") == 0);
+    CHECK(f.host->logContains("50 dpi"));
+    CHECK(plot::plotDpi(*f.host) == doctest::Approx(50));
+    // PNG header width / height: A4 landscape at 50 dpi is 585 x 413.
+    auto be32 = [&](std::size_t at) {
+        return (static_cast<unsigned>(static_cast<unsigned char>(bytes[at])) << 24) |
+               (static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 1])) << 16) |
+               (static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 2])) << 8) |
+               static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 3]));
+    };
+    CHECK(be32(16) == 585u);
+    CHECK(be32(20) == 413u);
+
+    auto jpg = f.path("a4.jpg");
+    r = f.host->run("EXPORTJPG", {"", jpg});
+    CHECK(r.finished);
+    bytes = slurp(jpg);
+    REQUIRE(bytes.size() > 50);
+    CHECK(static_cast<unsigned char>(bytes[0]) == 0xFF);
+    CHECK(static_cast<unsigned char>(bytes[1]) == 0xD8);
+
+    // Absurd resolutions are refused, not attempted.
+    auto bad =
+        f.host->run("EXPORTPNG", {"Resolution", "100000", "Resolution", "50", "", f.path("x.png")});
+    CHECK(bad.finished);
+}
+
+TEST_CASE("forFormat swaps an export extension; dpi and quality have defaults") {
+    CHECK(plot::forFormat("a.pdf", plot::Format::Png) == "a.png");
+    CHECK(plot::forFormat("dir.x/a", plot::Format::Jpeg) == "dir.x/a.jpg");
+    CHECK(plot::forFormat("a.JPEG", plot::Format::Svg) == "a.svg");
+    CHECK(plot::forFormat("a.txt", plot::Format::Pdf) == "a.txt");
+    Fixture f;
+    CHECK(plot::plotDpi(*f.host) == doctest::Approx(300));
+    CHECK(plot::jpegQuality(*f.host) == 90);
+}

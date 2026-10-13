@@ -170,10 +170,66 @@ void saveSettings(cmd::IHost& h, const PlotSettings& s) {
                                                                  : "color");
 }
 
+const char* extension(Format f) {
+    switch (f) {
+        case Format::Pdf:
+            return ".pdf";
+        case Format::Svg:
+            return ".svg";
+        case Format::Png:
+            return ".png";
+        case Format::Jpeg:
+            return ".jpg";
+    }
+    return ".pdf";
+}
+
+const char* formatName(Format f) {
+    switch (f) {
+        case Format::Pdf:
+            return "PDF";
+        case Format::Svg:
+            return "SVG";
+        case Format::Png:
+            return "PNG";
+        case Format::Jpeg:
+            return "JPEG";
+    }
+    return "PDF";
+}
+
+double plotDpi(const cmd::IHost& h) {
+    if (auto v = h.setting("plot.dpi"); v && !v->empty()) {
+        const double d = std::atof(v->c_str());
+        if (d >= 10 && d <= 2400)
+            return d;
+    }
+    return 300;
+}
+
+void setPlotDpi(cmd::IHost& h, double dpi) {
+    h.setSetting("plot.dpi", fmt(dpi));
+}
+
+int jpegQuality(const cmd::IHost& h) {
+    if (auto v = h.setting("plot.jpegQuality"); v && !v->empty()) {
+        const int q = std::atoi(v->c_str());
+        if (q >= 1 && q <= 100)
+            return q;
+    }
+    return 90;
+}
+
+namespace {
+std::string fileKey(Format f) {
+    return std::string("plot.file") + extension(f);  // plot.file.pdf, plot.file.svg, ...
+}
+}  // namespace
+
 std::string lastFile(const cmd::IHost& h, Format f) {
-    if (auto v = h.setting(f == Format::Pdf ? "plot.file.pdf" : "plot.file.svg"); v && !v->empty())
+    if (auto v = h.setting(fileKey(f)); v && !v->empty())
         return *v;
-    return f == Format::Pdf ? "drawing.pdf" : "drawing.svg";
+    return std::string("drawing") + extension(f);
 }
 
 std::string defaultFile(const cmd::IHost& h, Format f) {
@@ -184,11 +240,11 @@ std::string defaultFile(const cmd::IHost& h, Format f) {
     auto slash = doc.find_last_of("/\\");
     if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
         doc.resize(dot);
-    return doc + (f == Format::Pdf ? ".pdf" : ".svg");
+    return doc + extension(f);
 }
 
 void setLastFile(cmd::IHost& h, Format f, const std::string& path) {
-    h.setSetting(f == Format::Pdf ? "plot.file.pdf" : "plot.file.svg", path);
+    h.setSetting(fileKey(f), path);
 }
 
 std::string plotLayout(const cmd::IHost& host) {
@@ -200,12 +256,25 @@ void setPlotLayout(cmd::IHost& host, const std::string& name) {
 }
 
 std::string withExtension(std::string path, Format f) {
-    const std::string ext = f == Format::Pdf ? ".pdf" : ".svg";
+    const std::string ext = extension(f);
     auto slash = path.find_last_of("/\\");
     auto dot = path.find_last_of('.');
     if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
         path += ext;
     return path;
+}
+
+std::string forFormat(std::string path, Format f) {
+    const auto slash = path.find_last_of("/\\");
+    const auto dot = path.find_last_of('.');
+    if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) {
+        std::string ext = path.substr(dot);
+        for (char& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext == ".pdf" || ext == ".svg" || ext == ".png" || ext == ".jpg" || ext == ".jpeg")
+            path.resize(dot);
+    }
+    return withExtension(std::move(path), f);
 }
 
 BBox2 viewWindow(const cmd::IHost& h) {

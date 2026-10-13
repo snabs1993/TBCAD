@@ -18,7 +18,15 @@ namespace tbcad::plot {
 void registerCommands(cmd::Registry& registry);
 void registerUi(ui::UiRegistry& registry);
 
-enum class Format { Pdf, Svg };
+enum class Format { Pdf, Svg, Png, Jpeg };
+// File extension of the format with the dot (".pdf").
+const char* extension(Format format);
+const char* formatName(Format format);  // "PDF", "SVG", "PNG", "JPEG"
+// Resolution of PNG / JPEG output in dpi (setting "plot.dpi", 10..2400, default 300) and the JPEG
+// quality (setting "plot.jpegQuality", 1..100, default 90).
+double plotDpi(const cmd::IHost& host);
+void setPlotDpi(cmd::IHost& host, double dpi);
+int jpegQuality(const cmd::IHost& host);
 
 // The plot settings live in the host's free-form settings ("plot.*" keys), so the PLOT command, the
 // dialog panel and the next session all see the same values.
@@ -50,6 +58,9 @@ std::vector<std::string> listStyleTables(const cmd::IHost& host);
 
 // Adds the extension for the format when the path has none.
 std::string withExtension(std::string path, Format format);
+// Like withExtension, but a path that ends in another export extension (.pdf .svg .png .jpg
+// .jpeg) gets the extension of the format instead.
+std::string forFormat(std::string path, Format format);
 // The visible drawing area for PlotArea::Display, from the host's view.
 BBox2 viewWindow(const cmd::IHost& host);
 // "Fit", "1:100", "100" -> settings (fit / scaleN). False when the text is not a scale.
