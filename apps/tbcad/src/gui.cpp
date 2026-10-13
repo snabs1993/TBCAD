@@ -108,7 +108,8 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
       registry_(registry),
       window_(window),
       settings_(SettingsDialog::Hooks{
-          [this] { return dark_; }, [this](bool dark) { setTheme(dark); },
+          [this] { return static_cast<int>(themeMode_); },
+          [this](int mode) { setThemeMode(static_cast<ui::ThemeMode>(mode)); },
           [this] { setDpiScale(dpiScale_); },
           [this](const std::string& action) { return actionLabel(action); }}) {
     float sx = 1, sy = 1;
@@ -117,8 +118,11 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     recovery_ = core_.pendingRecovery();
     openRecoveryPrompt_ = recovery_.has_value();
     anyActivity_ = true;
-    dark_ = core_.settings().getString("ui.theme", "dark") != "light";
+    themeMode_ = ui::parseThemeMode(core_.settings().getString("ui.theme", "dark"));
+    theme_ = ui::themeFor(themeMode_, systemPrefersDark());
+    core_.setTheme(theme_);
     lineweights_ = core_.settings().getBool("view.lineweights", true);
+    cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
     // Text layout finds its fonts and the Thai word list next to the executable.
@@ -129,6 +133,21 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     // The IME hook positions the candidate window on this native window.
     ImGui::GetMainViewport()->PlatformHandleRaw = nativeHandle();
     installImeHook(window);
+}
+
+void Gui::setThemeMode(ui::ThemeMode mode) {
+    themeMode_ = mode;
+    theme_ = ui::themeFor(mode, systemPrefersDark());
+    core_.setTheme(theme_);
+    core_.settings().setString("ui.theme", std::string(ui::themeModeName(mode)));
+    applyTheme(theme_, dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
+    anyActivity_ = true;
+}
+
+Rgba Gui::viewportBackground() const {
+    if (auto custom = ui::parseHexColor(core_.settings().getString("ui.viewportBackground", "")))
+        return *custom;
+    return theme_.bgViewport;
 }
 
 std::string Gui::actionLabel(const std::string& action) const {
@@ -159,17 +178,11 @@ std::string Gui::actionLabel(const std::string& action) const {
     return action;
 }
 
-void Gui::setTheme(bool dark) {
-    dark_ = dark;
-    core_.settings().setString("ui.theme", dark ? "dark" : "light");
-    applyTheme(dark, dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
-}
-
 void Gui::setDpiScale(float scale) {
     dpiScale_ = std::max(0.5f, scale);
     const float total = dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0));
     buildFonts(total);
-    applyTheme(dark_, total);
+    applyTheme(theme_, total);
     anyActivity_ = true;
 }
 
@@ -196,10 +209,15 @@ bool Gui::consumeActivity() {
 // ---- actions -----------------------------------------------------------------------------------
 
 void Gui::runAction(const std::string& action) {
-    if (action == "file.new")
-        requestAction(Pending::New);
-    else if (action == "file.open")
-        requestAction(Pending::Open);
+    if (action == "file.new") {
+        core_.newDocument();
+        startPage_ = false;
+    } else if (action == "file.open")
+        doOpen();
+    else if (action == "file.close")
+        requestAction(Pending::Close);
+    else if (action == "view.nextDocument")
+        core_.activateDocument((core_.activeDocument() + 1) % core_.documentCount());
     else if (action == "file.save")
         doSave();
     else if (action == "file.saveAs")
@@ -217,7 +235,15 @@ void Gui::runAction(const std::string& action) {
         core_.zoomExtents();
     else if (action == "view.toggleCommandLine")
         showCommandLine_ = !showCommandLine_;
-    else if (action == "view.expandLog")
+    else if (action == "view.commandPalette") {
+        showCommandLine_ = true;
+        paletteOpen_ = true;
+        suggestDismissed_ = false;
+        refocusInput_ = true;
+    } else if (action == "view.cursorHud") {
+        cursorHud_ = !cursorHud_;
+        core_.settings().setBool("hud.enabled", cursorHud_);
+    } else if (action == "view.expandLog")
         logExpanded_ = !logExpanded_;
     else if (action == "view.cleanScreen")
         cleanScreen_ = !cleanScreen_;
@@ -233,30 +259,47 @@ void Gui::runAction(const std::string& action) {
     anyActivity_ = true;
 }
 
-void Gui::requestAction(Pending what, std::string path) {
+void Gui::requestAction(Pending what) {
     pending_ = what;
-    pendingPath_ = std::move(path);
-    if (core_.modified())
-        openSavePrompt_ = true;
-    else
-        performPending();
+    continuePending();
 }
 
-void Gui::performPending() {
-    Pending what = pending_;
-    pending_ = Pending::None;
+// Closing one drawing, or leaving the program: asks about each drawing with unsaved changes in
+// turn (it becomes the active tab so the user sees what is being asked about).
+void Gui::continuePending() {
+    if (pending_ == Pending::Close) {
+        if (core_.modified())
+            openSavePrompt_ = true;
+        else
+            performPending();
+    } else if (pending_ == Pending::Exit) {
+        for (std::size_t i = 0; i < core_.documentCount(); ++i) {
+            if (!core_.documentModified(i))
+                continue;
+            if (!core_.activateDocument(i)) {
+                pending_ = Pending::None;  // a command is still running there
+                return;
+            }
+            openSavePrompt_ = true;
+            return;
+        }
+        pending_ = Pending::None;
+        exitRequested_ = true;
+    }
+}
+
+void Gui::performPending(bool discard) {
+    const Pending what = pending_;
     switch (what) {
-        case Pending::New:
-            core_.newDocument();
-            break;
-        case Pending::Open:
-            doOpen();
-            break;
-        case Pending::OpenRecent:
-            doOpenPath(pendingPath_);
+        case Pending::Close:
+            pending_ = Pending::None;
+            core_.closeDocument(core_.activeDocument());
+            startPage_ = true;
             break;
         case Pending::Exit:
-            exitRequested_ = true;
+            if (discard)
+                core_.closeDocument(core_.activeDocument());
+            continuePending();
             break;
         case Pending::None:
             break;
@@ -264,7 +307,7 @@ void Gui::performPending() {
 }
 
 bool Gui::requestClose() {
-    if (!core_.modified())
+    if (!core_.anyDocumentModified())
         return true;
     requestAction(Pending::Exit);
     return exitRequested_;
@@ -309,7 +352,7 @@ void Gui::doSaveAs() {
             if (!r)
                 lastError_ = r.error().message;
             else if (saveThenPending_)
-                performPending();
+                performPending(false);
         }
         saveThenPending_ = false;
         return;
@@ -365,6 +408,11 @@ void Gui::shortcuts() {
             chord->key[0] != 'F')
             continue;
         if (ImGui::IsKeyChordPressed(*ic)) {
+            if (chord->key == "ESCAPE" && suggestVisible_) {
+                suggestDismissed_ = true;  // Esc closes the suggestion list first
+                paletteOpen_ = false;
+                return;
+            }
             runAction(action);
             return;
         }
@@ -424,12 +472,14 @@ void Gui::menuBar() {
             for (const auto& path : core_.recentFiles()) {
                 std::string name = platform::pathToUtf8(platform::pathFromUtf8(path).filename());
                 if (ImGui::MenuItem(name.c_str()))
-                    requestAction(Pending::OpenRecent, path);
+                    doOpenPath(path);
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", path.c_str());
             }
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem("Close", keys.label("file.close").c_str()))
+            runAction("file.close");
         ImGui::Separator();
         if (ImGui::MenuItem("Save", keys.label("file.save").c_str()))
             runAction("file.save");
@@ -478,10 +528,15 @@ void Gui::menuBar() {
         for (const auto& p : registry_.panels())
             ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
         ImGui::Separator();
-        if (ImGui::MenuItem("Dark Theme", nullptr, dark_))
-            setTheme(true);
-        if (ImGui::MenuItem("Light Theme", nullptr, !dark_))
-            setTheme(false);
+        if (ImGui::BeginMenu("Theme")) {
+            if (ImGui::MenuItem("Dark", nullptr, themeMode_ == ui::ThemeMode::Dark))
+                setThemeMode(ui::ThemeMode::Dark);
+            if (ImGui::MenuItem("Light", nullptr, themeMode_ == ui::ThemeMode::Light))
+                setThemeMode(ui::ThemeMode::Light);
+            if (ImGui::MenuItem("Follow Windows", nullptr, themeMode_ == ui::ThemeMode::System))
+                setThemeMode(ui::ThemeMode::System);
+            ImGui::EndMenu();
+        }
         if (ImGui::MenuItem("Show Line Weights", nullptr, &lineweights_))
             core_.settings().setBool("view.lineweights", lineweights_);
         registeredMenu("View");
@@ -648,6 +703,12 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
             return 0;
         }
         case ImGuiInputTextFlags_CallbackHistory: {
+            if (suggestVisible_ && !suggestions_.empty()) {
+                const int n = static_cast<int>(suggestions_.size());
+                suggestSel_ = d->EventKey == ImGuiKey_UpArrow ? std::max(0, suggestSel_ - 1)
+                                                              : std::min(n - 1, suggestSel_ + 1);
+                return 0;
+            }
             if (inputHistory_.empty())
                 return 0;
             if (d->EventKey == ImGuiKey_UpArrow) {
@@ -666,6 +727,14 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
             return 0;
         }
         case ImGuiInputTextFlags_CallbackCompletion: {
+            if (suggestVisible_ && !suggestions_.empty()) {
+                const auto& pick = suggestions_[static_cast<std::size_t>(
+                    std::clamp(suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))];
+                d->DeleteChars(0, d->BufTextLen);
+                d->InsertChars(0, pick.name.c_str());
+                paletteOpen_ = false;
+                return 0;
+            }
             auto matches =
                 core_.complete(std::string(d->Buf, static_cast<std::size_t>(d->BufTextLen)));
             if (matches.empty())
@@ -740,7 +809,10 @@ void Gui::commandWindow() {
         return;
     ImGui::SetNextWindowSize(ImVec2(700, 160), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Command", &showCommandLine_)) {
-        const float footer = ImGui::GetFrameHeightWithSpacing() + 2;
+        const cmd::PromptInfo* pending = core_.promptInfo();
+        const float footer =
+            ImGui::GetFrameHeightWithSpacing() + 2 +
+            (pending && !pending->keywords.empty() ? ImGui::GetFrameHeightWithSpacing() : 0.0f);
         ImGui::BeginChild("##history", ImVec2(0, -footer), false,
                           ImGuiWindowFlags_HorizontalScrollbar);
         const auto& lines = core_.history();
@@ -755,8 +827,16 @@ void Gui::commandWindow() {
         }
         ImGui::EndChild();
 
+        const bool chips = optionChips();
         ImGui::AlignTextToFramePadding();
+        const cmd::PromptInfo* info = core_.promptInfo();
         std::string prompt = core_.promptText();
+        if (chips && info) {
+            prompt = info->text;
+            if (info->defaultText)
+                prompt += " <" + *info->defaultText + ">";
+            prompt += ": ";
+        }
         ImGui::TextUnformatted(prompt.c_str());
         ImGui::SameLine(0, 0);
         ImGui::SetNextItemWidth(-1);
@@ -764,12 +844,18 @@ void Gui::commandWindow() {
             ImGui::SetKeyboardFocusHere();
             refocusInput_ = false;
         }
+        updateSuggestions();
         const ImGuiInputTextFlags flags =
             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
             ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackCharFilter;
         if (ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this)) {
             std::string line = input_;
+            if (suggestVisible_ && !suggestions_.empty())
+                line = suggestions_[static_cast<std::size_t>(std::clamp(
+                                        suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
+                           .name;
             input_.clear();
+            paletteOpen_ = false;
             if (!line.empty() && (inputHistory_.empty() || inputHistory_.back() != line))
                 inputHistory_.push_back(line);
             historyPos_ = -1;
@@ -778,6 +864,8 @@ void Gui::commandWindow() {
             anyActivity_ = true;
         }
         inputId_ = ImGui::GetItemID();
+        const ImVec2 inputMin = ImGui::GetItemRectMin();
+        const float inputW = ImGui::GetItemRectSize().x;
         if (!typedWhileUnfocused_.empty() && ImGui::IsItemActive()) {
             ImGui::GetIO().AddInputCharactersUTF8(typedWhileUnfocused_.c_str());
             typedWhileUnfocused_.clear();
@@ -787,8 +875,273 @@ void Gui::commandWindow() {
             core_.submitText("");
             refocusInput_ = true;
         }
+        if (suggestVisible_)
+            drawSuggestions(inputMin, inputW);
     }
     ImGui::End();
+}
+
+void Gui::updateSuggestions() {
+    if (input_ != suggestFor_) {
+        suggestFor_ = input_;
+        suggestSel_ = 0;
+        suggestDismissed_ = false;
+    }
+    const bool word = input_.find_first_of(" \t") == std::string::npos;
+    suggestVisible_ = core_.promptInfo() == nullptr && !suggestDismissed_ && word &&
+                      (paletteOpen_ || !input_.empty());
+    if (!suggestVisible_) {
+        suggestions_.clear();
+        return;
+    }
+    suggestions_ = ui::matchCommands(core_.registry(), input_, paletteOpen_ ? 16 : 8);
+    if (suggestions_.empty()) {
+        suggestVisible_ = false;
+        return;
+    }
+    suggestSel_ = std::clamp(suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1);
+}
+
+void Gui::drawSuggestions(ImVec2 inputPos, float width) {
+    ImGui::SetNextWindowPos(ImVec2(inputPos.x, inputPos.y - 4), ImGuiCond_Always, ImVec2(0, 1));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(width, 560.0f), 0), ImVec2(560, 400));
+    const ImGuiWindowFlags wf = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking;
+    if (ImGui::Begin("##suggest", nullptr, wf)) {
+        const ImVec4 muted = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+        const auto& keys = core_.keybindings();
+        for (std::size_t i = 0; i < suggestions_.size(); ++i) {
+            const auto& m = suggestions_[i];
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Selectable("##row", static_cast<int>(i) == suggestSel_,
+                                  ImGuiSelectableFlags_None, ImVec2(0, 0))) {
+                std::string name = m.name;
+                input_.clear();
+                paletteOpen_ = false;
+                core_.submitText(name);
+                refocusInput_ = true;
+                anyActivity_ = true;
+            }
+            if (ImGui::IsItemHovered() &&
+                (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0))
+                suggestSel_ = static_cast<int>(i);
+            ImGui::SameLine(0, 0);
+            ImGui::TextUnformatted(m.name.c_str());
+            ImGui::SameLine(150);
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            ImGui::TextUnformatted(m.alias.empty() ? "" : ("(" + m.alias + ")").c_str());
+            ImGui::SameLine(210);
+            ImGui::TextUnformatted(m.description.c_str());
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+        (void)keys;
+    }
+    ImGui::End();
+    anyActivity_ = true;
+}
+
+// Option chips for the pending prompt; each keyword is a button with its key letters underlined.
+// Returns true when chips were drawn (the prompt text then omits the "[Close/Undo]" list).
+bool Gui::optionChips() {
+    const cmd::PromptInfo* info = core_.promptInfo();
+    if (!info || info->keywords.empty())
+        return false;
+    for (std::size_t i = 0; i < info->keywords.size(); ++i) {
+        const std::string& word = info->keywords[i];
+        if (i)
+            ImGui::SameLine();
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::SmallButton(word.c_str())) {
+            core_.submitText(word);
+            refocusInput_ = true;
+            anyActivity_ = true;
+        }
+        const ImVec2 lo = ImGui::GetItemRectMin();
+        const ImVec2 hi = ImGui::GetItemRectMax();
+        const std::size_t n = ui::keywordKeyLength(info->keywords, i);
+        const float w = ImGui::CalcTextSize(word.substr(0, n).c_str()).x;
+        const float x0 = lo.x + ImGui::GetStyle().FramePadding.x;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(x0, hi.y - 3), ImVec2(x0 + w, hi.y - 3),
+                                            ImGui::GetColorU32(ImGuiCol_Text), 1.0f);
+        ImGui::PopID();
+    }
+    return true;
+}
+
+// The prompt next to the cursor: what the program wants next, the typed text, and clickable
+// options. Follows the cursor with a lag so the options can be reached with the mouse.
+void Gui::cursorHud(const ViewportRect& rect) {
+    const cmd::PromptInfo* info = core_.promptInfo();
+    if (!cursorHud_ || !info) {
+        hudAnchor_ = ImVec2(-1e6f, -1e6f);
+        hudHovered_ = false;
+        return;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    const bool inside = io.MousePos.x >= rect.x && io.MousePos.y >= rect.y &&
+                        io.MousePos.x < rect.x + rect.w && io.MousePos.y < rect.y + rect.h;
+    if (!inside && !hudHovered_)
+        return;
+    const float dx = io.MousePos.x - hudAnchor_.x;
+    const float dy = io.MousePos.y - hudAnchor_.y;
+    const float lag = 48.0f * dpiScale_;
+    if (!hudHovered_ && (dx * dx + dy * dy > lag * lag || hudAnchor_.x < -1e5f))
+        hudAnchor_ = io.MousePos;
+    const bool options = !info->keywords.empty();
+    ImGui::SetNextWindowPos(ImVec2(hudAnchor_.x + 16 * dpiScale_, hudAnchor_.y + 16 * dpiScale_));
+    ImGui::SetNextWindowBgAlpha(0.88f);
+    ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                          ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                          ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
+                          ImGuiWindowFlags_NoMove;
+    if (!options)
+        wf |= ImGuiWindowFlags_NoInputs;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 5));
+    if (ImGui::Begin("##hud", nullptr, wf)) {
+        std::string line = info->text;
+        if (info->defaultText)
+            line += " <" + *info->defaultText + ">";
+        if (!input_.empty())
+            line += ": " + input_;
+        ImGui::TextUnformatted(line.c_str());
+        const cmd::FilterFeedback& fb = core_.feedback();
+        if (fb.active && !fb.tooltip.empty()) {  // snap label, "distance < angle" tracking
+            const Rgba snap = theme_.snap;
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                  ImVec4(snap.r / 255.0f, snap.g / 255.0f, snap.b / 255.0f, 1.0f));
+            ImGui::TextUnformatted(fb.tooltip.c_str());
+            ImGui::PopStyleColor();
+        }
+        if (options) {
+            ImGui::PushID("hudchips");
+            for (std::size_t i = 0; i < info->keywords.size(); ++i) {
+                if (i)
+                    ImGui::SameLine();
+                if (ImGui::SmallButton(info->keywords[i].c_str())) {
+                    core_.submitText(info->keywords[i]);
+                    refocusInput_ = true;
+                }
+            }
+            ImGui::PopID();
+        }
+        hudHovered_ = options && ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+    } else {
+        hudHovered_ = false;
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+    anyActivity_ = true;
+}
+
+void Gui::docTabs() {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoScrollWithMouse;
+    const float h = ImGui::GetFrameHeight() + 4.0f * dpiScale_;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 0));
+    if (ImGui::BeginViewportSideBar("##doctabs", vp, ImGuiDir_Up, h, flags)) {
+        if (ImGui::BeginTabBar("##docs", ImGuiTabBarFlags_FittingPolicyScroll |
+                                             ImGuiTabBarFlags_TabListPopupButton)) {
+            const std::size_t n = core_.documentCount();
+            const std::size_t active = core_.activeDocument();
+            const bool external = active != shownActive_;
+            std::optional<std::size_t> toActivate, toClose;
+            for (std::size_t i = 0; i < n; ++i) {
+                std::string label =
+                    core_.documentTitle(i) + "###doc" + std::to_string(core_.documentId(i));
+                ImGuiTabItemFlags tf = ImGuiTabItemFlags_None;
+                if (core_.documentModified(i))
+                    tf |= ImGuiTabItemFlags_UnsavedDocument;
+                if (external && i == active)
+                    tf |= ImGuiTabItemFlags_SetSelected;
+                bool open = true;
+                if (ImGui::BeginTabItem(label.c_str(), &open, tf)) {
+                    if (!external && i != active)
+                        toActivate = i;
+                    ImGui::EndTabItem();
+                }
+                if (!open)
+                    toClose = i;
+            }
+            if (ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
+                runAction("file.new");
+            ImGui::EndTabBar();
+            shownActive_ = active;
+            if (toActivate && !core_.activateDocument(*toActivate))
+                shownActive_ = static_cast<std::size_t>(-1);  // put the selection back
+            if (toClose) {
+                if (*toClose == core_.activeDocument() || core_.activateDocument(*toClose))
+                    requestAction(Pending::Close);
+                else
+                    shownActive_ = static_cast<std::size_t>(-1);
+            }
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+}
+
+// Shown over the empty viewport while only an untouched "Untitled" drawing is open.
+void Gui::startPage(const ViewportRect& rect) {
+    if (!startPage_ || !core_.isPristine() || core_.documentCount() != 1)
+        return;
+    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w * 0.5f, rect.y + rect.h * 0.45f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24, 20));
+    if (ImGui::Begin("##start", nullptr, wf)) {
+        ImGui::SetWindowFontScale(1.6f);
+        ImGui::TextUnformatted("TBCAD");
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::TextDisabled("Free 2D CAD");
+        ImGui::Spacing();
+        if (ImGui::Button("New drawing", ImVec2(150, 0)))
+            runAction("file.new");
+        ImGui::SameLine();
+        if (ImGui::Button("Open...", ImVec2(110, 0)))
+            runAction("file.open");
+        ImGui::SameLine();
+        ImGui::BeginDisabled();
+        ImGui::Button("Import DXF", ImVec2(110, 0));
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("DXF import is not available yet.");
+
+        const auto recent = core_.recentFiles();
+        if (!recent.empty()) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("Recent");
+            for (const auto& path : recent) {
+                const std::filesystem::path fp = platform::pathFromUtf8(path);
+                ImGui::PushID(path.c_str());
+                if (ImGui::Selectable(platform::pathToUtf8(fp.filename()).c_str(), false,
+                                      ImGuiSelectableFlags_None, ImVec2(360, 0)))
+                    doOpenPath(path);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", path.c_str());
+                ImGui::PopID();
+            }
+        }
+        if (core_.settings().getBool("ui.gettingAround", true)) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextDisabled("Getting around");
+            ImGui::BulletText("Type a command or its short name, then Enter.");
+            ImGui::BulletText("Enter repeats the last command, Esc cancels.");
+            ImGui::BulletText("Middle-drag pans, the wheel zooms.");
+            ImGui::BulletText("Ctrl+Shift+P lists every command.");
+            bool hide = false;
+            if (ImGui::Checkbox("Don't show again", &hide) && hide)
+                core_.settings().setBool("ui.gettingAround", false);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 void Gui::propertiesWindow() {
@@ -929,6 +1282,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
 }
 
 ViewportRect Gui::frame() {
+    if (auto text = core_.takeClipboardText())
+        glfwSetClipboardString(window_, text->c_str());
     shortcuts();
     for (const std::string& what : core_.takeUiRequests()) {
         if (what == "settings")
@@ -939,6 +1294,7 @@ ViewportRect Gui::frame() {
     if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
         menuBar();
         toolStrip();
+        docTabs();
         readOnlyBanner();
         statusBar();
     }
@@ -961,6 +1317,8 @@ ViewportRect Gui::frame() {
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);
     lastRect_ = rect;
+    startPage(rect);
+    cursorHud(rect);
 
     // Non-blocking notice when a command put geometry outside the working area.
     if (core_.outOfAreaNotice()) {
@@ -1052,7 +1410,7 @@ void Gui::dialogs() {
             if (core_.hasFile()) {
                 auto r = core_.save();
                 if (r)
-                    performPending();
+                    performPending(false);
                 else {
                     lastError_ = r.error().message;
                     pending_ = Pending::None;
@@ -1065,7 +1423,7 @@ void Gui::dialogs() {
         ImGui::SameLine();
         if (ImGui::Button("Don't Save", ImVec2(110, 0))) {
             ImGui::CloseCurrentPopup();
-            performPending();
+            performPending(true);
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(110, 0))) {
@@ -1156,7 +1514,7 @@ void Gui::dialogs() {
                 if (!r)
                     lastError_ = r.error().message;
                 else if (saveThenPending_)
-                    performPending();
+                    performPending(false);
                 saveThenPending_ = false;
             }
         }
