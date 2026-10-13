@@ -285,6 +285,32 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
     CHECK(withAttribs == 1);
 }
 
+TEST_CASE("round trip: external reference fields of a block") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("blocks");
+        BlockId plain = tx.addBlock(BlockDef{.name = "plain"}).value();
+        BlockId ref = tx.addBlock(BlockDef{.name = "ref"}).value();
+        REQUIRE(tx.modifyBlock(ref, [](BlockDef& d) {
+                      d.xrefPath = "..\\plans\\site.tbcad";
+                      d.xrefStamp = 1760000000123456789;
+                  }).ok());
+        (void)plain;
+        tx.commit();
+    }
+    auto bytes = io::writeTbcadToMemory(doc);
+    REQUIRE(bytes.ok());
+    io::IoReport rep;
+    auto back = io::readTbcad(bytes.value(), rep);
+    REQUIRE(back.ok());
+    CHECK(back.value()->blockByName("plain")->xrefPath.empty());
+    const BlockDef* ref = back.value()->blockByName("ref");
+    REQUIRE(ref);
+    CHECK(ref->xrefPath == "..\\plans\\site.tbcad");
+    CHECK(ref->xrefStamp == 1760000000123456789);
+    CHECK(rep.unknownChunks == 0);
+}
+
 TEST_CASE("round trip: ids freed after the highest saved id are not reused after a reload") {
     Document doc;
     EntityId lastEntity;
