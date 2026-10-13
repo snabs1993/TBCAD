@@ -1,0 +1,1271 @@
+#include "tbcad/core/document.h"
+
+#include <algorithm>
+#include <cmath>
+#include <new>
+#include <stdexcept>
+#include <unordered_set>
+
+namespace tbcad {
+
+namespace {
+
+std::string foldName(std::string_view s) {
+    std::string r(s);
+    for (char& c : r) {
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
+    }
+    return r;
+}
+
+bool validName(std::string_view s) {
+    if (s.empty())
+        return false;
+    for (char c : s) {
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F)
+            return false;
+    }
+    return true;
+}
+
+// Index key of a table row: names are unique per parent for layers, globally otherwise.
+std::string layerKey(LayerId parent, std::string_view name) {
+    return std::to_string(parent.value) + "/" + foldName(name);
+}
+template <class Row>
+std::string nameKey(const Row& r) {
+    if constexpr (std::is_same_v<Row, Layer>)
+        return layerKey(r.parent, r.name);
+    else
+        return foldName(r.name);
+}
+
+Error invalid(std::string msg) {
+    return makeError(ErrorCode::InvalidArgument, std::move(msg));
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------------------------
+// EntityStore, tables, ChangeSet
+
+namespace detail {
+
+EntityStore::~EntityStore() {
+    while (size_ > 0)
+        popBack();
+    for (Entity* c : chunks_)
+        ::operator delete(c, std::align_val_t{alignof(Entity)});
+}
+
+std::size_t EntityStore::pushBack(Entity&& e) {
+    if (size_ == chunks_.size() * kChunk) {
+        void* mem = ::operator new(sizeof(Entity) * kChunk, std::align_val_t{alignof(Entity)});
+        chunks_.push_back(static_cast<Entity*>(mem));
+    }
+    new (&at(size_)) Entity(std::move(e));
+    return size_++;
+}
+
+void EntityStore::popBack() {
+    at(size_ - 1).~Entity();
+    --size_;
+}
+
+template <class Row, class IdT>
+const Row* Table<Row, IdT>::findByName(std::string_view name) const {
+    auto it = byName.find(std::is_same_v<Row, Layer> ? layerKey(LayerId{}, name) : foldName(name));
+    return it == byName.end() ? nullptr : find(it->second);
+}
+
+template struct Table<Layer, LayerId>;
+template struct Table<Linetype, LinetypeId>;
+template struct Table<TextStyle, TextStyleId>;
+template struct Table<DimStyle, DimStyleId>;
+template struct Table<BlockDef, BlockId>;
+
+}  // namespace detail
+
+bool ChangeSet::empty() const {
+    return entities.empty() && layers.empty() && linetypes.empty() && textStyles.empty() &&
+           dimStyles.empty() && blocks.empty() && !header && order.empty();
+}
+
+namespace {
+template <class Row>
+std::vector<RowChange<Row>> invertRows(const std::vector<RowChange<Row>>& in) {
+    std::vector<RowChange<Row>> out;
+    out.reserve(in.size());
+    for (const auto& c : in)
+        out.push_back({c.after, c.before});
+    return out;
+}
+}  // namespace
+
+ChangeSet ChangeSet::inverted() const {
+    ChangeSet r;
+    r.name = name;
+    r.snapshots = snapshots;
+    r.entities.reserve(entities.size());
+    for (const auto& c : entities)
+        r.entities.push_back({c.after, c.before});
+    r.layers = invertRows(layers);
+    r.linetypes = invertRows(linetypes);
+    r.textStyles = invertRows(textStyles);
+    r.dimStyles = invertRows(dimStyles);
+    r.blocks = invertRows(blocks);
+    if (header)
+        r.header = HeaderChange{header->after, header->before};
+    for (const auto& o : order)
+        r.order.push_back({o.id, o.after, o.before});
+    r.outOfArea = outOfArea;
+    return r;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Validation
+
+namespace {
+
+constexpr int kMaxLayerDepth = 8;
+constexpr std::int64_t kFrontBase = std::int64_t{1} << 62;
+
+// Checks one entity's payload, normalizes where the model says so (arc angles) and measures the
+// largest absolute coordinate.
+struct Checker {
+    const Document& doc;
+    BlockId owner;
+    double extent = 0;
+    std::string err;
+
+    void bad(std::string msg) {
+        if (err.empty())
+            err = std::move(msg);
+    }
+    void v(double x) {
+        if (!std::isfinite(x))
+            bad("non-finite number");
+        else
+            extent = std::max(extent, std::abs(x));
+    }
+    void p(const Vec2& a) {
+        v(a.x);
+        v(a.y);
+    }
+    void pr(const Vec2& c, double r) {
+        p(c);
+        v(r);
+        if (err.empty())
+            extent = std::max(extent, std::max(std::abs(c.x), std::abs(c.y)) + std::abs(r));
+    }
+    void finite(double x) {
+        if (!std::isfinite(x))
+            bad("non-finite number");
+    }
+    void textStyleOk(TextStyleId s) {
+        if (s && !doc.textStyle(s))
+            bad("unknown text style");
+    }
+    void dimStyleOk(DimStyleId s) {
+        if (s && !doc.dimStyle(s))
+            bad("unknown dimension style");
+    }
+    void polyVertices(const std::vector<PolyVertex>& vs) {
+        for (const auto& pv : vs) {
+            p(pv.p);
+            finite(pv.bulge);
+            finite(pv.startWidth);
+            finite(pv.endWidth);
+        }
+    }
+    void spline(const SplineData& d) {
+        if (d.degree < 1)
+            bad("spline degree must be at least 1");
+        for (const auto& c : d.control)
+            p(c);
+        for (const auto& c : d.fit)
+            p(c);
+        for (double k : d.knots)
+            finite(k);
+        for (double w : d.weights)
+            finite(w);
+        if (d.control.empty() && d.fit.empty())
+            bad("spline has no control or fit points");
+        if (!d.weights.empty() && d.weights.size() != d.control.size()) {
+            bad("spline weights must match control points");
+        }
+        if (!d.knots.empty() && !d.control.empty() &&
+            d.knots.size() != d.control.size() + static_cast<std::size_t>(d.degree) + 1) {
+            bad("spline knot count must be control points + degree + 1");
+        }
+        if (!std::is_sorted(d.knots.begin(), d.knots.end()))
+            bad("spline knots must not decrease");
+    }
+
+    void operator()(LineData& d) {
+        p(d.a);
+        p(d.b);
+    }
+    void operator()(CircleData& d) {
+        pr(d.center, d.radius);
+        if (!(d.radius > 0))
+            bad("circle radius must be positive");
+    }
+    void operator()(ArcData& d) {
+        pr(d.center, d.radius);
+        finite(d.startAngle);
+        finite(d.endAngle);
+        if (!(d.radius > 0))
+            bad("arc radius must be positive");
+        if (!err.empty())
+            return;
+        d.startAngle = normalizeAngle(d.startAngle);
+        d.endAngle = normalizeAngle(d.endAngle);
+        if (tol::nearlyEqualAngle(d.startAngle, d.endAngle)) {
+            bad("arc start and end angle are equal; use a circle");
+        }
+    }
+    void operator()(PolylineData& d) {
+        polyVertices(d.v);
+        finite(d.constantWidth);
+        if (d.v.empty())
+            bad("polyline has no vertices");
+    }
+    void operator()(PointData& d) { p(d.p); }
+    void operator()(EllipseData& d) {
+        p(d.center);
+        p(d.majorAxis);
+        finite(d.ratio);
+        finite(d.startParam);
+        finite(d.endParam);
+        if (err.empty())
+            extent = std::max(
+                extent, std::max(std::abs(d.center.x), std::abs(d.center.y)) + length(d.majorAxis));
+        if (!(length(d.majorAxis) > 0))
+            bad("ellipse major axis has zero length");
+        if (!(d.ratio > 0 && d.ratio <= 1))
+            bad("ellipse ratio must be in (0, 1]");
+    }
+    void operator()(SplineData& d) { spline(d); }
+    void operator()(TextData& d) {
+        p(d.position);
+        p(d.alignPoint);
+        finite(d.rotation);
+        finite(d.widthFactor);
+        finite(d.oblique);
+        if (!(d.height > 0) || !std::isfinite(d.height))
+            bad("text height must be positive");
+        textStyleOk(d.style);
+    }
+    void operator()(MTextData& d) {
+        p(d.position);
+        finite(d.width);
+        finite(d.rotation);
+        if (!(d.height > 0) || !std::isfinite(d.height))
+            bad("text height must be positive");
+        textStyleOk(d.style);
+    }
+    void operator()(HatchData& d) {
+        p(d.patternOrigin);
+        finite(d.patternScale);
+        finite(d.patternAngle);
+        for (auto& loop : d.loops) {
+            for (auto& e : loop.edges) {
+                std::visit(
+                    [&](auto& edge) {
+                        using E = std::decay_t<decltype(edge)>;
+                        if constexpr (std::is_same_v<E, HatchLineEdge>) {
+                            p(edge.a);
+                            p(edge.b);
+                        } else if constexpr (std::is_same_v<E, HatchArcEdge>) {
+                            pr(edge.center, edge.radius);
+                            finite(edge.startAngle);
+                            finite(edge.endAngle);
+                        } else if constexpr (std::is_same_v<E, HatchEllipseEdge>) {
+                            p(edge.center);
+                            p(edge.majorAxis);
+                            finite(edge.ratio);
+                            finite(edge.startParam);
+                            finite(edge.endParam);
+                        } else if constexpr (std::is_same_v<E, HatchSplineEdge>) {
+                            spline(edge.spline);
+                        } else {
+                            polyVertices(edge.v);
+                        }
+                    },
+                    e);
+            }
+        }
+    }
+    void operator()(InsertData& d) {
+        p(d.position);
+        finite(d.scale.x);
+        finite(d.scale.y);
+        finite(d.rotation);
+        if (!doc.block(d.block)) {
+            bad("insert refers to an unknown block");
+            return;
+        }
+        if (owner) {
+            // Reject cycles: the inserted block must not (transitively) insert the owner.
+            std::vector<BlockId> stack{d.block};
+            std::unordered_set<BlockId> seen;
+            while (!stack.empty() && err.empty()) {
+                BlockId b = stack.back();
+                stack.pop_back();
+                if (b == owner) {
+                    bad("block insert would create a cycle");
+                    break;
+                }
+                if (!seen.insert(b).second)
+                    continue;
+                const BlockDef* def = doc.block(b);
+                if (!def)
+                    continue;
+                for (EntityId id : def->entities) {
+                    const Entity* e = doc.find(id);
+                    if (const auto* ins = e ? entityAs<InsertData>(*e) : nullptr) {
+                        stack.push_back(ins->block);
+                    }
+                }
+            }
+        }
+    }
+    void operator()(DimensionData& d) {
+        for (const auto& q : d.defPts)
+            p(q);
+        p(d.textPos);
+        finite(d.rotation);
+        finite(d.measurement);
+        dimStyleOk(d.style);
+    }
+    void operator()(LeaderData& d) {
+        for (const auto& q : d.vertices)
+            p(q);
+        p(d.textPos);
+        dimStyleOk(d.style);
+    }
+    void operator()(ProxyData& d) {
+        for (const auto& item : d.graphics.items) {
+            std::visit(
+                [&](const auto& it) {
+                    using I = std::decay_t<decltype(it)>;
+                    if constexpr (std::is_same_v<I, DisplayFill>) {
+                        for (const auto& ring : it.rings) {
+                            for (const auto& q : ring)
+                                p(q);
+                        }
+                    } else {
+                        for (const auto& q : it.pts)
+                            p(q);
+                    }
+                },
+                item);
+        }
+    }
+};
+
+// Returns the largest absolute coordinate of the entity, or an error. Fills in a default layer.
+Result<double> validateEntity(const Document& doc, Entity& e, BlockId owner) {
+    EntityCommon& c = e.common;
+    if (!c.layer)
+        c.layer = doc.header().currentLayer;
+    if (!doc.layer(c.layer))
+        return invalid("unknown layer");
+    if (c.linetype != kLinetypeByLayer && c.linetype != kLinetypeByBlock &&
+        !doc.linetype(c.linetype)) {
+        return invalid("unknown linetype");
+    }
+    if (c.color.kind == ColorKind::ByParent)
+        return invalid("ByParent applies to layers only");
+    if (c.color.kind == ColorKind::Index && c.color.indexValue() == 0) {
+        return invalid("color index 0 is not valid");
+    }
+    if (c.lineweight.v < -3)
+        return invalid("invalid lineweight");
+    if (!std::isfinite(c.linetypeScale) || !(c.linetypeScale > 0)) {
+        return invalid("linetype scale must be positive");
+    }
+    Checker chk{doc, owner, 0, {}};
+    visitEntity(e, chk);
+    if (!chk.err.empty())
+        return invalid(chk.err);
+    if (chk.extent > kHardCap) {
+        return makeError(ErrorCode::OutOfRange,
+                         "geometry lies beyond the hard coordinate limit of 1e10 mm");
+    }
+    return chk.extent;
+}
+
+// Per-row validation. `old` is the row before an edit (null for a new row).
+Result<void> checkRow(const Document& doc, Layer& r, const Layer* old) {
+    if (!validName(r.name))
+        return invalid("invalid layer name");
+    if (old && old->id == kLayerZero && r.name != old->name)
+        return invalid("layer \"0\" cannot be renamed");
+    if (r.parent) {
+        if (old && old->id == kLayerZero)
+            return invalid("layer \"0\" cannot have a parent");
+        if (r.parent == kLayerZero)
+            return invalid("layer \"0\" cannot have sub-layers");
+        if (!doc.layer(r.parent))
+            return invalid("unknown parent layer");
+        int depth = 1;
+        for (LayerId p = r.parent; p; p = doc.layer(p)->parent) {
+            if (old && p == old->id)
+                return invalid("layer parent would create a cycle");
+            ++depth;
+        }
+        // Height of the subtree below this layer (0 for a leaf).
+        int height = 0;
+        if (old) {
+            for (const auto& [lid, l] : doc.layers()) {
+                int d = 1;
+                bool below = false;
+                for (LayerId p = l.parent; p; p = doc.layer(p)->parent, ++d)
+                    below = below || p == old->id;
+                if (below) {
+                    d = 0;
+                    for (LayerId p = l.id; p != old->id; p = doc.layer(p)->parent)
+                        ++d;
+                    height = std::max(height, d);
+                }
+            }
+        }
+        if (depth + height > kMaxLayerDepth)
+            return invalid("sub-layers nest at most 8 levels deep");
+    } else if (r.color.kind == ColorKind::ByParent || r.lineweight.isByParent() ||
+               r.linetype == kLinetypeByParent) {
+        return invalid("ByParent needs a parent layer");
+    }
+    if (r.color.kind == ColorKind::ByLayer || r.color.kind == ColorKind::ByBlock)
+        return invalid("a layer color cannot be ByLayer or ByBlock");
+    if (r.color.kind == ColorKind::Index && r.color.indexValue() == 0)
+        return invalid("color index 0 is not valid");
+    if (!r.linetype)
+        r.linetype = kLinetypeContinuous;
+    if (r.linetype != kLinetypeByParent && !doc.linetype(r.linetype))
+        return invalid("unknown linetype");
+    if (r.lineweight.isByLayer() || r.lineweight.isByBlock() || r.lineweight.v < -4)
+        return invalid("a layer lineweight must be Default, a value or ByParent");
+    return {};
+}
+Result<void> checkRow(const Document&, Linetype& r, const Linetype* old) {
+    if (!validName(r.name))
+        return invalid("invalid linetype name");
+    double total = 0;
+    for (double d : r.pattern) {
+        if (!std::isfinite(d))
+            return invalid("linetype pattern has a non-finite element");
+        total += std::abs(d);
+    }
+    if (!r.pattern.empty() && !(total > 0))
+        return invalid("linetype pattern has no length");
+    if (old && old->id == kLinetypeContinuous) {
+        if (r.name != old->name || !r.pattern.empty()) {
+            return invalid("the Continuous linetype cannot be changed");
+        }
+    }
+    return {};
+}
+Result<void> checkRow(const Document&, TextStyle& r, const TextStyle* old) {
+    if (!validName(r.name))
+        return invalid("invalid text style name");
+    if (old && old->id == kTextStyleStandard && r.name != old->name) {
+        return invalid("the Standard text style cannot be renamed");
+    }
+    if (!std::isfinite(r.widthFactor) || !(r.widthFactor > 0)) {
+        return invalid("width factor must be positive");
+    }
+    if (!std::isfinite(r.oblique))
+        return invalid("non-finite oblique angle");
+    return {};
+}
+Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
+    if (!validName(r.name))
+        return invalid("invalid dimension style name");
+    if (old && old->id == kDimStyleStandard && r.name != old->name) {
+        return invalid("the Standard dimension style cannot be renamed");
+    }
+    if (r.textStyle && !doc.textStyle(r.textStyle))
+        return invalid("unknown text style");
+    for (double d : {r.textHeight, r.arrowSize, r.overallScale}) {
+        if (!std::isfinite(d) || !(d > 0))
+            return invalid("dimension size must be positive");
+    }
+    for (double d :
+         {r.textGap, r.extLineOffset, r.extLineExtension, r.dimLineExtension, r.roundOff}) {
+        if (!std::isfinite(d) || d < 0)
+            return invalid("dimension distance must not be negative");
+    }
+    r.precision = std::clamp(r.precision, 0, 16);
+    return {};
+}
+Result<void> checkRow(const Document&, BlockDef& r, const BlockDef*) {
+    if (!validName(r.name))
+        return invalid("invalid block name");
+    if (!isFinite(r.base))
+        return invalid("non-finite base point");
+    return {};
+}
+
+bool isBuiltin(LayerId id) {
+    return id == kLayerZero;
+}
+bool isBuiltin(LinetypeId id) {
+    return id == kLinetypeContinuous;
+}
+bool isBuiltin(TextStyleId id) {
+    return id == kTextStyleStandard;
+}
+bool isBuiltin(DimStyleId id) {
+    return id == kDimStyleStandard;
+}
+
+bool inUse(const Document& d, LayerId id) {
+    if (d.header().currentLayer == id)
+        return true;
+    for (const auto& [lid, l] : d.layers()) {
+        if (l.parent == id)
+            return true;  // has sub-layers
+    }
+    bool used = false;
+    d.forEachEntity([&](const Entity& e) { used = used || e.common.layer == id; });
+    return used;
+}
+bool inUse(const Document& d, LinetypeId id) {
+    for (const auto& [lid, l] : d.layers()) {
+        if (l.linetype == id)
+            return true;
+    }
+    bool used = false;
+    d.forEachEntity([&](const Entity& e) { used = used || e.common.linetype == id; });
+    return used;
+}
+bool inUse(const Document& d, TextStyleId id) {
+    if (d.header().currentTextStyle == id)
+        return true;
+    for (const auto& [sid, s] : d.dimStyles()) {
+        if (s.textStyle == id)
+            return true;
+    }
+    bool used = false;
+    d.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TextData>(e))
+            used = used || t->style == id;
+        if (const auto* t = entityAs<MTextData>(e))
+            used = used || t->style == id;
+    });
+    return used;
+}
+bool inUse(const Document& d, DimStyleId id) {
+    if (d.header().currentDimStyle == id)
+        return true;
+    bool used = false;
+    d.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<DimensionData>(e))
+            used = used || t->style == id;
+        if (const auto* t = entityAs<LeaderData>(e))
+            used = used || t->style == id;
+    });
+    return used;
+}
+bool inUse(const Document& d, BlockId id) {
+    bool used = false;
+    d.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<InsertData>(e))
+            used = used || t->block == id;
+    });
+    return used;
+}
+
+// Replaces (or removes, when newRow is empty) a table row and keeps the name index in step.
+template <class Row, class IdT>
+void replaceRow(detail::Table<Row, IdT>& t, IdT id, const std::optional<Row>& newRow) {
+    ++t.version;
+    auto it = t.rows.find(id);
+    if (it != t.rows.end()) {
+        t.byName.erase(nameKey(it->second));
+        t.rows.erase(it);
+    }
+    if (newRow) {
+        t.rows.emplace(id, *newRow);
+        t.byName[nameKey(*newRow)] = id;
+        t.next = std::max<std::uint32_t>(t.next, id.value + 1);
+    }
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------------------------
+// Document
+
+Document::Document() {
+    Linetype cont;
+    cont.id = kLinetypeContinuous;
+    cont.name = "Continuous";
+    cont.description = "Solid line";
+    replaceRow<Linetype, LinetypeId>(linetypes_, cont.id, cont);
+
+    Layer zero;
+    zero.id = kLayerZero;
+    zero.name = "0";
+    zero.linetype = kLinetypeContinuous;
+    replaceRow<Layer, LayerId>(layers_, zero.id, zero);
+
+    TextStyle ts;
+    ts.id = kTextStyleStandard;
+    ts.name = "Standard";
+    replaceRow<TextStyle, TextStyleId>(textStyles_, ts.id, ts);
+
+    DimStyle ds;
+    ds.id = kDimStyleStandard;
+    ds.name = "Standard";
+    ds.textStyle = kTextStyleStandard;
+    replaceRow<DimStyle, DimStyleId>(dimStyles_, ds.id, ds);
+
+    posOf_.assign(1, 0xFFFFFFFFu);
+}
+
+Document::~Document() = default;
+
+const Entity* Document::find(EntityId id) const {
+    if (id.value >= posOf_.size())
+        return nullptr;
+    std::uint32_t pos = posOf_[id.value];
+    return pos == 0xFFFFFFFFu ? nullptr : &store_.at(pos);
+}
+
+Entity* Document::findMutable(EntityId id) {
+    return const_cast<Entity*>(static_cast<const Document*>(this)->find(id));
+}
+
+void Document::insertEntity(Entity&& e) {
+    std::uint64_t v = e.common.id.value;
+    if (v >= posOf_.size())
+        posOf_.resize(v + 1, 0xFFFFFFFFu);
+    posOf_[v] = static_cast<std::uint32_t>(store_.pushBack(std::move(e)));
+    nextEntityId_ = std::max(nextEntityId_, v + 1);
+}
+
+void Document::removeEntity(EntityId id) {
+    std::uint32_t pos = id.value < posOf_.size() ? posOf_[id.value] : 0xFFFFFFFFu;
+    if (pos == 0xFFFFFFFFu)
+        return;
+    std::size_t last = store_.size() - 1;
+    if (pos != last) {
+        Entity& moved = store_.at(last);
+        posOf_[moved.common.id.value] = pos;
+        store_.at(pos) = std::move(moved);
+    }
+    store_.popBack();
+    posOf_[id.value] = 0xFFFFFFFFu;
+}
+
+BlockId Document::ownerBlock(EntityId id) const {
+    auto it = owner_.find(id);
+    return it == owner_.end() ? BlockId{} : it->second;
+}
+
+std::int64_t Document::orderKey(EntityId id) const {
+    auto it = orderOverride_.find(id);
+    return it == orderOverride_.end() ? static_cast<std::int64_t>(id.value) : it->second;
+}
+
+std::vector<EntityId> Document::modelSpace() const {
+    std::vector<EntityId> out;
+    out.reserve(modelSpaceCount());
+    for (std::uint64_t v = 1; v < posOf_.size(); ++v) {
+        if (posOf_[v] == 0xFFFFFFFFu)
+            continue;
+        EntityId id{v};
+        if (owner_.find(id) == owner_.end())
+            out.push_back(id);
+    }
+    if (!orderOverride_.empty()) {
+        std::stable_sort(out.begin(), out.end(),
+                         [&](EntityId a, EntityId b) { return orderKey(a) < orderKey(b); });
+    }
+    return out;
+}
+
+void Document::setBlockRow(const BlockDef* oldRow, const BlockDef* newRow) {
+    if (oldRow) {
+        for (EntityId id : oldRow->entities)
+            owner_.erase(id);
+    }
+    if (newRow) {
+        for (EntityId id : newRow->entities)
+            owner_[id] = newRow->id;
+    }
+}
+
+const Layer* Document::layerByName(LayerId parent, std::string_view name) const {
+    return layers_.findByKey(layerKey(parent, name));
+}
+
+EffectiveLayer Document::effective(LayerId id) const {
+    if (effectiveVersion_ != layers_.version) {
+        effectiveCache_.clear();
+        effectiveVersion_ = layers_.version;
+    }
+    auto hit = effectiveCache_.find(id);
+    if (hit != effectiveCache_.end())
+        return hit->second;
+    EffectiveLayer e;
+    const Layer* own = layer(id);
+    if (!own)
+        return e;
+    e.id = id;
+    bool haveColor = false, haveLt = false, haveLw = false;
+    for (const Layer* l = own; l; l = l->parent ? layer(l->parent) : nullptr) {
+        e.on = e.on && l->on;
+        e.plot = e.plot && l->plot;
+        e.frozen = e.frozen || l->frozen;
+        e.locked = e.locked || l->locked;
+        if (!haveColor && l->color.kind != ColorKind::ByParent) {
+            e.color = l->color;
+            haveColor = true;
+        }
+        if (!haveLt && l->linetype != kLinetypeByParent) {
+            e.linetype = l->linetype;
+            haveLt = true;
+        }
+        if (!haveLw && !l->lineweight.isByParent()) {
+            e.lineweight = l->lineweight;
+            haveLw = true;
+        }
+    }
+    effectiveCache_.emplace(id, e);
+    return e;
+}
+
+Transaction Document::begin(std::string name) {
+    if (active_)
+        throw std::logic_error("a transaction is already open on this document");
+    return Transaction(this, std::move(name));
+}
+
+void Document::addObserver(DocumentObserver* observer) {
+    observers_.push_back(observer);
+}
+
+void Document::removeObserver(DocumentObserver* observer) {
+    observers_.erase(std::remove(observers_.begin(), observers_.end(), observer), observers_.end());
+}
+
+void Document::notify(const ChangeSet& cs) {
+    auto copy = observers_;
+    for (DocumentObserver* o : copy) {
+        if (std::find(observers_.begin(), observers_.end(), o) != observers_.end()) {
+            o->onChanged(cs);
+        }
+    }
+}
+
+namespace {
+template <class Row, class IdT>
+void applyRows(detail::Table<Row, IdT>& t, const std::vector<RowChange<Row>>& changes,
+               const std::function<void(const Row*, const Row*)>& hook = {}) {
+    for (const auto& c : changes) {
+        IdT id = c.after ? c.after->id : c.before->id;
+        if (hook)
+            hook(t.find(id), c.after ? &*c.after : nullptr);
+        replaceRow(t, id, c.after);
+    }
+}
+}  // namespace
+
+void Document::applyForward(const ChangeSet& cs) {
+    for (const EntityChange& c : cs.entities) {
+        const Entity* after = cs.after(c);
+        if (after) {
+            if (Entity* live = findMutable(after->common.id)) {
+                *live = *after;
+            } else {
+                insertEntity(Entity(*after));
+            }
+        } else {
+            removeEntity(cs.before(c)->common.id);
+        }
+    }
+    applyRows(layers_, cs.layers);
+    applyRows(linetypes_, cs.linetypes);
+    applyRows(textStyles_, cs.textStyles);
+    applyRows(dimStyles_, cs.dimStyles);
+    applyRows<BlockDef, BlockId>(
+        blocks_, cs.blocks, [this](const BlockDef* o, const BlockDef* n) { setBlockRow(o, n); });
+    if (cs.header)
+        header_ = cs.header->after;
+    for (const OrderChange& o : cs.order) {
+        if (o.after)
+            orderOverride_[o.id] = *o.after;
+        else
+            orderOverride_.erase(o.id);
+    }
+}
+
+void Document::apply(const ChangeSet& changes, Direction direction) {
+    if (active_)
+        throw std::logic_error("cannot undo or redo while a transaction is open");
+    if (direction == Direction::Redo) {
+        applyForward(changes);
+        ++revision_;
+        if (!changes.empty())
+            notify(changes);
+    } else {
+        ChangeSet inv = changes.inverted();
+        applyForward(inv);
+        ++revision_;
+        if (!inv.empty())
+            notify(inv);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Transaction
+
+Transaction::Transaction(Document* doc, std::string name)
+    : doc_(doc), name_(std::move(name)), startNextId_(doc->nextEntityId_) {
+    doc->active_ = this;
+}
+
+Transaction::Transaction(Transaction&& o) noexcept
+    : doc_(o.doc_),
+      name_(std::move(o.name_)),
+      startNextId_(o.startNextId_),
+      beforeSnaps_(std::move(o.beforeSnaps_)),
+      touched_(std::move(o.touched_)),
+      outOfArea_(std::move(o.outOfArea_)),
+      headerBefore_(std::move(o.headerBefore_)),
+      order_(std::move(o.order_)),
+      pLayers_(std::move(o.pLayers_)),
+      pLinetypes_(std::move(o.pLinetypes_)),
+      pTextStyles_(std::move(o.pTextStyles_)),
+      pDimStyles_(std::move(o.pDimStyles_)),
+      pBlocks_(std::move(o.pBlocks_)) {
+    o.doc_ = nullptr;
+    if (doc_)
+        doc_->active_ = this;
+}
+
+Transaction::~Transaction() {
+    if (doc_)
+        rollback();
+}
+
+Document& Transaction::doc() const {
+    if (!doc_)
+        throw std::logic_error("transaction already finished");
+    return *doc_;
+}
+
+void Transaction::touchEntity(EntityId id) {
+    if (id.value >= startNextId_ || touched_.count(id))
+        return;
+    const Entity* e = doc_->find(id);
+    if (!e)
+        return;
+    touched_.emplace(id, static_cast<std::uint32_t>(beforeSnaps_.size()));
+    beforeSnaps_.push_back(*e);
+}
+
+template <class Row, class IdT>
+void Transaction::touchRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id) {
+    if (p.rows.find(id) != p.rows.end())
+        return;
+    RowChange<Row> rc;
+    if (const Row* r = t.find(id))
+        rc.before = *r;
+    p.rows.emplace(id, std::move(rc));
+}
+
+void Transaction::touchBlock(BlockId id) {
+    touchRow(doc_->blocks_, pBlocks_, id);
+}
+
+void Transaction::touchOrder(EntityId id) {
+    if (order_.count(id))
+        return;
+    OrderChange oc;
+    oc.id = id;
+    auto it = doc_->orderOverride_.find(id);
+    if (it != doc_->orderOverride_.end())
+        oc.before = it->second;
+    order_.emplace(id, oc);
+}
+
+Result<EntityId> Transaction::add(Entity entity, BlockId owner) {
+    Document& d = doc();
+    if (owner && !d.block(owner))
+        return makeError(ErrorCode::NotFound, "unknown block");
+    Result<double> ext = validateEntity(d, entity, owner);
+    if (!ext)
+        return ext.error();
+    EntityId id{d.nextEntityId_++};
+    entity.common.id = id;
+    if (ext.value() > d.header_.workArea)
+        outOfArea_.push_back(id);
+    d.insertEntity(std::move(entity));
+    if (owner) {
+        touchBlock(owner);
+        d.blocks_.rows.find(owner)->second.entities.push_back(id);
+        d.owner_[id] = owner;
+    }
+    return id;
+}
+
+Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>& fn) {
+    Document& d = doc();
+    Entity* live = d.findMutable(id);
+    if (!live)
+        return makeError(ErrorCode::NotFound, "unknown entity");
+    Entity work = *live;
+    fn(work);
+    work.common.id = id;
+    Result<double> ext = validateEntity(d, work, d.ownerBlock(id));
+    if (!ext)
+        return ext.error();
+    touchEntity(id);  // live still holds the original state
+    *live = std::move(work);
+    if (ext.value() > d.header_.workArea)
+        outOfArea_.push_back(id);
+    return {};
+}
+
+Result<void> Transaction::eraseEntityInternal(EntityId id) {
+    Document& d = doc();
+    if (!d.find(id))
+        return makeError(ErrorCode::NotFound, "unknown entity");
+    touchEntity(id);
+    auto ow = d.owner_.find(id);
+    if (ow != d.owner_.end()) {
+        BlockId b = ow->second;
+        touchBlock(b);
+        auto& list = d.blocks_.rows.find(b)->second.entities;
+        auto pos = std::find(list.rbegin(), list.rend(), id);
+        if (pos != list.rend())
+            list.erase(std::next(pos).base());
+        d.owner_.erase(ow);
+    }
+    if (d.orderOverride_.count(id)) {
+        touchOrder(id);
+        d.orderOverride_.erase(id);
+    }
+    d.removeEntity(id);
+    return {};
+}
+
+Result<void> Transaction::erase(EntityId id) {
+    doc();
+    return eraseEntityInternal(id);
+}
+
+Result<void> Transaction::bringToFront(EntityId id) {
+    Document& d = doc();
+    if (!d.find(id))
+        return makeError(ErrorCode::NotFound, "unknown entity");
+    std::int64_t key = kFrontBase;
+    for (const auto& [eid, k] : d.orderOverride_) {
+        if (eid != id && k >= kFrontBase)
+            key = std::max(key, k + 1);
+    }
+    touchOrder(id);
+    d.orderOverride_[id] = key;
+    return {};
+}
+
+Result<void> Transaction::sendToBack(EntityId id) {
+    Document& d = doc();
+    if (!d.find(id))
+        return makeError(ErrorCode::NotFound, "unknown entity");
+    std::int64_t key = -kFrontBase;
+    for (const auto& [eid, k] : d.orderOverride_) {
+        if (eid != id && k <= -kFrontBase)
+            key = std::min(key, k - 1);
+    }
+    touchOrder(id);
+    d.orderOverride_[id] = key;
+    return {};
+}
+
+// Tables ------------------------------------------------------------------------------------
+
+template <class Row, class IdT>
+Result<IdT> Transaction::addRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, Row row) {
+    doc();
+    if (Result<void> r = checkRow(*doc_, row, nullptr); !r)
+        return r.error();
+    if (t.byName.count(nameKey(row))) {
+        return makeError(ErrorCode::Conflict, "name already in use: " + row.name);
+    }
+    IdT id{t.next};
+    row.id = id;
+    if constexpr (std::is_same_v<Row, BlockDef>)
+        row.entities.clear();
+    touchRow(t, p, id);
+    ++t.next;
+    replaceRow<Row, IdT>(t, id, std::optional<Row>(std::move(row)));
+    return id;
+}
+
+template <class Row, class IdT>
+Result<void> Transaction::modifyRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id,
+                                    const std::function<void(Row&)>& fn) {
+    doc();
+    const Row* live = t.find(id);
+    if (!live)
+        return makeError(ErrorCode::NotFound, "unknown table row");
+    Row work = *live;
+    fn(work);
+    work.id = id;
+    if constexpr (std::is_same_v<Row, BlockDef>)
+        work.entities = live->entities;
+    if (Result<void> r = checkRow(*doc_, work, live); !r)
+        return r.error();
+    if (nameKey(work) != nameKey(*live) && t.byName.count(nameKey(work))) {
+        return makeError(ErrorCode::Conflict, "name already in use: " + work.name);
+    }
+    touchRow(t, p, id);
+    replaceRow<Row, IdT>(t, id, std::optional<Row>(std::move(work)));
+    return {};
+}
+
+template <class Row, class IdT>
+Result<void> Transaction::eraseRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id) {
+    doc();
+    if (!t.find(id))
+        return makeError(ErrorCode::NotFound, "unknown table row");
+    if (isBuiltin(id))
+        return makeError(ErrorCode::Conflict, "built-in row cannot be deleted");
+    if (inUse(*doc_, id))
+        return makeError(ErrorCode::Conflict, "row is in use");
+    touchRow(t, p, id);
+    replaceRow<Row, IdT>(t, id, std::nullopt);
+    return {};
+}
+
+Result<LayerId> Transaction::addLayer(Layer r) {
+    return addRow(doc().layers_, pLayers_, std::move(r));
+}
+Result<void> Transaction::modifyLayer(LayerId id, const std::function<void(Layer&)>& fn) {
+    return modifyRow(doc().layers_, pLayers_, id, fn);
+}
+Result<void> Transaction::eraseLayer(LayerId id) {
+    return eraseRow(doc().layers_, pLayers_, id);
+}
+
+Result<LinetypeId> Transaction::addLinetype(Linetype r) {
+    return addRow(doc().linetypes_, pLinetypes_, std::move(r));
+}
+Result<void> Transaction::modifyLinetype(LinetypeId id, const std::function<void(Linetype&)>& fn) {
+    return modifyRow(doc().linetypes_, pLinetypes_, id, fn);
+}
+Result<void> Transaction::eraseLinetype(LinetypeId id) {
+    return eraseRow(doc().linetypes_, pLinetypes_, id);
+}
+
+Result<TextStyleId> Transaction::addTextStyle(TextStyle r) {
+    return addRow(doc().textStyles_, pTextStyles_, std::move(r));
+}
+Result<void> Transaction::modifyTextStyle(TextStyleId id,
+                                          const std::function<void(TextStyle&)>& fn) {
+    return modifyRow(doc().textStyles_, pTextStyles_, id, fn);
+}
+Result<void> Transaction::eraseTextStyle(TextStyleId id) {
+    return eraseRow(doc().textStyles_, pTextStyles_, id);
+}
+
+Result<DimStyleId> Transaction::addDimStyle(DimStyle r) {
+    return addRow(doc().dimStyles_, pDimStyles_, std::move(r));
+}
+Result<void> Transaction::modifyDimStyle(DimStyleId id, const std::function<void(DimStyle&)>& fn) {
+    return modifyRow(doc().dimStyles_, pDimStyles_, id, fn);
+}
+Result<void> Transaction::eraseDimStyle(DimStyleId id) {
+    return eraseRow(doc().dimStyles_, pDimStyles_, id);
+}
+
+Result<BlockId> Transaction::addBlock(BlockDef r) {
+    return addRow(doc().blocks_, pBlocks_, std::move(r));
+}
+Result<void> Transaction::modifyBlock(BlockId id, const std::function<void(BlockDef&)>& fn) {
+    return modifyRow(doc().blocks_, pBlocks_, id, fn);
+}
+
+Result<void> Transaction::eraseBlock(BlockId id) {
+    Document& d = doc();
+    const BlockDef* def = d.block(id);
+    if (!def)
+        return makeError(ErrorCode::NotFound, "unknown block");
+    if (inUse(d, id))
+        return makeError(ErrorCode::Conflict, "block is referenced by an insert");
+    std::vector<EntityId> members = def->entities;
+    for (EntityId e : members) {
+        if (Result<void> r = eraseEntityInternal(e); !r)
+            return r.error();
+    }
+    touchBlock(id);
+    replaceRow<BlockDef, BlockId>(d.blocks_, id, std::nullopt);
+    return {};
+}
+
+Result<void> Transaction::modifyHeader(const std::function<void(Header&)>& fn) {
+    Document& d = doc();
+    Header work = d.header_;
+    fn(work);
+    if (!std::isfinite(work.workArea) || !(work.workArea > 0) || work.workArea > kHardCap) {
+        return makeError(ErrorCode::OutOfRange, "work area must be in (0, 1e10] mm");
+    }
+    if (!std::isfinite(work.ltScale) || !(work.ltScale > 0)) {
+        return invalid("linetype scale must be positive");
+    }
+    if (!d.layer(work.currentLayer))
+        return invalid("unknown current layer");
+    if (!d.textStyle(work.currentTextStyle))
+        return invalid("unknown current text style");
+    if (!d.dimStyle(work.currentDimStyle))
+        return invalid("unknown current dimension style");
+    if (!headerBefore_)
+        headerBefore_ = d.header_;
+    d.header_ = std::move(work);
+    return {};
+}
+
+// Commit / rollback -------------------------------------------------------------------------
+
+namespace {
+template <class Row, class IdT, class P>
+void collectRows(const detail::Table<Row, IdT>& t, const P& pending,
+                 std::vector<RowChange<Row>>& out) {
+    for (const auto& [id, rc] : pending.rows) {
+        RowChange<Row> c;
+        c.before = rc.before;
+        if (const Row* r = t.find(id))
+            c.after = *r;
+        if (c.before || c.after)
+            out.push_back(std::move(c));
+    }
+}
+}  // namespace
+
+ChangeSet Transaction::commit() {
+    Document& d = doc();
+    ChangeSet cs;
+    cs.name = name_;
+
+    std::vector<EntityId> touchedIds;
+    touchedIds.reserve(touched_.size());
+    for (const auto& kv : touched_)
+        touchedIds.push_back(kv.first);
+    std::sort(touchedIds.begin(), touchedIds.end());
+
+    std::size_t added = 0;
+    for (std::uint64_t v = startNextId_; v < d.nextEntityId_; ++v) {
+        if (v < d.posOf_.size() && d.posOf_[v] != 0xFFFFFFFFu)
+            ++added;
+    }
+    auto snaps = std::make_shared<std::vector<Entity>>();
+    snaps->reserve(touchedIds.size() * 2 + added);
+    cs.entities.reserve(touchedIds.size() + added);
+
+    for (EntityId id : touchedIds) {
+        EntityChange c;
+        c.before = static_cast<std::uint32_t>(snaps->size());
+        snaps->push_back(std::move(beforeSnaps_[touched_[id]]));
+        if (const Entity* live = d.find(id)) {
+            c.after = static_cast<std::uint32_t>(snaps->size());
+            snaps->push_back(*live);
+        }
+        cs.entities.push_back(c);
+    }
+    for (std::uint64_t v = startNextId_; v < d.nextEntityId_; ++v) {
+        if (v >= d.posOf_.size() || d.posOf_[v] == 0xFFFFFFFFu)
+            continue;
+        EntityChange c;
+        c.after = static_cast<std::uint32_t>(snaps->size());
+        snaps->push_back(d.store_.at(d.posOf_[v]));
+        cs.entities.push_back(c);
+    }
+    cs.snapshots = std::move(snaps);
+
+    collectRows(d.layers_, pLayers_, cs.layers);
+    collectRows(d.linetypes_, pLinetypes_, cs.linetypes);
+    collectRows(d.textStyles_, pTextStyles_, cs.textStyles);
+    collectRows(d.dimStyles_, pDimStyles_, cs.dimStyles);
+    collectRows(d.blocks_, pBlocks_, cs.blocks);
+    if (headerBefore_)
+        cs.header = HeaderChange{*headerBefore_, d.header_};
+    for (auto& [id, oc] : order_) {
+        auto it = d.orderOverride_.find(id);
+        oc.after = it == d.orderOverride_.end() ? std::nullopt : std::optional(it->second);
+        if (oc.before != oc.after)
+            cs.order.push_back(oc);
+    }
+
+    std::sort(outOfArea_.begin(), outOfArea_.end());
+    outOfArea_.erase(std::unique(outOfArea_.begin(), outOfArea_.end()), outOfArea_.end());
+    for (EntityId id : outOfArea_) {
+        const Entity* live = d.find(id);
+        if (!live)
+            continue;
+        Entity copy = *live;
+        Result<double> ext = validateEntity(d, copy, d.ownerBlock(id));
+        if (ext && ext.value() > d.header_.workArea)
+            cs.outOfArea.push_back(id);
+    }
+
+    d.active_ = nullptr;
+    doc_ = nullptr;
+    ++d.revision_;
+    if (!cs.empty())
+        d.notify(cs);
+    return cs;
+}
+
+void Transaction::rollback() {
+    if (!doc_)
+        return;
+    Document& d = *doc_;
+
+    // Entities added by this transaction.
+    for (std::uint64_t v = startNextId_; v < d.nextEntityId_; ++v) {
+        EntityId id{v};
+        if (d.find(id)) {
+            d.owner_.erase(id);
+            d.removeEntity(id);
+        }
+    }
+    // Pre-existing entities that were modified or erased.
+    for (const auto& [id, idx] : touched_) {
+        if (Entity* live = d.findMutable(id))
+            *live = beforeSnaps_[idx];
+        else
+            d.insertEntity(Entity(beforeSnaps_[idx]));
+    }
+    auto restore = [](auto& table, auto& pending) {
+        for (auto& [id, rc] : pending.rows)
+            replaceRow(table, id, rc.before);
+    };
+    restore(d.layers_, pLayers_);
+    restore(d.linetypes_, pLinetypes_);
+    restore(d.textStyles_, pTextStyles_);
+    restore(d.dimStyles_, pDimStyles_);
+    for (auto& [id, rc] : pBlocks_.rows) {
+        d.setBlockRow(d.block(id), rc.before ? &*rc.before : nullptr);
+        replaceRow<BlockDef, BlockId>(d.blocks_, id, rc.before);
+    }
+    if (headerBefore_)
+        d.header_ = *headerBefore_;
+    for (const auto& [id, oc] : order_) {
+        if (oc.before)
+            d.orderOverride_[id] = *oc.before;
+        else
+            d.orderOverride_.erase(id);
+    }
+    d.active_ = nullptr;
+    doc_ = nullptr;
+}
+
+}  // namespace tbcad
