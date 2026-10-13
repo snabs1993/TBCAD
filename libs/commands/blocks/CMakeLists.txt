@@ -4,11 +4,13 @@ set(_block_cmd_sources
   src/array_command.cpp
   src/attribute_commands.cpp
   src/block_command.cpp
+  src/block_count_command.cpp
   src/block_list.cpp
   src/block_panel.cpp
   src/commands.cpp
   src/explode_command.cpp
   src/insert_command.cpp
+  src/palette.cpp
   src/snap_provider.cpp
   src/xref_commands.cpp)
 
@@ -32,7 +34,9 @@ tbcad_add_tests(block_cmds
     tests/array_command_tests.cpp
     tests/attribute_command_tests.cpp
     tests/xref_command_tests.cpp
+    tests/palette_tests.cpp
     tests/attribute_command_tests.cpp
     tests/xref_command_tests.cpp
+    tests/palette_tests.cpp
     tests/explode_command_tests.cpp
   DEPENDS tbcad_command_registry)

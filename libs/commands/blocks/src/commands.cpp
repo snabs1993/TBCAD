@@ -31,12 +31,18 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXDetachCommand());
     (void)registry.add(makeXBindCommand());
     (void)registry.add(makeXListCommand());
+    (void)registry.add(makeBlockCountCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
     registerBlockPanel(ui);
     ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make", "B");
     ui.addMenuItem("Draw/Block/Insert Block...", "INSERT", "block.insert", "I");
+    ui.addMenuItem("Draw/Block/Define Attribute...", "ATTDEF", "block.attdef");
+    ui.addMenuItem("Modify/Edit Attributes...", "ATTEDIT", "block.attedit");
+    ui.addMenuItem("Insert/External Reference...", "XATTACH", "block.xattach");
+    ui.addMenuItem("Insert/Reload External References", "XRELOAD", "block.xreload");
+    ui.addMenuItem("Tools/Block Count...", "BLOCKCOUNT", "block.count");
     ui.addMenuItem("Modify/Explode", "EXPLODE", "modify.explode", "X");
     ui.addMenuItem("Modify/Array...", "ARRAY", "modify.array");
 }

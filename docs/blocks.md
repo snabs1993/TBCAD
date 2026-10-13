@@ -127,3 +127,27 @@ readers see an ATTDEF as plain text showing its tag.
 ## External references
 
 An xref is a block whose content is a snapshot of another drawing; see `docs/xref.md`.
+
+## Block palette, library and block count
+
+The `Blocks` panel is a palette with two tabs.
+
+* **Drawing**: one tile per named block with a line thumbnail (`thumbnailOfBlock`), the number of
+  uses (or `xref`), a filter box and a `Count` button. Double-click inserts; right-click offers
+  Insert and, for xrefs, Reload / Bind / Detach.
+* **Library**: a folder of `.tbcad` and `.dxf` files (setting `block.library`, three levels deep,
+  at most 2,000 files). Thumbnails load one file per frame. Double-click inserts the file as a
+  block; right-click can attach it as an xref instead.
+
+`INSERT` accepts the name of a library file in place of a block name (absolute path, or relative
+to the drawing's folder or the library folder; `.tbcad` may be left out). The file becomes an
+ordinary block named like the file (`xref::importAsBlock`: layers are matched by name, missing
+ones are created, layer 0 stays layer 0, nested blocks are copied as `name$block`) the first time;
+later inserts reuse it. Esc during the insert leaves nothing behind.
+
+`BLOCKCOUNT` (`BCOUNT`) lists each used block with the inserts placed in model space and the total
+including blocks nested in other inserted blocks, then offers `Table` (a grid of text and lines at
+a point), `Csv` (a file with `Block,Count,Total`) or `None`.
+
+The ImGui part of the palette is compiled only with `TBCAD_BUILD_APP`; everything it shows comes
+from `palette.h`, which the tests cover.

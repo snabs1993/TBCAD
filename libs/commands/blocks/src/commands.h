@@ -22,6 +22,7 @@ std::unique_ptr<cmd::Command> makeXReloadCommand();
 std::unique_ptr<cmd::Command> makeXDetachCommand();
 std::unique_ptr<cmd::Command> makeXBindCommand();
 std::unique_ptr<cmd::Command> makeXListCommand();
+std::unique_ptr<cmd::Command> makeBlockCountCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
 
 namespace detail {

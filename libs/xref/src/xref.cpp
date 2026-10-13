@@ -31,8 +31,8 @@ class Filler {
 public:
     // `merge`: the source's layers are matched by name with the host's own (a file used as a
     // block) instead of being hung below a layer named like the xref.
-    Filler(Transaction& tx, Document& host, const Document& src, std::string name,
-           Summary& summary, bool merge = false)
+    Filler(Transaction& tx, Document& host, const Document& src, std::string name, Summary& summary,
+           bool merge = false)
         : tx_(tx), host_(host), src_(src), name_(std::move(name)), sum_(summary), merge_(merge) {}
 
     Result<void> run(BlockId into) {
