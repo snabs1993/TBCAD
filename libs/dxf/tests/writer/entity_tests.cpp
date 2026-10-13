@@ -7,6 +7,7 @@
 #include "semantic_dump.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
+#include "tbcad/hatch/pattern.h"
 
 namespace tbcad::dxf {
 namespace detail {
@@ -572,6 +573,38 @@ TEST_CASE("non-finite coordinates are written as zero with a warning") {
     }
     RoundTrip rt = roundTrip(doc);
     CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+}
+
+TEST_CASE("patterns of the W5-4 library, including the user's own, are embedded") {
+    hatch::Pattern mine;
+    mine.name = "DXFTESTPAT";
+    hatch::PatternFamily f;
+    f.angle = kPi / 2;
+    f.delta = {0, 7};
+    mine.families.push_back(f);
+    hatch::PatternRegistry::add(mine);
+
+    Document doc;
+    {
+        auto tx = doc.begin("hatch");
+        HatchData h;
+        h.solid = false;
+        h.pattern = "dxftestpat";
+        HatchPolylineEdge e;
+        e.closed = true;
+        e.v = {pv(0, 0), pv(10, 0), pv(10, 10)};
+        HatchLoop loop;
+        loop.edges.emplace_back(e);
+        h.loops.push_back(loop);
+        REQUIRE(tx.add(make(Indirect<HatchData>(h))).ok());
+        tx.commit();
+    }
+    Report report;
+    auto out = exportDxf(doc, ExportOptions{}, report);
+    hatch::PatternRegistry::clearUser();
+    REQUIRE(out.ok());
+    CHECK(report.countCode(wcode::kUnknownPattern) == 0);
+    CHECK(out.value().bytes.find("\r\n78\r\n1\r\n") != std::string::npos);
 }
 
 }  // namespace tbcad::dxf

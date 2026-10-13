@@ -105,12 +105,13 @@ allows (0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 10
 
 ### Hatch patterns
 
-Our own patterns are designed from scratch and embedded as definition lines (group codes
-53/43/44/45/46/79/49) with the hatch's scale and angle applied, so other programs draw them:
-`LINE0`, `LINE45`, `CROSS45`, `GRID`, `BRICK`, `DOTS`, `SAND`, `EARTH` (`SOLID` needs no lines).
-`ExportOptions::patterns` lets the pattern library of W5-4 (`assets/patterns/tbcad.patterns`)
-provide any other name; a name nobody knows is written without lines (AutoCAD draws its own
-`ANSI31` and friends by name) and reported as `dxf.writer.unknown_pattern` (info).
+Pattern definitions come from the W5-4 library (`tbcad::hatch::PatternRegistry`: the built-in
+`LINE0`, `LINE45`, `CROSS45`, `GRID`, `BRICK`, `DOTS`, `SAND`, `EARTH` and the user's own
+patterns). They are embedded as definition lines (group codes 53/43/44/45/46/79/49) with the
+hatch's scale and angle applied, so other programs draw them; `SOLID` needs no lines.
+`ExportOptions::patterns`, when set, is asked first. A name nobody knows is written without lines
+(AutoCAD draws its own `ANSI31` and friends by name) and reported as `dxf.writer.unknown_pattern`
+(info). The reader keeps only the pattern name; the definition comes from the library on display.
 
 ### Dimensions
 
