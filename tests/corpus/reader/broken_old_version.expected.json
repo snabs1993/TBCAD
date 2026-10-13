@@ -1,0 +1,5 @@
+{
+  "description": "AC1006 (R10) is older than R12 and is refused with a clear message",
+  "exit": 2,
+  "ezdxf": false
+}

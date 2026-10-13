@@ -1,0 +1,23 @@
+{
+  "description": "sub-layers restored from TBCAD XDATA, children before parents",
+  "dxf": {
+    "LINE": 4
+  },
+  "encoding": "ANSI_1252",
+  "exit": 1,
+  "kinds": {
+    "Line": 4
+  },
+  "layers": [
+    "0",
+    "A",
+    "A/child",
+    "A/child/leaf",
+    "Defpoints",
+    "orphan~x"
+  ],
+  "version": "AC1018",
+  "warnings": [
+    "dxf.reader.sublayer_parent_missing"
+  ]
+}

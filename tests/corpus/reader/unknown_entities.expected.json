@@ -1,0 +1,23 @@
+{
+  "description": "entity types TBCAD does not read are skipped and counted",
+  "dxf": {
+    "3DSOLID": 2,
+    "IMAGE": 1,
+    "LINE": 1,
+    "MLINE": 1,
+    "RAY": 1,
+    "REGION": 1
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Line": 1
+  },
+  "layers": [
+    "0"
+  ],
+  "version": "AC1015",
+  "warnings": [
+    "dxf.reader.skipped_entity"
+  ]
+}

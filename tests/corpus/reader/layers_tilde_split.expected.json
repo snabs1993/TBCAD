@@ -1,0 +1,26 @@
+{
+  "description": "--split-layers ~ builds S-FLOOR/edge and X/y/z",
+  "dxf": {
+    "LINE": 4
+  },
+  "encoding": "ANSI_1252",
+  "exit": 0,
+  "kinds": {
+    "Line": 4
+  },
+  "layers": [
+    "0",
+    "Defpoints",
+    "S-FLOOR",
+    "S-FLOOR/Floor hidden",
+    "S-FLOOR/edge",
+    "X",
+    "X/y",
+    "X/y/z"
+  ],
+  "options": {
+    "splitLayers": "~"
+  },
+  "version": "AC1018",
+  "warnings": []
+}

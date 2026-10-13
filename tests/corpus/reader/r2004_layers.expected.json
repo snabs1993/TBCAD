@@ -1,0 +1,23 @@
+{
+  "description": "R2004 layer table: colours, lineweight, on/frozen/locked/plot",
+  "dxf": {
+    "LINE": 6
+  },
+  "encoding": "ANSI_1252",
+  "exit": 0,
+  "kinds": {
+    "Line": 6
+  },
+  "layers": [
+    "0",
+    "Defpoints",
+    "FROZEN",
+    "HIDDEN",
+    "LOCKED",
+    "NOPLOT",
+    "TRUE",
+    "WALLS"
+  ],
+  "version": "AC1018",
+  "warnings": []
+}

@@ -1,4 +1,4 @@
-name: Fuzz DXF lexer
+name: Fuzz DXF lexer and reader
 
 # 30 s on every pull request that touches the DXF code, 5 min every night.
 on:
@@ -32,13 +32,21 @@ jobs:
           -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
           -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
       - name: Build
-        run: cmake --build build/fuzz --target tbcad_dxf_fuzz_lexer
+        run: cmake --build build/fuzz --target tbcad_dxf_fuzz_lexer tbcad_dxf_fuzz_reader
       - name: Fuzz
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
           mkdir -p build/fuzz-corpus artifacts
           cp tests/corpus/synthetic/lexer/*.dxf build/fuzz-corpus/
           build/fuzz/libs/dxf/tbcad_dxf_fuzz_lexer build/fuzz-corpus \
+            -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=artifacts/
+      - name: Fuzz the reader
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
+          mkdir -p build/fuzz-corpus-reader artifacts
+          cp tests/corpus/reader/*.dxf build/fuzz-corpus-reader/
+          build/fuzz/libs/dxf/tbcad_dxf_fuzz_reader build/fuzz-corpus-reader \
             -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
             -artifact_prefix=artifacts/
       - name: Upload crash inputs

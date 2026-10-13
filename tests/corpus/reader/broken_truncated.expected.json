@@ -1,0 +1,15 @@
+{
+  "description": "file cut inside the last LINE: no EOF, three lines survive",
+  "dxf_min": {
+    "LINE": 3
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds_min": {
+    "Line": 3
+  },
+  "version": "AC1015",
+  "warnings_has": [
+    "dxf.lexer.missing_eof"
+  ]
+}

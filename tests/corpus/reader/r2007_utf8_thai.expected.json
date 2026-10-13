@@ -1,0 +1,24 @@
+{
+  "description": "R2007 UTF-8 with Thai text and a Thai layer name",
+  "dxf": {
+    "MTEXT": 1,
+    "TEXT": 1
+  },
+  "encoding": "UTF-8",
+  "exit": 0,
+  "kinds": {
+    "MText": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "Defpoints",
+    "ผนัง"
+  ],
+  "texts": [
+    "สวัสดี TBCAD",
+    "ห้องนอน\nห้องน้ำ"
+  ],
+  "version": "AC1021",
+  "warnings": []
+}

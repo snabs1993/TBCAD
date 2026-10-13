@@ -1,0 +1,35 @@
+{
+  "description": "entities with extrusion (0,0,-1); one tilted arc is skipped",
+  "dxf": {
+    "ARC": 2,
+    "CIRCLE": 1,
+    "ELLIPSE": 1,
+    "HATCH": 1,
+    "INSERT": 1,
+    "LINE": 2,
+    "LWPOLYLINE": 1,
+    "TEXT": 1
+  },
+  "encoding": "ANSI_1252",
+  "exit": 1,
+  "kinds": {
+    "Arc": 1,
+    "Circle": 1,
+    "Ellipse": 1,
+    "Hatch": 1,
+    "Insert": 1,
+    "Polyline": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "Defpoints"
+  ],
+  "texts": [
+    "neg"
+  ],
+  "version": "AC1015",
+  "warnings": [
+    "dxf.reader.extrusion_3d"
+  ]
+}

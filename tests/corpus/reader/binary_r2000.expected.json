@@ -1,0 +1,26 @@
+{
+  "binary": true,
+  "description": "binary DXF, R2000 style 2-byte group codes",
+  "dxf": {
+    "CIRCLE": 1,
+    "LINE": 2,
+    "TEXT": 1
+  },
+  "exit": 0,
+  "ezdxf": false,
+  "kinds": {
+    "Circle": 1,
+    "Line": 2,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "A"
+  ],
+  "texts": [
+    "bin"
+  ],
+  "unitScale": 1.0,
+  "version": "AC1015",
+  "warnings": []
+}

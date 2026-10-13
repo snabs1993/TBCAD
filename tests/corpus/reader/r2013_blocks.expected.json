@@ -1,0 +1,26 @@
+{
+  "description": "R2013 nested blocks, a MINSERT array and an attribute",
+  "dxf": {
+    "ATTDEF": 1,
+    "ATTRIB": 1,
+    "CIRCLE": 1,
+    "INSERT": 4,
+    "LINE": 3
+  },
+  "encoding": "UTF-8",
+  "exit": 0,
+  "kinds": {
+    "Insert": 8,
+    "Line": 1,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "Defpoints"
+  ],
+  "texts": [
+    "V1"
+  ],
+  "version": "AC1027",
+  "warnings": []
+}

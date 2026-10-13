@@ -1,0 +1,17 @@
+{
+  "description": "hatches with polyline, line+arc, ellipse, spline edges and an island",
+  "dxf": {
+    "HATCH": 5
+  },
+  "encoding": "ANSI_1252",
+  "exit": 0,
+  "kinds": {
+    "Hatch": 5
+  },
+  "layers": [
+    "0",
+    "Defpoints"
+  ],
+  "version": "AC1015",
+  "warnings": []
+}
