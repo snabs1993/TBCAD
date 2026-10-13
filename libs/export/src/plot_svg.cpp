@@ -59,6 +59,8 @@ public:
                 fill(*f);
             else if (const auto* d = std::get_if<PlotDots>(&prim))
                 dots(*d);
+            else if (const auto* c = std::get_if<PlotClip>(&prim))
+                clip(*c);
         }
         out_ << "</g>\n</svg>\n";
         return out_.str();
@@ -79,6 +81,17 @@ private:
             s += " stroke-linecap=\"round\"";
         }
         return s;
+    }
+
+    void clip(const PlotClip& c) {
+        if (!c.begin) {
+            out_ << "</g>\n";
+            return;
+        }
+        const std::string id = "vp" + std::to_string(++clips_);
+        out_ << "<clipPath id=\"" << id << "\"><rect x=\"" << num(c.rect.min.x) << "\" y=\""
+             << num(h_ - c.rect.max.y) << "\" width=\"" << num(c.rect.width()) << "\" height=\""
+             << num(c.rect.height()) << "\"/></clipPath>\n<g clip-path=\"url(#" << id << ")\">\n";
     }
 
     void path(const PlotPath& p) {
@@ -125,6 +138,7 @@ private:
 
     const PlotSheet& sheet_;
     double h_;
+    int clips_ = 0;
     std::ostringstream out_;
 };
 

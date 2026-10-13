@@ -1,0 +1,11 @@
+// Generated from assets/linetypes/tbcad.lintypes by libs/commands/layers/CMakeLists.txt.
+#include "tbcad/layers/linetype_file.h"
+
+namespace tbcad::layers {
+
+const std::string& builtinLinetypeText() {
+    static const std::string text = R"TBCADLT(@TBCAD_LINETYPES_TEXT@)TBCADLT";
+    return text;
+}
+
+}  // namespace tbcad::layers
