@@ -1,5 +1,6 @@
 # TBCAD user guide
 
+- [Quick Start / คู่มือเริ่มต้น](../quickstart.md)
 - [Getting started](getting-started.md)
 - [Commands and aliases](commands.md)
 - [Levels (floors)](levels.md)

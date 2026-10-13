@@ -107,7 +107,6 @@ private:
     void cursorHud(const ViewportRect& rect);
     void logWindow();
     std::string actionLabel(const std::string& action) const;
-    void propertiesWindow();
     void quickProperties(const ViewportRect& rect);
     void panels();
     void dialogs();
@@ -152,7 +151,6 @@ private:
     bool showAbout_ = false;
     bool showNotices_ = false;
     bool showCommandLine_ = true;
-    bool showProperties_ = true;
     bool layoutBuilt_ = false;
     ui::WorkspaceStore workspaces_;
     std::string workspaceName_{};  // the one last switched to or saved
@@ -164,6 +162,7 @@ private:
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
     std::size_t recoveryCount_ = 0;
+    std::string crashReport_{};  // newest unacknowledged crash report file, if any
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};
@@ -203,6 +202,8 @@ private:
     bool saveThenPending_ = false;
     std::string noticesText_{};
     bool noticesLoaded_ = false;
+    bool showQuickStart_ = false;
+    std::string quickStartText_{};
     std::string lastError_{};
 
     // Viewport interaction.

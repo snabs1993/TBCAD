@@ -1,0 +1,18 @@
+{
+  "description": "non-numbers, infinities, comma decimals, huge values (beyond the hard cap are dropped) and padding",
+  "dxf": {
+    "LINE": 13
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds_min": {
+    "Line": 5
+  },
+  "layers": [
+    "0"
+  ],
+  "version": "AC1015",
+  "warnings_has": [
+    "dxf.lexer.bad_number"
+  ]
+}

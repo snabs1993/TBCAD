@@ -1,0 +1,92 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1032
+  9
+$INSUNITS
+ 70
+4
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LAYER
+ 70
+2
+  0
+LAYER
+  2
+0
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+L-ˇ˛-x
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+TEXT
+  8
+L-ˇ˛-x
+ 10
+0
+ 20
+0
+ 40
+2.5
+  1
+ok ‡∏™‡∏ß bad:ˇ˛ end ‡∏
+  0
+TEXT
+  8
+0
+ 10
+0
+ 20
+5
+ 40
+2.5
+  1
+‡∏õ‡∏Å‡∏ï‡∏¥ \U+0E01
+  0
+LINE
+  8
+0
+ 10
+0
+ 20
+0
+ 11
+1
+ 21
+1
+  0
+ENDSEC
+  0
+EOF

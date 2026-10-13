@@ -5,7 +5,7 @@ list(FILTER _convert_sources EXCLUDE REGEX "/src/main\\.cpp$")
 
 tbcad_add_library(convert
   SOURCES ${_convert_sources}
-  DEPENDS tbcad::core tbcad::dxf tbcad::io)
+  DEPENDS tbcad::core tbcad::dxf tbcad::dwg tbcad::io)
 
 add_executable(tbcad-convert src/main.cpp)
 target_link_libraries(tbcad-convert PRIVATE tbcad::convert)

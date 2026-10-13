@@ -8,6 +8,8 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Donut", "DONUT", "draw.donut", "");
     ui.addMenuItem("Draw/Revision Cloud", "REVCLOUD", "draw.revcloud", "");
     ui.addMenuItem("Draw/Boundary", "BOUNDARY", "draw.boundary", "");
+    ui.addMenuItem("Draw/Ray", "RAY", "draw.ray", "");
+    ui.addMenuItem("Draw/Construction Line", "XLINE", "draw.xline", "");
     ui.addMenuItem("Draw/Sketch", "SKETCH", "draw.sketch", "");
     ui.addMenuItem("Draw/Region", "REGION", "draw.region", "");
     ui.addMenuItem("Modify/Region/Union", "UNION", "modify.union", "");

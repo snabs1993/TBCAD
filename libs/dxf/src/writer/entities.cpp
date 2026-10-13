@@ -7,6 +7,7 @@
 #include "tbcad/blocks/explode.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 #include "writer_impl.h"
 
@@ -322,6 +323,12 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
         case EntityKind::Table:
             writeTable(p, e, owner);
             break;
+        case EntityKind::Ray:
+            writeRay(p, *entityAs<RayData>(e), e, owner);
+            break;
+        case EntityKind::MLine:
+            writeMline(p, *entityAs<MlineData>(e), e, owner);
+            break;
     }
     if (kind(e) != EntityKind::Insert)
         writeAnnotativeData(e);
@@ -384,6 +391,59 @@ void Writer::writeLine(const Props& p, const LineData& d, std::uint64_t owner) {
     o_->pt(10, d.a);
     o_->pt(11, d.b);
     count("LINE");
+}
+
+void Writer::writeRay(const Props& p, const RayData& d, const Entity& e, std::uint64_t owner) {
+    if (r12_) {
+        downgrade(d.infinite ? "XLINE" : "RAY", "has no R12 form; written as a long line");
+        writeLine(p, LineData{rayStart(d), rayEnd(d)}, owner);
+        return;
+    }
+    (void)e;
+    const char* name = d.infinite ? "XLINE" : "RAY";
+    head(name, p, owner, d.infinite ? "AcDbXline" : "AcDbRay");
+    o_->pt(10, d.origin);
+    o_->pt(11, d.dir);
+    count(name);
+}
+
+// A multiline is an INSERT of an anonymous *M block holding its lines, so any program shows it.
+// Our extended data carries the multiline and its style; the importer rebuilds it from that.
+void Writer::writeMline(const Props& p, const MlineData& d, const Entity& e, std::uint64_t owner) {
+    DimBlock block;
+    do {
+        block.name = "*M" + std::to_string(++dimCounter_);
+    } while (blockSet_.has(block.name));
+    blockSet_.add(block.name);
+    block.rec = newHandle();
+    {
+        Out bo(utf8_, r12_);
+        Out* saved = o_;
+        o_ = &bo;
+        auto parts = mline::explodeMline(doc_, e);
+        if (parts) {
+            for (const Entity& part : parts.value())
+                writeEntity(part, block.rec);
+        }
+        o_ = saved;
+        block.body = std::move(bo.buf);
+    }
+    const std::string blockName = block.name;
+    dimBlocks_.push_back(std::move(block));
+
+    head("INSERT", p, owner, "AcDbBlockReference");
+    Out& o = *o_;
+    o.str(2, blockName);
+    o.pt(10, Vec2{0, 0});
+    o.d(41, 1);
+    o.d(42, 1);
+    o.d(43, 1);
+    count("INSERT");
+    o.raw(1001, "TBCAD");
+    const auto style = mline::findStyle(doc_, d.style);
+    const std::string text = mline::serialize(d, style ? *style : mline::standardStyle());
+    for (std::size_t at = 0; at < text.size(); at += 200)
+        o.str(1000, text.substr(at, 200));
 }
 
 void Writer::writePoint(const Props& p, const PointData& d, std::uint64_t owner) {
@@ -816,9 +876,9 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
         Out& o = *o_;
         o.i(90, 498);
         o.i(91, 500);
-        o.i(93, 0);
         o.i(95, 0);
         o.i(70, 0);
+        o.i(92, static_cast<long long>(d.raw.size()));
         static const char* digits = "0123456789ABCDEF";
         for (std::size_t pos = 0; pos < d.raw.size(); pos += 127) {
             std::string hex;
@@ -828,6 +888,7 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
             }
             o.raw(310, hex);
         }
+        o.i(93, 0);
         count("ACAD_PROXY_ENTITY");
         return;
     }

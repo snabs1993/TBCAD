@@ -194,6 +194,11 @@ bool curvesOf(const Entity& e, std::vector<CurveRef>& out) {
             for (Segment& s : segments(*entityAs<PolylineData>(e)))
                 out.push_back(std::move(s.curve));
             return true;
+        case EntityKind::Ray: {
+            const auto& d = *entityAs<RayData>(e);
+            out.push_back(CurveRef::line(rayStart(d), rayEnd(d)));
+            return true;
+        }
         case EntityKind::Ellipse: {
             const auto& d = *entityAs<EllipseData>(e);
             if (d.ratio > 0 && lengthSquared(d.majorAxis) > 0)
@@ -361,6 +366,7 @@ std::optional<Vec2> closestPoint(const Entity& e, Vec2 p, const Document* doc) {
             return closestOnPolyline(*entityAs<PolylineData>(e), p);
         case EntityKind::Point:
             return entityAs<PointData>(e)->p;
+        case EntityKind::Ray:
         case EntityKind::Ellipse:
         case EntityKind::Spline: {
             std::vector<CurveRef> cs;
@@ -477,6 +483,7 @@ bool crossesWindow(const Entity& e, const BBox2& window, const Document* doc) {
         case EntityKind::Point:
             return window.contains(entityAs<PointData>(e)->p);
         case EntityKind::Line:
+        case EntityKind::Ray:
         case EntityKind::Circle:
         case EntityKind::Arc:
         case EntityKind::Ellipse:
@@ -528,6 +535,10 @@ std::vector<Vec2> endpoints(const Entity& e) {
         case EntityKind::Polyline:
             for (const PolyVertex& v : entityAs<PolylineData>(e)->v)
                 out.push_back(v.p);
+            break;
+        case EntityKind::Ray:
+            if (!entityAs<RayData>(e)->infinite)
+                out.push_back(entityAs<RayData>(e)->origin);
             break;
         default:
             break;

@@ -146,7 +146,7 @@ namespace {
 
 struct HookTable {
     std::mutex mutex;
-    std::array<ExplodeFn, static_cast<std::size_t>(EntityKind::Table) + 1> fns{};
+    std::array<ExplodeFn, kEntityKindCount> fns{};
 };
 
 HookTable& hooks() {

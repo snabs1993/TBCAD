@@ -90,9 +90,17 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
     }
 
     std::vector<EntityId> out;
-    for (const Entity* e : shownEntities(doc)) {
+    // Level queries also see the dimmed objects of other levels (they are shown, just not
+    // pickable); every other property only looks at the current level.
+    for (const Entity* e :
+         q.property == Property::Level ? shownOnAnyLevel(doc) : shownEntities(doc)) {
         bool hit = false;
         switch (q.property) {
+            case Property::Level: {
+                const Level* l = doc.level(e->common.level);
+                hit = l && upper(l->name) == want;
+                break;
+            }
             case Property::Type: {
                 const std::string k = kindName(*e);
                 hit = want == k || (k == "POLYLINE" && want == "LWPOLYLINE") ||
@@ -165,10 +173,10 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions po;
-        po.keywords = {"Type", "Layer", "Color", "Linetype", "Lineweight"};
+        po.keywords = {"Type", "Layer", "Color", "Linetype", "Lineweight", "Level"};
         po.defaultKeyword = "Type";
-        auto p = co_await ctx.getKeyword("Property [Type/Layer/Color/Linetype/Lineweight] <Type>",
-                                         std::move(po));
+        auto p = co_await ctx.getKeyword(
+            "Property [Type/Layer/Color/Linetype/Lineweight/Level] <Type>", std::move(po));
         if (!p.ok())
             co_return;
         Query q;
@@ -180,6 +188,8 @@ public:
             q.property = Property::Linetype;
         else if (p.keyword == "Lineweight")
             q.property = Property::Lineweight;
+        else if (p.keyword == "Level")
+            q.property = Property::Level;
 
         auto v = co_await ctx.getString("Value");
         if (!v.ok())

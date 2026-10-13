@@ -16,6 +16,8 @@ void commit(DrawingSession& s, Transaction& tx, const std::string& label) {
     s.undoStack().push(label, {std::move(cs)});
 }
 
+}  // namespace
+
 // Why an entity cannot be edited, empty when it can: locked layers (and, in "active only"
 // mode, every layer outside the current layer's branch) are read-only.
 std::string whyReadOnly(const Document& doc, const Entity& e) {
@@ -35,6 +37,8 @@ std::string whyReadOnly(const Document& doc, const Entity& e) {
     return l.inactive ? "layer \"" + name + "\" is not the active layer (Active Only mode is on)"
                       : "layer \"" + name + "\" is locked";
 }
+
+namespace {
 
 ToolResult addEntities(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;
@@ -177,7 +181,7 @@ std::string applySet(const Document& doc, Entity& e, const Json& set) {
     }
     EntityKind k = kind(e);
     if (k == EntityKind::Dimension || k == EntityKind::Leader || k == EntityKind::Proxy ||
-        k == EntityKind::Table) {
+        k == EntityKind::Table || k == EntityKind::Ray || k == EntityKind::MLine) {
         return "the geometry of a " + kindName(k) +
                " is changed with transform or run_command, not with set";
     }
@@ -345,8 +349,9 @@ void registerEditTools(ToolSet& tools) {
     };
 
     Json entitySchema = tObject(
-        {{"kind", tString("line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch "
-                          "or insert")},
+        {{"kind",
+          tString("line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, "
+                  "insert, dimension or leader")},
          {"layer", tString("layer path; default: the `layer` argument or the current layer")},
          {"level", tString("level name; default: the current level")},
          {"color", tAny("\"ByLayer\", \"ByBlock\", ACI 1..255 or \"#RRGGBB\"")},
@@ -362,8 +367,9 @@ void registerEditTools(ToolSet& tools) {
         "([[[x,y]..]..]), pattern,scale,angle. insert: block,position,scale,rotation.");
 
     tools.add({"add_entities", "Add entities",
-               "Adds geometry to the drawing in one undo step. Dimensions and leaders are made "
-               "with run_command.",
+               "Adds geometry to the drawing in one undo step: lines, arcs, polylines, text, "
+               "hatches (also gradients), block inserts (also arrays, attributes), dimensions and "
+               "leaders. Read the tbcad://docs/entity-json resource for the fields.",
                tObject({{"entities", tArray(entitySchema, "", 10000)},
                         {"layer", tString("default layer path for entities without one")},
                         {"create_layers", tBool("create layers (and parents) that do not exist")}},

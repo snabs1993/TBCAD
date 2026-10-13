@@ -17,7 +17,7 @@ struct RegistryEntry {
 
 struct Registry {
     std::shared_mutex mutex;
-    std::array<RegistryEntry, static_cast<std::size_t>(EntityKind::Table) + 1> entries{};
+    std::array<RegistryEntry, kEntityKindCount> entries{};
 };
 
 Registry& registry() {
@@ -35,6 +35,7 @@ bool isBuiltIn(EntityKind k) {
         case EntityKind::Ellipse:
         case EntityKind::Spline:
         case EntityKind::Proxy:
+        case EntityKind::Ray:
             return true;
         default:
             return false;
@@ -282,6 +283,14 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
             out.items.push_back(std::move(p));
             return;
         }
+        case EntityKind::Ray: {
+            const auto& d = *entityAs<RayData>(e);
+            DisplayPolyline p;
+            p.pts = {rayStart(d), rayEnd(d)};
+            p.style = resolveStyle(doc, e, ctx);
+            out.items.push_back(std::move(p));
+            return;
+        }
         case EntityKind::Proxy: {
             const auto& d = *entityAs<ProxyData>(e);
             out.items.insert(out.items.end(), d.graphics.items.begin(), d.graphics.items.end());
@@ -337,6 +346,13 @@ BBox2 bounds(const Entity& e) {
             for (const PolyVertex& v : pl.v)
                 w = std::max({w, v.startWidth, v.endWidth});
             return w > 0 ? b.inflated(0.5 * w) : b;
+        }
+        case EntityKind::Ray: {
+            const auto& d = *entityAs<RayData>(e);
+            BBox2 b;
+            b.expand(rayStart(d));
+            b.expand(rayEnd(d));
+            return b;
         }
         case EntityKind::Proxy:
             return displayBounds(entityAs<ProxyData>(e)->graphics);

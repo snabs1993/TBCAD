@@ -92,6 +92,28 @@ unless `discard_changes`), `set_view` (viewport only), `export_pdf` (listed when
 it sets `Paper`, `Orientation`, `Scale`, `Area` through that command's menu and then `Export`) and
 `export_dxf` (listed when `EXPORTDXF` exists).
 
+Editing tools (one undo step each, `AI: <tool>`):
+
+- `offset_entities` (`ids`, `distance`, `side` / `side_point` / `through`, `round_corners`, `delete_source`),
+  `trim_entities` (`targets: [{id, pick}]`, `edges`), `extend_entities` (`targets`, `boundaries`),
+  `fillet` / `chamfer` (two entities or a polyline vertex; radius, distances or angle; `trim`),
+  `break_entity`, `join_entities`. These call the same `libs/modify` functions as the commands.
+- Layouts and plot: `list_layouts`, `create_layout`, `modify_layout`, `delete_layout`, `add_viewport`,
+  `modify_viewport` (scale `"1:50"`, `freeze` layers, `remove`), `add_title_block`; `export_pdf` takes `layout`
+  to plot one sheet and `color` for the pen colours.
+- Blocks: `create_block` (BLOCK command: `ids`, `base`, `originals` convert/retain/delete, `redefine`);
+  text with `attdef` becomes an attribute. `list_blocks` lists attributes, dynamic parameters/actions and xref
+  state. Insert with `add_entities` kind `insert` (`attributes: {TAG: value}`).
+- Dynamic blocks: `add_block_parameter` (linear, rotation, flip, visibility), `add_block_action` (stretch, move,
+  scale), `set_dynamic_value` on an insert.
+- Layers: `set_active_only`, `layer_state` (list, save, restore with `parts`, rename, delete).
+- Constraints: `list_constraints`, `add_constraint` (Coincident, Horizontal, Vertical, Parallel,
+  Perpendicular, Equal, Tangent, Fix, Distance, Radius, Angle in degrees; solves and moves the geometry; a
+  conflicting set is refused and nothing changes), `remove_constraint`, `solve_constraints`.
+- Dimensions and leaders are writable with `add_entities` (`dimKind` linear, aligned, angular, radius,
+  diameter, ordinate, ...). Chains and baselines (`DIMCONTINUE`, `DIMBASELINE`) are reachable with
+  `run_command`. Hatch accepts `gradient: {type, color1, color2, angle}`; inserts accept `array`.
+
 Resources: `tbcad://drawing/info`, `tbcad://drawing/layers`, `tbcad://commands`, `tbcad://docs/entity-json`.
 
 A failed call leaves nothing behind: the undo group is rolled back.
@@ -128,7 +150,7 @@ Kind fields:
 - **mtext**: `position`, `height`, `width`, `value`, `attachment` (topLeft ... bottomRight), optional `rotation`, `style`
 - **hatch**: `loops`, `solid`, and for patterns `pattern`, `scale`, `angle`. When writing, a loop is `[[x,y],...]` or `{"vertices": [...]}` or `{"edges": [{"type":"line"|"arc"|"polyline",...}]}`.
 - **insert**: `block` (name), `position`, `scale` (number or `[sx, sy]`), `rotation`
-- **dimension**, **leader**: read only here; create them with `run_command` (DIMLINEAR, DIMALIGNED, DIMRADIUS, LEADER ...).
+- **dimension**, **leader**: read and write (`dimKind`, definition points, `textOverride`, `style`; leader `vertices`, `text`). Moving one with `set` is refused; use `transform`.
 - **proxy**: an imported entity of an unknown type; read only.
 
 Writing: `add_entities` accepts line, circle, arc, polyline, point, ellipse, spline, text, mtext,
