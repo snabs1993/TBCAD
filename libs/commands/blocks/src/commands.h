@@ -6,6 +6,7 @@
 
 #include "tbcad/block_cmds/block_cmds.h"
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/drafting/snap_geometry.h"
 
 namespace tbcad::block_cmds {
 

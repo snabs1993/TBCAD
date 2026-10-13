@@ -72,8 +72,10 @@ Defaults are 3 x 4 for rectangular arrays (spacing 1.5 x the selection's size) a
 ## Object snap
 
 `blocks::snapGeometry(doc, insert)` returns the curve and point geometry of an Insert flattened
-through nested blocks and placed in the Insert's space. The drafting aids use it as the Insert
-entry of their `SnapGeometryProvider`.
+through nested blocks and placed in the Insert's space. `registerCommands` sets it up as the Insert
+entry of `drafting::SnapGeometryRegistry::instance()` (`block_cmds::registerSnapProvider`): each
+part offers what a stand-alone entity of its kind would (endpoints, midpoints, centres, quadrants,
+curves for intersection, perpendicular and tangent).
 
 ## Spatial index
 

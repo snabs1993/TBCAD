@@ -9,6 +9,7 @@ namespace tbcad::block_cmds {
 
 void registerCommands(cmd::Registry& registry) {
     blocks::registerInsertDisplay();
+    registerSnapProvider(drafting::SnapGeometryRegistry::instance());
     (void)registry.add(makeBlockCommand());
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
