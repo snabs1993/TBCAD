@@ -222,7 +222,8 @@ std::size_t Importer::decodeProxyGraphics(std::span<const std::uint8_t> data,
     // Arc of the circle around `c` in the plane (ux, uy) from angle a for sweep s.
     auto sampleArc = [&](V3 c, double r, V3 ux, V3 uy, double a, double s) {
         std::vector<Vec2> pts;
-        const int n = std::clamp(static_cast<int>(std::ceil(std::abs(s) / kTwoPi * 96)), 4, 192);
+        const double want = std::isfinite(s) ? std::ceil(std::abs(s) / kTwoPi * 96) : 192.0;
+        const int n = static_cast<int>(std::clamp(want, 4.0, 192.0));
         for (int i = 0; i <= n; ++i) {
             double t = a + s * i / n;
             double ct = std::cos(t) * r, stt = std::sin(t) * r;
