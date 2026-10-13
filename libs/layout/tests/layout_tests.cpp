@@ -377,3 +377,21 @@ TEST_CASE("SVG of a layout is clipped per viewport and well-formed") {
         ++closes;
     CHECK(opens == closes);
 }
+
+TEST_CASE("viewport edits with an id that does not exist are refused, not crashed on") {
+    Document doc;
+    run(doc, "new", [](Transaction& tx) { return createLayout(tx, "S"); });
+    run(doc, "vp", [](Transaction& tx) {
+        BBox2 r;
+        r.expand({10, 10});
+        r.expand({210, 150});
+        return addViewport(tx, "S", r, {0, 0}, 50).ok() ? Result<void>() : Error{};
+    });
+    auto tx = doc.begin("bad");
+    for (int id : {0, -3, 2, 1000}) {
+        CHECK_FALSE(setViewportScale(tx, "S", id, 100).ok());
+        CHECK_FALSE(setViewportCenter(tx, "S", id, {1, 1}).ok());
+        CHECK_FALSE(setViewportOn(tx, "S", id, false).ok());
+        CHECK_FALSE(removeViewport(tx, "S", id).ok());
+    }
+}
