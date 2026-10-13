@@ -35,7 +35,7 @@ target_compile_definitions(tbcad PRIVATE
   TBCAD_VERSION="${PROJECT_VERSION}"
   TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 target_link_libraries(tbcad PRIVATE
-  tbcad_appcore tbcad_mcpapp tbcad_dwgopen tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
+  tbcad_appcore tbcad_mcpapp tbcad_plugin tbcad_dwgopen tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
   tbcad::glad tbcad::imgui)
 if(WIN32)
   target_link_libraries(tbcad PRIVATE imm32)
