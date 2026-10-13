@@ -77,6 +77,17 @@ it `Input` events: `Input::typed("0,0")`, `enter()`, `cancel()` (Esc), `click(Ra
 * Noun-verb: `getSelection` returns the host's current selection immediately when it is non-empty
   (`SelectionOptions::allowPreselection`); otherwise picks accumulate until Enter.
 
+## Commit hooks and the window query
+
+* `Registry::addCommitHook(fn(Document&, Transaction&))`: runs just before a command's open
+  transaction is committed (every commit, including checkpoints; never for a cancelled or failed
+  command). Edits made through `tx` join the command's undo step. Use `tx.touchedEntities()` (the
+  pre-existing entities modified or erased so far) to find out what changed, and return at once when
+  nothing relevant was touched. Associative hatches use it to follow their boundary.
+* `IHost::entitiesInWindow(box)` returns the model-space ids whose box meets the window, from the
+  host's spatial index, or `nullopt` when the host has none (callers scan the document then).
+  `ScriptHost::setWindowQuery` fakes it in tests.
+
 ## Aliases
 
 Built-in aliases come from `defaultAliases()`. The user file `aliases.json` in the settings folder
