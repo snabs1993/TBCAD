@@ -162,3 +162,10 @@ back (74 MB of DXF) in 1.4 s with a Release build.
 Paper space and layouts beyond the two default ones, XDATA other than TBCAD's, gradient hatches,
 hatch associativity, arc-length dimensions (skipped with a warning), dimension style variables
 beyond the basic ones, binary DXF output.
+
+## Commands
+
+`EXPORTDXF` asks for a file name and a version (R2000 default, R12, R2007) and writes the whole
+drawing. `IMPORTDXF` asks for a file name and adds the contents of the DXF file to the open
+drawing in one undo step; layers, linetypes and styles are matched by name, and blocks whose name
+is taken are renamed `<name>_1`. Both live in `libs/commands/dxfexport`.
