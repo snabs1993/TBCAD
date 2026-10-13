@@ -143,6 +143,7 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
     ++generation_;
     lastTessellatedFor_ = camera_;
     autosavedRevision_ = ~std::uint64_t{0};
+    notifySessionHooks();
     if (!session_->index.empty())
         zoomExtents();
 }
@@ -373,6 +374,9 @@ void AppCore::submitText(std::string_view text) {
         run.submit(cmd::Input::enter());
         return;
     }
+    // A leading apostrophe marks a transparent command; with nothing running it is just a command.
+    if (trimmed.size() > 1 && trimmed[0] == '\'')
+        trimmed.erase(0, 1);
     std::vector<std::string> words = splitWords(trimmed);
     if (words.empty())
         return;
@@ -656,7 +660,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             g.gapPx = 5;
             overlay.line(render::Space::World, feedback_.guide->first, feedback_.guide->second, g);
         }
-        if (!feedback_.marker.empty()) {
+        // With a UI registry the drafting module draws the snap marker itself.
+        if (!ui && !feedback_.marker.empty()) {
             render::MarkerKind mk = render::MarkerKind::Square;
             if (feedback_.marker == "midpoint")
                 mk = render::MarkerKind::Triangle;
@@ -700,6 +705,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         pc.host = this;
         pc.selection = &selection_;
         pc.camera = &camera_;
+        pc.feedback = &feedback_;
         pc.runCommand = [this](const std::string& line) { submitText(line); };
         for (const auto& fn : ui->overlayDrawers())
             fn(pc, overlay);
@@ -726,8 +732,10 @@ void AppCore::applyUiKeybindings(const UiRegistry& ui) {
     for (const auto& f : ui.pointFilters())
         filterChain_.add(f.filter.get(), f.order);
     lineParser_ = ui.lineParser();
+    ui_ = &ui;
     if (session_)
         session_->runner->setLineParser(lineParser_);
+    notifySessionHooks();
     for (const auto& item : ui.menuItems())
         if (!item.actionId.empty())
             keybindings_.declare(item.actionId, item.defaultChord);
@@ -737,12 +745,27 @@ void AppCore::applyUiKeybindings(const UiRegistry& ui) {
     }
 }
 
+void AppCore::notifySessionHooks() {
+    if (!ui_ || !session_)
+        return;
+    SessionInfo info{&session_->doc, &session_->index, this};
+    for (const auto& hook : ui_->sessionHooks())
+        hook(info);
+}
+
 void AppCore::registerBuiltinUi(UiRegistry& ui) {
     auto toggle = [&](const char* id, const char* label, const char* key) {
         std::string k = key;
         ui.addStatusToggle(
             id, label, [this, k] { return settings_.getBool(k, false); },
-            [this, k](bool on) { settings_.setBool(k, on); });
+            [this, k](bool on) {
+                settings_.setBool(k, on);
+                // Ortho and polar tracking exclude each other.
+                if (on && k == "drafting.ortho")
+                    settings_.setBool("drafting.polar", false);
+                if (on && k == "drafting.polar")
+                    settings_.setBool("drafting.ortho", false);
+            });
     };
     toggle("snap", "SNAP", "drafting.snap");
     toggle("grid", "GRID", "view.grid");
