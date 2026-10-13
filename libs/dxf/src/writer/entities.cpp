@@ -1087,7 +1087,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     o.i(70, type | (d.textPosUser ? 128 : 0));
     o.i(71, 5);
     if (!d.textOverride.empty())
-        o.str(1, d.textOverride);
+        o.str(1, text::expandFields(doc_, d.textOverride));
     o.str(3, dimStyleNameOf(d.style));
     o.d(42, dim::measurement(d));
     sub(subclass);

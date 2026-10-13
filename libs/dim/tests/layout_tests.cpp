@@ -248,3 +248,16 @@ TEST_CASE("refresh recomputes the measurement and the default text position") {
     CHECK(d.measurement == doctest::Approx(200));
     CHECK(near(d.textPos, {1, 2}));
 }
+
+TEST_CASE("a dimension text override can hold fields") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("sheet");
+        REQUIRE(tx.modifyHeader([](Header& h) { h.custom["sheet.number"] = "A-101"; }));
+        tx.commit();
+    }
+    DimensionData d = linear({0, 0}, {100, 0}, {50, 10});
+    d.textOverride = "<> (%<sheet>%)";
+    Layout L = layoutDimension(doc, d);
+    CHECK(L.text.utf8 == "100.00 (A-101)");
+}
