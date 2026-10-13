@@ -895,6 +895,14 @@ Json entityToJson(const Document& doc, const Entity& e) {
     }
     if (!e.common.visible)
         o["visible"] = false;
+    if (e.common.annotative) {
+        o["annotative"] = true;
+        Json::Array scales;
+        for (double n : e.common.annoScales)
+            scales.emplace_back(n);
+        if (!scales.empty())
+            o["annotativeScales"] = Json(std::move(scales));
+    }
 
     visitEntity(e, [&](const auto& d) {
         using T = std::decay_t<decltype(d)>;

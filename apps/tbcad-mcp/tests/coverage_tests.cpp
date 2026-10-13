@@ -349,3 +349,29 @@ TEST_CASE("region booleans and copy to level") {
                     "{\"op\":\"subtract\",\"ids\":[\"" + r + "\"],\"subtract\":[\"" + c + "\"]}");
     CHECK(sub.find("created")->asArray().size() >= 1);
 }
+
+TEST_CASE("annotation scale: settings, annotative text") {
+    Full f;
+    Json st = f.ok("annotation", R"({"action":"get"})");
+    CHECK(st.find("scaleList")->asArray().size() > 3);
+    f.ok("annotation", R"({"action":"set_scale","scale":50})");
+    CHECK(f.ok("annotation").find("scale")->asNumber() == 50);
+    f.ok("annotation", R"({"action":"add_scale","scale":77})");
+    bool has77 = false;
+    const Json after = f.ok("annotation");
+    for (const Json& n : after.find("scaleList")->asArray())
+        has77 = has77 || n.asNumber() == 77;
+    CHECK(has77);
+    f.ok("annotation", R"({"action":"delete_scale","scale":77})");
+    CHECK(f.fails("annotation", R"({"action":"set_scale","scale":0})").size() > 0);
+    std::string t = f.add(R"({"kind":"text","position":[0,0],"height":2.5,"value":"Note"})");
+    f.ok("annotation",
+         "{\"action\":\"set_annotative\",\"ids\":[\"" + t + "\"],\"scales\":[50,100]}");
+    Json g = f.ok("get_entity", "{\"id\":\"" + t + "\"}");
+    CHECK(g.find("annotative")->asBool());
+    CHECK(g.find("annotativeScales")->asArray().size() == 2);
+    f.ok("annotation", "{\"action\":\"set_annotative\",\"ids\":[\"" + t + "\"],\"on\":false}");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + t + "\"}").find("annotative") == nullptr);
+    f.ok("annotation", R"({"action":"new_objects","on":true})");
+    CHECK(f.ok("annotation").find("newObjectsAnnotative")->asBool());
+}

@@ -235,6 +235,75 @@ ToolResult regionOp(ToolContext& ctx, const Json& a) {
     return ToolResult::fail("op must be region, union, subtract or intersect");
 }
 
+// ---- annotation scale -------------------------------------------------------------------------
+
+ToolResult annotation(ToolContext& ctx, const Json& a) {
+    DrawingSession& s = ctx.session;
+    Document& doc = s.document();
+    std::string action = argString(a, "action", "get");
+    auto state = [&]() {
+        Json::Array list;
+        for (double n : annotationScaleList(doc.header()))
+            list.emplace_back(n);
+        return Json::Object{{"scale", currentAnnotationScale(doc.header())},
+                            {"newObjectsAnnotative", annotateNewObjects(doc.header())},
+                            {"scaleList", Json(std::move(list))}};
+    };
+    if (action == "get")
+        return ToolResult::ok(Json(state()));
+    auto scaleArg = [&](const char* key) -> Result<double> {
+        const Json* v = a.find(key);
+        if (!v || !v->isNumber() || !(v->asNumber() > 0))
+            return makeError(ErrorCode::InvalidArgument,
+                             std::string(key) + " must be a number above zero (N of 1:N)");
+        return v->asNumber();
+    };
+    ToolResult r = ToolResult::fail("nothing to do");
+    if (action == "set_scale") {
+        auto n = scaleArg("scale");
+        if (!n)
+            return ToolResult::fail(n.error().message);
+        r = runChecked(s, "CANNOSCALE", {Json(formatDouble(n.value()))});
+    } else if (action == "new_objects") {
+        r = runChecked(s, "ANNONEW", {Json(argBool(a, "on", true) ? "On" : "Off")});
+    } else if (action == "add_scale" || action == "delete_scale") {
+        auto n = scaleArg("scale");
+        if (!n)
+            return ToolResult::fail(n.error().message);
+        r = runChecked(s, "SCALELISTEDIT",
+                       {Json(action == "add_scale" ? "Add" : "Delete"),
+                        Json(formatDouble(n.value())), Json("Done")});
+    } else if (action == "reset_scales") {
+        r = runChecked(s, "SCALELISTEDIT", {Json("Reset"), Json("Done")});
+    } else if (action == "set_annotative") {
+        auto ids = needIds(doc, a);
+        if (!ids)
+            return ToolResult::fail(ids.error().message);
+        const bool on = argBool(a, "on", true);
+        std::vector<Json> in{selectInput(ids.value()), Json(""),
+                             Json(!on                ? "Off"
+                                  : a.find("scales") ? "Scales"
+                                                     : "On")};
+        if (on && a.find("scales")) {
+            std::string joined;
+            for (const Json& n : a.find("scales")->asArray())
+                joined += (joined.empty() ? "" : ",") + formatDouble(n.asNumber());
+            in.emplace_back(joined);
+        }
+        r = runChecked(s, "ANNOTATIVE", in);
+    } else {
+        return ToolResult::fail(
+            "action must be get, set_scale, new_objects, add_scale, delete_scale, reset_scales or "
+            "set_annotative");
+    }
+    r = failOnProblem(std::move(r));
+    if (r.isError)
+        return r;
+    Json::Object out = state();
+    out["messages"] = *r.data.find("messages");
+    return ToolResult::ok(Json(std::move(out)));
+}
+
 }  // namespace
 
 void registerOpsTools(ToolSet& tools) {
@@ -296,6 +365,21 @@ void registerOpsTools(ToolSet& tools) {
             "Copies entities to another level at the same position (COPYTOLEVEL).",
             tObject({{"ids", ids}, {"level", tString("level name")}}, {"ids", "level"}),
             outSchema({"messages", "created"}), false, "COPYTOLEVEL", copyToLevel);
+    cmdTool("annotation", "Annotation scale",
+            "get: current annotation scale, whether new text/dimensions start annotative, and the "
+            "scale list. set_scale (CANNOSCALE), new_objects on/off (ANNONEW), add_scale / "
+            "delete_scale / reset_scales (SCALELISTEDIT), and set_annotative to make `ids` "
+            "annotative (on) or ordinary (off), optionally with `scales` (N of 1:N). Entities "
+            "show `annotative` and `annotativeScales`.",
+            tObject({{"action", tEnum({"get", "set_scale", "new_objects", "add_scale",
+                                       "delete_scale", "reset_scales", "set_annotative"})},
+                     {"scale", tNumber("N of 1:N")},
+                     {"on", tBool()},
+                     {"ids", ids},
+                     {"scales", tArray(tNumber(), "N of 1:N for each scale")}},
+                    {}),
+            outSchema({"scale", "newObjectsAnnotative", "scaleList"}), false, "CANNOSCALE",
+            annotation);
     cmdTool("region_op", "Region booleans",
             "op region: closed objects become plain closed polylines. union / intersect combine "
             "`ids`; subtract cuts `subtract` out of `ids`. Sources are replaced by the result "
