@@ -9,6 +9,7 @@
 
 #include "key_map.h"
 #include "tbcad/platform/keybindings.h"
+#include "tbcad/tmpl/tmpl.h"
 
 namespace tbcad::app {
 
@@ -160,6 +161,22 @@ void SettingsDialog::files(ui::AppCore& core) {
     if (ImGui::Combo("Default save format", &fmt, "TBCAD (.tbcad)\0DXF (.dxf)\0"))
         s.setString("files.defaultFormat", fmt == 1 ? "dxf" : "tbcad");
     ImGui::TextDisabled("A drawing opened from a .dxf file is saved back as DXF.");
+    ImGui::Spacing();
+    {
+        const std::vector<std::string> names = core.templateNames();
+        std::string current = s.getString("template.default", "");
+        if (current.empty())
+            current = tmpl::kBuiltinTemplate;
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::BeginCombo("Default template", current.c_str())) {
+            for (const std::string& n : names)
+                if (ImGui::Selectable(n.c_str(), n == current))
+                    s.setString("template.default", n == tmpl::kBuiltinTemplate ? "" : n);
+            ImGui::EndCombo();
+        }
+        ImGui::TextDisabled("Templates are .tbt files in %s. Save one with SAVEASTEMPLATE.",
+                            core.templateFolder().string().c_str());
+    }
     ImGui::Spacing();
     ImGui::TextDisabled("Settings folder: %s", core.settingsFolder().string().c_str());
 }

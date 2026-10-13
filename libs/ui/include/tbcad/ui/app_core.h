@@ -89,6 +89,9 @@ public:
 
     // New and open add a tab. An untouched "Untitled" drawing is reused instead of keeping an
     // empty tab; a file that is already open is just activated.
+    // Starts from the default template (setting "template.default": a template name, empty or
+    // "Built-in" = the built-in drawing). A template that cannot be read falls back to the
+    // built-in drawing and says so in the history.
     void newDocument();
     Result<void> openFile(const std::filesystem::path& path);
 
@@ -242,6 +245,11 @@ public:
     std::optional<std::string> setting(std::string_view key) const override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
+    // ---- templates ---------------------------------------------------------------------------
+    std::filesystem::path templateFolder() const { return paths_.configDir / "templates"; }
+    std::vector<std::string> templateNames() const override;
+    std::string saveAsTemplate(std::string_view name) override;
+    std::string newFromTemplate(std::string_view name) override;
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
     // Panels asked for since the last call (the window opens them).
@@ -292,6 +300,9 @@ private:
     PanelContext makePanelContext();
     std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
+    // A copy of the default template; `problem` gets a sentence when the chosen one is unusable
+    // and the built-in drawing was used instead.
+    std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
     std::vector<std::string> panelRequests_{};
     platform::Settings settings_;
