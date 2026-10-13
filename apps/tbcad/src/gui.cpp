@@ -225,7 +225,10 @@ void Gui::runAction(const std::string& action) {
         core_.redo();
     else if (action == "edit.selectAll")
         core_.selectAll();
-    else if (action == "edit.deselect") {
+    else if (action == "edit.delete") {
+        if (!core_.selection().empty() && !core_.runner().active())
+            core_.submitText("ERASE");
+    } else if (action == "edit.deselect") {
         core_.pressEscape();
         input_.clear();
     } else if (action == "view.zoomExtents")
@@ -322,6 +325,42 @@ void Gui::doOpen() {
     browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf");
 }
 
+// IMPORTDXF / EXPORTDXF ask for a file name; the dialog supplies it as the answer to that prompt.
+void Gui::dxfCommandWithPath(const char* command, const std::filesystem::path& path) {
+    core_.submitText(command);
+    core_.submitText(platform::pathToUtf8(path));
+}
+
+void Gui::doImportDxf() {
+    static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
+    if (platform::nativeDialogsAvailable()) {
+        if (auto p = platform::showOpenDialog(nativeHandle(), filters, "Import DXF"))
+            dxfCommandWithPath("IMPORTDXF", *p);
+        return;
+    }
+    std::filesystem::path start =
+        core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
+    browserPurpose_ = BrowserPurpose::ImportDxf;
+    browser_.open(FileBrowser::Mode::Open, start, "", ".dxf");
+}
+
+void Gui::doExportDxf() {
+    static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
+    std::filesystem::path stem = core_.hasFile() ? core_.file() : std::filesystem::path{"Drawing1"};
+    stem.replace_extension(".dxf");
+    std::string suggested = stem.filename().string();
+    if (platform::nativeDialogsAvailable()) {
+        if (auto p =
+                platform::showSaveDialog(nativeHandle(), filters, "Export DXF", "dxf", suggested))
+            dxfCommandWithPath("EXPORTDXF", *p);
+        return;
+    }
+    std::filesystem::path start =
+        core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
+    browserPurpose_ = BrowserPurpose::ExportDxf;
+    browser_.open(FileBrowser::Mode::Save, start, suggested, ".dxf");
+}
+
 void Gui::doOpenPath(const std::string& path) {
     auto r = core_.openFile(platform::pathFromUtf8(path));
     if (!r)
@@ -411,8 +450,10 @@ void Gui::shortcuts() {
         if (!ic)
             continue;
         // While a text field has the keyboard only chords with Ctrl/Alt, Escape and F-keys work.
+        // Delete erases the selection unless the command line holds text being edited.
+        const bool deleteOnEmptyLine = chord->key == "DELETE" && input_.empty();
         if (io.WantTextInput && !chord->ctrl && !chord->alt && chord->key != "ESCAPE" &&
-            chord->key[0] != 'F')
+            chord->key[0] != 'F' && !deleteOnEmptyLine)
             continue;
         if (ImGui::IsKeyChordPressed(*ic)) {
             if (chord->key == "ESCAPE" && suggestVisible_) {
@@ -492,6 +533,11 @@ void Gui::menuBar() {
             runAction("file.save");
         if (ImGui::MenuItem("Save As...", keys.label("file.saveAs").c_str()))
             runAction("file.saveAs");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Import DXF..."))
+            doImportDxf();
+        if (ImGui::MenuItem("Export DXF..."))
+            doExportDxf();
         registeredMenu("File");
         ImGui::Separator();
         if (ImGui::MenuItem("Exit"))
@@ -510,6 +556,9 @@ void Gui::menuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Select All", keys.label("edit.selectAll").c_str()))
             core_.selectAll();
+        if (ImGui::MenuItem("Delete", keys.label("edit.delete").c_str(), false,
+                            !core_.selection().empty()))
+            runAction("edit.delete");
         if (ImGui::MenuItem("Deselect", keys.label("edit.deselect").c_str(), false,
                             !core_.selection().empty()))
             core_.clearSelection();
@@ -1504,6 +1553,10 @@ void Gui::dialogs() {
         if (auto path = browser_.draw()) {
             if (browserPurpose_ == BrowserPurpose::Open) {
                 doOpenPath(platform::pathToUtf8(*path));
+            } else if (browserPurpose_ == BrowserPurpose::ImportDxf) {
+                dxfCommandWithPath("IMPORTDXF", *path);
+            } else if (browserPurpose_ == BrowserPurpose::ExportDxf) {
+                dxfCommandWithPath("EXPORTDXF", *path);
             } else {
                 auto r = core_.saveAs(*path);
                 if (!r)
