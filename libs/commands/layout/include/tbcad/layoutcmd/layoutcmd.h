@@ -5,7 +5,7 @@
 namespace tbcad::layoutcmd {
 
 // Called by the generated tbcad::registerAllCommands (see module.cmake).
-// Commands: LAYOUT, MVIEW, VPSCALE, VPLAYER, TITLEBLOCK.
+// Commands: LAYOUT, MVIEW, VPSCALE, VPLAYER, VPLEVEL, TITLEBLOCK.
 void registerCommands(cmd::Registry& registry);
 
 // The layout the commands work on when none is named: host setting "layout.current", else the

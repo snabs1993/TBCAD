@@ -123,3 +123,27 @@ TEST_CASE("QSELECT Not and Append") {
     CHECK(has(sel, c));
     CHECK(has(sel, l));
 }
+
+TEST_CASE("queryEntities by level also finds the dimmed objects of other levels") {
+    Fixture f;
+    auto ground = f.addEntity(LineData{{0, 0}, {1, 1}});
+    LevelId upper;
+    {
+        Transaction tx = f.doc.begin("level");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentLevel = upper; }).ok());
+        tx.commit();
+    }
+    auto top = f.addEntity(LineData{{0, 0}, {2, 2}});
+    auto onUpper = queryEntities(f.doc, {Property::Level, "upper", false});
+    REQUIRE(onUpper);
+    CHECK(*onUpper == std::vector<EntityId>{top});
+    auto onFirst = queryEntities(f.doc, {Property::Level, "Level 1", false});
+    REQUIRE(onFirst);
+    CHECK(*onFirst == std::vector<EntityId>{ground});  // dimmed, but still found by name
+    auto notUpper = queryEntities(f.doc, {Property::Level, "Upper", true});
+    REQUIRE(notUpper);
+    CHECK(*notUpper == std::vector<EntityId>{ground});
+}
