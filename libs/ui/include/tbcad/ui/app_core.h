@@ -197,10 +197,12 @@ private:
     void updateHover(const PointerState& p);
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
+    void notifySessionHooks();
 
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
+    const UiRegistry* ui_ = nullptr;
     platform::AppPaths paths_;
     platform::Settings settings_;
     platform::Keybindings keybindings_;

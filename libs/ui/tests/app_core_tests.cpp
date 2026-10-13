@@ -475,3 +475,28 @@ TEST_CASE("registered point filters apply to clicks, also after a new document")
         CHECK(found);
     }
 }
+
+TEST_CASE("session hooks run when installed and for every new document") {
+    Fixture f("hook_session");
+    UiRegistry ui;
+    std::vector<const Document*> seen;
+    ui.addSessionHook([&](const SessionInfo& s) {
+        REQUIRE(s.doc != nullptr);
+        CHECK(s.index != nullptr);
+        CHECK(s.host != nullptr);
+        seen.push_back(s.doc);
+    });
+    f.core->applyUiKeybindings(ui);
+    REQUIRE(seen.size() == 1);
+    CHECK(seen[0] == &f.core->document());
+    f.core->newDocument();
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[1] == &f.core->document());
+}
+
+TEST_CASE("a leading apostrophe on an idle command line is ignored") {
+    Fixture f("apostrophe");
+    f.core->submitText("'TESTLINE");
+    CHECK(f.core->runner().active());
+    f.core->pressEscape();
+}
