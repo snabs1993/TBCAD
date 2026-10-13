@@ -310,10 +310,12 @@ TEST_CASE("SVG: well-formed XML in millimetres") {
 
     auto path = std::filesystem::temp_directory_path() / "tbcad_plot_test.svg";
     REQUIRE(writeSvg(sheet, path.string()).ok());
-    std::ifstream in(path, std::ios::binary);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    CHECK(ss.str() == svg);
+    {
+        std::ifstream in(path, std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        CHECK(ss.str() == svg);
+    }
     std::filesystem::remove(path);
 }
 
