@@ -67,6 +67,7 @@ enum class EntityKind : std::uint8_t {
     Dimension,
     Leader,
     Proxy,
+    Table,  // after Proxy so the numbers of the older kinds stay as written in files
 };
 
 struct LineData {
@@ -307,12 +308,36 @@ struct ProxyData {
     DisplayList graphics{};
 };
 
+// One cell of a table. A merged range is stored on its top-left cell (colSpan/rowSpan > 1); the
+// other cells of the range are `covered` and ignored.
+struct TableCell {
+    std::string utf8{};  // MText markup (plain text is fine)
+    std::uint16_t colSpan = 1;
+    std::uint16_t rowSpan = 1;
+    bool covered = false;
+};
+
+// A grid of text cells. `origin` is the top-left corner, rows go down and columns go right in the
+// table's own frame, which is rotated by `rotation` around `origin`.
+struct TableData {
+    Vec2 origin{};
+    double rotation = 0;
+    std::vector<double> colWidths{};
+    std::vector<double> rowHeights{};
+    std::vector<TableCell> cells{};  // row-major, rowHeights.size() * colWidths.size()
+    double textHeight = 2.5;
+    double margin = 1.0;  // between cell border and text
+    TextStyleId style{};  // null = document's current text style
+    bool titleRow = false;  // the first row is a title: its text is centred
+};
+
 // The alternatives are in EntityKind order. Larger kinds are boxed in Indirect<> to keep Entity
 // small; use entityAs<T>() / visitEntity() instead of std::get_if / std::visit.
 using EntityData = std::variant<LineData, CircleData, ArcData, PolylineData, PointData,
                                 Indirect<EllipseData>, Indirect<SplineData>, Indirect<TextData>,
                                 Indirect<MTextData>, Indirect<HatchData>, Indirect<InsertData>,
-                                Indirect<DimensionData>, Indirect<LeaderData>, Indirect<ProxyData>>;
+                                Indirect<DimensionData>, Indirect<LeaderData>, Indirect<ProxyData>,
+                                Indirect<TableData>>;
 
 struct Entity {
     EntityCommon common{};
@@ -337,7 +362,7 @@ T* entityAs(Entity& e) {
                   std::is_same_v<T, TextData> || std::is_same_v<T, MTextData> ||
                   std::is_same_v<T, HatchData> || std::is_same_v<T, InsertData> ||
                   std::is_same_v<T, DimensionData> || std::is_same_v<T, LeaderData> ||
-                  std::is_same_v<T, ProxyData>) {
+                  std::is_same_v<T, ProxyData> || std::is_same_v<T, TableData>) {
         auto* p = std::get_if<Indirect<T>>(&e.data);
         return p ? &**p : nullptr;
     } else {

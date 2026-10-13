@@ -226,6 +226,27 @@ struct PayloadWriter {
         str(d.utf8);
         w.vec2(d.textPos);
     }
+    void operator()(const TableData& d) {
+        w.vec2(d.origin);
+        w.f64(d.rotation);
+        w.f64(d.textHeight);
+        w.f64(d.margin);
+        w.varint(d.style.value);
+        w.u8(d.titleRow ? 1 : 0);
+        w.varint(d.colWidths.size());
+        for (double x : d.colWidths)
+            w.f64(x);
+        w.varint(d.rowHeights.size());
+        for (double y : d.rowHeights)
+            w.f64(y);
+        w.varint(d.cells.size());
+        for (const TableCell& c : d.cells) {
+            str(c.utf8);
+            w.varint(c.colSpan);
+            w.varint(c.rowSpan);
+            w.u8(c.covered ? 1 : 0);
+        }
+    }
     void operator()(const ProxyData& d) {
         str(d.originalType);
         w.varint(d.raw.size());
@@ -514,6 +535,36 @@ struct PayloadReader {
             }
             case EntityKind::Proxy:
                 return proxy();
+            case EntityKind::Table: {
+                TableData d;
+                d.origin = r.vec2();
+                d.rotation = r.f64();
+                d.textHeight = r.f64();
+                d.margin = r.f64();
+                d.style = id<TextStyleId>();
+                d.titleRow = r.boolean();
+                std::size_t nc = r.count(8);
+                d.colWidths.resize(nc);
+                for (double& x : d.colWidths)
+                    x = r.f64();
+                std::size_t nr = r.count(8);
+                d.rowHeights.resize(nr);
+                for (double& y : d.rowHeights)
+                    y = r.f64();
+                std::size_t n = r.count(4);
+                if (nc == 0 || nr == 0 || n != nc * nr)
+                    bad("table cell count does not match its rows and columns");
+                d.cells.resize(n);
+                for (TableCell& c : d.cells) {
+                    c.utf8 = str();
+                    c.colSpan =
+                        static_cast<std::uint16_t>(std::min<std::uint64_t>(r.varint(), 65535));
+                    c.rowSpan =
+                        static_cast<std::uint16_t>(std::min<std::uint64_t>(r.varint(), 65535));
+                    c.covered = r.boolean();
+                }
+                return make(std::move(d));
+            }
         }
         bad("unknown entity kind");
     }
@@ -642,7 +693,7 @@ struct PayloadReader {
     }
 };
 
-constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::Proxy);
+constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::Table);
 
 }  // namespace
 

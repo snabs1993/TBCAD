@@ -71,6 +71,8 @@ const char* kindName(EntityKind k) {
             return "Leader";
         case EntityKind::Proxy:
             return "Proxy object";
+        case EntityKind::Table:
+            return "Table";
     }
     return "Object";
 }

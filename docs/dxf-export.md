@@ -171,3 +171,8 @@ beyond the basic ones, binary DXF output.
 drawing. `IMPORTDXF` asks for a file name and adds the contents of the DXF file to the open
 drawing in one undo step; layers, linetypes and styles are matched by name, and blocks whose name
 is taken are renamed `<name>_1`. Both live in `libs/commands/dxfexport`.
+
+## Tables
+
+A table is written as an INSERT of an anonymous `*T<n>` block (grid lines and one MTEXT per filled cell) with
+TBCAD extended data that carries the table; see `docs/table.md`.
