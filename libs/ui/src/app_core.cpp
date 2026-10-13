@@ -94,6 +94,7 @@ struct AppCore::DocSlot {
     render::Camera2D camera{};  // the view while the drawing is in the background
     std::vector<EntityId> selection{};
     bool viewSaved = false;
+    std::uint64_t autosavedRevision = ~std::uint64_t{0};  // revision last written to the autosave
 };
 
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
@@ -192,7 +193,6 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     scene_.setSelected(selection_);
     ++generation_;
     lastTessellatedFor_ = camera_;
-    autosavedRevision_ = ~std::uint64_t{0};
     notifySessionHooks();
     if (fitView && !session_->index.empty())
         zoomExtents();
@@ -203,10 +203,13 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
         slots_.emplace_back();
     DocSlot& slot = slots_[active_];
     session_ = nullptr;
+    if (slot.session)
+        removeAutosaveOf(slot.id);
     slot.session.reset();
     slot.session = makeSession(std::move(doc), std::move(file));
     slot.id = nextDocId_++;
     slot.viewSaved = false;
+    slot.autosavedRevision = ~std::uint64_t{0};
     enterSlot(active_, true);
 }
 
@@ -249,6 +252,7 @@ void AppCore::closeDocument(std::size_t index) {
         return;
     if (index == active_ && runner().active())
         pressEscape();
+    removeAutosaveOf(slots_[index].id);
     if (slots_.size() == 1) {
         installSession(std::make_unique<Document>(), {});
         return;
@@ -340,14 +344,14 @@ bool AppCore::modified() const {
 
 // ---- recovery / shutdown -------------------------------------------------------------------
 
-std::optional<Recovery> AppCore::pendingRecovery() const {
-    fs::path file = paths_.autosaveDir() / "recovery.tbcad";
-    std::error_code ec;
-    if (!fs::exists(file, ec))
-        return std::nullopt;
+namespace {
+
+Recovery readRecovery(const fs::path& tbcadFile) {
     Recovery r;
-    r.autosaveFile = file;
-    std::ifstream in(paths_.autosaveDir() / "recovery.json", std::ios::binary);
+    r.autosaveFile = tbcadFile;
+    fs::path meta = tbcadFile;
+    meta.replace_extension(".json");
+    std::ifstream in(meta, std::ios::binary);
     if (in) {
         std::ostringstream buf;
         buf << in.rdbuf();
@@ -356,6 +360,37 @@ std::optional<Recovery> AppCore::pendingRecovery() const {
                 r.originalPath = o->asString();
     }
     return r;
+}
+
+bool isRecoveryFile(const fs::path& p) {
+    const std::string name = p.filename().string();
+    return name.rfind("recovery", 0) == 0 &&
+           (p.extension() == ".tbcad" || p.extension() == ".json");
+}
+
+}  // namespace
+
+// Every unsaved drawing has its own pair of files, recovery-<n>.tbcad and recovery-<n>.json
+// (a single recovery.tbcad from older versions is found too).
+std::vector<Recovery> AppCore::pendingRecoveries() const {
+    std::vector<fs::path> files;
+    std::error_code ec;
+    for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
+         it.increment(ec))
+        if (it->path().extension() == ".tbcad" && isRecoveryFile(it->path()))
+            files.push_back(it->path());
+    std::sort(files.begin(), files.end());
+    std::vector<Recovery> out;
+    for (const fs::path& f : files)
+        out.push_back(readRecovery(f));
+    return out;
+}
+
+std::optional<Recovery> AppCore::pendingRecovery() const {
+    auto all = pendingRecoveries();
+    if (all.empty())
+        return std::nullopt;
+    return all.front();
 }
 
 Result<void> AppCore::recover(const Recovery& r) {
@@ -369,14 +404,58 @@ Result<void> AppCore::recover(const Recovery& r) {
     return {};
 }
 
+Result<void> AppCore::recoverAll() {
+    const auto all = pendingRecoveries();
+    std::optional<Error> firstError;
+    std::size_t done = 0;
+    for (const Recovery& r : all) {
+        if (done == 0) {
+            if (auto res = recover(r); !res) {
+                firstError = res.error();
+                continue;
+            }
+        } else {
+            io::IoReport report;
+            auto doc = io::readTbcad(r.autosaveFile, report);
+            if (!doc) {
+                firstError = doc.error();
+                continue;
+            }
+            addSession(std::move(doc.value()), platform::pathFromUtf8(r.originalPath));
+            session_->savedRevision = ~std::uint64_t{0};
+        }
+        ++done;
+    }
+    // The leftovers are replaced by autosaves of the recovered drawings.
+    removeAutosaveFiles();
+    autosaveNow();
+    if (done == 0 && firstError)
+        return *firstError;
+    if (done > 1)
+        print("Recovered " + std::to_string(done) + " drawings from the last autosave.");
+    return {};
+}
+
 void AppCore::discardRecovery() {
     removeAutosaveFiles();
 }
 
 void AppCore::removeAutosaveFiles() {
     std::error_code ec;
-    fs::remove(paths_.autosaveDir() / "recovery.tbcad", ec);
-    fs::remove(paths_.autosaveDir() / "recovery.json", ec);
+    std::vector<fs::path> files;
+    for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
+         it.increment(ec))
+        if (isRecoveryFile(it->path()))
+            files.push_back(it->path());
+    for (const fs::path& f : files)
+        fs::remove(f, ec);
+}
+
+void AppCore::removeAutosaveOf(std::uint64_t slotId) {
+    std::error_code ec;
+    const std::string base = "recovery-" + std::to_string(slotId);
+    fs::remove(paths_.autosaveDir() / (base + ".tbcad"), ec);
+    fs::remove(paths_.autosaveDir() / (base + ".json"), ec);
 }
 
 void AppCore::shutdown() {
@@ -386,23 +465,29 @@ void AppCore::shutdown() {
 }
 
 bool AppCore::autosaveNow() {
-    if (!modified() || autosavedRevision_ == session_->doc.revision())
-        return false;
-    if (!platform::ensureDirectory(paths_.autosaveDir()))
-        return false;
-    io::WriteOptions opt;
-    opt.keepBackup = false;
-    if (!io::writeTbcad(session_->doc, paths_.autosaveDir() / "recovery.tbcad", opt))
-        return false;
-    {
-        platform::Json::Object o;
-        o["original"] = platform::pathToUtf8(session_->file);
-        std::ofstream out(paths_.autosaveDir() / "recovery.json",
-                          std::ios::binary | std::ios::trunc);
-        out << platform::toJson(platform::Json(std::move(o)));
+    bool wrote = false;
+    for (DocSlot& slot : slots_) {
+        Session& ses = *slot.session;
+        if (ses.doc.revision() == ses.savedRevision || slot.autosavedRevision == ses.doc.revision())
+            continue;
+        if (!platform::ensureDirectory(paths_.autosaveDir()))
+            return wrote;
+        const std::string base = "recovery-" + std::to_string(slot.id);
+        io::WriteOptions opt;
+        opt.keepBackup = false;
+        if (!io::writeTbcad(ses.doc, paths_.autosaveDir() / (base + ".tbcad"), opt))
+            continue;
+        {
+            platform::Json::Object o;
+            o["original"] = platform::pathToUtf8(ses.file);
+            std::ofstream out(paths_.autosaveDir() / (base + ".json"),
+                              std::ios::binary | std::ios::trunc);
+            out << platform::toJson(platform::Json(std::move(o)));
+        }
+        slot.autosavedRevision = ses.doc.revision();
+        wrote = true;
     }
-    autosavedRevision_ = session_->doc.revision();
-    return true;
+    return wrote;
 }
 
 void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
@@ -629,6 +714,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     session_->file = path;
     session_->readOnlyFormat.clear();
     session_->savedRevision = session_->doc.revision();
+    removeAutosaveOf(slots_[active_].id);
     if (!anyDocumentModified())
         removeAutosaveFiles();
     settings_.addRecentFile(platform::pathToUtf8(path));

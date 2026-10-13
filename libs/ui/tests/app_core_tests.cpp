@@ -353,6 +353,33 @@ TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
     CHECK_FALSE(second.pendingRecovery().has_value());
 }
 
+TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
+    Fixture f("autosave_multi");
+    f.line("0,0", "100,0");
+    f.core->newDocument();
+    f.line("0,0", "0,50");
+    f.core->newDocument();
+    f.line("5,5", "6,6");
+    REQUIRE(f.core->documentCount() == 3);
+    CHECK(f.core->autosaveNow());
+    CHECK_FALSE(f.core->autosaveNow());
+
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    CHECK(second.pendingRecoveries().size() == 3);
+    REQUIRE(second.recoverAll().ok());
+    CHECK(second.documentCount() == 3);
+    CHECK(second.modified());
+    // The recovered drawings are protected again straight away.
+    CHECK(second.pendingRecoveries().size() == 3);
+
+    // Closing a drawing takes its backup away.
+    second.closeDocument(0);
+    CHECK(second.pendingRecoveries().size() == 2);
+    second.discardRecovery();
+    CHECK(second.pendingRecoveries().empty());
+}
+
 TEST_CASE("a clean save or shutdown removes the autosave") {
     Fixture f("autosave2");
     f.line("0,0", "100,0");
