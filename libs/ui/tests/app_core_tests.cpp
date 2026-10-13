@@ -263,6 +263,28 @@ TEST_CASE("zoom extents fits the drawing; ZOOM and PAN work as commands") {
     CHECK(f.core->camera().center.x == doctest::Approx(c0.x - 10));
 }
 
+TEST_CASE("ZOOM Extents counts every entity kind, not only lines and circles") {
+    Fixture f("zoomkinds");
+    {
+        // The command used a coarse scan that skipped ellipses (and text, hatches, dimensions).
+        auto tx = f.core->document().begin("ellipse");
+        Entity e;
+        EllipseData el;
+        el.center = {7000, 3000};
+        el.majorAxis = {500, 0};
+        el.ratio = 0.5;
+        e.data = el;
+        REQUIRE(tx.add(e).ok());
+        tx.commit();
+    }
+    f.core->submitText("ZOOM E");
+    BBox2 vis = f.core->camera().visibleWorld();
+    CHECK(vis.min.x <= 6500);
+    CHECK(vis.max.x >= 7500);
+    CHECK(vis.min.y <= 2750);
+    CHECK(vis.max.y >= 3250);
+}
+
 TEST_CASE("ZOOM is transparent inside another command") {
     Fixture f("zoomtransparent");
     f.core->submitText("TESTLINE");
