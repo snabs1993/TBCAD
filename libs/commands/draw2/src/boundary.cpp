@@ -39,7 +39,7 @@ std::vector<hatch::Candidate> candidates(cmd::CommandContext& ctx) {
     auto consider = [&](const Entity& e) {
         if (!e.common.visible || !hasCurves(e) || doc.ownerBlock(e.common.id))
             return;
-        if (!doc.effective(e.common.layer).visible())
+        if (!doc.effective(e.common).live())
             return;
         out.push_back({e.common.id, &e});
     };

@@ -27,8 +27,9 @@ enum class Space : std::uint8_t {
     Block,
     Header,  // one per document, id 0
     Order,   // draw order of one entity, id = entity id
+    Level,
 };
-inline constexpr std::uint8_t kLastSpace = static_cast<std::uint8_t>(Space::Order);
+inline constexpr std::uint8_t kLastSpace = static_cast<std::uint8_t>(Space::Level);
 
 struct Key {
     Space space = Space::Entity;

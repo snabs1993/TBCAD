@@ -100,6 +100,39 @@ TEST_CASE("delta: replaying the encoded changes of an edit series reproduces the
     CHECK(canonicalDump(replica) == canonicalDump(source));
 }
 
+TEST_CASE("delta: levels, entity levels and the current level travel with a change") {
+    Document source;
+    Recorder rec;
+    source.addObserver(&rec);
+    LevelId upper;
+    {
+        Transaction tx = source.begin("level");
+        upper = must(tx.addLevel({.name = "Level 2", .elevation = 3200, .locked = true}));
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentLevel = upper; }).ok());
+        tx.commit();
+    }
+    {
+        Transaction tx = source.begin("line");
+        Entity e;
+        e.data = LineData{{0, 0}, {5, 5}};
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    source.removeObserver(&rec);
+    Document replica;
+    for (const ChangeSet& cs : rec.sets) {
+        auto delta = io::decodeDelta(io::encodeDelta(io::deltaOf(cs)));
+        TB_REQUIRE_OK(delta);
+        auto rebuilt = io::materialize(delta.value(), replica);
+        TB_REQUIRE_OK(rebuilt);
+        TB_REQUIRE_OK(replica.applyChecked(rebuilt.value()));
+    }
+    CHECK(canonicalDump(replica) == canonicalDump(source));
+    CHECK(replica.header().currentLevel == upper);
+    CHECK(replica.level(upper)->locked);
+    CHECK(replica.find(EntityId{1})->common.level == upper);
+}
+
 TEST_CASE("delta: the receiver rebuilds the before half from its own document") {
     Document source;
     Recorder rec;

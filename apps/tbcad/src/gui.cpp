@@ -836,6 +836,34 @@ void Gui::statusBar() {
             ImGui::EndCombo();
         }
 
+        // Level switcher: pick the level to work on (highest first, like a section).
+        {
+            const Level* cur = doc.level(doc.header().currentLevel);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("  Level:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::CalcTextSize("Level 00 (mmm)").x + 40.0f);
+            if (ImGui::BeginCombo("##levelsw", cur ? cur->name.c_str() : "?")) {
+                std::vector<const Level*> order;
+                for (const auto& [id, l] : doc.levels())
+                    order.push_back(&l);
+                std::stable_sort(order.begin(), order.end(), [](const Level* a, const Level* b) {
+                    return a->elevation > b->elevation;
+                });
+                for (const Level* l : order) {
+                    const bool sel = l->id == doc.header().currentLevel;
+                    if (ImGui::Selectable(l->name.c_str(), sel) && !sel) {
+                        core_.submitText("-LEVEL Set #" + std::to_string(l->id.value));
+                        core_.submitText("");
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Level you work on. Ctrl+PageUp / Ctrl+PageDown steps through levels.");
+        }
+
         std::string right = std::to_string(doc.modelSpaceCount()) + " objects   " +
                             std::to_string(core_.selection().size()) + " selected   " +
                             std::to_string(static_cast<int>(fps_ + 0.5)) + " fps";

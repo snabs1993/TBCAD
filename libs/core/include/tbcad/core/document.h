@@ -21,16 +21,26 @@ inline constexpr double kDefaultWorkArea = 1e8;
 inline constexpr double kHardCap = 1e10;
 
 // Rows every document has. They can be edited (except as noted) but never deleted.
-inline constexpr LayerId kLayerZero{1};  // name and id are fixed
+inline constexpr LayerId kLayerZero{1};     // name and id are fixed
+inline constexpr LevelId kLevelDefault{1};  // cannot be deleted, can be renamed
 inline constexpr LinetypeId kLinetypeContinuous{1};
 inline constexpr TextStyleId kTextStyleStandard{1};
 inline constexpr DimStyleId kDimStyleStandard{1};
+
+// How objects on levels other than the current one are treated.
+enum class LevelView : std::uint8_t {
+    DimOthers,   // shown faded, cannot be selected or snapped to (default)
+    HideOthers,  // not shown at all
+    ShowAll,     // shown normally and fully editable
+};
 
 struct Header {
     LengthUnit units = LengthUnit::Millimeter;
     double workArea = kDefaultWorkArea;  // geometry beyond +-workArea is flagged, not rejected
     double ltScale = 1;
     LayerId currentLayer = kLayerZero;
+    LevelId currentLevel = kLevelDefault;
+    LevelView levelView = LevelView::DimOthers;
     // Properties new objects get from the drawing commands (ByLayer unless the user sets them).
     Color currentColor = Color::byLayer();  // never ByParent
     LinetypeId currentLinetype = kLinetypeByLayer;
@@ -91,6 +101,7 @@ struct ChangeSet {
     std::shared_ptr<const std::vector<Entity>> snapshots = std::make_shared<std::vector<Entity>>();
     std::vector<EntityChange> entities{};
     std::vector<RowChange<Layer>> layers{};
+    std::vector<RowChange<Level>> levels{};
     std::vector<RowChange<Linetype>> linetypes{};
     std::vector<RowChange<TextStyle>> textStyles{};
     std::vector<RowChange<DimStyle>> dimStyles{};
@@ -176,6 +187,7 @@ struct Table {
 struct NextIds {
     std::uint64_t entity = 1;
     std::uint32_t layer = 1;
+    std::uint32_t level = 1;
     std::uint32_t linetype = 1;
     std::uint32_t textStyle = 1;
     std::uint32_t dimStyle = 1;
@@ -218,11 +230,14 @@ public:
 
     // Tables.
     const std::map<LayerId, Layer>& layers() const { return layers_.rows; }
+    const std::map<LevelId, Level>& levels() const { return levels_.rows; }
     const std::map<LinetypeId, Linetype>& linetypes() const { return linetypes_.rows; }
     const std::map<TextStyleId, TextStyle>& textStyles() const { return textStyles_.rows; }
     const std::map<DimStyleId, DimStyle>& dimStyles() const { return dimStyles_.rows; }
     const std::map<BlockId, BlockDef>& blocks() const { return blocks_.rows; }
     const Layer* layer(LayerId id) const { return layers_.find(id); }
+    const Level* level(LevelId id) const { return levels_.find(id); }
+    const Level* levelByName(std::string_view name) const { return levels_.findByName(name); }
     const Linetype* linetype(LinetypeId id) const { return linetypes_.find(id); }
     const TextStyle* textStyle(TextStyleId id) const { return textStyles_.find(id); }
     const DimStyle* dimStyle(DimStyleId id) const { return dimStyles_.find(id); }
@@ -233,6 +248,10 @@ public:
     // Layer state with sub-layer inheritance applied. Cached; the cache is dropped on any
     // layer-table change. An unknown id yields defaults with a null id.
     EffectiveLayer effective(LayerId id) const;  // honours Header::activeOnly
+    // The layer state of an object, with its level applied: a hidden level (or, depending on
+    // Header::levelView, any level other than the current one) switches the object off; a locked
+    // level or a dimmed other level locks it (`otherLevel` is set for the latter).
+    EffectiveLayer effective(const EntityCommon& c) const;
     // Child layer with this name under `parent` (null parent = top level).
     const Layer* layerByName(LayerId parent, std::string_view name) const;
     const Linetype* linetypeByName(std::string_view n) const { return linetypes_.findByName(n); }
@@ -295,6 +314,7 @@ private:
     std::map<EntityId, std::int64_t> orderOverride_{};
 
     detail::Table<Layer, LayerId> layers_{};
+    detail::Table<Level, LevelId> levels_{};
     detail::Table<Linetype, LinetypeId> linetypes_{};
     detail::Table<TextStyle, TextStyleId> textStyles_{};
     detail::Table<DimStyle, DimStyleId> dimStyles_{};
@@ -331,6 +351,11 @@ public:
     Result<LayerId> addLayer(Layer row);
     Result<void> modifyLayer(LayerId id, const std::function<void(Layer&)>& fn);
     Result<void> eraseLayer(LayerId id);
+    // The default level cannot be deleted; a level that has objects (or is current) cannot be
+    // deleted either: move the objects first.
+    Result<LevelId> addLevel(Level row);
+    Result<void> modifyLevel(LevelId id, const std::function<void(Level&)>& fn);
+    Result<void> eraseLevel(LevelId id);
     Result<LinetypeId> addLinetype(Linetype row);
     Result<void> modifyLinetype(LinetypeId id, const std::function<void(Linetype&)>& fn);
     Result<void> eraseLinetype(LinetypeId id);
@@ -396,6 +421,7 @@ private:
     std::optional<Header> headerBefore_{};
     std::map<EntityId, OrderChange> order_{};
     Pending<Layer, LayerId> pLayers_{};
+    Pending<Level, LevelId> pLevels_{};
     Pending<Linetype, LinetypeId> pLinetypes_{};
     Pending<TextStyle, TextStyleId> pTextStyles_{};
     Pending<DimStyle, DimStyleId> pDimStyles_{};

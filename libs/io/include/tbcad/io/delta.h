@@ -37,6 +37,7 @@ struct Delta {
     std::string name{};
     std::vector<EntityDelta> entities{};
     std::vector<RowDelta<Layer>> layers{};
+    std::vector<RowDelta<Level>> levels{};
     std::vector<RowDelta<Linetype>> linetypes{};
     std::vector<RowDelta<TextStyle>> textStyles{};
     std::vector<RowDelta<DimStyle>> dimStyles{};

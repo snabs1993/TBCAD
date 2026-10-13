@@ -32,7 +32,7 @@ std::vector<const Entity*> shownEntities(const Document& doc) {
     std::vector<const Entity*> out;
     for (EntityId id : doc.modelSpace()) {
         const Entity* e = doc.find(id);
-        if (e && e->common.visible && doc.effective(e->common.layer).visible())
+        if (e && e->common.visible && doc.effective(e->common).live())
             out.push_back(e);
     }
     return out;

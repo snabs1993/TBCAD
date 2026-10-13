@@ -231,6 +231,7 @@ private:
         Entity e = in;
         e.common.id = {};
         e.common.layer = mapLayer(in.common.layer);
+        e.common.level = {};  // the host decides (the current level); block content ignores it
         e.common.linetype = mapLinetype(in.common.linetype);
         if (auto* t = entityAs<TextData>(e))
             t->style = mapTextStyle(t->style);

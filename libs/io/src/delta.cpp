@@ -14,7 +14,7 @@ using namespace detail;
 namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
-constexpr std::uint8_t kDeltaVersion = 1;
+constexpr std::uint8_t kDeltaVersion = 2;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -45,6 +45,12 @@ void putRow(ByteWriter& w, StringTable& st, const Layer& r) {
     w.i16(r.lineweight.v);
     w.u8(static_cast<std::uint8_t>((r.on ? 1 : 0) | (r.frozen ? 2 : 0) | (r.locked ? 4 : 0) |
                                    (r.plot ? 8 : 0)));
+}
+
+void putRow(ByteWriter& w, StringTable& st, const Level& r) {
+    putString(w, st, r.name);
+    w.f64(r.elevation);
+    w.u8(static_cast<std::uint8_t>((r.visible ? 1 : 0) | (r.locked ? 2 : 0)));
 }
 
 void putRow(ByteWriter& w, StringTable& st, const Linetype& r) {
@@ -115,6 +121,8 @@ void putHeader(ByteWriter& w, StringTable& st, const Header& h) {
     w.f64(h.workArea);
     w.f64(h.ltScale);
     w.varint(h.currentLayer.value);
+    w.varint(h.currentLevel.value);
+    w.u8(static_cast<std::uint8_t>(h.levelView));
     putColor(w, h.currentColor);
     w.u32(h.currentLinetype.value);
     w.i16(h.currentLineweight.v);
@@ -184,6 +192,15 @@ struct Reader {
         l.frozen = (f & 2) != 0;
         l.locked = (f & 4) != 0;
         l.plot = (f & 8) != 0;
+    }
+    void row(Level& l) {
+        l.name = str();
+        l.elevation = r.f64();
+        std::uint8_t f = r.u8();
+        if (f > 3)
+            bad("invalid level flags");
+        l.visible = (f & 1) != 0;
+        l.locked = (f & 2) != 0;
     }
     void row(Linetype& l) {
         l.name = str();
@@ -275,6 +292,8 @@ struct Reader {
         h.workArea = r.f64();
         h.ltScale = r.f64();
         h.currentLayer = LayerId{id32()};
+        h.currentLevel = LevelId{id32()};
+        h.levelView = enumeration(LevelView::ShowAll);
         h.currentColor = color();
         h.currentLinetype = LinetypeId{r.u32()};
         h.currentLineweight = LineWeight{r.i16()};
@@ -319,8 +338,8 @@ void expand(const std::vector<RowDelta<Row>>& in, std::vector<RowChange<Row>>& o
 }  // namespace
 
 bool Delta::empty() const {
-    return entities.empty() && layers.empty() && linetypes.empty() && textStyles.empty() &&
-           dimStyles.empty() && blocks.empty() && !header && order.empty();
+    return entities.empty() && layers.empty() && levels.empty() && linetypes.empty() &&
+           textStyles.empty() && dimStyles.empty() && blocks.empty() && !header && order.empty();
 }
 
 Delta deltaOf(const ChangeSet& cs) {
@@ -334,6 +353,7 @@ Delta deltaOf(const ChangeSet& cs) {
         d.entities.push_back(std::move(e));
     }
     collect<Layer, LayerId>(cs.layers, d.layers);
+    collect<Level, LevelId>(cs.levels, d.levels);
     collect<Linetype, LinetypeId>(cs.linetypes, d.linetypes);
     collect<TextStyle, TextStyleId>(cs.textStyles, d.textStyles);
     collect<DimStyle, DimStyleId>(cs.dimStyles, d.dimStyles);
@@ -357,11 +377,13 @@ std::vector<std::uint8_t> encodeDelta(const Delta& delta) {
             Entity copy = *e.after;
             copy.common.id = e.id;
             encodeEntity(body, st, copy, BlockId{});
+            body.varint(copy.common.level.value);
         } else {
             body.varint(e.id.value);
         }
     }
     putRows(body, st, delta.layers);
+    putRows(body, st, delta.levels);
     putRows(body, st, delta.linetypes);
     putRows(body, st, delta.textStyles);
     putRows(body, st, delta.dimStyles);
@@ -428,6 +450,7 @@ Result<Delta> decodeDelta(std::span<const std::uint8_t> bytes, const DeltaLimits
                 bad("invalid presence flag");
             if (present) {
                 DecodedEntity dec = decodeEntity(r, strings);
+                dec.entity.common.level = LevelId{rd.id32()};
                 e.id = dec.entity.common.id;
                 e.after = std::move(dec.entity);
             } else {
@@ -440,6 +463,7 @@ Result<Delta> decodeDelta(std::span<const std::uint8_t> bytes, const DeltaLimits
             d.entities.push_back(std::move(e));
         }
         rd.rows(d.layers);
+        rd.rows(d.levels);
         rd.rows(d.linetypes);
         rd.rows(d.textStyles);
         rd.rows(d.dimStyles);
@@ -494,6 +518,7 @@ Result<ChangeSet> materialize(const Delta& d, const Document& doc) {
     }
     cs.snapshots = std::move(snaps);
     expand<Layer, LayerId>(d.layers, cs.layers, [&](LayerId id) { return doc.layer(id); });
+    expand<Level, LevelId>(d.levels, cs.levels, [&](LevelId id) { return doc.level(id); });
     expand<Linetype, LinetypeId>(d.linetypes, cs.linetypes,
                                  [&](LinetypeId id) { return doc.linetype(id); });
     expand<TextStyle, TextStyleId>(d.textStyles, cs.textStyles,
@@ -504,6 +529,10 @@ Result<ChangeSet> materialize(const Delta& d, const Document& doc) {
     for (const auto& r : cs.layers) {
         if (!r.before && !r.after)
             return makeError(ErrorCode::NotFound, "change erases a layer that does not exist");
+    }
+    for (const auto& r : cs.levels) {
+        if (!r.before && !r.after)
+            return makeError(ErrorCode::NotFound, "change erases a level that does not exist");
     }
     for (const auto& r : cs.linetypes) {
         if (!r.before && !r.after)

@@ -52,7 +52,7 @@ std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& hos
             return;
         if (checkWindow && !window.intersects(geom::bounds(e)))
             return;
-        if (!doc.effective(e.common.layer).visible())
+        if (!doc.effective(e.common).live())
             return;
         out.push_back({e.common.id, &e});
     };

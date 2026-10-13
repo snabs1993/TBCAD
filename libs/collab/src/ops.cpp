@@ -26,6 +26,11 @@ bool existedBefore(const ChangeSet& cs, const Key& k) {
                 if (idOf(c) == k.id)
                     return c.before.has_value();
             return false;
+        case Space::Level:
+            for (const auto& c : cs.levels)
+                if (idOf(c) == k.id)
+                    return c.before.has_value();
+            return false;
         case Space::Linetype:
             for (const auto& c : cs.linetypes)
                 if (idOf(c) == k.id)
@@ -198,6 +203,9 @@ void rebasePending(std::vector<Op>& pending, const Accepted& own) {
                     break;
                 case Space::Layer:
                     row(own.delta.layers);
+                    break;
+                case Space::Level:
+                    row(own.delta.levels);
                     break;
                 case Space::Linetype:
                     row(own.delta.linetypes);

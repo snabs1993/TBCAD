@@ -109,6 +109,43 @@ TEST_CASE("entities with the visible flag off are not selectable") {
     CHECK_FALSE(pickEntity(d.doc, d.idx, {5, 0}, 1).has_value());
 }
 
+TEST_CASE("objects on another level cannot be picked, even at the same position") {
+    Indexed d;
+    EntityId ground = addLine(d.doc, {0, 0}, {100, 0});
+    LevelId upper;
+    {
+        auto tx = d.doc.begin("level");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentLevel = upper; }).ok());
+        tx.commit();
+    }
+    EntityId top = addLine(d.doc, {0, 0}, {100, 0});  // same position, current level
+    CHECK(d.doc.find(top)->common.level == upper);
+    CHECK(pickEntity(d.doc, d.idx, {50, 0}, 3) == top);
+    CHECK_FALSE(isSelectable(d.doc, *d.doc.find(ground)));
+    BBox2 box;
+    box.expand({-10, -10});
+    box.expand({110, 10});
+    CHECK(selectInBox(d.doc, d.idx, box, true) == std::vector<EntityId>{top});
+
+    // Switch back: now only the first level answers.
+    {
+        auto tx = d.doc.begin("back");
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentLevel = kLevelDefault; }).ok());
+        tx.commit();
+    }
+    CHECK(pickEntity(d.doc, d.idx, {50, 0}, 3) == ground);
+    // Showing all levels makes both pickable again (the one on top wins the tie).
+    {
+        auto tx = d.doc.begin("all");
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.levelView = LevelView::ShowAll; }).ok());
+        tx.commit();
+    }
+    CHECK(pickEntity(d.doc, d.idx, {50, 0}, 3) == top);
+}
+
 TEST_CASE("pickAllAt lists the overlapping entities nearest first and cycling walks them") {
     Indexed d;
     EntityId a = addLine(d.doc, {0, 0}, {100, 0});

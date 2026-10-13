@@ -24,18 +24,22 @@ const char* spaceName(Space s) {
             return "drawing settings";
         case Space::Order:
             return "draw order";
+        case Space::Level:
+            return "level";
     }
     return "?";
 }
 
 std::vector<Key> keysOf(const io::Delta& d) {
     std::vector<Key> keys;
-    keys.reserve(d.entities.size() + d.layers.size() + d.linetypes.size() + d.textStyles.size() +
-                 d.dimStyles.size() + d.blocks.size() + d.order.size() + 1);
+    keys.reserve(d.entities.size() + d.layers.size() + d.levels.size() + d.linetypes.size() +
+                 d.textStyles.size() + d.dimStyles.size() + d.blocks.size() + d.order.size() + 1);
     for (const auto& e : d.entities)
         keys.push_back({Space::Entity, e.id.value});
     for (const auto& r : d.layers)
         keys.push_back({Space::Layer, r.id});
+    for (const auto& r : d.levels)
+        keys.push_back({Space::Level, r.id});
     for (const auto& r : d.linetypes)
         keys.push_back({Space::Linetype, r.id});
     for (const auto& r : d.textStyles)
@@ -59,6 +63,8 @@ bool exists(const Document& doc, const Key& k) {
             return doc.contains(EntityId{k.id});
         case Space::Layer:
             return k.id <= 0xFFFFFFFFu && doc.layer(LayerId{static_cast<std::uint32_t>(k.id)});
+        case Space::Level:
+            return k.id <= 0xFFFFFFFFu && doc.level(LevelId{static_cast<std::uint32_t>(k.id)});
         case Space::Linetype:
             return k.id <= 0xFFFFFFFFu &&
                    doc.linetype(LinetypeId{static_cast<std::uint32_t>(k.id)});

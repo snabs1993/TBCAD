@@ -46,6 +46,7 @@ struct EntityCommon {
     EntityId id{};  // assigned by the document; ignored by Transaction::add
     double linetypeScale = 1;
     LayerId layer{};  // null is replaced by the document's current layer on add
+    LevelId level{};  // null is replaced by the document's current level on add
     LinetypeId linetype = kLinetypeByLayer;
     Color color = Color::byLayer();
     LineWeight lineweight = LineWeight::byLayer();

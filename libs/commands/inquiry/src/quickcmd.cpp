@@ -19,8 +19,7 @@ std::vector<const Entity*> entitiesNear(cmd::CommandContext& ctx, Vec2 at) {
     window.expand({at.x + r, at.y + r});
     std::vector<const Entity*> out;
     auto consider = [&](const Entity& e) {
-        if (!e.common.visible || doc.ownerBlock(e.common.id) ||
-            !doc.effective(e.common.layer).visible())
+        if (!e.common.visible || doc.ownerBlock(e.common.id) || !doc.effective(e.common).live())
             return;
         std::vector<geom::CurveRef> curves;
         if (!geom::curvesOf(e, curves))

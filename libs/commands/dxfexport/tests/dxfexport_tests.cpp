@@ -7,6 +7,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/document.h"
+#include "tbcad/dxfexport/dxfexport.h"
 
 using namespace tbcad;
 
@@ -102,4 +103,44 @@ TEST_CASE("IMPORTDXF reports a missing file and changes nothing") {
     CHECK(r.finished);
     CHECK(doc.entityCount() == 0);
     CHECK_FALSE(host.undoStack().canUndo());
+}
+
+TEST_CASE("merging a drawing matches levels by name and adds the missing ones") {
+    Document src;
+    {
+        auto tx = src.begin("src");
+        REQUIRE(tx.modifyLevel(kLevelDefault, [](Level& l) { l.name = "Ground"; }).ok());
+        Level up;
+        up.name = "Floor 2";
+        up.elevation = 3000;
+        LevelId l2 = tx.addLevel(up).value();
+        Entity a;
+        a.data = LineData{{0, 0}, {1, 0}};
+        a.common.level = kLevelDefault;
+        REQUIRE(tx.add(std::move(a)).ok());
+        Entity b;
+        b.data = LineData{{0, 0}, {1, 0}};
+        b.common.level = l2;
+        REQUIRE(tx.add(std::move(b)).ok());
+        tx.commit();
+    }
+    Document dst;
+    {
+        auto tx = dst.begin("dst");
+        REQUIRE(tx.modifyLevel(kLevelDefault, [](Level& l) { l.name = "ground"; }).ok());
+        tx.commit();
+    }
+    auto tx = dst.begin("merge");
+    REQUIRE(dxfexport::mergeDocument(dst, tx, src).ok());
+    tx.commit();
+    REQUIRE(dst.levels().size() == 2);  // "Ground" matched "ground", "Floor 2" was added
+    const Level* f2 = dst.levelByName("Floor 2");
+    REQUIRE(f2);
+    int onFirst = 0, onSecond = 0;
+    dst.forEachEntity([&](const Entity& e) {
+        onFirst += e.common.level == kLevelDefault;
+        onSecond += e.common.level == f2->id;
+    });
+    CHECK(onFirst == 1);
+    CHECK(onSecond == 1);
 }

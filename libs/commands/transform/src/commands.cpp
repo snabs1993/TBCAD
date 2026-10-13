@@ -358,7 +358,7 @@ std::vector<EntityId> stretchCandidates(CommandContext& ctx, const BBox2& window
     auto consider = [&](const Entity& e, bool test) {
         if (!e.common.visible || doc.ownerBlock(e.common.id))
             return;
-        const EffectiveLayer layer = doc.effective(e.common.layer);
+        const EffectiveLayer layer = doc.effective(e.common);
         if (!layer.visible() || layer.locked)
             return;
         if (test && !window.intersects(geom::bounds(e, doc)))

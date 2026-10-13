@@ -51,9 +51,15 @@ SceneSync::~SceneSync() {
     doc_.removeObserver(this);
 }
 
+// Objects on a hidden level (or, in "hide others" view, on another level) are taken out of the
+// scene; layer visibility is handled by the scene itself.
+bool SceneSync::hiddenByLevel(const Entity& e) const {
+    return doc_.effective(e.common.layer).on && !doc_.effective(e.common).on;
+}
+
 void SceneSync::upsertEntity(const Entity& e) {
     const EntityId id = e.common.id;
-    if (!e.common.visible || doc_.ownerBlock(id)) {
+    if (!e.common.visible || doc_.ownerBlock(id) || hiddenByLevel(e)) {
         scene_.remove(id);
         return;
     }
@@ -64,7 +70,7 @@ void SceneSync::upsertEntity(const Entity& e) {
         blocks::BlockDisplayScope scope(blockCache_);
         geom::buildDisplay(doc_, e, ctx, list);
     }
-    if (doc_.effective(e.common.layer).locked)
+    if (doc_.effective(e.common).locked)
         fade(list);
     scene_.upsert(id, list, drawOrderOf(id), needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
 }
@@ -98,7 +104,7 @@ void SceneSync::rebuildDrawOrder() {
     std::uint32_t rank = 0;
     for (EntityId id : doc_.modelSpace()) {
         const Entity* e = doc_.find(id);
-        if (!e || !e->common.visible)
+        if (!e || !e->common.visible || hiddenByLevel(*e))
             continue;
         geom::DisplayContext ctx;
         ctx.pixelSizeMm = pixelSizeMm_;
@@ -107,7 +113,7 @@ void SceneSync::rebuildDrawOrder() {
             blocks::BlockDisplayScope scope(blockCache_);
             geom::buildDisplay(doc_, *e, ctx, list);
         }
-        if (doc_.effective(e->common.layer).locked)
+        if (doc_.effective(e->common).locked)
             fade(list);
         scene_.upsert(id, list, ++rank, needsTessellation(*e) ? 1.0 / pixelSizeMm_ : 0.0);
     }
@@ -131,6 +137,15 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     }
     if (!cs.layers.empty() || cs.header)
         syncLayers();
+    if (!cs.levels.empty() ||
+        (cs.header && (cs.header->before.currentLevel != cs.header->after.currentLevel ||
+                       cs.header->before.levelView != cs.header->after.levelView))) {
+        // Level visibility, the current level or the view of other levels changed.
+        doc_.forEachEntity([&](const Entity& e) {
+            if (!doc_.ownerBlock(e.common.id))
+                upsertEntity(e);
+        });
+    }
     if (blockTouched) {
         // Inserts show the contents of their block: redraw them.
         doc_.forEachEntity([&](const Entity& e) {

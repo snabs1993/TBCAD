@@ -44,6 +44,8 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     headReal(body, st, "workArea", h.workArea), bump();
     headReal(body, st, "ltScale", h.ltScale), bump();
     headInt(body, st, "currentLayer", h.currentLayer.value), bump();
+    headInt(body, st, "currentLevel", h.currentLevel.value), bump();
+    headInt(body, st, "levelView", static_cast<std::int64_t>(h.levelView)), bump();
     headInt(body, st, "currentColor",
             (static_cast<std::int64_t>(h.currentColor.kind) << 24) | (h.currentColor.r << 16) |
                 (h.currentColor.g << 8) | h.currentColor.b),
@@ -56,6 +58,7 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     const NextIds next = doc.nextIds();
     headInt(body, st, "nextEntity", static_cast<std::int64_t>(next.entity)), bump();
     headInt(body, st, "nextLayer", next.layer), bump();
+    headInt(body, st, "nextLevel", next.level), bump();
     headInt(body, st, "nextLinetype", next.linetype), bump();
     headInt(body, st, "nextTextStyle", next.textStyle), bump();
     headInt(body, st, "nextDimStyle", next.dimStyle), bump();
@@ -147,6 +150,22 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             layr.i16(r.lineweight.v);
             layr.u8(static_cast<std::uint8_t>((r.on ? 1 : 0) | (r.frozen ? 2 : 0) |
                                               (r.locked ? 4 : 0) | (r.plot ? 8 : 0)));
+        }
+
+        // Levels (LVLS) are written only when the document has more than the pristine default
+        // level; ELVL maps entities to their level, listing only those not on the default level.
+        ByteWriter lvls;
+        bool writeLvls = doc.levels().size() > 1;
+        if (const Level* l1 = doc.level(kLevelDefault);
+            l1 && (l1->name != "Level 1" || l1->elevation != 0 || !l1->visible || l1->locked)) {
+            writeLvls = true;
+        }
+        lvls.varint(doc.levels().size());
+        for (const auto& [id, r] : doc.levels()) {
+            lvls.varint(id.value);
+            lvls.varint(st.intern(r.name));
+            lvls.f64(r.elevation);
+            lvls.u8(static_cast<std::uint8_t>((r.visible ? 1 : 0) | (r.locked ? 2 : 0)));
         }
 
         ByteWriter blks;
@@ -250,6 +269,24 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             flush();
         }
 
+        ByteWriter elvl;
+        {
+            std::size_t n = 0;
+            for (const Entity* e : ents)
+                n += e->common.level == kLevelDefault ? 0 : 1;
+            if (n > 0) {
+                elvl.varint(n);
+                std::uint64_t prev = 0;
+                for (const Entity* e : ents) {
+                    if (e->common.level == kLevelDefault)
+                        continue;
+                    elvl.varint(e->common.id.value - prev);
+                    prev = e->common.id.value;
+                    elvl.varint(e->common.level.value);
+                }
+            }
+        }
+
         // Draw order, only when it differs from creation order.
         ByteWriter ordr;
         {
@@ -288,6 +325,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         appendChunk(out, kTsty, tsty.bytes(), options.compress);
         appendChunk(out, kDsty, dsty.bytes(), options.compress);
         appendChunk(out, kLayr, layr.bytes(), options.compress);
+        if (writeLvls)
+            appendChunk(out, kLvls, lvls.bytes(), options.compress);
         appendChunk(out, kBlks, blks.bytes(), options.compress);
         if (xrefCount > 0)
             appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
@@ -297,6 +336,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             appendChunk(out, kDynb, dynb.bytes(), options.compress);
         for (const auto& c : entChunks)
             appendChunk(out, kEnts, c, options.compress);
+        if (elvl.size() != 0)
+            appendChunk(out, kElvl, elvl.bytes(), options.compress);
         if (ordr.size() != 0)
             appendChunk(out, kOrdr, ordr.bytes(), options.compress);
         for (const auto& [key, value] : opaque) {
