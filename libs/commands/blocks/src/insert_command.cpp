@@ -184,6 +184,7 @@ public:
 
         Entity e;
         e.data = Indirect<InsertData>(data);
+        applyCurrentProperties(ctx.doc().header(), e);
         auto added = ctx.tx().add(std::move(e));
         if (!added) {
             ctx.message(added.error().message);

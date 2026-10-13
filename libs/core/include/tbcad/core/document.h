@@ -367,4 +367,13 @@ private:
     Pending<BlockDef, BlockId> pBlocks_{};
 };
 
+// New objects the user draws take the layer and the current colour, linetype and lineweight of the
+// drawing (Header::current*). Commands that copy or edit existing objects keep their own.
+inline void applyCurrentProperties(const Header& h, Entity& e) {
+    e.common.layer = h.currentLayer;
+    e.common.color = h.currentColor;
+    e.common.linetype = h.currentLinetype;
+    e.common.lineweight = h.currentLineweight;
+}
+
 }  // namespace tbcad

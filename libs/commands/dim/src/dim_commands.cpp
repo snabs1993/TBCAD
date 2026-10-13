@@ -348,6 +348,7 @@ public:
         ctx.setUndoLabel("LEADER");
         Entity e;
         e.data = Indirect<LeaderData>(leaderOf(ctx.doc(), std::move(pts), text));
+        applyCurrentProperties(ctx.doc().header(), e);
         auto id = ctx.tx().add(std::move(e));
         if (!id)
             ctx.message(id.error().message);
