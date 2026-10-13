@@ -230,6 +230,7 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
         }
         if (entityAs<DimensionData>(*e)) {
             i += writeDimension(ids, i, owner);
+            writeAnnotativeData(*e);
             continue;
         }
         writeEntity(*e, owner);
@@ -237,8 +238,25 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
     }
 }
 
+void Writer::setLevelTag(const EntityCommon& c) {
+    levelTag_.clear();
+    if (!tagLevels_)
+        return;
+    if (const Level* l = doc_.level(c.level))
+        levelTag_ = l->name;
+}
+
+void Writer::emitLevelTag() {
+    if (levelTag_.empty() || !o_)
+        return;
+    o_->raw(1001, "TBCAD");
+    o_->str(1000, "level=" + levelTag_);
+    levelTag_.clear();
+}
+
 void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
     Props p = propsOf(e.common);
+    setLevelTag(e.common);
     switch (kind(e)) {
         case EntityKind::Line:
             writeLine(p, *entityAs<LineData>(e), owner);
@@ -305,6 +323,17 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
             writeTable(p, e, owner);
             break;
     }
+    if (kind(e) != EntityKind::Insert)
+        writeAnnotativeData(e);
+}
+
+// Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer
+// turns it back into the flag. Written after the last group of the record.
+void Writer::writeAnnotativeData(const Entity& e) {
+    if (!e.common.annotative)
+        return;
+    o_->raw(1001, "TBCAD");
+    o_->str(1000, "annotative=1");
 }
 
 // A table is an INSERT of an anonymous *T block that holds its drawn grid and texts, so any
@@ -392,6 +421,7 @@ void Writer::writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& 
         o.d(41, constantWidth);
     }
     o.i(70, closed ? 1 : 0);
+    emitLevelTag();  // XDATA of the polyline comes before its vertices
     for (const PolyVertex& pv : v) {
         o.zero("VERTEX");
         o.str(8, p.layer);
@@ -690,6 +720,16 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
     o.d(43, 1);
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
+    if (d.clip.size() >= 3) {
+        // No DXF form for a clipping boundary: TBCAD restores it from XDATA (block coordinates).
+        o.raw(1001, "TBCAD");
+        o.str(1000, d.clipOn ? "clip=1" : "clip=0");
+        for (const Vec2& v : d.clip)
+            o.pt(1010, v);
+        downgrade("INSERT",
+                  "a clipping boundary is kept only in TBCAD XDATA; other programs "
+                  "show the whole block");
+    }
     count("INSERT");
     if (defs.empty())
         return;
@@ -946,6 +986,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             break;
     }
 
+    setLevelTag(e->common);
     head("DIMENSION", p, owner, "AcDbDimension");
     Out& o = *o_;
     o.str(2, blockName);

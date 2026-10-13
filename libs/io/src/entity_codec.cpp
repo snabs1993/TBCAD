@@ -16,7 +16,8 @@ constexpr std::uint8_t kCfLineweight = 4;
 constexpr std::uint8_t kCfLtScale = 8;
 constexpr std::uint8_t kCfHidden = 16;
 constexpr std::uint8_t kCfOwner = 32;
-constexpr std::uint8_t kCfKnownMask = 63;
+constexpr std::uint8_t kCfAnnotative = 64;
+constexpr std::uint8_t kCfKnownMask = 127;
 
 // ---------------------------------------------------------------- writing
 
@@ -183,8 +184,8 @@ struct PayloadWriter {
         w.vec2(d.scale);
         w.f64(d.rotation);
         // Trailing fields: attribute values (format 1.1), then tagged sections: 1 = array
-        // (format 1.3), 2 = dynamic block values (format 1.4).
-        if (!d.attribs.empty() || d.array || !d.dynValues.empty()) {
+        // (format 1.3), 2 = dynamic block values (format 1.4), 3 = clipping boundary (format 1.6).
+        if (!d.attribs.empty() || d.array || !d.dynValues.empty() || d.clip.size() >= 3) {
             w.varint(d.attribs.size());
             for (const AttribValue& a : d.attribs) {
                 str(a.tag);
@@ -214,6 +215,13 @@ struct PayloadWriter {
             w.varint(d.dynValues.size());
             for (double v : d.dynValues)
                 w.f64(v);
+        }
+        if (d.clip.size() >= 3) {
+            w.u8(3);
+            w.u8(d.clipOn ? 1 : 0);
+            w.varint(d.clip.size());
+            for (const Vec2& p : d.clip)
+                w.vec2(p);
         }
     }
     void operator()(const DimensionData& d) {
@@ -507,6 +515,14 @@ struct PayloadReader {
                             d.dynValues.push_back(r.f64());
                         continue;
                     }
+                    if (tag == 3) {
+                        d.clipOn = r.boolean();
+                        std::size_t n = r.count(16);
+                        d.clip.reserve(n);
+                        for (std::size_t i = 0; i < n; ++i)
+                            d.clip.push_back(r.vec2());
+                        continue;
+                    }
                     if (tag != 1)
                         bad("unknown insert section");
                     ArrayInfo a;
@@ -749,6 +765,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         flags |= kCfLtScale;
     if (!c.visible)
         flags |= kCfHidden;
+    if (c.annotative)
+        flags |= kCfAnnotative;
     if (owner)
         flags |= kCfOwner;
     w.varint(c.id.value);
@@ -801,6 +819,7 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
     if (flags & kCfLtScale)
         c.linetypeScale = r.f64();
     c.visible = !(flags & kCfHidden);
+    c.annotative = (flags & kCfAnnotative) != 0;
     if (flags & kCfOwner)
         out.owner = pr.id<BlockId>();
     if (!c.id)

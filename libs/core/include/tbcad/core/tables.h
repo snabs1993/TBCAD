@@ -26,6 +26,17 @@ struct Layer {
     bool plot = true;
 };
 
+// A level groups objects the way a floor plan groups storeys: the user works on one level at a
+// time and objects on different levels may occupy the same XY position without interfering
+// (see docs/levels.md). Independent of layers: every object has both a layer and a level.
+struct Level {
+    LevelId id{};
+    std::string name{};
+    double elevation = 0;  // mm, for ordering and display; the model stays 2D
+    bool visible = true;   // switched off: hidden everywhere (also in plots)
+    bool locked = false;   // shown but cannot be selected, snapped to or edited
+};
+
 struct Linetype {
     LinetypeId id{};
     std::string name{};
@@ -151,9 +162,14 @@ struct EffectiveLayer {
     // Locked only because the document is in "active only" mode and this layer is outside the
     // current layer's branch.
     bool inactive = false;
+    // Locked only because the object lies on a level other than the current one.
+    bool otherLevel = false;
 
     // Drawn at all: on and not frozen.
     bool visible() const { return on && !frozen; }
+    // Visible and on the current level (or levels are all shown): takes part in snapping and
+    // boundary detection.
+    bool live() const { return visible() && !otherLevel; }
 };
 
 }  // namespace tbcad

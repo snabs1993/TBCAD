@@ -134,7 +134,7 @@ private:
     void writeDimStyles(Out& o, std::uint64_t table);
     void writeBlockRecords(Out& o, std::uint64_t table);
     void blockBegin(Out& o, const std::string& name, std::uint64_t rec, Vec2 base, int flags,
-                    bool paperSpace);
+                    bool paperSpace, const BlockDef* xref = nullptr);
     void blockEnd(Out& o, std::uint64_t rec, bool paperSpace);
 
     // ---- entities.cpp --------------------------------------------------------------------
@@ -144,8 +144,14 @@ private:
               std::string_view subclass);
     void sub(std::string_view subclass);
     void count(std::string_view type, std::size_t n = 1) {
+        emitLevelTag();
         summary_.entities[std::string(type)] += n;
     }
+    // TBCAD XDATA naming the entity's level ("level=<name>"), written at the end of the
+    // record that setLevelTag() prepared; a no-op when no tag is pending.
+    void emitLevelTag();
+    void setLevelTag(const EntityCommon& c);
+    void levelsXdata(Out& o);
     void skipEntity(std::string_view what, const std::string& why);
     void downgrade(std::string_view what, const std::string& why);
 
@@ -169,6 +175,7 @@ private:
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
     void writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner);
     void writeTable(const Props& p, const Entity& e, std::uint64_t owner);
+    void writeAnnotativeData(const Entity& e);
     void writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner);
     void writeSolid(const Props& p, const std::vector<Vec2>& ring, std::uint64_t owner);
     void writeCurveFallback(const Entity& e, const Props& p, std::uint64_t owner);
@@ -220,6 +227,8 @@ private:
     std::unordered_set<std::string> warnedPatterns_{};
     BBox2 extents_{};
     bool r12HatchWarned_ = false;
+    bool tagLevels_ = false;  // the document has more than the pristine default level
+    std::string levelTag_{};
     std::unordered_map<std::string, std::vector<HatchPatternLine>> patternCache_{};
 };
 

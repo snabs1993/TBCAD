@@ -290,3 +290,58 @@ TEST_CASE("blend two lines with a tangent spline") {
     CHECK_FALSE(blendCurves(a, {9, 0}, line({10, 0}, {12, 3}), {10, 0}).ok());
     CHECK_FALSE(blendCurves(a, {9, 0}, circle({0, 0}, 1), {1, 0}).ok());
 }
+
+TEST_CASE("polyline vertex insert, remove and move") {
+    Entity p = poly(pts({{0, 0}, {10, 0}, {10, 10}}), false);
+    auto ins = insertPolylineVertex(p, {4, 1});
+    REQUIRE(ins.ok());
+    const auto& a = as<PolylineData>(*ins.value().modified);
+    REQUIRE(a.v.size() == 4);
+    CHECK(near(a.v[1].p, {4, 0}));
+    CHECK_FALSE(insertPolylineVertex(p, {10, 0}).ok());  // already a vertex
+
+    auto rem = removePolylineVertex(*ins.value().modified, {4.2, 0.3});
+    REQUIRE(rem.ok());
+    CHECK(as<PolylineData>(*rem.value().modified).v.size() == 3);
+    CHECK_FALSE(removePolylineVertex(poly(pts({{0, 0}, {1, 0}}), false), {0, 0}).ok());
+
+    auto mv = movePolylineVertex(p, {10.5, 0.5}, {12, 3});
+    REQUIRE(mv.ok());
+    CHECK(near(as<PolylineData>(*mv.value().modified).v[1].p, {12, 3}));
+}
+
+TEST_CASE("inserting into an arc segment keeps the arc") {
+    std::vector<PolyVertex> v = pts({{0, 0}, {10, 0}});
+    v[0].bulge = 1;  // half circle through (5, -5)
+    Entity p = poly(v, false);
+    auto ins = insertPolylineVertex(p, {5, -5});
+    REQUIRE(ins.ok());
+    const auto& a = as<PolylineData>(*ins.value().modified);
+    REQUIRE(a.v.size() == 3);
+    CHECK(near(a.v[1].p, {5, -5}, 1e-6));
+    CHECK(near(a.v[0].bulge, std::tan(kPi / 8), 1e-6));
+    CHECK(near(a.v[1].bulge, std::tan(kPi / 8), 1e-6));
+}
+
+TEST_CASE("spline fit point editing") {
+    Entity src = poly(pts({{0, 0}, {5, 4}, {10, 0}, {15, 4}}), false);
+    auto sp = polylineToSpline(src);
+    REQUIRE(sp.ok());
+    std::size_t n = as<SplineData>(sp.value()).fit.size();
+    auto add = editSplineFit(sp.value(), SplineFitOp::Add, {7, 3});
+    REQUIRE(add.ok());
+    CHECK(as<SplineData>(*add.value().modified).fit.size() == n + 1);
+    auto del = editSplineFit(sp.value(), SplineFitOp::Delete, {5, 4});
+    REQUIRE(del.ok());
+    CHECK(as<SplineData>(*del.value().modified).fit.size() == n - 1);
+    auto mv = editSplineFit(sp.value(), SplineFitOp::Move, {5, 4}, {5, 8});
+    REQUIRE(mv.ok());
+    bool moved = false;
+    for (Vec2 q : as<SplineData>(*mv.value().modified).fit)
+        moved = moved || near(q, {5, 8}, 1e-9);
+    CHECK(moved);
+    auto closed = editSplineFit(sp.value(), SplineFitOp::Close);
+    REQUIRE(closed.ok());
+    CHECK(as<SplineData>(*closed.value().modified).closed);
+    CHECK_FALSE(editSplineFit(line({0, 0}, {1, 1}), SplineFitOp::Add).ok());
+}

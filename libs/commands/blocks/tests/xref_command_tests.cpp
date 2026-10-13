@@ -143,3 +143,34 @@ TEST_CASE("XATTACH with the name-only path type stores just the file name") {
     REQUIRE(f.doc.blockByName("plan"));
     CHECK(f.doc.blockByName("plan")->xrefPath == "plan.tbcad");
 }
+
+TEST_CASE("XCLIP clips an insert in block coordinates; OFF, ON and Delete; undo") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 10);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    EntityId ins = f.modelSpace()[0];
+    // Rectangle in world coordinates: the block sits at x=100, so this is x 0..4 of the block.
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "", "100,0", "104,10"});
+    auto* d = entityAs<InsertData>(*f.doc.find(ins));
+    REQUIRE(d->clip.size() == 4);
+    CHECK(near(d->clip[0], {0, 0}));
+    CHECK(near(d->clip[2], {4, 10}));
+    BBox2 box = blocks::insertBounds(f.doc, *f.doc.find(ins));
+    CHECK(near(box.min, {100, 0}));
+    CHECK(near(box.max, {104, 10}));
+
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "OFF"});
+    CHECK_FALSE(entityAs<InsertData>(*f.doc.find(ins))->clipOn);
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "ON"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clipOn);
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Delete"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.empty());
+    CHECK(f.host->undo());
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.size() == 4);
+
+    // Polygonal: three points then Enter.
+    f.host->run("XCLIP",
+                {cmd::ScriptItem::pick(ins), "New", "Polygonal", "100,0", "108,0", "100,8", ""});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.size() == 3);
+}

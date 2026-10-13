@@ -46,10 +46,14 @@ struct EntityCommon {
     EntityId id{};  // assigned by the document; ignored by Transaction::add
     double linetypeScale = 1;
     LayerId layer{};  // null is replaced by the document's current layer on add
+    LevelId level{};  // null is replaced by the document's current level on add
     LinetypeId linetype = kLinetypeByLayer;
     Color color = Color::byLayer();
     LineWeight lineweight = LineWeight::byLayer();
     bool visible = true;
+    // Annotative: text height, dimension sizes and table text follow the annotation scale
+    // (Header custom "tbcad.annoscale", or the viewport's scale when plotting a layout).
+    bool annotative = false;
 };
 
 enum class EntityKind : std::uint8_t {
@@ -273,6 +277,10 @@ struct InsertData {
     std::optional<ArrayInfo> array{};    // set: shown once per array item
     // Values of the block's dynamic parameters, in parameter order (missing = the default).
     std::vector<double> dynValues{};
+    // Clipping boundary (XCLIP): a closed polygon in the block's own coordinates, so it follows
+    // the insert when that is moved, rotated or scaled. Fewer than 3 points = not clipped.
+    std::vector<Vec2> clip{};
+    bool clipOn = true;  // false: the boundary is kept but the whole block shows
 };
 
 enum class DimKind : std::uint8_t {

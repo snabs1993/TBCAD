@@ -10,7 +10,6 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makeQuickProperties());
     (void)registry.add(detail::makeChProp());
     (void)registry.add(detail::makeFilter());
-    (void)registry.add(detail::makeMatchProp());
     (void)registry.add(detail::makeHide());
     (void)registry.add(detail::makeUnisolate());
 }

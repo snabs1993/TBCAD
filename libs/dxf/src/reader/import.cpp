@@ -237,8 +237,99 @@ void Importer::processTables(RecordReader& rr) {
             readStyle(r);
         else if (r.type == "DIMSTYLE")
             readDimStyle(r);
+        else if (r.type == "APPID")
+            readAppId(r);
     }
     createLayers();
+    createLevels();
+}
+
+// TBCAD level table: XDATA on the TBCAD application record (written by the exporter).
+void Importer::readAppId(const Record& r) {
+    bool inOurs = false;
+    for (const Group& g : r.g) {
+        if (g.code == 1001) {
+            inOurs = g.str() == "TBCAD";
+            continue;
+        }
+        if (!inOurs)
+            continue;
+        if (g.code == 1000) {
+            std::string v = dec(g.str());
+            if (v.rfind("levels-current=", 0) == 0)
+                levelCurrent_ = v.substr(15);
+            else if (v.rfind("levels-view=", 0) == 0)
+                levelView_ = std::atoi(v.c_str() + 12);
+            else if (v.rfind("levels-row=", 0) == 0)
+                levelRows_.push_back({v.substr(11), 0, 1});
+        } else if (g.code == 1040 && !levelRows_.empty()) {
+            double e = g.number();
+            levelRows_.back().elevation = std::isfinite(e) ? e : 0;
+        } else if (g.code == 1070 && !levelRows_.empty()) {
+            levelRows_.back().flags = static_cast<int>(g.integer());
+        }
+    }
+}
+
+void Importer::createLevels() {
+    if (levelsCreated_)
+        return;
+    levelsCreated_ = true;
+    auto key = [](const std::string& n) { return fold(n); };
+    levelByFold_[key(doc_->level(kLevelDefault)->name)] = kLevelDefault;
+    bool first = true;
+    for (const LevelRow& row : levelRows_) {
+        if (row.name.empty())
+            continue;
+        Level l;
+        l.name = row.name;
+        l.elevation = row.elevation * k_;
+        l.visible = (row.flags & 1) != 0;
+        l.locked = (row.flags & 2) != 0;
+        if (first) {
+            // The first row is the exporter's first level: it keeps the default level's id.
+            first = false;
+            (void)tx_->modifyLevel(kLevelDefault, [&](Level& d) { d = l; });
+            levelByFold_.clear();
+            levelByFold_[key(row.name)] = kLevelDefault;
+            continue;
+        }
+        tbcad::Result<LevelId> id = tx_->addLevel(std::move(l));
+        if (id)
+            levelByFold_[key(row.name)] = id.value();
+    }
+    if (!levelCurrent_.empty()) {
+        auto it = levelByFold_.find(key(levelCurrent_));
+        if (it != levelByFold_.end()) {
+            LevelId id = it->second;
+            LevelView view = levelView_ >= 0 && levelView_ <= 2 ? static_cast<LevelView>(levelView_)
+                                                                : LevelView::DimOthers;
+            (void)tx_->modifyHeader([&](Header& h) {
+                h.currentLevel = id;
+                h.levelView = view;
+            });
+        }
+    }
+}
+
+// The level named by the entity's TBCAD XDATA ("level=<name>"); the default level otherwise.
+LevelId Importer::levelFor(const Record& r) {
+    bool inOurs = false;
+    for (const Group& g : r.g) {
+        if (g.code == 1001) {
+            inOurs = g.str() == "TBCAD";
+            continue;
+        }
+        if (inOurs && g.code == 1000) {
+            std::string v = dec(g.str());
+            if (v.rfind("level=", 0) == 0) {
+                auto it = levelByFold_.find(fold(v.substr(6)));
+                if (it != levelByFold_.end())
+                    return it->second;
+            }
+        }
+    }
+    return kLevelDefault;
 }
 
 void Importer::readLinetype(const Record& r) {
@@ -671,12 +762,36 @@ void Importer::processBlocks(RecordReader& rr) {
                     blockDefined_.insert(id);
                     curBlock_ = id;
                     Vec2 base = P(r, 10, 20);
+                    // TBCAD XDATA: the block is an external reference (its content is the
+                    // snapshot).
+                    std::string xrefPath;
+                    std::int64_t xrefStamp = 0;
+                    bool xrefOverlay = false;
+                    bool inOurs = false;
+                    for (const Group& g : r.g) {
+                        if (g.code == 1001) {
+                            inOurs = g.str() == "TBCAD";
+                        } else if (inOurs && g.code == 1000) {
+                            std::string v = dec(g.str());
+                            if (v.rfind("xref=", 0) == 0)
+                                xrefPath = v.substr(5);
+                            else if (v.rfind("stamp=", 0) == 0)
+                                xrefStamp = std::strtoll(v.c_str() + 6, nullptr, 10);
+                        } else if (inOurs && g.code == 1070) {
+                            xrefOverlay = g.integer() != 0;
+                        }
+                    }
                     (void)tx_->modifyBlock(id, [&](BlockDef& b) {
                         b.base = base;
                         b.anonymous = (r.integer(70) & 1) != 0 || name[0] == '*';
+                        if (!xrefPath.empty()) {
+                            b.xrefPath = xrefPath;
+                            b.xrefStamp = xrefStamp;
+                            b.xrefOverlay = xrefOverlay;
+                        }
                     });
                     ++sum_.blocks;
-                    if (r.integer(70) & 4) {
+                    if ((r.integer(70) & 4) && xrefPath.empty()) {
                         report_.warn(code::kXref,
                                      "external reference block \"" + name +
                                          "\" is not supported; the block is empty",

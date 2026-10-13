@@ -120,6 +120,22 @@ std::vector<BlockId> dependentBlocks(const Document& doc, const std::vector<Bloc
 
 namespace {
 
+// `box` limited to the clipping boundary of `ins` seen through `t` (block space of the insert's
+// block to the space `box` is in).
+BBox2 limitToClip(BBox2 box, const InsertData& ins, const Transform2& t) {
+    if (!ins.clipOn || ins.clip.size() < 3 || box.empty())
+        return box;
+    BBox2 c;
+    for (const Vec2& p : ins.clip)
+        c.expand(t.apply(p));
+    BBox2 out;
+    out.min = {std::max(box.min.x, c.min.x), std::max(box.min.y, c.min.y)};
+    out.max = {std::min(box.max.x, c.max.x), std::min(box.max.y, c.max.y)};
+    if (out.min.x > out.max.x || out.min.y > out.max.y)
+        return {};
+    return out;
+}
+
 BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& t, int depth,
                     const InsertData* owner = nullptr) {
     BBox2 box;
@@ -132,7 +148,8 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
         if (const auto* ins = entityAs<InsertData>(*e)) {
             if (const BlockDef* inner = doc.block(ins->block))
                 for (const Transform2& it : instanceTransforms(*ins, inner->base))
-                    box.merge(contentBounds(doc, *inner, t * it, depth + 1, ins));
+                    box.merge(limitToClip(contentBounds(doc, *inner, t * it, depth + 1, ins), *ins,
+                                          t * it));
             continue;
         }
         std::optional<Entity> shown;
@@ -165,7 +182,7 @@ BBox2 insertBounds(const Document& doc, const Entity& insert) {
         return {};
     BBox2 box;
     for (const Transform2& t : instanceTransforms(*ins, def->base))
-        box.merge(contentBounds(doc, *def, t, 0, ins));
+        box.merge(limitToClip(contentBounds(doc, *def, t, 0, ins), *ins, t));
     return box;
 }
 

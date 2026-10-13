@@ -24,6 +24,9 @@ struct DisplayContext {
     Rgba byBlockColor{255, 255, 255, 255};
     double byBlockLineweightMm = 0.25;
     const std::vector<double>* byBlockPattern = nullptr;
+    // Scale for annotative objects (model units per paper unit). 0 = the drawing's current
+    // annotation scale; a layout viewport sets its own.
+    double annoScale = 0;
 
     double tolerance() const { return chordTolMm > 0 ? chordTolMm : pixelSizeMm * 0.25; }
 };

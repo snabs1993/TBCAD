@@ -1,5 +1,7 @@
 #include "tbcad/ui/settings_model.h"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 
 #include "tbcad/platform/json.h"
@@ -30,7 +32,150 @@ Result<void> writeAtomic(const std::filesystem::path& file, const std::string& t
     return {};
 }
 
+std::string trimmed(std::string_view v) {
+    return cmd::trim(v);
+}
+
+bool validAliasText(const std::string& a) {
+    if (a.empty() || a.size() > 20)
+        return false;
+    for (unsigned char c : a)
+        if (!std::isalnum(c) && c != '_' && c != '-')
+            return false;
+    return true;
+}
+
 }  // namespace
+
+PgpParse parsePgp(std::string_view text) {
+    PgpParse out;
+    bool external = false;
+    std::size_t lineNo = 0;
+    std::size_t pos = 0;
+    while (pos <= text.size()) {
+        std::size_t end = text.find('\n', pos);
+        if (end == std::string_view::npos)
+            end = text.size();
+        std::string line(text.substr(pos, end - pos));
+        pos = end + 1;
+        ++lineNo;
+        if (auto semi = line.find(';'); semi != std::string::npos)
+            line.erase(semi);
+        line = trimmed(line);
+        if (line.empty())
+            continue;
+        const std::string where = "line " + std::to_string(lineNo) + ": ";
+        if (line.front() == '[') {
+            external = cmd::toUpperAscii(line).find("EXTERNAL") != std::string::npos;
+            continue;
+        }
+        if (external)
+            continue;  // `NOTEPAD, 1, File to edit: ,` runs a program; not supported
+        auto comma = line.find(',');
+        if (comma == std::string::npos) {
+            out.skipped.push_back(where + "no comma, skipped");
+            continue;
+        }
+        std::string alias = cmd::toUpperAscii(trimmed(line.substr(0, comma)));
+        std::string rest = trimmed(line.substr(comma + 1));
+        if (rest.empty() || rest.front() != '*') {
+            out.skipped.push_back(where + alias + " does not start with *, skipped");
+            continue;
+        }
+        rest.erase(0, 1);
+        // Keep the command word only; anything after (a flag column) is dropped.
+        std::size_t stop = rest.find_first_of(" \t,");
+        std::string command = cmd::toUpperAscii(trimmed(rest.substr(0, stop)));
+        if (!validAliasText(alias)) {
+            out.skipped.push_back(where + "\"" + alias + "\" is not a usable alias");
+            continue;
+        }
+        if (command.empty()) {
+            out.skipped.push_back(where + alias + " has no command");
+            continue;
+        }
+        out.aliases[alias] = command;
+    }
+    return out;
+}
+
+std::string writePgp(const std::map<std::string, std::string>& aliases) {
+    std::string out =
+        "; TBCAD command aliases in acad.pgp style: ALIAS, *COMMAND\n"
+        "; Lines starting with ; are comments.\n\n";
+    for (const auto& [a, c] : aliases) {
+        std::string left = a + ",";
+        left.resize(std::max<std::size_t>(left.size() + 1, 12), ' ');
+        out += left + "*" + c + "\n";
+    }
+    return out;
+}
+
+AliasImportReport AliasEditor::importPgp(std::string_view text) {
+    AliasImportReport rep;
+    PgpParse parsed = parsePgp(text);
+    rep.skipped = std::move(parsed.skipped);
+    auto next = registry_.userAliases();
+    const auto& effective = registry_.aliases();
+    for (const auto& [alias, command] : parsed.aliases) {
+        const cmd::Command* c = registry_.find(command);
+        if (!c || c->name() != command) {
+            rep.skipped.push_back(alias + " -> " + command + ": no such command here");
+            continue;
+        }
+        auto cur = effective.find(alias);
+        if (cur != effective.end() && cur->second == command) {
+            rep.skipped.push_back(alias + " -> " + command + ": already an alias");
+            continue;
+        }
+        for (auto it = next.begin(); it != next.end();) {  // aliases are case-insensitive
+            if (cmd::toUpperAscii(trimmed(it->first)) == alias)
+                it = next.erase(it);
+            else
+                ++it;
+        }
+        next[alias] = command;
+        ++rep.added;
+    }
+    if (rep.added == 0)
+        return rep;
+    if (std::string err = commit(std::move(next)); !err.empty()) {
+        rep.added = 0;
+        rep.error = err;
+    }
+    return rep;
+}
+
+std::string AliasEditor::exportPgp() const {
+    return writePgp(registry_.aliases());
+}
+
+std::string KeybindingEditor::exportTo(const std::filesystem::path& file) const {
+    if (auto r = keys_.save(file); !r)
+        return r.error().message;
+    return {};
+}
+
+KeybindingEditor::Outcome KeybindingEditor::importFrom(const std::filesystem::path& file,
+                                                       std::vector<std::string>* warnings) {
+    Outcome o;
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec)) {
+        o.error = "There is no file " + file.string();
+        return o;
+    }
+    // Check the file on a scratch copy first, so a bad file changes nothing.
+    platform::Keybindings probe = keys_;
+    auto loaded = probe.load(file);
+    if (!loaded) {
+        o.error = loaded.error().message;
+        return o;
+    }
+    if (warnings)
+        *warnings = loaded.value();
+    keys_ = std::move(probe);
+    return save();
+}
 
 std::string AliasEditor::commit(std::map<std::string, std::string> next) {
     const auto before = registry_.userAliases();

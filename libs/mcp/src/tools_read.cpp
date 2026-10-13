@@ -240,6 +240,17 @@ ToolResult queryEntities(ToolContext& ctx, const Json& a) {
             layers.insert(layer->id);
         }
     }
+    std::set<LevelId> levels;
+    bool filterLevels = false;
+    if (const Json* l = a.find("levels")) {
+        filterLevels = true;
+        for (const auto& p : l->asArray()) {
+            const Level* level = doc.levelByName(p.asString());
+            if (!level)
+                return ToolResult::fail("unknown level \"" + p.asString() + "\"");
+            levels.insert(level->id);
+        }
+    }
     bool sub = argBool(a, "include_sublayers", true);
     std::set<std::string> kinds;
     if (const Json* k = a.find("kinds")) {
@@ -265,6 +276,8 @@ ToolResult queryEntities(ToolContext& ctx, const Json& a) {
         if (!e)
             continue;
         if (filterLayers && !layerInSet(doc, e->common.layer, layers, sub))
+            continue;
+        if (filterLevels && !levels.count(e->common.level))
             continue;
         if (!kinds.empty() && !kinds.count(kindName(kind(*e))))
             continue;
@@ -547,6 +560,7 @@ void registerReadTools(ToolSet& tools) {
                                           "spline", "text", "mtext", "hatch", "insert", "dimension",
                                           "leader", "proxy"}))},
                   {"layers", tArray(tString(), "Layer paths such as S-FLOOR~edge")},
+                  {"levels", tArray(tString(), "Level names")},
                   {"include_sublayers", tBool("default true")},
                   {"bbox", tArray(tPoint(), "[[x1,y1],[x2,y2]] in mm", 2)},
                   {"mode", tEnum({"inside", "crossing"}, "bbox mode, default crossing")},

@@ -117,3 +117,13 @@ The algorithms live in `libs/modify/extra.h`. POINT objects made by DIVIDE and M
 | `SETBYLAYER` | | Colour, linetype and lineweight back to ByLayer. |
 
 ALIGN, MATCHPROP, SETBYLAYER and SCALETEXT accept every entity kind on an editable layer; the others need curve geometry.
+
+### Batch 3 (Q72m)
+
+| Command | Alias | What it does |
+| --- | --- | --- |
+| `SPLINEDIT` | `SPE` | Add, Delete or Move fit points (the spline is fitted again), Close, Open, Reverse. Needs a spline that has fit points. |
+| `JUSTIFYTEXT` | | Changes the justification of Text (Left, Center, Right, Middle, TL..BR) or the attachment of MText without moving it. Aligned and Fit text are skipped. |
+| `PEDIT` > Vertices | | Insert (splits a straight or arc segment), Remove (neighbours joined by a straight segment) and Move a vertex. Per-vertex widths are not preserved when inserting. |
+
+The menu now lists the new commands under Modify (Draw for DIVIDE and MEASURE).

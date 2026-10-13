@@ -501,3 +501,86 @@ TEST_CASE("round trip: a gradient hatch keeps its gradient") {
     CHECK(h->gradient->angle == doctest::Approx(0.75));
     CHECK_FALSE(entityAs<HatchData>(*back->find(EntityId{2}))->gradient.has_value());
 }
+
+TEST_CASE("round trip: levels, entity levels, current level and the level view") {
+    auto doc = makeRichDocument();
+    LevelId l2, l3;
+    {
+        auto tx = doc->begin("levels");
+        REQUIRE(tx.modifyLevel(kLevelDefault, [](Level& l) { l.name = "ชั้น 1"; }).ok());
+        Level up;
+        up.name = "Level 2";
+        up.elevation = 3200.5;
+        up.locked = true;
+        l2 = tx.addLevel(up).value();
+        Level hidden;
+        hidden.name = "Roof";
+        hidden.elevation = 6400;
+        hidden.visible = false;
+        l3 = tx.addLevel(hidden).value();
+        REQUIRE(tx.erase(EntityId{6}).ok());  // keep ids sparse
+        REQUIRE(tx.modify(EntityId{7}, [&](Entity& e) { e.common.level = l2; }).ok());
+        REQUIRE(tx.modify(EntityId{9}, [&](Entity& e) { e.common.level = l3; }).ok());
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      h.currentLevel = l2;
+                      h.levelView = LevelView::ShowAll;
+                  }).ok());
+        tx.commit();
+    }
+    std::string before = canonicalDump(*doc);
+    CHECK(before.find("level2") != std::string::npos);
+    for (bool compress : {true, false}) {
+        io::WriteOptions o;
+        o.compress = compress;
+        auto bytes = writeOrFail(*doc, o);
+        io::IoReport report;
+        auto back = readOrFail(bytes, &report);
+        CHECK(canonicalDump(*back) == before);
+        CHECK(report.warnings.empty());
+        CHECK(back->level(l2)->name == "Level 2");
+        CHECK(back->level(l2)->locked);
+        CHECK_FALSE(back->level(l3)->visible);
+        CHECK(back->find(EntityId{7})->common.level == l2);
+        CHECK(back->find(EntityId{9})->common.level == l3);
+        CHECK(back->find(EntityId{8})->common.level == kLevelDefault);
+        CHECK(back->header().currentLevel == l2);
+        CHECK(back->header().levelView == LevelView::ShowAll);
+        CHECK(writeOrFail(*back, o) == bytes);
+    }
+}
+
+TEST_CASE("round trip: a document with one pristine level has no level chunks") {
+    auto doc = makeRichDocument();
+    auto bytes = writeOrFail(*doc);
+    auto chunks = io::listChunks(bytes);
+    REQUIRE(chunks.ok());
+    for (const auto& c : chunks.value()) {
+        CHECK(c.type != "LVLS");
+        CHECK(c.type != "ELVL");
+    }
+}
+
+TEST_CASE("round trip: insert clipping boundary") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("clip");
+        BlockId blk = tx.addBlock(BlockDef{.name = "Plan"}).value();
+        Entity a;
+        a.data = LineData{{0, 0}, {10, 0}};
+        (void)tx.add(std::move(a), blk);
+        Entity ins;
+        InsertData data{blk, {3, 3}, {1, 1}, 0};
+        data.clip = {{0, 0}, {5, 0}, {5, 5}, {0, 5}};
+        data.clipOn = false;
+        ins.data = Indirect<InsertData>(std::move(data));
+        (void)tx.add(std::move(ins));
+        Entity plain;
+        plain.data = Indirect<InsertData>(InsertData{blk, {50, 0}, {1, 1}, 0});
+        (void)tx.add(std::move(plain));
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    CHECK(before.find("CLIPoff") != std::string::npos);
+}

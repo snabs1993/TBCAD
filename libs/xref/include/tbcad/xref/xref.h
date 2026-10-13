@@ -52,8 +52,9 @@ struct Summary {
 
 enum class State {
     UpToDate,
-    Changed,  // the file is newer (or older) than the snapshot
-    Missing,  // the file cannot be found
+    Changed,   // the file is newer (or older) than the snapshot
+    Missing,   // the file cannot be found
+    Unloaded,  // unloaded on purpose: the block is empty until the next reload
     NotXref,
 };
 
@@ -86,8 +87,38 @@ Result<void> reload(Transaction& tx, Document& doc, BlockId block, const Source&
                     Summary* summary = nullptr);
 // Removes the xref: its inserts, its block, the nested blocks and the layers no entity uses.
 Result<void> detach(Transaction& tx, Document& doc, BlockId block);
+// Drops the snapshot of the xref but keeps the block, its path and its inserts (XRELOAD brings
+// it back). Layers stay, so their states survive the next reload.
+Result<void> unload(Transaction& tx, Document& doc, BlockId block);
 // Turns the xref into an ordinary block (and its nested blocks and layers into ordinary ones).
 Result<void> bind(Transaction& tx, Document& doc, BlockId block);
+
+// ---- content: single items of another drawing (the content browser)
+// ------------------------------
+
+enum class ContentKind { Block, Layer, Linetype, TextStyle, DimStyle };
+
+struct ContentItem {
+    ContentKind kind = ContentKind::Block;
+    // The row's name. A sub-layer is written parent~child.
+    std::string name{};
+};
+
+struct ImportReport {
+    std::size_t added = 0;               // rows and blocks created
+    std::vector<std::string> skipped{};  // items not imported, each with the reason
+};
+
+// What a drawing offers: its blocks (not anonymous, not xrefs), layers (not "0"), linetypes (not
+// Continuous), text styles and dimension styles (not Standard), each sorted by name.
+std::vector<ContentItem> listContent(const Document& src);
+
+// Copies the items from `source` into `doc`. Rows the drawing already has under that name are not
+// touched and reported as skipped; a block whose name is taken is skipped too. A block brings the
+// layers, linetypes and styles its entities use (matched by name, created when missing) and the
+// blocks it inserts, named "<block>$<nested>". A dimension style brings its text style.
+Result<void> importContent(Transaction& tx, Document& doc, const Source& source,
+                           const std::vector<ContentItem>& items, ImportReport& report);
 
 // Whether the file of an xref block changed since the snapshot.
 State state(const Document& doc, BlockId block, const std::filesystem::path& hostFile);

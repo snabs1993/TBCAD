@@ -508,13 +508,15 @@ public:
                                "Join",
                                "Width",
                                "Spline",
+                               "Vertices",
                                "Reverse",
                                "Exit"};
             }
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
-                         : "Enter an option [Close/Open/Join/Width/Spline/Reverse/Exit] <Exit>",
+                isSpline
+                    ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
+                    : "Enter an option [Close/Open/Join/Width/Spline/Vertices/Reverse/Exit] <Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
@@ -533,6 +535,44 @@ public:
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
                 else
                     ctx.message(edit.error().message);
+            } else if (k.keyword == "Vertices") {
+                for (;;) {
+                    cmd::KeywordOptions vo;
+                    vo.keywords = {"Insert", "Remove", "Move", "Exit"};
+                    vo.defaultKeyword = "Exit";
+                    auto v = co_await ctx.getKeyword(
+                        "Vertex option [Insert/Remove/Move/Exit] <Exit>", vo);
+                    if (!v.ok() || v.keyword == "Exit")
+                        break;
+                    auto at = co_await ctx.getPoint(v.keyword == "Insert"
+                                                        ? "Specify a point on the segment to split"
+                                                        : "Specify a point near the vertex");
+                    if (!at.ok())
+                        continue;
+                    const Entity* cur = ctx.doc().find(id);
+                    if (!cur)
+                        co_return;
+                    Result<modify::EntityEdit> edit =
+                        Error{ErrorCode::InvalidArgument, "Unsupported"};
+                    if (v.keyword == "Insert") {
+                        edit = modify::insertPolylineVertex(*cur, at.point);
+                    } else if (v.keyword == "Remove") {
+                        edit = modify::removePolylineVertex(*cur, at.point);
+                    } else {
+                        cmd::PointOptions po;
+                        auto to = co_await ctx.getPoint("Specify the new location", po);
+                        if (!to.ok())
+                            continue;
+                        cur = ctx.doc().find(id);
+                        if (!cur)
+                            co_return;
+                        edit = modify::movePolylineVertex(*cur, at.point, to.point);
+                    }
+                    if (!edit)
+                        ctx.message(edit.error().message);
+                    else
+                        (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
+                }
             } else if (k.keyword == "Reverse") {
                 if (auto edit = modify::reverseEntity(*e))
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));

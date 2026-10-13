@@ -21,6 +21,7 @@ set(_mcp_sources
   src/tools_layers.cpp
   src/tools_layout.cpp
   src/tools_modify.cpp
+  src/tools_levels.cpp
   src/tools_read.cpp)
 
 tbcad_add_library(mcp

@@ -927,4 +927,145 @@ Result<Entity> blendCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pi
     return withData(a, Indirect<SplineData>(std::move(sp.value())));
 }
 
+// ---- PEDIT vertices -----------------------------------------------------------------------------
+
+namespace {
+
+std::size_t nearestVertex(const PolylineData& p, Vec2 q) {
+    std::size_t best = 0;
+    double bd = 1e300;
+    for (std::size_t i = 0; i < p.v.size(); ++i) {
+        double d = distance(p.v[i].p, q);
+        if (d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+}  // namespace
+
+Result<EntityEdit> insertPolylineVertex(const Entity& e, Vec2 p) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    PolylineData clean = cleanPolyline(*pl);
+    std::vector<Seg> segs = polylineSegs(clean);
+    if (segs.empty())
+        return err("The polyline has no segments.");
+    double g = closestGlobalParam(segs, p);
+    auto i = static_cast<std::size_t>(std::min<double>(std::floor(g), segs.size() - 1.0));
+    double u = std::clamp(g - static_cast<double>(i), 0.0, 1.0);
+    if (u < 1e-9 || u > 1.0 - 1e-9)
+        return err("There is already a vertex there.");
+    std::vector<Seg> chain(segs.begin(), segs.begin() + static_cast<std::ptrdiff_t>(i));
+    chain.push_back(segSub(segs[i], 0.0, u));
+    chain.push_back(segSub(segs[i], u, 1.0));
+    chain.insert(chain.end(), segs.begin() + static_cast<std::ptrdiff_t>(i) + 1, segs.end());
+    EntityEdit r;
+    r.modified = withData(e, polylineFromSegs(chain, clean.closed, &clean));
+    return r;
+}
+
+Result<EntityEdit> removePolylineVertex(const Entity& e, Vec2 near) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    std::size_t minCount = pl->closed ? 4 : 3;
+    if (pl->v.size() < minCount)
+        return err("The polyline would have too few vertices.");
+    PolylineData out = *pl;
+    std::size_t i = nearestVertex(out, near);
+    if (pl->closed || i > 0) {
+        // The segment that ended here and the one that started here become one straight segment.
+        std::size_t prev = (i + out.v.size() - 1) % out.v.size();
+        out.v[prev].bulge = 0;
+    }
+    out.v.erase(out.v.begin() + static_cast<std::ptrdiff_t>(i));
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+Result<EntityEdit> movePolylineVertex(const Entity& e, Vec2 near, Vec2 to) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    PolylineData out = *pl;
+    out.v[nearestVertex(out, near)].p = to;
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+// ---- SPLINEDIT ----------------------------------------------------------------------------------
+
+Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b) {
+    const auto* sp = entityAs<SplineData>(e);
+    if (!sp)
+        return err("Select a spline.");
+    if (sp->fit.size() < 2)
+        return err("This spline has no fit points to edit.");
+    std::vector<Vec2> fit = sp->fit;
+    bool closed = sp->closed;
+    auto nearest = [&](Vec2 q) {
+        std::size_t best = 0;
+        for (std::size_t i = 1; i < fit.size(); ++i) {
+            if (distance(fit[i], q) < distance(fit[best], q))
+                best = i;
+        }
+        return best;
+    };
+    switch (op) {
+        case SplineFitOp::Add: {
+            std::vector<CurveRef> cs;
+            if (!geom::curvesOf(e, cs) || cs.empty())
+                return err("The spline has no geometry.");
+            Vec2 on = cs.front().closestPoint(a);
+            std::size_t segCount = closed ? fit.size() : fit.size() - 1;
+            std::size_t at = 0;
+            double bd = 1e300;
+            for (std::size_t i = 0; i < segCount; ++i) {
+                Vec2 p0 = fit[i], p1 = fit[(i + 1) % fit.size()];
+                Vec2 d = p1 - p0;
+                double l2 = dot(d, d);
+                double u = l2 > 0 ? std::clamp(dot(on - p0, d) / l2, 0.0, 1.0) : 0.0;
+                double dist = distance(p0 + d * u, on);
+                if (dist < bd) {
+                    bd = dist;
+                    at = i;
+                }
+            }
+            fit.insert(fit.begin() + static_cast<std::ptrdiff_t>(at) + 1, on);
+            break;
+        }
+        case SplineFitOp::Delete:
+            if (fit.size() <= (closed ? 3u : 2u))
+                return err("The spline would have too few fit points.");
+            fit.erase(fit.begin() + static_cast<std::ptrdiff_t>(nearest(a)));
+            break;
+        case SplineFitOp::Move:
+            fit[nearest(a)] = b;
+            break;
+        case SplineFitOp::Close:
+            if (fit.size() < 3)
+                return err("A closed spline needs at least three fit points.");
+            closed = true;
+            break;
+        case SplineFitOp::Open:
+            closed = false;
+            break;
+    }
+    geom::InterpolateOptions io;
+    io.degree = sp->degree;
+    io.closed = closed;
+    auto fitted = geom::interpolateSpline(fit, io);
+    if (!fitted)
+        return err("The spline could not be fitted: " + fitted.error().message);
+    EntityEdit r;
+    r.modified = withData(e, Indirect<SplineData>(std::move(fitted.value())));
+    return r;
+}
+
 }  // namespace tbcad::modify
