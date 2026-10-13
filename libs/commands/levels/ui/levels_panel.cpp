@@ -78,14 +78,16 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
     ImGui::EndDisabled();
     ImGui::EndDisabled();
 
-    constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
-                                       ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
-                                       ImGuiTableFlags_SizingFixedFit;
+    constexpr ImGuiTableFlags kFlags =
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX |
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
     const float footer = ImGui::GetFrameHeightWithSpacing() * 2 + 6;
     if (ImGui::BeginTable("##levels", 6, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Cur", ImGuiTableColumnFlags_WidthFixed, 34);
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3.0f);
+        // Fixed width (the table scrolls sideways when the panel is narrow) so names never get
+        // squeezed.
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 160);
         ImGui::TableSetupColumn("Elev (mm)", ImGuiTableColumnFlags_WidthFixed, 80);
         ImGui::TableSetupColumn("Show", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 34);
