@@ -15,6 +15,7 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/platform/crash.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
@@ -127,7 +128,12 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     dpiScale_ = std::max(1.0f, sx);
     recoveryCount_ = core_.pendingRecoveries().size();
     recovery_ = core_.pendingRecovery();
-    openRecoveryPrompt_ = recovery_.has_value();
+    {
+        auto crashes = platform::pendingCrashReports(core_.paths().crashDir());
+        if (!crashes.empty())
+            crashReport_ = platform::pathToUtf8(crashes.back());
+    }
+    openRecoveryPrompt_ = recovery_.has_value() || !crashReport_.empty();
     anyActivity_ = true;
     themeMode_ = ui::parseThemeMode(core_.settings().getString("ui.theme", "dark"));
     theme_ = ui::themeFor(themeMode_, systemPrefersDark());
@@ -2034,12 +2040,27 @@ void Gui::dialogs() {
         ImGui::TextUnformatted("TBCAD did not close normally last time.");
         if (recoveryCount_ > 1)
             ImGui::Text("Automatic backups of %zu unsaved drawings were found.", recoveryCount_);
-        else
+        else if (recovery_)
             ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
+        if (!crashReport_.empty()) {
+            ImGui::TextWrapped(
+                "A crash report was saved to %s. Attach it when you report the problem.",
+                crashReport_.c_str());
+            if (!recovery_) {
+                ImGui::Spacing();
+                if (ImGui::Button("OK", ImVec2(110, 0))) {
+                    platform::acknowledgeCrashReports(core_.paths().crashDir());
+                    crashReport_.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
         ImGui::Spacing();
-        if (ImGui::Button("Recover", ImVec2(110, 0))) {
+        if (recovery_ && ImGui::Button("Recover", ImVec2(110, 0))) {
+            platform::acknowledgeCrashReports(core_.paths().crashDir());
+            crashReport_.clear();
             if (recovery_) {
                 auto r = core_.recoverAll();
                 if (!r)
@@ -2049,7 +2070,9 @@ void Gui::dialogs() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Discard", ImVec2(110, 0))) {
+        if (recovery_ && ImGui::Button("Discard", ImVec2(110, 0))) {
+            platform::acknowledgeCrashReports(core_.paths().crashDir());
+            crashReport_.clear();
             core_.discardRecovery();
             recovery_.reset();
             ImGui::CloseCurrentPopup();
