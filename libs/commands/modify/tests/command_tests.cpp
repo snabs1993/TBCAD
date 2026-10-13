@@ -324,3 +324,172 @@ TEST_CASE("ERASE removes the selection") {
     f.host.undo();
     CHECK(f.doc.entityCount() == 3);
 }
+
+TEST_CASE("the extra modify commands are registered") {
+    Fixture f;
+    for (auto [alias, name] :
+         std::vector<std::pair<const char*, const char*>>{{"LEN", "LENGTHEN"},
+                                                          {"MA", "MATCHPROP"},
+                                                          {"REVERSE", "REVERSE"},
+                                                          {"DIV", "DIVIDE"},
+                                                          {"ME", "MEASURE"},
+                                                          {"AL", "ALIGN"},
+                                                          {"OVERKILL", "OVERKILL"},
+                                                          {"PE", "PEDIT"}}) {
+        REQUIRE(f.reg.find(alias) != nullptr);
+        CHECK(f.reg.find(alias) == f.reg.find(name));
+    }
+}
+
+TEST_CASE("LENGTHEN by delta, percent and total, one undo step") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    auto r =
+        f.host.run("LENGTHEN", {"Delta", "5", ScriptItem::pick(l, {9, 0}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {15, 0}));
+    CHECK(f.host.undoStack().undoLabel() == "LENGTHEN");
+    f.host.undo();
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {10, 0}));
+    f.host.run("LENGTHEN", {"Total", "4", ScriptItem::pick(l, {1, 0}), ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(l))->a, {6, 0}));
+    f.host.run("LENGTHEN", {"Percent", "200", ScriptItem::pick(l, {9, 0}), ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {14, 0}));
+    f.host.run("LENGTHEN", {"Dynamic", ScriptItem::pick(l, {13, 0}), "20,5", ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {20, 0}));
+}
+
+TEST_CASE("REVERSE and ALIGN") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    f.host.run("REVERSE", {ScriptItem::select({l}), ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(l))->a, {10, 0}));
+    f.host.undo();
+    CHECK(near(entityAs<LineData>(f.get(l))->a, {0, 0}));
+
+    f.host.run("ALIGN",
+               {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5", "10,0", "5,15", "N"});
+    const auto* ld = entityAs<LineData>(f.get(l));
+    CHECK(near(ld->a, {5, 5}));
+    CHECK(near(ld->b, {5, 15}));
+}
+
+TEST_CASE("DIVIDE and MEASURE place points") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {12, 0}});
+    f.host.run("DIVIDE", {ScriptItem::pick(l, {6, 0}), "4"});
+    CHECK(f.count(EntityKind::Point) == 3);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Point) == 0);
+    f.host.run("MEASURE", {ScriptItem::pick(l, {11, 0}), "5"});
+    REQUIRE(f.count(EntityKind::Point) == 2);
+    bool at7 = false;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<PointData>(e))
+            at7 = at7 || near(p->p, {7, 0});
+    });
+    CHECK(at7);  // measured from the end the pick was nearest to
+}
+
+TEST_CASE("MATCHPROP copies layer, colour and text height") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 1}, {1, 1}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(a, [](Entity& e) {
+            e.common.color = Color::byLayer();
+            e.common.linetypeScale = 3;
+        }));
+        tx.commit();
+    }
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {0.5, 0}), ScriptItem::pick(b, {0.5, 1}), ScriptItem::esc()});
+    CHECK(f.get(b).common.linetypeScale == doctest::Approx(3));
+}
+
+TEST_CASE("OVERKILL deletes duplicates and merges overlaps") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId c = f.add(LineData{{8, 0}, {20, 0}});
+    f.host.run("OVERKILL", {ScriptItem::select({a, b, c}), ScriptItem::enter()});
+    CHECK(f.count(EntityKind::Line) == 1);
+    CHECK(f.host.undoStack().undoLabel() == "OVERKILL");
+    f.host.undo();
+    CHECK(f.count(EntityKind::Line) == 3);
+}
+
+TEST_CASE("PEDIT converts a line, closes, widens and joins") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId m = f.add(LineData{{10, 0}, {10, 10}});
+    f.host.run("PEDIT", {ScriptItem::pick(l, {5, 0}), "Yes", "Width", "2", "Join",
+                         ScriptItem::select({m}), ScriptItem::enter(), "Exit"});
+    REQUIRE(f.count(EntityKind::Polyline) == 1);
+    CHECK(f.count(EntityKind::Line) == 0);
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<PolylineData>(e)) {
+            CHECK(p->v.size() == 3);
+            CHECK_FALSE(p->closed);
+        }
+    });
+}
+
+TEST_CASE("EXTRIM cuts several objects on one side of an edge") {
+    Fixture f;
+    EntityId edge = f.add(LineData{{5, -10}, {5, 10}});
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 3}, {10, 3}});
+    f.add(LineData{{0, 20}, {4, 20}});
+    auto r = f.host.run("EXTRIM", {ScriptItem::pick(edge, {5, 0}), "8,0",
+                                   ScriptItem::select({a, b}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(near(entityAs<LineData>(f.get(a))->b, {5, 0}));
+    CHECK(near(entityAs<LineData>(f.get(b))->b, {5, 3}));
+    CHECK(f.host.undoStack().undoLabel() == "EXTRIM");
+    f.host.undo();
+    CHECK(near(entityAs<LineData>(f.get(a))->b, {10, 0}));
+}
+
+TEST_CASE("BLEND adds a spline between two line ends") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{30, 10}, {20, 10}});
+    f.host.run("BLEND", {ScriptItem::pick(a, {9, 0}), ScriptItem::pick(b, {21, 10})});
+    CHECK(f.count(EntityKind::Spline) == 1);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Spline) == 0);
+}
+
+TEST_CASE("SCALETEXT and SETBYLAYER") {
+    Fixture f;
+    TextData t;
+    t.height = 2;
+    t.utf8 = "abc";
+    EntityId id = f.add(Indirect<TextData>(t));
+    f.host.run("SCALETEXT", {ScriptItem::select({id}), ScriptItem::enter(), "3"});
+    CHECK(entityAs<TextData>(f.get(id))->height == doctest::Approx(6));
+    f.host.run("SCALETEXT", {ScriptItem::select({id}), ScriptItem::enter(), "New height", "5"});
+    CHECK(entityAs<TextData>(f.get(id))->height == doctest::Approx(5));
+
+    EntityId l = f.add(LineData{{0, 0}, {1, 0}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(l, [](Entity& e) { e.common.lineweight = LineWeight::mm(0.5); }));
+        tx.commit();
+    }
+    f.host.run("SETBYLAYER", {ScriptItem::select({l}), ScriptItem::enter()});
+    CHECK(f.get(l).common.lineweight == LineWeight::byLayer());
+}
+
+TEST_CASE("ALIGN and MATCHPROP also work on text") {
+    Fixture f;
+    TextData t;
+    t.position = {1, 1};
+    t.utf8 = "x";
+    EntityId id = f.add(Indirect<TextData>(t));
+    f.host.run("ALIGN", {ScriptItem::select({id}), ScriptItem::enter(), "0,0", "10,10",
+                         ScriptItem::enter()});
+    CHECK(near(entityAs<TextData>(f.get(id))->position, {11, 11}));
+}

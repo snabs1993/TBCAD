@@ -13,6 +13,7 @@
 #include <map>
 #include <sstream>
 
+#include "icons.h"
 #include "key_map.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
@@ -29,6 +30,14 @@ namespace tbcad::app {
 namespace {
 
 constexpr ImGuiID kDockId = 0x7BC4D001u;
+
+const std::vector<platform::FileFilter>& openFilters() {
+    static const std::vector<platform::FileFilter> f = {{"All drawings", "*.tbcad;*.dxf;*.dwg"},
+                                                        {"TBCAD drawings", "*.tbcad"},
+                                                        {"DXF drawings", "*.dxf"},
+                                                        {"DWG drawings (read-only)", "*.dwg"}};
+    return f;
+}
 
 const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
     static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
@@ -71,6 +80,8 @@ const char* kindName(EntityKind k) {
             return "Leader";
         case EntityKind::Proxy:
             return "Proxy object";
+        case EntityKind::Table:
+            return "Table";
     }
     return "Object";
 }
@@ -112,6 +123,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
+    recoveryCount_ = core_.pendingRecoveries().size();
     recovery_ = core_.pendingRecovery();
     openRecoveryPrompt_ = recovery_.has_value();
     anyActivity_ = true;
@@ -225,7 +237,10 @@ void Gui::runAction(const std::string& action) {
         core_.redo();
     else if (action == "edit.selectAll")
         core_.selectAll();
-    else if (action == "edit.deselect") {
+    else if (action == "edit.delete") {
+        if (!core_.selection().empty() && !core_.runner().active())
+            core_.submitText("ERASE");
+    } else if (action == "edit.deselect") {
         core_.pressEscape();
         input_.clear();
     } else if (action == "view.zoomExtents")
@@ -312,14 +327,50 @@ bool Gui::requestClose() {
 
 void Gui::doOpen() {
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), drawingFilters(), "Open drawing"))
+        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing"))
             doOpenPath(platform::pathToUtf8(*p));
         return;
     }
     std::filesystem::path start =
         core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
     browserPurpose_ = BrowserPurpose::Open;
-    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf");
+    browser_.open(FileBrowser::Mode::Open, start, "", ".tbcad;.dxf;.dwg");
+}
+
+// IMPORTDXF / EXPORTDXF ask for a file name; the dialog supplies it as the answer to that prompt.
+void Gui::dxfCommandWithPath(const char* command, const std::filesystem::path& path) {
+    core_.submitText(command);
+    core_.submitText(platform::pathToUtf8(path));
+}
+
+void Gui::doImportDxf() {
+    static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
+    if (platform::nativeDialogsAvailable()) {
+        if (auto p = platform::showOpenDialog(nativeHandle(), filters, "Import DXF"))
+            dxfCommandWithPath("IMPORTDXF", *p);
+        return;
+    }
+    std::filesystem::path start =
+        core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
+    browserPurpose_ = BrowserPurpose::ImportDxf;
+    browser_.open(FileBrowser::Mode::Open, start, "", ".dxf");
+}
+
+void Gui::doExportDxf() {
+    static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
+    std::filesystem::path stem = core_.hasFile() ? core_.file() : std::filesystem::path{"Drawing1"};
+    stem.replace_extension(".dxf");
+    std::string suggested = stem.filename().string();
+    if (platform::nativeDialogsAvailable()) {
+        if (auto p =
+                platform::showSaveDialog(nativeHandle(), filters, "Export DXF", "dxf", suggested))
+            dxfCommandWithPath("EXPORTDXF", *p);
+        return;
+    }
+    std::filesystem::path start =
+        core_.hasFile() ? core_.file().parent_path() : std::filesystem::path{};
+    browserPurpose_ = BrowserPurpose::ExportDxf;
+    browser_.open(FileBrowser::Mode::Save, start, suggested, ".dxf");
 }
 
 void Gui::doOpenPath(const std::string& path) {
@@ -329,7 +380,7 @@ void Gui::doOpenPath(const std::string& path) {
 }
 
 void Gui::doSave() {
-    if (!core_.hasFile()) {
+    if (!core_.hasFile() || core_.readOnlyOrigin()) {
         doSaveAs();
         return;
     }
@@ -352,6 +403,10 @@ void Gui::doSaveAs() {
             ext = "tbcad";
     }
     std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1." + ext;
+    if (core_.readOnlyOrigin()) {  // never suggest the original (read-only) name
+        ext = "tbcad";
+        suggested = core_.file().stem().string() + ".tbcad";
+    }
     if (platform::nativeDialogsAvailable()) {
         if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
                                               "Save drawing as", ext, suggested)) {
@@ -411,8 +466,10 @@ void Gui::shortcuts() {
         if (!ic)
             continue;
         // While a text field has the keyboard only chords with Ctrl/Alt, Escape and F-keys work.
+        // Delete erases the selection unless the command line holds text being edited.
+        const bool deleteOnEmptyLine = chord->key == "DELETE" && input_.empty();
         if (io.WantTextInput && !chord->ctrl && !chord->alt && chord->key != "ESCAPE" &&
-            chord->key[0] != 'F')
+            chord->key[0] != 'F' && !deleteOnEmptyLine)
             continue;
         if (ImGui::IsKeyChordPressed(*ic)) {
             if (chord->key == "ESCAPE" && suggestVisible_) {
@@ -492,6 +549,11 @@ void Gui::menuBar() {
             runAction("file.save");
         if (ImGui::MenuItem("Save As...", keys.label("file.saveAs").c_str()))
             runAction("file.saveAs");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Import DXF..."))
+            doImportDxf();
+        if (ImGui::MenuItem("Export DXF..."))
+            doExportDxf();
         registeredMenu("File");
         ImGui::Separator();
         if (ImGui::MenuItem("Exit"))
@@ -510,6 +572,9 @@ void Gui::menuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Select All", keys.label("edit.selectAll").c_str()))
             core_.selectAll();
+        if (ImGui::MenuItem("Delete", keys.label("edit.delete").c_str(), false,
+                            !core_.selection().empty()))
+            runAction("edit.delete");
         if (ImGui::MenuItem("Deselect", keys.label("edit.deselect").c_str(), false,
                             !core_.selection().empty()))
             core_.clearSelection();
@@ -581,35 +646,123 @@ void Gui::menuBar() {
 }
 
 void Gui::toolStrip() {
+    struct Tool {
+        Icon icon;
+        const char* tip;
+        const char* action;   // built-in action id, or nullptr
+        const char* command;  // command line to run, or nullptr
+    };
+    struct Group {
+        const char* name;
+        std::vector<Tool> tools;
+    };
+    static const std::vector<Group> groups = {
+        {"File",
+         {{Icon::New, "New (Ctrl+N)", "file.new", nullptr},
+          {Icon::Open, "Open (Ctrl+O)", "file.open", nullptr},
+          {Icon::Save, "Save (Ctrl+S)", "file.save", nullptr}}},
+        {"Edit",
+         {{Icon::Undo, "Undo", "edit.undo", nullptr}, {Icon::Redo, "Redo", "edit.redo", nullptr}}},
+        {"Draw",
+         {{Icon::Line, "Line", nullptr, "LINE"},
+          {Icon::Polyline, "Polyline", nullptr, "POLYLINE"},
+          {Icon::Circle, "Circle", nullptr, "CIRCLE"},
+          {Icon::Arc, "Arc", nullptr, "ARC"},
+          {Icon::Rectangle, "Rectangle", nullptr, "RECTANGLE"},
+          {Icon::Hatch, "Hatch", nullptr, "HATCH"},
+          {Icon::Text, "Text", nullptr, "TEXT"}}},
+        {"Modify",
+         {{Icon::Move, "Move", nullptr, "MOVE"},
+          {Icon::Copy, "Copy", nullptr, "COPY"},
+          {Icon::Rotate, "Rotate", nullptr, "ROTATE"},
+          {Icon::Scale, "Scale", nullptr, "SCALE"},
+          {Icon::Mirror, "Mirror", nullptr, "MIRROR"},
+          {Icon::Stretch, "Stretch", nullptr, "STRETCH"},
+          {Icon::Trim, "Trim", nullptr, "TRIM"},
+          {Icon::Offset, "Offset", nullptr, "OFFSET"},
+          {Icon::Fillet, "Fillet", nullptr, "FILLET"},
+          {Icon::Erase, "Erase", nullptr, "ERASE"}}},
+        {"View", {{Icon::ZoomExtents, "Zoom Extents", "view.zoomExtents", nullptr}}}};
+
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking;
-    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 1.2f;
+    const float iconSize = std::round(
+        26.0f * dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
+    const float h = iconSize + ImGui::GetStyle().WindowPadding.y * 2.0f;
     if (ImGui::BeginViewportSideBar("##toolstrip", vp, ImGuiDir_Up, h, flags)) {
-        auto button = [&](const char* label, bool enabled = true) {
-            ImGui::BeginDisabled(!enabled);
-            bool pressed = ImGui::Button(label);
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            return pressed;
-        };
-        if (button("New"))
-            runAction("file.new");
-        if (button("Open"))
-            runAction("file.open");
-        if (button("Save"))
-            runAction("file.save");
-        ImGui::TextDisabled("|");
+        bool first = true;
+        for (const Group& group : groups) {
+            const std::string key = std::string("ui.toolgroup.") + group.name;
+            if (!core_.settings().getBool(key, true))
+                continue;
+            bool any = false;
+            for (const Tool& t : group.tools)
+                any = any || t.action || core_.registry().find(t.command);
+            if (!any)
+                continue;
+            if (!first) {
+                ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
+                const ImVec2 p = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddLine(
+                    ImVec2(p.x - ImGui::GetStyle().ItemSpacing.x, p.y + 3),
+                    ImVec2(p.x - ImGui::GetStyle().ItemSpacing.x, p.y + iconSize - 3),
+                    ImGui::GetColorU32(ImGuiCol_Separator));
+            }
+            first = false;
+            bool firstInGroup = true;
+            for (const Tool& t : group.tools) {
+                if (t.command && !core_.registry().find(t.command))
+                    continue;
+                if (!firstInGroup)
+                    ImGui::SameLine(0, 2);
+                firstInGroup = false;
+                bool enabled = true;
+                if (t.action && std::string(t.action) == "edit.undo")
+                    enabled = !core_.undoLabel().empty();
+                if (t.action && std::string(t.action) == "edit.redo")
+                    enabled = !core_.redoLabel().empty();
+                ImGui::PushID(t.tip);
+                if (iconButton("##tool", t.icon, iconSize, enabled)) {
+                    if (t.action)
+                        runAction(t.action);
+                    else
+                        core_.submitText(t.command);
+                }
+                ImGui::PopID();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort |
+                                         ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("%s", t.tip);
+            }
+        }
+        // Right-click the strip to show or hide a group.
+        if (ImGui::BeginPopupContextWindow("##toolstripMenu")) {
+            for (const Group& group : groups) {
+                const std::string key = std::string("ui.toolgroup.") + group.name;
+                bool shown = core_.settings().getBool(key, true);
+                if (ImGui::MenuItem(group.name, nullptr, &shown))
+                    core_.settings().setBool(key, shown);
+            }
+            ImGui::EndPopup();
+        }
+    }
+    ImGui::End();
+}
+
+void Gui::readOnlyBanner() {
+    const std::string text = core_.readOnlyBanner();
+    if (text.empty())
+        return;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    if (ImGui::BeginViewportSideBar("##readonlybanner", vp, ImGuiDir_Up, h, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text.c_str());
         ImGui::SameLine();
-        if (button("Undo", !core_.undoLabel().empty()))
-            core_.undo();
-        if (button("Redo", !core_.redoLabel().empty()))
-            core_.redo();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
-        if (button("Zoom Extents"))
-            core_.zoomExtents();
-        ImGui::NewLine();
+        if (ImGui::SmallButton("Save As..."))
+            runAction("file.saveAs");
     }
     ImGui::End();
 }
@@ -744,6 +897,8 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
             return 0;
         }
         case ImGuiInputTextFlags_CallbackCompletion: {
+            if (auto* dyn = registry_.cursorFields(); dyn && core_.promptInfo() && dyn->focusNext())
+                return 0;  // dynamic input: Tab goes to the first field
             if (suggestVisible_ && !suggestions_.empty()) {
                 const auto& pick = suggestions_[static_cast<std::size_t>(
                     std::clamp(suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))];
@@ -769,6 +924,83 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         default:
             return 0;
     }
+}
+
+// Dynamic input: the distance and angle (or X and Y) of the point under the cursor. Tab moves the
+// keyboard through the fields; a value typed into one locks it, Enter in the last unlocked field
+// places the point.
+void Gui::dynamicFields(const cmd::FilterFeedback& fb) {
+    cmd::CursorFieldProvider* dyn = registry_.cursorFields();
+    if (!dyn)
+        return;
+    const std::vector<cmd::CursorField> fields = dyn->fields(fb);
+    if (fields.empty()) {
+        dynFocus_ = -1;
+        return;
+    }
+    const int focus = dyn->focused();
+    if (focus != dynFocus_) {
+        // Tab away from a field keeps what was typed in it.
+        if (dynFocus_ >= 0 && dynFocus_ < static_cast<int>(fields.size()) &&
+            dynBuf_ != fields[static_cast<std::size_t>(dynFocus_)].text)
+            dyn->edit(static_cast<std::size_t>(dynFocus_), dynBuf_);
+        dynFocus_ = focus;
+        if (focus >= 0 && focus < static_cast<int>(fields.size())) {
+            dynBuf_ = fields[static_cast<std::size_t>(focus)].text;
+            dynFocusPending_ = true;
+        }
+    }
+    const Rgba snap = theme_.snap;
+    const ImVec4 accent(snap.r / 255.0f, snap.g / 255.0f, snap.b / 255.0f, 1.0f);
+    ImGui::PushID("dynfields");
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        if (i)
+            ImGui::SameLine();
+        const cmd::CursorField& f = fields[i];
+        if (static_cast<int>(i) == focus) {
+            ImGui::TextUnformatted(f.label.c_str());
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(72.0f * dpiScale_);
+            if (dynFocusPending_) {
+                ImGui::SetKeyboardFocusHere();
+                dynFocusPending_ = false;
+            }
+            bool tab = false;
+            auto callback = [](ImGuiInputTextCallbackData* d) {
+                if (d->EventFlag == ImGuiInputTextFlags_CallbackCompletion)
+                    *static_cast<bool*>(d->UserData) = true;
+                return 0;
+            };
+            const ImGuiInputTextFlags flags = ImGuiInputTextFlags_EnterReturnsTrue |
+                                              ImGuiInputTextFlags_AutoSelectAll |
+                                              ImGuiInputTextFlags_CallbackCompletion;
+            if (ImGui::InputText("##field", &dynBuf_, flags, callback, &tab)) {
+                if (!dyn->edit(i, dynBuf_)) {
+                    core_.print("That value cannot be used here.");
+                } else if (auto p = dyn->lockedPoint(fb)) {
+                    // Every field is fixed: Enter places the point.
+                    ui::PointerState ps;
+                    ps.screen = core_.camera().worldToScreen(*p);
+                    dyn->focus(-1);
+                    core_.click(ps);
+                    refocusInput_ = true;
+                } else {
+                    dyn->focusNext();  // on to the next field
+                }
+            } else if (tab) {
+                if (dynBuf_ != f.text)
+                    dyn->edit(i, dynBuf_);
+                dyn->focusNext();
+            }
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                  f.locked ? accent : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+            const std::string shown = f.label + " " + f.text + (f.locked ? " *" : "");
+            ImGui::TextUnformatted(shown.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::PopID();
 }
 
 void Gui::logWindow() {
@@ -995,6 +1227,9 @@ void Gui::cursorHud(const ViewportRect& rect) {
     if (!cursorHud_ || !info) {
         hudAnchor_ = ImVec2(-1e6f, -1e6f);
         hudHovered_ = false;
+        if (auto* dyn = registry_.cursorFields())
+            dyn->reset();  // the point prompt is over: forget typed field values
+        dynFocus_ = -1;
         return;
     }
     ImGuiIO& io = ImGui::GetIO();
@@ -1014,7 +1249,9 @@ void Gui::cursorHud(const ViewportRect& rect) {
                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                           ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
                           ImGuiWindowFlags_NoMove;
-    if (!options)
+    const auto* dynProvider = registry_.cursorFields();
+    const bool editingField = dynProvider && dynProvider->focused() >= 0;
+    if (!options && !editingField)
         wf |= ImGuiWindowFlags_NoInputs;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 5));
     if (ImGui::Begin("##hud", nullptr, wf)) {
@@ -1032,6 +1269,7 @@ void Gui::cursorHud(const ViewportRect& rect) {
             ImGui::TextUnformatted(fb.tooltip.c_str());
             ImGui::PopStyleColor();
         }
+        dynamicFields(fb);
         if (options) {
             ImGui::PushID("hudchips");
             for (std::size_t i = 0; i < info->keywords.size(); ++i) {
@@ -1290,12 +1528,70 @@ void Gui::viewportInput(const ViewportRect& rect) {
         }
     }
 
+    // Right button: context menu, or Enter for users who set ui.rightClick = enter.
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        if (core_.settings().getString("ui.rightClick", "menu") == "enter")
+            core_.submitText("");
+        else
+            ImGui::OpenPopup("##viewportMenu");
+    }
+    viewportMenu();
+
     if (hovered || leftDown_ || panning_)
         core_.pointerMoved(ps);
     else
         core_.pointerLeft();
     if (hovered)
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+}
+
+// What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
+// options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
+void Gui::viewportMenu() {
+    if (!ImGui::BeginPopup("##viewportMenu"))
+        return;
+    anyActivity_ = true;
+    auto run = [&](const std::string& line) { core_.submitText(line); };
+    if (core_.runner().active()) {
+        if (ImGui::MenuItem("Enter"))
+            run("");
+        if (ImGui::MenuItem("Cancel"))
+            core_.pressEscape();
+        if (const auto* prompt = core_.runner().prompt(); prompt && !prompt->keywords.empty()) {
+            ImGui::Separator();
+            for (const std::string& k : prompt->keywords)
+                if (ImGui::MenuItem(k.c_str()))
+                    run(k);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Zoom Extents"))
+            core_.zoomExtents();
+    } else {
+        const std::string last(core_.runner().lastCommand());
+        if (!last.empty() && ImGui::MenuItem(("Repeat " + last).c_str()))
+            run("");
+        if (!core_.selection().empty()) {
+            ImGui::Separator();
+            for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
+                if (core_.registry().find(c) && ImGui::MenuItem(c))
+                    run(c);
+            if (ImGui::MenuItem("Deselect All"))
+                core_.clearSelection();
+        } else if (ImGui::MenuItem("Select All")) {
+            core_.selectAll();
+        }
+        ImGui::Separator();
+        const std::string undo = core_.undoLabel();
+        const std::string redo = core_.redoLabel();
+        if (ImGui::MenuItem(undo.empty() ? "Undo" : undo.c_str(), nullptr, false, !undo.empty()))
+            core_.undo();
+        if (ImGui::MenuItem(redo.empty() ? "Redo" : redo.c_str(), nullptr, false, !redo.empty()))
+            core_.redo();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Zoom Extents"))
+            core_.zoomExtents();
+    }
+    ImGui::EndPopup();
 }
 
 void Gui::queueDroppedFile(std::string path) {
@@ -1319,6 +1615,7 @@ ViewportRect Gui::frame() {
         menuBar();
         toolStrip();
         docTabs();
+        readOnlyBanner();
         statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -1399,13 +1696,16 @@ void Gui::dialogs() {
     }
     if (ImGui::BeginPopupModal("Recover drawing?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("TBCAD did not close normally last time.");
-        ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
+        if (recoveryCount_ > 1)
+            ImGui::Text("Automatic backups of %zu unsaved drawings were found.", recoveryCount_);
+        else
+            ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
         ImGui::Spacing();
         if (ImGui::Button("Recover", ImVec2(110, 0))) {
             if (recovery_) {
-                auto r = core_.recover(*recovery_);
+                auto r = core_.recoverAll();
                 if (!r)
                     lastError_ = r.error().message;
             }
@@ -1532,6 +1832,10 @@ void Gui::dialogs() {
         if (auto path = browser_.draw()) {
             if (browserPurpose_ == BrowserPurpose::Open) {
                 doOpenPath(platform::pathToUtf8(*path));
+            } else if (browserPurpose_ == BrowserPurpose::ImportDxf) {
+                dxfCommandWithPath("IMPORTDXF", *path);
+            } else if (browserPurpose_ == BrowserPurpose::ExportDxf) {
+                dxfCommandWithPath("EXPORTDXF", *path);
             } else {
                 auto r = core_.saveAs(*path);
                 if (!r)

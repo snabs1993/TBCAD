@@ -182,7 +182,9 @@ public:
         if (!t.ok())
             co_return;
         d.utf8 = t.text;
-        auto id = ctx.tx().add(Entity{{}, std::move(d)});
+        Entity created{{}, std::move(d)};
+        applyCurrentProperties(ctx.doc().header(), created);
+        auto id = ctx.tx().add(std::move(created));
         if (!id)
             ctx.message(id.error().message);
     }
@@ -356,7 +358,9 @@ public:
         for (const Attach& a : kAttach)
             if (a.a == st.attach)
                 ctx.host().setSetting(kAttachKey, a.name);
-        auto id = ctx.tx().add(Entity{{}, std::move(d)});
+        Entity created{{}, std::move(d)};
+        applyCurrentProperties(ctx.doc().header(), created);
+        auto id = ctx.tx().add(std::move(created));
         if (!id)
             ctx.message(id.error().message);
     }

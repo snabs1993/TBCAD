@@ -223,7 +223,7 @@ public:
     std::string_view name() const override { return "DIMSTYLE"; }
     std::vector<std::string> defaultAliases() const override { return {"D"}; }
     std::string_view description() const override {
-        return "Create, select, edit or delete dimension styles";
+        return "Create, select, rename, edit or delete dimension styles";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -232,7 +232,7 @@ public:
         ctx.setUndoLabel("Dimension style");
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Current", "New", "Delete", "Edit", "List", "Done"};
+            ko.keywords = {"Current", "New", "Rename", "Delete", "Edit", "List", "Done"};
             ko.defaultKeyword = "Done";
             auto k = co_await ctx.getKeyword("Dimension style option", ko);
             if (!k.ok() || k.keyword == "Done")
@@ -269,14 +269,42 @@ public:
                 else
                     check(ctx, ctx.tx().modifyHeader(
                                    [i = id.value()](Header& h) { h.currentDimStyle = i; }));
+            } else if (k.keyword == "Rename") {
+                const DimStyle* s = ctx.doc().dimStyleByName(name);
+                if (!s) {
+                    ctx.message("No dimension style named \"" + name + "\".");
+                    continue;
+                }
+                if (s->id == kDimStyleStandard) {
+                    ctx.message("The Standard style cannot be renamed.");
+                    continue;
+                }
+                const DimStyleId id = s->id;
+                cmd::StringOptions no;
+                auto nn = co_await ctx.getString("New name", no);
+                if (!nn.ok())
+                    continue;
+                const std::string to = cmd::trim(nn.text);
+                if (to.empty() || ctx.doc().dimStyleByName(to)) {
+                    ctx.message("That name is empty or already used.");
+                    continue;
+                }
+                check(ctx, ctx.tx().modifyDimStyle(id, [&](DimStyle& row) { row.name = to; }));
             } else if (k.keyword == "Delete") {
                 const DimStyle* s = ctx.doc().dimStyleByName(name);
                 if (!s)
                     ctx.message("No dimension style named \"" + name + "\".");
                 else if (s->id == ctx.doc().header().currentDimStyle)
                     ctx.message("The current style cannot be deleted; make another one current.");
-                else
-                    check(ctx, ctx.tx().eraseDimStyle(s->id));
+                else if (s->id == kDimStyleStandard)
+                    ctx.message("The Standard style cannot be deleted.");
+                else {
+                    auto r = ctx.tx().eraseDimStyle(s->id);
+                    if (!r)
+                        ctx.message(r.error().code == ErrorCode::Conflict
+                                        ? "Dimensions or leaders still use \"" + name + "\"."
+                                        : r.error().message);
+                }
             } else if (k.keyword == "Edit") {
                 const DimStyle* s = ctx.doc().dimStyleByName(name);
                 if (!s) {
@@ -323,7 +351,21 @@ private:
     }
 };
 
+class DimStylesPanelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMSTYLES"; }
+    std::string_view description() const override { return "Open the dimension style manager"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("dimstyles");
+        co_return;
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeDimStylesPanelCommand() {
+    return std::make_unique<DimStylesPanelCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand() {
     return std::make_unique<DimStyleCommand>();

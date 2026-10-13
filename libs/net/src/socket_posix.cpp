@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -9,9 +10,9 @@
 #include <cerrno>
 #include <cstring>
 
-#include "socket.h"
+#include "tbcad/net/socket.h"
 
-namespace tbcad::mcp::net {
+namespace tbcad::net {
 
 bool initialize() {
     return true;
@@ -29,7 +30,7 @@ int waitFor(int fd, short events, int timeoutMs) {
     }
 }
 
-Handle bindLoopback(int port, int& boundPort, std::string& error) {
+Handle bindTcp(const std::string& bindAddress, int port, int& boundPort, std::string& error) {
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         error = std::strerror(errno);
@@ -39,7 +40,13 @@ Handle bindLoopback(int port, int& boundPort, std::string& error) {
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (bindAddress.empty()) {
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (::inet_pton(AF_INET, bindAddress.c_str(), &addr.sin_addr) != 1) {
+        error = "not an IPv4 address: " + bindAddress;
+        ::close(fd);
+        return kInvalid;
+    }
     addr.sin_port = htons(static_cast<std::uint16_t>(port));
     if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0 || ::listen(fd, 16) != 0) {
         error = std::strerror(errno);
@@ -54,11 +61,16 @@ Handle bindLoopback(int port, int& boundPort, std::string& error) {
 
 }  // namespace
 
-Handle listenLoopback(int port, bool fallbackToAny, int& boundPort, std::string& error) {
-    Handle h = bindLoopback(port, boundPort, error);
+Handle listenTcp(const std::string& bindAddress, int port, bool fallbackToAny, int& boundPort,
+                 std::string& error) {
+    Handle h = bindTcp(bindAddress, port, boundPort, error);
     if (h == kInvalid && fallbackToAny && port != 0)
-        h = bindLoopback(0, boundPort, error);
+        h = bindTcp(bindAddress, 0, boundPort, error);
     return h;
+}
+
+Handle listenLoopback(int port, bool fallbackToAny, int& boundPort, std::string& error) {
+    return listenTcp("127.0.0.1", port, fallbackToAny, boundPort, error);
 }
 
 Handle acceptWithTimeout(Handle listener, int timeoutMs) {
@@ -72,17 +84,15 @@ Handle acceptWithTimeout(Handle listener, int timeoutMs) {
     return fd;
 }
 
-Handle connectLoopback(int port, int timeoutMs) {
+namespace {
+
+Handle connectAddr(const sockaddr_in& addr, int timeoutMs) {
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
         return kInvalid;
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(static_cast<std::uint16_t>(port));
     int flags = ::fcntl(fd, F_GETFL, 0);
     ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    int r = ::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr);
+    int r = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof addr);
     if (r != 0 && errno != EINPROGRESS) {
         ::close(fd);
         return kInvalid;
@@ -104,6 +114,33 @@ Handle connectLoopback(int port, int timeoutMs) {
     int one = 1;
     ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
     return fd;
+}
+
+}  // namespace
+
+Handle connectTcp(const std::string& host, int port, int timeoutMs) {
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    if (::getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res)
+        return kInvalid;
+    Handle h = kInvalid;
+    for (addrinfo* a = res; a && h == kInvalid; a = a->ai_next) {
+        sockaddr_in addr = *reinterpret_cast<const sockaddr_in*>(a->ai_addr);
+        addr.sin_port = htons(static_cast<std::uint16_t>(port));
+        h = connectAddr(addr, timeoutMs);
+    }
+    ::freeaddrinfo(res);
+    return h;
+}
+
+Handle connectLoopback(int port, int timeoutMs) {
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<std::uint16_t>(port));
+    return connectAddr(addr, timeoutMs);
 }
 
 long receive(Handle s, void* buffer, std::size_t size, int timeoutMs) {
@@ -162,4 +199,4 @@ long currentProcessId() {
     return static_cast<long>(::getpid());
 }
 
-}  // namespace tbcad::mcp::net
+}  // namespace tbcad::net

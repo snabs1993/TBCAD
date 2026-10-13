@@ -746,6 +746,9 @@ void Importer::processBlocks(RecordReader& rr) {
             // are kept only when the caller asks for the graphics.
             if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
                 skipBlock_ = true;
+            // Table graphics (*T<n>) are regenerated from the table kept in extended data.
+            if (f.size() > 2 && f[0] == '*' && f[1] == 't')
+                skipBlock_ = true;
             if (!skipBlock_) {
                 BlockId id = blockFor(rawName);
                 if (!id) {

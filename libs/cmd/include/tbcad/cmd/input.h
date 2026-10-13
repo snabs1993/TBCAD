@@ -176,6 +176,7 @@ struct Input {
 struct PointQuery {
     std::optional<Vec2> base{};  // current rubber-band origin, if any
     bool click = false;          // true when the point is being committed, false while hovering
+    bool shift = false;          // Shift is held: temporary ortho (flips the ORTHO setting)
     double pixelSize = 1;
 };
 
@@ -186,6 +187,38 @@ struct FilterFeedback {
     Vec2 markerPos{};
     std::string tooltip{};
     std::optional<std::pair<Vec2, Vec2>> guide{};  // tracking line
+    // Set by the runner for every point prompt: the base point and the point the filters settled
+    // on (what the preview and a click would use). `hasPoint` is false before the first move.
+    bool hasPoint = false;
+    std::optional<Vec2> base{};
+    Vec2 point{};
+};
+
+// One editable field next to the cursor (dynamic input): "Distance 12.5", "Angle 45".
+struct CursorField {
+    std::string label{};
+    std::string text{};
+    bool locked = false;  // the user typed a value; it no longer follows the cursor
+};
+
+// The data behind the cursor fields. The application draws them and routes typing; the module
+// that implements this decides what they mean.
+class CursorFieldProvider {
+public:
+    virtual ~CursorFieldProvider() = default;
+    // Fields for the point prompt that `feedback` describes; empty when there are none.
+    virtual std::vector<CursorField> fields(const FilterFeedback& feedback) const = 0;
+    // Field that has the keyboard (-1 = none).
+    virtual int focused() const = 0;
+    virtual void focus(int index) = 0;
+    // Gives the keyboard to the next field; false when there are no fields to go through.
+    virtual bool focusNext() = 0;
+    // Text typed into a field: a value locks it, empty text unlocks it. False when unreadable.
+    virtual bool edit(std::size_t index, std::string_view text) = 0;
+    // The point the locked values fix completely (all fields locked); nullopt otherwise.
+    virtual std::optional<Vec2> lockedPoint(const FilterFeedback& feedback) const = 0;
+    // The prompt ended: forget locks and focus.
+    virtual void reset() = 0;
 };
 
 class PointFilter {

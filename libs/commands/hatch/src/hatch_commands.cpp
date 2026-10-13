@@ -302,6 +302,7 @@ private:
             g.angle = p.angle;
             entityAs<HatchData>(hatch)->gradient = g;
         }
+        applyCurrentProperties(ctx.doc().header(), hatch);
         auto id = ctx.tx().add(std::move(hatch));
         if (!id) {
             ctx.message(id.error().message);

@@ -64,6 +64,8 @@ const char* kindLabel(EntityKind k) {
             return "Leader";
         case EntityKind::Proxy:
             return "Proxy";
+        case EntityKind::Table:
+            return "Table";
     }
     return "Object";
 }

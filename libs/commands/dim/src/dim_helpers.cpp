@@ -10,7 +10,7 @@
 namespace tbcad::dimcmd {
 
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out) {
-    e.common.layer = ctx.doc().header().currentLayer;
+    applyCurrentProperties(ctx.doc().header(), e);
     geom::DisplayContext dc;
     const double scale = ctx.host().view().scale;
     if (scale > 0)
@@ -27,6 +27,7 @@ Entity dimEntity(const Document& doc, DimensionData d) {
     dim::refresh(doc, d);
     Entity e;
     e.data = Indirect<DimensionData>(std::move(d));
+    applyCurrentProperties(doc.header(), e);
     return e;
 }
 
@@ -130,8 +131,13 @@ double autoRotation(Vec2 p1, Vec2 p2, Vec2 c) {
 }
 
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain) {
+    return leaderOf(doc, std::move(pts), plain, doc.header().currentDimStyle);
+}
+
+LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain,
+                    DimStyleId style) {
     LeaderData l;
-    l.style = doc.header().currentDimStyle;
+    l.style = style;
     l.vertices = std::move(pts);
     l.utf8 = text::markupFromPlain(plain);
     if (l.vertices.size() >= 2) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -82,6 +83,49 @@ struct DimStyle {
     Color textColor = Color::byBlock();
 };
 
+// ---- Dynamic blocks --------------------------------------------------------------------------
+// A block can carry parameters and actions. Each Insert stores one value per parameter
+// (InsertData::dynValues); the block's entities are the default state and the actions turn them
+// into the state the values ask for. All coordinates are in block space.
+struct DynParam {
+    enum class Kind : std::uint8_t {
+        Linear,      // value = distance from `base` along base->end (default: their distance)
+        Rotation,    // value = angle (radians) about `base`; `end` is the handle at angle 0
+        Flip,        // value 0 or 1; `base`->`end` is the mirror axis
+        Visibility,  // value = index into `states`
+    };
+    Kind kind = Kind::Linear;
+    std::string name{};
+    Vec2 base{};
+    Vec2 end{1, 0};
+    // Linear and rotation limits; used when max > min.
+    double min = 0;
+    double max = 0;
+    // Visibility: state names, and for each the objects shown in it. Objects named by no state are
+    // always shown.
+    std::vector<std::string> states{};
+    std::vector<std::vector<EntityId>> stateObjects{};
+};
+
+struct DynAction {
+    enum class Kind : std::uint8_t {
+        Stretch,  // linear: points of `objects` inside the frame move by the change in distance
+        Move,     // linear: `objects` move along the parameter's direction
+        Scale,    // linear: `objects` scale about `base` by value / default
+        Rotate,   // rotation: `objects` turn about the parameter's base
+        Flip,     // flip: `objects` are mirrored in the axis when the value is 1
+    };
+    Kind kind = Kind::Move;
+    int param = 0;  // index into DynamicDef::params
+    std::vector<EntityId> objects{};
+    Vec2 frameMin{}, frameMax{};  // Stretch only
+};
+
+struct DynamicDef {
+    std::vector<DynParam> params{};
+    std::vector<DynAction> actions{};
+};
+
 struct BlockDef {
     BlockId id{};
     std::string name{};
@@ -94,6 +138,7 @@ struct BlockDef {
     // last-write time (nanoseconds since the Unix epoch) when the snapshot was taken.
     std::string xrefPath{};
     std::int64_t xrefStamp = 0;
+    std::optional<DynamicDef> dynamic{};
 };
 
 }  // namespace tbcad

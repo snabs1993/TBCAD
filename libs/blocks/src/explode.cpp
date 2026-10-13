@@ -8,6 +8,7 @@
 #include "internal.h"
 #include "tbcad/blocks/array.h"
 #include "tbcad/blocks/attributes.h"
+#include "tbcad/blocks/dynamic.h"
 
 namespace tbcad::blocks {
 
@@ -46,7 +47,7 @@ bool hasCurveOrPoint(EntityKind k) {
 
 bool needsUniformScale(EntityKind k) {
     return k == EntityKind::Text || k == EntityKind::MText || k == EntityKind::Dimension ||
-           k == EntityKind::Leader;
+           k == EntityKind::Leader || k == EntityKind::Table;
 }
 
 // Rotation-and-uniform-scale approximation of t (a mirror is kept), with the same translation as
@@ -77,9 +78,9 @@ void Flatten::contents(const Entity& insert, const Transform2& outer, int depth)
     const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
     if (!def)
         return;
-    for (EntityId id : def->entities) {
-        const Entity* child = doc.find(id);
-        if (!child || !child->common.visible)
+    std::vector<Entity> storage;
+    for (const Entity* child : blockItems(doc, *def, ins, storage)) {
+        if (!child->common.visible)
             continue;
         if (const auto* t = entityAs<TextData>(*child); t && t->attdef) {
             // An attribute turns into plain text holding this insert's value.
@@ -145,7 +146,7 @@ namespace {
 
 struct HookTable {
     std::mutex mutex;
-    std::array<ExplodeFn, 14> fns{};
+    std::array<ExplodeFn, static_cast<std::size_t>(EntityKind::Table) + 1> fns{};
 };
 
 HookTable& hooks() {

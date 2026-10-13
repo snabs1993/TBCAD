@@ -3,7 +3,9 @@ tbcad_add_library(dim_commands
     src/dim_commands.cpp
     src/dim_helpers.cpp
     src/smart_commands.cpp
+    src/chain_commands.cpp
     src/dimstyle_command.cpp
+    src/mleader_style.cpp
   DEPENDS tbcad::cmd tbcad::dim tbcad::blocks tbcad::geom tbcad::text)
 
 if(TBCAD_BUILD_APP)
@@ -18,4 +20,6 @@ tbcad_add_tests(dim_commands
     tests/dim_command_tests.cpp
     tests/dimstyle_command_tests.cpp
     tests/smart_command_tests.cpp
+    tests/chain_command_tests.cpp
+    tests/mleader_style_tests.cpp
   DEPENDS tbcad::cmd)

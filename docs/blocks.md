@@ -78,6 +78,40 @@ DXF has no associative array: export writes one INSERT per item (with its ATTRIB
 (unequal X and Y scale) whose items turn is written with the nearest placement and a note in the export
 report. In `.tbcad` the array is a trailing field of the Insert record (format 1.3).
 
+## Dynamic blocks
+
+A block can carry parameters and actions (`BlockDef::dynamic`, `DynamicDef`); each Insert keeps one
+value per parameter in `InsertData::dynValues` (missing or out-of-range values fall back to the
+default or the nearest limit). The block's entities are the default state. All coordinates are in
+block space.
+
+| Parameter | Value | Handle |
+| --- | --- | --- |
+| Linear | distance from `base` along `base`->`end` (default: their distance), optional min / max | on the line at the value |
+| Rotation | angle in radians about `base`, `end` is the handle at angle 0 | on the circle at the angle |
+| Flip | 0 or 1, `base`->`end` is the mirror line | none (use DYNSET) |
+| Visibility | index of a named state; each state lists the objects it shows (objects in no state are always shown) | none (use DYNSET) |
+
+| Action | Parameter | Effect |
+| --- | --- | --- |
+| Stretch | linear | points of the objects inside the stretch frame move by (value - default) along the line; a circle, text or insert moves whole when its reference point is inside |
+| Move | linear | the objects move by (value - default) along the line |
+| Scale | linear | the objects scale about `base` by value / default |
+| Rotate | rotation | the objects turn about `base` |
+| Flip | flip | the objects are mirrored in the line when the value is 1 |
+
+`blocks::evaluateDynamic` gives the entities for a set of values and `blocks::blockItems` is what
+display, bounds, snap and explode iterate, so a dynamic Insert is drawn, measured, snapped to and
+exploded in its own state. Dynamic Inserts are not cached across inserts. `dynHandles` / `dynDrag` /
+`dynSet` provide the grips: the Insert's grips include one per linear or rotation parameter (grip
+index `kDynGripBase` + parameter), and stretching it with GRIPEDIT changes the value.
+
+Authoring is by command, with points in block coordinates and objects chosen by window (the block
+objects that lie completely inside it): `BPARAM` adds a parameter, `BACTION` adds an action driven by
+a parameter, `DYNSET` sets a value on an Insert. DXF has no dynamic blocks: export writes the
+current state of each dynamic Insert as plain objects. In `.tbcad` the definitions are the `DYNB`
+chunk and the values a trailing Insert section (format 1.4).
+
 ## Commands
 
 | Command | Alias | Flow |
@@ -87,6 +121,9 @@ report. In `.tbcad` the array is a trailing field of the Insert record (format 1
 | `EXPLODE` | `X` | objects (selected inserts and polylines), one level. |
 | `ARRAY` | `AR` | objects, `Rectangular` (rows, columns, column distance, row distance, angle), `Polar` (centre, count, angle to fill, rotate items) or `Path` (path curve, base point, count or distance, align), with preview, then `Associative [Yes/No]` (default Yes; a path array is always associative). |
 | `ARRAYRECT` / `ARRAYPOLAR` / `ARRAYPATH` | | The same, for one type. |
+| `BPARAM` | | Block name, type (`Linear`, `Rotation`, `Flip`, `Visibility`), parameter name, then its points (and limits, or the states with the window of objects each shows). |
+| `BACTION` | | Block name, parameter, action (`Stretch`/`Move`/`Scale` for linear), the stretch frame (stretch only) and the window of objects it changes. |
+| `DYNSET` | | Pick a dynamic Insert, name a parameter and give its value (distance, angle, `Yes`/`No`, or a state name). |
 | `ARRAYEDIT` | | Pick an associative array and change its rows, columns and spacing (rectangular), or its count and angle or distance (polar, path). One undo step. |
 
 Defaults are 3 x 4 for rectangular arrays (spacing 1.5 x the selection's size) and 6 items over

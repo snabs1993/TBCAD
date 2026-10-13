@@ -11,8 +11,21 @@
 namespace tbcad::dimcmd {
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand();
+std::unique_ptr<cmd::Command> makeDimStylesPanelCommand();
 std::unique_ptr<cmd::Command> makeSmartDimCommand();
 std::unique_ptr<cmd::Command> makeMLeaderCommand();
+std::unique_ptr<cmd::Command> makeMLeaderStyleCommand();
+
+// The multileader style in use: the dimension style that carries its arrow, landing gap and
+// text style, and the default content type ("Text", "Block" or "None").
+struct MLeaderStyle {
+    DimStyleId dim{};
+    std::string content = "Text";
+};
+MLeaderStyle currentMLeaderStyle(const Document& doc);
+std::unique_ptr<cmd::Command> makeContinueCommand();
+std::unique_ptr<cmd::Command> makeBaselineCommand();
+std::unique_ptr<cmd::Command> makeTextEditCommand();
 
 // Shared by the dimension commands (dim_helpers.cpp).
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out);
@@ -27,6 +40,8 @@ bool measurableEnds(const Entity& e, Vec2 pick, Vec2& a, Vec2& b);
 bool circleOf(const Entity& e, Vec2& c, double& r);
 double autoRotation(Vec2 p1, Vec2 p2, Vec2 c);
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain);
+LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain,
+                    DimStyleId style);
 
 // Applies one DIMSTYLE property. `key` is one of propertyKeywords() (matched case-insensitively);
 // `value` is the text the user typed ('_' stands for a space in prefix and suffix). Returns an

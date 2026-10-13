@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <sstream>
 
+#include "tbcad/blocks/attributes.h"
+
 namespace tbcad::layout {
 
 namespace {
@@ -357,47 +359,99 @@ bool frozenInViewport(const Document& doc, const Viewport& vp, LayerId layer) {
     return false;
 }
 
+namespace {
+
+constexpr const char* kTitleBlockName = "TITLEBLOCK";
+constexpr double kBlockW = 120, kBlockH = 40, kRowH = 10, kTextH = 3.5;
+
+// The title block definition: a frame with four rows (project, drawing, scale, and sheet with
+// date) whose values are attributes, so they can be edited with ATTEDIT and read back by tag.
+Result<BlockId> titleBlockDefinition(Transaction& tx) {
+    if (const BlockDef* have = tx.document().blockByName(kTitleBlockName))
+        return have->id;
+    auto block = tx.addBlock(BlockDef{.name = kTitleBlockName});
+    if (!block)
+        return block.error();
+    const BlockId id = block.value();
+    auto add = [&](EntityData d) -> Result<void> {
+        Entity e;
+        e.data = std::move(d);
+        if (auto r = tx.add(std::move(e), id); !r)
+            return r.error();
+        return {};
+    };
+    const Vec2 c[4] = {{0, 0}, {kBlockW, 0}, {kBlockW, kBlockH}, {0, kBlockH}};
+    for (int i = 0; i < 4; ++i)
+        if (auto r = add(LineData{c[i], c[(i + 1) % 4]}); !r)
+            return r.error();
+    for (int row = 1; row < 4; ++row)
+        if (auto r = add(LineData{{0, row * kRowH}, {kBlockW, row * kRowH}}); !r)
+            return r.error();
+    if (auto r = add(LineData{{kBlockW / 2, 0}, {kBlockW / 2, kRowH}}); !r)
+        return r.error();
+    auto text = [&](Vec2 p, const std::string& label, const char* tag = nullptr) -> Result<void> {
+        TextData t;
+        t.position = p;
+        t.alignPoint = p;
+        t.height = kTextH;
+        t.utf8 = label;
+        if (tag) {
+            AttDefInfo def;
+            def.tag = tag;
+            def.prompt = label;
+            t.attdef = std::move(def);
+        }
+        return add(Indirect<TextData>(std::move(t)));
+    };
+    struct Cell {
+        double x, row;
+        const char* label;
+        const char* tag;
+    };
+    // Row 0 is the bottom one.
+    const Cell cells[] = {{0, 0, "Sheet:", "SHEET"},
+                          {kBlockW / 2, 0, "Date:", "DATE"},
+                          {0, 1, "Scale:", "SCALE"},
+                          {0, 2, "Drawing:", "DRAWING"},
+                          {0, 3, "Project:", "PROJECT"}};
+    for (const Cell& cell : cells) {
+        const double y = cell.row * kRowH + 3;
+        if (auto r = text({cell.x + 3, y}, cell.label); !r)
+            return r.error();
+        if (auto r = text({cell.x + 24, y}, cell.tag, cell.tag); !r)
+            return r.error();
+    }
+    return id;
+}
+
+}  // namespace
+
 Result<void> addTitleBlock(Transaction& tx, const std::string& layoutName,
                            const TitleBlockFields& f) {
     auto l = findLayout(tx.document(), layoutName);
     if (!l)
         return err(ErrorCode::NotFound, "No layout named \"" + layoutName + "\"");
-    const double w = l->widthMm, m = 10, bw = 120, bh = 40;
-    const double x1 = w - m, x0 = x1 - bw, y0 = m, y1 = m + bh;
-    auto line = [&](Vec2 a, Vec2 b) {
-        Entity e;
-        e.data = LineData{a, b};
-        return tx.add(std::move(e), l->content);
-    };
-    auto text = [&](Vec2 p, double h, const std::string& s) {
-        TextData t;
-        t.position = p;
-        t.height = h;
-        t.utf8 = s;
-        Entity e;
-        e.data = Indirect<TextData>(std::move(t));
-        return tx.add(std::move(e), l->content);
-    };
-    // Outer frame and four rows.
-    const Vec2 c[4] = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
-    for (int i = 0; i < 4; ++i)
-        if (auto r = line(c[i], c[(i + 1) % 4]); !r)
-            return r.error();
-    for (int row = 1; row < 4; ++row)
-        if (auto r = line({x0, y0 + row * bh / 4}, {x1, y0 + row * bh / 4}); !r)
-            return r.error();
-    const std::pair<const char*, const std::string*> rows[4] = {{"Sheet: ", &f.sheet},
-                                                                {"Scale: ", &f.scale},
-                                                                {"Drawing: ", &f.drawing},
-                                                                {"Project: ", &f.project}};
-    for (int i = 0; i < 4; ++i)
-        if (auto r = text({x0 + 3, y0 + i * bh / 4 + 3}, 3.5,
-                          std::string(rows[i].first) + *rows[i].second);
-            !r)
-            return r.error();
-    if (!f.date.empty())
-        if (auto r = text({x0 + bw / 2, y0 + 3}, 3.5, "Date: " + f.date); !r)
-            return r.error();
+    auto def = titleBlockDefinition(tx);
+    if (!def)
+        return def.error();
+
+    InsertData ins;
+    ins.block = def.value();
+    ins.position = {l->widthMm - 10 - kBlockW, 10};
+    ins.attribs = blocks::defaultAttribs(tx.document(), def.value());
+    const std::pair<const char*, const std::string*> values[] = {{"PROJECT", &f.project},
+                                                                 {"DRAWING", &f.drawing},
+                                                                 {"SCALE", &f.scale},
+                                                                 {"DATE", &f.date},
+                                                                 {"SHEET", &f.sheet}};
+    for (auto& a : ins.attribs)
+        for (const auto& [tag, value] : values)
+            if (a.tag == tag)
+                a.value = *value;
+    Entity e;
+    e.data = Indirect<InsertData>(std::move(ins));
+    if (auto r = tx.add(std::move(e), l->content); !r)
+        return r.error();
     return {};
 }
 

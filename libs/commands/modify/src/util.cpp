@@ -48,6 +48,10 @@ bool isEditable(const Document& doc, const Entity& e) {
     return modify::isCurveEntity(e) && layerAllows(doc, e, true);
 }
 
+bool isModifiable(const Document& doc, const Entity& e) {
+    return layerAllows(doc, e, true);
+}
+
 bool isUsableEdge(const Document& doc, const Entity& e) {
     return modify::isCurveEntity(e) && layerAllows(doc, e, false);
 }
