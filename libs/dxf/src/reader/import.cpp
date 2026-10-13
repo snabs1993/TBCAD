@@ -728,9 +728,9 @@ Result<ImportResult> Importer::run() {
     acadVer_ = hints.acadVer;
     int vnum = versionNumber(acadVer_);
     if (vnum != 0 && vnum < 1009) {
-        return Error{"unsupported DXF version " + acadVer_ + " (" + versionName(acadVer_) +
-                         "); TBCAD reads AC1009 (R12) and later",
-                     0};
+        return makeError(ErrorCode::Unsupported, "unsupported DXF version " + acadVer_ + " (" +
+                                                     versionName(acadVer_) +
+                                                     "); TBCAD reads AC1009 (R12) and later");
     }
     sum_.acadVer = acadVer_;
     sum_.version = versionName(acadVer_);
@@ -783,7 +783,7 @@ Result<ImportResult> Importer::run() {
     if (sum_.unitsName.empty())
         setUnits(0, true);
     if (!sawSection) {
-        return Error{"no SECTION found: this does not look like a DXF file", 0};
+        return makeError(ErrorCode::Parse, "no SECTION found: this does not look like a DXF file");
     }
     createLayers();
     finish();

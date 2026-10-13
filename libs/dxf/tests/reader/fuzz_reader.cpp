@@ -17,7 +17,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if (size > 1 && (data[1] & 1))
         options.dimensionGraphics = false;
     Report report;
-    Result<ImportResult> r = importDxf(bytes, options, report);
+    tbcad::Result<ImportResult> r = importDxf(bytes, options, report);
     if (r.ok())
         (void)r.value().summary.toJson(report);
     return 0;

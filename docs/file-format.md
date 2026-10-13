@@ -1,6 +1,6 @@
 # The .tbcad file format
 
-Format version **1.1** (1.0 files read unchanged; 1.1 adds attribute fields to Text and Insert, below). This document is the specification; the reference implementation is
+Format version **1.2** (1.0 and 1.1 files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 adds the `XRFS` chunk for external references, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
 `libs/io/tools`) prints any file as text.
 
@@ -52,6 +52,7 @@ error, an unknown chunk is kept whatever its flags.
 | `DSTY` | dimension styles | 0..1 |
 | `LAYR` | layers, including the sub-layer tree | 0..1 |
 | `BLKS` | block definitions | 0..1 |
+| `XRFS` | external references of blocks (since 1.2) | 0..1, only when a block is an xref |
 | `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
@@ -113,6 +114,12 @@ then three colours (dim line, extension line, text).
 
 **BLKS** row: `id`, `name`, `f64 x`, `f64 y` (base point), `u8 anonymous`. Which entities belong
 to a block is given by each entity's *owner* field; a block's members are in id order.
+
+**XRFS** row (since 1.2): `varint block` (the id of a `BLKS` row), `string path` (as the user typed
+it; relative paths are resolved against the folder of the drawing), `i64 stamp` (last-write time of
+the source file in nanoseconds since the Unix epoch when the block was last loaded). The block's
+entities are stored as for any block, so a drawing opens and plots without the source file.
+1.0 and 1.1 readers keep the chunk as an unknown chunk and write it back unchanged.
 
 A **colour** is 4 bytes: `u8 kind` (0 ByLayer, 1 ByBlock, 2 Index, 3 Rgb, 4 ByParent), then
 `r g b` (for Index the palette index is in `r`).

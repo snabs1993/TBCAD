@@ -231,7 +231,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     if (!readFile(input, bytes))
         return fail("cannot read " + input, report);
 
-    dxf::Result<dxf::ImportResult> result = dxf::importDxf(bytes, options, report);
+    Result<dxf::ImportResult> result = dxf::importDxf(bytes, options, report);
     if (!result)
         return fail(input + ": " + result.error().message, report);
     dxf::ImportResult& imported = result.value();

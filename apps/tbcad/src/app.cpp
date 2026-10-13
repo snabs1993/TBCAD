@@ -23,19 +23,19 @@ namespace tbcad::app {
 namespace {
 
 void printUsage() {
-    std::puts(
-        "TBCAD " TBCAD_VERSION
-        "\n"
-        "Usage: tbcad [file.tbcad] [options]\n"
-        "  --script \"CMD;CMD\"   run command lines after start\n"
-        "  --frames N           draw N frames, then exit\n"
-        "  --screenshot F.ppm   save the last frame\n"
-        "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
-        "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
-        "  --list-commands F    write every command with its aliases (Markdown) to F (- = stdout)\n"
-        "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
-        "  --mcp                turn the MCP server on (AI access to the drawing)\n"
-        "  --no-vsync           do not wait for the monitor\n");
+    std::puts("TBCAD " TBCAD_VERSION
+              "\n"
+              "Usage: tbcad [file.tbcad] [options]\n"
+              "  --script \"CMD;CMD\"   run command lines after start\n"
+              "  --frames N           draw N frames, then exit\n"
+              "  --screenshot F.ppm   save the last frame\n"
+              "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
+              "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
+              "  --list-commands F    write every command with its aliases (Markdown) to F "
+              "(default: stdout)\n"
+              "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
+              "  --mcp                turn the MCP server on (AI access to the drawing)\n"
+              "  --no-vsync           do not wait for the monitor\n");
 }
 
 void glfwError(int code, const char* description) {
@@ -63,9 +63,11 @@ Options parseOptions(int argc, char** argv) {
             o.gateLines = std::max(1000, std::atoi(next().c_str()));
         else if (a == "--self-test")
             o.selfTest = true;
-        else if (a == "--list-commands")
-            o.listCommands = next();
-        else if (a == "--mcp")
+        else if (a == "--list-commands") {
+            // No file name (or the next argument is another option): print to stdout.
+            const bool hasValue = i + 1 < argc && (argv[i + 1][0] != '-' || argv[i + 1][1] == '\0');
+            o.listCommands = hasValue ? next() : "-";
+        } else if (a == "--mcp")
             o.mcp = true;
         else if (a == "--no-vsync")
             o.vsync = false;
@@ -260,7 +262,7 @@ std::optional<mcp::Image> App::captureView(int maxPx, const BBox2& area) {
 
     captureTarget_.resize(pw, ph);
     captureTarget_.bind();
-    renderer_.setBackground(gui_ ? gui_->theme().bgViewport : ui::darkTheme().bgViewport);
+    renderer_.setBackground(gui_ ? gui_->viewportBackground() : ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->scene());

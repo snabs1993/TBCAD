@@ -86,6 +86,7 @@ public:
         loadDimStyles(tx);
         loadLayers(tx);
         loadBlocks(tx);
+        loadXrefs(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
         loadOrder(tx);
@@ -105,6 +106,7 @@ private:
                 case kDsty:
                 case kLayr:
                 case kBlks:
+                case kXrfs:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
                         bad("duplicate chunk " + fourccName(c.type));
@@ -200,6 +202,22 @@ private:
                 h.ltScale = fval;
             } else if (key == "currentLayer") {
                 id(h.currentLayer);
+            } else if (key == "currentColor") {
+                wantInt();
+                if (ival < 0 || (ival >> 24) > static_cast<std::int64_t>(ColorKind::ByParent) ||
+                    ival >= (std::int64_t{1} << 32))
+                    bad("invalid current colour");
+                h.currentColor.kind = static_cast<ColorKind>(ival >> 24);
+                h.currentColor.r = static_cast<std::uint8_t>(ival >> 16);
+                h.currentColor.g = static_cast<std::uint8_t>(ival >> 8);
+                h.currentColor.b = static_cast<std::uint8_t>(ival);
+            } else if (key == "currentLinetype") {
+                id(h.currentLinetype);
+            } else if (key == "currentLineweight") {
+                wantInt();
+                if (ival < -4 || ival > 32767)
+                    bad("invalid current lineweight");
+                h.currentLineweight.v = static_cast<std::int16_t>(ival);
             } else if (key == "currentTextStyle") {
                 id(h.currentTextStyle);
             } else if (key == "currentDimStyle") {
@@ -444,6 +462,27 @@ private:
                 bad("internal id mismatch");
             ++next;
         });
+    }
+
+    void loadXrefs(Transaction& tx) {
+        const RawChunk* c = find(kXrfs);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(3);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            std::string path = str(r);
+            std::int64_t stamp = r.i64();
+            if (!tx.modifyBlock(b, [&](BlockDef& d) {
+                       d.xrefPath = path;
+                       d.xrefStamp = stamp;
+                   }).ok())
+                bad("external reference names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in XRFS");
     }
 
     void loadEntities(Transaction& tx) {
