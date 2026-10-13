@@ -79,4 +79,19 @@ Result<Entity> splineToPolyline(const Entity& e, double tolerance);
 // Sets the constant width of every segment of a polyline entity.
 Result<EntityEdit> setPolylineWidth(const Entity& e, double width);
 
+// ---- EXTRIM -------------------------------------------------------------------------------------
+
+// Trims `target` at its crossings with the single cutting edge and removes every part that lies on
+// the same side of the edge as `side`. The edge may be a line (taken as infinite), a circle or an
+// arc (taken as the full circle, sides are inside / outside) or a closed polyline. Errors: another
+// kind of edge; the target does not cross the edge. When nothing of the target lies on that side
+// the result is "no change" (an empty edit).
+Result<EntityEdit> extrimEntity(const Entity& target, const Entity& edge, Vec2 side);
+
+// ---- BLEND --------------------------------------------------------------------------------------
+
+// A tangent-continuous spline between the ends of two open curves (line, arc, open polyline or
+// open spline), taking the end of each nearest to its pick point. Properties come from `a`.
+Result<Entity> blendCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB);
+
 }  // namespace tbcad::modify

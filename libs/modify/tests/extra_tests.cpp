@@ -222,3 +222,71 @@ TEST_CASE("polyline conversions") {
     CHECK(near(as<PolylineData>(*w.value().modified).v[1].endWidth, 0.5));
     CHECK_FALSE(setPolylineWidth(line({0, 0}, {1, 1}), 1).ok());
 }
+
+TEST_CASE("extrim removes the part of a line beyond a cutting line") {
+    Entity edge = line({5, -10}, {5, 10});
+    Entity target = line({0, 0}, {10, 0});
+    auto r = extrimEntity(target, edge, {8, 3});
+    REQUIRE(r.ok());
+    REQUIRE(r.value().modified.has_value());
+    const auto& d = as<LineData>(*r.value().modified);
+    CHECK(near(d.a, {0, 0}));
+    CHECK(near(d.b, {5, 0}));
+    CHECK(r.value().added.empty());
+    // Pick on the other side keeps the right half.
+    auto l = extrimEntity(target, edge, {1, 3});
+    REQUIRE(l.ok());
+    CHECK(near(as<LineData>(*l.value().modified).a, {5, 0}));
+}
+
+TEST_CASE("extrim with a circle edge cuts what is inside, keeping both outer ends") {
+    Entity edge = circle({5, 0}, 2);
+    Entity target = line({0, 0}, {10, 0});
+    auto r = extrimEntity(target, edge, {5, 0});  // inside
+    REQUIRE(r.ok());
+    REQUIRE(r.value().modified.has_value());
+    REQUIRE(r.value().added.size() == 1);
+    std::vector<double> xs;
+    for (const Entity* e : {&*r.value().modified, &r.value().added[0]}) {
+        const auto& d = as<LineData>(*e);
+        xs.push_back(std::min(d.a.x, d.b.x));
+        xs.push_back(std::max(d.a.x, d.b.x));
+    }
+    std::sort(xs.begin(), xs.end());
+    CHECK(near(xs[0], 0));
+    CHECK(near(xs[1], 3));
+    CHECK(near(xs[2], 7));
+    CHECK(near(xs[3], 10));
+}
+
+TEST_CASE("extrim reports edges without two sides and misses") {
+    Entity target = line({0, 0}, {10, 0});
+    CHECK_FALSE(extrimEntity(target, poly(pts({{0, 5}, {1, 5}, {2, 6}}), false), {0, 0}).ok());
+    auto none = extrimEntity(target, line({50, -1}, {50, 1}), {60, 0});
+    REQUIRE(none.ok());
+    CHECK_FALSE(none.value().modified.has_value());
+    CHECK_FALSE(none.value().eraseSource);
+    // Everything lies on the picked side: the target disappears.
+    auto gone = extrimEntity(target, line({-5, -1}, {-5, 1}), {5, 0});
+    REQUIRE(gone.ok());
+    CHECK_FALSE(gone.value().eraseSource);  // never crosses the edge
+}
+
+TEST_CASE("blend two lines with a tangent spline") {
+    Entity a = line({0, 0}, {10, 0});
+    Entity b = line({30, 10}, {20, 10});
+    auto r = blendCurves(a, {9, 0}, b, {21, 10});
+    REQUIRE(r.ok());
+    REQUIRE(kind(r.value()) == EntityKind::Spline);
+    std::vector<geom::CurveRef> cs;
+    REQUIRE(geom::curvesOf(r.value(), cs));
+    const auto& c = cs.front();
+    Vec2 s = c.pointAt(c.t0()), e = c.pointAt(c.t0() + c.sweep());
+    CHECK(near(s, {10, 0}, 1e-6));
+    CHECK(near(e, {20, 10}, 1e-6));
+    Vec2 ts = c.tangentAt(c.t0()), te = c.tangentAt(c.t0() + c.sweep());
+    CHECK(near(ts, {1, 0}, 1e-6));
+    CHECK(near(te, {1, 0}, 1e-6));  // arrives travelling along +x, into b's end
+    CHECK_FALSE(blendCurves(a, {9, 0}, line({10, 0}, {12, 3}), {10, 0}).ok());
+    CHECK_FALSE(blendCurves(a, {9, 0}, circle({0, 0}, 1), {1, 0}).ok());
+}
