@@ -263,3 +263,25 @@ TEST_CASE("dynamic blocks: parameter, action, set value on an insert") {
     CHECK(f.fails("set_dynamic_value", "{\"id\":\"" + ins + "\",\"parameter\":\"Zzz\",\"value\":1}")
               .size() > 0);
 }
+
+TEST_CASE("ray, xline, mline and table can be written and read back") {
+    Full f;
+    std::string r = f.add(R"({"kind":"ray","origin":[0,0],"direction":[3,4]})");
+    Json g = f.ok("get_entity", "{\"id\":\"" + r + "\"}");
+    CHECK(g.find("direction")->asArray()[0].asNumber() == doctest::Approx(0.6));
+    CHECK_FALSE(g.find("infinite")->asBool());
+    std::string x = f.add(R"({"kind":"xline","origin":[0,0],"direction":[1,0]})");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + x + "\"}").find("infinite")->asBool());
+    CHECK(
+        f.fails("add_entities", R"({"entities":[{"kind":"ray","origin":[0,0],"direction":[0,0]}]})")
+            .size() > 0);
+    std::string m = f.add(R"({"kind":"mline","vertices":[[0,0],[100,0],[100,50]],"scale":2})");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + m + "\"}").find("vertices")->asArray().size() == 3);
+    std::string t = f.add(R"({"kind":"table","origin":[0,0],"columnWidths":[40,60],
+        "rowHeights":[10,10],"cells":["A","B","C","D"],"titleRow":true})");
+    Json tg = f.ok("get_entity", "{\"id\":\"" + t + "\"}");
+    CHECK(tg.find("cells")->asArray().size() == 4);
+    CHECK(tg.find("columnWidths")->asArray()[1].asNumber() == 60);
+    Json q = f.ok("query_entities", R"({"kinds":["table","ray","mline"]})");
+    CHECK(q.find("entities")->asArray().size() == 4);
+}
