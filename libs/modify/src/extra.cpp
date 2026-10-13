@@ -1068,4 +1068,65 @@ Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b
     return r;
 }
 
+// ---- FIND / replace ----------------------------------------------------------------------------
+
+namespace {
+
+char lowerAscii(char c) {
+    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+}
+
+int replaceAllIn(std::string& text, std::string_view find, std::string_view repl, bool matchCase) {
+    if (find.empty() || text.size() < find.size())
+        return 0;
+    auto same = [&](std::size_t at) {
+        for (std::size_t k = 0; k < find.size(); ++k) {
+            char a = text[at + k], b = find[k];
+            if (matchCase ? a != b : lowerAscii(a) != lowerAscii(b))
+                return false;
+        }
+        return true;
+    };
+    std::string out;
+    int n = 0;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        if (i + find.size() <= text.size() && same(i)) {
+            out += repl;
+            i += find.size();
+            ++n;
+        } else {
+            out += text[i++];
+        }
+    }
+    if (n)
+        text = std::move(out);
+    return n;
+}
+
+}  // namespace
+
+std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
+                                       std::string_view replacement, bool matchCase) {
+    TextReplace r{e, 0};
+    auto edit = [&](std::string& s) { r.count += replaceAllIn(s, find, replacement, matchCase); };
+    if (auto* t = entityAs<TextData>(r.entity))
+        edit(t->utf8);
+    else if (auto* m = entityAs<MTextData>(r.entity))
+        edit(m->utf8);
+    else if (auto* l = entityAs<LeaderData>(r.entity))
+        edit(l->utf8);
+    else if (auto* d = entityAs<DimensionData>(r.entity))
+        edit(d->textOverride);
+    else if (auto* ins = entityAs<InsertData>(r.entity))
+        for (AttribValue& a : ins->attribs)
+            edit(a.value);
+    else if (auto* tb = entityAs<TableData>(r.entity))
+        for (TableCell& c : tb->cells)
+            edit(c.utf8);
+    if (r.count == 0)
+        return std::nullopt;
+    return r;
+}
+
 }  // namespace tbcad::modify

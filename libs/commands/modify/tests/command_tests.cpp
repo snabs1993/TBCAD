@@ -581,3 +581,64 @@ TEST_CASE("DRAWORDER front, back and above/below an object") {
     f.host.undo();
     CHECK(order() == std::vector<EntityId>{b, a, c});
 }
+
+TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in one step") {
+    Fixture f;
+    TextData td;
+    td.utf8 = "Room 1 / room 2";
+    EntityId t = f.add(Indirect<TextData>(td));
+    f.host.run("FIND", {"room", "", "No"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
+    f.host.run("FIND", {"room", "Hall", "No"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1 / Hall 2");
+    f.host.undo();
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
+    f.host.run("FIND", {"room", "Hall", "Yes"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / Hall 2");
+}
+
+TEST_CASE("RENAME renames layers and blocks and refuses clashes") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("setup");
+        Layer a;
+        a.name = "Walls";
+        Layer b;
+        b.name = "Doors";
+        REQUIRE(tx.addLayer(a).ok());
+        REQUIRE(tx.addLayer(b).ok());
+        tx.commit();
+    }
+    f.host.run("RENAME", {"Layer", "Walls", "Partitions"});
+    CHECK(f.doc.layerByName("Partitions") != nullptr);
+    CHECK(f.doc.layerByName("Walls") == nullptr);
+    f.host.run("RENAME", {"Layer", "Partitions", "Doors"});
+    CHECK(f.doc.layerByName("Partitions") != nullptr);
+    f.host.run("RENAME", {"Layer", "0", "Zero"});
+    CHECK(f.doc.layerByName("Zero") == nullptr);
+}
+
+TEST_CASE("COPYTOLAYER copies onto the layer of the picked object") {
+    Fixture f;
+    LayerId target;
+    {
+        Transaction tx = f.doc.begin("setup");
+        Layer l;
+        l.name = "Target";
+        target = tx.addLayer(l).value();
+        tx.commit();
+    }
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    Entity e;
+    e.data = LineData{{0, 5}, {10, 5}};
+    e.common.layer = target;
+    EntityId b;
+    {
+        Transaction tx = f.doc.begin("setup");
+        b = tx.add(e).value();
+        tx.commit();
+    }
+    f.host.run("COPYTOLAYER", {ScriptItem::select({a}), ScriptItem::enter(), ScriptItem::pick(b)});
+    CHECK(f.count(EntityKind::Line) == 3);
+    CHECK(f.get(a).common.layer != target);
+}

@@ -127,3 +127,9 @@ ALIGN, MATCHPROP, SETBYLAYER and SCALETEXT accept every entity kind on an editab
 | `PEDIT` > Vertices | | Insert (splits a straight or arc segment), Remove (neighbours joined by a straight segment) and Move a vertex. Per-vertex widths are not preserved when inserting. |
 
 The menu now lists the new commands under Modify (Draw for DIVIDE and MEASURE).
+
+## FIND, RENAME, COPYTOLAYER (Q75m)
+
+- **FIND** (Ctrl+F): asks for the text, the replacement (Enter = only count) and Match case. Searches model-space text, mtext, leader notes, dimension text overrides, block attribute values and table cells. One undo step. Objects on locked, off or frozen layers are counted but not changed.
+- **RENAME** (REN): Layer, Block, TextStyle or DimStyle, old name, new name. Refuses clashes and layer 0.
+- **COPYTOLAYER**: select objects, pick an object on the destination layer; copies land there.
