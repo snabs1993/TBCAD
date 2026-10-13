@@ -1,0 +1,280 @@
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cstdio>
+#include <sstream>
+#include <utility>
+
+#include "tbcad/constraints/constraints.h"
+
+namespace tbcad::constraints {
+
+namespace {
+
+constexpr std::string_view kNames[] = {"Coincident",    "Horizontal", "Vertical", "Parallel",
+                                       "Perpendicular", "Equal",      "Tangent",  "Fix",
+                                       "Distance",      "Radius",     "Angle"};
+
+enum class Type { None, Line, Circle, Arc, Point };
+
+Type typeOf(const Document& doc, EntityId id) {
+    const Entity* e = doc.find(id);
+    if (!e)
+        return Type::None;
+    switch (kind(*e)) {
+        case EntityKind::Line:
+            return Type::Line;
+        case EntityKind::Circle:
+            return Type::Circle;
+        case EntityKind::Arc:
+            return Type::Arc;
+        case EntityKind::Point:
+            return Type::Point;
+        default:
+            return Type::None;
+    }
+}
+
+const char* typeName(Type t) {
+    switch (t) {
+        case Type::Line:
+            return "line";
+        case Type::Circle:
+            return "circle";
+        case Type::Arc:
+            return "arc";
+        case Type::Point:
+            return "point";
+        default:
+            return "object";
+    }
+}
+
+// Does `part` of an entity of type `t` name a point?
+bool isPointRef(Type t, Part p) {
+    switch (t) {
+        case Type::Point:
+            return p == Part::Whole || p == Part::Start;
+        case Type::Line:
+            return p == Part::Start || p == Part::End;
+        case Type::Circle:
+            return p == Part::Center;
+        case Type::Arc:
+            return p == Part::Start || p == Part::End || p == Part::Center;
+        default:
+            return false;
+    }
+}
+
+Error bad(std::string message) {
+    return Error{ErrorCode::InvalidArgument, std::move(message)};
+}
+
+std::string refText(const Document& doc, const Ref& r) {
+    std::string s = typeName(typeOf(doc, r.entity));
+    s += " " + std::to_string(r.entity.value);
+    switch (r.part) {
+        case Part::Start:
+            s += " start";
+            break;
+        case Part::End:
+            s += " end";
+            break;
+        case Part::Center:
+            s += " center";
+            break;
+        default:
+            break;
+    }
+    return s;
+}
+
+}  // namespace
+
+std::string_view kindName(Kind k) {
+    return kNames[static_cast<int>(k)];
+}
+
+bool isDimensional(Kind k) {
+    return k == Kind::Distance || k == Kind::Radius || k == Kind::Angle;
+}
+
+std::string describe(const Document& doc, const Constraint& c) {
+    std::string s =
+        "#" + std::to_string(c.id) + " " + std::string(kindName(c.kind)) + " " + refText(doc, c.a);
+    if (c.b.entity)
+        s += " / " + refText(doc, c.b);
+    char buf[48];
+    if (c.kind == Kind::Distance || c.kind == Kind::Radius) {
+        std::snprintf(buf, sizeof buf, " = %.6g", c.value);
+        s += buf;
+    } else if (c.kind == Kind::Angle) {
+        std::snprintf(buf, sizeof buf, " = %.6g deg", c.value * 180.0 / kPi);
+        s += buf;
+    }
+    return s;
+}
+
+Result<void> validate(const Document& doc, const Constraint& c) {
+    const Type ta = typeOf(doc, c.a.entity);
+    const Type tb = c.b.entity ? typeOf(doc, c.b.entity) : Type::None;
+    if (ta == Type::None)
+        return bad("the first object cannot be constrained (lines, circles, arcs and points can)");
+    const bool needsB = c.kind != Kind::Fix && c.kind != Kind::Radius &&
+                        !(c.kind == Kind::Horizontal || c.kind == Kind::Vertical);
+    if (needsB && tb == Type::None)
+        return bad(std::string(kindName(c.kind)) + " needs a second object");
+    switch (c.kind) {
+        case Kind::Coincident:
+            if (!isPointRef(ta, c.a.part) || !isPointRef(tb, c.b.part))
+                return bad("Coincident joins two points (line ends, arc ends or centres, points)");
+            if (c.a == c.b)
+                return bad("Coincident needs two different points");
+            break;
+        case Kind::Horizontal:
+        case Kind::Vertical:
+            if (ta == Type::Line && c.a.part == Part::Whole && !c.b.entity)
+                break;
+            if (isPointRef(ta, c.a.part) && isPointRef(tb, c.b.part) && !(c.a == c.b))
+                break;
+            return bad(std::string(kindName(c.kind)) + " takes one line or two points");
+        case Kind::Parallel:
+        case Kind::Perpendicular:
+            if (ta != Type::Line || tb != Type::Line || c.a.entity == c.b.entity)
+                return bad(std::string(kindName(c.kind)) + " takes two different lines");
+            break;
+        case Kind::Equal:
+            if (c.a.entity == c.b.entity)
+                return bad("Equal takes two different objects");
+            if (!((ta == Type::Line && tb == Type::Line) ||
+                  ((ta == Type::Circle || ta == Type::Arc) &&
+                   (tb == Type::Circle || tb == Type::Arc))))
+                return bad("Equal takes two lines or two circles/arcs");
+            break;
+        case Kind::Tangent: {
+            const bool ca = ta == Type::Circle || ta == Type::Arc;
+            const bool cb = tb == Type::Circle || tb == Type::Arc;
+            if (c.a.entity == c.b.entity ||
+                !((ta == Type::Line && cb) || (ca && tb == Type::Line) || (ca && cb)))
+                return bad("Tangent takes a line and a circle/arc, or two circles/arcs");
+            break;
+        }
+        case Kind::Fix:
+            if (c.a.part != Part::Whole && !isPointRef(ta, c.a.part))
+                return bad("Fix takes an object or one of its points");
+            break;
+        case Kind::Distance:
+            if (!isPointRef(ta, c.a.part) || !isPointRef(tb, c.b.part) || c.a == c.b)
+                return bad("Distance measures between two points");
+            if (!(c.value >= 0) || !std::isfinite(c.value))
+                return bad("the distance must be zero or more");
+            break;
+        case Kind::Radius:
+            if (ta != Type::Circle && ta != Type::Arc)
+                return bad("Radius takes a circle or an arc");
+            if (!(c.value > 0) || !std::isfinite(c.value))
+                return bad("the radius must be more than zero");
+            break;
+        case Kind::Angle:
+            if (ta != Type::Line || tb != Type::Line || c.a.entity == c.b.entity)
+                return bad("Angle takes two different lines");
+            if (!std::isfinite(c.value))
+                return bad("the angle must be a number");
+            break;
+    }
+    return {};
+}
+
+std::uint32_t ConstraintSet::add(Constraint c) {
+    c.id = next_++;
+    items_.push_back(c);
+    return c.id;
+}
+
+bool ConstraintSet::remove(std::uint32_t id) {
+    for (auto it = items_.begin(); it != items_.end(); ++it) {
+        if (it->id == id) {
+            items_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+const Constraint* ConstraintSet::find(std::uint32_t id) const {
+    for (const Constraint& c : items_) {
+        if (c.id == id)
+            return &c;
+    }
+    return nullptr;
+}
+
+Constraint* ConstraintSet::find(std::uint32_t id) {
+    return const_cast<Constraint*>(std::as_const(*this).find(id));
+}
+
+bool ConstraintSet::involves(EntityId e) const {
+    for (const Constraint& c : items_) {
+        if (c.a.entity == e || c.b.entity == e)
+            return true;
+    }
+    return false;
+}
+
+// Line format: "<id> <kind> <entityA> <partA> <entityB> <partB> <value>"; entity 0 = none.
+std::string ConstraintSet::toText() const {
+    std::string out;
+    char buf[160];
+    for (const Constraint& c : items_) {
+        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g\n", c.id,
+                      static_cast<int>(c.kind), static_cast<unsigned long long>(c.a.entity.value),
+                      static_cast<int>(c.a.part), static_cast<unsigned long long>(c.b.entity.value),
+                      static_cast<int>(c.b.part), c.value);
+        out += buf;
+    }
+    return out;
+}
+
+ConstraintSet ConstraintSet::fromText(const std::string& text) {
+    ConstraintSet set;
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        unsigned id = 0, kind = 0, ea = 0, pa = 0, eb = 0, pb = 0;
+        unsigned long long a = 0, b = 0;
+        double value = 0;
+        if (std::sscanf(line.c_str(), "%u %u %llu %u %llu %u %lf", &id, &kind, &a, &pa, &b, &pb,
+                        &value) != 7)
+            continue;
+        (void)ea;
+        (void)eb;
+        if (kind > static_cast<unsigned>(Kind::Angle) || pa > 3 || pb > 3 || a == 0 || id == 0)
+            continue;
+        Constraint c;
+        c.id = id;
+        c.kind = static_cast<Kind>(kind);
+        c.a = {EntityId{a}, static_cast<Part>(pa)};
+        c.b = {EntityId{b}, static_cast<Part>(pb)};
+        c.value = value;
+        set.items_.push_back(c);
+        set.next_ = std::max(set.next_, id + 1);
+    }
+    return set;
+}
+
+ConstraintSet load(const Document& doc) {
+    auto it = doc.header().custom.find(kHeaderKey);
+    return it == doc.header().custom.end() ? ConstraintSet{} : ConstraintSet::fromText(it->second);
+}
+
+Result<void> store(Transaction& tx, const ConstraintSet& set) {
+    const std::string text = set.toText();
+    return tx.modifyHeader([&](Header& h) {
+        if (text.empty())
+            h.custom.erase(kHeaderKey);
+        else
+            h.custom[kHeaderKey] = text;
+    });
+}
+
+}  // namespace tbcad::constraints
