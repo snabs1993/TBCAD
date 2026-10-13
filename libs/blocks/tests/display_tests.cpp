@@ -34,6 +34,28 @@ TEST_CASE("an insert displays its block transformed") {
     CHECK(near(p.pts[1], {100, 60}));
 }
 
+TEST_CASE("an associative array displays its block once per item") {
+    registerInsertDisplay();
+    Document doc;
+    BlockId b = addBlock(doc, "*A1", {line(0, 0, 1, 0)}, {0, 0});
+    Entity e = insertOf(b, {100, 0});
+    ArrayInfo a;
+    a.rows = 2;
+    a.columns = 3;
+    a.rowSpacing = 5;
+    a.columnSpacing = 10;
+    entityAs<InsertData>(e)->array = a;
+    EntityId i = addEntity(doc, e);
+    DisplayList l = displayOf(doc, i);
+    REQUIRE(l.items.size() == 6);
+    CHECK(near(poly(l, 0).pts[0], {100, 0}));
+    CHECK(near(poly(l, 5).pts[0], {120, 5}));
+    BBox2 box = insertBounds(doc, *doc.find(i));
+    CHECK(near(box.min, {100, 0}));
+    CHECK(near(box.max, {121, 5}));
+    CHECK(snapGeometry(doc, *doc.find(i)).size() == 6);
+}
+
 TEST_CASE("ByBlock colour and lineweight come from the insert; layer 0 takes its layer") {
     registerInsertDisplay();
     Document doc;

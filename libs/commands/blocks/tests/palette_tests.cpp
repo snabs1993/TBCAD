@@ -1,0 +1,173 @@
+#include <filesystem>
+#include <fstream>
+
+#include "support.h"
+#include "tbcad/block_cmds/palette.h"
+#include "tbcad/io/tbcad.h"
+
+using namespace tbcad;
+using namespace tbcad::block_cmds;
+using namespace tbcad::block_cmds::test;
+namespace fs = std::filesystem;
+
+namespace {
+
+struct Dir {
+    fs::path path;
+    explicit Dir(const char* name) {
+        path = fs::temp_directory_path() / name;
+        fs::remove_all(path);
+        fs::create_directories(path);
+    }
+    ~Dir() { fs::remove_all(path); }
+};
+
+void writeBox(const fs::path& file, double w, double h) {
+    Document d;
+    Transaction tx = d.begin("box");
+    auto line = [&](double a, double b, double c, double e) {
+        Entity ent;
+        ent.data = LineData{{a, b}, {c, e}};
+        (void)tx.add(ent);
+    };
+    line(0, 0, w, 0);
+    line(w, 0, w, h);
+    line(w, h, 0, h);
+    line(0, h, 0, 0);
+    tx.commit();
+    fs::create_directories(file.parent_path());
+    REQUIRE(io::writeTbcad(d, file, io::WriteOptions{.keepBackup = false}).ok());
+}
+
+BlockId makeBlock(Fixture& f, const char* name, double w, double h) {
+    f.addLine(0, 0, w, 0);
+    f.addLine(w, 0, w, h);
+    f.host->setSelection(f.modelSpace());
+    f.host->run("BLOCK", {name, "0,0", "D"});
+    return f.doc.blockByName(name)->id;
+}
+
+}  // namespace
+
+TEST_CASE("thumbnail of a block is scaled so the long side is 1") {
+    Fixture f;
+    BlockId b = makeBlock(f, "Wide", 40, 10);
+    blocks::registerInsertDisplay();
+    Thumbnail t = thumbnailOfBlock(f.doc, b);
+    REQUIRE_FALSE(t.empty());
+    CHECK(t.width == doctest::Approx(1));
+    CHECK(t.height == doctest::Approx(0.25));
+    for (const auto& s : t.strokes)
+        for (Vec2 p : s) {
+            CHECK(p.x >= -1e-9);
+            CHECK(p.x <= 1 + 1e-9);
+            CHECK(p.y >= -1e-9);
+            CHECK(p.y <= 0.25 + 1e-9);
+        }
+    Document empty;
+    CHECK(thumbnailOfModel(empty).empty());
+    CHECK(thumbnailOfBlock(f.doc, BlockId{999}).empty());
+}
+
+TEST_CASE("library: scan, filter, thumbnails and file lookup") {
+    Dir dir("tbcad_palette_lib");
+    writeBox(dir.path / "Door.tbcad", 10, 20);
+    writeBox(dir.path / "sub" / "Window.tbcad", 30, 10);
+    std::ofstream(dir.path / "notes.txt") << "x";
+    std::ofstream(dir.path / "plan.dxf") << "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n";
+
+    auto all = scanLibrary(dir.path);
+    REQUIRE(all.size() == 3);
+    CHECK(all[0].name == "Door");
+    CHECK(all[1].name == "plan");
+    CHECK(all[2].name == "Window");
+    auto some = scanLibrary(dir.path, "WIN");
+    REQUIRE(some.size() == 1);
+    CHECK(some[0].name == "Window");
+    CHECK(scanLibrary(dir.path / "missing").empty());
+
+    LibraryThumbnails thumbs;
+    CHECK(thumbs.find(all[0].path) == nullptr);
+    int loaded = 0;
+    while (thumbs.loadNext(all))
+        ++loaded;
+    CHECK(loaded == 3);
+    const Thumbnail* door = thumbs.find(all[0].path);
+    REQUIRE(door);
+    CHECK(door->height == doctest::Approx(1));
+    CHECK(door->width == doctest::Approx(0.5));
+    const Thumbnail* plan = thumbs.find(all[1].path);
+    REQUIRE(plan);
+    CHECK(plan->empty());  // a drawing without geometry still counts as loaded
+
+    CHECK(libraryFileFor("Door", {}, dir.path) == dir.path / "Door.tbcad");
+    CHECK(libraryFileFor("sub/Window.tbcad", {}, dir.path) == dir.path / "sub/Window.tbcad");
+    CHECK(libraryFileFor("Door", dir.path / "host.tbcad", {}) == dir.path / "Door.tbcad");
+    CHECK(libraryFileFor((dir.path / "plan.dxf").string(), {}, {}) == dir.path / "plan.dxf");
+    CHECK(libraryFileFor("nothing", {}, dir.path).empty());
+    CHECK(libraryFileFor("notes.txt", {}, dir.path).empty());
+}
+
+TEST_CASE("INSERT takes a library file by name and makes it a block once") {
+    Dir dir("tbcad_palette_insert");
+    writeBox(dir.path / "Door.tbcad", 10, 20);
+    Fixture f;
+    f.host->setSetting("block.library", dir.path.string());
+    auto r = f.host->run("INSERT", {"Door", "5,5"});
+    CHECK(r.finished);
+    REQUIRE(f.doc.blockByName("Door"));
+    CHECK(f.doc.blockByName("Door")->entities.size() == 4);
+    REQUIRE(f.modelSpace().size() == 1);
+    // A second insert reuses the block.
+    f.host->run("INSERT", {"Door", "50,5"});
+    CHECK(f.modelSpace().size() == 2);
+    CHECK(f.doc.blocks().size() == 1);
+    // Esc after naming the file leaves nothing behind.
+    Fixture g;
+    g.host->setSetting("block.library", dir.path.string());
+    g.host->run("INSERT", {"Door", cmd::ScriptItem::esc()});
+    CHECK(g.doc.blockByName("Door") == nullptr);
+}
+
+TEST_CASE("block count: direct and nested inserts, CSV, table") {
+    Fixture f;
+    BlockId a = makeBlock(f, "A", 10, 10);
+    // B contains two inserts of A.
+    f.host->run("INSERT", {"A", "0,0"});
+    f.host->run("INSERT", {"A", "20,0"});
+    f.host->setSelection(f.modelSpace());
+    f.host->run("BLOCK", {"B", "0,0", "D"});
+    f.host->run("INSERT", {"B", "0,0"});
+    f.host->run("INSERT", {"B", "100,0"});
+    f.host->run("INSERT", {"A", "200,0"});
+    (void)a;
+
+    auto rows = blockCount(f.doc);
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].name == "A");
+    CHECK(rows[0].direct == 1);
+    CHECK(rows[0].total == 5);  // one placed + two in each of two Bs
+    CHECK(rows[1].name == "B");
+    CHECK(rows[1].direct == 2);
+    CHECK(rows[1].total == 2);
+    CHECK(blockCountCsv(rows) == "Block,Count,Total\r\nA,1,5\r\nB,2,2\r\n");
+    CHECK(blockCountCsv({{"x\"y z", 1, 2}}) == "Block,Count,Total\r\n\"x\"\"y z\",1,2\r\n");
+    CHECK(blockCountCsv({{"a,b", 1, 2}}) == "Block,Count,Total\r\n\"a,b\",1,2\r\n");
+
+    Dir dir("tbcad_palette_count");
+    fs::path csv = dir.path / "out.csv";
+    f.host->clearLog();
+    f.host->run("BLOCKCOUNT", {"C", csv.string()});
+    CHECK(f.host->logContains("2 blocks, 3 inserts"));
+    CHECK(fs::exists(csv));
+
+    std::size_t before = f.modelSpace().size();
+    f.host->run("BLOCKCOUNT", {"T", "0,-50"});
+    CHECK(f.modelSpace().size() > before);
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().size() == before);
+
+    Fixture none;
+    none.host->run("BLOCKCOUNT", {});
+    CHECK(none.host->logContains("No blocks are inserted"));
+}

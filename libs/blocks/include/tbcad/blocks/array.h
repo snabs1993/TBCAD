@@ -42,6 +42,12 @@ std::vector<Transform2> rectangularTransforms(const RectArray& spec);
 // `reference` is the point of the source that follows the circle when items are not rotated.
 std::vector<Transform2> polarTransforms(const PolarArray& spec, Vec2 reference);
 
+// Associative arrays (InsertData::array): the transforms of every item, in block coordinates and
+// including item 0. Rows run row by row. Never more than kMaxArrayItems entries.
+std::vector<Transform2> arrayItemTransforms(const ArrayInfo& info);
+// Number of items arrayItemTransforms returns.
+long long arrayItemCount(const ArrayInfo& info);
+
 // Largest number of copies an array may create (guards against typos like 1e6 x 1e6).
 inline constexpr long long kMaxArrayItems = 100000;
 
