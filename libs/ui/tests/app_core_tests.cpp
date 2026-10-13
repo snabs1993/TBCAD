@@ -536,3 +536,32 @@ TEST_CASE("double click on a text object selects it and starts TEXTEDIT") {
     CHECK(f.core->selection() == std::vector<EntityId>{line});
     geom::DisplayRegistry::clear(EntityKind::Text);
 }
+
+TEST_CASE(
+    "an idle click goes to the click hooks first; a handled click leaves the selection alone") {
+    Fixture f("hook_idle_click");
+    f.line("0,0", "100,0");
+    f.core->selectAll();
+    REQUIRE(f.core->selection().size() == 1);
+    UiRegistry ui;
+    int calls = 0;
+    Vec2 seen{};
+    bool consume = true;
+    ui.addIdleClickHook([&](PanelContext& pc, Vec2 world, double aperture, bool, bool) {
+        ++calls;
+        seen = world;
+        CHECK(aperture > 0);
+        CHECK(pc.apertureMm == aperture);
+        CHECK(pc.selection == &f.core->selection());
+        return consume;
+    });
+    f.core->applyUiKeybindings(ui);
+    f.core->click(f.at({300, 300}));  // empty space: would clear the selection
+    CHECK(calls == 1);
+    CHECK(distance(seen, {300, 300}) < 1e-6);
+    CHECK(f.core->selection().size() == 1);
+    consume = false;
+    f.core->click(f.at({300, 300}));
+    CHECK(calls == 2);
+    CHECK(f.core->selection().empty());
+}

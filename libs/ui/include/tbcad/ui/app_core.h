@@ -207,6 +207,7 @@ private:
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
+    PanelContext makePanelContext();
     const UiRegistry* ui_ = nullptr;
     platform::AppPaths paths_;
     platform::Settings settings_;

@@ -27,6 +27,9 @@ struct PanelContext {
     std::function<void(const std::string&)> runCommand{};
     // Snap marker / tracking line of the point prompt in progress (overlay drawers only).
     const cmd::FilterFeedback* feedback = nullptr;
+    // Cursor in drawing units and the pick aperture in mm at the current zoom.
+    Vec2 cursorWorld{};
+    double apertureMm = 0;
 };
 
 // The drawing a command module works on. Passed to the session hooks whenever a different
@@ -42,6 +45,11 @@ using SessionHookFn = std::function<void(const SessionInfo&)>;
 // drawFn inside a window it created. The function may include <imgui.h> itself.
 using PanelDrawFn = std::function<void(PanelContext&)>;
 using PropertyDrawFn = std::function<void(PanelContext&, EntityId)>;
+// Called for a left click that no command is waiting for, before the click selects anything.
+// Return true when the module handled it (usually by running a command line), which stops the
+// selection from changing. `world` is the click in drawing units.
+using IdleClickFn =
+    std::function<bool(PanelContext&, Vec2 world, double apertureMm, bool shift, bool ctrl)>;
 using OverlayDrawFn = std::function<void(PanelContext&, render::Overlay&)>;
 
 struct PanelInfo {
@@ -83,6 +91,8 @@ public:
     bool addStatusToggle(std::string id, std::string label, std::function<bool()> get,
                          std::function<void(bool)> set);
     void addOverlayDrawer(OverlayDrawFn fn);
+    // Hooks run in registration order until one returns true.
+    void addIdleClickHook(IdleClickFn fn) { idleClicks_.push_back(std::move(fn)); }
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
     // Point filters (osnap, polar/ortho, grid snap ...). The registry owns them; the lowest
     // `order` that returns a point wins. AppCore installs them into every command runner.
@@ -100,6 +110,7 @@ public:
     const std::vector<MenuItemInfo>& menuItems() const { return menuItems_; }
     const std::vector<StatusToggle>& statusToggles() const { return toggles_; }
     const std::vector<OverlayDrawFn>& overlayDrawers() const { return overlays_; }
+    const std::vector<IdleClickFn>& idleClickHooks() const { return idleClicks_; }
     const std::vector<PropertySection>& propertySections() const { return sections_; }
     struct PointFilterEntry {
         int order = 0;
@@ -116,6 +127,7 @@ private:
     std::vector<MenuItemInfo> menuItems_{};
     std::vector<StatusToggle> toggles_{};
     std::vector<OverlayDrawFn> overlays_{};
+    std::vector<IdleClickFn> idleClicks_{};
     std::vector<PropertySection> sections_{};
     std::vector<PointFilterEntry> filters_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
