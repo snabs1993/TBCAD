@@ -223,6 +223,11 @@ struct DataDumper {
               << a.pathSpacing;
             polyV(o, a.path);
         }
+        if (!d.dynValues.empty()) {
+            o << " DYN";
+            for (double v : d.dynValues)
+                o << " " << v;
+        }
     }
     void operator()(const DimensionData& d) {
         o << "DIM kind" << static_cast<int>(d.kind) << " rot" << d.rotation;
@@ -327,6 +332,28 @@ std::string canonicalDump(const Document& doc) {
         for (EntityId e : r.entities)
             o << " " << e;
         o << "\n";
+        if (r.dynamic) {
+            for (const DynParam& p : r.dynamic->params) {
+                o << "  dynparam " << static_cast<int>(p.kind) << " ";
+                o.quoted(p.name);
+                o << " " << p.base << " " << p.end << " " << p.min << " " << p.max;
+                for (std::size_t i = 0; i < p.states.size(); ++i) {
+                    o << " state ";
+                    o.quoted(p.states[i]);
+                    if (i < p.stateObjects.size())
+                        for (EntityId e : p.stateObjects[i])
+                            o << " " << e;
+                }
+                o << "\n";
+            }
+            for (const DynAction& a : r.dynamic->actions) {
+                o << "  dynaction " << static_cast<int>(a.kind) << " p" << a.param << " "
+                  << a.frameMin << " " << a.frameMax << " objs";
+                for (EntityId e : a.objects)
+                    o << " " << e;
+                o << "\n";
+            }
+        }
     }
     // Entities in id order.
     std::vector<EntityId> ids;

@@ -182,8 +182,9 @@ struct PayloadWriter {
         w.vec2(d.position);
         w.vec2(d.scale);
         w.f64(d.rotation);
-        // Trailing fields: attribute values (format 1.1), then an array (format 1.3).
-        if (!d.attribs.empty() || d.array) {
+        // Trailing fields: attribute values (format 1.1), then tagged sections: 1 = array
+        // (format 1.3), 2 = dynamic block values (format 1.4).
+        if (!d.attribs.empty() || d.array || !d.dynValues.empty()) {
             w.varint(d.attribs.size());
             for (const AttribValue& a : d.attribs) {
                 str(a.tag);
@@ -207,6 +208,12 @@ struct PayloadWriter {
             w.u8(a.pathClosed ? 1 : 0);
             w.f64(a.pathSpacing);
             polyVertices(a.path);
+        }
+        if (!d.dynValues.empty()) {
+            w.u8(2);
+            w.varint(d.dynValues.size());
+            for (double v : d.dynValues)
+                w.f64(v);
         }
     }
     void operator()(const DimensionData& d) {
@@ -470,7 +477,17 @@ struct PayloadReader {
                         d.attribs.push_back(std::move(a));
                     }
                 }
-                if (r.remaining() > 0 && r.u8() == 1) {
+                while (r.remaining() > 0) {
+                    std::uint8_t tag = r.u8();
+                    if (tag == 2) {
+                        std::size_t n = r.count(8);
+                        d.dynValues.reserve(n);
+                        for (std::size_t i = 0; i < n; ++i)
+                            d.dynValues.push_back(r.f64());
+                        continue;
+                    }
+                    if (tag != 1)
+                        bad("unknown insert section");
                     ArrayInfo a;
                     a.kind = enumeration<ArrayInfo::Kind>(
                         static_cast<std::uint8_t>(ArrayInfo::Kind::Path));

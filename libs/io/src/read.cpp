@@ -87,6 +87,7 @@ public:
         loadLayers(tx);
         loadBlocks(tx);
         loadXrefs(tx);
+        loadDynamic(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
         loadOrder(tx);
@@ -107,6 +108,7 @@ private:
                 case kLayr:
                 case kBlks:
                 case kXrfs:
+                case kDynb:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
                         bad("duplicate chunk " + fourccName(c.type));
@@ -483,6 +485,66 @@ private:
         }
         if (!r.atEnd())
             bad("trailing data in XRFS");
+    }
+
+    void loadDynamic(Transaction& tx) {
+        const RawChunk* c = find(kDynb);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        auto small = [&](std::uint64_t n, std::uint64_t cap, const char* what) {
+            if (n > cap)
+                bad(std::string(what) + " count out of range");
+            return static_cast<std::size_t>(n);
+        };
+        auto ids = [&] {
+            std::vector<EntityId> v(r.count(1));
+            for (EntityId& e : v)
+                e = EntityId{id32(r)};
+            return v;
+        };
+        std::size_t n = r.count(3);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            DynamicDef def;
+            std::size_t np = r.count(20);
+            for (std::size_t k = 0; k < np; ++k) {
+                DynParam p;
+                std::uint8_t kind = r.u8();
+                if (kind > static_cast<std::uint8_t>(DynParam::Kind::Visibility))
+                    bad("unknown dynamic parameter kind");
+                p.kind = static_cast<DynParam::Kind>(kind);
+                p.name = str(r);
+                p.base = r.vec2();
+                p.end = r.vec2();
+                p.min = r.f64();
+                p.max = r.f64();
+                std::size_t ns = small(r.varint(), 10000, "state");
+                for (std::size_t s = 0; s < ns; ++s) {
+                    p.states.push_back(str(r));
+                    p.stateObjects.push_back(ids());
+                }
+                def.params.push_back(std::move(p));
+            }
+            std::size_t na = r.count(20);
+            for (std::size_t k = 0; k < na; ++k) {
+                DynAction a;
+                std::uint8_t kind = r.u8();
+                if (kind > static_cast<std::uint8_t>(DynAction::Kind::Flip))
+                    bad("unknown dynamic action kind");
+                a.kind = static_cast<DynAction::Kind>(kind);
+                a.param = static_cast<int>(small(r.varint(), 10000, "parameter"));
+                a.frameMin = r.vec2();
+                a.frameMax = r.vec2();
+                a.objects = ids();
+                def.actions.push_back(std::move(a));
+            }
+            if (!tx.modifyBlock(b, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok())
+                bad("dynamic definition names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in DYNB");
     }
 
     void loadEntities(Transaction& tx) {
