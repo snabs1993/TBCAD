@@ -12,6 +12,7 @@
 #include "tbcad/render/camera.h"
 #include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/settings_model.h"
+#include "tbcad/ui/workspace.h"
 
 namespace tbcad::ui {
 
@@ -280,6 +281,59 @@ public:
     }
 };
 
+class WorkspaceCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "WORKSPACE"; }
+    std::vector<std::string> defaultAliases() const override { return {"WS"}; }
+    std::string_view description() const override {
+        return "Switch, save, rename or delete workspaces (saved panel layouts)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        WorkspaceStore store(ctx.host().settingsFolder() / "workspaces");
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Load", "Save", "Rename", "Delete", "List"};
+        ko.defaultKeyword = "Load";
+        auto k = co_await ctx.getKeyword("Workspace option [Load/Save/Rename/Delete/List]", ko);
+        if (!k.ok())
+            co_return;
+        if (k.keyword == "List") {
+            std::string all;
+            for (const std::string& n : store.names())
+                all += (all.empty() ? "" : ", ") + n;
+            ctx.message("Workspaces: " + all);
+            co_return;
+        }
+        cmd::StringOptions so;
+        auto n = co_await ctx.getString("Workspace name", so);
+        if (!n.ok())
+            co_return;
+        const std::string name = cmd::trim(n.text);
+        if (k.keyword == "Load") {
+            if (!store.load(name))
+                ctx.message("No workspace named \"" + name + "\".");
+            else
+                ctx.host().requestUi("workspace:load:" + name);  // the window owns the panels
+        } else if (k.keyword == "Save") {
+            if (store.isBuiltin(name))
+                ctx.message("\"" + name + "\" is built in; choose another name.");
+            else if (name.empty())
+                ctx.message("Give the workspace a name.");
+            else
+                ctx.host().requestUi("workspace:save:" + name);
+        } else if (k.keyword == "Delete") {
+            const std::string err = store.remove(name);
+            ctx.message(err.empty() ? "Workspace deleted." : err);
+        } else {
+            cmd::StringOptions no;
+            auto to = co_await ctx.getString("New name", no);
+            if (!to.ok())
+                co_return;
+            const std::string err = store.rename(name, cmd::trim(to.text));
+            ctx.message(err.empty() ? "Workspace renamed." : err);
+        }
+    }
+};
+
 std::filesystem::path pathOf(const std::string& text) {
     return platform::pathFromUtf8(cmd::trim(text));
 }
@@ -370,6 +424,7 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<SaveAsTemplateCommand>());
     (void)registry.add(std::make_unique<NewFromTemplateCommand>());
     (void)registry.add(std::make_unique<TemplateDefaultCommand>());
+    (void)registry.add(std::make_unique<WorkspaceCommand>());
     (void)registry.add(std::make_unique<AliasImportCommand>());
     (void)registry.add(std::make_unique<AliasExportCommand>());
     (void)registry.add(std::make_unique<KeysFileCommand>("KEYSIMPORT", true,
