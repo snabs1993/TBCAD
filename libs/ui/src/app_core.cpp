@@ -16,6 +16,7 @@
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
+#include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/xref/xref.h"
 
@@ -134,7 +135,13 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     for (const auto& w : report.warnings)
         startupWarnings_.push_back(w);
 
-    installSession(std::make_unique<Document>(), {});
+    {
+        std::string problem;
+        auto doc = defaultDocument(&problem);
+        if (!problem.empty())
+            startupWarnings_.push_back(problem);
+        installSession(std::move(doc), {});
+    }
     for (const auto& w : startupWarnings_)
         print(w);
 }
@@ -255,7 +262,7 @@ void AppCore::closeDocument(std::size_t index) {
         pressEscape();
     removeAutosaveOf(slots_[index].id);
     if (slots_.size() == 1) {
-        installSession(std::make_unique<Document>(), {});
+        installSession(defaultDocument(), {});
         return;
     }
     if (index == active_) {
@@ -508,8 +515,69 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
 
 // ---- files -------------------------------------------------------------------------------------
 
+std::unique_ptr<Document> AppCore::defaultDocument(std::string* problem) {
+    const std::string name = settings_.getString("template.default", "");
+    if (!name.empty() && name != tmpl::kBuiltinTemplate) {
+        const fs::path file =
+            templateFolder() /
+            platform::pathFromUtf8(tmpl::sanitizeTemplateName(name) + tmpl::kTemplateExtension);
+        std::error_code ec;
+        std::string why;
+        if (!fs::exists(file, ec)) {
+            why = "No template named \"" + name + "\".";
+        } else if (auto doc = tmpl::loadTemplate(file)) {
+            return std::move(doc.value());
+        } else {
+            why = "Cannot read the template: " + doc.error().message;
+        }
+        if (problem)
+            *problem = "Default template \"" + name + "\": " + why + " Using the built-in drawing.";
+    }
+    return tmpl::builtinTemplate();
+}
+
 void AppCore::newDocument() {
-    addSession(std::make_unique<Document>(), {});
+    std::string problem;
+    auto doc = defaultDocument(&problem);
+    if (!problem.empty())
+        print(problem);
+    addSession(std::move(doc), {});
+}
+
+std::vector<std::string> AppCore::templateNames() const {
+    std::vector<std::string> out{tmpl::kBuiltinTemplate};
+    for (const auto& t : tmpl::listTemplates(templateFolder()))
+        out.push_back(t.name);
+    return out;
+}
+
+std::string AppCore::newFromTemplate(std::string_view name) {
+    if (name.empty() || name == tmpl::kBuiltinTemplate) {
+        addSession(tmpl::builtinTemplate(), {});
+        return {};
+    }
+    const fs::path file =
+        templateFolder() / platform::pathFromUtf8(tmpl::sanitizeTemplateName(std::string(name)) +
+                                                  tmpl::kTemplateExtension);
+    std::error_code ec;
+    if (!fs::exists(file, ec))
+        return "No template named \"" + std::string(name) + "\".";
+    auto doc = tmpl::loadTemplate(file);
+    if (!doc)
+        return "Cannot read the template: " + doc.error().message;
+    addSession(std::move(doc.value()), {});
+    return {};
+}
+
+std::string AppCore::saveAsTemplate(std::string_view name) {
+    const std::string clean = tmpl::sanitizeTemplateName(std::string(name));
+    if (clean == tmpl::kBuiltinTemplate)
+        return "\"Built-in\" is reserved; choose another name.";
+    auto r = tmpl::saveTemplate(document(), templateFolder() / platform::pathFromUtf8(clean));
+    if (!r)
+        return r.error().message;
+    print("Template saved: " + platform::pathToUtf8(r.value()));
+    return {};
 }
 
 namespace {
@@ -666,6 +734,17 @@ Result<void> AppCore::openFile(const fs::path& path) {
     }
     if (isDxfPath(path))
         return openDxf(path);
+    if (tmpl::isTemplatePath(path)) {
+        // A template opens as a new untitled drawing; the template file stays as it is.
+        auto doc = tmpl::loadTemplate(path);
+        if (!doc) {
+            print("Cannot open " + path.string() + ": " + doc.error().message);
+            return doc.error();
+        }
+        addSession(std::move(doc.value()), {});
+        print("New drawing from template " + path.string());
+        return {};
+    }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
