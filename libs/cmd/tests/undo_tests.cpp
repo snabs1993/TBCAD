@@ -102,3 +102,25 @@ TEST_CASE("undo stack: size estimate grows with the data") {
     CHECK(estimateBytes(big) > 100000 * sizeof(PolyVertex));
     CHECK(estimateBytes(big) > estimateBytes(small));
 }
+
+TEST_CASE("undo stack: a guard can refuse a step, which is then dropped") {
+    Document doc;
+    UndoStack st;
+    st.push("one", {addLine(doc, 0)});
+    st.push("two", {addLine(doc, 1)});
+    int calls = 0;
+    st.setGuard([&](const Document&, std::span<const ChangeSet> sets, Direction d) -> std::string {
+        ++calls;
+        CHECK(sets.size() == 1);
+        return d == Direction::Undo && calls == 1 ? "somebody changed it" : std::string{};
+    });
+    CHECK_FALSE(st.undo(doc));
+    CHECK(st.blockedReason() == "somebody changed it");
+    CHECK(doc.entityCount() == 2);  // nothing was undone
+    CHECK(st.undoCount() == 1);     // the refused step is gone
+    CHECK_FALSE(st.canRedo());
+    CHECK(st.undo(doc));  // the older step is next
+    CHECK(doc.entityCount() == 1);
+    CHECK(st.blockedReason().empty());
+    CHECK(st.redo(doc));
+}

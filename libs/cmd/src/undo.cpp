@@ -123,9 +123,17 @@ void UndoStack::setLimitBytes(std::size_t limit) {
 bool UndoStack::undo(Document& doc) {
     if (undo_.empty() || groupDepth_ > 0)
         return false;
+    blocked_.clear();
     Entry e = std::move(undo_.back());
     undo_.pop_back();
     used_ -= std::min(used_, e.bytes);
+    if (guard_) {
+        std::string why = guard_(doc, e.sets, Direction::Undo);
+        if (!why.empty()) {
+            blocked_ = std::move(why);
+            return false;
+        }
+    }
     for (auto it = e.sets.rbegin(); it != e.sets.rend(); ++it)
         doc.apply(*it, Direction::Undo);
     redo_.push_back(std::move(e));
@@ -135,8 +143,16 @@ bool UndoStack::undo(Document& doc) {
 bool UndoStack::redo(Document& doc) {
     if (redo_.empty() || groupDepth_ > 0)
         return false;
+    blocked_.clear();
     Entry e = std::move(redo_.back());
     redo_.pop_back();
+    if (guard_) {
+        std::string why = guard_(doc, e.sets, Direction::Redo);
+        if (!why.empty()) {
+            blocked_ = std::move(why);
+            return false;
+        }
+    }
     for (const ChangeSet& cs : e.sets)
         doc.apply(cs, Direction::Redo);
     used_ += e.bytes;
