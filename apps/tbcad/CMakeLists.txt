@@ -7,6 +7,7 @@ set(_tbcad_app_sources
   src/gui.cpp
   src/gui_style.cpp
   src/key_map.cpp
+  src/settings_dialog.cpp
   src/file_browser.cpp
   src/viewport_target.cpp
   src/gate.cpp)
@@ -34,7 +35,7 @@ target_compile_definitions(tbcad PRIVATE
   TBCAD_VERSION="${PROJECT_VERSION}"
   TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 target_link_libraries(tbcad PRIVATE
-  tbcad_appcore tbcad_ui tbcad_platform tbcad_render tbcad_command_registry
+  tbcad_appcore tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
   tbcad::glad tbcad::imgui)
 if(WIN32)
   target_link_libraries(tbcad PRIVATE imm32)

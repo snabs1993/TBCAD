@@ -112,3 +112,17 @@ was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenG
 Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Action ids:
 `file.new`, `file.open`, `file.save`, `file.saveAs`, `edit.undo`, `edit.redo`, `edit.selectAll`,
 `edit.deselect`, `view.zoomExtents`, `view.toggleCommandLine`, plus every menu item's own id.
+
+## Settings dialog, command log, clean screen
+
+- **Tools > Settings** (`SETTINGS`, aliases `OPTIONS`, `OP`): tabs General, Display, Drafting, Files, Aliases and
+  Keybindings. Everything is saved as you change it. The Aliases tab lists built-in and user aliases
+  (clashes marked), adds, changes and removes user aliases, and writes `aliases.json` through
+  `ui::AliasEditor`. The Keybindings tab captures the next key press for an action, warns when the keys are
+  already used (Take over / Cancel), and can unbind or restore the default, through
+  `ui::KeybindingEditor` and `keybindings.json`. A hidden `SETTINGSPAGE <page>` opens a tab directly.
+- **Ctrl+L** (`view.expandLog`): the whole command history in one read-only box that can be selected and
+  copied. **F11** (`view.cleanScreen`): hides menus, tool strip, status bar and panels, leaving the
+  viewport and the command line. Both are rebindable like any other action.
+- `IHost::requestUi(what)` lets a command ask the window to open something; `AppCore::takeUiRequests()`
+  hands the requests to the window.

@@ -1,0 +1,11 @@
+Thai word list (assets/dictionaries/thai-words.txt)
+
+Derived from the PyThaiNLP corpus file pythainlp/corpus/words_th.txt
+(https://github.com/PyThaiNLP/pythainlp), filtered and sorted for TBCAD.
+Corpora and word lists created by the PyThaiNLP project are released under the
+Creative Commons Zero 1.0 Universal Public Domain Dedication (CC0 1.0):
+https://creativecommons.org/publicdomain/zero/1.0/
+(see https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md).
+
+CC0 places the work in the public domain; no attribution is required. It is listed here for
+transparency. The word list is used only as data for line breaking of Thai text.
