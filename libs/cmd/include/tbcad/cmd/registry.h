@@ -75,6 +75,11 @@ private:
 // Commands that belong to the framework itself: UNDO [U], REDO, UNDOBEGIN, UNDOEND, ALIASES.
 void registerBuiltinCommands(Registry& registry);
 
+// A Markdown table of the commands users can type: name, effective aliases and description, sorted
+// by name. Commands without a description (internal ones) are left out. Used by
+// `tbcad --list-commands` to generate the command list of the user guide.
+std::string commandListMarkdown(const Registry& registry);
+
 // Parses the alias file text into alias -> command pairs. Exposed for tests.
 Result<std::map<std::string, std::string>> parseAliasJson(std::string_view text);
 
