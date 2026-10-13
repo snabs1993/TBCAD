@@ -151,6 +151,16 @@ struct DataDumper {
           << d.rotation << " wf" << d.widthFactor << " ob" << d.oblique << " style" << d.style
           << " " << static_cast<int>(d.h) << "/" << static_cast<int>(d.v) << " ";
         o.quoted(d.utf8);
+        if (d.attdef) {
+            o << " ATTDEF tag=";
+            o.quoted(d.attdef->tag);
+            o << " prompt=";
+            o.quoted(d.attdef->prompt);
+            o << " default=";
+            o.quoted(d.attdef->defaultValue);
+            o << " flags" << (d.attdef->invisible ? "I" : "") << (d.attdef->constant ? "C" : "")
+              << (d.attdef->verify ? "V" : "") << (d.attdef->preset ? "P" : "");
+        }
     }
     void operator()(const MTextData& d) {
         o << "MTEXT " << d.position << " h" << d.height << " w" << d.width << " rot" << d.rotation
@@ -195,6 +205,12 @@ struct DataDumper {
     void operator()(const InsertData& d) {
         o << "INSERT block" << d.block << " " << d.position << " sc" << d.scale << " rot"
           << d.rotation;
+        for (const AttribValue& a : d.attribs) {
+            o << " ATTRIB ";
+            o.quoted(a.tag);
+            o << "=";
+            o.quoted(a.value);
+        }
     }
     void operator()(const DimensionData& d) {
         o << "DIM kind" << static_cast<int>(d.kind) << " rot" << d.rotation;

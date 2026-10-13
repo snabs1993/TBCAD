@@ -236,3 +236,51 @@ TEST_CASE("round trip: the current colour, linetype and lineweight survive") {
     CHECK(back->header().currentLineweight == LineWeight::mm(0.35));
     CHECK(canonicalDump(*back) == canonicalDump(*doc));
 }
+
+TEST_CASE("round trip: attribute definitions and attribute values") {
+    Document doc;
+    BlockId blk;
+    {
+        Transaction tx = doc.begin("attrs");
+        blk = tx.addBlock(BlockDef{.name = "Tag"}).value();
+        TextData t;
+        t.utf8 = "TAG1";
+        t.attdef = AttDefInfo{"ROOM", "Room name?", "ห้องนอน", true, false, true, true};
+        Entity e;
+        e.data = Indirect<TextData>(t);
+        (void)tx.add(std::move(e), blk);
+        Entity plain;
+        plain.data = Indirect<TextData>(TextData{.utf8 = "plain"});
+        (void)tx.add(std::move(plain));
+        Entity ins;
+        ins.data = Indirect<InsertData>(InsertData{
+            blk, {5, 5}, {1, 1}, 0, {AttribValue{"ROOM", "ห้องรับแขก"}, AttribValue{"AREA", "12"}}});
+        (void)tx.add(std::move(ins));
+        Entity bare;
+        bare.data = Indirect<InsertData>(InsertData{blk, {1, 1}, {1, 1}, 0, {}});
+        (void)tx.add(std::move(bare));
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    const BlockDef* def = back->blockByName("Tag");
+    REQUIRE(def != nullptr);
+    const auto* t = entityAs<TextData>(*back->find(def->entities[0]));
+    REQUIRE((t && t->attdef));
+    CHECK(t->attdef->tag == "ROOM");
+    CHECK(t->attdef->defaultValue == "ห้องนอน");
+    CHECK(t->attdef->invisible);
+    CHECK_FALSE(t->attdef->constant);
+    CHECK(t->attdef->verify);
+    CHECK(t->attdef->preset);
+    int withAttribs = 0;
+    back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e); i && !i->attribs.empty()) {
+            ++withAttribs;
+            CHECK(i->attribs.size() == 2);
+            CHECK(i->attribs[0].value == "ห้องรับแขก");
+        }
+    });
+    CHECK(withAttribs == 1);
+}

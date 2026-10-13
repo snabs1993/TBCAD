@@ -34,18 +34,29 @@ rotation is ignored for those two.
 
 ### Wrapping and Thai
 
-There is no dictionary, so Thai text (written without spaces) is wrapped like this:
+Break opportunities are spaces, the zero-width space U+200B (not drawn), and, inside Thai text,
+the word boundaries found with a dictionary:
 
-1. Break opportunities are spaces and the zero-width space U+200B (insert one by hand where a
-   Thai word boundary is wanted; U+200B is not drawn).
-2. A run of text that is wider than the whole width is filled **grapheme cluster by cluster**.
-   A cluster is a base character with its combining marks (Thai vowels and tone marks above and
-   below, SARA AM, ZWJ/ZWNJ) plus a Thai leading vowel (U+0E40..0E44) with the consonant that
-   follows it. A cluster is never split, even if it alone is wider than the width.
-3. Words wider than the width start on a new line first, then are filled the same way.
+* `assets/dictionaries/thai-words.txt` is a CC0 word list (60,958 words) derived from PyThaiNLP's
+  `words_th.txt`; see `assets/dictionaries/README.md` and `third_party/notices/thai-wordlist.txt`.
+  It is not derived from libthai or ICU. One word per line; edit the file to add words.
+* `thaiWordBreaks` splits each Thai run by maximal matching: dynamic programming over grapheme
+  clusters, fewest unknown clusters first, then fewest words. Unknown stretches (names, loanwords
+  missing from the list) stay together; a break is only offered next to a known word. A repetition
+  mark (ๆ) or abbreviation sign (ฯ) never starts a line.
+* The list loads on first use from `setDictionaryDirectory` (the app points it at its `assets`
+  folder), then the source tree, then `./assets/dictionaries`. Without a list, Thai wraps at
+  cluster boundaries only (below).
 
-This means a Thai paragraph wraps at the right margin but may break inside a word. Real Thai
-word breaking (dictionary) is future work.
+A run that is still wider than the whole width (one very long word, or Thai text with no list) is
+filled **grapheme cluster by cluster**. A cluster is a base character with its combining marks
+(Thai vowels and tone marks above and below, SARA AM, ZWJ/ZWNJ) plus a Thai leading vowel
+(U+0E40..0E44) with the consonant that follows it. A cluster is never split. A word wider than the
+width starts on a new line first.
+
+Limits: the list is a plain word list without frequencies, so rare ambiguous phrases can segment
+differently than a person would; a word missing from the list may be split at a dictionary word
+inside it. Use U+200B to force a break opportunity.
 
 ## Display
 

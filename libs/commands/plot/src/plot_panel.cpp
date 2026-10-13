@@ -1,0 +1,260 @@
+#include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
+
+#include <algorithm>
+#include <cmath>
+#include <string>
+
+#include "panel.h"
+#include "tbcad/plot/plot.h"
+
+namespace tbcad::plot {
+
+namespace {
+
+using exportlib::ColorMode;
+using exportlib::PlotArea;
+using exportlib::PlotSettings;
+
+struct PanelState {
+    PlotSettings settings{};
+    bool loaded = false;
+    std::string scaleInput{};
+    std::string fileInput{};
+    Format format = Format::Pdf;
+    std::string message{};
+    // Preview cache: rebuilt when the document, the settings or the view-dependent window change.
+    exportlib::PlotSheet sheet{};
+    std::string sheetError{};
+    std::uint64_t builtRevision = ~0ull;
+    std::string builtKey{};
+};
+
+PanelState& state() {
+    static PanelState s;
+    return s;
+}
+
+std::string keyOf(const PlotSettings& s, const BBox2& displayWindow) {
+    char buf[512];
+    std::snprintf(buf, sizeof buf, "%s|%g|%g|%d|%d|%g,%g,%g,%g|%d|%g|%d|%g,%g|%g|%d|%d|%g,%g,%g,%g",
+                  s.paperName.c_str(), s.customWidthMm, s.customHeightMm, s.landscape, int(s.area),
+                  s.window.min.x, s.window.min.y, s.window.max.x, s.window.max.y, s.fitToPaper,
+                  s.scaleN, s.centerOnPaper, s.offsetMm.x, s.offsetMm.y, s.marginMm, s.lineweights,
+                  int(s.color), displayWindow.min.x, displayWindow.min.y, displayWindow.max.x,
+                  displayWindow.max.y);
+    return buf;
+}
+
+ImU32 col(Rgba c) {
+    return IM_COL32(c.r, c.g, c.b, 255);
+}
+
+void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
+    const auto& lay = sheet.layout;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    // Fit the page into the available rectangle, leaving room for a border.
+    const float pad = 8;
+    float k = std::min((size.x - 2 * pad) / float(lay.pageWidthMm),
+                       (size.y - 2 * pad) / float(lay.pageHeightMm));
+    k = std::max(k, 0.01f);
+    float pw = float(lay.pageWidthMm) * k, ph = float(lay.pageHeightMm) * k;
+    ImVec2 p0{origin.x + (size.x - pw) / 2, origin.y + (size.y - ph) / 2};
+    auto toScreen = [&](Vec2 p) {
+        return ImVec2(p0.x + float(p.x) * k, p0.y + ph - float(p.y) * k);
+    };
+
+    dl->AddRectFilled({p0.x + 3, p0.y + 3}, {p0.x + pw + 3, p0.y + ph + 3}, IM_COL32(0, 0, 0, 60));
+    dl->AddRectFilled(p0, {p0.x + pw, p0.y + ph}, IM_COL32(255, 255, 255, 255));
+    ImVec2 pa = toScreen(lay.printable.min), pb = toScreen(lay.printable.max);
+    dl->AddRect({pa.x, pb.y}, {pb.x, pa.y}, IM_COL32(120, 160, 220, 160));
+    dl->PushClipRect({pa.x, pb.y}, {pb.x, pa.y}, true);
+
+    // Same primitives as the exported file; line widths use the real paper width, at least 1 px.
+    std::vector<ImVec2> pts;
+    for (const auto& prim : sheet.prims) {
+        if (const auto* p = std::get_if<exportlib::PlotPath>(&prim)) {
+            pts.clear();
+            for (const Vec2& v : p->pts)
+                pts.push_back(toScreen(v));
+            dl->AddPolyline(pts.data(), int(pts.size()), col(p->style.color),
+                            p->closed ? ImDrawFlags_Closed : ImDrawFlags_None,
+                            std::max(1.0f, float(p->style.widthMm) * k));
+        } else if (const auto* a = std::get_if<exportlib::PlotArc>(&prim)) {
+            ImVec2 c = toScreen(a->center);
+            float r = float(a->radius) * k;
+            float w = std::max(1.0f, float(a->style.widthMm) * k);
+            if (a->full) {
+                dl->AddCircle(c, r, col(a->style.color), 0, w);
+            } else {
+                // Screen y runs downwards: negate the angles.
+                dl->PathArcTo(c, r, float(-a->end), float(-a->start), 0);
+                dl->PathStroke(col(a->style.color), ImDrawFlags_None, w);
+            }
+        } else if (const auto* f = std::get_if<exportlib::PlotFill>(&prim)) {
+            // The preview outlines fills; the file is filled even-odd.
+            for (const auto& ring : f->rings) {
+                pts.clear();
+                for (const Vec2& v : ring)
+                    pts.push_back(toScreen(v));
+                dl->AddPolyline(pts.data(), int(pts.size()), col(f->color), ImDrawFlags_Closed,
+                                1.0f);
+            }
+        } else if (const auto* d = std::get_if<exportlib::PlotDots>(&prim)) {
+            for (const Vec2& v : d->pts)
+                dl->AddCircleFilled(toScreen(v), std::max(1.0f, float(d->style.widthMm) * k / 2),
+                                    col(d->style.color));
+        }
+    }
+    dl->PopClipRect();
+    ImGui::Dummy(size);
+}
+
+void draw(ui::PanelContext& pc) {
+    PanelState& st = state();
+    if (!pc.doc || !pc.host)
+        return;
+    if (!st.loaded) {
+        st.settings = loadSettings(*pc.host);
+        st.scaleInput = scaleText(st.settings);
+        st.fileInput = defaultFile(*pc.host, st.format);
+        st.loaded = true;
+    }
+    PlotSettings& s = st.settings;
+    bool changed = false;
+
+    // Paper
+    if (ImGui::BeginCombo("Paper", s.paperName.c_str())) {
+        for (const auto& p : exportlib::paperSizes())
+            if (ImGui::Selectable(p.name.c_str(), p.name == s.paperName)) {
+                s.paperName = p.name;
+                changed = true;
+            }
+        if (ImGui::Selectable("Custom", s.paperName == "Custom")) {
+            s.paperName = "Custom";
+            changed = true;
+        }
+        ImGui::EndCombo();
+    }
+    if (s.paperName == "Custom") {
+        changed |= ImGui::InputDouble("Width (mm)", &s.customWidthMm, 1, 10, "%.1f");
+        changed |= ImGui::InputDouble("Height (mm)", &s.customHeightMm, 1, 10, "%.1f");
+        s.customWidthMm = std::max(1.0, s.customWidthMm);
+        s.customHeightMm = std::max(1.0, s.customHeightMm);
+    }
+    int orient = s.landscape ? 0 : 1;
+    changed |= ImGui::RadioButton("Landscape", &orient, 0);
+    ImGui::SameLine();
+    changed |= ImGui::RadioButton("Portrait", &orient, 1);
+    s.landscape = orient == 0;
+
+    // Area
+    static const char* areaNames[] = {"Extents", "Display", "Window"};
+    int area = int(s.area);
+    if (ImGui::Combo("Plot area", &area, areaNames, 3)) {
+        s.area = PlotArea(area);
+        changed = true;
+    }
+    if (s.area == PlotArea::Window) {
+        ImGui::TextDisabled(s.window.empty() ? "No window yet: run PLOT, then Area > Window."
+                                             : "Window set with the PLOT command (Area > Window).");
+    }
+
+    // Scale
+    std::string scaleLabel = s.fitToPaper ? "Fit to paper" : scaleText(s);
+    if (ImGui::BeginCombo("Scale", scaleLabel.c_str())) {
+        if (ImGui::Selectable("Fit to paper", s.fitToPaper)) {
+            s.fitToPaper = true;
+            changed = true;
+        }
+        for (double n : exportlib::scalePresets()) {
+            std::string label = "1:" + std::to_string(static_cast<long long>(n));
+            if (ImGui::Selectable(label.c_str(), !s.fitToPaper && s.scaleN == n)) {
+                s.fitToPaper = false;
+                s.scaleN = n;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (!s.fitToPaper) {
+        changed |= ImGui::InputDouble("1 mm on paper =", &s.scaleN, 1, 10, "%.4g drawing units");
+        s.scaleN = std::max(1e-6, s.scaleN);
+    }
+
+    // Placement
+    changed |= ImGui::Checkbox("Centre on paper", &s.centerOnPaper);
+    if (!s.centerOnPaper) {
+        changed |= ImGui::InputDouble("Offset X (mm)", &s.offsetMm.x, 1, 10, "%.2f");
+        changed |= ImGui::InputDouble("Offset Y (mm)", &s.offsetMm.y, 1, 10, "%.2f");
+    }
+    changed |= ImGui::InputDouble("Margin (mm)", &s.marginMm, 1, 10, "%.1f");
+    s.marginMm = std::max(0.0, s.marginMm);
+
+    // Appearance
+    changed |= ImGui::Checkbox("Plot lineweights", &s.lineweights);
+    static const char* colorNames[] = {"As displayed", "Monochrome (black)", "Greyscale"};
+    int color = int(s.color);
+    if (ImGui::Combo("Colour", &color, colorNames, 3)) {
+        s.color = ColorMode(color);
+        changed = true;
+    }
+    if (changed)
+        saveSettings(*pc.host, s);
+
+    // Preview, rebuilt only when the document or the settings change.
+    BBox2 view = s.area == PlotArea::Display ? viewWindow(*pc.host) : BBox2{};
+    PlotSettings built = s;
+    if (built.area == PlotArea::Display)
+        built.window = view;
+    std::string key = keyOf(built, view);
+    if (key != st.builtKey || pc.doc->revision() != st.builtRevision) {
+        auto sheet = exportlib::buildSheet(*pc.doc, built);
+        st.sheetError = sheet ? std::string() : sheet.error().message;
+        st.sheet = sheet ? std::move(sheet.value()) : exportlib::PlotSheet{};
+        st.builtKey = key;
+        st.builtRevision = pc.doc->revision();
+    }
+    ImGui::Separator();
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float previewH = std::clamp(avail.y - 110.0f, 160.0f, 520.0f);
+    if (!st.sheetError.empty()) {
+        ImGui::TextDisabled("%s", st.sheetError.c_str());
+    } else {
+        drawPreview(st.sheet, {avail.x, previewH});
+        if (st.sheet.layout.overflows)
+            ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f}, "The drawing is larger than the paper.");
+        else
+            ImGui::TextDisabled("Scale 1:%.4g  |  %zu objects", 1.0 / st.sheet.layout.paperPerUnit,
+                                st.sheet.entityCount);
+    }
+
+    // Export
+    ImGui::InputText("File", &st.fileInput);
+    auto doExport = [&](Format f) {
+        st.format = f;
+        std::string path = st.fileInput.empty() ? defaultFile(*pc.host, f) : st.fileInput;
+        PlotSettings run = s;
+        auto r = exportFile(*pc.doc, *pc.host, run, f, path);
+        st.message = r ? r.value() : r.error().message;
+        pc.host->print(st.message);
+        if (r)
+            setLastFile(*pc.host, f, withExtension(path, f));
+    };
+    if (ImGui::Button("Export PDF"))
+        doExport(Format::Pdf);
+    ImGui::SameLine();
+    if (ImGui::Button("Export SVG"))
+        doExport(Format::Svg);
+    if (!st.message.empty())
+        ImGui::TextWrapped("%s", st.message.c_str());
+}
+
+}  // namespace
+
+void registerPlotPanel(ui::UiRegistry& registry) {
+    registry.addPanel("plot", "Plot", draw, false);
+}
+
+}  // namespace tbcad::plot

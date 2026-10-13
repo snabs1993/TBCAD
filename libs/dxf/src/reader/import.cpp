@@ -705,12 +705,6 @@ void Importer::finish() {
                      std::to_string(flattened_) + " entities had a non-zero Z; Z was dropped",
                      firstFlattenedLine_);
     }
-    if (attdefs_ > 0) {
-        report_.info(code::kSkippedEntity,
-                     std::to_string(attdefs_) +
-                         " attribute definitions (ATTDEF) were not imported; attribute values "
-                         "are kept as plain text");
-    }
     if (mirroredText_ > 0) {
         report_.info(code::kMirroredText,
                      std::to_string(mirroredText_) +

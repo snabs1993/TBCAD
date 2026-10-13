@@ -5,14 +5,18 @@ tbcad_add_library(text
     src/clusters.cpp
     src/fonts.cpp
     src/markup.cpp
+    src/thai_break.cpp
     src/layout.cpp
     src/display.cpp
   DEPENDS tbcad::core tbcad::geom tbcad::font)
+target_compile_definitions(tbcad_text PRIVATE
+  TBCAD_TEXT_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets/dictionaries")
 
 tbcad_add_tests(text
   SOURCES
     tests/main.cpp
     tests/cluster_tests.cpp
     tests/markup_tests.cpp
+    tests/thai_break_tests.cpp
     tests/layout_tests.cpp
     tests/display_tests.cpp)

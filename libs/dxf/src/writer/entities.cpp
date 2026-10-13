@@ -481,11 +481,18 @@ void Writer::writeSpline(const Props& p, const SplineData& d, const Entity& e,
 // Text
 
 void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
-    head("TEXT", p, owner, "AcDbText");
+    writeTextRecord(p, d, owner, d.attdef ? "ATTDEF" : "TEXT", d.utf8);
+}
+
+// TEXT, ATTDEF (inside a block) and ATTRIB (after an INSERT) share the text groups; only the
+// record type, the string in group 1 and the attribute subclass differ.
+void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t owner,
+                             std::string_view type, const std::string& shown) {
+    head(type, p, owner, "AcDbText");
     Out& o = *o_;
     o.pt(10, d.position);
     o.d(40, d.height);
-    o.str(1, d.utf8);
+    o.str(1, type == "ATTDEF" ? d.attdef->defaultValue : shown);
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
     if (d.widthFactor != 1)
@@ -498,10 +505,22 @@ void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
         o.i(72, static_cast<int>(d.h));
     if (aligned)
         o.pt(11, d.alignPoint);
-    sub("AcDbText");
-    if (d.v != VAlign::Baseline)
-        o.i(73, static_cast<int>(d.v));
-    count("TEXT");
+    if (type == "TEXT") {
+        sub("AcDbText");
+        if (d.v != VAlign::Baseline)
+            o.i(73, static_cast<int>(d.v));
+    } else {
+        const AttDefInfo& a = *d.attdef;
+        sub(type == "ATTDEF" ? "AcDbAttributeDefinition" : "AcDbAttribute");
+        if (type == "ATTDEF")
+            o.str(3, a.prompt);
+        o.str(2, a.tag);
+        o.i(70,
+            (a.invisible ? 1 : 0) | (a.constant ? 2 : 0) | (a.verify ? 4 : 0) | (a.preset ? 8 : 0));
+        if (d.v != VAlign::Baseline)
+            o.i(74, static_cast<int>(d.v));
+    }
+    count(std::string(type));
 }
 
 void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner) {
@@ -568,8 +587,17 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         skipEntity("INSERT", "its block definition does not exist");
         return;
     }
+    // Non-constant attributes of the block become ATTRIB records after the INSERT.
+    std::vector<const TextData*> defs;
+    if (const BlockDef* bd = doc_.block(d.block))
+        for (EntityId id : bd->entities)
+            if (const Entity* e = doc_.find(id))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef && !t->attdef->constant)
+                    defs.push_back(t);
     head("INSERT", p, owner, "AcDbBlockReference");
     Out& o = *o_;
+    if (!defs.empty())
+        o.i(66, 1);
     o.str(2, name);
     o.pt(10, d.position);
     o.d(41, d.scale.x);
@@ -578,6 +606,36 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
     count("INSERT");
+    if (defs.empty())
+        return;
+    const BlockDef* bd = doc_.block(d.block);
+    const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+    for (const TextData* def : defs) {
+        // The definition's placement, carried through the insert transform. A non-uniform scale
+        // cannot stretch text, so the height follows the Y scale.
+        Vec2 rel = def->position - bd->base;
+        rel = {rel.x * d.scale.x, rel.y * d.scale.y};
+        TextData t = *def;
+        t.position = d.position + Vec2{rel.x * c - rel.y * sn, rel.x * sn + rel.y * c};
+        Vec2 al = def->alignPoint - bd->base;
+        al = {al.x * d.scale.x, al.y * d.scale.y};
+        t.alignPoint = d.position + Vec2{al.x * c - al.y * sn, al.x * sn + al.y * c};
+        t.height = def->height * std::abs(d.scale.y);
+        t.rotation = def->rotation + d.rotation;
+        std::string value;
+        bool found = false;
+        for (const AttribValue& v : d.attribs)
+            if (v.tag == def->attdef->tag) {
+                value = v.value;
+                found = true;
+                break;
+            }
+        if (!found)
+            value = def->attdef->defaultValue;
+        writeTextRecord(p, t, owner, "ATTRIB", value);
+    }
+    o.zero("SEQEND");
+    o.str(8, p.layer);
 }
 
 void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner) {

@@ -163,6 +163,8 @@ private:
     void writeEllipse(const Props& p, const EllipseData& d, const Entity& e, std::uint64_t owner);
     void writeSpline(const Props& p, const SplineData& d, const Entity& e, std::uint64_t owner);
     void writeText(const Props& p, const TextData& d, std::uint64_t owner);
+    void writeTextRecord(const Props& p, const TextData& d, std::uint64_t owner,
+                         std::string_view type, const std::string& shown);
     void writeMText(const Props& p, const MTextData& d, std::uint64_t owner);
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
     void writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner);

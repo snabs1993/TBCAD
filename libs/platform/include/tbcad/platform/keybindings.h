@@ -43,6 +43,11 @@ public:
     std::string label(std::string_view actionId) const;
 
     void set(std::string_view actionId, std::string chord);
+    // The chord declared in code, and whether keybindings.json (or set()) changed it.
+    std::string defaultChordOf(std::string_view actionId) const;
+    bool overridden(std::string_view actionId) const;
+    // Removes the override so the declared chord applies again.
+    void reset(std::string_view actionId);
     std::vector<std::string> actions() const;
 
 private:

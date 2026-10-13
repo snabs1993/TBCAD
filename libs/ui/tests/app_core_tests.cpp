@@ -446,6 +446,101 @@ TEST_CASE("command completion lists names and aliases") {
     CHECK(f.core->complete("").empty());
 }
 
+TEST_CASE("several drawings: tabs keep their own content, view and selection") {
+    Fixture f("tabs");
+    CHECK(f.core->documentCount() == 1);
+    CHECK(f.core->isPristine());
+    f.line("0,0", "100,0");
+    CHECK_FALSE(f.core->isPristine());
+
+    f.core->newDocument();  // the first drawing has content, so this adds a tab
+    REQUIRE(f.core->documentCount() == 2);
+    CHECK(f.core->activeDocument() == 1);
+    CHECK(f.core->document().modelSpaceCount() == 0);
+    CHECK(f.core->scene().entityCount() == 0);
+    f.line("0,0", "5,5");
+    f.line("1,1", "2,2");
+    CHECK(f.core->scene().entityCount() == 2);
+
+    CHECK(f.core->documentModified(0));
+    CHECK(f.core->documentTitle(0) == "Untitled");
+    CHECK(f.core->documentId(0) != f.core->documentId(1));
+
+    REQUIRE(f.core->activateDocument(0));
+    CHECK(f.core->document().modelSpaceCount() == 1);
+    CHECK(f.core->scene().entityCount() == 1);
+    // Undo history is per drawing.
+    CHECK(f.core->undo());
+    CHECK(f.core->document().modelSpaceCount() == 0);
+    REQUIRE(f.core->activateDocument(1));
+    CHECK(f.core->document().modelSpaceCount() == 2);
+}
+
+TEST_CASE("an untouched Untitled drawing is reused by New and Open") {
+    Fixture f("reuse");
+    f.core->newDocument();
+    CHECK(f.core->documentCount() == 1);
+    fs::path file = f.dir / "a.tbcad";
+    REQUIRE(f.core->saveAs(file).ok());  // empty drawing on disk
+    f.core->newDocument();               // the saved drawing is not "Untitled", so a tab is added
+    REQUIRE(f.core->documentCount() == 2);
+    REQUIRE(f.core->openFile(file).ok());  // already open: just activates
+    CHECK(f.core->documentCount() == 2);
+    CHECK(f.core->activeDocument() == 0);
+}
+
+TEST_CASE("closing drawings") {
+    Fixture f("close");
+    f.line("0,0", "1,1");
+    f.core->newDocument();
+    f.line("0,0", "2,2");
+    f.line("0,0", "3,3");
+    f.core->newDocument();
+    f.line("0,0", "4,4");
+    f.line("0,0", "5,5");
+    f.line("0,0", "6,6");
+    REQUIRE(f.core->documentCount() == 3);
+    REQUIRE(f.core->activeDocument() == 2);
+
+    f.core->closeDocument(0);  // a background tab
+    CHECK(f.core->documentCount() == 2);
+    CHECK(f.core->activeDocument() == 1);
+    CHECK(f.core->document().modelSpaceCount() == 3);
+
+    f.core->closeDocument(1);  // the active one: its neighbour takes over
+    CHECK(f.core->documentCount() == 1);
+    CHECK(f.core->document().modelSpaceCount() == 2);
+    CHECK(f.core->scene().entityCount() == 2);
+
+    f.core->closeDocument(0);  // the last one leaves a fresh Untitled
+    CHECK(f.core->documentCount() == 1);
+    CHECK(f.core->isPristine());
+    CHECK(f.core->scene().entityCount() == 0);
+}
+
+TEST_CASE("switching tabs is refused while a command runs") {
+    Fixture f("busy");
+    f.line("0,0", "1,1");
+    f.core->newDocument();
+    f.line("0,0", "2,2");
+    f.core->submitText("TESTLINE");
+    REQUIRE(f.core->runner().active());
+    CHECK_FALSE(f.core->activateDocument(0));
+    CHECK(f.core->activeDocument() == 1);
+    f.core->pressEscape();
+    CHECK(f.core->activateDocument(0));
+}
+
+TEST_CASE("the clipboard.text setting is handed to the window once") {
+    Fixture f("clipboard");
+    CHECK_FALSE(f.core->takeClipboardText().has_value());
+    f.core->setSetting("clipboard.text", "area = 12.5");
+    auto text = f.core->takeClipboardText();
+    REQUIRE(text.has_value());
+    CHECK(*text == "area = 12.5");
+    CHECK_FALSE(f.core->takeClipboardText().has_value());
+}
+
 namespace {
 struct SnapTo100 : cmd::PointFilter {
     std::optional<Vec2> filter(const cmd::PointQuery&, Vec2, cmd::FilterFeedback&) override {
@@ -501,6 +596,42 @@ TEST_CASE("a leading apostrophe on an idle command line is ignored") {
     f.core->pressEscape();
 }
 
+TEST_CASE("double click on a text object selects it and starts TEXTEDIT") {
+    // The text generator lives in libs/text; a stand-in gives the object a pickable outline.
+    geom::DisplayRegistry::set(EntityKind::Text, [](const Document&, const Entity& e,
+                                                    const geom::DisplayContext&, DisplayList& out) {
+        const auto& t = *entityAs<TextData>(e);
+        DisplayPolyline pl;
+        pl.closed = true;
+        pl.pts = {t.position, t.position + Vec2{40, 0}, t.position + Vec2{40, 10},
+                  t.position + Vec2{0, 10}};
+        out.items.emplace_back(std::move(pl));
+    });
+    Fixture f("dblclick");
+    EntityId text;
+    {
+        auto tx = f.core->document().begin("text");
+        TextData d;
+        d.position = {100, 100};
+        d.utf8 = "abc";
+        text = tx.add(Entity{{}, d}).value();
+        tx.commit();
+    }
+    EntityId line = addLine(f.core->document(), {0, 0}, {50, 0});
+
+    f.core->doubleClick(f.at({100, 105}));  // on the text outline
+    CHECK(f.core->selection() == std::vector<EntityId>{text});
+    bool started = false;
+    for (const auto& h : f.core->history())
+        started = started || h.find("TEXTEDIT") != std::string::npos;
+    CHECK(started);
+
+    f.core->clearSelection();
+    f.core->doubleClick(f.at({25, 0}));  // a line: plain single click
+    CHECK(f.core->selection() == std::vector<EntityId>{line});
+    geom::DisplayRegistry::clear(EntityKind::Text);
+}
+
 TEST_CASE(
     "an idle click goes to the click hooks first; a handled click leaves the selection alone") {
     Fixture f("hook_idle_click");
@@ -528,4 +659,16 @@ TEST_CASE(
     f.core->click(f.at({300, 300}));
     CHECK(calls == 2);
     CHECK(f.core->selection().empty());
+}
+
+TEST_CASE("SETTINGS asks the window to open the dialog") {
+    Fixture f("settings_cmd");
+    f.core->submitText("op");  // alias
+    auto req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "settings");
+    CHECK(f.core->takeUiRequests().empty());
+    CHECK_FALSE(f.core->runner().active());
+    CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
+    CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
