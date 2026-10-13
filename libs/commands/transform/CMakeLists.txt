@@ -6,7 +6,7 @@ tbcad_add_library(transform
     src/grip_command.cpp
     src/stretch.cpp
     src/ui.cpp
-  DEPENDS tbcad::cmd tbcad::geom tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::geom tbcad::ui tbcad::blocks)
 
 tbcad_add_tests(transform
   SOURCES
