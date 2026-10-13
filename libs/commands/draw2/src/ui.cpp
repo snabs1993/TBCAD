@@ -10,6 +10,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Wipeout", "WIPEOUT", "draw.wipeout", "");
     ui.addMenuItem("Draw/Boundary", "BOUNDARY", "draw.boundary", "");
     ui.addMenuItem("Draw/Ray", "RAY", "draw.ray", "");
+    ui.addMenuItem("Draw/Solid", "SOLID", "draw.solid", "");
     ui.addMenuItem("Draw/Construction Line", "XLINE", "draw.xline", "");
     ui.addMenuItem("Draw/Sketch", "SKETCH", "draw.sketch", "");
     ui.addMenuItem("Draw/Region", "REGION", "draw.region", "");
