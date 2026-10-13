@@ -1036,6 +1036,17 @@ Json entityToJson(const Document& doc, const Entity& e) {
             o["rotation"] = d.rotation;
             o["rows"] = static_cast<double>(d.rowHeights.size());
             o["columns"] = static_cast<double>(d.colWidths.size());
+            Json::Array cw, rh;
+            for (double w : d.colWidths)
+                cw.emplace_back(w);
+            for (double h : d.rowHeights)
+                rh.emplace_back(h);
+            o["columnWidths"] = Json(std::move(cw));
+            o["rowHeights"] = Json(std::move(rh));
+            o["textHeight"] = d.textHeight;
+            o["margin"] = d.margin;
+            if (d.titleRow)
+                o["titleRow"] = true;
             Json::Array cells;
             for (const TableCell& c : d.cells)
                 cells.push_back(Json(c.utf8));
@@ -1297,6 +1308,56 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             e.data = Indirect<DimensionData>(dimensionFromJson(doc, j));
         } else if (k == "leader") {
             e.data = Indirect<LeaderData>(leaderFromJson(doc, j));
+        } else if (k == "ray" || k == "xline") {
+            RayData r;
+            r.origin = pt(j, "origin");
+            Vec2 dir = pt(j, "direction");
+            const double len = std::hypot(dir.x, dir.y);
+            if (len < 1e-12)
+                fail("direction must not be zero");
+            r.dir = {dir.x / len, dir.y / len};
+            r.infinite = k == "xline" || boolOr(j, "infinite", false);
+            e.data = Indirect<RayData>(r);
+        } else if (k == "mline") {
+            MlineData m;
+            m.style = strOr(j, "style", "STANDARD");
+            m.scale = lenOr(j, "scale", 1);
+            m.justification = static_cast<int>(lenOr(j, "justification", 1));
+            if (m.justification < 0 || m.justification > 2)
+                fail("justification is 0 (top), 1 (zero) or 2 (bottom)");
+            m.closed = boolOr(j, "closed", false);
+            m.v = pointsFrom(req(j, "vertices"), "vertices");
+            if (m.v.size() < 2)
+                fail("an mline needs at least two vertices");
+            e.data = Indirect<MlineData>(std::move(m));
+        } else if (k == "table") {
+            TableData t;
+            t.origin = pt(j, "origin");
+            t.rotation = angOr(j, "rotation", 0);
+            for (const Json& w : req(j, "columnWidths").asArray())
+                t.colWidths.push_back(num(w, "columnWidths"));
+            for (const Json& h : req(j, "rowHeights").asArray())
+                t.rowHeights.push_back(num(h, "rowHeights"));
+            if (t.colWidths.empty() || t.rowHeights.empty())
+                fail("a table needs columnWidths and rowHeights");
+            for (double w : t.colWidths)
+                if (!(w > 0))
+                    fail("column widths must be positive");
+            for (double h : t.rowHeights)
+                if (!(h > 0))
+                    fail("row heights must be positive");
+            t.textHeight = lenOr(j, "textHeight", 2.5);
+            t.margin = lenOr(j, "margin", 1.0);
+            t.titleRow = boolOr(j, "titleRow", false);
+            t.cells.resize(t.colWidths.size() * t.rowHeights.size());
+            if (const Json* c = j.find("cells")) {
+                if (!c->isArray() || c->asArray().size() > t.cells.size())
+                    fail("cells must be a row-major array of at most rows x columns strings");
+                std::size_t i = 0;
+                for (const Json& cell : c->asArray())
+                    t.cells[i++].utf8 = cell.isString() ? cell.asString() : std::string();
+            }
+            e.data = Indirect<TableData>(std::move(t));
         } else if (k == "proxy") {
             fail("proxy entities are read-only");
         } else {
