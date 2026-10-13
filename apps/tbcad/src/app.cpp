@@ -260,7 +260,7 @@ std::optional<mcp::Image> App::captureView(int maxPx, const BBox2& area) {
 
     captureTarget_.resize(pw, ph);
     captureTarget_.bind();
-    renderer_.setBackground(backgroundFor(gui_ ? gui_->dark() : true));
+    renderer_.setBackground(gui_ ? gui_->viewportBackground() : ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->scene());
