@@ -41,8 +41,8 @@ bool looksLikeDwg(std::span<const std::byte> bytes);
 // Same contract as dxf::importDxf: fails only when the bytes are not a DWG file or the version
 // is not supported; damaged parts of a supported file become diagnostics in `report`. The
 // summary's `version` is the DWG release and the JSON report says "format":"dwg".
-dxf::Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
-                                         const dxf::ImportOptions& options, dxf::Report& report);
+Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
+                                    const dxf::ImportOptions& options, dxf::Report& report);
 
 namespace code {
 inline constexpr std::string_view kUnsupportedVersion = "dwg.reader.unsupported_version";

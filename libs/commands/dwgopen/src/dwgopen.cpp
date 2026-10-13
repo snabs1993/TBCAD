@@ -43,7 +43,7 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
         bytes[i] = static_cast<std::byte>(raw[i]);
 
     dxf::Report report;
-    dxf::Result<dxf::ImportResult> imported = dwg::importDwg(bytes, {}, report);
+    Result<dxf::ImportResult> imported = dwg::importDwg(bytes, {}, report);
     if (!imported)
         return makeError(ErrorCode::Parse, imported.error().message);
 
@@ -63,7 +63,7 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
 Result<std::vector<std::string>> writeDxfFile(const Document& doc,
                                               const std::filesystem::path& path) {
     dxf::Report report;
-    dxf::Result<dxf::ExportResult> exported = dxf::exportDxf(doc, {}, report);
+    Result<dxf::ExportResult> exported = dxf::exportDxf(doc, {}, report);
     if (!exported)
         return makeError(ErrorCode::Generic, exported.error().message);
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
