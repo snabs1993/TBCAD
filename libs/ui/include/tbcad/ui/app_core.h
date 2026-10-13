@@ -135,6 +135,9 @@ public:
     void pointerLeft();
     // A left click that did not turn into a drag.
     void click(const PointerState& p);
+    // A double click while no command runs: a text object under the pointer is selected and
+    // edited with TEXTEDIT; anything else behaves like a single click.
+    void doubleClick(const PointerState& p);
     // A finished rectangle drag from `a` to `b` (screen pixels). Left to right selects what is
     // completely inside (window), right to left what it touches (crossing). Shift removes.
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);

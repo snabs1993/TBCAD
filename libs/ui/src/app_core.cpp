@@ -568,6 +568,22 @@ void AppCore::click(const PointerState& p) {
     applyPick({*id}, p.shift);
 }
 
+void AppCore::doubleClick(const PointerState& p) {
+    if (runner().active()) {
+        click(p);
+        return;
+    }
+    Vec2 world = makeRaw(p).worldCursor;
+    auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
+    const Entity* e = id ? session_->doc.find(*id) : nullptr;
+    if (!e || (kind(*e) != EntityKind::Text && kind(*e) != EntityKind::MText)) {
+        click(p);
+        return;
+    }
+    applyPick({*id}, false);
+    submitText("TEXTEDIT");
+}
+
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
     const bool crossing = dragIsCrossing(a.x, b.x);
     Vec2 wa = camera_.screenToWorld(a);
