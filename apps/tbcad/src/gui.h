@@ -202,6 +202,8 @@ private:
     bool saveThenPending_ = false;
     std::string noticesText_{};
     bool noticesLoaded_ = false;
+    bool showQuickStart_ = false;
+    std::string quickStartText_{};
     std::string lastError_{};
 
     // Viewport interaction.

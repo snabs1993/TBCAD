@@ -201,6 +201,7 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"view.toggleCommandLine", "View > Command Line"},
         {"view.expandLog", "View > Command Log"},
         {"view.cleanScreen", "View > Clean Screen"},
+        {"help.quickStart", "Help > Quick Start"},
         {"tools.settings", "Tools > Settings"}};
     if (auto it = builtin.find(action); it != builtin.end())
         return it->second;
@@ -287,6 +288,8 @@ void Gui::runAction(const std::string& action) {
         logExpanded_ = !logExpanded_;
     else if (action == "view.cleanScreen")
         cleanScreen_ = !cleanScreen_;
+    else if (action == "help.quickStart")
+        showQuickStart_ = true;
     else if (action == "tools.settings")
         settings_.open();
     else {
@@ -678,6 +681,8 @@ void Gui::menuBar() {
         }
     }
     if (ImGui::BeginMenu("Help")) {
+        if (ImGui::MenuItem("Quick Start", keys.label("help.quickStart").c_str()))
+            showQuickStart_ = true;
         if (ImGui::MenuItem("About TBCAD"))
             showAbout_ = true;
         if (ImGui::MenuItem("Third-Party Notices"))
@@ -2108,6 +2113,7 @@ void Gui::dialogs() {
     ImGui::SetNextWindowSize(ImVec2(560, 0), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("About TBCAD", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("TBCAD %s", TBCAD_VERSION);
+        ImGui::TextDisabled("Build %s", TBCAD_GIT_HASH);
         ImGui::TextUnformatted("A free 2D CAD program.");
         ImGui::Separator();
         ImGui::TextWrapped(
@@ -2130,6 +2136,28 @@ void Gui::dialogs() {
         if (ImGui::Button("Third-Party Notices..."))
             showNotices_ = true;
         ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(110, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (showQuickStart_) {
+        ImGui::OpenPopup("Quick Start");
+        showQuickStart_ = false;
+        if (quickStartText_.empty()) {
+            std::ifstream in(findBesideExecutable("assets/help/quickstart.md"), std::ios::binary);
+            std::ostringstream buf;
+            buf << in.rdbuf();
+            quickStartText_ = in ? buf.str() : "The quick start guide was not found (assets/help).";
+        }
+    }
+    ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Quick Start", nullptr)) {
+        ImGui::BeginChild("##quickstart", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(quickStartText_.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
         if (ImGui::Button("Close", ImVec2(110, 0)))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
