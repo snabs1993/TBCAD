@@ -16,6 +16,7 @@
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/dwgopen/dwgopen.h"
+#include "tbcad/platform/crash.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
 
@@ -299,6 +300,7 @@ int App::run() {
         return 0;
     }
     paths_ = platform::defaultAppPaths();
+    platform::installCrashHandler(paths_.crashDir(), TBCAD_VERSION);
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);

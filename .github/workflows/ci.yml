@@ -96,12 +96,23 @@ jobs:
       - name: Configure
         run: cmake --preset linux-gcc-release -DTBCAD_WARNINGS_AS_ERRORS=ON
       - name: Build
-        run: cmake --build --preset linux-gcc-release --target tbcad_index_tests render_bench
+        run: cmake --build --preset linux-gcc-release --target tbcad_index_tests render_bench tbcad-convert
       - name: Index numbers (1 M boxes; informational, shared runners are noisy)
         continue-on-error: true
         run: |
           build/linux-gcc-release/libs/index/tbcad_index_tests -tc="bulk load*" | tee index-perf.txt
           { echo '### Spatial index'; echo '```'; grep 'index perf' index-perf.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Large file (100 MB DXF in, .tbcad out and back; fails above 60 s each way)
+        run: |
+          python3 tools/gen_big_dxf.py big.dxf 100
+          s=$(date +%s.%N)
+          build/linux-gcc-release/apps/tbcad-convert/tbcad-convert -q big.dxf -o big.tbcad
+          m=$(date +%s.%N)
+          build/linux-gcc-release/apps/tbcad-convert/tbcad-convert -q big.tbcad -o back.dxf
+          e=$(date +%s.%N)
+          imp=$(echo "$m - $s" | bc -l); exp=$(echo "$e - $m" | bc -l)
+          { echo '### 100 MB DXF'; echo "import $imp s, export $exp s"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          test "$(echo "$imp < 60 && $exp < 60" | bc -l)" = 1
       - name: Render benchmark (software OpenGL, numbers only)
         continue-on-error: true
         run: |

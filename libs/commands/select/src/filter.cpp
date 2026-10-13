@@ -7,7 +7,7 @@ namespace tbcad::select {
 
 namespace {
 constexpr const char* kPrefix = "filter.";
-const char* const kProps[] = {"Type", "Layer", "Color", "Linetype", "Lineweight"};
+const char* const kProps[] = {"Type", "Layer", "Color", "Linetype", "Lineweight", "Level"};
 }  // namespace
 
 std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
@@ -43,7 +43,7 @@ std::vector<Query> decodeFilter(const std::string& text) {
     std::istringstream in(text);
     std::string line;
     while (std::getline(in, line)) {
-        if (line.size() < 2 || line[0] < '0' || line[0] > '4')
+        if (line.size() < 2 || line[0] < '0' || line[0] > '5')
             continue;
         Query q;
         q.property = static_cast<Property>(line[0] - '0');
@@ -151,14 +151,14 @@ public:
 private:
     static cmd::Task add(cmd::CommandContext& ctx, std::vector<Query>& conds) {
         cmd::KeywordOptions po;
-        po.keywords = {"Type", "Layer", "Color", "Linetype", "Lineweight"};
+        po.keywords = {"Type", "Layer", "Color", "Linetype", "Lineweight", "Level"};
         po.defaultKeyword = "Type";
-        auto p = co_await ctx.getKeyword("Property [Type/Layer/Color/Linetype/Lineweight] <Type>",
-                                         std::move(po));
+        auto p = co_await ctx.getKeyword(
+            "Property [Type/Layer/Color/Linetype/Lineweight/Level] <Type>", std::move(po));
         if (!p.ok())
             co_return;
         Query q;
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < 6; ++i)
             if (p.keyword == kProps[i])
                 q.property = static_cast<Property>(i);
         auto v = co_await ctx.getString("Value");

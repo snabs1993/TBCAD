@@ -15,6 +15,7 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/platform/crash.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
@@ -127,7 +128,12 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     dpiScale_ = std::max(1.0f, sx);
     recoveryCount_ = core_.pendingRecoveries().size();
     recovery_ = core_.pendingRecovery();
-    openRecoveryPrompt_ = recovery_.has_value();
+    {
+        auto crashes = platform::pendingCrashReports(core_.paths().crashDir());
+        if (!crashes.empty())
+            crashReport_ = platform::pathToUtf8(crashes.back());
+    }
+    openRecoveryPrompt_ = recovery_.has_value() || !crashReport_.empty();
     anyActivity_ = true;
     themeMode_ = ui::parseThemeMode(core_.settings().getString("ui.theme", "dark"));
     theme_ = ui::themeFor(themeMode_, systemPrefersDark());
@@ -146,7 +152,8 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
                 on = it != ws->panels.end() && it->second;
             }
             showCommandLine_ = ws->commandLine;
-            showProperties_ = ws->properties;
+            if (!ws->panels.count("properties"))
+                panelOpen_["properties"] = ws->properties;
         } else {
             workspaceName_.clear();
         }
@@ -621,7 +628,6 @@ void Gui::menuBar() {
         ImGui::Separator();
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
-        ImGui::MenuItem("Properties", nullptr, &showProperties_);
         if (bool qp = core_.setting("ui.quickProps").value_or("0") == "1";
             ImGui::MenuItem("Quick Properties", nullptr, qp))
             core_.setSetting("ui.quickProps", qp ? "0" : "1");
@@ -890,7 +896,6 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.22f, nullptr, &center);
     ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
-    ImGui::DockBuilderDockWindow("Properties", right);
     for (const auto& p : registry_.panels())
         ImGui::DockBuilderDockWindow(p.title.c_str(), right);
     ImGui::DockBuilderFinish(ds);
@@ -902,7 +907,8 @@ void Gui::applyWorkspace(const ui::Workspace& ws) {
         on = it != ws.panels.end() && it->second;
     }
     showCommandLine_ = ws.commandLine;
-    showProperties_ = ws.properties;
+    if (!ws.panels.count("properties"))  // workspaces saved before the panel replaced the window
+        panelOpen_["properties"] = ws.properties;
     if (ws.dockIni.empty())
         rebuildDock_ = true;  // built-in workspaces use the default layout
     else
@@ -927,7 +933,7 @@ void Gui::saveWorkspace(const std::string& name) {
     for (const auto& [id, on] : panelOpen_)
         ws.panels[id] = on;
     ws.commandLine = showCommandLine_;
-    ws.properties = showProperties_;
+    ws.properties = panelOpen_["properties"];
     size_t size = 0;
     const char* ini = ImGui::SaveIniSettingsToMemory(&size);
     ws.dockIni.assign(ini ? ini : "", ini ? size : 0);
@@ -1549,47 +1555,6 @@ void Gui::startPage(const ViewportRect& rect) {
     ImGui::PopStyleVar();
 }
 
-void Gui::propertiesWindow() {
-    if (!showProperties_)
-        return;
-    ImGui::SetNextWindowSize(ImVec2(280, 400), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Properties", &showProperties_)) {
-        const auto& sel = core_.selection();
-        const Document& doc = core_.document();
-        if (sel.empty()) {
-            ImGui::TextDisabled("Nothing selected");
-        } else if (sel.size() == 1) {
-            const Entity* e = doc.find(sel[0]);
-            if (e) {
-                ImGui::TextUnformatted(kindName(kind(*e)));
-                const Layer* layer = doc.layer(e->common.layer);
-                ImGui::Text("Layer: %s", layer ? layer->name.c_str() : "?");
-                ui::PanelContext pc;
-                pc.doc = &core_.document();
-                pc.host = &core_;
-                pc.selection = &sel;
-                pc.camera = &core_.camera();
-                pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
-                for (const auto* section : registry_.sectionsFor(kind(*e))) {
-                    ImGui::Separator();
-                    section->draw(pc, sel[0]);
-                }
-            }
-        } else {
-            std::map<std::string, int> counts;
-            for (EntityId id : sel)
-                if (const Entity* e = doc.find(id))
-                    ++counts[kindName(kind(*e))];
-            ImGui::Text("%zu objects selected", sel.size());
-            for (const auto& [name, n] : counts)
-                ImGui::BulletText("%s: %d", name.c_str(), n);
-        }
-    }
-    ImGui::End();
-}
-
-// Small floating box in the corner of the viewport with the common properties of the selection.
-// Edits go through CHPROP, so they are undoable and logged like anything typed.
 void Gui::quickProperties(const ViewportRect& rect) {
     if (core_.setting("ui.quickProps").value_or("0") != "1" || core_.selection().empty() ||
         core_.runner().active())
@@ -1721,6 +1686,16 @@ void Gui::panels() {
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
     pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    pc.commandActive = core_.runner().active();
+    pc.drawPropertySections = [this, &pc](EntityId id) {
+        const Entity* e = core_.document().find(id);
+        if (!e)
+            return;
+        for (const auto* section : registry_.sectionsFor(kind(*e))) {
+            ImGui::Separator();
+            section->draw(pc, id);
+        }
+    };
     for (const std::string& id : core_.takePanelRequests())
         panelOpen_[id] = true;
     for (const auto& p : registry_.panels()) {
@@ -1956,7 +1931,6 @@ ViewportRect Gui::frame() {
     dockLayout(kDockId);
     commandWindow();
     if (!cleanScreen_) {
-        propertiesWindow();
         panels();
     }
     logWindow();
@@ -2034,12 +2008,27 @@ void Gui::dialogs() {
         ImGui::TextUnformatted("TBCAD did not close normally last time.");
         if (recoveryCount_ > 1)
             ImGui::Text("Automatic backups of %zu unsaved drawings were found.", recoveryCount_);
-        else
+        else if (recovery_)
             ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
+        if (!crashReport_.empty()) {
+            ImGui::TextWrapped(
+                "A crash report was saved to %s. Attach it when you report the problem.",
+                crashReport_.c_str());
+            if (!recovery_) {
+                ImGui::Spacing();
+                if (ImGui::Button("OK", ImVec2(110, 0))) {
+                    platform::acknowledgeCrashReports(core_.paths().crashDir());
+                    crashReport_.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
         ImGui::Spacing();
-        if (ImGui::Button("Recover", ImVec2(110, 0))) {
+        if (recovery_ && ImGui::Button("Recover", ImVec2(110, 0))) {
+            platform::acknowledgeCrashReports(core_.paths().crashDir());
+            crashReport_.clear();
             if (recovery_) {
                 auto r = core_.recoverAll();
                 if (!r)
@@ -2049,7 +2038,9 @@ void Gui::dialogs() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Discard", ImVec2(110, 0))) {
+        if (recovery_ && ImGui::Button("Discard", ImVec2(110, 0))) {
+            platform::acknowledgeCrashReports(core_.paths().crashDir());
+            crashReport_.clear();
             core_.discardRecovery();
             recovery_.reset();
             ImGui::CloseCurrentPopup();
