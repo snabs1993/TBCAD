@@ -1,10 +1,12 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -12,11 +14,21 @@ using namespace tbcad;
 
 namespace {
 
+long uniqueId() {
+    static long counter = 0;
+    return static_cast<long>(std::chrono::steady_clock::now().time_since_epoch().count() %
+                             1000000007L) *
+               16 +
+           (counter++ & 15);
+}
+
 struct Fixture {
     Document doc;
     cmd::Registry reg;
     std::unique_ptr<cmd::ScriptHost> host;
-    std::filesystem::path dir = std::filesystem::temp_directory_path() / "tbcad_plot_cmd_tests";
+    // ctest runs the test cases in parallel processes: every fixture gets a folder of its own.
+    std::filesystem::path dir = std::filesystem::temp_directory_path() /
+                                ("tbcad_plot_cmd_tests_" + std::to_string(uniqueId()));
 
     Fixture() {
         std::filesystem::create_directories(dir);
@@ -170,4 +182,24 @@ TEST_CASE("the default file name follows the open drawing; PLOTPANEL opens the p
     CHECK(r.finished);
     REQUIRE(h.panels.size() == 1);
     CHECK(h.panels[0] == "plot");
+}
+
+TEST_CASE("the Layout option plots a layout at 1:1 instead of model space") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Plan", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "Plan", {{10, 10}, {410, 287}}, {5000, 0}, 100).ok());
+        tx.commit();
+    }
+    auto out = f.path("layout.pdf");
+    auto r = f.host->run("EXPORTPDF", {"Layout", "Plan", "", out});
+    CHECK(r.finished);
+    REQUIRE(std::filesystem::exists(out));
+    CHECK(f.host->logContains("Layout Plan: Plotted"));
+    CHECK(plot::plotLayout(*f.host) == "Plan");
+    // Unknown layout: an error message, no file.
+    auto bad = f.path("bad.pdf");
+    f.host->run("EXPORTPDF", {"Layout", "Nope", "", bad});
+    CHECK_FALSE(std::filesystem::exists(bad));
 }
