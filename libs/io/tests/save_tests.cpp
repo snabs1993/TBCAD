@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 
@@ -122,6 +123,8 @@ TEST_CASE("tbcad-dump prints the chunk list and the canonical dump") {
     REQUIRE(std::system(cmd.c_str()) == 0);
     std::ifstream in(out, std::ios::binary);
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    // The Windows C runtime writes "\n" as "\r\n" in text mode.
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
     CHECK(text.find("chunk HEAD") != std::string::npos);
     CHECK(text.find("chunk END") != std::string::npos);
     CHECK(text.find(canonicalDump(*doc)) != std::string::npos);
