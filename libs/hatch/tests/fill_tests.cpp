@@ -445,6 +445,7 @@ TEST_CASE("gradient bands keep holes") {
 }
 
 TEST_CASE("a gradient hatch displays as bands that run from colour 1 to colour 2") {
+    registerHatchDisplay();
     Document doc;
     Scene s;
     s.rectLines({0, 0}, {50, 50});
