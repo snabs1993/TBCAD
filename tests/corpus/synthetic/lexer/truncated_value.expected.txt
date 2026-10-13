@@ -1,0 +1,5 @@
+G 1 0 S SECTION
+G 3 2 S ENTITIES
+G 5 0 S POINT
+W 7 dxf.lexer.missing_value
+W 8 dxf.lexer.missing_eof
