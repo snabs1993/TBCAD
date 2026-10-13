@@ -15,6 +15,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeTextStylesPanelCommand());
     (void)registry.add(makeAnnotativeCommand());
     (void)registry.add(makeAnnoScaleCommand());
+    (void)registry.add(makeAnnoNewCommand());
     (void)registry.add(makeScaleListCommand());
 }
 
@@ -30,6 +31,7 @@ void registerUi(ui::UiRegistry& ui) {
 #ifdef TBCAD_TEXTCMD_IMGUI
     registerEditorPanel(ui);
     registerStylePanel(ui);
+    registerAnnotationSection(ui);
 #endif
 }
 

@@ -17,7 +17,8 @@ constexpr std::uint8_t kCfLtScale = 8;
 constexpr std::uint8_t kCfHidden = 16;
 constexpr std::uint8_t kCfOwner = 32;
 constexpr std::uint8_t kCfAnnotative = 64;
-constexpr std::uint8_t kCfKnownMask = 127;
+constexpr std::uint8_t kCfAnnoScales = 128;  // list of scales follows the owner
+constexpr std::uint8_t kCfKnownMask = 255;
 
 // ---------------------------------------------------------------- writing
 
@@ -752,6 +753,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         flags |= kCfHidden;
     if (c.annotative)
         flags |= kCfAnnotative;
+    if (c.annotative && !c.annoScales.empty())
+        flags |= kCfAnnoScales;
     if (owner)
         flags |= kCfOwner;
     w.varint(c.id.value);
@@ -771,6 +774,11 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         w.f64(c.linetypeScale);
     if (flags & kCfOwner)
         w.varint(owner.value);
+    if (flags & kCfAnnoScales) {
+        w.varint(c.annoScales.size());
+        for (double v : c.annoScales)
+            w.f64(v);
+    }
 
     if (unknown) {
         w.raw(unknown->raw);
@@ -807,6 +815,18 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
     c.annotative = (flags & kCfAnnotative) != 0;
     if (flags & kCfOwner)
         out.owner = pr.id<BlockId>();
+    if (flags & kCfAnnoScales) {
+        const std::uint64_t n = r.varint();
+        if (n > 64)
+            bad("too many annotation scales");
+        std::vector<double> found;
+        for (std::uint64_t i = 0; i < n; ++i) {
+            double v = r.f64();
+            if (std::isfinite(v) && v > 0)
+                found.push_back(v);
+        }
+        c.annoScales = ScaleList(std::move(found));
+    }
     if (!c.id)
         bad("entity id 0");
 

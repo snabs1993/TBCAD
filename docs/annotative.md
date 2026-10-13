@@ -1,15 +1,32 @@
 # Annotative scaling
 
-Text, dimensions, leaders and tables can follow the drawing's annotation scale, so notes stay
-readable at any plot scale.
+Text, dimensions, leaders, tables and symbols (block inserts) can be drawn at paper size (1:1)
+and sized for a plot scale afterwards.
 
-- `ANNOTATIVE` (`ANNO`): select objects, then On or Off.
-- `CANNOSCALE` (`AS`): set the current scale as N of 1:N (`100` for 1:100). Annotative objects
-  are drawn N times larger in model space, so they print at the same paper size.
-- `SCALELISTEDIT`: Add, Delete, Reset or List the scales on offer.
-- A layout viewport uses its own scale, so one drawing can show the same note at 1:50 and 1:100
-  side by side with the same paper height.
+## Per object
 
-Both the current scale and the list are stored in the drawing (`.tbcad`). DXF files carry only the
-per-object annotative note (in TBCAD's XDATA), so other programs see ordinary objects at the
-size last drawn; the scale and the list are not written to DXF.
+- Select an object: the **Annotation** part of the Properties panel has an *Annotative* box and
+  the scales the object is made for (*Change...* offers the scale list, or a custom N).
+- `ANNOTATIVE` (`ANNO`): select objects, then `On`, `Off` or `Scales` (for example `50,100`;
+  empty means "follow the drawing's current scale").
+- An annotative object is drawn at its **first** scale in model space (text 2.5 mm high becomes
+  125 mm at 1:50). In a layout viewport it is drawn at the viewport's scale, so it prints at the
+  same paper size, and it is shown only in viewports whose scale is in its list.
+- A symbol (block insert) has no live scaling: turning it on or changing its scale rescales the
+  insert, so a north arrow drawn at 1:1 becomes 50 times larger at 1:50 and back again when
+  turned off.
+
+## Per drawing
+
+- `CANNOSCALE` (`AS`), or the *Scale* box in the status bar: the current annotation scale, the
+  default for new annotative objects and for annotative objects that list no scale of their own.
+- `ANNONEW`, or the *ANNO* button in the status bar: new text, dimensions, leaders, tables and
+  symbols start annotative at the current scale.
+- `SCALELISTEDIT`: Add, Delete, Reset, List the scales on offer.
+
+## Files
+
+- `.tbcad` keeps the flag and each object's scales, the current scale and the list.
+- DXF keeps the same in TBCAD's extended data (per object) and in an `XRECORD` in the root
+  dictionary (current scale and list). R2007 files also get real `ACAD_SCALELIST` / `SCALE`
+  objects. Other programs show the objects at the size last drawn.

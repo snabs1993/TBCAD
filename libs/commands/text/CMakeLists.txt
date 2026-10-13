@@ -9,7 +9,7 @@ set(_textcmd_sources
 # The editor panel needs Dear ImGui, which is only fetched when the application is built.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp)
+  list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp ui/annotation_section.cpp)
 endif()
 
 tbcad_add_library(textcmd

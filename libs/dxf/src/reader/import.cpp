@@ -219,6 +219,41 @@ void Importer::skipSection(RecordReader& rr) {
     }
 }
 
+// OBJECTS: only our annotation-scale note is read (the current scale and the scale list); the
+// SCALE objects other programs write are not needed because the note carries the same list.
+void Importer::processObjects(RecordReader& rr) {
+    Record r;
+    while (rr.next(r)) {
+        if (r.type == "ENDSEC")
+            return;
+        if (r.type == "SECTION" || r.type == "EOF") {
+            rr.pushBack(std::move(r));
+            return;
+        }
+        if (r.type != "XRECORD")
+            continue;
+        const Group* g = r.find(1);
+        if (!g)
+            continue;
+        const std::string text = dec(g->str());
+        if (text.rfind("current=", 0) != 0)
+            continue;
+        const std::size_t semi = text.find(";list=");
+        if (semi == std::string::npos)
+            continue;
+        const std::string cur = text.substr(8, semi - 8);
+        const std::string list = text.substr(semi + 6);
+        char* end = nullptr;
+        const double c = std::strtod(cur.c_str(), &end);
+        (void)tx_->modifyHeader([&](Header& h) {
+            if (end != cur.c_str() && std::isfinite(c) && c > 0)
+                h.custom[kAnnoScaleKey] = cur;
+            if (!list.empty() && list.size() < 2000)
+                h.custom[kAnnoScaleListKey] = list;
+        });
+    }
+}
+
 void Importer::processTables(RecordReader& rr) {
     Record r;
     while (rr.next(r)) {
@@ -810,6 +845,8 @@ Result<ImportResult> Importer::run() {
             processBlocks(rr);
         else if (name == "ENTITIES")
             processEntities(rr);
+        else if (name == "OBJECTS")
+            processObjects(rr);
         else
             skipSection(rr);
     }

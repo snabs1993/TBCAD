@@ -75,6 +75,7 @@ private:
     void processBlocks(RecordReader& rr);
     void processEntities(RecordReader& rr);
     void skipSection(RecordReader& rr);
+    void processObjects(RecordReader& rr);
     BlockId blockFor(std::string_view dxfName);
     void finish();
 

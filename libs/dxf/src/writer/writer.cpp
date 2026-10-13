@@ -538,11 +538,32 @@ std::string Writer::objectsSection() {
     std::uint64_t groupDict = newHandle(), layoutDict = newHandle(), mlineDict = newHandle(),
                   plotDict = newHandle(), mlineStyle = newHandle(), placeholder = newHandle();
 
+    // Annotation scales: the current scale and the list, when the drawing has any (R2007 and later
+    // get real SCALE objects; the XRECORD carries them for every version, for our own importer).
+    const auto& custom = doc_.header().custom;
+    const bool hasScales =
+        !r12_ && (custom.count(kAnnoScaleKey) || custom.count(kAnnoScaleListKey));
+    const bool scaleObjects = hasScales && opt_.version == DxfVersion::R2007;
+    std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
+    std::uint64_t scaleRec = hasScales ? newHandle() : 0;
+    std::vector<double> scaleList = annotationScaleList(doc_.header());
+    std::vector<std::uint64_t> scaleHandles;
+    for (std::size_t i = 0; scaleObjects && i < scaleList.size(); ++i)
+        scaleHandles.push_back(newHandle());
+
     o.zero("DICTIONARY");
     o.h(5, rootDict_);
     o.i(330, 0);
     o.raw(100, "AcDbDictionary");
     o.i(281, 1);
+    if (scaleObjects) {
+        o.raw(3, "ACAD_SCALELIST");
+        o.h(350, scaleDict);
+    }
+    if (hasScales) {
+        o.raw(3, "TBCAD_ANNOSCALE");
+        o.h(350, scaleRec);
+    }
     o.raw(3, "ACAD_GROUP");
     o.h(350, groupDict);
     o.raw(3, "ACAD_LAYOUT");
@@ -563,6 +584,48 @@ std::string Writer::objectsSection() {
         o.i(281, 1);
     };
     ownedDict(groupDict);
+    if (scaleObjects) {
+        ownedDict(scaleDict);
+        for (std::size_t i = 0; i < scaleList.size(); ++i) {
+            char name[48];
+            std::snprintf(name, sizeof name, "1:%g", scaleList[i]);
+            o.raw(3, name);
+            o.h(350, scaleHandles[i]);
+        }
+        for (std::size_t i = 0; i < scaleList.size(); ++i) {
+            char name[48];
+            std::snprintf(name, sizeof name, "1:%g", scaleList[i]);
+            o.zero("SCALE");
+            o.h(5, scaleHandles[i]);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, scaleDict);
+            o.raw(102, "}");
+            o.h(330, scaleDict);
+            o.raw(100, "AcDbScale");
+            o.i(70, 0);
+            o.raw(300, name);
+            o.d(140, 1.0);
+            o.d(141, scaleList[i]);
+            o.i(290, 0);
+        }
+    }
+    if (hasScales) {
+        // current scale and list as text: "current=50;list=1,2,5"
+        char cur[48];
+        std::snprintf(cur, sizeof cur, "%.12g", currentAnnotationScale(doc_.header()));
+        std::string text = std::string("current=") + cur + ";list=";
+        for (std::size_t i = 0; i < scaleList.size(); ++i) {
+            char v[48];
+            std::snprintf(v, sizeof v, "%.12g", scaleList[i]);
+            text += (i ? "," : "") + std::string(v);
+        }
+        o.zero("XRECORD");
+        o.h(5, scaleRec);
+        o.h(330, rootDict_);
+        o.raw(100, "AcDbXrecord");
+        o.i(280, 1);
+        o.str(1, text);
+    }
 
     ownedDict(layoutDict);
     o.raw(3, "Layout1");

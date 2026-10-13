@@ -317,6 +317,15 @@ void Writer::writeAnnotativeData(const Entity& e) {
         return;
     o_->raw(1001, "TBCAD");
     o_->str(1000, "annotative=1");
+    if (!e.common.annoScales.empty()) {
+        std::string s = "annoscales=";
+        for (double v : e.common.annoScales) {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.12g", v);
+            s += (s.back() == '=' ? "" : ",") + std::string(buf);
+        }
+        o_->str(1000, s);
+    }
 }
 
 // A table is an INSERT of an anonymous *T block that holds its drawn grid and texts, so any
