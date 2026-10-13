@@ -16,18 +16,6 @@ void commit(DrawingSession& s, Transaction& tx, const std::string& label) {
     s.undoStack().push(label, {std::move(cs)});
 }
 
-// Why an entity cannot be edited, empty when it can: locked layers (and, in "active only"
-// mode, every layer outside the current layer's branch) are read-only.
-std::string whyReadOnly(const Document& doc, const Entity& e) {
-    EffectiveLayer l = doc.effective(e.common.layer);
-    if (!l.locked)
-        return {};
-    const Layer* row = doc.layer(e.common.layer);
-    std::string name = row ? row->name : std::string("?");
-    return l.inactive ? "layer \"" + name + "\" is not the active layer (Active Only mode is on)"
-                      : "layer \"" + name + "\" is locked";
-}
-
 ToolResult addEntities(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;
     Document& doc = s.document();
@@ -325,14 +313,27 @@ ToolResult setSelection(ToolContext& ctx, const Json& a) {
 
 }  // namespace
 
+// Why an entity cannot be edited, empty when it can: locked layers (and, in "active only"
+// mode, every layer outside the current layer's branch) are read-only.
+std::string whyReadOnly(const Document& doc, const Entity& e) {
+    EffectiveLayer l = doc.effective(e.common.layer);
+    if (!l.locked)
+        return {};
+    const Layer* row = doc.layer(e.common.layer);
+    std::string name = row ? row->name : std::string("?");
+    return l.inactive ? "layer \"" + name + "\" is not the active layer (Active Only mode is on)"
+                      : "layer \"" + name + "\" is locked";
+}
+
 void registerEditTools(ToolSet& tools) {
     auto idArray = [](const char* d = "Entity ids (decimal strings)") {
         return tArray(tString(), d);
     };
 
     Json entitySchema = tObject(
-        {{"kind", tString("line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch "
-                          "or insert")},
+        {{"kind",
+          tString("line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, "
+                  "insert, dimension or leader")},
          {"layer", tString("layer path; default: the `layer` argument or the current layer")},
          {"color", tAny("\"ByLayer\", \"ByBlock\", ACI 1..255 or \"#RRGGBB\"")},
          {"linetype", tString("name, \"ByLayer\" or \"ByBlock\"")},
@@ -347,8 +348,9 @@ void registerEditTools(ToolSet& tools) {
         "([[[x,y]..]..]), pattern,scale,angle. insert: block,position,scale,rotation.");
 
     tools.add({"add_entities", "Add entities",
-               "Adds geometry to the drawing in one undo step. Dimensions and leaders are made "
-               "with run_command.",
+               "Adds geometry to the drawing in one undo step: lines, arcs, polylines, text, "
+               "hatches (also gradients), block inserts (also arrays, attributes), dimensions and "
+               "leaders. Read the tbcad://docs/entity-json resource for the fields.",
                tObject({{"entities", tArray(entitySchema, "", 10000)},
                         {"layer", tString("default layer path for entities without one")},
                         {"create_layers", tBool("create layers (and parents) that do not exist")}},

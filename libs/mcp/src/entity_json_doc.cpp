@@ -33,13 +33,22 @@ Kind fields:
 - **spline**: `degree`, `controlPoints`, optional `fitPoints`, `weights`, `closed`
 - **text**: `position`, `height`, `value`, optional `rotation`, `style`, `hAlign` (left, center, right, aligned, middle, fit), `vAlign` (baseline, bottom, middle, top), `alignPoint`, `widthFactor`, `oblique`
 - **mtext**: `position`, `height`, `width`, `value`, `attachment` (topLeft ... bottomRight), optional `rotation`, `style`
-- **hatch**: `loops`, `solid`, and for patterns `pattern`, `scale`, `angle`. When writing, a loop is `[[x,y],...]` or `{"vertices": [...]}` or `{"edges": [{"type":"line"|"arc"|"polyline",...}]}`.
-- **insert**: `block` (name), `position`, `scale` (number or `[sx, sy]`), `rotation`
-- **dimension**, **leader**: read only here; create them with `run_command` (DIMLINEAR, DIMALIGNED, DIMRADIUS, LEADER ...).
+- **hatch**: `loops`, `solid`, and for patterns `pattern`, `scale`, `angle`, optional `patternOrigin`. `fill` is the solid colour (default ByLayer). `gradient` `{"type": "linear"|"cylinder", "color1", "color2", "angle"}` makes it a gradient fill (colours as for `color`). `associativeWith` lists the boundary entity ids the hatch follows (read only). When writing, a loop is `[[x,y],...]` or `{"vertices": [...]}` or `{"edges": [{"type":"line"|"arc"|"polyline",...}]}`.
+- **insert**: `block` (name), `position`, `scale` (number or `[sx, sy]`), `rotation`. Optional `attributes` `{"TAG": "value"}` (values of the block's attribute definitions), `dynamicValues` (numbers, in the order of the block's dynamic parameters) and `array`, which turns the insert into an associative array:
+  `{"kind":"rectangular","rows","columns","rowSpacing","columnSpacing","angle"}`,
+  `{"kind":"polar","center","count","fillAngle","rotateItems","reference"}` or
+  `{"kind":"path","path":[vertices],"pathClosed","count","pathSpacing","rotateItems","reference"}`.
+- **dimension**: `dimKind` is `linear`, `aligned`, `radius`, `diameter`, `angular` (two lines) or `angular3`. Writing takes one of
+  `linear`/`aligned`: `start`, `end`, `dimLine` (a point on the dimension line); linear also `rotation` (0 = horizontal, pi/2 = vertical);
+  `radius`/`diameter`: `center`, `radius`, optional `angle` (where the dimension sits on the circle);
+  `angular`: `lines` `[[a, b], [c, d]]` and `arcPoint` (a point on the dimension arc);
+  `angular3`: `first`, `second`, `vertex`, `arcPoint`;
+  or the raw `definitionPoints` that reading returns. Optional `text` (override; `<>` stands for the measured value), `textPosition` (fixes the text there unless `textPositionFixed` is false; reading returns both), `dimStyle` (name). `measurement` and the text position are computed. Baseline and continued chains are made with `run_command` (DIMBASELINE, DIMCONTINUE) or by adding more linear dimensions that share a point.
+- **leader**: `vertices` (at least two, the arrow end first), optional `text`, `textPosition`, `dimStyle`.
 - **proxy**: an imported entity of an unknown type; read only.
 
 Writing: `add_entities` accepts line, circle, arc, polyline, point, ellipse, spline, text, mtext,
-hatch and insert. `modify_entities` `set` takes any of the fields above for the entity's kind.
+hatch, insert, dimension and leader. `modify_entities` `set` takes any of the fields above for the entity's kind.
 )MD";
     return doc;
 }
