@@ -15,6 +15,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Rotate", "ROTATE", "modify.rotate", "");
     ui.addMenuItem("Modify/Scale", "SCALE", "modify.scale", "");
     ui.addMenuItem("Modify/Mirror", "MIRROR", "modify.mirror", "");
+    ui.addMenuItem("Modify/Stretch", "STRETCH", "modify.stretch", "");
 
     // A click on a grip of the selection starts GRIPEDIT; Ctrl makes it a copy.
     ui.addIdleClickHook([](ui::PanelContext& ctx, Vec2 world, double aperture, bool /*shift*/,
