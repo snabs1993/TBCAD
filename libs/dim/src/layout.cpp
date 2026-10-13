@@ -2,6 +2,7 @@
 #include <cmath>
 
 #include "tbcad/dim/dim.h"
+#include "tbcad/text/field.h"
 #include "tbcad/text/text.h"
 
 namespace tbcad::dim {
@@ -481,7 +482,10 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     Layout L;
     const DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
-    const std::string txt = dimensionText(st, d);
+    DimensionData shown = d;
+    if (text::hasFields(shown.textOverride))
+        shown.textOverride = text::expandFields(doc, shown.textOverride);
+    const std::string txt = dimensionText(st, shown);
     switch (d.kind) {
         case DimKind::Linear:
         case DimKind::Aligned:

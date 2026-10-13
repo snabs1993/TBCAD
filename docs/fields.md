@@ -17,5 +17,6 @@ table cell. A field is written `%<name>%` or `%<name:argument:argument>%`.
 A field that cannot be worked out (no such object, unsaved drawing) shows `####`. On screen the
 texts with fields are redrawn after every change, so a length or area follows its object live.
 `FIELD` asks for the kind of field, the object when needed, and the place for the new text.
-Limits: the file name changes on the screen only after the next edit; fields in dimension text
-and attributes are not worked out yet; DXF files carry the shown text of the moment.
+Fields also work in the text override of a dimension (`<>` still stands for the measurement).
+Limits: the file name changes on the screen only after the next edit; DXF files carry the shown
+text of the moment.
