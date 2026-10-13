@@ -243,7 +243,7 @@ TEST_CASE("files: load by extension, stamps, state and path rules") {
         REQUIRE(io::writeTbcad(*doc, file, io::WriteOptions{.keepBackup = false}).ok());
     }
     CHECK(defaultName(file) == "plan one");
-    CHECK(defaultName("a$b:c.dxf") == "a_b_c");
+    CHECK(defaultName("a$b c.dxf") == "a_b c");
     CHECK(resolvePath("plan one.tbcad", dir / "host.tbcad") == file);
     CHECK(resolvePath(file.string(), "/elsewhere/host.tbcad") == file);
 
