@@ -1,0 +1,30 @@
+#pragma once
+
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace tbcad::platform {
+
+struct FileFilter {
+    std::string name;     // "TBCAD drawings"
+    std::string pattern;  // "*.tbcad" (several: "*.dxf;*.dwg")
+};
+
+// Native file dialogs. Only Windows has them (IFileDialog); elsewhere nativeDialogsAvailable() is
+// false and the application shows its own ImGui file browser instead.
+bool nativeDialogsAvailable();
+
+// `ownerWindow` is the HWND on Windows (may be null). Returns nullopt when the user cancels.
+std::optional<std::filesystem::path> showOpenDialog(void* ownerWindow,
+                                                    const std::vector<FileFilter>& filters,
+                                                    const std::string& title);
+// `defaultExtension` without the dot ("tbcad"). `suggestedName` may be empty.
+std::optional<std::filesystem::path> showSaveDialog(void* ownerWindow,
+                                                    const std::vector<FileFilter>& filters,
+                                                    const std::string& title,
+                                                    const std::string& defaultExtension,
+                                                    const std::string& suggestedName);
+
+}  // namespace tbcad::platform
