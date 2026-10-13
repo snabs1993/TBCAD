@@ -7,9 +7,11 @@ tbcad_add_tests(e2e
   SOURCES
     tests/main.cpp
     tests/smoke_tests.cpp
+    tests/command_fuzz_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry)
 # The target exists only when tests are built (the ezdxf and fuzz jobs configure without them).
 if(TARGET tbcad_e2e_tests)
   target_compile_definitions(tbcad_e2e_tests PRIVATE
-    TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus")
+    TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus"
+    TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples")
 endif()

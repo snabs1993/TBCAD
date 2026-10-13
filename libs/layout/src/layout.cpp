@@ -262,15 +262,17 @@ struct Edit {
     Viewport* vp = nullptr;
 };
 
-Result<Edit> openEdit(Transaction& tx, const std::string& layoutName, int vpId) {
+// wantVp: also find viewport `vpId` (an id below 1 never exists); false opens the layout only.
+Result<Edit> openEdit(Transaction& tx, const std::string& layoutName, int vpId,
+                      bool wantVp = true) {
     Edit e;
     e.all = current(tx, tx.document());
     e.layout = pick(e.all, layoutName);
     if (!e.layout)
         return err(ErrorCode::NotFound, "No layout named \"" + layoutName + "\"");
-    if (vpId > 0) {
+    if (wantVp) {
         for (Viewport& v : e.layout->viewports)
-            if (v.id == vpId)
+            if (vpId > 0 && v.id == vpId)
                 e.vp = &v;
         if (!e.vp)
             return err(ErrorCode::NotFound,
@@ -287,7 +289,7 @@ Result<int> addViewport(Transaction& tx, const std::string& layoutName, const BB
         return err(ErrorCode::InvalidArgument, "A viewport needs a rectangle with an area");
     if (!(scaleN > 0))
         return err(ErrorCode::InvalidArgument, "The viewport scale must be positive");
-    auto e = openEdit(tx, layoutName, 0);
+    auto e = openEdit(tx, layoutName, 0, false);
     if (!e)
         return e.error();
     Edit ed = std::move(e.value());
