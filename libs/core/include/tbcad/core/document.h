@@ -288,6 +288,11 @@ public:
 
     Result<void> modifyHeader(const std::function<void(Header&)>& fn);
 
+    // Ids of the entities that existed when the transaction began and have been modified or erased
+    // by it so far (entities added in this transaction are not listed). Sorted by id. Lets
+    // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
+    std::vector<EntityId> touchedEntities() const;
+
     // Finishes the transaction. Observers are notified once unless nothing changed.
     ChangeSet commit();
     // Undoes everything done so far and ends the transaction.
