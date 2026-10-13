@@ -52,7 +52,7 @@ struct PlotLayout {
     double pageWidthMm = 0, pageHeightMm = 0;
     // Printable rectangle on the sheet (page minus margins), lower-left origin.
     BBox2 printable{};
-    BBox2 area{};            // plotted rectangle in drawing units
+    BBox2 area{};             // plotted rectangle in drawing units
     double paperPerUnit = 1;  // paper mm per drawing unit
     // Paper position of area.min.
     Vec2 origin{};
@@ -80,7 +80,7 @@ struct PlotPath {
     bool closed = false;
     PlotStyle style{};
 };
-struct PlotArc {  // counter-clockwise from start to end in drawing space; a full circle when full
+struct PlotArc {    // counter-clockwise from start to end in drawing space; a full circle when full
     Vec2 center{};  // paper mm
     double radius = 0;
     double start = 0, end = 0;

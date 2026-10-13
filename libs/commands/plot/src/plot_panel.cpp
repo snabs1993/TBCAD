@@ -61,7 +61,9 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
     k = std::max(k, 0.01f);
     float pw = float(lay.pageWidthMm) * k, ph = float(lay.pageHeightMm) * k;
     ImVec2 p0{origin.x + (size.x - pw) / 2, origin.y + (size.y - ph) / 2};
-    auto toScreen = [&](Vec2 p) { return ImVec2(p0.x + float(p.x) * k, p0.y + ph - float(p.y) * k); };
+    auto toScreen = [&](Vec2 p) {
+        return ImVec2(p0.x + float(p.x) * k, p0.y + ph - float(p.y) * k);
+    };
 
     dl->AddRectFilled({p0.x + 3, p0.y + 3}, {p0.x + pw + 3, p0.y + ph + 3}, IM_COL32(0, 0, 0, 60));
     dl->AddRectFilled(p0, {p0.x + pw, p0.y + ph}, IM_COL32(255, 255, 255, 255));
@@ -76,8 +78,7 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
             pts.clear();
             for (const Vec2& v : p->pts)
                 pts.push_back(toScreen(v));
-            dl->AddPolyline(pts.data(), int(pts.size()),
-                            col(p->style.color),
+            dl->AddPolyline(pts.data(), int(pts.size()), col(p->style.color),
                             p->closed ? ImDrawFlags_Closed : ImDrawFlags_None,
                             std::max(1.0f, float(p->style.widthMm) * k));
         } else if (const auto* a = std::get_if<exportlib::PlotArc>(&prim)) {
@@ -97,7 +98,8 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
                 pts.clear();
                 for (const Vec2& v : ring)
                     pts.push_back(toScreen(v));
-                dl->AddPolyline(pts.data(), int(pts.size()), col(f->color), ImDrawFlags_Closed, 1.0f);
+                dl->AddPolyline(pts.data(), int(pts.size()), col(f->color), ImDrawFlags_Closed,
+                                1.0f);
             }
         } else if (const auto* d = std::get_if<exportlib::PlotDots>(&prim)) {
             for (const Vec2& v : d->pts)

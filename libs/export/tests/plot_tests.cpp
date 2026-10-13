@@ -53,7 +53,8 @@ void checkWithQpdf(const PlotSheet& sheet, const char* name) {
         MESSAGE("qpdf not found, skipping check for ", std::string(name));
         return;
     }
-    auto path = std::filesystem::temp_directory_path() / (std::string("tbcad_plot_") + name + ".pdf");
+    auto path =
+        std::filesystem::temp_directory_path() / (std::string("tbcad_plot_") + name + ".pdf");
     REQUIRE(writePdf(sheet, path.string()).ok());
     std::string cmd = "qpdf --check \"" + path.string() + "\" > " + kNull + " 2>&1";
     int rc = std::system(cmd.c_str());

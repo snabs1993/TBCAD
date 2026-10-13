@@ -69,8 +69,8 @@ TEST_CASE("EXPORTPDF writes a PDF with the chosen paper and scale") {
 TEST_CASE("EXPORTSVG: orientation, paper and colour options") {
     Fixture f;
     auto out = f.path("a4.svg");
-    auto r = f.host->run("EXPORTSVG", {"Paper", "a4", "Orientation", "Portrait", "Color",
-                                       "Monochrome", "", out});
+    auto r = f.host->run(
+        "EXPORTSVG", {"Paper", "a4", "Orientation", "Portrait", "Color", "Monochrome", "", out});
     CHECK(r.finished);
     std::string svg = slurp(out);
     CHECK(svg.find("width=\"210mm\"") != std::string::npos);
@@ -115,7 +115,8 @@ TEST_CASE("window area uses two corners; an empty drawing reports an error") {
 
     Document empty;
     cmd::ScriptHost h2(empty, f.reg);
-    auto r2 = h2.run("EXPORTPDF", {"", f.path("none.pdf"), cmd::ScriptItem::esc(), cmd::ScriptItem::esc()});
+    auto r2 = h2.run("EXPORTPDF",
+                     {"", f.path("none.pdf"), cmd::ScriptItem::esc(), cmd::ScriptItem::esc()});
     CHECK(h2.logContains("Nothing to plot"));
     CHECK_FALSE(std::filesystem::exists(f.path("none.pdf")));
 }

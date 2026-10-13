@@ -68,7 +68,8 @@ private:
     std::string xy(Vec2 p) const { return num(p.x) + ' ' + num(h_ - p.y); }
 
     std::string strokeAttrs(const PlotStyle& st, bool round) const {
-        std::string s = " stroke=\"" + hex(st.color) + "\" stroke-width=\"" + num(st.widthMm) + "\"";
+        std::string s =
+            " stroke=\"" + hex(st.color) + "\" stroke-width=\"" + num(st.widthMm) + "\"";
         if (!st.dashMm.empty()) {
             s += " stroke-dasharray=\"";
             for (std::size_t i = 0; i < st.dashMm.size(); ++i)
@@ -95,7 +96,8 @@ private:
                  << "\" r=\"" << num(a.radius) << '"' << strokeAttrs(a.style, false) << "/>\n";
             return;
         }
-        Vec2 s{a.center.x + a.radius * std::cos(a.start), a.center.y + a.radius * std::sin(a.start)};
+        Vec2 s{a.center.x + a.radius * std::cos(a.start),
+               a.center.y + a.radius * std::sin(a.start)};
         Vec2 e{a.center.x + a.radius * std::cos(a.end), a.center.y + a.radius * std::sin(a.end)};
         const bool large = (a.end - a.start) > kPi;
         // y is flipped, so counter-clockwise (in the drawing) is sweep-flag 0.

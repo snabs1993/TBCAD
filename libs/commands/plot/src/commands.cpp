@@ -22,7 +22,9 @@ std::string lower(std::string s) {
 std::string summary(const PlotSettings& s, Format format) {
     std::string t = format == Format::Pdf ? "PDF" : "SVG";
     t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
-    t += s.area == PlotArea::Extents ? ", Extents" : s.area == PlotArea::Display ? ", Display" : ", Window";
+    t += s.area == PlotArea::Extents   ? ", Extents"
+         : s.area == PlotArea::Display ? ", Display"
+                                       : ", Window";
     t += ", scale " + scaleText(s);
     return t;
 }
@@ -46,8 +48,8 @@ public:
         Format format = format_;
         for (;;) {
             KeywordOptions menu;
-            menu.keywords = {"Paper",  "Orientation", "Area",   "Scale",  "Center", "Offset",
-                             "Margin", "LineWeights", "Color",  "Format", "Export"};
+            menu.keywords = {"Paper",  "Orientation", "Area",  "Scale",  "Center", "Offset",
+                             "Margin", "LineWeights", "Color", "Format", "Export"};
             menu.defaultKeyword = "Export";
             auto choice = co_await ctx.getKeyword("Plot " + summary(s, format), menu);
             if (choice.status == Status::Cancel)
@@ -207,12 +209,10 @@ private:
 void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PlotCommand>(
         "PLOT", std::vector<std::string>{"PRINT"}, "Plot the drawing to PDF or SVG", Format::Pdf));
-    (void)registry.add(std::make_unique<PlotCommand>("EXPORTPDF", std::vector<std::string>{},
-                                                     "Export the drawing to a PDF file",
-                                                     Format::Pdf));
-    (void)registry.add(std::make_unique<PlotCommand>("EXPORTSVG", std::vector<std::string>{},
-                                                     "Export the drawing to an SVG file",
-                                                     Format::Svg));
+    (void)registry.add(std::make_unique<PlotCommand>(
+        "EXPORTPDF", std::vector<std::string>{}, "Export the drawing to a PDF file", Format::Pdf));
+    (void)registry.add(std::make_unique<PlotCommand>(
+        "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
 }
 
 }  // namespace tbcad::plot

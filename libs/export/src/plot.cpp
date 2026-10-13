@@ -9,9 +9,9 @@ namespace tbcad::exportlib {
 
 const std::vector<PaperSize>& paperSizes() {
     static const std::vector<PaperSize> sizes = {
-        {"A0", 841, 1189},   {"A1", 594, 841},      {"A2", 420, 594},
-        {"A3", 297, 420},    {"A4", 210, 297},      {"ANSI A", 215.9, 279.4},
-        {"ANSI B", 279.4, 431.8}, {"ANSI C", 431.8, 558.8}, {"ANSI D", 558.8, 863.6},
+        {"A0", 841, 1189},         {"A1", 594, 841},         {"A2", 420, 594},
+        {"A3", 297, 420},          {"A4", 210, 297},         {"ANSI A", 215.9, 279.4},
+        {"ANSI B", 279.4, 431.8},  {"ANSI C", 431.8, 558.8}, {"ANSI D", 558.8, 863.6},
         {"ANSI E", 863.6, 1117.6},
     };
     return sizes;
@@ -175,7 +175,8 @@ Result<PlotLayout> computeLayout(const Document& doc, const PlotSettings& s) {
 
     lay.area = s.area == PlotArea::Extents ? extentsOf(doc) : s.window;
     if (lay.area.empty())
-        return invalid(s.area == PlotArea::Extents ? "Nothing to plot" : "The plot window is empty");
+        return invalid(s.area == PlotArea::Extents ? "Nothing to plot"
+                                                   : "The plot window is empty");
     double aw = lay.area.width(), ah = lay.area.height();
     if (!(aw > 0) && !(ah > 0)) {  // a single point: give it a 1 unit box
         lay.area = lay.area.inflated(0.5);
