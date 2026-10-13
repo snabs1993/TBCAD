@@ -7,6 +7,7 @@ set(_tbcad_app_sources
   src/gui.cpp
   src/gui_style.cpp
   src/key_map.cpp
+  src/settings_dialog.cpp
   src/file_browser.cpp
   src/viewport_target.cpp
   src/gate.cpp)

@@ -565,3 +565,15 @@ TEST_CASE(
     CHECK(calls == 2);
     CHECK(f.core->selection().empty());
 }
+
+TEST_CASE("SETTINGS asks the window to open the dialog") {
+    Fixture f("settings_cmd");
+    f.core->submitText("op");  // alias
+    auto req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "settings");
+    CHECK(f.core->takeUiRequests().empty());
+    CHECK_FALSE(f.core->runner().active());
+    CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
+    CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
+}

@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "tbcad/cmd/host.h"
@@ -188,6 +189,9 @@ public:
     cmd::ViewState view() const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
+    void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
+    // Requests commands made since the last call ("settings"), oldest first.
+    std::vector<std::string> takeUiRequests() { return std::exchange(uiRequests_, {}); }
     void promptChanged(const cmd::PromptInfo* prompt) override;
     void feedbackChanged(const cmd::FilterFeedback& feedback) override;
 
@@ -208,6 +212,7 @@ private:
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
     PanelContext makePanelContext();
+    std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
     platform::AppPaths paths_;
     platform::Settings settings_;

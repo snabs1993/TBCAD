@@ -193,12 +193,42 @@ public:
     }
 };
 
+class SettingsCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "SETTINGS"; }
+    std::vector<std::string> defaultAliases() const override { return {"OPTIONS", "OP"}; }
+    std::string_view description() const override {
+        return "Open the Settings dialog (aliases, key bindings, display, files)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi("settings");
+        co_return;
+    }
+};
+
+// Hidden (no description): opens the Settings dialog on one page, for scripts and screenshots.
+class SettingsPageCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "SETTINGSPAGE"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::KeywordOptions o;
+        o.keywords = {"General", "Display", "Drafting", "Files", "Aliases", "Keybindings"};
+        o.defaultKeyword = "General";
+        auto r = co_await ctx.getKeyword(
+            "Page [General/Display/Drafting/Files/Aliases/Keybindings]", std::move(o));
+        if (r.ok())
+            ctx.host().requestUi("settings:" + r.keyword);
+    }
+};
+
 }  // namespace
 
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
     (void)registry.add(std::make_unique<PanCommand>());
     (void)registry.add(std::make_unique<DevGenCommand>());
+    (void)registry.add(std::make_unique<SettingsCommand>());
+    (void)registry.add(std::make_unique<SettingsPageCommand>());
 }
 
 }  // namespace tbcad::ui
