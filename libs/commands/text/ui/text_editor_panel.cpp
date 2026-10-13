@@ -1,11 +1,11 @@
 // The "Text" panel: a multiline ImGui editor for the selected TEXT / MTEXT object. It uses the
 // platform's IME like any other ImGui input, so Thai can be typed with the Windows keyboard
 // layout or IME. Apply runs TEXTEDIT, so the edit is one undo step.
-#include <algorithm>
-#include <string>
-
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
+
+#include <algorithm>
+#include <string>
 
 #include "commands.h"
 #include "tbcad/textcmd/textcmd.h"
@@ -17,8 +17,8 @@ namespace {
 
 struct EditorState {
     EntityId id{};
-    std::string stored;  // what the entity contained when the editor last loaded it
-    std::string buffer;  // editable form (MTEXT: "\P" shown as a newline)
+    std::string stored;    // what the entity contained when the editor last loaded it
+    std::string buffer;    // editable form (MTEXT: "\P" shown as a newline)
     std::string wrapOpen;  // markup to wrap around the selection on the next callback
 };
 

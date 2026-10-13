@@ -1,6 +1,6 @@
-#include <cmath>
-
 #include <doctest/doctest.h>
+
+#include <cmath>
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"

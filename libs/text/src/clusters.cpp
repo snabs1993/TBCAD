@@ -43,10 +43,10 @@ std::size_t decodeAt(std::string_view s, std::size_t i, char32_t& cp) {
 }
 
 bool isExtend(char32_t c) {
-    return (c >= 0x0300 && c <= 0x036F) ||  // combining diacritics
-           (c >= 0x0483 && c <= 0x0489) ||  // Cyrillic marks
+    return (c >= 0x0300 && c <= 0x036F) ||                                  // combining diacritics
+           (c >= 0x0483 && c <= 0x0489) ||                                  // Cyrillic marks
            (c >= 0x0591 && c <= 0x05BD) || (c >= 0x05BF && c <= 0x05C7) ||  // Hebrew points
-           (c >= 0x064B && c <= 0x065F) || c == 0x0670 ||                    // Arabic marks
+           (c >= 0x064B && c <= 0x065F) || c == 0x0670 ||                   // Arabic marks
            c == 0x0E31 || (c >= 0x0E34 && c <= 0x0E3A) ||  // Thai vowels above / below
            c == 0x0E33 ||                                  // Thai SARA AM
            (c >= 0x0E47 && c <= 0x0E4E) ||                 // Thai tone marks, MAITAIKHU ...

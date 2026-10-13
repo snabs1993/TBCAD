@@ -72,10 +72,10 @@ std::string markupFromPlain(std::string_view plain);
 struct PlacedGlyph {
     font::FontId font{};
     std::uint32_t glyphId = 0;
-    Vec2 origin{};       // glyph origin in layout space (mm), y up, includes the shaper's offsets
-    double scale = 0;    // mm per em
-    double shear = 0;    // synthetic italic: x += shear * y (in glyph space)
-    int color = -1;      // palette index or -1
+    Vec2 origin{};     // glyph origin in layout space (mm), y up, includes the shaper's offsets
+    double scale = 0;  // mm per em
+    double shear = 0;  // synthetic italic: x += shear * y (in glyph space)
+    int color = -1;    // palette index or -1
 };
 
 struct LayoutLine {
@@ -110,15 +110,16 @@ TextLayout layoutMText(const Document& doc, const MTextData& t);
 TextLayout layoutEntity(const Document& doc, const Entity& e);
 
 // Advance width in mm of a single line of plain text at the given capital height.
-double measureWidth(const TextStyle* style, std::string_view utf8, double height,
-                    bool bold = false, bool italic = false);
+double measureWidth(const TextStyle* style, std::string_view utf8, double height, bool bold = false,
+                    bool italic = false);
 
 // Fraction of a line's height used for line pitch in MTEXT (5/3, like AutoCAD).
 inline constexpr double kLineSpacing = 5.0 / 3.0;
 // Shear used for synthetic italics (12 degrees).
 double syntheticItalicShear();
 
-// ---- display / bounds / hit testing --------------------------------------------------------------
+// ---- display / bounds / hit testing
+// --------------------------------------------------------------
 
 // Registers the Text and MText generators and bounds with geom::DisplayRegistry. Idempotent; call
 // at start-up before concurrent use.

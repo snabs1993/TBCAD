@@ -1,7 +1,6 @@
-#include "tbcad/textcmd/textcmd.h"
-
 #include "commands.h"
 #include "tbcad/text/text.h"
+#include "tbcad/textcmd/textcmd.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::textcmd {

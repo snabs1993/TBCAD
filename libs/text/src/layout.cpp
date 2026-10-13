@@ -116,7 +116,8 @@ BBox2 glyphBoxLayout(const PlacedGlyph& g) {
     return out;
 }
 
-// ---- line building -------------------------------------------------------------------------------
+// ---- line building
+// -------------------------------------------------------------------------------
 
 struct Item {
     std::string text{};
@@ -209,7 +210,8 @@ public:
                     push(std::move(it));
             }
             if (u.brk && u.brk->kind == Token::Kind::Space) {
-                Item sp{u.brk->text, u.brk->attr, true, itemWidth(style_, u.brk->text, u.brk->attr)};
+                Item sp{u.brk->text, u.brk->attr, true,
+                        itemWidth(style_, u.brk->text, u.brk->attr)};
                 push(std::move(sp));
             }
         }

@@ -1,6 +1,6 @@
-#include <algorithm>
-
 #include <doctest/doctest.h>
+
+#include <algorithm>
 
 #include "tbcad/text/text.h"
 
@@ -62,8 +62,8 @@ TEST_CASE("Latin text displays as filled glyph rings") {
 
 TEST_CASE("Thai 'ห้อง': tone mark and vowels are filled rings placed above the base glyphs") {
     Document doc;
-    Entity withMark{{}, thai("ห้อง")};     // ห้อง
-    Entity without{{}, thai("หอง")};            // หอง
+    Entity withMark{{}, thai("ห้อง")};  // ห้อง
+    Entity without{{}, thai("หอง")};   // หอง
     DisplayList a = build(doc, withMark);
     DisplayList b = build(doc, without);
     REQUIRE_FALSE(a.items.empty());
@@ -130,8 +130,8 @@ TEST_CASE("hit testing uses the transformed layout box") {
     TextLayout l = layoutEntity(doc, e);
     REQUIRE_FALSE(l.empty());
     double w = l.lines[0].width;
-    CHECK(hitTest(doc, e, {95, 100 + w / 2}, 0));       // over the text
+    CHECK(hitTest(doc, e, {95, 100 + w / 2}, 0));  // over the text
     CHECK_FALSE(hitTest(doc, e, {120, 100 + w / 2}, 0));
-    CHECK(hitTest(doc, e, {103, 100 + w / 2}, 3));      // below the baseline, within the aperture
+    CHECK(hitTest(doc, e, {103, 100 + w / 2}, 3));  // below the baseline, within the aperture
     CHECK_FALSE(geom::hitTest(e, {500, 500}, 0.5, &doc));
 }

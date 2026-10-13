@@ -46,7 +46,7 @@ public:
             for (const auto& [id, s] : doc.textStyles()) {
                 std::string line = (id == doc.header().currentTextStyle ? "* " : "  ") + s.name +
                                    "  font: " +
-                                   (!s.fontFile.empty() ? s.fontFile
+                                   (!s.fontFile.empty()     ? s.fontFile
                                     : !s.fontFamily.empty() ? s.fontFamily
                                                             : std::string("Sarabun (default)")) +
                                    "  width " + std::to_string(s.widthFactor);
@@ -59,7 +59,7 @@ public:
         row.name = existing ? existing->name : n.text;
 
         cmd::StringOptions fo;
-        fo.defaultValue = !row.fontFile.empty() ? row.fontFile
+        fo.defaultValue = !row.fontFile.empty()     ? row.fontFile
                           : !row.fontFamily.empty() ? row.fontFamily
                                                     : std::string("Sarabun");
         auto f = co_await ctx.getString("Specify font family or font file", fo);

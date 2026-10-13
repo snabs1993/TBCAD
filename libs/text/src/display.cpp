@@ -39,7 +39,8 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             DisplayPolyline box;
             box.closed = true;
             box.style = base;
-            const double x0 = l.x0, x1 = l.x0 + l.width, y0 = l.baseline, y1 = l.baseline + l.height;
+            const double x0 = l.x0, x1 = l.x0 + l.width, y0 = l.baseline,
+                         y1 = l.baseline + l.height;
             for (Vec2 c : {Vec2{x0, y0}, Vec2{x1, y0}, Vec2{x1, y1}, Vec2{x0, y1}})
                 box.pts.push_back(layout.toWorld.apply(c));
             out.items.emplace_back(std::move(box));
@@ -48,8 +49,8 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
     }
 
     for (const PlacedGlyph& g : layout.glyphs) {
-        const font::GlyphOutline& o =
-            fonts().outline(g.font, g.glyphId, outlineTolerance(ctx.tolerance(), g.scale * scaleToWorld) );
+        const font::GlyphOutline& o = fonts().outline(
+            g.font, g.glyphId, outlineTolerance(ctx.tolerance(), g.scale * scaleToWorld));
         if (o.contours.empty())
             continue;
         DisplayFill fill;
@@ -62,7 +63,8 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             std::vector<Vec2> ring;
             ring.reserve(c.points.size());
             for (const font::FPoint& p : c.points) {
-                Vec2 local{g.origin.x + (p.x + g.shear * p.y) * g.scale, g.origin.y + p.y * g.scale};
+                Vec2 local{g.origin.x + (p.x + g.shear * p.y) * g.scale,
+                           g.origin.y + p.y * g.scale};
                 ring.push_back(layout.toWorld.apply(local));
             }
             fill.rings.push_back(std::move(ring));

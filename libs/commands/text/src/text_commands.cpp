@@ -39,13 +39,20 @@ struct Justify {
     VAlign v;
 };
 constexpr Justify kJustify[] = {
-    {"Left", HAlign::Left, VAlign::Baseline},     {"Center", HAlign::Center, VAlign::Baseline},
-    {"Right", HAlign::Right, VAlign::Baseline},   {"Aligned", HAlign::Aligned, VAlign::Baseline},
-    {"Middle", HAlign::Middle, VAlign::Baseline}, {"Fit", HAlign::Fit, VAlign::Baseline},
-    {"TL", HAlign::Left, VAlign::Top},            {"TC", HAlign::Center, VAlign::Top},
-    {"TR", HAlign::Right, VAlign::Top},           {"ML", HAlign::Left, VAlign::Middle},
-    {"MC", HAlign::Middle, VAlign::Middle},       {"MR", HAlign::Right, VAlign::Middle},
-    {"BL", HAlign::Left, VAlign::Bottom},         {"BC", HAlign::Center, VAlign::Bottom},
+    {"Left", HAlign::Left, VAlign::Baseline},
+    {"Center", HAlign::Center, VAlign::Baseline},
+    {"Right", HAlign::Right, VAlign::Baseline},
+    {"Aligned", HAlign::Aligned, VAlign::Baseline},
+    {"Middle", HAlign::Middle, VAlign::Baseline},
+    {"Fit", HAlign::Fit, VAlign::Baseline},
+    {"TL", HAlign::Left, VAlign::Top},
+    {"TC", HAlign::Center, VAlign::Top},
+    {"TR", HAlign::Right, VAlign::Top},
+    {"ML", HAlign::Left, VAlign::Middle},
+    {"MC", HAlign::Middle, VAlign::Middle},
+    {"MR", HAlign::Right, VAlign::Middle},
+    {"BL", HAlign::Left, VAlign::Bottom},
+    {"BC", HAlign::Center, VAlign::Bottom},
     {"BR", HAlign::Right, VAlign::Bottom},
 };
 
@@ -68,9 +75,11 @@ struct Attach {
     Attachment a;
 };
 constexpr Attach kAttach[] = {
-    {"TL", Attachment::TopLeft},     {"TC", Attachment::TopCenter},     {"TR", Attachment::TopRight},
-    {"ML", Attachment::MiddleLeft},  {"MC", Attachment::MiddleCenter},  {"MR", Attachment::MiddleRight},
-    {"BL", Attachment::BottomLeft},  {"BC", Attachment::BottomCenter},  {"BR", Attachment::BottomRight},
+    {"TL", Attachment::TopLeft},      {"TC", Attachment::TopCenter},
+    {"TR", Attachment::TopRight},     {"ML", Attachment::MiddleLeft},
+    {"MC", Attachment::MiddleCenter}, {"MR", Attachment::MiddleRight},
+    {"BL", Attachment::BottomLeft},   {"BC", Attachment::BottomCenter},
+    {"BR", Attachment::BottomRight},
 };
 
 std::optional<TextStyleId> styleByName(CommandContext& ctx, const std::string& name) {

@@ -1,6 +1,6 @@
-#include <cmath>
-
 #include <doctest/doctest.h>
+
+#include <cmath>
 
 #include "tbcad/text/text.h"
 
@@ -9,8 +9,9 @@ using namespace tbcad::text;
 
 namespace {
 
-const std::string kThai = "สวัสดีครับผม"
-                          "ชื่อทดสอบ";
+const std::string kThai =
+    "สวัสดีครับผม"
+    "ชื่อทดสอบ";
 
 // Advance of `s` computed straight from the font library, independent of the layout code.
 double fontWidth(const std::string& s, double height) {
@@ -93,7 +94,7 @@ TEST_CASE("TEXT alignment points for each mode") {
     {
         TextLayout l = layout(HAlign::Left, VAlign::Bottom);
         double base = l.toWorld.apply({0, l.lines[0].baseline}).y;
-        CHECK(base > 50);                    // baseline above the point
+        CHECK(base > 50);  // baseline above the point
         CHECK(l.toWorld.apply({0, l.frame.min.y}).y == doctest::Approx(50));  // frame bottom on it
     }
     // Middle (horizontal + vertical centre)
@@ -144,7 +145,8 @@ TEST_CASE("TEXT rotation, width factor and oblique") {
     TextData w = baseText("TBCAD");
     w.widthFactor = 0.5;
     TextLayout lw = layoutText(doc, w);
-    CHECK(lw.toWorld.apply({lw.lines[0].width, 0}).x == doctest::Approx(fontWidth("TBCAD", 10) / 2));
+    CHECK(lw.toWorld.apply({lw.lines[0].width, 0}).x ==
+          doctest::Approx(fontWidth("TBCAD", 10) / 2));
 
     TextData o = baseText("TBCAD");
     o.oblique = 0.3;

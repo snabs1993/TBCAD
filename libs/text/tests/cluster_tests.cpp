@@ -29,6 +29,8 @@ TEST_CASE("clusters: a Thai leading vowel stays with the following consonant") {
 }
 
 TEST_CASE("clusters: invalid UTF-8 counts one cluster per bad byte") {
-    std::string s = "a\xFF" "b";
+    std::string s =
+        "a\xFF"
+        "b";
     CHECK(clusterBoundaries(s) == std::vector<std::size_t>{0, 1, 2, 3});
 }
