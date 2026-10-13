@@ -508,6 +508,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 ans.status = Status::Ok;
                 ans.entity = in.entity;
                 ans.point = in.raw.worldCursor;
+                ans.shift = in.raw.shift;
                 return complete(std::move(ans));
             }
             if (req.kind == K::Selection) {
