@@ -84,5 +84,6 @@ TEST_CASE("sources of a boundary with islands include the island entities") {
     REQUIRE(r.ok());
     CHECK(r.value().loops.size() == 2);
     CHECK(r.value().sources.size() == 5);
-    CHECK(std::find(r.value().sources.begin(), r.value().sources.end(), c) != r.value().sources.end());
+    CHECK(std::find(r.value().sources.begin(), r.value().sources.end(), c) !=
+          r.value().sources.end());
 }

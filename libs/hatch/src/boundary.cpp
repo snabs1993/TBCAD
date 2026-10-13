@@ -535,8 +535,7 @@ Boundary makeBoundary(const std::vector<Candidate>& cands, const LoopSet& set, s
             if (c < 0)
                 continue;  // a gap connector
             EntityId id = cands[static_cast<std::size_t>(c)].id;
-            if (std::find(result.sources.begin(), result.sources.end(), id) ==
-                result.sources.end())
+            if (std::find(result.sources.begin(), result.sources.end(), id) == result.sources.end())
                 result.sources.push_back(id);
         }
     };

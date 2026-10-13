@@ -70,7 +70,8 @@ BBox2 loopBox(const HatchLoop& l) {
 
 }  // namespace
 
-std::size_t updateAssociativeHatches(Document& doc, Transaction& tx, const BoundaryOptions& options) {
+std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
+                                     const BoundaryOptions& options) {
     std::vector<EntityId> touched = tx.touchedEntities();
     if (touched.empty())
         return 0;
