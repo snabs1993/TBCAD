@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,24 +16,26 @@
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/render/camera.h"
 
 namespace tbcad::app {
 
 namespace {
 
 void printUsage() {
-    std::puts(
-        "TBCAD " TBCAD_VERSION
-        "\n"
-        "Usage: tbcad [file.tbcad] [options]\n"
-        "  --script \"CMD;CMD\"   run command lines after start\n"
-        "  --frames N           draw N frames, then exit\n"
-        "  --screenshot F.ppm   save the last frame\n"
-        "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
-        "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
-        "  --list-commands F    write every command with its aliases (Markdown) to F (- = stdout)\n"
-        "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
-        "  --no-vsync           do not wait for the monitor\n");
+    std::puts("TBCAD " TBCAD_VERSION
+              "\n"
+              "Usage: tbcad [file.tbcad] [options]\n"
+              "  --script \"CMD;CMD\"   run command lines after start\n"
+              "  --frames N           draw N frames, then exit\n"
+              "  --screenshot F.ppm   save the last frame\n"
+              "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
+              "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
+              "  --list-commands F    write every command with its aliases (Markdown) to F "
+              "(default: stdout)\n"
+              "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
+              "  --mcp                turn the MCP server on (AI access to the drawing)\n"
+              "  --no-vsync           do not wait for the monitor\n");
 }
 
 void glfwError(int code, const char* description) {
@@ -56,10 +59,16 @@ Options parseOptions(int argc, char** argv) {
             o.report = next();
         else if (a == "--gate")
             o.gate = true;
+        else if (a == "--gate-lines")
+            o.gateLines = std::max(1000, std::atoi(next().c_str()));
         else if (a == "--self-test")
             o.selfTest = true;
-        else if (a == "--list-commands")
-            o.listCommands = next();
+        else if (a == "--list-commands") {
+            // No file name (or the next argument is another option): print to stdout.
+            const bool hasValue = i + 1 < argc && (argv[i + 1][0] != '-' || argv[i + 1][1] == '\0');
+            o.listCommands = hasValue ? next() : "-";
+        } else if (a == "--mcp")
+            o.mcp = true;
         else if (a == "--no-vsync")
             o.vsync = false;
         else if (a == "--help" || a == "-h")
@@ -115,10 +124,12 @@ bool App::initWindow(std::string& why) {
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
     imguiReady_ = true;
+    windowReady_ = true;
     return true;
 }
 
 void App::shutdownWindow() {
+    windowReady_ = false;
     gui_.reset();
     if (imguiReady_) {
         ImGui_ImplOpenGL3_Shutdown();
@@ -152,7 +163,7 @@ void App::drawScene() {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
-    renderer_.setBackground(backgroundFor(gui_->dark()));
+    renderer_.setBackground(gui_->viewportBackground());
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
     renderer_.beginFrame();
@@ -166,7 +177,7 @@ void App::renderDrawingOnce(bool finish) {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
-    renderer_.setBackground(backgroundFor(true));
+    renderer_.setBackground(ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->scene());
@@ -188,6 +199,9 @@ void App::frame() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ViewportRect rect = gui_->frame();
+    mcp_->drawDialogs();
+    if (mcp_->consumeSettingsRequest())
+        gui_->openPanel("mcp");
     const ui::AppCore& c = *core_;
     target_.resize(c.camera().viewportW, c.camera().viewportH);
     gui_->showViewport(target_.texture(), rect);
@@ -197,8 +211,8 @@ void App::frame() {
 
     glfwGetFramebufferSize(window_, &framebufferW_, &framebufferH_);
     ViewportTarget::unbindToWindow(framebufferW_, framebufferH_);
-    const Rgba bg = backgroundFor(gui_->dark());
-    glClearColor(bg.r / 255.0f * 0.8f, bg.g / 255.0f * 0.8f, bg.b / 255.0f * 0.8f, 1.0f);
+    const Rgba bg = gui_->theme().bgApp;
+    glClearColor(bg.r / 255.0f, bg.g / 255.0f, bg.b / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
@@ -222,6 +236,58 @@ bool App::saveScreenshot(const std::string& path) {
                 .put(static_cast<char>(p[2]));
         }
     return static_cast<bool>(out);
+}
+
+std::optional<mcp::Image> App::captureView(int maxPx, const BBox2& area) {
+    if (!window_ || !core_)
+        return std::nullopt;
+    const render::Camera2D saved = core_->camera();
+    const BBox2 box = area.empty() ? saved.visibleWorld() : area;
+    const double w = box.max.x - box.min.x;
+    const double h = box.max.y - box.min.y;
+    if (!(w > 0) || !(h > 0))
+        return std::nullopt;
+    maxPx = std::clamp(maxPx, 16, 4096);
+    const int pw = w >= h ? maxPx : std::max(1, static_cast<int>(std::lround(maxPx * w / h)));
+    const int ph = w >= h ? std::max(1, static_cast<int>(std::lround(maxPx * h / w))) : maxPx;
+
+    render::Camera2D cam = saved;
+    cam.viewportW = pw;
+    cam.viewportH = ph;
+    cam.center = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+    cam.pixelsPerMm = std::min(pw / w, ph / h);
+    // Curves are tessellated for the zoom, so let the core do it for the capture's zoom first.
+    core_->setCamera(cam);
+    core_->updateFrame();
+
+    captureTarget_.resize(pw, ph);
+    captureTarget_.bind();
+    renderer_.setBackground(gui_ ? gui_->viewportBackground() : ui::darkTheme().bgViewport);
+    renderer_.setCamera(cam);
+    renderer_.beginFrame();
+    renderer_.draw(core_->scene());
+    renderer_.endFrame();
+    glFinish();
+
+    mcp::Image img;
+    img.width = pw;
+    img.height = ph;
+    std::vector<std::uint8_t> bottomUp(static_cast<std::size_t>(pw) * ph * 4);
+    const bool ok = captureTarget_.read(bottomUp.data());
+    img.rgba.resize(bottomUp.size());
+    for (int y = 0; y < ph; ++y)
+        std::copy_n(&bottomUp[static_cast<std::size_t>(ph - 1 - y) * pw * 4],
+                    static_cast<std::size_t>(pw) * 4,
+                    &img.rgba[static_cast<std::size_t>(y) * pw * 4]);
+    img.worldBox = cam.visibleWorld();
+    img.mmPerPixel = cam.pixelSizeMm();
+
+    ViewportTarget::unbindToWindow(framebufferW_, framebufferH_);
+    core_->setCamera(saved);
+    core_->updateFrame();
+    if (!ok)
+        return std::nullopt;
+    return img;
 }
 
 int App::run() {
@@ -248,8 +314,26 @@ int App::run() {
         }
         return 0;
     }
+    {
+        mcpapp::McpController::Hooks hooks;
+        hooks.capture = [this](int maxPx, const BBox2& area) { return captureView(maxPx, area); };
+        hooks.wake = [this] {
+            if (windowReady_)
+                glfwPostEmptyEvent();
+        };
+#ifdef _WIN32
+        hooks.bridgeExe = platform::pathFromUtf8(findBesideExecutable("tbcad-mcp.exe"));
+#else
+        hooks.bridgeExe = platform::pathFromUtf8(findBesideExecutable("tbcad-mcp"));
+#endif
+        mcp_ = std::make_unique<mcpapp::McpController>(*core_, std::move(hooks), TBCAD_VERSION);
+        mcp_->registerCommands(*registry_);
+        if (options_.mcp)
+            core_->settings().setBool(mcpapp::kSettingEnabled, true);
+    }
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
+    mcp_->registerUi(*uiRegistry_);
     core_->registerBuiltinUi(*uiRegistry_);
     core_->applyUiKeybindings(*uiRegistry_);
 
@@ -265,7 +349,7 @@ int App::run() {
         const float total =
             gui_->dpiScale() * static_cast<float>(core_->settings().getNumber("ui.scale", 1.0));
         buildFonts(total);
-        applyTheme(gui_->dark(), total);
+        applyTheme(gui_->theme(), total);
     }
     glfwSetWindowUserPointer(window_, gui_.get());
     glfwSetWindowContentScaleCallback(window_, [](GLFWwindow* w, float xs, float) {
@@ -297,6 +381,7 @@ int App::run() {
         if (glfwWindowShouldClose(window_) && !gui_->requestClose())
             glfwSetWindowShouldClose(window_, GLFW_FALSE);
 
+        mcp_->pump();
         frame();
         ++framesDrawn;
         if (scripted && framesDrawn >= options_.frames) {
@@ -327,6 +412,7 @@ int App::run() {
                         static_cast<unsigned long long>(stats.vertices));
         }
     }
+    mcp_.reset();
     core_->shutdown();
     return status;
 }

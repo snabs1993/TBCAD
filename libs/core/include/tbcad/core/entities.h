@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -124,6 +125,19 @@ struct SplineData {
 enum class HAlign : std::uint8_t { Left, Center, Right, Aligned, Middle, Fit };
 enum class VAlign : std::uint8_t { Baseline, Bottom, Middle, Top };
 
+// Marks a Text as an attribute definition (ATTDEF). Only meaningful inside a block definition:
+// each Insert of the block shows its own value for `tag` in place of this text (see
+// InsertData::attribs and docs/blocks.md).
+struct AttDefInfo {
+    std::string tag{};           // no spaces, upper case
+    std::string prompt{};        // shown when the value is asked for
+    std::string defaultValue{};  // value when none is given; the fixed value of a constant one
+    bool invisible = false;      // value is stored but not drawn
+    bool constant = false;       // fixed value, never asked for or edited per insert
+    bool verify = false;         // ask twice (stored, not enforced by the data model)
+    bool preset = false;         // takes the default without asking, editable later
+};
+
 struct TextData {
     Vec2 position{};
     Vec2 alignPoint{};
@@ -135,6 +149,7 @@ struct TextData {
     HAlign h = HAlign::Left;
     VAlign v = VAlign::Baseline;
     std::string utf8{};
+    std::optional<AttDefInfo> attdef{};  // set: this text is an attribute definition
 };
 
 enum class Attachment : std::uint8_t {
@@ -200,11 +215,18 @@ struct HatchData {
     std::vector<EntityId> sourceBoundary{};  // for later associativity
 };
 
+// Value of one attribute of an Insert, matched to the block's attribute definition by tag.
+struct AttribValue {
+    std::string tag{};
+    std::string value{};
+};
+
 struct InsertData {
     BlockId block{};
     Vec2 position{};
     Vec2 scale{1, 1};
     double rotation = 0;
+    std::vector<AttribValue> attribs{};  // non-constant attributes of the block, by tag
 };
 
 enum class DimKind : std::uint8_t {

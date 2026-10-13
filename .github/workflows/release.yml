@@ -57,6 +57,7 @@ jobs:
           New-Item -ItemType Directory -Force $stage | Out-Null
           Copy-Item "$b/apps/tbcad/tbcad.exe" $stage
           Copy-Item "$b/apps/tbcad-convert/tbcad-convert.exe" $stage
+          Copy-Item "$b/apps/tbcad-mcp/tbcad-mcp.exe" $stage
           Copy-Item "$b/apps/tbcad/assets" "$stage/assets" -Recurse
           Copy-Item "$b/THIRD_PARTY_NOTICES.txt" $stage
           Copy-Item LICENSE $stage

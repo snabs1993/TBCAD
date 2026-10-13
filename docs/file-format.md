@@ -1,6 +1,6 @@
 # The .tbcad file format
 
-Format version **1.0**. This document is the specification; the reference implementation is
+Format version **1.2** (1.0 and 1.1 files read unchanged; 1.1 adds attribute fields to Text and Insert, 1.2 adds the `XRFS` chunk for external references, below). This document is the specification; the reference implementation is
 `libs/io` (`tbcad::io::readTbcad` / `writeTbcad`). `tools/tbcad-dump` (built from
 `libs/io/tools`) prints any file as text.
 
@@ -52,6 +52,7 @@ error, an unknown chunk is kept whatever its flags.
 | `DSTY` | dimension styles | 0..1 |
 | `LAYR` | layers, including the sub-layer tree | 0..1 |
 | `BLKS` | block definitions | 0..1 |
+| `XRFS` | external references of blocks (since 1.2) | 0..1, only when a block is an xref |
 | `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
@@ -83,9 +84,14 @@ in first-use order, so output is deterministic. The reader rejects invalid UTF-8
 | `ltScale` | real | global linetype scale |
 | `currentLayer`, `currentTextStyle`, `currentDimStyle` | int | row ids |
 | `createdBy` | string | free text |
+| `nextEntity` | int | next free entity id |
+| `nextLayer`, `nextLinetype`, `nextTextStyle`, `nextDimStyle`, `nextBlock` | int | next free row id of each table |
 | `c:<key>` | string | an entry of `Header::custom` |
 
-Unknown keys are ignored with a warning.
+Unknown keys are ignored with a warning. The `next*` keys are optional: ids are never reused, so a
+file stores the next free ids, which can be higher than the highest saved id when the last rows
+were deleted. A reader raises its counters to at least these values (they never lower them).
+Older files without them get the id after the highest saved one.
 
 ## Tables
 
@@ -108,6 +114,12 @@ then three colours (dim line, extension line, text).
 
 **BLKS** row: `id`, `name`, `f64 x`, `f64 y` (base point), `u8 anonymous`. Which entities belong
 to a block is given by each entity's *owner* field; a block's members are in id order.
+
+**XRFS** row (since 1.2): `varint block` (the id of a `BLKS` row), `string path` (as the user typed
+it; relative paths are resolved against the folder of the drawing), `i64 stamp` (last-write time of
+the source file in nanoseconds since the Unix epoch when the block was last loaded). The block's
+entities are stored as for any block, so a drawing opens and plots without the source file.
+1.0 and 1.1 readers keep the chunk as an unknown chunk and write it back unchanged.
 
 A **colour** is 4 bytes: `u8 kind` (0 ByLayer, 1 ByBlock, 2 Index, 3 Rgb, 4 ByParent), then
 `r g b` (for Index the palette index is in `r`).
@@ -175,10 +187,10 @@ loses nothing when it saves. The common properties stay editable. Bytes after th
 | Point | `v2` |
 | Ellipse | `v2 center`, `v2 majorAxis`, `f64 ratio`, `f64 startParam`, `f64 endParam` |
 | Spline | spline body |
-| Text | `v2 position`, `v2 alignPoint`, `f64 height`, `f64 rotation`, `f64 widthFactor`, `f64 oblique`, `varint style`, `u8 hAlign`, `u8 vAlign`, `string` |
+| Text | `v2 position`, `v2 alignPoint`, `f64 height`, `f64 rotation`, `f64 widthFactor`, `f64 oblique`, `varint style`, `u8 hAlign`, `u8 vAlign`, `string`; since 1.1, optional trailing attribute definition: `u8 flags` (1 invisible, 2 constant, 4 verify, 8 preset, 128 always set), `string tag`, `string prompt`, `string default` |
 | MText | `v2 position`, `f64 height`, `f64 width`, `f64 rotation`, `u8 attachment`, `varint style`, `string` |
 | Hatch | `u8 solid`, `string pattern`, `f64 scale`, `f64 angle`, `v2 origin`, colour fill, `varint n` + `n` × `varint` source boundary ids, `varint loops` × (`u8 outer`, `varint edges` × edge) |
-| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation` |
+| Insert | `varint block`, `v2 position`, `v2 scale`, `f64 rotation`; since 1.1, optional trailing attribute values: `varint count`, then per attribute `string tag`, `string value` |
 | Dimension | `u8 kind`, `f64 rotation`, 4 × `v2` defining points, `v2 textPos`, `u8 textPosUser`, `string textOverride`, `varint style`, `f64 measurement` |
 | Leader | `varint n` × `v2` vertices, `varint style`, `string`, `v2 textPos` |
 | Proxy | `string originalType`, `varint n` + raw bytes, `varint items` × display item |
@@ -235,5 +247,4 @@ options give the same bytes, and `write(read(write(d)))` equals `write(d)`.
 ## Not stored
 
 Undo history, selection and view state, the effective layer cache, and the linetype pointer
-inside proxy display styles. The next free id of each table is derived from the highest saved
-id, so ids freed *after* the highest one are reused after a reload.
+inside proxy display styles.

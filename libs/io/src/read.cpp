@@ -86,10 +86,12 @@ public:
         loadDimStyles(tx);
         loadLayers(tx);
         loadBlocks(tx);
+        loadXrefs(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
         loadOrder(tx);
         tx.commit();
+        check(doc_->reserveIds(nextIds_), "next ids");
         return std::move(doc_);
     }
 
@@ -104,6 +106,7 @@ private:
                 case kDsty:
                 case kLayr:
                 case kBlks:
+                case kXrfs:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
                         bad("duplicate chunk " + fourccName(c.type));
@@ -151,6 +154,8 @@ private:
         return strings_[static_cast<std::size_t>(i)];
     }
 
+    NextIds nextIds_{};
+
     Header loadHead() {
         Header h;
         Payload p(*find(kHead));
@@ -197,10 +202,48 @@ private:
                 h.ltScale = fval;
             } else if (key == "currentLayer") {
                 id(h.currentLayer);
+            } else if (key == "currentColor") {
+                wantInt();
+                if (ival < 0 || (ival >> 24) > static_cast<std::int64_t>(ColorKind::ByParent) ||
+                    ival >= (std::int64_t{1} << 32))
+                    bad("invalid current colour");
+                h.currentColor.kind = static_cast<ColorKind>(ival >> 24);
+                h.currentColor.r = static_cast<std::uint8_t>(ival >> 16);
+                h.currentColor.g = static_cast<std::uint8_t>(ival >> 8);
+                h.currentColor.b = static_cast<std::uint8_t>(ival);
+            } else if (key == "currentLinetype") {
+                id(h.currentLinetype);
+            } else if (key == "currentLineweight") {
+                wantInt();
+                if (ival < -4 || ival > 32767)
+                    bad("invalid current lineweight");
+                h.currentLineweight.v = static_cast<std::int16_t>(ival);
             } else if (key == "currentTextStyle") {
                 id(h.currentTextStyle);
             } else if (key == "currentDimStyle") {
                 id(h.currentDimStyle);
+            } else if (key.starts_with("next") && type == 1 &&
+                       (key == "nextEntity" || key == "nextLayer" || key == "nextLinetype" ||
+                        key == "nextTextStyle" || key == "nextDimStyle" || key == "nextBlock")) {
+                if (ival < 1 || ival > (std::int64_t{1} << 48))
+                    bad("HEAD next-id out of range");
+                if (key == "nextEntity") {
+                    nextIds_.entity = static_cast<std::uint64_t>(ival);
+                } else {
+                    if (ival > std::numeric_limits<std::uint32_t>::max())
+                        bad("HEAD next-id out of range");
+                    auto v = static_cast<std::uint32_t>(ival);
+                    if (key == "nextLayer")
+                        nextIds_.layer = v;
+                    else if (key == "nextLinetype")
+                        nextIds_.linetype = v;
+                    else if (key == "nextTextStyle")
+                        nextIds_.textStyle = v;
+                    else if (key == "nextDimStyle")
+                        nextIds_.dimStyle = v;
+                    else
+                        nextIds_.block = v;
+                }
             } else if (key == "createdBy") {
                 if (type != 0)
                     bad("HEAD key createdBy has the wrong type");
@@ -419,6 +462,27 @@ private:
                 bad("internal id mismatch");
             ++next;
         });
+    }
+
+    void loadXrefs(Transaction& tx) {
+        const RawChunk* c = find(kXrfs);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(3);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            std::string path = str(r);
+            std::int64_t stamp = r.i64();
+            if (!tx.modifyBlock(b, [&](BlockDef& d) {
+                       d.xrefPath = path;
+                       d.xrefStamp = stamp;
+                   }).ok())
+                bad("external reference names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in XRFS");
     }
 
     void loadEntities(Transaction& tx) {

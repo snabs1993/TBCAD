@@ -14,6 +14,14 @@ std::unique_ptr<cmd::Command> makeBlockCommand();
 std::unique_ptr<cmd::Command> makeInsertCommand();
 std::unique_ptr<cmd::Command> makeExplodeCommand();
 std::unique_ptr<cmd::Command> makeArrayCommand();
+std::unique_ptr<cmd::Command> makeAttDefCommand();
+std::unique_ptr<cmd::Command> makeAttEditCommand();
+std::unique_ptr<cmd::Command> makeAttSyncCommand();
+std::unique_ptr<cmd::Command> makeXAttachCommand();
+std::unique_ptr<cmd::Command> makeXReloadCommand();
+std::unique_ptr<cmd::Command> makeXDetachCommand();
+std::unique_ptr<cmd::Command> makeXBindCommand();
+std::unique_ptr<cmd::Command> makeXListCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
 
 namespace detail {

@@ -5,6 +5,7 @@
 #include <functional>
 
 #include "importer.h"
+#include "tbcad/dim/dim.h"
 
 namespace tbcad::dxf::detail {
 
@@ -625,6 +626,10 @@ void Importer::processBlocks(RecordReader& rr) {
             inBlock_ = true;
             curBlock_ = BlockId{};
             skipBlock_ = isLayoutBlock(f);
+            // The drawn dimension (*D<n>) is regenerated from the definition points; its parts
+            // are kept only when the caller asks for the graphics.
+            if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
+                skipBlock_ = true;
             if (!skipBlock_) {
                 BlockId id = blockFor(rawName);
                 if (!id) {
@@ -705,12 +710,6 @@ void Importer::finish() {
                      std::to_string(flattened_) + " entities had a non-zero Z; Z was dropped",
                      firstFlattenedLine_);
     }
-    if (attdefs_ > 0) {
-        report_.info(code::kSkippedEntity,
-                     std::to_string(attdefs_) +
-                         " attribute definitions (ATTDEF) were not imported; attribute values "
-                         "are kept as plain text");
-    }
     if (mirroredText_ > 0) {
         report_.info(code::kMirroredText,
                      std::to_string(mirroredText_) +
@@ -734,9 +733,9 @@ Result<ImportResult> Importer::run() {
     acadVer_ = hints.acadVer;
     int vnum = versionNumber(acadVer_);
     if (vnum != 0 && vnum < 1009) {
-        return Error{"unsupported DXF version " + acadVer_ + " (" + versionName(acadVer_) +
-                         "); TBCAD reads AC1009 (R12) and later",
-                     0};
+        return makeError(ErrorCode::Unsupported, "unsupported DXF version " + acadVer_ + " (" +
+                                                     versionName(acadVer_) +
+                                                     "); TBCAD reads AC1009 (R12) and later");
     }
     sum_.acadVer = acadVer_;
     sum_.version = versionName(acadVer_);
@@ -789,7 +788,7 @@ Result<ImportResult> Importer::run() {
     if (sum_.unitsName.empty())
         setUnits(0, true);
     if (!sawSection) {
-        return Error{"no SECTION found: this does not look like a DXF file", 0};
+        return makeError(ErrorCode::Parse, "no SECTION found: this does not look like a DXF file");
     }
     createLayers();
     finish();
@@ -808,6 +807,30 @@ Result<ImportResult> Importer::run() {
 
     ChangeSet cs = tx_->commit();
     tx_.reset();
+
+    // Dimensions draw themselves: put the text where our generator puts it (the position the
+    // other program stored is only a hint) so that re-exporting gives the same file again. The
+    // measurement the file stored is kept (or derived when it stored none).
+    {
+        std::vector<EntityId> dims;
+        doc_->forEachEntity([&](const Entity& e) {
+            if (entityAs<DimensionData>(e))
+                dims.push_back(e.common.id);
+        });
+        if (!dims.empty()) {
+            Transaction tx = doc_->begin("dimension text");
+            for (EntityId id : dims) {
+                (void)tx.modify(id, [&](Entity& e) {
+                    DimensionData& d = *entityAs<DimensionData>(e);
+                    const double measured = d.measurement;
+                    dim::refresh(*doc_, d);
+                    if (measured > 0)
+                        d.measurement = measured;
+                });
+            }
+            tx.commit();
+        }
+    }
     sum_.outsideWorkArea = cs.outOfArea.size();
     if (sum_.outsideWorkArea > 0) {
         report_.warn(code::kOutsideWorkArea,

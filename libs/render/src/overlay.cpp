@@ -163,10 +163,15 @@ void Overlay::rubberBand(Space space, Vec2 a, Vec2 b, Rgba color) {
 }
 
 void Overlay::selectionWindow(Vec2 a, Vec2 b, bool crossing) {
+    selectionWindow(a, b, crossing, crossing ? kCrossingBorder : kWindowBorder,
+                    crossing ? kCrossingFill : kWindowFill);
+}
+
+void Overlay::selectionWindow(Vec2 a, Vec2 b, bool crossing, Rgba border, Rgba fillColor) {
     const Vec2 ring[4] = {{a.x, a.y}, {b.x, a.y}, {b.x, b.y}, {a.x, b.y}};
-    fill(Space::Screen, ring, crossing ? kCrossingFill : kWindowFill);
+    fill(Space::Screen, ring, fillColor);
     OverlayStyle st;
-    st.color = crossing ? kCrossingBorder : kWindowBorder;
+    st.color = border;
     if (crossing) {
         st.dashPx = 6;
         st.gapPx = 4;

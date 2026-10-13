@@ -3,7 +3,7 @@
 # this file.
 file(GLOB_RECURSE _dxf_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-tbcad_add_library(dxf SOURCES ${_dxf_sources} DEPENDS tbcad::core tbcad::geom)
+tbcad_add_library(dxf SOURCES ${_dxf_sources} DEPENDS tbcad::core tbcad::geom tbcad::hatch tbcad::dim)
 target_include_directories(tbcad_dxf PRIVATE src/encoding src/reader)
 
 # Optional libFuzzer build (clang only): cmake -DTBCAD_DXF_FUZZ=ON

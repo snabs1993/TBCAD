@@ -14,7 +14,7 @@ Options:
 | `--units <unit>` | Units to assume when the file has none |
 | `--encoding <name>` | Text encoding for old DXF files |
 | `--split-layers <sep>` | Turn layer names such as `S-FLOOR~edge` into sub-layers (separator `sep`) |
-| `--no-dimension-graphics` | Do not draw imported dimensions |
+| `--dimension-graphics` | Also keep the dimension drawings stored in the file (dimensions draw themselves without it) |
 | `-q` | Quiet: no warnings on the console |
 
 Exit codes: `0` success, `1` converted with warnings, `2` failed (not a DXF file, unreadable input or bad options).

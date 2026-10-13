@@ -60,7 +60,10 @@ void SceneSync::upsertEntity(const Entity& e) {
     geom::DisplayContext ctx;
     ctx.pixelSizeMm = pixelSizeMm_;
     DisplayList list;
-    geom::buildDisplay(doc_, e, ctx, list);
+    {
+        blocks::BlockDisplayScope scope(blockCache_);
+        geom::buildDisplay(doc_, e, ctx, list);
+    }
     if (doc_.effective(e.common.layer).locked)
         fade(list);
     scene_.upsert(id, list, drawOrderOf(id), needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
@@ -100,7 +103,10 @@ void SceneSync::rebuildDrawOrder() {
         geom::DisplayContext ctx;
         ctx.pixelSizeMm = pixelSizeMm_;
         DisplayList list;
-        geom::buildDisplay(doc_, *e, ctx, list);
+        {
+            blocks::BlockDisplayScope scope(blockCache_);
+            geom::buildDisplay(doc_, *e, ctx, list);
+        }
         if (doc_.effective(e->common.layer).locked)
             fade(list);
         scene_.upsert(id, list, ++rank, needsTessellation(*e) ? 1.0 / pixelSizeMm_ : 0.0);

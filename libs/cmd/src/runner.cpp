@@ -294,6 +294,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         const std::size_t depth = stack_.size();
         if (a.status == Status::Cancel)
             ctx.markCancelled();
+        ctx.setLastPoint(lastPoint_);
         auto h = ctx.deliver(std::move(a));
         h.resume();
         afterResume();

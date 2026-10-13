@@ -172,6 +172,10 @@ public:
     // True once the user pressed Esc at one of this command's prompts. Later prompts answer
     // Cancel immediately, so a command that keeps looping still terminates.
     bool cancelled() const { return cancelled_; }
+    // The last point the user entered or clicked in this session, as of the most recent answer
+    // (so after a distance prompt answered by a click it is that click). Lets a command recover
+    // the direction of a point-or-number answer.
+    Vec2 lastPoint() const { return lastPoint_; }
     // By default Esc discards everything the command did. LINE-like commands keep the segments
     // already drawn: call commitOnCancel() once at the start.
     void commitOnCancel(bool keep = true) { commitOnCancel_ = keep; }
@@ -184,6 +188,7 @@ public:
     // Stores the answer and returns the coroutine to resume.
     std::coroutine_handle<> deliver(detail::PromptAnswer answer);
     void markCancelled() { cancelled_ = true; }
+    void setLastPoint(Vec2 p) { lastPoint_ = p; }
     // Ends the command: commits or rolls back. Returns true if an undo entry was recorded.
     bool finish(bool failed);
     CommandContext* parent() const { return parent_; }
@@ -207,6 +212,7 @@ private:
     std::vector<ChangeSet> segments_{};
     std::vector<std::size_t> marks_{};  // segments_.size() at each checkpoint
     bool cancelled_ = false;
+    Vec2 lastPoint_{};
     bool commitOnCancel_ = false;
 
     std::optional<detail::PromptRequest> pending_{};

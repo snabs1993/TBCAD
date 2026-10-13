@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -85,6 +86,14 @@ public:
     void setSettingsFolder(std::filesystem::path p) { settingsFolder_ = std::move(p); }
     ViewState view() const override { return view_; }
     void setView(const ViewState& v) override { view_ = v; }
+    // Tests: answers entitiesInWindow() with `fn` (without it the host reports "no index").
+    using WindowQuery = std::function<std::vector<EntityId>(const BBox2&)>;
+    void setWindowQuery(WindowQuery fn) { windowQuery_ = std::move(fn); }
+    std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override {
+        if (!windowQuery_)
+            return std::nullopt;
+        return windowQuery_(window);
+    }
     void setPreview(const DisplayList* list) override;
     void promptChanged(const PromptInfo* prompt) override;
 
@@ -102,6 +111,7 @@ private:
     std::vector<std::pair<std::string, std::string>> settings_{};
     std::filesystem::path settingsFolder_{};
     ViewState view_{};
+    WindowQuery windowQuery_{};
     DisplayList preview_{};
 };
 

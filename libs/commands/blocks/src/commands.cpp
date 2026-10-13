@@ -23,6 +23,14 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeArrayCommand());
+    (void)registry.add(makeAttDefCommand());
+    (void)registry.add(makeAttEditCommand());
+    (void)registry.add(makeAttSyncCommand());
+    (void)registry.add(makeXAttachCommand());
+    (void)registry.add(makeXReloadCommand());
+    (void)registry.add(makeXDetachCommand());
+    (void)registry.add(makeXBindCommand());
+    (void)registry.add(makeXListCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {

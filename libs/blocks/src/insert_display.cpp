@@ -2,6 +2,7 @@
 #include <mutex>
 
 #include "internal.h"
+#include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/display.h"
 
 namespace tbcad::blocks {
@@ -57,6 +58,9 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
     for (EntityId id : def.entities) {
         const Entity* e = doc.find(id);
         if (!e || !e->common.visible)
+            continue;
+        // Attribute definitions show per-insert values and are added by buildInsertDisplay.
+        if (const auto* t = entityAs<TextData>(*e); t && t->attdef)
             continue;
         // Only the layer is substituted here: ByBlock values stay symbolic and are resolved by
         // the generators through child.byBlock*.
@@ -147,6 +151,21 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         }
     }
     transformList(*blockSpace, t, out);
+
+    // Attribute values differ per insert, so they are built here and not shared.
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        if (!e || !e->common.visible)
+            continue;
+        auto text = attributeText(*e, *ins);
+        if (!text)
+            continue;
+        if (text->common.layer == kLayerZero)
+            text->common.layer = insert.common.layer;
+        DisplayList own;
+        geom::buildDisplay(doc, *text, child, own);
+        transformList(own, t, out);
+    }
 }
 
 void registerInsertDisplay() {

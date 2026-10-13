@@ -44,9 +44,22 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     headReal(body, st, "workArea", h.workArea), bump();
     headReal(body, st, "ltScale", h.ltScale), bump();
     headInt(body, st, "currentLayer", h.currentLayer.value), bump();
+    headInt(body, st, "currentColor",
+            (static_cast<std::int64_t>(h.currentColor.kind) << 24) | (h.currentColor.r << 16) |
+                (h.currentColor.g << 8) | h.currentColor.b),
+        bump();
+    headInt(body, st, "currentLinetype", h.currentLinetype.value), bump();
+    headInt(body, st, "currentLineweight", h.currentLineweight.v), bump();
     headInt(body, st, "currentTextStyle", h.currentTextStyle.value), bump();
     headInt(body, st, "currentDimStyle", h.currentDimStyle.value), bump();
     headString(body, st, "createdBy", h.createdBy), bump();
+    const NextIds next = doc.nextIds();
+    headInt(body, st, "nextEntity", static_cast<std::int64_t>(next.entity)), bump();
+    headInt(body, st, "nextLayer", next.layer), bump();
+    headInt(body, st, "nextLinetype", next.linetype), bump();
+    headInt(body, st, "nextTextStyle", next.textStyle), bump();
+    headInt(body, st, "nextDimStyle", next.dimStyle), bump();
+    headInt(body, st, "nextBlock", next.block), bump();
     for (const auto& [k, v] : h.custom) {
         if (k.starts_with(kOpaqueChunkPrefix))
             continue;
@@ -140,6 +153,19 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             blks.u8(r.anonymous ? 1 : 0);
         }
 
+        ByteWriter xrfs;
+        std::size_t xrefCount = 0;
+        for (const auto& [id, r] : doc.blocks())
+            xrefCount += r.xrefPath.empty() ? 0 : 1;
+        xrfs.varint(xrefCount);
+        for (const auto& [id, r] : doc.blocks()) {
+            if (r.xrefPath.empty())
+                continue;
+            xrfs.varint(id.value);
+            xrfs.varint(st.intern(r.xrefPath));
+            xrfs.i64(r.xrefStamp);
+        }
+
         // Entities in id order, split over ENTS chunks of about 8 MiB.
         std::vector<const Entity*> ents;
         ents.reserve(doc.entityCount());
@@ -208,6 +234,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         appendChunk(out, kDsty, dsty.bytes(), options.compress);
         appendChunk(out, kLayr, layr.bytes(), options.compress);
         appendChunk(out, kBlks, blks.bytes(), options.compress);
+        if (xrefCount > 0)
+            appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
         for (const auto& c : entChunks)
             appendChunk(out, kEnts, c, options.compress);
         if (ordr.size() != 0)

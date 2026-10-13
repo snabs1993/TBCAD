@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
 #include "writer_impl.h"
 
@@ -481,11 +482,18 @@ void Writer::writeSpline(const Props& p, const SplineData& d, const Entity& e,
 // Text
 
 void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
-    head("TEXT", p, owner, "AcDbText");
+    writeTextRecord(p, d, owner, d.attdef ? "ATTDEF" : "TEXT", d.utf8);
+}
+
+// TEXT, ATTDEF (inside a block) and ATTRIB (after an INSERT) share the text groups; only the
+// record type, the string in group 1 and the attribute subclass differ.
+void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t owner,
+                             std::string_view type, const std::string& shown) {
+    head(type, p, owner, "AcDbText");
     Out& o = *o_;
     o.pt(10, d.position);
     o.d(40, d.height);
-    o.str(1, d.utf8);
+    o.str(1, type == "ATTDEF" ? d.attdef->defaultValue : shown);
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
     if (d.widthFactor != 1)
@@ -498,10 +506,22 @@ void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
         o.i(72, static_cast<int>(d.h));
     if (aligned)
         o.pt(11, d.alignPoint);
-    sub("AcDbText");
-    if (d.v != VAlign::Baseline)
-        o.i(73, static_cast<int>(d.v));
-    count("TEXT");
+    if (type == "TEXT") {
+        sub("AcDbText");
+        if (d.v != VAlign::Baseline)
+            o.i(73, static_cast<int>(d.v));
+    } else {
+        const AttDefInfo& a = *d.attdef;
+        sub(type == "ATTDEF" ? "AcDbAttributeDefinition" : "AcDbAttribute");
+        if (type == "ATTDEF")
+            o.str(3, a.prompt);
+        o.str(2, a.tag);
+        o.i(70,
+            (a.invisible ? 1 : 0) | (a.constant ? 2 : 0) | (a.verify ? 4 : 0) | (a.preset ? 8 : 0));
+        if (d.v != VAlign::Baseline)
+            o.i(74, static_cast<int>(d.v));
+    }
+    count(std::string(type));
 }
 
 void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner) {
@@ -568,8 +588,17 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         skipEntity("INSERT", "its block definition does not exist");
         return;
     }
+    // Non-constant attributes of the block become ATTRIB records after the INSERT.
+    std::vector<const TextData*> defs;
+    if (const BlockDef* bd = doc_.block(d.block))
+        for (EntityId id : bd->entities)
+            if (const Entity* e = doc_.find(id))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef && !t->attdef->constant)
+                    defs.push_back(t);
     head("INSERT", p, owner, "AcDbBlockReference");
     Out& o = *o_;
+    if (!defs.empty())
+        o.i(66, 1);
     o.str(2, name);
     o.pt(10, d.position);
     o.d(41, d.scale.x);
@@ -578,6 +607,36 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
     count("INSERT");
+    if (defs.empty())
+        return;
+    const BlockDef* bd = doc_.block(d.block);
+    const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+    for (const TextData* def : defs) {
+        // The definition's placement, carried through the insert transform. A non-uniform scale
+        // cannot stretch text, so the height follows the Y scale.
+        Vec2 rel = def->position - bd->base;
+        rel = {rel.x * d.scale.x, rel.y * d.scale.y};
+        TextData t = *def;
+        t.position = d.position + Vec2{rel.x * c - rel.y * sn, rel.x * sn + rel.y * c};
+        Vec2 al = def->alignPoint - bd->base;
+        al = {al.x * d.scale.x, al.y * d.scale.y};
+        t.alignPoint = d.position + Vec2{al.x * c - al.y * sn, al.x * sn + al.y * c};
+        t.height = def->height * std::abs(d.scale.y);
+        t.rotation = def->rotation + d.rotation;
+        std::string value;
+        bool found = false;
+        for (const AttribValue& v : d.attribs)
+            if (v.tag == def->attdef->tag) {
+                value = v.value;
+                found = true;
+                break;
+            }
+        if (!found)
+            value = def->attdef->defaultValue;
+        writeTextRecord(p, t, owner, "ATTRIB", value);
+    }
+    o.zero("SEQEND");
+    o.str(8, p.layer);
 }
 
 void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner) {
@@ -733,59 +792,9 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     }
     Props p = propsOf(e->common);
 
-    // Imported dimensions are followed by their drawn graphics (a DIMENSION proxy) and the loose
-    // text of the dimension. They belong into the dimension's anonymous block.
-    // TODO(W5-5): once DimensionData has its own display generator, build the *D block from it
-    // instead of from these imported graphics.
-    const ProxyData* proxy = nullptr;
-    std::vector<const Entity*> texts;
-    std::size_t j = index + 1;
-    if (j < ids.size()) {
-        const Entity* n = doc_.find(ids[j]);
-        const ProxyData* pd = n ? entityAs<ProxyData>(*n) : nullptr;
-        if (pd && pd->originalType == "DIMENSION") {
-            proxy = pd;
-            ++j;
-        }
-    }
-    if (proxy) {
-        BBox2 box;
-        for (Vec2 pt : d.defPts)
-            box.expand(pt);
-        box.expand(d.textPos);
-        for (const DisplayItem& item : proxy->graphics.items) {
-            if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
-                for (Vec2 pt : pl->pts)
-                    box.expand(pt);
-            } else if (const auto* fl = std::get_if<DisplayFill>(&item)) {
-                for (const auto& ring : fl->rings) {
-                    for (Vec2 pt : ring)
-                        box.expand(pt);
-                }
-            }
-        }
-        while (j < ids.size() && texts.size() < 8) {
-            const Entity* n = doc_.find(ids[j]);
-            if (!n || n->common.layer != e->common.layer)
-                break;
-            Vec2 at;
-            double h = 0;
-            if (const auto* t = entityAs<TextData>(*n)) {
-                at = t->position;
-                h = t->height;
-            } else if (const auto* m = entityAs<MTextData>(*n)) {
-                at = m->position;
-                h = m->height;
-            } else {
-                break;
-            }
-            if (!box.inflated(3 * std::max(h, 1.0)).contains(at))
-                break;
-            texts.push_back(n);
-            ++j;
-        }
-    }
-
+    // The anonymous *D block is generated from the dimension generator, so every dimension
+    // carries drawn graphics that other programs can show without regenerating anything.
+    const dim::Layout layout = dim::layoutDimension(doc_, d);
     DimBlock block;
     do {
         block.name = "*D" + std::to_string(++dimCounter_);
@@ -796,18 +805,13 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
         Out bo(utf8_, r12_);
         Out* saved = o_;
         o_ = &bo;
-        if (proxy)
-            writeDisplayList(proxy->graphics, p.layer, block.rec);
-        for (const Entity* t : texts)
-            writeEntity(*t, block.rec);
+        auto parts = dim::explodeDimension(doc_, *e);
+        if (parts) {
+            for (const Entity& part : parts.value())
+                writeEntity(part, block.rec);
+        }
         o_ = saved;
         block.body = std::move(bo.buf);
-    }
-    if (!proxy) {
-        ++summary_.downgraded;
-        rep_.warn(wcode::kNoDimensionGraphics,
-                  "a dimension has no drawn graphics; its block is empty, so programs that do not "
-                  "regenerate dimensions will show nothing (the dimension generator is W5-5)");
     }
     std::string blockName = block.name;
     dimBlocks_.push_back(std::move(block));
@@ -874,13 +878,13 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             o.pt(10, d.defPts[3]);
             break;
     }
-    o.pt(11, d.textPos);
-    o.i(70, type);
+    o.pt(11, layout.text.valid() ? layout.text.center : d.textPos);
+    o.i(70, type | (d.textPosUser ? 128 : 0));
     o.i(71, 5);
     if (!d.textOverride.empty())
         o.str(1, d.textOverride);
     o.str(3, dimStyleNameOf(d.style));
-    o.d(42, d.measurement);
+    o.d(42, dim::measurement(d));
     sub(subclass);
     switch (d.kind) {
         case DimKind::Linear:
@@ -901,7 +905,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             o.pt(13, d.defPts[0]);
             o.pt(14, d.defPts[1]);
             o.pt(15, d.defPts[2]);
-            o.pt(16, d.defPts[3]);
+            o.pt(16, d.textPos);  // a point on the dimension arc
             break;
         case DimKind::Angular3Point:
             o.pt(13, d.defPts[0]);
@@ -912,7 +916,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             break;
     }
     count("DIMENSION");
-    return j - index;
+    return 1;
 }
 
 }  // namespace tbcad::dxf::detail

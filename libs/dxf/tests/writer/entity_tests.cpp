@@ -5,8 +5,10 @@
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
+#include "tbcad/hatch/pattern.h"
 
 namespace tbcad::dxf {
 namespace detail {
@@ -236,7 +238,7 @@ TEST_CASE("all geometry kinds, properties and tables survive an export and re-im
         ld.textPos = ld.vertices.back();  // where the importer puts it
         addTo(make(Indirect<LeaderData>(ld)), notesId);
 
-        // Dimensions of every kind (no drawn graphics: the exporter says so).
+        // Dimensions of every kind (the exporter draws their *D blocks).
         auto addDim = [&](DimKind k, std::array<Vec2, 4> pts, double rot, double measurement) {
             DimensionData d;
             d.kind = k;
@@ -326,10 +328,23 @@ TEST_CASE("all geometry kinds, properties and tables survive an export and re-im
 
         tx.commit();
     }
+    {
+        // The text position of a dimension is derived from its definition points and style.
+        std::vector<EntityId> dims;
+        doc.forEachEntity([&](const Entity& e) {
+            if (entityAs<DimensionData>(e))
+                dims.push_back(e.common.id);
+        });
+        Transaction tx = doc.begin("refresh dimensions");
+        for (EntityId id : dims)
+            REQUIRE(
+                tx.modify(id, [&](Entity& e) { dim::refresh(doc, *entityAs<DimensionData>(e)); }));
+        tx.commit();
+    }
 
     RoundTrip rt = roundTrip(doc);
     CHECK_MESSAGE(rt.diff.empty(), rt.diff);
-    CHECK(rt.exportReport.countCode(wcode::kNoDimensionGraphics) == 7);
+    CHECK(rt.exportReport.countCode(wcode::kNoDimensionGraphics) == 0);
     CHECK(rt.exportReport.count(Severity::Error) == 0);
 }
 
@@ -572,6 +587,154 @@ TEST_CASE("non-finite coordinates are written as zero with a warning") {
     }
     RoundTrip rt = roundTrip(doc);
     CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+}
+
+TEST_CASE("patterns of the W5-4 library, including the user's own, are embedded") {
+    hatch::Pattern mine;
+    mine.name = "DXFTESTPAT";
+    hatch::PatternFamily f;
+    f.angle = kPi / 2;
+    f.delta = {0, 7};
+    mine.families.push_back(f);
+    hatch::PatternRegistry::add(mine);
+
+    Document doc;
+    {
+        auto tx = doc.begin("hatch");
+        HatchData h;
+        h.solid = false;
+        h.pattern = "dxftestpat";
+        HatchPolylineEdge e;
+        e.closed = true;
+        e.v = {pv(0, 0), pv(10, 0), pv(10, 10)};
+        HatchLoop loop;
+        loop.edges.emplace_back(e);
+        h.loops.push_back(loop);
+        REQUIRE(tx.add(make(Indirect<HatchData>(h))).ok());
+        tx.commit();
+    }
+    Report report;
+    auto out = exportDxf(doc, ExportOptions{}, report);
+    hatch::PatternRegistry::clearUser();
+    REQUIRE(out.ok());
+    CHECK(report.countCode(wcode::kUnknownPattern) == 0);
+    CHECK(out.value().bytes.find("\r\n78\r\n1\r\n") != std::string::npos);
+}
+
+TEST_CASE("attribute definitions and values survive an export and re-import") {
+    Document doc;
+    {
+        auto tx = doc.begin("attributes");
+        BlockId b = tx.addBlock(BlockDef{.name = "TAGGED", .base = {1, 1}}).value();
+        TextData def;
+        def.position = {2, 3};
+        def.alignPoint = def.position;
+        def.height = 2;
+        def.utf8 = "ROOM";
+        def.attdef = AttDefInfo{"ROOM", "Room name", "none", false, false, true, false};
+        REQUIRE(tx.add(make(def), b).ok());
+        TextData hidden;
+        hidden.position = {2, 5};
+        hidden.alignPoint = hidden.position;
+        hidden.utf8 = "ID";
+        hidden.attdef = AttDefInfo{"ID", "", "x", true, false, false, true};
+        REQUIRE(tx.add(make(hidden), b).ok());
+        TextData fixed;
+        fixed.position = {2, 7};
+        fixed.alignPoint = fixed.position;
+        fixed.utf8 = "K";
+        fixed.attdef = AttDefInfo{"K", "", "const", false, true, false, false};
+        REQUIRE(tx.add(make(fixed), b).ok());
+        InsertData ins{b, {10, 10}, {1, 1}, 0};
+        ins.attribs = {{"ROOM", "Kitchen"}, {"ID", "42"}};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    // The exported INSERT is followed by one ATTRIB per non-constant attribute and a SEQEND.
+    std::size_t attribs = 0;
+    for (std::size_t at = rt.bytes.find("ATTRIB"); at != std::string::npos;
+         at = rt.bytes.find("ATTRIB", at + 1))
+        ++attribs;
+    CHECK(attribs == 2);
+}
+
+TEST_CASE("exported ATTRIB records sit at the inserted position, scaled and turned") {
+    Document doc;
+    BlockId b;
+    {
+        auto tx = doc.begin("attributes");
+        b = tx.addBlock(BlockDef{.name = "B", .base = {0, 0}}).value();
+        TextData def;
+        def.position = {1, 0};
+        def.height = 1;
+        def.utf8 = "T";
+        def.attdef = AttDefInfo{"T", "", "d", false, false, false, false};
+        REQUIRE(tx.add(make(def), b).ok());
+        InsertData ins{b, {10, 0}, {2, 2}, kPi / 2};
+        ins.attribs = {{"T", "v"}};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    Report rep;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, rep);
+    REQUIRE(out.ok());
+    Report back;
+    Result<ImportResult> in = importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, back);
+    REQUIRE(in.ok());
+    // The definition (1,0) is scaled to (2,0), turned 90 degrees to (0,2) and moved to (10,2).
+    // The attribute has a matching ATTDEF in the block, so it comes back as an insert value; check
+    // the raw record through the text instead.
+    std::string text = out.value().bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    std::size_t at = text.find("\nATTRIB\n");
+    REQUIRE(at != std::string::npos);
+    std::size_t end = text.find("\nSEQEND\n", at);
+    REQUIRE(end != std::string::npos);
+    std::string rec = text.substr(at, end - at);
+    CHECK(rec.find("\n10\n10") != std::string::npos);
+    CHECK(rec.find("\n40\n2.0\n") != std::string::npos);
+    CHECK(rec.find("\n50\n90") != std::string::npos);
+}
+
+TEST_CASE("a dimension is exported with a drawn *D block that other programs can show") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("dimensions");
+        DimensionData d;
+        d.kind = DimKind::Linear;
+        d.defPts = {Vec2{0, 0}, Vec2{100, 0}, Vec2{50, 10}, Vec2{}};
+        d.style = kDimStyleStandard;
+        Entity e;
+        e.data = Indirect<DimensionData>(d);
+        REQUIRE(tx.add(std::move(e)));
+        tx.commit();
+    }
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
+    REQUIRE(out.ok());
+    CHECK(exportReport.countCode(wcode::kNoDimensionGraphics) == 0);
+
+    ImportOptions opt;
+    opt.dimensionGraphics = true;
+    Report report;
+    Result<ImportResult> in = importDxf(testing::bytesOf(out.value().bytes), opt, report);
+    REQUIRE(in.ok());
+    int proxies = 0, texts = 0;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<ProxyData>(e)) {
+            ++proxies;
+            // two extension lines, the dimension line and two arrowheads
+            CHECK(p->graphics.items.size() >= 5);
+        } else if (const auto* t = entityAs<TextData>(e)) {
+            texts += t->utf8 == "100.00" ? 1 : 0;
+        } else if (const auto* m = entityAs<MTextData>(e)) {
+            texts += m->utf8.find("100.00") != std::string::npos ? 1 : 0;
+        }
+    });
+    CHECK(proxies == 1);
+    CHECK(texts >= 1);
 }
 
 }  // namespace tbcad::dxf

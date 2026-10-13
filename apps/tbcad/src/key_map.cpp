@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <map>
+#include <string>
 
 namespace tbcad::app {
 
@@ -33,6 +34,25 @@ std::optional<ImGuiKey> imguiKeyFor(const std::string& k) {
     if (it == names.end())
         return std::nullopt;
     return it->second;
+}
+
+std::optional<std::string> keyNameFor(ImGuiKey key) {
+    if (key >= ImGuiKey_A && key <= ImGuiKey_Z)
+        return std::string(1, static_cast<char>('A' + (key - ImGuiKey_A)));
+    if (key >= ImGuiKey_0 && key <= ImGuiKey_9)
+        return std::string(1, static_cast<char>('0' + (key - ImGuiKey_0)));
+    if (key >= ImGuiKey_F1 && key <= ImGuiKey_F24)
+        return "F" + std::to_string(key - ImGuiKey_F1 + 1);
+    // Search the name table so both directions stay in step.
+    static const char* const names[] = {"ESCAPE", "ENTER",  "DELETE",   "TAB",       "SPACE",
+                                        "HOME",   "END",    "LEFT",     "RIGHT",     "UP",
+                                        "DOWN",   "PAGEUP", "PAGEDOWN", "BACKSPACE", "INSERT"};
+    for (const char* n : names) {
+        auto k = imguiKeyFor(n);
+        if (k && *k == key)
+            return std::string(n);
+    }
+    return std::nullopt;
 }
 
 std::optional<ImGuiKeyChord> imguiChordFor(const platform::KeyChord& chord) {
