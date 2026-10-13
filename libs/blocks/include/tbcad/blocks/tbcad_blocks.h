@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tbcad/blocks/array.h"
+#include "tbcad/blocks/assembly.h"
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/display.h"

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "tbcad/core/color.h"
+#include "tbcad/core/tables.h"
 #include "tbcad/core/display.h"
 #include "tbcad/core/ids.h"
 #include "tbcad/core/math.h"
@@ -272,6 +273,8 @@ struct InsertData {
     std::optional<ArrayInfo> array{};    // set: shown once per array item
     // Values of the block's dynamic parameters, in parameter order (missing = the default).
     std::vector<double> dynValues{};
+    // Values of the block's assembly parameters by name (missing = the default).
+    std::vector<AsmValue> asmValues{};
 };
 
 enum class DimKind : std::uint8_t {

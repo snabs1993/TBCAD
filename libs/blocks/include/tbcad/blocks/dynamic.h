@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "tbcad/blocks/assembly.h"
 #include "tbcad/core/core.h"
 
 namespace tbcad::blocks {
@@ -21,9 +22,12 @@ std::vector<Entity> evaluateDynamic(const Document& doc, const BlockDef& def,
                                     const std::vector<double>& values);
 
 // The entities an Insert shows: pointers into the document for an ordinary block, into `storage`
-// for a dynamic one (evaluated for `insert`). `insert` may be null (the default state).
+// for a dynamic one (evaluated for `insert`) or when `nested` settings from an assembly apply.
+// `insert` may be null (the default state). For an assembly pass the resolved insert
+// (resolveAssembly) and its nested settings.
 std::vector<const Entity*> blockItems(const Document& doc, const BlockDef& def,
-                                      const InsertData* insert, std::vector<Entity>& storage);
+                                      const InsertData* insert, std::vector<Entity>& storage,
+                                      const std::vector<NestedSet>* nested = nullptr);
 
 // A grip of a dynamic Insert: the handle of a linear or rotation parameter, in drawing space.
 struct DynHandle {

@@ -410,6 +410,62 @@ TEST_CASE("round trip: dynamic block definitions and values") {
     CHECK(values == 1);
 }
 
+TEST_CASE("round trip: assembly definitions and parameter values") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("assembly");
+        BlockId blk = tx.addBlock(BlockDef{.name = "Shelf"}).value();
+        Entity a;
+        a.data = LineData{{0, 0}, {10, 0}};
+        EntityId line = tx.add(std::move(a), blk).value();
+        AssemblyDef def;
+        AsmParam w;
+        w.name = "ความยาว";
+        w.defaultNumber = 10;
+        w.min = 1;
+        w.max = 99;
+        def.params.push_back(w);
+        AsmParam m;
+        m.kind = AsmParam::Kind::Choice;
+        m.name = "Material";
+        m.choices = {"Oak", "Pine"};
+        m.defaultText = "Oak";
+        def.params.push_back(m);
+        def.bindings.push_back(
+            AsmBinding{AsmBinding::Kind::ArrayField, line, "columns", "ceil(ความยาว / 5)"});
+        def.presets.push_back(
+            AsmPreset{"long", {AsmValue{"ความยาว", false, 80, ""}, AsmValue{"Material", true, 0, "Pine"}}});
+        REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) { d.assembly = std::move(def); }).ok());
+        Entity ins;
+        InsertData data{blk, {3, 3}, {1, 1}, 0};
+        data.asmValues = {AsmValue{"ความยาว", false, 42, ""}, AsmValue{"Material", true, 0, "Pine"}};
+        ins.data = Indirect<InsertData>(std::move(data));
+        (void)tx.add(std::move(ins));
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    const BlockDef* def = back->blockByName("Shelf");
+    REQUIRE((def && def->assembly));
+    CHECK(def->assembly->params.size() == 2);
+    CHECK(def->assembly->params[1].choices[1] == "Pine");
+    REQUIRE(def->assembly->bindings.size() == 1);
+    CHECK(def->assembly->bindings[0].formula == "ceil(ความยาว / 5)");
+    REQUIRE(def->assembly->presets.size() == 1);
+    CHECK(def->assembly->presets[0].values[1].text == "Pine");
+    int values = 0;
+    back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e)) {
+            ++values;
+            REQUIRE(i->asmValues.size() == 2);
+            CHECK(i->asmValues[0].number == 42);
+            CHECK(i->asmValues[1].text == "Pine");
+        }
+    });
+    CHECK(values == 1);
+}
+
 TEST_CASE("round trip: external reference fields of a block") {
     Document doc;
     {

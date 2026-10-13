@@ -17,6 +17,7 @@ set(_mcp_sources
   src/tools_edit.cpp
   src/tools_files.cpp
   src/tools_layers.cpp
+  src/tools_assembly.cpp
   src/tools_read.cpp)
 
 if(WIN32)
@@ -27,7 +28,7 @@ endif()
 
 tbcad_add_library(mcp
   SOURCES ${_mcp_sources}
-  DEPENDS tbcad::core tbcad::cmd tbcad::io tbcad::geom tbcad::index tbcad::platform)
+  DEPENDS tbcad::core tbcad::cmd tbcad::blocks tbcad::expr tbcad::io tbcad::geom tbcad::index tbcad::platform)
 target_include_directories(tbcad_mcp PRIVATE src)
 target_link_libraries(tbcad_mcp PRIVATE miniz)
 if(WIN32)

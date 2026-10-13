@@ -176,6 +176,7 @@ Json commandsJson(DrawingSession& s, const std::string& filter);
 void registerReadTools(ToolSet& tools);
 void registerEditTools(ToolSet& tools);
 void registerLayerTools(ToolSet& tools);
+void registerAssemblyTools(ToolSet& tools);
 void registerFileTools(ToolSet& tools);
 void registerCommandTools(ToolSet& tools);
 

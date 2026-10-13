@@ -476,3 +476,56 @@ TEST_CASE("Active Only mode: MCP edits are limited to the current layer's branch
     r.ok("delete_entities", J(R"({"ids":[")" + ids[1].asString() + R"("]})"));
     r.ok("set_active_only", J(R"({"on":false})"));
 }
+
+TEST_CASE("assembly parameters: list, set, refuse bad values, undo") {
+    Rig r;
+    r.initialize();
+    Document& doc = r.session.document();
+    BlockId blk;
+    EntityId ins;
+    {
+        auto tx = doc.begin("assembly");
+        blk = tx.addBlock(BlockDef{.name = "Shelf"}).value();
+        REQUIRE(tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}}, blk).ok());
+        AssemblyDef def;
+        AsmParam w;
+        w.name = "Width";
+        w.defaultNumber = 10;
+        w.min = 1;
+        w.max = 50;
+        def.params.push_back(w);
+        AsmParam m;
+        m.kind = AsmParam::Kind::Choice;
+        m.name = "Material";
+        m.choices = {"Oak", "Pine"};
+        m.defaultText = "Oak";
+        def.params.push_back(m);
+        def.presets.push_back(AsmPreset{"wide", {AsmValue{"Width", false, 40, ""}}});
+        REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) { d.assembly = std::move(def); }).ok());
+        ins = tx.add(Entity{{}, Indirect<InsertData>(InsertData{blk, {0, 0}, {1, 1}, 0})}).value();
+        tx.commit();
+    }
+    const Json idArg = Json(std::to_string(ins.value));
+    Json listed = r.ok("list_assembly_parameters", Json(Json::Object{{"id", idArg}}));
+    CHECK(listed.find("parameters")->asArray().size() == 2);
+    CHECK(listed.find("parameters")->asArray()[0].find("value")->asNumber() == 10);
+
+    Json set = r.ok("set_assembly_parameters",
+                    Json(Json::Object{{"id", idArg},
+                                      {"values", J(R"({"Width":25,"Material":"Pine"})")}}));
+    CHECK(set.find("parameters")->asArray()[0].find("value")->asNumber() == 25);
+    CHECK(set.find("parameters")->asArray()[1].find("value")->asString() == "Pine");
+
+    std::string bad = r.fails("set_assembly_parameters",
+                              Json(Json::Object{{"id", idArg}, {"values", J(R"({"Width":500})")}}));
+    CHECK_FALSE(bad.empty());
+    r.fails("set_assembly_parameters",
+            Json(Json::Object{{"id", idArg}, {"values", J(R"({"Nope":1})")}}));
+
+    Json preset = r.ok("set_assembly_parameters",
+                       Json(Json::Object{{"id", idArg}, {"preset", Json("wide")}}));
+    CHECK(preset.find("parameters")->asArray()[0].find("value")->asNumber() == 40);
+    r.ok("undo");
+    CHECK(entityAs<InsertData>(*doc.find(ins))->asmValues[0].number == 25);
+    r.fails("list_assembly_parameters", Json(Json::Object{{"id", Json("99999")}}));
+}

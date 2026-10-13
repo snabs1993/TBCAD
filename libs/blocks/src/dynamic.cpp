@@ -183,12 +183,15 @@ std::vector<Entity> evaluateDynamic(const Document& doc, const BlockDef& def,
 }
 
 std::vector<const Entity*> blockItems(const Document& doc, const BlockDef& def,
-                                      const InsertData* insert, std::vector<Entity>& storage) {
+                                      const InsertData* insert, std::vector<Entity>& storage,
+                                      const std::vector<NestedSet>* nested) {
     std::vector<const Entity*> items;
-    if (def.dynamic) {
+    if (def.dynamic || (nested && !nested->empty())) {
         InsertData none;
         const std::vector<double> values = dynValues(def, insert ? *insert : none);
         storage = evaluateDynamic(doc, def, values);
+        if (nested)
+            applyNested(doc, storage, *nested);
         items.reserve(storage.size());
         for (const Entity& e : storage)
             items.push_back(&e);

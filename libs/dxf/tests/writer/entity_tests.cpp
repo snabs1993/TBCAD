@@ -690,6 +690,30 @@ TEST_CASE("a dynamic block is exported as its current geometry") {
     CHECK(text.find("\n10\n103.0") != std::string::npos);
 }
 
+TEST_CASE("an assembly is exported as its current geometry") {
+    Document doc;
+    {
+        auto tx = doc.begin("assembly");
+        BlockId b = tx.addBlock(BlockDef{.name = "SHELF"}).value();
+        EntityId c = tx.add(make(CircleData{{0, 0}, 1}), b).value();
+        AssemblyDef def;
+        AsmParam n;
+        n.kind = AsmParam::Kind::Integer;
+        n.name = "N";
+        n.defaultNumber = 2;
+        def.params.push_back(n);
+        (void)c;
+        REQUIRE(tx.modifyBlock(b, [&](BlockDef& d) { d.assembly = std::move(def); }).ok());
+        REQUIRE(tx.add(make(InsertData{b, {100, 0}, {1, 1}, 0})).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    std::string text = rt.bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    CHECK(text.find("\nINSERT\n") == std::string::npos);
+    CHECK(text.find("\nCIRCLE\n") != std::string::npos);
+}
+
 TEST_CASE("an associative array is exported as one INSERT per item") {
     Document doc;
     {

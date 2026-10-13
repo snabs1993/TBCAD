@@ -88,6 +88,7 @@ public:
         loadBlocks(tx);
         loadXrefs(tx);
         loadDynamic(tx);
+        loadAssemblies(tx);
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         loadEntities(tx);
         loadOrder(tx);
@@ -109,6 +110,7 @@ private:
                 case kBlks:
                 case kXrfs:
                 case kDynb:
+                case kAsmb:
                 case kOrdr:
                     if (std::exchange(seen_[c.type], true))
                         bad("duplicate chunk " + fourccName(c.type));
@@ -545,6 +547,69 @@ private:
         }
         if (!r.atEnd())
             bad("trailing data in DYNB");
+    }
+
+    void loadAssemblies(Transaction& tx) {
+        const RawChunk* c = find(kAsmb);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        auto value = [&] {
+            AsmValue v;
+            v.name = str(r);
+            v.isText = r.boolean();
+            v.number = r.f64();
+            v.text = str(r);
+            return v;
+        };
+        std::size_t n = r.count(3);
+        for (std::size_t i = 0; i < n; ++i) {
+            BlockId b{id32(r)};
+            AssemblyDef def;
+            std::size_t np = r.count(12);
+            for (std::size_t k = 0; k < np; ++k) {
+                AsmParam prm;
+                std::uint8_t kind = r.u8();
+                if (kind > static_cast<std::uint8_t>(AsmParam::Kind::Choice))
+                    bad("unknown assembly parameter kind");
+                prm.kind = static_cast<AsmParam::Kind>(kind);
+                prm.name = str(r);
+                prm.defaultNumber = r.f64();
+                prm.defaultText = str(r);
+                prm.min = r.f64();
+                prm.max = r.f64();
+                std::size_t nc = r.count(1);
+                for (std::size_t m = 0; m < nc; ++m)
+                    prm.choices.push_back(str(r));
+                def.params.push_back(std::move(prm));
+            }
+            std::size_t nb = r.count(4);
+            for (std::size_t k = 0; k < nb; ++k) {
+                AsmBinding bd;
+                std::uint8_t kind = r.u8();
+                if (kind > static_cast<std::uint8_t>(AsmBinding::Kind::ArrayField))
+                    bad("unknown assembly binding kind");
+                bd.kind = static_cast<AsmBinding::Kind>(kind);
+                bd.entity = EntityId{r.varint()};
+                bd.target = str(r);
+                bd.formula = str(r);
+                def.bindings.push_back(std::move(bd));
+            }
+            std::size_t npr = r.count(2);
+            for (std::size_t k = 0; k < npr; ++k) {
+                AsmPreset pr;
+                pr.name = str(r);
+                std::size_t nv = r.count(8);
+                for (std::size_t m = 0; m < nv; ++m)
+                    pr.values.push_back(value());
+                def.presets.push_back(std::move(pr));
+            }
+            if (!tx.modifyBlock(b, [&](BlockDef& d) { d.assembly = std::move(def); }).ok())
+                bad("assembly definition names an unknown block");
+        }
+        if (!r.atEnd())
+            bad("trailing data in ASMB");
     }
 
     void loadEntities(Transaction& tx) {

@@ -78,8 +78,13 @@ void Flatten::contents(const Entity& insert, const Transform2& outer, int depth)
     const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
     if (!def)
         return;
+    std::optional<AsmResolved> res;
+    if (def->assembly) {
+        res = resolveAssembly(doc, *def, *ins);
+        ins = &res->insert;
+    }
     std::vector<Entity> storage;
-    for (const Entity* child : blockItems(doc, *def, ins, storage)) {
+    for (const Entity* child : blockItems(doc, *def, ins, storage, res ? &res->nested : nullptr)) {
         if (!child->common.visible)
             continue;
         if (const auto* t = entityAs<TextData>(*child); t && t->attdef) {
