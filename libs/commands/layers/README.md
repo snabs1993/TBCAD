@@ -58,3 +58,12 @@ locked unlocked plot noplot used empty current`, `name:S-*`, `path:S-FLOOR~e*`, 
 wildcards. A bare word is a name pattern. `-LAYERFILTER Apply` sets the host setting
 `layers.filter`; the Layers panel follows it and also accepts expressions in its filter box (any
 text with a `:`). The panel has a "Layer states..." list to restore a state and save the current one.
+
+## Layer tools (Q74m)
+
+Object-driven one-step commands (select objects, the layers they sit on are changed):
+LAYOFF, LAYFRZ (skips the current layer), LAYLCK, LAYULK, LAYISO (keeps the earlier on/off state
+in `tbcad.layiso` so LAYUNISO can restore it; repeated LAYISO keeps the first snapshot), LAYUNISO,
+LAYON and LAYTHW (no prompt: show / thaw every layer), LAYMCH (move objects to the layer of a picked
+object), LAYMRG (merge the layers of the selected objects into the layer of a picked object, one
+undo step) and LAYDEL (asks Yes/No, then erases the layer with all its objects).

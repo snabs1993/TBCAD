@@ -15,6 +15,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeCurrentCommand());
     (void)registry.add(makeLayerStateCommand());
     (void)registry.add(makeLayerFilterCommand());
+    registerLayerTools(registry);
 }
 
 void registerUi(ui::UiRegistry& ui) {
