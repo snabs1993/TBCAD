@@ -1,0 +1,11 @@
+G 1 0 S SECTION
+G 3 2 S ENTITIES
+G 5 0 S POINT
+G 8 10 D 1.5
+G 10 20 D 0
+G 12 30 D 3
+G 14 0 S ENDSEC
+G 16 0 S EOF
+W 7 dxf.lexer.blank_group_code
+W 9 dxf.lexer.decimal_comma
+W 11 dxf.lexer.bad_number
