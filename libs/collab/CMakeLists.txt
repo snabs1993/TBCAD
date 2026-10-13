@@ -9,6 +9,8 @@ tbcad_add_library(collab
     src/host.cpp
     src/replica.cpp
     src/snapshot.cpp
+    src/undo_guard.cpp
+    src/session.cpp
   DEPENDS tbcad::core tbcad::io)
 
 tbcad_add_tests(collab
@@ -19,4 +21,6 @@ tbcad_add_tests(collab
     tests/ids_tests.cpp
     tests/ops_tests.cpp
     tests/host_tests.cpp
-    tests/convergence_tests.cpp)
+    tests/convergence_tests.cpp
+    tests/undo_guard_tests.cpp
+    tests/session_tests.cpp)

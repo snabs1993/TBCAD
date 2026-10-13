@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,15 @@ public:
 
     void clear();
 
+    // Shared drawings: before an entry is undone or redone the guard may look at the document and
+    // the entry's change sets (in the order they were recorded) and refuse by returning a message,
+    // for instance because somebody else changed the same things since. A refused entry is dropped
+    // (it can never apply again), undo()/redo() return false and blockedReason() says why.
+    using Guard =
+        std::function<std::string(const Document&, std::span<const ChangeSet>, Direction)>;
+    void setGuard(Guard guard) { guard_ = std::move(guard); }
+    const std::string& blockedReason() const { return blocked_; }
+
     std::size_t usedBytes() const { return used_; }
     std::size_t limitBytes() const { return limit_; }
     void setLimitBytes(std::size_t limit);
@@ -77,6 +87,8 @@ private:
     Entry group_{};
     std::size_t dropped_ = 0;
     std::function<void(std::string)> sink_{};
+    Guard guard_{};
+    std::string blocked_{};
 };
 
 }  // namespace tbcad::cmd

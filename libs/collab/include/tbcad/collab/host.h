@@ -64,6 +64,7 @@ public:
     Document& document() { return *doc_; }
     const VersionMap& versions() const { return versions_; }
     std::uint64_t sequence() const { return seq_; }
+    const io::DeltaLimits& limits() const { return cfg_.limits; }
     // Restores versions saved with the file (see snapshot.h).
     void restore(VersionMap versions, std::uint64_t sequence);
 
