@@ -10,13 +10,11 @@ namespace {
 bool visibleEntity(const Document& doc, const Entity& e) {
     if (!e.common.visible)
         return false;
-    const Layer* l = doc.layer(e.common.layer);
-    return !l || (l->on && !l->frozen);
+    return doc.effective(e.common).live();
 }
 
 bool unlockedEntity(const Document& doc, const Entity& e) {
-    const Layer* l = doc.layer(e.common.layer);
-    return visibleEntity(doc, e) && (!l || !l->locked);
+    return visibleEntity(doc, e) && !doc.effective(e.common).locked;
 }
 
 std::string plural(std::size_t n) {

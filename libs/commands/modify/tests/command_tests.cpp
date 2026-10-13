@@ -119,6 +119,24 @@ TEST_CASE("OFFSET reports a collapse and keeps going") {
     CHECK(f.host.logContains("collapses"));
 }
 
+TEST_CASE("TRIM ignores cutting edges on another level") {
+    Fixture f;
+    EntityId h = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId edge = f.add(LineData{{3, -5}, {3, 5}});
+    {
+        auto tx = f.doc.begin("level");
+        auto lv = tx.addLevel(Level{{}, "Upper", 3000});
+        REQUIRE(lv.ok());
+        REQUIRE(tx.modify(edge, [&](Entity& e) { e.common.level = lv.value(); }));
+        tx.commit();
+    }
+    auto r =
+        f.host.run("TRIM", {ScriptItem::enter(), ScriptItem::pick(h, {5, 0}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 2);  // nothing was trimmed
+    CHECK(near(entityAs<LineData>(f.get(h))->b, {10, 0}));
+}
+
 TEST_CASE("TRIM in fast mode, Shift extends, Undo and Edge") {
     Fixture f;
     EntityId h = f.add(LineData{{0, 0}, {10, 0}});

@@ -35,12 +35,11 @@ namespace {
 bool layerAllows(const Document& doc, const Entity& e, bool needUnlocked) {
     if (!e.common.visible)
         return false;
-    const Layer* l = doc.layer(e.common.layer);
-    if (!l)
-        return true;
-    if (!l->on || l->frozen)
+    // Layer, sub-layer inheritance, "active only" and levels all apply.
+    const EffectiveLayer l = doc.effective(e.common);
+    if (!l.live())
         return false;
-    return !(needUnlocked && l->locked);
+    return !(needUnlocked && l.locked);
 }
 }  // namespace
 
