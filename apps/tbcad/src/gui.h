@@ -69,6 +69,9 @@ public:
     // Rendering preferences owned by the Gui (View menu).
     bool lineweights() const { return lineweights_; }
 
+    // Files dropped on the window; opened at the start of the next frame.
+    void queueDroppedFile(std::string path);
+
     // Command-line widget callback (public so the ImGui callback trampoline can reach it).
     int inputCallback(ImGuiInputTextCallbackData* data);
     // Rebuilds fonts and style after the window moved to a monitor with another DPI scale.
@@ -136,6 +139,7 @@ private:
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};
+    std::vector<std::string> droppedFiles_{};
 
     // Command line.
     std::string input_{};
