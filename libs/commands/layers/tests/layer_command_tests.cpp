@@ -242,27 +242,28 @@ void panelExec(cmd::ScriptHost& host, const std::vector<std::string>& lines) {
 TEST_CASE("the exact command sequences the layer panel sends work, names with spaces included") {
     Fixture f;
     panelExec(f.host, {"-LAYER New", "Walls and doors"});
-    const Layer* walls = f.layer("Walls and doors");
-    REQUIRE(walls != nullptr);
-    std::string wallsRef = "#" + std::to_string(walls->id.value);
+    REQUIRE(f.layer("Walls and doors") != nullptr);
+    // Pointers into the layer table do not survive edits; keep ids.
+    const LayerId wallsId = f.layer("Walls and doors")->id;
+    std::string wallsRef = "#" + std::to_string(wallsId.value);
 
     panelExec(f.host, {"-LAYER NewSub " + wallsRef, "Floor hidden"});
-    const Layer* sub = f.layer("Walls and doors~Floor hidden");
-    REQUIRE(sub != nullptr);
-    std::string subRef = "#" + std::to_string(sub->id.value);
+    REQUIRE(f.layer("Walls and doors~Floor hidden") != nullptr);
+    const LayerId subId = f.layer("Walls and doors~Floor hidden")->id;
+    std::string subRef = "#" + std::to_string(subId.value);
 
     panelExec(f.host, {"-LAYER Rename " + subRef, "Hidden floor"});
     CHECK(f.layer("Walls and doors~Hidden floor") != nullptr);
 
     panelExec(f.host, {"-LAYER Off " + wallsRef});
     CHECK_FALSE(f.layer("Walls and doors")->on);
-    CHECK_FALSE(f.doc.effective(sub->id).on);
+    CHECK_FALSE(f.doc.effective(subId).on);
     panelExec(f.host, {"-LAYER On " + wallsRef});
 
     panelExec(f.host, {"-LAYER Color 12,34,56", subRef});
-    CHECK(f.doc.effective(sub->id).color == Color::rgb(12, 34, 56));
+    CHECK(f.doc.effective(subId).color == Color::rgb(12, 34, 56));
     panelExec(f.host, {"-LAYER Lineweight 0.35", subRef});
-    CHECK(f.doc.layer(sub->id)->lineweight == LineWeight::mm(0.35));
+    CHECK(f.doc.layer(subId)->lineweight == LineWeight::mm(0.35));
 
     // Drag the sub-layer out to the top level, then back under its old parent.
     panelExec(f.host, {"-LAYER Parent " + subRef, "None"});
@@ -273,7 +274,7 @@ TEST_CASE("the exact command sequences the layer panel sends work, names with sp
     panelExec(f.host, {"-LAYER Delete " + wallsRef, "MoveUp"});
     CHECK(f.layer("Walls and doors") == nullptr);
     CHECK(f.layer("Hidden floor") != nullptr);
-    CHECK(f.doc.layer(sub->id)->parent == LayerId{});
+    CHECK(f.doc.layer(subId)->parent == LayerId{});
 }
 
 TEST_CASE("the exact command sequences the properties panel sends work") {

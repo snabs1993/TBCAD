@@ -403,24 +403,23 @@ Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep) {
         keepers.push_back(l->id);
     for (LayerId b : branchOf(doc, keep))
         keepers.push_back(b);
+    // Collect first: editing replaces rows in the layer table, so it cannot be iterated meanwhile.
+    std::vector<LayerId> turnOff, turnOn;
     for (const auto& [id, l] : doc.layers()) {
         bool k = std::find(keepers.begin(), keepers.end(), id) != keepers.end();
-        if (k)
-            continue;
-        if (l.on) {
-            auto r = editLayer(tx, id, [](Layer& x) { x.on = false; });
-            if (!r)
-                return r;
-        }
+        if (!k && l.on)
+            turnOff.push_back(id);
     }
     // The kept layer and its ancestors must be visible for the isolation to mean anything.
-    for (LayerId k : keepers) {
-        if (!doc.layer(k)->on) {
-            auto r = editLayer(tx, k, [](Layer& x) { x.on = true; });
-            if (!r)
-                return r;
-        }
-    }
+    for (LayerId k : keepers)
+        if (!doc.layer(k)->on)
+            turnOn.push_back(k);
+    for (LayerId id : turnOff)
+        if (auto r = editLayer(tx, id, [](Layer& x) { x.on = false; }); !r)
+            return r;
+    for (LayerId id : turnOn)
+        if (auto r = editLayer(tx, id, [](Layer& x) { x.on = true; }); !r)
+            return r;
     return {};
 }
 
