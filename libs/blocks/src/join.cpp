@@ -18,7 +18,7 @@ struct Member {
 };
 
 struct ClassCache {
-    const Document* doc = nullptr;
+    std::uint64_t doc = 0;
     std::uint64_t revision = ~std::uint64_t{0};
     std::size_t entities = 0;
     double tolerance = 0;
@@ -60,10 +60,10 @@ const std::vector<Member>& membersOf(const Document& doc, const std::string& cls
                                      const geom::DisplayContext& ctx) {
     ClassCache& c = g_cache;
     const double tol = quantize(ctx.tolerance());
-    if (c.doc != &doc || c.revision != doc.revision() || c.entities != doc.entityCount() ||
+    if (c.doc != doc.uid() || c.revision != doc.revision() || c.entities != doc.entityCount() ||
         c.tolerance != tol) {
         c.classes.clear();
-        c.doc = &doc;
+        c.doc = doc.uid();
         c.revision = doc.revision();
         c.entities = doc.entityCount();
         c.tolerance = tol;

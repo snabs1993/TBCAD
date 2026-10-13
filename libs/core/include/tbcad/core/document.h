@@ -240,6 +240,8 @@ public:
 
     // Incremented by every commit, undo and redo.
     std::uint64_t revision() const { return revision_; }
+    // Unique per Document object for the life of the process (addresses get reused, this does not).
+    std::uint64_t uid() const { return uid_; }
 
 private:
     friend class Transaction;
@@ -272,6 +274,7 @@ private:
     std::vector<DocumentObserver*> observers_{};
     Transaction* active_ = nullptr;
     std::uint64_t revision_ = 0;
+    std::uint64_t uid_ = 0;
 };
 
 // All edits of a Document go through a Transaction. Edits are applied immediately (reads inside
