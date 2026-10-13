@@ -4,6 +4,7 @@ tbcad_add_library(io
   SOURCES
     src/chunks.cpp
     src/crc32.cpp
+    src/delta.cpp
     src/entity_codec.cpp
     src/read.cpp
     src/save.cpp
@@ -23,6 +24,7 @@ tbcad_add_tests(io
     tests/roundtrip_tests.cpp
     tests/robustness_tests.cpp
     tests/save_tests.cpp
+    tests/delta_tests.cpp
     tests/performance_tests.cpp
   DEPENDS miniz)
 if(TBCAD_BUILD_TESTS)

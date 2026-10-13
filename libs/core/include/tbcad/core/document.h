@@ -21,16 +21,26 @@ inline constexpr double kDefaultWorkArea = 1e8;
 inline constexpr double kHardCap = 1e10;
 
 // Rows every document has. They can be edited (except as noted) but never deleted.
-inline constexpr LayerId kLayerZero{1};  // name and id are fixed
+inline constexpr LayerId kLayerZero{1};     // name and id are fixed
+inline constexpr LevelId kLevelDefault{1};  // cannot be deleted, can be renamed
 inline constexpr LinetypeId kLinetypeContinuous{1};
 inline constexpr TextStyleId kTextStyleStandard{1};
 inline constexpr DimStyleId kDimStyleStandard{1};
+
+// How objects on levels other than the current one are treated.
+enum class LevelView : std::uint8_t {
+    DimOthers,   // shown faded, cannot be selected or snapped to (default)
+    HideOthers,  // not shown at all
+    ShowAll,     // shown normally and fully editable
+};
 
 struct Header {
     LengthUnit units = LengthUnit::Millimeter;
     double workArea = kDefaultWorkArea;  // geometry beyond +-workArea is flagged, not rejected
     double ltScale = 1;
     LayerId currentLayer = kLayerZero;
+    LevelId currentLevel = kLevelDefault;
+    LevelView levelView = LevelView::DimOthers;
     // Properties new objects get from the drawing commands (ByLayer unless the user sets them).
     Color currentColor = Color::byLayer();  // never ByParent
     LinetypeId currentLinetype = kLinetypeByLayer;
@@ -43,6 +53,16 @@ struct Header {
     std::string createdBy{};
     std::map<std::string, std::string> custom{};  // settings stored in the file
 };
+
+// Annotation scale: model units per paper unit (100 for 1:100). Kept in Header::custom so it is
+// saved with the drawing. Always positive; 1 when unset or damaged.
+inline constexpr const char* kAnnoScaleKey = "tbcad.annoscale";
+inline constexpr const char* kAnnoScaleListKey = "tbcad.scalelist";
+double currentAnnotationScale(const Header& h);
+// The scales offered for annotation, as N of 1:N. Default list when none is stored.
+std::vector<double> annotationScaleList(const Header& h);
+// 1 for ordinary objects; for annotative ones `override` when positive, else the current scale.
+double annotationFactor(const Header& h, const EntityCommon& c, double override = 0);
 
 enum class Direction { Undo, Redo };
 
@@ -81,6 +101,7 @@ struct ChangeSet {
     std::shared_ptr<const std::vector<Entity>> snapshots = std::make_shared<std::vector<Entity>>();
     std::vector<EntityChange> entities{};
     std::vector<RowChange<Layer>> layers{};
+    std::vector<RowChange<Level>> levels{};
     std::vector<RowChange<Linetype>> linetypes{};
     std::vector<RowChange<TextStyle>> textStyles{};
     std::vector<RowChange<DimStyle>> dimStyles{};
@@ -166,6 +187,7 @@ struct Table {
 struct NextIds {
     std::uint64_t entity = 1;
     std::uint32_t layer = 1;
+    std::uint32_t level = 1;
     std::uint32_t linetype = 1;
     std::uint32_t textStyle = 1;
     std::uint32_t dimStyle = 1;
@@ -196,16 +218,26 @@ public:
     // Model-space entity ids in draw order (back to front).
     std::vector<EntityId> modelSpace() const;
     std::size_t modelSpaceCount() const { return store_.size() - owner_.size(); }
+    // The draw-order override of an entity (bring to front / send to back), if it has one.
+    std::optional<std::int64_t> drawOrderOverride(EntityId id) const {
+        auto it = orderOverride_.find(id);
+        if (it == orderOverride_.end())
+            return std::nullopt;
+        return it->second;
+    }
     // Block that owns the entity; null for model space.
     BlockId ownerBlock(EntityId id) const;
 
     // Tables.
     const std::map<LayerId, Layer>& layers() const { return layers_.rows; }
+    const std::map<LevelId, Level>& levels() const { return levels_.rows; }
     const std::map<LinetypeId, Linetype>& linetypes() const { return linetypes_.rows; }
     const std::map<TextStyleId, TextStyle>& textStyles() const { return textStyles_.rows; }
     const std::map<DimStyleId, DimStyle>& dimStyles() const { return dimStyles_.rows; }
     const std::map<BlockId, BlockDef>& blocks() const { return blocks_.rows; }
     const Layer* layer(LayerId id) const { return layers_.find(id); }
+    const Level* level(LevelId id) const { return levels_.find(id); }
+    const Level* levelByName(std::string_view name) const { return levels_.findByName(name); }
     const Linetype* linetype(LinetypeId id) const { return linetypes_.find(id); }
     const TextStyle* textStyle(TextStyleId id) const { return textStyles_.find(id); }
     const DimStyle* dimStyle(DimStyleId id) const { return dimStyles_.find(id); }
@@ -216,6 +248,10 @@ public:
     // Layer state with sub-layer inheritance applied. Cached; the cache is dropped on any
     // layer-table change. An unknown id yields defaults with a null id.
     EffectiveLayer effective(LayerId id) const;  // honours Header::activeOnly
+    // The layer state of an object, with its level applied: a hidden level (or, depending on
+    // Header::levelView, any level other than the current one) switches the object off; a locked
+    // level or a dimmed other level locks it (`otherLevel` is set for the latter).
+    EffectiveLayer effective(const EntityCommon& c) const;
     // Child layer with this name under `parent` (null parent = top level).
     const Layer* layerByName(LayerId parent, std::string_view name) const;
     const Linetype* linetypeByName(std::string_view n) const { return linetypes_.findByName(n); }
@@ -243,6 +279,21 @@ public:
     // Unique per Document object for the life of the process (addresses get reused, this does not).
     std::uint64_t uid() const { return uid_; }
 
+    // Collaboration. While a window is set, new entities take their ids from [first, limit)
+    // instead of the shared counter, so peers that edit the same drawing never mint the same id.
+    // The shared counter (nextIds().entity) still rises past every id in use. Adding an entity
+    // fails once the window is used up. Fails while a transaction is open.
+    Result<void> setEntityIdWindow(std::uint64_t first, std::uint64_t limit);
+    void clearEntityIdWindow();
+    // Ids left in the window; the largest value when no window is set.
+    std::uint64_t entityIdsLeft() const;
+
+    // Applies a change set that came from another peer, as apply(changes, Redo) does, but first
+    // checks every entity and row it writes with the rules a Transaction enforces (known layers,
+    // unique names, no dangling references ...). A change set that fails is not applied at all,
+    // and observers are not told. `changes` must carry the true "before" state of the document.
+    Result<void> applyChecked(const ChangeSet& changes);
+
 private:
     friend class Transaction;
 
@@ -258,10 +309,14 @@ private:
     detail::EntityStore store_{};
     std::vector<std::uint32_t> posOf_{};  // indexed by EntityId::value
     std::uint64_t nextEntityId_ = 1;
+    std::uint64_t windowNext_ = 0, windowLimit_ = 0;  // entity id window; limit 0 = none
+    // Where the next new entity id comes from.
+    std::uint64_t allocCursor() const { return windowLimit_ ? windowNext_ : nextEntityId_; }
     std::unordered_map<EntityId, BlockId> owner_{};  // entities that live in a block definition
     std::map<EntityId, std::int64_t> orderOverride_{};
 
     detail::Table<Layer, LayerId> layers_{};
+    detail::Table<Level, LevelId> levels_{};
     detail::Table<Linetype, LinetypeId> linetypes_{};
     detail::Table<TextStyle, TextStyleId> textStyles_{};
     detail::Table<DimStyle, DimStyleId> dimStyles_{};
@@ -299,6 +354,11 @@ public:
     Result<LayerId> addLayer(Layer row);
     Result<void> modifyLayer(LayerId id, const std::function<void(Layer&)>& fn);
     Result<void> eraseLayer(LayerId id);
+    // The default level cannot be deleted; a level that has objects (or is current) cannot be
+    // deleted either: move the objects first.
+    Result<LevelId> addLevel(Level row);
+    Result<void> modifyLevel(LevelId id, const std::function<void(Level&)>& fn);
+    Result<void> eraseLevel(LevelId id);
     Result<LinetypeId> addLinetype(Linetype row);
     Result<void> modifyLinetype(LinetypeId id, const std::function<void(Linetype&)>& fn);
     Result<void> eraseLinetype(LinetypeId id);
@@ -364,6 +424,7 @@ private:
     std::optional<Header> headerBefore_{};
     std::map<EntityId, OrderChange> order_{};
     Pending<Layer, LayerId> pLayers_{};
+    Pending<Level, LevelId> pLevels_{};
     Pending<Linetype, LinetypeId> pLinetypes_{};
     Pending<TextStyle, TextStyleId> pTextStyles_{};
     Pending<DimStyle, DimStyleId> pDimStyles_{};

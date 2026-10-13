@@ -529,3 +529,43 @@ TEST_CASE("assembly parameters: list, set, refuse bad values, undo") {
     CHECK(entityAs<InsertData>(*doc.find(ins))->asmValues[0].number == 25);
     r.fails("list_assembly_parameters", Json(Json::Object{{"id", Json("99999")}}));
 }
+
+TEST_CASE("levels: create, draw on a level, same position on another level, dim view protects") {
+    Rig r;
+    r.initialize();
+    Json first = r.ok("list_levels", J("{}"));
+    CHECK(first.find("levels")->asArray().size() == 1);
+    r.ok("create_level", J(R"({"name":"Floor 2","elevation":3000,"make_current":false})"));
+    r.fails("create_level", J(R"({"name":"floor 2"})"));
+    Json one = r.ok("add_entities", J(R"({"entities":[{"kind":"point","position":[1,1]}]})"));
+    r.ok("set_current_level", J(R"({"name":"Floor 2"})"));
+    // The same position, on the new level.
+    r.ok("add_entities", J(R"({"entities":[{"kind":"point","position":[1,1]}]})"));
+    r.ok("add_entities",
+         J(R"({"entities":[{"kind":"point","position":[1,1],"level":"Level 1"}]})"));
+    const Document& doc = r.session.document();
+    int onFloor2 = 0, onFirst = 0;
+    doc.forEachEntity([&](const Entity& e) {
+        onFloor2 += doc.level(e.common.level)->name == "Floor 2";
+        onFirst += e.common.level == kLevelDefault;
+    });
+    CHECK(onFloor2 == 1);
+    CHECK(onFirst == 2);
+
+    // The entity on the other level is read-only in the dim view.
+    std::string id = one.find("ids")->asArray()[0].asString();
+    std::string e = r.fails("delete_entities", J(R"({"ids":[")" + id + R"("]})"));
+    CHECK(e.find("level") != std::string::npos);
+    r.ok("set_level_view", J(R"({"mode":"all"})"));
+    r.ok("delete_entities", J(R"({"ids":[")" + id + R"("]})"));
+
+    Json q = r.ok("query_entities", J(R"({"levels":["Floor 2"]})"));
+    CHECK(q.find("total")->asNumber() == 1);
+    r.fails("query_entities", J(R"({"levels":["nope"]})"));
+
+    r.fails("delete_level", J(R"({"name":"Level 1"})"));
+    Json del = r.ok("delete_level", J(R"({"name":"Floor 2"})"));
+    CHECK(del.find("entitiesMoved")->asNumber() == 1);
+    CHECK(r.session.document().levels().size() == 1);
+    CHECK(r.session.document().header().currentLevel == kLevelDefault);
+}

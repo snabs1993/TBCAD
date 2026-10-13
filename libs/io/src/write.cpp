@@ -44,6 +44,8 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     headReal(body, st, "workArea", h.workArea), bump();
     headReal(body, st, "ltScale", h.ltScale), bump();
     headInt(body, st, "currentLayer", h.currentLayer.value), bump();
+    headInt(body, st, "currentLevel", h.currentLevel.value), bump();
+    headInt(body, st, "levelView", static_cast<std::int64_t>(h.levelView)), bump();
     headInt(body, st, "currentColor",
             (static_cast<std::int64_t>(h.currentColor.kind) << 24) | (h.currentColor.r << 16) |
                 (h.currentColor.g << 8) | h.currentColor.b),
@@ -56,6 +58,7 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
     const NextIds next = doc.nextIds();
     headInt(body, st, "nextEntity", static_cast<std::int64_t>(next.entity)), bump();
     headInt(body, st, "nextLayer", next.layer), bump();
+    headInt(body, st, "nextLevel", next.level), bump();
     headInt(body, st, "nextLinetype", next.linetype), bump();
     headInt(body, st, "nextTextStyle", next.textStyle), bump();
     headInt(body, st, "nextDimStyle", next.dimStyle), bump();
@@ -66,6 +69,11 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
         headString(body, st, std::string(kCustomPrefix) + k, v), bump();
     }
     return std::move(body.bytes());
+}
+
+std::uint32_t fourcc4(const std::string& s) {
+    char t[5] = {s[0], s[1], s[2], s[3], 0};
+    return fourcc(t);
 }
 
 }  // namespace
@@ -144,6 +152,22 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
                                               (r.locked ? 4 : 0) | (r.plot ? 8 : 0)));
         }
 
+        // Levels (LVLS) are written only when the document has more than the pristine default
+        // level; ELVL maps entities to their level, listing only those not on the default level.
+        ByteWriter lvls;
+        bool writeLvls = doc.levels().size() > 1;
+        if (const Level* l1 = doc.level(kLevelDefault);
+            l1 && (l1->name != "Level 1" || l1->elevation != 0 || !l1->visible || l1->locked)) {
+            writeLvls = true;
+        }
+        lvls.varint(doc.levels().size());
+        for (const auto& [id, r] : doc.levels()) {
+            lvls.varint(id.value);
+            lvls.varint(st.intern(r.name));
+            lvls.f64(r.elevation);
+            lvls.u8(static_cast<std::uint8_t>((r.visible ? 1 : 0) | (r.locked ? 2 : 0)));
+        }
+
         ByteWriter blks;
         blks.varint(doc.blocks().size());
         for (const auto& [id, r] : doc.blocks()) {
@@ -165,6 +189,16 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             xrfs.varint(st.intern(r.xrefPath));
             xrfs.i64(r.xrefStamp);
         }
+
+        // Overlay flags of xrefs (since 1.5); only when at least one xref is an overlay.
+        ByteWriter xrfo;
+        std::size_t overlayCount = 0;
+        for (const auto& [id, r] : doc.blocks())
+            overlayCount += (!r.xrefPath.empty() && r.xrefOverlay) ? 1 : 0;
+        xrfo.varint(overlayCount);
+        for (const auto& [id, r] : doc.blocks())
+            if (!r.xrefPath.empty() && r.xrefOverlay)
+                xrfo.varint(id.value);
 
         // Dynamic block definitions (format 1.4).
         ByteWriter dynb;
@@ -280,6 +314,24 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             flush();
         }
 
+        ByteWriter elvl;
+        {
+            std::size_t n = 0;
+            for (const Entity* e : ents)
+                n += e->common.level == kLevelDefault ? 0 : 1;
+            if (n > 0) {
+                elvl.varint(n);
+                std::uint64_t prev = 0;
+                for (const Entity* e : ents) {
+                    if (e->common.level == kLevelDefault)
+                        continue;
+                    elvl.varint(e->common.id.value - prev);
+                    prev = e->common.id.value;
+                    elvl.varint(e->common.level.value);
+                }
+            }
+        }
+
         // Draw order, only when it differs from creation order.
         ByteWriter ordr;
         {
@@ -318,15 +370,21 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         appendChunk(out, kTsty, tsty.bytes(), options.compress);
         appendChunk(out, kDsty, dsty.bytes(), options.compress);
         appendChunk(out, kLayr, layr.bytes(), options.compress);
+        if (writeLvls)
+            appendChunk(out, kLvls, lvls.bytes(), options.compress);
         appendChunk(out, kBlks, blks.bytes(), options.compress);
         if (xrefCount > 0)
             appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
+        if (overlayCount > 0)
+            appendChunk(out, kXrfo, xrfo.bytes(), options.compress);
         if (dynCount > 0)
             appendChunk(out, kDynb, dynb.bytes(), options.compress);
         if (asmCount > 0)
             appendChunk(out, kAsmb, asmb.bytes(), options.compress);
         for (const auto& c : entChunks)
             appendChunk(out, kEnts, c, options.compress);
+        if (elvl.size() != 0)
+            appendChunk(out, kElvl, elvl.bytes(), options.compress);
         if (ordr.size() != 0)
             appendChunk(out, kOrdr, ordr.bytes(), options.compress);
         for (const auto& [key, value] : opaque) {
@@ -334,13 +392,77 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
                 reinterpret_cast<const std::uint8_t*>(value->data()), value->size()));
             std::uint32_t type = r.u32();
             std::uint32_t flags = r.u32();
-            appendStoredChunk(out, type, flags, r.rest());
+            bool replaced = false;
+            for (const ExtraChunk& x : options.extraChunks) {
+                replaced = replaced || (x.type.size() == 4 && fourcc4(x.type) == type);
+            }
+            if (!replaced)
+                appendStoredChunk(out, type, flags, r.rest());
+        }
+        for (const ExtraChunk& x : options.extraChunks) {
+            if (x.type.size() != 4)
+                return makeError(ErrorCode::InvalidArgument, "chunk type must be four characters");
+            appendChunk(out, fourcc4(x.type), x.payload, options.compress);
         }
         appendStoredChunk(out, kEnd, 0, {});
         return std::move(out.bytes());
     } catch (const std::exception& ex) {
         return makeError(ErrorCode::Generic, std::string("cannot write .tbcad: ") + ex.what());
     }
+}
+
+}  // namespace tbcad::io
+
+namespace tbcad::io {
+
+namespace {
+// The header key and payload of the opaque chunk `type`.
+std::optional<std::pair<std::string, std::vector<std::uint8_t>>> locateOptionalChunk(
+    const Document& doc, std::string_view type) {
+    if (type.size() != 4)
+        return std::nullopt;
+    char t[5] = {type[0], type[1], type[2], type[3], 0};
+    const std::uint32_t want = detail::fourcc(t);
+    for (const auto& [key, value] : doc.header().custom) {
+        if (!key.starts_with(detail::kOpaqueChunkPrefix) || value.size() < 8)
+            continue;
+        try {
+            detail::ByteReader r(std::span<const std::uint8_t>(
+                reinterpret_cast<const std::uint8_t*>(value.data()), value.size()));
+            detail::RawChunk c;
+            c.type = r.u32();
+            c.flags = r.u32();
+            if (c.type != want)
+                continue;
+            c.stored = r.rest();
+            std::vector<std::uint8_t> scratch;
+            auto payload = detail::chunkPayload(c, scratch);
+            return std::make_pair(key, std::vector<std::uint8_t>(payload.begin(), payload.end()));
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+}  // namespace
+
+std::optional<std::vector<std::uint8_t>> findOptionalChunk(const Document& doc,
+                                                           std::string_view type) {
+    auto found = locateOptionalChunk(doc, type);
+    if (!found)
+        return std::nullopt;
+    return std::move(found->second);
+}
+
+std::optional<std::vector<std::uint8_t>> takeOptionalChunk(Document& doc, std::string_view type) {
+    auto found = locateOptionalChunk(doc, type);
+    if (!found)
+        return std::nullopt;
+    Transaction tx = doc.begin("drop optional chunk");
+    if (!tx.modifyHeader([&](Header& h) { h.custom.erase(found->first); }))
+        return std::move(found->second);
+    tx.commit();
+    return std::move(found->second);
 }
 
 }  // namespace tbcad::io

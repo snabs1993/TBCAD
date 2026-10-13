@@ -25,6 +25,8 @@ using LinetypeId = StrongId<struct LinetypeIdTag, std::uint32_t>;
 using TextStyleId = StrongId<struct TextStyleIdTag, std::uint32_t>;
 using DimStyleId = StrongId<struct DimStyleIdTag, std::uint32_t>;
 using BlockId = StrongId<struct BlockIdTag, std::uint32_t>;
+// A drawing level (floor, storey): objects on different levels never interact.
+using LevelId = StrongId<struct LevelIdTag, std::uint32_t>;
 
 inline constexpr LinetypeId kLinetypeByLayer{0};
 inline constexpr LinetypeId kLinetypeByBlock{0xFFFFFFFEu};

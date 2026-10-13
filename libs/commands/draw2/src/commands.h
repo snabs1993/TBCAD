@@ -13,5 +13,10 @@ std::unique_ptr<cmd::Command> makeRevCloud();
 std::unique_ptr<cmd::Command> makeCenterMark();
 std::unique_ptr<cmd::Command> makeCenterLine();
 std::unique_ptr<cmd::Command> makeBoundary();
+std::unique_ptr<cmd::Command> makeSketch();
+std::unique_ptr<cmd::Command> makeRegion();
+std::unique_ptr<cmd::Command> makeUnion();
+std::unique_ptr<cmd::Command> makeSubtract();
+std::unique_ptr<cmd::Command> makeIntersect();
 
 }  // namespace tbcad::draw2::detail

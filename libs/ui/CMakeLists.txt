@@ -13,8 +13,9 @@ tbcad_add_library(appcore
     src/app_core.cpp
     src/scene_sync.cpp
     src/selection.cpp
+    src/workspace.cpp
     src/settings_model.cpp
-  DEPENDS tbcad::ui tbcad::dxf tbcad::blocks tbcad::xref tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd)
+  DEPENDS tbcad::ui tbcad::dxf tbcad::blocks tbcad::xref tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd tbcad::template)
 target_include_directories(tbcad_appcore PRIVATE src)
 
 tbcad_add_tests(ui
@@ -32,4 +33,7 @@ tbcad_add_tests(appcore
     tests/scene_sync_tests.cpp
     tests/block_scene_tests.cpp
     tests/app_core_tests.cpp
+    tests/template_tests.cpp
+    tests/pgp_tests.cpp
+    tests/workspace_tests.cpp
     tests/headless_file_tests.cpp)

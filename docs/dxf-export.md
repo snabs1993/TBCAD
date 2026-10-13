@@ -62,6 +62,17 @@ Such characters become `_`; a name that then collides (names compare case-insens
 `_2`, `_3` suffix; R12 names are cut to 31 characters. Every change is an info diagnostic
 `dxf.writer.name_changed`. Block names that begin with `*` stay anonymous blocks.
 
+## Levels
+
+A drawing with more than one level (or a renamed or hidden first level) writes its levels as TBCAD
+XDATA, so a TBCAD to TBCAD round trip through DXF keeps them. The table is XDATA on the `TBCAD`
+APPID record: `1000 levels-current=<name>`, `1000 levels-view=<0|1|2>` and per level
+`1000 levels-row=<name>`, `1040 <elevation mm>`, `1070 <bit 0 visible, bit 1 locked>`. Every
+entity ends with `1001 TBCAD` / `1000 level=<name>`. Other programs ignore all of it and see every
+object, which is the right result for a floor-plan reader that flattens the levels. A drawing with
+only the untouched first level writes nothing extra. `ExportOptions::onlyLevel` (library API)
+writes just that level as a plain drawing.
+
 ## Layers and sub-layers
 
 DXF layers are flat. A sub-layer is written under its full path joined by the separator
@@ -171,3 +182,8 @@ beyond the basic ones, binary DXF output.
 drawing. `IMPORTDXF` asks for a file name and adds the contents of the DXF file to the open
 drawing in one undo step; layers, linetypes and styles are matched by name, and blocks whose name
 is taken are renamed `<name>_1`. Both live in `libs/commands/dxfexport`.
+
+## Tables
+
+A table is written as an INSERT of an anonymous `*T<n>` block (grid lines and one MTEXT per filled cell) with
+TBCAD extended data that carries the table; see `docs/table.md`.

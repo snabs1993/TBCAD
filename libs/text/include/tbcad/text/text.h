@@ -131,7 +131,7 @@ struct TextLayout {
 TextLayout layoutText(const Document& doc, const TextData& t);
 TextLayout layoutMText(const Document& doc, const MTextData& t);
 // Layout of either kind; empty for other kinds.
-TextLayout layoutEntity(const Document& doc, const Entity& e);
+TextLayout layoutEntity(const Document& doc, const Entity& e, double annoScale = 0);
 
 // Advance width in mm of a single line of plain text at the given capital height.
 double measureWidth(const TextStyle* style, std::string_view utf8, double height, bool bold = false,

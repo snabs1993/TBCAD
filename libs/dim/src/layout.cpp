@@ -466,9 +466,20 @@ AngularGeometry angularGeometry(const DimensionData& d) {
     return g;
 }
 
-Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance) {
+namespace {
+// The style with its overall scale multiplied by the annotation scale.
+DimStyle scaledStyle(const DimStyle& base, double annoScale) {
+    DimStyle s = base;
+    if (annoScale > 0 && annoScale != 1.0)
+        s.overallScale = (s.overallScale > 0 ? s.overallScale : 1.0) * annoScale;
+    return s;
+}
+}  // namespace
+
+Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance,
+                       double annoScale) {
     Layout L;
-    const DimStyle& st = styleOf(doc, d.style);
+    const DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
     const std::string txt = dimensionText(st, d);
     switch (d.kind) {
@@ -490,11 +501,11 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     return L;
 }
 
-Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance) {
+Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance, double annoScale) {
     Layout L;
     if (d.vertices.size() < 2)
         return L;
-    const DimStyle& st = styleOf(doc, d.style);
+    const DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
     Layout::Line line;
     line.pts = d.vertices;

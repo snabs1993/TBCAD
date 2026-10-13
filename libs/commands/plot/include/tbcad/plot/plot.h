@@ -39,6 +39,11 @@ BBox2 viewWindow(const cmd::IHost& host);
 bool parseScale(const std::string& text, exportlib::PlotSettings& settings);
 std::string scaleText(const exportlib::PlotSettings& settings);
 
+// The sheet the plot settings describe: the chosen layout, or model space. Display areas are
+// resolved from the host's view.
+Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHost& host,
+                                            exportlib::PlotSettings settings);
+
 // Builds the sheet from the settings (Display area is resolved from the host's view) and writes the
 // file. The returned text is the one-line summary for the command line.
 Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,

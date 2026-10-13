@@ -192,6 +192,7 @@ void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
     proxy.originalType = "DIMENSION";
     for (Entity& s : shapes) {
         s.common.layer = dc.layer;
+        s.common.level = dc.level;
         if (s.common.color.kind == ColorKind::ByBlock)
             s.common.color = dc.color;
         if (const auto* h = entityAs<HatchData>(s)) {
@@ -233,6 +234,7 @@ void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
     }
     for (Entity& t : texts) {
         t.common.layer = dc.layer;
+        t.common.level = dc.level;
         if (t.common.color.kind == ColorKind::ByBlock)
             t.common.color = dc.color;
         out.push_back(std::move(t));

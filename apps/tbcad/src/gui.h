@@ -15,6 +15,7 @@
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
+#include "tbcad/ui/workspace.h"
 
 struct GLFWwindow;
 
@@ -82,7 +83,7 @@ public:
 
 private:
     enum class Pending { None, Close, Exit };
-    enum class BrowserPurpose { Open, SaveAs };
+    enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf };
 
     void shortcuts();
     void menuBar();
@@ -92,6 +93,13 @@ private:
     void startPage(const ViewportRect& rect);
     void statusBar();
     void dockLayout(ImGuiID dockspace);
+    // Workspaces (saved window layouts). Switching applies the panels at once and the docking
+    // layout through Dear ImGui's ini data.
+    void applyWorkspace(const ui::Workspace& ws);
+    void switchWorkspace(const std::string& name);
+    void saveWorkspace(const std::string& name);
+    void workspaceMenu();
+    void workspaceDialog();
     void commandWindow();
     void updateSuggestions();
     void drawSuggestions(ImVec2 inputPos, float width);
@@ -100,6 +108,7 @@ private:
     void logWindow();
     std::string actionLabel(const std::string& action) const;
     void propertiesWindow();
+    void quickProperties(const ViewportRect& rect);
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
@@ -111,6 +120,9 @@ private:
     void doNew();
     void doOpen();
     void doOpenPath(const std::string& path);
+    void doImportDxf();
+    void doExportDxf();
+    void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
     void doSave();
     void doSaveAs();
     void afterSavePrompt(bool saved);
@@ -141,6 +153,12 @@ private:
     bool showCommandLine_ = true;
     bool showProperties_ = true;
     bool layoutBuilt_ = false;
+    ui::WorkspaceStore workspaces_;
+    std::string workspaceName_{};  // the one last switched to or saved
+    bool rebuildDock_ = false;     // rebuild the default docking layout next frame
+    bool openWorkspaceSave_ = false;
+    std::string workspaceNameInput_{};
+    std::string workspaceMessage_{};
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
@@ -190,6 +208,7 @@ private:
     bool leftDown_ = false;
     bool doubleClick_ = false;
     bool dragging_ = false;
+    std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
     Vec2 pressPos_{};
     bool panning_ = false;
     double pendingNotches_ = 0;

@@ -5,7 +5,7 @@
 
 namespace tbcad::select {
 
-namespace {
+namespace detail {
 
 std::string upper(std::string_view s) {
     return cmd::toUpperAscii(s);
@@ -64,7 +64,7 @@ bool sameColor(Color a, Color b) {
     return a == b;
 }
 
-}  // namespace
+}  // namespace detail
 
 std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Query& q) {
     using namespace detail;

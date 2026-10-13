@@ -1,5 +1,5 @@
 // This is the one file outside libs/platform and apps that includes the Winsock headers (the MCP
-// server needs plain TCP sockets on 127.0.0.1; see docs/mcp.md). Link ws2_32.
+// server and collaboration need plain TCP sockets; see docs/mcp.md). Link ws2_32.
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -12,9 +12,9 @@
 
 #include <mutex>
 
-#include "socket.h"
+#include "tbcad/net/socket.h"
 
-namespace tbcad::mcp::net {
+namespace tbcad::net {
 
 bool initialize() {
     static std::once_flag once;
@@ -39,7 +39,7 @@ int waitFor(SOCKET s, short events, int timeoutMs) {
     return WSAPoll(&p, 1, timeoutMs);
 }
 
-Handle bindLoopback(int port, int& boundPort, std::string& error) {
+Handle bindTcp(const std::string& bindAddress, int port, int& boundPort, std::string& error) {
     SOCKET s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == INVALID_SOCKET) {
         error = "socket() failed";
@@ -51,7 +51,13 @@ Handle bindLoopback(int port, int& boundPort, std::string& error) {
                  sizeof excl);
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (bindAddress.empty()) {
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else if (::inet_pton(AF_INET, bindAddress.c_str(), &addr.sin_addr) != 1) {
+        error = "not an IPv4 address: " + bindAddress;
+        ::closesocket(s);
+        return kInvalid;
+    }
     addr.sin_port = htons(static_cast<u_short>(port));
     if (::bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0 || ::listen(s, 16) != 0) {
         error = "bind/listen failed (error " + std::to_string(WSAGetLastError()) + ")";
@@ -66,15 +72,20 @@ Handle bindLoopback(int port, int& boundPort, std::string& error) {
 
 }  // namespace
 
-Handle listenLoopback(int port, bool fallbackToAny, int& boundPort, std::string& error) {
+Handle listenTcp(const std::string& bindAddress, int port, bool fallbackToAny, int& boundPort,
+                 std::string& error) {
     if (!initialize()) {
         error = "WSAStartup failed";
         return kInvalid;
     }
-    Handle h = bindLoopback(port, boundPort, error);
+    Handle h = bindTcp(bindAddress, port, boundPort, error);
     if (h == kInvalid && fallbackToAny && port != 0)
-        h = bindLoopback(0, boundPort, error);
+        h = bindTcp(bindAddress, 0, boundPort, error);
     return h;
+}
+
+Handle listenLoopback(int port, bool fallbackToAny, int& boundPort, std::string& error) {
+    return listenTcp("127.0.0.1", port, fallbackToAny, boundPort, error);
 }
 
 Handle acceptWithTimeout(Handle listener, int timeoutMs) {
@@ -88,19 +99,15 @@ Handle acceptWithTimeout(Handle listener, int timeoutMs) {
     return static_cast<Handle>(s);
 }
 
-Handle connectLoopback(int port, int timeoutMs) {
-    if (!initialize())
-        return kInvalid;
+namespace {
+
+Handle connectAddr(const sockaddr_in& addr, int timeoutMs) {
     SOCKET s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == INVALID_SOCKET)
         return kInvalid;
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(static_cast<u_short>(port));
     u_long nonBlocking = 1;
     ::ioctlsocket(s, FIONBIO, &nonBlocking);
-    int r = ::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof addr);
+    int r = ::connect(s, reinterpret_cast<const sockaddr*>(&addr), sizeof addr);
     if (r != 0 && WSAGetLastError() != WSAEWOULDBLOCK) {
         ::closesocket(s);
         return kInvalid;
@@ -121,6 +128,37 @@ Handle connectLoopback(int port, int timeoutMs) {
     return static_cast<Handle>(s);
 }
 
+}  // namespace
+
+Handle connectTcp(const std::string& host, int port, int timeoutMs) {
+    if (!initialize())
+        return kInvalid;
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    if (::getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res)
+        return kInvalid;
+    Handle h = kInvalid;
+    for (addrinfo* a = res; a && h == kInvalid; a = a->ai_next) {
+        sockaddr_in addr = *reinterpret_cast<const sockaddr_in*>(a->ai_addr);
+        addr.sin_port = htons(static_cast<u_short>(port));
+        h = connectAddr(addr, timeoutMs);
+    }
+    ::freeaddrinfo(res);
+    return h;
+}
+
+Handle connectLoopback(int port, int timeoutMs) {
+    if (!initialize())
+        return kInvalid;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(port));
+    return connectAddr(addr, timeoutMs);
+}
+
 long receive(Handle h, void* buffer, std::size_t size, int timeoutMs) {
     int w = waitFor(sock(h), POLLRDNORM, timeoutMs);
     if (w == 0)
@@ -133,6 +171,10 @@ long receive(Handle h, void* buffer, std::size_t size, int timeoutMs) {
     if (n == 0)
         return kClosed;
     return kError;
+}
+
+bool waitReadable(Handle h, int timeoutMs) {
+    return waitFor(sock(h), POLLRDNORM, timeoutMs) != 0;
 }
 
 bool sendAll(Handle h, const void* data, std::size_t size) {
@@ -169,4 +211,4 @@ long currentProcessId() {
     return static_cast<long>(::GetCurrentProcessId());
 }
 
-}  // namespace tbcad::mcp::net
+}  // namespace tbcad::net

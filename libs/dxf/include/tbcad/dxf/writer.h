@@ -47,6 +47,9 @@ struct ExportOptions {
     // "|" (xref layers) or "$" (bound xrefs).
     std::string layerSeparator = "~";
     HatchPatternLookup patterns{};
+    // Write only the objects of this level (null = every level). The file then holds a plain
+    // single-level drawing.
+    LevelId onlyLevel{};
 };
 
 struct ExportSummary {

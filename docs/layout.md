@@ -12,18 +12,18 @@ so they are saved in the `.tbcad` file and changes are undoable.
 | `MVIEW` (`MV`) | Adds a viewport: two sheet corners in mm, scale `1:N`, model centre |
 | `VPSCALE` | Changes a viewport's scale |
 | `VPLAYER` | Freezes or thaws a layer in one viewport (sub-layers follow their parent) |
-| `TITLEBLOCK` | Places title-block text on the sheet |
+| `TITLEBLOCK` | Inserts the `TITLEBLOCK` block (frame, labels and PROJECT, DRAWN BY, DATE, SCALE, SHEET attributes) on the sheet; edit the values with the attribute commands |
 
 A viewport plots the model through its own scale, clipped to its rectangle.
 
 ## Plotting a layout
 
-`PLOT`, `EXPORTPDF` and `EXPORTSVG` have a **Layout** option. Give a layout name to plot that sheet
+`PLOT`, `EXPORTPDF` and `EXPORTSVG` have a **Layout** option (and the Plot panel a "Plot" drop-down with live preview). Give a layout name to plot that sheet
 at 1:1 on its paper; leave it empty to plot model space (the setting is `plot.layout`).
 
 ## Sheet lists (`libs/sheets`)
 
-`PLOTSET` (alias `BATCHPLOT`) reads a text file and writes one multi-page PDF, one page per line:
+`PLOTSET` (aliases `BATCHPLOT`, `PUBLISH`) reads a text file and writes one multi-page PDF, one page per line:
 
 ```
 # comment

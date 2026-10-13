@@ -5,6 +5,7 @@ tbcad_add_library(blocks
     src/join.cpp
     src/attributes.cpp
     src/blocks.cpp
+    src/clip.cpp
     src/dynamic.cpp
     src/explode.cpp
     src/index_refresh.cpp
@@ -18,6 +19,7 @@ tbcad_add_tests(blocks
     tests/join_tests.cpp
     tests/attribute_tests.cpp
     tests/blocks_tests.cpp
+    tests/clip_tests.cpp
     tests/display_tests.cpp
     tests/dynamic_tests.cpp
     tests/explode_tests.cpp)

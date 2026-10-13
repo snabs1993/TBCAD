@@ -64,6 +64,8 @@ const char* kindLabel(EntityKind k) {
             return "Leader";
         case EntityKind::Proxy:
             return "Proxy";
+        case EntityKind::Table:
+            return "Table";
     }
     return "Object";
 }
@@ -104,7 +106,7 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
         const Entity* e = doc.find(id);
         if (!e || !matches(*e, only))
             continue;
-        if (doc.effective(e->common.layer).locked) {
+        if (doc.effective(e->common).locked) {
             ++sum.skippedLocked;
             continue;
         }

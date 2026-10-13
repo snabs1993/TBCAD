@@ -6,9 +6,13 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <fstream>
+#include <iterator>
 
 #include "key_map.h"
 #include "tbcad/platform/keybindings.h"
+#include "tbcad/platform/paths.h"
+#include "tbcad/tmpl/tmpl.h"
 
 namespace tbcad::app {
 
@@ -161,6 +165,22 @@ void SettingsDialog::files(ui::AppCore& core) {
         s.setString("files.defaultFormat", fmt == 1 ? "dxf" : "tbcad");
     ImGui::TextDisabled("A drawing opened from a .dxf file is saved back as DXF.");
     ImGui::Spacing();
+    {
+        const std::vector<std::string> names = core.templateNames();
+        std::string current = s.getString("template.default", "");
+        if (current.empty())
+            current = tmpl::kBuiltinTemplate;
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::BeginCombo("Default template", current.c_str())) {
+            for (const std::string& n : names)
+                if (ImGui::Selectable(n.c_str(), n == current))
+                    s.setString("template.default", n == tmpl::kBuiltinTemplate ? "" : n);
+            ImGui::EndCombo();
+        }
+        ImGui::TextDisabled("Templates are .tbt files in %s. Save one with SAVEASTEMPLATE.",
+                            core.templateFolder().string().c_str());
+    }
+    ImGui::Spacing();
     ImGui::TextDisabled("Settings folder: %s", core.settingsFolder().string().c_str());
 }
 
@@ -171,7 +191,7 @@ void SettingsDialog::aliases(ui::AppCore& core) {
     ImGui::SameLine();
     ImGui::TextDisabled("Commands are never tied to AutoCAD names: change any alias here.");
 
-    const float footer = ImGui::GetFrameHeightWithSpacing() * 2 + 8;
+    const float footer = ImGui::GetFrameHeightWithSpacing() * 3 + 8;
     if (ImGui::BeginTable("##aliases", 5,
                           ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable,
@@ -238,6 +258,52 @@ void SettingsDialog::aliases(ui::AppCore& core) {
     }
     if (!aliasError_.empty())
         ImGui::TextColored(kWarn, "%s", aliasError_.c_str());
+
+    ImGui::SetNextItemWidth(300);
+    ImGui::InputTextWithHint("##pgpPath", "Path of an acad.pgp style file", &pgpPath_);
+    ImGui::SameLine();
+    if (ImGui::Button("Import##pgp")) {
+        std::ifstream in(platform::pathFromUtf8(pgpPath_), std::ios::binary);
+        if (!in) {
+            pgpMessage_ = "Cannot read that file.";
+        } else {
+            std::string text((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+            ui::AliasImportReport rep = editor.importPgp(text);
+            pgpMessage_ =
+                !rep.error.empty()
+                    ? "Not imported: " + rep.error
+                    : "Imported " + std::to_string(rep.added) + " alias(es)" +
+                          (rep.skipped.empty() ? std::string(".")
+                                               : ", skipped " + std::to_string(rep.skipped.size()) +
+                                                     ": " + rep.skipped.front());
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export##pgp")) {
+        std::ofstream out(platform::pathFromUtf8(pgpPath_), std::ios::binary | std::ios::trunc);
+        out << editor.exportPgp();
+        pgpMessage_ = out ? "Aliases written." : "Cannot write that file.";
+    }
+    if (!pgpMessage_.empty())
+        ImGui::TextColored(kMuted, "%s", pgpMessage_.c_str());
+}
+
+void SettingsDialog::keyProfile(ui::AppCore& core) {
+    ImGui::SetNextItemWidth(300);
+    ImGui::InputTextWithHint("##keyFile", "Path of a key binding file (.json)", &keyFile_);
+    ImGui::SameLine();
+    if (ImGui::Button("Import##keys")) {
+        const std::string err = core.importKeybindings(platform::pathFromUtf8(keyFile_));
+        keyFileMessage_ = err.empty() ? "Key bindings imported." : err;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export##keys")) {
+        const std::string err = core.exportKeybindings(platform::pathFromUtf8(keyFile_));
+        keyFileMessage_ = err.empty() ? "Key bindings written." : err;
+    }
+    if (!keyFileMessage_.empty())
+        ImGui::TextColored(kMuted, "%s", keyFileMessage_.c_str());
 }
 
 void SettingsDialog::captureKey(ui::AppCore& core) {
@@ -284,7 +350,7 @@ void SettingsDialog::keybindings(ui::AppCore& core) {
     if (!capturing_.empty() && pendingConflict_.empty())
         captureKey(core);
 
-    const float footer = ImGui::GetFrameHeightWithSpacing() * 2 + 8;
+    const float footer = ImGui::GetFrameHeightWithSpacing() * 3 + 8;
     if (ImGui::BeginTable("##keys", 5,
                           ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable,
@@ -354,6 +420,7 @@ void SettingsDialog::keybindings(ui::AppCore& core) {
     } else if (!keyMessage_.empty()) {
         ImGui::TextColored(kWarn, "%s", keyMessage_.c_str());
     }
+    keyProfile(core);
 }
 
 }  // namespace tbcad::app

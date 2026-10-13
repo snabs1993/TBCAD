@@ -43,6 +43,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXReloadCommand());
     (void)registry.add(makeXDetachCommand());
     (void)registry.add(makeXBindCommand());
+    (void)registry.add(makeXUnloadCommand());
+    (void)registry.add(makeXClipCommand());
     (void)registry.add(makeXListCommand());
     (void)registry.add(makeBlockCountCommand());
 }
@@ -55,6 +57,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Edit Attributes...", "ATTEDIT", "block.attedit");
     ui.addMenuItem("Insert/External Reference...", "XATTACH", "block.xattach");
     ui.addMenuItem("Insert/Reload External References", "XRELOAD", "block.xreload");
+    ui.addMenuItem("Modify/Clip Block or Xref...", "XCLIP", "modify.xclip");
     ui.addMenuItem("Tools/Block Count...", "BLOCKCOUNT", "block.count");
     ui.addMenuItem("Modify/Explode", "EXPLODE", "modify.explode", "X");
     ui.addMenuItem("Draw/Block/Dynamic Parameter...", "BPARAM", "block.bparam");
@@ -79,7 +82,7 @@ std::vector<EntityId> inDrawOrder(const Document& doc, const std::vector<EntityI
 }
 
 bool editable(const Document& doc, const Entity& e) {
-    EffectiveLayer l = doc.effective(e.common.layer);
+    EffectiveLayer l = doc.effective(e.common);
     return l.visible() && !l.locked;
 }
 

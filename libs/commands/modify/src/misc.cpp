@@ -16,6 +16,10 @@ cmd::EntityFilterFn editableFilter(const Document& doc) {
     return [&doc](const Entity& e) { return selectable(doc, e); };
 }
 
+cmd::EntityFilterFn modifiableFilter(const Document& doc) {
+    return [&doc](const Entity& e) { return isModifiable(doc, e); };
+}
+
 std::string plural(std::size_t n, const char* one, const char* many) {
     return std::to_string(n) + " " + (n == 1 ? one : many);
 }
@@ -269,7 +273,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
-        so.filter = editableFilter(ctx.doc());
+        so.filter = modifiableFilter(ctx.doc());
         auto sel = co_await ctx.getSelection("Select objects to align", so);
         if (!sel.ok())
             co_return;
@@ -378,7 +382,7 @@ public:
         std::size_t done = 0;
         for (;;) {
             cmd::EntityOptions to;
-            to.filter = editableFilter(ctx.doc());
+            to.filter = modifiableFilter(ctx.doc());
             auto dst = co_await ctx.getEntity("Select destination object(s)", to);
             if (!dst.ok())
                 break;
@@ -504,13 +508,15 @@ public:
                                "Join",
                                "Width",
                                "Spline",
+                               "Vertices",
                                "Reverse",
                                "Exit"};
             }
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
-                         : "Enter an option [Close/Open/Join/Width/Spline/Reverse/Exit] <Exit>",
+                isSpline
+                    ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
+                    : "Enter an option [Close/Open/Join/Width/Spline/Vertices/Reverse/Exit] <Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
@@ -529,6 +535,44 @@ public:
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
                 else
                     ctx.message(edit.error().message);
+            } else if (k.keyword == "Vertices") {
+                for (;;) {
+                    cmd::KeywordOptions vo;
+                    vo.keywords = {"Insert", "Remove", "Move", "Exit"};
+                    vo.defaultKeyword = "Exit";
+                    auto v = co_await ctx.getKeyword(
+                        "Vertex option [Insert/Remove/Move/Exit] <Exit>", vo);
+                    if (!v.ok() || v.keyword == "Exit")
+                        break;
+                    auto at = co_await ctx.getPoint(v.keyword == "Insert"
+                                                        ? "Specify a point on the segment to split"
+                                                        : "Specify a point near the vertex");
+                    if (!at.ok())
+                        continue;
+                    const Entity* cur = ctx.doc().find(id);
+                    if (!cur)
+                        co_return;
+                    Result<modify::EntityEdit> edit =
+                        Error{ErrorCode::InvalidArgument, "Unsupported"};
+                    if (v.keyword == "Insert") {
+                        edit = modify::insertPolylineVertex(*cur, at.point);
+                    } else if (v.keyword == "Remove") {
+                        edit = modify::removePolylineVertex(*cur, at.point);
+                    } else {
+                        cmd::PointOptions po;
+                        auto to = co_await ctx.getPoint("Specify the new location", po);
+                        if (!to.ok())
+                            continue;
+                        cur = ctx.doc().find(id);
+                        if (!cur)
+                            co_return;
+                        edit = modify::movePolylineVertex(*cur, at.point, to.point);
+                    }
+                    if (!edit)
+                        ctx.message(edit.error().message);
+                    else
+                        (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
+                }
             } else if (k.keyword == "Reverse") {
                 if (auto edit = modify::reverseEntity(*e))
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));

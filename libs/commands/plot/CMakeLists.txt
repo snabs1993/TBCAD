@@ -1,4 +1,4 @@
-set(_plot_sources src/commands.cpp src/export_file.cpp src/settings.cpp src/ui.cpp)
+set(_plot_sources src/commands.cpp src/export_file.cpp src/print_cmd.cpp src/settings.cpp src/ui.cpp)
 
 # The dialog panel draws with Dear ImGui, which only exists when the application is built.
 if(TBCAD_BUILD_APP)
@@ -9,7 +9,7 @@ endif()
 tbcad_add_library(plot
   SOURCES ${_plot_sources}
   DEPENDS tbcad::cmd tbcad::core tbcad::geom tbcad::export tbcad::ui tbcad::layout
-          tbcad::sheets)
+          tbcad::sheets tbcad::print)
 if(TBCAD_BUILD_APP)
   target_link_libraries(tbcad_plot PRIVATE tbcad::imgui)
   target_compile_definitions(tbcad_plot PRIVATE TBCAD_PLOT_WITH_IMGUI=1)
@@ -20,4 +20,5 @@ tbcad_add_tests(plot
     tests/main.cpp
     tests/plot_command_tests.cpp
     tests/plot_content_tests.cpp
+    tests/print_command_tests.cpp
   DEPENDS tbcad_plot tbcad::text tbcad::hatch)

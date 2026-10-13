@@ -26,6 +26,7 @@ void registerDrawingTools(ToolSet& tools) {
     detail::registerEditTools(tools);
     detail::registerLayerTools(tools);
     detail::registerAssemblyTools(tools);
+    detail::registerLevelTools(tools);
     detail::registerCommandTools(tools);
     detail::registerFileTools(tools);
 }
