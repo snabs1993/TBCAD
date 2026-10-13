@@ -39,6 +39,18 @@ struct Accepted {
     io::Delta delta{};
 };
 
+// The delta of a change set as it goes on the wire. A header change that only touches per-user
+// settings (the current layer, colour, level, active-only ...) stays on the user's own machine,
+// so it is left out; an otherwise empty delta then means "nothing to send".
+io::Delta sharedDeltaOf(const ChangeSet& changes);
+// After io::materialize: the header change of somebody else's edit keeps this user's own
+// settings (current layer, colour, level ...), so only the shared fields change.
+void keepPersonalSettings(ChangeSet& materialized, const Document& doc);
+
+// The same change with the per-user header settings taken out, so that reversing or replaying it
+// never touches them.
+ChangeSet sharedChangesOf(const ChangeSet& changes);
+
 // Builds the Op for a change set the author just committed. `versions` are the versions the
 // author's replica holds (see Replica).
 Op makeOp(PeerId author, std::uint64_t clientSeq, const ChangeSet& committed,

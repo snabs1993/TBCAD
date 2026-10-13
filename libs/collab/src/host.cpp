@@ -59,7 +59,9 @@ void Host::onChanged(const ChangeSet& changes) {
     if (applying_)
         return;  // a guest's edit that submit() is applying; it is recorded there
     Accepted a;
-    a.delta = io::deltaOf(changes);
+    a.delta = sharedDeltaOf(changes);
+    if (a.delta.empty())
+        return;  // only the host's own settings changed
     a.author = kHostPeer;
     a.seq = ++seq_;
     versions_.setAll(keysOf(a.delta), a.seq);
@@ -130,6 +132,7 @@ Submitted Host::submit(PeerId from, const Op& op, std::uint64_t nowMs) {
     Result<ChangeSet> cs = io::materialize(op.delta, *doc_);
     if (!cs)
         return reject(RejectReason::Invalid, cs.error().message);
+    keepPersonalSettings(cs.value(), *doc_);
     applying_ = true;
     Result<void> done = doc_->applyChecked(cs.value());
     applying_ = false;

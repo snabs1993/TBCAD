@@ -62,8 +62,11 @@ void Replica::onChanged(const ChangeSet& changes) {
     if (busy_ || changes.empty())
         return;
     Pending p;
-    p.op = collab::makeOp(self_, ++clientSeq_, changes, versions_);
-    p.applied = changes;
+    p.op = collab::makeOp(self_, clientSeq_ + 1, changes, versions_);
+    if (p.op.delta.empty())
+        return;  // only this user's own settings changed: nothing to share
+    ++clientSeq_;
+    p.applied = sharedChangesOf(changes);
     // A window that ran dry moves on to the next block before the next edit.
     if (doc_->entityIdsLeft() == 0)
         useNextRange();
@@ -98,6 +101,7 @@ void Replica::putBackPending(std::size_t from) {
         Result<ChangeSet> cs = io::materialize(p.op.delta, *doc_);
         if (!cs)
             continue;
+        keepPersonalSettings(cs.value(), *doc_);
         if (!doc_->applyChecked(cs.value()))
             continue;
         p.applied = std::move(cs.value());
@@ -111,6 +115,7 @@ Result<ChangeSet> Replica::apply(const Accepted& a) {
     BusyGuard busyOff(busy_);
 
     ChangeSet applied;
+    ChangeSet ownAccepted;
     const bool own = a.author == self_;
     if (own) {
         if (pending_.empty() || pending_.front().op.clientSeq != a.clientSeq)
@@ -118,12 +123,14 @@ Result<ChangeSet> Replica::apply(const Accepted& a) {
         Pending done = std::move(pending_.front());
         pending_.pop_front();
         inFlight_ = false;
+        ownAccepted = done.live ? done.applied : ChangeSet{};
         if (!done.live) {
             // The host took an edit the replica could not replay: apply it the ordinary way.
             takeOffPending(0);
             Result<ChangeSet> cs = io::materialize(a.delta, *doc_);
             if (!cs)
                 return cs.error();
+            keepPersonalSettings(cs.value(), *doc_);
             if (Result<void> r = doc_->applyChecked(cs.value()); !r)
                 return r.error();
             applied = std::move(cs.value());
@@ -142,6 +149,7 @@ Result<ChangeSet> Replica::apply(const Accepted& a) {
             putBackPending(0);
             return cs.error();
         }
+        keepPersonalSettings(cs.value(), *doc_);
         if (Result<void> r = doc_->applyChecked(cs.value()); !r) {
             putBackPending(0);
             return r.error();
@@ -152,8 +160,14 @@ Result<ChangeSet> Replica::apply(const Accepted& a) {
     seq_ = a.seq;
     versions_.setAll(keysOf(a.delta), a.seq);
     busyOff.release();
-    if (own)
+    if (own) {
+        // After the version bookkeeping, so the callback sees the versions this edit produced.
+        if (ownAccepted.empty())
+            ownAccepted = applied;
+        if (onOwnAccepted && !ownAccepted.empty())
+            onOwnAccepted(ownAccepted, a.seq, a.clientSeq);
         sendNext();
+    }
     return applied;
 }
 
