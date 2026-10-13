@@ -276,6 +276,18 @@ void draw(ui::PanelContext& pc) {
 
     // Appearance
     changed |= ImGui::Checkbox("Plot lineweights", &s.lineweights);
+    {
+        bool stamp = plotStampOn(*pc.host);
+        if (ImGui::Checkbox("Plot stamp", &stamp))
+            setPlotStamp(*pc.host, stamp);
+        if (stamp) {
+            ImGui::SameLine();
+            std::string text = plotStampText(*pc.host);
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputText("##stamptext", &text))
+                setPlotStampText(*pc.host, text);
+        }
+    }
     static const char* colorNames[] = {"As displayed", "Monochrome (black)", "Greyscale"};
     int color = int(s.color);
     if (ImGui::Combo("Colour", &color, colorNames, 3)) {
@@ -290,11 +302,11 @@ void draw(ui::PanelContext& pc) {
     PlotSettings built = s;
     if (built.area == PlotArea::Display)
         built.window = view;
-    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host) + "|" + st.styleLoaded;
+    std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host) + "|" + st.styleLoaded +
+                      (plotStampOn(*pc.host) ? "|" + plotStampText(*pc.host) : "");
     if (key != st.builtKey || pc.doc->revision() != st.builtRevision) {
         const std::string name = plotLayout(*pc.host);
-        auto sheet = name.empty() ? exportlib::buildSheet(*pc.doc, built)
-                                  : layout::buildLayoutSheet(*pc.doc, name, built);
+        auto sheet = buildPlotSheet(*pc.doc, *pc.host, built);
         st.sheetError = sheet ? std::string() : sheet.error().message;
         st.sheet = sheet ? std::move(sheet.value()) : exportlib::PlotSheet{};
         st.builtKey = key;

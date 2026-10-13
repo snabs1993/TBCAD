@@ -28,3 +28,10 @@ File > Page Setup... or `PAGESETUP`:
 
 The Plot panel has a **Page setup** drop-down for the plotted target and a field to save the current
 options as a new setup.
+
+## Plot stamp
+
+`Stamp` in `PLOT` / `EXPORT*` / `PRINTER` (and the Plot panel checkbox) adds one line of text in the
+lower-left corner of the printable area: the settings `plot.stamp` and `plot.stampText`. Tokens:
+`%file%` `%layout%` `%date%` `%time%` `%scale%` `%paper%`. The stamp uses the same fonts as drawing
+text, so Thai works, and it is not counted among the plotted objects.

@@ -9,6 +9,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/plot/plot.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/ui_registry.h"
 
 using namespace tbcad;
@@ -358,4 +359,29 @@ TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unav
         CHECK(f.host->run("PLOTSET", {f.path("list.txt"), "Printer"}).finished);
         CHECK(f.host->logContains("Printing is only available"));
     }
+}
+
+TEST_CASE("the plot stamp adds text to the sheet and expands its tokens") {
+    static const bool registered = (text::registerDisplay(), true);
+    (void)registered;
+    Fixture f;
+    const auto settings = plot::loadSettings(*f.host);
+    auto plain = plot::buildPlotSheet(f.doc, *f.host, settings);
+    REQUIRE(plain.ok());
+    plot::setPlotStamp(*f.host, true);
+    plot::setPlotStampText(*f.host, "%paper% %layout% %scale%");
+    auto stamped = plot::buildPlotSheet(f.doc, *f.host, settings);
+    REQUIRE(stamped.ok());
+    CHECK(stamped.value().prims.size() > plain.value().prims.size());
+    CHECK(stamped.value().entityCount == plain.value().entityCount);
+    const auto text = plot::expandStamp("%paper% | %layout% | %file% | %date%", *f.host,
+                                        stamped.value(), settings);
+    CHECK(text.rfind("A3 | Model | Untitled | 20", 0) == 0);
+    plot::setPlotStamp(*f.host, false);
+    CHECK(plot::buildPlotSheet(f.doc, *f.host, settings).value().prims.size() ==
+          plain.value().prims.size());
+    // The Stamp option of PLOT sets both.
+    CHECK(f.host->run("EXPORTSVG", {"Stamp", "On", "%file% only", "", f.path("s.svg")}).finished);
+    CHECK(plot::plotStampOn(*f.host));
+    CHECK(plot::plotStampText(*f.host) == "%file% only");
 }

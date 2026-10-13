@@ -60,7 +60,7 @@ public:
             KeywordOptions menu;
             menu.keywords = {"Paper",  "Orientation", "Area",        "Scale", "Center",
                              "Offset", "Margin",      "LineWeights", "Color", "Style",
-                             "Format", "Resolution",  "Layout",      "Export"};
+                             "Format", "Resolution",  "Layout",      "Stamp", "Export"};
             menu.defaultKeyword = "Export";
             auto choice = co_await ctx.getKeyword("Plot " + summary(ctx.host(), s, format), menu);
             if (choice.status == Status::Cancel)
@@ -233,6 +233,22 @@ public:
                              : r.keyword == "Svg" ? Format::Svg
                              : r.keyword == "Png" ? Format::Png
                                                   : Format::Jpeg;
+            } else if (kw == "Stamp") {
+                KeywordOptions ko;
+                ko.keywords = {"On", "Off"};
+                ko.defaultKeyword = plotStampOn(ctx.host()) ? "On" : "Off";
+                auto r = co_await ctx.getKeyword("Plot stamp (file, layout, date, scale)", ko);
+                if (!r.ok())
+                    continue;
+                setPlotStamp(ctx.host(), r.keyword == "On");
+                if (r.keyword == "On") {
+                    cmd::StringOptions so;
+                    so.defaultValue = plotStampText(ctx.host());
+                    auto t = co_await ctx.getString(
+                        "Stamp text (%file% %layout% %date% %time% %scale% %paper%)", so);
+                    if (t.ok() && !t.text.empty())
+                        setPlotStampText(ctx.host(), t.text);
+                }
             } else if (kw == "Resolution") {
                 cmd::RealOptions ro;
                 ro.min = 10;
