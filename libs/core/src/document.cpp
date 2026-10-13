@@ -601,6 +601,29 @@ void replaceRow(detail::Table<Row, IdT>& t, IdT id, const std::optional<Row>& ne
 // ---------------------------------------------------------------------------------------------
 // Document
 
+NextIds Document::nextIds() const {
+    NextIds n;
+    n.entity = nextEntityId_;
+    n.layer = layers_.next;
+    n.linetype = linetypes_.next;
+    n.textStyle = textStyles_.next;
+    n.dimStyle = dimStyles_.next;
+    n.block = blocks_.next;
+    return n;
+}
+
+Result<void> Document::reserveIds(const NextIds& ids) {
+    if (active_)
+        return makeError(ErrorCode::Conflict, "cannot reserve ids while a transaction is open");
+    nextEntityId_ = std::max(nextEntityId_, ids.entity);
+    layers_.next = std::max(layers_.next, ids.layer);
+    linetypes_.next = std::max(linetypes_.next, ids.linetype);
+    textStyles_.next = std::max(textStyles_.next, ids.textStyle);
+    dimStyles_.next = std::max(dimStyles_.next, ids.dimStyle);
+    blocks_.next = std::max(blocks_.next, ids.block);
+    return {};
+}
+
 Document::Document() {
     Linetype cont;
     cont.id = kLinetypeContinuous;

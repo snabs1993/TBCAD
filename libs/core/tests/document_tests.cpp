@@ -919,3 +919,24 @@ TEST_CASE("touchedEntities lists modified and erased pre-existing entities only"
     (void)b;
     tx.rollback();
 }
+
+TEST_CASE("reserveIds only raises the next free ids") {
+    Document doc;
+    NextIds n = doc.nextIds();
+    NextIds want = n;
+    want.entity = 100;
+    want.layer = 50;
+    REQUIRE(doc.reserveIds(want));
+    CHECK(doc.nextIds().entity == 100);
+    CHECK(doc.nextIds().layer == 50);
+    NextIds low;  // all ones: never lowers
+    REQUIRE(doc.reserveIds(low));
+    CHECK(doc.nextIds().entity == 100);
+    Transaction tx = doc.begin("t");
+    Entity e;
+    e.data = PointData{};
+    CHECK(tx.add(e).value().value == 100);
+    CHECK(tx.addLayer(Layer{.name = "L"}).value().value == 50);
+    CHECK_FALSE(doc.reserveIds(want));  // refused while a transaction is open
+    tx.commit();
+}
