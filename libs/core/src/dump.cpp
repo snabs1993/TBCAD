@@ -211,6 +211,15 @@ struct DataDumper {
             o << "=";
             o.quoted(a.value);
         }
+        if (d.array) {
+            const ArrayInfo& a = *d.array;
+            o << " ARRAY kind" << static_cast<int>(a.kind) << " rows" << a.rows << " cols"
+              << a.columns << " rs" << a.rowSpacing << " cs" << a.columnSpacing << " ang" << a.angle
+              << " ctr" << a.center << " n" << a.count << " fill" << a.fillAngle << " rot"
+              << a.rotateItems << " ref" << a.reference << " closed" << a.pathClosed << " sp"
+              << a.pathSpacing;
+            polyV(o, a.path);
+        }
     }
     void operator()(const DimensionData& d) {
         o << "DIM kind" << static_cast<int>(d.kind) << " rot" << d.rotation;

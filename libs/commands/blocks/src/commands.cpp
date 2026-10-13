@@ -23,6 +23,10 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeArrayCommand());
+    (void)registry.add(makeArrayRectCommand());
+    (void)registry.add(makeArrayPolarCommand());
+    (void)registry.add(makeArrayPathCommand());
+    (void)registry.add(makeArrayEditCommand());
     (void)registry.add(makeAttDefCommand());
     (void)registry.add(makeAttEditCommand());
     (void)registry.add(makeAttSyncCommand());
@@ -45,6 +49,10 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Tools/Block Count...", "BLOCKCOUNT", "block.count");
     ui.addMenuItem("Modify/Explode", "EXPLODE", "modify.explode", "X");
     ui.addMenuItem("Modify/Array...", "ARRAY", "modify.array");
+    ui.addMenuItem("Modify/Array/Rectangular", "ARRAYRECT", "modify.arrayrect");
+    ui.addMenuItem("Modify/Array/Polar", "ARRAYPOLAR", "modify.arraypolar");
+    ui.addMenuItem("Modify/Array/Path", "ARRAYPATH", "modify.arraypath");
+    ui.addMenuItem("Modify/Array/Edit Array...", "ARRAYEDIT", "modify.arrayedit");
 }
 
 namespace detail {

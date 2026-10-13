@@ -24,13 +24,84 @@ void previewCopies(const Document& doc, const std::vector<Entity>& source,
     }
 }
 
-// ARRAY [AR]: rectangular or polar copies of the selected objects. Plain copies, not associative.
+// Curve geometry of the path object as polyline vertices; empty when the kind is not supported.
+bool pathVertices(const Entity& e, std::vector<PolyVertex>& v, bool& closed) {
+    closed = false;
+    if (const auto* l = entityAs<LineData>(e)) {
+        v = {PolyVertex{l->a}, PolyVertex{l->b}};
+        return true;
+    }
+    if (const auto* pl = entityAs<PolylineData>(e)) {
+        v = pl->v;
+        closed = pl->closed;
+        return v.size() >= 2;
+    }
+    if (const auto* a = entityAs<ArcData>(e)) {
+        double sweep = normalizeAngle(a->endAngle - a->startAngle);
+        if (sweep <= 0)
+            sweep = kTwoPi;
+        Vec2 p0 = a->center + Vec2{std::cos(a->startAngle), std::sin(a->startAngle)} * a->radius;
+        Vec2 p1 =
+            a->center +
+            Vec2{std::cos(a->startAngle + sweep), std::sin(a->startAngle + sweep)} * a->radius;
+        v = {PolyVertex{p0, std::tan(sweep / 4)}, PolyVertex{p1}};
+        return true;
+    }
+    if (const auto* c = entityAs<CircleData>(e)) {
+        Vec2 p0 = c->center + Vec2{c->radius, 0};
+        Vec2 p1 = c->center - Vec2{c->radius, 0};
+        v = {PolyVertex{p0, 1}, PolyVertex{p1, 1}};
+        closed = true;
+        return true;
+    }
+    return false;
+}
+
+std::string freeArrayName(const Document& doc) {
+    for (int i = 1;; ++i) {
+        std::string n = "*A" + std::to_string(i);
+        bool used = false;
+        for (const auto& b : doc.blocks())
+            used = used || b.second.name == n;
+        if (!used)
+            return n;
+    }
+}
+
+// ARRAY [AR] and ARRAYRECT / ARRAYPOLAR / ARRAYPATH: rectangular, polar or path patterns of the
+// selected objects, either plain copies or one associative array (an Insert of an anonymous
+// block whose parameters ARRAYEDIT can change).
 class ArrayCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "ARRAY"; }
-    std::vector<std::string> defaultAliases() const override { return {"AR"}; }
+    enum class Mode { Any, Rect, Polar, Path };
+    explicit ArrayCommand(Mode m = Mode::Any) : mode_(m) {}
+
+    std::string_view name() const override {
+        switch (mode_) {
+            case Mode::Rect:
+                return "ARRAYRECT";
+            case Mode::Polar:
+                return "ARRAYPOLAR";
+            case Mode::Path:
+                return "ARRAYPATH";
+            default:
+                return "ARRAY";
+        }
+    }
+    std::vector<std::string> defaultAliases() const override {
+        return mode_ == Mode::Any ? std::vector<std::string>{"AR"} : std::vector<std::string>{};
+    }
     std::string_view description() const override {
-        return "Copy objects in a rectangular or polar pattern";
+        switch (mode_) {
+            case Mode::Rect:
+                return "Associative rectangular array";
+            case Mode::Polar:
+                return "Associative polar array";
+            case Mode::Path:
+                return "Associative array along a path";
+            default:
+                return "Copy objects in a rectangular, polar or path pattern";
+        }
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -47,15 +118,85 @@ public:
             co_return;
         const BBox2 box = detail::boundsOf(doc, source);
 
-        auto type =
-            co_await ctx.getKeyword("Array type [Rectangular/Polar] <Rectangular>",
-                                    cmd::KeywordOptions{.keywords = {"Rectangular", "Polar"},
-                                                        .defaultKeyword = "Rectangular"});
-        if (!type.ok())
-            co_return;
+        std::string typeName = "Rectangular";
+        if (mode_ == Mode::Polar) {
+            typeName = "Polar";
+        } else if (mode_ == Mode::Path) {
+            typeName = "Path";
+        } else if (mode_ == Mode::Any) {
+            auto type = co_await ctx.getKeyword(
+                "Array type [Rectangular/Polar/Path] <Rectangular>",
+                cmd::KeywordOptions{.keywords = {"Rectangular", "Polar", "Path"},
+                                    .defaultKeyword = "Rectangular"});
+            if (!type.ok())
+                co_return;
+            typeName = type.keyword;
+        }
 
+        ArrayInfo info;
         std::vector<Entity> copies;
-        if (type.keyword == "Polar") {
+        if (typeName == "Path") {
+            cmd::EntityOptions eo;
+            eo.filter = [](const Entity& e) {
+                std::vector<PolyVertex> v;
+                bool closed = false;
+                return pathVertices(e, v, closed);
+            };
+            auto picked =
+                co_await ctx.getEntity("Select path curve (line, arc, circle or polyline)", eo);
+            if (!picked.ok())
+                co_return;
+            info.kind = ArrayInfo::Kind::Path;
+            pathVertices(*doc.find(picked.id), info.path, info.pathClosed);
+            PolylineData pl;
+            pl.v = info.path;
+            pl.closed = info.pathClosed;
+            double total = 0;
+            for (const auto& g : geom::segments(pl))
+                total += g.curve.length();
+            if (!(total > 0)) {
+                ctx.message("The path has no length");
+                co_return;
+            }
+            const Vec2 centre = box.empty() ? Vec2{} : box.center();
+            auto base = co_await ctx.getPoint(
+                "Specify base point (the point of the objects placed on the path) <centre>");
+            if (base.status == cmd::Status::Cancel)
+                co_return;
+            info.reference = base.ok() ? base.point : centre;
+            auto method = co_await ctx.getKeyword(
+                "Method [Count/Distance] <Count>",
+                cmd::KeywordOptions{.keywords = {"Count", "Distance"}, .defaultKeyword = "Count"});
+            if (!method.ok())
+                co_return;
+            if (method.keyword == "Distance") {
+                auto d =
+                    co_await ctx.getDistance("Specify the distance between items along the path",
+                                             cmd::DistanceOptions{.allowZero = false});
+                if (!d.ok())
+                    co_return;
+                info.pathSpacing = d.value;
+                info.count = static_cast<int>(std::min<double>(
+                    blocks::kMaxArrayItems,
+                    std::floor(total / d.value + 1e-9) + (info.pathClosed ? 0 : 1)));
+            } else {
+                auto n = co_await ctx.getInteger(
+                    "Enter the number of items <6>",
+                    cmd::IntOptions{.defaultValue = 6, .min = 1, .max = blocks::kMaxArrayItems});
+                if (!n.ok())
+                    co_return;
+                info.count = static_cast<int>(n.value);
+            }
+            auto align = co_await ctx.getKeyword(
+                "Align items to the path? [Yes/No] <Yes>",
+                cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
+            if (!align.ok())
+                co_return;
+            info.rotateItems = align.keyword == "Yes";
+            createAssociative(ctx, sel.ids, info);
+            co_return;
+        }
+        if (typeName == "Polar") {
             auto center = co_await ctx.getPoint("Specify center point of array");
             if (!center.ok())
                 co_return;
@@ -86,6 +227,12 @@ public:
             if (!rot.ok())
                 co_return;
             blocks::PolarArray spec{c, n, fill.value, rot.keyword == "Yes", std::nullopt};
+            info.kind = ArrayInfo::Kind::Polar;
+            info.center = c;
+            info.count = n;
+            info.fillAngle = fill.value;
+            info.rotateItems = spec.rotateItems;
+            info.reference = box.empty() ? Vec2{} : box.center();
             auto r = blocks::arrayPolar(source, spec);
             if (!r) {
                 ctx.message(r.error().message);
@@ -136,12 +283,28 @@ public:
             if (!ang.ok())
                 co_return;
             spec.angle = ang.value;
+            info.kind = ArrayInfo::Kind::Rectangular;
+            info.rows = spec.rows;
+            info.columns = spec.columns;
+            info.rowSpacing = spec.rowSpacing;
+            info.columnSpacing = spec.columnSpacing;
+            info.angle = spec.angle;
             auto r = blocks::arrayRectangular(source, spec);
             if (!r) {
                 ctx.message(r.error().message);
                 co_return;
             }
             copies = std::move(r).value();
+        }
+
+        auto assoc = co_await ctx.getKeyword(
+            "Create an associative array? [Yes/No] <Yes>",
+            cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
+        if (!assoc.ok())
+            co_return;
+        if (assoc.keyword == "Yes") {
+            createAssociative(ctx, sel.ids, info);
+            co_return;
         }
 
         std::vector<EntityId> created;
@@ -157,12 +320,150 @@ public:
         ctx.message("Created " + detail::objects(created.size()));
         ctx.setUndoLabel("Array " + detail::objects(created.size()));
     }
+
+private:
+    // Moves the objects into a new anonymous block and puts one Insert showing it per item.
+    static void createAssociative(cmd::CommandContext& ctx, std::vector<EntityId> ids,
+                                  ArrayInfo info) {
+        Document& doc = ctx.doc();
+        std::vector<Entity> content;
+        for (EntityId id : detail::inDrawOrder(doc, ids))
+            content.push_back(*doc.find(id));
+        Transaction& tx = ctx.tx();
+        auto block = tx.addBlock(BlockDef{.name = freeArrayName(doc), .anonymous = true});
+        if (!block) {
+            ctx.message(block.error().message);
+            return;
+        }
+        for (Entity& e : content) {
+            e.common.id = {};
+            if (auto r = tx.add(std::move(e), block.value()); !r) {
+                ctx.message(r.error().message);
+                return;  // the transaction is rolled back when the command ends
+            }
+        }
+        for (EntityId id : ids)
+            (void)tx.erase(id);
+        InsertData data{block.value(), {}, {1, 1}, 0};
+        const long long items = blocks::arrayItemCount(info);
+        data.array = std::move(info);
+        Entity ins;
+        ins.data = Indirect<InsertData>(std::move(data));
+        auto r = tx.add(std::move(ins));
+        if (!r) {
+            ctx.message(r.error().message);
+            return;
+        }
+        ctx.host().setSelection({r.value()});
+        ctx.message("Created an associative array of " + std::to_string(items) + " items");
+        ctx.setUndoLabel("Array " + std::to_string(items) + " items");
+    }
+
+    Mode mode_;
+};
+
+// ARRAYEDIT: change the parameters of an associative array.
+class ArrayEditCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ARRAYEDIT"; }
+    std::string_view description() const override {
+        return "Change the rows, columns, spacing or count of an associative array";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) {
+            const auto* ins = entityAs<InsertData>(e);
+            return ins && ins->array;
+        };
+        auto picked = co_await ctx.getEntity("Select an associative array", eo);
+        if (!picked.ok())
+            co_return;
+        const Entity* e = doc.find(picked.id);
+        ArrayInfo a = *entityAs<InsertData>(*e)->array;
+        if (a.kind == ArrayInfo::Kind::Rectangular) {
+            auto rows = co_await ctx.getInteger(
+                "Enter the number of rows <" + std::to_string(a.rows) + ">",
+                cmd::IntOptions{.defaultValue = a.rows, .min = 1, .max = blocks::kMaxArrayItems});
+            if (!rows.ok())
+                co_return;
+            auto cols = co_await ctx.getInteger(
+                "Enter the number of columns <" + std::to_string(a.columns) + ">",
+                cmd::IntOptions{
+                    .defaultValue = a.columns, .min = 1, .max = blocks::kMaxArrayItems});
+            if (!cols.ok())
+                co_return;
+            auto rsp = co_await ctx.getDistance(
+                "Specify the distance between rows <" + std::to_string(a.rowSpacing) + ">",
+                cmd::DistanceOptions{
+                    .defaultValue = a.rowSpacing, .allowZero = false, .allowNegative = true});
+            if (!rsp.ok())
+                co_return;
+            auto csp = co_await ctx.getDistance(
+                "Specify the distance between columns <" + std::to_string(a.columnSpacing) + ">",
+                cmd::DistanceOptions{
+                    .defaultValue = a.columnSpacing, .allowZero = false, .allowNegative = true});
+            if (!csp.ok())
+                co_return;
+            if (static_cast<long long>(rows.value) * cols.value > blocks::kMaxArrayItems) {
+                ctx.message("That array would have too many items");
+                co_return;
+            }
+            a.rows = static_cast<int>(rows.value);
+            a.columns = static_cast<int>(cols.value);
+            a.rowSpacing = rsp.value;
+            a.columnSpacing = csp.value;
+        } else {
+            auto n = co_await ctx.getInteger(
+                "Enter the number of items <" + std::to_string(a.count) + ">",
+                cmd::IntOptions{.defaultValue = a.count, .min = 1, .max = blocks::kMaxArrayItems});
+            if (!n.ok())
+                co_return;
+            a.count = static_cast<int>(n.value);
+            if (a.kind == ArrayInfo::Kind::Polar) {
+                auto fill = co_await ctx.getAngle(
+                    "Specify the angle to fill <" + std::to_string(a.fillAngle * 180.0 / kPi) + ">",
+                    cmd::AngleOptions{.defaultValue = a.fillAngle});
+                if (!fill.ok())
+                    co_return;
+                a.fillAngle = fill.value;
+            } else {
+                auto sp = co_await ctx.getDistance(
+                    "Specify the distance between items, 0 = spread evenly <" +
+                        std::to_string(a.pathSpacing) + ">",
+                    cmd::DistanceOptions{.defaultValue = a.pathSpacing, .allowZero = true});
+                if (!sp.ok())
+                    co_return;
+                a.pathSpacing = sp.value;
+            }
+        }
+        (void)ctx.tx().modify(picked.id, [&](Entity& ent) {
+            if (auto* d = entityAs<InsertData>(ent))
+                d->array = a;
+        });
+        ctx.message("Array now has " + std::to_string(blocks::arrayItemCount(a)) + " items");
+        ctx.setUndoLabel("Edit array");
+        co_return;
+    }
 };
 
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeArrayCommand() {
     return std::make_unique<ArrayCommand>();
+}
+std::unique_ptr<cmd::Command> makeArrayRectCommand() {
+    return std::make_unique<ArrayCommand>(ArrayCommand::Mode::Rect);
+}
+std::unique_ptr<cmd::Command> makeArrayPolarCommand() {
+    return std::make_unique<ArrayCommand>(ArrayCommand::Mode::Polar);
+}
+std::unique_ptr<cmd::Command> makeArrayPathCommand() {
+    return std::make_unique<ArrayCommand>(ArrayCommand::Mode::Path);
+}
+std::unique_ptr<cmd::Command> makeArrayEditCommand() {
+    return std::make_unique<ArrayEditCommand>();
 }
 
 }  // namespace tbcad::block_cmds

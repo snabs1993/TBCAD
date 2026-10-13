@@ -285,6 +285,71 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
     CHECK(withAttribs == 1);
 }
 
+TEST_CASE("round trip: associative arrays of every kind") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("arrays");
+        BlockId blk = tx.addBlock(BlockDef{.name = "*A1", .anonymous = true}).value();
+        Entity c;
+        c.data = CircleData{{0, 0}, 1};
+        (void)tx.add(std::move(c), blk);
+        auto put = [&](ArrayInfo a, Vec2 at) {
+            Entity e;
+            e.data = Indirect<InsertData>(InsertData{blk, at, {1, 1}, 0, {}, std::move(a)});
+            (void)tx.add(std::move(e));
+        };
+        ArrayInfo rect;
+        rect.rows = 3;
+        rect.columns = 4;
+        rect.rowSpacing = -7.5;
+        rect.columnSpacing = 6;
+        rect.angle = 0.25;
+        put(rect, {0, 0});
+        ArrayInfo polar;
+        polar.kind = ArrayInfo::Kind::Polar;
+        polar.center = {5, 5};
+        polar.count = 7;
+        polar.fillAngle = 3;
+        polar.rotateItems = false;
+        polar.reference = {1, 2};
+        put(polar, {1, 1});
+        ArrayInfo path;
+        path.kind = ArrayInfo::Kind::Path;
+        path.count = 9;
+        path.path = {PolyVertex{{0, 0}, 0.5}, PolyVertex{{10, 0}}, PolyVertex{{10, 10}}};
+        path.pathClosed = true;
+        path.pathSpacing = 2.5;
+        path.reference = {1, 1};
+        put(path, {2, 2});
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    int arrays = 0;
+    back->forEachEntity([&](const Entity& e) {
+        const auto* i = entityAs<InsertData>(e);
+        if (!i || !i->array)
+            return;
+        ++arrays;
+        if (i->array->kind == ArrayInfo::Kind::Rectangular) {
+            CHECK(i->array->rows == 3);
+            CHECK(i->array->columns == 4);
+            CHECK(i->array->rowSpacing == -7.5);
+            CHECK(i->array->angle == 0.25);
+        } else if (i->array->kind == ArrayInfo::Kind::Polar) {
+            CHECK(i->array->count == 7);
+            CHECK_FALSE(i->array->rotateItems);
+        } else {
+            CHECK(i->array->path.size() == 3);
+            CHECK(i->array->path[0].bulge == 0.5);
+            CHECK(i->array->pathClosed);
+            CHECK(i->array->pathSpacing == 2.5);
+        }
+    });
+    CHECK(arrays == 3);
+}
+
 TEST_CASE("round trip: external reference fields of a block") {
     Document doc;
     {

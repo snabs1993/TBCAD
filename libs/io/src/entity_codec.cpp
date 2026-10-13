@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -174,13 +175,31 @@ struct PayloadWriter {
         w.vec2(d.position);
         w.vec2(d.scale);
         w.f64(d.rotation);
-        // Trailing field (format 1.1): attribute values.
-        if (!d.attribs.empty()) {
+        // Trailing fields: attribute values (format 1.1), then an array (format 1.3).
+        if (!d.attribs.empty() || d.array) {
             w.varint(d.attribs.size());
             for (const AttribValue& a : d.attribs) {
                 str(a.tag);
                 str(a.value);
             }
+        }
+        if (d.array) {
+            const ArrayInfo& a = *d.array;
+            w.u8(1);
+            w.u8(static_cast<std::uint8_t>(a.kind));
+            w.varint(static_cast<std::uint64_t>(std::max(a.rows, 0)));
+            w.varint(static_cast<std::uint64_t>(std::max(a.columns, 0)));
+            w.f64(a.rowSpacing);
+            w.f64(a.columnSpacing);
+            w.f64(a.angle);
+            w.vec2(a.center);
+            w.varint(static_cast<std::uint64_t>(std::max(a.count, 0)));
+            w.f64(a.fillAngle);
+            w.u8(a.rotateItems ? 1 : 0);
+            w.vec2(a.reference);
+            w.u8(a.pathClosed ? 1 : 0);
+            w.f64(a.pathSpacing);
+            polyVertices(a.path);
         }
     }
     void operator()(const DimensionData& d) {
@@ -265,6 +284,13 @@ struct PayloadReader {
         if (v > maxValue)
             bad("enumeration value out of range");
         return static_cast<E>(v);
+    }
+    // Item counts of an array are bounded so a damaged file cannot ask for billions of copies.
+    int arrayCount() {
+        std::uint64_t n = r.varint();
+        if (n > 1000000)
+            bad("array item count out of range");
+        return static_cast<int>(n);
     }
     std::vector<PolyVertex> polyVertices() {
         std::size_t n = r.count(40);
@@ -436,6 +462,25 @@ struct PayloadReader {
                         a.value = str();
                         d.attribs.push_back(std::move(a));
                     }
+                }
+                if (r.remaining() > 0 && r.u8() == 1) {
+                    ArrayInfo a;
+                    a.kind = enumeration<ArrayInfo::Kind>(
+                        static_cast<std::uint8_t>(ArrayInfo::Kind::Path));
+                    a.rows = arrayCount();
+                    a.columns = arrayCount();
+                    a.rowSpacing = r.f64();
+                    a.columnSpacing = r.f64();
+                    a.angle = r.f64();
+                    a.center = r.vec2();
+                    a.count = arrayCount();
+                    a.fillAngle = r.f64();
+                    a.rotateItems = r.boolean();
+                    a.reference = r.vec2();
+                    a.pathClosed = r.boolean();
+                    a.pathSpacing = r.f64();
+                    a.path = polyVertices();
+                    d.array = std::move(a);
                 }
                 return make(std::move(d));
             }

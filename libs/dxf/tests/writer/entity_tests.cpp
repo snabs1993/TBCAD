@@ -646,6 +646,32 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
     CHECK(attribs == 2);
 }
 
+TEST_CASE("an associative array is exported as one INSERT per item") {
+    Document doc;
+    {
+        auto tx = doc.begin("array");
+        BlockId b = tx.addBlock(BlockDef{.name = "*A1", .anonymous = true}).value();
+        REQUIRE(tx.add(make(CircleData{{0, 0}, 1}), b).ok());
+        InsertData ins{b, {0, 0}, {1, 1}, 0};
+        ArrayInfo a;
+        a.rows = 2;
+        a.columns = 3;
+        a.rowSpacing = 10;
+        a.columnSpacing = 5;
+        ins.array = a;
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    std::string text = rt.bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    std::size_t inserts = 0;
+    for (std::size_t at = text.find("\nINSERT\n"); at != std::string::npos;
+         at = text.find("\nINSERT\n", at + 1))
+        ++inserts;
+    CHECK(inserts == 6);
+}
+
 TEST_CASE("exported ATTRIB records sit at the inserted position, scaled and turned") {
     Document doc;
     BlockId b;

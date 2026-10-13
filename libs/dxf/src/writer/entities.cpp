@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "tbcad/blocks/array.h"
+#include "tbcad/blocks/blocks.h"
 #include "tbcad/geom/entity.h"
 #include "writer_impl.h"
 
@@ -585,6 +587,30 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
     std::string name = blockNameOf(d.block);
     if (name.empty()) {
         skipEntity("INSERT", "its block definition does not exist");
+        return;
+    }
+    // An associative array has no DXF form: every item becomes an INSERT of its own.
+    if (d.array) {
+        const BlockDef* bd = doc_.block(d.block);
+        const Vec2 base = bd ? bd->base : Vec2{};
+        const Transform2 inst = blocks::instanceTransform(d, base);
+        const bool uniform = std::abs(std::abs(d.scale.x) - std::abs(d.scale.y)) < 1e-9;
+        const double flip = d.scale.x * d.scale.y < 0 ? -1.0 : 1.0;
+        bool noted = false;
+        for (const Transform2& item : blocks::arrayItemTransforms(*d.array)) {
+            InsertData one = d;
+            one.array.reset();
+            one.position = (inst * item).apply(base);
+            const double phi = std::atan2(item.m10, item.m00);
+            one.rotation = d.rotation + flip * phi;
+            if (!uniform && std::abs(phi) > 1e-9 && !noted) {
+                noted = true;
+                downgrade("INSERT",
+                          "an array with a stretched, rotated item is written with "
+                          "approximate placement");
+            }
+            writeInsert(p, one, owner);
+        }
         return;
     }
     // Non-constant attributes of the block become ATTRIB records after the INSERT.
