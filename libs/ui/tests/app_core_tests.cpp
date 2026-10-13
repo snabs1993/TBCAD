@@ -540,3 +540,58 @@ TEST_CASE("the clipboard.text setting is handed to the window once") {
     CHECK(*text == "area = 12.5");
     CHECK_FALSE(f.core->takeClipboardText().has_value());
 }
+
+namespace {
+struct SnapTo100 : cmd::PointFilter {
+    std::optional<Vec2> filter(const cmd::PointQuery&, Vec2, cmd::FilterFeedback&) override {
+        return Vec2{100, 100};
+    }
+};
+}  // namespace
+
+TEST_CASE("registered point filters apply to clicks, also after a new document") {
+    Fixture f("hook_filter");
+    UiRegistry ui;
+    ui.addPointFilter(0, std::make_unique<SnapTo100>());
+    f.core->applyUiKeybindings(ui);
+    for (int round = 0; round < 2; ++round) {
+        if (round == 1)
+            f.core->newDocument();
+        f.core->submitText("TESTLINE");
+        f.core->click(f.at({300, 300}));
+        f.core->click(f.at({400, 400}));
+        f.core->pressEscape();
+        // Both clicks snapped to (100,100).
+        bool found = false;
+        f.core->document().forEachEntity([&](const Entity& e) {
+            if (const auto* l = entityAs<LineData>(e))
+                found = found || (l->a.x == 100 && l->a.y == 100);
+        });
+        CHECK(found);
+    }
+}
+
+TEST_CASE("session hooks run when installed and for every new document") {
+    Fixture f("hook_session");
+    UiRegistry ui;
+    std::vector<const Document*> seen;
+    ui.addSessionHook([&](const SessionInfo& s) {
+        REQUIRE(s.doc != nullptr);
+        CHECK(s.index != nullptr);
+        CHECK(s.host != nullptr);
+        seen.push_back(s.doc);
+    });
+    f.core->applyUiKeybindings(ui);
+    REQUIRE(seen.size() == 1);
+    CHECK(seen[0] == &f.core->document());
+    f.core->newDocument();
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[1] == &f.core->document());
+}
+
+TEST_CASE("a leading apostrophe on an idle command line is ignored") {
+    Fixture f("apostrophe");
+    f.core->submitText("'TESTLINE");
+    CHECK(f.core->runner().active());
+    f.core->pressEscape();
+}

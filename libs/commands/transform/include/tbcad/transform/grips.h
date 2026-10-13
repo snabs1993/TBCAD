@@ -1,0 +1,54 @@
+#pragma once
+
+#include <optional>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "tbcad/cmd/host.h"
+#include "tbcad/cmd/registry.h"
+#include "tbcad/core/core.h"
+
+namespace tbcad::transform {
+
+// One grip of one selected entity (index as in geom::gripPoints).
+struct Grip {
+    EntityId entity{};
+    int index = 0;
+    Vec2 pos{};
+};
+
+// Grip modes, cycled with Enter / Space while a grip is hot.
+enum class GripMode { Stretch, Move, Rotate, Scale, Mirror };
+const char* gripModeName(GripMode mode);
+GripMode nextGripMode(GripMode mode);
+
+// Setting `grips.limit` (default 100): above this many selected entities no grips are shown.
+constexpr std::size_t kDefaultGripLimit = 100;
+std::size_t gripLimit(const cmd::IHost& host);
+
+// Grips of the given entities, or none when there are more than `limit` of them.
+std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> ids,
+                               std::size_t limit = kDefaultGripLimit);
+
+// Grip nearest to `p` within `apertureMm`, if any.
+const Grip* hitGrip(const std::vector<Grip>& grips, Vec2 p, double apertureMm);
+
+// Entities as they would look after dragging `hot` by `delta` in Stretch mode. Every selected
+// grip at the same location moves with it (the shared end of two lines stretches both). Each
+// entry is the source id and its new state. `error` receives the first failure, if any.
+std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
+                                                        const std::vector<Grip>& grips,
+                                                        const Grip& hot, Vec2 delta,
+                                                        std::string* error = nullptr);
+
+// Transform for the Move / Rotate / Scale / Mirror modes while the cursor is at `p`.
+// Rotate: the hot grip follows the cursor around `base`. Scale: the hot grip's distance from
+// `base` becomes the cursor's (1 mm reference when the grip sits on the base). Move: the hot
+// grip lands on `p`. Mirror: line from `base` to `p`.
+std::optional<Transform2> modeTransform(GripMode mode, Vec2 base, Vec2 hotPos, Vec2 p);
+
+void registerGripCommand(cmd::Registry& registry);
+
+}  // namespace tbcad::transform

@@ -21,16 +21,18 @@ namespace tbcad::app {
 namespace {
 
 void printUsage() {
-    std::puts("TBCAD " TBCAD_VERSION
-              "\n"
-              "Usage: tbcad [file.tbcad] [options]\n"
-              "  --script \"CMD;CMD\"   run command lines after start\n"
-              "  --frames N           draw N frames, then exit\n"
-              "  --screenshot F.ppm   save the last frame\n"
-              "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
-              "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
-              "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
-              "  --no-vsync           do not wait for the monitor\n");
+    std::puts(
+        "TBCAD " TBCAD_VERSION
+        "\n"
+        "Usage: tbcad [file.tbcad] [options]\n"
+        "  --script \"CMD;CMD\"   run command lines after start\n"
+        "  --frames N           draw N frames, then exit\n"
+        "  --screenshot F.ppm   save the last frame\n"
+        "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
+        "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
+        "  --list-commands F    write every command with its aliases (Markdown) to F (- = stdout)\n"
+        "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
+        "  --no-vsync           do not wait for the monitor\n");
 }
 
 void glfwError(int code, const char* description) {
@@ -58,6 +60,8 @@ Options parseOptions(int argc, char** argv) {
             o.gateLines = std::max(1000, std::atoi(next().c_str()));
         else if (a == "--self-test")
             o.selfTest = true;
+        else if (a == "--list-commands")
+            o.listCommands = next();
         else if (a == "--no-vsync")
             o.vsync = false;
         else if (a == "--help" || a == "-h")
@@ -231,6 +235,21 @@ int App::run() {
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);
+    if (!options_.listCommands.empty()) {
+        const std::string table = cmd::commandListMarkdown(*registry_);
+        if (options_.listCommands == "-") {
+            std::fputs(table.c_str(), stdout);
+            return 0;
+        }
+        std::ofstream out(options_.listCommands, std::ios::binary | std::ios::trunc);
+        out << table;
+        out.flush();
+        if (!out) {
+            std::fprintf(stderr, "tbcad: cannot write %s\n", options_.listCommands.c_str());
+            return 1;
+        }
+        return 0;
+    }
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
     core_->registerBuiltinUi(*uiRegistry_);

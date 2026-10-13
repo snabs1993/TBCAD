@@ -1,0 +1,42 @@
+name: DXF export
+
+# Exports every corpus drawing with tbcad-convert (R2000, R12, R2007) and audits the result with
+# ezdxf (MIT, Python) as an independent reader. ezdxf is used here only; it is never linked into
+# TBCAD. The round trip itself (DXF -> tbcad -> DXF -> tbcad) is a normal unit test in ci.yml.
+on:
+  pull_request:
+    paths:
+      - "libs/dxf/**"
+      - "libs/core/**"
+      - "libs/io/**"
+      - "apps/tbcad-convert/**"
+      - "tests/corpus/**"
+      - ".github/workflows/dxf-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dxf-export-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ezdxf-audit:
+    name: ezdxf audit of exports
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang ninja-build
+          python3 -m venv .venv && .venv/bin/pip install ezdxf==1.4.4
+      - name: Build tbcad-convert
+        run: |
+          cmake -S . -B build/export -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DTBCAD_BUILD_TESTS=OFF \
+            -DTBCAD_BUILD_APP=OFF
+          cmake --build build/export --target tbcad-convert
+      - name: Audit the exports
+        run: .venv/bin/python tests/corpus/roundtrip/audit_exports.py build/export/apps/tbcad-convert/tbcad-convert
