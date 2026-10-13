@@ -19,7 +19,7 @@ std::string promptWith(std::string_view text, const std::vector<std::string>& ke
 }
 
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out) {
-    e.common.layer = ctx.doc().header().currentLayer;
+    applyCurrentProperties(ctx.doc().header(), e);
     geom::DisplayContext dc;
     const double scale = ctx.host().view().scale;
     if (scale > 0)
@@ -31,7 +31,9 @@ void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out) {
 }
 
 bool addEntity(cmd::CommandContext& ctx, EntityData data) {
-    auto id = ctx.tx().add(Entity{{}, std::move(data)});
+    Entity e{{}, std::move(data)};
+    applyCurrentProperties(ctx.doc().header(), e);
+    auto id = ctx.tx().add(std::move(e));
     if (!id) {
         ctx.message(id.error().message);
         return false;

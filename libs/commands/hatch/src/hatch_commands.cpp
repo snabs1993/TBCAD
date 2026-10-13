@@ -257,6 +257,7 @@ private:
         Entity hatch = makeHatchEntity(b, *pattern, p.scale, p.angle, p.base);
         if (!p.associative)
             entityAs<HatchData>(hatch)->sourceBoundary.clear();
+        applyCurrentProperties(ctx.doc().header(), hatch);
         auto id = ctx.tx().add(std::move(hatch));
         if (!id) {
             ctx.message(id.error().message);

@@ -100,6 +100,7 @@ public:
         text.attdef = info;
         Entity e;
         e.data = Indirect<TextData>(std::move(text));
+        applyCurrentProperties(ctx.doc().header(), e);
         auto added = ctx.tx().add(std::move(e));
         if (!added) {
             ctx.message(added.error().message);

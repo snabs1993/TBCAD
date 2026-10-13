@@ -254,6 +254,79 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
     }
 }
 
+// With nothing selected the panel shows what new objects get: the current colour, linetype and
+// lineweight (-CURRENT). Layer stays in the Layers panel.
+void currentSection(tbcad::ui::PanelContext& ctx) {
+    const Document& doc = *ctx.doc;
+    const Header& h = doc.header();
+    auto set = [&](const std::string& keyword, const std::string& value) {
+        exec(ctx, {"-CURRENT " + keyword, value});
+    };
+    ImGui::TextDisabled("Nothing selected. New objects get:");
+    if (!ImGui::BeginTable("##current", 2, ImGuiTableFlags_SizingStretchProp))
+        return;
+    ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted("Colour");
+    ImGui::TableSetColumnIndex(1);
+    {
+        Color shown = h.currentColor;
+        ImVec4 sw = swatch(shown.kind == ColorKind::ByLayer || shown.kind == ColorKind::ByBlock
+                               ? Color::index(7)
+                               : shown);
+        if (ImGui::ColorButton("##cursw", sw,
+                               ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha,
+                               ImVec2(22, ImGui::GetFrameHeight() - 4)))
+            ImGui::OpenPopup("##curcolour");
+        ImGui::SameLine();
+        ImGui::TextUnformatted(colorName(shown).c_str());
+        ColorChoices allowed;
+        allowed.byLayer = true;
+        allowed.byBlock = true;
+        std::string chosen;
+        if (colorPopup("##curcolour", shown, allowed, chosen))
+            set("Color", chosen);
+    }
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted("Linetype");
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##curlt", linetypeName(doc, h.currentLinetype).c_str(),
+                          ImGuiComboFlags_HeightLarge)) {
+        if (ImGui::Selectable("ByLayer", h.currentLinetype == kLinetypeByLayer))
+            set("Linetype", "ByLayer");
+        if (ImGui::Selectable("ByBlock", h.currentLinetype == kLinetypeByBlock))
+            set("Linetype", "ByBlock");
+        for (const auto& [id, lt] : doc.linetypes())
+            if (ImGui::Selectable(lt.name.c_str(), h.currentLinetype == id))
+                set("Linetype", "#" + std::to_string(id.value));
+        ImGui::EndCombo();
+    }
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted("Lineweight");
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##curlw", lineweightName(h.currentLineweight).c_str(),
+                          ImGuiComboFlags_HeightLarge)) {
+        static const char* const kWeights[] = {"ByLayer", "ByBlock", "Default", "0.05", "0.09",
+                                               "0.13",    "0.15",    "0.18",    "0.20", "0.25",
+                                               "0.30",    "0.35",    "0.40",    "0.50", "0.60",
+                                               "0.70",    "0.80",    "1.00",    "1.40", "2.00"};
+        for (const char* w : kWeights)
+            if (ImGui::Selectable(w, false))
+                set("Lineweight", w);
+        ImGui::EndCombo();
+    }
+    ImGui::EndTable();
+}
+
 void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     if (c.fields.empty())
         return;
@@ -309,7 +382,7 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
     if (!ctx.doc || !ctx.selection)
         return;
     if (ctx.selection->empty()) {
-        ImGui::TextDisabled("Nothing selected");
+        currentSection(ctx);
         return;
     }
     refresh(ctx);
