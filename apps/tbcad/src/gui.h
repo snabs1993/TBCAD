@@ -68,6 +68,8 @@ public:
     // Rebuilds fonts and style after the window moved to a monitor with another DPI scale.
     void setDpiScale(float scale);
     float dpiScale() const { return dpiScale_; }
+    // Shows a registered panel (Tools > MCP Settings...).
+    void openPanel(const std::string& id) { panelOpen_[id] = true; }
 
 private:
     enum class Pending { None, New, Open, OpenRecent, Exit };

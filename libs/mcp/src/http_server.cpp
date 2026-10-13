@@ -139,6 +139,10 @@ struct HttpServer::Connection {
     std::atomic<bool> done{false};
 };
 
+long processId() {
+    return net::currentProcessId();
+}
+
 std::string randomHex(std::size_t bytes) {
     std::random_device rd;
     static const char* digits = "0123456789abcdef";

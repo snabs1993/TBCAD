@@ -111,5 +111,7 @@ void removeDiscovery(const std::filesystem::path& file);
 
 // Hex of `bytes` random bytes.
 std::string randomHex(std::size_t bytes);
+// Id of this process (what the discovery file records).
+long processId();
 
 }  // namespace tbcad::mcp

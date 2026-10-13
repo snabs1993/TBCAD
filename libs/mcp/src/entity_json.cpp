@@ -516,7 +516,21 @@ Result<Color> colorFromJson(const Json& j, bool forLayer) {
             return Color::byParent();
         if (s.size() == 7 && s[0] == '#') {
             unsigned v = 0;
-            if (std::sscanf(s.c_str() + 1, "%6x", &v) == 1) {
+            bool hex = true;
+            for (std::size_t i = 1; i < 7 && hex; ++i) {
+                const char c = s[i];
+                unsigned d = 0;
+                if (c >= '0' && c <= '9')
+                    d = static_cast<unsigned>(c - '0');
+                else if (c >= 'a' && c <= 'f')
+                    d = static_cast<unsigned>(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F')
+                    d = static_cast<unsigned>(c - 'A' + 10);
+                else
+                    hex = false;
+                v = v * 16 + d;
+            }
+            if (hex) {
                 return Color::rgb(static_cast<std::uint8_t>(v >> 16),
                                   static_cast<std::uint8_t>(v >> 8), static_cast<std::uint8_t>(v));
             }
