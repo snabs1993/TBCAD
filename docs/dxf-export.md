@@ -42,7 +42,7 @@ Lines end with CRLF. Numbers are written as the shortest text that reads back as
   `$DIMSTYLE`, `$INSUNITS = 4` (millimetres), `$MEASUREMENT = 1`, units/precision variables.
 * **CLASSES**: empty.
 * **TABLES**: VPORT (`*Active`, zoomed to the extents), LTYPE (`ByBlock`, `ByLayer`,
-  `Continuous` first, then the document's), LAYER, STYLE, VIEW and UCS (empty), APPID (`ACAD`,
+  `Continuous` first, then the document's), LAYER, STYLE (text styles that use the TBCAD Stroke font are written with `txt.shx`, AutoCAD's own stand-in; TBCAD reads it back as the stroke font), VIEW and UCS (empty), APPID (`ACAD`,
   `TBCAD`), DIMSTYLE, BLOCK_RECORD (`*Model_Space`, `*Paper_Space`, then every block).
 * **BLOCKS**: `*Model_Space`, `*Paper_Space`, the document's blocks in id order, then one
   anonymous `*D<n>` block per dimension.

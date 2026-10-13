@@ -96,10 +96,16 @@ BBox2 glyphBoxEm(font::FontId f, std::uint32_t gid) {
             return it->second;
     }
     BBox2 b;
-    const font::GlyphOutline& o = fonts().outline(f, gid);
-    for (const auto& c : o.contours)
-        for (const auto& p : c.points)
-            b.expand({p.x, p.y});
+    if (fonts().isStroke(f)) {
+        for (const auto& path : fonts().strokes(f, gid).paths)
+            for (const auto& p : path.points)
+                b.expand({p.x, p.y});
+    } else {
+        const font::GlyphOutline& o = fonts().outline(f, gid);
+        for (const auto& c : o.contours)
+            for (const auto& p : c.points)
+                b.expand({p.x, p.y});
+    }
     std::lock_guard lock(m);
     cache.emplace(key, b);
     return b;
