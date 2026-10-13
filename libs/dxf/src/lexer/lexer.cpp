@@ -360,7 +360,7 @@ Result<Lexer> Lexer::open(std::span<const std::byte> bytes, Report& report) {
     lx.report_ = &report;
     lx.data_ = std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     if (lx.data_.empty()) {
-        return Error{"empty input", 1};
+        return makeError(ErrorCode::Parse, "empty input");
     }
     if (lx.data_.size() >= kBinarySentinel.size() &&
         lx.data_.substr(0, kBinarySentinel.size()) == kBinarySentinel) {
@@ -375,7 +375,7 @@ Result<Lexer> Lexer::open(std::span<const std::byte> bytes, Report& report) {
                    rest.substr(1, 8) == std::string_view("SECTION\0", 8)) {
             lx.codeWidth_ = 1;
         } else {
-            return Error{"binary DXF: cannot determine the group code width", 1};
+            return makeError(ErrorCode::Parse, "binary DXF: cannot determine the group code width");
         }
         report.info(
             code::kBinary,
@@ -392,7 +392,7 @@ Result<Lexer> Lexer::open(std::span<const std::byte> bytes, Report& report) {
     for (;;) {
         const auto line = probe.readLine();
         if (!line) {
-            return Error{"not a DXF file: no group code found", 1};
+            return makeError(ErrorCode::Parse, "not a DXF file: no group code found");
         }
         const std::string_view t = trim(*line);
         if (t.empty()) {
@@ -400,7 +400,7 @@ Result<Lexer> Lexer::open(std::span<const std::byte> bytes, Report& report) {
         }
         std::int64_t v = 0;
         if (!parseInt64Strict(t, v) || v < kMinGroupCode || v > kMaxGroupCode) {
-            return Error{"not a DXF file: first line is not a group code", probe.line_ - 1};
+            return makeError(ErrorCode::Parse, "not a DXF file: first line is not a group code");
         }
         break;
     }

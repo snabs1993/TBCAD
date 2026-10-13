@@ -702,13 +702,13 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
 
 Result<ExportResult> Writer::run() {
     if (opt_.layerSeparator.empty()) {
-        return Error{"the layer separator must not be empty", 0};
+        return makeError(ErrorCode::InvalidArgument, "the layer separator must not be empty");
     }
     for (char c : opt_.layerSeparator) {
         if (c == '|' || c == '$' || isInvalidNameChar(c)) {
-            return Error{std::string("the character '") + c +
-                             "' cannot be used in a layer separator (DXF reserves it)",
-                         0};
+            return makeError(ErrorCode::InvalidArgument,
+                             std::string("the character '") + c +
+                                 "' cannot be used in a layer separator (DXF reserves it)");
         }
     }
 
