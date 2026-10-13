@@ -20,7 +20,7 @@ namespace {
 
 std::string bytes(const PdfDocument& doc) {
     std::ostringstream os;
-    REQUIRE(doc.write(os).ok);
+    REQUIRE(doc.write(os).ok());
     return os.str();
 }
 
@@ -144,7 +144,7 @@ void checkWithQpdf(const PdfDocument& doc, const char* name) {
     }
     auto path =
         std::filesystem::temp_directory_path() / (std::string("tbcad_pdf_test_") + name + ".pdf");
-    REQUIRE(doc.writeFile(path.string()).ok);
+    REQUIRE(doc.writeFile(path.string()).ok());
     std::string cmd = "qpdf --check \"" + path.string() + "\" > " + kNull + " 2>&1";
     int rc = std::system(cmd.c_str());
     std::filesystem::remove(path);
@@ -280,9 +280,9 @@ TEST_CASE("info title with Thai text is written as UTF-16BE") {
 TEST_CASE("writeFile to an unwritable path returns an error") {
     PdfDocument doc;
     doc.addPage(10, 10);
-    Result r = doc.writeFile("/nonexistent-dir-tbcad/x.pdf");
-    CHECK_FALSE(r.ok);
-    CHECK_FALSE(r.error.empty());
+    tbcad::Result<void> r = doc.writeFile("/nonexistent-dir-tbcad/x.pdf");
+    CHECK_FALSE(r.ok());
+    CHECK_FALSE(r.error().message.empty());
 }
 
 TEST_CASE("qpdf --check: empty page") {

@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include "tbcad/core/result.h"
+
 namespace tbcad::dxf {
 
 enum class Severity { Info, Warning, Error };
@@ -77,32 +79,6 @@ public:
 private:
     std::vector<Diagnostic> items_;
     std::size_t counts_[3] = {0, 0, 0};
-};
-
-struct Error {
-    std::string message;
-    int line = 0;
-};
-
-// Minimal value-or-error type. W1-1 (core) may later provide the project-wide Result; this
-// one has the same shape (ok/value/error) so callers will not change.
-template <class T>
-class Result {
-public:
-    Result(T value) : v_(std::move(value)) {}
-    Result(Error error) : v_(std::move(error)) {}
-
-    bool ok() const { return std::holds_alternative<T>(v_); }
-    explicit operator bool() const { return ok(); }
-    T& value() & { return std::get<T>(v_); }
-    const T& value() const& { return std::get<T>(v_); }
-    T&& value() && { return std::get<T>(std::move(v_)); }
-    const Error& error() const { return std::get<Error>(v_); }
-    T* operator->() { return &std::get<T>(v_); }
-    T& operator*() & { return std::get<T>(v_); }
-
-private:
-    std::variant<T, Error> v_;
 };
 
 }  // namespace tbcad::dxf

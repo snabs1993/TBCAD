@@ -17,7 +17,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     auto lx = Lexer::open(bytes, report);
     if (lx) {
         std::string text;
-        while (auto g = lx->next()) {
+        while (auto g = lx.value().next()) {
             if (g->type() == ValueType::String) {
                 text += g->str();
             }
