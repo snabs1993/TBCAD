@@ -319,6 +319,9 @@ public:
     // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
     std::vector<EntityId> touchedEntities() const;
 
+    // The document this transaction edits; reads see the edits made so far.
+    const Document& document() const { return *doc_; }
+
     // Finishes the transaction. Observers are notified once unless nothing changed.
     ChangeSet commit();
     // Undoes everything done so far and ends the transaction.

@@ -1,0 +1,93 @@
+// Paper-space layouts: a sheet of paper with its own drawing objects (title block, notes) and any
+// number of viewports that show model space at a scale, with layers that can be frozen per
+// viewport.
+//
+// Storage (no changes to core or the file format): the layout table is one text value in
+// Header::custom["tbcad.layouts"], so it is saved, loaded and undone with the drawing. The objects
+// that live on the sheet belong to a hidden anonymous block per layout ("*LAYOUT-<uid>"); their
+// coordinates are millimetres on the sheet with the origin at the lower-left corner.
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "tbcad/core/core.h"
+#include "tbcad/export/plot.h"
+
+namespace tbcad::layout {
+
+inline constexpr const char* kHeaderKey = "tbcad.layouts";
+
+struct Viewport {
+    int id = 0;         // unique within the layout, starts at 1
+    BBox2 paper{};      // rectangle on the sheet (mm)
+    Vec2 center{};      // model point shown at the middle of the viewport
+    double scaleN = 1;  // 1:N, 1 mm on the sheet = N model units
+    bool on = true;
+    std::vector<LayerId> frozen{};  // frozen in this viewport (their sub-layers too)
+};
+
+struct Layout {
+    int uid = 0;
+    std::string name{};
+    std::string paperName{};  // "A3", ... or "Custom"
+    bool landscape = true;
+    double widthMm = 0, heightMm = 0;  // as oriented
+    BlockId content{};                 // block holding the sheet's own objects
+    std::vector<Viewport> viewports{};
+
+    const Viewport* findViewport(int id) const;
+};
+
+// All layouts, in creation order. Unreadable lines are skipped.
+std::vector<Layout> layouts(const Document& doc);
+// By name, ASCII case-insensitive.
+std::optional<Layout> findLayout(const Document& doc, std::string_view name);
+
+// Names: 1-64 characters, no control characters, unique ignoring case.
+Result<void> validateLayoutName(const Document& doc, std::string_view name,
+                                std::string_view ignore = {});
+
+Result<void> createLayout(Transaction& tx, const std::string& name,
+                          const std::string& paperName = "A3", bool landscape = true);
+Result<void> deleteLayout(Transaction& tx, const std::string& name);
+Result<void> renameLayout(Transaction& tx, const std::string& name, const std::string& newName);
+// Changes the sheet; viewports and objects stay where they are (in millimetres).
+Result<void> setLayoutPaper(Transaction& tx, const std::string& name, const std::string& paperName,
+                            bool landscape, double customWidthMm = 0, double customHeightMm = 0);
+
+// Returns the new viewport's id.
+Result<int> addViewport(Transaction& tx, const std::string& layout, const BBox2& paperRect,
+                        Vec2 modelCenter, double scaleN);
+Result<void> removeViewport(Transaction& tx, const std::string& layout, int id);
+Result<void> setViewportScale(Transaction& tx, const std::string& layout, int id, double scaleN);
+Result<void> setViewportCenter(Transaction& tx, const std::string& layout, int id, Vec2 center);
+Result<void> setViewportOn(Transaction& tx, const std::string& layout, int id, bool on);
+// Freezes or thaws one layer in one viewport only; the layer table is not touched.
+Result<void> setViewportLayerFrozen(Transaction& tx, const std::string& layout, int id,
+                                    LayerId layer, bool frozen);
+
+// True when the layer, or one of its parents, is frozen in the viewport.
+bool frozenInViewport(const Document& doc, const Viewport& vp, LayerId layer);
+
+// Adds a framed title block with the standard fields (project, drawing, scale, date, sheet) to
+// the layout's sheet: a border and text objects in the lower right corner.
+struct TitleBlockFields {
+    std::string project{}, drawing{}, scale{}, date{}, sheet{};
+};
+Result<void> addTitleBlock(Transaction& tx, const std::string& layout,
+                           const TitleBlockFields& fields);
+
+// ---- plotting -------------------------------------------------------------------------------
+
+struct LayoutPlotOptions {
+    bool viewportBorders = true;  // draw each viewport's rectangle
+};
+// The sheet at 1:1: the layout's own objects, then each viewport's model-space view clipped to the
+// viewport. `base` supplies lineweights, colour mode, chord tolerance and hairline width; its
+// paper, area, scale and margins are ignored.
+Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::string& layout,
+                                              const exportlib::PlotSettings& base = {},
+                                              const LayoutPlotOptions& options = {});
+
+}  // namespace tbcad::layout
