@@ -356,12 +356,15 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     std::vector<Row> rows = buildRows(doc, st);
 
     constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
-                                       ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+                                       ImGuiTableFlags_ScrollX | ImGuiTableFlags_RowBg |
+                                       ImGuiTableFlags_BordersInnerV |
                                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Hideable;
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
     if (ImGui::BeginTable("##layers", 8, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3.0f);
+        // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
+        // away.
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 140);
         ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 34);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 34);

@@ -975,7 +975,7 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGui::DockBuilderSetNodeSize(ds, vp->WorkSize);
     ImGuiID center = ds;
     ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.22f, nullptr, &center);
-    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
+    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.28f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
     for (const auto& p : registry_.panels())
         ImGui::DockBuilderDockWindow(p.title.c_str(), right);
@@ -1319,7 +1319,8 @@ void Gui::commandWindow() {
         std::string prompt = core_.promptText();
         if (chips && info) {
             prompt = info->text;
-            if (info->defaultText)
+            if (info->defaultText &&
+                info->text.find("<" + *info->defaultText + ">") == std::string::npos)
                 prompt += " <" + *info->defaultText + ">";
             prompt += ": ";
         }
@@ -1779,10 +1780,41 @@ void Gui::panels() {
     };
     for (const std::string& id : core_.takePanelRequests())
         panelOpen_[id] = true;
+    // A panel the saved layout has never seen (imgui.ini from an older version, or a panel added
+    // later) is docked beside the Object Properties panel instead of floating over the tabs.
+    ImGuiID sideDock = 0;
+    for (const char* name : {"Object Properties", "Properties", "Layers", "Levels"}) {
+        if (ImGuiWindow* w = ImGui::FindWindowByName(name); w && w->DockId != 0)
+            sideDock = w->DockId;
+        else if (ImGuiWindowSettings* ws = ImGui::FindWindowSettingsByID(ImHashStr(name)))
+            sideDock = ws->DockId;
+        if (sideDock != 0)
+            break;
+    }
+    if (sideDock != 0) {
+        // Never tab the side panels into the command window's dock.
+        ImGuiID commandDock = 0;
+        if (ImGuiWindow* w = ImGui::FindWindowByName("Command"); w && w->DockId != 0)
+            commandDock = w->DockId;
+        else if (ImGuiWindowSettings* ws = ImGui::FindWindowSettingsByID(ImHashStr("Command")))
+            commandDock = ws->DockId;
+        if (commandDock == sideDock)
+            sideDock = 0;
+    }
+    if (sideDock == 0 && !dockFallbackTried_) {
+        // Nothing is docked at the side (a layout file from a much older version): start from the
+        // default layout once rather than leave panels floating over the document tabs.
+        dockFallbackTried_ = true;
+        rebuildDock_ = true;
+    }
     for (const auto& p : registry_.panels()) {
         bool& open = panelOpen_[p.id];
         if (!open)
             continue;
+        if (sideDock != 0) {
+            ImGui::SetNextWindowDockID(sideDock, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(320, 420), ImGuiCond_FirstUseEver);
+        }
         if (ImGui::Begin(p.title.c_str(), &open))
             p.draw(pc);
         ImGui::End();

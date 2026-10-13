@@ -123,7 +123,8 @@ std::optional<Vec2> parsePointText(std::string_view text, const PointParseContex
 
 std::string PromptInfo::display() const {
     std::string s = text;
-    if (!keywords.empty()) {
+    // Many prompts already spell out "[A/B] <default>" in their text; do not repeat either part.
+    if (!keywords.empty() && text.find('[') == std::string::npos) {
         s += " or [";
         for (std::size_t i = 0; i < keywords.size(); ++i) {
             if (i)
@@ -132,7 +133,7 @@ std::string PromptInfo::display() const {
         }
         s += ']';
     }
-    if (defaultText)
+    if (defaultText && text.find("<" + *defaultText + ">") == std::string::npos)
         s += " <" + *defaultText + ">";
     s += ": ";
     return s;

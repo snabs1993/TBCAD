@@ -136,6 +136,26 @@ public:
     }
 };
 
+// "50", "1:50" and "1/50" all mean one drawing unit to 50; anything else is rejected.
+std::optional<double> parseScaleN(const std::string& text) {
+    std::string t;
+    for (char c : text)
+        if (c != ' ')
+            t += c;
+    for (const char* prefix : {"1:", "1/"})
+        if (t.rfind(prefix, 0) == 0) {
+            t.erase(0, 2);
+            break;
+        }
+    if (t.empty())
+        return std::nullopt;
+    char* end = nullptr;
+    const double v = std::strtod(t.c_str(), &end);
+    if (end != t.c_str() + t.size() || !std::isfinite(v))
+        return std::nullopt;
+    return v;
+}
+
 // ANNONEW: new text, dimensions, leaders, tables and symbols are annotative.
 class AnnoNewCommand final : public cmd::Command {
 public:
@@ -169,16 +189,18 @@ public:
 
     Task run(CommandContext& ctx) override {
         const double cur = currentAnnotationScale(ctx.doc().header());
-        cmd::DistanceOptions o;
-        auto r = co_await ctx.getDistance(
-            "Annotation scale, N of 1:N <" + scaleText(cur).substr(2) + ">", o);
+        const std::string def = scaleText(cur).substr(2);
+        cmd::StringOptions so;
+        so.defaultValue = def;
+        auto r = co_await ctx.getString("Annotation scale, N or 1:N <" + def + ">", so);
         if (!r.ok())
             co_return;
-        if (!(r.value > 0) || !std::isfinite(r.value)) {
-            ctx.message("The scale must be above zero.");
+        const auto parsed = parseScaleN(r.text.empty() ? def : r.text);
+        if (!parsed || !(*parsed > 0)) {
+            ctx.message("Enter the scale as N or 1:N, a number above zero.");
             co_return;
         }
-        const double v = r.value;
+        const double v = *parsed;
         (void)ctx.tx().modifyHeader([&](Header& h) {
             char buf[40];
             std::snprintf(buf, sizeof buf, "%.12g", v);
@@ -217,15 +239,15 @@ public:
                 (void)ctx.tx().modifyHeader([](Header& h) { h.custom.erase(kAnnoScaleListKey); });
                 continue;
             }
-            cmd::DistanceOptions o;
-            auto r = co_await ctx.getDistance("Scale, N of 1:N", o);
+            auto r = co_await ctx.getString("Scale, N or 1:N");
             if (!r.ok())
                 co_return;
-            const double v = r.value;
-            if (!(v > 0) || !std::isfinite(v)) {
-                ctx.message("The scale must be above zero.");
+            const auto parsed = parseScaleN(r.text);
+            if (!parsed || !(*parsed > 0)) {
+                ctx.message("Enter the scale as N or 1:N, a number above zero.");
                 continue;
             }
+            const double v = *parsed;
             auto it = std::find(list.begin(), list.end(), v);
             if (k.keyword == "Add") {
                 if (it == list.end())

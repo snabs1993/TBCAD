@@ -588,3 +588,17 @@ TEST_CASE("CommandContext::lastPoint is the click that answered a distance promp
     host.run("LASTPOINTPROBE", {ScriptItem::click({3, 4})});
     CHECK(host.logContains("last=3.000000,4.000000"));
 }
+
+TEST_CASE("a prompt that spells out its keywords and default is not shown twice") {
+    cmd::PromptInfo p;
+    p.text = "Reference type [Attach/Overlay] <Attach>";
+    p.keywords = {"Attach", "Overlay"};
+    p.defaultText = "Attach";
+    CHECK(p.display() == "Reference type [Attach/Overlay] <Attach>: ");
+
+    cmd::PromptInfo q;
+    q.text = "Reference type";
+    q.keywords = {"Attach", "Overlay"};
+    q.defaultText = "Attach";
+    CHECK(q.display() == "Reference type or [Attach/Overlay] <Attach>: ");
+}

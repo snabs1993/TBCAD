@@ -156,7 +156,8 @@ private:
     bool layoutBuilt_ = false;
     ui::WorkspaceStore workspaces_;
     std::string workspaceName_{};  // the one last switched to or saved
-    bool rebuildDock_ = false;     // rebuild the default docking layout next frame
+    bool dockFallbackTried_ = false;
+    bool rebuildDock_ = false;  // rebuild the default docking layout next frame
     bool openWorkspaceSave_ = false;
     std::string workspaceNameInput_{};
     std::string workspaceMessage_{};
