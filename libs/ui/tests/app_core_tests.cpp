@@ -672,3 +672,45 @@ TEST_CASE("SETTINGS asks the window to open the dialog") {
     CHECK(f.core->keybindings().label("view.expandLog") == "Ctrl+L");
     CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
+
+TEST_CASE("a .dxf file opens and saves back as DXF in place") {
+    Fixture f("dxfmain");
+    f.line("0,0", "100,0");
+    f.line("10,10", "50,70");
+    const fs::path dxfFile = f.dir / "plan.dxf";
+    REQUIRE(f.core->saveAs(dxfFile).ok());
+    {
+        std::ifstream in(dxfFile, std::ios::binary);
+        std::string head(20, ' ');
+        in.read(head.data(), 20);
+        CHECK(head.find("SECTION") != std::string::npos);  // "  0\nSECTION" starts a DXF
+    }
+    CHECK(f.core->file() == dxfFile);
+
+    // Reopen in a second application: the lines come back and Save writes DXF again.
+    Fixture g("dxfmain2");
+    REQUIRE(g.core->openFile(dxfFile).ok());
+    CHECK(g.core->document().modelSpaceCount() == 2);
+    CHECK(g.core->file() == dxfFile);
+    g.line("0,5", "5,5");
+    CHECK(g.core->modified());
+    REQUIRE(g.core->save().ok());
+    CHECK_FALSE(g.core->modified());
+    CHECK(fs::exists(dxfFile.string() + ".bak"));
+
+    Fixture h("dxfmain3");
+    REQUIRE(h.core->openFile(dxfFile).ok());
+    CHECK(h.core->document().modelSpaceCount() == 3);
+}
+
+TEST_CASE("files.defaultFormat decides the extension of a name without one") {
+    Fixture f("dxfdefault");
+    f.line("0,0", "10,0");
+    f.core->settings().setString("files.defaultFormat", "dxf");
+    REQUIRE(f.core->saveAs(f.dir / "noext").ok());
+    CHECK(f.core->file().extension() == ".dxf");
+    CHECK(fs::exists(f.dir / "noext.dxf"));
+    f.core->settings().setString("files.defaultFormat", "tbcad");
+    REQUIRE(f.core->saveAs(f.dir / "other").ok());
+    CHECK(f.core->file().extension() == ".tbcad");
+}

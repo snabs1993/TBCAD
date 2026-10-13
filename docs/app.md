@@ -50,7 +50,7 @@ Owns the `Document`, `UndoStack`, `SpatialIndex` (kept current by `DocumentIndex
 `Scene` (kept current by `SceneSync`), the `CommandRunner`, settings and key bindings, and is the
 `cmd::IHost` the commands talk to.
 
-- **Files**: `newDocument`, `openFile`, `save`, `saveAs` (adds `.tbcad`, atomic with a `.bak`),
+- **Files**: `newDocument`, `openFile`, `save`, `saveAs` (adds the extension of `files.defaultFormat`, `.tbcad` unless set to `dxf`; atomic with a `.bak`; a `.dxf` path is read and written with `libs/dxf`, so a drawing opened from DXF is saved back as DXF),
   recent files, `windowTitle()` (`name.tbcad* - TBCAD`), `modified()`.
 - **Command line**: `submitText("LINE 0,0 100,0")`. The first word names a command (aliases work),
   the other words answer its prompts. Empty text repeats the last command or takes the default.
@@ -99,7 +99,7 @@ required by its license, and opens `THIRD_PARTY_NOTICES.txt` (copied next to the
 ### Command line options
 
 ```
-tbcad [file.tbcad] [--script "CMD;CMD"] [--frames N] [--screenshot out.ppm]
+tbcad [file.tbcad|file.dxf] [--script "CMD;CMD"] [--frames N] [--screenshot out.ppm]
       [--gate [--report out.txt]] [--self-test] [--no-vsync]
 ```
 
@@ -136,3 +136,7 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
   viewport and the command line. Both are rebindable like any other action.
 - `IHost::requestUi(what)` lets a command ask the window to open something; `AppCore::takeUiRequests()`
   hands the requests to the window.
+
+## DXF as the main file
+
+File > Open and drag-and-drop accept `.dxf` as well as `.tbcad`. Save on a drawing that came from a `.dxf` writes DXF (R2000) back to the same file, keeping the old one as `.bak`; notices from the reader and writer (skipped or simplified objects) go to the command history. Tools > Settings > Files > "Default save format" chooses the extension for new drawings; `.tbcad` stays the default.
