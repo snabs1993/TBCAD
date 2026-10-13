@@ -154,6 +154,28 @@ TEST_CASE("drag left to right selects inside, right to left selects touching") {
     CHECK(f.core->selection().empty());
 }
 
+TEST_CASE("Alt+click cycles through overlapping objects; lasso selects inside the path") {
+    Fixture f("cyclelasso");
+    f.line("0,0", "100,0");
+    f.line("0,0", "100,0");
+    f.core->cycleClick(f.at({50, 0}));
+    REQUIRE(f.core->selection().size() == 1);
+    const EntityId first = f.core->selection()[0];
+    f.core->cycleClick(f.at({50, 0}));
+    REQUIRE(f.core->selection().size() == 1);
+    CHECK(f.core->selection()[0] != first);
+    f.core->cycleClick(f.at({50, 0}));
+    CHECK(f.core->selection()[0] == first);  // wrapped round
+    f.core->cycleClick(f.at({700, 700}));
+    CHECK(f.core->selection().empty());
+
+    f.line("10,30", "20,30");
+    auto s = [&](Vec2 w) { return f.core->camera().worldToScreen(w); };
+    std::vector<Vec2> path{s({5, 20}), s({25, 20}), s({25, 40}), s({5, 40})};
+    f.core->lassoSelect(path, f.at({0, 0}));
+    CHECK(f.core->selection().size() == 1);
+}
+
 TEST_CASE("a selection prompt takes picks, windows and the selection made beforehand") {
     Fixture f("selprompt");
     f.line("0,0", "10,0");
