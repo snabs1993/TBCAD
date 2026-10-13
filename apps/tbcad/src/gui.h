@@ -11,6 +11,8 @@
 #include "file_browser.h"
 #include "tbcad/core/color.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/ui/command_match.h"
+#include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 
 struct GLFWwindow;
@@ -23,14 +25,14 @@ void installImeHook(GLFWwindow* window);
 // (Re)builds the UI font atlas: Latin (Lato) merged with Thai (Sarabun) at `scale`. Needs the
 // OpenGL backend to be initialised; recreates the font texture.
 void buildFonts(float scale);
-// Colours and metrics for the chosen theme; `scale` is the DPI scale for sizes.
-void applyTheme(bool dark, float scale);
+// Dear ImGui colours and metrics from the theme tokens; `scale` is the DPI scale for sizes.
+void applyTheme(const ui::Theme& theme, float scale);
+// True when Windows is set to dark app mode (always true elsewhere).
+bool systemPrefersDark();
 // Where bundled assets live: next to the executable, then ./assets, then the source tree.
 std::string findAsset(const std::string& relative);
 // A file shipped next to the executable (THIRD_PARTY_NOTICES.txt), or empty.
 std::string findBesideExecutable(const std::string& name);
-// Drawing-area background for the theme.
-Rgba backgroundFor(bool dark);
 
 struct ViewportRect {
     float x = 0, y = 0, w = 0, h = 0;  // window points
@@ -58,8 +60,11 @@ public:
         fps_ = fps;
         frameMs_ = frameMs;
     }
-    bool dark() const { return dark_; }
-    void setTheme(bool dark);
+    const ui::Theme& theme() const { return theme_; }
+    ui::ThemeMode themeMode() const { return themeMode_; }
+    void setThemeMode(ui::ThemeMode mode);
+    // Drawing-area background: the theme's, or the `ui.viewportBackground` setting (#RRGGBB).
+    Rgba viewportBackground() const;
     // Rendering preferences owned by the Gui (View menu).
     bool lineweights() const { return lineweights_; }
 
@@ -70,15 +75,21 @@ public:
     float dpiScale() const { return dpiScale_; }
 
 private:
-    enum class Pending { None, New, Open, OpenRecent, Exit };
+    enum class Pending { None, Close, Exit };
     enum class BrowserPurpose { Open, SaveAs };
 
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void docTabs();
+    void startPage(const ViewportRect& rect);
     void statusBar();
     void dockLayout(ImGuiID dockspace);
     void commandWindow();
+    void updateSuggestions();
+    void drawSuggestions(ImVec2 inputPos, float width);
+    bool optionChips();
+    void cursorHud(const ViewportRect& rect);
     void propertiesWindow();
     void panels();
     void dialogs();
@@ -93,8 +104,10 @@ private:
     void doSave();
     void doSaveAs();
     void afterSavePrompt(bool saved);
-    void requestAction(Pending what, std::string path = {});
-    void performPending();
+    void requestAction(Pending what);
+    // After the save prompt: `discard` is true for "Don't Save".
+    void performPending(bool discard = false);
+    void continuePending();
     void* nativeHandle() const;
 
     ui::AppCore& core_;
@@ -102,7 +115,8 @@ private:
     GLFWwindow* window_;
     FileBrowser browser_;
 
-    bool dark_ = true;
+    ui::ThemeMode themeMode_ = ui::ThemeMode::Dark;
+    ui::Theme theme_ = ui::darkTheme();
     bool lineweights_ = true;
     bool exitRequested_ = false;
     bool showAbout_ = false;
@@ -126,10 +140,21 @@ private:
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;
     ImGuiID inputId_ = 0;
+    // Autocomplete / command palette.
+    std::vector<ui::CommandMatch> suggestions_{};
+    int suggestSel_ = 0;
+    bool suggestVisible_ = false;
+    bool suggestDismissed_ = false;
+    bool paletteOpen_ = false;
+    std::string suggestFor_{};
+    bool cursorHud_ = true;
+    bool hudHovered_ = false;
+    bool startPage_ = true;
+    std::size_t shownActive_ = static_cast<std::size_t>(-1);
+    ImVec2 hudAnchor_{-1e6f, -1e6f};
 
     // Save prompt.
     Pending pending_ = Pending::None;
-    std::string pendingPath_{};
     bool openSavePrompt_ = false;
     bool saveThenPending_ = false;
     std::string noticesText_{};

@@ -112,3 +112,13 @@ was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenG
 Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Action ids:
 `file.new`, `file.open`, `file.save`, `file.saveAs`, `edit.undo`, `edit.redo`, `edit.selectAll`,
 `edit.deselect`, `view.zoomExtents`, `view.toggleCommandLine`, plus every menu item's own id.
+
+## UX layer (follow-up to W3-1)
+
+- **Theme tokens** (`libs/ui/theme.h`): Dark, Light and "follow Windows" (View > Theme, setting `ui.theme`). Panels and the overlay take colours from the tokens, never from literals. `ui.viewportBackground` (`#RRGGBB`) overrides the drawing background.
+- **Command bar**: typing shows a ranked list (exact alias, alias prefix, name prefix, fuzzy); Up/Down, Tab or Enter pick. Ctrl+Shift+P opens it with an empty query as a command palette. Esc closes the list first.
+- **Option chips** replace the `[A/B]` text of a prompt, with the key letters underlined; click or type them.
+- **Cursor HUD** (F12, setting `hud.enabled`): prompt, typed text, snap label / tracking tooltip (`FilterFeedback::tooltip`) and clickable options next to the cursor.
+- **Document tabs**: several drawings open at once, `●` marks unsaved ones, middle-click or ✕ closes (asks first), Ctrl+W closes, Ctrl+Tab switches. Each tab keeps its own undo history, view and selection. Autosave covers the active drawing only.
+- **Start page** while only an untouched "Untitled" drawing is open.
+- A command can copy text to the system clipboard by setting `clipboard.text`.

@@ -54,6 +54,8 @@ Options parseOptions(int argc, char** argv) {
             o.report = next();
         else if (a == "--gate")
             o.gate = true;
+        else if (a == "--gate-lines")
+            o.gateLines = std::max(1000, std::atoi(next().c_str()));
         else if (a == "--self-test")
             o.selfTest = true;
         else if (a == "--no-vsync")
@@ -148,7 +150,7 @@ void App::drawScene() {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
-    renderer_.setBackground(backgroundFor(gui_->dark()));
+    renderer_.setBackground(gui_->viewportBackground());
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
     renderer_.beginFrame();
@@ -162,7 +164,7 @@ void App::renderDrawingOnce(bool finish) {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
-    renderer_.setBackground(backgroundFor(true));
+    renderer_.setBackground(ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->scene());
@@ -193,8 +195,8 @@ void App::frame() {
 
     glfwGetFramebufferSize(window_, &framebufferW_, &framebufferH_);
     ViewportTarget::unbindToWindow(framebufferW_, framebufferH_);
-    const Rgba bg = backgroundFor(gui_->dark());
-    glClearColor(bg.r / 255.0f * 0.8f, bg.g / 255.0f * 0.8f, bg.b / 255.0f * 0.8f, 1.0f);
+    const Rgba bg = gui_->theme().bgApp;
+    glClearColor(bg.r / 255.0f, bg.g / 255.0f, bg.b / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
@@ -246,7 +248,7 @@ int App::run() {
         const float total =
             gui_->dpiScale() * static_cast<float>(core_->settings().getNumber("ui.scale", 1.0));
         buildFonts(total);
-        applyTheme(gui_->dark(), total);
+        applyTheme(gui_->theme(), total);
     }
     glfwSetWindowUserPointer(window_, gui_.get());
     glfwSetWindowContentScaleCallback(window_, [](GLFWwindow* w, float xs, float) {
