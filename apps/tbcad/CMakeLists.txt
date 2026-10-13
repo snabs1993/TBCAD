@@ -64,6 +64,14 @@ if(TBCAD_BUILD_TESTS)
              -DOUT=${CMAKE_CURRENT_BINARY_DIR}/commands.md
              -DCONFIG=${CMAKE_CURRENT_BINARY_DIR}/list-config
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_list_commands.cmake)
+  # Every menu entry's command run headless (no window): must not crash or hang.
+  add_executable(tbcad_menu_smoke_tests tests/menu_smoke.cpp)
+  target_compile_features(tbcad_menu_smoke_tests PRIVATE cxx_std_20)
+  tbcad_set_warnings(tbcad_menu_smoke_tests)
+  target_link_libraries(tbcad_menu_smoke_tests PRIVATE
+    tbcad_appcore tbcad_ui tbcad_platform tbcad_command_registry doctest::doctest)
+  include(doctest)
+  doctest_discover_tests(tbcad_menu_smoke_tests PROPERTIES TIMEOUT 600)
   add_test(NAME tbcad_gui_smoke
            COMMAND tbcad --self-test --frames 5 --script "DEVGEN LINES 20000")
   set_tests_properties(tbcad_gui_smoke PROPERTIES
