@@ -39,6 +39,20 @@ public:
         return d;
     }
 
+    // The same curve on a 2^16 x 2^16 grid: the top 32 bits of key() for coordinates shifted left
+    // by 16, in half the steps. Enough resolution to order a drawing; sorting 32-bit keys is
+    // much cheaper than 64-bit ones.
+    std::uint32_t key16(std::uint32_t x, std::uint32_t y) const {
+        std::uint32_t d = 0;
+        unsigned state = 0;
+        for (int shift = 12; shift >= 0; shift -= 4) {
+            std::uint16_t t = table_[index(state, (x >> shift) & 15u, (y >> shift) & 15u)];
+            d = (d << 8) | (t >> 2);
+            state = t & 3u;
+        }
+        return d;
+    }
+
     static const HilbertTable& instance() {
         static const HilbertTable t;
         return t;

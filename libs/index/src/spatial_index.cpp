@@ -29,12 +29,12 @@ inline void prefetch(const void* p) {
 }
 
 struct KeyIndex {
-    std::uint64_t key;
+    std::uint32_t key;
     std::uint32_t index;
 };
 
-// Stable LSD radix sort on the 64-bit key; byte positions where every key agrees are skipped
-// (common when the drawing is small compared to the 2^32 grid).
+// Stable LSD radix sort on the 32-bit key, 11 bits at a time; digit positions where every key
+// agrees are skipped (common when the drawing is small compared to the grid).
 void sortByKey(std::vector<KeyIndex>& a) {
     const std::size_t n = a.size();
     if (n < 4096) {
@@ -42,25 +42,28 @@ void sortByKey(std::vector<KeyIndex>& a) {
                          [](const KeyIndex& x, const KeyIndex& y) { return x.key < y.key; });
         return;
     }
-    std::vector<std::uint32_t> hist(8 * 256, 0);
+    constexpr int kBits = 11;
+    constexpr int kPasses = 3;
+    constexpr std::uint32_t kMask = (1u << kBits) - 1;
+    std::vector<std::uint32_t> hist(kPasses << kBits, 0);
     for (const KeyIndex& k : a)
-        for (int b = 0; b < 8; ++b)
-            ++hist[b * 256 + ((k.key >> (8 * b)) & 0xFF)];
+        for (int b = 0; b < kPasses; ++b)
+            ++hist[(b << kBits) + ((k.key >> (kBits * b)) & kMask)];
     std::vector<KeyIndex> tmp(n);
     std::vector<KeyIndex>* src = &a;
     std::vector<KeyIndex>* dst = &tmp;
-    for (int b = 0; b < 8; ++b) {
-        std::uint32_t* h = &hist[b * 256];
-        if (h[(a[0].key >> (8 * b)) & 0xFF] == n)
+    for (int b = 0; b < kPasses; ++b) {
+        std::uint32_t* h = &hist[b << kBits];
+        if (h[(a[0].key >> (kBits * b)) & kMask] == n)
             continue;
         std::uint32_t sum = 0;
-        for (int i = 0; i < 256; ++i) {
+        for (std::uint32_t i = 0; i <= kMask; ++i) {
             std::uint32_t c = h[i];
             h[i] = sum;
             sum += c;
         }
         for (const KeyIndex& k : *src)
-            (*dst)[h[(k.key >> (8 * b)) & 0xFF]++] = k;
+            (*dst)[h[(k.key >> (kBits * b)) & kMask]++] = k;
         std::swap(src, dst);
     }
     if (src != &a)
@@ -624,7 +627,7 @@ struct SpatialIndex::Impl {
         // Sort by Hilbert key of the box centre.
         double ext =
             std::max(treeExtent.max.x - treeExtent.min.x, treeExtent.max.y - treeExtent.min.y);
-        double scale = ext > 0 ? 4294967295.0 / ext : 0.0;
+        double scale = ext > 0 ? 65535.0 / ext : 0.0;
         std::vector<KeyIndex> keyed;
         keyed.reserve(tree.size());
         const detail::HilbertTable& ht = detail::HilbertTable::instance();
@@ -634,10 +637,9 @@ struct SpatialIndex::Impl {
             double cy = (b.min.y + b.max.y) * 0.5 - treeExtent.min.y;
             auto q = [&](double v) {
                 double s = v * scale;
-                return static_cast<std::uint32_t>(s <= 0 ? 0
-                                                         : (s >= 4294967295.0 ? 4294967295.0 : s));
+                return static_cast<std::uint32_t>(s <= 0 ? 0 : (s >= 65535.0 ? 65535.0 : s));
             };
-            keyed.push_back({ht.key(q(cx), q(cy)), i});
+            keyed.push_back({ht.key16(q(cx), q(cy)), i});
         }
         tree = {};
         sortByKey(keyed);
