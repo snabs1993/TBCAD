@@ -4,11 +4,20 @@
 #include <unordered_set>
 
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/hatch/hatch.h"
 
 namespace tbcad::block_cmds {
 
 void registerCommands(cmd::Registry& registry) {
     blocks::registerInsertDisplay();
+    blocks::ExplodeRegistry::set(
+        EntityKind::Hatch,
+        [](const Document& doc, const Entity& e) -> Result<blocks::ExplodeResult> {
+            auto r = hatch::explodeHatch(doc, e);
+            if (!r)
+                return r.error();
+            return blocks::ExplodeResult{std::move(r).value(), {}};
+        });
     registerSnapProvider(drafting::SnapGeometryRegistry::instance());
     (void)registry.add(makeBlockCommand());
     (void)registry.add(makeInsertCommand());

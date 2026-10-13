@@ -55,3 +55,22 @@ TEST_CASE("EXPLODE ignores what cannot be exploded") {
     CHECK(r.finished);
     CHECK(f.doc.contains(c));
 }
+
+TEST_CASE("EXPLODE breaks a pattern hatch into lines") {
+    Fixture f;
+    HatchLoop loop;
+    loop.edges = {HatchLineEdge{{0, 0}, {10, 0}}, HatchLineEdge{{10, 0}, {10, 10}},
+                  HatchLineEdge{{10, 10}, {0, 10}}, HatchLineEdge{{0, 10}, {0, 0}}};
+    HatchData hd;
+    hd.loops = {loop};
+    hd.solid = false;
+    hd.pattern = "LINE45";
+    hd.patternScale = 1;
+    Entity e;
+    e.data = Indirect<HatchData>(hd);
+    EntityId id = f.add(e);
+    f.host->setSelection({id});
+    f.host->run("EXPLODE", {});
+    CHECK_FALSE(f.doc.contains(id));
+    CHECK(f.modelSpace().size() > 1);
+}

@@ -12,7 +12,7 @@ set(_block_cmd_sources
 
 tbcad_add_library(block_cmds
   SOURCES ${_block_cmd_sources}
-  DEPENDS tbcad::cmd tbcad::blocks tbcad::drafting tbcad::geom tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::blocks tbcad::drafting tbcad::geom tbcad::hatch tbcad::ui)
 
 # The panel draws with Dear ImGui, which only the application build fetches.
 if(TBCAD_BUILD_APP)

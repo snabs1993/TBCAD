@@ -44,7 +44,7 @@ original and adds the parts in one undo step.
   with arcs is split into lines and elliptical arcs. Text, MText, dimensions and leaders are scaled
   evenly (message). A nested Insert that cannot represent the scale is flattened (message).
 * Polyline: lines and arcs; widths are dropped and reported.
-* Dimension, Hatch and Leader register a hook with `blocks::ExplodeRegistry::set(kind, fn)` when
+* Hatch is wired to `hatch::explodeHatch`. Dimension and Leader register a hook with `blocks::ExplodeRegistry::set(kind, fn)` when
   their modules exist. Kinds without a hook are not selectable by EXPLODE.
 
 ## Array
