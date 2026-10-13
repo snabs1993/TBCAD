@@ -119,5 +119,7 @@ readers see an ATTDEF as plain text showing its tag.
   each visible attribute with the insert's value, on the definition's own layer rules. Bounds
   include the attribute text. `EXPLODE` turns attributes into plain text with the values
   (invisible ones disappear).
-* `.tbcad` version 1.1 stores the extra fields (see `docs/file-format.md`); DXF mapping comes
-  with the DXF import/export change.
+* `.tbcad` version 1.1 stores the extra fields (see `docs/file-format.md`); DXF: ATTDEF and INSERT + ATTRIB + SEQEND
+  map to definitions and insert values (see `docs/dxf-import.md`, `docs/dxf-export.md`). An exported
+  ATTRIB sits where the definition lands after the insert transform; text is never stretched, so
+  its height follows the Y scale.

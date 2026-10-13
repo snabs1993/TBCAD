@@ -208,6 +208,13 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line) {
     }
 }
 
+static std::string upperAscii(std::string s) {
+    for (char& c : s)
+        if (c >= 'a' && c <= 'z')
+            c = static_cast<char>(c - 'a' + 'A');
+    return s;
+}
+
 void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
     std::string_view t = r.type;
     if (t == "SEQEND" || t == "VERTEX" || t == "ENDBLK" || t == "BLOCK")
@@ -264,14 +271,17 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         withFrame([&] { convEllipse(r, f, out); });
     } else if (t == "SPLINE") {
         convSpline(r, out);
-    } else if (t == "TEXT" || t == "ATTRIB") {
-        withFrame([&] { convText(r, f, t == "ATTRIB", out); });
+    } else if (t == "TEXT" || t == "ATTRIB" || t == "ATTDEF") {
+        const TextKind kind = t == "TEXT"     ? TextKind::Text
+                              : t == "ATTRIB" ? TextKind::Attrib
+                                              : TextKind::AttDef;
+        withFrame([&] { convText(r, f, kind, out); });
     } else if (t == "MTEXT") {
         withFrame([&] { convMText(r, f, out); });
     } else if (t == "POINT") {
         convPoint(r, out);
     } else if (t == "INSERT") {
-        withFrame([&] { convInsert(r, f, out); });
+        withFrame([&] { convInsert(r, rr, f, out); });
     } else if (t == "HATCH") {
         withFrame([&] { convHatch(r, f, out); });
     } else if (t == "SOLID" || t == "TRACE") {
@@ -282,8 +292,6 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convLeader(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
         convProxy(r, out);
-    } else if (t == "ATTDEF") {
-        ++attdefs_;  // attribute definitions are not imported (reported once, no warning)
     } else {
         return false;
     }
@@ -557,11 +565,32 @@ bool Importer::convSpline(const Record& r, std::vector<Entity>& out) {
 // ---------------------------------------------------------------------------------------------
 // Text
 
-bool Importer::convText(const Record& r, const Frame& f, bool attrib, std::vector<Entity>& out) {
-    if (attrib && (r.integer(70) & 1))
+bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vector<Entity>& out) {
+    const bool attrib = kind != TextKind::Text;  // ATTRIB and ATTDEF use group 74 for the baseline
+    if (kind == TextKind::Attrib && (r.integer(70) & 1))
         return true;  // invisible attribute: nothing to show
     TextData d;
     std::string text = replacePercentCodes(dec(r.raw(1)));
+    if (kind == TextKind::AttDef) {
+        // The definition shows its tag in the block; the default value lives in group 1.
+        AttDefInfo info;
+        info.tag = upperAscii(dec(r.raw(2)));
+        info.prompt = replacePercentCodes(dec(r.raw(3)));
+        info.defaultValue = text;
+        const std::int64_t flags = r.integer(70);
+        info.invisible = (flags & 1) != 0;
+        info.constant = (flags & 2) != 0;
+        info.verify = (flags & 4) != 0;
+        info.preset = (flags & 8) != 0;
+        if (info.tag.empty() || info.tag.find_first_of(" \t\r\n") != std::string::npos) {
+            bad(r, "ATTDEF", "attribute tag is empty or has spaces; imported as text");
+            d.utf8 = text;
+        } else {
+            d.utf8 = info.tag;
+            d.attdef = std::move(info);
+        }
+        text = d.utf8;
+    }
     if (text.empty())
         return true;
     d.utf8 = std::move(text);
@@ -622,7 +651,38 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
 // ---------------------------------------------------------------------------------------------
 // Inserts, solids, leaders, proxies
 
-bool Importer::convInsert(const Record& r, const Frame& f, std::vector<Entity>& out) {
+bool Importer::blockHasAttDef(BlockId block, const std::string& tag) const {
+    const BlockDef* def = doc_->block(block);
+    if (!def)
+        return false;
+    for (EntityId id : def->entities)
+        if (const Entity* e = doc_->find(id))
+            if (const auto* t = entityAs<TextData>(*e); t && t->attdef && t->attdef->tag == tag)
+                return !t->attdef->constant;
+    return false;
+}
+
+bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
+                          std::vector<Entity>& out) {
+    // An INSERT with group 66 = 1 is followed by its ATTRIB records up to SEQEND.
+    std::vector<Record> attribs;
+    if (r.integer(66) == 1) {
+        for (;;) {
+            Record a;
+            if (!rr.next(a))
+                break;
+            if (a.type == "ATTRIB") {
+                EntityCount& cnt = sum_.entities["ATTRIB"];
+                ++cnt.read;
+                ++cnt.imported;
+                attribs.push_back(std::move(a));
+            } else {
+                if (a.type != "SEQEND")
+                    rr.pushBack(std::move(a));
+                break;
+            }
+        }
+    }
     std::string_view rawName = r.raw(2);
     BlockId block = blockFor(rawName);
     if (!block) {
@@ -646,6 +706,30 @@ bool Importer::convInsert(const Record& r, const Frame& f, std::vector<Entity>& 
                      r.line);
         cols = rows = 1;
     }
+    // Values for the tags the block defines; any other ATTRIB stays visible as plain text.
+    std::vector<AttribValue> values;
+    std::vector<Entity> loose;
+    for (const Record& a : attribs) {
+        std::string tag = upperAscii(dec(a.raw(2)));
+        std::string value = replacePercentCodes(dec(a.raw(1)));
+        if (blockHasAttDef(block, tag)) {
+            bool seen = false;
+            for (const AttribValue& v : values)
+                seen = seen || v.tag == tag;
+            if (!seen)
+                values.push_back({std::move(tag), std::move(value)});
+            continue;
+        }
+        Frame af;
+        if (!frameOf(a, af, "ATTRIB"))
+            continue;
+        std::vector<Entity> text;
+        convText(a, af, TextKind::Attrib, text);
+        for (Entity& e : text) {
+            e.common = commonOf(a);
+            loose.push_back(std::move(e));
+        }
+    }
     double cr = std::cos(rot), sr = std::sin(rot);
     for (std::int64_t row = 0; row < rows; ++row) {
         for (std::int64_t col = 0; col < cols; ++col) {
@@ -656,9 +740,12 @@ bool Importer::convInsert(const Record& r, const Frame& f, std::vector<Entity>& 
             d.position = f.p(p);
             d.scale = f.mirror ? Vec2{-sx, sy} : Vec2{sx, sy};
             d.rotation = f.mirror ? -rot : rot;
+            d.attribs = values;
             out.push_back(makeEntity(std::move(d)));
         }
     }
+    for (Entity& e : loose)
+        out.push_back(std::move(e));
     return true;
 }
 
