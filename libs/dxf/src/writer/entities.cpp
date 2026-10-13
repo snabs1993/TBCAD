@@ -816,9 +816,9 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
         Out& o = *o_;
         o.i(90, 498);
         o.i(91, 500);
-        o.i(93, 0);
         o.i(95, 0);
         o.i(70, 0);
+        o.i(92, static_cast<long long>(d.raw.size()));
         static const char* digits = "0123456789ABCDEF";
         for (std::size_t pos = 0; pos < d.raw.size(); pos += 127) {
             std::string hex;
@@ -828,6 +828,7 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
             }
             o.raw(310, hex);
         }
+        o.i(93, 0);
         count("ACAD_PROXY_ENTITY");
         return;
     }

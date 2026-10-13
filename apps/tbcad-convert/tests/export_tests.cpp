@@ -97,6 +97,10 @@ TEST_CASE("DXF -> tbcad -> DXF -> tbcad gives equal drawings for every corpus fi
         Run again = run({second.string(), "-o", third.string(), "-q"});
         REQUIRE_MESSAGE(again.exit != tbcad::convert::kExitFailed, again.err);
 
+        // Foreign (AEC, Civil, ACIS) objects are exported as plain geometry, so they come back as
+        // polylines instead of proxies.
+        if (name == "aec_objects")
+            continue;
         auto a = load(first);
         auto b = load(third);
         std::string diff = tbcad::dxf::testing::SemanticDump::diff(

@@ -1,6 +1,7 @@
 // Internal: the DXF -> Document importer. Public entry point is importDxf() in reader.h.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -57,6 +58,9 @@ struct LevelRow {
     double elevation = 0;
     int flags = 1;  // bit0 visible, bit1 locked
 };
+
+// Removes the text records from a proxy graphics stream (see proxy.cpp).
+void stripProxyText(std::vector<std::uint8_t>& raw);
 
 class Importer {
 public:
@@ -118,6 +122,15 @@ private:
     bool convSolid(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convLeader(const Record& r, std::vector<Entity>& out);
     bool convProxy(const Record& r, std::vector<Entity>& out);
+    // An entity of another application (AEC, Civil, ACIS ...) that carries proxy graphics.
+    bool convForeign(const Record& r, std::vector<Entity>& out);
+
+    // ---- proxy.cpp --------------------------------------------------------------------------
+    std::vector<std::uint8_t> proxyGraphicsOf(const Record& r) const;
+    std::size_t decodeProxyGraphics(std::span<const std::uint8_t> data, const EntityCommon& base,
+                                    ProxyData& proxy, std::vector<Entity>& texts,
+                                    std::string& problem);
+    DisplayStyle resolveProxyStyle(const EntityCommon& base, Color color);
 
     // ---- hatch.cpp --------------------------------------------------------------------------
     bool convHatch(const Record& r, const Frame& f, std::vector<Entity>& out);
@@ -151,6 +164,7 @@ private:
     std::set<LayerId> placeholderLayers_{};
     std::map<std::string, LinetypeId, std::less<>> ltypeByRaw_{};
     std::unordered_set<std::string> warnedMissing_{};
+    std::unordered_set<std::string> foreignShown_{};  // object types already reported as proxies
 
     // blocks
     BlockId curBlock_{};

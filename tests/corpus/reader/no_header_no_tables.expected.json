@@ -1,0 +1,20 @@
+{
+  "description": "only an ENTITIES section: version unknown, layers created from use",
+  "dxf": {
+    "CIRCLE": 1,
+    "LINE": 1
+  },
+  "exit": 1,
+  "ezdxf": false,
+  "kinds": {
+    "Circle": 1,
+    "Line": 1
+  },
+  "layers": [
+    "0",
+    "X"
+  ],
+  "warnings_has": [
+    "dxf.reader.missing_layer"
+  ]
+}
