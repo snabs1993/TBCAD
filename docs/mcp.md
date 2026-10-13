@@ -106,6 +106,18 @@ Editing tools (one undo step each, `AI: <tool>`):
   state. Insert with `add_entities` kind `insert` (`attributes: {TAG: value}`).
 - Dynamic blocks: `add_block_parameter` (linear, rotation, flip, visibility), `add_block_action` (stretch, move,
   scale), `set_dynamic_value` on an insert.
+- Selection-driven commands as tools: `layer_by_objects` (off, freeze, lock, unlock, isolate, unisolate, all_on,
+  thaw_all, match, merge), `delete_layer_with_objects`, `list_groups`, `group_entities`, `ungroup`,
+  `set_draw_order`, `clipboard` (copy, cut, paste, paste_block, paste_original; the clip is kept by the server),
+  `copy_to_level`, `region_op` (region, union, subtract, intersect). They run the real command, so problems the
+  command reports come back as tool errors.
+- Plot: `export_pdf` and `export_image` (PNG/JPEG at `dpi`) take `style` (plot style table); `plot_style` lists,
+  selects or imports tables (.ctb); `page_setup` lists, saves, applies, assigns, renames and deletes page setups.
+- Annotation: `annotation` reads and sets the annotation scale, the scale list, whether new objects start
+  annotative, and makes objects annotative with chosen scales. Entities show `annotative` and `annotativeScales`.
+- Drafting: `insert_symbol` (north arrow, grid bubble, level/section/elevation/detail marks, annotative). Any
+  text can carry a field such as `%<date>%` or `%<length:#ID:2:m>%` in its `value`. A closed polyline with
+  `wipeout: true` hides what is behind it.
 - Layers: `set_active_only`, `layer_state` (list, save, restore with `parts`, rename, delete).
 - Constraints: `list_constraints`, `add_constraint` (Coincident, Horizontal, Vertical, Parallel,
   Perpendicular, Equal, Tangent, Fix, Distance, Radius, Angle in degrees; solves and moves the geometry; a

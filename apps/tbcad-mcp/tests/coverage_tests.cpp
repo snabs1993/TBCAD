@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/dump.h"
@@ -284,4 +285,149 @@ TEST_CASE("ray, xline, mline and table can be written and read back") {
     CHECK(tg.find("columnWidths")->asArray()[1].asNumber() == 60);
     Json q = f.ok("query_entities", R"({"kinds":["table","ray","mline"]})");
     CHECK(q.find("entities")->asArray().size() == 4);
+}
+
+TEST_CASE("layer tools by object, groups, draw order and the clipboard") {
+    Full f;
+    f.ok("create_layer", R"({"name":"A"})");
+    f.ok("create_layer", R"({"name":"B"})");
+    std::string a = f.add(R"({"kind":"line","layer":"A","start":[0,0],"end":[10,0]})");
+    std::string b = f.add(R"({"kind":"line","layer":"B","start":[0,5],"end":[10,5]})");
+    Json offr = f.ok("layer_by_objects", "{\"action\":\"off\",\"ids\":[\"" + a + "\"]}");
+    (void)offr;
+    std::function<bool(const Json&)> isOn = [&](const Json& nodes) {
+        for (const Json& l : nodes.asArray()) {
+            if (l.find("name")->asString() == "A")
+                return l.find("on")->asBool();
+            if (const Json* ch = l.find("children"))
+                if (ch->isArray() && !isOn(*ch))
+                    return false;
+        }
+        return true;
+    };
+    const bool aOn = isOn(*f.ok("list_layers").find("layers"));
+    CHECK_FALSE(aOn);
+    f.ok("layer_by_objects", R"({"action":"all_on"})");
+    f.ok("layer_by_objects", "{\"action\":\"isolate\",\"ids\":[\"" + b + "\"]}");
+    f.ok("layer_by_objects", R"({"action":"unisolate"})");
+    f.ok("layer_by_objects",
+         "{\"action\":\"match\",\"ids\":[\"" + a + "\"],\"target\":\"" + b + "\"}");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + a + "\"}").find("layer")->asString() == "B");
+    CHECK(f.fails("layer_by_objects", R"({"action":"bogus"})").size() > 0);
+
+    f.ok("group_entities", "{\"ids\":[\"" + a + "\",\"" + b + "\"],\"name\":\"pair\"}");
+    CHECK(f.ok("list_groups").find("groups")->asArray().size() == 1);
+    CHECK(f.fails("group_entities", "{\"ids\":[\"" + a + "\"],\"name\":\"pair\"}").size() > 0);
+    f.ok("ungroup", "{\"id\":\"" + a + "\"}");
+    CHECK(f.ok("list_groups").find("groups")->asArray().empty());
+
+    f.ok("set_draw_order", "{\"ids\":[\"" + a + "\"],\"order\":\"front\"}");
+    f.ok("set_draw_order",
+         "{\"ids\":[\"" + a + "\"],\"order\":\"below\",\"reference\":\"" + b + "\"}");
+
+    Json copied = f.ok("clipboard", "{\"action\":\"copy\",\"ids\":[\"" + a + "\"]}");
+    (void)copied;
+    Json pasted = f.ok("clipboard", R"({"action":"paste","point":[100,100]})");
+    CHECK(pasted.find("created")->asArray().size() == 1);
+    f.ok("clipboard", R"({"action":"paste_original"})");
+}
+
+TEST_CASE("region booleans and copy to level") {
+    Full f;
+    std::string p =
+        f.add(R"({"kind":"polyline","closed":true,"vertices":[[0,0],[10,0],[10,10],[0,10]]})");
+    std::string q =
+        f.add(R"({"kind":"polyline","closed":true,"vertices":[[5,5],[15,5],[15,15],[5,15]]})");
+    Json u = f.ok("region_op", "{\"op\":\"union\",\"ids\":[\"" + p + "\",\"" + q + "\"]}");
+    CHECK(u.find("created")->asArray().size() == 1);
+    CHECK(u.find("erased")->asArray().size() == 2);
+    CHECK(f.fails("region_op", "{\"op\":\"union\",\"ids\":[\"" + p + "\"]}").size() > 0);
+    std::string r =
+        f.add(R"({"kind":"polyline","closed":true,"vertices":[[0,0],[4,0],[4,4],[0,4]]})");
+    std::string c = f.add(R"({"kind":"circle","center":[2,2],"radius":1})");
+    Json sub = f.ok("region_op",
+                    "{\"op\":\"subtract\",\"ids\":[\"" + r + "\"],\"subtract\":[\"" + c + "\"]}");
+    CHECK(sub.find("created")->asArray().size() >= 1);
+}
+
+TEST_CASE("annotation scale: settings, annotative text") {
+    Full f;
+    Json st = f.ok("annotation", R"({"action":"get"})");
+    CHECK(st.find("scaleList")->asArray().size() > 3);
+    f.ok("annotation", R"({"action":"set_scale","scale":50})");
+    CHECK(f.ok("annotation").find("scale")->asNumber() == 50);
+    f.ok("annotation", R"({"action":"add_scale","scale":77})");
+    bool has77 = false;
+    const Json after = f.ok("annotation");
+    for (const Json& n : after.find("scaleList")->asArray())
+        has77 = has77 || n.asNumber() == 77;
+    CHECK(has77);
+    f.ok("annotation", R"({"action":"delete_scale","scale":77})");
+    CHECK(f.fails("annotation", R"({"action":"set_scale","scale":0})").size() > 0);
+    std::string t = f.add(R"({"kind":"text","position":[0,0],"height":2.5,"value":"Note"})");
+    f.ok("annotation",
+         "{\"action\":\"set_annotative\",\"ids\":[\"" + t + "\"],\"scales\":[50,100]}");
+    Json g = f.ok("get_entity", "{\"id\":\"" + t + "\"}");
+    CHECK(g.find("annotative")->asBool());
+    CHECK(g.find("annotativeScales")->asArray().size() == 2);
+    f.ok("annotation", "{\"action\":\"set_annotative\",\"ids\":[\"" + t + "\"],\"on\":false}");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + t + "\"}").find("annotative") == nullptr);
+    f.ok("annotation", R"({"action":"new_objects","on":true})");
+    CHECK(f.ok("annotation").find("newObjectsAnnotative")->asBool());
+}
+
+TEST_CASE("plot: page setups, plot style tables and image export") {
+    Full f;
+    f.ok("add_entities", R"({"entities":[{"kind":"line","start":[0,0],"end":[100,50]}]})");
+    CHECK(f.ok("page_setup").find("pageSetups")->asArray().empty());
+    f.ok("page_setup", R"({"action":"save","name":"A3 mono"})");
+    f.ok("create_layout", R"({"name":"Sheet 1","paper":"A4"})");
+    Json as = f.ok("page_setup", R"({"action":"assign","name":"A3 mono","layout":"Sheet 1"})");
+    CHECK(as.find("pageSetups")->asArray()[0].find("usedBy")->asArray().size() == 1);
+    f.ok("page_setup", R"({"action":"rename","name":"A3 mono","new_name":"Mono"})");
+    CHECK(f.fails("page_setup", R"({"action":"apply","name":"Nope"})").size() > 0);
+    f.ok("page_setup", R"({"action":"delete","name":"Mono"})");
+    CHECK(f.ok("page_setup").find("pageSetups")->asArray().empty());
+
+    CHECK(f.ok("plot_style").find("messages")->asArray().size() >= 3);
+    f.ok("plot_style", R"({"action":"select","name":"grayscale.ctb"})");
+    CHECK(f.fails("plot_style", R"({"action":"select","name":"no-such-table"})").size() > 0);
+
+    auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_image";
+    std::filesystem::create_directories(dir);
+    auto png = dir / "plot.png";
+    f.ok("export_image", "{\"path\":\"" + png.generic_string() + "\",\"dpi\":72,\"paper\":\"A5\"}");
+    {
+        std::ifstream in(png, std::ios::binary);
+        std::string head(8, ' ');
+        in.read(head.data(), 8);
+        CHECK(head.substr(1, 3) == "PNG");
+    }
+    auto jpg = dir / "plot.jpg";
+    f.ok("export_image",
+         "{\"path\":\"" + jpg.generic_string() + "\",\"dpi\":72,\"style\":\"none\"}");
+    CHECK(std::filesystem::exists(jpg));
+    CHECK(
+        f.fails("export_image", "{\"path\":\"" + (dir / "x.bmp").generic_string() + "\"}").size() >
+        0);
+    f.ok("export_pdf",
+         "{\"path\":\"" + (dir / "s.pdf").generic_string() + "\",\"style\":\"monochrome.ctb\"}");
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("symbols, wipeout flag and fields in text") {
+    Full f;
+    Json made = f.ok("insert_symbol",
+                     R"({"symbol":"grid_bubble","position":[0,0],"attributes":{"ID":"A"}})");
+    CHECK(made.find("created")->asArray().size() >= 1);
+    f.ok("insert_symbol", R"({"symbol":"north_arrow","position":[100,0],"rotation":30})");
+    CHECK(f.fails("insert_symbol", R"({"symbol":"pizza","position":[0,0]})").size() > 0);
+    std::string w = f.add(R"({"kind":"polyline","closed":true,"wipeout":true,
+        "vertices":[[0,0],[10,0],[10,10],[0,10]]})");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + w + "\"}").find("wipeout")->asBool());
+    f.ok("modify_entities", "{\"ids\":[\"" + w + "\"],\"set\":{\"wipeout\":false}}");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + w + "\"}").find("wipeout") == nullptr);
+    std::string t = f.add(R"({"kind":"text","position":[0,0],"height":2.5,"value":"%<date>%"})");
+    CHECK(f.ok("get_entity", "{\"id\":\"" + t + "\"}").find("value")->asString() == "%<date>%");
 }

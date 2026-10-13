@@ -187,6 +187,14 @@ void registerCommandTools(ToolSet& tools);
 void registerModifyTools(ToolSet& tools);
 void registerLayoutTools(ToolSet& tools);
 void registerBlockTools(ToolSet& tools);
+void registerOpsTools(ToolSet& tools);
+
+// "x,y" as a command input.
+std::string pointInput(Vec2 p);
+// Runs a command with scripted inputs and turns a failure into a tool error naming the prompts it
+// saw. On success the result has messages, created and erased ids (plus `extra`).
+ToolResult runChecked(DrawingSession& s, const std::string& command, std::vector<Json> inputs,
+                      Json::Object extra = {});
 void registerConstraintTools(ToolSet& tools);
 
 // Result of running a command with scripted input (also used by export_pdf / export_dxf).
