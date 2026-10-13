@@ -344,6 +344,46 @@ void draw(ui::PanelContext& pc) {
     ImGui::SameLine();
     if (ImGui::Button("Export JPEG"))
         doExport(Format::Jpeg);
+
+    // Printer
+    ImGui::Separator();
+    if (!print::available()) {
+        ImGui::TextDisabled("Printing is available in the Windows version. Export a PDF instead.");
+    } else {
+        const std::string chosen = pc.host->setting("plot.printer").value_or("");
+        if (ImGui::BeginCombo("Printer", chosen.empty() ? "<default printer>" : chosen.c_str())) {
+            if (ImGui::Selectable("<default printer>", chosen.empty()))
+                pc.host->setSetting("plot.printer", "");
+            for (const auto& p : print::listPrinters())
+                if (ImGui::Selectable(p.name.c_str(), p.name == chosen))
+                    pc.host->setSetting("plot.printer", p.name);
+            ImGui::EndCombo();
+        }
+        int copies =
+            std::clamp(std::atoi(pc.host->setting("plot.copies").value_or("1").c_str()), 1, 99);
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::InputInt("Copies", &copies)) {
+            copies = std::clamp(copies, 1, 99);
+            pc.host->setSetting("plot.copies", std::to_string(copies));
+        }
+        auto doPrint = [&](bool dialog) {
+            auto sheet = buildPlotSheet(*pc.doc, *pc.host, s);
+            if (!sheet) {
+                st.message = sheet.error().message;
+                return;
+            }
+            auto r = print::printSheet(sheet.value(), printJob(*pc.host, dialog));
+            st.message =
+                r ? "Sent " + std::to_string(sheet.value().entityCount) + " objects to the printer."
+                  : r.error().message;
+            pc.host->print(st.message);
+        };
+        if (ImGui::Button("Print"))
+            doPrint(false);
+        ImGui::SameLine();
+        if (ImGui::Button("Print dialog..."))
+            doPrint(true);
+    }
     if (!st.message.empty())
         ImGui::TextWrapped("%s", st.message.c_str());
 }

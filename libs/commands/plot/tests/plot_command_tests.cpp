@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/ui/ui_registry.h"
@@ -339,4 +340,21 @@ TEST_CASE("PAGESETUP saves the plot options, applies them and assigns them to la
     CHECK(layout::findLayout(f.doc, "Detail")->pageSetup.empty());
     CHECK(f.host->run("PAGESETUP", {"Apply", "Nope"}).finished);
     CHECK(f.host->logContains("No page setup named \"Nope\""));
+}
+
+TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {
+    Fixture f;
+    REQUIRE(io::writeTbcad(f.doc, f.dir / "d.tbcad").ok());
+    {
+        std::ofstream list(f.dir / "list.txt");
+        list << "d.tbcad\nd.tbcad\n";
+    }
+    CHECK(f.reg.find("PUBLISH") == f.reg.find("PLOTSET"));
+    const auto out = f.path("set.pdf");
+    CHECK(f.host->run("PUBLISH", {f.path("list.txt"), out}).finished);
+    CHECK(f.host->logContains("Plotted 2 sheets"));
+    CHECK(std::filesystem::exists(out));
+    CHECK(f.host->run("PLOTSET", {f.path("list.txt"), "Printer"}).finished);
+    if (!print::available())
+        CHECK(f.host->logContains("Printing is only available"));
 }

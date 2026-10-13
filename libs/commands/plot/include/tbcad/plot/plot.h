@@ -11,6 +11,7 @@
 #include "tbcad/export/plot.h"
 #include "tbcad/layout/pagesetup.h"
 #include "tbcad/plotstyle/plotstyle.h"
+#include "tbcad/print/print.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::plot {
@@ -56,6 +57,10 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(const
                                                                            const std::string& name);
 // Built-in names, then the files of the user folder.
 std::vector<std::string> listStyleTables(const cmd::IHost& host);
+
+// The print job the "plot.printer" / "plot.copies" settings describe (PRINTER command), titled
+// after the open drawing.
+print::PrintJob printJob(const cmd::IHost& host, bool showDialog);
 
 // ---- page setups (named plot options saved in the drawing, see layout/pagesetup.h)
 // ----------------

@@ -65,13 +65,11 @@ Result<std::vector<SheetEntry>> readSheetList(const std::filesystem::path& listF
     return parseSheetList(buf.str(), listFile.parent_path());
 }
 
-Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
-                                     const exportlib::PlotSettings& base,
-                                     const std::filesystem::path& pdfFile,
-                                     const layout::StyleResolver& styles) {
+Result<SheetSet> buildSheetList(const std::vector<SheetEntry>& entries,
+                                const exportlib::PlotSettings& base,
+                                const layout::StyleResolver& styles) {
     std::map<std::filesystem::path, std::unique_ptr<Document>> docs;
-    std::vector<exportlib::PlotSheet> sheets;
-    SheetSetReport report;
+    SheetSet set;
     for (const SheetEntry& e : entries) {
         const std::string what =
             e.file.filename().string() + (e.layout.empty() ? "" : " / " + e.layout);
@@ -91,13 +89,25 @@ Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
         if (!sheet)
             return Error{sheet.error().code, what + ": " + sheet.error().message};
         if (sheet.value().layout.overflows)
-            report.warnings.push_back(what + " is larger than its paper");
-        sheets.push_back(std::move(sheet.value()));
+            set.warnings.push_back(what + " is larger than its paper");
+        set.sheets.push_back(std::move(sheet.value()));
     }
-    auto written = exportlib::writePdfPages(sheets, pdfFile.string());
+    return set;
+}
+
+Result<SheetSetReport> plotSheetList(const std::vector<SheetEntry>& entries,
+                                     const exportlib::PlotSettings& base,
+                                     const std::filesystem::path& pdfFile,
+                                     const layout::StyleResolver& styles) {
+    auto set = buildSheetList(entries, base, styles);
+    if (!set)
+        return set.error();
+    auto written = exportlib::writePdfPages(set.value().sheets, pdfFile.string());
     if (!written)
         return written.error();
-    report.pages = sheets.size();
+    SheetSetReport report;
+    report.pages = set.value().sheets.size();
+    report.warnings = std::move(set.value().warnings);
     return report;
 }
 

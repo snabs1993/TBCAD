@@ -16,6 +16,21 @@ int copiesOf(const cmd::IHost& host) {
     }
 }
 
+}  // namespace
+
+print::PrintJob printJob(const cmd::IHost& host, bool showDialog) {
+    print::PrintJob job;
+    job.printer = host.setting(kPrinterKey).value_or("");
+    job.copies = copiesOf(host);
+    job.showDialog = showDialog;
+    const std::string file = host.setting("document.file").value_or("");
+    if (!file.empty())
+        job.title = file;
+    return job;
+}
+
+namespace {
+
 // PRINTER [PRN]: sends the sheet the plot settings describe to a Windows printer, through the
 // system print dialog (default) or straight to a named printer.
 class PrinterCommand final : public cmd::Command {
@@ -68,13 +83,7 @@ public:
                     ctx.message(sheet.error().message);
                     continue;
                 }
-                print::PrintJob job;
-                job.printer = chosen;
-                job.copies = copiesOf(ctx.host());
-                job.showDialog = kw == "Dialog";
-                const std::string file = ctx.host().setting("document.file").value_or("");
-                if (!file.empty())
-                    job.title = file;
+                const print::PrintJob job = printJob(ctx.host(), kw == "Dialog");
                 auto r = print::printSheet(sheet.value(), job);
                 ctx.message(r ? "Sent " + std::to_string(sheet.value().entityCount) +
                                     " objects to the printer."

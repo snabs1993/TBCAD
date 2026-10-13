@@ -270,7 +270,7 @@ public:
     std::string_view name() const override { return "PLOTSET"; }
     std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT", "PUBLISH"}; }
     std::string_view description() const override {
-        return "Plot a list of layouts from several drawings into one PDF";
+        return "Plot a list of layouts from several drawings into one PDF or onto a printer";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::StringOptions lo;
@@ -284,12 +284,34 @@ public:
             bool hasExt = dot != std::string::npos && (slash == std::string::npos || dot > slash);
             fo.defaultValue = (hasExt ? list.text.substr(0, dot) : list.text) + ".pdf";
         }
-        auto file = co_await ctx.getString("Output PDF file", fo);
+        auto file =
+            co_await ctx.getString("Output PDF file (or Printer / Dialog to print the sheets)", fo);
         if (!file.ok())
             co_return;
         auto entries = sheets::readSheetList(list.text);
         if (!entries) {
             ctx.message(entries.error().message);
+            co_return;
+        }
+        if (lower(file.text) == "printer" || lower(file.text) == "dialog") {
+            if (!print::available()) {
+                ctx.message(
+                    "Printing is only available in the Windows version. Plot to a PDF instead.");
+                co_return;
+            }
+            auto set = sheets::buildSheetList(entries.value(), loadSettings(ctx.host()),
+                                              styleResolver(ctx.host()));
+            if (!set) {
+                ctx.message(set.error().message);
+                co_return;
+            }
+            for (const auto& w : set.value().warnings)
+                ctx.message("Warning: " + w);
+            auto r = print::printSheets(set.value().sheets,
+                                        printJob(ctx.host(), lower(file.text) == "dialog"));
+            ctx.message(r ? "Sent " + std::to_string(set.value().sheets.size()) +
+                                " sheets to the printer."
+                          : r.error().message);
             co_return;
         }
         auto out = withExtension(file.text, Format::Pdf);

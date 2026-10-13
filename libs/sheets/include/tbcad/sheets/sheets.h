@@ -34,6 +34,15 @@ struct SheetSetReport {
     std::vector<std::string> warnings{};  // sheets that overflow their paper
 };
 
+struct SheetSet {
+    std::vector<exportlib::PlotSheet> sheets{};
+    std::vector<std::string> warnings{};  // sheets that overflow their paper
+};
+// Builds one sheet per entry (each drawing is loaded once). The error names the entry that failed.
+Result<SheetSet> buildSheetList(const std::vector<SheetEntry>& entries,
+                                const exportlib::PlotSettings& base,
+                                const layout::StyleResolver& styles = {});
+
 // A layout (or model space) with a page setup is plotted with that setup instead of `base`;
 // `styles` finds the setup's plot style table.
 // Builds one sheet per entry (each drawing is loaded once) and writes them as the pages of one PDF.
