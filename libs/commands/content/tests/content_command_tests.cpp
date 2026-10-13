@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <filesystem>
 
 #include "tbcad/cmd/cmd.h"
@@ -12,7 +13,9 @@ namespace fs = std::filesystem;
 namespace {
 
 struct TempDir {
-    fs::path path = fs::temp_directory_path() / ("tbcad-content-" + std::to_string(std::rand()));
+    fs::path path = fs::temp_directory_path() /
+                    (std::string("tbcad-content-") +
+                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     TempDir() { fs::create_directories(path); }
     ~TempDir() {
         std::error_code ec;
