@@ -58,7 +58,7 @@ public:
 
             if (kw == "Export") {
                 cmd::StringOptions fo;
-                fo.defaultValue = lastFile(ctx.host(), format);
+                fo.defaultValue = defaultFile(ctx.host(), format);
                 auto file = co_await ctx.getString("Output file", fo);
                 if (!file.ok())
                     co_return;
@@ -204,6 +204,17 @@ private:
     Format format_;
 };
 
+// PLOTPANEL: shows the Plot panel (settings with live preview).
+class PlotPanelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLOTPANEL"; }
+    std::string_view description() const override { return "Show the Plot panel with preview"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("plot");
+        co_return;
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -213,6 +224,7 @@ void registerCommands(cmd::Registry& registry) {
         "EXPORTPDF", std::vector<std::string>{}, "Export the drawing to a PDF file", Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
+    (void)registry.add(std::make_unique<PlotPanelCommand>());
 }
 
 }  // namespace tbcad::plot

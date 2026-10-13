@@ -809,6 +809,8 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
 }
 
 std::optional<std::string> AppCore::setting(std::string_view key) const {
+    if (key == "document.file")
+        return documentFile();
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             return std::string(settings_.getBool(key) ? "1" : "0");

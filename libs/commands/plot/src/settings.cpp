@@ -111,6 +111,17 @@ std::string lastFile(const cmd::IHost& h, Format f) {
     return f == Format::Pdf ? "drawing.pdf" : "drawing.svg";
 }
 
+std::string defaultFile(const cmd::IHost& h, Format f) {
+    std::string doc = h.documentFile();
+    if (doc.empty())
+        return lastFile(h, f);
+    auto dot = doc.find_last_of('.');
+    auto slash = doc.find_last_of("/\\");
+    if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
+        doc.resize(dot);
+    return doc + (f == Format::Pdf ? ".pdf" : ".svg");
+}
+
 void setLastFile(cmd::IHost& h, Format f, const std::string& path) {
     h.setSetting(f == Format::Pdf ? "plot.file.pdf" : "plot.file.svg", path);
 }
