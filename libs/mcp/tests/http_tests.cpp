@@ -2,7 +2,7 @@
 #include <cstring>
 #include <thread>
 
-#include "net/socket.h"
+#include "tbcad/net/socket.h"
 #include "rig.h"
 #include "tbcad/mcp/http_client.h"
 #include "tbcad/mcp/http_server.h"
