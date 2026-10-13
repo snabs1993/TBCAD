@@ -42,6 +42,7 @@ private:
     void aliases(ui::AppCore& core);
     void keybindings(ui::AppCore& core);
     void captureKey(ui::AppCore& core);
+    void keyProfile(ui::AppCore& core);
 
     Hooks hooks_;
     bool wantOpen_ = false;
@@ -53,10 +54,14 @@ private:
     std::string newCommand_{};
     std::string aliasFilter_{};
     std::string aliasError_{};
+    std::string pgpPath_{};
+    std::string pgpMessage_{};
     // Keybindings page.
     std::string keyFilter_{};
     std::string capturing_{};  // action being rebound; empty = none
     std::string keyMessage_{};
+    std::string keyFile_{};
+    std::string keyFileMessage_{};
     std::string pendingChord_{};
     std::string pendingConflict_{};
 };

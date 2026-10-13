@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <fstream>
 
 #include "tbcad/tmpl/tmpl.h"
@@ -11,7 +12,9 @@ namespace {
 struct TempDir {
     fs::path path;
     TempDir() {
-        path = fs::temp_directory_path() / ("tbcad-tmpl-" + std::to_string(std::rand()));
+        path = fs::temp_directory_path() /
+               (std::string("tbcad-tmpl-") +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         fs::create_directories(path);
     }
     ~TempDir() {
