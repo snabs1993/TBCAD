@@ -215,6 +215,10 @@ ToolResult exportPdf(ToolContext& ctx, const Json& a) {
     option("orientation", "Orientation");
     option("scale", "Scale");
     option("area", "Area");
+    option("color", "Color");
+    // Always set the layout so an earlier call's choice does not stick: "" = model space.
+    inputs.emplace_back("Layout");
+    inputs.push_back(Json(Json::Object{{"text", argString(a, "layout")}}));
     inputs.emplace_back("Export");
     inputs.emplace_back(path);
     return runWith(ctx, "EXPORTPDF", inputs, false);
@@ -248,21 +252,26 @@ void registerCommandTools(ToolSet& tools) {
                outSchema({"finished", "messages", "prompts", "created", "changed", "erased"}),
                Edit::Document, false, false, true, runCommand});
 
-    Tool pdf{"export_pdf",
-             "Export PDF",
-             "Writes the drawing to a PDF at the given scale (the EXPORTPDF command).",
-             tObject({{"path", tString("absolute path ending in .pdf")},
-                      {"paper", tString("A0..A4, ANSI A..E")},
-                      {"orientation", tString("Portrait or Landscape")},
-                      {"scale", tString("Fit or 1:N, e.g. 1:100")},
-                      {"area", tString("Extents or Display")}},
-                     {"path"}),
-             outSchema({"finished", "messages"}),
-             Edit::Session,
-             false,
-             false,
-             true,
-             exportPdf};
+    Tool pdf{
+        "export_pdf",
+        "Export PDF",
+        "Writes the drawing, or one of its layouts, to a PDF at the given scale (the EXPORTPDF "
+        "command). With `layout` the sheet is plotted 1:1 with its viewports; paper, "
+        "orientation, scale and area then come from the layout.",
+        tObject({{"path", tString("absolute path ending in .pdf")},
+                 {"paper", tString("A0..A4, ANSI A..E")},
+                 {"orientation", tString("Portrait or Landscape")},
+                 {"scale", tString("Fit or 1:N, e.g. 1:100")},
+                 {"area", tString("Extents or Display")},
+                 {"color", tString("Color, Monochrome or Greyscale")},
+                 {"layout", tString("name of a layout to plot; default: model space")}},
+                {"path"}),
+        outSchema({"finished", "messages"}),
+        Edit::Session,
+        false,
+        false,
+        true,
+        exportPdf};
     pdf.available = [](DrawingSession& s) { return s.registry().find("EXPORTPDF") != nullptr; };
     tools.add(std::move(pdf));
 
