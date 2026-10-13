@@ -192,10 +192,14 @@ struct FontLibrary::Impl {
         std::unordered_map<OutlineKey, GlyphOutline, OutlineKeyHash> outlines;
 
         ~Face() {
-            if (hbFont) hb_font_destroy(hbFont);
-            if (hbFace) hb_face_destroy(hbFace);
-            if (blob) hb_blob_destroy(blob);
-            if (ft) FT_Done_Face(ft);
+            if (hbFont)
+                hb_font_destroy(hbFont);
+            if (hbFace)
+                hb_face_destroy(hbFace);
+            if (blob)
+                hb_blob_destroy(blob);
+            if (ft)
+                FT_Done_Face(ft);
         }
     };
 
@@ -219,16 +223,17 @@ struct FontLibrary::Impl {
     }
     ~Impl() {
         faces.clear();  // faces must go before the library
-        if (ftLib) FT_Done_FreeType(ftLib);
+        if (ftLib)
+            FT_Done_FreeType(ftLib);
     }
 
-    Face* get(FontId id) {
-        return id.value < faces.size() ? faces[id.value].get() : nullptr;
-    }
+    Face* get(FontId id) { return id.value < faces.size() ? faces[id.value].get() : nullptr; }
 
     Result<FontId> addFace(std::vector<unsigned char> data, int index, const std::string& key) {
-        if (!ftLib) return Error{"FreeType could not be initialised"};
-        if (data.empty()) return Error{"font file is empty"};
+        if (!ftLib)
+            return Error{"FreeType could not be initialised"};
+        if (data.empty())
+            return Error{"font file is empty"};
         auto face = std::make_unique<Face>();
         face->data = std::move(data);
         if (FT_New_Memory_Face(ftLib, face->data.data(), static_cast<FT_Long>(face->data.size()),
@@ -259,29 +264,37 @@ struct FontLibrary::Impl {
         m.ascender = face->ft->ascender / upem;
         m.descender = face->ft->descender / upem;
         if (auto* os2 = static_cast<TT_OS2*>(FT_Get_Sfnt_Table(face->ft, FT_SFNT_OS2))) {
-            if (os2->version >= 2 && os2->sCapHeight > 0) m.capHeight = os2->sCapHeight / upem;
-            if (os2->version >= 2 && os2->sxHeight > 0) m.xHeight = os2->sxHeight / upem;
+            if (os2->version >= 2 && os2->sCapHeight > 0)
+                m.capHeight = os2->sCapHeight / upem;
+            if (os2->version >= 2 && os2->sxHeight > 0)
+                m.xHeight = os2->sxHeight / upem;
         }
         face->family = face->ft->family_name ? face->ft->family_name : "";
 
         const FontId id{static_cast<std::uint32_t>(faces.size())};
         faces.push_back(std::move(face));
-        if (!key.empty()) byPath[{key, index}] = id;
+        if (!key.empty())
+            byPath[{key, index}] = id;
         return id;
     }
 
     Result<FontId> loadFile(const std::filesystem::path& path, int index) {
         std::error_code ec;
         const std::string key = std::filesystem::absolute(path, ec).generic_string();
-        if (auto it = byPath.find({key, index}); it != byPath.end()) return it->second;
+        if (auto it = byPath.find({key, index}); it != byPath.end())
+            return it->second;
         const auto size = std::filesystem::file_size(path, ec);
-        if (ec) return Error{"cannot open font file: " + path.generic_string()};
-        if (size == 0 || size > kMaxFontFileBytes) return Error{"unreasonable font file size"};
+        if (ec)
+            return Error{"cannot open font file: " + path.generic_string()};
+        if (size == 0 || size > kMaxFontFileBytes)
+            return Error{"unreasonable font file size"};
         std::ifstream in(path, std::ios::binary);
-        if (!in) return Error{"cannot open font file: " + path.generic_string()};
+        if (!in)
+            return Error{"cannot open font file: " + path.generic_string()};
         std::vector<unsigned char> data(static_cast<std::size_t>(size));
         in.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
-        if (!in) return Error{"cannot read font file: " + path.generic_string()};
+        if (!in)
+            return Error{"cannot read font file: " + path.generic_string()};
         return addFace(std::move(data), index, key);
     }
 
@@ -290,15 +303,18 @@ struct FontLibrary::Impl {
         const char* file = n == "sarabun" ? "Sarabun-Regular.ttf"
                            : n == "lato"  ? "Lato-Regular.ttf"
                                           : nullptr;
-        if (!file) return Error{"unknown bundled font: " + std::string(name)};
+        if (!file)
+            return Error{"unknown bundled font: " + std::string(name)};
         std::vector<std::filesystem::path> dirs;
-        if (!bundledDir.empty()) dirs.push_back(bundledDir);
+        if (!bundledDir.empty())
+            dirs.push_back(bundledDir);
         dirs.emplace_back("assets/fonts");
         std::string last = "bundled font not found: ";
         last += file;
         for (const auto& d : dirs) {
             std::error_code ec;
-            if (std::filesystem::exists(d / file, ec)) return loadFile(d / file, 0);
+            if (std::filesystem::exists(d / file, ec))
+                return loadFile(d / file, 0);
         }
         return Error{last};
     }
@@ -306,14 +322,16 @@ struct FontLibrary::Impl {
     std::optional<FontId> thaiFont() {
         if (!thaiTried) {
             thaiTried = true;
-            if (auto r = loadBundledLocked("Sarabun"); r.ok()) thai = r.value();
+            if (auto r = loadBundledLocked("Sarabun"); r.ok())
+                thai = r.value();
         }
         return thai;
     }
     std::optional<FontId> latinFont() {
         if (!latinTried) {
             latinTried = true;
-            if (auto r = loadBundledLocked("Lato"); r.ok()) latin = r.value();
+            if (auto r = loadBundledLocked("Lato"); r.ok())
+                latin = r.value();
         }
         return latin;
     }
@@ -324,9 +342,11 @@ struct FontLibrary::Impl {
     }
 
     void scanSystemFonts() {
-        if (systemScanned) return;
+        if (systemScanned)
+            return;
         systemScanned = true;
-        if (!ftLib) return;
+        if (!ftLib)
+            return;
         std::vector<std::filesystem::path> roots;
 #ifdef _WIN32
         roots.emplace_back("C:\\Windows\\Fonts");
@@ -340,9 +360,11 @@ struct FontLibrary::Impl {
                 root, std::filesystem::directory_options::skip_permission_denied, ec);
             for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
                 std::error_code fec;
-                if (!it->is_regular_file(fec)) continue;
+                if (!it->is_regular_file(fec))
+                    continue;
                 const std::string ext = lower(it->path().extension().string());
-                if (ext != ".ttf" && ext != ".otf" && ext != ".ttc" && ext != ".otc") continue;
+                if (ext != ".ttf" && ext != ".otf" && ext != ".ttc" && ext != ".otc")
+                    continue;
                 FT_Face face = nullptr;
                 if (FT_New_Face(ftLib, it->path().string().c_str(), 0, &face) != 0 || !face) {
                     continue;
@@ -357,12 +379,15 @@ struct FontLibrary::Impl {
                             break;
                         }
                     }
-                    if (!face->family_name || !FT_IS_SCALABLE(face)) continue;
-                    systemFonts.push_back({it->path(), static_cast<int>(i), lower(face->family_name),
+                    if (!face->family_name || !FT_IS_SCALABLE(face))
+                        continue;
+                    systemFonts.push_back({it->path(), static_cast<int>(i),
+                                           lower(face->family_name),
                                            (face->style_flags & FT_STYLE_FLAG_BOLD) != 0,
                                            (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0});
                 }
-                if (face) FT_Done_Face(face);
+                if (face)
+                    FT_Done_Face(face);
             }
         }
     }
@@ -401,24 +426,29 @@ std::optional<FontId> FontLibrary::findSystem(std::string_view family, bool bold
     const SystemEntry* best = nullptr;
     int bestScore = -1;
     for (const auto& e : impl_->systemFonts) {
-        if (e.family != want) continue;
+        if (e.family != want)
+            continue;
         const int score = (e.bold == bold ? 2 : 0) + (e.italic == italic ? 1 : 0);
         if (score > bestScore) {
             best = &e;
             bestScore = score;
         }
     }
-    if (!best) return std::nullopt;
+    if (!best)
+        return std::nullopt;
     auto r = impl_->loadFile(best->path, best->index);
-    if (!r.ok()) return std::nullopt;
+    if (!r.ok())
+        return std::nullopt;
     return r.value();
 }
 
 std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Direction direction) {
     std::lock_guard lock(impl_->mutex);
     std::vector<ShapedRun> runs;
-    if (!impl_->get(font) || utf8.empty()) return runs;
-    if (utf8.size() > 0x7FFFFFFF) return runs;
+    if (!impl_->get(font) || utf8.empty())
+        return runs;
+    if (utf8.size() > 0x7FFFFFFF)
+        return runs;
 
     std::vector<FontId> chain{font};
     for (auto extra : {impl_->thaiFont(), impl_->latinFont()}) {
@@ -448,16 +478,17 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
     hb_buffer_t* buf = hb_buffer_create();
     for (std::size_t i = 0; i < cps.size();) {
         std::size_t j = i + 1;
-        while (j < cps.size() && pick[j] == pick[i]) ++j;
+        while (j < cps.size() && pick[j] == pick[i])
+            ++j;
         const std::uint32_t begin = cps[i].offset;
-        const std::uint32_t end = j < cps.size() ? cps[j].offset
-                                                 : static_cast<std::uint32_t>(utf8.size());
+        const std::uint32_t end =
+            j < cps.size() ? cps[j].offset : static_cast<std::uint32_t>(utf8.size());
         Impl::Face* f = impl_->get(chain[pick[i]]);
 
         hb_buffer_clear_contents(buf);
         hb_buffer_add_utf8(buf, utf8.data(), static_cast<int>(utf8.size()), begin, end - begin);
-        hb_buffer_set_direction(buf, direction == Direction::RTL ? HB_DIRECTION_RTL
-                                                                 : HB_DIRECTION_LTR);
+        hb_buffer_set_direction(buf,
+                                direction == Direction::RTL ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
         hb_buffer_guess_segment_properties(buf);
         hb_shape(f->hbFont, buf, nullptr, 0);
 
@@ -476,7 +507,8 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
         i = j;
     }
     hb_buffer_destroy(buf);
-    if (direction == Direction::RTL) std::reverse(runs.begin(), runs.end());
+    if (direction == Direction::RTL)
+        std::reverse(runs.begin(), runs.end());
     return runs;
 }
 
@@ -484,14 +516,17 @@ const GlyphOutline& FontLibrary::outline(FontId font, std::uint32_t glyphId, dou
     static const GlyphOutline kEmpty;
     std::lock_guard lock(impl_->mutex);
     Impl::Face* f = impl_->get(font);
-    if (!f) return kEmpty;
-    if (!(toleranceEm > 1e-6)) toleranceEm = 1e-6;
+    if (!f)
+        return kEmpty;
+    if (!(toleranceEm > 1e-6))
+        toleranceEm = 1e-6;
     std::uint64_t bits = 0;
     static_assert(sizeof(bits) == sizeof(toleranceEm));
     std::memcpy(&bits, &toleranceEm, sizeof(bits));
     const OutlineKey key{glyphId, bits};
     auto [it, inserted] = f->outlines.try_emplace(key);
-    if (!inserted) return it->second;
+    if (!inserted)
+        return it->second;
 
     GlyphOutline& out = it->second;
     if (FT_Load_Glyph(f->ft, glyphId, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) !=
@@ -509,7 +544,8 @@ const GlyphOutline& FontLibrary::outline(FontId font, std::uint32_t glyphId, dou
         out.contours.clear();
         return out;
     }
-    if (!out.contours.empty()) fl.closeContour();
+    if (!out.contours.empty())
+        fl.closeContour();
     return out;
 }
 

@@ -37,7 +37,8 @@ double signedArea(const Contour& c) {
 
 std::vector<ShapedGlyph> flat(const std::vector<ShapedRun>& runs) {
     std::vector<ShapedGlyph> out;
-    for (const auto& r : runs) out.insert(out.end(), r.glyphs.begin(), r.glyphs.end());
+    for (const auto& r : runs)
+        out.insert(out.end(), r.glyphs.begin(), r.glyphs.end());
     return out;
 }
 
@@ -49,8 +50,10 @@ TEST_CASE("Latin text shapes to one glyph per letter with positive advances") {
         const auto runs = f.lib.shape(id, "Hello");
         REQUIRE(runs.size() == 1);
         REQUIRE(runs[0].glyphs.size() == 5);
-        for (const auto& g : runs[0].glyphs) CHECK(g.xAdvance > 0);
-        for (std::uint32_t i = 0; i < 5; ++i) CHECK(runs[0].glyphs[i].cluster == i);
+        for (const auto& g : runs[0].glyphs)
+            CHECK(g.xAdvance > 0);
+        for (std::uint32_t i = 0; i < 5; ++i)
+            CHECK(runs[0].glyphs[i].cluster == i);
     }
 }
 
@@ -77,10 +80,12 @@ TEST_CASE("Thai tone mark and vowel stack on the base letter") {
         REQUIRE(!mark.contours.empty());
         double minY = 1e9;
         for (const auto& c : mark.contours)
-            for (const auto& p : c.points) minY = std::min(minY, p.y + g[1].yOffset / 1000.0);
+            for (const auto& p : c.points)
+                minY = std::min(minY, p.y + g[1].yOffset / 1000.0);
         CHECK(minY > f.lib.metrics(f.sarabun).xHeight);
         // One grapheme cluster: all glyphs map back to byte 0.
-        for (const auto& gl : g) CHECK(gl.cluster == 0);
+        for (const auto& gl : g)
+            CHECK(gl.cluster == 0);
     }
 
     SUBCASE("mai han-akat plus tone (ปั่น)") {
@@ -114,7 +119,8 @@ TEST_CASE("Missing glyphs fall back to the Thai font within one call") {
     CHECK(runs[0].glyphs.size() == 5);  // "Room "
     CHECK(runs[1].glyphs.size() > 5);
     // No .notdef glyphs anywhere.
-    for (const auto& g : flat(runs)) CHECK(g.glyphId != 0);
+    for (const auto& g : flat(runs))
+        CHECK(g.glyphId != 0);
     // Cluster offsets are byte offsets into the whole string.
     CHECK(runs[1].glyphs.front().cluster == 5);
     CHECK_FALSE(f.lib.hasGlyph(f.lato, 0x0E01));
@@ -188,9 +194,10 @@ TEST_CASE("Loading is idempotent and errors are reported") {
 TEST_CASE("Invalid UTF-8 and odd input do not crash") {
     Fonts f;
     CHECK(f.lib.shape(f.lato, "").empty());
-    for (const char* s : {"\xff\xfe", "ab\xe0\xb8", "\xf0\x9f\x98\x80", "\xc0\x80", "\xed\xa0\x80",
-                          "a\0b"}) {
-        const auto runs = f.lib.shape(f.lato, std::string_view(s, std::char_traits<char>::length(s)));
+    for (const char* s :
+         {"\xff\xfe", "ab\xe0\xb8", "\xf0\x9f\x98\x80", "\xc0\x80", "\xed\xa0\x80", "a\0b"}) {
+        const auto runs =
+            f.lib.shape(f.lato, std::string_view(s, std::char_traits<char>::length(s)));
         CHECK(!runs.empty());
     }
     CHECK(!f.lib.shape(f.lato, std::string_view("a\0b", 3)).empty());
@@ -210,11 +217,13 @@ TEST_CASE("Concurrent shaping and outlines") {
             for (int i = 0; i < 50; ++i) {
                 const auto runs = f.lib.shape(f.lato, "Room ห้องนอน น้ำ");
                 for (const auto& r : runs)
-                    for (const auto& g : r.glyphs) (void)f.lib.outline(r.font, g.glyphId);
+                    for (const auto& g : r.glyphs)
+                        (void)f.lib.outline(r.font, g.glyphId);
             }
         });
     }
-    for (auto& th : threads) th.join();
+    for (auto& th : threads)
+        th.join();
 }
 
 TEST_CASE("Corrupt font data returns an error and never crashes (1000 mutations)") {
@@ -245,7 +254,8 @@ TEST_CASE("Corrupt font data returns an error and never crashes (1000 mutations)
             {
                 const std::size_t at = rng() % data.size();
                 const std::size_t n = std::min<std::size_t>(1 + rng() % 64, data.size() - at);
-                for (std::size_t k = 0; k < n; ++k) data[at + k] = static_cast<unsigned char>(rng());
+                for (std::size_t k = 0; k < n; ++k)
+                    data[at + k] = static_cast<unsigned char>(rng());
             }
         }
         FontLibrary lib;
@@ -259,8 +269,10 @@ TEST_CASE("Corrupt font data returns an error and never crashes (1000 mutations)
         // A mutated font that still loads must survive shaping and outlines.
         (void)lib.metrics(r.value());
         for (const auto& run : lib.shape(r.value(), "Hello Room น้ำ ปั่น"))
-            for (const auto& g : run.glyphs) (void)lib.outline(r.value(), g.glyphId);
-        for (std::uint32_t g = 0; g < 64; ++g) (void)lib.outline(r.value(), g);
+            for (const auto& g : run.glyphs)
+                (void)lib.outline(r.value(), g.glyphId);
+        for (std::uint32_t g = 0; g < 64; ++g)
+            (void)lib.outline(r.value(), g);
     }
     MESSAGE("loaded " << loaded << ", rejected " << rejected);
     CHECK(rejected > 0);
