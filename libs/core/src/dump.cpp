@@ -254,8 +254,11 @@ std::string canonicalDump(const Document& doc) {
     Out o;
     const Header& h = doc.header();
     o << "header units" << static_cast<int>(h.units) << " workArea" << h.workArea << " ltScale"
-      << h.ltScale << " layer" << h.currentLayer << " textStyle" << h.currentTextStyle
-      << " dimStyle" << h.currentDimStyle << " createdBy=";
+      << h.ltScale << " layer" << h.currentLayer << " color"
+      << static_cast<int>(h.currentColor.kind) << ":" << static_cast<int>(h.currentColor.r) << ","
+      << static_cast<int>(h.currentColor.g) << "," << static_cast<int>(h.currentColor.b)
+      << " linetype" << h.currentLinetype.value << " lineweight" << h.currentLineweight.v
+      << " textStyle" << h.currentTextStyle << " dimStyle" << h.currentDimStyle << " createdBy=";
     o.quoted(h.createdBy);
     o << "\n";
     for (const auto& [k, v] : h.custom) {
