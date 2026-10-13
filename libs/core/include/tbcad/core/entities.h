@@ -326,18 +326,18 @@ struct TableData {
     std::vector<double> rowHeights{};
     std::vector<TableCell> cells{};  // row-major, rowHeights.size() * colWidths.size()
     double textHeight = 2.5;
-    double margin = 1.0;  // between cell border and text
-    TextStyleId style{};  // null = document's current text style
+    double margin = 1.0;    // between cell border and text
+    TextStyleId style{};    // null = document's current text style
     bool titleRow = false;  // the first row is a title: its text is centred
 };
 
 // The alternatives are in EntityKind order. Larger kinds are boxed in Indirect<> to keep Entity
 // small; use entityAs<T>() / visitEntity() instead of std::get_if / std::visit.
-using EntityData = std::variant<LineData, CircleData, ArcData, PolylineData, PointData,
-                                Indirect<EllipseData>, Indirect<SplineData>, Indirect<TextData>,
-                                Indirect<MTextData>, Indirect<HatchData>, Indirect<InsertData>,
-                                Indirect<DimensionData>, Indirect<LeaderData>, Indirect<ProxyData>,
-                                Indirect<TableData>>;
+using EntityData =
+    std::variant<LineData, CircleData, ArcData, PolylineData, PointData, Indirect<EllipseData>,
+                 Indirect<SplineData>, Indirect<TextData>, Indirect<MTextData>, Indirect<HatchData>,
+                 Indirect<InsertData>, Indirect<DimensionData>, Indirect<LeaderData>,
+                 Indirect<ProxyData>, Indirect<TableData>>;
 
 struct Entity {
     EntityCommon common{};
