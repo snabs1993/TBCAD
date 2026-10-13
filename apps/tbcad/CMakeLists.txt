@@ -11,7 +11,16 @@ set(_tbcad_app_sources
   src/viewport_target.cpp
   src/gate.cpp)
 if(WIN32)
-  list(APPEND _tbcad_app_sources src/ime_win32.cpp tbcad.manifest)
+  # Version info and icon (packaging/windows/tbcad.rc.in).
+  enable_language(RC)
+  string(REPLACE "." "," _v "${PROJECT_VERSION}")
+  set(TBCAD_VERSION_COMMAS "${_v},0")
+  set(TBCAD_VERSION_DOTS "${PROJECT_VERSION}.0")
+  set(TBCAD_ICON_PATH "${CMAKE_SOURCE_DIR}/packaging/windows/tbcad.ico")
+  configure_file("${CMAKE_SOURCE_DIR}/packaging/windows/tbcad.rc.in"
+                 "${CMAKE_CURRENT_BINARY_DIR}/tbcad.rc" @ONLY)
+  list(APPEND _tbcad_app_sources src/ime_win32.cpp tbcad.manifest
+       "${CMAKE_CURRENT_BINARY_DIR}/tbcad.rc")
 else()
   list(APPEND _tbcad_app_sources src/ime_stub.cpp)
 endif()
@@ -46,6 +55,13 @@ add_dependencies(tbcad notices)
 # Headless smoke test: opens a (hidden) window, runs commands, draws a few frames. Needs a display
 # and OpenGL 3.3 (CI uses xvfb and Mesa); skipped when TBCAD_RUN_GUI_TESTS is not set.
 if(TBCAD_BUILD_TESTS)
+  # The command list for the user guide: needs no window, so it runs everywhere.
+  add_test(NAME tbcad_list_commands
+           COMMAND ${CMAKE_COMMAND}
+             -DEXE=$<TARGET_FILE:tbcad>
+             -DOUT=${CMAKE_CURRENT_BINARY_DIR}/commands.md
+             -DCONFIG=${CMAKE_CURRENT_BINARY_DIR}/list-config
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_list_commands.cmake)
   add_test(NAME tbcad_gui_smoke
            COMMAND tbcad --self-test --frames 5 --script "DEVGEN LINES 20000")
   set_tests_properties(tbcad_gui_smoke PROPERTIES

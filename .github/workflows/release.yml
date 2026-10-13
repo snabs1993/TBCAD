@@ -1,0 +1,106 @@
+name: Release
+
+# Builds the Windows installer and the portable ZIP.
+#  - push of a tag v*  : builds, tests, attaches both files to a DRAFT GitHub Release (the owner
+#                        publishes it by hand).
+#  - workflow_dispatch : same build without a release; the files are workflow artifacts. Use it
+#                        to try the pipeline.
+# Code signing is not done yet (needs a certificate); see docs/release.md.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number for the file names (for example 0.1.0)'
+        required: false
+        default: '0.0.0-test'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows installer and ZIP
+    runs-on: windows-2022
+    permissions:
+      contents: write  # creates the draft release
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c # v1.13.0
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $v = $env:GITHUB_REF_NAME.Substring(1) }
+          else { $v = '${{ inputs.version }}'; if (-not $v) { $v = '0.0.0-test' } }
+          # Inno Setup wants a numeric version for the installer's own version resource.
+          $num = ($v -replace '^([0-9]+(\.[0-9]+){0,3}).*$', '$1')
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "numeric=$num" >> $env:GITHUB_OUTPUT
+          Write-Host "Building TBCAD $v ($num)"
+
+      - name: Configure
+        run: cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build --preset windows-msvc-release
+      - name: Test
+        run: ctest --preset windows-msvc-release
+
+      - name: Stage files
+        shell: pwsh
+        run: |
+          $b = 'build/windows-msvc-release'
+          $stage = 'stage/TBCAD'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "$b/apps/tbcad/tbcad.exe" $stage
+          Copy-Item "$b/apps/tbcad-convert/tbcad-convert.exe" $stage
+          Copy-Item "$b/apps/tbcad/assets" "$stage/assets" -Recurse
+          Copy-Item "$b/THIRD_PARTY_NOTICES.txt" $stage
+          Copy-Item LICENSE $stage
+          Copy-Item packaging/windows/tbcad-open-dxf.cmd $stage
+          # The command list of the user guide comes from the program itself.
+          $p = Start-Process "$stage/tbcad.exe" -ArgumentList '--list-commands', 'docs/user-guide/commands.md' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "tbcad --list-commands failed with $($p.ExitCode)" }
+          Copy-Item docs/user-guide "$stage/docs" -Recurse
+          Get-ChildItem $stage -Recurse | Measure-Object Length -Sum
+
+      - name: Portable ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path 'stage/TBCAD' -DestinationPath "dist/TBCAD-${{ steps.ver.outputs.version }}-portable.zip"
+
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $iscc) { choco install innosetup -y --no-progress | Out-Null }
+          $exe = (Get-Command iscc -ErrorAction SilentlyContinue)?.Source
+          if (-not $exe) { $exe = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $exe "/DAppVersion=${{ steps.ver.outputs.numeric }}" "/DBuildDir=$PWD\stage\TBCAD" "/DRepoDir=$PWD" "/DOutDir=$PWD\dist" packaging/windows/tbcad.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with $LASTEXITCODE" }
+          # The installer is named after the numeric version; add the full tag name when it differs.
+          $built = "dist/TBCAD-${{ steps.ver.outputs.numeric }}-setup.exe"
+          $want = "dist/TBCAD-${{ steps.ver.outputs.version }}-setup.exe"
+          if ($built -ne $want) { Move-Item $built $want -Force }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tbcad-windows-release
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Draft GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" --draft --verify-tag `
+            --title "TBCAD ${{ steps.ver.outputs.version }}" `
+            --notes "Draft. Windows installer and portable ZIP. Not code signed yet: Windows SmartScreen may warn on first run." `
+            (Get-ChildItem dist/* | ForEach-Object FullName)
