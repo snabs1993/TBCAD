@@ -37,6 +37,8 @@ Handle connectLoopback(int port, int timeoutMs);
 
 // >0 bytes read, kClosed, kError or kTimeout.
 long receive(Handle s, void* buffer, std::size_t size, int timeoutMs);
+// True when a receive would not block (data, end of stream or error pending) within timeoutMs.
+bool waitReadable(Handle s, int timeoutMs);
 bool sendAll(Handle s, const void* data, std::size_t size);
 void shutdownSocket(Handle s);
 void closeSocket(Handle s);
