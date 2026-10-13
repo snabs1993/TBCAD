@@ -34,7 +34,7 @@ std::uint64_t nextBatchId() {
 const BBox2& Tile::geometryBounds() const {
     if (boundsDirty) {
         BBox2 b;
-        for (const auto& [key, batch] : batches) {
+        for (const auto& [batchKey, batch] : batches) {
             for (const GpuVertex& v : batch.verts) {
                 b.expand({origin.x + static_cast<double>(v.hx) + static_cast<double>(v.lx),
                           origin.y + static_cast<double>(v.hy) + static_cast<double>(v.ly)});
