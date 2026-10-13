@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include "app_commands.h"
+#include "tbcad/blocks/index_refresh.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
@@ -68,6 +69,8 @@ struct AppCore::Session {
     cmd::UndoStack undo{};
     index::SpatialIndex index{};
     std::unique_ptr<index::DocumentIndexer> indexer{};
+    // Declared after the indexer so it is destroyed first.
+    std::unique_ptr<blocks::BlockIndexRefresher> blockRefresher{};
     std::unique_ptr<SceneSync> sync{};
     std::unique_ptr<AppObserver> observer{};
     std::unique_ptr<cmd::CommandRunner> runner{};
@@ -129,6 +132,7 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
     Document& d = s->doc;
     s->indexer = std::make_unique<index::DocumentIndexer>(
         d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); });
+    s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
     s->sync = std::make_unique<SceneSync>(d, scene_);
     s->sync->setPixelSize(camera_.pixelSizeMm());
     s->sync->rebuildAll();
