@@ -20,6 +20,10 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMatchProp());
     (void)registry.add(makeOverkill());
     (void)registry.add(makePedit());
+    (void)registry.add(makeBlend());
+    (void)registry.add(makeExtrim());
+    (void)registry.add(makeScaleText());
+    (void)registry.add(makeSetByLayer());
     if (!registry.find("ERASE"))
         (void)registry.add(makeErase());
 }
