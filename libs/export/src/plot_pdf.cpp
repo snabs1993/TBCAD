@@ -108,10 +108,7 @@ Result<void> writePdf(const PlotSheet& sheet, const std::string& path, const std
     pdf::PdfDocument doc;
     doc.setCompression(compress);
     paint(sheet, doc, title);
-    pdf::Result r = doc.writeFile(path);
-    if (!r)
-        return Error{ErrorCode::Io, r.error};
-    return {};
+    return doc.writeFile(path);
 }
 
 Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
@@ -119,9 +116,9 @@ Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
     doc.setCompression(compress);
     paint(sheet, doc, "TBCAD drawing");
     std::ostringstream out;
-    pdf::Result r = doc.write(out);
+    Result<void> r = doc.write(out);
     if (!r)
-        return Error{ErrorCode::Io, r.error};
+        return r.error();
     return out.str();
 }
 
