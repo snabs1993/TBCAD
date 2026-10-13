@@ -21,6 +21,17 @@ struct AliasReport {
     bool clean() const { return errors.empty() && warnings.empty(); }
 };
 
+// One row of the alias table shown in Settings. `command` is empty for a built-in alias that two
+// commands claim and no user alias has settled.
+struct AliasEntry {
+    enum class Source { BuiltIn, User };
+    std::string alias{};
+    std::string command{};
+    Source source = Source::BuiltIn;
+    bool conflict = false;  // unresolved built-in clash, or a user alias that is not valid
+    std::string note{};     // why it conflicts, or which built-in a user alias overrides
+};
+
 class Registry {
 public:
     Registry();
@@ -40,6 +51,10 @@ public:
     // Effective alias -> command name table (upper case).
     const std::map<std::string, std::string>& aliases() const { return aliases_; }
     std::vector<std::string> aliasesOf(std::string_view commandName) const;
+    // Every alias in effect plus the entries that are in conflict, sorted by alias.
+    std::vector<AliasEntry> aliasTable() const;
+    // The user aliases as last set (alias -> command, as given).
+    const std::map<std::string, std::string>& userAliases() const { return user_; }
     // Conflicts among built-in aliases found by the last rebuild.
     const std::vector<std::string>& conflicts() const { return conflicts_; }
 
