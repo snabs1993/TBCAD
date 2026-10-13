@@ -9,11 +9,12 @@ set(_block_cmd_sources
   src/commands.cpp
   src/explode_command.cpp
   src/insert_command.cpp
-  src/snap_provider.cpp)
+  src/snap_provider.cpp
+  src/xref_commands.cpp)
 
 tbcad_add_library(block_cmds
   SOURCES ${_block_cmd_sources}
-  DEPENDS tbcad::cmd tbcad::blocks tbcad::drafting tbcad::geom tbcad::hatch tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::blocks tbcad::xref tbcad::drafting tbcad::geom tbcad::hatch tbcad::ui)
 
 # The panel draws with Dear ImGui, which only the application build fetches.
 if(TBCAD_BUILD_APP)
@@ -30,6 +31,8 @@ tbcad_add_tests(block_cmds
     tests/snap_tests.cpp
     tests/array_command_tests.cpp
     tests/attribute_command_tests.cpp
+    tests/xref_command_tests.cpp
     tests/attribute_command_tests.cpp
+    tests/xref_command_tests.cpp
     tests/explode_command_tests.cpp
   DEPENDS tbcad_command_registry)

@@ -904,6 +904,36 @@ TEST_CASE("sub-layer depth is limited to 8 levels") {
     tx.commit();
 }
 
+TEST_CASE("current colour, linetype and lineweight are validated and undoable") {
+    Document doc;
+    CHECK(doc.header().currentColor == Color::byLayer());
+    CHECK(doc.header().currentLinetype == kLinetypeByLayer);
+    CHECK(doc.header().currentLineweight == LineWeight::byLayer());
+
+    Linetype lt;
+    lt.name = "Dashed";
+    lt.pattern = {12, -6};
+    LinetypeId id;
+    {
+        auto tx = doc.begin("setup");
+        id = tx.addLinetype(lt).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+            h.currentColor = Color::index(3);
+            h.currentLinetype = id;
+        }));
+        tx.commit();
+    }
+    CHECK(doc.header().currentLinetype == id);
+    {
+        auto tx = doc.begin("bad");
+        CHECK_FALSE(tx.modifyHeader([](Header& h) { h.currentColor = Color::byParent(); }));
+        CHECK_FALSE(tx.modifyHeader([](Header& h) { h.currentLinetype = LinetypeId{999}; }));
+        CHECK_FALSE(tx.eraseLinetype(id));  // it is the current linetype
+        tx.rollback();
+    }
+    CHECK(doc.header().currentColor == Color::index(3));
+}
+
 TEST_CASE("touchedEntities lists modified and erased pre-existing entities only") {
     Document doc;
     EntityId a = addLine(doc, 0), b = addLine(doc, 10), c = addLine(doc, 20);

@@ -123,3 +123,7 @@ readers see an ATTDEF as plain text showing its tag.
   map to definitions and insert values (see `docs/dxf-import.md`, `docs/dxf-export.md`). An exported
   ATTRIB sits where the definition lands after the insert transform; text is never stretched, so
   its height follows the Y scale.
+
+## External references
+
+An xref is a block whose content is a snapshot of another drawing; see `docs/xref.md`.

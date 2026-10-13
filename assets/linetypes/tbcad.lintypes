@@ -1,0 +1,18 @@
+# TBCAD linetype definitions. Written for TBCAD; part of the project under the MIT license.
+#
+# One linetype per line:   name ; description ; pattern
+# The pattern is a space or comma separated list of lengths in millimetres, starting with a dash:
+#   positive number = drawn dash, negative number = gap, 0 = dot.
+# The pattern is multiplied by the entity's linetype scale and the drawing's LTSCALE.
+# Lines starting with # and blank lines are ignored. "Continuous" is always present and needs no
+# entry. Proportions follow the ISO 128 idea of a 12 mm long dash, 3 mm gap and 0.5 mm dots.
+
+Dashed    ; Dashed __ __ __ __ __        ; 12 -6
+Hidden    ; Hidden _ _ _ _ _ _ _        ; 6 -3
+Center    ; Center ____ _ ____ _ ____    ; 32 -6 6 -6
+Phantom   ; Phantom ___ _ _ ___ _ _      ; 32 -6 6 -6 6 -6
+DashDot   ; Dash dot __ . __ . __ .      ; 12 -3 0 -3
+DashDot2  ; Dash dot (half) _ . _ . _ .  ; 6 -1.5 0 -1.5
+Dot       ; Dot . . . . . . . . .        ; 0 -3
+Border    ; Border __ __ . __ __ .       ; 12 -6 12 -6 0 -6
+Divide    ; Divide __ . . __ . . __      ; 12 -3 0 -3 0 -3
