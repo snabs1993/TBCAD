@@ -104,28 +104,31 @@ public:
             co_return;
         const bool inscribed = mode.keyword == "Inscribed";
 
-        auto build = [sides, center, inscribed](Vec2 p) -> std::optional<std::vector<PolyVertex>> {
-            const double r = distance(center, p);
+        // Orientation comes from the clicked point; a typed radius leaves it at 0 degrees.
+        auto build = [sides, center, inscribed](
+                         double r, double phi) -> std::optional<std::vector<PolyVertex>> {
             if (r < tol::kLinear)
                 return std::nullopt;
-            const double phi = std::atan2(p.y - center.y, p.x - center.x);
             if (inscribed)
                 return regular(center, r, phi, sides);
             return regular(center, r / std::cos(kPi / sides), phi - kPi / sides, sides);
         };
-        cmd::PointOptions ro;
+        auto angleOf = [center](Vec2 p) {
+            return tol::isZeroLength(p - center) ? 0.0 : std::atan2(p.y - center.y, p.x - center.x);
+        };
+        cmd::DistanceOptions ro;
         ro.base = center;
-        ro.allowNone = false;
-        ro.preview = [c, build](Vec2 cursor, DisplayList& out) {
-            if (auto v = build(cursor))
+        ro.allowZero = false;
+        ro.preview = [c, build, angleOf, center](Vec2 cursor, DisplayList& out) {
+            if (auto v = build(distance(center, cursor), angleOf(cursor)))
                 previewEntity(*c, polygonEntity(std::move(*v)), out);
         };
-        auto rp = co_await ctx.getPoint(inscribed ? "Specify radius of circle (inscribed)"
-                                                  : "Specify radius of circle (circumscribed)",
-                                        std::move(ro));
+        auto rp = co_await ctx.getDistance(inscribed ? "Specify radius of circle (inscribed)"
+                                                     : "Specify radius of circle (circumscribed)",
+                                           std::move(ro));
         if (!rp.ok())
             co_return;
-        auto v = build(rp.point);
+        auto v = build(rp.value, angleOf(ctx.lastPoint()));
         if (!v) {
             ctx.message("The radius must not be zero.");
             co_return;
