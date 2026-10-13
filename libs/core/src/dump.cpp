@@ -233,6 +233,14 @@ struct DataDumper {
             for (double v : d.dynValues)
                 o << " " << v;
         }
+        for (const AsmValue& v : d.asmValues) {
+            o << " ASM ";
+            o.quoted(v.name);
+            o << (v.isText ? " t " : " n ") << v.number << " ";
+            o.quoted(v.text);
+        }
+        if (d.joinOff)
+            o << " JOINOFF";
     }
     void operator()(const DimensionData& d) {
         o << "DIM kind" << static_cast<int>(d.kind) << " rot" << d.rotation;
@@ -376,6 +384,43 @@ std::string canonicalDump(const Document& doc) {
         for (EntityId e : r.entities)
             o << " " << e;
         o << "\n";
+        if (r.assembly) {
+            for (const AsmParam& p : r.assembly->params) {
+                o << "  asmparam " << static_cast<int>(p.kind) << " ";
+                o.quoted(p.name);
+                o << " " << p.defaultNumber << " ";
+                o.quoted(p.defaultText);
+                o << " " << p.min << " " << p.max;
+                for (const std::string& c : p.choices) {
+                    o << " ";
+                    o.quoted(c);
+                }
+                o << "\n";
+            }
+            for (const AsmBinding& b : r.assembly->bindings) {
+                o << "  asmbind " << static_cast<int>(b.kind) << " " << b.entity << " ";
+                o.quoted(b.target);
+                o << " ";
+                o.quoted(b.formula);
+                o << "\n";
+            }
+            for (const AsmPreset& pr : r.assembly->presets) {
+                o << "  asmpreset ";
+                o.quoted(pr.name);
+                for (const AsmValue& v : pr.values) {
+                    o << " ";
+                    o.quoted(v.name);
+                    o << (v.isText ? " t " : " n ") << v.number << " ";
+                    o.quoted(v.text);
+                }
+                o << "\n";
+            }
+            if (!r.assembly->joinClass.empty()) {
+                o << "  asmjoin ";
+                o.quoted(r.assembly->joinClass);
+                o << "\n";
+            }
+        }
         if (r.dynamic) {
             for (const DynParam& p : r.dynamic->params) {
                 o << "  dynparam " << static_cast<int>(p.kind) << " ";

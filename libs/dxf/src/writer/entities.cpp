@@ -301,9 +301,10 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
         case EntityKind::Insert: {
             const auto* ins = entityAs<InsertData>(e);
             const BlockDef* bd = doc_.block(ins->block);
-            if (bd && bd->dynamic) {
+            if (bd && (bd->dynamic || bd->assembly)) {
                 // DXF has no dynamic blocks: the current state is written as plain objects.
-                downgrade("INSERT", "a dynamic block is written as its current geometry");
+                downgrade("INSERT",
+                          "a dynamic block or assembly is written as its current geometry");
                 if (auto parts = blocks::explode(doc_, e)) {
                     for (const Entity& part : parts.value().entities)
                         if (kind(part) != EntityKind::Dimension)

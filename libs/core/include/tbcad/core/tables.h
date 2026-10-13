@@ -126,6 +126,56 @@ struct DynamicDef {
     std::vector<DynAction> actions{};
 };
 
+// ---- Parametric assemblies -------------------------------------------------------------------
+// A block with named parameters whose values (per Insert) feed formulas that drive the block's
+// dynamic parameters, attribute texts and nested inserts. See docs/assembly.md.
+struct AsmValue {
+    std::string name{};
+    bool isText = false;
+    double number = 0;
+    std::string text{};
+};
+
+struct AsmParam {
+    enum class Kind : std::uint8_t { Number, Integer, Text, Choice };
+    Kind kind = Kind::Number;
+    std::string name{};
+    double defaultNumber = 0;
+    std::string defaultText{};
+    // Number / Integer limits, used when max > min.
+    double min = 0;
+    double max = 0;
+    std::vector<std::string> choices{};  // Choice: the allowed texts; the default is the first
+};
+
+struct AsmBinding {
+    enum class Kind : std::uint8_t {
+        DynParam,    // value of a dynamic parameter of this block (number; a state name or index)
+        Attribute,   // text of an attribute of this block
+        Nested,      // a parameter of the insert `entity` inside this block
+        ArrayField,  // rows, columns, count, rowSpacing, columnSpacing or pathSpacing of the array
+                     // of the insert `entity` inside this block
+    };
+    Kind kind = Kind::DynParam;
+    EntityId entity{};     // Nested, ArrayField: the Insert entity in this block
+    std::string target{};  // parameter / attribute tag / array field name
+    std::string formula{};
+};
+
+struct AsmPreset {
+    std::string name{};
+    std::vector<AsmValue> values{};
+};
+
+struct AssemblyDef {
+    std::vector<AsmParam> params{};
+    std::vector<AsmBinding> bindings{};
+    std::vector<AsmPreset> presets{};
+    // Non-empty: inserts of this block that overlap other inserts with the same class merge into
+    // one body (see blocks/join.h).
+    std::string joinClass{};
+};
+
 struct BlockDef {
     BlockId id{};
     std::string name{};
@@ -142,6 +192,7 @@ struct BlockDef {
     // xref by another one (an attached xref is carried along, an overlay is not).
     bool xrefOverlay = false;
     std::optional<DynamicDef> dynamic{};
+    std::optional<AssemblyDef> assembly{};
 };
 
 }  // namespace tbcad

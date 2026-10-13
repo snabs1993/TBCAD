@@ -7,6 +7,7 @@
 
 #include "panel_util.h"
 #include "panels.h"
+#include "tbcad/blocks/assembly.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
 
@@ -376,6 +377,80 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     }
 }
 
+// Parameters of the selected parametric assembly: one row per parameter, edits go through
+// -ASMSET so that one edit is one undo step. Shown when every selected insert is of the same
+// assembly block.
+void assemblySection(tbcad::ui::PanelContext& ctx, Cache& c) {
+    const Document& doc = *ctx.doc;
+    const BlockDef* def = nullptr;
+    const InsertData* first = nullptr;
+    for (EntityId id : c.selection) {
+        const Entity* e = doc.find(id);
+        const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+        const BlockDef* d = ins ? doc.block(ins->block) : nullptr;
+        if (!d || !d->assembly)
+            return;
+        if (def && def != d)
+            return;
+        def = d;
+        if (!first)
+            first = ins;
+    }
+    if (!def || !first)
+        return;
+    const AssemblyDef& ad = *def->assembly;
+    if (!ImGui::CollapsingHeader(("Assembly: " + def->name).c_str(),
+                                 ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    const auto values = blocks::asmEffectiveValues(ad, *first);
+    auto set = [&](const std::string& name, const std::string& value) {
+        exec(ctx, {"-ASMSET " + name, value});
+    };
+    if (!ad.presets.empty()) {
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##preset", "Preset...")) {
+            for (const AsmPreset& pr : ad.presets)
+                if (ImGui::Selectable(pr.name.c_str(), false))
+                    set("@preset", pr.name);
+            ImGui::EndCombo();
+        }
+    }
+    if (ImGui::BeginTable("##assembly", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
+        ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+        for (std::size_t i = 0; i < ad.params.size(); ++i) {
+            const AsmParam& p = ad.params[i];
+            const AsmValue& v = values[i];
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(p.name.c_str());
+            ImGui::TableSetColumnIndex(1);
+            ImGui::PushID(static_cast<int>(i));
+            if (p.kind == AsmParam::Kind::Choice) {
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::BeginCombo("##choice", v.text.c_str())) {
+                    for (const std::string& ch : p.choices)
+                        if (ImGui::Selectable(ch.c_str(), ch == v.text))
+                            set(p.name, ch);
+                    ImGui::EndCombo();
+                }
+            } else {
+                const bool text = p.kind == AsmParam::Kind::Text;
+                if (auto t = editableText("##v", text ? v.text : formatNumber(v.number)))
+                    set(p.name, *t);
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (!ad.joinClass.empty()) {
+        bool joined = !first->joinOff;
+        if (ImGui::Checkbox(("Join with other \"" + ad.joinClass + "\"").c_str(), &joined))
+            if (ctx.runCommand)
+                ctx.runCommand(joined ? "JOINASM" : "UNJOINASM");
+    }
+}
+
 }  // namespace
 
 void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
@@ -404,6 +479,7 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
         return;
     }
     generalSection(ctx, c);
+    assemblySection(ctx, c);
     geometrySection(ctx, c);
 
     // Sections other modules registered for the kind in play (text, dimensions, hatch ...),

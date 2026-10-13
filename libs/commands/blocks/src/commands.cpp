@@ -30,6 +30,12 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBParamCommand());
     (void)registry.add(makeBActionCommand());
     (void)registry.add(makeDynSetCommand());
+    (void)registry.add(makeAsmDefCommand());
+    (void)registry.add(makeAsmSetCommand());
+    (void)registry.add(makeAsmInfoCommand());
+    (void)registry.add(makeJoinAsmCommand(true));
+    (void)registry.add(makeJoinAsmCommand(false));
+    (void)registry.add(makeAsmSetSelectedCommand());
     (void)registry.add(makeAttDefCommand());
     (void)registry.add(makeAttEditCommand());
     (void)registry.add(makeAttSyncCommand());

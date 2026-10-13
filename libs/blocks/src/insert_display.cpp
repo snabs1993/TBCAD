@@ -55,11 +55,12 @@ void transformList(const DisplayList& in, const Transform2& t, DisplayList& out)
 
 // The block's content in block space for one combination of insert style and tolerance.
 std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef& def,
-                                             const Entity& insert,
+                                             const Entity& insert, const InsertData* effective,
+                                             const std::vector<NestedSet>* nested,
                                              const geom::DisplayContext& child) {
     auto list = std::make_shared<DisplayList>();
     std::vector<Entity> storage;
-    for (const Entity* e : blockItems(doc, def, entityAs<InsertData>(insert), storage)) {
+    for (const Entity* e : blockItems(doc, def, effective, storage, nested)) {
         if (!e->common.visible)
             continue;
         // Attribute definitions show per-insert values and are added by buildInsertDisplay.
@@ -125,6 +126,15 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     if (!def || def->entities.empty())
         return;
     DepthGuard guard;
+    const std::size_t firstItem = out.items.size();
+
+    // An assembly's formulas turn its parameter values into the values the content is built from.
+    std::optional<AsmResolved> resolved;
+    const InsertData* shown = ins;
+    if (def->assembly) {
+        resolved = resolveAssembly(doc, *def, *ins);
+        shown = &resolved->insert;
+    }
 
     // Style of the insert itself: what ByBlock means for everything inside.
     const DisplayStyle self = geom::resolveStyle(doc, insert, ctx);
@@ -138,8 +148,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     const double stretch = std::max(maxStretch(t), 1e-12);
     child.chordTolMm = quantizeTolerance(ctx.tolerance() / stretch);
 
-    // A dynamic block looks different for every set of values, so it is not shared.
-    BlockDisplayCache* cache = def->dynamic ? nullptr : g_active;
+    // A dynamic block or assembly looks different for every set of values, so it is not shared.
+    BlockDisplayCache* cache = (def->dynamic || def->assembly) ? nullptr : g_active;
     std::shared_ptr<const DisplayList> blockSpace;
     BlockDisplayCache::Key key;
     if (cache) {
@@ -149,7 +159,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         blockSpace = cache->find(key);
     }
     if (!blockSpace) {
-        blockSpace = buildBlockSpace(doc, *def, insert, child);
+        blockSpace = buildBlockSpace(doc, *def, insert, shown,
+                                     resolved ? &resolved->nested : nullptr, child);
         if (cache) {
             cache->countBuild();
             cache->put(key, blockSpace);
@@ -175,7 +186,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         const Entity* e = doc.find(id);
         if (!e || !e->common.visible)
             continue;
-        auto text = attributeText(*e, *ins);
+        auto text = attributeText(*e, *shown);
         if (!text)
             continue;
         if (text->common.layer == kLayerZero)
@@ -187,6 +198,10 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         for (const Transform2& it : items)
             transformList(own, it, out);
     }
+
+    // Overlapping assemblies of one join class read as a single body.
+    if (g_depth == 1 && detail::joinApplies(doc, insert, *def, *ins))
+        detail::joinClip(doc, insert, *def, ctx, out, firstItem);
 }
 
 void registerInsertDisplay() {

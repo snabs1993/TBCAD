@@ -187,8 +187,10 @@ struct PayloadWriter {
         w.vec2(d.scale);
         w.f64(d.rotation);
         // Trailing fields: attribute values (format 1.1), then tagged sections: 1 = array
-        // (format 1.3), 2 = dynamic block values (format 1.4), 3 = clipping boundary (format 1.6).
-        if (!d.attribs.empty() || d.array || !d.dynValues.empty() || d.clip.size() >= 3) {
+        // (format 1.3), 2 = dynamic block values (format 1.4), 3 = clipping boundary (format 1.6),
+        // 5 = assembly values and 6 = not joined (format 1.8).
+        if (!d.attribs.empty() || d.array || !d.dynValues.empty() || d.clip.size() >= 3 ||
+            !d.asmValues.empty() || d.joinOff) {
             w.varint(d.attribs.size());
             for (const AttribValue& a : d.attribs) {
                 str(a.tag);
@@ -226,6 +228,18 @@ struct PayloadWriter {
             for (const Vec2& p : d.clip)
                 w.vec2(p);
         }
+        if (!d.asmValues.empty()) {
+            w.u8(5);
+            w.varint(d.asmValues.size());
+            for (const AsmValue& v : d.asmValues) {
+                str(v.name);
+                w.u8(v.isText ? 1 : 0);
+                w.f64(v.number);
+                str(v.text);
+            }
+        }
+        if (d.joinOff)
+            w.u8(6);
     }
     void operator()(const DimensionData& d) {
         w.u8(static_cast<std::uint8_t>(d.kind));
@@ -538,6 +552,23 @@ struct PayloadReader {
                         d.clip.reserve(n);
                         for (std::size_t i = 0; i < n; ++i)
                             d.clip.push_back(r.vec2());
+                        continue;
+                    }
+                    if (tag == 5) {
+                        std::size_t n = r.count(10);
+                        d.asmValues.reserve(n);
+                        for (std::size_t i = 0; i < n; ++i) {
+                            AsmValue v;
+                            v.name = str();
+                            v.isText = r.boolean();
+                            v.number = r.f64();
+                            v.text = str();
+                            d.asmValues.push_back(std::move(v));
+                        }
+                        continue;
+                    }
+                    if (tag == 6) {
+                        d.joinOff = true;
                         continue;
                     }
                     if (tag != 1)

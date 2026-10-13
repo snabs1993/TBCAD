@@ -14,6 +14,7 @@
 #include "tbcad/core/display.h"
 #include "tbcad/core/ids.h"
 #include "tbcad/core/math.h"
+#include "tbcad/core/tables.h"
 
 namespace tbcad {
 
@@ -322,6 +323,9 @@ struct InsertData {
     std::optional<ArrayInfo> array{};    // set: shown once per array item
     // Values of the block's dynamic parameters, in parameter order (missing = the default).
     std::vector<double> dynValues{};
+    // Values of the block's assembly parameters by name (missing = the default).
+    std::vector<AsmValue> asmValues{};
+    bool joinOff = false;  // assembly insert: stays separate from overlapping assemblies
     // Clipping boundary (XCLIP): a closed polygon in the block's own coordinates, so it follows
     // the insert when that is moved, rotated or scaled. Fewer than 3 points = not clipped.
     std::vector<Vec2> clip{};

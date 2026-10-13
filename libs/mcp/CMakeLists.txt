@@ -19,6 +19,7 @@ set(_mcp_sources
   src/tools_blocks.cpp
   src/tools_constraints.cpp
   src/tools_layers.cpp
+  src/tools_assembly.cpp
   src/tools_layout.cpp
   src/tools_modify.cpp
   src/tools_levels.cpp
@@ -26,7 +27,7 @@ set(_mcp_sources
 
 tbcad_add_library(mcp
   SOURCES ${_mcp_sources}
-  DEPENDS tbcad::core tbcad::cmd tbcad::io tbcad::geom tbcad::blocks tbcad::dim tbcad::layout tbcad::constraints tbcad::modify tbcad::index tbcad::platform tbcad::net)
+  DEPENDS tbcad::core tbcad::cmd tbcad::io tbcad::geom tbcad::blocks tbcad::expr tbcad::dim tbcad::layout tbcad::constraints tbcad::modify tbcad::index tbcad::platform tbcad::net)
 target_include_directories(tbcad_mcp PRIVATE src)
 target_link_libraries(tbcad_mcp PRIVATE miniz)
 

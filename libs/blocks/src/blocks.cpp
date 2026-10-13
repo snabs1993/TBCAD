@@ -6,6 +6,7 @@
 
 #include "internal.h"
 #include "tbcad/blocks/array.h"
+#include "tbcad/blocks/assembly.h"
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/dynamic.h"
 
@@ -141,8 +142,14 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
     BBox2 box;
     if (depth > kMaxNesting)
         return box;
+    std::optional<AsmResolved> res;
+    const InsertData* eff = owner;
+    if (def.assembly && owner) {
+        res = resolveAssembly(doc, def, *owner);
+        eff = &res->insert;
+    }
     std::vector<Entity> storage;
-    for (const Entity* e : blockItems(doc, def, owner, storage)) {
+    for (const Entity* e : blockItems(doc, def, eff, storage, res ? &res->nested : nullptr)) {
         if (!e->common.visible)
             continue;
         if (const auto* ins = entityAs<InsertData>(*e)) {
@@ -154,9 +161,9 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
         }
         std::optional<Entity> shown;
         if (const auto* td = entityAs<TextData>(*e); td && td->attdef) {
-            if (!owner)
+            if (!eff)
                 continue;  // a bare definition (no insert) is measured by its tag below
-            shown = attributeText(*e, *owner);
+            shown = attributeText(*e, *eff);
             if (!shown)
                 continue;
             e = &*shown;

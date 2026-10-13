@@ -240,6 +240,51 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             }
         }
 
+        // Parametric assembly definitions (format 1.5).
+        ByteWriter asmb;
+        std::size_t asmCount = 0;
+        for (const auto& [id, r] : doc.blocks())
+            asmCount += r.assembly ? 1 : 0;
+        asmb.varint(asmCount);
+        auto putValue = [&](const AsmValue& v) {
+            asmb.varint(st.intern(v.name));
+            asmb.u8(v.isText ? 1 : 0);
+            asmb.f64(v.number);
+            asmb.varint(st.intern(v.text));
+        };
+        for (const auto& [id, r] : doc.blocks()) {
+            if (!r.assembly)
+                continue;
+            asmb.varint(id.value);
+            asmb.varint(r.assembly->params.size());
+            for (const AsmParam& p : r.assembly->params) {
+                asmb.u8(static_cast<std::uint8_t>(p.kind));
+                asmb.varint(st.intern(p.name));
+                asmb.f64(p.defaultNumber);
+                asmb.varint(st.intern(p.defaultText));
+                asmb.f64(p.min);
+                asmb.f64(p.max);
+                asmb.varint(p.choices.size());
+                for (const std::string& c : p.choices)
+                    asmb.varint(st.intern(c));
+            }
+            asmb.varint(r.assembly->bindings.size());
+            for (const AsmBinding& b : r.assembly->bindings) {
+                asmb.u8(static_cast<std::uint8_t>(b.kind));
+                asmb.varint(b.entity.value);
+                asmb.varint(st.intern(b.target));
+                asmb.varint(st.intern(b.formula));
+            }
+            asmb.varint(r.assembly->presets.size());
+            for (const AsmPreset& pr : r.assembly->presets) {
+                asmb.varint(st.intern(pr.name));
+                asmb.varint(pr.values.size());
+                for (const AsmValue& v : pr.values)
+                    putValue(v);
+            }
+            asmb.varint(st.intern(r.assembly->joinClass));
+        }
+
         // Entities in id order, split over ENTS chunks of about 8 MiB.
         std::vector<const Entity*> ents;
         ents.reserve(doc.entityCount());
@@ -334,6 +379,8 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             appendChunk(out, kXrfo, xrfo.bytes(), options.compress);
         if (dynCount > 0)
             appendChunk(out, kDynb, dynb.bytes(), options.compress);
+        if (asmCount > 0)
+            appendChunk(out, kAsmb, asmb.bytes(), options.compress);
         for (const auto& c : entChunks)
             appendChunk(out, kEnts, c, options.compress);
         if (elvl.size() != 0)

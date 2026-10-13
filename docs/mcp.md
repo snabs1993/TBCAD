@@ -76,7 +76,7 @@ viewport; does not change the user's view).
 Changing the drawing (one undo step each): `add_entities` (up to 10,000 per call), `modify_entities`
 (`set` properties or geometry, or `transform` with move/rotate/scale/mirror), `delete_entities`,
 `create_layer`, `modify_layer`, `delete_layer`, `set_current_layer`, `create_level`, `modify_level`,
-`delete_level`, `set_current_level`, `set_level_view`, `run_command`. `list_levels` is read only, and
+`delete_level`, `set_current_level`, `set_level_view`, `set_assembly_parameters`, `run_command`. `list_levels` and `list_assembly_parameters` (see `docs/assembly.md`) are read only, and
 `query_entities` also filters by `levels`. Entities carry a `level` name once the drawing has more than
 one level; edits to objects on another level are refused in the default dim view (see `docs/levels.md`).
 

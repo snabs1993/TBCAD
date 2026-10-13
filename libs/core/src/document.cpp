@@ -1,6 +1,7 @@
 #include "tbcad/core/document.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -739,6 +740,8 @@ Result<void> Document::reserveIds(const NextIds& ids) {
 }
 
 Document::Document() {
+    static std::atomic<std::uint64_t> next{1};
+    uid_ = next.fetch_add(1);
     Linetype cont;
     cont.id = kLinetypeContinuous;
     cont.name = "Continuous";

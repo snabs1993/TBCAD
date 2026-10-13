@@ -112,6 +112,8 @@ a parameter, `DYNSET` sets a value on an Insert. DXF has no dynamic blocks: expo
 current state of each dynamic Insert as plain objects. In `.tbcad` the definitions are the `DYNB`
 chunk and the values a trailing Insert section (format 1.4).
 
+See `docs/assembly.md` for parametric assemblies (named parameters, formulas, presets and joint assemblies built on dynamic blocks).
+
 ## Commands
 
 | Command | Alias | Flow |

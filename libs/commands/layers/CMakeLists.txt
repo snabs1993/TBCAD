@@ -18,7 +18,7 @@ set(_layers_sources
   src/property_commands.cpp
   src/register.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/builtin_linetypes.cpp")
-set(_layers_deps tbcad::cmd tbcad::ui tbcad::core tbcad::geom)
+set(_layers_deps tbcad::cmd tbcad::ui tbcad::core tbcad::geom tbcad::blocks)
 
 # The panels draw with Dear ImGui, which only exists when the application is built. Without it
 # the panels are registered as empty stubs, so headless builds and tests still link.
