@@ -23,9 +23,8 @@ bool startsWith(const std::string& s, const std::string& prefix) {
 bool isSubsequence(std::string_view query, std::string_view text) {
     std::size_t q = 0;
     for (char c : text) {
-        if (q < query.size() &&
-            std::toupper(static_cast<unsigned char>(c)) ==
-                std::toupper(static_cast<unsigned char>(query[q])))
+        if (q < query.size() && std::toupper(static_cast<unsigned char>(c)) ==
+                                    std::toupper(static_cast<unsigned char>(query[q])))
             ++q;
     }
     return q == query.size();
@@ -96,9 +95,8 @@ std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::stri
         if (matched)
             out.push_back(std::move(m));
     }
-    std::stable_sort(out.begin(), out.end(), [](const CommandMatch& a, const CommandMatch& b) {
-        return a.rank < b.rank;
-    });
+    std::stable_sort(out.begin(), out.end(),
+                     [](const CommandMatch& a, const CommandMatch& b) { return a.rank < b.rank; });
     if (out.size() > limit)
         out.resize(limit);
     return out;
