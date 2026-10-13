@@ -1,0 +1,82 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <functional>
+#include <string>
+#include <vector>
+
+#include "tbcad/core/core.h"
+
+namespace tbcad::cmd {
+
+// Approximate heap size of a change set (snapshots plus table rows). Shared snapshot storage is
+// counted once.
+std::size_t estimateBytes(const ChangeSet& changes);
+
+// History of committed commands. One entry per command (or per UNDO BEGIN/END group); an entry may
+// consist of several change sets (checkpoints inside a command).
+//
+// The stack is the only thing that should call Document::apply for undo and redo, and it assumes
+// the document is not changed behind its back.
+class UndoStack {
+public:
+    static constexpr std::size_t kDefaultLimitBytes = std::size_t{512} * 1024 * 1024;
+
+    explicit UndoStack(std::size_t limitBytes = kDefaultLimitBytes) : limit_(limitBytes) {}
+
+    // Records a finished command. Empty change sets are skipped; an entry with nothing left is
+    // not recorded. Clears the redo history. Inside a group (beginGroup) the sets are collected
+    // and recorded as a single entry at endGroup. `bytes` overrides the size estimate (tests).
+    void push(std::string label, std::vector<ChangeSet> sets, std::size_t bytes = 0);
+
+    bool canUndo() const { return !undo_.empty(); }
+    bool canRedo() const { return !redo_.empty(); }
+    // Menu labels: "Line", "Move"... Empty when there is nothing to undo / redo.
+    std::string undoLabel() const { return undo_.empty() ? std::string{} : undo_.back().label; }
+    std::string redoLabel() const { return redo_.empty() ? std::string{} : redo_.back().label; }
+    std::size_t undoCount() const { return undo_.size(); }
+    std::size_t redoCount() const { return redo_.size(); }
+    // Labels, oldest first.
+    std::vector<std::string> undoLabels() const;
+
+    // Return false when there is nothing to do or a group is still open.
+    bool undo(Document& doc);
+    bool redo(Document& doc);
+
+    // Macros: everything pushed between beginGroup and the matching endGroup becomes one undo
+    // step. Groups nest; only the outermost label is used.
+    void beginGroup(std::string label);
+    bool endGroup();  // false when no group is open
+    bool inGroup() const { return groupDepth_ > 0; }
+
+    void clear();
+
+    std::size_t usedBytes() const { return used_; }
+    std::size_t limitBytes() const { return limit_; }
+    void setLimitBytes(std::size_t limit);
+
+    // Called with a message when old entries are dropped to stay under the limit.
+    void setMessageSink(std::function<void(std::string)> sink) { sink_ = std::move(sink); }
+
+private:
+    struct Entry {
+        std::string label{};
+        std::vector<ChangeSet> sets{};
+        std::size_t bytes = 0;
+    };
+    void record(Entry e);
+    void trim();
+
+    std::deque<Entry> undo_{};
+    std::vector<Entry> redo_{};
+    std::size_t used_ = 0;
+    std::size_t limit_;
+    int groupDepth_ = 0;
+    Entry group_{};
+    std::size_t dropped_ = 0;
+    std::function<void(std::string)> sink_{};
+};
+
+}  // namespace tbcad::cmd
