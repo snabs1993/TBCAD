@@ -1,0 +1,440 @@
+#include "tbcad/render/scene.h"
+
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <tuple>
+#include <utility>
+
+#include "tbcad/render/fill.h"
+
+namespace tbcad::render {
+namespace {
+
+constexpr double kMaxCoordinate = 1e15;       // beyond this nothing is drawable in doubles anyway
+constexpr double kDashedPiecePeriods = 1000;  // split dashed segments longer than this many periods
+
+std::uint32_t packRgba(Rgba c) {
+    return static_cast<std::uint32_t>(c.r) | static_cast<std::uint32_t>(c.g) << 8 |
+           static_cast<std::uint32_t>(c.b) << 16 | static_cast<std::uint32_t>(c.a) << 24;
+}
+
+bool drawable(const Vec2& p) {
+    return isFinite(p) && std::abs(p.x) < kMaxCoordinate && std::abs(p.y) < kMaxCoordinate;
+}
+
+// Batch ids are unique across all scenes, so one Renderer can serve several of them.
+std::uint64_t nextBatchId() {
+    static std::atomic<std::uint64_t> next{1};
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
+}  // namespace
+
+const BBox2& Tile::geometryBounds() const {
+    if (boundsDirty) {
+        BBox2 b;
+        for (const auto& [batchKey, batch] : batches) {
+            for (const GpuVertex& v : batch.verts) {
+                b.expand({origin.x + static_cast<double>(v.hx) + static_cast<double>(v.lx),
+                          origin.y + static_cast<double>(v.hy) + static_cast<double>(v.ly)});
+            }
+        }
+        bounds = b;
+        boundsDirty = false;
+    }
+    return bounds;
+}
+
+// State carried while one entity is being added.
+struct Scene::Cursor {
+    EntityId entity{};
+    EntityRec* rec = nullptr;
+    std::uint32_t drawOrder = 0;
+    double builtZoom = 0;
+    // Last (tile, batch) used, to skip hash lookups for consecutive segments.
+    TileKey tileKey{};
+    BatchKey batchKey{};
+    Tile* tile = nullptr;
+    Batch* batch = nullptr;
+
+    // Appends vertices to the batch for (tileKey, key), extending the entity's range.
+    void append(Scene& s, const TileKey& tk, const BatchKey& key, double halfWidthMm,
+                std::span<const GpuVertex> v) {
+        if (!batch || !(tk == tileKey) || !(key == batchKey)) {
+            batch = &s.batchFor(tk, key, halfWidthMm);
+            tile = &s.tiles_.at(tk);
+            tileKey = tk;
+            batchKey = key;
+            rec->refs.emplace_back(tk, key);
+        }
+        if (batch->ranges.empty() || batch->ranges.back().entity != entity ||
+            batch->ranges.back().builtPixelsPerMm != builtZoom ||
+            batch->ranges.back().drawOrder != drawOrder) {
+            batch->ranges.push_back(
+                {entity, static_cast<std::uint32_t>(batch->verts.size()), 0, drawOrder, builtZoom});
+            batch->minDrawOrder =
+                batch->ranges.size() == 1 ? drawOrder : std::min(batch->minDrawOrder, drawOrder);
+        }
+        batch->ranges.back().count += static_cast<std::uint32_t>(v.size());
+        batch->verts.insert(batch->verts.end(), v.begin(), v.end());
+        ++batch->version;
+    }
+    void expand(const Vec2& p) {
+        if (tile)
+            tile->bounds.expand(p);
+    }
+};
+
+Scene::Scene(Options options) : tileSize_(options.tileSizeMm > 0 ? options.tileSizeMm : 1024) {
+    patterns_.emplace_back();  // 0 = continuous
+    patternIds_[{}] = 0;
+}
+
+double Scene::suggestTileSize(const BBox2& extent) {
+    double size = 1024;
+    if (!extent.empty()) {
+        double longest = std::max(extent.width(), extent.height());
+        size = std::exp2(std::ceil(std::log2(std::max(longest / 8.0, 1.0))));
+    }
+    return std::clamp(size, 16.0, 16777216.0);
+}
+
+TileKey Scene::tileOf(const Vec2& p) const {
+    return {static_cast<std::int64_t>(std::floor(p.x / tileSize_)),
+            static_cast<std::int64_t>(std::floor(p.y / tileSize_))};
+}
+
+Batch& Scene::batchFor(const TileKey& tk, const BatchKey& key, double halfWidthMm) {
+    auto [tit, newTile] = tiles_.try_emplace(tk);
+    Tile& tile = tit->second;
+    if (newTile) {
+        tile.key = tk;
+        tile.origin = {static_cast<double>(tk.x) * tileSize_,
+                       static_cast<double>(tk.y) * tileSize_};
+    }
+    tile.maxHalfWidthMm = std::max(tile.maxHalfWidthMm, halfWidthMm);
+    auto [bit, newBatch] = tile.batches.try_emplace(key);
+    if (newBatch) {
+        bit->second.id = nextBatchId();
+        bit->second.key = key;
+    }
+    return bit->second;
+}
+
+std::uint32_t Scene::internPattern(const DisplayStyle& style) {
+    if (!style.pattern || style.pattern->empty())
+        return 0;
+    double scale = style.patternScale > 0 ? style.patternScale : 1.0;
+    std::vector<double> scaled;
+    scaled.reserve(style.pattern->size());
+    for (double e : *style.pattern)
+        scaled.push_back(e * scale);
+    DashPattern p{scaled};
+    if (p.continuous())
+        return 0;
+    auto it = patternIds_.find(scaled);
+    if (it != patternIds_.end())
+        return it->second;
+    auto id = static_cast<std::uint32_t>(patterns_.size());
+    patterns_.push_back(p);
+    patternIds_.emplace(std::move(scaled), id);
+    return id;
+}
+
+BatchKey Scene::styleKey(BatchKind kind, const DisplayStyle& style) {
+    BatchKey k;
+    k.kind = kind;
+    k.layer = style.layer;
+    k.rgba = packRgba(style.color);
+    if (kind == BatchKind::Stroke) {
+        k.lineweightUm =
+            static_cast<std::int32_t>(std::lround(std::max(0.0, style.lineweight) * 1000));
+        k.pattern = internPattern(style);
+    }
+    return k;
+}
+
+void Scene::addPolyline(Cursor& c, const DisplayPolyline& pl) {
+    const auto& pts = pl.pts;
+    const std::size_t n = pts.size();
+    if (n < 2)
+        return;
+    BatchKey key = styleKey(BatchKind::Stroke, pl.style);
+    const double halfWidth = std::max(0.0, pl.style.lineweight) * 0.5;
+    const double period = patterns_[key.pattern].period();
+    const double maxPiece = period > 0 ? period * kDashedPiecePeriods : 0;
+    const std::size_t segments = (pl.closed && n > 2) ? n : n - 1;
+
+    double cum = 0;  // distance along the polyline (mm)
+    for (std::size_t i = 0; i < segments; ++i) {
+        const Vec2 a = pts[i];
+        const Vec2 b = pts[(i + 1) % n];
+        if (!drawable(a) || !drawable(b))
+            continue;
+        const double len = distance(a, b);
+        if (len <= 0)
+            continue;
+        const int pieces = maxPiece > 0 ? static_cast<int>(std::ceil(len / maxPiece)) : 1;
+        for (int p = 0; p < pieces; ++p) {
+            const double t0 = static_cast<double>(p) / pieces;
+            const double t1 = static_cast<double>(p + 1) / pieces;
+            const Vec2 pa = pieces == 1 ? a : lerp(a, b, t0);
+            const Vec2 pb = pieces == 1 ? b : lerp(a, b, t1);
+            const double plen = len / pieces;
+            const double d0 = wrapDashDistance(cum, period);
+            const TileKey tk = tileOf(pa);
+            // The tile may not exist yet; append() creates it and sets c.tile.
+            const Vec2 origin = {static_cast<double>(tk.x) * tileSize_,
+                                 static_cast<double>(tk.y) * tileSize_};
+            const GpuVertex v[2] = {packVertex(pa, origin, period > 0 ? d0 : 0),
+                                    packVertex(pb, origin, period > 0 ? d0 + plen : 0)};
+            c.append(*this, tk, key, halfWidth, v);
+            c.expand(pa);
+            c.expand(pb);
+            cum += plen;
+        }
+    }
+}
+
+void Scene::addFill(Cursor& c, const DisplayFill& fill) {
+    std::vector<Vec2> tris = triangulateEvenOdd(fill.rings);
+    if (tris.empty())
+        return;
+    BatchKey key = styleKey(BatchKind::Fill, fill.style);
+    for (std::size_t i = 0; i + 2 < tris.size(); i += 3) {
+        const Vec2 centroid = (tris[i] + tris[i + 1] + tris[i + 2]) / 3.0;
+        if (!drawable(centroid))
+            continue;
+        const TileKey tk = tileOf(centroid);
+        const Vec2 origin = {static_cast<double>(tk.x) * tileSize_,
+                             static_cast<double>(tk.y) * tileSize_};
+        const GpuVertex v[3] = {packVertex(tris[i], origin), packVertex(tris[i + 1], origin),
+                                packVertex(tris[i + 2], origin)};
+        c.append(*this, tk, key, 0, v);
+        c.expand(tris[i]);
+        c.expand(tris[i + 1]);
+        c.expand(tris[i + 2]);
+    }
+}
+
+void Scene::addPoints(Cursor& c, const DisplayPoints& pts) {
+    BatchKey key = styleKey(BatchKind::Point, pts.style);
+    for (const Vec2& p : pts.pts) {
+        if (!drawable(p))
+            continue;
+        const TileKey tk = tileOf(p);
+        const Vec2 origin = {static_cast<double>(tk.x) * tileSize_,
+                             static_cast<double>(tk.y) * tileSize_};
+        const GpuVertex v[1] = {packVertex(p, origin)};
+        c.append(*this, tk, key, 0, v);
+        c.expand(p);
+    }
+}
+
+void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder,
+                   double builtPixelsPerMm) {
+    remove(id);
+    EntityRec& rec = entities_[id];
+    rec.drawOrder = drawOrder;
+    Cursor c;
+    c.entity = id;
+    c.rec = &rec;
+    c.drawOrder = drawOrder;
+    c.builtZoom = builtPixelsPerMm;
+    for (const DisplayItem& item : list.items) {
+        // Moving to another item may change tile and style; force a fresh lookup.
+        c.batch = nullptr;
+        c.tile = nullptr;
+        if (const auto* pl = std::get_if<DisplayPolyline>(&item))
+            addPolyline(c, *pl);
+        else if (const auto* f = std::get_if<DisplayFill>(&item))
+            addFill(c, *f);
+        else if (const auto* p = std::get_if<DisplayPoints>(&item))
+            addPoints(c, *p);
+    }
+    std::sort(rec.refs.begin(), rec.refs.end());
+    rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());
+    ++changeCounter_;
+}
+
+void Scene::eraseRefs(EntityId id, const EntityRec& rec) {
+    for (const auto& [tk, bk] : rec.refs) {
+        auto tit = tiles_.find(tk);
+        if (tit == tiles_.end())
+            continue;
+        Tile& tile = tit->second;
+        auto bit = tile.batches.find(bk);
+        if (bit == tile.batches.end())
+            continue;
+        Batch& batch = bit->second;
+        for (std::size_t r = 0; r < batch.ranges.size();) {
+            if (batch.ranges[r].entity != id) {
+                ++r;
+                continue;
+            }
+            const BatchRange gone = batch.ranges[r];
+            batch.verts.erase(batch.verts.begin() + gone.begin,
+                              batch.verts.begin() + gone.begin + gone.count);
+            batch.ranges.erase(batch.ranges.begin() + static_cast<std::ptrdiff_t>(r));
+            for (std::size_t k = r; k < batch.ranges.size(); ++k)
+                batch.ranges[k].begin -= gone.count;
+        }
+        ++batch.version;
+        if (batch.ranges.empty()) {
+            deleted_.push_back(batch.id);
+            tile.batches.erase(bit);
+        } else {
+            batch.minDrawOrder = batch.ranges[0].drawOrder;
+            for (const BatchRange& r : batch.ranges)
+                batch.minDrawOrder = std::min(batch.minDrawOrder, r.drawOrder);
+        }
+        if (tile.batches.empty())
+            tiles_.erase(tit);
+        else
+            tile.boundsDirty = true;
+    }
+}
+
+void Scene::remove(EntityId id) {
+    auto it = entities_.find(id);
+    if (it == entities_.end())
+        return;
+    eraseRefs(id, it->second);
+    entities_.erase(it);
+    ++changeCounter_;
+}
+
+void Scene::clear() {
+    for (auto& [tk, tile] : tiles_)
+        for (auto& [bk, batch] : tile.batches)
+            deleted_.push_back(batch.id);
+    tiles_.clear();
+    entities_.clear();
+    ++changeCounter_;
+}
+
+void Scene::setLayerVisible(LayerId layer, bool visible) {
+    bool changed = visible ? hiddenLayers_.erase(layer) != 0 : hiddenLayers_.insert(layer).second;
+    if (changed)
+        ++changeCounter_;
+}
+
+void Scene::setHighlighted(std::span<const EntityId> ids) {
+    highlighted_.clear();
+    highlighted_.insert(ids.begin(), ids.end());
+    ++changeCounter_;
+}
+
+void Scene::setSelected(std::span<const EntityId> ids) {
+    selected_.clear();
+    selected_.insert(ids.begin(), ids.end());
+    ++changeCounter_;
+}
+
+const SelectionGeometry& Scene::geometryFor(const std::unordered_set<EntityId>& set,
+                                            SelCache& cache) const {
+    if (cache.builtFor == changeCounter_)
+        return cache.geometry;
+    cache.builtFor = changeCounter_;
+    cache.geometry.version = changeCounter_;
+    cache.geometry.tiles.clear();
+    std::map<std::pair<TileKey, std::int32_t>, std::size_t> index;
+    for (EntityId id : set) {
+        auto eit = entities_.find(id);
+        if (eit == entities_.end())
+            continue;
+        for (const auto& [tk, bk] : eit->second.refs) {
+            if (bk.kind != BatchKind::Stroke || !layerVisible(bk.layer))
+                continue;
+            auto tit = tiles_.find(tk);
+            if (tit == tiles_.end())
+                continue;
+            auto bit = tit->second.batches.find(bk);
+            if (bit == tit->second.batches.end())
+                continue;
+            auto [iit, fresh] =
+                index.try_emplace({tk, bk.lineweightUm}, cache.geometry.tiles.size());
+            if (fresh) {
+                SelectionTile st;
+                st.origin = tit->second.origin;
+                st.lineweightMm = bk.lineweightUm / 1000.0;
+                cache.geometry.tiles.push_back(std::move(st));
+            }
+            SelectionTile& st = cache.geometry.tiles[iit->second];
+            const Batch& batch = bit->second;
+            for (const BatchRange& r : batch.ranges) {
+                if (r.entity != id)
+                    continue;
+                st.verts.insert(st.verts.end(), batch.verts.begin() + r.begin,
+                                batch.verts.begin() + r.begin + r.count);
+            }
+        }
+    }
+    return cache.geometry;
+}
+
+bool Scene::needsRetessellation(const Camera2D& oldCam, const Camera2D& newCam) {
+    if (!(oldCam.pixelsPerMm > 0) || !(newCam.pixelsPerMm > 0))
+        return false;
+    double ratio = newCam.pixelsPerMm / oldCam.pixelsPerMm;
+    return ratio > 4.0 || ratio < 0.25;
+}
+
+namespace {
+BBox2 cullBox(const Camera2D& camera, const Tile& tile) {
+    // Strokes extend half a lineweight beyond their centre line, plus a few pixels for caps,
+    // antialiasing and points.
+    return camera.visibleWorld().inflated(tile.maxHalfWidthMm + 8.0 * camera.pixelSizeMm());
+}
+}  // namespace
+
+std::vector<EntityId> Scene::staleEntities(const Camera2D& camera) const {
+    std::vector<EntityId> out;
+    for (const auto& [tk, tile] : tiles_) {
+        if (!tile.geometryBounds().intersects(cullBox(camera, tile)))
+            continue;
+        for (const auto& [bk, batch] : tile.batches) {
+            for (const BatchRange& r : batch.ranges) {
+                if (r.builtPixelsPerMm <= 0)
+                    continue;
+                double ratio = camera.pixelsPerMm / r.builtPixelsPerMm;
+                if (ratio > 4.0 || ratio < 0.25)
+                    out.push_back(r.entity);
+            }
+        }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+std::vector<VisibleBatch> Scene::visibleBatches(const Camera2D& camera) const {
+    std::vector<VisibleBatch> out;
+    for (const auto& [tk, tile] : tiles_) {
+        if (!tile.geometryBounds().intersects(cullBox(camera, tile)))
+            continue;
+        for (const auto& [bk, batch] : tile.batches) {
+            if (layerVisible(bk.layer) && !batch.verts.empty())
+                out.push_back({&tile, &batch});
+        }
+    }
+    std::sort(out.begin(), out.end(), [](const VisibleBatch& a, const VisibleBatch& b) {
+        return std::make_tuple(a.batch->key.kind, a.batch->minDrawOrder, a.batch->id) <
+               std::make_tuple(b.batch->key.kind, b.batch->minDrawOrder, b.batch->id);
+    });
+    return out;
+}
+
+std::vector<std::uint64_t> Scene::takeDeletedBatches() {
+    return std::exchange(deleted_, {});
+}
+
+BBox2 Scene::bounds() const {
+    BBox2 b;
+    for (const auto& [tk, tile] : tiles_)
+        b.merge(tile.geometryBounds());
+    return b;
+}
+
+}  // namespace tbcad::render
