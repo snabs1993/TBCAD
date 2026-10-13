@@ -39,16 +39,19 @@ if(NOT TARGET tbcad_imgui)
     list(GET _imgui_files ${_i} _path)
     math(EXPR _j "${_i} + 1")
     list(GET _imgui_files ${_j} _hash)
-    string(MAKE_C_IDENTIFIER "imgui_${_path}" _name)
-    FetchContent_Declare(${_name}
-      URL "${_imgui_base}/${_path}"
-      URL_HASH SHA256=${_hash}
-      DOWNLOAD_NO_EXTRACT TRUE)
-    FetchContent_MakeAvailable(${_name})
+    # file(DOWNLOAD) rather than one FetchContent sub-build per file: those sub-build directories
+    # have long names and pushed Windows paths past MAX_PATH (260).
     get_filename_component(_dir "${_path}" DIRECTORY)
-    get_filename_component(_file "${_path}" NAME)
     file(MAKE_DIRECTORY "${_imgui_root}/${_dir}")
-    file(COPY "${${_name}_SOURCE_DIR}/${_file}" DESTINATION "${_imgui_root}/${_dir}")
+    if(NOT EXISTS "${_imgui_root}/${_path}")
+      file(DOWNLOAD "${_imgui_base}/${_path}" "${_imgui_root}/${_path}"
+           EXPECTED_HASH SHA256=${_hash} STATUS _st)
+      list(GET _st 0 _code)
+      if(NOT _code EQUAL 0)
+        file(REMOVE "${_imgui_root}/${_path}")
+        message(FATAL_ERROR "Cannot download ${_imgui_base}/${_path}: ${_st}")
+      endif()
+    endif()
   endforeach()
 
   add_library(tbcad_imgui STATIC
