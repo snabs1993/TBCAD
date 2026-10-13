@@ -1,5 +1,5 @@
-# Glue between the application and the file-format backends: opens .dwg read-only and saves
-# copies as .dxf. Backends are registered through AppCore::setForeignReader / setDxfWriter, so
+# Glue between the application and the file-format backends: opens .dwg read-only (Save As
+# copies as .dxf. Backends are registered through AppCore::setForeignReader, so
 # another DWG reader can replace libs/dwg here without touching the application.
 tbcad_add_library(dwgopen
   SOURCES src/dwgopen.cpp

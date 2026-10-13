@@ -4,7 +4,6 @@
 #include <iterator>
 
 #include "tbcad/dwg/dwg.h"
-#include "tbcad/dxf/writer.h"
 
 namespace tbcad::dwgopen {
 
@@ -60,25 +59,8 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
     return out;
 }
 
-Result<std::vector<std::string>> writeDxfFile(const Document& doc,
-                                              const std::filesystem::path& path) {
-    dxf::Report report;
-    Result<dxf::ExportResult> exported = dxf::exportDxf(doc, {}, report);
-    if (!exported)
-        return makeError(ErrorCode::Generic, exported.error().message);
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f)
-        return makeError(ErrorCode::Io, "The file cannot be written.");
-    f << exported.value().bytes;
-    f.flush();
-    if (!f)
-        return makeError(ErrorCode::Io, "Writing the file failed.");
-    return messagesOf(report);
-}
-
 void registerForeignFormats(ui::AppCore& core) {
     core.setForeignReader(".dwg", readDwgFile, /*readOnly=*/true);
-    core.setDxfWriter(writeDxfFile);
 }
 
 }  // namespace tbcad::dwgopen

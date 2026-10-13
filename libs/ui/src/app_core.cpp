@@ -4,12 +4,15 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <sstream>
 #include <unordered_set>
 
 #include "app_commands.h"
 #include "tbcad/blocks/index_refresh.h"
+#include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
@@ -424,20 +427,114 @@ void AppCore::newDocument() {
 }
 
 namespace {
-std::string lowerExtension(const fs::path& p) {
+
+bool isDxfPath(const fs::path& p) {
     std::string e = p.extension().string();
-    for (char& c : e)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return e == ".dxf";
+}
+
+}  // namespace
+
+Result<void> AppCore::openDxf(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        print("Cannot open " + path.string());
+        settings_.removeRecentFile(platform::pathToUtf8(path));
+        return makeError(ErrorCode::Io, "Cannot read " + path.string());
+    }
+    std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(raw.size());
+    std::transform(raw.begin(), raw.end(), bytes.begin(),
+                   [](char c) { return static_cast<std::byte>(c); });
+    dxf::Report report;
+    auto result = dxf::importDxf(bytes, {}, report);
+    if (!result) {
+        print("Cannot open " + path.string() + ": " + result.error().message);
+        return makeError(ErrorCode::Parse, result.error().message);
+    }
+    auto& imported = result.value();
+    std::size_t total = 0;
+    for (const auto& [name, count] : imported.summary.entities)
+        total += count.imported;
+    addSession(std::move(imported.document), path);
+    std::size_t shown = 0;
+    for (const auto& d : report.diagnostics()) {
+        if (d.severity == dxf::Severity::Info)
+            continue;
+        if (++shown > 5)
+            break;
+        print("DXF: " + d.message);
+    }
+    std::size_t warnings =
+        report.count(dxf::Severity::Warning) + report.count(dxf::Severity::Error);
+    if (warnings > 5)
+        print("DXF: " + std::to_string(warnings - 5) + " more notice(s) not shown.");
+    if (imported.summary.unitsAssumed)
+        print("DXF: the file has no units; millimetres assumed.");
+    settings_.addRecentFile(platform::pathToUtf8(path));
+    (void)settings_.save(paths_.settingsFile());
+    print("Opened " + path.string() + " (" + std::to_string(total) + " objects)");
+    return {};
+}
+
+Result<void> AppCore::saveDxf(const fs::path& path) {
+    dxf::Report report;
+    dxf::ExportOptions options;
+    auto out = dxf::exportDxf(session_->doc, options, report);
+    if (!out) {
+        print("Cannot save " + path.string() + ": " + out.error().message);
+        return makeError(ErrorCode::InvalidArgument, out.error().message);
+    }
+    std::error_code ec;
+    fs::path tmp = path;
+    tmp += ".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (f)
+            f.write(out.value().bytes.data(),
+                    static_cast<std::streamsize>(out.value().bytes.size()));
+        if (!f) {
+            f.close();
+            fs::remove(tmp, ec);
+            print("Cannot save " + path.string());
+            return makeError(ErrorCode::Io, "Cannot write " + path.string());
+        }
+    }
+    if (fs::exists(path, ec)) {
+        fs::path bak = path;
+        bak += ".bak";
+        fs::remove(bak, ec);
+        fs::rename(path, bak, ec);
+    }
+    fs::rename(tmp, path, ec);
+    if (ec) {
+        print("Cannot save " + path.string() + ": " + ec.message());
+        return makeError(ErrorCode::Io, ec.message());
+    }
+    const auto& sum = out.value().summary;
+    if (sum.skipped > 0)
+        print("DXF: " + std::to_string(sum.skipped) + " object(s) could not be written.");
+    if (sum.downgraded > 0)
+        print("DXF: " + std::to_string(sum.downgraded) +
+              " object(s) were written in a simpler form.");
+    return {};
+}
+
+static std::string lowerExtension(const fs::path& p) {
+    std::string e = p.extension().string();
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return e;
 }
-}  // namespace
 
 void AppCore::setForeignReader(std::string extension, ForeignReadFn read, bool readOnly) {
     foreignReaders_[std::move(extension)] = ForeignReader{std::move(read), readOnly};
 }
 
 bool AppCore::canOpenExtension(std::string_view e) const {
-    return e == ".tbcad" || foreignReaders_.find(e) != foreignReaders_.end();
+    return e == ".tbcad" || e == ".dxf" || foreignReaders_.find(e) != foreignReaders_.end();
 }
 
 bool AppCore::readOnlyOrigin() const {
@@ -481,6 +578,8 @@ Result<void> AppCore::openFile(const fs::path& path) {
             print(readOnlyBanner());
         return {};
     }
+    if (isDxfPath(path))
+        return openDxf(path);
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
@@ -512,7 +611,7 @@ Result<void> AppCore::save() {
 Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
-        path += ".tbcad";
+        path += settings_.getString("files.defaultFormat", "tbcad") == "dxf" ? ".dxf" : ".tbcad";
     if (runner().active()) {
         print("Finish the current command first.");
         return makeError(ErrorCode::Conflict, "A command is running.");
@@ -522,21 +621,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         return makeError(ErrorCode::Unsupported,
                          "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
     }
-    if (ext == ".dxf") {
-        if (!dxfWriter_)
-            return makeError(ErrorCode::Unsupported, "DXF export is not available.");
-        auto w = dxfWriter_(session_->doc, path);
-        if (!w) {
-            print("Cannot save " + path.string() + ": " + w.error().message);
-            return w.error();
-        }
-        for (const auto& m : w.value())
-            print(m);
-        // A DXF is an export copy: the drawing keeps its current name and saved state.
-        print("Exported " + path.string());
-        return {};
-    }
-    auto r = io::writeTbcad(session_->doc, path);
+    auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path);
     if (!r) {
         print("Cannot save " + path.string() + ": " + r.error().message);
         return r;
@@ -1079,6 +1164,14 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    // Active-only mode lives in the drawing (Header::activeOnly); the command that owns it is
+    // registered by the layers module, so this is a no-op in builds without it.
+    ui.addStatusToggle(
+        "activeonly", "ACTIVE", [this] { return document().header().activeOnly; },
+        [this](bool on) {
+            if (!prompt_)
+                submitText(on ? "ACTIVEONLY On" : "ACTIVEONLY Off");
+        });
     ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 

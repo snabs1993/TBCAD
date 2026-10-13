@@ -113,7 +113,6 @@ public:
     // Foreign formats. `extension` is lower case with the dot (".dwg"). A read-only format
     // opens as a copy: Save always asks for a new name and never writes the original.
     void setForeignReader(std::string extension, ForeignReadFn read, bool readOnly);
-    void setDxfWriter(ForeignWriteFn write) { dxfWriter_ = std::move(write); }
     bool canOpenExtension(std::string_view lowerExtension) const;
     // True while the drawing came from a read-only format and has not been saved as .tbcad.
     bool readOnlyOrigin() const;
@@ -249,6 +248,8 @@ private:
     class AppObserver;
 
     std::unique_ptr<Session> makeSession(std::unique_ptr<Document> doc, std::filesystem::path file);
+    Result<void> openDxf(const std::filesystem::path& path);
+    Result<void> saveDxf(const std::filesystem::path& path);
     void clearTransientState();
     // Replaces the active drawing.
     void installSession(std::unique_ptr<Document> doc, std::filesystem::path file);
@@ -270,7 +271,6 @@ private:
         bool readOnly = true;
     };
     std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
-    ForeignWriteFn dxfWriter_{};
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;

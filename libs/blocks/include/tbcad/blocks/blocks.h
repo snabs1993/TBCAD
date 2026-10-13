@@ -17,6 +17,11 @@ Transform2 instanceTransform(const InsertData& insert, Vec2 blockBase);
 // Same, looking the base point up in the document (identity base when the block is missing).
 Transform2 instanceTransform(const Document& doc, const InsertData& insert);
 
+// Block space to the Insert's space for every item of the Insert: one transform for a plain
+// Insert, one per item for an associative array (see ArrayInfo; item transforms act in block
+// space, before instanceTransform).
+std::vector<Transform2> instanceTransforms(const InsertData& insert, Vec2 blockBase);
+
 // ---- Definitions
 // ---------------------------------------------------------------------------------
 

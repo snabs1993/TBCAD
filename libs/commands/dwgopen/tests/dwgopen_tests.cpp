@@ -21,22 +21,3 @@ TEST_CASE("readDwgFile rejects missing, junk and unsupported files without touch
     CHECK(r.error().message.find("unsupported") != std::string::npos);
     fs::remove_all(dir);
 }
-
-TEST_CASE("writeDxfFile writes a DXF") {
-    fs::path dir = fs::temp_directory_path() / "tbcad_dwgopen_tests2";
-    fs::create_directories(dir);
-    Document doc;
-    {
-        auto tx = doc.begin("line");
-        (void)tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}});
-        tx.commit();
-    }
-    REQUIRE(dwgopen::writeDxfFile(doc, dir / "a.dxf").ok());
-    std::string text;
-    {  // closed before remove_all (Windows)
-        std::ifstream in(dir / "a.dxf", std::ios::binary);
-        text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    }
-    CHECK(text.find("LINE") != std::string::npos);
-    fs::remove_all(dir);
-}

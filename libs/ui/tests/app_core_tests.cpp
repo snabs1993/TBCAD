@@ -410,7 +410,7 @@ TEST_CASE("host settings are typed by what is stored; toggles live in the UI reg
 
     UiRegistry ui;
     f.core->registerBuiltinUi(ui);
-    REQUIRE(ui.statusToggles().size() == 5);
+    REQUIRE(ui.statusToggles().size() == 6);
     CHECK(ui.statusToggles()[0].label == "SNAP");
     CHECK(ui.statusToggles()[0].get());
     ui.statusToggles()[0].set(false);
@@ -708,7 +708,7 @@ TEST_CASE("SETTINGS asks the window to open the dialog") {
     CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
 
-TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, never .dwg") {
+TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never .dwg") {
     Fixture f("foreign");
     fs::path src = f.dir / "plan.dwg";
     { std::ofstream(src, std::ios::binary) << "original bytes"; }
@@ -725,12 +725,6 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, 
             return r;
         },
         true);
-    std::vector<fs::path> dxfWrites;
-    f.core->setDxfWriter(
-        [&](const Document&, const fs::path& p) -> Result<std::vector<std::string>> {
-            dxfWrites.push_back(p);
-            return std::vector<std::string>{};
-        });
 
     CHECK(f.core->canOpenExtension(".dwg"));
     REQUIRE(f.core->openFile(src).ok());
@@ -746,11 +740,6 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, 
     CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());  // nor any .dwg
     CHECK_FALSE(fs::exists(f.dir / "x.dwg"));
 
-    REQUIRE(f.core->saveAs(f.dir / "copy.dxf").ok());
-    REQUIRE(dxfWrites.size() == 1);
-    CHECK(f.core->readOnlyOrigin());  // a DXF is only an export copy
-    CHECK(f.core->modified());
-
     REQUIRE(f.core->saveAs(f.dir / "plan.tbcad").ok());
     CHECK_FALSE(f.core->readOnlyOrigin());
     CHECK_FALSE(f.core->modified());
@@ -761,6 +750,48 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad/.dxf, 
     std::ifstream in(src, std::ios::binary);
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(content == "original bytes");
+}
+
+TEST_CASE("a .dxf file opens and saves back as DXF in place") {
+    Fixture f("dxfmain");
+    f.line("0,0", "100,0");
+    f.line("10,10", "50,70");
+    const fs::path dxfFile = f.dir / "plan.dxf";
+    REQUIRE(f.core->saveAs(dxfFile).ok());
+    {
+        std::ifstream in(dxfFile, std::ios::binary);
+        std::string head(20, ' ');
+        in.read(head.data(), 20);
+        CHECK(head.find("SECTION") != std::string::npos);  // "  0\nSECTION" starts a DXF
+    }
+    CHECK(f.core->file() == dxfFile);
+
+    // Reopen in a second application: the lines come back and Save writes DXF again.
+    Fixture g("dxfmain2");
+    REQUIRE(g.core->openFile(dxfFile).ok());
+    CHECK(g.core->document().modelSpaceCount() == 2);
+    CHECK(g.core->file() == dxfFile);
+    g.line("0,5", "5,5");
+    CHECK(g.core->modified());
+    REQUIRE(g.core->save().ok());
+    CHECK_FALSE(g.core->modified());
+    CHECK(fs::exists(dxfFile.string() + ".bak"));
+
+    Fixture h("dxfmain3");
+    REQUIRE(h.core->openFile(dxfFile).ok());
+    CHECK(h.core->document().modelSpaceCount() == 3);
+}
+
+TEST_CASE("files.defaultFormat decides the extension of a name without one") {
+    Fixture f("dxfdefault");
+    f.line("0,0", "10,0");
+    f.core->settings().setString("files.defaultFormat", "dxf");
+    REQUIRE(f.core->saveAs(f.dir / "noext").ok());
+    CHECK(f.core->file().extension() == ".dxf");
+    CHECK(fs::exists(f.dir / "noext.dxf"));
+    f.core->settings().setString("files.defaultFormat", "tbcad");
+    REQUIRE(f.core->saveAs(f.dir / "other").ok());
+    CHECK(f.core->file().extension() == ".tbcad");
 }
 
 namespace {

@@ -27,7 +27,7 @@ private:
     Mode mode_ = Mode::Open;
     std::filesystem::path dir_{};
     std::string name_{};
-    bool matchesExtension(const std::filesystem::path& p) const;
+    bool extensionMatches(const std::filesystem::path& p) const;
     std::string extension_{};
     std::string dirText_{};
     struct Item {

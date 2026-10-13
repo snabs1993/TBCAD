@@ -21,8 +21,4 @@ struct ForeignOpenResult {
 // Reads a file of a foreign format into a document. The file is never modified.
 using ForeignReadFn = std::function<Result<ForeignOpenResult>(const std::filesystem::path&)>;
 
-// Writes a copy of the document in a foreign format (DXF). Returns warning lines for the log.
-using ForeignWriteFn =
-    std::function<Result<std::vector<std::string>>(const Document&, const std::filesystem::path&)>;
-
 }  // namespace tbcad::ui
