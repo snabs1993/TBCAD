@@ -615,27 +615,6 @@ TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in 
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / Hall 2");
 }
 
-TEST_CASE("RENAME renames layers and blocks and refuses clashes") {
-    Fixture f;
-    {
-        Transaction tx = f.doc.begin("setup");
-        Layer a;
-        a.name = "Walls";
-        Layer b;
-        b.name = "Doors";
-        REQUIRE(tx.addLayer(a).ok());
-        REQUIRE(tx.addLayer(b).ok());
-        tx.commit();
-    }
-    f.host.run("RENAME", {"Layer", "Walls", "Partitions"});
-    CHECK(f.doc.layerByName("Partitions") != nullptr);
-    CHECK(f.doc.layerByName("Walls") == nullptr);
-    f.host.run("RENAME", {"Layer", "Partitions", "Doors"});
-    CHECK(f.doc.layerByName("Partitions") != nullptr);
-    f.host.run("RENAME", {"Layer", "0", "Zero"});
-    CHECK(f.doc.layerByName("Zero") == nullptr);
-}
-
 TEST_CASE("COPYTOLAYER copies onto the layer of the picked object") {
     Fixture f;
     LayerId target;

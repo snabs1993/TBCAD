@@ -33,7 +33,6 @@ std::unique_ptr<cmd::Command> makeExtrim();
 std::unique_ptr<cmd::Command> makeScaleText();
 std::unique_ptr<cmd::Command> makeSetByLayer();
 std::unique_ptr<cmd::Command> makeFind();
-std::unique_ptr<cmd::Command> makeRename();
 std::unique_ptr<cmd::Command> makeCopyToLayer();
 
 }  // namespace tbcad::modifycmd

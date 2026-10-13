@@ -7,6 +7,7 @@ tbcad_add_library(draw2
     src/draw2.cpp
     src/point.cpp
     src/ray.cpp
+    src/solid.cpp
     src/regionops.cpp
     src/revcloud.cpp
     src/sketch.cpp
@@ -22,6 +23,7 @@ tbcad_add_tests(draw2
     tests/donut_tests.cpp
     tests/point_tests.cpp
     tests/ray_tests.cpp
+    tests/solid_tests.cpp
     tests/region_tests.cpp
     tests/revcloud_tests.cpp
     tests/sketch_tests.cpp
