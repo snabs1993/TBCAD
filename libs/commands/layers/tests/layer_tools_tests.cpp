@@ -62,7 +62,8 @@ TEST_CASE("LAYFRZ refuses the current layer but still freezes the others") {
         REQUIRE(layers::setCurrentLayer(f.doc, tx, f.a).ok());
         tx.commit();
     }
-    CHECK(f.run("LAYFRZ", {cmd::ScriptItem::select({f.ea, f.eb}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.run("LAYFRZ", {cmd::ScriptItem::select({f.ea, f.eb}), cmd::ScriptItem::enter()})
+              .finished);
     CHECK_FALSE(f.doc.layer(f.a)->frozen);
     CHECK(f.doc.layer(f.b)->frozen);
 }
@@ -91,7 +92,9 @@ TEST_CASE("LAYISO hides the other layers and LAYUNISO brings back the earlier st
 TEST_CASE("LAYMCH moves objects to the layer of the picked object") {
     Fixture f;
     f.setup();
-    CHECK(f.run("LAYMCH", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(), cmd::ScriptItem::pick(f.eb)}).finished);
+    CHECK(f.run("LAYMCH", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(),
+                           cmd::ScriptItem::pick(f.eb)})
+              .finished);
     CHECK(f.doc.find(f.ea)->common.layer == f.b);
     CHECK(f.doc.layer(f.a) != nullptr);
 }
@@ -99,7 +102,9 @@ TEST_CASE("LAYMCH moves objects to the layer of the picked object") {
 TEST_CASE("LAYMRG moves everything over and removes the source layer, one undo step") {
     Fixture f;
     f.setup();
-    CHECK(f.run("LAYMRG", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(), cmd::ScriptItem::pick(f.eb)}).finished);
+    CHECK(f.run("LAYMRG", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(),
+                           cmd::ScriptItem::pick(f.eb)})
+              .finished);
     CHECK(f.doc.layer(f.a) == nullptr);
     CHECK(f.doc.find(f.ea)->common.layer == f.b);
     f.host.undo();

@@ -49,18 +49,18 @@ public:
         for (LayerId id : ids) {
             Result<void> r;
             switch (act_) {
-            case Act::Off:
-                r = setOn(ctx.doc(), ctx.tx(), id, false);
-                break;
-            case Act::Freeze:
-                r = setFrozen(ctx.doc(), ctx.tx(), id, true);
-                break;
-            case Act::Lock:
-                r = setLocked(ctx.doc(), ctx.tx(), id, true);
-                break;
-            case Act::Unlock:
-                r = setLocked(ctx.doc(), ctx.tx(), id, false);
-                break;
+                case Act::Off:
+                    r = setOn(ctx.doc(), ctx.tx(), id, false);
+                    break;
+                case Act::Freeze:
+                    r = setFrozen(ctx.doc(), ctx.tx(), id, true);
+                    break;
+                case Act::Lock:
+                    r = setLocked(ctx.doc(), ctx.tx(), id, true);
+                    break;
+                case Act::Unlock:
+                    r = setLocked(ctx.doc(), ctx.tx(), id, false);
+                    break;
             }
             if (r)
                 done.push_back(id);
@@ -109,9 +109,7 @@ public:
 class LayUnisoCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYUNISO"; }
-    std::string_view description() const override {
-        return "Restore the layers hidden by LAYISO";
-    }
+    std::string_view description() const override { return "Restore the layers hidden by LAYISO"; }
     Task run(CommandContext& ctx) override {
         auto it = ctx.doc().header().custom.find(kIsoKey);
         if (it == ctx.doc().header().custom.end()) {
@@ -146,7 +144,7 @@ public:
                 ids.push_back(id);
         for (LayerId id : ids)
             (void)(thaw_ ? setFrozen(ctx.doc(), ctx.tx(), id, false)
-                          : setOn(ctx.doc(), ctx.tx(), id, true));
+                         : setOn(ctx.doc(), ctx.tx(), id, true));
         ctx.message(ids.empty() ? "Nothing to change."
                                 : std::to_string(ids.size()) +
                                       (thaw_ ? " layer(s) thawed." : " layer(s) turned on."));
@@ -234,8 +232,7 @@ public:
         cmd::KeywordOptions ko;
         ko.keywords = {"Yes", "No"};
         ko.defaultKeyword = "No";
-        auto k = co_await ctx.getKeyword(
-            "Delete layer " + path + " and all its objects", ko);
+        auto k = co_await ctx.getKeyword("Delete layer " + path + " and all its objects", ko);
         if (!k.ok() || k.keyword != "Yes")
             co_return;
         std::vector<EntityId> doomed;
@@ -258,8 +255,7 @@ public:
 }  // namespace
 
 void registerLayerTools(cmd::Registry& registry) {
-    (void)registry.add(std::make_unique<PickedLayerCommand>(
-        "LAYOFF", "Turned off", Act::Off));
+    (void)registry.add(std::make_unique<PickedLayerCommand>("LAYOFF", "Turned off", Act::Off));
     (void)registry.add(std::make_unique<PickedLayerCommand>("LAYFRZ", "Froze", Act::Freeze));
     (void)registry.add(std::make_unique<PickedLayerCommand>("LAYLCK", "Locked", Act::Lock));
     (void)registry.add(std::make_unique<PickedLayerCommand>("LAYULK", "Unlocked", Act::Unlock));
