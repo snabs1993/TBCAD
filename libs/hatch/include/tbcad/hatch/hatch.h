@@ -30,4 +30,14 @@ Entity makeHatchEntity(const Boundary& boundary, const Pattern& pattern, double 
 Result<std::vector<Entity>> explodeHatch(const Document& doc, const Entity& hatch,
                                          double tolerance = 0.01);
 
+// Associative hatches. For every hatch whose `sourceBoundary` contains an entity touched by `tx`
+// (Transaction::touchedEntities), the boundary is found again from the source entities and the
+// hatch's loops are replaced. A hatch whose source was erased, or whose sources no longer enclose
+// a region, becomes non-associative (empty sourceBoundary) and keeps its last loops. Hatches whose
+// loops would not change are not written. Meant to run as a commit hook (see
+// cmd::Registry::addCommitHook) so the update joins the command's undo step.
+// Returns the number of hatches that were rewritten or detached.
+std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
+                                     const BoundaryOptions& options = {});
+
 }  // namespace tbcad::hatch

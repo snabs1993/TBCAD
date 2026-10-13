@@ -293,3 +293,39 @@ TEST_CASE("text layout of other entities is empty, empty text has no glyphs") {
     CHECK(layoutText(doc, t).empty());
     CHECK(layoutMText(doc, MTextData{}).empty());
 }
+
+TEST_CASE("MTEXT: Thai wraps between words, not inside them") {
+    Document doc;
+    // สวัสดี ครับ ผม ชื่อ ทดสอบ (without spaces)
+    const std::string s =
+        "สวัสดีครับผม"
+        "ชื่อทดสอบ";
+    const std::vector<std::string> words{"สวัสดี", "ครับ", "ผม", "ชื่อ", "ทดสอบ"};
+    double widest = 0;
+    for (const auto& w : words)
+        widest = std::max(widest, fontWidth(w, 5));
+    // Any width at least as wide as the widest word must give lines made of whole words.
+    for (double extra : {0.0, 2.0, 6.0, 12.0}) {
+        MTextData m;
+        m.height = 5;
+        m.utf8 = s;
+        m.width = widest + extra;
+        TextLayout l = layoutMText(doc, m);
+        REQUIRE(l.lines.size() >= 2);
+        std::string joined;
+        for (const auto& ln : l.lines) {
+            joined += ln.text;
+            // The line starts at a word start: the text before it is a whole number of words.
+            std::size_t acc = 0;
+            bool onBoundary = joined.size() == ln.text.size();
+            for (const auto& w : words) {
+                if (acc == joined.size() - ln.text.size())
+                    onBoundary = true;
+                acc += w.size();
+            }
+            CHECK(onBoundary);
+            CHECK(ln.width <= m.width + 1e-6);
+        }
+        CHECK(joined == s);
+    }
+}

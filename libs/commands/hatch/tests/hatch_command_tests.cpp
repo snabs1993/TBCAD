@@ -13,6 +13,25 @@ using namespace tbcad::cmd;
 
 namespace {
 
+// Test command: stretches the rectangle made by Fixture::rect({0,0},{100,60}) to x = 150.
+class Widen final : public Command {
+public:
+    explicit Widen(const std::vector<EntityId>& ids) : ids_(ids) {}
+    std::string_view name() const override { return "WIDEN"; }
+    Task run(CommandContext& ctx) override {
+        auto edit = [&](std::size_t i, auto fn) {
+            (void)ctx.tx().modify(ids_[i], [&](Entity& e) { fn(*entityAs<LineData>(e)); });
+        };
+        edit(0, [](LineData& l) { l.b = {150, 0}; });
+        edit(1, [](LineData& l) { l.a = {150, 0}, l.b = {150, 60}; });
+        edit(2, [](LineData& l) { l.a = {150, 60}; });
+        co_return;
+    }
+
+private:
+    const std::vector<EntityId>& ids_;
+};
+
 struct Fixture {
     Document doc;
     Registry reg;
@@ -22,6 +41,7 @@ struct Fixture {
     Fixture() {
         registerBuiltinCommands(reg);
         hatchcmd::registerCommands(reg);
+        (void)reg.add(std::make_unique<Widen>(ids));
         host = std::make_unique<ScriptHost>(doc, reg);
     }
 
@@ -307,4 +327,92 @@ TEST_CASE("HATCHEDIT on 1,000 hatches is one undo step") {
     CHECK(f.host->undo());
     for (EntityId id : ids)
         REQUIRE(entityAs<HatchData>(*f.doc.find(id))->patternScale == doctest::Approx(1));
+}
+
+TEST_CASE(
+    "HATCH: hovering previews the region under the cursor, and the cache follows the drawing") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    f.host->run("HATCH", {});  // waits for a point
+    f.host->runner().pointerMoved(RawInput{{50, 30}, {}, 1});
+    const DisplayList& pv = f.host->preview();
+    REQUIRE_FALSE(pv.items.empty());
+    CHECK(std::holds_alternative<DisplayFill>(pv.items.front()));
+    bool outline = false;
+    for (const DisplayItem& it : pv.items)
+        if (auto* pl = std::get_if<DisplayPolyline>(&it))
+            outline = outline || pl->closed;
+    CHECK(outline);
+    // Outside the shape there is nothing to preview.
+    f.host->runner().pointerMoved(RawInput{{500, 500}, {}, 1});
+    CHECK(f.host->preview().items.empty());
+    f.host->feed({ScriptItem::esc()});
+    CHECK(f.hatches().empty());
+}
+
+TEST_CASE("HATCH: the host's window query supplies the candidates") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    ViewState v;
+    v.center = {50, 30};
+    v.scale = 1;
+    v.sizePx = {400, 400};
+    f.host->setView(v);
+    int calls = 0;
+    std::vector<EntityId> answer;
+    f.host->setWindowQuery([&](const BBox2&) {
+        ++calls;
+        return answer;
+    });
+    // The index says nothing is there, so there is no boundary even though the document has one.
+    f.host->run("HATCH", {"50,30", ScriptItem::esc()});
+    CHECK(calls > 0);
+    CHECK(f.hatches().empty());
+    answer = f.ids;
+    f.host->run("HATCH", {"50,30", ""});
+    CHECK(f.hatches().size() == 1);
+}
+
+TEST_CASE("HATCH: Gap closes a small opening, Link off makes the hatch independent") {
+    Fixture f;
+    f.addEntity(LineData{{0, 0}, {100, 0}});
+    f.addEntity(LineData{{100, 0}, {100, 60}});
+    f.addEntity(LineData{{100, 60}, {0, 60}});
+    f.addEntity(LineData{{0, 60}, {0, 0.5}});
+    f.host->run("HATCH", {"50,30", ScriptItem::esc()});
+    CHECK(f.hatches().empty());
+    f.host->run("HATCH", {"G", "1", "L", "50,30", ""});
+    auto hs = f.hatches();
+    REQUIRE(hs.size() == 1);
+    CHECK(hs[0]->loops[0].edges.size() == 5);
+    CHECK(hs[0]->sourceBoundary.empty());  // Link was turned off
+    CHECK(f.host->setting("hatch.gap").value() == "1");
+    CHECK(f.host->setting("hatch.associative").value() == "0");
+    f.host->run("HATCH", {"L", "50,30", ""});  // back on
+    hs = f.hatches();
+    REQUIRE(hs.size() == 2);
+    CHECK_FALSE(hs[1]->sourceBoundary.empty());
+}
+
+TEST_CASE("an associative hatch follows its boundary in the same undo step") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    f.host->run("HATCH", {"50,30", ""});
+    REQUIRE(f.hatches().size() == 1);
+    CHECK(hatch::hatchBounds(*f.hatches()[0]).max.x == doctest::Approx(100));
+    f.host->run("WIDEN", {});
+    CHECK(hatch::hatchBounds(*f.hatches()[0]).max.x == doctest::Approx(150));
+    CHECK(f.hatches()[0]->sourceBoundary.size() == 4);
+    CHECK(f.host->undo());
+    CHECK(hatch::hatchBounds(*f.hatches()[0]).max.x == doctest::Approx(100));
+    CHECK(f.host->redo());
+    CHECK(hatch::hatchBounds(*f.hatches()[0]).max.x == doctest::Approx(150));
+}
+
+TEST_CASE("a hatch made with Link off stays put when the boundary moves") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    f.host->run("HATCH", {"L", "50,30", ""});
+    f.host->run("WIDEN", {});
+    CHECK(hatch::hatchBounds(*f.hatches()[0]).max.x == doctest::Approx(100));
 }
