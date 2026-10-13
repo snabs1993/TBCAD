@@ -37,7 +37,7 @@ const char* kUsage =
     "                          or a $INSUNITS number) instead of what the file says\n"
     "  --encoding NAME         text encoding of the file (utf-8, cp874, cp1252, ...)\n"
     "  --split-layers SEP      turn layer names like A~b into a sub-layer b of A (SEP = ~)\n"
-    "  --no-dimension-graphics do not keep the drawn graphics of dimensions\n"
+    "  --dimension-graphics    also keep the dimension drawings stored in the file\n"
     "\n"
     "export options (.tbcad -> DXF):\n"
     "  --version V             r2000 (default, AC1015), r12 (AC1009) or r2007 (AC1021, UTF-8)\n"
@@ -172,8 +172,10 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             if (!v)
                 return kExitFailed;
             options.splitLayers = *v;
+        } else if (a == "--dimension-graphics") {
+            options.dimensionGraphics = true;
         } else if (a == "--no-dimension-graphics") {
-            options.dimensionGraphics = false;
+            options.dimensionGraphics = false;  // the default; accepted for old scripts
         } else if (a == "--version") {
             auto v = value("a DXF version");
             if (!v)

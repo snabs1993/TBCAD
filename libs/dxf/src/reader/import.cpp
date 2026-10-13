@@ -5,6 +5,7 @@
 #include <functional>
 
 #include "importer.h"
+#include "tbcad/dim/dim.h"
 
 namespace tbcad::dxf::detail {
 
@@ -802,6 +803,30 @@ Result<ImportResult> Importer::run() {
 
     ChangeSet cs = tx_->commit();
     tx_.reset();
+
+    // Dimensions draw themselves: put the text where our generator puts it (the position the
+    // other program stored is only a hint) so that re-exporting gives the same file again. The
+    // measurement the file stored is kept (or derived when it stored none).
+    {
+        std::vector<EntityId> dims;
+        doc_->forEachEntity([&](const Entity& e) {
+            if (entityAs<DimensionData>(e))
+                dims.push_back(e.common.id);
+        });
+        if (!dims.empty()) {
+            Transaction tx = doc_->begin("dimension text");
+            for (EntityId id : dims) {
+                (void)tx.modify(id, [&](Entity& e) {
+                    DimensionData& d = *entityAs<DimensionData>(e);
+                    const double measured = d.measurement;
+                    dim::refresh(*doc_, d);
+                    if (measured > 0)
+                        d.measurement = measured;
+                });
+            }
+            tx.commit();
+        }
+    }
     sum_.outsideWorkArea = cs.outOfArea.size();
     if (sum_.outsideWorkArea > 0) {
         report_.warn(code::kOutsideWorkArea,

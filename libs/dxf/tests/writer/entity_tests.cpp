@@ -5,6 +5,7 @@
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 
@@ -236,7 +237,7 @@ TEST_CASE("all geometry kinds, properties and tables survive an export and re-im
         ld.textPos = ld.vertices.back();  // where the importer puts it
         addTo(make(Indirect<LeaderData>(ld)), notesId);
 
-        // Dimensions of every kind (no drawn graphics: the exporter says so).
+        // Dimensions of every kind (the exporter draws their *D blocks).
         auto addDim = [&](DimKind k, std::array<Vec2, 4> pts, double rot, double measurement) {
             DimensionData d;
             d.kind = k;
@@ -326,10 +327,23 @@ TEST_CASE("all geometry kinds, properties and tables survive an export and re-im
 
         tx.commit();
     }
+    {
+        // The text position of a dimension is derived from its definition points and style.
+        std::vector<EntityId> dims;
+        doc.forEachEntity([&](const Entity& e) {
+            if (entityAs<DimensionData>(e))
+                dims.push_back(e.common.id);
+        });
+        Transaction tx = doc.begin("refresh dimensions");
+        for (EntityId id : dims)
+            REQUIRE(
+                tx.modify(id, [&](Entity& e) { dim::refresh(doc, *entityAs<DimensionData>(e)); }));
+        tx.commit();
+    }
 
     RoundTrip rt = roundTrip(doc);
     CHECK_MESSAGE(rt.diff.empty(), rt.diff);
-    CHECK(rt.exportReport.countCode(wcode::kNoDimensionGraphics) == 7);
+    CHECK(rt.exportReport.countCode(wcode::kNoDimensionGraphics) == 0);
     CHECK(rt.exportReport.count(Severity::Error) == 0);
 }
 
@@ -649,6 +663,45 @@ TEST_CASE("exported ATTRIB records sit at the inserted position, scaled and turn
     CHECK(rec.find("\n10\n10") != std::string::npos);
     CHECK(rec.find("\n40\n2.0\n") != std::string::npos);
     CHECK(rec.find("\n50\n90") != std::string::npos);
+}
+
+TEST_CASE("a dimension is exported with a drawn *D block that other programs can show") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("dimensions");
+        DimensionData d;
+        d.kind = DimKind::Linear;
+        d.defPts = {Vec2{0, 0}, Vec2{100, 0}, Vec2{50, 10}, Vec2{}};
+        d.style = kDimStyleStandard;
+        Entity e;
+        e.data = Indirect<DimensionData>(d);
+        REQUIRE(tx.add(std::move(e)));
+        tx.commit();
+    }
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
+    REQUIRE(out.ok());
+    CHECK(exportReport.countCode(wcode::kNoDimensionGraphics) == 0);
+
+    ImportOptions opt;
+    opt.dimensionGraphics = true;
+    Report report;
+    Result<ImportResult> in = importDxf(testing::bytesOf(out.value().bytes), opt, report);
+    REQUIRE(in.ok());
+    int proxies = 0, texts = 0;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<ProxyData>(e)) {
+            ++proxies;
+            // two extension lines, the dimension line and two arrowheads
+            CHECK(p->graphics.items.size() >= 5);
+        } else if (const auto* t = entityAs<TextData>(e)) {
+            texts += t->utf8 == "100.00" ? 1 : 0;
+        } else if (const auto* m = entityAs<MTextData>(e)) {
+            texts += m->utf8.find("100.00") != std::string::npos ? 1 : 0;
+        }
+    });
+    CHECK(proxies == 1);
+    CHECK(texts >= 1);
 }
 
 }  // namespace tbcad::dxf

@@ -134,17 +134,19 @@ kind:
 |---|---|
 | Linear, Aligned | group 13, group 14, group 10 (point on the dimension line), unused |
 | Radius, Diameter | group 10 (centre / first point), group 15 (point on the circle), unused, unused |
-| Angular2Line | 13, 14, 15, 10 |
+| Angular2Line | 13, 14, 15, 10; the point on the arc (group 16) goes to `textPos` |
 | Angular3Point | 13, 14, 15 (vertex), 10 (arc point) |
 
 Some writers (ezdxf, some CAD programs) store an aligned dimension as a rotated linear one;
 that is imported as Linear with `rotation`. Ordinate dimensions have no `DimensionData` form.
 
-With `dimensionGraphics` (default) the anonymous `*D` block of the dimension is also kept so the
-dimension displays before the dimension generator (W5-5) exists: its lines, arcs and solid
-arrowheads become one `ProxyData` entity (`originalType = "DIMENSION"`, resolved `DisplayList`),
-and its text becomes loose `TextData`/`MTextData`. W5-5 should switch the option off (the
-converter has `--no-dimension-graphics`) once `DimensionData` draws itself.
+Dimensions draw themselves from their definition points and style (`docs/dim.md`), so the file's
+own drawing (the anonymous `*D` block) is not needed. After the import the text position of every
+dimension whose text the user did not move is recomputed by the generator, which makes
+export, import and export give the same dimension again; the stored measurement is kept. With
+`dimensionGraphics` on (converter `--dimension-graphics`) the block is also kept as one
+`ProxyData` entity (`originalType = "DIMENSION"`, resolved `DisplayList`) and loose
+`TextData`/`MTextData`, which shows exactly what the other program drew. Off by default.
 
 ## Report and exit codes
 
@@ -167,7 +169,7 @@ offsets for binary DXF).
 ```
 tbcad-convert input.dxf -o output.tbcad [--report report.json] [--units mm|cm|m|km|in|ft|yd|mi|<n>]
               [--encoding utf-8|cp874|cp1252|...] [--split-layers <sep>]
-              [--no-dimension-graphics] [-q]
+              [--dimension-graphics] [-q]
 ```
 
 Exit codes: **0** converted without warnings, **1** converted with warnings (printed to stderr
