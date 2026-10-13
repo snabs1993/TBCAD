@@ -142,7 +142,8 @@ public:
         ctx.message("dist " + formatDouble(dist.value));
         auto ang = co_await ctx.getAngle("Angle", AngleOptions{.base = Vec2{0, 0}});
         ctx.message("ang " + formatDouble(ang.value));
-        auto n = co_await ctx.getInteger("Count", IntOptions{.defaultValue = 4, .min = 1, .max = 10});
+        auto n =
+            co_await ctx.getInteger("Count", IntOptions{.defaultValue = 4, .min = 1, .max = 10});
         ctx.message("n " + std::to_string(n.value) + " st " + std::to_string(int(n.status)));
         auto x = co_await ctx.getReal("Real", RealOptions{.defaultValue = 2.5});
         ctx.message("real " + formatDouble(x.value));
@@ -161,9 +162,8 @@ public:
         ctx.message("sel " + std::to_string(sel.ids.size()) + " st " +
                     std::to_string(int(sel.status)));
         auto e = co_await ctx.getEntity(
-            "Pick a line", EntityOptions{.filter = [](const Entity& en) {
-                return kind(en) == EntityKind::Line;
-            }});
+            "Pick a line",
+            EntityOptions{.filter = [](const Entity& en) { return kind(en) == EntityKind::Line; }});
         ctx.message("entity " + std::to_string(e.id.value) + " st " +
                     std::to_string(int(e.status)));
     }
@@ -195,7 +195,8 @@ class KeywordCmd final : public Command {
 public:
     std::string_view name() const override { return "KW"; }
     Task run(CommandContext& ctx) override {
-        auto r = co_await ctx.getPoint("Point", PointOptions{.keywords = {"Close", "Cancelx", "Undo"}});
+        auto r =
+            co_await ctx.getPoint("Point", PointOptions{.keywords = {"Close", "Cancelx", "Undo"}});
         ctx.message("status " + std::to_string(int(r.status)) + " kw " + r.keyword);
     }
 };
@@ -358,8 +359,7 @@ TEST_CASE("typed input grammar and rejection of bad input") {
 TEST_CASE("typed values for distance, angle, integer, real, string, keyword") {
     Fixture f;
     ScriptHost host(f.doc, f.reg);
-    auto r = host.run("EVERYTHING",
-                      {"12.5", "90", "99", "7", "", "Hello world", "fast"});
+    auto r = host.run("EVERYTHING", {"12.5", "90", "99", "7", "", "Hello world", "fast"});
     CHECK(r.finished);
     CHECK(r.rejected == 1);  // 99 is out of range
     CHECK(host.logContains("dist 12.5"));
@@ -516,11 +516,13 @@ TEST_CASE("point filters: priority order, preview gets the filtered point") {
     host.filters().add(&grid, 20);
     host.filters().add(&osnap, 10);  // lower order wins when it applies
 
-    host.run("TWOLINE", {ScriptItem::click({2, 1}), });
+    host.run("TWOLINE", {
+                            ScriptItem::click({2, 1}),
+                        });
     host.runner().pointerMoved(RawInput{{23, 18}, {}, 1});
     REQUIRE(host.preview().items.size() == 1);
     const auto& pl = std::get<DisplayPolyline>(host.preview().items[0]);
-    CHECK(near(pl.pts[0], {0, 0}));   // clicked near the origin: osnap won over the grid
+    CHECK(near(pl.pts[0], {0, 0}));    // clicked near the origin: osnap won over the grid
     CHECK(near(pl.pts[1], {20, 20}));  // far from the origin: grid
     CHECK(host.runner().feedback().marker == "grid");
 

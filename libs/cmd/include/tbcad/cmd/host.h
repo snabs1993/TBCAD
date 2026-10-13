@@ -12,8 +12,8 @@
 namespace tbcad::cmd {
 
 struct ViewState {
-    Vec2 center{};       // world point at the middle of the viewport
-    double scale = 1;    // millimetres per screen pixel
+    Vec2 center{};     // world point at the middle of the viewport
+    double scale = 1;  // millimetres per screen pixel
     Vec2 sizePx{};
 };
 
@@ -21,10 +21,10 @@ struct ViewState {
 struct PromptInfo {
     enum class Kind { Point, Distance, Angle, Real, Integer, String, Keyword, Selection, Entity };
     Kind kind = Kind::Point;
-    std::string text{};                    // "Specify next point"
-    std::vector<std::string> keywords{};   // "Close", "Undo"
+    std::string text{};                   // "Specify next point"
+    std::vector<std::string> keywords{};  // "Close", "Undo"
     std::optional<std::string> defaultText{};
-    std::string command{};                 // name of the running command
+    std::string command{};  // name of the running command
 
     // "Specify next point or [Close/Undo]: "
     std::string display() const;

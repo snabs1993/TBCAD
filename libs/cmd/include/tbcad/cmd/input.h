@@ -108,9 +108,9 @@ struct KeywordOptions {
 };
 struct SelectionOptions {
     std::vector<std::string> keywords{};
-    EntityFilterFn filter{};         // entities for which it returns false are ignored
-    bool allowPreselection = true;   // use the host's current selection without prompting
-    bool single = false;             // finish after the first pick
+    EntityFilterFn filter{};        // entities for which it returns false are ignored
+    bool allowPreselection = true;  // use the host's current selection without prompting
+    bool single = false;            // finish after the first pick
 };
 struct EntityOptions {
     std::vector<std::string> keywords{};
@@ -180,7 +180,7 @@ struct PointQuery {
 // What a filter wants the UI to draw (snap marker, tracking line, tooltip).
 struct FilterFeedback {
     bool active = false;
-    std::string marker{};   // e.g. "endpoint"; empty = none
+    std::string marker{};  // e.g. "endpoint"; empty = none
     Vec2 markerPos{};
     std::string tooltip{};
     std::optional<std::pair<Vec2, Vec2>> guide{};  // tracking line

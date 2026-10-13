@@ -66,8 +66,7 @@ CommandContext::Awaiter<RealResult> CommandContext::getAngle(std::string prompt,
     return {*this, std::move(r)};
 }
 
-CommandContext::Awaiter<RealResult> CommandContext::getReal(std::string prompt,
-                                                            RealOptions opts) {
+CommandContext::Awaiter<RealResult> CommandContext::getReal(std::string prompt, RealOptions opts) {
     auto r = make(detail::PromptKind::Real, std::move(prompt), std::move(opts.keywords));
     r.defaultReal = opts.defaultValue;
     r.min = opts.min;
@@ -75,8 +74,7 @@ CommandContext::Awaiter<RealResult> CommandContext::getReal(std::string prompt,
     return {*this, std::move(r)};
 }
 
-CommandContext::Awaiter<IntResult> CommandContext::getInteger(std::string prompt,
-                                                              IntOptions opts) {
+CommandContext::Awaiter<IntResult> CommandContext::getInteger(std::string prompt, IntOptions opts) {
     auto r = make(detail::PromptKind::Integer, std::move(prompt), std::move(opts.keywords));
     r.defaultInt = opts.defaultValue;
     if (opts.min)

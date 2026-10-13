@@ -1,9 +1,10 @@
+#include "tbcad/cmd/input.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 
 #include "tbcad/cmd/host.h"
-#include "tbcad/cmd/input.h"
 
 namespace tbcad::cmd {
 

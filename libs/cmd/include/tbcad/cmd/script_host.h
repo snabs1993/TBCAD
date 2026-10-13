@@ -28,11 +28,11 @@ struct ScriptItem {
 };
 
 struct ScriptResult {
-    bool started = false;       // the command was found and started
-    bool finished = false;      // the command is no longer running
-    std::size_t consumed = 0;   // items fed before the command finished
-    std::size_t rejected = 0;   // items a prompt refused
-    std::string error{};        // set when `started` is false
+    bool started = false;      // the command was found and started
+    bool finished = false;     // the command is no longer running
+    std::size_t consumed = 0;  // items fed before the command finished
+    std::size_t rejected = 0;  // items a prompt refused
+    std::string error{};       // set when `started` is false
 };
 
 // Headless host: feeds scripted input to commands so every command can be tested without a UI.

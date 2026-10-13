@@ -10,15 +10,24 @@ namespace {
 
 PromptInfo::Kind infoKind(detail::PromptKind k) {
     switch (k) {
-        case detail::PromptKind::Point: return PromptInfo::Kind::Point;
-        case detail::PromptKind::Distance: return PromptInfo::Kind::Distance;
-        case detail::PromptKind::Angle: return PromptInfo::Kind::Angle;
-        case detail::PromptKind::Real: return PromptInfo::Kind::Real;
-        case detail::PromptKind::Integer: return PromptInfo::Kind::Integer;
-        case detail::PromptKind::String: return PromptInfo::Kind::String;
-        case detail::PromptKind::Keyword: return PromptInfo::Kind::Keyword;
-        case detail::PromptKind::Selection: return PromptInfo::Kind::Selection;
-        case detail::PromptKind::Entity: return PromptInfo::Kind::Entity;
+        case detail::PromptKind::Point:
+            return PromptInfo::Kind::Point;
+        case detail::PromptKind::Distance:
+            return PromptInfo::Kind::Distance;
+        case detail::PromptKind::Angle:
+            return PromptInfo::Kind::Angle;
+        case detail::PromptKind::Real:
+            return PromptInfo::Kind::Real;
+        case detail::PromptKind::Integer:
+            return PromptInfo::Kind::Integer;
+        case detail::PromptKind::String:
+            return PromptInfo::Kind::String;
+        case detail::PromptKind::Keyword:
+            return PromptInfo::Kind::Keyword;
+        case detail::PromptKind::Selection:
+            return PromptInfo::Kind::Selection;
+        case detail::PromptKind::Entity:
+            return PromptInfo::Kind::Entity;
     }
     return PromptInfo::Kind::Point;
 }
@@ -173,7 +182,8 @@ void CommandRunner::refreshPrompt() {
         case detail::PromptKind::Keyword:
             info.defaultText = req.defaultText;
             break;
-        default: break;
+        default:
+            break;
     }
     prompt_ = std::move(info);
     host_.promptChanged(&*prompt_);

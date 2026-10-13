@@ -12,7 +12,8 @@ namespace {
 
 class Named final : public Command {
 public:
-    Named(std::string n, std::vector<std::string> a) : name_(std::move(n)), aliases_(std::move(a)) {}
+    Named(std::string n, std::vector<std::string> a)
+        : name_(std::move(n)), aliases_(std::move(a)) {}
     std::string_view name() const override { return name_; }
     std::vector<std::string> defaultAliases() const override { return aliases_; }
     Task run(CommandContext&) override { co_return; }

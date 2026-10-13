@@ -96,9 +96,8 @@ private:
                 ++col;
             }
         }
-        return makeError(ErrorCode::Parse,
-                         msg + " (line " + std::to_string(line) + ", column " +
-                             std::to_string(col) + ")");
+        return makeError(ErrorCode::Parse, msg + " (line " + std::to_string(line) + ", column " +
+                                               std::to_string(col) + ")");
     }
     char peek() const { return pos_ < s_.size() ? s_[pos_] : '\0'; }
     bool eat(char c) {
@@ -109,8 +108,8 @@ private:
         return false;
     }
     void skipWs() {
-        while (pos_ < s_.size() && (s_[pos_] == ' ' || s_[pos_] == '\t' || s_[pos_] == '\n' ||
-                                    s_[pos_] == '\r'))
+        while (pos_ < s_.size() &&
+               (s_[pos_] == ' ' || s_[pos_] == '\t' || s_[pos_] == '\n' || s_[pos_] == '\r'))
             ++pos_;
     }
     bool hex4(std::uint32_t& v) {
@@ -151,14 +150,30 @@ private:
                 break;
             char e = s_[pos_++];
             switch (e) {
-                case '"': out += '"'; break;
-                case '\\': out += '\\'; break;
-                case '/': out += '/'; break;
-                case 'b': out += '\b'; break;
-                case 'f': out += '\f'; break;
-                case 'n': out += '\n'; break;
-                case 'r': out += '\r'; break;
-                case 't': out += '\t'; break;
+                case '"':
+                    out += '"';
+                    break;
+                case '\\':
+                    out += '\\';
+                    break;
+                case '/':
+                    out += '/';
+                    break;
+                case 'b':
+                    out += '\b';
+                    break;
+                case 'f':
+                    out += '\f';
+                    break;
+                case 'n':
+                    out += '\n';
+                    break;
+                case 'r':
+                    out += '\r';
+                    break;
+                case 't':
+                    out += '\t';
+                    break;
                 case 'u': {
                     std::uint32_t cp = 0;
                     if (!hex4(cp)) {
@@ -267,7 +282,8 @@ AliasReport Registry::rebuild() {
             if (!inserted && it->second != name) {
                 if (ambiguous.insert(a).second)
                     conflicts_.push_back("Alias " + a + " is claimed by both " + it->second +
-                                         " and " + name + "; neither gets it until a user alias "
+                                         " and " + name +
+                                         "; neither gets it until a user alias "
                                          "decides");
                 else
                     conflicts_.back() += " (also " + name + ")";
@@ -292,8 +308,8 @@ AliasReport Registry::rebuild() {
             continue;
         }
         if (!commands_.count(t)) {
-            report.errors.push_back("aliases.json: \"" + rawAlias + "\" points to unknown command \"" +
-                                    rawTarget + "\"");
+            report.errors.push_back("aliases.json: \"" + rawAlias +
+                                    "\" points to unknown command \"" + rawTarget + "\"");
             continue;
         }
         aliases_[a] = t;

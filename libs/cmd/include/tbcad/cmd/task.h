@@ -25,8 +25,7 @@ public:
         std::suspend_always initial_suspend() noexcept { return {}; }
         struct FinalAwaiter {
             bool await_ready() noexcept { return false; }
-            std::coroutine_handle<> await_suspend(
-                std::coroutine_handle<promise_type> h) noexcept {
+            std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_type> h) noexcept {
                 auto next = h.promise().continuation;
                 return next ? next : std::noop_coroutine();
             }
