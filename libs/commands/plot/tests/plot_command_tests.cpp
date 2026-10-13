@@ -145,3 +145,29 @@ TEST_CASE("registerUi adds the File menu entries") {
         plotItem |= m.command == "PLOT";
     CHECK(plotItem);
 }
+
+namespace {
+struct DocHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    std::string file{};
+    std::vector<std::string> panels{};
+    std::string documentFile() const override { return file; }
+    void openPanel(std::string_view id) override { panels.emplace_back(id); }
+};
+}  // namespace
+
+TEST_CASE("the default file name follows the open drawing; PLOTPANEL opens the panel") {
+    Fixture f;
+    DocHost h(f.doc, f.reg);
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "drawing.pdf");
+    h.file = "C:\\work\\plan.v2.tbcad";
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "C:\\work\\plan.v2.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Svg) == "C:\\work\\plan.v2.svg");
+    h.file = "/tmp/dir.x/plan";
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/tmp/dir.x/plan.pdf");
+
+    auto r = h.run("PLOTPANEL", {});
+    CHECK(r.finished);
+    REQUIRE(h.panels.size() == 1);
+    CHECK(h.panels[0] == "plot");
+}

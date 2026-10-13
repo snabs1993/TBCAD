@@ -1,10 +1,14 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "tbcad/cmd/registry.h"
+#include "tbcad/mcp/session.h"
+#include "tbcad/mcpapp/controller.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/renderer.h"
 #include "tbcad/ui/app_core.h"
@@ -27,6 +31,7 @@ struct Options {
     bool selfTest = false;     // hidden window, exit code 77 when no display / OpenGL
     bool gate = false;         // run the performance gate and exit
     bool vsync = true;
+    bool mcp = false;  // --mcp: turn the MCP server on (and remember it)
     bool help = false;
     std::string listCommands{};  // --list-commands F: write the command list (Markdown) and exit
 };
@@ -42,6 +47,10 @@ public:
     App& operator=(const App&) = delete;
 
     int run();
+
+    // Renders `area` (world box; empty = the current view) offscreen for the MCP capture_view
+    // tool. The user's view is left as it was. Owner thread only.
+    std::optional<mcp::Image> captureView(int maxPx, const BBox2& area);
 
     // Used by the gate.
     ui::AppCore& core() { return *core_; }
@@ -65,10 +74,13 @@ private:
     std::unique_ptr<cmd::Registry> registry_;
     std::unique_ptr<ui::UiRegistry> uiRegistry_;
     std::unique_ptr<ui::AppCore> core_;
+    std::unique_ptr<mcpapp::McpController> mcp_;
     std::unique_ptr<Gui> gui_;
     GLFWwindow* window_ = nullptr;
     render::Renderer renderer_;
     ViewportTarget target_;
+    ViewportTarget captureTarget_;
+    std::atomic<bool> windowReady_{false};  // glfwPostEmptyEvent is only legal after glfwInit
     render::Overlay overlay_;
     std::string iniPath_{};
     bool imguiReady_ = false;

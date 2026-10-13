@@ -23,6 +23,7 @@
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
 #include "tbcad/ui/scene_sync.h"
+#include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::ui {
@@ -80,8 +81,27 @@ public:
     // Incremented whenever a different document is loaded; lets the window drop caches.
     std::uint64_t documentGeneration() const { return generation_; }
 
+    // New and open add a tab. An untouched "Untitled" drawing is reused instead of keeping an
+    // empty tab; a file that is already open is just activated.
     void newDocument();
     Result<void> openFile(const std::filesystem::path& path);
+
+    // ---- open drawings (tabs) ----------------------------------------------------------------
+    std::size_t documentCount() const;
+    std::size_t activeDocument() const { return active_; }
+    // Switches to drawing `index`: its view and selection come back. Refused while a command
+    // runs. Returns whether `index` is active afterwards.
+    bool activateDocument(std::size_t index);
+    // Closes drawing `index` without asking (the window asks about unsaved changes first). Closing
+    // the last drawing leaves one empty "Untitled".
+    void closeDocument(std::size_t index);
+    std::string documentTitle(std::size_t index) const;
+    bool documentModified(std::size_t index) const;
+    bool anyDocumentModified() const;
+    // Stable while the drawing stays open, whatever happens to the other tabs.
+    std::uint64_t documentId(std::size_t index) const;
+    // Untitled, unmodified and empty: nothing the user would miss.
+    bool isPristine() const;
     // Saves to the current file; fails with NotFound-style error text when there is none yet
     // (the window then asks for a name and calls saveAs).
     Result<void> save();
@@ -111,6 +131,11 @@ public:
     void print(std::string_view message) override;
     // Prompt line for the command line widget, e.g. "Specify next point or [Close/Undo]: ".
     std::string promptText() const;
+    // Text a command put in the `clipboard.text` setting for the system clipboard (COPYRESULT).
+    // Returns it once.
+    std::optional<std::string> takeClipboardText();
+    // The pending prompt, for option chips and the cursor HUD. Null when idle.
+    const cmd::PromptInfo* promptInfo() const { return prompt_ ? &*prompt_ : nullptr; }
     // Command names and aliases beginning with `prefix`, for completion.
     std::vector<std::string> complete(std::string_view prefix) const;
 
@@ -153,6 +178,10 @@ public:
     // Aperture of the pick box in mm at the current zoom.
     double apertureMm() const;
 
+    // Colours of the overlay (crosshair, selection boxes, snap marker) come from the UI theme.
+    void setTheme(const Theme& theme) { theme_ = theme; }
+    const Theme& theme() const { return theme_; }
+
     // ---- overlay -----------------------------------------------------------------------------
     // Crosshair, pick box, command preview, snap marker, selection rectangle and the overlay
     // drawers modules registered. Cleared first.
@@ -186,7 +215,12 @@ public:
     std::optional<std::string> setting(std::string_view key) const override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }
+    std::string documentFile() const override { return platform::pathToUtf8(file()); }
+    void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
+    // Panels asked for since the last call (the window opens them).
+    std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
+    std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
     void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
@@ -197,9 +231,18 @@ public:
 
 private:
     struct Session;
+    struct DocSlot;
     class AppObserver;
 
+    std::unique_ptr<Session> makeSession(std::unique_ptr<Document> doc, std::filesystem::path file);
+    void clearTransientState();
+    // Replaces the active drawing.
     void installSession(std::unique_ptr<Document> doc, std::filesystem::path file);
+    // Adds a drawing and makes it the active one (or replaces an untouched Untitled one).
+    void addSession(std::unique_ptr<Document> doc, std::filesystem::path file);
+    // Makes slots_[index] the active one: view, selection and scene.
+    void enterSlot(std::size_t index, bool fitView);
+    std::optional<std::size_t> slotOfFile(const std::filesystem::path& path) const;
     void resetSessionState();
     void removeAutosaveFiles();
     cmd::RawInput makeRaw(const PointerState& p) const;
@@ -215,18 +258,23 @@ private:
     std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
     platform::AppPaths paths_;
+    std::vector<std::string> panelRequests_{};
     platform::Settings settings_;
     platform::Keybindings keybindings_;
     std::vector<std::string> startupWarnings_{};
 
     render::Scene scene_;
-    std::unique_ptr<Session> session_;
+    std::vector<DocSlot> slots_;
+    std::size_t active_ = 0;
+    std::uint64_t nextDocId_ = 1;
+    Session* session_ = nullptr;  // slots_[active_]
     std::uint64_t generation_ = 0;
 
     render::Camera2D camera_{};
     render::Camera2D lastTessellatedFor_{};
     Vec2 cursorWorld_{};
     bool cursorInside_ = false;
+    Theme theme_ = darkTheme();
     PointerState lastPointer_{};
 
     std::vector<EntityId> selection_{};
@@ -238,6 +286,7 @@ private:
     std::optional<std::pair<Vec2, Vec2>> drag_{};
     std::optional<OutOfAreaNotice> outOfArea_{};
     bool inUndo_ = false;
+    std::optional<std::string> clipboardOut_{};
 
     std::chrono::steady_clock::time_point lastAutosave_{};
     std::uint64_t autosavedRevision_ = ~std::uint64_t{0};

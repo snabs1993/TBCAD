@@ -78,6 +78,14 @@ struct AppCore::Session {
     std::uint64_t savedRevision = 0;
 };
 
+struct AppCore::DocSlot {
+    std::unique_ptr<Session> session;
+    std::uint64_t id = 0;
+    render::Camera2D camera{};  // the view while the drawing is in the background
+    std::vector<EntityId> selection{};
+    bool viewSaved = false;
+};
+
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     : registry_(registry), paths_(std::move(paths)), settings_(platform::Settings::withDefaults()) {
     if (auto r = settings_.load(paths_.settingsFile()); !r)
@@ -87,12 +95,16 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("file.open", "Ctrl+O");
     keybindings_.declare("file.save", "Ctrl+S");
     keybindings_.declare("file.saveAs", "Ctrl+Shift+S");
+    keybindings_.declare("file.close", "Ctrl+W");
+    keybindings_.declare("view.nextDocument", "Ctrl+Tab");
     keybindings_.declare("edit.undo", "Ctrl+Z");
     keybindings_.declare("edit.redo", "Ctrl+Y");
     keybindings_.declare("edit.selectAll", "Ctrl+A");
     keybindings_.declare("edit.deselect", "Escape");
     keybindings_.declare("view.zoomExtents", "");
     keybindings_.declare("view.toggleCommandLine", "");
+    keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
+    keybindings_.declare("view.cursorHud", "F12");
     keybindings_.declare("view.expandLog", "Ctrl+L");
     keybindings_.declare("view.cleanScreen", "F11");
     keybindings_.declare("tools.settings", "");
@@ -116,12 +128,30 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
 }
 
 AppCore::~AppCore() {
-    // The runner may hold coroutine frames that refer to the host and the document.
-    session_.reset();
+    // The runners may hold coroutine frames that refer to the host and the documents.
+    session_ = nullptr;
+    slots_.clear();
 }
 
-void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
-    session_.reset();
+std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document> doc,
+                                                       fs::path file) {
+    auto s = std::make_unique<Session>(std::move(doc));
+    Document& d = s->doc;
+    s->indexer = std::make_unique<index::DocumentIndexer>(
+        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); });
+    s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
+    s->sync = std::make_unique<SceneSync>(d, scene_);
+    s->observer = std::make_unique<AppObserver>(d, *this);
+    s->runner = std::make_unique<cmd::CommandRunner>(d, s->undo, *this, registry_);
+    s->runner->setFilterChain(&filterChain_);
+    s->runner->setLineParser(lineParser_);
+    s->undo.setMessageSink([this](std::string m) { print(m); });
+    s->file = std::move(file);
+    s->savedRevision = d.revision();
+    return s;
+}
+
+void AppCore::clearTransientState() {
     selection_.clear();
     outOfArea_.reset();
     drag_.reset();
@@ -130,29 +160,146 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
     feedback_ = {};
     scene_.setSelected({});
     scene_.setHighlighted({});
+}
 
-    auto s = std::make_unique<Session>(std::move(doc));
-    Document& d = s->doc;
-    s->indexer = std::make_unique<index::DocumentIndexer>(
-        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); });
-    s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
-    s->sync = std::make_unique<SceneSync>(d, scene_);
-    s->sync->setPixelSize(camera_.pixelSizeMm());
-    s->sync->rebuildAll();
-    s->observer = std::make_unique<AppObserver>(d, *this);
-    s->runner = std::make_unique<cmd::CommandRunner>(d, s->undo, *this, registry_);
-    s->runner->setFilterChain(&filterChain_);
-    s->runner->setLineParser(lineParser_);
-    s->undo.setMessageSink([this](std::string m) { print(m); });
-    s->file = std::move(file);
-    s->savedRevision = d.revision();
-    session_ = std::move(s);
+void AppCore::enterSlot(std::size_t index, bool fitView) {
+    clearTransientState();
+    active_ = index;
+    DocSlot& slot = slots_[index];
+    session_ = slot.session.get();
+    if (slot.viewSaved && !fitView) {
+        const int w = camera_.viewportW, h = camera_.viewportH;
+        camera_ = slot.camera;
+        camera_.viewportW = w;
+        camera_.viewportH = h;
+        selection_ = slot.selection;
+        selection_.erase(std::remove_if(selection_.begin(), selection_.end(),
+                                        [&](EntityId id) { return !session_->doc.find(id); }),
+                         selection_.end());
+    }
+    session_->sync->setPixelSize(camera_.pixelSizeMm());
+    session_->sync->rebuildAll();
+    scene_.setSelected(selection_);
     ++generation_;
     lastTessellatedFor_ = camera_;
     autosavedRevision_ = ~std::uint64_t{0};
     notifySessionHooks();
-    if (!session_->index.empty())
+    if (fitView && !session_->index.empty())
         zoomExtents();
+}
+
+void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
+    if (slots_.empty())
+        slots_.emplace_back();
+    DocSlot& slot = slots_[active_];
+    session_ = nullptr;
+    slot.session.reset();
+    slot.session = makeSession(std::move(doc), std::move(file));
+    slot.id = nextDocId_++;
+    slot.viewSaved = false;
+    enterSlot(active_, true);
+}
+
+void AppCore::addSession(std::unique_ptr<Document> doc, fs::path file) {
+    if (!slots_.empty() && isPristine()) {
+        installSession(std::move(doc), std::move(file));
+        return;
+    }
+    if (!slots_.empty()) {
+        slots_[active_].camera = camera_;
+        slots_[active_].selection = selection_;
+        slots_[active_].viewSaved = true;
+    }
+    DocSlot slot;
+    slot.session = makeSession(std::move(doc), std::move(file));
+    slot.id = nextDocId_++;
+    slots_.push_back(std::move(slot));
+    // The vector may have moved the slots, but the sessions are heap objects.
+    enterSlot(slots_.size() - 1, true);
+}
+
+bool AppCore::activateDocument(std::size_t index) {
+    if (index >= slots_.size())
+        return false;
+    if (index == active_)
+        return true;
+    if (runner().active()) {
+        print("Finish the current command first.");
+        return false;
+    }
+    slots_[active_].camera = camera_;
+    slots_[active_].selection = selection_;
+    slots_[active_].viewSaved = true;
+    enterSlot(index, false);
+    return true;
+}
+
+void AppCore::closeDocument(std::size_t index) {
+    if (index >= slots_.size())
+        return;
+    if (index == active_ && runner().active())
+        pressEscape();
+    if (slots_.size() == 1) {
+        installSession(std::make_unique<Document>(), {});
+        return;
+    }
+    if (index == active_) {
+        const std::size_t next = index + 1 < slots_.size() ? index + 1 : index - 1;
+        std::unique_ptr<Session> dying = std::move(slots_[index].session);
+        slots_.erase(slots_.begin() + static_cast<std::ptrdiff_t>(index));
+        dying.reset();
+        enterSlot(next > index ? next - 1 : next, false);
+    } else {
+        slots_.erase(slots_.begin() + static_cast<std::ptrdiff_t>(index));
+        if (index < active_)
+            --active_;
+    }
+}
+
+std::size_t AppCore::documentCount() const {
+    return slots_.size();
+}
+
+std::string AppCore::documentTitle(std::size_t index) const {
+    if (index >= slots_.size())
+        return {};
+    const Session& s = *slots_[index].session;
+    return s.file.empty() ? std::string("Untitled") : s.file.filename().string();
+}
+
+bool AppCore::documentModified(std::size_t index) const {
+    if (index >= slots_.size())
+        return false;
+    const Session& s = *slots_[index].session;
+    return s.doc.revision() != s.savedRevision;
+}
+
+bool AppCore::anyDocumentModified() const {
+    for (std::size_t i = 0; i < slots_.size(); ++i)
+        if (documentModified(i))
+            return true;
+    return false;
+}
+
+std::uint64_t AppCore::documentId(std::size_t index) const {
+    return index < slots_.size() ? slots_[index].id : 0;
+}
+
+bool AppCore::isPristine() const {
+    return session_ && session_->file.empty() && !modified() &&
+           session_->doc.modelSpaceCount() == 0;
+}
+
+std::optional<std::size_t> AppCore::slotOfFile(const fs::path& path) const {
+    std::error_code ec;
+    for (std::size_t i = 0; i < slots_.size(); ++i) {
+        const fs::path& f = slots_[i].session->file;
+        if (f.empty())
+            continue;
+        if (fs::equivalent(f, path, ec) || f.lexically_normal() == path.lexically_normal())
+            return i;
+    }
+    return std::nullopt;
 }
 
 Document& AppCore::document() {
@@ -265,11 +412,14 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
 // ---- files -------------------------------------------------------------------------------------
 
 void AppCore::newDocument() {
-    removeAutosaveFiles();
-    installSession(std::make_unique<Document>(), {});
+    addSession(std::make_unique<Document>(), {});
 }
 
 Result<void> AppCore::openFile(const fs::path& path) {
+    if (auto open = slotOfFile(path)) {
+        activateDocument(*open);
+        return {};
+    }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
@@ -277,8 +427,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
         settings_.removeRecentFile(platform::pathToUtf8(path));
         return doc.error();
     }
-    removeAutosaveFiles();
-    installSession(std::move(doc.value()), path);
+    addSession(std::move(doc.value()), path);
     for (const auto& w : report.warnings)
         print("Warning: " + w);
     if (report.unknownEntityKinds > 0)
@@ -311,7 +460,8 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     }
     session_->file = path;
     session_->savedRevision = session_->doc.revision();
-    removeAutosaveFiles();
+    if (!anyDocumentModified())
+        removeAutosaveFiles();
     settings_.addRecentFile(platform::pathToUtf8(path));
     (void)settings_.save(paths_.settingsFile());
     print("Saved " + path.string());
@@ -464,6 +614,10 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         session_->sync->refreshStale(camera_);
         lastTessellatedFor_ = camera_;
     }
+}
+
+std::optional<std::vector<EntityId>> AppCore::entitiesInWindow(const BBox2& window) const {
+    return spatialIndex().queryIds(window);
 }
 
 cmd::ViewState AppCore::view() const {
@@ -714,18 +868,20 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
                 mk = render::MarkerKind::X;
             else if (feedback_.marker == "node" || feedback_.marker == "insertion")
                 mk = render::MarkerKind::Cross;
-            overlay.marker(render::Space::World, feedback_.markerPos, mk, 10, {255, 230, 0, 255});
+            overlay.marker(render::Space::World, feedback_.markerPos, mk, 10, theme_.snap);
         }
     }
     if (drag_) {
-        overlay.selectionWindow(drag_->first, drag_->second,
-                                dragIsCrossing(drag_->first.x, drag_->second.x));
+        const bool crossing = dragIsCrossing(drag_->first.x, drag_->second.x);
+        const Rgba tone = crossing ? theme_.crossing : theme_.select;
+        overlay.selectionWindow(drag_->first, drag_->second, crossing, tone,
+                                ui::withAlpha(tone, 0.15));
     }
     if (cursorInside_ && !drag_) {
         const Vec2 c = lastPointer_.screen;
         const double arm = std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;
-        cross.color = {200, 200, 200, 160};
+        cross.color = ui::withAlpha(theme_.text, 0.6);
         cross.widthPx = 1.0;
         overlay.line(render::Space::Screen, {c.x - arm, c.y}, {c.x + arm, c.y}, cross);
         overlay.line(render::Space::Screen, {c.x, c.y - arm}, {c.x, c.y + arm}, cross);
@@ -738,7 +894,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             Vec2 box[4] = {
                 {c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}};
             render::OverlayStyle pb;
-            pb.color = {230, 230, 230, 220};
+            pb.color = ui::withAlpha(theme_.text, 0.85);
             overlay.polyline(render::Space::Screen, box, true, pb);
         }
     }
@@ -813,6 +969,8 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
 }
 
 std::optional<std::string> AppCore::setting(std::string_view key) const {
+    if (key == "document.file")
+        return documentFile();
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             return std::string(settings_.getBool(key) ? "1" : "0");
@@ -825,7 +983,15 @@ std::optional<std::string> AppCore::setting(std::string_view key) const {
     }
 }
 
+std::optional<std::string> AppCore::takeClipboardText() {
+    std::optional<std::string> out;
+    out.swap(clipboardOut_);
+    return out;
+}
+
 void AppCore::setSetting(std::string_view key, std::string value) {
+    if (key == "clipboard.text")
+        clipboardOut_ = value;
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             settings_.setBool(key, isTrue(value));

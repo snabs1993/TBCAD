@@ -6,7 +6,7 @@
   #define AppVersion "0.0.0"
 #endif
 #ifndef BuildDir
-  #error Pass /DBuildDir=<folder that holds tbcad.exe, tbcad-convert.exe and assets>
+  #error Pass /DBuildDir=<folder that holds tbcad.exe, tbcad-convert.exe, tbcad-mcp.exe and assets>
 #endif
 #ifndef RepoDir
   #define RepoDir "..\.."
@@ -55,6 +55,7 @@ Name: "assoc_dxf"; Description: "Add TBCAD to the ""Open with"" list of .&dxf fi
 [Files]
 Source: "{#BuildDir}\tbcad.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\tbcad-convert.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\tbcad-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BuildDir}\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
