@@ -14,7 +14,8 @@ if(TBCAD_BUILD_TESTS)
   set_target_properties(tbcad_hello_plugin PROPERTIES
     PREFIX "" OUTPUT_NAME "hello_plugin"
     C_VISIBILITY_PRESET hidden
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/plugins")
   if(MSVC)
     target_compile_options(tbcad_hello_plugin PRIVATE /W4)
   else()
@@ -30,6 +31,6 @@ tbcad_add_tests(plugin
 if(TBCAD_BUILD_TESTS)
   add_dependencies(tbcad_plugin_tests tbcad_hello_plugin)
   target_compile_definitions(tbcad_plugin_tests PRIVATE
-    TBCAD_TEST_PLUGIN_DIR="${CMAKE_CURRENT_BINARY_DIR}/plugins"
+    TBCAD_TEST_PLUGIN_DIR="$<TARGET_FILE_DIR:tbcad_hello_plugin>"
     TBCAD_TEST_LIB_EXT="$<IF:$<BOOL:${WIN32}>,.dll,$<IF:$<BOOL:${APPLE}>,.dylib,.so>>")
 endif()
