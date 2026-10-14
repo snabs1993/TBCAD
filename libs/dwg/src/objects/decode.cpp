@@ -1845,7 +1845,7 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
             (tails[type]++ < (type == 7 ? 4 : 2) || e.handle == 3105) &&
             (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
              type == 1 || type == 18 || type == 17 || type == 7 || type == 44 || type == 45 ||
-             e.handle == 3105)) {
+             type == 21 || e.handle == 3105)) {
             Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
             auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
                 std::string bits;
