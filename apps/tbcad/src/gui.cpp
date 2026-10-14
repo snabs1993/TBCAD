@@ -1915,10 +1915,15 @@ void Gui::viewportInput(const ViewportRect& rect) {
         dragging_ = false;
         doubleClick_ = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
         pressPos_ = mouse;
+        // A point is taken when the button goes down, so the rubber band follows the pointer
+        // while it is dragged; releasing after a drag answers the next point prompt.
+        pressTookPoint_ = pointPrompt && !io.KeyAlt;
+        if (pressTookPoint_)
+            core_.click(ps);
     }
     if (leftDown_) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            if (!pointPrompt && !dragging_ &&
+            if (!pointPrompt && !dragging_ && !pressTookPoint_ &&
                 std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y) > 4.0 * s)
                 dragging_ = true;
             if (dragging_ && io.KeyAlt) {
@@ -1935,6 +1940,15 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 core_.setLassoPath({});
                 core_.setSelectionDrag(std::make_pair(pressPos_, mouse));
             }
+        } else if (pressTookPoint_) {
+            // Press-drag-release: the release is the next point when the pointer travelled.
+            const auto* next = core_.runner().prompt();
+            const bool nextIsPoint = next && (next->kind == cmd::PromptInfo::Kind::Point ||
+                                              next->kind == cmd::PromptInfo::Kind::Distance ||
+                                              next->kind == cmd::PromptInfo::Kind::Angle);
+            if (nextIsPoint && std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y) > 4.0 * s)
+                core_.click(ps);
+            pressTookPoint_ = leftDown_ = dragging_ = false;
         } else {
             if (dragging_ && !lassoPath_.empty()) {
                 core_.lassoSelect(lassoPath_, ps);
