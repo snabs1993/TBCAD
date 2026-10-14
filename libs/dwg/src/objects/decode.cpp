@@ -357,8 +357,10 @@ private:
                 type = kLwPolyline;
             else if (cls == "HATCH")
                 type = kHatch;
-            else if (cls == "LAYOUT")
+            else if (cls == "LAYOUT") {
                 type = kLayoutObject;
+                ++out_.layoutSeen;
+            }
         }
         std::size_t objBits = 0;
         if (fmt_.r2010) {
@@ -1256,6 +1258,12 @@ private:
             h.handle();  // visual style
         l.block = resolveHandle(h.handle(), self);
         if (r.failed() || h.failed()) {
+            if (out_.layoutDiag.size() < 4)
+                out_.layoutDiag.push_back(
+                    "layout " + hex(self) + " did not read: main data to bit " +
+                    std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ", handles " +
+                    (h.failed() ? "failed" : "ok") + ", block " + hex(l.block) + ", bits " +
+                    dumpCurrent());
             note("layout " + hex(self) + " is damaged (" + (r.failed() ? "data" : "handles") +
                  " read to bit " + std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) +
                  ", name \"" + l.name + "\", paper " + std::to_string(l.width) + " x " +
@@ -2332,7 +2340,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r28: class names read from the string run after the class fields; r27: class bytes "
+    return "r29: layout diagnostics outside the note cap; r28: class names read from the string "
+           "run after the class fields; r27: class bytes "
            "dump; r26: class string stream end retried; r25: class section skips "
            "its bit-size word; r24: "
            "class section reading retried; r23: "

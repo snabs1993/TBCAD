@@ -299,7 +299,10 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                               l.damaged ? "(dictionary) " : "", l.name.c_str());
                 ls += t;
             }
-            ls += "; dictionaries read: " + std::to_string(drawing.dictionaries.size());
+            for (const std::string& d : drawing.layoutDiag)
+                report.info(code::kSkippedObject, d);
+            ls += "; layout objects met: " + std::to_string(drawing.layoutSeen) +
+                  "; dictionaries read: " + std::to_string(drawing.dictionaries.size());
             report.info(code::kSkippedObject, ls);
         }
         std::string ins = "inserts per owner:";

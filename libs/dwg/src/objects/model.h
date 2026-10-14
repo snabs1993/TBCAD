@@ -133,6 +133,8 @@ struct Drawing {
     std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
     std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
+    std::size_t layoutSeen = 0;             // LAYOUT objects met
+    std::vector<std::string> layoutDiag{};  // LAYOUT objects that did not read (not note-capped)
 };
 
 }  // namespace tbcad::dwg::detail
