@@ -6,7 +6,8 @@ This is the library part of the plan in `build/collab-brief.md`: everything that
 |---|---|
 | `libs/core` | `Document::setEntityIdWindow`, `applyChecked`, `drawOrderOverride` |
 | `libs/io` | `io::Delta` (the "after" half of a `ChangeSet` on the wire), `findOptionalChunk` / `ExtraChunk` for the `VERS` chunk |
-| `libs/collab` | versions, id ranges, `Op` / `Accepted`, `Host`, `Replica`, snapshot helpers |
+| `libs/collab` | versions, id ranges, `Op` / `Accepted`, `Host`, `Replica`, snapshot helpers, sessions, undo guard |
+| `libs/collabnet` | sessions over TCP with TLS-PSK |
 
 ## The model in one page
 
@@ -38,6 +39,12 @@ The host owns the authoritative document. Every edit is a `ChangeSet`; what trav
 * **Per-user undo.** Each person's `cmd::UndoStack` holds only their own steps. Undoing "puts back what I had", which is wrong if somebody changed the same thing since. `collab::checkUndoRedo` (set with `UndoStack::setGuard`) compares the drawing with the images the step would restore over and refuses with "Cannot undo: the entity was changed by someone else since."; the refused step is dropped so the next undo works on the older step. The host cannot catch this itself, because the undo is a fresh edit made on the latest versions. The guard is therefore what the application must install when it joins a session (Q63).
 * The header is shared as a whole (the host validates it like any other row); `activeOnly` and file-carried chunks are never overwritten.
 * Layer locks and enforcement beyond the viewer role are Q64.
+
+## Over the network (`libs/collabnet`)
+
+`TcpHost` listens (this computer only, or every interface for a LAN) and `TcpGuest` connects; both wrap the frames of a session in `libs/net` channels with TLS 1.3 and the key derived from the session password (`nettls::derivePsk`; a wrong password fails the handshake). They are driven by `pump()`, called often from the thread that owns the document (every UI frame): `TcpHost::pump(nowMs)` takes in connections whose handshake finished and feeds frames to the `HostSession`, `TcpGuest::pump()` feeds the `GuestSession`. The only extra threads are the TLS handshakes of arriving connections (at most 8 at a time, 5 s each), so a client that connects and says nothing can not stall the host. Wiring: `TcpGuest tcp; GuestSession guest(tcp.sender()); tcp.attach(guest); tcp.connect(host, port, psk, name, timeoutMs, error);`.
+
+Known limits of this first version: a join snapshot over 16 MB (`net::kMaxFrameBytes`) can not be sent (chunking is the follow-up), a guest that stops reading blocks the host's pump while its socket buffer is full, and LAN discovery (UDP broadcast) belongs to the UI task Q63.
 
 ## Tests
 
