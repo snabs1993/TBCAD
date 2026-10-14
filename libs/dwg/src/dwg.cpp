@@ -295,16 +295,22 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     // How much model space data lies inside what this viewport shows.
                     const double h = val(e, 45), w = h * val(e, 40) / val(e, 41);
                     const double cx = val(e, 17) + val(e, 12), cy = val(e, 27) + val(e, 22);
-                    std::size_t inside = 0, total = 0;
+                    std::size_t inside = 0, total = 0, elsewhere = 0;
                     double bx0 = 1e300, by0 = 1e300, bx1 = -1e300, by1 = -1e300;
                     for (const detail::EntityRec& m : drawing.entities) {
                         const auto mo = drawing.blocks.find(m.owner);
                         const bool model =
                             m.entmode == 2 || (m.entmode == 0 && mo != drawing.blocks.end() &&
                                                mo->second.name == "*Model_Space");
-                        if (!model || m.dxfType == "VIEWPORT")
+                        if (m.dxfType == "VIEWPORT")
                             continue;
                         const double px = val(m, 10), py = val(m, 20);
+                        if (!model) {
+                            if ((px != 0 || py != 0) && std::abs(px - cx) <= w / 2 &&
+                                std::abs(py - cy) <= h / 2)
+                                ++elsewhere;
+                            continue;
+                        }
                         if (px == 0 && py == 0)
                             continue;
                         ++total;
@@ -316,10 +322,12 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                             ++inside;
                     }
                     char u[300];
-                    std::snprintf(u, sizeof u,
-                                  "  viewport shows model %.0f,%.0f size %.0f x %.0f: %zu of %zu "
-                                  "model entities start inside; they span %.0f,%.0f to %.0f,%.0f",
-                                  cx, cy, w, h, inside, total, bx0, by0, bx1, by1);
+                    std::snprintf(
+                        u, sizeof u,
+                        "  viewport shows model %.0f,%.0f size %.0f x %.0f: %zu of %zu "
+                        "model entities start inside (%zu more in other blocks); they span "
+                        "%.0f,%.0f to %.0f,%.0f",
+                        cx, cy, w, h, inside, total, elsewhere, bx0, by0, bx1, by1);
                     report.info(code::kSkippedObject, u);
                 }
             }
