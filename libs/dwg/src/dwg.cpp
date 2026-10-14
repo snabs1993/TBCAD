@@ -119,6 +119,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         return read.error();
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
+    if (!drawing.walkSummary.empty())
+        report.info(code::kSkippedObject, drawing.walkSummary);
     if (!drawing.relocated.empty()) {
         std::size_t total = 0;
         std::string first;

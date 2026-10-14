@@ -115,6 +115,7 @@ struct Drawing {
     std::map<std::uint32_t, std::array<std::size_t, 2>> layoutCheck{};
     // Objects found away from the place the object map gives: shift in bytes -> how many.
     std::map<std::int64_t, std::size_t> relocated{};
+    std::string walkSummary{};
 };
 
 }  // namespace tbcad::dwg::detail

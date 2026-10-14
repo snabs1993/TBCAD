@@ -84,40 +84,37 @@ public:
                 note("object " + hex(e.handle) + " lies outside the file");
                 continue;
             }
-            if (frameHandle(e.offset) != e.handle) {
-                // The map says the object is here but another (or no) object starts there: look
-                // nearby for the frame that carries this handle (its own handle is inside it).
-                std::int64_t found = 0;
-                bool ok = false;
-                if (!walkedDone_)
-                    walkStream();
-                if (const auto w = walked_.find(e.handle); w != walked_.end()) {
-                    found = w->second - e.offset;
-                    ok = true;
-                }
-                for (std::int64_t d : {lastShift_}) {
-                    if (d != 0 && frameHandle(e.offset + d) == e.handle) {
-                        found = d;
+            quiet_ = true;
+            decodeOne(e);
+            quiet_ = false;
+            if (framed_)
+                continue;
+            // The frame at the place the map names is damaged: look for the object elsewhere. Its
+            // own handle sits inside its frame, so the walk of the whole stream can find it.
+            if (!walkedDone_)
+                walkStream();
+            std::int64_t found = 0;
+            bool ok = false;
+            if (const auto w = walked_.find(e.handle);
+                w != walked_.end() && w->second != e.offset) {
+                found = w->second - e.offset;
+                ok = true;
+            }
+            for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
+                for (std::int64_t sd : {d, -d}) {
+                    if (frameHandle(e.offset + sd) == e.handle) {
+                        found = sd;
                         ok = true;
+                        break;
                     }
                 }
-                for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
-                    for (std::int64_t sd : {d, -d}) {
-                        if (frameHandle(e.offset + sd) == e.handle) {
-                            found = sd;
-                            ok = true;
-                            break;
-                        }
-                    }
-                }
-                if (ok) {
-                    lastShift_ = found;
-                    ++out_.relocated[found];
-                    MapEntry moved = e;
-                    moved.offset += found;
-                    decodeOne(moved);
-                    continue;
-                }
+            }
+            if (ok) {
+                ++out_.relocated[found];
+                MapEntry moved = e;
+                moved.offset += found;
+                decodeOne(moved);
+                continue;
             }
             decodeOne(e);
         }
@@ -134,6 +131,15 @@ private:
             v >>= 4;
         } while (v);
         return s;
+    }
+
+    bool quiet_ = false;
+    bool framed_ = true;
+    // A problem with the frame of an object: silent while the caller may still look elsewhere.
+    void frameNote(const std::string& s) {
+        framed_ = false;
+        if (!quiet_)
+            note(s);
     }
 
     void note(const std::string& s) {
@@ -213,6 +219,18 @@ private:
     void walkStream() {
         walkedDone_ = true;
         std::int64_t off = 4;
+        std::size_t resyncs = 0;
+        struct Summary {
+            ObjectReader* self;
+            std::int64_t* off;
+            std::size_t* resyncs;
+            ~Summary() {
+                self->out_.walkSummary = "stream walk: " + std::to_string(self->walked_.size()) +
+                                         " objects, " + std::to_string(*resyncs) +
+                                         " resyncs, stopped at byte " + std::to_string(*off) +
+                                         " of " + std::to_string(self->file_.size());
+            }
+        } summary{this, &off, &resyncs};
         std::size_t misses = 0;
         const std::int64_t end = static_cast<std::int64_t>(file_.size());
         while (off + 8 < end) {
@@ -231,6 +249,7 @@ private:
                 if (frameHandle(off + d) != 0 && l1 != 0 &&
                     frameHandle(off + d + static_cast<std::int64_t>(l1) + 2) != 0) {
                     off += d;
+                    ++resyncs;
                     again = true;
                     break;
                 }
@@ -257,6 +276,7 @@ private:
     }
 
     void decodeOne(const MapEntry& e) {
+        framed_ = true;
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
         // R2010 and later: the size of the handle stream (in bits) follows the size. The size
@@ -267,7 +287,7 @@ private:
         const std::size_t lead = head.bytePos();
         if (head.failed() || size == 0 || size > file_.size() ||
             static_cast<std::size_t>(e.offset) + lead + size > file_.size()) {
-            note("object " + hex(e.handle) + " has an impossible size" + where(e));
+            frameNote("object " + hex(e.handle) + " has an impossible size" + where(e));
             return;
         }
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
@@ -283,7 +303,7 @@ private:
         std::size_t objBits = 0;
         if (fmt_.r2010) {
             if (handleBits > body.size() * 8) {
-                note("object " + hex(e.handle) + " has a damaged header" + where(e));
+                frameNote("object " + hex(e.handle) + " has a damaged header" + where(e));
                 return;
             }
             objBits = body.size() * 8 - handleBits;
@@ -292,13 +312,13 @@ private:
         }
         const HandleRef self = r.handle();
         if (r.failed() || objBits > body.size() * 8) {
-            note("object " + hex(e.handle) + " has a damaged header" + where(e));
+            frameNote("object " + hex(e.handle) + " has a damaged header" + where(e));
             return;
         }
         // R2007 and later: strings live in their own stream just before the handle stream.
         BitReader strings;
         if (fmt_.r2007 && !locateStringStream(body, objBits, strings)) {
-            note("object " + hex(e.handle) + " has a damaged string stream" + where(e));
+            frameNote("object " + hex(e.handle) + " has a damaged string stream" + where(e));
             return;
         }
         currentHandle_ = self.value;
