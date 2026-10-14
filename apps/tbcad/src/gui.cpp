@@ -2023,6 +2023,26 @@ void Gui::dropIntoViewport(const ViewportRect& rect) {
         core_.submitText(line);
 }
 
+// Setting hover.tooltip: after the pointer rests 600 ms on an object, a tooltip names its type,
+// layer and length or radius.
+void Gui::hoverTooltip() {
+    const ImGuiIO& io = ImGui::GetIO();
+    const double now = ImGui::GetTime();
+    if (std::abs(io.MousePos.x - hoverTipPos_.x) > 2 ||
+        std::abs(io.MousePos.y - hoverTipPos_.y) > 2) {
+        hoverTipPos_ = io.MousePos;
+        hoverTipSince_ = now;
+    }
+    if (!core_.settings().getBool("hover.tooltip", false) || now - hoverTipSince_ < 0.6 ||
+        core_.runner().active() || io.WantCaptureMouse)
+        return;
+    const EntityId id = core_.hoveredEntity();
+    if (!id)
+        return;
+    if (const std::string text = core_.describeEntity(id); !text.empty())
+        ImGui::SetTooltip("%s", text.c_str());
+}
+
 // What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
 // options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
 void Gui::viewportMenu() {
@@ -2140,6 +2160,7 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    hoverTooltip();
     quickProperties(rect);
 
     // Non-blocking notice when a command put geometry outside the working area.

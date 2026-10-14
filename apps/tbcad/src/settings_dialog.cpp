@@ -188,6 +188,9 @@ void SettingsDialog::display(ui::AppCore& core) {
                 s.setString("view.crosshair", kCross[i]);
         ImGui::EndCombo();
     }
+    bool hoverTip = s.getBool("hover.tooltip", false);
+    if (ImGui::Checkbox("Tooltip with type, layer and size when resting on an object", &hoverTip))
+        s.setBool("hover.tooltip", hoverTip);
     bool rightIsEnter = s.getString("ui.rightClick", "menu") == "enter";
     if (ImGui::Checkbox("Right-click in the drawing acts as Enter (no menu)", &rightIsEnter))
         s.setString("ui.rightClick", rightIsEnter ? "enter" : "menu");

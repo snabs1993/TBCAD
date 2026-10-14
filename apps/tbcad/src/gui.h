@@ -191,6 +191,9 @@ private:
     std::string suggestFor_{};
     bool cursorHud_ = true;
     bool hudHovered_ = false;
+    ImVec2 hoverTipPos_{-1, -1};  // where the pointer rested, for the hover tooltip
+    double hoverTipSince_ = 0;
+    void hoverTooltip();
     bool startPage_ = true;
     std::size_t shownActive_ = static_cast<std::size_t>(-1);
     ImVec2 hudAnchor_{-1e6f, -1e6f};
