@@ -188,10 +188,14 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 continue;
             std::snprintf(b, sizeof b, " %llX", static_cast<unsigned long long>(h));
             const auto c = perOwner.find(h);
-            spaces += std::string(b) + " (" + bl.name + ", " +
+            spaces += std::string(b) + " (" + bl.name + ", lists " + std::to_string(bl.ownedCount) +
+                      (bl.membersRead ? "" : "?") + ", " +
                       std::to_string(c == perOwner.end() ? 0 : c->second) + " entities, " +
                       std::to_string(insertsPer[h]) + " inserts)";
         }
+        spaces += "; member lists changed " + std::to_string(drawing.ownerFixed) +
+                  " entity owners, " + std::to_string(drawing.membersMissing) +
+                  " listed members were not decoded";
         std::size_t unowned = perOwner.count(0) ? perOwner[0] : 0;
         spaces += "; entities with no owner: " + std::to_string(unowned);
         report.info(code::kSkippedObject, spaces);

@@ -671,6 +671,7 @@ private:
                 b.handle = self;
                 bool anonymous = false, hasAtts = false, isXref = false, overlay = false;
                 bool f64 = false, xdep = false;
+                std::uint32_t ownedCount = 0, insertCount = 0;
                 auto body = [&](BitReader& rr, BlockRec& bb) {
                     bb.name = rr.textBytes();
                     readTriple(rr, f64, xdep);
@@ -681,8 +682,9 @@ private:
                     rr.b();  // loaded bit
                     // Owned object count; an external reference owns no objects and the files
                     // do not store the count for it.
+                    ownedCount = 0;
                     if (fmt_.r2004 && !isXref && !overlay)
-                        rr.bl();
+                        ownedCount = rr.bl();
                     bb.baseX = rr.bd();
                     bb.baseY = rr.bd();
                     bb.baseZ = rr.bd();
@@ -690,8 +692,9 @@ private:
                     if (fmt_.r2007) {
                         // Insert count (non-zero bytes ending in a zero), description, preview,
                         // units.
-                        for (int i = 0; i < 100000 && !rr.failed() && rr.rc() != 0; ++i) {
-                        }
+                        insertCount = 0;
+                        for (int i = 0; i < 100000 && !rr.failed() && rr.rc() != 0; ++i)
+                            ++insertCount;
                         rr.textBytes();
                         const std::uint32_t preview = rr.bl();
                         if (preview > rr.bitsLeft() / 8)
@@ -724,6 +727,17 @@ private:
                 }
                 b.flags = (anonymous ? 1 : 0) | (hasAtts ? 2 : 0) | (isXref ? 4 : 0) |
                           (overlay ? 8 : 0) | (xdep ? 16 : 0);
+                // The handle stream names the objects the block owns: the authoritative member
+                // list (an entity's own owner handle is the fallback).
+                leadingHandles(h, self, reactors, true);
+                h.handle();  // null hard pointer
+                h.handle();  // BLOCK entity
+                if (fmt_.r2004 && ownedCount < 20000000) {
+                    for (std::uint32_t i = 0; i < ownedCount && !h.failed(); ++i)
+                        b.members.push_back(resolveHandle(h.handle(), self));
+                    b.ownedCount = ownedCount;
+                    b.membersRead = !h.failed();
+                }
                 out_.blocks[self] = std::move(b);
                 break;
             }
@@ -2051,6 +2065,34 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    std::vector<std::string>& notes, const Format& fmt) {
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
+    {
+        // Each block lists the entities it owns; where an entity names another owner, believe
+        // the list.
+        std::unordered_map<std::uint64_t, std::size_t> index;
+        for (std::size_t i = 0; i < out.entities.size(); ++i)
+            index[out.entities[i].handle] = i;
+        for (const auto& [bh, blk] : out.blocks) {
+            if (!blk.membersRead)
+                continue;
+            std::size_t found = 0;
+            for (std::uint64_t m : blk.members)
+                found += index.count(m);
+            out.membersMissing += blk.members.size() - found;
+            // A list that mostly names objects we have is trustworthy; otherwise it was misread.
+            if (found * 10 < blk.members.size() * 9)
+                continue;
+            for (std::uint64_t m : blk.members) {
+                const auto it = index.find(m);
+                if (it == index.end())
+                    continue;
+                EntityRec& e = out.entities[it->second];
+                if (e.owner != bh) {
+                    ++out.ownerFixed;
+                    e.owner = bh;
+                }
+            }
+        }
+    }
     // Anonymous blocks (dimensions, hatches) are stored with a bare "*D" or "*U" name; the
     // numbering is implied. Give every repeat its own name so inserts keep their own block.
     std::set<std::string> used;
@@ -2071,7 +2113,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r17: space owner info; r16: terminator check in LZ (really fixes 50.9 MB); r15: owner "
+    return "r18: block member lists decide ownership; r17: space owner info; r16: terminator check "
+           "in LZ (really fixes 50.9 MB); r15: owner "
            "summary, LZ opcode 0x18-0x1F bit 14, no owned count on xref blocks; r14: block header "
            "decides table layout, section map hex; r13: block header dumps; r12: LZ reading "
            "choice, page-record trace; r11: calibration "

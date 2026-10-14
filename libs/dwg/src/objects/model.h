@@ -69,6 +69,9 @@ struct BlockRec {
     double baseX = 0, baseY = 0, baseZ = 0;
     int flags = 0;  // DXF 70 of the BLOCK record
     std::string xrefPath{};
+    std::vector<std::uint64_t> members{};  // owned entity handles from the handle stream
+    std::uint32_t ownedCount = 0;
+    bool membersRead = false;
 };
 
 // One entity: DXF type name, common properties and data groups (without layer/linetype/colour,
@@ -115,6 +118,7 @@ struct Drawing {
     std::map<std::uint32_t, std::array<std::size_t, 2>> layoutCheck{};
     // Objects found away from the place the object map gives: shift in bytes -> how many.
     std::map<std::int64_t, std::size_t> relocated{};
+    std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
 };
 
