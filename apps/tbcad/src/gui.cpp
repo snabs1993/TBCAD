@@ -1001,7 +1001,7 @@ void Gui::statusBar() {
         // Absurd coordinates (a stray point far away) switch to scientific notation, and the
         // readout keeps a fixed width so it never pushes the toggles or hides Y.
         auto shown = [&](double v) {
-            if (std::abs(v) < 1e9)
+            if (std::abs(v) < 1e7)
                 return formatLength(v, 3, fmt);
             char buf[32];
             std::snprintf(buf, sizeof buf, "%.3e", v);
@@ -1012,7 +1012,7 @@ void Gui::statusBar() {
             ImGui::PushFont(mono);
         ImGui::Text("X %s   Y %s   %s", shown(c.x).c_str(), shown(c.y).c_str(),
                     std::string(unitSuffix(fmt.unit)).c_str());
-        const float pad = ImGui::CalcTextSize("X -100000000.000   Y -100000000.000   mm").x -
+        const float pad = ImGui::CalcTextSize("X -1000000.000   Y -1000000.000   mm").x -
                           ImGui::GetItemRectSize().x;
         if (mono)
             ImGui::PopFont();
@@ -1033,7 +1033,22 @@ void Gui::statusBar() {
         }
         const Layer* layer = doc.layer(doc.header().currentLayer);
         ImGui::SameLine();
-        ImGui::Text("  Layer: %s", layer ? layer->name.c_str() : "0");
+        ImGui::TextUnformatted("  Layer:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::CalcTextSize("A-WALL~interior").x + 30.0f);
+        if (ImGui::BeginCombo("##layersw", layer ? layer->name.c_str() : "0",
+                              ImGuiComboFlags_HeightLarge)) {
+            for (const auto& [id, l] : doc.layers()) {
+                const bool sel = id == doc.header().currentLayer;
+                if (ImGui::Selectable(l.name.c_str(), sel) && !sel) {
+                    core_.submitText("-LAYER Set #" + std::to_string(id.value));
+                    core_.submitText("");
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Layer new objects are drawn on.");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(130);
         if (ImGui::BeginCombo("##workspace",
@@ -1109,12 +1124,24 @@ void Gui::statusBar() {
                 ImGui::SetTooltip("New text, dimensions, tables and symbols follow the scale");
         }
 
-        std::string right = std::to_string(doc.modelSpaceCount()) + " objects   " +
-                            std::to_string(core_.selection().size()) + " selected   " +
-                            std::to_string(static_cast<int>(fps_ + 0.5)) + " fps";
-        float w = ImGui::CalcTextSize(right.c_str()).x;
-        ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);
-        ImGui::TextUnformatted(right.c_str());
+        // Counts on the right; on a narrow window the fps and then the object count go first,
+        // so they never overlap the toggles.
+        const std::string objects = std::to_string(doc.modelSpaceCount()) + " objects   ";
+        const std::string selected = std::to_string(core_.selection().size()) + " selected   ";
+        const std::string fps = std::to_string(static_cast<int>(fps_ + 0.5)) + " fps";
+        const float free = ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x -
+                           (ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x) -
+                           2 * ImGui::GetStyle().ItemSpacing.x;
+        std::string right = objects + selected + fps;
+        if (ImGui::CalcTextSize(right.c_str()).x > free)
+            right = objects + selected;
+        if (ImGui::CalcTextSize(right.c_str()).x > free)
+            right = selected;
+        const float w = ImGui::CalcTextSize(right.c_str()).x;
+        if (w <= free) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);
+            ImGui::TextUnformatted(right.c_str());
+        }
     }
     ImGui::End();
 }
