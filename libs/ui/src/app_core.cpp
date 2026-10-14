@@ -1064,7 +1064,7 @@ BBox2 AppCore::drawingExtents() const {
 }
 
 void AppCore::zoomExtents() {
-    zoomToBox(drawingExtents());
+    zoomToBox(inPaperSpace() ? paper_.sheet() : drawingExtents());
 }
 
 void AppCore::zoomToBox(const BBox2& box) {

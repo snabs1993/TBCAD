@@ -26,6 +26,16 @@ TEST_CASE("switching to a layout shows the sheet and goes back to the model view
     CHECK(&core.renderScene() != &core.scene());
     CHECK(core.renderScene().entityCount() > 0);  // at least the white sheet
 
+    // Zoom Extents shows the whole sheet.
+    core.setCamera([&] {
+        render::Camera2D c = core.camera();
+        c.pixelsPerMm *= 8;
+        return c;
+    }());
+    core.zoomExtents();
+    CHECK(core.camera().screenToWorld({0, 0}).x <= 1.0);  // the sheet starts at x = 0
+    CHECK(core.camera().pixelsPerMm < 5);
+
     // Clicks do nothing in a read-only layout view.
     core.click({core.camera().worldToScreen({100, 100}), false, false});
     CHECK(core.selection().empty());
