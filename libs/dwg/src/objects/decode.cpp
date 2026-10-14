@@ -1652,4 +1652,55 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
     reader.run(map);
 }
 
+void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
+                     std::vector<std::string>& lines) {
+    std::map<std::uint32_t, std::size_t> histogram;
+    std::size_t bad = 0, shown = 0;
+    for (const MapEntry& e : map) {
+        if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file.size()) {
+            ++bad;
+            continue;
+        }
+        BitReader head(file.subspan(static_cast<std::size_t>(e.offset)));
+        const std::uint32_t size = head.ms();
+        const std::size_t lead = head.bytePos();
+        if (head.failed() || size == 0 ||
+            static_cast<std::size_t>(e.offset) + lead + size > file.size()) {
+            ++bad;
+            if (shown++ < 12)
+                lines.push_back("object map entry handle " + std::to_string(e.handle) + " at " +
+                                std::to_string(e.offset) + ": impossible size");
+            continue;
+        }
+        BitReader r(file.subspan(static_cast<std::size_t>(e.offset) + lead, size));
+        std::size_t handleBits = 0;
+        if (fmt.r2010)
+            handleBits = static_cast<std::size_t>(r.mcUnsigned());
+        const std::uint32_t type =
+            fmt.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
+        std::size_t objBits = fmt.r2010 ? size * 8 - handleBits : r.rl();
+        const HandleRef self = r.handle();
+        ++histogram[type];
+        if (shown++ < 12)
+            lines.push_back("object " + std::to_string(e.handle) + " at " +
+                            std::to_string(e.offset) + ": " + std::to_string(size) +
+                            " bytes, type " + std::to_string(type) + ", handle bits " +
+                            std::to_string(handleBits) + ", data bits " + std::to_string(objBits) +
+                            ", own handle " + std::to_string(self.value) +
+                            (r.failed() ? " (header read failed)" : ""));
+    }
+    lines.push_back("objects: " + std::to_string(map.size()) + " in the map, " +
+                    std::to_string(bad) + " unreadable");
+    std::string h = "object types (type:count):";
+    std::size_t n = 0;
+    for (const auto& [t, c] : histogram) {
+        if (n++ >= 80) {
+            h += " ...";
+            break;
+        }
+        h += " " + std::to_string(t) + ":" + std::to_string(c);
+    }
+    lines.push_back(h);
+}
+
 }  // namespace tbcad::dwg::detail

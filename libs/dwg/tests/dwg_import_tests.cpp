@@ -613,6 +613,7 @@ TEST_CASE("describe lists the container steps and sections") {
     CHECK(text.find("AC1032") != std::string::npos);
     CHECK(text.find("section \"AcDb:AcDbObjects\"") != std::string::npos);
     CHECK(text.find("decoded section AcDb:Handles") != std::string::npos);
+    CHECK(text.find("object types (type:count):") != std::string::npos);
     CHECK(text.find("import: ok") != std::string::npos);
     CHECK(describe(asBytes(std::vector<std::uint8_t>{1, 2, 3})).find("not a DWG") !=
           std::string::npos);

@@ -166,6 +166,25 @@ std::string describe(std::span<const std::byte> bytes) {
             for (const auto& [name, data] : sections.value().sections)
                 line("decoded section " + name + ": " + std::to_string(data.size()) +
                      " bytes, starts " + hex16(data));
+            const auto& secs = sections.value().sections;
+            const auto objs = secs.find("AcDb:AcDbObjects");
+            const auto hnd = secs.find("AcDb:Handles");
+            if (objs != secs.end() && hnd != secs.end()) {
+                std::vector<std::string> n2;
+                const auto map = detail::readObjectMapData(hnd->second, 0, hnd->second.size(), n2);
+                for (const std::string& n : n2)
+                    line("note: " + n);
+                detail::Format fmt;
+                fmt.r2004 = true;
+                fmt.r2007 = v.version >= Version::R2010;
+                fmt.r2010 = v.version >= Version::R2010;
+                fmt.r2013 = v.version >= Version::R2013;
+                fmt.r2018 = v.version >= Version::R2018;
+                std::vector<std::string> lines;
+                detail::describeObjects(objs->second, map, fmt, lines);
+                for (const std::string& l : lines)
+                    line(l);
+            }
         }
     }
     dxf::Report report;
@@ -173,7 +192,7 @@ std::string describe(std::span<const std::byte> bytes) {
     line(r ? "import: ok" : "import failed: " + r.error().message);
     std::size_t shown = 0;
     for (const dxf::Diagnostic& d : report.diagnostics()) {
-        if (shown++ >= 40)
+        if (shown++ >= 80)
             break;
         line(std::string(d.severity == dxf::Severity::Error     ? "error: "
                          : d.severity == dxf::Severity::Warning ? "warning: "
