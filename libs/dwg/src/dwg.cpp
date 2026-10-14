@@ -263,12 +263,14 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         {
             // Every viewport: where it sits on its sheet and what it looks at.
             auto val = [](const detail::EntityRec& e, int code) {
-                for (const detail::Group& g : e.groups)
-                    if (g.code == code)
-                        if (const double* v = std::get_if<double>(&g.value.v))
-                            return *v;
-                        else if (const long long* i = std::get_if<long long>(&g.value.v))
-                            return static_cast<double>(*i);
+                for (const detail::Group& g : e.groups) {
+                    if (g.code != code)
+                        continue;
+                    if (const double* v = std::get_if<double>(&g.value.v))
+                        return *v;
+                    if (const long long* i = std::get_if<long long>(&g.value.v))
+                        return static_cast<double>(*i);
+                }
                 return 0.0;
             };
             int n = 0;
