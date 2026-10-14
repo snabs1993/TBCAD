@@ -187,8 +187,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         rebuildDrawOrder();
 }
 
-void SceneSync::rebuildAll() {
-    scene_.clear();
+void SceneSync::rebuildAll(double tileSizeMm) {
+    scene_.clearAndRetile(tileSizeMm);
     lockedLayers_.clear();
     for (const auto& [id, layer] : doc_.layers())
         if (doc_.effective(id).locked)

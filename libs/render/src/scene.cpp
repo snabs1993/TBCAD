@@ -314,6 +314,12 @@ void Scene::clear() {
     ++changeCounter_;
 }
 
+void Scene::clearAndRetile(double tileSizeMm) {
+    clear();
+    if (tileSizeMm > 0)
+        tileSize_ = tileSizeMm;
+}
+
 void Scene::setLayerVisible(LayerId layer, bool visible) {
     bool changed = visible ? hiddenLayers_.erase(layer) != 0 : hiddenLayers_.insert(layer).second;
     if (changed)

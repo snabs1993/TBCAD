@@ -30,7 +30,7 @@ public:
     double pixelSize() const { return pixelSizeMm_; }
 
     // Rebuilds the whole scene from the document (after loading a file).
-    void rebuildAll();
+    void rebuildAll(double tileSizeMm = 0);
     // Rebuilds up to `limit` entities in view whose curves were tessellated for a zoom more than
     // 4x away from the camera's. Returns how many were rebuilt.
     std::size_t refreshStale(const render::Camera2D& camera, std::size_t limit = 20000);

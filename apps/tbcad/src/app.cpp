@@ -161,6 +161,25 @@ void App::runScript(const std::string& script) {
     }
 }
 
+namespace {
+// TBCAD_PROFILE=1 prints where each frame spends its time (milliseconds, averaged over 60 frames).
+struct PhaseTimer {
+    static bool enabled() {
+        static const bool on = std::getenv("TBCAD_PROFILE") != nullptr;
+        return on;
+    }
+    double t0 = glfwGetTime();
+    double lap() {
+        double t = glfwGetTime();
+        double d = (t - t0) * 1000.0;
+        t0 = t;
+        return d;
+    }
+};
+double gPhase[8] = {};
+int gPhaseFrames = 0;
+}  // namespace
+
 void App::drawScene() {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
@@ -172,10 +191,17 @@ void App::drawScene() {
     renderer_.draw(core_->underlayImages());
     core_->buildUnderlay(underlay_, uiRegistry_.get());
     renderer_.draw(underlay_);
+    PhaseTimer pt;
     renderer_.draw(core_->scene());
+    if (PhaseTimer::enabled())
+        gPhase[3] += pt.lap();
     core_->buildOverlay(overlay_, uiRegistry_.get());
+    if (PhaseTimer::enabled())
+        gPhase[4] += pt.lap();
     renderer_.draw(overlay_);
     renderer_.endFrame();
+    if (PhaseTimer::enabled())
+        gPhase[5] += pt.lap();
 }
 
 void App::renderDrawingOnce(bool finish) {
@@ -193,7 +219,10 @@ void App::renderDrawingOnce(bool finish) {
 }
 
 void App::frame() {
+    PhaseTimer pt;
     core_->updateFrame();
+    if (PhaseTimer::enabled())
+        gPhase[0] += pt.lap();
 
     const std::string title = core_->windowTitle();
     if (title != lastTitle_) {
@@ -212,8 +241,12 @@ void App::frame() {
     target_.resize(c.camera().viewportW, c.camera().viewportH);
     gui_->showViewport(target_.texture(), rect);
     ImGui::Render();
+    if (PhaseTimer::enabled())
+        gPhase[1] += pt.lap();
 
     drawScene();
+    if (PhaseTimer::enabled())
+        pt.lap();
 
     glfwGetFramebufferSize(window_, &framebufferW_, &framebufferH_);
     ViewportTarget::unbindToWindow(framebufferW_, framebufferH_);
@@ -221,6 +254,21 @@ void App::frame() {
     glClearColor(bg.r / 255.0f, bg.g / 255.0f, bg.b / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (PhaseTimer::enabled()) {
+        gPhase[2] += pt.lap();
+        if (++gPhaseFrames == 60) {
+            const auto& st = renderer_.stats();
+            std::fprintf(stderr,
+                         "profile ms/frame: update %.2f  ui %.2f  composite %.2f  scene.draw %.2f  "
+                         "overlay.build %.2f  overlay.draw %.2f  (draw calls %u, verts %llu)\n",
+                         gPhase[0] / 60, gPhase[1] / 60, gPhase[2] / 60, gPhase[3] / 60,
+                         gPhase[4] / 60, gPhase[5] / 60, st.drawCalls,
+                         static_cast<unsigned long long>(st.vertices));
+            for (double& v : gPhase)
+                v = 0;
+            gPhaseFrames = 0;
+        }
+    }
 }
 
 bool App::saveScreenshot(const std::string& path) {
