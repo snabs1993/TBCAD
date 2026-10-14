@@ -200,6 +200,14 @@ private:
     ImVec2 hoverTipPos_{-1, -1};  // where the pointer rested, for the hover tooltip
     double hoverTipSince_ = 0;
     void hoverTooltip();
+    // Short non-blocking notices at the bottom right of the viewport (saved, opened, ...).
+    void toast(const std::string& text);
+    void drawToasts(const ViewportRect& rect);
+    struct Toast {
+        std::string text;
+        double shownAt = 0;
+    };
+    std::vector<Toast> toasts_{};
     bool startPage_ = true;
     std::size_t shownActive_ = static_cast<std::size_t>(-1);
     ImVec2 hudAnchor_{-1e6f, -1e6f};

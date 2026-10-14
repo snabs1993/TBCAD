@@ -494,6 +494,8 @@ void Gui::doOpenPath(const std::string& path) {
     core_.setEchoOpenFailures(true);
     if (!r)
         lastError_ = r.error().message;
+    else
+        toast("Opened " + platform::pathFromUtf8(path).filename().string());
 }
 
 void Gui::openPending() {
@@ -523,6 +525,36 @@ void Gui::openPending() {
         lastError_ = r.error().message;
 }
 
+void Gui::toast(const std::string& text) {
+    toasts_.push_back({text, ImGui::GetTime()});
+    if (toasts_.size() > 4)
+        toasts_.erase(toasts_.begin());
+    anyActivity_ = true;
+}
+
+void Gui::drawToasts(const ViewportRect& rect) {
+    constexpr double kLife = 3.0, kFade = 0.5;
+    const double now = ImGui::GetTime();
+    std::erase_if(toasts_, [&](const Toast& t) { return now - t.shownAt > kLife; });
+    if (toasts_.empty())
+        return;
+    anyActivity_ = true;  // keep frames coming so the toast fades out and disappears
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    float y = rect.y + rect.h - 16;
+    for (auto it = toasts_.rbegin(); it != toasts_.rend(); ++it) {
+        const double age = now - it->shownAt;
+        const float a = age > kLife - kFade ? static_cast<float>((kLife - age) / kFade) : 1.0f;
+        const ImVec2 size = ImGui::CalcTextSize(it->text.c_str());
+        const ImVec2 p1(rect.x + rect.w - 16, y);
+        const ImVec2 p0(p1.x - size.x - 24, y - size.y - 16);
+        fg->AddRectFilled(p0, p1, IM_COL32(36, 40, 48, static_cast<int>(235 * a)), 6.0f);
+        fg->AddRect(p0, p1, IM_COL32(90, 100, 120, static_cast<int>(255 * a)), 6.0f);
+        fg->AddText(ImVec2(p0.x + 12, p0.y + 8), IM_COL32(235, 238, 245, static_cast<int>(255 * a)),
+                    it->text.c_str());
+        y = p0.y - 8;
+    }
+}
+
 void Gui::doSave() {
     if (!core_.hasFile() || core_.readOnlyOrigin()) {
         doSaveAs();
@@ -531,6 +563,8 @@ void Gui::doSave() {
     auto r = core_.save();
     if (!r)
         lastError_ = r.error().message;
+    else
+        toast("Saved " + core_.file().filename().string());
 }
 
 void Gui::doSaveAs() {
@@ -558,8 +592,11 @@ void Gui::doSaveAs() {
             auto r = core_.saveAs(*p);
             if (!r)
                 lastError_ = r.error().message;
-            else if (saveThenPending_)
-                performPending(false);
+            else {
+                toast("Saved " + core_.file().filename().string());
+                if (saveThenPending_)
+                    performPending(false);
+            }
         }
         saveThenPending_ = false;
         return;
@@ -2278,6 +2315,7 @@ ViewportRect Gui::frame() {
     cursorHud(rect);
     hoverTooltip();
     quickProperties(rect);
+    drawToasts(rect);
 
     // Non-blocking notice when a command put geometry outside the working area.
     if (core_.outOfAreaNotice()) {
