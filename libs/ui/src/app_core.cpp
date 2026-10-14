@@ -251,7 +251,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
                          selection_.end());
     }
     session_->sync->setPixelSize(camera_.pixelSizeMm());
-    session_->sync->rebuildAll();
+    session_->sync->rebuildAll(render::Scene::suggestTileSize(drawingExtents()));
     scene_.setSelected(selection_);
     ++generation_;
     lastTessellatedFor_ = camera_;
@@ -1023,8 +1023,8 @@ void AppCore::panPixels(double dx, double dy) {
     camera_.panPixels(dx, dy);
 }
 
-void AppCore::zoomExtents() {
-    // Rays and xlines have no end, so they do not count; if they are all there is, use them.
+// Rays and xlines have no end, so they do not count; if they are all there is, use them.
+BBox2 AppCore::drawingExtents() const {
     BBox2 box;
     std::vector<BBox2> boxes;
     const Document& doc = session_->doc;
@@ -1060,7 +1060,11 @@ void AppCore::zoomExtents() {
         if (!core.empty() && (box.width() > 5 * core.width() || box.height() > 5 * core.height()))
             box = core;
     }
-    zoomToBox(box.empty() ? session_->index.bounds() : box);
+    return box.empty() ? session_->index.bounds() : box;
+}
+
+void AppCore::zoomExtents() {
+    zoomToBox(drawingExtents());
 }
 
 void AppCore::zoomToBox(const BBox2& box) {

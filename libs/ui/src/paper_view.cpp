@@ -176,7 +176,6 @@ private:
     void arc(const PlotArc& a) {
         if (!(a.radius > 0))
             return;
-        constexpr double kTwoPi = 6.283185307179586;
         double sweep = a.full ? kTwoPi : a.end - a.start;
         while (!a.full && sweep <= 0)
             sweep += kTwoPi;

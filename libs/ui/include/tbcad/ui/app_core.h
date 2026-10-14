@@ -180,6 +180,7 @@ public:
     void zoomAtScreen(Vec2 screen, double notches);
     void panPixels(double dx, double dy);
     void zoomExtents();
+    BBox2 drawingExtents() const;
     void zoomToBox(const BBox2& box);
     void zoomToEntities(const std::vector<EntityId>& ids);
     // Tessellate for the current zoom when it changed enough; call once per frame.

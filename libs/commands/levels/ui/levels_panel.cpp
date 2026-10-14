@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <string>
+#include <unordered_map>
 
 #include "panels.h"
 #include "tbcad/levels/level_ops.h"
@@ -29,7 +30,26 @@ struct PanelState {
     LevelId renaming{};
     bool focusRename = false;
     std::string renameBuf{};
+    // Objects per level, counted in one pass and only again after the drawing changed (a big
+    // drawing has hundreds of thousands of objects; counting per row and frame was slow).
+    const Document* countedDoc = nullptr;
+    std::uint64_t countedRevision = ~std::uint64_t{0};
+    std::unordered_map<std::uint64_t, std::size_t> counts{};
 };
+
+const std::unordered_map<std::uint64_t, std::size_t>& levelCounts(PanelState& st,
+                                                                  const Document& doc) {
+    if (st.countedDoc != &doc || st.countedRevision != doc.revision()) {
+        st.counts.clear();
+        doc.forEachEntity([&](const Entity& e) {
+            if (!doc.ownerBlock(e.common.id))
+                ++st.counts[e.common.level.value];
+        });
+        st.countedDoc = &doc;
+        st.countedRevision = doc.revision();
+    }
+    return st.counts;
+}
 
 PanelState& state() {
     static PanelState s;
@@ -172,7 +192,9 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
                     ImGui::SetTooltip("Locked levels show but cannot be edited");
             }
             ImGui::TableSetColumnIndex(5);
-            ImGui::Text("%zu", entityCount(doc, l->id));
+            const auto& counts = levelCounts(st, doc);
+            auto found = counts.find(l->id.value);
+            ImGui::Text("%zu", found == counts.end() ? std::size_t{0} : found->second);
             ImGui::PopID();
         }
         ImGui::EndTable();

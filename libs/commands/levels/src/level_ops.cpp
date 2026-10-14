@@ -62,7 +62,11 @@ std::vector<LevelId> levelOrder(const Document& doc) {
 
 std::size_t entityCount(const Document& doc, LevelId id) {
     std::size_t n = 0;
-    doc.forEachEntity([&](const Entity& e) { n += e.common.level == id ? 1 : 0; });
+    // Model space only, like the object count in the status bar: what sits inside block definitions
+    // belongs to the block, not to a level of the drawing.
+    doc.forEachEntity([&](const Entity& e) {
+        n += (e.common.level == id && !doc.ownerBlock(e.common.id)) ? 1 : 0;
+    });
     return n;
 }
 
