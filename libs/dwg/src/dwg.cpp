@@ -387,8 +387,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
                 bool any = false;
                 for (const detail::Group& g : e.groups) {
-                    const double* v = std::get_if<double>(&g.value.v);
-                    if (!v || g.code < 10 || g.code > 23 || (g.code > 13 && g.code < 20))
+                    const double* dv = std::get_if<double>(&g.value.v);
+                    if (!dv || g.code < 10 || g.code > 23 || (g.code > 13 && g.code < 20))
                         continue;
                     if ((g.code == 12 || g.code == 22) && e.dxfType == "DIMENSION")
                         continue;  // the clone insertion point, not geometry
@@ -397,8 +397,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         (e.dxfType == "MTEXT" || e.dxfType == "TEXT" || e.dxfType == "ATTRIB"))
                         continue;
                     const int axis = g.code >= 20 ? 1 : 0;
-                    lo[axis] = std::min(lo[axis], *v);
-                    hi[axis] = std::max(hi[axis], *v);
+                    lo[axis] = std::min(lo[axis], *dv);
+                    hi[axis] = std::max(hi[axis], *dv);
                     any = true;
                 }
                 if (!any || lo[0] > hi[0] || lo[1] > hi[1])
@@ -435,8 +435,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     std::string gl = "  groups:";
                     for (const detail::Group& g : w.e->groups) {
                         gl += " " + std::to_string(g.code) + "=";
-                        if (const double* v = std::get_if<double>(&g.value.v))
-                            gl += std::to_string(*v);
+                        if (const double* dv = std::get_if<double>(&g.value.v))
+                            gl += std::to_string(*dv);
                         else if (const long long* n = std::get_if<long long>(&g.value.v))
                             gl += std::to_string(*n);
                         else
@@ -469,8 +469,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     ", height " + std::to_string(tall[i].first) + ", groups:";
                 for (const detail::Group& g : e.groups) {
                     txt += " " + std::to_string(g.code) + "=";
-                    if (const double* v = std::get_if<double>(&g.value.v))
-                        txt += std::to_string(*v);
+                    if (const double* dv = std::get_if<double>(&g.value.v))
+                        txt += std::to_string(*dv);
                     else if (const long long* n = std::get_if<long long>(&g.value.v))
                         txt += std::to_string(*n);
                     else
@@ -486,19 +486,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
             for (const auto& [dh, ds] : drawing.dimStyles) {
                 if (++shown > 6)
                     break;
-                std::string line = "dimstyle \"" + ds.name + "\":";
+                std::string dsLine = "dimstyle \"" + ds.name + "\":";
                 for (const detail::Group& g : ds.groups) {
                     if (g.code != 40 && g.code != 41 && g.code != 42 && g.code != 43 &&
                         g.code != 44 && g.code != 45 && g.code != 140 && g.code != 141 &&
                         g.code != 142 && g.code != 143 && g.code != 147 && g.code != 144)
                         continue;
-                    line += " " + std::to_string(g.code) + "=";
-                    if (const double* v = std::get_if<double>(&g.value.v))
-                        line += std::to_string(*v);
+                    dsLine += " " + std::to_string(g.code) + "=";
+                    if (const double* dv = std::get_if<double>(&g.value.v))
+                        dsLine += std::to_string(*dv);
                     else if (const long long* n = std::get_if<long long>(&g.value.v))
-                        line += std::to_string(*n);
+                        dsLine += std::to_string(*n);
                 }
-                report.info(code::kSkippedObject, line);
+                report.info(code::kSkippedObject, dsLine);
             }
         }
         std::string ins = "inserts per owner:";
