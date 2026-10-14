@@ -17,6 +17,17 @@ using exportlib::PlotDots;
 using exportlib::PlotFill;
 using exportlib::PlotPath;
 
+// The renderer swaps pure black and pure white to stay visible against the window background (the
+// way model space works). The sheet has its own white background, so a one-step nudge keeps ink
+// black and paper white whatever the theme is.
+Rgba keepColor(Rgba c) {
+    if (c.r == 0 && c.g == 0 && c.b == 0)
+        c.r = c.g = c.b = 1;
+    else if (c.r == 255 && c.g == 255 && c.b == 255)
+        c.r = c.g = c.b = 254;
+    return c;
+}
+
 // Liang-Barsky: the part of segment ab inside the box, as parameters; false when none.
 bool clipSegment(Vec2 a, Vec2 b, const BBox2& w, double& t0, double& t1) {
     t0 = 0;
@@ -107,7 +118,7 @@ public:
     void sheet(const BBox2& box) {
         DisplayFill paper;
         paper.rings = {{box.min, {box.max.x, box.min.y}, box.max, {box.min.x, box.max.y}}};
-        paper.style.color = Rgba{255, 255, 255, 255};
+        paper.style.color = keepColor(Rgba{255, 255, 255, 255});
         list_.items.emplace_back(std::move(paper));
         flush();
     }
@@ -115,7 +126,7 @@ public:
 private:
     DisplayStyle styleOf(const exportlib::PlotStyle& s) {
         DisplayStyle d;
-        d.color = s.color;
+        d.color = keepColor(s.color);
         d.lineweight = s.widthMm;
         if (!s.dashMm.empty()) {
             std::vector<double> dashes = s.dashMm;
@@ -193,7 +204,7 @@ private:
 
     void fill(const PlotFill& f) {
         DisplayFill out;
-        out.style.color = f.color;
+        out.style.color = keepColor(f.color);
         for (const auto& ring : f.rings) {
             if (ring.size() < 3)
                 continue;
