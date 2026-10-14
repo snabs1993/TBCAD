@@ -83,6 +83,35 @@ public:
                 note("object " + hex(e.handle) + " lies outside the file");
                 continue;
             }
+            if (frameHandle(e.offset) != e.handle) {
+                // The map says the object is here but another (or no) object starts there: look
+                // nearby for the frame that carries this handle (its own handle is inside it).
+                std::int64_t found = 0;
+                bool ok = false;
+                for (std::int64_t d : {lastShift_}) {
+                    if (d != 0 && frameHandle(e.offset + d) == e.handle) {
+                        found = d;
+                        ok = true;
+                    }
+                }
+                for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
+                    for (std::int64_t sd : {d, -d}) {
+                        if (frameHandle(e.offset + sd) == e.handle) {
+                            found = sd;
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+                if (ok) {
+                    lastShift_ = found;
+                    ++out_.relocated[found];
+                    MapEntry moved = e;
+                    moved.offset += found;
+                    decodeOne(moved);
+                    continue;
+                }
+            }
             decodeOne(e);
         }
         std::sort(out_.entities.begin(), out_.entities.end(),
@@ -115,6 +144,33 @@ private:
     }
 
     std::size_t mainEnd_ = 0;
+    std::int64_t lastShift_ = 0;
+
+    // The own handle of the object framed at `offset` (0 when nothing sensible starts there).
+    std::uint64_t frameHandle(std::int64_t offset) const {
+        if (offset < 0 || static_cast<std::size_t>(offset) >= file_.size())
+            return 0;
+        BitReader head(file_.subspan(static_cast<std::size_t>(offset)));
+        const std::uint32_t size = head.ms();
+        std::size_t handleBits = 0;
+        if (fmt_.r2010)
+            handleBits = static_cast<std::size_t>(head.mcUnsigned());
+        const std::size_t lead = head.bytePos();
+        if (head.failed() || size == 0 ||
+            static_cast<std::size_t>(offset) + lead + size > file_.size())
+            return 0;
+        if (handleBits > static_cast<std::size_t>(size) * 8)
+            return 0;
+        BitReader r(file_.subspan(static_cast<std::size_t>(offset) + lead, size));
+        if (fmt_.r2010)
+            r.objectTypeR2010();
+        else {
+            r.bs();
+            r.rl();
+        }
+        const HandleRef self = r.handle();
+        return r.failed() ? 0 : self.value;
+    }
 
     // Where an object that could not be framed sits: offset, offset inside a 0x7400 page, and
     // its first bytes (a diagnostic for map or page misplacement).

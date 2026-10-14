@@ -119,6 +119,21 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         return read.error();
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
+    if (!drawing.relocated.empty()) {
+        std::size_t total = 0;
+        std::string first;
+        for (const auto& [shift, count] : drawing.relocated) {
+            total += count;
+            if (first.size() < 120)
+                first += (first.empty() ? "" : ", ") + std::to_string(shift) + " (" +
+                         std::to_string(count) + ")";
+        }
+        report.info(code::kSkippedObject,
+                    std::to_string(total) +
+                        " object(s) were found away from the place the object map gives; shifts in "
+                        "bytes: " +
+                        first);
+    }
     for (const auto& [type, t] : drawing.layoutCheck)
         report.info(code::kSkippedObject, "layout check, object type " + std::to_string(type) +
                                               ": " + std::to_string(t[0]) +

@@ -113,6 +113,8 @@ struct Drawing {
     // Per object type: how often the main data ended exactly where the object says (0) and how
     // often not (1). R2007 and later only; a diagnostic for layout mistakes.
     std::map<std::uint32_t, std::array<std::size_t, 2>> layoutCheck{};
+    // Objects found away from the place the object map gives: shift in bytes -> how many.
+    std::map<std::int64_t, std::size_t> relocated{};
 };
 
 }  // namespace tbcad::dwg::detail
