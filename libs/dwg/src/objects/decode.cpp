@@ -114,6 +114,8 @@ private:
         return idx < classes_.size() ? classes_[idx].dxfName : std::string{};
     }
 
+    std::size_t mainEnd_ = 0;
+
     void decodeOne(const MapEntry& e) {
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
@@ -159,6 +161,7 @@ private:
             note("object " + hex(e.handle) + " has a damaged string stream");
             return;
         }
+        mainEnd_ = strings.bitSize() != 0 ? strings.bitPos() : (objBits > 0 ? objBits - 1 : 0);
         if (strings.bitSize() != 0)
             r.setStringStream(&strings);
         switch (type) {
@@ -210,6 +213,29 @@ private:
             name = "type " + std::to_string(type);
         ++out_.skippedTypes[name];
     }
+
+    // The exact bit where the main (non-string, non-handle) data of the current object must end
+    // (R2007 and later): the start of the string stream, or the string flag when there is none.
+    // Layout variants that differ between versions are chosen by which one lands exactly here.
+    void tally(std::uint32_t type, const BitReader& r) {
+        if (!fmt_.r2007 || r.failed())
+            return;
+        auto& t = out_.layoutCheck[type];
+        ++t[r.bitPos() == mainEnd_ ? 0 : 1];
+    }
+
+    // Table records start with a 64-bit flag, an xref index and an xref-dependency flag. Files
+    // written by recent versions leave the index out (checked on a real R2018 file).
+    int tripleVariant_ = -1;  // 1 = xref index present, 0 = absent, -1 = not decided yet
+    void readTriple(BitReader& r, bool& flag64, bool& xdep) {
+        flag64 = r.b();
+        if (tripleVariant_ != 0)
+            r.bs();
+        xdep = r.b();
+    }
+
+    // Entities: the "no links" bit that older versions store may be missing.
+    int nolinksVariant_ = -1;
 
     // ---- shared prefixes ----------------------------------------------------------------------
 
@@ -308,10 +334,22 @@ private:
             case kLayer: {
                 LayerRec l;
                 l.handle = self;
+                if (fmt_.r2007 && tripleVariant_ < 0) {
+                    for (int v : {1, 0}) {
+                        BitReader probe = r;
+                        tripleVariant_ = v;
+                        bool f = false, x = false;
+                        readTriple(probe, f, x);
+                        probe.bs();
+                        readCmc(probe, 7);
+                        if (!probe.failed() && probe.bitPos() == mainEnd_)
+                            break;
+                        tripleVariant_ = -1;
+                    }
+                }
                 l.name = r.textBytes();
-                r.b();   // 64 flag
-                r.bs();  // xref index
-                const bool xdep = r.b();
+                bool flag64 = false, xdep = false;
+                readTriple(r, flag64, xdep);
                 const int values = r.bs();
                 const ColorValue color = readCmc(r, 7);
                 leadingHandles(h, self, reactors, true);
@@ -339,9 +377,10 @@ private:
                 LinetypeRec t;
                 t.handle = self;
                 t.name = r.textBytes();
-                r.b();
-                r.bs();
-                r.b();
+                {
+                    bool f = false, x = false;
+                    readTriple(r, f, x);
+                }
                 t.description = r.textBytes();
                 t.patternLength = r.bd();
                 r.rc();  // alignment, always 'A'
@@ -366,9 +405,8 @@ private:
                 StyleRec s;
                 s.handle = self;
                 s.name = r.textBytes();
-                r.b();
-                r.bs();
-                const bool xdep = r.b();
+                bool f64 = false, xdep = false;
+                readTriple(r, f64, xdep);
                 const bool vertical = r.b();
                 const bool shapeFile = r.b();
                 s.height = r.bd();
@@ -390,9 +428,8 @@ private:
                 DimStyleRec d;
                 d.handle = self;
                 d.name = r.textBytes();
-                const bool flag64 = r.b();
-                r.bs();  // xref index + 1
-                const bool xdep = r.b();
+                bool flag64 = false, xdep = false;
+                readTriple(r, flag64, xdep);
                 dimStyleVars(r, d);
                 const bool unknown = r.b();
                 if (r.failed()) {
@@ -407,9 +444,8 @@ private:
                 BlockRec b;
                 b.handle = self;
                 b.name = r.textBytes();
-                r.b();
-                r.bs();
-                const bool xdep = r.b();
+                bool f64 = false, xdep = false;
+                readTriple(r, f64, xdep);
                 const bool anonymous = r.b();
                 const bool hasAtts = r.b();
                 const bool isXref = r.b();
@@ -433,6 +469,7 @@ private:
             default:
                 break;
         }
+        tally(type, r);
     }
 
     // ---- entities -----------------------------------------------------------------------------
@@ -468,7 +505,8 @@ private:
             xdicMissing_ = r.b();
         if (fmt_.r2013)
             r.b();  // object has data in the data store section
-        c.nolinks = r.b();
+        if (nolinksVariant_ != 0 || !fmt_.r2007)
+            c.nolinks = r.b();
         if (fmt_.r2004) {
             const ColorValue cv = readEnc(r);
             c.color = cv.index;
@@ -497,6 +535,20 @@ private:
                       std::uint64_t self) {
         CommonBits c;
         ownedCount_ = 0;
+        if (fmt_.r2007 && type == kLine && nolinksVariant_ < 0) {
+            for (int v : {1, 0}) {
+                BitReader probe = r;
+                nolinksVariant_ = v;
+                CommonBits pc;
+                EntityRec pe;
+                if (readCommonEntity(probe, pc)) {
+                    line(probe, pe);
+                    if (!probe.failed() && probe.bitPos() == mainEnd_)
+                        break;
+                }
+                nolinksVariant_ = -1;
+            }
+        }
         if (!readCommonEntity(r, c)) {
             note("entity " + hex(self) + " has a damaged common part");
             return;
@@ -588,6 +640,7 @@ private:
             default:
                 return;
         }
+        tally(type, r);
         if (r.failed()) {
             note(e.dxfType + " " + hex(self) + " is damaged and was skipped");
             return;
@@ -1683,18 +1736,24 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
         std::size_t objBits = fmt.r2010 ? size * 8 - handleBits : r.rl();
         const HandleRef self = r.handle();
         ++histogram[type];
-        // The last data bits of a few table records and entities: they show where the string
-        // stream of the format sits.
-        if (objBits >= 8 && objBits <= size * 8 && (tails[type]++ < 3) &&
-            (type == 49 || type == 51 || type == 53 || type == 57 || type == 19 || type == 1)) {
-            std::string bits;
-            const std::size_t from = objBits > 200 ? objBits - 200 : 0;
-            BitReader t(file.subspan(static_cast<std::size_t>(e.offset) + lead, size), from);
-            for (std::size_t i = from; i < objBits; ++i)
-                bits += t.b() ? '1' : '0';
-            lines.push_back("tail of data of type " + std::to_string(type) + " object " +
+        // All data bits and the handle stream bits of a few table records and entities, so a
+        // layout can be checked field by field against the format description.
+        if (objBits >= 8 && objBits <= size * 8 && (tails[type]++ < 2) &&
+            (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
+             type == 1 || type == 18 || type == 17)) {
+            Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
+            auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
+                std::string bits;
+                BitReader t(ob, from);
+                for (std::size_t i = from; i < to && i < from + cap; ++i)
+                    bits += t.b() ? '1' : '0';
+                return bits;
+            };
+            lines.push_back("bits of type " + std::to_string(type) + " object " +
                             std::to_string(e.handle) + " (" + std::to_string(objBits) +
-                            " data bits, last " + std::to_string(objBits - from) + "): " + bits);
+                            " data bits): " + dump(0, objBits, 1400));
+            lines.push_back("handle bits of that object (" + std::to_string(handleBits) +
+                            "): " + dump(objBits, size * 8, 400));
         }
         if (shown++ < 12)
             lines.push_back("object " + std::to_string(e.handle) + " at " +

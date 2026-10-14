@@ -119,6 +119,11 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         return read.error();
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
+    for (const auto& [type, t] : drawing.layoutCheck)
+        report.info(code::kSkippedObject, "layout check, object type " + std::to_string(type) +
+                                              ": " + std::to_string(t[0]) +
+                                              " end where expected, " + std::to_string(t[1]) +
+                                              " do not");
     for (const auto& [name, count] : drawing.skippedTypes)
         report.info(code::kSkippedObject,
                     std::to_string(count) + " object(s) of type " + name + " are not read yet");
