@@ -2244,7 +2244,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r19: LZ opcodes, block lists and layout checks, reachability info";
+    return "r20: layouts (VIEWPORT, LAYOUT), xref paths; r19: reachability info";
 }
 
 void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
