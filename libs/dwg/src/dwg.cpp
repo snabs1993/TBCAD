@@ -477,11 +477,15 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
             for (const auto& [k, n] : cnt)
                 line += " " + k + "=" + std::to_string(n);
             report.info(code::kSkippedObject, line);
-            int shownMt = 0;
+            int shownMt = 0, shownIns = 0;
             for (const detail::EntityRec& e : drawing.entities) {
-                if (!dl.count(e.layer) || e.dxfType != "MTEXT" || shownMt >= 4)
+                if (!dl.count(e.layer))
                     continue;
-                std::string gl = "A-ANNO-D mtext " + std::to_string(e.handle) + ":";
+                if (e.dxfType == "MTEXT"    ? shownMt++ >= 1
+                    : e.dxfType == "INSERT" ? shownIns++ >= 6
+                                            : true)
+                    continue;
+                std::string gl = "A-ANNO-D " + e.dxfType + " " + std::to_string(e.handle) + ":";
                 for (const detail::Group& g : e.groups) {
                     gl += " " + std::to_string(g.code) + "=";
                     if (const double* v = std::get_if<double>(&g.value.v))
@@ -492,7 +496,6 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         gl += "\"" + std::get<std::string>(g.value.v).substr(0, 40) + "\"";
                 }
                 report.info(code::kSkippedObject, gl);
-                ++shownMt;
             }
             if (firstDim) {
                 std::string gl = "first dimension " + std::to_string(firstDim->dimStyle) +
