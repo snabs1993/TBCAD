@@ -56,8 +56,11 @@ bool readSystemPage(Bytes file, std::uint64_t at, std::uint32_t expectedType,
     }
     const Bytes payload = file.subspan(static_cast<std::size_t>(at) + 0x14, comp);
     if (le32(h, 12) == 2) {
-        if (!lz77Decompress(payload, decomp, out)) {
-            notes.push_back(std::string("the ") + what + " could not be decompressed");
+        std::string why;
+        if (!lz77Decompress(payload, decomp, out, nullptr, &why)) {
+            notes.push_back(std::string("the ") + what + " could not be decompressed: " + why +
+                            "; header: compressed " + std::to_string(comp) + ", expanded " +
+                            std::to_string(decomp));
             return false;
         }
     } else {

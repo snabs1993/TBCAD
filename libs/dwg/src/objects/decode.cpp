@@ -177,6 +177,7 @@ private:
     std::size_t mainEnd_ = 0;
     std::int64_t lastShift_ = 0;
     int hugeSeen_ = 0;
+    std::map<std::uint32_t, int> failDumps_;
     std::uint64_t currentHandle_ = 0;
     Bytes currentBody_;
     std::size_t currentBits_ = 0;
@@ -522,17 +523,18 @@ private:
                 LayerRec l;
                 l.handle = self;
                 if (fmt_.r2007 && tripleVariant_ < 0) {
-                    for (int v : {1, 0}) {
+                    // Only a layer that fits one reading and not the other decides it.
+                    bool fits[2] = {false, false};
+                    for (int v = 0; v < 2; ++v) {
                         BitReader probe = r;
                         tripleVariant_ = v;
                         bool f = false, x = false;
                         readTriple(probe, f, x);
                         probe.bs();
                         readCmc(probe, 7);
-                        if (!probe.failed() && probe.bitPos() == mainEnd_)
-                            break;
-                        tripleVariant_ = -1;
+                        fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
                     }
+                    tripleVariant_ = fits[0] != fits[1] ? (fits[0] ? 0 : 1) : -1;
                 }
                 l.name = r.textBytes();
                 bool flag64 = false, xdep = false;
@@ -737,18 +739,18 @@ private:
         CommonBits c;
         ownedCount_ = 0;
         if (fmt_.r2007 && type == kLine && nolinksVariant_ < 0) {
-            for (int v : {1, 0}) {
+            bool fits[2] = {false, false};
+            for (int v = 0; v < 2; ++v) {
                 BitReader probe = r;
-                nolinksVariant_ = v;
+                nolinksVariant_ = v == 0 ? 1 : 0;
                 CommonBits pc;
                 EntityRec pe;
                 if (readCommonEntity(probe, pc)) {
                     line(probe, pe);
-                    if (!probe.failed() && probe.bitPos() == mainEnd_)
-                        break;
+                    fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
                 }
-                nolinksVariant_ = -1;
             }
+            nolinksVariant_ = fits[0] != fits[1] ? (fits[0] ? 1 : 0) : -1;
         }
         if (fmt_.r2007 && (type == kInsert) && !insertCountKnown_) {
             bool fits[2] = {false, false};
@@ -863,8 +865,18 @@ private:
         tally(type, r);
         if (r.failed()) {
             note(e.dxfType + " " + hex(self) + " is damaged and was skipped (read to bit " +
-                 std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")");
+                 std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
+                 (failDumps_[type]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
             return;
+        }
+        for (const Group& g : e.groups) {
+            if (const double* v = std::get_if<double>(&g.value.v)) {
+                if (!std::isfinite(*v) || std::abs(*v) > 1e13) {
+                    note(e.dxfType + " " + hex(self) +
+                         " has a number out of range and was skipped");
+                    return;
+                }
+            }
         }
         BitReader h(body, objBits);
         e.owner = leadingHandles(h, self, c.reactors, c.entmode == 0);

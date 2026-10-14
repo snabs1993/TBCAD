@@ -1,5 +1,7 @@
 #include "container/lz77.h"
 
+#include <string>
+
 namespace tbcad::dwg::detail {
 
 namespace {
@@ -8,6 +10,7 @@ class Cursor {
 public:
     explicit Cursor(std::span<const std::uint8_t> in) : in_(in) {}
     bool atEnd() const { return pos_ >= in_.size(); }
+    std::size_t pos() const { return pos_; }
     std::uint8_t peek() const { return pos_ < in_.size() ? in_[pos_] : 0; }
     std::uint8_t next() {
         if (pos_ >= in_.size()) {
@@ -79,24 +82,31 @@ std::size_t longCount(Cursor& c) {
 // position, so the source is `size - (offset + extra)`. The spec does not say whether the
 // stored value is zero based; the caller tries 1 first (offset 0 would copy from nothing).
 bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t extra,
-         std::vector<std::uint8_t>& out) {
+         std::vector<std::uint8_t>& out, std::string* why) {
+    auto fail = [&](const char* what, const Cursor& cur) {
+        if (why)
+            *why = std::string(what) + " (input byte " + std::to_string(cur.pos()) + " of " +
+                   std::to_string(in.size()) + ", output " + std::to_string(out.size()) + " of " +
+                   std::to_string(expected) + ")";
+        return false;
+    };
     out.clear();
     out.reserve(expected);
     Cursor c(in);
     auto copyLiterals = [&](std::size_t n) {
         if (n > expected - out.size())
-            return false;
+            return fail("literal run too long", c);
         const auto s = c.take(n);
         if (c.failed)
-            return false;
+            return fail("literal run cut off", c);
         out.insert(out.end(), s.begin(), s.end());
         return true;
     };
     if (!copyLiterals(literalLength(c)))
-        return false;
+        return false;  // reason already recorded
     for (;;) {
         if (c.atEnd())
-            return out.size() == expected;  // tolerate a missing terminator
+            return out.size() == expected || fail("input ended early", c);
         const std::uint8_t op = c.next();
         std::size_t count = 0, offset = 0, lit = 0;
         auto twoByte = [&]() {
@@ -107,9 +117,9 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
             lit = first & 3;
         };
         if (op == 0x11)
-            return out.size() == expected;
+            return out.size() == expected || fail("terminator before the expected size", c);
         if (op < 0x10) {
-            return false;  // 0x00..0x0F cannot start an opcode set
+            return fail("unexpected opcode", c);  // 0x00..0x0F cannot start an opcode set
         } else if (op == 0x10) {
             count = longCount(c) + 9;
             twoByte();
@@ -131,14 +141,16 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
             lit = op & 3;
         }
         if (c.failed)
-            return false;
+            return fail("opcode cut off", c);
         if (lit == 0 && op != 0x11)
             lit = literalLength(c);
         if (c.failed)
-            return false;
+            return fail("literal length cut off", c);
         const std::size_t back = offset + extra;
         if (back == 0 || back > out.size() || count > expected - out.size())
-            return false;
+            return fail(back == 0 || back > out.size() ? "copy distance outside the output"
+                                                       : "copy longer than the expected size",
+                        c);
         // The ranges may overlap (a distance shorter than the length repeats a pattern).
         std::size_t from = out.size() - back;
         for (std::size_t i = 0; i < count; ++i)
@@ -151,13 +163,13 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
 }  // namespace
 
 bool lz77Decompress(std::span<const std::uint8_t> in, std::size_t expected,
-                    std::vector<std::uint8_t>& out, int* distanceBias) {
-    if (run(in, expected, 1, out)) {
+                    std::vector<std::uint8_t>& out, int* distanceBias, std::string* why) {
+    if (run(in, expected, 1, out, why)) {
         if (distanceBias)
             *distanceBias = 1;
         return true;
     }
-    if (run(in, expected, 0, out)) {
+    if (run(in, expected, 0, out, nullptr)) {
         if (distanceBias)
             *distanceBias = 0;
         return true;
