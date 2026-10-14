@@ -979,6 +979,115 @@ void Gui::readOnlyBanner() {
     ImGui::End();
 }
 
+float Gui::layoutTabsHeight() const {
+    return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+}
+
+// The Model / layout tab strip under the drawing area.
+void Gui::layoutTabs(const ViewportRect& rect) {
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav |
+                                   ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoFocusOnAppearing;
+    const float h = layoutTabsHeight();
+    const std::vector<std::string> names = core_.layoutNames();
+    std::string openPopup;
+    ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y + rect.h));
+    ImGui::SetNextWindowSize(ImVec2(rect.w, h));
+    if (ImGui::Begin("##layouttabs", nullptr, flags)) {
+        auto run = [&](std::initializer_list<std::string> lines) {
+            for (const std::string& l : lines)
+                core_.submitText(l);
+        };
+        auto tab = [&](const std::string& label, const std::string& name) {
+            const bool active = core_.activeLayout() == name;
+            ImGui::PushID(label.c_str());
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_TabSelected));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+            }
+            if (ImGui::Button(label.c_str()) && !active)
+                core_.setActiveLayout(name);
+            if (active)
+                ImGui::PopStyleColor(2);
+            if (!name.empty() && ImGui::BeginPopupContextItem("##tabmenu")) {
+                if (ImGui::MenuItem("New layout..."))
+                    openPopup = "new";
+                if (ImGui::MenuItem("Rename..."))
+                    openPopup = "rename";
+                if (ImGui::MenuItem("Delete")) {
+                    if (core_.activeLayout() == name)
+                        core_.setActiveLayout("");
+                    run({"LAYOUT", "Delete", name});
+                }
+                layoutTarget_ = name;
+                ImGui::EndPopup();
+            } else if (name.empty() && ImGui::BeginPopupContextItem("##tabmenu")) {
+                if (ImGui::MenuItem("New layout..."))
+                    openPopup = "new";
+                ImGui::EndPopup();
+            }
+            ImGui::PopID();
+            ImGui::SameLine();
+        };
+        ImGui::AlignTextToFramePadding();
+        tab("Model", "");
+        for (const std::string& n : names)
+            tab(n, n);
+        if (ImGui::Button("+"))
+            openPopup = "new";
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("New layout");
+        if (core_.inPaperSpace()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("  Layout view (read-only). Edit it with the layout commands.");
+        }
+    }
+    ImGui::End();
+
+    if (!openPopup.empty()) {
+        layoutDialog_ = openPopup;
+        if (openPopup == "new") {
+            int n = static_cast<int>(names.size()) + 1;
+            layoutNameBuf_ = "Layout" + std::to_string(n);
+        } else {
+            layoutNameBuf_ = layoutTarget_;
+        }
+        ImGui::OpenPopup("##layoutname");
+    }
+    if (ImGui::BeginPopup("##layoutname")) {
+        ImGui::TextUnformatted(layoutDialog_ == "new" ? "New layout name" : "Rename layout");
+        char buf[128];
+        std::snprintf(buf, sizeof buf, "%s", layoutNameBuf_.c_str());
+        if (ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();
+        const bool enter =
+            ImGui::InputText("##n", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue);
+        layoutNameBuf_ = buf;
+        if ((enter || ImGui::Button("OK")) && !layoutNameBuf_.empty()) {
+            if (layoutDialog_ == "new") {
+                core_.submitText("LAYOUT");
+                core_.submitText("New");
+                core_.submitText(layoutNameBuf_);
+                core_.submitText("A3");
+                core_.submitText("Landscape");
+                core_.setActiveLayout(layoutNameBuf_);
+            } else {
+                const bool wasActive = core_.activeLayout() == layoutTarget_;
+                core_.submitText("LAYOUT");
+                core_.submitText("Rename");
+                core_.submitText(layoutTarget_);
+                core_.submitText(layoutNameBuf_);
+                if (wasActive)
+                    core_.setActiveLayout(layoutNameBuf_);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void Gui::statusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -2340,6 +2449,10 @@ ViewportRect Gui::frame() {
         rect = {center->Pos.x, center->Pos.y, center->Size.x, center->Size.y};
     }
     const float s = ImGui::GetIO().DisplayFramebufferScale.x;
+    if (!cleanScreen_ && rect.h > 3 * layoutTabsHeight()) {
+        rect.h -= layoutTabsHeight();
+        layoutTabs(rect);
+    }
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);

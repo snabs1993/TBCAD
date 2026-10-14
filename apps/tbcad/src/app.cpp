@@ -172,7 +172,7 @@ void App::drawScene() {
     renderer_.draw(core_->underlayImages());
     core_->buildUnderlay(underlay_, uiRegistry_.get());
     renderer_.draw(underlay_);
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     core_->buildOverlay(overlay_, uiRegistry_.get());
     renderer_.draw(overlay_);
     renderer_.endFrame();
@@ -186,7 +186,7 @@ void App::renderDrawingOnce(bool finish) {
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->underlayImages());
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     renderer_.endFrame();
     if (finish)
         glFinish();
@@ -272,7 +272,7 @@ std::optional<mcp::Image> App::captureView(int maxPx, const BBox2& area) {
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->underlayImages());
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     renderer_.endFrame();
     glFinish();
 
