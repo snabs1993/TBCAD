@@ -583,13 +583,40 @@ TEST_CASE("layer 0 exists even when the file has no layer table") {
     CHECK(modelEntities<LineData>(l.doc()).size() == 1);
 }
 
-TEST_CASE("paper space entities are skipped and counted") {
+TEST_CASE("paper space entities become a layout sheet") {
     Pairs p;
     p.g(0, "LINE").g(8, "0").g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 1.0);
     p.g(0, "LINE").g(8, "0").g(67, 1).g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 1.0);
     Loaded l = load(entitiesOnly(p.text));
     CHECK(modelEntities<LineData>(l.doc()).size() == 1);
-    CHECK(l.report.countCode(code::kPaperSpace) == 1);
+    CHECK(l.report.countCode(code::kPaperSpace) == 0);
+    CHECK(l.result.summary.layouts == 1);
+    const auto it = l.doc().header().custom.find("tbcad.layouts");
+    REQUIRE(it != l.doc().header().custom.end());
+    CHECK(it->second.rfind("L\t1\tLayout1\tCustom\t", 0) == 0);
+}
+
+TEST_CASE("a layout takes its name and paper size from the LAYOUT object and keeps its viewports") {
+    Pairs p;
+    p.section("BLOCKS")
+        .g(0, "BLOCK")
+        .g(2, "*Paper_Space")
+        .g(70, 0)
+        .g(10, 0.0)
+        .g(20, 0.0)
+        .g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(67, 1).g(10, 5.0).g(20, 5.0).g(11, 100.0).g(21, 5.0);
+    p.g(0, "VIEWPORT").g(8, "0").g(67, 1).g(10, 210.0).g(20, 148.5).g(40, 400.0).g(41, 280.0);
+    p.g(69, 2).g(68, 1).g(12, 1000.0).g(22, 2000.0).g(45, 28000.0);
+    p.g(0, "ENDBLK").end();
+    p.section("OBJECTS").g(0, "LAYOUT").g(1, "Model").g(71, 0).g(44, 297.0).g(45, 210.0);
+    p.g(0, "LAYOUT").g(1, "Sheet A1").g(71, 1).g(44, 841.0).g(45, 594.0).g(73, 0).end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    CHECK(l.result.summary.layouts == 1);
+    const std::string& t = l.doc().header().custom.at("tbcad.layouts");
+    CHECK(t.rfind("L\t1\tSheet A1\tCustom\t1\t841\t594\t", 0) == 0);
+    // Viewport 1: paper rectangle (10,8.5)-(410,288.5), centre (1000,2000), 1:100.
+    CHECK(t.find("V\t1\t10\t8.5\t410\t288.5\t1000\t2000\t100\t1\t") != std::string::npos);
 }
 
 TEST_CASE("an older version than R12 is refused") {

@@ -49,6 +49,9 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
 // few raw bytes of each section).
 std::string describe(std::span<const std::byte> bytes);
 
+// Which revision of the reader this program contains (to check that a test build is current).
+std::string readerRevision();
+
 namespace code {
 inline constexpr std::string_view kUnsupportedVersion = "dwg.reader.unsupported_version";
 inline constexpr std::string_view kBadObject = "dwg.reader.bad_object";

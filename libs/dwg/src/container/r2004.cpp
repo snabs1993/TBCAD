@@ -56,8 +56,11 @@ bool readSystemPage(Bytes file, std::uint64_t at, std::uint32_t expectedType,
     }
     const Bytes payload = file.subspan(static_cast<std::size_t>(at) + 0x14, comp);
     if (le32(h, 12) == 2) {
-        if (!lz77Decompress(payload, decomp, out)) {
-            notes.push_back(std::string("the ") + what + " could not be decompressed");
+        std::string why;
+        if (!lz77Decompress(payload, decomp, out, nullptr, &why)) {
+            notes.push_back(std::string("the ") + what + " could not be decompressed: " + why +
+                            "; header: compressed " + std::to_string(comp) + ", expanded " +
+                            std::to_string(decomp));
             return false;
         }
     } else {
@@ -168,6 +171,23 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
     std::vector<std::uint8_t> desc;
     if (!readSystemPage(file, sm->address, 0x4163003Bu, desc, notes, "section map"))
         return makeError(ErrorCode::Parse, "the DWG section map is damaged");
+    if (trace && has(file, sm->address, 0x14 + le32(file, sm->address + 8))) {
+        // Structure only: the compressed section map and what it expands to (no drawing data).
+        const std::size_t comp = le32(file, sm->address + 8);
+        std::string raw = "section map compressed bytes (" + std::to_string(comp) + "):";
+        std::string dec = "section map expanded bytes (" + std::to_string(desc.size()) + "):";
+        char b[4];
+        for (std::size_t k = 0; k < comp; ++k) {
+            std::snprintf(b, sizeof b, "%02X", file[sm->address + 0x14 + k]);
+            raw += b;
+        }
+        for (std::size_t k = 0; k < desc.size() && k < 40000; ++k) {
+            std::snprintf(b, sizeof b, "%02X", desc[k]);
+            dec += b;
+        }
+        tr(raw);
+        tr(dec);
+    }
     if (desc.size() < 0x14)
         return makeError(ErrorCode::Parse, "the DWG section map is too short");
     const std::uint32_t count = le32(desc, 0);
@@ -198,7 +218,28 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
         std::vector<Rec> recs;
         for (std::uint32_t k = 0; k < pageCount; ++k) {
             recs.push_back({le32(desc, pos), le32(desc, pos + 4), le64(desc, pos + 8)});
+            if (trace && recs.size() <= 3)
+                tr("  record " + std::to_string(k) + " at map byte " + std::to_string(pos) + ": " +
+                   std::to_string(recs.back().page) + " / " + std::to_string(recs.back().size) +
+                   " / " + std::to_string(recs.back().start));
             pos += 16;
+        }
+        if (trace && !recs.empty()) {
+            // Hex of the map bytes around the first record that names no page.
+            for (std::size_t k = 0; k < recs.size(); ++k) {
+                if (findPage(recs[k].page))
+                    continue;
+                const std::size_t at = pos - 16 * (recs.size() - k);
+                std::string l = "  first unknown page: record " + std::to_string(k) +
+                                " at map byte " + std::to_string(at) + ", bytes from 48 before:";
+                char b[8];
+                for (std::size_t q = at >= 48 ? at - 48 : 0; q < at + 64 && q < desc.size(); ++q) {
+                    std::snprintf(b, sizeof b, " %02X", desc[q]);
+                    l += b;
+                }
+                tr(l);
+                break;
+            }
         }
         const std::string sname(name);
         tr("section \"" + sname + "\": size " + std::to_string(total) + ", " +

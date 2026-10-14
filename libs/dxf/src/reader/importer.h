@@ -92,6 +92,11 @@ private:
     void processObjects(RecordReader& rr);
     BlockId blockFor(std::string_view dxfName);
     void finish();
+    void finishLayouts();
+    void readLayoutObject(const Record& r);
+    void readViewport(const Record& r, BlockId sheetBlock);
+    // The sheet (paper space block) with this folded DXF name; created on first use.
+    std::size_t sheetFor(const std::string& foldedName);
 
     // ---- entities.cpp: record -> entities ---------------------------------------------------
     void handleEntity(Record& r, RecordReader& rr, BlockId owner);
@@ -172,8 +177,33 @@ private:
     BlockId curBlock_{};
     bool inBlock_ = false;
     bool skipBlock_ = false;
+    bool sheetBlock_ = false;  // reading the objects of a layout sheet
     std::unordered_map<std::string, BlockId> blockByFold_{};
     std::unordered_set<BlockId> blockDefined_{};
+
+    // paper space: every *Paper_Space block becomes a layout sheet (see libs/layout/layout.h)
+    struct SheetViewport {
+        Vec2 min{}, max{}, center{};
+        double scaleN = 1;
+        bool on = true;
+        int id = 0;
+        std::vector<std::string> frozen{};  // layer names (DXF spelling)
+    };
+    struct Sheet {
+        std::string foldedName{};
+        BlockId content{};
+        std::vector<SheetViewport> viewports{};
+        double extentX = 0, extentY = 0;  // of the drawn objects, for a size when none is stored
+    };
+    struct LayoutRow {
+        std::string name{};
+        int tab = 0;
+        double width = 0, height = 0;  // mm as stored (0 = unknown)
+        int rotation = 0;
+    };
+    std::vector<Sheet> sheets_{};
+    std::vector<LayoutRow> layoutRows_{};
+    int curSheet_ = -1;  // the sheet whose block is being read (BLOCKS section)
 
     // diagnostics accumulated for one summary line each
     std::map<std::string, std::pair<std::size_t, int>> skippedTypes_{};  // type -> (count, line)

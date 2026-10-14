@@ -194,8 +194,8 @@ bool Importer::frameOf(const Record& r, Frame& f, std::string_view type) {
     nx /= len;
     ny /= len;
     nz /= len;
-    // A tilt below about 0.6 degrees (real drawings carry such noise) is read as flat.
-    if (std::abs(nx) < 1e-2 && std::abs(ny) < 1e-2) {
+    // A tilt below about 3 degrees (real drawings carry such noise) is read as flat.
+    if (std::abs(nx) < 5e-2 && std::abs(ny) < 5e-2) {
         f.mirror = nz < 0;
         return true;
     }
@@ -250,10 +250,36 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
     if (t == "SEQEND" || t == "VERTEX" || t == "ENDBLK" || t == "BLOCK")
         return;
     std::string type(t);
-    if (r.integer(67) == 1) {
+    // Paper space: the objects of a layout sheet are read in paper millimetres into the sheet's
+    // own block (the unit scale of the model does not apply to them).
+    struct PaperScale {
+        double& k;
+        double saved;
+        PaperScale(double& kk, bool on) : k(kk), saved(kk) {
+            if (on)
+                k = 1;
+        }
+        ~PaperScale() { k = saved; }
+    };
+    std::size_t paperSheet = sheets_.size();
+    if (sheetBlock_ && curSheet_ >= 0) {
+        paperSheet = static_cast<std::size_t>(curSheet_);
+    } else if (r.integer(67) == 1) {
+        paperSheet = sheetFor("*paper_space");
+    }
+    const bool onSheet = paperSheet < sheets_.size() && sheets_[paperSheet].content;
+    if (type == "VIEWPORT") {
+        if (onSheet)
+            readViewport(r, sheets_[paperSheet].content);
+        return;
+    }
+    if (onSheet)
+        owner = sheets_[paperSheet].content;
+    else if (r.integer(67) == 1) {
         ++paperSpace_;
         return;
     }
+    PaperScale paperScale(k_, onSheet);
     EntityCount& cnt = sum_.entities[type];
     ++cnt.read;
     note3d(r);

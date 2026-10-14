@@ -21,6 +21,14 @@ from the public ODA specification (see `docs/dwg-cleanroom-log.md`); no other DW
 R2007 (AC1021) files use a different container and are refused with a clear message for now.
 Password-protected files are refused. `tbcad-convert x.dwg out.tbcad|out.dxf` uses the same reader.
 
+## Layouts
+
+Each paper space block becomes a TBCAD layout: real layout name and tab order (from the layout
+dictionary and layout objects), the sheet's objects, and its viewports (window, view centre, scale,
+frozen layers). References to other drawings are kept as external references with their saved
+paths; `tbcad-convert --dwg-info` and the open message list those that cannot be found. A viewport
+whose content comes from a missing external reference is empty, as in the program that wrote the file.
+
 ## Status and limits
 
 Tests use files built by a small writer in `libs/dwg/tests`, so they prove the reader agrees with the

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 
@@ -229,6 +230,10 @@ void Importer::processObjects(RecordReader& rr) {
         if (r.type == "SECTION" || r.type == "EOF") {
             rr.pushBack(std::move(r));
             return;
+        }
+        if (r.type == "LAYOUT") {
+            readLayoutObject(r);
+            continue;
         }
         if (r.type != "XRECORD")
             continue;
@@ -757,6 +762,21 @@ BlockId Importer::blockFor(std::string_view dxfName) {
     return id.value();
 }
 
+std::size_t Importer::sheetFor(const std::string& foldedName) {
+    for (std::size_t i = 0; i < sheets_.size(); ++i)
+        if (sheets_[i].foldedName == foldedName)
+            return i;
+    Sheet s;
+    s.foldedName = foldedName;
+    BlockDef def;
+    def.name = "*LAYOUT-" + std::to_string(sheets_.size() + 1);
+    def.anonymous = true;
+    if (auto id = tx_->addBlock(std::move(def)))
+        s.content = id.value();
+    sheets_.push_back(std::move(s));
+    return sheets_.size() - 1;
+}
+
 void Importer::processBlocks(RecordReader& rr) {
     createLayers();
     Record r;
@@ -777,6 +797,18 @@ void Importer::processBlocks(RecordReader& rr) {
             inBlock_ = true;
             curBlock_ = BlockId{};
             skipBlock_ = isLayoutBlock(f);
+            curSheet_ = -1;
+            if (f.rfind("*paper_space", 0) == 0 || f.rfind("$paper_space", 0) == 0) {
+                // A layout's sheet: its objects are read into a hidden block, in paper
+                // millimetres (the drawing's unit scale does not apply to the sheet).
+                const std::size_t si = sheetFor(f);
+                if (sheets_[si].content) {
+                    curSheet_ = static_cast<int>(si);
+                    curBlock_ = sheets_[si].content;
+                    skipBlock_ = true;  // no named block is created for it
+                    sheetBlock_ = true;
+                }
+            }
             // The drawn dimension (*D<n>) is regenerated from the definition points; its parts
             // are kept only when the caller asks for the graphics.
             if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
@@ -827,23 +859,42 @@ void Importer::processBlocks(RecordReader& rr) {
                     });
                     ++sum_.blocks;
                     if ((r.integer(70) & 4) && xrefPath.empty()) {
-                        report_.warn(code::kXref,
-                                     "external reference block \"" + name +
-                                         "\" is not supported; the block is empty",
-                                     r.line);
+                        // An external reference to another drawing: keep the path so the XREF
+                        // commands can load it (the block stays empty until then).
+                        const std::string stored = dec(r.raw(1));
+                        if (!stored.empty()) {
+                            const bool overlay = (r.integer(70) & 8) != 0;
+                            (void)tx_->modifyBlock(id, [&](BlockDef& b) {
+                                b.xrefPath = stored;
+                                b.xrefOverlay = overlay;
+                            });
+                        }
+                        report_.warn(
+                            code::kXref,
+                            "external reference \"" + name + "\"" +
+                                (stored.empty() ? std::string() : " (file " + stored + ")") +
+                                " is not loaded; the block is empty until the file is "
+                                "found (XREF > Reload)",
+                            r.line);
                     }
                 }
             }
         } else if (r.type == "ENDBLK") {
             inBlock_ = false;
             skipBlock_ = false;
+            sheetBlock_ = false;
+            curSheet_ = -1;
             curBlock_ = BlockId{};
+        } else if (inBlock_ && sheetBlock_) {
+            handleEntity(r, rr, curBlock_);
         } else if (inBlock_ && !skipBlock_) {
             handleEntity(r, rr, curBlock_);
         }
     }
     inBlock_ = false;
     skipBlock_ = false;
+    sheetBlock_ = false;
+    curSheet_ = -1;
     curBlock_ = BlockId{};
 }
 
@@ -864,7 +915,148 @@ void Importer::processEntities(RecordReader& rr) {
 
 // ---------------------------------------------------------------------------------------------
 
+// A VIEWPORT on a layout sheet: where it sits on the paper and which model area it shows.
+void Importer::readViewport(const Record& r, BlockId sheetBlock) {
+    for (Sheet& sh : sheets_) {
+        if (sh.content != sheetBlock)
+            continue;
+        const double id = r.num(69, 0);
+        const double w = r.num(40), h = r.num(41);
+        if (id == 1 || !(w > 0) || !(h > 0))
+            return;  // the sheet's own overall viewport, or a degenerate one
+        SheetViewport v;
+        const double cx = r.num(10), cy = r.num(20);
+        v.min = {cx - w / 2, cy - h / 2};
+        v.max = {cx + w / 2, cy + h / 2};
+        // The view centre is in display coordinates relative to the view target.
+        v.center = {(r.num(17) + r.num(12)) * k_, (r.num(27) + r.num(22)) * k_};
+        const double viewHeight = r.num(45) * k_;
+        v.scaleN = viewHeight > 0 ? viewHeight / h : 1;
+        v.on = r.integer(68, 1) != 0;
+        v.id = static_cast<int>(sh.viewports.size()) + 1;
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                ours = g.str() == "TBCAD";
+            } else if (ours && g.code == 1000) {
+                const std::string t = dec(g.str());
+                if (t.rfind("frozen=", 0) == 0)
+                    v.frozen.push_back(t.substr(7));
+            }
+        }
+        sh.viewports.push_back(v);
+        return;
+    }
+}
+
+void Importer::readLayoutObject(const Record& r) {
+    LayoutRow row;
+    row.name = dec(r.raw(1));
+    row.tab = static_cast<int>(r.integer(71, 0));
+    row.width = r.num(44);
+    row.height = r.num(45);
+    row.rotation = static_cast<int>(r.integer(73, 0));
+    if (row.name.empty())
+        return;
+    layoutRows_.push_back(std::move(row));
+}
+
+// Builds the layout table (Header::custom["tbcad.layouts"], format in libs/layout/layout.h) from
+// the sheets read, naming them from the LAYOUT objects in tab order.
+void Importer::finishLayouts() {
+    // An empty sheet (the default *Paper_Space of a file with no layouts) is not a layout.
+    for (std::size_t i = sheets_.size(); i-- > 0;) {
+        const BlockDef* b = doc_->block(sheets_[i].content);
+        if (sheets_[i].viewports.empty() && (!b || b->entities.empty())) {
+            if (sheets_[i].content)
+                (void)tx_->eraseBlock(sheets_[i].content);
+            sheets_.erase(sheets_.begin() + static_cast<std::ptrdiff_t>(i));
+        }
+    }
+    if (sheets_.empty())
+        return;
+    // Sheets in creation order: "*Paper_Space", "*Paper_Space0", "*Paper_Space1", ...
+    std::vector<std::size_t> order(sheets_.size());
+    for (std::size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    auto rank = [&](const Sheet& s) {
+        const std::string suffix =
+            s.foldedName.substr(std::min<std::size_t>(12, s.foldedName.size()));
+        return suffix.empty() ? -1 : std::atoi(suffix.c_str());
+    };
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return rank(sheets_[a]) < rank(sheets_[b]);
+    });
+    std::vector<LayoutRow> rows;
+    for (LayoutRow& l : layoutRows_) {
+        const std::string f = fold(l.name);
+        if (f != "model")
+            rows.push_back(l);
+    }
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const LayoutRow& a, const LayoutRow& b) { return a.tab < b.tab; });
+    auto num = [](double v) {
+        char buf[40];
+        std::snprintf(buf, sizeof buf, "%.17g", v);
+        return std::string(buf);
+    };
+    std::string text;
+    std::unordered_set<std::string> used;
+    int uid = 0;
+    for (std::size_t n = 0; n < order.size(); ++n) {
+        const Sheet& sh = sheets_[order[n]];
+        std::string name = n < rows.size() ? rows[n].name : "Layout" + std::to_string(n + 1);
+        if (name.size() > 64)
+            name.resize(64);
+        for (char& c : name)
+            if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f || c == '\t')
+                c = ' ';
+        while (!name.empty() && name.back() == ' ')
+            name.pop_back();
+        while (!name.empty() && name.front() == ' ')
+            name.erase(name.begin());
+        if (name.empty())
+            name = "Layout" + std::to_string(n + 1);
+        while (!used.insert(fold(name)).second)
+            name += "_";
+        double w = n < rows.size() ? rows[n].width : 0, h = n < rows.size() ? rows[n].height : 0;
+        if (n < rows.size() && (rows[n].rotation == 1 || rows[n].rotation == 3))
+            std::swap(w, h);
+        if (!(w > 0) || !(h > 0)) {
+            w = 420;
+            h = 297;
+            for (const SheetViewport& v : sh.viewports) {
+                while (v.max.x > w - 5)
+                    w *= 1.5;
+                while (v.max.y > h - 5)
+                    h *= 1.5;
+            }
+        }
+        ++uid;
+        text += "L\t" + std::to_string(uid) + "\t" + name + "\tCustom\t" + (w > h ? "1" : "0") +
+                "\t" + num(w) + "\t" + num(h) + "\t" + std::to_string(sh.content.value) + "\t\n";
+        for (const SheetViewport& v : sh.viewports) {
+            // The sheet's own overall viewport covers the whole paper: not a window on the model.
+            if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)
+                continue;
+            std::string frozenIds;
+            for (const std::string& ln : v.frozen) {
+                const auto it = layerByFold_.find(fold(ln));
+                if (it != layerByFold_.end())
+                    frozenIds += (frozenIds.empty() ? "" : ",") + std::to_string(it->second.value);
+            }
+            text += "V\t" + std::to_string(v.id) + "\t" + num(v.min.x) + "\t" + num(v.min.y) +
+                    "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
+                    num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
+                    frozenIds + "\t0\n";
+        }
+    }
+    (void)tx_->modifyHeader([&](Header& h) { h.custom["tbcad.layouts"] = text; });
+    sum_.layouts = sheets_.size();
+}
+
 void Importer::finish() {
+    finishLayouts();
     for (const auto& [f, id] : blockByFold_) {
         if (!blockDefined_.count(id)) {
             const BlockDef* b = doc_->block(id);
@@ -880,8 +1072,7 @@ void Importer::finish() {
     }
     if (paperSpace_ > 0) {
         report_.warn(code::kPaperSpace,
-                     std::to_string(paperSpace_) +
-                         " paper space entities skipped (layouts are not imported)");
+                     std::to_string(paperSpace_) + " paper space entities skipped");
     }
     if (flattened_ > 0) {
         report_.info(code::kFlattened,

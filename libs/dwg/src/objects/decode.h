@@ -23,4 +23,7 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
 // -2 = by block, -3 = default.
 int lineweightToDxf(int code);
 
+// Which revision of the object reader built this program (changes with every reader fix).
+const char* readerRevision();
+
 }  // namespace tbcad::dwg::detail

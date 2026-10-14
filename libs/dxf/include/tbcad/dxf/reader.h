@@ -49,6 +49,7 @@ struct ImportSummary {
     std::map<std::string, EntityCount> entities{};  // by DXF type name
     std::size_t layers = 0;
     std::size_t blocks = 0;
+    std::size_t layouts = 0;          // paper space layouts imported
     std::size_t outsideWorkArea = 0;  // entities kept but beyond the working area
     std::size_t beyondHardCap = 0;    // entities dropped because of the hard coordinate cap
 

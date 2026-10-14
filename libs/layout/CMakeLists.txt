@@ -9,4 +9,4 @@ tbcad_add_tests(layout
     tests/main.cpp
     tests/layout_tests.cpp
     tests/pagesetup_tests.cpp
-  DEPENDS tbcad::pdf tbcad::io tbcad::blocks)
+  DEPENDS tbcad::pdf tbcad::io tbcad::blocks tbcad::dxf)

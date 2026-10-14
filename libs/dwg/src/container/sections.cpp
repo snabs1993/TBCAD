@@ -1,6 +1,7 @@
 #include "container/sections.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "bits/bit_reader.h"
@@ -21,7 +22,7 @@ constexpr std::uint8_t kHeaderStart[16] = {0xCF, 0x7B, 0x1F, 0x23, 0xFD, 0xDE, 0
                                            0x5F, 0x7C, 0x68, 0xB8, 0x4E, 0x6D, 0x33, 0x5F};
 
 // Sentinel, size, and the optional extra size word; returns the data bytes or empty.
-Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraWord,
+Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], std::size_t extraBytes,
                   std::vector<std::string>& notes, const char* what) {
     if (section.size() < 20) {
         notes.push_back(std::string("the ") + what + " section is too short");
@@ -32,12 +33,12 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraW
     std::size_t pos = 16;
     const std::uint32_t size = le32(section, pos);
     pos += 4;
-    if (extraWord) {
-        if (section.size() < pos + 4) {
+    if (extraBytes) {
+        if (section.size() < pos + extraBytes) {
             notes.push_back(std::string("the ") + what + " section is too short");
             return {};
         }
-        pos += 4;
+        pos += extraBytes;
     }
     if (size > section.size() - pos) {
         notes.push_back(std::string("the ") + what + " section is cut off");
@@ -48,58 +49,109 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraW
 
 }  // namespace
 
-std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int maintenance,
-                                    std::vector<std::string>& notes) {
+namespace {
+
+std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::size_t extra,
+                                        std::vector<std::string>& notes) {
     std::vector<ClassInfo> out;
-    const bool extra = fmt.r2010 && maintenance > 3;
     const Bytes data = sectionData(section, kClassStart, extra, notes, "class");
     if (data.empty())
         return out;
     BitReader r(data);
-    BitReader strings;
-    std::size_t endBit = data.size() * 8;
-    if (fmt.r2007) {
-        if (!locateStringStream(data, endBit, strings)) {
-            notes.push_back("the class section has a damaged string stream");
-            return out;
-        }
-        if (strings.bitSize() != 0) {
-            endBit = strings.bitPos();
-            r.setStringStream(&strings);
-        }
-    }
-    r.bs();  // maximum class number
+    const std::uint32_t maxClass = r.bs();  // maximum class number
     r.rc();
     r.rc();
     r.b();
-    while (r.bitPos() + 16 <= endBit && !r.failed()) {
+    const std::size_t count = maxClass >= 500 && maxClass < 100000 ? maxClass - 499 : 0;
+    if (!fmt.r2007) {
+        // Older releases: names inline with the fields.
+        while (r.bitsLeft() >= 16 && !r.failed() && out.size() < count) {
+            ClassInfo c;
+            c.number = r.bs();
+            r.bs();  // proxy flags
+            c.app = r.textBytes();
+            c.cppName = r.textBytes();
+            c.dxfName = r.textBytes();
+            r.b();  // was a zombie
+            c.entity = r.bs() == 0x1F2;
+            r.bl();  // objects of this class
+            r.bs();  // version
+            r.bs();  // maintenance release
+            r.bl();
+            r.bl();
+            if (r.failed() || c.number < 500)
+                break;
+            out.push_back(std::move(c));
+        }
+        return out;
+    }
+    // R2007 and later: all the fields of every class come first, then one run of UTF-16
+    // strings (application, C++ name and DXF name per class) that starts right after them
+    // (checked against a real R2018 file; the end-of-data flag of object records is not there).
+    for (std::size_t i = 0; i < count && !r.failed(); ++i) {
         ClassInfo c;
         c.number = r.bs();
         r.bs();  // proxy flags
-        c.app = r.textBytes();
-        c.cppName = r.textBytes();
-        c.dxfName = r.textBytes();
-        r.b();  // was a zombie
+        r.b();   // was a zombie
         c.entity = r.bs() == 0x1F2;
         r.bl();  // objects of this class
         r.bs();  // version
         r.bs();  // maintenance release
         r.bl();
         r.bl();
-        if (r.failed())
+        if (r.failed() || c.number < 500)
             break;
         out.push_back(std::move(c));
-        if (out.size() > 100000)
-            break;
     }
+    BitReader strings(data, r.bitPos());
+    for (ClassInfo& c : out) {
+        c.app = strings.textUnicode();
+        c.cppName = strings.textUnicode();
+        c.dxfName = strings.textUnicode();
+        if (strings.failed()) {
+            notes.push_back("the class names are cut off");
+            break;
+        }
+    }
+    if (out.size() != count)
+        notes.push_back("the class section lists " + std::to_string(out.size()) + " of " +
+                        std::to_string(count) + " classes");
     return out;
+}
+
+}  // namespace
+
+std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int maintenance,
+                                    std::vector<std::string>& notes) {
+    // The size of the words between the size and the data depends on the release (a real R2018
+    // file has two); the first reading that yields classes wins.
+    const std::size_t known = fmt.r2018 ? 8 : (fmt.r2010 && maintenance > 3 ? 4 : 0);
+    std::vector<std::size_t> tries{known};
+    if (fmt.r2010)
+        for (std::size_t x : {8u, 4u, 0u})
+            if (x != known)
+                tries.push_back(x);
+    std::vector<std::string> first;
+    for (std::size_t i = 0; i < tries.size(); ++i) {
+        std::vector<std::string> n;
+        auto a = parseClassesWith(section, fmt, tries[i], n);
+        if (!a.empty()) {
+            if (i == 0)
+                notes.insert(notes.end(), n.begin(), n.end());
+            return a;
+        }
+        if (i == 0)
+            first = n;
+    }
+    notes.insert(notes.end(), first.begin(), first.end());
+    return {};
 }
 
 HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,
                        std::vector<std::string>& notes) {
     HeaderVars v;
     const bool extra = fmt.r2018 || (fmt.r2010 && maintenance > 3);
-    const Bytes data = sectionData(section, kHeaderStart, extra, notes, "header");
+    const Bytes data = sectionData(section, kHeaderStart, extra ? 4 : 0, notes, "header");
     if (data.empty())
         return v;
     std::vector<std::string> tried;

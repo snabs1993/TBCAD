@@ -4,14 +4,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace tbcad::dwg::detail {
 
 // Expands `in` into exactly `expected` bytes. Returns false when the stream is damaged, ends
 // early or would produce more than `expected` bytes. `out` is replaced.
+// `why` (optional) receives the reason and place of the failure.
 // `distanceBias` (optional) receives 1 or 0: which reading of the stored distances worked.
 bool lz77Decompress(std::span<const std::uint8_t> in, std::size_t expected,
-                    std::vector<std::uint8_t>& out, int* distanceBias = nullptr);
+                    std::vector<std::uint8_t>& out, int* distanceBias = nullptr,
+                    std::string* why = nullptr);
 
 }  // namespace tbcad::dwg::detail

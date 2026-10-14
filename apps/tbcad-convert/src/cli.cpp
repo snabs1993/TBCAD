@@ -31,6 +31,7 @@ const char* kUsage =
     "\n"
     "options:\n"
     "  -o, --output FILE       the file to write (required)\n"
+    "  --reader-revision       print which revision of the .dwg reader this build has\n"
     "  --dwg-info FILE         describe a .dwg file's structure (for diagnosing files that fail)\n"
     "  --report FILE           write a JSON report (counts, units, encoding, warnings)\n"
     "  -q, --quiet             print nothing except errors\n"
@@ -140,6 +141,9 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         };
         if (a == "-h" || a == "--help") {
             out << kUsage;
+            return kExitOk;
+        } else if (a == "--reader-revision") {
+            out << dwg::readerRevision() << "\n";
             return kExitOk;
         } else if (a == "--dwg-info") {
             auto v = value("a .dwg file");

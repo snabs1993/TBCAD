@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <set>
+#include <string>
+#include <unordered_map>
 
 #include "bits/bit_reader.h"
 
@@ -34,8 +38,11 @@ enum Type : std::uint32_t {
     kSpline = 0x24,
     kMtext = 0x2C,
     kLeader = 0x2D,
+    kDictionary = 0x2A,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
-    kHatch = 1000,
+    kHatch = 100000,
+    kLayoutObject = 0x52,
+    kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
     kDimAligned = 0x16,
@@ -77,40 +84,90 @@ public:
                  std::vector<std::string>& notes, const Format& fmt)
         : file_(file), classes_(classes), out_(out), notes_(notes), fmt_(fmt) {}
 
+    // The layouts of layers, lines and inserts differ between files; each is decided by the first
+    // object that fits one reading only. Objects that need a decision (block headers) can come
+    // before that object in the stream, so decode ahead quietly and throw the result away.
+    void calibrate() {
+        const Drawing saved = out_;
+        const auto savedFail = failDumps_;
+        const auto savedMiss = missDumps_;
+        const std::size_t notesBefore = notes_.size();
+        const bool wasQuiet = quiet_;
+        quiet_ = true;
+        std::size_t seen = 0;
+        for (const auto& [h, off] : walkedList_) {
+            if (tripleVariant_ >= 0 && nolinksVariant_ >= 0 && insertCountKnown_)
+                break;
+            if (++seen > 40000)
+                break;
+            MapEntry e;
+            e.handle = h;
+            e.offset = off;
+            decodeOne(e);
+        }
+        quiet_ = wasQuiet;
+        out_ = saved;
+        failDumps_ = savedFail;
+        missDumps_ = savedMiss;
+        notes_.resize(std::min(notes_.size(), notesBefore));
+    }
+
     void run(const std::vector<MapEntry>& map) {
+        // R2010 and later: the objects follow each other in the stream and carry their own
+        // handle, so walking the stream is more dependable than the object map (whose entries
+        // are written in a shape that is easy to misread). Use the map only as a fallback.
+        if (fmt_.r2010) {
+            walkStream();
+            if (walkedList_.size() * 10 >= map.size() * 9) {
+                calibrate();
+                for (const auto& [h, off] : walkedList_) {
+                    MapEntry e;
+                    e.handle = h;
+                    e.offset = off;
+                    decodeOne(e);
+                }
+                std::sort(
+                    out_.entities.begin(), out_.entities.end(),
+                    [](const EntityRec& a, const EntityRec& b) { return a.handle < b.handle; });
+                return;
+            }
+        }
         for (const MapEntry& e : map) {
             if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file_.size()) {
                 note("object " + hex(e.handle) + " lies outside the file");
                 continue;
             }
-            if (frameHandle(e.offset) != e.handle) {
-                // The map says the object is here but another (or no) object starts there: look
-                // nearby for the frame that carries this handle (its own handle is inside it).
-                std::int64_t found = 0;
-                bool ok = false;
-                for (std::int64_t d : {lastShift_}) {
-                    if (d != 0 && frameHandle(e.offset + d) == e.handle) {
-                        found = d;
+            quiet_ = true;
+            decodeOne(e);
+            quiet_ = false;
+            if (framed_)
+                continue;
+            // The frame at the place the map names is damaged: look for the object elsewhere. Its
+            // own handle sits inside its frame, so the walk of the whole stream can find it.
+            if (!walkedDone_)
+                walkStream();
+            std::int64_t found = 0;
+            bool ok = false;
+            if (const auto w = walked_.find(e.handle);
+                w != walked_.end() && w->second != e.offset) {
+                found = w->second - e.offset;
+                ok = true;
+            }
+            for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
+                for (std::int64_t sd : {d, -d}) {
+                    if (frameHandle(e.offset + sd) == e.handle) {
+                        found = sd;
                         ok = true;
+                        break;
                     }
                 }
-                for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
-                    for (std::int64_t sd : {d, -d}) {
-                        if (frameHandle(e.offset + sd) == e.handle) {
-                            found = sd;
-                            ok = true;
-                            break;
-                        }
-                    }
-                }
-                if (ok) {
-                    lastShift_ = found;
-                    ++out_.relocated[found];
-                    MapEntry moved = e;
-                    moved.offset += found;
-                    decodeOne(moved);
-                    continue;
-                }
+            }
+            if (ok) {
+                ++out_.relocated[found];
+                MapEntry moved = e;
+                moved.offset += found;
+                decodeOne(moved);
+                continue;
             }
             decodeOne(e);
         }
@@ -129,6 +186,15 @@ private:
         return s;
     }
 
+    bool quiet_ = false;
+    bool framed_ = true;
+    // A problem with the frame of an object: silent while the caller may still look elsewhere.
+    void frameNote(const std::string& s) {
+        framed_ = false;
+        if (!quiet_)
+            note(s);
+    }
+
     void note(const std::string& s) {
         if (notes_.size() < kMaxNotes)
             notes_.push_back(s);
@@ -139,12 +205,27 @@ private:
     std::string dxfNameOfClass(std::uint32_t type) const {
         if (type < 500)
             return {};
+        for (const ClassInfo& c : classes_)
+            if (c.number == static_cast<int>(type))
+                return c.dxfName;
         const std::size_t idx = type - 500;
         return idx < classes_.size() ? classes_[idx].dxfName : std::string{};
     }
 
     std::size_t mainEnd_ = 0;
-    std::int64_t lastShift_ = 0;
+    int hugeSeen_ = 0;
+    std::map<std::uint32_t, int> failDumps_;
+    std::uint64_t currentHandle_ = 0;
+    Bytes currentBody_;
+    std::size_t currentBits_ = 0;
+    // All data bits of the object being decoded (diagnostic for values that look wrong).
+    std::string dumpCurrent() const {
+        std::string bits;
+        BitReader t(currentBody_);
+        for (std::size_t i = 0; i < currentBits_ && i < 3000; ++i)
+            bits += t.b() ? '1' : '0';
+        return bits;
+    }
 
     // The own handle of the object framed at `offset` (0 when nothing sensible starts there).
     std::uint64_t frameHandle(std::int64_t offset) const {
@@ -172,6 +253,70 @@ private:
         return r.failed() ? 0 : self.value;
     }
 
+    // Size in bytes of the object framed at `offset` including the leading size fields (0 when
+    // nothing sensible starts there).
+    std::size_t frameLength(std::int64_t offset) const {
+        if (offset < 0 || static_cast<std::size_t>(offset) >= file_.size())
+            return 0;
+        BitReader head(file_.subspan(static_cast<std::size_t>(offset)));
+        const std::uint32_t size = head.ms();
+        if (fmt_.r2010)
+            head.mcUnsigned();
+        const std::size_t lead = head.bytePos();
+        if (head.failed() || size == 0)
+            return 0;
+        return lead + size;
+    }
+
+    // Objects follow each other in the stream (size, body, a 2 byte check value): walking it from
+    // the start gives every object's real position, whatever the object map says.
+    std::unordered_map<std::uint64_t, std::int64_t> walked_;
+    std::vector<std::pair<std::uint64_t, std::int64_t>> walkedList_;
+    bool walkedDone_ = false;
+    void walkStream() {
+        walkedDone_ = true;
+        std::int64_t off = 4;
+        std::size_t resyncs = 0;
+        struct Summary {
+            ObjectReader* self;
+            std::int64_t* off;
+            std::size_t* resyncs;
+            ~Summary() {
+                self->out_.walkSummary = "stream walk: " + std::to_string(self->walked_.size()) +
+                                         " objects, " + std::to_string(*resyncs) +
+                                         " resyncs, stopped at byte " + std::to_string(*off) +
+                                         " of " + std::to_string(self->file_.size());
+            }
+        } summary{this, &off, &resyncs};
+        std::size_t misses = 0;
+        const std::int64_t end = static_cast<std::int64_t>(file_.size());
+        while (off + 8 < end) {
+            const std::uint64_t h = frameHandle(off);
+            const std::size_t len = frameLength(off);
+            if (h != 0 && len != 0 && off + static_cast<std::int64_t>(len) + 2 <= end) {
+                walked_.emplace(h, off);
+                walkedList_.emplace_back(h, off);
+                off += static_cast<std::int64_t>(len) + 2;
+                misses = 0;
+                continue;
+            }
+            // Lost the frame: move on byte by byte until two frames in a row look right.
+            bool again = false;
+            for (std::int64_t d = 1; d <= 4096 && off + d + 8 < end; ++d) {
+                const std::size_t l1 = frameLength(off + d);
+                if (frameHandle(off + d) != 0 && l1 != 0 &&
+                    frameHandle(off + d + static_cast<std::int64_t>(l1) + 2) != 0) {
+                    off += d;
+                    ++resyncs;
+                    again = true;
+                    break;
+                }
+            }
+            if (!again || ++misses > 100000)
+                break;
+        }
+    }
+
     // Where an object that could not be framed sits: offset, offset inside a 0x7400 page, and
     // its first bytes (a diagnostic for map or page misplacement).
     std::string where(const MapEntry& e) const {
@@ -189,6 +334,7 @@ private:
     }
 
     void decodeOne(const MapEntry& e) {
+        framed_ = true;
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
         // R2010 and later: the size of the handle stream (in bits) follows the size. The size
@@ -199,23 +345,28 @@ private:
         const std::size_t lead = head.bytePos();
         if (head.failed() || size == 0 || size > file_.size() ||
             static_cast<std::size_t>(e.offset) + lead + size > file_.size()) {
-            note("object " + hex(e.handle) + " has an impossible size" + where(e));
+            frameNote("object " + hex(e.handle) + " has an impossible size" + where(e));
             return;
         }
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
         BitReader r(body);
         std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
+        out_.rawType[e.handle] = type;
         if (type >= 500) {
             const std::string cls = dxfNameOfClass(type);
             if (cls == "LWPOLYLINE")
                 type = kLwPolyline;
             else if (cls == "HATCH")
                 type = kHatch;
+            else if (cls == "LAYOUT") {
+                type = kLayoutObject;
+                ++out_.layoutSeen;
+            }
         }
         std::size_t objBits = 0;
         if (fmt_.r2010) {
             if (handleBits > body.size() * 8) {
-                note("object " + hex(e.handle) + " has a damaged header" + where(e));
+                frameNote("object " + hex(e.handle) + " has a damaged header" + where(e));
                 return;
             }
             objBits = body.size() * 8 - handleBits;
@@ -224,15 +375,18 @@ private:
         }
         const HandleRef self = r.handle();
         if (r.failed() || objBits > body.size() * 8) {
-            note("object " + hex(e.handle) + " has a damaged header" + where(e));
+            frameNote("object " + hex(e.handle) + " has a damaged header" + where(e));
             return;
         }
         // R2007 and later: strings live in their own stream just before the handle stream.
         BitReader strings;
         if (fmt_.r2007 && !locateStringStream(body, objBits, strings)) {
-            note("object " + hex(e.handle) + " has a damaged string stream" + where(e));
+            frameNote("object " + hex(e.handle) + " has a damaged string stream" + where(e));
             return;
         }
+        currentHandle_ = self.value;
+        currentBody_ = body;
+        currentBits_ = objBits;
         mainEnd_ = strings.bitSize() != 0 ? strings.bitPos() : (objBits > 0 ? objBits - 1 : 0);
         if (strings.bitSize() != 0)
             r.setStringStream(&strings);
@@ -262,6 +416,7 @@ private:
             case kPolyline2d:
             case kMtext:
             case kHatch:
+            case kViewport:
             case kLeader:
             case kDimOrdinate:
             case kDimLinear:
@@ -271,6 +426,12 @@ private:
             case kDimRadius:
             case kDimDiameter:
                 decodeEntity(type, r, objBits, body, self.value);
+                return;
+            case kLayoutObject:
+                decodeLayoutObject(r, objBits, body, self.value);
+                return;
+            case kDictionary:
+                decodeDictionary(r, objBits, body, self.value);
                 return;
             case kBlock:
             case kEndBlk:
@@ -294,7 +455,12 @@ private:
             return;
         auto& t = out_.layoutCheck[type];
         ++t[r.bitPos() == mainEnd_ ? 0 : 1];
+        if (r.bitPos() != mainEnd_ && !quiet_ && missDumps_[type]++ < 2)
+            note("layout of type " + std::to_string(type) + " object " + hex(currentHandle_) +
+                 " ended at bit " + std::to_string(r.bitPos()) + ", expected " +
+                 std::to_string(mainEnd_) + ", bits " + dumpCurrent());
     }
+    std::map<std::uint32_t, int> missDumps_;
 
     // Table records start with a 64-bit flag, an xref index and an xref-dependency flag. Files
     // written by recent versions leave the index out (checked on a real R2018 file).
@@ -411,17 +577,18 @@ private:
                 LayerRec l;
                 l.handle = self;
                 if (fmt_.r2007 && tripleVariant_ < 0) {
-                    for (int v : {1, 0}) {
+                    // Only a layer that fits one reading and not the other decides it.
+                    bool fits[2] = {false, false};
+                    for (int v = 0; v < 2; ++v) {
                         BitReader probe = r;
                         tripleVariant_ = v;
                         bool f = false, x = false;
                         readTriple(probe, f, x);
                         probe.bs();
                         readCmc(probe, 7);
-                        if (!probe.failed() && probe.bitPos() == mainEnd_)
-                            break;
-                        tripleVariant_ = -1;
+                        fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
                     }
+                    tripleVariant_ = fits[0] != fits[1] ? (fits[0] ? 0 : 1) : -1;
                 }
                 l.name = r.textBytes();
                 bool flag64 = false, xdep = false;
@@ -519,40 +686,75 @@ private:
             case kBlockHeader: {
                 BlockRec b;
                 b.handle = self;
-                b.name = r.textBytes();
+                bool anonymous = false, hasAtts = false, isXref = false, overlay = false;
                 bool f64 = false, xdep = false;
-                readTriple(r, f64, xdep);
-                const bool anonymous = r.b();
-                const bool hasAtts = r.b();
-                const bool isXref = r.b();
-                const bool overlay = r.b();
-                r.b();  // loaded bit
-                if (fmt_.r2004)
-                    r.bl();  // owned object count
-                b.baseX = r.bd();
-                b.baseY = r.bd();
-                b.baseZ = r.bd();
-                b.xrefPath = r.textBytes();
-                if (fmt_.r2007) {
-                    // Insert count (non-zero bytes ending in a zero), description, preview, units.
-                    for (int i = 0; i < 100000 && !r.failed() && r.rc() != 0; ++i) {
+                std::uint32_t ownedCount = 0, insertCount = 0;
+                auto blockBody = [&](BitReader& rr, BlockRec& bb) {
+                    bb.name = rr.textBytes();
+                    readTriple(rr, f64, xdep);
+                    anonymous = rr.b();
+                    hasAtts = rr.b();
+                    isXref = rr.b();
+                    overlay = rr.b();
+                    rr.b();  // loaded bit
+                    // Owned object count; an external reference owns no objects and the files
+                    // do not store the count for it.
+                    ownedCount = 0;
+                    if (fmt_.r2004 && !isXref && !overlay)
+                        ownedCount = rr.bl();
+                    bb.baseX = rr.bd();
+                    bb.baseY = rr.bd();
+                    bb.baseZ = rr.bd();
+                    bb.xrefPath = rr.textBytes();
+                    if (fmt_.r2007) {
+                        // Insert count (non-zero bytes ending in a zero), description, preview,
+                        // units.
+                        insertCount = 0;
+                        for (int i = 0; i < 100000 && !rr.failed() && rr.rc() != 0; ++i)
+                            ++insertCount;
+                        rr.textBytes();
+                        const std::uint32_t preview = rr.bl();
+                        if (preview > rr.bitsLeft() / 8)
+                            rr.fail();
+                        else
+                            rr.seekBit(rr.bitPos() + static_cast<std::size_t>(preview) * 8);
+                        rr.bs();  // insert units
+                        rr.b();   // explodable
+                        rr.rc();  // block scaling
                     }
-                    r.textBytes();
-                    const std::uint32_t preview = r.bl();
-                    if (preview > r.bitsLeft() / 8)
-                        r.fail();
-                    else
-                        r.seekBit(r.bitPos() + static_cast<std::size_t>(preview) * 8);
-                    r.bs();  // insert units
-                    r.b();   // explodable
-                    r.rc();  // block scaling
+                };
+                if (fmt_.r2007 && tripleVariant_ < 0) {
+                    // Layers did not decide the table record layout; a block header may.
+                    bool fits[2] = {false, false};
+                    for (int v = 0; v < 2; ++v) {
+                        BitReader probe = r;
+                        BlockRec pb;
+                        tripleVariant_ = v;
+                        blockBody(probe, pb);
+                        fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
+                    }
+                    tripleVariant_ = fits[0] != fits[1] ? (fits[0] ? 0 : 1) : -1;
                 }
+                blockBody(r, b);
                 if (r.failed()) {
-                    note("block header " + hex(self) + " is damaged");
+                    note("block header " + hex(self) + " is damaged (read to bit " +
+                         std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
+                         (failDumps_[type]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
                     return;
                 }
                 b.flags = (anonymous ? 1 : 0) | (hasAtts ? 2 : 0) | (isXref ? 4 : 0) |
                           (overlay ? 8 : 0) | (xdep ? 16 : 0);
+                // The handle stream names the objects the block owns: the authoritative member
+                // list (an entity's own owner handle is the fallback).
+                leadingHandles(h, self, reactors, true);
+                h.handle();  // null hard pointer
+                h.handle();  // BLOCK entity
+                if (fmt_.r2004 && ownedCount < 20000000) {
+                    for (std::uint32_t i = 0; i < ownedCount && !h.failed(); ++i)
+                        b.members.push_back(resolveHandle(h.handle(), self));
+                    b.ownedCount = ownedCount;
+                    b.membersRead = !h.failed();
+                }
                 out_.blocks[self] = std::move(b);
                 break;
             }
@@ -626,18 +828,18 @@ private:
         CommonBits c;
         ownedCount_ = 0;
         if (fmt_.r2007 && type == kLine && nolinksVariant_ < 0) {
-            for (int v : {1, 0}) {
+            bool fits[2] = {false, false};
+            for (int v = 0; v < 2; ++v) {
                 BitReader probe = r;
-                nolinksVariant_ = v;
+                nolinksVariant_ = v == 0 ? 1 : 0;
                 CommonBits pc;
                 EntityRec pe;
                 if (readCommonEntity(probe, pc)) {
                     line(probe, pe);
-                    if (!probe.failed() && probe.bitPos() == mainEnd_)
-                        break;
+                    fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
                 }
-                nolinksVariant_ = -1;
             }
+            nolinksVariant_ = fits[0] != fits[1] ? (fits[0] ? 1 : 0) : -1;
         }
         if (fmt_.r2007 && (type == kInsert) && !insertCountKnown_) {
             bool fits[2] = {false, false};
@@ -676,7 +878,12 @@ private:
         bool wantChildren = false;
         bool wantDim = false;
         bool wantLeader = false;
+        bool wantViewport = false;
         switch (type) {
+            case kViewport:
+                viewport(r, e);
+                wantViewport = true;
+                break;
             case kLine:
                 line(r, e);
                 break;
@@ -752,8 +959,18 @@ private:
         tally(type, r);
         if (r.failed()) {
             note(e.dxfType + " " + hex(self) + " is damaged and was skipped (read to bit " +
-                 std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")");
+                 std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
+                 (failDumps_[type]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
             return;
+        }
+        for (const Group& g : e.groups) {
+            if (const double* v = std::get_if<double>(&g.value.v)) {
+                if (!std::isfinite(*v) || std::abs(*v) > 1e13) {
+                    note(e.dxfType + " " + hex(self) +
+                         " has a number out of range and was skipped");
+                    return;
+                }
+            }
         }
         BitReader h(body, objBits);
         e.owner = leadingHandles(h, self, c.reactors, c.entmode == 0);
@@ -777,6 +994,10 @@ private:
             e.style = resolveHandle(h.handle(), self);
         if (wantBlock)
             e.blockHeader = resolveHandle(h.handle(), self);
+        if (wantViewport) {
+            for (std::uint32_t i = 0; i < viewportFrozen_ && i < 100000 && !h.failed(); ++i)
+                e.frozenLayers.push_back(resolveHandle(h.handle(), self));
+        }
         if (wantLeader)
             h.handle();  // associated annotation
         if (wantLeader || wantDim)
@@ -883,6 +1104,187 @@ private:
         extrusionGroups(e, n);
     }
 
+    // VIEWPORT (ODA spec 20.4.38): a window on a layout sheet showing model space.
+    std::uint32_t viewportFrozen_ = 0;
+    void viewport(BitReader& r, EntityRec& e) {
+        e.dxfType = "VIEWPORT";
+        const Vec3 center = bd3(r);
+        const double width = r.bd();
+        const double height = r.bd();
+        const Vec3 target = bd3(r);
+        bd3(r);  // view direction
+        r.bd();  // view twist
+        const double viewHeight = r.bd();
+        r.bd();  // lens length
+        r.bd();  // front clip
+        r.bd();  // back clip
+        r.bd();  // snap angle
+        const double vcx = r.rd();
+        const double vcy = r.rd();
+        for (int i = 0; i < 6; ++i)
+            r.rd();  // snap base, snap spacing, grid spacing
+        r.bs();      // circle zoom
+        if (fmt_.r2007)
+            r.bs();  // grid major
+        viewportFrozen_ = r.bl();
+        const std::uint32_t flags = r.bl();
+        r.textBytes();  // style sheet
+        r.rc();         // render mode
+        r.b();          // UCS at origin
+        r.b();          // UCS per viewport
+        bd3(r);
+        bd3(r);
+        bd3(r);  // UCS origin and axes
+        r.bd();  // elevation
+        r.bs();  // ortho view type
+        if (fmt_.r2004)
+            r.bs();  // shade plot mode
+        if (fmt_.r2007) {
+            r.b();   // use default lights
+            r.rc();  // default lighting type
+            r.bd();  // brightness
+            r.bd();  // contrast
+            readCmc(r, 7);
+        }
+        point3(e, 10, center);
+        add(e, 40, width);
+        add(e, 41, height);
+        point3(e, 17, target);
+        add(e, 12, vcx);
+        add(e, 22, vcy);
+        add(e, 45, viewHeight);
+        // The status flags did not match the "off" bit on a real file (every viewport of the
+        // sheets read as off), so every viewport is treated as on.
+        add(e, 90, static_cast<long long>(flags));
+        add(e, 68, 1);
+        // A sheet's own overall viewport (id 1) looks at nothing of model space: its view is the
+        // paper itself.
+        if (std::abs(target.x) < 1e-9 && std::abs(target.y) < 1e-9 &&
+            std::abs(vcx - center.x) < 1e-6 && std::abs(vcy - center.y) < 1e-6)
+            add(e, 69, 1);
+    }
+
+    // DICTIONARY (ODA spec 20.4.44): name and handle pairs; the layout dictionary names the
+    // layouts.
+    void decodeDictionary(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        // The item count is a raw long in the description; which form a real file uses is decided
+        // by where the main data must end (the names live in the string stream).
+        std::uint32_t n = 0;
+        bool done = false;
+        for (int form = 0; form < 2 && !done; ++form) {
+            BitReader probe = r;
+            probe.setStringStream(nullptr);
+            n = form == 0 ? probe.rl() : probe.bl();
+            probe.bs();  // cloning flag
+            probe.rc();  // hard owner flag
+            if (!probe.failed() && (!fmt_.r2007 || probe.bitPos() == mainEnd_)) {
+                r.seekBit(probe.bitPos());
+                done = true;
+            }
+        }
+        if (!done || n > 100000) {
+            note("dictionary " + hex(self) + " has an unexpected layout" +
+                 (failDumps_[kDictionary]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
+            return;
+        }
+        std::vector<std::string> names;
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i)
+            names.push_back(r.textBytes());
+        tally(kDictionary, r);
+        BitReader h(body, objBits);
+        leadingHandles(h, self, reactors, true);
+        std::vector<std::pair<std::string, std::uint64_t>> items;
+        for (std::size_t i = 0; i < names.size() && !h.failed(); ++i)
+            items.emplace_back(names[i], resolveHandle(h.handle(), self));
+        if (!r.failed() && !h.failed())
+            out_.dictionaries[self] = std::move(items);
+    }
+
+    // LAYOUT object (ODA spec 20.4.84): the name, paper size and paper space block of a layout.
+    void decodeLayoutObject(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        LayoutRec l;
+        l.handle = self;
+        r.textBytes();  // page setup name
+        r.textBytes();  // printer
+        r.bs();         // plot layout flags
+        for (int i = 0; i < 4; ++i)
+            r.bd();  // margins
+        l.width = r.bd();
+        l.height = r.bd();
+        r.textBytes();  // paper size
+        r.bd();
+        r.bd();  // plot origin
+        r.bs();  // paper units
+        l.rotation = r.bs();
+        r.bs();  // plot type
+        for (int i = 0; i < 4; ++i)
+            r.bd();  // window
+        r.bd();
+        r.bd();         // custom print scale
+        r.textBytes();  // style sheet
+        r.bs();         // scale type
+        r.bd();         // scale factor
+        r.bd();
+        r.bd();  // paper image origin
+        if (fmt_.r2004) {
+            r.bs();
+            r.bs();
+            r.bs();  // shade plot
+        }
+        l.name = r.textBytes();
+        l.tab = static_cast<int>(r.bl());
+        r.bs();  // flags
+        bd3(r);  // UCS origin
+        for (int i = 0; i < 4; ++i)
+            r.rd();  // limits
+        bd3(r);      // insertion base
+        bd3(r);
+        bd3(r);  // UCS axes
+        r.bd();  // elevation
+        r.bs();  // ortho view type
+        bd3(r);
+        bd3(r);  // extents
+        if (fmt_.r2004)
+            r.rl();  // viewport count
+        tally(kLayoutObject, r);
+        BitReader h(body, objBits);
+        leadingHandles(h, self, reactors, true);
+        if (fmt_.r2004)
+            h.handle();  // plot view
+        if (fmt_.r2007)
+            h.handle();  // visual style
+        l.block = resolveHandle(h.handle(), self);
+        if (r.failed() || h.failed()) {
+            if (out_.layoutDiag.size() < 4)
+                out_.layoutDiag.push_back(
+                    "layout " + hex(self) + " did not read: main data to bit " +
+                    std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ", handles " +
+                    (h.failed() ? "failed" : "ok") + ", block " + hex(l.block) + ", bits " +
+                    dumpCurrent());
+            note("layout " + hex(self) + " is damaged (" + (r.failed() ? "data" : "handles") +
+                 " read to bit " + std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) +
+                 ", name \"" + l.name + "\", paper " + std::to_string(l.width) + " x " +
+                 std::to_string(l.height) + ")" +
+                 (failDumps_[kLayoutObject]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
+            // The fields before the block handle are unreliable here; the layout dictionary
+            // names the layout and the paper size comes from the importer's default.
+            if (l.block == 0)
+                return;
+            l.name.clear();
+            l.width = l.height = 0;
+            l.tab = 0;
+            l.damaged = true;
+        }
+        for (const LayoutRec& old : out_.layoutObjects)
+            if (old.handle == l.handle)
+                return;  // an object met twice (map and stream walk) is one layout
+        out_.layoutObjects.push_back(std::move(l));
+    }
+
     void point(BitReader& r, EntityRec& e) {
         e.dxfType = "POINT";
         const Vec3 p = bd3(r);
@@ -919,6 +1321,12 @@ private:
         const double height = r.rd();
         if (!(flags & 0x10))
             width = r.rd();
+        if (height > 1e5 && hugeSeen_++ < 3) {
+            std::string bits;
+            note(std::string(dxfType) + " " + hex(currentHandle_) + " has height " +
+                 std::to_string(height) + " at (" + std::to_string(ix) + ", " + std::to_string(iy) +
+                 "), flags " + hex(flags) + ", data bits " + dumpCurrent());
+        }
         const std::string value = r.textBytes();
         int generation = 0, horizontal = 0, vertical = 0;
         if (!(flags & 0x20))
@@ -1864,6 +2272,99 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    std::vector<std::string>& notes, const Format& fmt) {
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
+    {
+        // Layouts whose own record could not be read are named by the layout dictionary; the
+        // tab order follows the creation order (handles).
+        std::map<std::uint64_t, std::string> nameOf;
+        for (const auto& [dh, items] : out.dictionaries)
+            for (const auto& [name, target] : items)
+                if (name == "ACAD_LAYOUT") {
+                    const auto d = out.dictionaries.find(target);
+                    if (d != out.dictionaries.end())
+                        for (const auto& [ln, lh] : d->second)
+                            nameOf[lh] = ln;
+                }
+        std::vector<LayoutRec*> todo;
+        for (LayoutRec& l : out.layoutObjects)
+            if (l.damaged && nameOf.count(l.handle))
+                todo.push_back(&l);
+        std::sort(todo.begin(), todo.end(),
+                  [](const LayoutRec* a, const LayoutRec* b) { return a->handle < b->handle; });
+        int tab = 1;
+        for (LayoutRec* l : todo) {
+            l->name = nameOf[l->handle];
+            l->tab = l->name == "Model" ? 0 : tab++;
+        }
+    }
+    {
+        // Each block lists the entities it owns; where an entity names another owner, believe
+        // the list.
+        std::unordered_map<std::uint64_t, std::size_t> index;
+        for (std::size_t i = 0; i < out.entities.size(); ++i)
+            index[out.entities[i].handle] = i;
+        for (const auto& [bh, blk] : out.blocks) {
+            if (!blk.membersRead)
+                continue;
+            std::size_t found = 0;
+            for (std::uint64_t m : blk.members)
+                found += index.count(m);
+            out.membersMissing += blk.members.size() - found;
+            // A list that mostly names objects we have is trustworthy; otherwise it was misread.
+            const bool trusted = found * 10 >= blk.members.size() * 9;
+            for (std::uint64_t m : blk.members) {
+                const auto it = index.find(m);
+                if (it == index.end())
+                    continue;
+                EntityRec& e = out.entities[it->second];
+                // Even a partly misread list places the entities that have no owner of their own
+                // (entity mode 1 or 2 stores none).
+                if (!trusted && e.entmode == 0)
+                    continue;
+                if (e.entmode != 0) {
+                    e.entmode = 0;
+                    e.owner = bh;
+                    ++out.ownerFixed;
+                } else if (e.owner != bh) {
+                    ++out.ownerFixed;
+                    e.owner = bh;
+                }
+            }
+        }
+    }
+    // Anonymous blocks (dimensions, hatches) are stored with a bare "*D" or "*U" name; the
+    // numbering is implied. Give every repeat its own name so inserts keep their own block.
+    std::set<std::string> used;
+    std::map<std::string, int> counter;
+    for (auto& [h, b] : out.blocks) {
+        if (b.name.size() < 2 || b.name[0] != '*' || b.name.rfind("*Model_Space", 0) == 0 ||
+            b.name.rfind("*Paper_Space", 0) == 0)
+            continue;
+        if (used.insert(b.name).second)
+            continue;
+        const std::string stem = b.name;
+        std::string candidate;
+        do {
+            candidate = stem + std::to_string(++counter[stem]);
+        } while (!used.insert(candidate).second);
+        b.name = candidate;
+    }
+}
+
+const char* readerRevision() {
+    return "r33: layouts met twice count once; r32: partly misread block member lists still place "
+           "unowned entities; r31: LAYOUT is "
+           "fixed type 82; r30: layout dictionary entry types; r29: layout "
+           "diagnostics outside the note cap; r28: "
+           "class names read from the string "
+           "run after the class fields; r27: class bytes "
+           "dump; r26: class string stream end retried; r25: class section skips "
+           "its bit-size word; r24: "
+           "class section reading retried; r23: "
+           "class lookup by number, private type numbers "
+           "moved; r22: layout names from the "
+           "layout dictionary; r21: layout diagnostics; r20: layouts "
+           "(VIEWPORT, LAYOUT), xref paths; r19: "
+           "reachability info";
 }
 
 void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
