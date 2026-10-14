@@ -669,34 +669,51 @@ private:
             case kBlockHeader: {
                 BlockRec b;
                 b.handle = self;
-                b.name = r.textBytes();
+                bool anonymous = false, hasAtts = false, isXref = false, overlay = false;
                 bool f64 = false, xdep = false;
-                readTriple(r, f64, xdep);
-                const bool anonymous = r.b();
-                const bool hasAtts = r.b();
-                const bool isXref = r.b();
-                const bool overlay = r.b();
-                r.b();  // loaded bit
-                if (fmt_.r2004)
-                    r.bl();  // owned object count
-                b.baseX = r.bd();
-                b.baseY = r.bd();
-                b.baseZ = r.bd();
-                b.xrefPath = r.textBytes();
-                if (fmt_.r2007) {
-                    // Insert count (non-zero bytes ending in a zero), description, preview, units.
-                    for (int i = 0; i < 100000 && !r.failed() && r.rc() != 0; ++i) {
+                auto body = [&](BitReader& rr, BlockRec& bb) {
+                    bb.name = rr.textBytes();
+                    readTriple(rr, f64, xdep);
+                    anonymous = rr.b();
+                    hasAtts = rr.b();
+                    isXref = rr.b();
+                    overlay = rr.b();
+                    rr.b();  // loaded bit
+                    if (fmt_.r2004)
+                        rr.bl();  // owned object count
+                    bb.baseX = rr.bd();
+                    bb.baseY = rr.bd();
+                    bb.baseZ = rr.bd();
+                    bb.xrefPath = rr.textBytes();
+                    if (fmt_.r2007) {
+                        // Insert count (non-zero bytes ending in a zero), description, preview,
+                        // units.
+                        for (int i = 0; i < 100000 && !rr.failed() && rr.rc() != 0; ++i) {
+                        }
+                        rr.textBytes();
+                        const std::uint32_t preview = rr.bl();
+                        if (preview > rr.bitsLeft() / 8)
+                            rr.fail();
+                        else
+                            rr.seekBit(rr.bitPos() + static_cast<std::size_t>(preview) * 8);
+                        rr.bs();  // insert units
+                        rr.b();   // explodable
+                        rr.rc();  // block scaling
                     }
-                    r.textBytes();
-                    const std::uint32_t preview = r.bl();
-                    if (preview > r.bitsLeft() / 8)
-                        r.fail();
-                    else
-                        r.seekBit(r.bitPos() + static_cast<std::size_t>(preview) * 8);
-                    r.bs();  // insert units
-                    r.b();   // explodable
-                    r.rc();  // block scaling
+                };
+                if (fmt_.r2007 && tripleVariant_ < 0) {
+                    // Layers did not decide the table record layout; a block header may.
+                    bool fits[2] = {false, false};
+                    for (int v = 0; v < 2; ++v) {
+                        BitReader probe = r;
+                        BlockRec pb;
+                        tripleVariant_ = v;
+                        body(probe, pb);
+                        fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
+                    }
+                    tripleVariant_ = fits[0] != fits[1] ? (fits[0] ? 0 : 1) : -1;
                 }
+                body(r, b);
                 if (r.failed()) {
                     note("block header " + hex(self) + " is damaged (read to bit " +
                          std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
@@ -2052,7 +2069,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r13: block header dumps; r12: LZ reading choice, page-record trace; r11: calibration "
+    return "r14: block header decides table layout, section map hex; r13: block header dumps; r12: LZ reading choice, page-record trace; r11: calibration "
            "pre-pass; r10: variants by one-fit rule, range "
            "check, failure reasons";
 }

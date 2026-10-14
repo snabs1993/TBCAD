@@ -171,6 +171,23 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
     std::vector<std::uint8_t> desc;
     if (!readSystemPage(file, sm->address, 0x4163003Bu, desc, notes, "section map"))
         return makeError(ErrorCode::Parse, "the DWG section map is damaged");
+    if (trace && has(file, sm->address, 0x14 + le32(file, sm->address + 8))) {
+        // Structure only: the compressed section map and what it expands to (no drawing data).
+        const std::size_t comp = le32(file, sm->address + 8);
+        std::string raw = "section map compressed bytes (" + std::to_string(comp) + "):";
+        std::string dec = "section map expanded bytes (" + std::to_string(desc.size()) + "):";
+        char b[4];
+        for (std::size_t k = 0; k < comp; ++k) {
+            std::snprintf(b, sizeof b, "%02X", file[sm->address + 0x14 + k]);
+            raw += b;
+        }
+        for (std::size_t k = 0; k < desc.size() && k < 40000; ++k) {
+            std::snprintf(b, sizeof b, "%02X", desc[k]);
+            dec += b;
+        }
+        tr(raw);
+        tr(dec);
+    }
     if (desc.size() < 0x14)
         return makeError(ErrorCode::Parse, "the DWG section map is too short");
     const std::uint32_t count = le32(desc, 0);
