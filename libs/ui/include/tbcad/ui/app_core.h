@@ -179,6 +179,9 @@ public:
     void pointerMoved(const PointerState& p);
     void pointerLeft();
     // A left click that did not turn into a drag.
+    // Pressing the button on a grip of the selection starts its edit at once (so a press-drag-
+    // release moves it). True when the press was taken; call `click` for everything else.
+    bool pressOnGrip(const PointerState& p);
     void click(const PointerState& p);
     // A double click while no command runs: a text object under the pointer is selected and
     // edited with TEXTEDIT; anything else behaves like a single click.
@@ -299,6 +302,7 @@ private:
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     EntityId hoverId_{};
+    int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
     void notifySessionHooks();
