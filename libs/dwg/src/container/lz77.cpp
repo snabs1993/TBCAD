@@ -151,8 +151,18 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
 }  // namespace
 
 bool lz77Decompress(std::span<const std::uint8_t> in, std::size_t expected,
-                    std::vector<std::uint8_t>& out) {
-    return run(in, expected, 1, out) || run(in, expected, 0, out);
+                    std::vector<std::uint8_t>& out, int* distanceBias) {
+    if (run(in, expected, 1, out)) {
+        if (distanceBias)
+            *distanceBias = 1;
+        return true;
+    }
+    if (run(in, expected, 0, out)) {
+        if (distanceBias)
+            *distanceBias = 0;
+        return true;
+    }
+    return false;
 }
 
 }  // namespace tbcad::dwg::detail

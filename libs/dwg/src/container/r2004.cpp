@@ -242,13 +242,18 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
                 file.subspan(static_cast<std::size_t>(pg->address) + 32, dataSize);
             if (compressed == 2) {
                 std::vector<std::uint8_t> page;
-                if (!lz77Decompress(payload, maxPage, page) &&
-                    !lz77Decompress(payload, logical, page)) {
+                int bias = 1;
+                if (!lz77Decompress(payload, maxPage, page, &bias) &&
+                    !lz77Decompress(payload, logical, page, &bias)) {
                     tr("  page " + std::to_string(rec.page) + " at " + hex(pg->address) +
                        ": cannot decompress " + std::to_string(dataSize) + " bytes");
                     bad = true;
                     continue;
                 }
+                if (bias != 1)
+                    tr("  page " + std::to_string(rec.page) + " of \"" + sname + "\" at " +
+                       std::to_string(start) + " only decompresses with distance bias " +
+                       std::to_string(bias));
                 const std::size_t n = std::min(logical, page.size());
                 std::memcpy(data.data() + start, page.data(), n);
             } else {
