@@ -980,10 +980,11 @@ void Gui::readOnlyBanner() {
 }
 
 float Gui::layoutTabsHeight() const {
-    return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2.0f;
 }
 
-// The Model / layout tab strip under the drawing area.
+// The Model / layout tab strip under the drawing area. Model and "+" stay put; the layout tabs
+// scroll sideways (mouse wheel) when there are more than fit, following the active one.
 void Gui::layoutTabs(const ViewportRect& rect) {
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav |
@@ -991,6 +992,7 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoFocusOnAppearing;
     const float h = layoutTabsHeight();
     const std::vector<std::string> names = core_.layoutNames();
+    const bool readOnly = !core_.readOnlyBanner().empty();
     std::string openPopup;
     ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y + rect.h));
     ImGui::SetNextWindowSize(ImVec2(rect.w, h));
@@ -998,6 +1000,14 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         auto run = [&](std::initializer_list<std::string> lines) {
             for (const std::string& l : lines)
                 core_.submitText(l);
+        };
+        // New / Rename / Delete need a drawing that can be changed.
+        auto guarded = [&](const char* label) {
+            if (ImGui::MenuItem(label, nullptr, false, !readOnly))
+                return true;
+            if (readOnly && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("This drawing is read-only. Use Save As first.");
+            return false;
         };
         auto tab = [&](const std::string& label, const std::string& name) {
             const bool active = core_.activeLayout() == name;
@@ -1007,25 +1017,30 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                                       ImGui::GetStyleColorVec4(ImGuiCol_TabSelected));
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
             }
-            if (ImGui::Button(label.c_str()) && !active)
+            if (ImGui::Button(label.c_str()) && !active) {
                 core_.setActiveLayout(name);
+            }
             if (active)
                 ImGui::PopStyleColor(2);
-            if (!name.empty() && ImGui::BeginPopupContextItem("##tabmenu")) {
-                if (ImGui::MenuItem("New layout..."))
+            if (active && name.empty())
+                layoutFollowed_.clear();
+            if (active && layoutFollowed_ != name) {
+                layoutFollowed_ = name;
+                ImGui::SetScrollHereX(0.5f);
+            }
+            if (ImGui::BeginPopupContextItem("##tabmenu")) {
+                if (guarded("New layout..."))
                     openPopup = "new";
-                if (ImGui::MenuItem("Rename..."))
-                    openPopup = "rename";
-                if (ImGui::MenuItem("Delete")) {
-                    if (core_.activeLayout() == name)
-                        core_.setActiveLayout("");
-                    run({"LAYOUT", "Delete", name});
+                if (!name.empty()) {
+                    if (guarded("Rename..."))
+                        openPopup = "rename";
+                    if (guarded("Delete")) {
+                        if (core_.activeLayout() == name)
+                            core_.setActiveLayout("");
+                        run({"LAYOUT", "Delete", name});
+                    }
+                    layoutTarget_ = name;
                 }
-                layoutTarget_ = name;
-                ImGui::EndPopup();
-            } else if (name.empty() && ImGui::BeginPopupContextItem("##tabmenu")) {
-                if (ImGui::MenuItem("New layout..."))
-                    openPopup = "new";
                 ImGui::EndPopup();
             }
             ImGui::PopID();
@@ -1033,15 +1048,39 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         };
         ImGui::AlignTextToFramePadding();
         tab("Model", "");
+        const float plusW = ImGui::CalcTextSize("+").x + 2 * ImGui::GetStyle().FramePadding.x;
+        const bool paper = core_.inPaperSpace();
+        const char* hint = "Layout view (read-only)";
+        const float hintW = paper ? ImGui::CalcTextSize(hint).x + 24 : 0.0f;
+        float avail =
+            ImGui::GetContentRegionAvail().x - plusW - 2 * ImGui::GetStyle().ItemSpacing.x;
+        // The hint gives way before the tabs do.
+        const bool showHint = paper && avail - hintW > 160;
+        if (showHint)
+            avail -= hintW;
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::BeginChild("##tabscroll",
+                          ImVec2(std::max(avail, 40.0f), ImGui::GetFrameHeight() + 2), false,
+                          ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollbar |
+                              ImGuiWindowFlags_NoBackground);
+        if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0f)
+            ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60.0f);
         for (const std::string& n : names)
             tab(n, n);
-        if (ImGui::Button("+"))
-            openPopup = "new";
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::SameLine();
+        if (ImGui::Button("+")) {
+            if (readOnly)
+                toast("This drawing is read-only. Use Save As first.");
+            else
+                openPopup = "new";
+        }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("New layout");
-        if (core_.inPaperSpace()) {
+        if (showHint) {
             ImGui::SameLine();
-            ImGui::TextDisabled("  Layout view (read-only). Edit it with the layout commands.");
+            ImGui::TextDisabled("%s", hint);
         }
     }
     ImGui::End();
@@ -1065,7 +1104,9 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         const bool enter =
             ImGui::InputText("##n", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue);
         layoutNameBuf_ = buf;
-        if ((enter || ImGui::Button("OK")) && !layoutNameBuf_.empty()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        } else if ((enter || ImGui::Button("OK")) && !layoutNameBuf_.empty()) {
             if (layoutDialog_ == "new") {
                 core_.submitText("LAYOUT");
                 core_.submitText("New");

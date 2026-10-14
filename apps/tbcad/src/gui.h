@@ -251,6 +251,7 @@ private:
     ViewportRect lastRect_{};
     std::string layoutDialog_{};  // "new" / "rename", while its name popup is open
     std::string layoutTarget_{};
+    std::string layoutFollowed_{};  // the tab the strip last scrolled to
     std::string layoutNameBuf_{};
 
     double fps_ = 0;
