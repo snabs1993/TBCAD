@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/ui/selection.h"
 #include "test_support.h"
 
@@ -174,4 +175,29 @@ TEST_CASE("lasso selects inside a concave polygon; crossing also takes what it t
     CHECK(selectInPolygon(d.doc, d.idx, {{0, 0}, {10, 10}}, true).empty());
     (void)notch;
     (void)outside;
+}
+
+TEST_CASE("a click inside a hatch picks it, but a line under the pointer wins") {
+    hatch::registerHatchDisplay();
+    Indexed d;
+    HatchData h;
+    HatchLoop loop;
+    HatchPolylineEdge pe;
+    for (Vec2 q : {Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 100}, Vec2{0, 100}})
+        pe.v.push_back(PolyVertex{q});
+    pe.closed = true;
+    loop.edges.push_back(pe);
+    h.loops.push_back(loop);
+    h.solid = false;
+    h.pattern = "ANSI31";
+    EntityId hatch;
+    {
+        auto tx = d.doc.begin("hatch");
+        hatch = tx.add(Entity{{}, h}).value();
+        tx.commit();
+    }
+    EntityId line = addLine(d.doc, {0, 50}, {100, 50});
+    CHECK(pickEntity(d.doc, d.idx, {30, 20}, 1) == hatch);
+    CHECK(pickEntity(d.doc, d.idx, {30, 50}, 1) == line);
+    CHECK_FALSE(pickEntity(d.doc, d.idx, {130, 20}, 1).has_value());
 }
