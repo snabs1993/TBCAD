@@ -410,6 +410,7 @@ private:
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
     int xrefReloadWait_ = 0;
+    bool viewStatePending_ = false;
     underlay::ImageCache imageCache_{};
 };
 

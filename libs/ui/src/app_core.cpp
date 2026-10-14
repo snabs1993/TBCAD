@@ -1021,9 +1021,43 @@ std::string AppCore::promptText() const {
     return prompt_->display();
 }
 
+namespace {
+
+// Commands that only change what is shown (layer visibility), not the drawing itself.
+bool isViewStateCommand(const std::vector<std::string>& words) {
+    if (words.empty())
+        return false;
+    const std::string name = cmd::toUpperAscii(words[0]);
+    if (name == "LAYISO" || name == "LAYUNISO" || name == "LAYOFF" || name == "LAYON" ||
+        name == "LAYFRZ" || name == "LAYTHW")
+        return true;
+    if (name != "-LAYER" || words.size() < 2)
+        return false;
+    const std::string option = cmd::toUpperAscii(words[1]);
+    return option == "ON" || option == "OFF" || option == "FREEZE" || option == "THAW" ||
+           option == "SET" || option == "ISOLATE" || option == "SHOWALL";
+}
+
+}  // namespace
+
 void AppCore::submitText(std::string_view text) {
     std::string trimmed = cmd::trim(text);
     cmd::CommandRunner& run = runner();
+    // Turning layers on and off in a drawing opened from a read-only format is not an edit: it
+    // must not mark the drawing as modified (there is nothing to save back).
+    struct ViewStateGuard {
+        AppCore& core;
+        ~ViewStateGuard() {
+            if (core.viewStatePending_ && !core.runner().active()) {
+                core.viewStatePending_ = false;
+                core.session_->savedRevision = core.session_->doc.revision();
+            }
+        }
+    } guard{*this};
+    if (!run.active() && !trimmed.empty())
+        viewStatePending_ =
+            readOnlyOrigin() && !modified() &&
+            isViewStateCommand(splitWords(trimmed[0] == '\'' ? trimmed.substr(1) : trimmed));
     print(promptText() + trimmed);
     if (run.active()) {
         run.submit(trimmed.empty() ? cmd::Input::enter() : cmd::Input::typed(trimmed));

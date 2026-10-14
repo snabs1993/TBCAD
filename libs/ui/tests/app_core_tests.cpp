@@ -953,6 +953,42 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
     CHECK(gFakeXReloadRuns == 1);
 }
 
+namespace {
+
+// Stands in for LAYOFF: changes the drawing the way a layer toggle does.
+class FakeLayOff final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LAYOFF"; }
+    std::string_view description() const override { return "test"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        (void)ctx.tx().add(Entity{{}, LineData{{0, 0}, {1, 1}}});
+        co_return;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("layer visibility in a read-only drawing does not mark it modified") {
+    Fixture f("viewstate");
+    (void)f.registry->add(std::make_unique<FakeLayOff>());
+    fs::path src = f.dir / "plan.dwg";
+    { std::ofstream(src, std::ios::binary) << "x"; }
+    f.core->setForeignReader(
+        ".dwg",
+        [](const fs::path&) -> Result<ForeignOpenResult> {
+            ForeignOpenResult r;
+            r.document = std::make_unique<Document>();
+            r.format = "DWG R2000";
+            return r;
+        },
+        true);
+    REQUIRE(f.core->openFile(src).ok());
+    f.core->submitText("LAYOFF");
+    CHECK_FALSE(f.core->modified());
+    f.line("0,0", "5,5");  // a real edit still counts
+    CHECK(f.core->modified());
+}
+
 TEST_CASE("Delete is bound to edit.delete") {
     Fixture f("deletekey");
     CHECK(f.core->keybindings().label("edit.delete") == "Delete");
