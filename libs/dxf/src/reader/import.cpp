@@ -859,10 +859,23 @@ void Importer::processBlocks(RecordReader& rr) {
                     });
                     ++sum_.blocks;
                     if ((r.integer(70) & 4) && xrefPath.empty()) {
-                        report_.warn(code::kXref,
-                                     "external reference block \"" + name +
-                                         "\" is not supported; the block is empty",
-                                     r.line);
+                        // An external reference to another drawing: keep the path so the XREF
+                        // commands can load it (the block stays empty until then).
+                        const std::string stored = dec(r.raw(1));
+                        if (!stored.empty()) {
+                            const bool overlay = (r.integer(70) & 8) != 0;
+                            (void)tx_->modifyBlock(id, [&](BlockDef& b) {
+                                b.xrefPath = stored;
+                                b.xrefOverlay = overlay;
+                            });
+                        }
+                        report_.warn(
+                            code::kXref,
+                            "external reference \"" + name + "\"" +
+                                (stored.empty() ? std::string() : " (file " + stored + ")") +
+                                " is not loaded; the block is empty until the file is "
+                                "found (XREF > Reload)",
+                            r.line);
                     }
                 }
             }
@@ -921,6 +934,16 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
         v.scaleN = viewHeight > 0 ? viewHeight / h : 1;
         v.on = r.integer(68, 1) != 0;
         v.id = static_cast<int>(sh.viewports.size()) + 1;
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                ours = g.str() == "TBCAD";
+            } else if (ours && g.code == 1000) {
+                const std::string t = dec(g.str());
+                if (t.rfind("frozen=", 0) == 0)
+                    v.frozen.push_back(t.substr(7));
+            }
+        }
         sh.viewports.push_back(v);
         return;
     }
@@ -1012,10 +1035,21 @@ void Importer::finishLayouts() {
         ++uid;
         text += "L\t" + std::to_string(uid) + "\t" + name + "\tCustom\t" + (w > h ? "1" : "0") +
                 "\t" + num(w) + "\t" + num(h) + "\t" + std::to_string(sh.content.value) + "\t\n";
-        for (const SheetViewport& v : sh.viewports)
+        for (const SheetViewport& v : sh.viewports) {
+            // The sheet's own overall viewport covers the whole paper: not a window on the model.
+            if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)
+                continue;
+            std::string frozenIds;
+            for (const std::string& ln : v.frozen) {
+                const auto it = layerByFold_.find(fold(ln));
+                if (it != layerByFold_.end())
+                    frozenIds += (frozenIds.empty() ? "" : ",") + std::to_string(it->second.value);
+            }
             text += "V\t" + std::to_string(v.id) + "\t" + num(v.min.x) + "\t" + num(v.min.y) +
                     "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
-                    num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t\t0\n";
+                    num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
+                    frozenIds + "\t0\n";
+        }
     }
     (void)tx_->modifyHeader([&](Header& h) { h.custom["tbcad.layouts"] = text; });
     sum_.layouts = sheets_.size();

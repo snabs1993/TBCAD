@@ -40,6 +40,8 @@ enum Type : std::uint32_t {
     kLeader = 0x2D,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
     kHatch = 1000,
+    kLayoutObject = 1001,
+    kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
     kDimAligned = 0x16,
@@ -351,6 +353,8 @@ private:
                 type = kLwPolyline;
             else if (cls == "HATCH")
                 type = kHatch;
+            else if (cls == "LAYOUT")
+                type = kLayoutObject;
         }
         std::size_t objBits = 0;
         if (fmt_.r2010) {
@@ -405,6 +409,7 @@ private:
             case kPolyline2d:
             case kMtext:
             case kHatch:
+            case kViewport:
             case kLeader:
             case kDimOrdinate:
             case kDimLinear:
@@ -414,6 +419,9 @@ private:
             case kDimRadius:
             case kDimDiameter:
                 decodeEntity(type, r, objBits, body, self.value);
+                return;
+            case kLayoutObject:
+                decodeLayoutObject(r, objBits, body, self.value);
                 return;
             case kBlock:
             case kEndBlk:
@@ -860,7 +868,12 @@ private:
         bool wantChildren = false;
         bool wantDim = false;
         bool wantLeader = false;
+        bool wantViewport = false;
         switch (type) {
+            case kViewport:
+                viewport(r, e);
+                wantViewport = true;
+                break;
             case kLine:
                 line(r, e);
                 break;
@@ -971,6 +984,10 @@ private:
             e.style = resolveHandle(h.handle(), self);
         if (wantBlock)
             e.blockHeader = resolveHandle(h.handle(), self);
+        if (wantViewport) {
+            for (std::uint32_t i = 0; i < viewportFrozen_ && i < 100000 && !h.failed(); ++i)
+                e.frozenLayers.push_back(resolveHandle(h.handle(), self));
+        }
         if (wantLeader)
             h.handle();  // associated annotation
         if (wantLeader || wantDim)
@@ -1075,6 +1092,121 @@ private:
         add(e, 50, a0 * kDeg);
         add(e, 51, a1 * kDeg);
         extrusionGroups(e, n);
+    }
+
+    // VIEWPORT (ODA spec 20.4.38): a window on a layout sheet showing model space.
+    std::uint32_t viewportFrozen_ = 0;
+    void viewport(BitReader& r, EntityRec& e) {
+        e.dxfType = "VIEWPORT";
+        const Vec3 center = bd3(r);
+        const double width = r.bd();
+        const double height = r.bd();
+        const Vec3 target = bd3(r);
+        bd3(r);  // view direction
+        r.bd();  // view twist
+        const double viewHeight = r.bd();
+        r.bd();  // lens length
+        r.bd();  // front clip
+        r.bd();  // back clip
+        r.bd();  // snap angle
+        const double vcx = r.rd();
+        const double vcy = r.rd();
+        for (int i = 0; i < 6; ++i)
+            r.rd();  // snap base, snap spacing, grid spacing
+        r.bs();      // circle zoom
+        if (fmt_.r2007)
+            r.bs();  // grid major
+        viewportFrozen_ = r.bl();
+        const std::uint32_t flags = r.bl();
+        r.textBytes();  // style sheet
+        r.rc();         // render mode
+        r.b();          // UCS at origin
+        r.b();          // UCS per viewport
+        bd3(r);
+        bd3(r);
+        bd3(r);  // UCS origin and axes
+        r.bd();  // elevation
+        r.bs();  // ortho view type
+        if (fmt_.r2004)
+            r.bs();  // shade plot mode
+        if (fmt_.r2007) {
+            r.b();   // use default lights
+            r.rc();  // default lighting type
+            r.bd();  // brightness
+            r.bd();  // contrast
+            readCmc(r, 7);
+        }
+        point3(e, 10, center);
+        add(e, 40, width);
+        add(e, 41, height);
+        point3(e, 17, target);
+        add(e, 12, vcx);
+        add(e, 22, vcy);
+        add(e, 45, viewHeight);
+        add(e, 68, (flags & 0x20000) ? 0 : 1);
+    }
+
+    // LAYOUT object (ODA spec 20.4.84): the name, paper size and paper space block of a layout.
+    void decodeLayoutObject(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        LayoutRec l;
+        l.handle = self;
+        r.textBytes();  // page setup name
+        r.textBytes();  // printer
+        r.bs();         // plot layout flags
+        for (int i = 0; i < 4; ++i)
+            r.bd();  // margins
+        l.width = r.bd();
+        l.height = r.bd();
+        r.textBytes();  // paper size
+        r.bd();
+        r.bd();  // plot origin
+        r.bs();  // paper units
+        l.rotation = r.bs();
+        r.bs();  // plot type
+        for (int i = 0; i < 4; ++i)
+            r.bd();  // window
+        r.bd();
+        r.bd();         // custom print scale
+        r.textBytes();  // style sheet
+        r.bs();         // scale type
+        r.bd();         // scale factor
+        r.bd();
+        r.bd();  // paper image origin
+        if (fmt_.r2004) {
+            r.bs();
+            r.bs();
+            r.bs();  // shade plot
+        }
+        l.name = r.textBytes();
+        l.tab = static_cast<int>(r.bl());
+        r.bs();  // flags
+        bd3(r);  // UCS origin
+        for (int i = 0; i < 4; ++i)
+            r.rd();  // limits
+        bd3(r);      // insertion base
+        bd3(r);
+        bd3(r);  // UCS axes
+        r.bd();  // elevation
+        r.bs();  // ortho view type
+        bd3(r);
+        bd3(r);  // extents
+        if (fmt_.r2004)
+            r.rl();  // viewport count
+        tally(kLayoutObject, r);
+        BitReader h(body, objBits);
+        leadingHandles(h, self, reactors, true);
+        if (fmt_.r2004)
+            h.handle();  // plot view
+        if (fmt_.r2007)
+            h.handle();  // visual style
+        l.block = resolveHandle(h.handle(), self);
+        if (r.failed() || h.failed()) {
+            note("layout " + hex(self) + " is damaged");
+            return;
+        }
+        out_.layoutObjects.push_back(std::move(l));
     }
 
     void point(BitReader& r, EntityRec& e) {

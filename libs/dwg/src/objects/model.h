@@ -90,6 +90,7 @@ struct EntityRec {
     // POLYLINE (vertices) and INSERT (attributes): the first and last owned object handle.
     std::uint64_t firstChild = 0, lastChild = 0;
     bool hasChildren = false;                   // INSERT: the attribute bit was set
+    std::vector<std::uint64_t> frozenLayers{};  // VIEWPORT: layers frozen in it
     std::vector<std::uint64_t> childHandles{};  // R2004+: the owned records, in order
     int color = 256;                            // ACI, 256 = by layer
     int trueColor = -1;                         // 0xRRGGBB when set
@@ -97,6 +98,15 @@ struct EntityRec {
     bool invisible = false;
     int lineweight = 29;  // DWG lineweight code (29 = by layer)
     std::vector<Group> groups{};
+};
+
+struct LayoutRec {
+    std::uint64_t handle = 0;
+    std::string name{};
+    int tab = 0;
+    double width = 0, height = 0;  // paper, mm
+    int rotation = 0;
+    std::uint64_t block = 0;  // its paper space block header
 };
 
 struct Drawing {
@@ -118,6 +128,7 @@ struct Drawing {
     std::map<std::uint32_t, std::array<std::size_t, 2>> layoutCheck{};
     // Objects found away from the place the object map gives: shift in bytes -> how many.
     std::map<std::int64_t, std::size_t> relocated{};
+    std::vector<LayoutRec> layoutObjects{};
     std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
 };

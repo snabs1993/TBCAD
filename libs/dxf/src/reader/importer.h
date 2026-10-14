@@ -187,6 +187,7 @@ private:
         double scaleN = 1;
         bool on = true;
         int id = 0;
+        std::vector<std::string> frozen{};  // layer names (DXF spelling)
     };
     struct Sheet {
         std::string foldedName{};

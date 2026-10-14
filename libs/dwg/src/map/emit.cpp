@@ -85,6 +85,8 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
         o.group(48, e.ltScale);
     if (e.invisible)
         o.group(60, 1);
+    if (e.entmode == 1)
+        o.group(67, 1);
     if (e.dxfType == "INSERT") {
         o.group(2, n.block(e.blockHeader));
         if (e.hasChildren && (e.firstChild || !e.childHandles.empty()))
@@ -106,6 +108,12 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
     }
     for (const Group& g : e.groups)
         emitGroup(o, g);
+    if (e.dxfType == "VIEWPORT" && !e.frozenLayers.empty()) {
+        // The layers frozen in this viewport, by name (read back by the importer).
+        o.group(1001, "TBCAD");
+        for (std::uint64_t h : e.frozenLayers)
+            o.group(1000, "frozen=" + n.layer(h));
+    }
 }
 
 bool isChild(const EntityRec& e) {
@@ -241,9 +249,27 @@ std::string emitDxf(const Drawing& d) {
         if (d.entities[i].entmode == 0)
             byOwner[d.entities[i].owner].push_back(i);
 
+    // Layout sheets (paper space blocks) in tab order, then by handle.
+    std::vector<std::uint64_t> sheets;
+    std::unordered_map<std::uint64_t, const LayoutRec*> layoutOf;
+    for (const LayoutRec& l : d.layoutObjects)
+        layoutOf[l.block] = &l;
+    for (const auto& [h, b] : d.blocks)
+        if (b.name.rfind("*Paper_Space", 0) == 0 || b.name.rfind("*PAPER_SPACE", 0) == 0)
+            sheets.push_back(h);
+    std::stable_sort(sheets.begin(), sheets.end(), [&](std::uint64_t a, std::uint64_t b) {
+        const auto la = layoutOf.find(a), lb = layoutOf.find(b);
+        const int ta = la == layoutOf.end() ? 1 << 30 : la->second->tab;
+        const int tb = lb == layoutOf.end() ? 1 << 30 : lb->second->tab;
+        return ta != tb ? ta < tb : a < b;
+    });
+    auto isSheet = [&](std::uint64_t h) {
+        return std::find(sheets.begin(), sheets.end(), h) != sheets.end();
+    };
+
     o.beginSection("BLOCKS");
     for (const auto& [h, b] : d.blocks) {
-        if (h == modelSpace || h == paperSpace)
+        if (h == modelSpace || h == paperSpace || isSheet(h))
             continue;
         o.begin("BLOCK");
         o.group(8, "0");
@@ -262,6 +288,22 @@ std::string emitDxf(const Drawing& d) {
         o.begin("ENDBLK");
         o.group(8, "0");
     }
+    for (std::size_t i = 0; i < sheets.size(); ++i) {
+        o.begin("BLOCK");
+        o.group(8, "0");
+        o.group(2, i == 0 ? std::string("*Paper_Space") : "*Paper_Space" + std::to_string(i - 1));
+        o.group(70, 0);
+        o.group(10, 0.0);
+        o.group(20, 0.0);
+        o.group(30, 0.0);
+        auto members = byOwner.find(sheets[i]);
+        if (members != byOwner.end())
+            for (std::size_t idx : members->second)
+                if (!isChild(d.entities[idx]))
+                    emitWithChildren(o, d, d.entities[idx], n);
+        o.begin("ENDBLK");
+        o.group(8, "0");
+    }
     o.endSection();
 
     o.beginSection("ENTITIES");
@@ -271,6 +313,23 @@ std::string emitDxf(const Drawing& d) {
             emitWithChildren(o, d, e, n);
     }
     o.endSection();
+    if (!sheets.empty()) {
+        o.beginSection("OBJECTS");
+        for (std::size_t i = 0; i < sheets.size(); ++i) {
+            const auto it = layoutOf.find(sheets[i]);
+            o.begin("LAYOUT");
+            o.group(1, it != layoutOf.end() && !it->second->name.empty()
+                           ? it->second->name
+                           : "Layout" + std::to_string(i + 1));
+            o.group(71, static_cast<long long>(i + 1));
+            if (it != layoutOf.end() && it->second->width > 0 && it->second->height > 0) {
+                o.group(44, it->second->width);
+                o.group(45, it->second->height);
+                o.group(73, static_cast<long long>(it->second->rotation));
+            }
+        }
+        o.endSection();
+    }
     o.endFile();
     return o.take();
 }
