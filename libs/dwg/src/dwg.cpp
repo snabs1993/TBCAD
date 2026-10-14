@@ -477,6 +477,23 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
             for (const auto& [k, n] : cnt)
                 line += " " + k + "=" + std::to_string(n);
             report.info(code::kSkippedObject, line);
+            int shownMt = 0;
+            for (const detail::EntityRec& e : drawing.entities) {
+                if (!dl.count(e.layer) || e.dxfType != "MTEXT" || shownMt >= 4)
+                    continue;
+                std::string gl = "A-ANNO-D mtext " + std::to_string(e.handle) + ":";
+                for (const detail::Group& g : e.groups) {
+                    gl += " " + std::to_string(g.code) + "=";
+                    if (const double* v = std::get_if<double>(&g.value.v))
+                        gl += std::to_string(*v);
+                    else if (const long long* n = std::get_if<long long>(&g.value.v))
+                        gl += std::to_string(*n);
+                    else
+                        gl += "\"" + std::get<std::string>(g.value.v).substr(0, 40) + "\"";
+                }
+                report.info(code::kSkippedObject, gl);
+                ++shownMt;
+            }
             if (firstDim) {
                 std::string gl = "first dimension " + std::to_string(firstDim->dimStyle) +
                                  " block " + std::to_string(firstDim->blockHeader) + ":";
