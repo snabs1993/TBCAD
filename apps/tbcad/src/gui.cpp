@@ -1760,8 +1760,23 @@ void Gui::commandWindow() {
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(lines.size()));
         while (clipper.Step())
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
-                ImGui::TextUnformatted(lines[static_cast<std::size_t>(i)].c_str());
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const std::string& line = lines[static_cast<std::size_t>(i)];
+                const auto starts = [&](const char* w) { return line.rfind(w, 0) == 0; };
+                // Errors red, warnings amber, everything else in the normal text colour.
+                const bool err = starts("Unknown") || starts("Cannot") || starts("Invalid") ||
+                                 starts("Error") || starts("Failed") || starts("No such") ||
+                                 starts("Not found");
+                const bool warn = starts("Warning");
+                if (err || warn) {
+                    const Rgba c = err ? theme_.danger : theme_.snap;
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                                          ImVec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, 1.0f));
+                }
+                ImGui::TextUnformatted(line.c_str());
+                if (err || warn)
+                    ImGui::PopStyleColor();
+            }
         if (lines.size() != lastHistorySize_) {
             ImGui::SetScrollHereY(1.0f);
             lastHistorySize_ = lines.size();
