@@ -147,6 +147,12 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
+    // The default dock sizes changed (smaller command bar and side panels); a layout saved by
+    // an older build is replaced once.
+    if (core_.settings().getString("ui.dockLayout", "") != "v2") {
+        rebuildDock_ = true;
+        core_.settings().setString("ui.dockLayout", "v2");
+    }
     // The workspace used last time. Only the panels are applied here: the docking layout comes
     // back from imgui.ini by itself.
     workspaceName_ = core_.settings().getString("workspace.current", "");
@@ -1438,16 +1444,20 @@ void Gui::dockLayout(ImGuiID ds) {
     if (existing && (existing->IsSplitNode() || existing->Windows.Size > 0) && !rebuildDock_)
         return;  // restored from imgui.ini
     rebuildDock_ = false;
+    frontLayersIn_ = 3;  // a new window takes the tab front; put Layers there once all exist
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::DockBuilderRemoveNode(ds);
     ImGui::DockBuilderAddNode(ds, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(ds, vp->WorkSize);
     ImGuiID center = ds;
-    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.22f, nullptr, &center);
-    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.34f, nullptr, &center);
+    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.15f, nullptr, &center);
+    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.26f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
+    // The last window docked is the one shown in front: Layers first, as in the plan.
     for (const auto& p : registry_.panels())
-        ImGui::DockBuilderDockWindow(p.title.c_str(), right);
+        if (p.title != "Layers")
+            ImGui::DockBuilderDockWindow(p.title.c_str(), right);
+    ImGui::DockBuilderDockWindow("Layers", right);
     ImGui::DockBuilderFinish(ds);
 }
 
@@ -2675,6 +2685,9 @@ ViewportRect Gui::frame() {
     if (!cleanScreen_) {
         panels();
     }
+    if (frontLayersIn_ > 0 && --frontLayersIn_ == 0)
+        ImGui::SetWindowFocus("Layers");
+    anyActivity_ = anyActivity_ || frontLayersIn_ > 0;
     logWindow();
 
     ViewportRect rect{vp->WorkPos.x, vp->WorkPos.y, vp->WorkSize.x, vp->WorkSize.y};
