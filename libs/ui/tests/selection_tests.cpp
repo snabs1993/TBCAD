@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/ui/selection.h"
 #include "test_support.h"
 
@@ -177,6 +178,7 @@ TEST_CASE("lasso selects inside a concave polygon; crossing also takes what it t
 }
 
 TEST_CASE("a click inside a hatch picks it, but a line under the pointer wins") {
+    hatch::registerHatchDisplay();
     Indexed d;
     HatchData h;
     HatchLoop loop;
