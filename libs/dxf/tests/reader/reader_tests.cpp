@@ -598,7 +598,13 @@ TEST_CASE("paper space entities become a layout sheet") {
 
 TEST_CASE("a layout takes its name and paper size from the LAYOUT object and keeps its viewports") {
     Pairs p;
-    p.section("BLOCKS").g(0, "BLOCK").g(2, "*Paper_Space").g(70, 0).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.section("BLOCKS")
+        .g(0, "BLOCK")
+        .g(2, "*Paper_Space")
+        .g(70, 0)
+        .g(10, 0.0)
+        .g(20, 0.0)
+        .g(30, 0.0);
     p.g(0, "LINE").g(8, "0").g(67, 1).g(10, 5.0).g(20, 5.0).g(11, 100.0).g(21, 5.0);
     p.g(0, "VIEWPORT").g(8, "0").g(67, 1).g(10, 210.0).g(20, 148.5).g(40, 400.0).g(41, 280.0);
     p.g(69, 2).g(68, 1).g(12, 1000.0).g(22, 2000.0).g(45, 28000.0);
