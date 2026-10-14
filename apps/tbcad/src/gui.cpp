@@ -680,6 +680,15 @@ void drawNode(const MenuNode& node, ui::AppCore& core, const platform::Keybindin
         if (child.item) {
             std::string shortcut =
                 child.item->actionId.empty() ? "" : keys.label(child.item->actionId);
+            if (shortcut.empty()) {  // no key chord: show the command alias instead, like AutoCAD
+                const std::string& line = child.item->command;
+                const std::string name = line.substr(0, line.find(' '));
+                if (!name.empty() && name.front() != '-' && core.registry().find(name)) {
+                    auto aliases = core.registry().aliasesOf(name);
+                    if (!aliases.empty())
+                        shortcut = aliases.front();
+                }
+            }
             if (ImGui::MenuItem(child.name.c_str(), shortcut.c_str()))
                 core.submitText(child.item->command);
         } else if (ImGui::BeginMenu(child.name.c_str())) {
