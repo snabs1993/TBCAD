@@ -152,6 +152,18 @@ private:
 
     std::size_t mainEnd_ = 0;
     std::int64_t lastShift_ = 0;
+    int hugeSeen_ = 0;
+    std::uint64_t currentHandle_ = 0;
+    Bytes currentBody_;
+    std::size_t currentBits_ = 0;
+    // All data bits of the object being decoded (diagnostic for values that look wrong).
+    std::string dumpCurrent() const {
+        std::string bits;
+        BitReader t(currentBody_);
+        for (std::size_t i = 0; i < currentBits_ && i < 3000; ++i)
+            bits += t.b() ? '1' : '0';
+        return bits;
+    }
 
     // The own handle of the object framed at `offset` (0 when nothing sensible starts there).
     std::uint64_t frameHandle(std::int64_t offset) const {
@@ -289,6 +301,9 @@ private:
             note("object " + hex(e.handle) + " has a damaged string stream" + where(e));
             return;
         }
+        currentHandle_ = self.value;
+        currentBody_ = body;
+        currentBits_ = objBits;
         mainEnd_ = strings.bitSize() != 0 ? strings.bitPos() : (objBits > 0 ? objBits - 1 : 0);
         if (strings.bitSize() != 0)
             r.setStringStream(&strings);
@@ -975,6 +990,12 @@ private:
         const double height = r.rd();
         if (!(flags & 0x10))
             width = r.rd();
+        if (height > 1e5 && hugeSeen_++ < 3) {
+            std::string bits;
+            note(std::string(dxfType) + " " + hex(currentHandle_) + " has height " +
+                 std::to_string(height) + " at (" + std::to_string(ix) + ", " + std::to_string(iy) +
+                 "), flags " + hex(flags) + ", data bits " + dumpCurrent());
+        }
         const std::string value = r.textBytes();
         int generation = 0, horizontal = 0, vertical = 0;
         if (!(flags & 0x20))
