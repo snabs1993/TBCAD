@@ -279,6 +279,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 report.info(code::kSkippedObject, t);
             }
         }
+        {
+            std::string ls = "layout objects:";
+            for (const detail::LayoutRec& l : drawing.layoutObjects) {
+                char t[160];
+                std::snprintf(t, sizeof t, " %llX block %llX tab %d %s[%s]",
+                              static_cast<unsigned long long>(l.handle),
+                              static_cast<unsigned long long>(l.block), l.tab,
+                              l.damaged ? "(dictionary) " : "", l.name.c_str());
+                ls += t;
+            }
+            ls += "; dictionaries read: " + std::to_string(drawing.dictionaries.size());
+            report.info(code::kSkippedObject, ls);
+        }
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)

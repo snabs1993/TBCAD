@@ -107,6 +107,7 @@ struct LayoutRec {
     double width = 0, height = 0;  // paper, mm
     int rotation = 0;
     std::uint64_t block = 0;  // its paper space block header
+    bool damaged = false;     // only the handles were read; name and tab come from the dictionary
 };
 
 struct Drawing {
@@ -129,6 +130,7 @@ struct Drawing {
     // Objects found away from the place the object map gives: shift in bytes -> how many.
     std::map<std::int64_t, std::size_t> relocated{};
     std::vector<LayoutRec> layoutObjects{};
+    std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
     std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
 };

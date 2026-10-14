@@ -38,6 +38,7 @@ enum Type : std::uint32_t {
     kSpline = 0x24,
     kMtext = 0x2C,
     kLeader = 0x2D,
+    kDictionary = 0x2A,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
     kHatch = 1000,
     kLayoutObject = 1001,
@@ -422,6 +423,9 @@ private:
                 return;
             case kLayoutObject:
                 decodeLayoutObject(r, objBits, body, self.value);
+                return;
+            case kDictionary:
+                decodeDictionary(r, objBits, body, self.value);
                 return;
             case kBlock:
             case kEndBlk:
@@ -1143,7 +1147,38 @@ private:
         add(e, 12, vcx);
         add(e, 22, vcy);
         add(e, 45, viewHeight);
-        add(e, 68, (flags & 0x20000) ? 0 : 1);
+        // The status flags did not match the "off" bit on a real file (every viewport of the
+        // sheets read as off), so every viewport is treated as on.
+        add(e, 90, static_cast<long long>(flags));
+        add(e, 68, 1);
+        // A sheet's own overall viewport (id 1) looks at nothing of model space: its view is the
+        // paper itself.
+        if (std::abs(target.x) < 1e-9 && std::abs(target.y) < 1e-9 &&
+            std::abs(vcx - center.x) < 1e-6 && std::abs(vcy - center.y) < 1e-6)
+            add(e, 69, 1);
+    }
+
+    // DICTIONARY (ODA spec 20.4.44): name and handle pairs; the layout dictionary names the
+    // layouts.
+    void decodeDictionary(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        const std::uint32_t n = r.rl();
+        r.bs();  // cloning flag
+        r.rc();  // hard owner flag
+        if (r.failed() || n > 100000)
+            return;
+        std::vector<std::string> names;
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i)
+            names.push_back(r.textBytes());
+        tally(kDictionary, r);
+        BitReader h(body, objBits);
+        leadingHandles(h, self, reactors, true);
+        std::vector<std::pair<std::string, std::uint64_t>> items;
+        for (std::size_t i = 0; i < names.size() && !h.failed(); ++i)
+            items.emplace_back(names[i], resolveHandle(h.handle(), self));
+        if (!r.failed() && !h.failed())
+            out_.dictionaries[self] = std::move(items);
     }
 
     // LAYOUT object (ODA spec 20.4.84): the name, paper size and paper space block of a layout.
@@ -1208,11 +1243,14 @@ private:
                  ", name \"" + l.name + "\", paper " + std::to_string(l.width) + " x " +
                  std::to_string(l.height) + ")" +
                  (failDumps_[kLayoutObject]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
-            // The name and block are what a sheet needs: keep them when they read sensibly.
-            if (l.name.empty() || l.block == 0)
+            // The fields before the block handle are unreliable here; the layout dictionary
+            // names the layout and the paper size comes from the importer's default.
+            if (l.block == 0)
                 return;
-            if (!(l.width > 1 && l.width < 1e6 && l.height > 1 && l.height < 1e6))
-                l.width = l.height = 0;
+            l.name.clear();
+            l.width = l.height = 0;
+            l.tab = 0;
+            l.damaged = true;
         }
         out_.layoutObjects.push_back(std::move(l));
     }
@@ -2205,6 +2243,30 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
     {
+        // Layouts whose own record could not be read are named by the layout dictionary; the
+        // tab order follows the creation order (handles).
+        std::map<std::uint64_t, std::string> nameOf;
+        for (const auto& [dh, items] : out.dictionaries)
+            for (const auto& [name, target] : items)
+                if (name == "ACAD_LAYOUT") {
+                    const auto d = out.dictionaries.find(target);
+                    if (d != out.dictionaries.end())
+                        for (const auto& [ln, lh] : d->second)
+                            nameOf[lh] = ln;
+                }
+        std::vector<LayoutRec*> todo;
+        for (LayoutRec& l : out.layoutObjects)
+            if (l.damaged && nameOf.count(l.handle))
+                todo.push_back(&l);
+        std::sort(todo.begin(), todo.end(),
+                  [](const LayoutRec* a, const LayoutRec* b) { return a->handle < b->handle; });
+        int tab = 1;
+        for (LayoutRec* l : todo) {
+            l->name = nameOf[l->handle];
+            l->tab = l->name == "Model" ? 0 : tab++;
+        }
+    }
+    {
         // Each block lists the entities it owns; where an entity names another owner, believe
         // the list.
         std::unordered_map<std::uint64_t, std::size_t> index;
@@ -2252,7 +2314,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r21: layout diagnostics; r20: layouts (VIEWPORT, LAYOUT), xref paths; r19: "
+    return "r22: layout names from the layout dictionary; r21: layout diagnostics; r20: layouts "
+           "(VIEWPORT, LAYOUT), xref paths; r19: "
            "reachability info";
 }
 
