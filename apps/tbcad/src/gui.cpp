@@ -1435,6 +1435,8 @@ void Gui::commandWindow() {
         ImGui::BeginChild("##history", ImVec2(0, -footer), false,
                           ImGuiWindowFlags_HorizontalScrollbar);
         const auto& lines = core_.history();
+        if (ImFont* mono = monoFont())
+            ImGui::PushFont(mono);
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(lines.size()));
         while (clipper.Step())
@@ -1444,6 +1446,8 @@ void Gui::commandWindow() {
             ImGui::SetScrollHereY(1.0f);
             lastHistorySize_ = lines.size();
         }
+        if (monoFont())
+            ImGui::PopFont();
         ImGui::EndChild();
 
         const float footerTop = ImGui::GetCursorPosY();
@@ -2487,7 +2491,7 @@ void Gui::dialogs() {
         ImGui::BulletText("GLFW (zlib/libpng)");
         ImGui::BulletText("FreeType (FreeType License) and HarfBuzz (MIT)");
         ImGui::BulletText("miniz (MIT), earcut (ISC), glad (CC0)");
-        ImGui::BulletText("Lato and Sarabun fonts (SIL Open Font License)");
+        ImGui::BulletText("Lato, Sarabun and Liberation Mono fonts (SIL Open Font License)");
         ImGui::Spacing();
         ImGui::TextWrapped(
             "Portions of this software are copyright \xC2\xA9 The FreeType Project "

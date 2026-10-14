@@ -16,5 +16,6 @@ TBCAD also uses these third-party components. The full licence text of each is i
 - earcut (ISC)
 - miniz (MIT)
 - Sarabun font (SIL OFL 1.1)
+- Liberation Mono font (SIL OFL 1.1)
 - Lato font (SIL OFL 1.1)
 - doctest (MIT, tests only)

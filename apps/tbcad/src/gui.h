@@ -19,6 +19,7 @@
 #include "wheel_menu.h"
 
 struct GLFWwindow;
+struct ImFont;
 
 namespace tbcad::app {
 
@@ -28,6 +29,9 @@ void installImeHook(GLFWwindow* window);
 // (Re)builds the UI font atlas: Latin (Lato) merged with Thai (Sarabun) at `scale`. Needs the
 // OpenGL backend to be initialised; recreates the font texture.
 void buildFonts(float scale);
+// Monospace font (Liberation Mono, Thai merged from Sarabun) for the command log and the status
+// bar coordinates; nullptr when the font file is missing (use the normal font then).
+ImFont* monoFont();
 // Dear ImGui colours and metrics from the theme tokens; `scale` is the DPI scale for sizes.
 void applyTheme(const ui::Theme& theme, float scale);
 // True when Windows is set to dark app mode (always true elsewhere).

@@ -16,6 +16,14 @@ namespace tbcad::app {
 namespace fs = std::filesystem;
 
 namespace {
+ImFont* gMono = nullptr;
+}  // namespace
+
+ImFont* monoFont() {
+    return gMono;
+}
+
+namespace {
 
 fs::path executableDir() {
 #if defined(_WIN32)
@@ -85,6 +93,18 @@ void buildFonts(float scale) {
         static const ImWchar thai[] = {0x0E01, 0x0E5B, 0};
         io.Fonts->AddFontFromFileTTF(sarabun.c_str(), size + 1.0f * scale, &cfg,
                                      base ? thai : ranges.Data);
+    }
+    gMono = nullptr;
+    if (std::string mono = findAsset("fonts/LiberationMono-Regular.ttf"); !mono.empty()) {
+        static const ImWchar latin[] = {0x0020, 0x00FF, 0x2013, 0x2014, 0x2026, 0};
+        gMono = io.Fonts->AddFontFromFileTTF(mono.c_str(), size, nullptr, latin);
+        if (gMono && !sarabun.empty()) {
+            ImFontConfig cfg;
+            cfg.MergeMode = true;
+            cfg.GlyphOffset.y = 1.0f * scale;
+            static const ImWchar thai[] = {0x0E01, 0x0E5B, 0};
+            io.Fonts->AddFontFromFileTTF(sarabun.c_str(), size + 1.0f * scale, &cfg, thai);
+        }
     }
     if (!base && sarabun.empty())
         io.Fonts->AddFontDefault();
