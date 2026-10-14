@@ -1995,6 +1995,10 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
     reader.run(map);
 }
 
+const char* readerRevision() {
+    return "3920a28+ r10: variants by one-fit rule, range check, failure reasons";
+}
+
 void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
                      std::vector<std::string>& lines) {
     std::map<std::uint32_t, std::size_t> histogram, tails;

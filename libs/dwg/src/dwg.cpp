@@ -156,6 +156,10 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
     return result;
 }
 
+std::string readerRevision() {
+    return detail::readerRevision();
+}
+
 std::string describe(std::span<const std::byte> bytes) {
     std::string out;
     auto line = [&](const std::string& s) { out += s + "\n"; };
@@ -169,6 +173,7 @@ std::string describe(std::span<const std::byte> bytes) {
         return h;
     };
     const VersionInfo v = detectVersion(bytes);
+    line(std::string("object reader revision: ") + detail::readerRevision());
     line("file size: " + std::to_string(bytes.size()) + " bytes");
     line("version: " + (v.code.empty() ? std::string("(not a DWG file)") : v.code + " " + v.name) +
          (v.supported ? "" : " (not supported)"));
