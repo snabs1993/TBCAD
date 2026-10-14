@@ -2134,7 +2134,10 @@ private:
         if (fmt_.r2018) {
             const int kind = r.rc();
             if (kind != 1) {
-                r.fail();  // multi-line attributes carry an embedded MTEXT: not read yet
+                // A multi-line attribute carries an embedded MTEXT after the text fields; the
+                // text fields already hold its plain text, so the rest is left unread.
+                add(e, 2, def ? "MLATTDEF" : "MLATTRIB");
+                add(e, 70, 0);
                 return;
             }
         }
@@ -2225,7 +2228,7 @@ private:
         if (fmt_.r2004) {
             const std::uint32_t background = r.bl();
             if ((background & 1) || (fmt_.r2018 && (background & 0x10))) {
-                r.bl();  // background scale factor
+                r.bd();  // background scale factor (a real in real files, not the long of the spec)
                 readCmc(r, 7);
                 r.bl();  // background transparency
             }
@@ -2502,7 +2505,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r49: data of other blocks inside each viewport counted; r48: model data inside each "
+    return "r50: mtext background scale is a real; multi-line attributes kept; r49: data of other "
+           "blocks inside each viewport counted; r48: model data inside each "
            "viewport counted; r47: viewport direction and twist "
            "listed; r46: paper rectangle moved to the sheet "
            "origin; r45: layout margins, limits and "
