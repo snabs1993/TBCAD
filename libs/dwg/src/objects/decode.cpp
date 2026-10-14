@@ -671,7 +671,7 @@ private:
                 bool anonymous = false, hasAtts = false, isXref = false, overlay = false;
                 bool f64 = false, xdep = false;
                 std::uint32_t ownedCount = 0, insertCount = 0;
-                auto body = [&](BitReader& rr, BlockRec& bb) {
+                auto blockBody = [&](BitReader& rr, BlockRec& bb) {
                     bb.name = rr.textBytes();
                     readTriple(rr, f64, xdep);
                     anonymous = rr.b();
@@ -712,12 +712,12 @@ private:
                         BitReader probe = r;
                         BlockRec pb;
                         tripleVariant_ = v;
-                        body(probe, pb);
+                        blockBody(probe, pb);
                         fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
                     }
                     tripleVariant_ = fits[0] != fits[1] ? (fits[0] ? 0 : 1) : -1;
                 }
-                body(r, b);
+                blockBody(r, b);
                 if (r.failed()) {
                     note("block header " + hex(self) + " is damaged (read to bit " +
                          std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
