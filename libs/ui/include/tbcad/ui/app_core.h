@@ -134,6 +134,17 @@ public:
     // opens as a copy: Save always asks for a new name and never writes the original.
     void setForeignReader(std::string extension, ForeignReadFn read, bool readOnly);
     bool canOpenExtension(std::string_view lowerExtension) const;
+    // Opens a foreign file on a worker thread so the window keeps drawing (and can show how long
+    // it has been). False when the file is not a foreign format or one open is already running;
+    // the caller then uses openFile. pollOpen() finishes it on the main thread, once per frame:
+    // it returns the outcome when the open has just ended, nothing while it is still running.
+    bool openFileAsync(const std::filesystem::path& path);
+    std::optional<Result<void>> pollOpen();
+    struct OpeningInfo {
+        std::filesystem::path path;
+        double seconds = 0;
+    };
+    std::optional<OpeningInfo> opening() const;
     // True while the drawing came from a read-only format and has not been saved as .tbcad.
     bool readOnlyOrigin() const;
     // The window shows a failed open in its own message box; it turns the command-line echo off so
@@ -328,6 +339,10 @@ private:
         bool readOnly = true;
     };
     std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
+    struct PendingOpen;
+    Result<void> finishForeignOpen(const std::filesystem::path& path, const std::string& ext,
+                                   bool readOnly, Result<ForeignOpenResult> res);
+    std::shared_ptr<PendingOpen> pendingOpen_{};
     bool echoOpenFailures_ = true;
     void printOpenFailure(const std::string& text);
     cmd::Registry& registry_;

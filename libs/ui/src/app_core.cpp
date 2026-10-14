@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <map>
 #include <sstream>
@@ -786,36 +787,82 @@ std::string AppCore::readOnlyBanner() const {
            " opened read-only. Use Save As to keep a copy as .tbcad or .dxf.";
 }
 
+Result<void> AppCore::finishForeignOpen(const fs::path& path, const std::string& ext, bool readOnly,
+                                        Result<ForeignOpenResult> res) {
+    if (!res) {
+        printOpenFailure("Cannot open " + path.string() + ": " + res.error().message);
+        settings_.removeRecentFile(platform::pathToUtf8(path));
+        return res.error();
+    }
+    ForeignOpenResult& r = res.value();
+    addSession(std::move(r.document), path);
+    if (readOnly) {
+        std::string fmt = ext.size() > 1 ? ext.substr(1) : ext;
+        for (char& c : fmt)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        session_->readOnlyFormat = fmt;
+    }
+    for (const auto& m : r.messages)
+        print(m);
+    settings_.addRecentFile(platform::pathToUtf8(path));
+    (void)settings_.save(paths_.settingsFile());
+    print("Opened " + path.string() + (r.format.empty() ? "" : " (" + r.format + ")") +
+          (readOnly ? " read-only" : ""));
+    if (readOnly)
+        print(readOnlyBanner());
+    return {};
+}
+
+struct AppCore::PendingOpen {
+    fs::path path;
+    std::string ext;
+    bool readOnly = true;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    std::future<Result<ForeignOpenResult>> result;
+};
+
+bool AppCore::openFileAsync(const fs::path& path) {
+    if (pendingOpen_ || slotOfFile(path))
+        return false;
+    auto it = foreignReaders_.find(lowerExtension(path));
+    if (it == foreignReaders_.end())
+        return false;
+    auto job = std::make_shared<PendingOpen>();
+    job->path = path;
+    job->ext = it->first;
+    job->readOnly = it->second.readOnly;
+    job->result =
+        std::async(std::launch::async, [read = it->second.read, path] { return read(path); });
+    pendingOpen_ = std::move(job);
+    return true;
+}
+
+std::optional<Result<void>> AppCore::pollOpen() {
+    if (!pendingOpen_)
+        return std::nullopt;
+    if (pendingOpen_->result.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return std::nullopt;
+    std::shared_ptr<PendingOpen> job = std::move(pendingOpen_);
+    pendingOpen_.reset();
+    return finishForeignOpen(job->path, job->ext, job->readOnly, job->result.get());
+}
+
+std::optional<AppCore::OpeningInfo> AppCore::opening() const {
+    if (!pendingOpen_)
+        return std::nullopt;
+    return OpeningInfo{
+        pendingOpen_->path,
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - pendingOpen_->start)
+            .count()};
+}
+
 Result<void> AppCore::openFile(const fs::path& path) {
     if (auto open = slotOfFile(path)) {
         activateDocument(*open);
         return {};
     }
-    if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
-        auto res = it->second.read(path);
-        if (!res) {
-            printOpenFailure("Cannot open " + path.string() + ": " + res.error().message);
-            settings_.removeRecentFile(platform::pathToUtf8(path));
-            return res.error();
-        }
-        ForeignOpenResult& r = res.value();
-        addSession(std::move(r.document), path);
-        if (it->second.readOnly) {
-            std::string fmt = it->first.size() > 1 ? it->first.substr(1) : it->first;
-            for (char& c : fmt)
-                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            session_->readOnlyFormat = fmt;
-        }
-        for (const auto& m : r.messages)
-            print(m);
-        settings_.addRecentFile(platform::pathToUtf8(path));
-        (void)settings_.save(paths_.settingsFile());
-        print("Opened " + path.string() + (r.format.empty() ? "" : " (" + r.format + ")") +
-              (it->second.readOnly ? " read-only" : ""));
-        if (it->second.readOnly)
-            print(readOnlyBanner());
-        return {};
-    }
+    if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end())
+        return finishForeignOpen(path, it->first, it->second.readOnly, it->second.read(path));
     if (isDxfPath(path))
         return openDxf(path);
     if (tmpl::isTemplatePath(path)) {
