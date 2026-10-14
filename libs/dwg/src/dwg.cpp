@@ -432,7 +432,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         }
         {
             // Dimension styles (text height, scale, arrow size decide how dimensions draw) and
-            // the layers whose name starts with A-ANNO-D.
+            //
             std::size_t shown = 0;
             for (const auto& [dh, ds] : drawing.dimStyles) {
                 if (++shown > 6)
@@ -450,95 +450,6 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         line += std::to_string(*n);
                 }
                 report.info(code::kSkippedObject, line);
-            }
-            for (const auto& [lh, ly] : drawing.layers)
-                if (ly.name.rfind("A-ANNO-D", 0) == 0)
-                    report.info(code::kSkippedObject,
-                                "layer \"" + ly.name + "\" colour " + std::to_string(ly.color) +
-                                    " true " + std::to_string(ly.trueColor) + " lineweight " +
-                                    std::to_string(ly.lineweight));
-        }
-        {
-            // What sits on the A-ANNO-D layers: counts by type, plus the first dimension.
-            std::set<std::uint64_t> dl;
-            for (const auto& [lh, ly] : drawing.layers)
-                if (ly.name.rfind("A-ANNO-D", 0) == 0)
-                    dl.insert(lh);
-            std::map<std::string, int> cnt;
-            const detail::EntityRec* firstDim = nullptr;
-            for (const detail::EntityRec& e : drawing.entities)
-                if (dl.count(e.layer)) {
-                    ++cnt[e.dxfType + " lw" + std::to_string(e.lineweight) + " col" +
-                          std::to_string(e.color)];
-                    if (!firstDim && e.dxfType == "DIMENSION")
-                        firstDim = &e;
-                }
-            std::string line = "A-ANNO-D entities:";
-            for (const auto& [k, n] : cnt)
-                line += " " + k + "=" + std::to_string(n);
-            report.info(code::kSkippedObject, line);
-            int shownMt = 0, shownIns = 0;
-            for (const detail::EntityRec& e : drawing.entities) {
-                if (!dl.count(e.layer))
-                    continue;
-                if (e.dxfType == "MTEXT"    ? shownMt++ >= 1
-                    : e.dxfType == "INSERT" ? shownIns++ >= 6
-                                            : true)
-                    continue;
-                std::string gl = "A-ANNO-D " + e.dxfType + " " + std::to_string(e.handle) + ":";
-                for (const detail::Group& g : e.groups) {
-                    gl += " " + std::to_string(g.code) + "=";
-                    if (const double* v = std::get_if<double>(&g.value.v))
-                        gl += std::to_string(*v);
-                    else if (const long long* n = std::get_if<long long>(&g.value.v))
-                        gl += std::to_string(*n);
-                    else
-                        gl += "\"" + std::get<std::string>(g.value.v).substr(0, 40) + "\"";
-                }
-                report.info(code::kSkippedObject, gl);
-            }
-            if (!dl.empty()) {
-                std::uint64_t bh = 0;
-                for (const detail::EntityRec& e : drawing.entities)
-                    if (dl.count(e.layer) && e.dxfType == "INSERT") {
-                        bh = e.blockHeader;
-                        break;
-                    }
-                const auto bi = drawing.blocks.find(bh);
-                report.info(code::kSkippedObject,
-                            "A-ANNO-D first insert block: " +
-                                (bi != drawing.blocks.end() ? bi->second.name : "(unknown)"));
-                int n = 0;
-                for (const detail::EntityRec& e : drawing.entities) {
-                    if (e.owner != bh || e.entmode != 0 || n++ >= 6)
-                        continue;
-                    std::string gl =
-                        "  member " + e.dxfType + " lw" + std::to_string(e.lineweight) + ":";
-                    for (const detail::Group& g : e.groups) {
-                        gl += " " + std::to_string(g.code) + "=";
-                        if (const double* v = std::get_if<double>(&g.value.v))
-                            gl += std::to_string(*v);
-                        else if (const long long* k = std::get_if<long long>(&g.value.v))
-                            gl += std::to_string(*k);
-                        else
-                            gl += "\"" + std::get<std::string>(g.value.v).substr(0, 24) + "\"";
-                    }
-                    report.info(code::kSkippedObject, gl);
-                }
-            }
-            if (firstDim) {
-                std::string gl = "first dimension " + std::to_string(firstDim->dimStyle) +
-                                 " block " + std::to_string(firstDim->blockHeader) + ":";
-                for (const detail::Group& g : firstDim->groups) {
-                    gl += " " + std::to_string(g.code) + "=";
-                    if (const double* v = std::get_if<double>(&g.value.v))
-                        gl += std::to_string(*v);
-                    else if (const long long* n = std::get_if<long long>(&g.value.v))
-                        gl += std::to_string(*n);
-                    else
-                        gl += "\"" + std::get<std::string>(g.value.v).substr(0, 24) + "\"";
-                }
-                report.info(code::kSkippedObject, gl);
             }
         }
         std::string ins = "inserts per owner:";

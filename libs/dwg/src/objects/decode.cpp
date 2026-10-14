@@ -2487,7 +2487,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r39: dimension styles listed; r38: widest fills listed; r37: tallest texts listed; "
+    return "r44: dimension style overrides read from extended data; r39: dimension styles listed; "
+           "r38: widest fills listed; r37: tallest texts listed; "
            "r36: widest ignores dimension "
            "clone point; r35: widest "
            "entities listed with groups; "
