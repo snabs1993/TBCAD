@@ -278,16 +278,18 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 if (e.dxfType != "VIEWPORT" || ++n > 40)
                     continue;
                 const auto o = drawing.blocks.find(e.owner);
-                char t[320];
-                std::snprintf(t, sizeof t,
-                              "viewport %llX on %s: centre %.1f,%.1f size %.1f x %.1f; target "
-                              "%.1f,%.1f view centre %.1f,%.1f height %.1f; %zu frozen; %s",
-                              static_cast<unsigned long long>(e.handle),
-                              e.entmode == 0 && o != drawing.blocks.end() ? o->second.name.c_str()
-                                                                          : "paper space",
-                              val(e, 10), val(e, 20), val(e, 40), val(e, 41), val(e, 17),
-                              val(e, 27), val(e, 12), val(e, 22), val(e, 45), e.frozenLayers.size(),
-                              val(e, 68) != 0 ? "on" : "off");
+                char t[480];
+                std::snprintf(
+                    t, sizeof t,
+                    "viewport %llX on %s: centre %.1f,%.1f size %.1f x %.1f; target "
+                    "%.1f,%.1f view centre %.1f,%.1f height %.1f; direction %.3f,%.3f,%.3f twist "
+                    "%.3f; %zu frozen; %s",
+                    static_cast<unsigned long long>(e.handle),
+                    e.entmode == 0 && o != drawing.blocks.end() ? o->second.name.c_str()
+                                                                : "paper space",
+                    val(e, 10), val(e, 20), val(e, 40), val(e, 41), val(e, 17), val(e, 27),
+                    val(e, 12), val(e, 22), val(e, 45), val(e, 16), val(e, 26), val(e, 36),
+                    val(e, 51), e.frozenLayers.size(), val(e, 68) != 0 ? "on" : "off");
                 report.info(code::kSkippedObject, t);
             }
         }

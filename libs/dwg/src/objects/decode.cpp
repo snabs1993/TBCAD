@@ -1247,8 +1247,8 @@ private:
         const double width = r.bd();
         const double height = r.bd();
         const Vec3 target = bd3(r);
-        bd3(r);  // view direction
-        r.bd();  // view twist
+        const Vec3 viewDir = bd3(r);
+        const double twist = r.bd();
         const double viewHeight = r.bd();
         r.bd();  // lens length
         r.bd();  // front clip
@@ -1285,6 +1285,9 @@ private:
         add(e, 40, width);
         add(e, 41, height);
         point3(e, 17, target);
+        point3(e, 16, viewDir);
+        if (twist != 0)
+            add(e, 51, twist);
         add(e, 12, vcx);
         add(e, 22, vcy);
         add(e, 45, viewHeight);
@@ -2499,7 +2502,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r46: paper rectangle moved to the sheet origin; r45: layout margins, limits and "
+    return "r47: viewport direction and twist listed; r46: paper rectangle moved to the sheet "
+           "origin; r45: layout margins, limits and "
            "extents listed; r44: dimension style overrides read "
            "from extended data; r39: dimension styles listed; "
            "r38: widest fills listed; r37: tallest texts listed; "
