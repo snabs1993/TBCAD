@@ -1049,7 +1049,7 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGui::DockBuilderSetNodeSize(ds, vp->WorkSize);
     ImGuiID center = ds;
     ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.22f, nullptr, &center);
-    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.28f, nullptr, &center);
+    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.34f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
     for (const auto& p : registry_.panels())
         ImGui::DockBuilderDockWindow(p.title.c_str(), right);
@@ -1470,7 +1470,7 @@ void Gui::updateSuggestions() {
 
 void Gui::drawSuggestions(ImVec2 inputPos, float width) {
     ImGui::SetNextWindowPos(ImVec2(inputPos.x, inputPos.y - 4), ImGuiCond_Always, ImVec2(0, 1));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(width, 560.0f), 0), ImVec2(560, 400));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(std::min(width, 760.0f), 0), ImVec2(760, 400));
     const ImGuiWindowFlags wf = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
@@ -1478,6 +1478,14 @@ void Gui::drawSuggestions(ImVec2 inputPos, float width) {
     if (ImGui::Begin("##suggest", nullptr, wf)) {
         const ImVec4 muted = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
         const auto& keys = core_.keybindings();
+        // Columns: name, (alias), description; the description starts after the widest alias.
+        float nameW = 0, aliasW = 0;
+        for (const auto& m : suggestions_) {
+            nameW = std::max(nameW, ImGui::CalcTextSize(m.name.c_str()).x);
+            aliasW = std::max(aliasW, ImGui::CalcTextSize(("(" + m.alias + ")").c_str()).x);
+        }
+        const float aliasX = nameW + 16.0f * dpiScale_;
+        const float descX = aliasX + aliasW + 16.0f * dpiScale_;
         for (std::size_t i = 0; i < suggestions_.size(); ++i) {
             const auto& m = suggestions_[i];
             ImGui::PushID(static_cast<int>(i));
@@ -1495,10 +1503,10 @@ void Gui::drawSuggestions(ImVec2 inputPos, float width) {
                 suggestSel_ = static_cast<int>(i);
             ImGui::SameLine(0, 0);
             ImGui::TextUnformatted(m.name.c_str());
-            ImGui::SameLine(150);
+            ImGui::SameLine(aliasX);
             ImGui::PushStyleColor(ImGuiCol_Text, muted);
             ImGui::TextUnformatted(m.alias.empty() ? "" : ("(" + m.alias + ")").c_str());
-            ImGui::SameLine(210);
+            ImGui::SameLine(descX);
             ImGui::TextUnformatted(m.description.c_str());
             ImGui::PopStyleColor();
             ImGui::PopID();

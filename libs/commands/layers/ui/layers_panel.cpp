@@ -364,14 +364,14 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 140);
-        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 30);
-        ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 34);
-        ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 34);
-        ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 56);
-        ImGui::TableSetupColumn("Linetype", ImGuiTableColumnFlags_WidthFixed, 96);
-        ImGui::TableSetupColumn("Weight", ImGuiTableColumnFlags_WidthFixed, 84);
-        ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 34);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 28);
+        ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 46);
+        ImGui::TableSetupColumn("Linetype", ImGuiTableColumnFlags_WidthFixed, 80);
+        ImGui::TableSetupColumn("Weight", ImGuiTableColumnFlags_WidthFixed, 64);
+        ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableHeadersRow();
 
         ImGuiListClipper clipper;
