@@ -117,6 +117,11 @@ private:
     void decodeOne(const MapEntry& e) {
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
+        // R2010 and later: the size of the handle stream (in bits) follows the size. The size
+        // counts the bytes after that field (checked against a real R2018 file).
+        std::size_t handleBits = 0;
+        if (fmt_.r2010)
+            handleBits = static_cast<std::size_t>(head.mcUnsigned());
         const std::size_t lead = head.bytePos();
         if (head.failed() || size == 0 || size > file_.size() ||
             static_cast<std::size_t>(e.offset) + lead + size > file_.size()) {
@@ -125,9 +130,6 @@ private:
         }
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
         BitReader r(body);
-        std::size_t handleBits = 0;
-        if (fmt_.r2010)
-            handleBits = static_cast<std::size_t>(r.mcUnsigned());
         std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
         if (type >= 500) {
             const std::string cls = dxfNameOfClass(type);
@@ -1654,7 +1656,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 
 void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
                      std::vector<std::string>& lines) {
-    std::map<std::uint32_t, std::size_t> histogram;
+    std::map<std::uint32_t, std::size_t> histogram, tails;
     std::size_t bad = 0, shown = 0;
     for (const MapEntry& e : map) {
         if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file.size()) {
@@ -1663,6 +1665,9 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
         }
         BitReader head(file.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
+        std::size_t handleBits = 0;
+        if (fmt.r2010)
+            handleBits = static_cast<std::size_t>(head.mcUnsigned());
         const std::size_t lead = head.bytePos();
         if (head.failed() || size == 0 ||
             static_cast<std::size_t>(e.offset) + lead + size > file.size()) {
@@ -1673,14 +1678,24 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
             continue;
         }
         BitReader r(file.subspan(static_cast<std::size_t>(e.offset) + lead, size));
-        std::size_t handleBits = 0;
-        if (fmt.r2010)
-            handleBits = static_cast<std::size_t>(r.mcUnsigned());
         const std::uint32_t type =
             fmt.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
         std::size_t objBits = fmt.r2010 ? size * 8 - handleBits : r.rl();
         const HandleRef self = r.handle();
         ++histogram[type];
+        // The last data bits of a few table records and entities: they show where the string
+        // stream of the format sits.
+        if (objBits >= 8 && objBits <= size * 8 && (tails[type]++ < 3) &&
+            (type == 49 || type == 51 || type == 53 || type == 57 || type == 19 || type == 1)) {
+            std::string bits;
+            const std::size_t from = objBits > 200 ? objBits - 200 : 0;
+            BitReader t(file.subspan(static_cast<std::size_t>(e.offset) + lead, size), from);
+            for (std::size_t i = from; i < objBits; ++i)
+                bits += t.b() ? '1' : '0';
+            lines.push_back("tail of data of type " + std::to_string(type) + " object " +
+                            std::to_string(e.handle) + " (" + std::to_string(objBits) +
+                            " data bits, last " + std::to_string(objBits - from) + "): " + bits);
+        }
         if (shown++ < 12)
             lines.push_back("object " + std::to_string(e.handle) + " at " +
                             std::to_string(e.offset) + ": " + std::to_string(size) +

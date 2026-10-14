@@ -171,6 +171,33 @@ std::string describe(std::span<const std::byte> bytes) {
             const auto hnd = secs.find("AcDb:Handles");
             if (objs != secs.end() && hnd != secs.end()) {
                 std::vector<std::string> n2;
+                {
+                    // The framing of the first handle-map sections: size, first bytes, the bytes
+                    // just before the next section (CRC) and the section after.
+                    const auto& hd = hnd->second;
+                    std::size_t at = 0;
+                    for (int si = 0; si < 4 && at + 2 <= hd.size(); ++si) {
+                        const std::size_t sz = (std::size_t(hd[at]) << 8) | hd[at + 1];
+                        std::string l = "handle map section " + std::to_string(si) + " at " +
+                                        std::to_string(at) + ": size " + std::to_string(sz) +
+                                        ", starts";
+                        char b[8];
+                        for (std::size_t k = 2; k < 14 && at + k < hd.size(); ++k) {
+                            std::snprintf(b, sizeof b, " %02X", hd[at + k]);
+                            l += b;
+                        }
+                        l += ", ends";
+                        for (std::size_t k = (sz >= 6 ? sz - 4 : 0);
+                             k < sz + 6 && at + k < hd.size(); ++k) {
+                            std::snprintf(b, sizeof b, " %02X", hd[at + k]);
+                            l += b;
+                        }
+                        line(l);
+                        if (sz <= 2)
+                            break;
+                        at += sz + 2;
+                    }
+                }
                 const auto map = detail::readObjectMapData(hnd->second, 0, hnd->second.size(), n2);
                 for (const std::string& n : n2)
                     line("note: " + n);

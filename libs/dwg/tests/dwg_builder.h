@@ -312,29 +312,23 @@ private:
         } else {
             data.b(false);
         }
-        std::vector<std::uint8_t> mc;
-        std::size_t handleBits = handles.bitCount();
-        std::size_t total = 0;
-        for (int pass = 0; pass < 3; ++pass) {  // the MC length depends on the padded size
-            mc.clear();
-            std::size_t v = handleBits;
-            do {
-                std::uint8_t byte = v & 0x7f;
-                v >>= 7;
-                mc.push_back(static_cast<std::uint8_t>(byte | (v ? 0x80 : 0)));
-            } while (v);
-            total = mc.size() * 8 + data.bitCount() + handles.bitCount();
-            handleBits = handles.bitCount() + ((8 - total % 8) % 8);
-        }
+        const std::size_t total = data.bitCount() + handles.bitCount();
+        const std::size_t handleBits = handles.bitCount() + ((8 - total % 8) % 8);
         BitWriter all;
-        for (std::uint8_t b : mc)
-            all.rc(b);
         appendBits(all, data);
         appendBits(all, handles);
-        std::vector<std::uint8_t> body = all.bytes();
+        const std::vector<std::uint8_t> body = all.bytes();
+        // Size of the data and handle bytes, then the handle stream size as MC (not part of the
+        // counted size), as in a real R2018 file.
         BitWriter size;
         size.ms(static_cast<std::uint32_t>(body.size()));
         std::vector<std::uint8_t> out = size.bytes();
+        std::size_t v = handleBits;
+        do {
+            const auto byte = static_cast<std::uint8_t>(v & 0x7f);
+            v >>= 7;
+            out.push_back(static_cast<std::uint8_t>(byte | (v ? 0x80 : 0)));
+        } while (v);
         out.insert(out.end(), body.begin(), body.end());
         out.push_back(0);
         out.push_back(0);
