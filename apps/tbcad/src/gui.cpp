@@ -1999,6 +1999,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         pressTookPoint_ = pointPrompt && !io.KeyAlt;
         if (pressTookPoint_)
             core_.click(ps);
+        else if (!prompt && !io.KeyAlt && !doubleClick_)
+            pressTookPoint_ = core_.pressOnGrip(ps);  // a grip starts its edit on press
     }
     if (leftDown_) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {

@@ -14,6 +14,7 @@
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/hatch/fill.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/tmpl/tmpl.h"
@@ -206,8 +207,10 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     ++generation_;
     lastTessellatedFor_ = camera_;
     notifySessionHooks();
-    if (fitView && !session_->index.empty())
+    if (fitView && !session_->index.empty()) {
         zoomExtents();
+        fitPending_ = 6;
+    }
 }
 
 void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
@@ -937,19 +940,30 @@ std::vector<std::string> AppCore::complete(std::string_view prefix) const {
 // ---- viewport ----------------------------------------------------------------------------------
 
 void AppCore::setViewportSize(int w, int h) {
-    camera_.viewportW = std::max(w, 1);
-    camera_.viewportH = std::max(h, 1);
+    const int nw = std::max(w, 1), nh = std::max(h, 1);
+    const bool changed = nw != camera_.viewportW || nh != camera_.viewportH;
+    camera_.viewportW = nw;
+    camera_.viewportH = nh;
+    // A drawing just opened was fitted to the size the window had then; while the user has not
+    // touched the view, fit it again when the panels settle into their real size.
+    if (changed && fitPending_ > 0 && session_) {
+        --fitPending_;
+        zoomExtents();
+    }
 }
 
 void AppCore::setCamera(const render::Camera2D& cam) {
     camera_ = cam;
+    fitPending_ = 0;
 }
 
 void AppCore::zoomAtScreen(Vec2 screen, double notches) {
+    fitPending_ = 0;
     camera_.zoomAt(screen, std::pow(kZoomStep, notches));
 }
 
 void AppCore::panPixels(double dx, double dy) {
+    fitPending_ = 0;
     camera_.panPixels(dx, dy);
 }
 
@@ -1159,6 +1173,17 @@ PanelContext AppCore::makePanelContext() {
     pc.commandActive = runner().active();
     pc.runCommand = [this](const std::string& line) { submitText(line); };
     return pc;
+}
+
+bool AppCore::pressOnGrip(const PointerState& p) {
+    if (runner().active() || !ui_ || ui_->idleClickHooks().empty())
+        return false;
+    const Vec2 world = makeRaw(p).worldCursor;
+    PanelContext pc = makePanelContext();
+    for (const auto& hook : ui_->idleClickHooks())
+        if (hook(pc, world, apertureMm(), p.shift, p.ctrl))
+            return true;
+    return false;
 }
 
 void AppCore::click(const PointerState& p) {
@@ -1410,6 +1435,30 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             pb.color = ui::withAlpha(theme_.text, 0.85);
             overlay.polyline(render::Space::Screen, box, true, pb);
         }
+    }
+    // A selected or hovered hatch is a fill without strokes, so outline its boundary: otherwise
+    // "1 selected" shows nothing on screen.
+    {
+        render::OverlayStyle outline;
+        outline.widthPx = 2.0;
+        auto outlineHatch = [&](EntityId id, Rgba color) {
+            const Entity* e = session_->doc.find(id);
+            const auto* h = e ? entityAs<HatchData>(*e) : nullptr;
+            if (!h)
+                return;
+            outline.color = color;
+            for (const HatchLoop& loop : h->loops) {
+                std::vector<Vec2> pts;
+                for (const geom::CurveRef& c : hatch::loopCurves(loop))
+                    geom::flatten(c, camera_.pixelSizeMm(), pts);
+                if (pts.size() >= 2)
+                    overlay.polyline(render::Space::World, pts, true, outline);
+            }
+        };
+        for (EntityId id : selection_)
+            outlineHatch(id, theme_.select);
+        if (hoverId_ && !std::count(selection_.begin(), selection_.end(), hoverId_))
+            outlineHatch(hoverId_, ui::withAlpha(theme_.select, 0.5));
     }
     if (ui) {
         PanelContext pc = makePanelContext();
