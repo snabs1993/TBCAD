@@ -5,6 +5,7 @@
 
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/display.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/pdf/pdf.h"
@@ -394,4 +395,31 @@ TEST_CASE("viewport edits with an id that does not exist are refused, not crashe
         CHECK_FALSE(setViewportOn(tx, "S", id, false).ok());
         CHECK_FALSE(removeViewport(tx, "S", id).ok());
     }
+}
+
+TEST_CASE("layouts imported from a DXF file are read by the layout table") {
+    const std::string dxfText =
+        "  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\n*Paper_Space\n 70\n0\n 10\n0\n 20\n0\n 30\n0\n"
+        "  0\nLINE\n  8\n0\n 67\n1\n 10\n5\n 20\n5\n 11\n100\n 21\n5\n"
+        "  0\nVIEWPORT\n  8\n0\n 67\n1\n 10\n210\n 20\n148.5\n 40\n400\n 41\n280\n 69\n2\n"
+        " 68\n1\n 12\n1000\n 22\n2000\n 45\n28000\n  0\nENDBLK\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n  0\nLAYOUT\n  1\nSheet A1\n 71\n1\n 44\n841\n 45\n594\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    dxf::Report report;
+    auto r = dxf::importDxf(std::span<const std::byte>(
+                                reinterpret_cast<const std::byte*>(dxfText.data()), dxfText.size()),
+                            {}, report);
+    REQUIRE(r.ok());
+    const Document& doc = *r.value().document;
+    const std::vector<Layout> all = layouts(doc);
+    REQUIRE(all.size() == 1);
+    CHECK(all[0].name == "Sheet A1");
+    CHECK(all[0].widthMm == doctest::Approx(841));
+    CHECK(all[0].heightMm == doctest::Approx(594));
+    REQUIRE(all[0].viewports.size() == 1);
+    CHECK(all[0].viewports[0].scaleN == doctest::Approx(100));
+    CHECK(all[0].viewports[0].center.x == doctest::Approx(1000));
+    const BlockDef* sheet = doc.block(all[0].content);
+    REQUIRE(sheet != nullptr);
+    CHECK(sheet->entities.size() == 1);
 }
