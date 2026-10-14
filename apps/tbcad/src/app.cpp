@@ -191,14 +191,10 @@ void App::drawScene() {
     renderer_.draw(core_->underlayImages());
     core_->buildUnderlay(underlay_, uiRegistry_.get());
     renderer_.draw(underlay_);
-<<<<<<< HEAD
-    renderer_.draw(core_->renderScene());
-=======
     PhaseTimer pt;
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     if (PhaseTimer::enabled())
         gPhase[3] += pt.lap();
->>>>>>> origin/main
     core_->buildOverlay(overlay_, uiRegistry_.get());
     if (PhaseTimer::enabled())
         gPhase[4] += pt.lap();
