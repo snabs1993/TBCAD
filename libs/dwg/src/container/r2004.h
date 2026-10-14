@@ -25,7 +25,9 @@ std::uint32_t pageChecksum(std::uint32_t seed, std::span<const std::uint8_t> dat
 // The 0x6C-byte pad that the file header data is XORed with (and that fills gaps).
 std::vector<std::uint8_t> headerMask(std::size_t length);
 
+// `trace`, when given, receives one line per structural step (for diagnosing files that fail).
 Result<SectionSet> readSections(std::span<const std::uint8_t> file,
-                                std::vector<std::string>& notes);
+                                std::vector<std::string>& notes,
+                                std::vector<std::string>* trace = nullptr);
 
 }  // namespace tbcad::dwg::detail

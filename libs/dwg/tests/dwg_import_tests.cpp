@@ -576,6 +576,16 @@ TEST_CASE("damaged or truncated files give a result or a clean error, never a cr
     CHECK(true);
 }
 
+TEST_CASE("describe lists the container steps and sections") {
+    const std::string text = describe(asBytes(sampleDrawing2004("AC1032")));
+    CHECK(text.find("AC1032") != std::string::npos);
+    CHECK(text.find("section \"AcDb:AcDbObjects\"") != std::string::npos);
+    CHECK(text.find("decoded section AcDb:Handles") != std::string::npos);
+    CHECK(text.find("import: ok") != std::string::npos);
+    CHECK(describe(asBytes(std::vector<std::uint8_t>{1, 2, 3})).find("not a DWG") !=
+          std::string::npos);
+}
+
 TEST_CASE("damaged R2004 and R2010 files give a result or a clean error, never a crash") {
     for (const char* version : {"AC1018", "AC1024"}) {
         const auto good = sampleDrawing2004(version);

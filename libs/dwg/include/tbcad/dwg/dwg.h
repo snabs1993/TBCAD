@@ -44,6 +44,11 @@ bool looksLikeDwg(std::span<const std::byte> bytes);
 Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                     const dxf::ImportOptions& options, dxf::Report& report);
 
+// A structural description of a file for diagnosing files that do not open: version, container
+// steps, section sizes and the import messages. It contains no drawing content (only counts and a
+// few raw bytes of each section).
+std::string describe(std::span<const std::byte> bytes);
+
 namespace code {
 inline constexpr std::string_view kUnsupportedVersion = "dwg.reader.unsupported_version";
 inline constexpr std::string_view kBadObject = "dwg.reader.bad_object";

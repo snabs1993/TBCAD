@@ -609,10 +609,15 @@ bool isDxfPath(const fs::path& p) {
 
 }  // namespace
 
+void AppCore::printOpenFailure(const std::string& text) {
+    if (echoOpenFailures_)
+        print(text);
+}
+
 Result<void> AppCore::openDxf(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        print("Cannot open " + path.string());
+        printOpenFailure("Cannot open " + path.string());
         settings_.removeRecentFile(platform::pathToUtf8(path));
         return makeError(ErrorCode::Io, "Cannot read " + path.string());
     }
@@ -623,7 +628,7 @@ Result<void> AppCore::openDxf(const fs::path& path) {
     dxf::Report report;
     auto result = dxf::importDxf(bytes, {}, report);
     if (!result) {
-        print("Cannot open " + path.string() + ": " + result.error().message);
+        printOpenFailure("Cannot open " + path.string() + ": " + result.error().message);
         return makeError(ErrorCode::Parse, result.error().message);
     }
     auto& imported = result.value();
@@ -728,7 +733,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
     if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
         auto res = it->second.read(path);
         if (!res) {
-            print("Cannot open " + path.string() + ": " + res.error().message);
+            printOpenFailure("Cannot open " + path.string() + ": " + res.error().message);
             settings_.removeRecentFile(platform::pathToUtf8(path));
             return res.error();
         }
@@ -756,7 +761,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
         // A template opens as a new untitled drawing; the template file stays as it is.
         auto doc = tmpl::loadTemplate(path);
         if (!doc) {
-            print("Cannot open " + path.string() + ": " + doc.error().message);
+            printOpenFailure("Cannot open " + path.string() + ": " + doc.error().message);
             return doc.error();
         }
         addSession(std::move(doc.value()), {});
@@ -766,7 +771,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
     if (!doc) {
-        print("Cannot open " + path.string() + ": " + doc.error().message);
+        printOpenFailure("Cannot open " + path.string() + ": " + doc.error().message);
         settings_.removeRecentFile(platform::pathToUtf8(path));
         return doc.error();
     }
