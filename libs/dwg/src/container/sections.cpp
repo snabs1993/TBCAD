@@ -52,7 +52,7 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], std::size_t
 namespace {
 
 std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::size_t extra,
-                                        std::vector<std::string>& notes) {
+                                        bool useBitsWord, std::vector<std::string>& notes) {
     std::vector<ClassInfo> out;
     const Bytes data = sectionData(section, kClassStart, extra, notes, "class");
     if (data.empty())
@@ -60,7 +60,7 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::s
     BitReader r(data);
     BitReader strings;
     std::size_t endBit = data.size() * 8;
-    if (extra >= 8) {
+    if (extra >= 8 && useBitsWord) {
         // A real R2018 file: a high size word, then the number of data bits.
         std::uint32_t bitsWord = 0;
         for (int i = 0; i < 4; ++i)
@@ -97,6 +97,24 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::s
         r.bl();
         r.bl();
         if (r.failed() || c.number < 500) {
+            if (out.size() < 5) {
+                notes.push_back("class data size " + std::to_string(data.size()) + ", end bit " +
+                                std::to_string(endBit) + ", strings at " +
+                                std::to_string(strings.bitSize() ? strings.bitPos() : 0));
+                std::string hx = "class data head:";
+                char b[8];
+                for (std::size_t k = 0; k < 96 && k < data.size(); ++k) {
+                    std::snprintf(b, sizeof b, " %02X", data[k]);
+                    hx += b;
+                }
+                hx += " ... tail:";
+                for (std::size_t k = data.size() > 64 ? data.size() - 64 : 0; k < data.size();
+                     ++k) {
+                    std::snprintf(b, sizeof b, " %02X", data[k]);
+                    hx += b;
+                }
+                notes.push_back(hx);
+            }
             if (out.empty())
                 notes.push_back("first class entry unreadable: number " + std::to_string(c.number) +
                                 ", names [" + c.app + "] [" + c.cppName + "] [" + c.dxfName +
@@ -127,7 +145,15 @@ std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int mainte
     std::vector<std::string> first;
     for (std::size_t i = 0; i < tries.size(); ++i) {
         std::vector<std::string> n;
-        auto a = parseClassesWith(section, fmt, tries[i], n);
+        auto a = parseClassesWith(section, fmt, tries[i], true, n);
+        if (a.size() < 5 && tries[i] >= 8) {
+            std::vector<std::string> n2;
+            auto b = parseClassesWith(section, fmt, tries[i], false, n2);
+            if (b.size() > a.size()) {
+                a = std::move(b);
+                n = n2;
+            }
+        }
         if (!a.empty()) {
             if (i == 0)
                 notes.insert(notes.end(), n.begin(), n.end());
