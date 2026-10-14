@@ -349,13 +349,24 @@ void Gui::requestAction(Pending what) {
     continuePending();
 }
 
+// A question about unsaved work must not wait behind other windows or in the taskbar.
+void Gui::bringToFront() {
+    if (!window_)
+        return;
+    if (glfwGetWindowAttrib(window_, GLFW_ICONIFIED))
+        glfwRestoreWindow(window_);
+    glfwFocusWindow(window_);
+    glfwRequestWindowAttention(window_);
+}
+
 // Closing one drawing, or leaving the program: asks about each drawing with unsaved changes in
 // turn (it becomes the active tab so the user sees what is being asked about).
 void Gui::continuePending() {
     if (pending_ == Pending::Close) {
-        if (core_.modified())
+        if (core_.modified()) {
             openSavePrompt_ = true;
-        else
+            bringToFront();
+        } else
             performPending();
     } else if (pending_ == Pending::Exit) {
         for (std::size_t i = 0; i < core_.documentCount(); ++i) {
@@ -366,6 +377,7 @@ void Gui::continuePending() {
                 return;
             }
             openSavePrompt_ = true;
+            bringToFront();
             return;
         }
         pending_ = Pending::None;
@@ -398,10 +410,25 @@ bool Gui::requestClose() {
     return exitRequested_;
 }
 
+// File dialogs open next to the current drawing, else in the folder of the last file picked,
+// else (empty) in Documents.
+std::filesystem::path Gui::dialogFolder() const {
+    if (core_.hasFile())
+        return core_.file().parent_path();
+    return platform::pathFromUtf8(core_.settings().getString("files.lastFolder", ""));
+}
+
+void Gui::rememberFolder(const std::filesystem::path& picked) {
+    core_.settings().setString("files.lastFolder", platform::pathToUtf8(picked.parent_path()));
+}
+
 void Gui::doOpen() {
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing"))
+        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing",
+                                              dialogFolder())) {
+            rememberFolder(*p);
             doOpenPath(platform::pathToUtf8(*p));
+        }
         return;
     }
     std::filesystem::path start =
@@ -419,8 +446,11 @@ void Gui::dxfCommandWithPath(const char* command, const std::filesystem::path& p
 void Gui::doImportDxf() {
     static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
     if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), filters, "Import DXF"))
+        if (auto p =
+                platform::showOpenDialog(nativeHandle(), filters, "Import DXF", dialogFolder())) {
+            rememberFolder(*p);
             dxfCommandWithPath("IMPORTDXF", *p);
+        }
         return;
     }
     std::filesystem::path start =
@@ -435,9 +465,11 @@ void Gui::doExportDxf() {
     stem.replace_extension(".dxf");
     std::string suggested = stem.filename().string();
     if (platform::nativeDialogsAvailable()) {
-        if (auto p =
-                platform::showSaveDialog(nativeHandle(), filters, "Export DXF", "dxf", suggested))
+        if (auto p = platform::showSaveDialog(nativeHandle(), filters, "Export DXF", "dxf",
+                                              suggested, dialogFolder())) {
+            rememberFolder(*p);
             dxfCommandWithPath("EXPORTDXF", *p);
+        }
         return;
     }
     std::filesystem::path start =
@@ -517,7 +549,8 @@ void Gui::doSaveAs() {
     }
     if (platform::nativeDialogsAvailable()) {
         if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
-                                              "Save drawing as", ext, suggested)) {
+                                              "Save drawing as", ext, suggested, dialogFolder())) {
+            rememberFolder(*p);
             auto r = core_.saveAs(*p);
             if (!r)
                 lastError_ = r.error().message;
@@ -1337,9 +1370,12 @@ void Gui::commandWindow() {
     ImGui::SetNextWindowSize(ImVec2(700, 160), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Command", &showCommandLine_)) {
         const cmd::PromptInfo* pending = core_.promptInfo();
-        const float footer =
+        // The footer (option chips and the input line) is measured on the previous frame, so
+        // the history never runs under it however many rows the chips wrap into.
+        const float estimate =
             ImGui::GetFrameHeightWithSpacing() + 2 +
             (pending && !pending->keywords.empty() ? ImGui::GetFrameHeightWithSpacing() : 0.0f);
+        const float footer = std::max(estimate, commandFooterH_);
         ImGui::BeginChild("##history", ImVec2(0, -footer), false,
                           ImGuiWindowFlags_HorizontalScrollbar);
         const auto& lines = core_.history();
@@ -1354,6 +1390,7 @@ void Gui::commandWindow() {
         }
         ImGui::EndChild();
 
+        const float footerTop = ImGui::GetCursorPosY();
         const bool chips = optionChips();
         ImGui::AlignTextToFramePadding();
         const cmd::PromptInfo* info = core_.promptInfo();
@@ -1403,6 +1440,7 @@ void Gui::commandWindow() {
             core_.submitText("");
             refocusInput_ = true;
         }
+        commandFooterH_ = ImGui::GetCursorPosY() - footerTop + 2;
         if (suggestVisible_)
             drawSuggestions(inputMin, inputW);
     }
@@ -1479,8 +1517,14 @@ bool Gui::optionChips() {
         return false;
     for (std::size_t i = 0; i < info->keywords.size(); ++i) {
         const std::string& word = info->keywords[i];
-        if (i)
-            ImGui::SameLine();
+        if (i) {
+            const float next = ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x +
+                               ImGui::CalcTextSize(word.c_str()).x +
+                               2 * ImGui::GetStyle().FramePadding.x;
+            if (next < ImGui::GetWindowPos().x + ImGui::GetWindowWidth() -
+                           ImGui::GetStyle().WindowPadding.x)
+                ImGui::SameLine();  // else the chip starts a new row
+        }
         ImGui::PushID(static_cast<int>(i));
         if (ImGui::SmallButton(word.c_str())) {
             core_.submitText(word);
@@ -1522,7 +1566,17 @@ void Gui::cursorHud(const ViewportRect& rect) {
     if (!hudHovered_ && (dx * dx + dy * dy > lag * lag || hudAnchor_.x < -1e5f))
         hudAnchor_ = io.MousePos;
     const bool options = !info->keywords.empty();
-    ImGui::SetNextWindowPos(ImVec2(hudAnchor_.x + 16 * dpiScale_, hudAnchor_.y + 16 * dpiScale_));
+    // Stay inside the drawing: flip to the other side of the cursor near the right and bottom
+    // edges (the size is the previous frame's).
+    const float gap = 16 * dpiScale_;
+    ImVec2 hudPos(hudAnchor_.x + gap, hudAnchor_.y + gap);
+    if (hudPos.x + hudSize_.x > rect.x + rect.w)
+        hudPos.x = hudAnchor_.x - gap - hudSize_.x;
+    if (hudPos.y + hudSize_.y > rect.y + rect.h)
+        hudPos.y = hudAnchor_.y - gap - hudSize_.y;
+    hudPos.x = std::clamp(hudPos.x, rect.x, std::max(rect.x, rect.x + rect.w - hudSize_.x));
+    hudPos.y = std::clamp(hudPos.y, rect.y, std::max(rect.y, rect.y + rect.h - hudSize_.y));
+    ImGui::SetNextWindowPos(hudPos);
     ImGui::SetNextWindowBgAlpha(0.88f);
     ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
@@ -1561,6 +1615,7 @@ void Gui::cursorHud(const ViewportRect& rect) {
             }
             ImGui::PopID();
         }
+        hudSize_ = ImGui::GetWindowSize();
         hudHovered_ = options && ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
     } else {
         hudHovered_ = false;
@@ -1622,10 +1677,12 @@ void Gui::docTabs() {
 
 // Shown over the empty viewport while only an untouched "Untitled" drawing is open.
 void Gui::startPage(const ViewportRect& rect) {
-    if (!startPage_ || !core_.isPristine() || core_.documentCount() != 1)
+    // The card steps aside as soon as a command starts. It hangs from a fixed top edge, so the
+    // buttons stay put however long the recent list is.
+    if (!startPage_ || !core_.isPristine() || core_.documentCount() != 1 || core_.runner().active())
         return;
-    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w * 0.5f, rect.y + rect.h * 0.45f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w * 0.5f, rect.y + std::min(60.0f, rect.h * 0.1f)),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
                                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav;
@@ -1642,17 +1699,17 @@ void Gui::startPage(const ViewportRect& rect) {
         if (ImGui::Button("Open...", ImVec2(110, 0)))
             runAction("file.open");
         ImGui::SameLine();
-        ImGui::BeginDisabled();
-        ImGui::Button("Import DXF", ImVec2(110, 0));
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("DXF import is not available yet.");
+        if (ImGui::Button("Import DXF", ImVec2(110, 0)))
+            doImportDxf();
 
         const auto recent = core_.recentFiles();
         if (!recent.empty()) {
             ImGui::Spacing();
             ImGui::TextDisabled("Recent");
+            int shown = 0;
             for (const auto& path : recent) {
+                if (++shown > 5)
+                    break;
                 const std::filesystem::path fp = platform::pathFromUtf8(path);
                 ImGui::PushID(path.c_str());
                 if (ImGui::Selectable(platform::pathToUtf8(fp.filename()).c_str(), false,
@@ -1876,6 +1933,20 @@ void Gui::viewportInput(const ViewportRect& rect) {
     const bool hovered = inside && !io.WantCaptureMouse;
     const double dt = std::max(1e-4, static_cast<double>(io.DeltaTime));
     const ui::PointerState ps{mouse, io.KeyShift, io.KeyCtrl};
+
+    // The picture follows the state by one frame (the status bar, the overlay and the scene are
+    // built from what the previous frame left), so keep drawing for a few frames after the
+    // pointer moves, a button changes, text is typed or the drawing, selection or log changes.
+    // Otherwise the last change would wait for the next event to appear.
+    {
+        const std::size_t stamp = core_.history().size() * 31 + core_.selection().size() * 7 +
+                                  std::hash<std::string>{}(core_.undoLabel());
+        if (stamp != activityStamp_ || io.MouseDelta.x != 0 || io.MouseDelta.y != 0 ||
+            io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2] ||
+            io.InputQueueCharacters.Size > 0)
+            anyActivity_ = true;
+        activityStamp_ = stamp;
+    }
 
     // Middle button: pan; double click: zoom extents.
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
