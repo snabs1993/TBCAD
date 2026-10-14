@@ -90,8 +90,8 @@ TEST_CASE("an opcode 0x18..0x1F carries bit 14 of the distance and a three bit l
         in.push_back(c);
         expected.push_back(static_cast<char>(c));
     }
-    for (std::uint8_t b : {0x1A, 0x01, 0x00, 0x5A, 0x11})
-        in.push_back(b);
+    for (int b : {0x1A, 0x01, 0x00, 0x5A, 0x11})
+        in.push_back(static_cast<std::uint8_t>(b));
     expected += expected.substr(40000 - 32768, 4);
     expected += 'Z';
     bool ok = false;
