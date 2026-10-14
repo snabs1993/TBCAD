@@ -52,90 +52,70 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], std::size_t
 namespace {
 
 std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::size_t extra,
-                                        bool useBitsWord, std::vector<std::string>& notes) {
+                                        std::vector<std::string>& notes) {
     std::vector<ClassInfo> out;
     const Bytes data = sectionData(section, kClassStart, extra, notes, "class");
     if (data.empty())
         return out;
     BitReader r(data);
-    BitReader strings;
-    std::size_t endBit = data.size() * 8;
-    if (extra >= 8 && useBitsWord) {
-        // A real R2018 file: a high size word, then the number of data bits.
-        std::uint32_t bitsWord = 0;
-        for (int i = 0; i < 4; ++i)
-            bitsWord |= static_cast<std::uint32_t>(section[16 + 4 + 4 + i]) << (8 * i);
-        if (bitsWord > 0 && bitsWord <= endBit)
-            endBit = bitsWord;
-    }
-    if (fmt.r2007) {
-        if (!locateStringStream(data, endBit, strings)) {
-            notes.push_back("the class section has a damaged string stream");
-            return out;
-        }
-        if (strings.bitSize() != 0) {
-            endBit = strings.bitPos();
-            r.setStringStream(&strings);
-        }
-    }
-    r.bs();  // maximum class number
+    const std::uint32_t maxClass = r.bs();  // maximum class number
     r.rc();
     r.rc();
     r.b();
-    while (r.bitPos() + 16 <= endBit && !r.failed()) {
+    const std::size_t count = maxClass >= 500 && maxClass < 100000 ? maxClass - 499 : 0;
+    if (!fmt.r2007) {
+        // Older releases: names inline with the fields.
+        while (r.bitsLeft() >= 16 && !r.failed() && out.size() < count) {
+            ClassInfo c;
+            c.number = r.bs();
+            r.bs();  // proxy flags
+            c.app = r.textBytes();
+            c.cppName = r.textBytes();
+            c.dxfName = r.textBytes();
+            r.b();  // was a zombie
+            c.entity = r.bs() == 0x1F2;
+            r.bl();  // objects of this class
+            r.bs();  // version
+            r.bs();  // maintenance release
+            r.bl();
+            r.bl();
+            if (r.failed() || c.number < 500)
+                break;
+            out.push_back(std::move(c));
+        }
+        return out;
+    }
+    // R2007 and later: all the fields of every class come first, then one run of UTF-16
+    // strings (application, C++ name and DXF name per class) that starts right after them
+    // (checked against a real R2018 file; the end-of-data flag of object records is not there).
+    for (std::size_t i = 0; i < count && !r.failed(); ++i) {
         ClassInfo c;
         c.number = r.bs();
         r.bs();  // proxy flags
-        c.app = r.textBytes();
-        c.cppName = r.textBytes();
-        c.dxfName = r.textBytes();
-        r.b();  // was a zombie
+        r.b();   // was a zombie
         c.entity = r.bs() == 0x1F2;
         r.bl();  // objects of this class
         r.bs();  // version
         r.bs();  // maintenance release
         r.bl();
         r.bl();
-        if (r.failed() || c.number < 500) {
-            if (out.size() < 5) {
-                notes.push_back("class data size " + std::to_string(data.size()) + ", end bit " +
-                                std::to_string(endBit) + ", strings at " +
-                                std::to_string(strings.bitSize() ? strings.bitPos() : 0));
-                std::string hx = "class data head:";
-                char b[8];
-                for (std::size_t k = 0; k < 96 && k < data.size(); ++k) {
-                    std::snprintf(b, sizeof b, " %02X", data[k]);
-                    hx += b;
-                }
-                hx += " ... tail:";
-                for (std::size_t k = data.size() > 64 ? data.size() - 64 : 0; k < data.size();
-                     ++k) {
-                    std::snprintf(b, sizeof b, " %02X", data[k]);
-                    hx += b;
-                }
-                notes.push_back(hx);
-                // Temporary: the whole class section, to decode it offline.
-                for (std::size_t k0 = 0; k0 < data.size() && data.size() < 120000; k0 += 2048) {
-                    std::string chunk = "class bytes @" + std::to_string(k0) + ":";
-                    for (std::size_t k = k0; k < k0 + 2048 && k < data.size(); ++k) {
-                        std::snprintf(b, sizeof b, " %02X", data[k]);
-                        chunk += b;
-                    }
-                    notes.push_back(chunk);
-                }
-            }
-            if (out.empty())
-                notes.push_back("first class entry unreadable: number " + std::to_string(c.number) +
-                                ", names [" + c.app + "] [" + c.cppName + "] [" + c.dxfName +
-                                "], bit " + std::to_string(r.bitPos()) + " of " +
-                                std::to_string(endBit) + " (extra word " +
-                                (extra ? "read" : "not read") + ")");
+        if (r.failed() || c.number < 500)
+            break;
+        out.push_back(std::move(c));
+    }
+    BitReader strings(data, r.bitPos());
+    for (ClassInfo& c : out) {
+        c.app = strings.textUnicode();
+        c.cppName = strings.textUnicode();
+        c.dxfName = strings.textUnicode();
+        if (strings.failed()) {
+            notes.push_back("the class names are cut off");
             break;
         }
-        out.push_back(std::move(c));
-        if (out.size() > 100000)
-            break;
     }
+    if (out.size() != count)
+        notes.push_back("the class section lists " + std::to_string(out.size()) + " of " +
+                        std::to_string(count) + " classes");
     return out;
 }
 
@@ -154,15 +134,7 @@ std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int mainte
     std::vector<std::string> first;
     for (std::size_t i = 0; i < tries.size(); ++i) {
         std::vector<std::string> n;
-        auto a = parseClassesWith(section, fmt, tries[i], true, n);
-        if (a.size() < 5 && tries[i] >= 8) {
-            std::vector<std::string> n2;
-            auto b = parseClassesWith(section, fmt, tries[i], false, n2);
-            if (b.size() > a.size()) {
-                a = std::move(b);
-                n = n2;
-            }
-        }
+        auto a = parseClassesWith(section, fmt, tries[i], n);
         if (!a.empty()) {
             if (i == 0)
                 notes.insert(notes.end(), n.begin(), n.end());

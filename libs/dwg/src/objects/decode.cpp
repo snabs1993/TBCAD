@@ -2332,7 +2332,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r27: class bytes dump; r26: class string stream end retried; r25: class section skips "
+    return "r28: class names read from the string run after the class fields; r27: class bytes "
+           "dump; r26: class string stream end retried; r25: class section skips "
            "its bit-size word; r24: "
            "class section reading retried; r23: "
            "class lookup by number, private type numbers "
