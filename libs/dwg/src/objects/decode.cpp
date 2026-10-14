@@ -2021,7 +2021,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r11: calibration pre-pass, trailing LZ input; r10: variants by one-fit rule, range "
+    return "r12: LZ reading choice, page-record trace; r11: calibration pre-pass; r10: variants by one-fit rule, range "
            "check, failure reasons";
 }
 

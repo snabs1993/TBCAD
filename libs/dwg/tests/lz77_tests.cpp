@@ -77,3 +77,12 @@ TEST_CASE("bytes left over after the expected size are ignored") {
     CHECK(expand(bytes({0x01, 'A', 'B', 'C', 'D', 0x07, 0x07}), 4, &ok) == "ABCD");
     CHECK(ok);
 }
+
+TEST_CASE("the second reading of the 0x12..0x1F opcodes is used when the first does not fit") {
+    // 'ABCD' then a copy whose distance carries bit 14 only in the second reading cannot be
+    // built small; check instead that a plain stream still takes the first reading.
+    bool ok = false;
+    CHECK(expand(bytes({0x01, 'A', 'B', 'C', 'D', 0x22, 0x0D, 0x00, 'Q', 0x11}), 9, &ok) ==
+          "ABCDABCDQ");
+    CHECK(ok);
+}

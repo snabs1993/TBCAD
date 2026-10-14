@@ -81,8 +81,11 @@ std::size_t longCount(Cursor& c) {
 // `extra` is the distance bias: the stored offset counts back from the byte before the output
 // position, so the source is `size - (offset + extra)`. The spec does not say whether the
 // stored value is zero based; the caller tries 1 first (offset 0 would copy from nothing).
-bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t extra,
-         std::vector<std::uint8_t>& out, std::string* why) {
+// `hiBit`: read bit 3 of an 0x12..0x1F opcode as bit 14 of the distance and the length from the
+// low three bits (a second reading of that opcode, tried when the first does not fit).
+// `leftover` receives the input bytes not consumed on success.
+bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t extra, bool hiBit,
+         std::vector<std::uint8_t>& out, std::string* why, std::size_t& leftover) {
     auto fail = [&](const char* what, const Cursor& cur) {
         if (why)
             *why = std::string(what) + " (input byte " + std::to_string(cur.pos()) + " of " +
@@ -93,11 +96,14 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
     out.clear();
     out.reserve(expected);
     Cursor c(in);
+    leftover = 0;
     auto copyLiterals = [&](std::size_t n) {
         if (n > expected - out.size()) {
             // Trailing bytes after a complete output are not data.
-            if (out.size() == expected)
+            if (out.size() == expected) {
+                leftover = in.size() - c.pos();
                 return true;
+            }
             return fail("literal run too long", c);
         }
         const auto s = c.take(n);
@@ -112,8 +118,10 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
         if (c.atEnd())
             return out.size() == expected || fail("input ended early", c);
         // Complete output with input left over (padding or a checksum): done.
-        if (out.size() == expected)
+        if (out.size() == expected) {
+            leftover = in.size() - c.pos();
             return true;
+        }
         const std::uint8_t op = c.next();
         std::size_t count = 0, offset = 0, lit = 0;
         auto twoByte = [&]() {
@@ -123,8 +131,12 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
                 (static_cast<std::size_t>(first) >> 2) | (static_cast<std::size_t>(second) << 6);
             lit = first & 3;
         };
-        if (op == 0x11)
-            return out.size() == expected || fail("terminator before the expected size", c);
+        if (op == 0x11) {
+            if (out.size() != expected)
+                return fail("terminator before the expected size", c);
+            leftover = in.size() - c.pos();
+            return true;
+        }
         if (op < 0x10) {
             return fail("unexpected opcode", c);  // 0x00..0x0F cannot start an opcode set
         } else if (op == 0x10) {
@@ -132,9 +144,11 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
             twoByte();
             offset += 0x3FFF;
         } else if (op < 0x20) {
-            count = (op & 0x0F) + 2;
+            count = (op & (hiBit ? 0x07 : 0x0F)) + 2;
             twoByte();
             offset += 0x3FFF;
+            if (hiBit && (op & 0x08))
+                offset += 0x4000;
         } else if (op == 0x20) {
             count = longCount(c) + 0x21;
             twoByte();
@@ -171,17 +185,37 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
 
 bool lz77Decompress(std::span<const std::uint8_t> in, std::size_t expected,
                     std::vector<std::uint8_t>& out, int* distanceBias, std::string* why) {
-    if (run(in, expected, 1, out, why)) {
-        if (distanceBias)
-            *distanceBias = 1;
-        return true;
+    // Prefer a reading that consumes the whole input; fall back to one that only fills the output.
+    std::vector<std::uint8_t> best;
+    int bestBias = -1;
+    bool first = true;
+    for (int bias : {1, 0}) {
+        for (bool hi : {false, true}) {
+            std::size_t left = 0;
+            std::string reason;
+            if (!run(in, expected, static_cast<std::size_t>(bias), hi, out, first ? why : &reason,
+                     left)) {
+                first = false;
+                continue;
+            }
+            first = false;
+            if (left == 0) {
+                if (distanceBias)
+                    *distanceBias = bias;
+                return true;
+            }
+            if (bestBias < 0) {
+                best = out;
+                bestBias = bias;
+            }
+        }
     }
-    if (run(in, expected, 0, out, nullptr)) {
-        if (distanceBias)
-            *distanceBias = 0;
-        return true;
-    }
-    return false;
+    if (bestBias < 0)
+        return false;
+    out = std::move(best);
+    if (distanceBias)
+        *distanceBias = bestBias;
+    return true;
 }
 
 }  // namespace tbcad::dwg::detail

@@ -201,7 +201,28 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
         std::vector<Rec> recs;
         for (std::uint32_t k = 0; k < pageCount; ++k) {
             recs.push_back({le32(desc, pos), le32(desc, pos + 4), le64(desc, pos + 8)});
+            if (trace && recs.size() <= 3)
+                tr("  record " + std::to_string(k) + " at map byte " + std::to_string(pos) + ": " +
+                   std::to_string(recs.back().page) + " / " + std::to_string(recs.back().size) +
+                   " / " + std::to_string(recs.back().start));
             pos += 16;
+        }
+        if (trace && !recs.empty()) {
+            // Hex of the map bytes around the first record that names no page.
+            for (std::size_t k = 0; k < recs.size(); ++k) {
+                if (findPage(recs[k].page))
+                    continue;
+                const std::size_t at = pos - 16 * (recs.size() - k);
+                std::string l = "  first unknown page: record " + std::to_string(k) +
+                                " at map byte " + std::to_string(at) + ", bytes from 48 before:";
+                char b[8];
+                for (std::size_t q = at >= 48 ? at - 48 : 0; q < at + 64 && q < desc.size(); ++q) {
+                    std::snprintf(b, sizeof b, " %02X", desc[q]);
+                    l += b;
+                }
+                tr(l);
+                break;
+            }
         }
         const std::string sname(name);
         tr("section \"" + sname + "\": size " + std::to_string(total) + ", " +
