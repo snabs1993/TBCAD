@@ -97,6 +97,8 @@ private:
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();
+    float layoutTabsHeight() const;
+    void layoutTabs(const ViewportRect& rect);
     void dockLayout(ImGuiID dockspace);
     // Workspaces (saved window layouts). Switching applies the panels at once and the docking
     // layout through Dear ImGui's ini data.
@@ -247,6 +249,12 @@ private:
     int activityFrames_ = 0;
     bool anyActivity_ = false;
     ViewportRect lastRect_{};
+    std::string layoutDialog_{};  // "new" / "rename", while its name popup is open
+    std::string layoutTarget_{};
+    float layoutScrollDelta_ = 0.0f;  // pending sideways scroll of the tab strip
+    float layoutScrollMax_ = 0.0f;
+    std::string layoutFollowed_{};  // the tab the strip last scrolled to
+    std::string layoutNameBuf_{};
 
     double fps_ = 0;
     double frameMs_ = 0;

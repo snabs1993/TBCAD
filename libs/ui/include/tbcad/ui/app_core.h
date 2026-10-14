@@ -25,6 +25,7 @@
 #include "tbcad/render/overlay.h"
 #include "tbcad/render/scene.h"
 #include "tbcad/ui/foreign_files.h"
+#include "tbcad/ui/paper_view.h"
 #include "tbcad/ui/scene_sync.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
@@ -83,6 +84,16 @@ public:
     const Document& document() const;
     const index::SpatialIndex& spatialIndex() const;
     render::Scene& scene() { return scene_; }
+    // ---- layouts (paper space) ---------------------------------------------------------------
+    // The tab strip's model: "" is Model, otherwise a layout name. A layout is shown read-only
+    // (the sheet, its objects and the viewports); editing it is done with the layout commands.
+    const std::string& activeLayout() const { return activeLayout_; }
+    bool inPaperSpace() const { return !activeLayout_.empty(); }
+    std::vector<std::string> layoutNames() const;
+    // Empty or an unknown name goes back to Model. Returns false when the layout can't be shown.
+    bool setActiveLayout(const std::string& name);
+    // What the window draws: the drawing, or the active layout's sheet.
+    render::Scene& renderScene() { return inPaperSpace() ? paper_.scene() : scene_; }
     cmd::UndoStack& undoStack();
     cmd::CommandRunner& runner();
     cmd::Registry& registry() { return registry_; }
@@ -293,6 +304,7 @@ private:
     Result<void> openDxf(const std::filesystem::path& path);
     Result<void> saveDxf(const std::filesystem::path& path);
     void clearTransientState();
+    void leavePaper();  // back to Model, restoring the model view
     // Replaces the active drawing.
     void installSession(std::unique_ptr<Document> doc, std::filesystem::path file);
     // Adds a drawing and makes it the active one (or replaces an untouched Untitled one).
@@ -341,6 +353,10 @@ private:
     std::uint64_t generation_ = 0;
 
     render::Camera2D camera_{};
+    std::string activeLayout_{};
+    PaperView paper_{};
+    render::Camera2D modelCamera_{};
+    std::uint64_t paperRevision_ = 0;
     render::Camera2D lastTessellatedFor_{};
     Vec2 cursorWorld_{};
     bool cursorInside_ = false;

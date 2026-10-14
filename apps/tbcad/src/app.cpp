@@ -192,7 +192,7 @@ void App::drawScene() {
     core_->buildUnderlay(underlay_, uiRegistry_.get());
     renderer_.draw(underlay_);
     PhaseTimer pt;
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     if (PhaseTimer::enabled())
         gPhase[3] += pt.lap();
     core_->buildOverlay(overlay_, uiRegistry_.get());
@@ -212,7 +212,7 @@ void App::renderDrawingOnce(bool finish) {
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->underlayImages());
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     renderer_.endFrame();
     if (finish)
         glFinish();
@@ -320,7 +320,7 @@ std::optional<mcp::Image> App::captureView(int maxPx, const BBox2& area) {
     renderer_.setCamera(cam);
     renderer_.beginFrame();
     renderer_.draw(core_->underlayImages());
-    renderer_.draw(core_->scene());
+    renderer_.draw(core_->renderScene());
     renderer_.endFrame();
     glFinish();
 

@@ -11,11 +11,12 @@ tbcad_add_library(appcore
   SOURCES
     src/app_commands.cpp
     src/app_core.cpp
+    src/paper_view.cpp
     src/scene_sync.cpp
     src/selection.cpp
     src/workspace.cpp
     src/settings_model.cpp
-  DEPENDS tbcad::ui tbcad::hatch tbcad::dxf tbcad::blocks tbcad::xref tbcad::underlay tbcad::platform tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd tbcad::template)
+  DEPENDS tbcad::ui tbcad::hatch tbcad::dxf tbcad::blocks tbcad::xref tbcad::underlay tbcad::platform tbcad::layout tbcad::export tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd tbcad::template)
 target_include_directories(tbcad_appcore PRIVATE src)
 
 tbcad_add_tests(ui
@@ -38,4 +39,5 @@ tbcad_add_tests(appcore
     tests/pgp_tests.cpp
     tests/drag_payload_tests.cpp
     tests/workspace_tests.cpp
-    tests/headless_file_tests.cpp)
+    tests/headless_file_tests.cpp
+    tests/paper_view_tests.cpp)

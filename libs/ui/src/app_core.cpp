@@ -16,6 +16,7 @@
 #include "tbcad/geom/entity.h"
 #include "tbcad/hatch/fill.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
@@ -174,6 +175,53 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     return s;
 }
 
+std::vector<std::string> AppCore::layoutNames() const {
+    std::vector<std::string> out;
+    if (!session_)
+        return out;
+    for (const layout::Layout& l : layout::layouts(session_->doc))
+        out.push_back(l.name);
+    return out;
+}
+
+void AppCore::leavePaper() {
+    if (activeLayout_.empty())
+        return;
+    const int w = camera_.viewportW, h = camera_.viewportH;
+    camera_ = modelCamera_;
+    camera_.viewportW = w;
+    camera_.viewportH = h;
+    activeLayout_.clear();
+    paper_.clear();
+    lastTessellatedFor_ = {};
+}
+
+bool AppCore::setActiveLayout(const std::string& name) {
+    if (!session_)
+        return false;
+    if (name.empty() || !layout::findLayout(session_->doc, name)) {
+        leavePaper();
+        return name.empty();
+    }
+    if (runner().active())
+        pressEscape();
+    clearTransientState();
+    const bool wasModel = activeLayout_.empty();
+    if (wasModel)
+        modelCamera_ = camera_;
+    const std::string problem = paper_.build(session_->doc, name);
+    if (!problem.empty()) {
+        print(problem);
+        if (!wasModel)
+            leavePaper();
+        return false;
+    }
+    activeLayout_ = name;
+    paperRevision_ = session_->doc.revision();
+    camera_.fit(paper_.sheet());
+    return true;
+}
+
 void AppCore::clearTransientState() {
     selection_.clear();
     outOfArea_.reset();
@@ -187,6 +235,7 @@ void AppCore::clearTransientState() {
 }
 
 void AppCore::enterSlot(std::size_t index, bool fitView) {
+    leavePaper();
     clearTransientState();
     active_ = index;
     DocSlot& slot = slots_[index];
@@ -234,6 +283,7 @@ void AppCore::addSession(std::unique_ptr<Document> doc, fs::path file) {
         return;
     }
     if (!slots_.empty()) {
+        leavePaper();
         slots_[active_].camera = camera_;
         slots_[active_].selection = selection_;
         slots_[active_].viewSaved = true;
@@ -255,6 +305,7 @@ bool AppCore::activateDocument(std::size_t index) {
         print("Finish the current command first.");
         return false;
     }
+    leavePaper();
     slots_[active_].camera = camera_;
     slots_[active_].selection = selection_;
     slots_[active_].viewSaved = true;
@@ -1057,7 +1108,7 @@ void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
 
 std::vector<render::ImageDraw> AppCore::underlayImages() {
     std::vector<render::ImageDraw> out;
-    if (!session_)
+    if (!session_ || inPaperSpace())
         return out;
     const std::filesystem::path host = session_->file;
     auto list = underlay::collectImages(session_->doc, imageCache_, [&](std::string_view stored) {
@@ -1082,6 +1133,16 @@ std::vector<render::ImageDraw> AppCore::underlayImages() {
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     tickAutosave(now);
     tickXrefs(now);
+    if (inPaperSpace()) {
+        if (!layout::findLayout(session_->doc, activeLayout_)) {
+            leavePaper();  // the layout was deleted
+        } else if (session_->doc.revision() != paperRevision_) {
+            paperRevision_ = session_->doc.revision();
+            paper_.build(session_->doc, activeLayout_);
+        }
+        if (inPaperSpace())
+            return;
+    }
     if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
@@ -1125,6 +1186,8 @@ cmd::RawInput AppCore::makeRaw(const PointerState& p) const {
 }
 
 void AppCore::updateHover(const PointerState& p) {
+    if (inPaperSpace())
+        return;
     std::vector<EntityId> hover;
     bool wantsHover =
         !runner().active() || (prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Selection ||
@@ -1164,6 +1227,8 @@ std::string AppCore::describeEntity(EntityId id) const {
 }
 
 void AppCore::pointerMoved(const PointerState& p) {
+    if (inPaperSpace())
+        return;
     lastPointer_ = p;
     cursorInside_ = true;
     cmd::RawInput raw = makeRaw(p);
@@ -1225,6 +1290,8 @@ bool AppCore::pressOnGrip(const PointerState& p) {
 }
 
 void AppCore::click(const PointerState& p) {
+    if (inPaperSpace())
+        return;
     cmd::RawInput raw = makeRaw(p);
     Vec2 world = raw.worldCursor;
     cmd::CommandRunner& run = runner();
@@ -1280,6 +1347,8 @@ void AppCore::doubleClick(const PointerState& p) {
 }
 
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
+    if (inPaperSpace())
+        return;
     const bool crossing = dragIsCrossing(a.x, b.x);
     Vec2 wa = camera_.screenToWorld(a);
     Vec2 wb = camera_.screenToWorld(b);
@@ -1300,6 +1369,8 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
 }
 
 void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
+    if (inPaperSpace())
+        return;
     if (screenPath.size() < 3)
         return;
     std::vector<Vec2> poly;
@@ -1391,6 +1462,8 @@ void AppCore::pruneSelection() {
 
 void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     overlay.clear();
+    if (inPaperSpace())
+        return;
     // Command preview (rubber band, ghost geometry).
     if (hasPreview_) {
         render::OverlayStyle st;
@@ -1507,6 +1580,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
 
 void AppCore::buildUnderlay(render::Overlay& underlay, const UiRegistry* ui) {
     underlay.clear();
+    if (inPaperSpace())
+        return;
     if (!ui)
         return;
     PanelContext pc = makePanelContext();
