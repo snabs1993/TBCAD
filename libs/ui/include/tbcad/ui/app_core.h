@@ -208,6 +208,11 @@ public:
     void setTheme(const Theme& theme) { theme_ = theme; }
     const Theme& theme() const { return theme_; }
 
+    // The object under the pickbox (null when none) and a one-line description of it for the
+    // hover tooltip: "Line, layer Walls, length 1250.00 mm".
+    EntityId hoveredEntity() const { return hoverId_; }
+    std::string describeEntity(EntityId id) const;
+
     // ---- overlay -----------------------------------------------------------------------------
     // Crosshair, pick box, command preview, snap marker, selection rectangle and the overlay
     // drawers modules registered. Cleared first.
@@ -293,6 +298,7 @@ private:
     void removeAutosaveOf(std::uint64_t slotId);
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
+    EntityId hoverId_{};
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
     void notifySessionHooks();

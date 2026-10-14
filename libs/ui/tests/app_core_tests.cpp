@@ -921,3 +921,16 @@ TEST_CASE("Delete is bound to edit.delete") {
     Fixture f("deletekey");
     CHECK(f.core->keybindings().label("edit.delete") == "Delete");
 }
+
+TEST_CASE("hover names the object under the pointer for the tooltip") {
+    Fixture f("hovertip");
+    f.line("0,0", "100,0");
+    CHECK(!f.core->hoveredEntity());
+    f.core->pointerMoved(f.at({50, 0}));
+    REQUIRE(f.core->hoveredEntity());
+    const std::string text = f.core->describeEntity(f.core->hoveredEntity());
+    CHECK(text.find("Line") == 0);
+    CHECK(text.find("length 100.00 mm") != std::string::npos);
+    f.core->pointerLeft();
+    CHECK(!f.core->hoveredEntity());
+}

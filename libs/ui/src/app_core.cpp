@@ -182,6 +182,7 @@ void AppCore::clearTransientState() {
     feedback_ = {};
     scene_.setSelected({});
     scene_.setHighlighted({});
+    hoverId_ = {};
 }
 
 void AppCore::enterSlot(std::size_t index, bool fitView) {
@@ -1075,7 +1076,33 @@ void AppCore::updateHover(const PointerState& p) {
         if (auto id = pickEntity(session_->doc, session_->index, w, apertureMm()))
             hover.push_back(*id);
     }
+    hoverId_ = hover.empty() ? EntityId{} : hover.front();
     scene_.setHighlighted(hover);
+}
+
+std::string AppCore::describeEntity(EntityId id) const {
+    if (!session_)
+        return {};
+    const Entity* e = session_->doc.find(id);
+    if (!e)
+        return {};
+    static const char* const kNames[] = {"Line",    "Circle",    "Arc",    "Polyline", "Point",
+                                         "Ellipse", "Spline",    "Text",   "MText",    "Hatch",
+                                         "Block",   "Dimension", "Leader", "Proxy",    "Table",
+                                         "Ray",     "Multiline"};
+    const auto k = static_cast<std::size_t>(kind(*e));
+    std::string out = k < std::size(kNames) ? kNames[k] : "Object";
+    if (const Layer* l = session_->doc.layer(e->common.layer))
+        out += ", layer " + l->name;
+    char buf[64];
+    if (const auto* c = std::get_if<CircleData>(&e->data)) {
+        std::snprintf(buf, sizeof buf, ", radius %.2f mm", c->radius);
+        out += buf;
+    } else if (const double len = geom::length(*e); len > 0) {
+        std::snprintf(buf, sizeof buf, ", length %.2f mm", len);
+        out += buf;
+    }
+    return out;
 }
 
 void AppCore::pointerMoved(const PointerState& p) {
@@ -1091,6 +1118,7 @@ void AppCore::pointerMoved(const PointerState& p) {
 void AppCore::pointerLeft() {
     cursorInside_ = false;
     scene_.setHighlighted({});
+    hoverId_ = {};
 }
 
 void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
