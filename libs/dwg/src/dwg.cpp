@@ -307,17 +307,17 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         const auto d = drawing.dictionaries.find(target);
                         if (d == drawing.dictionaries.end())
                             continue;
-                        std::string line = "layout dictionary entries:";
+                        std::string entriesLine = "layout dictionary entries:";
                         for (const auto& [ln, lh] : d->second) {
                             const auto t = drawing.rawType.find(lh);
-                            char b[64];
-                            std::snprintf(b, sizeof b, " %llX type ",
+                            char hb[64];
+                            std::snprintf(hb, sizeof hb, " %llX type ",
                                           static_cast<unsigned long long>(lh));
-                            line += " [" + ln + "]" + b +
-                                    (t == drawing.rawType.end() ? std::string("absent")
-                                                                : std::to_string(t->second));
+                            entriesLine += " [" + ln + "]" + hb +
+                                           (t == drawing.rawType.end() ? std::string("absent")
+                                                                       : std::to_string(t->second));
                         }
-                        report.info(code::kSkippedObject, line);
+                        report.info(code::kSkippedObject, entriesLine);
                     }
             for (const std::string& d : drawing.layoutDiag)
                 report.info(code::kSkippedObject, d);

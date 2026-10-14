@@ -4,10 +4,40 @@
 #include <vector>
 
 #include "container/sections.h"
-#include "dwg_builder.h"
 
 namespace tbcad::dwg::test {
 namespace {
+
+// The few bit codes the class section needs.
+class BitWriter {
+public:
+    void bits(std::uint64_t v, unsigned n) {
+        for (unsigned i = n; i-- > 0;) {
+            if (pos_ % 8 == 0)
+                bytes_.push_back(0);
+            if ((v >> i) & 1)
+                bytes_.back() = static_cast<std::uint8_t>(bytes_.back() | (0x80 >> (pos_ % 8)));
+            ++pos_;
+        }
+    }
+    void b(bool v) { bits(v ? 1 : 0, 1); }
+    void rc(unsigned v) { bits(v & 0xFF, 8); }
+    void bs(int v) {  // always the long form: code 00 and two bytes
+        bits(0, 2);
+        rc(static_cast<unsigned>(v));
+        rc(static_cast<unsigned>(v) >> 8);
+    }
+    void bl(int v) {
+        bits(0, 2);
+        for (int i = 0; i < 4; ++i)
+            rc(static_cast<unsigned>(v) >> (8 * i));
+    }
+    const std::vector<std::uint8_t>& bytes() const { return bytes_; }
+
+private:
+    std::vector<std::uint8_t> bytes_{};
+    std::size_t pos_ = 0;
+};
 
 void text(BitWriter& w, const std::string& s) {
     w.bs(static_cast<int>(s.size()));
