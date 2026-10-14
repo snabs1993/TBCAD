@@ -119,7 +119,8 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
             return out.size() == expected || fail("input ended early", c);
         // Complete output with input left over (padding or a checksum): done.
         if (out.size() == expected) {
-            leftover = in.size() - c.pos() + 1;  // ended without the terminator
+            // A stream that ends with its terminator is the sure sign of a correct reading.
+            leftover = c.peek() == 0x11 ? 0 : in.size() - c.pos() + 1;
             return true;
         }
         const std::uint8_t op = c.next();

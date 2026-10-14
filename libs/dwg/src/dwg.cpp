@@ -143,9 +143,11 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                               ": " + std::to_string(t[0]) +
                                               " end where expected, " + std::to_string(t[1]) +
                                               " do not");
+    std::size_t skippedShown = 0;
     for (const auto& [name, count] : drawing.skippedTypes)
-        report.info(code::kSkippedObject,
-                    std::to_string(count) + " object(s) of type " + name + " are not read yet");
+        if (skippedShown++ < 30)
+            report.info(code::kSkippedObject,
+                        std::to_string(count) + " object(s) of type " + name + " are not read yet");
 
     {
         // Where the entities live: the biggest owners, to see whether model space is found.
@@ -283,7 +285,7 @@ std::string describe(std::span<const std::byte> bytes) {
                 d.severity != dxf::Severity::Error && d.severity != dxf::Severity::Warning;
             if (info != (pass == 0))
                 continue;
-            if (shown++ >= 80)
+            if (shown++ >= 200)
                 break;
             line(std::string(d.severity == dxf::Severity::Error     ? "error: "
                              : d.severity == dxf::Severity::Warning ? "warning: "
