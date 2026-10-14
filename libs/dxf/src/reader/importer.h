@@ -108,6 +108,8 @@ private:
     LinetypeId linetypeFor(std::string_view raw, int line);
     TextStyleId textStyleFor(std::string_view raw) const;
     DimStyleId dimStyleFor(std::string_view raw) const;
+    DimStyleId dimStyleWithOverrides(const Record& r, DimStyleId base);
+    std::map<std::string, DimStyleId> dimOverrideStyles_{};
     Vec2 P(const Record& r, int cx, int cy) const { return {r.num(cx) * k_, r.num(cy) * k_}; }
     void note3d(const Record& r);
     void bad(const Record& r, std::string_view type, const std::string& message);
@@ -200,6 +202,8 @@ private:
         int tab = 0;
         double width = 0, height = 0;  // mm as stored (0 = unknown)
         int rotation = 0;
+        bool hasExtents = false;  // the paper rectangle in paper space coordinates
+        Vec2 extMin{}, extMax{};
     };
     std::vector<Sheet> sheets_{};
     std::vector<LayoutRow> layoutRows_{};

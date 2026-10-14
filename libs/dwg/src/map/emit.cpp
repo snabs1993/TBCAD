@@ -326,6 +326,14 @@ std::string emitDxf(const Drawing& d) {
                 o.group(44, it->second->width);
                 o.group(45, it->second->height);
                 o.group(73, static_cast<long long>(it->second->rotation));
+                const double* ex = it->second->extents;
+                if (ex[3] > ex[0] && ex[4] > ex[1]) {
+                    // The paper rectangle in paper space coordinates.
+                    o.group(14, ex[0]);
+                    o.group(24, ex[1]);
+                    o.group(15, ex[3]);
+                    o.group(25, ex[4]);
+                }
             }
         }
         o.endSection();

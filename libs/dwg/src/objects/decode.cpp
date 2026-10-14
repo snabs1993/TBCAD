@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <set>
 #include <string>
@@ -532,14 +533,148 @@ private:
         return c;
     }
 
+    // Extended data of the object being read; kept so a dimension can pick out its style
+    // overrides (the "DSTYLE" block of the standard application).
+    std::vector<std::vector<std::uint8_t>> eed_{};
+
     void skipEed(BitReader& r) {
+        eed_.clear();
         for (int guard = 0; guard < 100000; ++guard) {
             const std::int32_t size = r.bs();
             if (size <= 0 || r.failed())
                 return;
             r.handle();
-            for (std::int32_t i = 0; i < size && !r.failed(); ++i)
-                r.rc();
+            std::vector<std::uint8_t> bytes;
+            for (std::int32_t i = 0; i < size && !r.failed(); ++i) {
+                const auto b = static_cast<std::uint8_t>(r.rc());
+                if (bytes.size() < 4096)
+                    bytes.push_back(b);
+            }
+            if (!r.failed() && eed_.size() < 16)
+                eed_.push_back(std::move(bytes));
+        }
+    }
+
+    // Reads the style overrides of a dimension from its extended data (ODA spec section 28:
+    // string "DSTYLE", then braces holding pairs of a variable number and its value) and adds
+    // them to the entity as standard extended-data groups.
+    void dimStyleOverrides(EntityRec& e) {
+        for (const std::vector<std::uint8_t>& d : eed_) {
+            std::size_t p = 0;
+            auto have = [&](std::size_t n) { return p + n <= d.size(); };
+            auto str = [&](std::string& out) {
+                out.clear();
+                if (fmt_.r2007) {
+                    if (!have(2))
+                        return false;
+                    const std::size_t n = d[p] | (d[p + 1] << 8);
+                    p += 2;
+                    if (!have(n * 2))
+                        return false;
+                    for (std::size_t i = 0; i < n; ++i) {
+                        const unsigned ch = d[p + 2 * i] | (d[p + 2 * i + 1] << 8);
+                        out.push_back(ch < 128 ? static_cast<char>(ch) : '?');
+                    }
+                    p += n * 2;
+                } else {
+                    if (!have(3))
+                        return false;
+                    const std::size_t n = d[p];
+                    p += 3;  // length and code page
+                    if (!have(n))
+                        return false;
+                    out.assign(reinterpret_cast<const char*>(&d[p]), n);
+                    p += n;
+                }
+                return true;
+            };
+            auto u16 = [&](long long& v) {
+                if (!have(2))
+                    return false;
+                v = static_cast<std::int16_t>(d[p] | (d[p + 1] << 8));
+                p += 2;
+                return true;
+            };
+            if (!have(1) || d[p] != 0)
+                continue;
+            ++p;
+            std::string name;
+            if (!str(name) || name != "DSTYLE")
+                continue;
+            std::vector<Group> found;
+            bool ok = true;
+            while (ok && have(1)) {
+                const int type = d[p++];
+                if (type == 2) {  // brace
+                    if (!have(1))
+                        break;
+                    ++p;
+                    continue;
+                }
+                if (type != 70) {
+                    ok = false;
+                    break;
+                }
+                long long var = 0;
+                if (!u16(var) || !have(1)) {
+                    ok = false;
+                    break;
+                }
+                const int vt = d[p++];
+                Group g;
+                if (vt == 40 || vt == 41 || vt == 42) {
+                    if (!have(8)) {
+                        ok = false;
+                        break;
+                    }
+                    double v;
+                    std::memcpy(&v, &d[p], 8);
+                    p += 8;
+                    g.value.v.emplace<double>(v);
+                } else if (vt == 70) {
+                    long long v = 0;
+                    if (!u16(v)) {
+                        ok = false;
+                        break;
+                    }
+                    g.value.v.emplace<long long>(v);
+                } else if (vt == 71) {
+                    if (!have(4)) {
+                        ok = false;
+                        break;
+                    }
+                    std::int32_t v;
+                    std::memcpy(&v, &d[p], 4);
+                    p += 4;
+                    g.value.v.emplace<long long>(v);
+                } else if (vt == 5 || vt == 3) {
+                    if (!have(8)) {
+                        ok = false;
+                        break;
+                    }
+                    p += 8;  // handles (text style, arrow blocks): not used
+                    continue;
+                } else {
+                    ok = false;
+                    break;
+                }
+                g.code = 1070;
+                found.push_back(std::move(g));
+                Group k;
+                k.code = vt >= 70 ? 1000 + vt : 1040;
+                k.value = found.back().value;
+                found.back().value.v.emplace<long long>(var);
+                found.push_back(std::move(k));
+            }
+            if (found.empty())
+                continue;
+            add(e, 1001, Value{std::string("ACAD")});
+            add(e, 1000, Value{std::string("DSTYLE")});
+            add(e, 1002, Value{std::string("{")});
+            for (Group& g : found)
+                e.groups.push_back(std::move(g));
+            add(e, 1002, Value{std::string("}")});
+            return;
         }
     }
 
@@ -1112,8 +1247,8 @@ private:
         const double width = r.bd();
         const double height = r.bd();
         const Vec3 target = bd3(r);
-        bd3(r);  // view direction
-        r.bd();  // view twist
+        const Vec3 viewDir = bd3(r);
+        const double twist = r.bd();
         const double viewHeight = r.bd();
         r.bd();  // lens length
         r.bd();  // front clip
@@ -1150,6 +1285,9 @@ private:
         add(e, 40, width);
         add(e, 41, height);
         point3(e, 17, target);
+        point3(e, 16, viewDir);
+        if (twist != 0)
+            add(e, 51, twist);
         add(e, 12, vcx);
         add(e, 22, vcy);
         add(e, 45, viewHeight);
@@ -1211,13 +1349,13 @@ private:
         r.textBytes();  // page setup name
         r.textBytes();  // printer
         r.bs();         // plot layout flags
-        for (int i = 0; i < 4; ++i)
-            r.bd();  // margins
+        for (double& m : l.margins)
+            m = r.bd();
         l.width = r.bd();
         l.height = r.bd();
         r.textBytes();  // paper size
-        r.bd();
-        r.bd();  // plot origin
+        l.plotOrigin[0] = r.bd();
+        l.plotOrigin[1] = r.bd();
         r.bs();  // paper units
         l.rotation = r.bs();
         r.bs();  // plot type
@@ -1239,15 +1377,27 @@ private:
         l.tab = static_cast<int>(r.bl());
         r.bs();  // flags
         bd3(r);  // UCS origin
-        for (int i = 0; i < 4; ++i)
-            r.rd();  // limits
-        bd3(r);      // insertion base
+        for (double& v : l.limits)
+            v = r.rd();
+        {
+            const Vec3 ib = bd3(r);  // insertion base
+            l.insBase[0] = ib.x;
+            l.insBase[1] = ib.y;
+            l.insBase[2] = ib.z;
+        }
         bd3(r);
         bd3(r);  // UCS axes
         r.bd();  // elevation
         r.bs();  // ortho view type
-        bd3(r);
-        bd3(r);  // extents
+        {
+            const Vec3 a = bd3(r), b = bd3(r);  // extents
+            l.extents[0] = a.x;
+            l.extents[1] = a.y;
+            l.extents[2] = a.z;
+            l.extents[3] = b.x;
+            l.extents[4] = b.y;
+            l.extents[5] = b.z;
+        }
         if (fmt_.r2004)
             r.rl();  // viewport count
         tally(kLayoutObject, r);
@@ -1914,6 +2064,7 @@ private:
         if (leaderLen != 0)
             add(e, 40, leaderLen);
         extrusionGroups(e, c.extrusion);
+        dimStyleOverrides(e);
     }
 
     void leader(BitReader& r, EntityRec& e) {
@@ -2351,7 +2502,19 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r33: layouts met twice count once; r32: partly misread block member lists still place "
+    return "r49: data of other blocks inside each viewport counted; r48: model data inside each "
+           "viewport counted; r47: viewport direction and twist "
+           "listed; r46: paper rectangle moved to the sheet "
+           "origin; r45: layout margins, limits and "
+           "extents listed; r44: dimension style overrides read "
+           "from extended data; r39: dimension styles listed; "
+           "r38: widest fills listed; r37: tallest texts listed; "
+           "r36: widest ignores dimension "
+           "clone point; r35: widest "
+           "entities listed with groups; "
+           "r34: widest entities listed; r33: layouts met "
+           "twice count once; r32: partly misread "
+           "block member lists still place "
            "unowned entities; r31: LAYOUT is "
            "fixed type 82; r30: layout dictionary entry types; r29: layout "
            "diagnostics outside the note cap; r28: "

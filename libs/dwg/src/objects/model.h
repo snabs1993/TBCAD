@@ -106,6 +106,11 @@ struct LayoutRec {
     int tab = 0;
     double width = 0, height = 0;  // paper, mm
     int rotation = 0;
+    double margins[4] = {0, 0, 0, 0};  // left, bottom, right, top (ODA order)
+    double plotOrigin[2] = {0, 0};
+    double limits[4] = {0, 0, 0, 0};  // min x, min y, max x, max y
+    double insBase[3] = {0, 0, 0};
+    double extents[6] = {0, 0, 0, 0, 0, 0};
     std::uint64_t block = 0;  // its paper space block header
     bool damaged = false;     // only the handles were read; name and tab come from the dictionary
 };
