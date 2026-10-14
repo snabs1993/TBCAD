@@ -342,6 +342,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
         options, report);
     if (result) {
+        report.info(code::kSkippedObject,
+                    "layouts imported: " + std::to_string(result.value().summary.layouts));
         result.value().summary.acadVer = v.code;
         result.value().summary.version = v.name;
     }

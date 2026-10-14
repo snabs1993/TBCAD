@@ -1279,6 +1279,9 @@ private:
             l.tab = 0;
             l.damaged = true;
         }
+        for (const LayoutRec& old : out_.layoutObjects)
+            if (old.handle == l.handle)
+                return;  // an object met twice (map and stream walk) is one layout
         out_.layoutObjects.push_back(std::move(l));
     }
 
@@ -2348,7 +2351,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r32: partly misread block member lists still place unowned entities; r31: LAYOUT is "
+    return "r33: layouts met twice count once; r32: partly misread block member lists still place "
+           "unowned entities; r31: LAYOUT is "
            "fixed type 82; r30: layout dictionary entry types; r29: layout "
            "diagnostics outside the note cap; r28: "
            "class names read from the string "
