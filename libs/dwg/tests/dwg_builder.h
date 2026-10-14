@@ -14,6 +14,7 @@ namespace tbcad::dwg::test {
 inline bool gR2004 = false;
 inline bool gR2007 = false;  // R2010 layout: string stream, no object size
 inline bool gR2013 = false;
+inline bool gMapRestarts = false;  // object map sections restart handle and offset deltas
 
 class BitWriter {
 public:
@@ -164,6 +165,44 @@ inline void putMc(std::vector<std::uint8_t>& out, std::int64_t v) {
     }
 }
 
+// The object map in sections that reach about 2035 bytes, as real files do (size field big endian,
+// counting itself, then two CRC bytes), ending with the empty section.
+inline void appendObjectMap(std::vector<std::uint8_t>& out,
+                            std::vector<std::pair<std::uint64_t, std::int64_t>> map) {
+    std::sort(map.begin(), map.end());
+    std::vector<std::uint8_t> sec;
+    std::uint64_t lastH = 0;
+    std::int64_t lastL = 0;
+    auto flush = [&]() {
+        if (sec.empty())
+            return;
+        const std::size_t total = sec.size() + 2;
+        out.push_back(static_cast<std::uint8_t>(total >> 8));
+        out.push_back(static_cast<std::uint8_t>(total & 0xff));
+        out.insert(out.end(), sec.begin(), sec.end());
+        out.push_back(0);
+        out.push_back(0);
+        sec.clear();
+        if (gMapRestarts) {
+            lastH = 0;
+            lastL = 0;
+        }
+    };
+    for (auto& [h, l] : map) {
+        putMc(sec, static_cast<std::int64_t>(h - lastH));
+        putMc(sec, l - lastL);
+        lastH = h;
+        lastL = l;
+        if (sec.size() > 2033)
+            flush();
+    }
+    flush();
+    out.push_back(0);  // empty last section (size 2)
+    out.push_back(2);
+    out.push_back(0);
+    out.push_back(0);
+}
+
 // One object: type + body written by the caller, then the handle stream.
 class ObjectWriter {
 public:
@@ -278,29 +317,23 @@ private:
         } else {
             data.b(false);
         }
-        std::vector<std::uint8_t> mc;
-        std::size_t handleBits = handles.bitCount();
-        std::size_t total = 0;
-        for (int pass = 0; pass < 3; ++pass) {  // the MC length depends on the padded size
-            mc.clear();
-            std::size_t v = handleBits;
-            do {
-                std::uint8_t byte = v & 0x7f;
-                v >>= 7;
-                mc.push_back(static_cast<std::uint8_t>(byte | (v ? 0x80 : 0)));
-            } while (v);
-            total = mc.size() * 8 + data.bitCount() + handles.bitCount();
-            handleBits = handles.bitCount() + ((8 - total % 8) % 8);
-        }
+        const std::size_t total = data.bitCount() + handles.bitCount();
+        const std::size_t handleBits = handles.bitCount() + ((8 - total % 8) % 8);
         BitWriter all;
-        for (std::uint8_t b : mc)
-            all.rc(b);
         appendBits(all, data);
         appendBits(all, handles);
-        std::vector<std::uint8_t> body = all.bytes();
+        const std::vector<std::uint8_t> body = all.bytes();
+        // Size of the data and handle bytes, then the handle stream size as MC (not part of the
+        // counted size), as in a real R2018 file.
         BitWriter size;
         size.ms(static_cast<std::uint32_t>(body.size()));
         std::vector<std::uint8_t> out = size.bytes();
+        std::size_t v = handleBits;
+        do {
+            const auto byte = static_cast<std::uint8_t>(v & 0x7f);
+            v >>= 7;
+            out.push_back(static_cast<std::uint8_t>(byte | (v ? 0x80 : 0)));
+        } while (v);
         out.insert(out.end(), body.begin(), body.end());
         out.push_back(0);
         out.push_back(0);
@@ -332,26 +365,7 @@ public:
             map.emplace_back(h, static_cast<std::int64_t>(objects.size()));
             objects.insert(objects.end(), bytes.begin(), bytes.end());
         }
-        std::sort(map.begin(), map.end());
-        std::vector<std::uint8_t> sec;
-        std::uint64_t lastH = 0;
-        std::int64_t lastL = 0;
-        for (auto& [h, l] : map) {
-            putMc(sec, static_cast<std::int64_t>(h - lastH));
-            putMc(sec, l - lastL);
-            lastH = h;
-            lastL = l;
-        }
-        const std::size_t total = sec.size() + 2;
-        handles.push_back(static_cast<std::uint8_t>(total >> 8));
-        handles.push_back(static_cast<std::uint8_t>(total & 0xff));
-        handles.insert(handles.end(), sec.begin(), sec.end());
-        handles.push_back(0);
-        handles.push_back(0);
-        handles.push_back(0);  // empty last section (size 2)
-        handles.push_back(2);
-        handles.push_back(0);
-        handles.push_back(0);
+        appendObjectMap(handles, map);
     }
 
     std::vector<std::uint8_t> build(const char* version = "AC1015") const {
@@ -390,25 +404,7 @@ public:
             classSize = out.size() - classAt;
         }
         const std::size_t mapAt = out.size();
-        std::vector<std::uint8_t> sec;
-        std::uint64_t lastH = 0;
-        std::int64_t lastL = 0;
-        for (auto& [h, l] : map) {
-            putMc(sec, static_cast<std::int64_t>(h - lastH));
-            putMc(sec, l - lastL);
-            lastH = h;
-            lastL = l;
-        }
-        const std::size_t total = sec.size() + 2;
-        out.push_back(static_cast<std::uint8_t>(total >> 8));
-        out.push_back(static_cast<std::uint8_t>(total & 0xff));
-        out.insert(out.end(), sec.begin(), sec.end());
-        out.push_back(0);
-        out.push_back(0);
-        out.push_back(0);  // empty last section (size 2)
-        out.push_back(2);
-        out.push_back(0);
-        out.push_back(0);
+        appendObjectMap(out, map);
         const std::size_t mapSize = out.size() - mapAt;
         auto put32 = [&](std::size_t at, std::uint32_t v) {
             for (int i = 0; i < 4; ++i)

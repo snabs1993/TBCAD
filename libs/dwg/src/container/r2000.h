@@ -71,7 +71,8 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
 
 // The handle -> offset table from a buffer holding only that table (R2004 and later sections,
 // where offsets count from the start of the object section).
+// `limit` is how many bytes the offsets may point into (0 = the size of `data`).
 std::vector<MapEntry> readObjectMapData(Bytes data, std::size_t start, std::size_t end,
-                                        std::vector<std::string>& notes);
+                                        std::vector<std::string>& notes, std::uint64_t limit = 0);
 
 }  // namespace tbcad::dwg::detail

@@ -31,6 +31,22 @@ std::vector<std::string> messagesOf(const dxf::Report& report) {
     return out;
 }
 
+std::string productOf(const std::string& code) {
+    if (code == "AC1015")
+        return "AutoCAD 2000";
+    if (code == "AC1018")
+        return "AutoCAD 2004";
+    if (code == "AC1021")
+        return "AutoCAD 2007";
+    if (code == "AC1024")
+        return "AutoCAD 2010";
+    if (code == "AC1027")
+        return "AutoCAD 2013";
+    if (code == "AC1032")
+        return "AutoCAD 2018";
+    return "version " + code;
+}
+
 }  // namespace
 
 Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
@@ -44,8 +60,15 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
 
     dxf::Report report;
     Result<dxf::ImportResult> imported = dwg::importDwg(bytes, {}, report);
-    if (!imported)
-        return makeError(ErrorCode::Parse, imported.error().message);
+    if (!imported) {
+        // One plain sentence for the message box; the reader's reason follows it.
+        const dwg::VersionInfo v = dwg::detectVersion(bytes);
+        std::string msg = v.code.empty() ? std::string("This is not a DWG file.")
+                                         : "This DWG file (" + productOf(v.code) +
+                                               " format) could not be opened.";
+        msg += " " + imported.error().message;
+        return makeError(ErrorCode::Parse, msg);
+    }
 
     dxf::ImportResult& r = imported.value();
     ui::ForeignOpenResult out;

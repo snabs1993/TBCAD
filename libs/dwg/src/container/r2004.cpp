@@ -1,6 +1,7 @@
 #include "container/r2004.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "bits/bit_reader.h"
@@ -94,7 +95,17 @@ std::vector<std::uint8_t> headerMask(std::size_t length) {
     return out;
 }
 
-Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
+Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
+                                std::vector<std::string>* trace) {
+    auto tr = [&](const std::string& line) {
+        if (trace && trace->size() < 400)
+            trace->push_back(line);
+    };
+    auto hex = [](std::uint64_t v) {
+        char b[24];
+        std::snprintf(b, sizeof b, "0x%llX", static_cast<unsigned long long>(v));
+        return std::string(b);
+    };
     if (file.size() < 0x100)
         return makeError(ErrorCode::Parse, "the DWG file is too short");
     SectionSet set;
@@ -117,6 +128,9 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
     const std::uint64_t pageMapAt = le64(hd, 0x54) + 0x100;
     const std::uint32_t sectionMapId = le32(hd, 0x5C);
     const std::uint32_t pageCountHint = le32(hd, 0x60);
+    tr("file header: page map id " + std::to_string(pageMapId) + " at " + hex(pageMapAt) +
+       ", section map id " + std::to_string(sectionMapId) + ", page array size " +
+       std::to_string(pageCountHint));
 
     // The page map lists every page in file order; addresses follow from the sizes.
     std::vector<std::uint8_t> map;
@@ -138,7 +152,8 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
             pages.push_back(p);
         }
     }
-    (void)pageCountHint;
+    tr("page map: " + std::to_string(pages.size()) + " entries, " + std::to_string(map.size()) +
+       " bytes");
     auto findPage = [&](std::int64_t number) -> const PageRef* {
         for (const PageRef& p : pages)
             if (p.number == number)
@@ -156,6 +171,8 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
     if (desc.size() < 0x14)
         return makeError(ErrorCode::Parse, "the DWG section map is too short");
     const std::uint32_t count = le32(desc, 0);
+    tr("section map: " + std::to_string(count) + " sections, " + std::to_string(desc.size()) +
+       " bytes at page address " + hex(sm->address));
     std::size_t pos = 0x14;
     for (std::uint32_t si = 0; si < count; ++si) {
         if (pos + 0x60 > desc.size()) {
@@ -184,6 +201,9 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
             pos += 16;
         }
         const std::string sname(name);
+        tr("section \"" + sname + "\": size " + std::to_string(total) + ", " +
+           std::to_string(pageCount) + " pages, max page " + hex(maxPage) + ", compressed " +
+           std::to_string(compressed));
         if (sname.empty() || total == 0 || total > kMaxSection || maxPage == 0 ||
             maxPage > (1u << 24))
             continue;
@@ -192,6 +212,7 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
         for (const Rec& rec : recs) {
             const PageRef* pg = findPage(rec.page);
             if (!pg || !has(file, pg->address, 32)) {
+                tr("  page " + std::to_string(rec.page) + ": not found in the page map");
                 bad = true;
                 continue;
             }
@@ -206,6 +227,9 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
             const std::uint32_t type = le32(Bytes(hdr, 32), 0);
             const std::uint32_t dataSize = le32(Bytes(hdr, 32), 8);
             if (type != 0x4163043Bu || !has(file, pg->address + 32, dataSize)) {
+                tr("  page " + std::to_string(rec.page) + " at " + hex(pg->address) +
+                   ": header type " + hex(type) + ", data size " + std::to_string(dataSize) +
+                   " (not a data page)");
                 bad = true;
                 continue;
             }
@@ -218,11 +242,18 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes) {
                 file.subspan(static_cast<std::size_t>(pg->address) + 32, dataSize);
             if (compressed == 2) {
                 std::vector<std::uint8_t> page;
-                if (!lz77Decompress(payload, maxPage, page) &&
-                    !lz77Decompress(payload, logical, page)) {
+                int bias = 1;
+                if (!lz77Decompress(payload, maxPage, page, &bias) &&
+                    !lz77Decompress(payload, logical, page, &bias)) {
+                    tr("  page " + std::to_string(rec.page) + " at " + hex(pg->address) +
+                       ": cannot decompress " + std::to_string(dataSize) + " bytes");
                     bad = true;
                     continue;
                 }
+                if (bias != 1)
+                    tr("  page " + std::to_string(rec.page) + " of \"" + sname + "\" at " +
+                       std::to_string(start) + " only decompresses with distance bias " +
+                       std::to_string(bias));
                 const std::size_t n = std::min(logical, page.size());
                 std::memcpy(data.data() + start, page.data(), n);
             } else {

@@ -125,6 +125,9 @@ public:
     bool canOpenExtension(std::string_view lowerExtension) const;
     // True while the drawing came from a read-only format and has not been saved as .tbcad.
     bool readOnlyOrigin() const;
+    // The window shows a failed open in its own message box; it turns the command-line echo off so
+    // the message is not shown twice.
+    void setEchoOpenFailures(bool on) { echoOpenFailures_ = on; }
     // One-line banner for a read-only drawing; empty otherwise.
     std::string readOnlyBanner() const;
     bool modified() const;
@@ -312,6 +315,8 @@ private:
         bool readOnly = true;
     };
     std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
+    bool echoOpenFailures_ = true;
+    void printOpenFailure(const std::string& text);
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;

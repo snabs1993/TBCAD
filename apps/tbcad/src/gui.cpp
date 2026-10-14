@@ -489,7 +489,9 @@ void Gui::doOpenPath(const std::string& path) {
         anyActivity_ = true;
         return;
     }
+    core_.setEchoOpenFailures(false);  // the message box below shows it
     auto r = core_.openFile(platform::pathFromUtf8(path));
+    core_.setEchoOpenFailures(true);
     if (!r)
         lastError_ = r.error().message;
 }
@@ -514,7 +516,9 @@ void Gui::openPending() {
     }
     std::string path = std::move(pendingOpen_);
     pendingOpen_.clear();
+    core_.setEchoOpenFailures(false);  // the message box below shows it
     auto r = core_.openFile(platform::pathFromUtf8(path));
+    core_.setEchoOpenFailures(true);
     if (!r)
         lastError_ = r.error().message;
 }

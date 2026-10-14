@@ -194,7 +194,8 @@ bool Importer::frameOf(const Record& r, Frame& f, std::string_view type) {
     nx /= len;
     ny /= len;
     nz /= len;
-    if (std::abs(nx) < 1e-6 && std::abs(ny) < 1e-6) {
+    // A tilt below about 0.6 degrees (real drawings carry such noise) is read as flat.
+    if (std::abs(nx) < 1e-2 && std::abs(ny) < 1e-2) {
         f.mirror = nz < 0;
         return true;
     }
