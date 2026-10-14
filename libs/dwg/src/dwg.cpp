@@ -358,7 +358,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     {std::max(hi[0] - lo[0], hi[1] - lo[1]), lo[0], lo[1], hi[0], hi[1], &e});
             }
             std::sort(wide.begin(), wide.end(),
-                      [](const Wide& a, const Wide& b) { return a.span > b.span; });
+                      [](const Wide& lhs, const Wide& rhs) { return lhs.span > rhs.span; });
             for (std::size_t i = 0; i < wide.size() && i < 6; ++i) {
                 const Wide& w = wide[i];
                 const auto o = drawing.blocks.find(w.e->owner);
@@ -384,6 +384,39 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     }
                     report.info(code::kSkippedObject, gl);
                 }
+            }
+        }
+        {
+            // Text with the largest height (a misread height would draw giant glyphs).
+            std::vector<std::pair<double, const detail::EntityRec*>> tall;
+            for (const detail::EntityRec& e : drawing.entities) {
+                if (e.dxfType != "TEXT" && e.dxfType != "MTEXT" && e.dxfType != "ATTRIB" &&
+                    e.dxfType != "ATTDEF")
+                    continue;
+                for (const detail::Group& g : e.groups)
+                    if (g.code == 40)
+                        if (const double* h = std::get_if<double>(&g.value.v))
+                            tall.emplace_back(*h, &e);
+            }
+            std::sort(tall.begin(), tall.end(),
+                      [](const auto& lhs, const auto& rhs) { return lhs.first > rhs.first; });
+            for (std::size_t i = 0; i < tall.size() && i < 5; ++i) {
+                const detail::EntityRec& e = *tall[i].second;
+                const auto o = drawing.blocks.find(e.owner);
+                std::string txt =
+                    "text " + std::to_string(i) + " " + e.dxfType + " in " +
+                    (e.entmode == 0 && o != drawing.blocks.end() ? o->second.name : "a space") +
+                    ", height " + std::to_string(tall[i].first) + ", groups:";
+                for (const detail::Group& g : e.groups) {
+                    txt += " " + std::to_string(g.code) + "=";
+                    if (const double* v = std::get_if<double>(&g.value.v))
+                        txt += std::to_string(*v);
+                    else if (const long long* n = std::get_if<long long>(&g.value.v))
+                        txt += std::to_string(*n);
+                    else
+                        txt += "\"" + std::get<std::string>(g.value.v).substr(0, 30) + "\"";
+                }
+                report.info(code::kSkippedObject, txt);
             }
         }
         std::string ins = "inserts per owner:";
