@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <set>
 #include <string>
@@ -532,14 +533,148 @@ private:
         return c;
     }
 
+    // Extended data of the object being read; kept so a dimension can pick out its style
+    // overrides (the "DSTYLE" block of the standard application).
+    std::vector<std::vector<std::uint8_t>> eed_{};
+
     void skipEed(BitReader& r) {
+        eed_.clear();
         for (int guard = 0; guard < 100000; ++guard) {
             const std::int32_t size = r.bs();
             if (size <= 0 || r.failed())
                 return;
             r.handle();
-            for (std::int32_t i = 0; i < size && !r.failed(); ++i)
-                r.rc();
+            std::vector<std::uint8_t> bytes;
+            for (std::int32_t i = 0; i < size && !r.failed(); ++i) {
+                const auto b = static_cast<std::uint8_t>(r.rc());
+                if (bytes.size() < 4096)
+                    bytes.push_back(b);
+            }
+            if (!r.failed() && eed_.size() < 16)
+                eed_.push_back(std::move(bytes));
+        }
+    }
+
+    // Reads the style overrides of a dimension from its extended data (ODA spec section 28:
+    // string "DSTYLE", then braces holding pairs of a variable number and its value) and adds
+    // them to the entity as standard extended-data groups.
+    void dimStyleOverrides(EntityRec& e) {
+        for (const std::vector<std::uint8_t>& d : eed_) {
+            std::size_t p = 0;
+            auto have = [&](std::size_t n) { return p + n <= d.size(); };
+            auto str = [&](std::string& out) {
+                out.clear();
+                if (fmt_.r2007) {
+                    if (!have(2))
+                        return false;
+                    const std::size_t n = d[p] | (d[p + 1] << 8);
+                    p += 2;
+                    if (!have(n * 2))
+                        return false;
+                    for (std::size_t i = 0; i < n; ++i) {
+                        const unsigned ch = d[p + 2 * i] | (d[p + 2 * i + 1] << 8);
+                        out.push_back(ch < 128 ? static_cast<char>(ch) : '?');
+                    }
+                    p += n * 2;
+                } else {
+                    if (!have(3))
+                        return false;
+                    const std::size_t n = d[p];
+                    p += 3;  // length and code page
+                    if (!have(n))
+                        return false;
+                    out.assign(reinterpret_cast<const char*>(&d[p]), n);
+                    p += n;
+                }
+                return true;
+            };
+            auto u16 = [&](long long& v) {
+                if (!have(2))
+                    return false;
+                v = static_cast<std::int16_t>(d[p] | (d[p + 1] << 8));
+                p += 2;
+                return true;
+            };
+            if (!have(1) || d[p] != 0)
+                continue;
+            ++p;
+            std::string name;
+            if (!str(name) || name != "DSTYLE")
+                continue;
+            std::vector<Group> found;
+            bool ok = true;
+            while (ok && have(1)) {
+                const int type = d[p++];
+                if (type == 2) {  // brace
+                    if (!have(1))
+                        break;
+                    ++p;
+                    continue;
+                }
+                if (type != 70) {
+                    ok = false;
+                    break;
+                }
+                long long var = 0;
+                if (!u16(var) || !have(1)) {
+                    ok = false;
+                    break;
+                }
+                const int vt = d[p++];
+                Group g;
+                if (vt == 40 || vt == 41 || vt == 42) {
+                    if (!have(8)) {
+                        ok = false;
+                        break;
+                    }
+                    double v;
+                    std::memcpy(&v, &d[p], 8);
+                    p += 8;
+                    g.value.v.emplace<double>(v);
+                } else if (vt == 70) {
+                    long long v = 0;
+                    if (!u16(v)) {
+                        ok = false;
+                        break;
+                    }
+                    g.value.v.emplace<long long>(v);
+                } else if (vt == 71) {
+                    if (!have(4)) {
+                        ok = false;
+                        break;
+                    }
+                    std::int32_t v;
+                    std::memcpy(&v, &d[p], 4);
+                    p += 4;
+                    g.value.v.emplace<long long>(v);
+                } else if (vt == 5 || vt == 3) {
+                    if (!have(8)) {
+                        ok = false;
+                        break;
+                    }
+                    p += 8;  // handles (text style, arrow blocks): not used
+                    continue;
+                } else {
+                    ok = false;
+                    break;
+                }
+                g.code = 1070;
+                found.push_back(std::move(g));
+                Group k;
+                k.code = vt >= 70 ? 1000 + vt : 1040;
+                k.value = found.back().value;
+                found.back().value.v.emplace<long long>(var);
+                found.push_back(std::move(k));
+            }
+            if (found.empty())
+                continue;
+            add(e, 1001, Value{std::string("ACAD")});
+            add(e, 1000, Value{std::string("DSTYLE")});
+            add(e, 1002, Value{std::string("{")});
+            for (Group& g : found)
+                e.groups.push_back(std::move(g));
+            add(e, 1002, Value{std::string("}")});
+            return;
         }
     }
 
@@ -1914,6 +2049,7 @@ private:
         if (leaderLen != 0)
             add(e, 40, leaderLen);
         extrusionGroups(e, c.extrusion);
+        dimStyleOverrides(e);
     }
 
     void leader(BitReader& r, EntityRec& e) {

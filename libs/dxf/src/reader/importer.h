@@ -108,6 +108,8 @@ private:
     LinetypeId linetypeFor(std::string_view raw, int line);
     TextStyleId textStyleFor(std::string_view raw) const;
     DimStyleId dimStyleFor(std::string_view raw) const;
+    DimStyleId dimStyleWithOverrides(const Record& r, DimStyleId base);
+    std::map<std::string, DimStyleId> dimOverrideStyles_{};
     Vec2 P(const Record& r, int cx, int cy) const { return {r.num(cx) * k_, r.num(cy) * k_}; }
     void note3d(const Record& r);
     void bad(const Record& r, std::string_view type, const std::string& message);

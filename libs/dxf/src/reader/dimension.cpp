@@ -3,6 +3,8 @@
 // loose text entities so the dimension displays before the dimension generator exists.
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #include "importer.h"
 #include "tbcad/dxf/encoding.h"
@@ -40,6 +42,114 @@ void bulgeArc(Vec2 a, Vec2 b, double bulge, std::vector<Vec2>& out) {
 }
 
 }  // namespace
+
+// A dimension can carry its own values for a few style variables (the "DSTYLE" block of its
+// extended data), and its text can start with a relative height ("{\\H560x;<>}"). Both make a
+// copy of the style named by the dimension; copies with the same values are shared.
+DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
+    std::optional<double> txt, asz, scale, gap, exo, exe, dle;
+    bool inDstyle = false, inAcad = false;
+    int var = -1;
+    for (const Group& g : r.g) {
+        if (g.code == 1001) {
+            inAcad = g.str() == "ACAD";
+            inDstyle = false;
+            var = -1;
+            continue;
+        }
+        if (!inAcad)
+            continue;
+        if (g.code == 1000) {
+            inDstyle = g.str() == "DSTYLE";
+            continue;
+        }
+        if (!inDstyle)
+            continue;
+        if (g.code == 1070 && var < 0) {
+            var = static_cast<int>(g.integer());
+            continue;
+        }
+        if (g.code == 1040 || g.code == 1070 || g.code == 1071) {
+            const double v = g.code == 1040 ? g.number() : static_cast<double>(g.integer());
+            if (std::isfinite(v)) {
+                switch (var) {
+                    case 140:
+                        txt = v * k_;
+                        break;
+                    case 41:
+                        asz = v * k_;
+                        break;
+                    case 40:
+                        scale = v;
+                        break;
+                    case 147:
+                        gap = v * k_;
+                        break;
+                    case 42:
+                        exo = v * k_;
+                        break;
+                    case 44:
+                        exe = v * k_;
+                        break;
+                    case 46:
+                        dle = v * k_;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            var = -1;
+        }
+    }
+    double factor = 1;
+    {
+        const std::string t = dec(r.raw(1));
+        std::size_t i = t.rfind("\\H", 0) == 0 ? 0 : t.find("{\\H");
+        if (i != std::string::npos && i <= 8) {
+            i = t.find("\\H", i) + 2;
+            std::size_t j = t.find(';', i);
+            if (j != std::string::npos && j > i && t[j - 1] == 'x') {
+                const double v = std::strtod(t.substr(i, j - 1 - i).c_str(), nullptr);
+                if (std::isfinite(v) && v > 0 && v < 1e6)
+                    factor = v;
+            }
+        }
+    }
+    if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && factor == 1)
+        return base;
+    const DimStyle* b = base ? doc_->dimStyle(base) : nullptr;
+    DimStyle ds = b ? *b : DimStyle{};
+    if (txt && *txt > 0)
+        ds.textHeight = *txt;
+    if (asz && *asz > 0)
+        ds.arrowSize = *asz;
+    if (scale && *scale > 0)
+        ds.overallScale = *scale;
+    if (gap && *gap >= 0)
+        ds.textGap = *gap;
+    if (exo && *exo >= 0)
+        ds.extLineOffset = *exo;
+    if (exe && *exe >= 0)
+        ds.extLineExtension = *exe;
+    if (dle && *dle >= 0)
+        ds.dimLineExtension = *dle;
+    ds.textHeight *= factor;
+    char key[256];
+    std::snprintf(key, sizeof key, "%u|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g", base.value,
+                  ds.textHeight, ds.arrowSize, ds.overallScale, ds.textGap, ds.extLineOffset,
+                  ds.extLineExtension, ds.dimLineExtension, factor);
+    auto it = dimOverrideStyles_.find(key);
+    if (it != dimOverrideStyles_.end())
+        return it->second;
+    ds.name = (b ? b->name : std::string("Standard")) + "$" +
+              std::to_string(dimOverrideStyles_.size() + 1);
+    ds.id = DimStyleId{};
+    tbcad::Result<DimStyleId> id = tx_->addDimStyle(std::move(ds));
+    if (!id)
+        return base;
+    dimOverrideStyles_[key] = id.value();
+    return id.value();
+}
 
 bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId /*owner*/) {
     const std::int64_t flags = r.integer(70);
@@ -90,7 +200,7 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
     std::string text = stripMText(dec(r.raw(1)));
     if (text != "<>")
         d.textOverride = text;
-    d.style = dimStyleFor(r.raw(3));
+    d.style = dimStyleWithOverrides(r, dimStyleFor(r.raw(3)));
     d.measurement = r.num(42) * (isLength ? k_ : 1.0);
     if (!(d.measurement > 0) || !std::isfinite(d.measurement)) {
         // Many writers omit the measurement; derive it from the definition points.

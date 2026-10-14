@@ -619,6 +619,26 @@ TEST_CASE("a layout takes its name and paper size from the LAYOUT object and kee
     CHECK(t.find("V\t1\t10\t8.5\t410\t288.5\t1000\t2000\t100\t1\t") != std::string::npos);
 }
 
+TEST_CASE("dimension: style overrides in its extended data and a relative text height") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(2, "Big").g(140, 450.0).g(41, 400.0).g(40, 1.0);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Big").g(10, 5.0).g(20, 5.0).g(11, 5.0);
+    p.g(21, 8.0).g(70, 1).g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0).g(42, 10.0);
+    p.g(1, "{\\H560x;<>}");
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 140).g(1040, 1.25).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(near(ds->textHeight, 700.0));
+    CHECK(near(ds->arrowSize, 400.0));
+}
+
 TEST_CASE("an older version than R12 is refused") {
     Report report;
     Result<ImportResult> r = importDxf(
