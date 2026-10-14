@@ -12,6 +12,7 @@ tbcad_add_tests(modify
     tests/main.cpp
     tests/break_join_tests.cpp
     tests/extra_tests.cpp
+    tests/fuzz_tests.cpp
     tests/fillet_tests.cpp
     tests/offset_tests.cpp
     tests/test_support.h
