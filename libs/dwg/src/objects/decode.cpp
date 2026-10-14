@@ -79,6 +79,24 @@ public:
         : file_(file), classes_(classes), out_(out), notes_(notes), fmt_(fmt) {}
 
     void run(const std::vector<MapEntry>& map) {
+        // R2010 and later: the objects follow each other in the stream and carry their own
+        // handle, so walking the stream is more dependable than the object map (whose entries
+        // are written in a shape that is easy to misread). Use the map only as a fallback.
+        if (fmt_.r2010) {
+            walkStream();
+            if (walkedList_.size() * 10 >= map.size() * 9) {
+                for (const auto& [h, off] : walkedList_) {
+                    MapEntry e;
+                    e.handle = h;
+                    e.offset = off;
+                    decodeOne(e);
+                }
+                std::sort(
+                    out_.entities.begin(), out_.entities.end(),
+                    [](const EntityRec& a, const EntityRec& b) { return a.handle < b.handle; });
+                return;
+            }
+        }
         for (const MapEntry& e : map) {
             if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file_.size()) {
                 note("object " + hex(e.handle) + " lies outside the file");
@@ -215,6 +233,7 @@ private:
     // Objects follow each other in the stream (size, body, a 2 byte check value): walking it from
     // the start gives every object's real position, whatever the object map says.
     std::unordered_map<std::uint64_t, std::int64_t> walked_;
+    std::vector<std::pair<std::uint64_t, std::int64_t>> walkedList_;
     bool walkedDone_ = false;
     void walkStream() {
         walkedDone_ = true;
@@ -238,6 +257,7 @@ private:
             const std::size_t len = frameLength(off);
             if (h != 0 && len != 0 && off + static_cast<std::int64_t>(len) + 2 <= end) {
                 walked_.emplace(h, off);
+                walkedList_.emplace_back(h, off);
                 off += static_cast<std::int64_t>(len) + 2;
                 misses = 0;
                 continue;
