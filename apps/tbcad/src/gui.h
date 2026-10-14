@@ -120,6 +120,9 @@ private:
 
     void doNew();
     void doOpen();
+    void bringToFront();
+    std::filesystem::path dialogFolder() const;
+    void rememberFolder(const std::filesystem::path& picked);
     void doOpenPath(const std::string& path);
     void openPending();
     void doImportDxf();
@@ -181,6 +184,7 @@ private:
     bool spaceAsEnter_ = false;
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;
+    float commandFooterH_ = 0;  // measured height of the chips and input line
     ImGuiID inputId_ = 0;
     // Autocomplete / command palette.
     std::vector<ui::CommandMatch> suggestions_{};
@@ -191,6 +195,8 @@ private:
     std::string suggestFor_{};
     bool cursorHud_ = true;
     bool hudHovered_ = false;
+    std::size_t activityStamp_ = 0;
+    ImVec2 hudSize_{0, 0};
     ImVec2 hoverTipPos_{-1, -1};  // where the pointer rested, for the hover tooltip
     double hoverTipSince_ = 0;
     void hoverTooltip();

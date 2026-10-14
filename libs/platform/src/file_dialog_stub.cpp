@@ -7,13 +7,15 @@ bool nativeDialogsAvailable() {
 }
 
 std::optional<std::filesystem::path> showOpenDialog(void*, const std::vector<FileFilter>&,
-                                                    const std::string&) {
+                                                    const std::string&,
+                                                    const std::filesystem::path&) {
     return std::nullopt;
 }
 
 std::optional<std::filesystem::path> showSaveDialog(void*, const std::vector<FileFilter>&,
                                                     const std::string&, const std::string&,
-                                                    const std::string&) {
+                                                    const std::string&,
+                                                    const std::filesystem::path&) {
     return std::nullopt;
 }
 

@@ -648,7 +648,13 @@ Result<void> AppCore::openDxf(const fs::path& path) {
         print("DXF: the file has no units; millimetres assumed.");
     settings_.addRecentFile(platform::pathToUtf8(path));
     (void)settings_.save(paths_.settingsFile());
-    print("Opened " + path.string() + " (" + std::to_string(total) + " objects)");
+    // The status bar counts model space; the rest of the file's objects are inside blocks,
+    // layouts or other spaces.
+    std::string counts = std::to_string(session_->doc.modelSpaceCount()) + " objects";
+    if (total > session_->doc.modelSpaceCount())
+        counts += ", " + std::to_string(total - session_->doc.modelSpaceCount()) +
+                  " more inside blocks and layouts";
+    print("Opened " + path.string() + " (" + counts + ")");
     return {};
 }
 
