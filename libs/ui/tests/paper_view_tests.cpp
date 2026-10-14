@@ -7,6 +7,7 @@
 using namespace tbcad;
 using namespace tbcad::ui;
 using namespace tbcad::ui::test;
+namespace fs = std::filesystem;
 
 TEST_CASE("switching to a layout shows the sheet and goes back to the model view") {
     auto registry = makeRegistry();
@@ -67,4 +68,29 @@ TEST_CASE("deleting the shown layout returns to the model") {
     }
     core.updateFrame();
     CHECK_FALSE(core.inPaperSpace());
+}
+
+TEST_CASE("an xref whose file is gone is listed as missing when the drawing opens") {
+    auto registry = makeRegistry();
+    const fs::path dir = tempDir("xrefmissing");
+    AppCore core(*registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    core.setViewportSize(1000, 800);
+    CHECK_FALSE(core.xrefNoticeVisible());
+    {
+        auto tx = core.document().begin("xref");
+        BlockDef def;
+        def.name = "site";
+        def.xrefPath = "gone/site.dxf";
+        REQUIRE(tx.addBlock(std::move(def)).ok());
+        tx.commit();
+    }
+    REQUIRE(core.saveAs(dir / "host.tbcad").ok());
+    core.newDocument();
+    REQUIRE(core.openFile(dir / "host.tbcad").ok());
+    REQUIRE(core.missingXrefs().size() == 1);
+    CHECK(core.missingXrefs()[0].name == "site");
+    CHECK(core.missingXrefs()[0].path == "gone/site.dxf");
+    CHECK(core.xrefNoticeVisible());
+    core.dismissXrefNotice();
+    CHECK_FALSE(core.xrefNoticeVisible());
 }

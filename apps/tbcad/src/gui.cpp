@@ -1205,6 +1205,55 @@ void Gui::layoutTabs(const ViewportRect& rect) {
     }
 }
 
+// A drawing with external references that cannot be found looks incomplete (empty sheet
+// viewports, missing backgrounds): say so, and list each name and path on request.
+void Gui::xrefNotice() {
+    if (!core_.xrefNoticeVisible()) {
+        xrefListOpen_ = false;
+        return;
+    }
+    const auto& missing = core_.missingXrefs();
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    if (ImGui::BeginViewportSideBar("##xrefnotice", vp, ImGuiDir_Up, h, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%zu external reference%s not found. The drawing may look incomplete.",
+                    missing.size(), missing.size() == 1 ? "" : "s");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Show list"))
+            xrefListOpen_ = true;
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Dismiss"))
+            core_.dismissXrefNotice();
+    }
+    ImGui::End();
+    if (!xrefListOpen_)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(620, 320), ImGuiCond_Appearing);
+    if (ImGui::Begin("Missing external references", &xrefListOpen_)) {
+        ImGui::TextDisabled(
+            "Put the files at these paths (relative paths start in the drawing's folder).");
+        if (ImGui::BeginTable("##missingxrefs", 2,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders |
+                                  ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 180);
+            ImGui::TableSetupColumn("Saved path", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            for (const auto& m : missing) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(m.name.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(m.path.c_str());
+            }
+            ImGui::EndTable();
+        }
+    }
+    ImGui::End();
+}
+
 void Gui::statusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -2582,6 +2631,7 @@ ViewportRect Gui::frame() {
         toolStrip();
         docTabs();
         readOnlyBanner();
+        xrefNotice();
         statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();

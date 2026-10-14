@@ -94,6 +94,8 @@ private:
     void menuBar();
     void toolStrip();
     void readOnlyBanner();
+    void xrefNotice();
+    bool xrefListOpen_ = false;
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();
