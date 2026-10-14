@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 #include "bits/bit_reader.h"
 
@@ -88,6 +89,12 @@ public:
                 // nearby for the frame that carries this handle (its own handle is inside it).
                 std::int64_t found = 0;
                 bool ok = false;
+                if (!walkedDone_)
+                    walkStream();
+                if (const auto w = walked_.find(e.handle); w != walked_.end()) {
+                    found = w->second - e.offset;
+                    ok = true;
+                }
                 for (std::int64_t d : {lastShift_}) {
                     if (d != 0 && frameHandle(e.offset + d) == e.handle) {
                         found = d;
@@ -170,6 +177,55 @@ private:
         }
         const HandleRef self = r.handle();
         return r.failed() ? 0 : self.value;
+    }
+
+    // Size in bytes of the object framed at `offset` including the leading size fields (0 when
+    // nothing sensible starts there).
+    std::size_t frameLength(std::int64_t offset) const {
+        if (offset < 0 || static_cast<std::size_t>(offset) >= file_.size())
+            return 0;
+        BitReader head(file_.subspan(static_cast<std::size_t>(offset)));
+        const std::uint32_t size = head.ms();
+        if (fmt_.r2010)
+            head.mcUnsigned();
+        const std::size_t lead = head.bytePos();
+        if (head.failed() || size == 0)
+            return 0;
+        return lead + size;
+    }
+
+    // Objects follow each other in the stream (size, body, a 2 byte check value): walking it from
+    // the start gives every object's real position, whatever the object map says.
+    std::unordered_map<std::uint64_t, std::int64_t> walked_;
+    bool walkedDone_ = false;
+    void walkStream() {
+        walkedDone_ = true;
+        std::int64_t off = 4;
+        std::size_t misses = 0;
+        const std::int64_t end = static_cast<std::int64_t>(file_.size());
+        while (off + 8 < end) {
+            const std::uint64_t h = frameHandle(off);
+            const std::size_t len = frameLength(off);
+            if (h != 0 && len != 0 && off + static_cast<std::int64_t>(len) + 2 <= end) {
+                walked_.emplace(h, off);
+                off += static_cast<std::int64_t>(len) + 2;
+                misses = 0;
+                continue;
+            }
+            // Lost the frame: move on byte by byte until two frames in a row look right.
+            bool again = false;
+            for (std::int64_t d = 1; d <= 4096 && off + d + 8 < end; ++d) {
+                const std::size_t l1 = frameLength(off + d);
+                if (frameHandle(off + d) != 0 && l1 != 0 &&
+                    frameHandle(off + d + static_cast<std::int64_t>(l1) + 2) != 0) {
+                    off += d;
+                    again = true;
+                    break;
+                }
+            }
+            if (!again || ++misses > 100000)
+                break;
+        }
     }
 
     // Where an object that could not be framed sits: offset, offset inside a 0x7400 page, and
