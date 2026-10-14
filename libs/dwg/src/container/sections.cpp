@@ -1,6 +1,7 @@
 #include "container/sections.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "bits/bit_reader.h"
@@ -48,10 +49,11 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraW
 
 }  // namespace
 
-std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int maintenance,
-                                    std::vector<std::string>& notes) {
+namespace {
+
+std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, bool extra,
+                                        std::vector<std::string>& notes) {
     std::vector<ClassInfo> out;
-    const bool extra = fmt.r2010 && maintenance > 3;
     const Bytes data = sectionData(section, kClassStart, extra, notes, "class");
     if (data.empty())
         return out;
@@ -86,13 +88,46 @@ std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int mainte
         r.bs();  // maintenance release
         r.bl();
         r.bl();
-        if (r.failed())
+        if (r.failed() || c.number < 500) {
+            if (out.empty())
+                notes.push_back("first class entry unreadable: number " + std::to_string(c.number) +
+                                ", names [" + c.app + "] [" + c.cppName + "] [" + c.dxfName +
+                                "], bit " + std::to_string(r.bitPos()) + " of " +
+                                std::to_string(endBit) + " (extra word " +
+                                (extra ? "read" : "not read") + ")");
             break;
+        }
         out.push_back(std::move(c));
         if (out.size() > 100000)
             break;
     }
     return out;
+}
+
+}  // namespace
+
+std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int maintenance,
+                                    std::vector<std::string>& notes) {
+    // The extra size word depends on the release; a real R2018 file decides which reading fits.
+    const bool first = fmt.r2018 || (fmt.r2010 && maintenance > 3);
+    std::vector<std::string> n1, n2;
+    auto a = parseClassesWith(section, fmt, first, n1);
+    if (!a.empty() || !fmt.r2010) {
+        notes.insert(notes.end(), n1.begin(), n1.end());
+        return a;
+    }
+    auto b = parseClassesWith(section, fmt, !first, n2);
+    if (!b.empty())
+        return b;
+    notes.insert(notes.end(), n1.begin(), n1.end());
+    std::string hex = "class section starts:";
+    char t[8];
+    for (std::size_t i = 16; i < 48 && i < section.size(); ++i) {
+        std::snprintf(t, sizeof t, " %02X", section[i]);
+        hex += t;
+    }
+    notes.push_back(hex);
+    return a;
 }
 
 HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,

@@ -2332,7 +2332,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r23: class lookup by number, private type numbers moved; r22: layout names from the "
+    return "r24: class section reading retried; r23: class lookup by number, private type numbers "
+           "moved; r22: layout names from the "
            "layout dictionary; r21: layout diagnostics; r20: layouts "
            "(VIEWPORT, LAYOUT), xref paths; r19: "
            "reachability info";
