@@ -343,6 +343,12 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::TextUnformatted(f.field.label.c_str());
+            if (f.field.type == FieldType::Number) {  // lengths are millimetres, areas mm²
+                ImGui::SameLine(0, 4);
+                ImGui::TextDisabled("%s", f.field.id.find("area") != std::string::npos
+                                              ? "mm\xC2\xB2"
+                                              : "mm");
+            }
             ImGui::TableSetColumnIndex(1);
             std::string text;
             if (f.varies) {
