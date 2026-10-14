@@ -930,8 +930,21 @@ void Gui::toolStrip() {
                 }
                 ImGui::PopID();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort |
-                                         ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip("%s", t.tip);
+                                         ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    // "Line (L) - Draw straight segments": name, alias and description come
+                    // from the command registry.
+                    std::string tip = t.tip;
+                    if (t.command) {
+                        if (cmd::Command* c = core_.registry().find(t.command)) {
+                            auto aliases = core_.registry().aliasesOf(c->name());
+                            if (!aliases.empty())
+                                tip += " (" + aliases.front() + ")";
+                            if (!c->description().empty())
+                                tip += "\n" + std::string(c->description());
+                        }
+                    }
+                    ImGui::SetTooltip("%s", tip.c_str());
+                }
             }
         }
         // Right-click the strip to show or hide a group.
