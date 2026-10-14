@@ -2163,6 +2163,23 @@ void Gui::viewportMenu() {
         const std::string last(core_.runner().lastCommand());
         if (!last.empty() && ImGui::MenuItem(("Repeat " + last).c_str()))
             run("");
+        // The commands typed lately (latest first), each once; a click runs it.
+        std::vector<std::string> recent;
+        for (auto it = inputHistory_.rbegin(); it != inputHistory_.rend() && recent.size() < 8;
+             ++it) {
+            std::string word = it->substr(0, it->find(' '));
+            std::transform(word.begin(), word.end(), word.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+            if (!word.empty() && word != last && core_.registry().find(word) &&
+                std::find(recent.begin(), recent.end(), word) == recent.end())
+                recent.push_back(word);
+        }
+        if (!recent.empty() && ImGui::BeginMenu("Recent Commands")) {
+            for (const std::string& r : recent)
+                if (ImGui::MenuItem(r.c_str()))
+                    run(r);
+            ImGui::EndMenu();
+        }
         if (!core_.selection().empty()) {
             ImGui::Separator();
             for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
