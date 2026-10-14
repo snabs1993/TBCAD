@@ -2307,14 +2307,21 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                 found += index.count(m);
             out.membersMissing += blk.members.size() - found;
             // A list that mostly names objects we have is trustworthy; otherwise it was misread.
-            if (found * 10 < blk.members.size() * 9)
-                continue;
+            const bool trusted = found * 10 >= blk.members.size() * 9;
             for (std::uint64_t m : blk.members) {
                 const auto it = index.find(m);
                 if (it == index.end())
                     continue;
                 EntityRec& e = out.entities[it->second];
-                if (e.owner != bh) {
+                // Even a partly misread list places the entities that have no owner of their own
+                // (entity mode 1 or 2 stores none).
+                if (!trusted && e.entmode == 0)
+                    continue;
+                if (e.entmode != 0) {
+                    e.entmode = 0;
+                    e.owner = bh;
+                    ++out.ownerFixed;
+                } else if (e.owner != bh) {
                     ++out.ownerFixed;
                     e.owner = bh;
                 }
@@ -2341,7 +2348,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r31: LAYOUT is fixed type 82; r30: layout dictionary entry types; r29: layout "
+    return "r32: partly misread block member lists still place unowned entities; r31: LAYOUT is "
+           "fixed type 82; r30: layout dictionary entry types; r29: layout "
            "diagnostics outside the note cap; r28: "
            "class names read from the string "
            "run after the class fields; r27: class bytes "
