@@ -207,7 +207,6 @@ private:
     }
 
     std::size_t mainEnd_ = 0;
-    std::int64_t lastShift_ = 0;
     int hugeSeen_ = 0;
     std::map<std::uint32_t, int> failDumps_;
     std::uint64_t currentHandle_ = 0;

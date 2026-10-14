@@ -199,6 +199,14 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         std::size_t unowned = perOwner.count(0) ? perOwner[0] : 0;
         spaces += "; entities with no owner: " + std::to_string(unowned);
         report.info(code::kSkippedObject, spaces);
+        std::map<std::string, std::size_t> inModel;
+        for (const detail::EntityRec& e : drawing.entities)
+            if (e.entmode == 2)
+                ++inModel[e.dxfType];
+        std::string mc = "model space (entity mode 2) holds:";
+        for (const auto& [t, c] : inModel)
+            mc += " " + t + " " + std::to_string(c);
+        report.info(code::kSkippedObject, mc);
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)
