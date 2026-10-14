@@ -294,11 +294,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         {
             std::string ls = "layout objects:";
             for (const detail::LayoutRec& l : drawing.layoutObjects) {
-                char t[160];
-                std::snprintf(t, sizeof t, " %llX block %llX tab %d %s[%s]",
-                              static_cast<unsigned long long>(l.handle),
-                              static_cast<unsigned long long>(l.block), l.tab,
-                              l.damaged ? "(dictionary) " : "", l.name.c_str());
+                char t[520];
+                std::snprintf(
+                    t, sizeof t,
+                    " %llX block %llX tab %d %s[%s] paper %.1f x %.1f rot %d margins %.1f %.1f "
+                    "%.1f %.1f origin %.1f %.1f limits %.1f %.1f %.1f %.1f base %.1f %.1f "
+                    "extents %.1f %.1f %.1f %.1f;",
+                    static_cast<unsigned long long>(l.handle),
+                    static_cast<unsigned long long>(l.block), l.tab,
+                    l.damaged ? "(dictionary) " : "", l.name.c_str(), l.width, l.height, l.rotation,
+                    l.margins[0], l.margins[1], l.margins[2], l.margins[3], l.plotOrigin[0],
+                    l.plotOrigin[1], l.limits[0], l.limits[1], l.limits[2], l.limits[3],
+                    l.insBase[0], l.insBase[1], l.extents[0], l.extents[1], l.extents[3],
+                    l.extents[4]);
                 ls += t;
             }
             for (const auto& [dh, items] : drawing.dictionaries)

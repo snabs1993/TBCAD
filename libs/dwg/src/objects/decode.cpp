@@ -1346,13 +1346,13 @@ private:
         r.textBytes();  // page setup name
         r.textBytes();  // printer
         r.bs();         // plot layout flags
-        for (int i = 0; i < 4; ++i)
-            r.bd();  // margins
+        for (double& m : l.margins)
+            m = r.bd();
         l.width = r.bd();
         l.height = r.bd();
         r.textBytes();  // paper size
-        r.bd();
-        r.bd();  // plot origin
+        l.plotOrigin[0] = r.bd();
+        l.plotOrigin[1] = r.bd();
         r.bs();  // paper units
         l.rotation = r.bs();
         r.bs();  // plot type
@@ -1374,15 +1374,27 @@ private:
         l.tab = static_cast<int>(r.bl());
         r.bs();  // flags
         bd3(r);  // UCS origin
-        for (int i = 0; i < 4; ++i)
-            r.rd();  // limits
-        bd3(r);      // insertion base
+        for (double& v : l.limits)
+            v = r.rd();
+        {
+            const Vec3 ib = bd3(r);  // insertion base
+            l.insBase[0] = ib.x;
+            l.insBase[1] = ib.y;
+            l.insBase[2] = ib.z;
+        }
         bd3(r);
         bd3(r);  // UCS axes
         r.bd();  // elevation
         r.bs();  // ortho view type
-        bd3(r);
-        bd3(r);  // extents
+        {
+            const Vec3 a = bd3(r), b = bd3(r);  // extents
+            l.extents[0] = a.x;
+            l.extents[1] = a.y;
+            l.extents[2] = a.z;
+            l.extents[3] = b.x;
+            l.extents[4] = b.y;
+            l.extents[5] = b.z;
+        }
         if (fmt_.r2004)
             r.rl();  // viewport count
         tally(kLayoutObject, r);
@@ -2487,7 +2499,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r44: dimension style overrides read from extended data; r39: dimension styles listed; "
+    return "r45: layout margins, limits and extents listed; r44: dimension style overrides read "
+           "from extended data; r39: dimension styles listed; "
            "r38: widest fills listed; r37: tallest texts listed; "
            "r36: widest ignores dimension "
            "clone point; r35: widest "
