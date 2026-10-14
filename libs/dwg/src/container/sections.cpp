@@ -22,7 +22,7 @@ constexpr std::uint8_t kHeaderStart[16] = {0xCF, 0x7B, 0x1F, 0x23, 0xFD, 0xDE, 0
                                            0x5F, 0x7C, 0x68, 0xB8, 0x4E, 0x6D, 0x33, 0x5F};
 
 // Sentinel, size, and the optional extra size word; returns the data bytes or empty.
-Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraWord,
+Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], std::size_t extraBytes,
                   std::vector<std::string>& notes, const char* what) {
     if (section.size() < 20) {
         notes.push_back(std::string("the ") + what + " section is too short");
@@ -33,12 +33,12 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraW
     std::size_t pos = 16;
     const std::uint32_t size = le32(section, pos);
     pos += 4;
-    if (extraWord) {
-        if (section.size() < pos + 4) {
+    if (extraBytes) {
+        if (section.size() < pos + extraBytes) {
             notes.push_back(std::string("the ") + what + " section is too short");
             return {};
         }
-        pos += 4;
+        pos += extraBytes;
     }
     if (size > section.size() - pos) {
         notes.push_back(std::string("the ") + what + " section is cut off");
@@ -51,7 +51,7 @@ Bytes sectionData(Bytes section, const std::uint8_t (&sentinel)[16], bool extraW
 
 namespace {
 
-std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, bool extra,
+std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::size_t extra,
                                         std::vector<std::string>& notes) {
     std::vector<ClassInfo> out;
     const Bytes data = sectionData(section, kClassStart, extra, notes, "class");
@@ -60,6 +60,14 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, bool e
     BitReader r(data);
     BitReader strings;
     std::size_t endBit = data.size() * 8;
+    if (extra >= 8) {
+        // A real R2018 file: a high size word, then the number of data bits.
+        std::uint32_t bitsWord = 0;
+        for (int i = 0; i < 4; ++i)
+            bitsWord |= static_cast<std::uint32_t>(section[16 + 4 + 4 + i]) << (8 * i);
+        if (bitsWord > 0 && bitsWord <= endBit)
+            endBit = bitsWord;
+    }
     if (fmt.r2007) {
         if (!locateStringStream(data, endBit, strings)) {
             notes.push_back("the class section has a damaged string stream");
@@ -108,33 +116,35 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, bool e
 
 std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int maintenance,
                                     std::vector<std::string>& notes) {
-    // The extra size word depends on the release; a real R2018 file decides which reading fits.
-    const bool first = fmt.r2018 || (fmt.r2010 && maintenance > 3);
-    std::vector<std::string> n1, n2;
-    auto a = parseClassesWith(section, fmt, first, n1);
-    if (!a.empty() || !fmt.r2010) {
-        notes.insert(notes.end(), n1.begin(), n1.end());
-        return a;
+    // The size of the words between the size and the data depends on the release (a real R2018
+    // file has two); the first reading that yields classes wins.
+    const std::size_t known = fmt.r2018 ? 8 : (fmt.r2010 && maintenance > 3 ? 4 : 0);
+    std::vector<std::size_t> tries{known};
+    if (fmt.r2010)
+        for (std::size_t x : {8u, 4u, 0u})
+            if (x != known)
+                tries.push_back(x);
+    std::vector<std::string> first;
+    for (std::size_t i = 0; i < tries.size(); ++i) {
+        std::vector<std::string> n;
+        auto a = parseClassesWith(section, fmt, tries[i], n);
+        if (!a.empty()) {
+            if (i == 0)
+                notes.insert(notes.end(), n.begin(), n.end());
+            return a;
+        }
+        if (i == 0)
+            first = n;
     }
-    auto b = parseClassesWith(section, fmt, !first, n2);
-    if (!b.empty())
-        return b;
-    notes.insert(notes.end(), n1.begin(), n1.end());
-    std::string hex = "class section starts:";
-    char t[8];
-    for (std::size_t i = 16; i < 48 && i < section.size(); ++i) {
-        std::snprintf(t, sizeof t, " %02X", section[i]);
-        hex += t;
-    }
-    notes.push_back(hex);
-    return a;
+    notes.insert(notes.end(), first.begin(), first.end());
+    return {};
 }
 
 HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,
                        std::vector<std::string>& notes) {
     HeaderVars v;
     const bool extra = fmt.r2018 || (fmt.r2010 && maintenance > 3);
-    const Bytes data = sectionData(section, kHeaderStart, extra, notes, "header");
+    const Bytes data = sectionData(section, kHeaderStart, extra ? 4 : 0, notes, "header");
     if (data.empty())
         return v;
     std::vector<std::string> tried;
