@@ -101,7 +101,7 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
         if (n > expected - out.size()) {
             // Trailing bytes after a complete output are not data.
             if (out.size() == expected) {
-                leftover = in.size() - c.pos();
+                leftover = in.size() - c.pos() + 1;  // ended without the terminator
                 return true;
             }
             return fail("literal run too long", c);
@@ -119,7 +119,7 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
             return out.size() == expected || fail("input ended early", c);
         // Complete output with input left over (padding or a checksum): done.
         if (out.size() == expected) {
-            leftover = in.size() - c.pos();
+            leftover = in.size() - c.pos() + 1;  // ended without the terminator
             return true;
         }
         const std::uint8_t op = c.next();
@@ -134,7 +134,7 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
         if (op == 0x11) {
             if (out.size() != expected)
                 return fail("terminator before the expected size", c);
-            leftover = in.size() - c.pos();
+            leftover = 0;  // the stream ended with its terminator at the expected size
             return true;
         }
         if (op < 0x10) {

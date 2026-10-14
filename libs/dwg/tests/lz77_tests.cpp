@@ -78,11 +78,23 @@ TEST_CASE("bytes left over after the expected size are ignored") {
     CHECK(ok);
 }
 
-TEST_CASE("the second reading of the 0x12..0x1F opcodes is used when the first does not fit") {
-    // 'ABCD' then a copy whose distance carries bit 14 only in the second reading cannot be
-    // built small; check instead that a plain stream still takes the first reading.
+TEST_CASE("an opcode 0x18..0x1F carries bit 14 of the distance and a three bit length") {
+    // 40000 literal bytes (length 0x00 form: 0x0F + 156 * 0xFF + 202 + 3), then a copy of four
+    // bytes from 32768 back with one literal, then the terminator.
+    std::vector<std::uint8_t> in{0x00};
+    in.insert(in.end(), 156, 0x00);
+    in.push_back(202);
+    std::string expected;
+    for (int i = 0; i < 40000; ++i) {
+        const auto c = static_cast<std::uint8_t>(i % 251 + 1);
+        in.push_back(c);
+        expected.push_back(static_cast<char>(c));
+    }
+    for (std::uint8_t b : {0x1A, 0x01, 0x00, 0x5A, 0x11})
+        in.push_back(b);
+    expected += expected.substr(40000 - 32768, 4);
+    expected += 'Z';
     bool ok = false;
-    CHECK(expand(bytes({0x01, 'A', 'B', 'C', 'D', 0x22, 0x0D, 0x00, 'Q', 0x11}), 9, &ok) ==
-          "ABCDABCDQ");
+    CHECK(expand(in, expected.size(), &ok) == expected);
     CHECK(ok);
 }

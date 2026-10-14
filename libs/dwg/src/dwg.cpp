@@ -1,7 +1,9 @@
 #include "tbcad/dwg/dwg.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <map>
 
 #include "container/r2000.h"
 #include "container/r2004.h"
@@ -145,6 +147,34 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.info(code::kSkippedObject,
                     std::to_string(count) + " object(s) of type " + name + " are not read yet");
 
+    {
+        // Where the entities live: the biggest owners, to see whether model space is found.
+        std::map<std::uint64_t, std::size_t> perOwner;
+        std::size_t paper = 0;
+        for (const detail::EntityRec& e : drawing.entities) {
+            if (e.entmode == 0)
+                ++perOwner[e.owner];
+            else
+                ++paper;
+        }
+        std::vector<std::pair<std::size_t, std::uint64_t>> top;
+        for (const auto& [h, c] : perOwner)
+            top.emplace_back(c, h);
+        std::sort(top.rbegin(), top.rend());
+        std::string line = std::to_string(drawing.entities.size()) + " entities, " +
+                           std::to_string(drawing.blocks.size()) +
+                           " blocks; entity mode 1/2: " + std::to_string(paper) +
+                           "; biggest owners:";
+        char b[32];
+        for (std::size_t i = 0; i < top.size() && i < 6; ++i) {
+            std::snprintf(b, sizeof b, " %llX", static_cast<unsigned long long>(top[i].second));
+            const auto it = drawing.blocks.find(top[i].second);
+            line += std::string(b) + " (" +
+                    (it == drawing.blocks.end() ? "no block" : it->second.name) + ", " +
+                    std::to_string(top[i].first) + ")";
+        }
+        report.info(code::kSkippedObject, line);
+    }
     const std::string text = detail::emitDxf(drawing);
     auto result = dxf::importDxf(
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),

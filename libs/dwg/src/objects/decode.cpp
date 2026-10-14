@@ -679,8 +679,10 @@ private:
                     isXref = rr.b();
                     overlay = rr.b();
                     rr.b();  // loaded bit
-                    if (fmt_.r2004)
-                        rr.bl();  // owned object count
+                    // Owned object count; an external reference owns no objects and the files
+                    // do not store the count for it.
+                    if (fmt_.r2004 && !isXref && !overlay)
+                        rr.bl();
                     bb.baseX = rr.bd();
                     bb.baseY = rr.bd();
                     bb.baseZ = rr.bd();
@@ -2069,7 +2071,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r14: block header decides table layout, section map hex; r13: block header dumps; r12: LZ reading choice, page-record trace; r11: calibration "
+    return "r15: owner summary, LZ opcode 0x18-0x1F bit 14, no owned count on xref blocks; r14: block header "
+           "decides table layout, section map hex; r13: block header dumps; r12: LZ reading "
+           "choice, page-record trace; r11: calibration "
            "pre-pass; r10: variants by one-fit rule, range "
            "check, failure reasons";
 }
