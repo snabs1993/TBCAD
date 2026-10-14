@@ -341,6 +341,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     const double* v = std::get_if<double>(&g.value.v);
                     if (!v || g.code < 10 || g.code > 23 || (g.code > 13 && g.code < 20))
                         continue;
+                    if ((g.code == 12 || g.code == 22) && e.dxfType == "DIMENSION")
+                        continue;  // the clone insertion point, not geometry
                     // Codes 11 and 21 are points only for a few types (SOLID, LINE, ...).
                     if ((g.code == 11 || g.code == 21) &&
                         (e.dxfType == "MTEXT" || e.dxfType == "TEXT" || e.dxfType == "ATTRIB"))

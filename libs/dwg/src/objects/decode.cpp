@@ -2351,7 +2351,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r35: widest entities listed with groups; r34: widest entities listed; r33: layouts met "
+    return "r36: widest ignores dimension clone point; r35: widest entities listed with groups; "
+           "r34: widest entities listed; r33: layouts met "
            "twice count once; r32: partly misread "
            "block member lists still place "
            "unowned entities; r31: LAYOUT is "
