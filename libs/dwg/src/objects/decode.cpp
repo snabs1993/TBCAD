@@ -2112,7 +2112,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r18: block member lists decide ownership; r17: space owner info; r16: terminator check "
+    return "r19: reachability info; r18: block member lists decide ownership; r17: space owner info; r16: terminator check "
            "in LZ (really fixes 50.9 MB); r15: owner "
            "summary, LZ opcode 0x18-0x1F bit 14, no owned count on xref blocks; r14: block header "
            "decides table layout, section map hex; r13: block header dumps; r12: LZ reading "

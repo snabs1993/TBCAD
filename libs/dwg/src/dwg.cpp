@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
+#include <unordered_map>
 
 #include "container/r2000.h"
 #include "container/r2004.h"
@@ -207,6 +209,49 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         for (const auto& [t, c] : inModel)
             mc += " " + t + " " + std::to_string(c);
         report.info(code::kSkippedObject, mc);
+        {
+            // Reachability: which blocks (and how many entities) a space reaches through nested
+            // inserts.
+            std::unordered_map<std::uint64_t, std::vector<std::size_t>> byOwner;
+            for (std::size_t i = 0; i < drawing.entities.size(); ++i)
+                if (drawing.entities[i].entmode == 0)
+                    byOwner[drawing.entities[i].owner].push_back(i);
+            auto reach = [&](bool paperSpaces) {
+                std::set<std::uint64_t> seen;
+                std::vector<std::uint64_t> todo;
+                std::size_t missing = 0, ents = 0;
+                auto visitEntity = [&](const detail::EntityRec& e) {
+                    ++ents;
+                    if (e.dxfType == "INSERT" && e.blockHeader) {
+                        if (!drawing.blocks.count(e.blockHeader))
+                            ++missing;
+                        else if (seen.insert(e.blockHeader).second)
+                            todo.push_back(e.blockHeader);
+                    }
+                };
+                for (const detail::EntityRec& e : drawing.entities) {
+                    const auto o = drawing.blocks.find(e.owner);
+                    const bool paperOwner =
+                        o != drawing.blocks.end() && o->second.name.rfind("*Paper_Space", 0) == 0;
+                    const bool modelOwner =
+                        o != drawing.blocks.end() && o->second.name.rfind("*Model_Space", 0) == 0;
+                    if (paperSpaces ? (e.entmode == 1 || (e.entmode == 0 && paperOwner))
+                                    : (e.entmode == 2 || (e.entmode == 0 && modelOwner)))
+                        visitEntity(e);
+                }
+                while (!todo.empty()) {
+                    const std::uint64_t bh = todo.back();
+                    todo.pop_back();
+                    for (std::size_t i : byOwner[bh])
+                        visitEntity(drawing.entities[i]);
+                }
+                return std::to_string(seen.size()) + " blocks, " + std::to_string(ents) +
+                       " entities reached, " + std::to_string(missing) +
+                       " inserts name a block that was not read";
+            };
+            report.info(code::kSkippedObject, "reachable from model space: " + reach(false));
+            report.info(code::kSkippedObject, "reachable from paper spaces: " + reach(true));
+        }
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)
