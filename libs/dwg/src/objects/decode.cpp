@@ -679,7 +679,8 @@ private:
         }
         tally(type, r);
         if (r.failed()) {
-            note(e.dxfType + " " + hex(self) + " is damaged and was skipped");
+            note(e.dxfType + " " + hex(self) + " is damaged and was skipped (read to bit " +
+                 std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")");
             return;
         }
         BitReader h(body, objBits);
@@ -1816,7 +1817,7 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
             };
             lines.push_back("bits of type " + std::to_string(type) + " object " +
                             std::to_string(e.handle) + " (" + std::to_string(objBits) +
-                            " data bits): " + dump(0, objBits, 1400));
+                            " data bits): " + dump(0, objBits, 3200));
             lines.push_back("handle bits of that object (" + std::to_string(handleBits) +
                             "): " + dump(objBits, size * 8, 400));
         }
