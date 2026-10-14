@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <thread>
 
 #include "tbcad/core/dump.h"
 #include "tbcad/io/tbcad.h"
@@ -821,6 +822,37 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never
     std::ifstream in(src, std::ios::binary);
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(content == "original bytes");
+}
+
+TEST_CASE("a foreign file opens on a worker thread and finishes when polled") {
+    Fixture f("foreignasync");
+    fs::path src = f.dir / "slow.dwg";
+    { std::ofstream(src, std::ios::binary) << "bytes"; }
+    f.core->setForeignReader(
+        ".dwg",
+        [](const fs::path&) -> Result<ForeignOpenResult> {
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            ForeignOpenResult r;
+            r.document = std::make_unique<Document>();
+            return r;
+        },
+        true);
+    CHECK_FALSE(f.core->openFileAsync(f.dir / "a.txt"));  // not a foreign format
+    REQUIRE(f.core->openFileAsync(src));
+    CHECK_FALSE(f.core->openFileAsync(src));  // one at a time
+    REQUIRE(f.core->opening().has_value());
+    CHECK(f.core->opening()->path == src);
+    std::optional<Result<void>> done;
+    for (int i = 0; i < 200 && !done; ++i) {
+        done = f.core->pollOpen();
+        if (!done)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    REQUIRE(done.has_value());
+    CHECK(done->ok());
+    CHECK_FALSE(f.core->opening().has_value());
+    CHECK(f.core->readOnlyOrigin());
+    CHECK(f.core->displayName() == "slow.dwg [Read-only]");
 }
 
 TEST_CASE("a .dxf file opens and saves back as DXF in place") {

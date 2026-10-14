@@ -479,10 +479,18 @@ void Gui::doExportDxf() {
 }
 
 void Gui::doOpenPath(const std::string& path) {
+    if (core_.opening()) {
+        toast("Another file is still opening.");
+        return;
+    }
     // A big file blocks the window for seconds: show "Opening ..." for one frame first so the
     // program does not look frozen.
     std::error_code ec;
     auto size = std::filesystem::file_size(platform::pathFromUtf8(path), ec);
+    if (!ec && size > (1u << 20) && core_.openFileAsync(platform::pathFromUtf8(path))) {
+        anyActivity_ = true;  // read on a worker thread; openPending() shows the progress
+        return;
+    }
     if (!ec && size > (8u << 20) && pendingOpen_.empty()) {
         pendingOpen_ = path;
         pendingOpenShown_ = false;
@@ -499,6 +507,31 @@ void Gui::doOpenPath(const std::string& path) {
 }
 
 void Gui::openPending() {
+    static std::string openingName;
+    if (auto info = core_.opening()) {
+        openingName = platform::pathToUtf8(info->path.filename());
+        anyActivity_ = true;  // keep drawing so the elapsed time counts up
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (ImGui::Begin("##opening", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+            ImGui::Text("Opening %s ...", platform::pathToUtf8(info->path.filename()).c_str());
+            const float t = static_cast<float>(ImGui::GetTime());
+            ImGui::ProgressBar(-1.0f * t, ImVec2(260, 6), "");  // moving bar: still working
+            ImGui::TextDisabled("%.0f s. Big drawings can take a while; the window stays usable.",
+                                info->seconds);
+        }
+        ImGui::End();
+    }
+    core_.setEchoOpenFailures(false);  // the message box shows a failure
+    if (auto done = core_.pollOpen()) {
+        if (!*done)
+            lastError_ = done->error().message;
+        else
+            toast("Opened " + openingName);
+    }
+    core_.setEchoOpenFailures(true);
     if (pendingOpen_.empty())
         return;
     if (!pendingOpenShown_) {
