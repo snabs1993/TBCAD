@@ -164,6 +164,8 @@ public:
     const std::unordered_map<TileKey, Tile>& tiles() const { return tiles_; }
     TileKey tileOf(const Vec2& p) const;
     double tileSize() const { return tileSize_; }
+    // Drops all geometry and re-tiles with the given tile edge (mm); <= 0 keeps the current one.
+    void clearAndRetile(double tileSizeMm);
 
 private:
     struct EntityRec {
