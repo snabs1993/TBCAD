@@ -1353,12 +1353,17 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     }
     if (cursorInside_ && !drag_ && lasso_.empty()) {
         const Vec2 c = lastPointer_.screen;
-        const double arm = std::max(camera_.viewportW, camera_.viewportH);
+        // view.crosshair: "full" (across the viewport), "short" (5 % of its width) or "off".
+        const std::string mode = settings_.getString("view.crosshair", "full");
+        const double arm = mode == "short" ? std::max(8.0, camera_.viewportW * 0.05)
+                                           : std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;
         cross.color = ui::withAlpha(theme_.text, 0.6);
         cross.widthPx = 1.0;
-        overlay.line(render::Space::Screen, {c.x - arm, c.y}, {c.x + arm, c.y}, cross);
-        overlay.line(render::Space::Screen, {c.x, c.y - arm}, {c.x, c.y + arm}, cross);
+        if (mode != "off") {
+            overlay.line(render::Space::Screen, {c.x - arm, c.y}, {c.x + arm, c.y}, cross);
+            overlay.line(render::Space::Screen, {c.x, c.y - arm}, {c.x, c.y + arm}, cross);
+        }
         // Pick box, only when no command is waiting for a point.
         const bool pointPrompt = prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Point ||
                                              prompt_->kind == cmd::PromptInfo::Kind::Distance ||
