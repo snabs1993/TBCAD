@@ -935,8 +935,23 @@ void Gui::statusBar() {
         UnitFormat fmt;
         fmt.unit = doc.header().units;
         Vec2 c = core_.cursorWorld();
-        ImGui::Text("X %s   Y %s   %s", formatLength(c.x, 3, fmt).c_str(),
-                    formatLength(c.y, 3, fmt).c_str(), std::string(unitSuffix(fmt.unit)).c_str());
+        // Absurd coordinates (a stray point far away) switch to scientific notation, and the
+        // readout keeps a fixed width so it never pushes the toggles or hides Y.
+        auto shown = [&](double v) {
+            if (std::abs(v) < 1e9)
+                return formatLength(v, 3, fmt);
+            char buf[32];
+            std::snprintf(buf, sizeof buf, "%.3e", v);
+            return std::string(buf);
+        };
+        ImGui::Text("X %s   Y %s   %s", shown(c.x).c_str(), shown(c.y).c_str(),
+                    std::string(unitSuffix(fmt.unit)).c_str());
+        const float pad = ImGui::CalcTextSize("X -100000000.000   Y -100000000.000   mm").x -
+                          ImGui::GetItemRectSize().x;
+        if (pad > 0) {
+            ImGui::SameLine(0, 0);
+            ImGui::Dummy({pad, 1});
+        }
         for (const auto& t : registry_.statusToggles()) {
             ImGui::SameLine();
             bool on = t.get();
