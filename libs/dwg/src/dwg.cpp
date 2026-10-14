@@ -240,14 +240,21 @@ std::string describe(std::span<const std::byte> bytes) {
     dxf::Report report;
     auto r = importDwg(bytes, dxf::ImportOptions{}, report);
     line(r ? "import: ok" : "import failed: " + r.error().message);
-    std::size_t shown = 0;
-    for (const dxf::Diagnostic& d : report.diagnostics()) {
-        if (shown++ >= 80)
-            break;
-        line(std::string(d.severity == dxf::Severity::Error     ? "error: "
-                         : d.severity == dxf::Severity::Warning ? "warning: "
-                                                                : "info: ") +
-             d.message);
+    // Information lines first (they carry the layout and recovery summaries), then the warnings.
+    for (int pass = 0; pass < 2; ++pass) {
+        std::size_t shown = 0;
+        for (const dxf::Diagnostic& d : report.diagnostics()) {
+            const bool info =
+                d.severity != dxf::Severity::Error && d.severity != dxf::Severity::Warning;
+            if (info != (pass == 0))
+                continue;
+            if (shown++ >= 80)
+                break;
+            line(std::string(d.severity == dxf::Severity::Error     ? "error: "
+                             : d.severity == dxf::Severity::Warning ? "warning: "
+                                                                    : "info: ") +
+                 d.message);
+        }
     }
     return out;
 }
