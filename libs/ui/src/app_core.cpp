@@ -954,11 +954,40 @@ void AppCore::panPixels(double dx, double dy) {
 void AppCore::zoomExtents() {
     // Rays and xlines have no end, so they do not count; if they are all there is, use them.
     BBox2 box;
+    std::vector<BBox2> boxes;
     const Document& doc = session_->doc;
     doc.forEachEntity([&](const Entity& e) {
-        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e))
-            box.merge(session_->index.boxOf(e.common.id));
+        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e)) {
+            const BBox2 b = session_->index.boxOf(e.common.id);
+            box.merge(b);
+            if (!b.empty())
+                boxes.push_back(b);
+        }
     });
+    // A few stray objects far from everything else (common in imported files) would shrink the
+    // real drawing to a speck: when the outermost 2% of the objects stretch the view more than
+    // fivefold, frame the rest.
+    if (boxes.size() >= 50) {
+        std::vector<double> xs, ys;
+        for (const BBox2& b : boxes) {
+            xs.push_back(b.center().x);
+            ys.push_back(b.center().y);
+        }
+        std::sort(xs.begin(), xs.end());
+        std::sort(ys.begin(), ys.end());
+        const std::size_t cut = boxes.size() / 50;
+        const double spanX = xs[xs.size() - 1 - cut] - xs[cut];
+        const double spanY = ys[ys.size() - 1 - cut] - ys[cut];
+        BBox2 core;
+        for (const BBox2& b : boxes) {
+            const Vec2 c = b.center();
+            if (c.x >= xs[cut] - spanX && c.x <= xs[xs.size() - 1 - cut] + spanX &&
+                c.y >= ys[cut] - spanY && c.y <= ys[ys.size() - 1 - cut] + spanY)
+                core.merge(b);
+        }
+        if (!core.empty() && (box.width() > 5 * core.width() || box.height() > 5 * core.height()))
+            box = core;
+    }
     zoomToBox(box.empty() ? session_->index.bounds() : box);
 }
 

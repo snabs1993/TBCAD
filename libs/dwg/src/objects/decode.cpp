@@ -116,6 +116,22 @@ private:
 
     std::size_t mainEnd_ = 0;
 
+    // Where an object that could not be framed sits: offset, offset inside a 0x7400 page, and
+    // its first bytes (a diagnostic for map or page misplacement).
+    std::string where(const MapEntry& e) const {
+        std::string w = " (at " + std::to_string(e.offset) + ", page offset " +
+                        std::to_string(e.offset % 0x7400) + ", bytes";
+        static const char* d = "0123456789ABCDEF";
+        for (std::size_t i = 0; i < 8 && static_cast<std::size_t>(e.offset) + i < file_.size();
+             ++i) {
+            const std::uint8_t b = file_[static_cast<std::size_t>(e.offset) + i];
+            w += ' ';
+            w += d[b >> 4];
+            w += d[b & 15];
+        }
+        return w + ")";
+    }
+
     void decodeOne(const MapEntry& e) {
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
@@ -127,7 +143,7 @@ private:
         const std::size_t lead = head.bytePos();
         if (head.failed() || size == 0 || size > file_.size() ||
             static_cast<std::size_t>(e.offset) + lead + size > file_.size()) {
-            note("object " + hex(e.handle) + " has an impossible size");
+            note("object " + hex(e.handle) + " has an impossible size" + where(e));
             return;
         }
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
@@ -143,7 +159,7 @@ private:
         std::size_t objBits = 0;
         if (fmt_.r2010) {
             if (handleBits > body.size() * 8) {
-                note("object " + hex(e.handle) + " has a damaged header");
+                note("object " + hex(e.handle) + " has a damaged header" + where(e));
                 return;
             }
             objBits = body.size() * 8 - handleBits;
@@ -152,13 +168,13 @@ private:
         }
         const HandleRef self = r.handle();
         if (r.failed() || objBits > body.size() * 8) {
-            note("object " + hex(e.handle) + " has a damaged header");
+            note("object " + hex(e.handle) + " has a damaged header" + where(e));
             return;
         }
         // R2007 and later: strings live in their own stream just before the handle stream.
         BitReader strings;
         if (fmt_.r2007 && !locateStringStream(body, objBits, strings)) {
-            note("object " + hex(e.handle) + " has a damaged string stream");
+            note("object " + hex(e.handle) + " has a damaged string stream" + where(e));
             return;
         }
         mainEnd_ = strings.bitSize() != 0 ? strings.bitPos() : (objBits > 0 ? objBits - 1 : 0);
@@ -1455,13 +1471,34 @@ private:
         const Vec3 xdir = bd3(r);
         bd3(r);  // offset to the block insertion point
         bd3(r);  // end point projection
-        const double boxHeight = r.bd();
-        const double boxWidth = r.bd();
-        const bool hookOnX = r.b();
-        const bool arrow = r.b();
-        r.bs();
-        r.b();
-        r.b();
+        // The text box size is missing from leaders without an annotation in R2018 files: pick
+        // the tail that ends exactly where the object's data ends.
+        double boxHeight = 0, boxWidth = 0;
+        bool hookOnX = false, arrow = false;
+        auto tail = [&](BitReader& t, bool withBox) {
+            if (withBox) {
+                boxHeight = t.bd();
+                boxWidth = t.bd();
+            }
+            hookOnX = t.b();
+            arrow = t.b();
+            t.bs();
+            t.b();
+            t.b();
+        };
+        BitReader withBox = r;
+        tail(withBox, true);
+        if (fmt_.r2007 && (withBox.failed() || withBox.bitPos() != mainEnd_)) {
+            BitReader without = r;
+            tail(without, false);
+            if (!without.failed() && without.bitPos() == mainEnd_) {
+                r = without;
+            } else {
+                tail(r, true);
+            }
+        } else {
+            tail(r, true);
+        }
         add(e, 71, arrow ? 1 : 0);
         add(e, 72, pathType);
         add(e, 73, annotation);
@@ -1804,9 +1841,11 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
         ++histogram[type];
         // All data bits and the handle stream bits of a few table records and entities, so a
         // layout can be checked field by field against the format description.
-        if (objBits >= 8 && objBits <= size * 8 && (tails[type]++ < (type == 7 ? 4 : 2)) &&
+        if (objBits >= 8 && objBits <= size * 8 &&
+            (tails[type]++ < (type == 7 ? 4 : 2) || e.handle == 3105) &&
             (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
-             type == 1 || type == 18 || type == 17 || type == 7 || type == 44 || type == 45)) {
+             type == 1 || type == 18 || type == 17 || type == 7 || type == 44 || type == 45 ||
+             e.handle == 3105)) {
             Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
             auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
                 std::string bits;
