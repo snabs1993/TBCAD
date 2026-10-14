@@ -1233,6 +1233,9 @@ void Gui::xrefNotice() {
         return;
     ImGui::SetNextWindowSize(ImVec2(620, 320), ImGuiCond_Appearing);
     if (ImGui::Begin("Missing external references", &xrefListOpen_)) {
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+            ImGui::IsKeyPressed(ImGuiKey_Escape))
+            xrefListOpen_ = false;
         ImGui::TextDisabled(
             "Put the files at these paths (relative paths start in the drawing's folder).");
         if (ImGui::BeginTable("##missingxrefs", 2,
@@ -1250,6 +1253,8 @@ void Gui::xrefNotice() {
             }
             ImGui::EndTable();
         }
+        if (ImGui::Button("Close"))
+            xrefListOpen_ = false;
     }
     ImGui::End();
 }
