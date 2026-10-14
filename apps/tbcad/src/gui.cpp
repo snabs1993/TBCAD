@@ -2073,6 +2073,8 @@ void Gui::viewportMenu() {
             for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
                 if (core_.registry().find(c) && ImGui::MenuItem(c))
                     run(c);
+            if (core_.registry().find("LAYISO") && ImGui::MenuItem("Isolate Layer"))
+                run("LAYISO");
             if (ImGui::MenuItem("Deselect All"))
                 core_.clearSelection();
         } else {
