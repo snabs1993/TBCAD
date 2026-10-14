@@ -213,6 +213,7 @@ private:
 
     // Viewport interaction.
     bool leftDown_ = false;
+    bool pressTookPoint_ = false;  // the press already answered a point prompt
     bool doubleClick_ = false;
     bool dragging_ = false;
     std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
