@@ -165,7 +165,7 @@ namespace {
 // TBCAD_PROFILE=1 prints where each frame spends its time (milliseconds, averaged over 60 frames).
 struct PhaseTimer {
     static bool enabled() {
-        static const bool on = std::getenv("TBCAD_PROFILE") != nullptr;
+        static const bool on = platform::processEnvironment("TBCAD_PROFILE").has_value();
         return on;
     }
     double t0 = glfwGetTime();
