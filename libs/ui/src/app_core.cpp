@@ -90,6 +90,8 @@ struct AppCore::Session {
     // File stamp of each xref that a reload was already tried for (a failed reload is not retried
     // until the file changes again).
     std::map<BlockId, std::int64_t> xrefTried{};
+    std::vector<AppCore::MissingXref> missingXrefs{};
+    std::size_t xrefNoticeDismissedFor = 0;  // the notice was closed at this many missing xrefs
 };
 
 struct AppCore::DocSlot {
@@ -256,10 +258,41 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     ++generation_;
     lastTessellatedFor_ = camera_;
     notifySessionHooks();
+    scanMissingXrefs();
     if (fitView && !session_->index.empty()) {
         zoomExtents();
         fitPending_ = 6;
     }
+}
+
+void AppCore::scanMissingXrefs() {
+    session_->missingXrefs.clear();
+    for (BlockId id : xref::xrefs(session_->doc)) {
+        const BlockDef* def = session_->doc.block(id);
+        if (!def)
+            continue;
+        // Not found on disk, whether the snapshot was taken (Missing) or never was (an import
+        // that could not read the file leaves it unloaded).
+        std::error_code ec;
+        if (!fs::is_regular_file(xref::resolvePath(def->xrefPath, session_->file), ec))
+            session_->missingXrefs.push_back({def->name, def->xrefPath});
+    }
+    if (session_->missingXrefs.size() != session_->xrefNoticeDismissedFor)
+        session_->xrefNoticeDismissedFor = 0;
+}
+
+const std::vector<AppCore::MissingXref>& AppCore::missingXrefs() const {
+    return session_->missingXrefs;
+}
+
+bool AppCore::xrefNoticeVisible() const {
+    return session_ && !session_->missingXrefs.empty() &&
+           session_->missingXrefs.size() != session_->xrefNoticeDismissedFor;
+}
+
+void AppCore::dismissXrefNotice() {
+    if (session_)
+        session_->xrefNoticeDismissedFor = session_->missingXrefs.size();
 }
 
 void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {

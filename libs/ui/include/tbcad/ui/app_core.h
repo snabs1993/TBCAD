@@ -141,6 +141,15 @@ public:
     void setEchoOpenFailures(bool on) { echoOpenFailures_ = on; }
     // One-line banner for a read-only drawing; empty otherwise.
     std::string readOnlyBanner() const;
+    // External references whose file cannot be found, scanned when a drawing is opened or
+    // activated. The window shows a notice until it is dismissed (a new one shows it again).
+    struct MissingXref {
+        std::string name;
+        std::string path;  // as stored in the drawing
+    };
+    const std::vector<MissingXref>& missingXrefs() const;
+    bool xrefNoticeVisible() const;
+    void dismissXrefNotice();
     bool modified() const;
     // "Untitled" or the file name.
     std::string displayName() const;
@@ -305,6 +314,7 @@ private:
     Result<void> saveDxf(const std::filesystem::path& path);
     void clearTransientState();
     void leavePaper();  // back to Model, restoring the model view
+    void scanMissingXrefs();
     // Replaces the active drawing.
     void installSession(std::unique_ptr<Document> doc, std::filesystem::path file);
     // Adds a drawing and makes it the active one (or replaces an untouched Untitled one).
