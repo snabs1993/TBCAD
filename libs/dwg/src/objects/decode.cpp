@@ -236,6 +236,10 @@ private:
 
     // Entities: the "no links" bit that older versions store may be missing.
     int nolinksVariant_ = -1;
+    // INSERT: the owned-object count is stored for every insert (the description says so) or only
+    // when attributes follow (what a real R2018 file does).
+    bool insertCountAlways_ = true;
+    bool insertCountKnown_ = false;
 
     // ---- shared prefixes ----------------------------------------------------------------------
 
@@ -457,6 +461,20 @@ private:
                 b.baseY = r.bd();
                 b.baseZ = r.bd();
                 b.xrefPath = r.textBytes();
+                if (fmt_.r2007) {
+                    // Insert count (non-zero bytes ending in a zero), description, preview, units.
+                    for (int i = 0; i < 100000 && !r.failed() && r.rc() != 0; ++i) {
+                    }
+                    r.textBytes();
+                    const std::uint32_t preview = r.bl();
+                    if (preview > r.bitsLeft() / 8)
+                        r.fail();
+                    else
+                        r.seekBit(r.bitPos() + static_cast<std::size_t>(preview) * 8);
+                    r.bs();  // insert units
+                    r.b();   // explodable
+                    r.rc();  // block scaling
+                }
                 if (r.failed()) {
                     note("block header " + hex(self) + " is damaged");
                     return;
@@ -547,6 +565,25 @@ private:
                         break;
                 }
                 nolinksVariant_ = -1;
+            }
+        }
+        if (fmt_.r2007 && (type == kInsert) && !insertCountKnown_) {
+            bool fits[2] = {false, false};
+            for (int v = 0; v < 2; ++v) {
+                BitReader probe = r;
+                insertCountAlways_ = v == 1;
+                CommonBits pc;
+                EntityRec pe;
+                if (readCommonEntity(probe, pc)) {
+                    insert(probe, pe, false);
+                    fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
+                }
+            }
+            if (fits[0] != fits[1]) {
+                insertCountAlways_ = fits[1];
+                insertCountKnown_ = true;
+            } else {
+                insertCountAlways_ = true;
             }
         }
         if (!readCommonEntity(r, c)) {
@@ -1532,6 +1569,34 @@ private:
         const int spacingStyle = r.bs();
         const double spacingFactor = r.bd();
         r.b();  // unknown bit
+        if (fmt_.r2004) {
+            const std::uint32_t background = r.bl();
+            if ((background & 1) || (fmt_.r2018 && (background & 0x10))) {
+                r.bl();  // background scale factor
+                readCmc(r, 7);
+                r.bl();  // background transparency
+            }
+            if (fmt_.r2018 && r.b()) {  // not annotative: a second copy of the geometry follows
+                r.bs();                 // version
+                r.b();                  // default flag
+                r.bl();                 // attachment point
+                bd3(r);
+                bd3(r);
+                for (int i = 0; i < 4; ++i)
+                    r.bd();
+                const int columnType = r.bs();
+                if (columnType != 0) {
+                    const std::uint32_t heights = r.bl();
+                    r.bd();  // column width
+                    r.bd();  // gutter
+                    const bool autoHeight = r.b();
+                    r.b();  // flow reversed
+                    if (!autoHeight && columnType == 2)
+                        for (std::uint32_t i = 0; i < heights && i < 10000 && !r.failed(); ++i)
+                            r.bd();
+                }
+            }
+        }
         point3(e, 10, p);
         add(e, 40, height);
         if (width != 0)
@@ -1572,7 +1637,7 @@ private:
         const double rotation = r.bd();
         const Vec3 n = bd3(r);
         const bool attribs = r.b();
-        if (fmt_.r2004)
+        if (fmt_.r2004 && (attribs || insertCountAlways_))
             ownedCount_ = r.bl();
         point3(e, 10, p);
         if (s.x != 1)
@@ -1738,9 +1803,9 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
         ++histogram[type];
         // All data bits and the handle stream bits of a few table records and entities, so a
         // layout can be checked field by field against the format description.
-        if (objBits >= 8 && objBits <= size * 8 && (tails[type]++ < 2) &&
+        if (objBits >= 8 && objBits <= size * 8 && (tails[type]++ < (type == 7 ? 4 : 2)) &&
             (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
-             type == 1 || type == 18 || type == 17)) {
+             type == 1 || type == 18 || type == 17 || type == 7 || type == 44 || type == 45)) {
             Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
             auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
                 std::string bits;

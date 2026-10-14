@@ -90,6 +90,14 @@ std::vector<std::uint8_t> blockHeader(std::uint64_t h, const char* name, double 
     o.main.bd(by);
     o.main.bd(0.0);
     o.main.text("");
+    if (gR2007) {
+        o.main.rc(0);     // insert count terminator
+        o.main.text("");  // description
+        o.main.bl(0);     // preview size
+        o.main.bs(0);     // insert units
+        o.main.b(true);   // explodable
+        o.main.rc(1);     // block scaling
+    }
     o.handles.handle(4, 0x01);
     o.xdic();
     return o.finish();
