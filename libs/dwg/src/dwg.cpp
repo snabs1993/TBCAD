@@ -458,6 +458,40 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                     " true " + std::to_string(ly.trueColor) + " lineweight " +
                                     std::to_string(ly.lineweight));
         }
+        {
+            // What sits on the A-ANNO-D layers: counts by type, plus the first dimension.
+            std::set<std::uint64_t> dl;
+            for (const auto& [lh, ly] : drawing.layers)
+                if (ly.name.rfind("A-ANNO-D", 0) == 0)
+                    dl.insert(lh);
+            std::map<std::string, int> cnt;
+            const detail::EntityRec* firstDim = nullptr;
+            for (const detail::EntityRec& e : drawing.entities)
+                if (dl.count(e.layer)) {
+                    ++cnt[e.dxfType + " lw" + std::to_string(e.lineweight) + " col" +
+                          std::to_string(e.color)];
+                    if (!firstDim && e.dxfType == "DIMENSION")
+                        firstDim = &e;
+                }
+            std::string line = "A-ANNO-D entities:";
+            for (const auto& [k, n] : cnt)
+                line += " " + k + "=" + std::to_string(n);
+            report.info(code::kSkippedObject, line);
+            if (firstDim) {
+                std::string gl = "first dimension " + std::to_string(firstDim->dimStyle) +
+                                 " block " + std::to_string(firstDim->blockHeader) + ":";
+                for (const detail::Group& g : firstDim->groups) {
+                    gl += " " + std::to_string(g.code) + "=";
+                    if (const double* v = std::get_if<double>(&g.value.v))
+                        gl += std::to_string(*v);
+                    else if (const long long* n = std::get_if<long long>(&g.value.v))
+                        gl += std::to_string(*n);
+                    else
+                        gl += "\"" + std::get<std::string>(g.value.v).substr(0, 24) + "\"";
+                }
+                report.info(code::kSkippedObject, gl);
+            }
+        }
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)
