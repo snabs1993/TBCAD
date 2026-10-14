@@ -351,6 +351,7 @@ private:
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
         BitReader r(body);
         std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
+        out_.rawType[e.handle] = type;
         if (type >= 500) {
             const std::string cls = dxfNameOfClass(type);
             if (cls == "LWPOLYLINE")
@@ -2340,7 +2341,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r29: layout diagnostics outside the note cap; r28: class names read from the string "
+    return "r30: layout dictionary entry types; r29: layout diagnostics outside the note cap; r28: "
+           "class names read from the string "
            "run after the class fields; r27: class bytes "
            "dump; r26: class string stream end retried; r25: class section skips "
            "its bit-size word; r24: "

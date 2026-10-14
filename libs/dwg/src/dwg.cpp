@@ -299,6 +299,24 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                               l.damaged ? "(dictionary) " : "", l.name.c_str());
                 ls += t;
             }
+            for (const auto& [dh, items] : drawing.dictionaries)
+                for (const auto& [name, target] : items)
+                    if (name == "ACAD_LAYOUT") {
+                        const auto d = drawing.dictionaries.find(target);
+                        if (d == drawing.dictionaries.end())
+                            continue;
+                        std::string line = "layout dictionary entries:";
+                        for (const auto& [ln, lh] : d->second) {
+                            const auto t = drawing.rawType.find(lh);
+                            char b[64];
+                            std::snprintf(b, sizeof b, " %llX type ",
+                                          static_cast<unsigned long long>(lh));
+                            line += " [" + ln + "]" + b +
+                                    (t == drawing.rawType.end() ? std::string("absent")
+                                                                : std::to_string(t->second));
+                        }
+                        report.info(code::kSkippedObject, line);
+                    }
             for (const std::string& d : drawing.layoutDiag)
                 report.info(code::kSkippedObject, d);
             ls += "; layout objects met: " + std::to_string(drawing.layoutSeen) +
