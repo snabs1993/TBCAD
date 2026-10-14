@@ -114,6 +114,15 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::s
                     hx += b;
                 }
                 notes.push_back(hx);
+                // Temporary: the whole class section, to decode it offline.
+                for (std::size_t k0 = 0; k0 < data.size() && data.size() < 120000; k0 += 2048) {
+                    std::string chunk = "class bytes @" + std::to_string(k0) + ":";
+                    for (std::size_t k = k0; k < k0 + 2048 && k < data.size(); ++k) {
+                        std::snprintf(b, sizeof b, " %02X", data[k]);
+                        chunk += b;
+                    }
+                    notes.push_back(chunk);
+                }
             }
             if (out.empty())
                 notes.push_back("first class entry unreadable: number " + std::to_string(c.number) +
