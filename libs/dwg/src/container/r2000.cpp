@@ -123,7 +123,8 @@ std::vector<MapEntry> readObjectMapData(Bytes file, std::size_t start, std::size
         const std::size_t size = (static_cast<std::size_t>(file[pos]) << 8) | file[pos + 1];
         if (size <= 2)
             break;
-        if (size > 2032 + 2 || pos + size + 2 > file.size()) {
+        // The spec says sections are cut at 2032 bytes; real files have 2035 in the size field.
+        if (size > 0x1000 || pos + size + 2 > file.size()) {
             notes.push_back("the object map is damaged; later objects are missing");
             break;
         }

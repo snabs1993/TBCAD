@@ -164,6 +164,40 @@ inline void putMc(std::vector<std::uint8_t>& out, std::int64_t v) {
     }
 }
 
+// The object map in sections that reach about 2035 bytes, as real files do (size field big endian,
+// counting itself, then two CRC bytes), ending with the empty section.
+inline void appendObjectMap(std::vector<std::uint8_t>& out,
+                            std::vector<std::pair<std::uint64_t, std::int64_t>> map) {
+    std::sort(map.begin(), map.end());
+    std::vector<std::uint8_t> sec;
+    std::uint64_t lastH = 0;
+    std::int64_t lastL = 0;
+    auto flush = [&]() {
+        if (sec.empty())
+            return;
+        const std::size_t total = sec.size() + 2;
+        out.push_back(static_cast<std::uint8_t>(total >> 8));
+        out.push_back(static_cast<std::uint8_t>(total & 0xff));
+        out.insert(out.end(), sec.begin(), sec.end());
+        out.push_back(0);
+        out.push_back(0);
+        sec.clear();
+    };
+    for (auto& [h, l] : map) {
+        putMc(sec, static_cast<std::int64_t>(h - lastH));
+        putMc(sec, l - lastL);
+        lastH = h;
+        lastL = l;
+        if (sec.size() > 2033)
+            flush();
+    }
+    flush();
+    out.push_back(0);  // empty last section (size 2)
+    out.push_back(2);
+    out.push_back(0);
+    out.push_back(0);
+}
+
 // One object: type + body written by the caller, then the handle stream.
 class ObjectWriter {
 public:
@@ -332,26 +366,7 @@ public:
             map.emplace_back(h, static_cast<std::int64_t>(objects.size()));
             objects.insert(objects.end(), bytes.begin(), bytes.end());
         }
-        std::sort(map.begin(), map.end());
-        std::vector<std::uint8_t> sec;
-        std::uint64_t lastH = 0;
-        std::int64_t lastL = 0;
-        for (auto& [h, l] : map) {
-            putMc(sec, static_cast<std::int64_t>(h - lastH));
-            putMc(sec, l - lastL);
-            lastH = h;
-            lastL = l;
-        }
-        const std::size_t total = sec.size() + 2;
-        handles.push_back(static_cast<std::uint8_t>(total >> 8));
-        handles.push_back(static_cast<std::uint8_t>(total & 0xff));
-        handles.insert(handles.end(), sec.begin(), sec.end());
-        handles.push_back(0);
-        handles.push_back(0);
-        handles.push_back(0);  // empty last section (size 2)
-        handles.push_back(2);
-        handles.push_back(0);
-        handles.push_back(0);
+        appendObjectMap(handles, map);
     }
 
     std::vector<std::uint8_t> build(const char* version = "AC1015") const {
@@ -390,25 +405,7 @@ public:
             classSize = out.size() - classAt;
         }
         const std::size_t mapAt = out.size();
-        std::vector<std::uint8_t> sec;
-        std::uint64_t lastH = 0;
-        std::int64_t lastL = 0;
-        for (auto& [h, l] : map) {
-            putMc(sec, static_cast<std::int64_t>(h - lastH));
-            putMc(sec, l - lastL);
-            lastH = h;
-            lastL = l;
-        }
-        const std::size_t total = sec.size() + 2;
-        out.push_back(static_cast<std::uint8_t>(total >> 8));
-        out.push_back(static_cast<std::uint8_t>(total & 0xff));
-        out.insert(out.end(), sec.begin(), sec.end());
-        out.push_back(0);
-        out.push_back(0);
-        out.push_back(0);  // empty last section (size 2)
-        out.push_back(2);
-        out.push_back(0);
-        out.push_back(0);
+        appendObjectMap(out, map);
         const std::size_t mapSize = out.size() - mapAt;
         auto put32 = [&](std::size_t at, std::uint32_t v) {
             for (int i = 0; i < 4; ++i)
