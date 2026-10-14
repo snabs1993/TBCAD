@@ -176,6 +176,38 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     std::to_string(top[i].first) + ")";
         }
         report.info(code::kSkippedObject, line);
+        // Model and paper space: which block headers carry those names and what they own.
+        std::string spaces = "spaces:";
+        std::map<std::uint64_t, std::size_t> insertsPer;
+        for (const detail::EntityRec& e : drawing.entities)
+            if (e.entmode == 0 && e.dxfType == "INSERT")
+                ++insertsPer[e.owner];
+        for (const auto& [h, bl] : drawing.blocks) {
+            if (bl.name.rfind("*Model_Space", 0) != 0 && bl.name.rfind("*Paper_Space", 0) != 0 &&
+                bl.name.rfind("*MODEL_SPACE", 0) != 0 && bl.name.rfind("*PAPER_SPACE", 0) != 0)
+                continue;
+            std::snprintf(b, sizeof b, " %llX", static_cast<unsigned long long>(h));
+            const auto c = perOwner.find(h);
+            spaces += std::string(b) + " (" + bl.name + ", " +
+                      std::to_string(c == perOwner.end() ? 0 : c->second) + " entities, " +
+                      std::to_string(insertsPer[h]) + " inserts)";
+        }
+        std::size_t unowned = perOwner.count(0) ? perOwner[0] : 0;
+        spaces += "; entities with no owner: " + std::to_string(unowned);
+        report.info(code::kSkippedObject, spaces);
+        std::string ins = "inserts per owner:";
+        std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
+        for (const auto& [h, c] : insertsPer)
+            topIns.emplace_back(c, h);
+        std::sort(topIns.rbegin(), topIns.rend());
+        for (std::size_t i = 0; i < topIns.size() && i < 6; ++i) {
+            std::snprintf(b, sizeof b, " %llX", static_cast<unsigned long long>(topIns[i].second));
+            const auto it = drawing.blocks.find(topIns[i].second);
+            ins += std::string(b) + " (" +
+                   (it == drawing.blocks.end() ? "no block" : it->second.name) + ", " +
+                   std::to_string(topIns[i].first) + ")";
+        }
+        report.info(code::kSkippedObject, ins);
     }
     const std::string text = detail::emitDxf(drawing);
     auto result = dxf::importDxf(
