@@ -83,6 +83,35 @@ public:
                 note("object " + hex(e.handle) + " lies outside the file");
                 continue;
             }
+            if (frameHandle(e.offset) != e.handle) {
+                // The map says the object is here but another (or no) object starts there: look
+                // nearby for the frame that carries this handle (its own handle is inside it).
+                std::int64_t found = 0;
+                bool ok = false;
+                for (std::int64_t d : {lastShift_}) {
+                    if (d != 0 && frameHandle(e.offset + d) == e.handle) {
+                        found = d;
+                        ok = true;
+                    }
+                }
+                for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
+                    for (std::int64_t sd : {d, -d}) {
+                        if (frameHandle(e.offset + sd) == e.handle) {
+                            found = sd;
+                            ok = true;
+                            break;
+                        }
+                    }
+                }
+                if (ok) {
+                    lastShift_ = found;
+                    ++out_.relocated[found];
+                    MapEntry moved = e;
+                    moved.offset += found;
+                    decodeOne(moved);
+                    continue;
+                }
+            }
             decodeOne(e);
         }
         std::sort(out_.entities.begin(), out_.entities.end(),
@@ -114,20 +143,67 @@ private:
         return idx < classes_.size() ? classes_[idx].dxfName : std::string{};
     }
 
+    std::size_t mainEnd_ = 0;
+    std::int64_t lastShift_ = 0;
+
+    // The own handle of the object framed at `offset` (0 when nothing sensible starts there).
+    std::uint64_t frameHandle(std::int64_t offset) const {
+        if (offset < 0 || static_cast<std::size_t>(offset) >= file_.size())
+            return 0;
+        BitReader head(file_.subspan(static_cast<std::size_t>(offset)));
+        const std::uint32_t size = head.ms();
+        std::size_t handleBits = 0;
+        if (fmt_.r2010)
+            handleBits = static_cast<std::size_t>(head.mcUnsigned());
+        const std::size_t lead = head.bytePos();
+        if (head.failed() || size == 0 ||
+            static_cast<std::size_t>(offset) + lead + size > file_.size())
+            return 0;
+        if (handleBits > static_cast<std::size_t>(size) * 8)
+            return 0;
+        BitReader r(file_.subspan(static_cast<std::size_t>(offset) + lead, size));
+        if (fmt_.r2010)
+            r.objectTypeR2010();
+        else {
+            r.bs();
+            r.rl();
+        }
+        const HandleRef self = r.handle();
+        return r.failed() ? 0 : self.value;
+    }
+
+    // Where an object that could not be framed sits: offset, offset inside a 0x7400 page, and
+    // its first bytes (a diagnostic for map or page misplacement).
+    std::string where(const MapEntry& e) const {
+        std::string w = " (at " + std::to_string(e.offset) + ", page offset " +
+                        std::to_string(e.offset % 0x7400) + ", bytes";
+        static const char* d = "0123456789ABCDEF";
+        for (std::size_t i = 0; i < 8 && static_cast<std::size_t>(e.offset) + i < file_.size();
+             ++i) {
+            const std::uint8_t b = file_[static_cast<std::size_t>(e.offset) + i];
+            w += ' ';
+            w += d[b >> 4];
+            w += d[b & 15];
+        }
+        return w + ")";
+    }
+
     void decodeOne(const MapEntry& e) {
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
+        // R2010 and later: the size of the handle stream (in bits) follows the size. The size
+        // counts the bytes after that field (checked against a real R2018 file).
+        std::size_t handleBits = 0;
+        if (fmt_.r2010)
+            handleBits = static_cast<std::size_t>(head.mcUnsigned());
         const std::size_t lead = head.bytePos();
         if (head.failed() || size == 0 || size > file_.size() ||
             static_cast<std::size_t>(e.offset) + lead + size > file_.size()) {
-            note("object " + hex(e.handle) + " has an impossible size");
+            note("object " + hex(e.handle) + " has an impossible size" + where(e));
             return;
         }
         Bytes body = file_.subspan(static_cast<std::size_t>(e.offset) + lead, size);
         BitReader r(body);
-        std::size_t handleBits = 0;
-        if (fmt_.r2010)
-            handleBits = static_cast<std::size_t>(r.mcUnsigned());
         std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
         if (type >= 500) {
             const std::string cls = dxfNameOfClass(type);
@@ -139,7 +215,7 @@ private:
         std::size_t objBits = 0;
         if (fmt_.r2010) {
             if (handleBits > body.size() * 8) {
-                note("object " + hex(e.handle) + " has a damaged header");
+                note("object " + hex(e.handle) + " has a damaged header" + where(e));
                 return;
             }
             objBits = body.size() * 8 - handleBits;
@@ -148,15 +224,16 @@ private:
         }
         const HandleRef self = r.handle();
         if (r.failed() || objBits > body.size() * 8) {
-            note("object " + hex(e.handle) + " has a damaged header");
+            note("object " + hex(e.handle) + " has a damaged header" + where(e));
             return;
         }
         // R2007 and later: strings live in their own stream just before the handle stream.
         BitReader strings;
         if (fmt_.r2007 && !locateStringStream(body, objBits, strings)) {
-            note("object " + hex(e.handle) + " has a damaged string stream");
+            note("object " + hex(e.handle) + " has a damaged string stream" + where(e));
             return;
         }
+        mainEnd_ = strings.bitSize() != 0 ? strings.bitPos() : (objBits > 0 ? objBits - 1 : 0);
         if (strings.bitSize() != 0)
             r.setStringStream(&strings);
         switch (type) {
@@ -208,6 +285,33 @@ private:
             name = "type " + std::to_string(type);
         ++out_.skippedTypes[name];
     }
+
+    // The exact bit where the main (non-string, non-handle) data of the current object must end
+    // (R2007 and later): the start of the string stream, or the string flag when there is none.
+    // Layout variants that differ between versions are chosen by which one lands exactly here.
+    void tally(std::uint32_t type, const BitReader& r) {
+        if (!fmt_.r2007 || r.failed())
+            return;
+        auto& t = out_.layoutCheck[type];
+        ++t[r.bitPos() == mainEnd_ ? 0 : 1];
+    }
+
+    // Table records start with a 64-bit flag, an xref index and an xref-dependency flag. Files
+    // written by recent versions leave the index out (checked on a real R2018 file).
+    int tripleVariant_ = -1;  // 1 = xref index present, 0 = absent, -1 = not decided yet
+    void readTriple(BitReader& r, bool& flag64, bool& xdep) {
+        flag64 = r.b();
+        if (tripleVariant_ != 0)
+            r.bs();
+        xdep = r.b();
+    }
+
+    // Entities: the "no links" bit that older versions store may be missing.
+    int nolinksVariant_ = -1;
+    // INSERT: the owned-object count is stored for every insert (the description says so) or only
+    // when attributes follow (what a real R2018 file does).
+    bool insertCountAlways_ = true;
+    bool insertCountKnown_ = false;
 
     // ---- shared prefixes ----------------------------------------------------------------------
 
@@ -306,10 +410,22 @@ private:
             case kLayer: {
                 LayerRec l;
                 l.handle = self;
+                if (fmt_.r2007 && tripleVariant_ < 0) {
+                    for (int v : {1, 0}) {
+                        BitReader probe = r;
+                        tripleVariant_ = v;
+                        bool f = false, x = false;
+                        readTriple(probe, f, x);
+                        probe.bs();
+                        readCmc(probe, 7);
+                        if (!probe.failed() && probe.bitPos() == mainEnd_)
+                            break;
+                        tripleVariant_ = -1;
+                    }
+                }
                 l.name = r.textBytes();
-                r.b();   // 64 flag
-                r.bs();  // xref index
-                const bool xdep = r.b();
+                bool flag64 = false, xdep = false;
+                readTriple(r, flag64, xdep);
                 const int values = r.bs();
                 const ColorValue color = readCmc(r, 7);
                 leadingHandles(h, self, reactors, true);
@@ -337,9 +453,10 @@ private:
                 LinetypeRec t;
                 t.handle = self;
                 t.name = r.textBytes();
-                r.b();
-                r.bs();
-                r.b();
+                {
+                    bool f = false, x = false;
+                    readTriple(r, f, x);
+                }
                 t.description = r.textBytes();
                 t.patternLength = r.bd();
                 r.rc();  // alignment, always 'A'
@@ -364,9 +481,8 @@ private:
                 StyleRec s;
                 s.handle = self;
                 s.name = r.textBytes();
-                r.b();
-                r.bs();
-                const bool xdep = r.b();
+                bool f64 = false, xdep = false;
+                readTriple(r, f64, xdep);
                 const bool vertical = r.b();
                 const bool shapeFile = r.b();
                 s.height = r.bd();
@@ -388,9 +504,8 @@ private:
                 DimStyleRec d;
                 d.handle = self;
                 d.name = r.textBytes();
-                const bool flag64 = r.b();
-                r.bs();  // xref index + 1
-                const bool xdep = r.b();
+                bool flag64 = false, xdep = false;
+                readTriple(r, flag64, xdep);
                 dimStyleVars(r, d);
                 const bool unknown = r.b();
                 if (r.failed()) {
@@ -405,9 +520,8 @@ private:
                 BlockRec b;
                 b.handle = self;
                 b.name = r.textBytes();
-                r.b();
-                r.bs();
-                const bool xdep = r.b();
+                bool f64 = false, xdep = false;
+                readTriple(r, f64, xdep);
                 const bool anonymous = r.b();
                 const bool hasAtts = r.b();
                 const bool isXref = r.b();
@@ -419,6 +533,20 @@ private:
                 b.baseY = r.bd();
                 b.baseZ = r.bd();
                 b.xrefPath = r.textBytes();
+                if (fmt_.r2007) {
+                    // Insert count (non-zero bytes ending in a zero), description, preview, units.
+                    for (int i = 0; i < 100000 && !r.failed() && r.rc() != 0; ++i) {
+                    }
+                    r.textBytes();
+                    const std::uint32_t preview = r.bl();
+                    if (preview > r.bitsLeft() / 8)
+                        r.fail();
+                    else
+                        r.seekBit(r.bitPos() + static_cast<std::size_t>(preview) * 8);
+                    r.bs();  // insert units
+                    r.b();   // explodable
+                    r.rc();  // block scaling
+                }
                 if (r.failed()) {
                     note("block header " + hex(self) + " is damaged");
                     return;
@@ -431,6 +559,7 @@ private:
             default:
                 break;
         }
+        tally(type, r);
     }
 
     // ---- entities -----------------------------------------------------------------------------
@@ -466,7 +595,8 @@ private:
             xdicMissing_ = r.b();
         if (fmt_.r2013)
             r.b();  // object has data in the data store section
-        c.nolinks = r.b();
+        if (nolinksVariant_ != 0 || !fmt_.r2007)
+            c.nolinks = r.b();
         if (fmt_.r2004) {
             const ColorValue cv = readEnc(r);
             c.color = cv.index;
@@ -495,6 +625,39 @@ private:
                       std::uint64_t self) {
         CommonBits c;
         ownedCount_ = 0;
+        if (fmt_.r2007 && type == kLine && nolinksVariant_ < 0) {
+            for (int v : {1, 0}) {
+                BitReader probe = r;
+                nolinksVariant_ = v;
+                CommonBits pc;
+                EntityRec pe;
+                if (readCommonEntity(probe, pc)) {
+                    line(probe, pe);
+                    if (!probe.failed() && probe.bitPos() == mainEnd_)
+                        break;
+                }
+                nolinksVariant_ = -1;
+            }
+        }
+        if (fmt_.r2007 && (type == kInsert) && !insertCountKnown_) {
+            bool fits[2] = {false, false};
+            for (int v = 0; v < 2; ++v) {
+                BitReader probe = r;
+                insertCountAlways_ = v == 1;
+                CommonBits pc;
+                EntityRec pe;
+                if (readCommonEntity(probe, pc)) {
+                    insert(probe, pe, false);
+                    fits[v] = !probe.failed() && probe.bitPos() == mainEnd_;
+                }
+            }
+            if (fits[0] != fits[1]) {
+                insertCountAlways_ = fits[1];
+                insertCountKnown_ = true;
+            } else {
+                insertCountAlways_ = true;
+            }
+        }
         if (!readCommonEntity(r, c)) {
             note("entity " + hex(self) + " has a damaged common part");
             return;
@@ -586,8 +749,10 @@ private:
             default:
                 return;
         }
+        tally(type, r);
         if (r.failed()) {
-            note(e.dxfType + " " + hex(self) + " is damaged and was skipped");
+            note(e.dxfType + " " + hex(self) + " is damaged and was skipped (read to bit " +
+                 std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")");
             return;
         }
         BitReader h(body, objBits);
@@ -1362,13 +1527,34 @@ private:
         const Vec3 xdir = bd3(r);
         bd3(r);  // offset to the block insertion point
         bd3(r);  // end point projection
-        const double boxHeight = r.bd();
-        const double boxWidth = r.bd();
-        const bool hookOnX = r.b();
-        const bool arrow = r.b();
-        r.bs();
-        r.b();
-        r.b();
+        // The text box size is missing from leaders without an annotation in R2018 files: pick
+        // the tail that ends exactly where the object's data ends.
+        double boxHeight = 0, boxWidth = 0;
+        bool hookOnX = false, arrow = false;
+        auto tail = [&](BitReader& t, bool withBox) {
+            if (withBox) {
+                boxHeight = t.bd();
+                boxWidth = t.bd();
+            }
+            hookOnX = t.b();
+            arrow = t.b();
+            t.bs();
+            t.b();
+            t.b();
+        };
+        BitReader withBox = r;
+        tail(withBox, true);
+        if (fmt_.r2007 && (withBox.failed() || withBox.bitPos() != mainEnd_)) {
+            BitReader without = r;
+            tail(without, false);
+            if (!without.failed() && without.bitPos() == mainEnd_) {
+                r = without;
+            } else {
+                tail(r, true);
+            }
+        } else {
+            tail(r, true);
+        }
         add(e, 71, arrow ? 1 : 0);
         add(e, 72, pathType);
         add(e, 73, annotation);
@@ -1477,6 +1663,34 @@ private:
         const int spacingStyle = r.bs();
         const double spacingFactor = r.bd();
         r.b();  // unknown bit
+        if (fmt_.r2004) {
+            const std::uint32_t background = r.bl();
+            if ((background & 1) || (fmt_.r2018 && (background & 0x10))) {
+                r.bl();  // background scale factor
+                readCmc(r, 7);
+                r.bl();  // background transparency
+            }
+            if (fmt_.r2018 && r.b()) {  // not annotative: a second copy of the geometry follows
+                r.bs();                 // version
+                r.b();                  // default flag
+                r.bl();                 // attachment point
+                bd3(r);
+                bd3(r);
+                for (int i = 0; i < 4; ++i)
+                    r.bd();
+                const int columnType = r.bs();
+                if (columnType != 0) {
+                    const std::uint32_t heights = r.bl();
+                    r.bd();  // column width
+                    r.bd();  // gutter
+                    const bool autoHeight = r.b();
+                    r.b();  // flow reversed
+                    if (!autoHeight && columnType == 2)
+                        for (std::uint32_t i = 0; i < heights && i < 10000 && !r.failed(); ++i)
+                            r.bd();
+                }
+            }
+        }
         point3(e, 10, p);
         add(e, 40, height);
         if (width != 0)
@@ -1517,7 +1731,7 @@ private:
         const double rotation = r.bd();
         const Vec3 n = bd3(r);
         const bool attribs = r.b();
-        if (fmt_.r2004)
+        if (fmt_.r2004 && (attribs || insertCountAlways_))
             ownedCount_ = r.bl();
         point3(e, 10, p);
         if (s.x != 1)
@@ -1650,6 +1864,78 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    std::vector<std::string>& notes, const Format& fmt) {
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
+}
+
+void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
+                     std::vector<std::string>& lines) {
+    std::map<std::uint32_t, std::size_t> histogram, tails;
+    std::size_t bad = 0, shown = 0;
+    for (const MapEntry& e : map) {
+        if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file.size()) {
+            ++bad;
+            continue;
+        }
+        BitReader head(file.subspan(static_cast<std::size_t>(e.offset)));
+        const std::uint32_t size = head.ms();
+        std::size_t handleBits = 0;
+        if (fmt.r2010)
+            handleBits = static_cast<std::size_t>(head.mcUnsigned());
+        const std::size_t lead = head.bytePos();
+        if (head.failed() || size == 0 ||
+            static_cast<std::size_t>(e.offset) + lead + size > file.size()) {
+            ++bad;
+            if (shown++ < 12)
+                lines.push_back("object map entry handle " + std::to_string(e.handle) + " at " +
+                                std::to_string(e.offset) + ": impossible size");
+            continue;
+        }
+        BitReader r(file.subspan(static_cast<std::size_t>(e.offset) + lead, size));
+        const std::uint32_t type =
+            fmt.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
+        std::size_t objBits = fmt.r2010 ? size * 8 - handleBits : r.rl();
+        const HandleRef self = r.handle();
+        ++histogram[type];
+        // All data bits and the handle stream bits of a few table records and entities, so a
+        // layout can be checked field by field against the format description.
+        if (objBits >= 8 && objBits <= size * 8 &&
+            (tails[type]++ < (type == 7 ? 4 : 2) || e.handle == 3105) &&
+            (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
+             type == 1 || type == 18 || type == 17 || type == 7 || type == 44 || type == 45 ||
+             type == 21 || e.handle == 3105)) {
+            Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
+            auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
+                std::string bits;
+                BitReader t(ob, from);
+                for (std::size_t i = from; i < to && i < from + cap; ++i)
+                    bits += t.b() ? '1' : '0';
+                return bits;
+            };
+            lines.push_back("bits of type " + std::to_string(type) + " object " +
+                            std::to_string(e.handle) + " (" + std::to_string(objBits) +
+                            " data bits): " + dump(0, objBits, 3200));
+            lines.push_back("handle bits of that object (" + std::to_string(handleBits) +
+                            "): " + dump(objBits, size * 8, 400));
+        }
+        if (shown++ < 12)
+            lines.push_back("object " + std::to_string(e.handle) + " at " +
+                            std::to_string(e.offset) + ": " + std::to_string(size) +
+                            " bytes, type " + std::to_string(type) + ", handle bits " +
+                            std::to_string(handleBits) + ", data bits " + std::to_string(objBits) +
+                            ", own handle " + std::to_string(self.value) +
+                            (r.failed() ? " (header read failed)" : ""));
+    }
+    lines.push_back("objects: " + std::to_string(map.size()) + " in the map, " +
+                    std::to_string(bad) + " unreadable");
+    std::string h = "object types (type:count):";
+    std::size_t n = 0;
+    for (const auto& [t, c] : histogram) {
+        if (n++ >= 80) {
+            h += " ...";
+            break;
+        }
+        h += " " + std::to_string(t) + ":" + std::to_string(c);
+    }
+    lines.push_back(h);
 }
 
 }  // namespace tbcad::dwg::detail

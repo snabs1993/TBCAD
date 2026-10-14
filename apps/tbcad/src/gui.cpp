@@ -489,7 +489,9 @@ void Gui::doOpenPath(const std::string& path) {
         anyActivity_ = true;
         return;
     }
+    core_.setEchoOpenFailures(false);  // the message box below shows it
     auto r = core_.openFile(platform::pathFromUtf8(path));
+    core_.setEchoOpenFailures(true);
     if (!r)
         lastError_ = r.error().message;
 }
@@ -514,7 +516,9 @@ void Gui::openPending() {
     }
     std::string path = std::move(pendingOpen_);
     pendingOpen_.clear();
+    core_.setEchoOpenFailures(false);  // the message box below shows it
     auto r = core_.openFile(platform::pathFromUtf8(path));
+    core_.setEchoOpenFailures(true);
     if (!r)
         lastError_ = r.error().message;
 }
@@ -1999,6 +2003,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         pressTookPoint_ = pointPrompt && !io.KeyAlt;
         if (pressTookPoint_)
             core_.click(ps);
+        else if (!prompt && !io.KeyAlt && !doubleClick_)
+            pressTookPoint_ = core_.pressOnGrip(ps);  // a grip starts its edit on press
     }
     if (leftDown_) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {

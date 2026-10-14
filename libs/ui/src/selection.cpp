@@ -22,9 +22,16 @@ bool isSelectable(const Document& doc, const Entity& e) {
     return layer.visible() && !layer.locked;
 }
 
+namespace {
+bool isFillKind(const Entity& e) {
+    return kind(e) == EntityKind::Hatch;
+}
+}  // namespace
+
 std::optional<EntityId> pickEntity(const Document& doc, const index::SpatialIndex& index, Vec2 p,
                                    double apertureMm) {
     std::optional<EntityId> best;
+    bool bestIsFill = true;
     double bestDist = std::numeric_limits<double>::infinity();
     index.queryPoint(p, apertureMm, [&](EntityId id, const BBox2&) {
         const Entity* e = doc.find(id);
@@ -32,9 +39,15 @@ std::optional<EntityId> pickEntity(const Document& doc, const index::SpatialInde
             return;
         if (!geom::hitTest(*e, p, apertureMm, &doc))
             return;
+        // A hatch is hit anywhere inside it, so a line or curve under the pointer wins over it.
+        const bool fill = isFillKind(*e);
+        if (best && fill && !bestIsFill)
+            return;
         double d = geom::distance(*e, p, &doc);
-        if (d < bestDist || (d == bestDist && best && id.value > best->value)) {
+        if ((bestIsFill && !fill) || d < bestDist ||
+            (d == bestDist && best && id.value > best->value)) {
             bestDist = d;
+            bestIsFill = fill;
             best = id;
         }
     });
@@ -47,7 +60,8 @@ std::vector<EntityId> pickAllAt(const Document& doc, const index::SpatialIndex& 
     index.queryPoint(p, apertureMm, [&](EntityId id, const BBox2&) {
         const Entity* e = doc.find(id);
         if (e && isSelectable(doc, *e) && geom::hitTest(*e, p, apertureMm, &doc))
-            hits.emplace_back(geom::distance(*e, p, &doc), id);
+            // Fills sort after every curve: their distance counts as the aperture and a bit.
+            hits.emplace_back(geom::distance(*e, p, &doc) + (isFillKind(*e) ? 1e9 : 0.0), id);
     });
     std::sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) {
         return a.first != b.first ? a.first < b.first : a.second.value > b.second.value;

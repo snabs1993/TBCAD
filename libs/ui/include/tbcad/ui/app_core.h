@@ -125,6 +125,9 @@ public:
     bool canOpenExtension(std::string_view lowerExtension) const;
     // True while the drawing came from a read-only format and has not been saved as .tbcad.
     bool readOnlyOrigin() const;
+    // The window shows a failed open in its own message box; it turns the command-line echo off so
+    // the message is not shown twice.
+    void setEchoOpenFailures(bool on) { echoOpenFailures_ = on; }
     // One-line banner for a read-only drawing; empty otherwise.
     std::string readOnlyBanner() const;
     bool modified() const;
@@ -180,6 +183,9 @@ public:
     void pointerMoved(const PointerState& p);
     void pointerLeft();
     // A left click that did not turn into a drag.
+    // Pressing the button on a grip of the selection starts its edit at once (so a press-drag-
+    // release moves it). True when the press was taken; call `click` for everything else.
+    bool pressOnGrip(const PointerState& p);
     void click(const PointerState& p);
     // A double click while no command runs: a text object under the pointer is selected and
     // edited with TEXTEDIT; anything else behaves like a single click.
@@ -300,6 +306,7 @@ private:
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     EntityId hoverId_{};
+    int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
     void notifySessionHooks();
@@ -309,6 +316,8 @@ private:
         bool readOnly = true;
     };
     std::map<std::string, ForeignReader, std::less<>> foreignReaders_{};
+    bool echoOpenFailures_ = true;
+    void printOpenFailure(const std::string& text);
     cmd::Registry& registry_;
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
