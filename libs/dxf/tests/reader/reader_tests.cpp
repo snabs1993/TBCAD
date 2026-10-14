@@ -639,6 +639,28 @@ TEST_CASE("dimension: style overrides in its extended data and a relative text h
     CHECK(near(ds->arrowSize, 400.0));
 }
 
+TEST_CASE("layout: a paper rectangle away from the origin moves to the origin") {
+    Pairs p;
+    p.section("BLOCKS")
+        .g(0, "BLOCK")
+        .g(2, "*Paper_Space")
+        .g(70, 0)
+        .g(10, 0.0)
+        .g(20, 0.0)
+        .g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(67, 1).g(10, 505.0).g(20, -40.0).g(11, 600.0).g(21, -40.0);
+    p.g(0, "VIEWPORT").g(8, "0").g(67, 1).g(10, 600.0).g(20, 50.0).g(40, 200.0).g(41, 100.0);
+    p.g(69, 2).g(68, 1).g(12, 1000.0).g(22, 2000.0).g(45, 10000.0);
+    p.g(0, "ENDBLK").end();
+    p.section("OBJECTS").g(0, "LAYOUT").g(1, "Model").g(71, 0).g(44, 297.0).g(45, 210.0);
+    p.g(0, "LAYOUT").g(1, "Sheet A3").g(71, 1).g(44, 297.0).g(45, 420.0).g(73, 1);
+    p.g(14, 493.0).g(24, -52.0).g(15, 913.0).g(25, 245.0).end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const std::string& t = l.doc().header().custom.at("tbcad.layouts");
+    // Viewport rectangle (500,0)-(700,100) minus the paper corner (493,-52).
+    CHECK(t.find("V\t1\t7\t52\t207\t152\t") != std::string::npos);
+}
+
 TEST_CASE("an older version than R12 is refused") {
     Report report;
     Result<ImportResult> r = importDxf(

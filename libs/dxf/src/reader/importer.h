@@ -202,6 +202,8 @@ private:
         int tab = 0;
         double width = 0, height = 0;  // mm as stored (0 = unknown)
         int rotation = 0;
+        bool hasExtents = false;  // the paper rectangle in paper space coordinates
+        Vec2 extMin{}, extMax{};
     };
     std::vector<Sheet> sheets_{};
     std::vector<LayoutRow> layoutRows_{};

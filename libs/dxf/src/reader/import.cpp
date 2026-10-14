@@ -956,6 +956,11 @@ void Importer::readLayoutObject(const Record& r) {
     row.width = r.num(44);
     row.height = r.num(45);
     row.rotation = static_cast<int>(r.integer(73, 0));
+    if (r.has(14) && r.has(24) && r.has(15) && r.has(25)) {
+        row.hasExtents = true;
+        row.extMin = {r.num(14), r.num(24)};
+        row.extMax = {r.num(15), r.num(25)};
+    }
     if (row.name.empty())
         return;
     layoutRows_.push_back(std::move(row));
@@ -1004,7 +1009,7 @@ void Importer::finishLayouts() {
     std::unordered_set<std::string> used;
     int uid = 0;
     for (std::size_t n = 0; n < order.size(); ++n) {
-        const Sheet& sh = sheets_[order[n]];
+        Sheet& sh = sheets_[order[n]];
         std::string name = n < rows.size() ? rows[n].name : "Layout" + std::to_string(n + 1);
         if (name.size() > 64)
             name.resize(64);
@@ -1030,6 +1035,28 @@ void Importer::finishLayouts() {
                     w *= 1.5;
                 while (v.max.y > h - 5)
                     h *= 1.5;
+            }
+        }
+        // Paper space coordinates are absolute: the sheet's paper rectangle can sit anywhere. Move
+        // the content so the paper's lower left corner is the origin of the sheet.
+        if (n < rows.size() && rows[n].hasExtents &&
+            std::abs(rows[n].extMax.x - rows[n].extMin.x - w) < 1.0 &&
+            std::abs(rows[n].extMax.y - rows[n].extMin.y - h) < 1.0 &&
+            (std::abs(rows[n].extMin.x) > 1e-6 || std::abs(rows[n].extMin.y) > 1e-6)) {
+            const Vec2 shift{-rows[n].extMin.x, -rows[n].extMin.y};
+            if (const BlockDef* b = doc_->block(sh.content)) {
+                const std::vector<EntityId> ids(b->entities.begin(), b->entities.end());
+                const Transform2 move = Transform2::translate(shift);
+                for (EntityId id : ids)
+                    (void)tx_->modify(id, [&](Entity& e) {
+                        tbcad::Result<Entity> moved = geom::transformed(e, move);
+                        if (moved)
+                            e = std::move(moved.value());
+                    });
+            }
+            for (SheetViewport& v : sh.viewports) {
+                v.min = v.min + shift;
+                v.max = v.max + shift;
             }
         }
         ++uid;
