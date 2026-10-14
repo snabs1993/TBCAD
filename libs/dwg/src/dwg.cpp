@@ -359,8 +359,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
             }
             std::sort(wide.begin(), wide.end(),
                       [](const Wide& lhs, const Wide& rhs) { return lhs.span > rhs.span; });
-            for (std::size_t i = 0; i < wide.size() && i < 6; ++i) {
-                const Wide& w = wide[i];
+            // The widest filled shapes get their own lines: a huge fill is easy to see on screen.
+            std::vector<Wide> fills;
+            for (const Wide& w : wide)
+                if (w.e->dxfType == "SOLID" || w.e->dxfType == "TRACE" || w.e->dxfType == "HATCH")
+                    fills.push_back(w);
+            if (fills.size() > 4)
+                fills.resize(4);
+            std::vector<Wide> shown(
+                wide.begin(),
+                wide.begin() + static_cast<std::ptrdiff_t>(std::min<std::size_t>(wide.size(), 6)));
+            shown.insert(shown.end(), fills.begin(), fills.end());
+            for (std::size_t i = 0; i < shown.size(); ++i) {
+                const Wide& w = shown[i];
                 const auto o = drawing.blocks.find(w.e->owner);
                 char t[300];
                 std::snprintf(
@@ -371,7 +382,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     w.x0, w.y0, w.x1, w.y1, w.e->color,
                     w.e->trueColor >= 0 ? " (true colour)" : "");
                 report.info(code::kSkippedObject, t);
-                if (i < 3) {
+                if (i < 3 || i >= 6) {
                     std::string gl = "  groups:";
                     for (const detail::Group& g : w.e->groups) {
                         gl += " " + std::to_string(g.code) + "=";
