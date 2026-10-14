@@ -147,6 +147,9 @@ public:
     std::optional<OpeningInfo> opening() const;
     // True while the drawing came from a read-only format and has not been saved as .tbcad.
     bool readOnlyOrigin() const;
+    // True for the frame before a changed external reference is reloaded, so the window can show
+    // a "Reloading external references" card before the command blocks.
+    bool xrefReloading() const { return xrefReloadWait_ > 0; }
     // The window shows a failed open in its own message box; it turns the command-line echo off so
     // the message is not shown twice.
     void setEchoOpenFailures(bool on) { echoOpenFailures_ = on; }
@@ -406,6 +409,7 @@ private:
     std::chrono::steady_clock::time_point lastAutosave_{};
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
+    int xrefReloadWait_ = 0;
     bool viewStatePending_ = false;
     underlay::ImageCache imageCache_{};
 };

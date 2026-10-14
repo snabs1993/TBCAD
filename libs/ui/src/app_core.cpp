@@ -1196,6 +1196,14 @@ void AppCore::zoomToEntities(const std::vector<EntityId>& ids) {
 
 void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
     using namespace std::chrono_literals;
+    if (xrefReloadWait_ > 0) {
+        // The window has had a frame to show the "Reloading" card; the reload itself blocks.
+        if (--xrefReloadWait_ == 0 && session_ && !session_->runner->active()) {
+            submitText("XRELOAD");
+            submitText("");
+        }
+        return;
+    }
     if (now - lastXrefCheck_ < 2s)
         return;
     lastXrefCheck_ = now;
@@ -1216,8 +1224,7 @@ void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
     if (!stale || !registry_.find("XRELOAD"))
         return;
     print("External reference changed on disk; reloading");
-    submitText("XRELOAD");
-    submitText("");
+    xrefReloadWait_ = 1;  // one frame with the notice on screen, then the blocking reload
 }
 
 std::vector<render::ImageDraw> AppCore::underlayImages() {
