@@ -32,6 +32,9 @@ struct PanelState {
     std::string stateName{};
     std::set<std::uint32_t> collapsed{};
     LayerId selected{};
+    std::set<std::uint32_t> multi{};     // Ctrl / Shift click selection; always holds `selected`
+    LayerId anchor{};                    // where a Shift range starts
+    std::vector<std::uint32_t> order{};  // visible rows, top to bottom (for Shift ranges)
     LayerId renaming{};
     bool focusRename = false;
     std::string renameBuf{};
@@ -43,6 +46,14 @@ struct PanelState {
 PanelState& state() {
     static PanelState s;
     return s;
+}
+
+// The selected layers as a command argument ("#3,#7"); the clicked row alone when none is chosen.
+std::string selectedRefs(const PanelState& st) {
+    std::string out;
+    for (std::uint32_t v : st.multi)
+        out += (out.empty() ? "" : ",") + idRef(LayerId{v});
+    return out.empty() ? idRef(st.selected) : out;
 }
 
 std::string lowered(std::string s) {
@@ -159,10 +170,30 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
         std::string label = std::string(current ? "> " : "   ") + l->name;
         if (dimmed)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        bool sel = st.selected == row.id;
+        bool sel = st.selected == row.id || st.multi.count(row.id.value) > 0;
         if (ImGui::Selectable(
                 label.c_str(), sel,
                 ImGuiSelectableFlags_AllowDoubleClick | ImGuiSelectableFlags_AllowOverlap)) {
+            const ImGuiIO& io = ImGui::GetIO();
+            if (io.KeyCtrl) {
+                if (!st.multi.erase(row.id.value))
+                    st.multi.insert(row.id.value);
+                st.anchor = row.id;
+            } else if (io.KeyShift && st.anchor) {
+                auto a = std::find(st.order.begin(), st.order.end(), st.anchor.value);
+                auto b = std::find(st.order.begin(), st.order.end(), row.id.value);
+                st.multi.clear();
+                if (a != st.order.end() && b != st.order.end()) {
+                    if (a > b)
+                        std::swap(a, b);
+                    st.multi.insert(a, b + 1);
+                } else {
+                    st.multi.insert(row.id.value);
+                }
+            } else {
+                st.multi = {row.id.value};
+                st.anchor = row.id;
+            }
             st.selected = row.id;
             if (ImGui::IsMouseDoubleClicked(0))
                 exec(ctx, {"-LAYER Set " + idRef(row.id)});
@@ -211,7 +242,11 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
         }
 
         if (ImGui::BeginPopupContextItem("##ctx")) {
+            if (!st.multi.count(row.id.value))
+                st.multi = {row.id.value};
             st.selected = row.id;
+            const std::size_t many = st.multi.size();
+            const std::string group = many > 1 ? " (" + std::to_string(many) + " layers)" : "";
             if (ImGui::MenuItem("New"))
                 newLayer(ctx, {});
             if (row.id != kLayerZero && ImGui::MenuItem("New Sub-layer"))
@@ -223,8 +258,14 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
             }
             if (ImGui::MenuItem("Set Current"))
                 exec(ctx, {"-LAYER Set " + idRef(row.id)});
-            if (ImGui::MenuItem("Isolate"))
-                exec(ctx, {"-LAYER Isolate " + idRef(row.id)});
+            if (ImGui::MenuItem(("Isolate" + group).c_str()))
+                exec(ctx, {"-LAYER Isolate " + selectedRefs(st)});
+            if (many > 1) {
+                if (ImGui::MenuItem(("Turn Off" + group).c_str()))
+                    exec(ctx, {"-LAYER Off " + selectedRefs(st)});
+                if (ImGui::MenuItem(("Turn On" + group).c_str()))
+                    exec(ctx, {"-LAYER On " + selectedRefs(st)});
+            }
             if (ImGui::MenuItem("Show All"))
                 exec(ctx, {"-LAYER ShowAll"});
             if (ImGui::MenuItem("Select Objects"))
@@ -332,6 +373,18 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
+    ImGui::BeginDisabled(!st.selected || !doc.layer(st.selected));
+    if (ImGui::Button("Isolate"))
+        exec(ctx, {"-LAYER Isolate " + selectedRefs(st)});
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "Turn off every layer except the selected ones\n"
+            "(Ctrl+click / Shift+click to select several)");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Show All"))
+        exec(ctx, {"-LAYER ShowAll"});
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "Filter layers (text, or name:S-* frozen ...)",
                              &st.filter);
@@ -354,6 +407,9 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     }
 
     std::vector<Row> rows = buildRows(doc, st);
+    st.order.clear();
+    for (const Row& r : rows)
+        st.order.push_back(r.id.value);
 
     constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
                                        ImGuiTableFlags_ScrollX | ImGuiTableFlags_RowBg |

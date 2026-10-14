@@ -1408,6 +1408,8 @@ void Gui::statusBar() {
             right = objects + selected;
         if (ImGui::CalcTextSize(right.c_str()).x > free)
             right = selected;
+        if (ImGui::CalcTextSize(right.c_str()).x > free)
+            right = std::to_string(core_.selection().size()) + " sel";
         const float w = ImGui::CalcTextSize(right.c_str()).x;
         if (w <= free) {
             ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);

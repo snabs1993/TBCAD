@@ -406,6 +406,7 @@ private:
     std::chrono::steady_clock::time_point lastAutosave_{};
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
+    bool viewStatePending_ = false;
     underlay::ImageCache imageCache_{};
 };
 

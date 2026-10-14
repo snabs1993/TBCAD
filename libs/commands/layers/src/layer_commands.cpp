@@ -269,14 +269,10 @@ private:
                 ctx.message(r.error().message);
         } else if (option == "Isolate") {
             std::vector<LayerId> ids;
-            co_await askLayers(ctx, "Layer to isolate", ids, ok);
+            co_await askLayers(ctx, "Layer(s) to isolate", ids, ok);
             if (!ok)
                 co_return;
-            if (ids.size() != 1) {
-                ctx.message("Give exactly one layer.");
-                co_return;
-            }
-            report(ctx, isolateLayer(doc, ctx.tx(), ids[0]));
+            report(ctx, isolateLayers(doc, ctx.tx(), ids));
         } else if (option == "ShowAll") {
             report(ctx, showAllLayers(doc, ctx.tx()));
         } else if (option == "List") {
