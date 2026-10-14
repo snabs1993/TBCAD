@@ -1203,8 +1203,16 @@ private:
             h.handle();  // visual style
         l.block = resolveHandle(h.handle(), self);
         if (r.failed() || h.failed()) {
-            note("layout " + hex(self) + " is damaged");
-            return;
+            note("layout " + hex(self) + " is damaged (" + (r.failed() ? "data" : "handles") +
+                 " read to bit " + std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) +
+                 ", name \"" + l.name + "\", paper " + std::to_string(l.width) + " x " +
+                 std::to_string(l.height) + ")" +
+                 (failDumps_[kLayoutObject]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
+            // The name and block are what a sheet needs: keep them when they read sensibly.
+            if (l.name.empty() || l.block == 0)
+                return;
+            if (!(l.width > 1 && l.width < 1e6 && l.height > 1 && l.height < 1e6))
+                l.width = l.height = 0;
         }
         out_.layoutObjects.push_back(std::move(l));
     }
@@ -2244,7 +2252,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r20: layouts (VIEWPORT, LAYOUT), xref paths; r19: reachability info";
+    return "r21: layout diagnostics; r20: layouts (VIEWPORT, LAYOUT), xref paths; r19: "
+           "reachability info";
 }
 
 void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,

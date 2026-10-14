@@ -252,6 +252,33 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
             report.info(code::kSkippedObject, "reachable from model space: " + reach(false));
             report.info(code::kSkippedObject, "reachable from paper spaces: " + reach(true));
         }
+        {
+            // Every viewport: where it sits on its sheet and what it looks at.
+            auto val = [](const detail::EntityRec& e, int code) {
+                for (const detail::Group& g : e.groups)
+                    if (g.code == code)
+                        if (const double* v = std::get_if<double>(&g.value.v))
+                            return *v;
+                return 0.0;
+            };
+            int n = 0;
+            for (const detail::EntityRec& e : drawing.entities) {
+                if (e.dxfType != "VIEWPORT" || ++n > 40)
+                    continue;
+                const auto o = drawing.blocks.find(e.owner);
+                char t[320];
+                std::snprintf(t, sizeof t,
+                              "viewport %llX on %s: centre %.1f,%.1f size %.1f x %.1f; target "
+                              "%.1f,%.1f view centre %.1f,%.1f height %.1f; %zu frozen; %s",
+                              static_cast<unsigned long long>(e.handle),
+                              e.entmode == 0 && o != drawing.blocks.end() ? o->second.name.c_str()
+                                                                          : "paper space",
+                              val(e, 10), val(e, 20), val(e, 40), val(e, 41), val(e, 17),
+                              val(e, 27), val(e, 12), val(e, 22), val(e, 45), e.frozenLayers.size(),
+                              val(e, 68) != 0 ? "on" : "off");
+                report.info(code::kSkippedObject, t);
+            }
+        }
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)
