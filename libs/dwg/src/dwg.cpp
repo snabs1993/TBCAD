@@ -40,8 +40,17 @@ Result<bool> readR2000(Bytes file, detail::Drawing& drawing, std::vector<std::st
 Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing,
                            std::vector<std::string>& notes, dxf::Report& report) {
     auto sections = detail::readSections(file, notes);
-    if (!sections)
-        return sections.error();
+    if (!sections) {
+        // Keep the reasons the container reader noted: they say which step failed.
+        std::string msg = sections.error().message;
+        for (std::size_t i = 0; i < notes.size() && i < 3; ++i)
+            msg += (i == 0 ? " (" : "; ") + notes[i] +
+                   (i + 1 == std::min<std::size_t>(notes.size(), 3) ? ")" : "");
+        msg += " [" + std::string(reinterpret_cast<const char*>(file.data()), 6) + ", " +
+               std::to_string(file.size()) + " bytes]";
+        report.error(code::kBadSection, msg);
+        return makeError(ErrorCode::Parse, msg);
+    }
     detail::Format fmt;
     fmt.r2004 = true;
     fmt.r2007 = version >= Version::R2010;  // R2007 has its own container and is not read
@@ -91,8 +100,13 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.error(code::kUnsupportedVersion, msg);
         return makeError(ErrorCode::Parse, msg);
     }
-    if (v.version == Version::R2007)
-        return makeError(ErrorCode::Parse, "DWG R2007 files are not readable yet");
+    if (v.version == Version::R2007) {
+        const std::string msg =
+            "this drawing is a DWG saved by the 2007-2009 releases (AC1021), which TBCAD cannot "
+            "read yet; save it as a 2010 or later (or 2004) DWG, or as DXF, and open that";
+        report.error(code::kUnsupportedVersion, msg);
+        return makeError(ErrorCode::Parse, msg);
+    }
 
     const Bytes file(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
     std::vector<std::string> notes;
