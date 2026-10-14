@@ -998,10 +998,15 @@ void Gui::statusBar() {
             std::snprintf(buf, sizeof buf, "%.3e", v);
             return std::string(buf);
         };
+        ImFont* mono = monoFont();  // digits of equal width, so the readout does not jitter
+        if (mono)
+            ImGui::PushFont(mono);
         ImGui::Text("X %s   Y %s   %s", shown(c.x).c_str(), shown(c.y).c_str(),
                     std::string(unitSuffix(fmt.unit)).c_str());
         const float pad = ImGui::CalcTextSize("X -100000000.000   Y -100000000.000   mm").x -
                           ImGui::GetItemRectSize().x;
+        if (mono)
+            ImGui::PopFont();
         if (pad > 0) {
             ImGui::SameLine(0, 0);
             ImGui::Dummy({pad, 1});
