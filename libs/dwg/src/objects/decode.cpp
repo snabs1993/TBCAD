@@ -41,7 +41,7 @@ enum Type : std::uint32_t {
     kDictionary = 0x2A,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
     kHatch = 100000,
-    kLayoutObject = 100001,
+    kLayoutObject = 0x52,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
@@ -2341,7 +2341,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r30: layout dictionary entry types; r29: layout diagnostics outside the note cap; r28: "
+    return "r31: LAYOUT is fixed type 82; r30: layout dictionary entry types; r29: layout "
+           "diagnostics outside the note cap; r28: "
            "class names read from the string "
            "run after the class fields; r27: class bytes "
            "dump; r26: class string stream end retried; r25: class section skips "
