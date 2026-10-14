@@ -430,6 +430,34 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 report.info(code::kSkippedObject, txt);
             }
         }
+        {
+            // Dimension styles (text height, scale, arrow size decide how dimensions draw) and
+            // the layers whose name starts with A-ANNO-D.
+            std::size_t shown = 0;
+            for (const auto& [dh, ds] : drawing.dimStyles) {
+                if (++shown > 6)
+                    break;
+                std::string line = "dimstyle \"" + ds.name + "\":";
+                for (const detail::Group& g : ds.groups) {
+                    if (g.code != 40 && g.code != 41 && g.code != 42 && g.code != 43 &&
+                        g.code != 44 && g.code != 45 && g.code != 140 && g.code != 141 &&
+                        g.code != 142 && g.code != 143 && g.code != 147 && g.code != 144)
+                        continue;
+                    line += " " + std::to_string(g.code) + "=";
+                    if (const double* v = std::get_if<double>(&g.value.v))
+                        line += std::to_string(*v);
+                    else if (const long long* n = std::get_if<long long>(&g.value.v))
+                        line += std::to_string(*n);
+                }
+                report.info(code::kSkippedObject, line);
+            }
+            for (const auto& [lh, ly] : drawing.layers)
+                if (ly.name.rfind("A-ANNO-D", 0) == 0)
+                    report.info(code::kSkippedObject,
+                                "layer \"" + ly.name + "\" colour " + std::to_string(ly.color) +
+                                    " true " + std::to_string(ly.trueColor) + " lineweight " +
+                                    std::to_string(ly.lineweight));
+        }
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)
