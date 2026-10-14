@@ -112,12 +112,56 @@ std::vector<MapEntry> readObjectMap(Bytes file, const Locator& loc,
     return readObjectMapData(file, loc.seeker, end, notes);
 }
 
+namespace {
+
+struct MapState {
+    std::uint64_t handle = 0;
+    std::int64_t loc = 0;
+};
+
+struct MapParse {
+    std::vector<MapEntry> entries{};
+    std::size_t valid = 0;  // entries with an offset inside the data and an increasing handle
+    MapState end{};
+};
+
+// Decodes one object-map section. `limit` is the number of bytes the offsets may point into.
+MapParse parseMapSection(Bytes data, MapState state, std::uint64_t limit) {
+    MapParse out;
+    BitReader r(data);
+    std::uint64_t previous = state.handle;
+    while (r.bitsLeft() >= 16 && !r.failed()) {
+        const std::int64_t dh = r.mc();
+        const std::int64_t dl = r.mc();
+        if (r.failed())
+            break;
+        // Unsigned arithmetic wraps instead of overflowing on garbage values.
+        const auto udh = static_cast<std::uint64_t>(dh);
+        state.handle += dh < 0 ? (~udh + 1) : udh;
+        state.loc = static_cast<std::int64_t>(static_cast<std::uint64_t>(state.loc) +
+                                              static_cast<std::uint64_t>(dl));
+        out.entries.push_back({state.handle, state.loc});
+        if (state.loc >= 0 && static_cast<std::uint64_t>(state.loc) < limit &&
+            state.handle > previous)
+            ++out.valid;
+        previous = state.handle;
+        if (out.entries.size() > 50'000'000)
+            break;
+    }
+    out.end = state;
+    return out;
+}
+
+}  // namespace
+
 std::vector<MapEntry> readObjectMapData(Bytes file, std::size_t start, std::size_t end,
-                                        std::vector<std::string>& notes) {
+                                        std::vector<std::string>& notes, std::uint64_t limit) {
     std::vector<MapEntry> out;
     std::size_t pos = start;
-    std::uint64_t lastHandle = 0;
-    std::int64_t lastLoc = 0;
+    MapState state;
+    if (limit == 0)
+        limit = file.size();
+    bool mixedReported = false;
     while (pos + 2 <= end) {
         // The section size is the one big-endian value of the format.
         const std::size_t size = (static_cast<std::size_t>(file[pos]) << 8) | file[pos + 1];
@@ -128,21 +172,34 @@ std::vector<MapEntry> readObjectMapData(Bytes file, std::size_t start, std::size
             notes.push_back("the object map is damaged; later objects are missing");
             break;
         }
-        BitReader r(file.subspan(pos + 2, size - 2));
-        while (r.bitsLeft() >= 16 && !r.failed()) {
-            const std::int64_t dh = r.mc();
-            const std::int64_t dl = r.mc();
-            if (r.failed())
-                break;
-            // Unsigned arithmetic wraps instead of overflowing on garbage values.
-            const auto udh = static_cast<std::uint64_t>(dh);
-            lastHandle += dh < 0 ? (~udh + 1) : udh;
-            lastLoc = static_cast<std::int64_t>(static_cast<std::uint64_t>(lastLoc) +
-                                                static_cast<std::uint64_t>(dl));
-            out.push_back({lastHandle, lastLoc});
-            if (out.size() > 50'000'000)
-                return out;
+        const Bytes data = file.subspan(pos + 2, size - 2);
+        // The spec starts the running handle and offset at zero once; a real R2018 file looks
+        // restarted at every section. Take whichever reading gives offsets that lie inside the
+        // object data (the first section decides nothing: both start at zero).
+        const MapParse cont = parseMapSection(data, state, limit);
+        MapParse best = cont;
+        if (cont.valid < cont.entries.size()) {
+            const MapParse reset = parseMapSection(data, MapState{}, limit);
+            if (reset.valid > best.valid) {
+                best = reset;
+                if (!mixedReported) {
+                    mixedReported = true;
+                    notes.push_back("the object map restarts its running values in each section");
+                }
+            }
+            if (best.valid < best.entries.size()) {
+                const MapParse mixedA = parseMapSection(data, MapState{0, state.loc}, limit);
+                if (mixedA.valid > best.valid)
+                    best = mixedA;
+                const MapParse mixedB = parseMapSection(data, MapState{state.handle, 0}, limit);
+                if (mixedB.valid > best.valid)
+                    best = mixedB;
+            }
         }
+        out.insert(out.end(), best.entries.begin(), best.entries.end());
+        state = best.end;
+        if (out.size() > 50'000'000)
+            return out;
         pos += size + 2;  // size field counts itself; the CRC follows the data
     }
     return out;

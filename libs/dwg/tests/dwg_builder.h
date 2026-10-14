@@ -14,6 +14,7 @@ namespace tbcad::dwg::test {
 inline bool gR2004 = false;
 inline bool gR2007 = false;  // R2010 layout: string stream, no object size
 inline bool gR2013 = false;
+inline bool gMapRestarts = false;  // object map sections restart handle and offset deltas
 
 class BitWriter {
 public:
@@ -182,6 +183,10 @@ inline void appendObjectMap(std::vector<std::uint8_t>& out,
         out.push_back(0);
         out.push_back(0);
         sec.clear();
+        if (gMapRestarts) {
+            lastH = 0;
+            lastL = 0;
+        }
     };
     for (auto& [h, l] : map) {
         putMc(sec, static_cast<std::int64_t>(h - lastH));

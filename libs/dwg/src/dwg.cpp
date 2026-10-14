@@ -71,7 +71,7 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
         report.error(code::kBadSection, msg);
         return makeError(ErrorCode::Parse, msg);
     }
-    const auto map = detail::readObjectMapData(handles, 0, handles.size(), notes);
+    const auto map = detail::readObjectMapData(handles, 0, handles.size(), notes, objects.size());
     if (map.empty()) {
         std::string msg = "the drawing has no object table";
         report.error(code::kBadSection, msg);
@@ -198,7 +198,8 @@ std::string describe(std::span<const std::byte> bytes) {
                         at += sz + 2;
                     }
                 }
-                const auto map = detail::readObjectMapData(hnd->second, 0, hnd->second.size(), n2);
+                const auto map = detail::readObjectMapData(hnd->second, 0, hnd->second.size(), n2,
+                                                           objs->second.size());
                 for (const std::string& n : n2)
                     line("note: " + n);
                 detail::Format fmt;

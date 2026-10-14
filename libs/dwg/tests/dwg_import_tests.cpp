@@ -608,6 +608,30 @@ TEST_CASE("an object map of many sections reads in full") {
     }
 }
 
+TEST_CASE("an object map that restarts its running values in each section reads in full") {
+    gMapRestarts = true;
+    gR2004 = true;
+    DwgFile f;
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    for (std::uint64_t i = 0; i < 1500; ++i)
+        f.add(0x100 + i * 3, line(0x100 + i * 3, 2, 0, 0, 0, double(i), 1));
+    std::vector<std::uint8_t> objects, handles;
+    f.sections(objects, handles);
+    gR2004 = false;
+    gMapRestarts = false;
+    Dwg2004File c;
+    c.section("AcDb:AcDbObjects", objects);
+    c.section("AcDb:Handles", handles);
+    dxf::Report report;
+    auto r = importDwg(asBytes(c.build("AC1018")), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    CHECK(r.value().document->modelSpace().size() == 1500);
+}
+
 TEST_CASE("describe lists the container steps and sections") {
     const std::string text = describe(asBytes(sampleDrawing2004("AC1032")));
     CHECK(text.find("AC1032") != std::string::npos);
