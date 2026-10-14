@@ -325,6 +325,48 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                   "; dictionaries read: " + std::to_string(drawing.dictionaries.size());
             report.info(code::kSkippedObject, ls);
         }
+        {
+            // The entities with the widest extent (what dominates "zoom extents").
+            struct Wide {
+                double span = 0, x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+                const detail::EntityRec* e = nullptr;
+            };
+            std::vector<Wide> wide;
+            for (const detail::EntityRec& e : drawing.entities) {
+                if (e.dxfType == "VIEWPORT" || e.dxfType == "INSERT")
+                    continue;
+                double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
+                bool any = false;
+                for (const detail::Group& g : e.groups) {
+                    const double* v = std::get_if<double>(&g.value.v);
+                    if (!v || g.code < 10 || g.code > 23 || (g.code > 13 && g.code < 20))
+                        continue;
+                    const int axis = g.code >= 20 ? 1 : 0;
+                    lo[axis] = std::min(lo[axis], *v);
+                    hi[axis] = std::max(hi[axis], *v);
+                    any = true;
+                }
+                if (!any || lo[0] > hi[0] || lo[1] > hi[1])
+                    continue;
+                wide.push_back(
+                    {std::max(hi[0] - lo[0], hi[1] - lo[1]), lo[0], lo[1], hi[0], hi[1], &e});
+            }
+            std::sort(wide.begin(), wide.end(),
+                      [](const Wide& a, const Wide& b) { return a.span > b.span; });
+            for (std::size_t i = 0; i < wide.size() && i < 6; ++i) {
+                const Wide& w = wide[i];
+                const auto o = drawing.blocks.find(w.e->owner);
+                char t[300];
+                std::snprintf(
+                    t, sizeof t, "wide entity %llX %s in %s: %.1f,%.1f to %.1f,%.1f; colour %d%s",
+                    static_cast<unsigned long long>(w.e->handle), w.e->dxfType.c_str(),
+                    w.e->entmode == 0 && o != drawing.blocks.end() ? o->second.name.c_str()
+                                                                   : "a space",
+                    w.x0, w.y0, w.x1, w.y1, w.e->color,
+                    w.e->trueColor >= 0 ? " (true colour)" : "");
+                report.info(code::kSkippedObject, t);
+            }
+        }
         std::string ins = "inserts per owner:";
         std::vector<std::pair<std::size_t, std::uint64_t>> topIns;
         for (const auto& [h, c] : insertsPer)

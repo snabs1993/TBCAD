@@ -2351,7 +2351,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r33: layouts met twice count once; r32: partly misread block member lists still place "
+    return "r34: widest entities listed; r33: layouts met twice count once; r32: partly misread "
+           "block member lists still place "
            "unowned entities; r31: LAYOUT is "
            "fixed type 82; r30: layout dictionary entry types; r29: layout "
            "diagnostics outside the note cap; r28: "
