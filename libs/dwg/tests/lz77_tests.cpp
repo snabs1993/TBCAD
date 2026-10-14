@@ -63,8 +63,17 @@ TEST_CASE("damaged streams fail instead of reading or writing out of bounds") {
     CHECK_FALSE(ok);
     expand(bytes({0x05, 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 0x11}), 4, &ok);  // too long
     CHECK_FALSE(ok);
-    expand(bytes({0x05, 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 0x03}), 8, &ok);  // bad opcode
+    expand(bytes({0x05, 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 0x03}), 12, &ok);  // bad opcode
     CHECK_FALSE(ok);
     expand({}, 5, &ok);
     CHECK_FALSE(ok);
+}
+
+TEST_CASE("bytes left over after the expected size are ignored") {
+    bool ok = false;
+    CHECK(expand(bytes({0x01, 'A', 'B', 'C', 'D', 0x11, 0x00, 0x00}), 4, &ok) == "ABCD");
+    CHECK(ok);
+    ok = false;
+    CHECK(expand(bytes({0x01, 'A', 'B', 'C', 'D', 0x07, 0x07}), 4, &ok) == "ABCD");
+    CHECK(ok);
 }

@@ -94,8 +94,12 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
     out.reserve(expected);
     Cursor c(in);
     auto copyLiterals = [&](std::size_t n) {
-        if (n > expected - out.size())
+        if (n > expected - out.size()) {
+            // Trailing bytes after a complete output are not data.
+            if (out.size() == expected)
+                return true;
             return fail("literal run too long", c);
+        }
         const auto s = c.take(n);
         if (c.failed)
             return fail("literal run cut off", c);
@@ -107,6 +111,9 @@ bool run(std::span<const std::uint8_t> in, std::size_t expected, std::size_t ext
     for (;;) {
         if (c.atEnd())
             return out.size() == expected || fail("input ended early", c);
+        // Complete output with input left over (padding or a checksum): done.
+        if (out.size() == expected)
+            return true;
         const std::uint8_t op = c.next();
         std::size_t count = 0, offset = 0, lit = 0;
         auto twoByte = [&]() {

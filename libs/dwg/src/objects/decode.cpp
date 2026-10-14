@@ -78,6 +78,30 @@ public:
                  std::vector<std::string>& notes, const Format& fmt)
         : file_(file), classes_(classes), out_(out), notes_(notes), fmt_(fmt) {}
 
+    // The layouts of layers, lines and inserts differ between files; each is decided by the first
+    // object that fits one reading only. Objects that need a decision (block headers) can come
+    // before that object in the stream, so decode ahead quietly and throw the result away.
+    void calibrate() {
+        const Drawing saved = out_;
+        const std::size_t notesBefore = notes_.size();
+        const bool wasQuiet = quiet_;
+        quiet_ = true;
+        std::size_t seen = 0;
+        for (const auto& [h, off] : walkedList_) {
+            if (tripleVariant_ >= 0 && nolinksVariant_ >= 0 && insertCountKnown_)
+                break;
+            if (++seen > 40000)
+                break;
+            MapEntry e;
+            e.handle = h;
+            e.offset = off;
+            decodeOne(e);
+        }
+        quiet_ = wasQuiet;
+        out_ = saved;
+        notes_.resize(std::min(notes_.size(), notesBefore));
+    }
+
     void run(const std::vector<MapEntry>& map) {
         // R2010 and later: the objects follow each other in the stream and carry their own
         // handle, so walking the stream is more dependable than the object map (whose entries
@@ -85,6 +109,7 @@ public:
         if (fmt_.r2010) {
             walkStream();
             if (walkedList_.size() * 10 >= map.size() * 9) {
+                calibrate();
                 for (const auto& [h, off] : walkedList_) {
                     MapEntry e;
                     e.handle = h;
@@ -1996,7 +2021,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "3920a28+ r10: variants by one-fit rule, range check, failure reasons";
+    return "r11: calibration pre-pass, trailing LZ input; r10: variants by one-fit rule, range "
+           "check, failure reasons";
 }
 
 void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format& fmt,
