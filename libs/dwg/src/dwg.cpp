@@ -82,6 +82,14 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
         return makeError(ErrorCode::Parse, msg);
     }
     const auto classes = detail::parseClasses(find("AcDb:Classes"), fmt, maintenance, notes);
+    {
+        std::string cl = "classes read: " + std::to_string(classes.size());
+        for (std::size_t i = 0; i < classes.size(); ++i)
+            if (i < 3 || classes[i].dxfName == "LAYOUT" || classes[i].dxfName == "HATCH")
+                cl += "; #" + std::to_string(i) + " number " + std::to_string(classes[i].number) +
+                      " [" + classes[i].dxfName + "]";
+        notes.push_back(cl);
+    }
     const auto vars = detail::parseHeader(find("AcDb:Header"), fmt, maintenance, notes);
     drawing.codepage = sec.codepage;
     drawing.unicode = fmt.r2007;
@@ -259,6 +267,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     if (g.code == code)
                         if (const double* v = std::get_if<double>(&g.value.v))
                             return *v;
+                        else if (const long long* i = std::get_if<long long>(&g.value.v))
+                            return static_cast<double>(*i);
                 return 0.0;
             };
             int n = 0;

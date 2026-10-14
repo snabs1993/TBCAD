@@ -40,8 +40,8 @@ enum Type : std::uint32_t {
     kLeader = 0x2D,
     kDictionary = 0x2A,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
-    kHatch = 1000,
-    kLayoutObject = 1001,
+    kHatch = 100000,
+    kLayoutObject = 100001,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
@@ -205,6 +205,9 @@ private:
     std::string dxfNameOfClass(std::uint32_t type) const {
         if (type < 500)
             return {};
+        for (const ClassInfo& c : classes_)
+            if (c.number == static_cast<int>(type))
+                return c.dxfName;
         const std::size_t idx = type - 500;
         return idx < classes_.size() ? classes_[idx].dxfName : std::string{};
     }
@@ -1163,11 +1166,26 @@ private:
     void decodeDictionary(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
         std::uint32_t reactors = 0;
         commonObjectPrefix(r, reactors);
-        const std::uint32_t n = r.rl();
-        r.bs();  // cloning flag
-        r.rc();  // hard owner flag
-        if (r.failed() || n > 100000)
+        // The item count is a raw long in the description; which form a real file uses is decided
+        // by where the main data must end (the names live in the string stream).
+        std::uint32_t n = 0;
+        bool done = false;
+        for (int form = 0; form < 2 && !done; ++form) {
+            BitReader probe = r;
+            probe.setStringStream(nullptr);
+            n = form == 0 ? probe.rl() : probe.bl();
+            probe.bs();  // cloning flag
+            probe.rc();  // hard owner flag
+            if (!probe.failed() && (!fmt_.r2007 || probe.bitPos() == mainEnd_)) {
+                r.seekBit(probe.bitPos());
+                done = true;
+            }
+        }
+        if (!done || n > 100000) {
+            note("dictionary " + hex(self) + " has an unexpected layout" +
+                 (failDumps_[kDictionary]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
             return;
+        }
         std::vector<std::string> names;
         for (std::uint32_t i = 0; i < n && !r.failed(); ++i)
             names.push_back(r.textBytes());
@@ -2314,7 +2332,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r22: layout names from the layout dictionary; r21: layout diagnostics; r20: layouts "
+    return "r23: class lookup by number, private type numbers moved; r22: layout names from the "
+           "layout dictionary; r21: layout diagnostics; r20: layouts "
            "(VIEWPORT, LAYOUT), xref paths; r19: "
            "reachability info";
 }
