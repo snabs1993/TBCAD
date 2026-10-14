@@ -1048,27 +1048,61 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         };
         ImGui::AlignTextToFramePadding();
         tab("Model", "");
-        const float plusW = ImGui::CalcTextSize("+").x + 2 * ImGui::GetStyle().FramePadding.x;
+        const ImGuiStyle& st = ImGui::GetStyle();
+        const float plusW = ImGui::CalcTextSize("+").x + 2 * st.FramePadding.x;
+        const bool overflow = layoutScrollMax_ > 1.0f;  // measured on the previous frame
+        const float arrowW = ImGui::GetFrameHeight();
         const bool paper = core_.inPaperSpace();
         const char* hint = "Layout view (read-only)";
         const float hintW = paper ? ImGui::CalcTextSize(hint).x + 24 : 0.0f;
-        float avail =
-            ImGui::GetContentRegionAvail().x - plusW - 2 * ImGui::GetStyle().ItemSpacing.x;
+        float avail = ImGui::GetContentRegionAvail().x - plusW - 2 * st.ItemSpacing.x;
+        if (overflow)
+            avail -= 3 * (arrowW + st.ItemSpacing.x);
         // The hint gives way before the tabs do.
         const bool showHint = paper && avail - hintW > 160;
         if (showHint)
             avail -= hintW;
+        if (overflow) {  // every tab stays reachable with the mouse: arrows and a full list
+            if (ImGui::ArrowButton("##tabsleft", ImGuiDir_Left))
+                layoutScrollDelta_ = -220.0f;
+            ImGui::SameLine();
+        }
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::BeginChild("##tabscroll",
                           ImVec2(std::max(avail, 40.0f), ImGui::GetFrameHeight() + 2), false,
                           ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollbar |
                               ImGuiWindowFlags_NoBackground);
         if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0f)
-            ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60.0f);
+            layoutScrollDelta_ -= ImGui::GetIO().MouseWheel * 60.0f;
+        if (layoutScrollDelta_ != 0.0f) {
+            ImGui::SetScrollX(ImGui::GetScrollX() + layoutScrollDelta_);
+            layoutScrollDelta_ = 0.0f;
+        }
+        layoutScrollMax_ = ImGui::GetScrollMaxX();
         for (const std::string& n : names)
             tab(n, n);
         ImGui::EndChild();
         ImGui::PopStyleVar();
+        if (overflow) {
+            ImGui::SameLine();
+            if (ImGui::ArrowButton("##tabsright", ImGuiDir_Right))
+                layoutScrollDelta_ = 220.0f;
+            ImGui::SameLine();
+            if (ImGui::ArrowButton("##tabslist", ImGuiDir_Down))
+                ImGui::OpenPopup("##alllayouts");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("All layouts");
+            if (ImGui::BeginPopup("##alllayouts")) {
+                if (ImGui::Selectable("Model", !core_.inPaperSpace()))
+                    core_.setActiveLayout("");
+                for (const std::string& n : names)
+                    if (ImGui::Selectable(n.c_str(), core_.activeLayout() == n)) {
+                        core_.setActiveLayout(n);
+                        layoutFollowed_.clear();  // scroll to the chosen tab
+                    }
+                ImGui::EndPopup();
+            }
+        }
         ImGui::SameLine();
         if (ImGui::Button("+")) {
             if (readOnly)
