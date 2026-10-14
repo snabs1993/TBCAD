@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "tbcad/geom/entity.h"
+#include "tbcad/hatch/fill.h"
 
 namespace tbcad::ui {
 
@@ -26,6 +27,42 @@ namespace {
 bool isFillKind(const Entity& e) {
     return kind(e) == EntityKind::Hatch;
 }
+
+bool insidePolygon(const std::vector<Vec2>& poly, Vec2 p) {
+    bool in = false;
+    for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+        const Vec2 a = poly[i], b = poly[j];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    }
+    return in;
+}
+
+// A click anywhere inside a hatch's area (even-odd over its loops) selects it, like AutoCAD.
+bool insideHatch(const Entity& e, Vec2 p) {
+    const auto* h = entityAs<HatchData>(e);
+    if (!h)
+        return false;
+    bool in = false;
+    for (const auto& ring : hatch::loopRings(*h, 0.05))
+        if (ring.size() >= 3 && insidePolygon(ring, p))
+            in = !in;
+    return in;
+}
+
+// Distance used for picking: 0 for a point inside a hatch, else the distance to its geometry.
+// Returns false when the entity is not hit at all.
+bool pickHit(const Document& doc, const Entity& e, Vec2 p, double apertureMm, double& d) {
+    if (geom::hitTest(e, p, apertureMm, &doc)) {
+        d = geom::distance(e, p, &doc);
+        return true;
+    }
+    if (isFillKind(e) && insideHatch(e, p)) {
+        d = 0;
+        return true;
+    }
+    return false;
+}
 }  // namespace
 
 std::optional<EntityId> pickEntity(const Document& doc, const index::SpatialIndex& index, Vec2 p,
@@ -37,13 +74,13 @@ std::optional<EntityId> pickEntity(const Document& doc, const index::SpatialInde
         const Entity* e = doc.find(id);
         if (!e || !isSelectable(doc, *e))
             return;
-        if (!geom::hitTest(*e, p, apertureMm, &doc))
+        double d = 0;
+        if (!pickHit(doc, *e, p, apertureMm, d))
             return;
         // A hatch is hit anywhere inside it, so a line or curve under the pointer wins over it.
         const bool fill = isFillKind(*e);
         if (best && fill && !bestIsFill)
             return;
-        double d = geom::distance(*e, p, &doc);
         if ((bestIsFill && !fill) || d < bestDist ||
             (d == bestDist && best && id.value > best->value)) {
             bestDist = d;
@@ -59,9 +96,10 @@ std::vector<EntityId> pickAllAt(const Document& doc, const index::SpatialIndex& 
     std::vector<std::pair<double, EntityId>> hits;
     index.queryPoint(p, apertureMm, [&](EntityId id, const BBox2&) {
         const Entity* e = doc.find(id);
-        if (e && isSelectable(doc, *e) && geom::hitTest(*e, p, apertureMm, &doc))
-            // Fills sort after every curve: their distance counts as the aperture and a bit.
-            hits.emplace_back(geom::distance(*e, p, &doc) + (isFillKind(*e) ? 1e9 : 0.0), id);
+        double d = 0;
+        if (e && isSelectable(doc, *e) && pickHit(doc, *e, p, apertureMm, d))
+            // Fills sort after every curve.
+            hits.emplace_back(d + (isFillKind(*e) ? 1e9 : 0.0), id);
     });
     std::sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) {
         return a.first != b.first ? a.first < b.first : a.second.value > b.second.value;
@@ -86,16 +124,6 @@ std::optional<EntityId> cycleNext(const std::vector<EntityId>& stack,
 }
 
 namespace {
-
-bool insidePolygon(const std::vector<Vec2>& poly, Vec2 p) {
-    bool in = false;
-    for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
-        const Vec2 a = poly[i], b = poly[j];
-        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
-            in = !in;
-    }
-    return in;
-}
 
 bool segmentsCross(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
     auto side = [](Vec2 p, Vec2 q, Vec2 r) {
