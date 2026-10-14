@@ -83,6 +83,8 @@ public:
     // before that object in the stream, so decode ahead quietly and throw the result away.
     void calibrate() {
         const Drawing saved = out_;
+        const auto savedFail = failDumps_;
+        const auto savedMiss = missDumps_;
         const std::size_t notesBefore = notes_.size();
         const bool wasQuiet = quiet_;
         quiet_ = true;
@@ -99,6 +101,8 @@ public:
         }
         quiet_ = wasQuiet;
         out_ = saved;
+        failDumps_ = savedFail;
+        missDumps_ = savedMiss;
         notes_.resize(std::min(notes_.size(), notesBefore));
     }
 
@@ -431,7 +435,12 @@ private:
             return;
         auto& t = out_.layoutCheck[type];
         ++t[r.bitPos() == mainEnd_ ? 0 : 1];
+        if (r.bitPos() != mainEnd_ && !quiet_ && missDumps_[type]++ < 2)
+            note("layout of type " + std::to_string(type) + " object " + hex(currentHandle_) +
+                 " ended at bit " + std::to_string(r.bitPos()) + ", expected " +
+                 std::to_string(mainEnd_) + ", bits " + dumpCurrent());
     }
+    std::map<std::uint32_t, int> missDumps_;
 
     // Table records start with a 64-bit flag, an xref index and an xref-dependency flag. Files
     // written by recent versions leave the index out (checked on a real R2018 file).
@@ -686,7 +695,9 @@ private:
                     r.rc();  // block scaling
                 }
                 if (r.failed()) {
-                    note("block header " + hex(self) + " is damaged");
+                    note("block header " + hex(self) + " is damaged (read to bit " +
+                         std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
+                         (failDumps_[type]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
                     return;
                 }
                 b.flags = (anonymous ? 1 : 0) | (hasAtts ? 2 : 0) | (isXref ? 4 : 0) |
@@ -2018,10 +2029,28 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    std::vector<std::string>& notes, const Format& fmt) {
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
+    // Anonymous blocks (dimensions, hatches) are stored with a bare "*D" or "*U" name; the
+    // numbering is implied. Give every repeat its own name so inserts keep their own block.
+    std::set<std::string> used;
+    std::map<std::string, int> counter;
+    for (auto& [h, b] : out.blocks) {
+        if (b.name.size() < 2 || b.name[0] != '*' || b.name.rfind("*Model_Space", 0) == 0 ||
+            b.name.rfind("*Paper_Space", 0) == 0)
+            continue;
+        if (used.insert(b.name).second)
+            continue;
+        const std::string stem = b.name;
+        std::string candidate;
+        do {
+            candidate = stem + std::to_string(++counter[stem]);
+        } while (!used.insert(candidate).second);
+        b.name = candidate;
+    }
 }
 
 const char* readerRevision() {
-    return "r12: LZ reading choice, page-record trace; r11: calibration pre-pass; r10: variants by one-fit rule, range "
+    return "r13: block header dumps; r12: LZ reading choice, page-record trace; r11: calibration "
+           "pre-pass; r10: variants by one-fit rule, range "
            "check, failure reasons";
 }
 
