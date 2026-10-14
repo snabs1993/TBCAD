@@ -508,6 +508,18 @@ void Gui::doOpenPath(const std::string& path) {
 
 void Gui::openPending() {
     static std::string openingName;
+    if (core_.xrefReloading()) {
+        anyActivity_ = true;  // the reload blocks on the next frame; show why first
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (ImGui::Begin("##xrefreload", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+            ImGui::TextUnformatted("Reloading external references ...");
+            ImGui::TextDisabled("A referenced file changed on disk.");
+        }
+        ImGui::End();
+    }
     if (auto info = core_.opening()) {
         openingName = platform::pathToUtf8(info->path.filename());
         anyActivity_ = true;  // keep drawing so the elapsed time counts up

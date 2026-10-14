@@ -944,7 +944,11 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
     f.core->tickXrefs(now + std::chrono::seconds(1));  // too soon after the last check
     CHECK(gFakeXReloadRuns == 0);
     f.core->tickXrefs(now + std::chrono::seconds(3));
+    CHECK(f.core->xrefReloading());  // a frame to show the card first
+    CHECK(gFakeXReloadRuns == 0);
+    f.core->tickXrefs(now + std::chrono::seconds(3));
     CHECK(gFakeXReloadRuns == 1);
+    CHECK_FALSE(f.core->xrefReloading());
     f.core->tickXrefs(now + std::chrono::seconds(6));  // the fake did not reload; no second try
     CHECK(gFakeXReloadRuns == 1);
 }
