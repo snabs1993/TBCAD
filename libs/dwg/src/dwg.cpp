@@ -291,6 +291,37 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     val(e, 12), val(e, 22), val(e, 45), val(e, 16), val(e, 26), val(e, 36),
                     val(e, 51), e.frozenLayers.size(), val(e, 68) != 0 ? "on" : "off");
                 report.info(code::kSkippedObject, t);
+                if (val(e, 40) > 0 && val(e, 45) > 0 && val(e, 17) != 0) {
+                    // How much model space data lies inside what this viewport shows.
+                    const double h = val(e, 45), w = h * val(e, 40) / val(e, 41);
+                    const double cx = val(e, 17) + val(e, 12), cy = val(e, 27) + val(e, 22);
+                    std::size_t inside = 0, total = 0;
+                    double bx0 = 1e300, by0 = 1e300, bx1 = -1e300, by1 = -1e300;
+                    for (const detail::EntityRec& m : drawing.entities) {
+                        const auto mo = drawing.blocks.find(m.owner);
+                        const bool model =
+                            m.entmode == 2 || (m.entmode == 0 && mo != drawing.blocks.end() &&
+                                               mo->second.name == "*Model_Space");
+                        if (!model || m.dxfType == "VIEWPORT")
+                            continue;
+                        const double px = val(m, 10), py = val(m, 20);
+                        if (px == 0 && py == 0)
+                            continue;
+                        ++total;
+                        bx0 = std::min(bx0, px);
+                        by0 = std::min(by0, py);
+                        bx1 = std::max(bx1, px);
+                        by1 = std::max(by1, py);
+                        if (std::abs(px - cx) <= w / 2 && std::abs(py - cy) <= h / 2)
+                            ++inside;
+                    }
+                    char u[300];
+                    std::snprintf(u, sizeof u,
+                                  "  viewport shows model %.0f,%.0f size %.0f x %.0f: %zu of %zu "
+                                  "model entities start inside; they span %.0f,%.0f to %.0f,%.0f",
+                                  cx, cy, w, h, inside, total, bx0, by0, bx1, by1);
+                    report.info(code::kSkippedObject, u);
+                }
             }
         }
         {

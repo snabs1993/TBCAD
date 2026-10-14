@@ -2502,7 +2502,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r47: viewport direction and twist listed; r46: paper rectangle moved to the sheet "
+    return "r48: model data inside each viewport counted; r47: viewport direction and twist "
+           "listed; r46: paper rectangle moved to the sheet "
            "origin; r45: layout margins, limits and "
            "extents listed; r44: dimension style overrides read "
            "from extended data; r39: dimension styles listed; "
