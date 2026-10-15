@@ -286,7 +286,25 @@ Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {
         return layout.error();
     PlotSheet sheet;
     sheet.layout = layout.value();
+    // A window (or a scale that overflows the page) must not let objects spill outside it.
+    const PlotLayout& lay = sheet.layout;
+    BBox2 clip;
+    clip.expand(lay.toPaper(lay.area.min));
+    clip.expand(lay.toPaper(lay.area.max));
+    const bool clipped = s.area == PlotArea::Window || lay.overflows;
+    if (clipped) {
+        BBox2 r;
+        r.min = {std::max(clip.min.x, lay.printable.min.x),
+                 std::max(clip.min.y, lay.printable.min.y)};
+        r.max = {std::min(clip.max.x, lay.printable.max.x),
+                 std::min(clip.max.y, lay.printable.max.y)};
+        if (!r.empty())
+            clip = r;
+        sheet.prims.emplace_back(PlotClip{clip, true});
+    }
     appendEntities(sheet, doc, doc.modelSpace(), sheet.layout, s, {});
+    if (clipped)
+        sheet.prims.emplace_back(PlotClip{clip, false});
     return sheet;
 }
 
