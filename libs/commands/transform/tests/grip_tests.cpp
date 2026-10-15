@@ -76,12 +76,12 @@ TEST_CASE("polyline vertex grip and bulge midpoint grip") {
     f.host.setSelection({id});
     f.host.run("GRIPEDIT", {"10,0", "12,1"});
     CHECK(near(get<PolylineData>(f.doc, id).v[1].p, {12, 1}));
-    // midpoint of segment 0 is now (6, 0.5); drag it off the chord to create an arc
+    // midpoint of segment 0 is now (6, 0.5); dragging a straight edge moves the edge (no arc)
     f.host.run("GRIPEDIT", {"6,0.5", "6,-3"});
     const auto& p = get<PolylineData>(f.doc, id);
-    CHECK(p.v[0].bulge != doctest::Approx(0.0));
-    CHECK(near(p.v[0].p, {0, 0}));
-    CHECK(near(p.v[1].p, {12, 1}));
+    CHECK(p.v[0].bulge == doctest::Approx(0.0));
+    CHECK(near(p.v[0].p, {0, -3.5}));
+    CHECK(near(p.v[1].p, {12, -2.5}));
 }
 
 TEST_CASE("Enter cycles stretch -> move -> rotate and keywords pick a mode") {
