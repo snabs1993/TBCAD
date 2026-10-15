@@ -86,7 +86,7 @@ private:
     Vec2 lastPoint_{};
     Vec2 cursor_{};
     std::vector<EntityId> previousSelection_{};  // what the last Select objects finished with
-    std::vector<EntityId> collected_{};  // selection being built at a getSelection prompt
+    std::vector<EntityId> collected_{};          // selection being built at a getSelection prompt
     PointFilterChain* chain_ = nullptr;
     CommandLineParser* parser_ = nullptr;
     DisplayList previewList_{};
