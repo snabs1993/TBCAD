@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <unordered_set>
 
 #include "tbcad/blocks/display.h"
@@ -40,7 +41,8 @@ public:
 
 private:
     bool hiddenByLevel(const Entity& e) const;
-    void upsertEntity(const Entity& e);
+    void upsertEntity(const Entity& e, std::optional<std::uint32_t> drawOrder = {});
+    void relevelMasks();
     void syncLayers();
     void rebuildDrawOrder();
 

@@ -157,3 +157,37 @@ TEST_CASE("levels: other levels are hidden or faded, hidden levels leave the sce
     CHECK_FALSE(scene.contains(a));
     CHECK(scene.contains(b));
 }
+
+TEST_CASE("a wipeout is drawn between the objects below it and the ones above it") {
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    addLine(doc, {0, 0}, {10, 10});
+    {
+        PolylineData box;
+        for (Vec2 p : {Vec2{2, 2}, Vec2{8, 2}, Vec2{8, 8}, Vec2{2, 8}})
+            box.v.push_back({p});
+        box.closed = true;
+        Entity e{{}, std::move(box)};
+        e.common.wipeout = true;
+        auto tx = doc.begin("wipeout");
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    addLine(doc, {0, 10}, {10, 0});  // added after the wipeout: stays on top of it
+    render::Camera2D cam;
+    cam.center = {5, 5};
+    cam.pixelsPerMm = 10;
+    cam.viewportW = 400;
+    cam.viewportH = 400;
+    auto v = scene.visibleBatches(cam);
+    // Same layer and style: two stroke batches, one on each side of the mask.
+    std::vector<render::BatchKind> kinds;
+    for (const auto& b : v)
+        kinds.push_back(b.batch->key.kind);
+    REQUIRE(kinds.size() == 3);
+    CHECK(kinds[0] == render::BatchKind::Stroke);
+    CHECK(kinds[1] == render::BatchKind::Mask);
+    CHECK(kinds[2] == render::BatchKind::Stroke);
+    CHECK_FALSE(scene.needsRelevel());
+}
