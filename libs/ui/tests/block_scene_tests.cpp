@@ -132,3 +132,31 @@ TEST_CASE("perf: 10,000 inserts of one block rebuild quickly thanks to the share
     CHECK(cache.builds() == 1);
     CHECK(withCache < uncached);
 }
+
+TEST_CASE("redefining a block (erase and re-add in one step) redraws every insert at once") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    index::SpatialIndex idx;
+    index::DocumentIndexer indexer(doc, idx,
+                                   [&doc](const Entity& e) { return geom::bounds(e, doc); });
+    blocks::BlockIndexRefresher refresher(doc, indexer);
+    BlockId b = makeBlock(doc, 1);  // a 3 mm wide symbol
+    addInserts(doc, b, 1);
+    EntityId ins = doc.modelSpace()[0];
+    const double w0 = scene.bounds().width();
+    {
+        Transaction tx = doc.begin("redefine");
+        const std::vector<EntityId> old = doc.block(b)->entities;
+        for (EntityId id : old)
+            (void)tx.erase(id);
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {300, 0}}}, b);
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {0, 1000}}}, b);
+        tx.commit();
+    }
+    CHECK(scene.bounds().width() > w0 + 250);
+    CHECK(scene.bounds().height() > 900);
+    CHECK(idx.boxOf(ins).width() > 250);
+    CHECK(idx.boxOf(ins).height() > 900);
+}
