@@ -35,6 +35,10 @@ struct PanelContext {
     // Draws the property sections other modules registered for this entity's kind (dimensions,
     // hatch ...). Set by the application; empty in tests.
     std::function<void(EntityId)> drawPropertySections{};
+    // True while the sections are drawn for several selected objects: a section then gets the
+    // first selected object of its kind and must either handle all of `selection` or draw nothing.
+    bool multiSelection = false;
+    std::function<void()> drawMultiSections{};
 };
 
 // The drawing a command module works on. Passed to the session hooks whenever a different

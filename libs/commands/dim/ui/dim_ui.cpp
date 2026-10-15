@@ -263,7 +263,7 @@ void drawPanel(ui::PanelContext& pc) {
 }
 
 void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
-    if (!pc.doc)
+    if (!pc.doc || pc.multiSelection)
         return;
     const Entity* e = pc.doc->find(id);
     const DimensionData* d = e ? entityAs<DimensionData>(*e) : nullptr;
@@ -278,7 +278,7 @@ void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
 }
 
 void drawLeaderSection(ui::PanelContext& pc, EntityId id) {
-    if (!pc.doc)
+    if (!pc.doc || pc.multiSelection)
         return;
     const Entity* e = pc.doc->find(id);
     const LeaderData* l = e ? entityAs<LeaderData>(*e) : nullptr;
