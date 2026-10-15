@@ -656,6 +656,19 @@ bool AppCore::autosaveNow() {
 }
 
 void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
+    // Changed settings reach settings.json within a moment, not only at a clean exit, so a crash
+    // or a kill does not lose them.
+    if (settings_.dirty()) {
+        if (!settingsDirtySeen_) {
+            settingsDirtySeen_ = true;
+            settingsDirtyAt_ = now;
+        } else if (now - settingsDirtyAt_ >= std::chrono::seconds(1)) {
+            (void)settings_.save(paths_.settingsFile());
+            settingsDirtySeen_ = false;
+        }
+    } else {
+        settingsDirtySeen_ = false;
+    }
     if (!autosaveClockStarted_) {
         lastAutosave_ = now;
         autosaveClockStarted_ = true;
