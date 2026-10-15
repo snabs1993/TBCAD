@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <string>
@@ -19,6 +20,34 @@ constexpr const char* kHeightKey = "text.height";
 constexpr const char* kJustifyKey = "text.justify";
 constexpr const char* kAttachKey = "mtext.attach";
 
+// Text that suits the drawing: 2.5 mm on a sheet-sized drawing, larger when the annotation scale
+// is set or when the drawing is big (a 20 m plan printed on a sheet needs about extent/160 text).
+double autoTextHeight(CommandContext& ctx) {
+    constexpr double kBase = 2.5;
+    const Document& doc = ctx.doc();
+    double n = currentAnnotationScale(doc.header());
+    if (!(n > 1)) {
+        BBox2 box;
+        doc.forEachEntity([&](const Entity& e) {
+            if (!doc.ownerBlock(e.common.id))
+                box.merge(geom::bounds(e, doc));
+        });
+        n = 1;
+        const double extent = std::max(box.width(), box.height());
+        if (std::isfinite(extent) && extent > 0) {
+            const double wanted = extent / 160.0 / kBase;
+            if (wanted >= 8) {
+                for (double decade = 1; decade <= 1e7; decade *= 10)
+                    for (double step : {1.0, 2.0, 5.0})
+                        if (std::fabs(std::log(decade * step / wanted)) <
+                            std::fabs(std::log(n / wanted)))
+                            n = decade * step;
+            }
+        }
+    }
+    return kBase * n;
+}
+
 double settingNumber(CommandContext& ctx, const char* key, double fallback) {
     if (auto s = ctx.host().setting(key)) {
         char* end = nullptr;
@@ -29,8 +58,10 @@ double settingNumber(CommandContext& ctx, const char* key, double fallback) {
     return fallback;
 }
 
-void rememberNumber(CommandContext& ctx, const char* key, double v) {
-    ctx.host().setSetting(key, std::to_string(v));
+// Only a height the user chose is remembered; the automatic one follows the next drawing.
+void rememberHeight(CommandContext& ctx, double v) {
+    const bool automatic = std::fabs(v - autoTextHeight(ctx)) < 1e-9;
+    ctx.host().setSetting(kHeightKey, automatic ? std::string() : std::to_string(v));
 }
 
 struct Justify {
@@ -103,7 +134,7 @@ public:
     std::string_view description() const override { return "Single-line text"; }
 
     Task run(CommandContext& ctx) override {
-        double height = settingNumber(ctx, kHeightKey, 2.5);
+        double height = settingNumber(ctx, kHeightKey, autoTextHeight(ctx));
         Justify just = kJustify[0];
         if (auto s = ctx.host().setting(kJustifyKey))
             if (const Justify* j = findJustify(*s))
@@ -175,7 +206,7 @@ public:
         }
         d.height = height;
         if (just.h != HAlign::Aligned)
-            rememberNumber(ctx, kHeightKey, height);
+            rememberHeight(ctx, height);
         ctx.host().setSetting(kJustifyKey, just.name);
 
         auto t = co_await ctx.getString("Enter text");
@@ -262,7 +293,7 @@ public:
 
     Task run(CommandContext& ctx) override {
         MTextState st;
-        st.height = settingNumber(ctx, kHeightKey, 2.5);
+        st.height = settingNumber(ctx, kHeightKey, autoTextHeight(ctx));
         if (auto s = ctx.host().setting(kAttachKey))
             for (const Attach& a : kAttach)
                 if (*s == a.name)
@@ -354,7 +385,7 @@ public:
         if (!t.ok())
             co_return;
         d.utf8 = t.text;
-        rememberNumber(ctx, kHeightKey, st.height);
+        rememberHeight(ctx, st.height);
         for (const Attach& a : kAttach)
             if (a.a == st.attach)
                 ctx.host().setSetting(kAttachKey, a.name);
