@@ -39,6 +39,8 @@ BBox2 boxOfEntities(const Document& doc) {
     // Every kind counts (text, hatches, dimensions, inserts ...), so ZOOM Extents agrees with the
     // toolbar button, which uses the spatial index built from the same bounds.
     doc.forEachEntity([&](const Entity& e) {
+        if (!geom::countsForExtents(e))
+            return;
         BBox2 b = geom::bounds(e, doc);
         if (!b.empty())
             box.merge(b);
@@ -55,14 +57,16 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
-        opts.keywords = {"Extents", "Window", "In", "Out"};
+        opts.keywords = {"Extents", "All", "Window", "In", "Out"};
         auto first = co_await ctx.getPoint(
-            "Specify first corner of the window or [Extents/Window/In/Out]", opts);
+            "Specify first corner of the window or [Extents/All/Window/In/Out]", opts);
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
             render::Camera2D cam = cameraOf(v);
-            if (first.keyword == "Extents") {
-                BBox2 box = boxOfEntities(ctx.doc());
+            if (first.keyword == "Extents" || first.keyword == "All") {
+                BBox2 box = ctx.host().viewExtents();
+                if (box.empty())
+                    box = boxOfEntities(ctx.doc());
                 if (box.empty()) {
                     ctx.message("Nothing to zoom to.");
                     co_return;
@@ -211,6 +215,25 @@ public:
         if (r.ok())
             ctx.host().requestUi("settings:" + r.keyword);
     }
+};
+
+// NEW, OPEN, SAVE, SAVEAS, CLOSE typed on the command line do what the File menu does: the window
+// owns the dialogs, so the command only asks it ("action:file.save").
+class FileActionCommand final : public cmd::Command {
+public:
+    FileActionCommand(const char* name, const char* action, const char* description)
+        : name_(name), action_(action), description_(description) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi(std::string("action:") + action_);
+        co_return;
+    }
+
+private:
+    const char* name_;
+    const char* action_;
+    const char* description_;
 };
 
 class SaveAsTemplateCommand final : public cmd::Command {
@@ -421,6 +444,18 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
     (void)registry.add(std::make_unique<SettingsPageCommand>());
+    (void)registry.add(
+        std::make_unique<FileActionCommand>("NEW", "file.new", "Start a new drawing"));
+    (void)registry.add(
+        std::make_unique<FileActionCommand>("OPEN", "file.open", "Open a drawing file"));
+    (void)registry.add(std::make_unique<FileActionCommand>(
+        "SAVE", "file.save", "Save the drawing (asks for a name the first time)"));
+    (void)registry.add(std::make_unique<FileActionCommand>("QSAVE", "file.save",
+                                                           "Save the drawing (same as SAVE)"));
+    (void)registry.add(std::make_unique<FileActionCommand>(
+        "SAVEAS", "file.saveAs", "Save the drawing under another name or format"));
+    (void)registry.add(
+        std::make_unique<FileActionCommand>("CLOSE", "file.close", "Close the current drawing"));
     (void)registry.add(std::make_unique<SaveAsTemplateCommand>());
     (void)registry.add(std::make_unique<NewFromTemplateCommand>());
     (void)registry.add(std::make_unique<TemplateDefaultCommand>());

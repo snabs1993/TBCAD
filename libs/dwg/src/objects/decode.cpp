@@ -114,10 +114,11 @@ public:
     }
 
     void run(const std::vector<MapEntry>& map) {
-        // R2010 and later: the objects follow each other in the stream and carry their own
+        // R2004 and later: the objects follow each other in the stream and carry their own
         // handle, so walking the stream is more dependable than the object map (whose entries
-        // are written in a shape that is easy to misread). Use the map only as a fallback.
-        if (fmt_.r2010) {
+        // are written in a shape that is easy to misread). Use the map only as a fallback. A real
+        // R2004 file had 2192 of 17669 map entries unusable while the walk found all 17669.
+        if (fmt_.r2004) {
             walkStream();
             if (walkedList_.size() * 10 >= map.size() * 9) {
                 calibrate();
@@ -2538,7 +2539,10 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r60: R2007 page map and section map block counts found by trial, data page coding "
+    return "r62: R2007 system pages tried with 239 and 251 data bytes per block and a plausibility "
+           "check; r61: R2004 objects found by walking the stream like R2010; r60: R2007 page map "
+           "and "
+           "section map block counts found by trial, data page coding "
            "tried; r59: header stage trace; r58: R2007 literal runs stored back to front; r57: "
            "HATCH read "
            "by its fixed type number "

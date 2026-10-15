@@ -41,12 +41,15 @@ std::string hexBytes(Bytes b, std::size_t from, std::size_t count) {
 }
 
 // A system page (page map or section map): the compressed data, Reed-Solomon coded in
-// interleaved blocks of (255, 239) with the data bytes of the blocks following each other. The
-// number of blocks is not stored with the page; `hint` (0 = unknown) is tried first, then the
-// others, and the one whose data expands to the stated size and uses exactly `comp` bytes wins.
+// interleaved blocks of 255 bytes with the data bytes of the blocks following each other. Neither
+// the number of blocks nor the number of data bytes per block (251 or 239) is stored with the
+// page, and the compressed size in the file header is not always trustworthy, so the
+// combinations are tried: first those whose data expands to the stated size and uses exactly
+// `comp` bytes, then those that only expand to the stated size and pass `plausible`.
 bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint64_t expanded,
                     std::uint64_t hint, std::vector<std::uint8_t>& out,
-                    std::vector<std::string>& notes, const char* what) {
+                    std::vector<std::string>& notes, const char* what,
+                    bool (*plausible)(const std::vector<std::uint8_t>&)) {
     if (comp == 0 || comp > kMaxSection || expanded > kMaxSection) {
         notes.push_back(std::string("the ") + what + " has impossible sizes");
         return false;
@@ -57,30 +60,71 @@ bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint6
     const std::uint64_t most = std::min<std::uint64_t>(
         4096, (file.size() - std::min<std::uint64_t>(at, file.size())) / 255);
     for (std::uint64_t b = 1; b <= most; ++b)
-        if (b != hint && b * 239 >= comp)
+        if (b != hint)
             tries.push_back(b);
     std::string why;
-    for (std::uint64_t blocks : tries) {
-        if (!has(file, at, blocks * 255))
-            continue;
-        const std::vector<std::uint8_t> data = rsDataBytes(
-            file.subspan(static_cast<std::size_t>(at), static_cast<std::size_t>(blocks * 255)),
-            static_cast<std::size_t>(blocks), 239, 255, true);
-        const Bytes payload(data.data(), static_cast<std::size_t>(comp));
-        if (comp == expanded) {
-            out.assign(payload.begin(), payload.end());
-            return true;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (std::uint64_t blocks : tries) {
+            if (!has(file, at, blocks * 255))
+                continue;
+            for (std::size_t perBlock : {std::size_t{239}, std::size_t{251}}) {
+                if (pass == 0 && blocks * perBlock < comp)
+                    continue;
+                const std::vector<std::uint8_t> data =
+                    rsDataBytes(file.subspan(static_cast<std::size_t>(at),
+                                             static_cast<std::size_t>(blocks * 255)),
+                                static_cast<std::size_t>(blocks), perBlock, 255, true);
+                if (pass == 0) {
+                    const Bytes payload(data.data(), static_cast<std::size_t>(comp));
+                    if (comp == expanded) {
+                        out.assign(payload.begin(), payload.end());
+                        return true;
+                    }
+                    std::size_t used = 0;
+                    std::string w;
+                    if (lz21Decompress(payload, static_cast<std::size_t>(expanded), out, &w,
+                                       &used) &&
+                        used == comp && (!plausible || plausible(out)))
+                        return true;
+                    if (why.empty())
+                        why = w;
+                } else {
+                    std::size_t used = 0;
+                    if (lz21Decompress(data, static_cast<std::size_t>(expanded), out, nullptr,
+                                       &used) &&
+                        plausible && plausible(out)) {
+                        notes.push_back(std::string("the ") + what + " was read with " +
+                                        std::to_string(blocks) + " blocks of " +
+                                        std::to_string(perBlock) + " using " +
+                                        std::to_string(used) + " bytes, not the stated " +
+                                        std::to_string(comp));
+                        return true;
+                    }
+                }
+            }
         }
-        std::size_t used = 0;
-        std::string w;
-        if (lz21Decompress(payload, static_cast<std::size_t>(expanded), out, &w, &used) &&
-            used == comp)
-            return true;
-        if (why.empty())
-            why = w;
     }
     notes.push_back(std::string("the ") + what + " could not be decompressed: " + why);
     return false;
+}
+
+// A page map is a list of (size, id) pairs: sizes are multiples of 32 and fit in the file.
+bool pageMapPlausible(const std::vector<std::uint8_t>& pm) {
+    if (pm.empty() || pm.size() % 16 != 0)
+        return false;
+    std::uint64_t total = 0;
+    for (std::size_t at = 0; at + 16 <= pm.size(); at += 16) {
+        const std::uint64_t size = le64(pm, at);
+        if (size == 0 || size % 32 != 0 || size > (std::uint64_t{1} << 31))
+            return false;
+        total += size;
+    }
+    return total < (std::uint64_t{1} << 40);
+}
+
+// A section map starts with a section description whose name length is small.
+bool sectionMapPlausible(const std::vector<std::uint8_t>& sm) {
+    return sm.size() >= 0x40 && le64(sm, 0x20) <= 256 && le64(sm, 0x38) <= 1'000'000;
 }
 
 }  // namespace
@@ -159,7 +203,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
 
     std::vector<std::uint8_t> pm;
     if (!readSystemPage(file, kStreamBase + pagesMapOffset, pagesMapComp, pagesMapExpanded, 0, pm,
-                        notes, "page map"))
+                        notes, "page map", pageMapPlausible))
         return makeError(ErrorCode::Parse, "the DWG page map is damaged");
     struct Page {
         std::int64_t id = 0;
@@ -195,7 +239,8 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
         return makeError(ErrorCode::Parse, "the DWG section map is missing");
     std::vector<std::uint8_t> sm;
     if (!readSystemPage(file, kStreamBase + smIt->second.offset, sectionsMapComp,
-                        sectionsMapExpanded, smIt->second.size / 255, sm, notes, "section map"))
+                        sectionsMapExpanded, smIt->second.size / 255, sm, notes, "section map",
+                        sectionMapPlausible))
         return makeError(ErrorCode::Parse, "the DWG section map is damaged");
     tr("section map expanded: " + std::to_string(sm.size()) + " bytes: " + hexBytes(sm, 0, 200));
 

@@ -44,6 +44,11 @@ inline std::string pathToUtf8(const std::filesystem::path& p) {
     return std::string(u.begin(), u.end());
 }
 
+// The path in a form that Windows opens even when it is longer than 260 characters: absolute,
+// with the \\?\ prefix (or \\?\UNC\ for a network share). Short paths and every other
+// platform get the path back unchanged. Use it where a file is opened by name.
+std::filesystem::path longPath(const std::filesystem::path& p, bool windows = kHostIsWindows);
+
 // Creates the directory (and parents). False on failure.
 bool ensureDirectory(const std::filesystem::path& dir);
 

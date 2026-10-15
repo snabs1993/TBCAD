@@ -9,7 +9,7 @@ tbcad_add_library(io
     src/read.cpp
     src/save.cpp
     src/write.cpp
-  DEPENDS tbcad::core)
+  DEPENDS tbcad::core tbcad::platform)
 target_link_libraries(tbcad_io PRIVATE miniz)
 
 # Prints a .tbcad file as readable text (used by tests and for debugging).

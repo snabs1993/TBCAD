@@ -4,6 +4,7 @@
 #include <iterator>
 
 #include "tbcad/dwg/dwg.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::dwgopen {
@@ -50,7 +51,7 @@ std::string productOf(const std::string& code) {
 }  // namespace
 
 Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(platform::longPath(path), std::ios::binary);
     if (!f)
         return makeError(ErrorCode::Io, "The file cannot be read.");
     std::vector<char> raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());

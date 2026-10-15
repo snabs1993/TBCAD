@@ -177,3 +177,27 @@ TEST_CASE("a layout asked for by a command is shown once the command is over") {
     CHECK(core.inPaperSpace());
     CHECK(core.settings().getString("plot.layout", "?") == "Plan");
 }
+
+TEST_CASE("ZOOM Extents and ZOOM All frame the sheet while a layout is active") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper5") / "cfg", tempDir("paper5") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    for (const char* kw : {"E", "A"}) {
+        core.setCamera([&] {
+            render::Camera2D c = core.camera();
+            c.pixelsPerMm *= 8;
+            return c;
+        }());
+        core.submitText("ZOOM");
+        core.submitText(kw);
+        CHECK(core.camera().screenToWorld({0, 0}).x <= 1.0);
+        CHECK(core.camera().pixelsPerMm < 5);
+    }
+}

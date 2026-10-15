@@ -2741,6 +2741,8 @@ ViewportRect Gui::frame() {
             settings_.open();
         else if (what.rfind("settings:", 0) == 0)
             settings_.open(what.substr(9));
+        else if (what.rfind("action:", 0) == 0)
+            runAction(what.substr(7));
         else if (what.rfind("workspace:load:", 0) == 0)
             switchWorkspace(what.substr(15));
         else if (what.rfind("workspace:save:", 0) == 0)

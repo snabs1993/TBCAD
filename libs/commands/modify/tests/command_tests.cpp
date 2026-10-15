@@ -555,6 +555,16 @@ TEST_CASE("SPLINEDIT adds and removes fit points") {
     CHECK(entityAs<SplineData>(f.get(id))->fit.size() == 4);
 }
 
+TEST_CASE("typing ALL at the selection prompt and pressing Enter finishes the selection") {
+    Fixture f;
+    f.add(LineData{{0, 0}, {1, 0}});
+    f.add(LineData{{0, 2}, {1, 2}});
+    auto r = f.host.run("GROUP", {"ALL", ScriptItem::enter(), "pair"});
+    CHECK(r.finished);
+    CHECK(f.host.logContains("2 found"));
+    CHECK(readGroups(f.doc).size() == 1);
+}
+
 TEST_CASE("GROUP makes a pick select the whole group; UNGROUP dissolves it") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {1, 0}});
