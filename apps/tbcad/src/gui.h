@@ -99,6 +99,7 @@ private:
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();
+    void snapModesPopup();
     float layoutTabsHeight() const;
     void layoutTabs(const ViewportRect& rect);
     void dockLayout(ImGuiID dockspace);
