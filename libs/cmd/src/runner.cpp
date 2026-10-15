@@ -251,7 +251,8 @@ void CommandRunner::textEdited(const std::string& text) {
     if (stack_.empty() || !stack_.back().ctx->hasPending())
         return;
     const detail::PromptRequest& req = *stack_.back().ctx->pending();
-    if (req.kind != detail::PromptKind::String || !req.textPreview)
+    if ((req.kind != detail::PromptKind::String && req.kind != detail::PromptKind::Integer) ||
+        !req.textPreview)
         return;
     previewList_.items.clear();
     if (!text.empty())

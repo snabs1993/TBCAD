@@ -175,3 +175,18 @@ TEST_CASE("ARRAYEDIT changes the rows and spacing of an associative array") {
     CHECK(f.host->undo());
     CHECK(onlyInsert(f)->array->rows == 2);
 }
+
+TEST_CASE("ARRAY shows the grid while the row and column counts are typed") {
+    Fixture f;
+    EntityId c = f.addCircle(0, 0, 1);
+    f.host->setSelection({c});
+    auto r = f.host->run("ARRAY", {"R"});  // now at "number of rows"
+    CHECK(!r.finished);
+    f.host->runner().textEdited("2");
+    CHECK(!f.host->preview().items.empty());
+    const std::size_t two = f.host->preview().items.size();
+    f.host->runner().textEdited("4");
+    CHECK(f.host->preview().items.size() > two);
+    f.host->runner().textEdited("");
+    CHECK(f.host->preview().items.empty());
+}

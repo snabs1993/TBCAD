@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdlib>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -240,19 +241,40 @@ public:
             }
             copies = std::move(r).value();
         } else {
-            auto rows = co_await ctx.getInteger(
-                "Enter the number of rows <3>",
-                cmd::IntOptions{.defaultValue = 3, .min = 1, .max = blocks::kMaxArrayItems});
+            const double w = box.empty() || box.width() <= 0 ? 10.0 : box.width() * 1.5;
+            const double h = box.empty() || box.height() <= 0 ? 10.0 : box.height() * 1.5;
+            const double pixel = ctx.host().view().scale;
+            // The grid shows while the counts are typed, at the default spacing.
+            auto gridPreview = [&doc, source, w, h, pixel](bool typedRows, int other) {
+                return [&doc, source, w, h, pixel, typedRows, other](const std::string& typed,
+                                                                     DisplayList& out) {
+                    const int n = std::atoi(typed.c_str());
+                    if (n < 1 || n > blocks::kMaxArrayItems)
+                        return;
+                    blocks::RectArray s;
+                    s.rows = typedRows ? n : other;
+                    s.columns = typedRows ? other : n;
+                    s.rowSpacing = h;
+                    s.columnSpacing = w;
+                    previewCopies(doc, source, blocks::rectangularTransforms(s), pixel, out);
+                };
+            };
+            auto rows =
+                co_await ctx.getInteger("Enter the number of rows <3>",
+                                        cmd::IntOptions{.defaultValue = 3,
+                                                        .min = 1,
+                                                        .max = blocks::kMaxArrayItems,
+                                                        .textPreview = gridPreview(true, 4)});
             if (!rows.ok())
                 co_return;
             auto cols = co_await ctx.getInteger(
                 "Enter the number of columns <4>",
-                cmd::IntOptions{.defaultValue = 4, .min = 1, .max = blocks::kMaxArrayItems});
+                cmd::IntOptions{.defaultValue = 4,
+                                .min = 1,
+                                .max = blocks::kMaxArrayItems,
+                                .textPreview = gridPreview(false, static_cast<int>(rows.value))});
             if (!cols.ok())
                 co_return;
-            const double w = box.empty() || box.width() <= 0 ? 10.0 : box.width() * 1.5;
-            const double h = box.empty() || box.height() <= 0 ? 10.0 : box.height() * 1.5;
-            const double pixel = ctx.host().view().scale;
             blocks::RectArray spec;
             spec.rows = static_cast<int>(rows.value);
             spec.columns = static_cast<int>(cols.value);
