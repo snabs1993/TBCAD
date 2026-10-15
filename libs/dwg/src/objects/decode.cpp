@@ -2538,7 +2538,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r57: HATCH read by its fixed type number 78; r56: R2007 container; r55: class fields "
+    return "r58: R2007 literal runs stored back to front; r57: HATCH read by its fixed type number "
+           "78; r56: R2007 container; r55: class fields "
            "tried with both version layouts; r54: header "
            "read diagnostics; r53: "
            "dimension text height from the fixed height of its "
