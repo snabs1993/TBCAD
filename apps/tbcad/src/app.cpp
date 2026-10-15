@@ -34,6 +34,7 @@ void printUsage() {
               "  --frames N           draw N frames, then exit\n"
               "  --screenshot F.ppm   save the last frame\n"
               "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
+              "  --gate-file F        time open, pan/zoom and select-all on drawing F, then exit\n"
               "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
               "  --list-commands F    write every command with its aliases (Markdown) to F "
               "(default: stdout)\n"
@@ -65,6 +66,8 @@ Options parseOptions(int argc, char** argv) {
             o.report = next();
         else if (a == "--gate")
             o.gate = true;
+        else if (a == "--gate-file")
+            o.gateFile = next();
         else if (a == "--gate-lines")
             o.gateLines = std::max(1000, std::atoi(next().c_str()));
         else if (a == "--self-test")
@@ -450,6 +453,8 @@ int App::run() {
 
     if (options_.gate)
         return runGate();
+    if (!options_.gateFile.empty())
+        return runGateFile();
 
     // Give the viewport a size before the first command runs (DEVGEN fits the view).
     {

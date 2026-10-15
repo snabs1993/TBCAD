@@ -143,12 +143,15 @@ void SceneSync::rebuildDrawOrder() {
 
 void SceneSync::onChanged(const ChangeSet& cs) {
     bool blockTouched = !cs.blocks.empty();
+    std::vector<EntityId> removed;
+    for (const EntityChange& c : cs.entities)
+        if (!cs.after(c))
+            removed.push_back(cs.idOf(c));
+    scene_.removeMany(removed);
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
-        if (!after) {
-            scene_.remove(cs.idOf(c));
+        if (!after)
             continue;
-        }
         if (doc_.ownerBlock(after->common.id)) {
             blockTouched = true;
             continue;
