@@ -394,6 +394,8 @@ private:
     void flashNew(std::vector<EntityId> ids);
     std::vector<EntityId> flashIds_{};
     std::chrono::steady_clock::time_point flashUntil_{};
+    std::size_t shownPicked_ =
+        0;  // objects picked at a Select objects prompt that are drawn selected
     Vec2 cursorWorld_{};
     bool cursorInside_ = false;
     Theme theme_ = darkTheme();

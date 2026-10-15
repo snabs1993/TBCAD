@@ -29,6 +29,9 @@ public:
     CommandRunner(const CommandRunner&) = delete;
     CommandRunner& operator=(const CommandRunner&) = delete;
 
+    // Objects picked so far at the active Select objects prompt (shown as selected).
+    const std::vector<EntityId>& collected() const { return collected_; }
+
     // Starts a command by name or alias. Fails when one is already running (use submit with an
     // apostrophe prefix, or startTransparent) or the name is unknown.
     Result<void> start(std::string_view nameOrAlias);

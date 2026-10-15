@@ -1279,6 +1279,16 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             return;
     }
     retileIfFragmented();
+    {
+        // Objects picked so far at "Select objects:" show as selected, so the drafter sees them.
+        const std::vector<EntityId>& picked = runner().collected();
+        if (picked.size() != shownPicked_) {
+            shownPicked_ = picked.size();
+            std::vector<EntityId> all = selection_;
+            all.insert(all.end(), picked.begin(), picked.end());
+            scene_.setSelected(all);
+        }
+    }
     if (!flashIds_.empty() && now >= flashUntil_) {
         flashIds_.clear();
         scene_.setHighlighted(hoverId_ ? std::vector<EntityId>{hoverId_} : std::vector<EntityId>{});
