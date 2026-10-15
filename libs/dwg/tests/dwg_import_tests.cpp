@@ -773,6 +773,24 @@ TEST_CASE("a solid hatch with two kinds of boundary imports") {
     CHECK(hatches == 1);
 }
 
+TEST_CASE("a hatch stored under its fixed type number 78 imports") {
+    DwgFile f;
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(0x70, hatchObj(0x70, 78));
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    int hatches = 0;
+    for (EntityId id : r.value().document->modelSpace())
+        if (kind(*r.value().document->find(id)) == EntityKind::Hatch)
+            ++hatches;
+    CHECK(hatches == 1);
+}
+
 TEST_CASE("a linear dimension with its style and drawn block imports") {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
