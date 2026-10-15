@@ -61,7 +61,7 @@ TEST_CASE("the modify commands are registered with their short names") {
     }
 }
 
-TEST_CASE("OFFSET by distance, repeated, one undo step; Through; corner setting") {
+TEST_CASE("OFFSET by distance, repeated, one undo step - Through - corner setting") {
     Fixture f;
     EntityId l = f.add(LineData{{0, 0}, {10, 0}});
     auto r = f.host.run("OFFSET", {"2", ScriptItem::pick(l, {5, 0}), "5,9", ScriptItem::enter()});
@@ -398,6 +398,8 @@ TEST_CASE("DIVIDE and MEASURE place points") {
     EntityId l = f.add(LineData{{0, 0}, {12, 0}});
     f.host.run("DIVIDE", {ScriptItem::pick(l, {6, 0}), "4"});
     CHECK(f.count(EntityKind::Point) == 3);
+    CHECK(f.host.selection().size() == 3);  // the new points are selected so they can be seen
+    CHECK(f.host.logContains("PTYPE"));
     f.host.undo();
     CHECK(f.count(EntityKind::Point) == 0);
     f.host.run("MEASURE", {ScriptItem::pick(l, {11, 0}), "5"});
@@ -565,7 +567,7 @@ TEST_CASE("typing ALL at the selection prompt and pressing Enter finishes the se
     CHECK(readGroups(f.doc).size() == 1);
 }
 
-TEST_CASE("GROUP makes a pick select the whole group; UNGROUP dissolves it") {
+TEST_CASE("GROUP makes a pick select the whole group - UNGROUP dissolves it") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {1, 0}});
     EntityId b = f.add(LineData{{0, 2}, {1, 2}});
@@ -617,6 +619,7 @@ TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in 
     EntityId t = f.add(Indirect<TextData>(td));
     f.host.run("FIND", {"room", "", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
+    CHECK(f.host.selection() == std::vector<EntityId>{t});  // the matches are selected
     f.host.run("FIND", {"room", "Hall", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1 / Hall 2");
     f.host.undo();

@@ -19,7 +19,7 @@ TEST_CASE("HIDE hides the selection and UNISOLATE brings it back") {
     CHECK(hiddenByIsolate(f.doc).empty());
 }
 
-TEST_CASE("ISOLATE hides everything else; UNISOLATE restores only what it hid") {
+TEST_CASE("ISOLATE hides everything else - UNISOLATE restores only what it hid") {
     Fixture f;
     auto a = f.addEntity(LineData{{0, 0}, {1, 0}});
     auto b = f.addEntity(LineData{{0, 1}, {1, 1}});

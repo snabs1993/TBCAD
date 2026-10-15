@@ -25,7 +25,7 @@ TEST_CASE("SOLID with four points draws a filled quad in bow-tie order") {
     CHECK(close(v[3].p, {0, 10}));
 }
 
-TEST_CASE("SOLID with Enter after three points is a triangle; further points continue") {
+TEST_CASE("SOLID with Enter after three points is a triangle - further points continue") {
     Fixture t;
     t.host.run("SO", {"0,0", "10,0", "5,5", ""});
     REQUIRE(t.entities().size() == 1);

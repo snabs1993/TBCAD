@@ -48,7 +48,7 @@ fs::path writeSource(const fs::path& dir, const char* name, int lines) {
 
 }  // namespace
 
-TEST_CASE("XATTACH attaches a file and inserts it; undo removes everything") {
+TEST_CASE("XATTACH attaches a file and inserts it - undo removes everything") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 3);
     Fixture f;
@@ -70,7 +70,7 @@ TEST_CASE("XATTACH attaches a file and inserts it; undo removes everything") {
     CHECK(f.modelSpace().empty());
 }
 
-TEST_CASE("XATTACH rejects a missing file and asks again; Enter inserts at the origin") {
+TEST_CASE("XATTACH rejects a missing file and asks again - Enter inserts at the origin") {
     Dir dir;
     fs::path file = writeSource(dir.path, "a.tbcad", 1);
     Fixture f;
@@ -82,7 +82,7 @@ TEST_CASE("XATTACH rejects a missing file and asks again; Enter inserts at the o
     CHECK(f.doc.blockByName("site") != nullptr);
 }
 
-TEST_CASE("XRELOAD picks up a changed file; XLIST reports the state") {
+TEST_CASE("XRELOAD picks up a changed file - XLIST reports the state") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 2);
     Fixture f;
@@ -105,7 +105,7 @@ TEST_CASE("XRELOAD picks up a changed file; XLIST reports the state") {
     CHECK(f.doc.blockByName("plan")->entities.size() == 2);
 }
 
-TEST_CASE("XBIND turns the xref into a block; XDETACH removes it") {
+TEST_CASE("XBIND turns the xref into a block - XDETACH removes it") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 2);
     Fixture f;
@@ -143,7 +143,7 @@ fs::path writePdf(const fs::path& dir, const char* name, const std::string& cont
 
 }  // namespace
 
-TEST_CASE("PDFATTACH attaches a PDF page as a faded underlay; the fade is stored with the path") {
+TEST_CASE("PDFATTACH attaches a PDF page as a faded underlay - the fade is stored with the path") {
     Dir dir;
     fs::path file = writePdf(dir.path, "site.pdf", "0 0 0 RG 0 0 m 72 0 l S 10 10 50 20 re S");
     Fixture f;
@@ -151,7 +151,7 @@ TEST_CASE("PDFATTACH attaches a PDF page as a faded underlay; the fade is stored
     CHECK(r.finished);
     const BlockDef* def = f.doc.blockByName("site");
     REQUIRE(def);
-    CHECK(def->xrefPath == file.string() + "#fade=70");
+    CHECK(def->xrefPath == file.generic_string() + "#fade=70");
     CHECK(def->entities.size() == 2);
     CHECK(xref::isUnderlay(f.doc, def->id));
     CHECK(f.doc.layerByName("site") != nullptr);
@@ -226,7 +226,7 @@ fs::path writeBmp(const fs::path& dir, const char* name, int w, int h) {
 
 }  // namespace
 
-TEST_CASE("IMAGEATTACH attaches a picture with a fade; the path is stored, not the pixels") {
+TEST_CASE("IMAGEATTACH attaches a picture with a fade - the path is stored, not the pixels") {
     Dir dir;
     fs::path file = writeBmp(dir.path, "site.bmp", 100, 50);
     Fixture f;
@@ -234,7 +234,7 @@ TEST_CASE("IMAGEATTACH attaches a picture with a fade; the path is stored, not t
     CHECK(r.finished);
     const BlockDef* def = f.doc.blockByName("site");
     REQUIRE(def);
-    CHECK(def->xrefPath == file.string());
+    CHECK(fs::path(def->xrefPath) == file);
     CHECK(def->entities.size() == 1);  // the frame
     CHECK(xref::isUnderlay(f.doc, def->id));
     CHECK(underlay::imageParams(f.doc.header(), "site").fade == 40);
@@ -247,7 +247,7 @@ TEST_CASE("IMAGEATTACH attaches a picture with a fade; the path is stored, not t
     CHECK(f.doc.blockByName("x") == nullptr);
 }
 
-TEST_CASE("IMAGECLIP keeps a rectangle of the picture; Delete shows it all") {
+TEST_CASE("IMAGECLIP keeps a rectangle of the picture - Delete shows it all") {
     Dir dir;
     fs::path file = writeBmp(dir.path, "site.bmp", 100, 50);
     Fixture f;
@@ -280,7 +280,7 @@ TEST_CASE("UNDERLAYFADE changes the fade of a picture and of a PDF page") {
     CHECK(f.doc.find(def->entities[0])->common.color == Color::rgb(32, 32, 32));
 }
 
-TEST_CASE("XATTACH Overlay with an absolute path; XLIST says overlay") {
+TEST_CASE("XATTACH Overlay with an absolute path - XLIST says overlay") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 2);
     Fixture f;
@@ -303,7 +303,7 @@ TEST_CASE("XATTACH with the name-only path type stores just the file name") {
     CHECK(f.doc.blockByName("plan")->xrefPath == "plan.tbcad");
 }
 
-TEST_CASE("XCLIP clips an insert in block coordinates; OFF, ON and Delete; undo") {
+TEST_CASE("XCLIP clips an insert in block coordinates - OFF, ON and Delete - undo") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 10);
     Fixture f;

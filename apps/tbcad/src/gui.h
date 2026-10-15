@@ -164,6 +164,8 @@ private:
     bool exitRequested_ = false;
     bool showAbout_ = false;
     bool showNotices_ = false;
+    bool showCommandList_ = false;
+    std::string commandFilter_{};
     bool showCommandLine_ = true;
     bool layoutBuilt_ = false;
     ui::WorkspaceStore workspaces_;

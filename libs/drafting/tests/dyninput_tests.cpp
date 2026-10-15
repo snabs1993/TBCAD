@@ -61,7 +61,7 @@ TEST_CASE("a locked angle keeps the distance along the ray") {
     CHECK(near(w.hover({50, -60}, Vec2{10, 10}), {10, 10}, 1e-9));
 }
 
-TEST_CASE("both locked: an exact point; X and Y lock one coordinate each") {
+TEST_CASE("both locked: an exact point - X and Y lock one coordinate each") {
     World w;
     fieldsOf(w, {1, 1}, Vec2{0, 0});
     REQUIRE(w.dyn.edit(0, "10"));
@@ -89,7 +89,7 @@ TEST_CASE("lockedPoint exists only when every field is locked") {
     CHECK(near(*p, {1, 11}, 1e-9));
 }
 
-TEST_CASE("empty text unlocks; unreadable text is refused and changes nothing") {
+TEST_CASE("empty text unlocks - unreadable text is refused and changes nothing") {
     World w;
     fieldsOf(w, {30, 40}, Vec2{0, 0});
     REQUIRE(w.dyn.edit(0, "100"));
@@ -123,7 +123,7 @@ TEST_CASE("locks end at the click and when the base point changes") {
     CHECK_FALSE(w.dyn.hasLocks());
 }
 
-TEST_CASE("reset clears locks and hides the fields; the setting switches them off") {
+TEST_CASE("reset clears locks and hides the fields - the setting switches them off") {
     World w;
     fieldsOf(w, {30, 40}, Vec2{0, 0});
     REQUIRE(w.dyn.edit(0, "100"));

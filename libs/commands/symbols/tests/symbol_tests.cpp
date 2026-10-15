@@ -78,7 +78,7 @@ TEST_CASE("GRIDBUBBLE makes the block once and inserts it annotative at the curr
     CHECK(f.lastInsert()->attribs[0].value == "A");
 }
 
-TEST_CASE("all symbols can be placed with default attributes; one undo step each") {
+TEST_CASE("all symbols can be placed with default attributes - one undo step each") {
     Fixture f;
     for (const auto& info : symbolscmd::symbolList()) {
         std::vector<cmd::ScriptItem> items = {"0,0", ""};

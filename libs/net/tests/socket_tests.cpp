@@ -37,7 +37,7 @@ TEST_CASE("net: loopback listener accepts, echoes and reports its address") {
     closeSocket(l);
 }
 
-TEST_CASE("net: connectTcp resolves names and numbers; any-interface listener works") {
+TEST_CASE("net: connectTcp resolves names and numbers - any-interface listener works") {
     REQUIRE(initialize());
     int port = 0;
     std::string err;

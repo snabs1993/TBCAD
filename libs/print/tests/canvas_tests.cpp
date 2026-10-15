@@ -130,7 +130,7 @@ TEST_CASE("an arc runs counter-clockwise from start to end, also across zero") {
     CHECK(pts.front().y > pts.back().y);  // starts at the bottom (larger pixel y)
 }
 
-TEST_CASE("fills, dots and clip regions are passed on; unbalanced clips are closed") {
+TEST_CASE("fills, dots and clip regions are passed on - unbalanced clips are closed") {
     PlotSheet s = sheet();
     PlotFill f;
     f.rings = {{{0, 0}, {10, 0}, {10, 10}}, {{1, 1}}};  // the second ring is too short

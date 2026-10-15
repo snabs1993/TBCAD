@@ -61,7 +61,7 @@ TEST_CASE("a closed polyline entity is a boundary on its own") {
     CHECK(r.value().sources == std::vector<EntityId>{EntityId{1}});
 }
 
-TEST_CASE("a circle inside a rectangle is an island; picking inside the circle fills the circle") {
+TEST_CASE("a circle inside a rectangle is an island - picking inside the circle fills the circle") {
     Scene s;
     s.rectLines({0, 0}, {100, 100});
     s.add(circle({50, 50}, 20));

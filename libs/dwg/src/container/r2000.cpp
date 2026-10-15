@@ -227,11 +227,17 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
             r.bl();
     };
     // From R2007 the handles are in a stream of their own.
+    std::string handles;  // the handles read, for the trace
     auto skipH = [&](int n) {
         if (r2007)
             return;
-        for (int i = 0; i < n; ++i)
-            r.handle();
+        for (int i = 0; i < n; ++i) {
+            const HandleRef h = r.handle();
+            char b[48];
+            std::snprintf(b, sizeof b, "%u:%llX ", static_cast<unsigned>(h.code),
+                          static_cast<unsigned long long>(h.value));
+            handles += b;
+        }
     };
     auto skipSpace = [&] {  // one set of paper or model space variables
         skipBd(9);          // INSBASE, EXTMIN, EXTMAX
@@ -288,12 +294,17 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
     stage("tdindwg", 0);
     r.cmc(r2004);  // CECOLOR
     stage("cecolor", 0);
-    r.handle();  // HANDSEED (always in this stream)
-    stage("handseed", 0);
+    {
+        const HandleRef seed = r.handle();  // HANDSEED (always in this stream)
+        stage("handseed", static_cast<double>(seed.value));
+    }
     skipH(r2007 ? 6 : 5);  // CLAYER, TEXTSTYLE, CELTYPE, [CMATERIAL], DIMSTYLE, CMLSTYLE
-    r.bd();                // PSVPSCALE
-    skipSpace();           // paper space
-    skipSpace();           // model space
+    stage("layer handles", 0);
+    stages += "[" + handles + "] ";
+    stage("psvpscale", r.bd());  // PSVPSCALE
+    skipSpace();                 // paper space
+    skipSpace();                 // model space
+    stage("spaces", 0);
     r.textBytes();
     r.textBytes();  // DIMPOST, DIMAPOST
     skipBd(9);
@@ -327,6 +338,8 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
         r.bd();  // DIMMZF
         r.textBytes();
     }
+    stage("dimvars", 0);
+    handles.clear();
     skipH(r2007 ? 8 : 5);  // DIMTXSTY, DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2, [three linetypes]
     skipBs(2);             // DIMLWD, DIMLWE
     skipH(9);              // control objects
@@ -343,6 +356,8 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
         skipH(1);  // VISUALSTYLE
     if (fmt.r2013)
         skipH(1);
+    stage("control handles", 0);
+    stages += "[" + handles + "] ";
     r.bl();  // flags
     const int units = r.bs();
     if (r.failed() || units < 0 || units > 20 || !std::isfinite(v.ltscale) || v.ltscale <= 0 ||

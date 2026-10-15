@@ -49,7 +49,8 @@ std::string hexBytes(Bytes b, std::size_t from, std::size_t count) {
 bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint64_t expanded,
                     std::uint64_t hint, std::vector<std::uint8_t>& out,
                     std::vector<std::string>& notes, const char* what,
-                    bool (*plausible)(const std::vector<std::uint8_t>&)) {
+                    bool (*plausible)(const std::vector<std::uint8_t>&),
+                    std::string* streamHex = nullptr) {
     if (comp == 0 || comp > kMaxSection || expanded > kMaxSection) {
         notes.push_back(std::string("the ") + what + " has impossible sizes");
         return false;
@@ -84,8 +85,11 @@ bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint6
                     std::string w;
                     if (lz21Decompress(payload, static_cast<std::size_t>(expanded), out, &w,
                                        &used) &&
-                        used == comp && (!plausible || plausible(out)))
+                        used == comp && (!plausible || plausible(out))) {
+                        if (streamHex)
+                            *streamHex = hexBytes(payload, 0, 20000);
                         return true;
+                    }
                     if (why.empty())
                         why = w;
                 } else {
@@ -93,6 +97,8 @@ bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint6
                     if (lz21Decompress(data, static_cast<std::size_t>(expanded), out, nullptr,
                                        &used) &&
                         plausible && plausible(out)) {
+                        if (streamHex)
+                            *streamHex = hexBytes(Bytes(data.data(), used), 0, 20000);
                         notes.push_back(std::string("the ") + what + " was read with " +
                                         std::to_string(blocks) + " blocks of " +
                                         std::to_string(perBlock) + " using " +
@@ -208,9 +214,11 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
         pagesMapFactor > 0 && pagesMapFactor < 1000
             ? (((pagesMapComp + 7) & ~std::uint64_t{7}) * pagesMapFactor + 238) / 239
             : 0;
+    std::string streamHex;
     if (!readSystemPage(file, kStreamBase + pagesMapOffset, pagesMapComp, pagesMapExpanded,
-                        pagesMapBlocks, pm, notes, "page map", pageMapPlausible))
+                        pagesMapBlocks, pm, notes, "page map", pageMapPlausible, &streamHex))
         return makeError(ErrorCode::Parse, "the DWG page map is damaged");
+    tr("page map stream: " + streamHex);
     struct Page {
         std::int64_t id = 0;
         std::uint64_t size = 0;
@@ -251,8 +259,9 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
     std::vector<std::uint8_t> sm;
     if (!readSystemPage(file, kStreamBase + smIt->second.offset, sectionsMapComp,
                         sectionsMapExpanded, smIt->second.size / 255, sm, notes, "section map",
-                        sectionMapPlausible))
+                        sectionMapPlausible, &streamHex))
         return makeError(ErrorCode::Parse, "the DWG section map is damaged");
+    tr("section map stream: " + streamHex);
     tr("section map expanded: " + std::to_string(sm.size()) + " bytes: " + hexBytes(sm, 0, 200));
 
     std::size_t pos = 0;
@@ -275,6 +284,12 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
         for (std::size_t i = 0; i + 1 < nameBytes && sm[pos + i] != 0; i += 2)
             name += static_cast<char>(sm[pos + i]);  // section names are ASCII
         pos += nameBytes;
+        if (!name.empty() && name.rfind("AcDb:", 0) != 0) {
+            // The records are positional, so the scan goes on; the section is listed but not used.
+            notes.push_back("the section map holds a section with the odd name \"" + name +
+                            "\"; it is skipped");
+            name.clear();
+        }
         if (numPages > (sm.size() - pos) / 56) {
             notes.push_back("the section map is cut off");
             break;
@@ -283,9 +298,10 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
            std::to_string(maxSize) + ", encryption " + std::to_string(encryption) + ", encoding " +
            std::to_string(encoding) + ", " + std::to_string(numPages) + " pages");
         std::vector<std::uint8_t> data;
-        if (!name.empty() && dataSize <= kMaxSection)
+        if (!name.empty() && dataSize <= (std::uint64_t{1} << 28))
             data.assign(static_cast<std::size_t>(dataSize), 0);
         bool bad = false;
+        std::uint64_t placed = 0;
         for (std::uint64_t k = 0; k < numPages; ++k, pos += 56) {
             const std::uint64_t offset = le64(sm, pos);
             const std::uint64_t pageId = le64(sm, pos + 0x10);
@@ -313,6 +329,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
             std::string why;
             std::string config;
             std::string head;
+            std::string fullStream;
             for (std::uint64_t blocks : {floorBlocks, floorBlocks + 1}) {
                 for (std::size_t perBlock : {std::size_t{251}, std::size_t{239}}) {
                     for (int il = 0; il < 2 && !done; ++il) {
@@ -343,6 +360,10 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                                      std::to_string(perBlock) +
                                      (inter ? ", interleaved" : ", plain");
                             head = hexBytes(raw, 0, 64);
+                            if (comp <= 2000 &&
+                                (name == "AcDb:Header" || name == "AcDb:Classes" ||
+                                 name == "AcDb:Handles" || name == "AcDb:AuxHeader"))
+                                fullStream = hexBytes(raw, 0, static_cast<std::size_t>(comp));
                         }
                     }
                     if (done)
@@ -360,15 +381,23 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                        ", " + why);
                 continue;
             }
+            if (trace && !fullStream.empty())
+                tr("  stream of \"" + name + "\" (" + std::to_string(expanded) +
+                   " bytes): " + fullStream);
             if (trace && k < 2)
                 tr("  page " + std::to_string(pageId) + " read as " + config + "; stream starts " +
                    head + "; expanded starts " + hexBytes(page, 0, 32));
-            if (offset < data.size())
+            if (offset < data.size()) {
                 std::memcpy(data.data() + offset, page.data(),
                             std::min<std::size_t>(page.size(), data.size() - offset));
+                ++placed;
+            }
         }
         if (bad)
             notes.push_back("some pages of section " + name + " are damaged and were left empty");
+        if (name == "AcDb:AcDbObjects" && placed == 0 && numPages > 0)
+            return makeError(ErrorCode::Parse,
+                             "none of the pages of the object section could be read");
         if (!name.empty())
             set.sections[name] = std::move(data);
     }

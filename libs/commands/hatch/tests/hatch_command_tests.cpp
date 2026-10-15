@@ -131,7 +131,7 @@ TEST_CASE("HATCH: a big area gets a bigger pattern scale until the user sets one
     CHECK(f.host->setting("hatch.scale").value() == "3");
 }
 
-TEST_CASE("HATCH: options change pattern, scale, angle and base; the choices are remembered") {
+TEST_CASE("HATCH: options change pattern, scale, angle and base - the choices are remembered") {
     Fixture f;
     f.rect({0, 0}, {100, 100});
     auto r =
@@ -154,7 +154,7 @@ TEST_CASE("HATCH: options change pattern, scale, angle and base; the choices are
     CHECK(f.host->setting("hatch.pattern").value() == "CROSS45");
 }
 
-TEST_CASE("HATCH: SOLID makes a solid hatch; unknown patterns are refused; ? lists them") {
+TEST_CASE("HATCH: SOLID makes a solid hatch - unknown patterns are refused - ? lists them") {
     Fixture f;
     f.rect({0, 0}, {10, 10});
     f.host->run("HATCH", {"P", "?", "P", "NOPE", "P", "solid", "5,5", ""});
@@ -298,7 +298,7 @@ TEST_CASE("HATCHEDIT: changes pattern, scale, angle and origin in one undo step"
     CHECK(entityAs<HatchData>(*f.doc.find(id))->patternScale == doctest::Approx(1));
 }
 
-TEST_CASE("HATCHEDIT: switching to SOLID sets the solid flag; non-hatch selections are ignored") {
+TEST_CASE("HATCHEDIT: switching to SOLID sets the solid flag - non-hatch selections are ignored") {
     Fixture f;
     f.rect({0, 0}, {10, 10});
     f.host->run("H", {"5,5", ""});

@@ -114,7 +114,7 @@ TEST_CASE("a circle in a non-uniformly scaled insert explodes to an ellipse") {
     CHECK(el->ratio == doctest::Approx(0.5));
 }
 
-TEST_CASE("a polyline explodes to lines and arcs; widths are reported") {
+TEST_CASE("a polyline explodes to lines and arcs - widths are reported") {
     Entity pl;
     pl.data = PolylineData{{{{0, 0}, 0, 1, 1}, {{10, 0}, 1, 0, 0}, {{10, 10}, 0, 0, 0}}, false, 0};
     auto r = explode(Document{}, pl);
@@ -134,7 +134,7 @@ TEST_CASE("a polyline explodes to lines and arcs; widths are reported") {
     CHECK(near(e, {10, 10}, 1e-9));
 }
 
-TEST_CASE("a closed polyline gives its closing segment; negative bulge runs clockwise") {
+TEST_CASE("a closed polyline gives its closing segment - negative bulge runs clockwise") {
     Entity pl;
     pl.data = PolylineData{{{{0, 0}, -1, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0}}, true, 0};
     auto r = explode(Document{}, pl);
@@ -177,7 +177,7 @@ TEST_CASE("text in a non-uniformly scaled insert is scaled evenly with a message
     CHECK_FALSE(r.value().messages.empty());
 }
 
-TEST_CASE("kinds without a hook cannot be exploded; hooks plug in") {
+TEST_CASE("kinds without a hook cannot be exploded - hooks plug in") {
     Entity pt;
     pt.data = PointData{{1, 1}};
     CHECK_FALSE(explode(Document{}, pt).ok());

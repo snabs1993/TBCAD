@@ -109,7 +109,7 @@ TEST_CASE("DIMLINEAR: keywords Horizontal, Vertical, Rotated and Text") {
     CHECK(h.dims()[0]->measurement == doctest::Approx(100 * std::cos(kPi / 4)));
 }
 
-TEST_CASE("DIMLINEAR: Enter selects an object; Esc leaves nothing behind") {
+TEST_CASE("DIMLINEAR: Enter selects an object - Esc leaves nothing behind") {
     Fixture f;
     EntityId line = f.addEntity(LineData{{0, 0}, {60, 0}});
     f.host->run("DIMLINEAR", {"", ScriptItem::pick(line, {30, 0}), "30,12"});
@@ -162,7 +162,7 @@ TEST_CASE("DIMRADIUS and DIMDIAMETER on a circle and an arc") {
     CHECK(g.dims().empty());
 }
 
-TEST_CASE("DIMANGULAR: two lines, perpendicular reads 90 degrees; three points") {
+TEST_CASE("DIMANGULAR: two lines, perpendicular reads 90 degrees - three points") {
     Fixture f;
     EntityId a = f.addEntity(LineData{{0, 0}, {50, 0}});
     EntityId b = f.addEntity(LineData{{0, 0}, {0, 50}});

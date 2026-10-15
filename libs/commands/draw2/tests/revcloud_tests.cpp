@@ -112,7 +112,7 @@ TEST_CASE("REVCLOUD with fewer than three points or no area draws nothing") {
     CHECK(f.entities().empty());
 }
 
-TEST_CASE("REVCLOUD: Esc draws nothing; Undo drops the last point; one undo step") {
+TEST_CASE("REVCLOUD: Esc draws nothing - Undo drops the last point - one undo step") {
     Fixture f;
     f.host.run("REVC", {"0,0", "100,0", "100,50", ScriptItem::esc()});
     CHECK(f.entities().empty());

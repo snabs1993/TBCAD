@@ -68,7 +68,7 @@ TEST_CASE("BLOCK keeps attributes and rejects duplicate tags") {
     CHECK(f.modelSpace().size() == 2);
 }
 
-TEST_CASE("INSERT asks for attribute values; constant ones are not asked") {
+TEST_CASE("INSERT asks for attribute values - constant ones are not asked") {
     Fixture f;
     makeTagBlock(f);
     auto r = f.host->run("INSERT", {"Tag", "10,10", "Bob"});
@@ -110,7 +110,7 @@ TEST_CASE("ATTEDIT changes the values of an insert and can be undone") {
     CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs[0].value == "Zed");
 }
 
-TEST_CASE("redefining a block updates its inserts; ATTSYNC does the same on demand") {
+TEST_CASE("redefining a block updates its inserts - ATTSYNC does the same on demand") {
     Fixture f;
     BlockId tag = makeTagBlock(f);
     f.host->run("INSERT", {"Tag", "0,0", "Zed"});
@@ -147,7 +147,7 @@ struct DialogHost : cmd::ScriptHost {
 
 }  // namespace
 
-TEST_CASE("ATTDEF opens the dialog in a window; the dialog's values leave only the start point") {
+TEST_CASE("ATTDEF opens the dialog in a window - the dialog's values leave only the start point") {
     Document doc;
     cmd::Registry reg;
     registerAllCommands(reg);

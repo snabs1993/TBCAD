@@ -204,6 +204,9 @@ std::filesystem::path libraryFileFor(const std::string& typed,
             fs::path withExt = c;
             withExt += ".tbcad";
             tries.push_back(withExt);
+            fs::path asDxf = c;
+            asDxf += ".dxf";
+            tries.push_back(asDxf);
         }
         for (const fs::path& t : tries) {
             const std::string ext = lower(t.extension().string());

@@ -93,7 +93,7 @@ TEST_CASE("insert and delete rows and columns keep cells in place") {
     CHECK_FALSE(deleteRow(t, 0));  // the last row stays
 }
 
-TEST_CASE("inserting through a merge splits it; a title row stays first") {
+TEST_CASE("inserting through a merge splits it - a title row stays first") {
     TableData t = grid(3, 3, "T");
     REQUIRE(insertRow(t, 0));  // goes after the title
     CHECK(cellAt(t, 0, 0).utf8 == "T");

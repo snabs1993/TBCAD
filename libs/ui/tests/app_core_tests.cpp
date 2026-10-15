@@ -6,6 +6,7 @@
 
 #include "tbcad/core/dump.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/xref/xref.h"
 #include "test_support.h"
@@ -41,6 +42,13 @@ struct Fixture {
 };
 
 }  // namespace
+
+TEST_CASE("an empty drawing starts at room size") {
+    Fixture f("roomview");
+    f.core->zoomExtents();
+    const double widthMm = f.core->camera().viewportW / f.core->camera().pixelsPerMm;
+    CHECK(widthMm == doctest::Approx(20000).epsilon(0.15));
+}
 
 TEST_CASE("command line runs commands, aliases, prompts and errors") {
     Fixture f("cmdline");
@@ -155,7 +163,38 @@ TEST_CASE("drag left to right selects inside, right to left selects touching") {
     CHECK(f.core->selection().empty());
 }
 
-TEST_CASE("Alt+click cycles through overlapping objects; lasso selects inside the path") {
+TEST_CASE("a drag over the whole drawing selects every attribute definition") {
+    text::registerDisplay();
+    Fixture f("dragattdef");
+    EntityId ids[2];
+    int n = 0;
+    for (Vec2 at : {Vec2{0, 500}, Vec2{0, 0}}) {
+        TextData t;
+        t.position = at;
+        t.height = 2.5;
+        t.utf8 = n == 0 ? "NAME" : "AREA";
+        AttDefInfo info;
+        info.tag = t.utf8;
+        t.attdef = info;
+        auto tx = f.core->document().begin("attdef");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        ids[n++] = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    f.core->updateFrame();
+    f.core->zoomExtents();
+    Vec2 a = {5, 5};
+    Vec2 b = {f.core->camera().screenToWorld({995, 795})};
+    b = f.core->camera().worldToScreen(b);
+    f.core->dragSelect(a, b, PointerState{b, false, false});
+    CHECK(f.core->selection().size() == 2);
+    f.core->clearSelection();
+    f.core->dragSelect(b, a, PointerState{a, false, false});
+    CHECK(f.core->selection().size() == 2);
+}
+
+TEST_CASE("Alt+click cycles through overlapping objects - lasso selects inside the path") {
     Fixture f("cyclelasso");
     f.line("0,0", "100,0");
     f.line("0,0", "100,0");
@@ -238,7 +277,7 @@ TEST_CASE("wheel zoom keeps the point under the cursor fixed, 1.2 per notch") {
     CHECK(f.core->camera().center.x == doctest::Approx(500 - 100));
 }
 
-TEST_CASE("zoom extents fits the drawing; ZOOM and PAN work as commands") {
+TEST_CASE("zoom extents fits the drawing - ZOOM and PAN work as commands") {
     Fixture f("extents");
     f.line("0,0", "10000,0");
     f.line("0,0", "0,5000");
@@ -505,7 +544,7 @@ TEST_CASE("a command that leaves the working area raises a notice with Zoom to a
     CHECK_FALSE(f.core->outOfAreaNotice().has_value());
 }
 
-TEST_CASE("host settings are typed by what is stored; toggles live in the UI registry") {
+TEST_CASE("host settings are typed by what is stored - toggles live in the UI registry") {
     Fixture f("hostsettings");
     CHECK(f.core->setting("drafting.snap") == "0");
     f.core->setSetting("drafting.snap", "on");

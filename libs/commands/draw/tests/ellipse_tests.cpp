@@ -96,7 +96,7 @@ TEST_CASE("ELLIPSE Arc at 45 degrees") {
     CHECK(closeAngle(e.endParam, std::atan2(2.0, 1.0)));
 }
 
-TEST_CASE("ELLIPSE with a zero axis is refused; Esc draws nothing") {
+TEST_CASE("ELLIPSE with a zero axis is refused - Esc draws nothing") {
     Fixture f;
     f.host.run("EL", {"0,0", "0,0"});
     CHECK(f.host.logContains("zero length"));

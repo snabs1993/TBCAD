@@ -282,7 +282,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     lastTessellatedFor_ = camera_;
     notifySessionHooks();
     scanMissingXrefs();
-    if (fitView && !session_->index.empty()) {
+    if (fitView && (!session_->index.empty() || !slot.viewSaved)) {
         zoomExtents();
         fitPending_ = 6;
     }
@@ -1261,7 +1261,19 @@ BBox2 AppCore::viewExtents() const {
 }
 
 void AppCore::zoomExtents() {
-    zoomToBox(viewExtents());
+    const BBox2 box = viewExtents();
+    if (box.empty() && !inPaperSpace()) {
+        // Nothing drawn yet: start at room size (about 20 m across) instead of 1 px = 1 mm.
+        constexpr double kRoomMm = 20000.0;
+        const double aspect = static_cast<double>(std::max(camera_.viewportH, 1)) /
+                              static_cast<double>(std::max(camera_.viewportW, 1));
+        BBox2 room;
+        room.expand({0, 0});
+        room.expand({kRoomMm, kRoomMm * aspect});
+        camera_.fit(room);
+        return;
+    }
+    zoomToBox(box);
 }
 
 void AppCore::zoomToBox(const BBox2& box) {

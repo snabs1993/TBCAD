@@ -72,7 +72,7 @@ TEST_CASE("RECTANGLE refuses a zero width and asks again") {
     CHECK(f.entities().size() == 1);
 }
 
-TEST_CASE("RECTANGLE: Esc draws nothing; the preview is the rectangle to the cursor") {
+TEST_CASE("RECTANGLE: Esc draws nothing - the preview is the rectangle to the cursor") {
     Fixture f;
     f.host.run("REC", {"0,0"});
     cmd::RawInput in;

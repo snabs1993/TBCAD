@@ -145,6 +145,18 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     theme_ = ui::themeFor(themeMode_, systemPrefersDark());
     core_.setTheme(theme_);
     core_.setDialogsAvailable(true);
+    {
+        // The starter symbols (doors, windows, furniture) that ship with the program are the
+        // block library until the user picks another folder.
+        const std::string shipped = findBesideExecutable("assets/blocks");
+        std::error_code ec;
+        const auto current = core_.setting("block.library");
+        if (!shipped.empty() &&
+            std::filesystem::is_directory(platform::pathFromUtf8(shipped), ec) &&
+            (!current || current->empty() ||
+             !std::filesystem::is_directory(platform::pathFromUtf8(*current), ec)))
+            core_.setSetting("block.library", shipped);
+    }
     lineweights_ = core_.settings().getBool("view.lineweights", true);
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
@@ -918,6 +930,8 @@ void Gui::menuBar() {
     if (ImGui::BeginMenu("Help")) {
         if (ImGui::MenuItem("Quick Start", keys.label("help.quickStart").c_str()))
             showQuickStart_ = true;
+        if (ImGui::MenuItem("Command List"))
+            showCommandList_ = true;
         if (ImGui::MenuItem("About TBCAD"))
             showAbout_ = true;
         if (ImGui::MenuItem("Third-Party Notices"))
@@ -2900,13 +2914,18 @@ void Gui::dialogs() {
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
         if (recovery_ && !recovery_->savedAt.empty() && recoveryCount_ <= 1)
             ImGui::Text("Backup saved: %s", recovery_->savedAt.c_str());
+        // The keyboard works too: a modal that only answers to the mouse is stuck when the
+        // window has not been clicked yet. Enter recovers (or says OK), Esc decides later.
+        const bool enterKey =
+            ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+        const bool escKey = ImGui::IsKeyPressed(ImGuiKey_Escape);
         if (!crashReport_.empty()) {
             ImGui::TextWrapped(
                 "A crash report was saved to %s. Attach it when you report the problem.",
                 crashReport_.c_str());
             if (!recovery_) {
                 ImGui::Spacing();
-                if (ImGui::Button("OK", ImVec2(110, 0))) {
+                if (ImGui::Button("OK", ImVec2(110, 0)) || enterKey) {
                     platform::acknowledgeCrashReports(core_.paths().crashDir());
                     crashReport_.clear();
                     ImGui::CloseCurrentPopup();
@@ -2914,7 +2933,7 @@ void Gui::dialogs() {
             }
         }
         ImGui::Spacing();
-        if (recovery_ && ImGui::Button("Recover", ImVec2(110, 0))) {
+        if (recovery_ && (ImGui::Button("Recover", ImVec2(110, 0)) || enterKey)) {
             platform::acknowledgeCrashReports(core_.paths().crashDir());
             crashReport_.clear();
             if (recovery_) {
@@ -2930,6 +2949,13 @@ void Gui::dialogs() {
             platform::acknowledgeCrashReports(core_.paths().crashDir());
             crashReport_.clear();
             core_.discardRecovery();
+            recovery_.reset();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Later", ImVec2(110, 0)) || escKey) {
+            // Nothing is deleted: the backup is offered again next time.
+            crashReport_.clear();
             recovery_.reset();
             ImGui::CloseCurrentPopup();
         }
@@ -3036,6 +3062,64 @@ void Gui::dialogs() {
         ImGui::PushTextWrapPos(0.0f);
         drawMarkdownLite(quickStartText_);
         ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+        if (ImGui::Button("Close", ImVec2(110, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (showCommandList_) {
+        ImGui::OpenPopup("Command List");
+        showCommandList_ = false;
+        commandFilter_.clear();
+    }
+    ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Command List", nullptr)) {
+        ImGui::SetNextItemWidth(320);
+        if (ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();
+        ImGui::InputTextWithHint("##cmdfilter", "Type to search commands", &commandFilter_);
+        ImGui::SameLine();
+        ImGui::TextDisabled("Click a command to run it.");
+        ImGui::BeginChild("##cmdlist", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+        if (ImGui::BeginTable("##cmdtable", 3,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+            ImGui::TableSetupColumn("Command");
+            ImGui::TableSetupColumn("Shortcut");
+            ImGui::TableSetupColumn("What it does", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            auto lower = [](std::string t) {
+                for (char& c : t)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return t;
+            };
+            const std::string needle = lower(commandFilter_);
+            for (cmd::Command* c : core_.registry().list()) {
+                if (c->description().empty())
+                    continue;
+                std::string aliases;
+                for (const std::string& a : core_.registry().aliasesOf(c->name()))
+                    aliases += (aliases.empty() ? "" : ", ") + a;
+                const std::string name(c->name());
+                const std::string desc(c->description());
+                if (!needle.empty() &&
+                    lower(name + " " + aliases + " " + desc).find(needle) == std::string::npos)
+                    continue;
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
+                    if (core_.runner().active())
+                        core_.pressEscape();
+                    core_.submitText(name);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(aliases.c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextWrapped("%s", desc.c_str());
+            }
+            ImGui::EndTable();
+        }
         ImGui::EndChild();
         if (ImGui::Button("Close", ImVec2(110, 0)))
             ImGui::CloseCurrentPopup();

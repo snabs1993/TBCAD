@@ -94,6 +94,30 @@ TEST_CASE("EXPORTDXF takes a version and Esc leaves no file") {
     std::filesystem::remove(file);
 }
 
+TEST_CASE("EXPORTDXF adds .dxf and asks before replacing a file") {
+    const auto file = tempFile("tbcad_dxfexport_ask.dxf");
+    std::filesystem::remove(file);
+    Document doc;
+    drawSomething(doc);
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+
+    auto bare = file;
+    bare.replace_extension();
+    host.run("EXPORTDXF", {bare.string(), ""});  // Enter takes R2000
+    REQUIRE(std::filesystem::exists(file));
+    CHECK(host.logContains("(AC1015)"));
+
+    const auto size = std::filesystem::file_size(file);
+    std::filesystem::resize_file(file, 10);
+    host.run("EXPORTDXF", {file.string(), ""});  // default answer is No
+    CHECK(std::filesystem::file_size(file) == 10);
+    host.run("EXPORTDXF", {file.string(), "Yes", ""});
+    CHECK(std::filesystem::file_size(file) == size);
+    std::filesystem::remove(file);
+}
+
 TEST_CASE("IMPORTDXF reports a missing file and changes nothing") {
     Document doc;
     cmd::Registry reg;

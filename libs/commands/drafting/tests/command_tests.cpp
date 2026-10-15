@@ -21,7 +21,7 @@ struct Fixture {
 };
 }  // namespace
 
-TEST_CASE("the commands and their aliases are registered; toggles and cycle are hidden") {
+TEST_CASE("the commands and their aliases are registered - toggles and cycle are hidden") {
     Fixture f;
     for (const char* n : {"OSNAP", "GRID", "SNAP", "ORTHO", "POLAR", "TOGGLEOSNAP", "TOGGLEGRID",
                           "TOGGLESNAP", "TOGGLEORTHO", "TOGGLEPOLAR", "SNAPCYCLE"})

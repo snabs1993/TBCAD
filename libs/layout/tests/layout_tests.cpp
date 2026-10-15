@@ -178,7 +178,7 @@ TEST_CASE("plotting a layout: a 10,000 mm model line in a 1:100 viewport is 100 
     CHECK(std::abs((std::stod(m[3]) - std::stod(m[1])) - 100.0) <= 0.01);
 }
 
-TEST_CASE("a viewport can show one level only; the choice is saved and plotted") {
+TEST_CASE("a viewport can show one level only - the choice is saved and plotted") {
     Document doc;
     LevelId upper;
     {
@@ -223,6 +223,32 @@ TEST_CASE("a viewport can show one level only; the choice is saved and plotted")
         CHECK_FALSE(setViewportLevel(tx, "L", 1, LevelId{99}).ok());
         return Result<void>{};
     });
+}
+
+TEST_CASE("a small drawing in a 1:1 viewport plots its lines") {
+    Document doc;
+    {
+        auto tx = doc.begin("model");
+        REQUIRE(tx.add(line({0, 0}, {100, 0})).ok());
+        REQUIRE(tx.add(line({100, 0}, {100, 60})).ok());
+        tx.commit();
+    }
+    run(doc, "layout", [](Transaction& tx) {
+        if (auto r = createLayout(tx, "A4 sheet", "A4"); !r)
+            return r;
+        BBox2 r;
+        r.expand({10, 10});
+        r.expand({200, 140});
+        auto id = addViewport(tx, "A4 sheet", r, {50, 30}, 1);
+        return id ? Result<void>() : Result<void>(id.error());
+    });
+    auto sheet = buildLayoutSheet(doc, "A4 sheet", {}, {false});
+    REQUIRE(sheet.ok());
+    int strokes = 0;
+    for (const auto& p : sheet.value().prims)
+        if (std::holds_alternative<exportlib::PlotPath>(p))
+            ++strokes;
+    CHECK(strokes == 2);
 }
 
 TEST_CASE("freezing a layer in one viewport hides it there only, sub-layers included") {
@@ -278,7 +304,7 @@ TEST_CASE("freezing a layer in one viewport hides it there only, sub-layers incl
     CHECK(total == 6);
 }
 
-TEST_CASE("title block and sheet objects are plotted; viewports can be switched off") {
+TEST_CASE("title block and sheet objects are plotted - viewports can be switched off") {
     Document doc;
     run(doc, "layout", [](Transaction& tx) {
         if (auto r = createLayout(tx, "T", "A3"); !r)
@@ -307,7 +333,7 @@ TEST_CASE("title block and sheet objects are plotted; viewports can be switched 
     CHECK_FALSE(buildLayoutSheet(doc, "missing").ok());
 }
 
-TEST_CASE("the title block is a block with attributes; a second one reuses the definition") {
+TEST_CASE("the title block is a block with attributes - a second one reuses the definition") {
     Document doc;
     run(doc, "layout", [](Transaction& tx) {
         if (auto r = createLayout(tx, "A", "A3"); !r)

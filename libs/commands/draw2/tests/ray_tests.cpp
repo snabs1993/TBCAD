@@ -40,7 +40,7 @@ TEST_CASE("XLINE through two points, with the options for fixed directions") {
     CHECK(close(indirect<RayData>(a.entities()[0]).dir, {0, 1}, 1e-9));
 }
 
-TEST_CASE("XLINE Bisect makes the bisector; Offset copies a line at a distance") {
+TEST_CASE("XLINE Bisect makes the bisector - Offset copies a line at a distance") {
     Fixture f;
     f.host.run("XLINE", {"Bisect", "0,0", "10,0", "0,10", ""});
     REQUIRE(f.entities().size() == 1);

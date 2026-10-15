@@ -386,6 +386,9 @@ public:
         ctx.setUndoLabel("Edit hatch");
         std::size_t changed = 0;
         for (;;) {
+            // Show each change at once instead of when the command ends.
+            if (changed > 0)
+                ctx.checkpoint();
             cmd::KeywordOptions ko;
             ko.keywords = {"Pattern", "Scale", "Angle", "Base", "Done"};
             ko.defaultKeyword = "Done";

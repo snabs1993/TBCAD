@@ -15,7 +15,7 @@ TEST_CASE("the block commands are registered with their aliases") {
     CHECK(f.reg.find("AR") == f.reg.find("ARRAY"));
 }
 
-TEST_CASE("BLOCK converts the selection into a block and one insert; undo restores it") {
+TEST_CASE("BLOCK converts the selection into a block and one insert - undo restores it") {
     Fixture f;
     EntityId a = f.addLine(10, 10, 20, 10);
     EntityId b = f.addCircle(15, 15, 2);
@@ -118,4 +118,14 @@ TEST_CASE("block list rows are sorted, filtered and count their uses") {
     CHECK(rows[1].name == "window");
     CHECK(blockRows(f.doc, "WIN").size() == 1);
     CHECK(blockRows(f.doc, "zzz").empty());
+}
+
+TEST_CASE("BLOCK with nothing selected says so and makes no block") {
+    Fixture f;
+    f.addLine(10, 10, 20, 10);
+    f.host->setSelection({});
+    auto r = f.host->run("BLOCK", {"Empty", "0,0", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.doc.blocks().empty());
+    CHECK(f.host->logContains("No objects selected"));
 }

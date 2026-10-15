@@ -114,7 +114,7 @@ TEST_CASE("DIMCON sets a length and a conflicting constraint is refused") {
     CHECK(f.line(f.l1).b.x == 10);
 }
 
-TEST_CASE("DELCON removes the constraints of the selected objects; erased objects drop theirs") {
+TEST_CASE("DELCON removes the constraints of the selected objects - erased objects drop theirs") {
     Fixture f;
     f.host->run("GEOMCON", {"Parallel", f.pick(f.l1, {5, 0}), f.pick(f.l2, {5, 5.7})});
     f.host->run("DELCON", {ScriptItem::select({f.l2}), ScriptItem::enter()});

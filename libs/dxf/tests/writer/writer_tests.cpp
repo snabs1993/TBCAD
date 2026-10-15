@@ -245,7 +245,7 @@ TEST_CASE("the TBCAD Stroke font is written as txt.shx and reads back as the str
     CHECK(ts->fontFamily == "TBCAD Stroke");
 }
 
-TEST_CASE("Thai text is escaped in R2000 and survives; R2007 writes UTF-8") {
+TEST_CASE("Thai text is escaped in R2000 and survives - R2007 writes UTF-8") {
     Document doc;
     {
         auto tx = doc.begin("thai");
