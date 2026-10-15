@@ -9,13 +9,23 @@ so they are saved in the `.tbcad` file and changes are undoable.
 | Command | What it does |
 | --- | --- |
 | `LAYOUT` (`LO`) | New, Delete, Rename, Paper, Set (current), List |
-| `MVIEW` (`MV`) | Adds a viewport: two sheet corners in mm, scale `1:N`, model centre |
+| `MVIEW` (`MV`) | Adds a viewport: two sheet corners in mm, scale `1:N`, model centre (Enter = the middle of the drawing) |
 | `VPSCALE` | Changes a viewport's scale |
+| `VPMOVE`, `VPRESIZE`, `VPCENTER`, `VPDELETE` | Move a viewport on the sheet, give it new corners, change the model point it shows, or delete it |
 | `VPLAYER` | Freezes or thaws a layer in one viewport (sub-layers follow their parent) |
 | `VPLEVEL` | Shows one level only in a viewport (empty name = every visible level again); plots follow it |
 | `TITLEBLOCK` | Inserts the `TITLEBLOCK` block (frame, labels and PROJECT, DRAWN BY, DATE, SCALE, SHEET attributes) on the sheet; edit the values with the attribute commands |
 
+Every viewport command asks "Click inside a viewport, or type its number".
+
 A viewport plots the model through its own scale, clipped to its rectangle.
+
+## Drawing on the sheet
+
+With a layout tab open you draw on the sheet itself: LINE, CIRCLE, RECTANG, TEXT, dimensions and the other
+drawing commands put their objects on the sheet, in millimetres of paper (text defaults to 2.5 mm). Click or
+window-select sheet objects to change them with MOVE, COPY, ERASE and the other editing commands; snaps work
+on sheet geometry. Double-click an empty part of a viewport to edit the model through it.
 
 ## Plotting a layout
 

@@ -50,6 +50,33 @@ void report(cmd::CommandContext& ctx, const Result<void>& r, const std::string& 
     ctx.message(r ? okText : r.error().message);
 }
 
+// Which viewport: click inside it on the sheet, or type its number.
+cmd::Task askViewport(cmd::CommandContext& ctx, const std::string& layoutName, int& id, bool& ok) {
+    ok = false;
+    auto lay = layout::findLayout(ctx.doc(), layoutName);
+    if (!lay || lay->viewports.empty()) {
+        ctx.message("\"" + layoutName + "\" has no viewports. Use MVIEW to add one.");
+        co_return;
+    }
+    cmd::PointOptions po;
+    po.allowNone = false;
+    for (const layout::Viewport& v : lay->viewports)
+        po.keywords.push_back(std::to_string(v.id));
+    auto r = co_await ctx.getPoint("Click inside a viewport, or type its number", po);
+    if (r.status == Status::Keyword) {
+        id = std::atoi(r.keyword.c_str());
+        ok = true;
+    } else if (r.ok()) {
+        for (const layout::Viewport& v : lay->viewports)  // the last one is drawn on top
+            if (v.paper.contains(r.point)) {
+                id = v.id;
+                ok = true;
+            }
+        if (!ok)
+            ctx.message("No viewport there.");
+    }
+}
+
 class LayoutCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYOUT"; }
@@ -237,8 +264,10 @@ public:
         std::string target;
         if (!requireLayout(ctx, target))
             co_return;
-        auto id = co_await ctx.getInteger("Viewport number");
-        if (!id.ok())
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
             co_return;
         cmd::StringOptions so;
         so.defaultValue = "1:100";
@@ -250,8 +279,8 @@ public:
             ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
             co_return;
         }
-        report(ctx, layout::setViewportScale(ctx.tx(), target, static_cast<int>(id.value), n),
-               "Viewport " + std::to_string(id.value) +
+        report(ctx, layout::setViewportScale(ctx.tx(), target, vpId, n),
+               "Viewport " + std::to_string(vpId) +
                    " is now 1:" + std::to_string(static_cast<long long>(n)));
     }
 };
@@ -285,14 +314,16 @@ public:
                         "\" (sub-layers: use the layer panel).");
             co_return;
         }
-        auto vp = co_await ctx.getInteger("Viewport number");
-        if (!vp.ok())
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
             co_return;
         report(ctx,
-               layout::setViewportLayerFrozen(ctx.tx(), target, static_cast<int>(vp.value),
-                                              layer->id, action.keyword == "Freeze"),
+               layout::setViewportLayerFrozen(ctx.tx(), target, vpId, layer->id,
+                                              action.keyword == "Freeze"),
                action.keyword + (action.keyword == "Freeze" ? "n " : "d ") + layer->name +
-                   " in viewport " + std::to_string(vp.value) + ".");
+                   " in viewport " + std::to_string(vpId) + ".");
     }
 };
 
@@ -307,8 +338,10 @@ public:
         std::string target;
         if (!requireLayout(ctx, target))
             co_return;
-        auto vp = co_await ctx.getInteger("Viewport number");
-        if (!vp.ok())
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
             co_return;
         cmd::StringOptions so;
         so.allowEmpty = true;
@@ -327,10 +360,138 @@ public:
             }
             level = found->id;
         }
-        report(ctx, layout::setViewportLevel(ctx.tx(), target, static_cast<int>(vp.value), level),
+        report(ctx, layout::setViewportLevel(ctx.tx(), target, vpId, level),
                level.value == 0
-                   ? "Viewport " + std::to_string(vp.value) + " shows all levels."
-                   : "Viewport " + std::to_string(vp.value) + " shows only " + name.text + ".");
+                   ? "Viewport " + std::to_string(vpId) + " shows all levels."
+                   : "Viewport " + std::to_string(vpId) + " shows only " + name.text + ".");
+    }
+};
+
+// VPDELETE, VPMOVE, VPRESIZE, VPCENTER: the rest of what a drafter does to a viewport.
+class VpDeleteCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPDELETE"; }
+    std::string_view description() const override {
+        return "Delete a viewport of the current layout";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        report(ctx, layout::removeViewport(ctx.tx(), target, vpId),
+               "Viewport " + std::to_string(vpId) + " deleted.");
+    }
+};
+
+class VpMoveCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPMOVE"; }
+    std::string_view description() const override { return "Move a viewport on the sheet"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        const auto lay = layout::findLayout(ctx.doc(), target);
+        const layout::Viewport* vp = lay ? lay->findViewport(vpId) : nullptr;
+        if (!vp) {
+            ctx.message("No viewport " + std::to_string(vpId) + ".");
+            co_return;
+        }
+        const BBox2 rect = vp->paper;
+        auto from = co_await ctx.getPoint("Specify base point (sheet mm)");
+        if (!from.ok())
+            co_return;
+        cmd::PointOptions po;
+        po.base = from.point;
+        po.preview = [rect, from = from.point](Vec2 to, DisplayList& out) {
+            const Vec2 d = to - from;
+            DisplayPolyline pl;
+            pl.closed = true;
+            pl.pts = {rect.min + d,
+                      {rect.max.x + d.x, rect.min.y + d.y},
+                      rect.max + d,
+                      {rect.min.x + d.x, rect.max.y + d.y}};
+            out.items.emplace_back(std::move(pl));
+        };
+        auto to = co_await ctx.getPoint("Specify second point (sheet mm)", po);
+        if (!to.ok())
+            co_return;
+        const Vec2 d = to.point - from.point;
+        BBox2 moved;
+        moved.expand(rect.min + d);
+        moved.expand(rect.max + d);
+        report(ctx, layout::setViewportRect(ctx.tx(), target, vpId, moved),
+               "Viewport " + std::to_string(vpId) + " moved.");
+    }
+};
+
+class VpResizeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPRESIZE"; }
+    std::string_view description() const override {
+        return "Give a viewport new corners on the sheet";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        auto a = co_await ctx.getPoint("Specify first corner on the sheet (mm)");
+        if (!a.ok())
+            co_return;
+        cmd::PointOptions po;
+        po.base = a.point;
+        po.preview = [first = a.point](Vec2 c, DisplayList& out) {
+            DisplayPolyline pl;
+            pl.closed = true;
+            pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
+            out.items.emplace_back(std::move(pl));
+        };
+        auto b = co_await ctx.getPoint("Specify opposite corner on the sheet (mm)", po);
+        if (!b.ok())
+            co_return;
+        BBox2 rect;
+        rect.expand(a.point);
+        rect.expand(b.point);
+        report(ctx, layout::setViewportRect(ctx.tx(), target, vpId, rect),
+               "Viewport " + std::to_string(vpId) + " resized.");
+    }
+};
+
+class VpCenterCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPCENTER"; }
+    std::string_view description() const override {
+        return "Change which model point a viewport shows at its middle";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        auto c = co_await ctx.getPoint("Specify the model point at the viewport centre");
+        if (!c.ok())
+            co_return;
+        report(ctx, layout::setViewportCenter(ctx.tx(), target, vpId, c.point),
+               "Viewport " + std::to_string(vpId) + " centred.");
     }
 };
 
@@ -388,6 +549,10 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<VpScaleCommand>());
     (void)registry.add(std::make_unique<VpLayerCommand>());
     (void)registry.add(std::make_unique<VpLevelCommand>());
+    (void)registry.add(std::make_unique<VpDeleteCommand>());
+    (void)registry.add(std::make_unique<VpMoveCommand>());
+    (void)registry.add(std::make_unique<VpResizeCommand>());
+    (void)registry.add(std::make_unique<VpCenterCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
 }
 

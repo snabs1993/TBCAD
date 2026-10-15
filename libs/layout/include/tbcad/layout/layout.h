@@ -67,6 +67,9 @@ Result<int> addViewport(Transaction& tx, const std::string& layout, const BBox2&
 Result<void> removeViewport(Transaction& tx, const std::string& layout, int id);
 Result<void> setViewportScale(Transaction& tx, const std::string& layout, int id, double scaleN);
 Result<void> setViewportCenter(Transaction& tx, const std::string& layout, int id, Vec2 center);
+// Moves or resizes the rectangle on the sheet; what it shows keeps its scale and centre.
+Result<void> setViewportRect(Transaction& tx, const std::string& layout, int id,
+                             const BBox2& paperRect);
 Result<void> setViewportOn(Transaction& tx, const std::string& layout, int id, bool on);
 // Freezes or thaws one layer in one viewport only; the layer table is not touched.
 Result<void> setViewportLayerFrozen(Transaction& tx, const std::string& layout, int id,
