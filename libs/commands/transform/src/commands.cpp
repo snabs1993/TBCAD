@@ -392,6 +392,12 @@ public:
             co_return;
         PointOptions co;
         co.base = c1.point;
+        co.preview = [first = c1.point](Vec2 c, DisplayList& out) {  // the crossing window
+            DisplayPolyline pl;
+            pl.closed = true;
+            pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
+            out.items.emplace_back(std::move(pl));
+        };
         auto c2 = co_await ctx.getPoint("Specify opposite corner", std::move(co));
         if (!c2.ok())
             co_return;
@@ -403,6 +409,14 @@ public:
             ctx.message("Nothing to stretch in the window.");
             co_return;
         }
+        // Only objects with an end point or vertex inside the window move; say how many do.
+        const std::size_t movable = stretchByWindow(ctx.doc(), ids, window, {1, 0}).size();
+        if (movable == 0) {
+            ctx.message(
+                "No end point or vertex lies inside the crossing window; nothing to stretch.");
+            co_return;
+        }
+        ctx.message(std::to_string(movable) + " found in the crossing window.");
         auto base = co_await ctx.getPoint("Specify base point");
         if (!base.ok())
             co_return;

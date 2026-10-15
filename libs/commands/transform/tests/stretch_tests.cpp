@@ -43,6 +43,14 @@ TEST_CASE("STRETCH moves the polyline vertices inside the window") {
     CHECK(near(v[2].p, {60, 50}));
 }
 
+TEST_CASE("STRETCH says so when no end point lies inside the window") {
+    Fixture f;
+    add(f.doc, LineData{{0, 0}, {100, 0}});
+    auto r = f.host.run("STRETCH", {"40,-10", "60,10"});  // crosses the middle only
+    CHECK(r.finished);
+    CHECK(f.host.logContains("nothing to stretch"));
+}
+
 TEST_CASE("STRETCH with an empty window changes nothing") {
     Fixture f;
     auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
