@@ -316,6 +316,7 @@ public:
     std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
     BlockId drawingOwner() const override;
     void setView(const cmd::ViewState& v) override;
+    BBox2 viewExtents() const override;
     void setPreview(const DisplayList* list) override;
     void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
     // Requests commands made since the last call ("settings"), oldest first.
