@@ -18,7 +18,8 @@ namespace tbcad::hatchcmd {
 struct Params {
     std::string pattern = "LINE45";
     double scale = 1;
-    double angle = 0;  // radians
+    bool scaleAuto = true;  // never set by the user: sized to the area when a hatch is made
+    double angle = 0;       // radians
     Vec2 base{};
     double gap = 0;           // mm; 0 = boundaries must be closed
     bool associative = true;  // the hatch follows its boundary objects
@@ -82,8 +83,10 @@ inline Params loadParams(const cmd::IHost& host) {
     if (auto v = host.setting(kSettingPattern); v && hatch::PatternRegistry::find(*v))
         p.pattern = hatch::PatternRegistry::find(*v)->name;
     double d = 0;
-    if (auto v = host.setting(kSettingScale); v && parseNumber(*v, d) && d > 0)
+    if (auto v = host.setting(kSettingScale); v && parseNumber(*v, d) && d > 0) {
         p.scale = d;
+        p.scaleAuto = false;
+    }
     if (auto v = host.setting(kSettingAngle); v && parseNumber(*v, d))
         p.angle = d * kPi / 180.0;
     if (auto v = host.setting(kSettingBase)) {
@@ -110,7 +113,8 @@ inline Params loadParams(const cmd::IHost& host) {
 
 inline void saveParams(cmd::IHost& host, const Params& p) {
     host.setSetting(kSettingPattern, p.pattern);
-    host.setSetting(kSettingScale, number(p.scale));
+    if (!p.scaleAuto)
+        host.setSetting(kSettingScale, number(p.scale));
     host.setSetting(kSettingAngle, number(p.angle * 180.0 / kPi));
     host.setSetting(kSettingBase, number(p.base.x) + "," + number(p.base.y));
     host.setSetting(kSettingGap, number(p.gap));
