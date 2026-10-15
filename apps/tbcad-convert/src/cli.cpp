@@ -16,6 +16,7 @@
 #include "tbcad/dxf/encoding.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::convert {
 
@@ -89,7 +90,7 @@ std::optional<dxf::Encoding> parseEncoding(const std::string& text) {
 }
 
 bool readFile(const std::string& path, std::vector<std::byte>& bytes) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(platform::longPath(platform::pathFromUtf8(path)), std::ios::binary);
     if (!f)
         return false;
     std::vector<char> raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -100,7 +101,7 @@ bool readFile(const std::string& path, std::vector<std::byte>& bytes) {
 }
 
 bool writeText(const std::string& path, const std::string& text) {
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(platform::longPath(platform::pathFromUtf8(path)), std::ios::binary);
     if (!f)
         return false;
     f << text;
@@ -267,7 +268,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         if (!writeText(output, exported.value().bytes))
             return fail("cannot write " + output, report);
     } else {
-        Result<void> written = io::writeTbcad(*imported.document, std::filesystem::path(output));
+        Result<void> written = io::writeTbcad(*imported.document, platform::pathFromUtf8(output));
         if (!written)
             return fail("cannot write " + output + ": " + written.error().message, report);
     }

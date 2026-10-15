@@ -3,7 +3,7 @@
 # another DWG reader can replace libs/dwg here without touching the application.
 tbcad_add_library(dwgopen
   SOURCES src/dwgopen.cpp
-  DEPENDS tbcad::appcore tbcad::dwg tbcad::dxf tbcad::xref)
+  DEPENDS tbcad::appcore tbcad::dwg tbcad::dxf tbcad::xref tbcad::platform)
 
 tbcad_add_tests(dwgopen
   SOURCES
