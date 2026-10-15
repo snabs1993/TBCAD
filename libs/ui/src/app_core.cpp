@@ -1264,11 +1264,32 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         if (inPaperSpace())
             return;
     }
+    retileIfFragmented();
     if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
         lastTessellatedFor_ = camera_;
     }
+}
+
+// Tiles are sized when a drawing opens. A drawing that grew a lot since (generated, pasted,
+// inserted) can end up with thousands of tiny tiles, each drawn with several draw calls, which is
+// what makes a big view slow. Re-tile once when that happens.
+void AppCore::retileIfFragmented() {
+    const std::size_t count = scene_.entityCount();
+    if (count < 20000 || scene_.tiles().size() < 512)
+        return;
+    if (count < retileCheckedAt_ * 2 && retileCheckedAt_ != 0)
+        return;
+    retileCheckedAt_ = count;
+    const double wanted = render::Scene::suggestTileSize(drawingExtents());
+    if (wanted < scene_.tileSize() * 1.9)
+        return;
+    session_->sync->setPixelSize(camera_.pixelSizeMm());
+    session_->sync->rebuildAll(wanted);
+    scene_.setSelected(selection_);
+    lastTessellatedFor_ = camera_;
+    ++generation_;
 }
 
 std::optional<std::vector<EntityId>> AppCore::entitiesInWindow(const BBox2& window) const {
@@ -1368,6 +1389,9 @@ void AppCore::pointerLeft() {
 void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
     // A picked member brings its whole group along (GROUP).
     const std::vector<EntityId> ids = expandGroups(session_->doc, picked);
+    // Picks come from the selection queries, which already skip hidden and locked objects, so
+    // only the extra group members need the check; a big window select then skips 150k lookups.
+    const bool trusted = ids.size() == picked.size();
     std::vector<EntityId> sel;
     if (remove) {
         std::unordered_set<EntityId> drop(ids.begin(), ids.end());
@@ -1375,6 +1399,19 @@ void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
         for (EntityId id : selection_)
             if (!drop.count(id))
                 sel.push_back(id);
+    } else if (selection_.empty()) {
+        sel = ids;
+        // Strictly increasing ids cannot repeat; anything else needs the de-duplication.
+        if (!std::is_sorted(sel.begin(), sel.end()) ||
+            std::adjacent_find(sel.begin(), sel.end()) != sel.end()) {
+            std::unordered_set<EntityId> seen;
+            std::vector<EntityId> unique;
+            unique.reserve(sel.size());
+            for (EntityId id : sel)
+                if (seen.insert(id).second)
+                    unique.push_back(id);
+            sel = std::move(unique);
+        }
     } else {
         std::unordered_set<EntityId> have(selection_.begin(), selection_.end());
         sel = selection_;
@@ -1382,7 +1419,12 @@ void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
             if (have.insert(id).second)
                 sel.push_back(id);
     }
-    setSelection(std::move(sel));
+    if (trusted) {
+        selection_ = std::move(sel);
+        scene_.setSelected(selection_);
+    } else {
+        setSelection(std::move(sel));
+    }
 }
 
 PanelContext AppCore::makePanelContext() {

@@ -76,6 +76,7 @@ int App::runGate() {
     // 2. Zoom extents, then draw.
     t0 = Clock::now();
     core.zoomExtents();
+    core.updateFrame();  // like every frame of the app: re-tiles a drawing that outgrew its tiles
     renderDrawingOnce(true);
     double firstFrameMs = msSince(t0);
     rep.line("zoom extents + first frame", firstFrameMs, "ms", "info", true);
@@ -87,6 +88,15 @@ int App::runGate() {
         frames.push_back(msSince(f0));
     }
     rep.line("static view, median frame", percentile(frames, 0.5), "ms", "info", true);
+    {
+        // Where a static frame goes: what was submitted, and how long the CPU spent on it
+        // (the rest of the frame time is the GPU).
+        const render::RenderStats& st = renderer_.stats();
+        rep.info("static frame: " + std::to_string(st.drawCalls) + " draw calls, " +
+                 std::to_string(st.vertices) + " vertices, " + std::to_string(st.tilesDrawn) +
+                 " tiles, " + std::to_string(st.uploadedBytes) + " bytes uploaded, cpu " +
+                 std::to_string(st.cpuMs) + " ms");
+    }
 
     // 3. Pan and zoom about the cursor.
     frames.clear();

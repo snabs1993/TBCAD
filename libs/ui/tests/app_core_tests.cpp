@@ -298,6 +298,19 @@ TEST_CASE("ZOOM is transparent inside another command") {
     CHECK(f.core->document().modelSpaceCount() == 1);
 }
 
+TEST_CASE("a drawing that outgrew its tiles is re-tiled once") {
+    Fixture f("retile");
+    f.core->submitText("DEVGEN LINES 40000");
+    const std::size_t before = f.core->scene().tiles().size();
+    CHECK(before >= 512);  // generated into the default small tiles
+    f.core->updateFrame();
+    CHECK(f.core->scene().tiles().size() < before / 4);
+    CHECK(f.core->scene().entityCount() == 40000);
+    const double tile = f.core->scene().tileSize();
+    f.core->updateFrame();  // settled: no further re-tiling
+    CHECK(f.core->scene().tileSize() == tile);
+}
+
 TEST_CASE("DEVGEN LINES makes the test drawing in one undo step") {
     Fixture f("devgen");
     f.core->submitText("DEVGEN LINES 5000");
