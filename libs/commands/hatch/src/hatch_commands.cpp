@@ -190,8 +190,10 @@ public:
                     ro.defaultValue = p.scale;
                     ro.min = 1e-6;
                     auto s = co_await ctx.getReal("Pattern scale", ro);
-                    if (s.ok())
+                    if (s.ok()) {
                         p.scale = s.value;
+                        p.scaleAuto = false;
+                    }
                 } else if (r.keyword == "Angle") {
                     cmd::AngleOptions ao;
                     ao.defaultValue = p.angle;
@@ -289,12 +291,27 @@ private:
                (p.associative ? "" : ", not linked");
     }
 
+    // Scale 1 suits small shapes; a big area (a framing plan in millimetres) would turn solid
+    // grey, so grow it in 1-2-5 steps to keep about 100 pattern units across the longer side.
+    static double autoScale(const HatchData& h) {
+        const BBox2 bb = hatchBounds(h);
+        const double extent = std::max(bb.max.x - bb.min.x, bb.max.y - bb.min.y);
+        const double raw = extent / 100.0;
+        if (!(raw > 1.5) || !std::isfinite(raw))
+            return 1;
+        const double decade = std::pow(10.0, std::floor(std::log10(raw)));
+        const double m = raw / decade;
+        return decade * (m >= 5 ? 5 : m >= 2 ? 2 : 1);
+    }
+
     std::size_t add(cmd::CommandContext& ctx, const Params& p, const Boundary& b) const {
         const Pattern* pattern = PatternRegistry::find(gradient_ ? "SOLID" : p.pattern);
         if (!pattern)
             return 0;
         ctx.checkpoint();
         Entity hatch = makeHatchEntity(b, *pattern, p.scale, p.angle, p.base);
+        if (p.scaleAuto)
+            entityAs<HatchData>(hatch)->patternScale = autoScale(*entityAs<HatchData>(hatch));
         if (!p.associative)
             entityAs<HatchData>(hatch)->sourceBoundary.clear();
         if (gradient_) {
