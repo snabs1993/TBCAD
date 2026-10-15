@@ -1,7 +1,5 @@
 #include "container/lz21.h"
 
-#include <cstring>
-
 namespace tbcad::dwg::detail {
 
 bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
@@ -93,7 +91,10 @@ bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
         }
         if (bad || literal > in.size() - src || literal > expected - dst)
             return fail("a literal run does not fit");
-        std::memcpy(out.data() + dst, in.data() + src, literal);
+        // Literal runs are stored back to front (checked against real files: the sizes in the
+        // file header only come out right that way).
+        for (std::uint32_t k = 0; k < literal; ++k)
+            out[dst + k] = in[src + literal - 1 - k];
         src += literal;
         dst += literal;
         literal = 0;

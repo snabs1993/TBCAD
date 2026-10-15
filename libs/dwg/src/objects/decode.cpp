@@ -353,6 +353,8 @@ private:
         BitReader r(body);
         std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
         out_.rawType[e.handle] = type;
+        if (type == 0x4E)
+            type = kHatch;  // HATCH has a fixed number in files that list it among the fixed types
         if (type >= 500) {
             const std::string cls = dxfNameOfClass(type);
             if (cls == "LWPOLYLINE")
@@ -2536,7 +2538,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r56: R2007 container; r55: class fields tried with both version layouts; r54: header "
+    return "r58: R2007 literal runs stored back to front; r57: HATCH read by its fixed type number "
+           "78; r56: R2007 container; r55: class fields "
+           "tried with both version layouts; r54: header "
            "read diagnostics; r53: "
            "dimension text height from the fixed height of its "
            "text style; r52: multi-line "

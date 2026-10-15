@@ -23,10 +23,11 @@ std::string expand(const std::vector<std::uint8_t>& in, std::size_t expected, bo
 
 TEST_CASE("R2007 compression: a short header, a literal run and a back reference") {
     // 0x22 starts the short header (two bytes skipped), 0x03 is the literal count, then the
-    // literals; 0x30 0x00 copies 3 bytes from one byte back and ends with no literals to follow.
+    // literals (stored back to front); 0x30 0x00 copies 3 bytes from one byte back and ends with no
+    // literals to follow.
     const std::vector<std::uint8_t> in = {0x22, 0x00, 0x00, 0x03, 'A', 'B', 'C', 0x30, 0x00};
     bool ok = false;
-    CHECK(expand(in, 6, &ok) == "ABCCCC");
+    CHECK(expand(in, 6, &ok) == "CBAAAA");
     CHECK(ok);
 }
 
@@ -36,7 +37,7 @@ TEST_CASE("R2007 compression: a literal run longer than the short form") {
     const std::string text = "0123456789";
     in.insert(in.end(), text.begin(), text.end());
     bool ok = false;
-    CHECK(expand(in, 10, &ok) == text);
+    CHECK(expand(in, 10, &ok) == std::string(text.rbegin(), text.rend()));
     CHECK(ok);
 }
 
