@@ -391,7 +391,11 @@ private:
         currentHandle_ = self.value;
         currentBody_ = body;
         currentBits_ = objBits;
-        mainEnd_ = strings.bitSize() != 0 ? strings.bitPos() : (objBits > 0 ? objBits - 1 : 0);
+        // The data of an R2004 object ends exactly at the stated size (checked against a real
+        // file); later releases and R2000 leave one bit.
+        const bool exactEnd = fmt_.r2004 && !fmt_.r2007;
+        mainEnd_ = strings.bitSize() != 0 ? strings.bitPos()
+                                          : (objBits > 0 ? objBits - (exactEnd ? 0 : 1) : 0);
         if (strings.bitSize() != 0)
             r.setStringStream(&strings);
         switch (type) {
@@ -940,7 +944,7 @@ private:
             xdicMissing_ = r.b();
         if (fmt_.r2013)
             r.b();  // object has data in the data store section
-        if (nolinksVariant_ != 0 || !fmt_.r2007)
+        if (nolinksVariant_ != 0 || !fmt_.r2004)
             c.nolinks = r.b();
         if (fmt_.r2004) {
             const ColorValue cv = readEnc(r);
@@ -970,7 +974,7 @@ private:
                       std::uint64_t self) {
         CommonBits c;
         ownedCount_ = 0;
-        if (fmt_.r2007 && type == kLine && nolinksVariant_ < 0) {
+        if (fmt_.r2004 && type == kLine && nolinksVariant_ < 0) {
             bool fits[2] = {false, false};
             for (int v = 0; v < 2; ++v) {
                 BitReader probe = r;
@@ -984,7 +988,7 @@ private:
             }
             nolinksVariant_ = fits[0] != fits[1] ? (fits[0] ? 1 : 0) : -1;
         }
-        if (fmt_.r2007 && (type == kInsert) && !insertCountKnown_) {
+        if (fmt_.r2004 && (type == kInsert) && !insertCountKnown_) {
             bool fits[2] = {false, false};
             for (int v = 0; v < 2; ++v) {
                 BitReader probe = r;
@@ -2539,7 +2543,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r62: R2007 system pages tried with 239 and 251 data bytes per block and a plausibility "
+    return "r63: R2004 entities read without the links flag, data end exact; r62: R2007 system "
+           "pages tried with 239 and 251 data bytes per block and a plausibility "
            "check; r61: R2004 objects found by walking the stream like R2010; r60: R2007 page map "
            "and "
            "section map block counts found by trial, data page coding "
