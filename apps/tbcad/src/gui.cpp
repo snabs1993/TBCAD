@@ -2374,6 +2374,10 @@ void Gui::panels() {
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
     pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    pc.cancelCommand = [this] {
+        if (core_.runner().active())
+            core_.pressEscape();
+    };
     pc.commandActive = core_.runner().active();
     pc.drawPropertySections = [this, &pc](EntityId id) {
         const Entity* e = core_.document().find(id);

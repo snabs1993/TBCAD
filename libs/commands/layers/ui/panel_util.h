@@ -17,6 +17,8 @@ namespace tbcad::layers::ui_detail {
 inline void exec(tbcad::ui::PanelContext& ctx, const std::vector<std::string>& lines) {
     if (!ctx.runCommand)
         return;
+    if (ctx.cancelCommand)
+        ctx.cancelCommand();
     for (const std::string& l : lines)
         ctx.runCommand(l);
     ctx.runCommand("");
