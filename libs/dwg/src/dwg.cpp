@@ -58,7 +58,7 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
     }
     detail::Format fmt;
     fmt.r2004 = true;
-    fmt.r2007 = version >= Version::R2010;  // R2007 has its own container and is not read
+    fmt.r2007 = version >= Version::R2007;  // from R2007 on strings and handles have streams
     fmt.r2010 = version >= Version::R2010;
     fmt.r2013 = version >= Version::R2013;
     fmt.r2018 = version >= Version::R2018;
@@ -113,14 +113,6 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.error(code::kUnsupportedVersion, msg);
         return makeError(ErrorCode::Parse, msg);
     }
-    if (v.version == Version::R2007) {
-        const std::string msg =
-            "this drawing is a DWG saved by the 2007-2009 releases (AC1021), which TBCAD cannot "
-            "read yet; save it as a 2010 or later (or 2004) DWG, or as DXF, and open that";
-        report.error(code::kUnsupportedVersion, msg);
-        return makeError(ErrorCode::Parse, msg);
-    }
-
     const Bytes file(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
     std::vector<std::string> notes;
     detail::Drawing drawing;
@@ -556,7 +548,7 @@ std::string describe(std::span<const std::byte> bytes) {
     if (v.code.empty())
         return out;
     const Bytes file(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
-    if (v.version >= Version::R2004 && v.version != Version::R2007) {
+    if (v.version >= Version::R2004) {
         std::vector<std::string> notes, trace;
         auto sections = detail::readSections(file, notes, &trace);
         for (const std::string& t : trace)
@@ -607,7 +599,7 @@ std::string describe(std::span<const std::byte> bytes) {
                     line("note: " + n);
                 detail::Format fmt;
                 fmt.r2004 = true;
-                fmt.r2007 = v.version >= Version::R2010;
+                fmt.r2007 = v.version >= Version::R2007;
                 fmt.r2010 = v.version >= Version::R2010;
                 fmt.r2013 = v.version >= Version::R2013;
                 fmt.r2018 = v.version >= Version::R2018;

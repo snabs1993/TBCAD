@@ -6,6 +6,7 @@
 
 #include "bits/bit_reader.h"
 #include "container/lz77.h"
+#include "container/r2007.h"
 
 namespace tbcad::dwg::detail {
 
@@ -111,6 +112,8 @@ Result<SectionSet> readSections(Bytes file, std::vector<std::string>& notes,
     };
     if (file.size() < 0x100)
         return makeError(ErrorCode::Parse, "the DWG file is too short");
+    if (std::memcmp(file.data(), "AC1021", 6) == 0)
+        return readSections2007(file, notes, trace);
     SectionSet set;
     set.maintenance = file[0x0B];
     set.codepage = static_cast<int>(file[0x13]) | (static_cast<int>(file[0x14]) << 8);
