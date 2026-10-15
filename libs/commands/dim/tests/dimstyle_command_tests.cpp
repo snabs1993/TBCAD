@@ -150,35 +150,34 @@ TEST_CASE("without a view a big drawing still gets readable dimension text") {
     const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
     REQUIRE(scaled);  // 20000 / 160 / 2.5 = 50
     CHECK(f.doc.header().currentDimStyle == scaled->id);
+}
 
-    TEST_CASE("DIMSETUP gives only the selected dimensions a style or an overall scale") {
-        Fixture f;
-        f.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});
-        f.host->run("DIMLINEAR", {"0,50", "100,50", "50,70"});
-        std::vector<EntityId> ids;
-        f.doc.forEachEntity([&](const Entity& e) {
-            if (entityAs<DimensionData>(e))
-                ids.push_back(e.common.id);
-        });
-        REQUIRE(ids.size() == 2);
-        auto styleOf = [&](EntityId id) { return entityAs<DimensionData>(*f.doc.find(id))->style; };
-        CHECK(f.host
-                  ->run("DIMSETUP",
-                        {ScriptItem::select({ids[0]}), ScriptItem::enter(), "Scale", "50"})
-                  .finished);
-        const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
-        REQUIRE(scaled);
-        CHECK(scaled->overallScale == doctest::Approx(50));
-        CHECK(styleOf(ids[0]) == scaled->id);
-        CHECK(styleOf(ids[1]) != scaled->id);  // untouched
-        CHECK(f.doc.dimStyle(kDimStyleStandard)->overallScale == doctest::Approx(1));
-        // Both together: the second joins the same copy, no duplicate is made.
-        f.host->run("DIMSETUP", {ScriptItem::select(ids), ScriptItem::enter(), "Scale", "50"});
-        CHECK(styleOf(ids[1]) == scaled->id);
-        CHECK(f.doc.dimStyles().size() == 2);
-        // Back to a named style.
-        f.host->run("DIMSETUP",
-                    {ScriptItem::select(ids), ScriptItem::enter(), "Style", "Standard"});
-        CHECK(styleOf(ids[0]) == kDimStyleStandard);
-        CHECK(f.host->undo());
-    }
+TEST_CASE("DIMSETUP gives only the selected dimensions a style or an overall scale") {
+    Fixture f;
+    f.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});
+    f.host->run("DIMLINEAR", {"0,50", "100,50", "50,70"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            ids.push_back(e.common.id);
+    });
+    REQUIRE(ids.size() == 2);
+    auto styleOf = [&](EntityId id) { return entityAs<DimensionData>(*f.doc.find(id))->style; };
+    CHECK(
+        f.host->run("DIMSETUP", {ScriptItem::select({ids[0]}), ScriptItem::enter(), "Scale", "50"})
+            .finished);
+    const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
+    REQUIRE(scaled);
+    CHECK(scaled->overallScale == doctest::Approx(50));
+    CHECK(styleOf(ids[0]) == scaled->id);
+    CHECK(styleOf(ids[1]) != scaled->id);  // untouched
+    CHECK(f.doc.dimStyle(kDimStyleStandard)->overallScale == doctest::Approx(1));
+    // Both together: the second joins the same copy, no duplicate is made.
+    f.host->run("DIMSETUP", {ScriptItem::select(ids), ScriptItem::enter(), "Scale", "50"});
+    CHECK(styleOf(ids[1]) == scaled->id);
+    CHECK(f.doc.dimStyles().size() == 2);
+    // Back to a named style.
+    f.host->run("DIMSETUP", {ScriptItem::select(ids), ScriptItem::enter(), "Style", "Standard"});
+    CHECK(styleOf(ids[0]) == kDimStyleStandard);
+    CHECK(f.host->undo());
+}
