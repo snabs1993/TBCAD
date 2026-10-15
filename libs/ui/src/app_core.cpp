@@ -209,6 +209,7 @@ void AppCore::leavePaper() {
     activeLayout_.clear();
     paper_.clear();
     lastTessellatedFor_ = {};
+    settings_.setString("plot.layout", "");  // PLOT follows what is on screen
 }
 
 bool AppCore::setActiveLayout(const std::string& name) {
@@ -232,6 +233,7 @@ bool AppCore::setActiveLayout(const std::string& name) {
         return false;
     }
     activeLayout_ = name;
+    settings_.setString("plot.layout", name);  // PLOT follows what is on screen
     paperRevision_ = session_->doc.revision();
     camera_.fit(paper_.sheet());
     return true;
