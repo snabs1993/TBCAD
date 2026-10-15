@@ -1,3 +1,4 @@
+#include <array>
 #include <cfloat>
 #include <cstdlib>
 #include <filesystem>
@@ -316,16 +317,16 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
         } else {
             f.error.clear();
             auto flag = [](bool v) { return std::string(v ? "1" : "0"); };
-            ctx.host->setSetting("attdef.tag", tag);
-            ctx.host->setSetting("attdef.prompt", f.prompt);
-            ctx.host->setSetting("attdef.default", f.defaultValue);
-            ctx.host->setSetting("attdef.invisible", flag(f.invisible));
-            ctx.host->setSetting("attdef.constant", flag(f.constant));
-            ctx.host->setSetting("attdef.verify", flag(f.verify));
-            ctx.host->setSetting("attdef.preset", flag(f.preset));
+            ctx.host->setSetting("tmp.attdef.tag", tag);
+            ctx.host->setSetting("tmp.attdef.prompt", f.prompt);
+            ctx.host->setSetting("tmp.attdef.default", f.defaultValue);
+            ctx.host->setSetting("tmp.attdef.invisible", flag(f.invisible));
+            ctx.host->setSetting("tmp.attdef.constant", flag(f.constant));
+            ctx.host->setSetting("tmp.attdef.verify", flag(f.verify));
+            ctx.host->setSetting("tmp.attdef.preset", flag(f.preset));
             ctx.host->setSetting("attdef.height", std::to_string(f.height));
-            ctx.host->setSetting("attdef.rotation", std::to_string(f.rotation));
-            ctx.host->setSetting("attdef.go", "1");
+            ctx.host->setSetting("tmp.attdef.rotation", std::to_string(f.rotation));
+            ctx.host->setSetting("tmp.attdef.go", "1");
             ctx.host->closePanel("attdef");
             if (ctx.cancelCommand)
                 ctx.cancelCommand();
@@ -338,6 +339,58 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
         ctx.host->closePanel("attdef");
 }
 
+// The attribute values INSERT asks for after the block is placed: one field per attribute. OK
+// stores "tag<US>value<RS>..." in tmp.insatt.result and presses Enter for INSERT; Cancel ends it.
+void drawAttValuesPanel(ui::PanelContext& ctx) {
+    static std::string shownFor;
+    static std::vector<std::array<std::string, 3>> rows;  // tag, label, value
+    if (!ctx.host)
+        return;
+    const std::string fields = ctx.host->setting("tmp.insatt.fields").value_or("");
+    if (fields.empty() || !ctx.commandActive) {
+        ImGui::TextDisabled("No attribute values are being asked for.");
+        return;
+    }
+    if (fields != shownFor) {
+        shownFor = fields;
+        rows.clear();
+        std::size_t at = 0;
+        while (at < fields.size()) {
+            const std::size_t end = fields.find('\x1e', at);
+            const std::string rec = fields.substr(at, end - at);
+            const std::size_t a = rec.find('\x1f');
+            const std::size_t b = a == std::string::npos ? a : rec.find('\x1f', a + 1);
+            if (b != std::string::npos)
+                rows.push_back({rec.substr(0, a), rec.substr(a + 1, b - a - 1), rec.substr(b + 1)});
+            if (end == std::string::npos)
+                break;
+            at = end + 1;
+        }
+    }
+    ImGui::Text("Attributes of %s", ctx.host->setting("tmp.insatt.block").value_or("").c_str());
+    ImGui::Separator();
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::InputText(rows[i][1].c_str(), &rows[i][2], ImGuiInputTextFlags_AutoSelectAll);
+        ImGui::PopID();
+    }
+    if (ImGui::Button("OK")) {
+        std::string result;
+        for (const auto& r : rows)
+            result += r[0] + "\x1f" + r[2] + "\x1e";
+        ctx.host->setSetting("tmp.insatt.result", result);
+        shownFor.clear();
+        if (ctx.runCommand)
+            ctx.runCommand("");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        shownFor.clear();
+        if (ctx.cancelCommand)
+            ctx.cancelCommand();
+    }
+}
+
 }  // namespace
 
 #endif
@@ -346,6 +399,7 @@ void registerBlockPanel(ui::UiRegistry& ui) {
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
     ui.addPanel("blocks", "Blocks", drawBlockPanel, false);
     ui.addPanel("attdef", "Define Attribute", drawAttDefPanel, false);
+    ui.addPanel("attvalues", "Attribute Values", drawAttValuesPanel, false);
 #else
     (void)ui;
 #endif

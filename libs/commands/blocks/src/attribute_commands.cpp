@@ -36,21 +36,22 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         AttDefInfo info;
         const bool dialog = !lineOnly_ && ctx.host().dialogsAvailable();
-        if (dialog && settingOf(ctx.host(), "attdef.go") != "1") {
+        if (dialog && settingOf(ctx.host(), "tmp.attdef.go") != "1") {
             ctx.host().openPanel("attdef");
             co_return;
         }
         if (dialog) {
-            ctx.host().setSetting("attdef.go", "0");
-            info.tag = blocks::normalizeTag(cmd::trim(settingOf(ctx.host(), "attdef.tag")));
-            info.invisible = settingOf(ctx.host(), "attdef.invisible") == "1";
-            info.constant = settingOf(ctx.host(), "attdef.constant") == "1";
-            info.verify = settingOf(ctx.host(), "attdef.verify") == "1";
-            info.preset = settingOf(ctx.host(), "attdef.preset") == "1";
-            info.prompt = info.constant ? std::string() : settingOf(ctx.host(), "attdef.prompt");
+            ctx.host().setSetting("tmp.attdef.go", "0");
+            info.tag = blocks::normalizeTag(cmd::trim(settingOf(ctx.host(), "tmp.attdef.tag")));
+            info.invisible = settingOf(ctx.host(), "tmp.attdef.invisible") == "1";
+            info.constant = settingOf(ctx.host(), "tmp.attdef.constant") == "1";
+            info.verify = settingOf(ctx.host(), "tmp.attdef.verify") == "1";
+            info.preset = settingOf(ctx.host(), "tmp.attdef.preset") == "1";
+            info.prompt =
+                info.constant ? std::string() : settingOf(ctx.host(), "tmp.attdef.prompt");
             if (info.prompt.empty() && !info.constant)
                 info.prompt = info.tag;
-            info.defaultValue = settingOf(ctx.host(), "attdef.default");
+            info.defaultValue = settingOf(ctx.host(), "tmp.attdef.default");
             if (auto ok = blocks::validateTag(info.tag); !ok.ok()) {
                 ctx.message(ok.error().message);
                 co_return;
@@ -115,7 +116,7 @@ public:
                                                              : height;
         double heightValue = height, rotation = 0.0;
         if (dialog) {  // the dialog already asked
-            const std::string r = settingOf(ctx.host(), "attdef.rotation");
+            const std::string r = settingOf(ctx.host(), "tmp.attdef.rotation");
             rotation = std::strtod(r.c_str(), nullptr) * kPi / 180.0;
         } else {
             auto h = co_await ctx.getReal("Specify text height <" + formatNumber(height) + ">",

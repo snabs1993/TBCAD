@@ -381,6 +381,7 @@ private:
     std::vector<std::string> panelRequests_{};
     std::vector<std::string> panelCloses_{};
     bool dialogsAvailable_ = false;
+    std::map<std::string, std::string> transient_{};  // "tmp.*" settings: not saved
     platform::Settings settings_;
     platform::Keybindings keybindings_;
     std::vector<std::string> startupWarnings_{};

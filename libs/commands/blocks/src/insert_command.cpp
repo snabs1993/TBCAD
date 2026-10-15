@@ -110,7 +110,7 @@ public:
             for (;;) {
                 cmd::PointOptions po;
                 po.keywords = {"Scale", "X", "Y", "Rotate", "Multiple"};
-                po.allowNone = false;
+                po.allowNone = placed > 0;  // Enter ends a Multiple series
                 po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
                     InsertData d = data;
                     d.position = cursor;
@@ -167,7 +167,48 @@ public:
             }
 
             // Attribute values. Preset and constant attributes are not asked for.
-            if (ctx.host().setting(kAttReqSetting).value_or("1") != "0") {
+            if (ctx.host().setting(kAttReqSetting).value_or("1") != "0" &&
+                ctx.host().dialogsAvailable()) {
+                // One small dialog for all the values instead of a prompt for each.
+                std::string fields;
+                for (const Entity* ad : blocks::attributeDefinitions(doc, block)) {
+                    const AttDefInfo& info = *entityAs<TextData>(*ad)->attdef;
+                    if (info.constant || info.preset)
+                        continue;
+                    for (const AttribValue& v : data.attribs)
+                        if (v.tag == info.tag)
+                            fields += v.tag + "\x1f" +
+                                      (info.prompt.empty() ? info.tag : info.prompt) + "\x1f" +
+                                      v.value + "\x1e";
+                }
+                if (!fields.empty()) {
+                    ctx.host().setSetting("tmp.insatt.block", def->name);
+                    ctx.host().setSetting("tmp.insatt.fields", fields);
+                    ctx.host().setSetting("tmp.insatt.result", "");
+                    ctx.host().openPanel("attvalues");
+                    auto r = co_await ctx.getString(
+                        "Attribute values: fill in the panel and press OK, or Enter for the "
+                        "defaults",
+                        cmd::StringOptions{.allowEmpty = true});
+                    ctx.host().closePanel("attvalues");
+                    if (!r.ok())
+                        co_return;
+                    const std::string result = ctx.host().setting("tmp.insatt.result").value_or("");
+                    std::size_t at = 0;
+                    while (at < result.size()) {
+                        const std::size_t end = result.find('\x1e', at);
+                        const std::string rec = result.substr(at, end - at);
+                        const std::size_t sep = rec.find('\x1f');
+                        if (sep != std::string::npos)
+                            for (AttribValue& v : data.attribs)
+                                if (v.tag == rec.substr(0, sep))
+                                    v.value = rec.substr(sep + 1);
+                        if (end == std::string::npos)
+                            break;
+                        at = end + 1;
+                    }
+                }
+            } else if (ctx.host().setting(kAttReqSetting).value_or("1") != "0") {
                 for (const Entity* ad : blocks::attributeDefinitions(doc, block)) {
                     const AttDefInfo& info = *entityAs<TextData>(*ad)->attdef;
                     if (info.constant || info.preset)
@@ -210,7 +251,7 @@ public:
                 }
             }
             if (multiple)
-                ctx.checkpoint();  // each copy is its own undo step and shows at once
+                ctx.checkpoint();  // each copy shows at once and survives Esc
             auto added = ctx.tx().add(std::move(e));
             if (!added) {
                 ctx.message(added.error().message);
