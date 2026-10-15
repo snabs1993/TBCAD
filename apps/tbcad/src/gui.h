@@ -169,6 +169,7 @@ private:
     ui::WorkspaceStore workspaces_;
     std::string workspaceName_{};  // the one last switched to or saved
     bool dockFallbackTried_ = false;
+    std::string focusPanel_{};  // window title to bring to the front of its tab group
     int frontLayersIn_ = 0;     // frames until the Layers tab is brought to the front
     bool rebuildDock_ = false;  // rebuild the default docking layout next frame
     bool openWorkspaceSave_ = false;

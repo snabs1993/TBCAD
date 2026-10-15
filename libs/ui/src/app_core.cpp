@@ -1559,12 +1559,15 @@ void AppCore::doubleClick(const PointerState& p) {
     Vec2 world = makeRaw(p).worldCursor;
     auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
     const Entity* e = id ? session_->doc.find(*id) : nullptr;
-    if (!e || (kind(*e) != EntityKind::Text && kind(*e) != EntityKind::MText)) {
+    if (!e) {
         click(p);
         return;
     }
     applyPick({*id}, false);
-    submitText("TEXTEDIT");
+    if (kind(*e) == EntityKind::Text || kind(*e) == EntityKind::MText)
+        submitText("TEXTEDIT");
+    else
+        openPanel("properties");  // like AutoCAD: double click an object to see its properties
 }
 
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {

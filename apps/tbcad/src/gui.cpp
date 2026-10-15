@@ -2394,8 +2394,12 @@ void Gui::panels() {
         }
         pc.multiSelection = false;
     };
-    for (const std::string& id : core_.takePanelRequests())
+    for (const std::string& id : core_.takePanelRequests()) {
         panelOpen_[id] = true;
+        for (const auto& panel : registry_.panels())
+            if (panel.id == id)
+                focusPanel_ = panel.title;  // bring its tab to the front
+    }
     // A panel the saved layout has never seen (imgui.ini from an older version, or a panel added
     // later) is docked beside the Object Properties panel instead of floating over the tabs.
     ImGuiID sideDock = 0;
@@ -2775,6 +2779,10 @@ ViewportRect Gui::frame() {
         frontLayersIn_ = 0;
     if (frontLayersIn_ > 0 && --frontLayersIn_ == 0)
         ImGui::SetWindowFocus("Layers");
+    if (!focusPanel_.empty()) {
+        ImGui::SetWindowFocus(focusPanel_.c_str());
+        focusPanel_.clear();
+    }
     anyActivity_ = anyActivity_ || frontLayersIn_ > 0 || core_.flashing();
     logWindow();
 
