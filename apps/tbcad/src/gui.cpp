@@ -696,6 +696,21 @@ void Gui::shortcuts() {
         refocusInput_ = true;
     }
 
+    // Ctrl+V with the command line focused: its text field claims the chord (and pastes the system
+    // clipboard text, usually nothing), so the drawing paste never ran. Objects copied in TBCAD
+    // leave a marker as the clipboard text; an empty clipboard or the marker means "paste objects".
+    if (io.WantTextInput && input_.empty() && io.KeyCtrl && !io.KeyShift && !io.KeyAlt &&
+        ImGui::IsKeyPressed(ImGuiKey_V, ImGuiInputFlags_None)) {
+        const char* text = ImGui::GetClipboardText();
+        const bool ownText =
+            !text || !*text || std::string_view(text).rfind("[TBCAD objects", 0) == 0;
+        if (ownText && core_.registry().find("PASTECLIP")) {
+            ImGui::SetKeyOwner(ImGuiKey_V, ImGuiKeyOwner_NoOwner, ImGuiInputFlags_LockThisFrame);
+            runAction("edit.paste");
+            return;
+        }
+    }
+
     for (const auto& action : core_.keybindings().actions()) {
         auto chord = core_.keybindings().chordOf(action);
         if (!chord)

@@ -57,6 +57,8 @@ public:
         }
         std::size_t n = clip.entities.size();
         setCurrent(std::move(clip));
+        // Replaces stale text on the system clipboard, so Ctrl+V pastes these objects.
+        ctx.host().setSetting("clipboard.text", "[TBCAD objects]");
         if (cut_) {
             for (EntityId id : sel.ids)
                 (void)ctx.tx().erase(id);
