@@ -1736,7 +1736,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     // Command preview (rubber band, ghost geometry).
     if (hasPreview_) {
         render::OverlayStyle st;
-        st.color = {255, 255, 255, 255};
+        const Rgba ink = inPaperSpace() ? Rgba{20, 20, 20, 255} : Rgba{255, 255, 255, 255};
+        st.color = ink;
         st.widthPx = 1.0;
         st.dashPx = 6;
         st.gapPx = 4;
@@ -1754,8 +1755,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
                         overlay.polyline(render::Space::World, ring, true, solid);
             } else if (const auto* pts = std::get_if<DisplayPoints>(&item)) {
                 for (const Vec2& pt : pts->pts)
-                    overlay.marker(render::Space::World, pt, render::MarkerKind::Cross, 6,
-                                   {255, 255, 255, 255});
+                    overlay.marker(render::Space::World, pt, render::MarkerKind::Cross, 6, ink);
             }
         }
     }
@@ -1805,7 +1805,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         const double arm = mode == "short" ? std::max(8.0, camera_.viewportW * 0.05)
                                            : std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;
-        cross.color = ui::withAlpha(theme_.text, 0.6);
+        cross.color = inPaperSpace() ? Rgba{110, 110, 110, 200} : ui::withAlpha(theme_.text, 0.6);
         cross.widthPx = 1.0;
         if (mode != "off") {
             overlay.line(render::Space::Screen, {c.x - arm, c.y}, {c.x + arm, c.y}, cross);
@@ -1820,7 +1820,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             Vec2 box[4] = {
                 {c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}};
             render::OverlayStyle pb;
-            pb.color = ui::withAlpha(theme_.text, 0.85);
+            pb.color = inPaperSpace() ? Rgba{90, 90, 90, 230} : ui::withAlpha(theme_.text, 0.85);
             overlay.polyline(render::Space::Screen, box, true, pb);
         }
     }
