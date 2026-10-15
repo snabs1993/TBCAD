@@ -24,7 +24,6 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Text/Single-line Text", "TEXT");
     ui.addMenuItem("Draw/Text/Multiline Text", "MTEXT");
     ui.addMenuItem("Modify/Text/Edit Text", "TEXTEDIT");
-    ui.addMenuItem("Format/Text Style...", "STYLE");
     ui.addMenuItem("Format/Text Style Manager", "TEXTSTYLES", "format.textstyles");
     ui.addMenuItem("Draw/Text/Field", "FIELD");
     ui.addMenuItem("Format/Annotative Objects", "ANNOTATIVE");

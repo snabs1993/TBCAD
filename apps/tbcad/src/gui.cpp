@@ -741,8 +741,11 @@ void drawNode(const MenuNode& node, ui::AppCore& core, const platform::Keybindin
                         shortcut = aliases.front();
                 }
             }
-            if (ImGui::MenuItem(child.name.c_str(), shortcut.c_str()))
+            if (ImGui::MenuItem(child.name.c_str(), shortcut.c_str())) {
+                if (child.item->command == "HATCH" || child.item->command == "GRADIENT")
+                    core.openPanel("hatch");  // pattern and scale are set in the panel
                 core.submitText(child.item->command);
+            }
         } else if (ImGui::BeginMenu(child.name.c_str())) {
             drawNode(child, core, keys);
             ImGui::EndMenu();
@@ -986,8 +989,11 @@ void Gui::toolStrip() {
                 if (iconButton("##tool", t.icon, iconSize, enabled)) {
                     if (t.action)
                         runAction(t.action);
-                    else
+                    else {
+                        if (std::string_view(t.command) == "HATCH")
+                            core_.openPanel("hatch");
                         core_.submitText(t.command);
+                    }
                 }
                 ImGui::PopID();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort |
