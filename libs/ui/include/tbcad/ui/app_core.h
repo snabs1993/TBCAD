@@ -386,6 +386,8 @@ private:
     render::Camera2D modelCamera_{};
     std::uint64_t paperRevision_ = 0;
     render::Camera2D lastTessellatedFor_{};
+    std::size_t retileCheckedAt_ = 0;  // entity count of the last fragmentation check
+    void retileIfFragmented();
     Vec2 cursorWorld_{};
     bool cursorInside_ = false;
     Theme theme_ = darkTheme();
