@@ -38,8 +38,10 @@ std::string literalRun(const std::string& text) {
     std::vector<std::uint8_t> in;
     if (text.size() < 8)
         in = {0x22, 0x00, 0x00, static_cast<std::uint8_t>(text.size())};
-    else
+    else if (text.size() < 23)
         in = {static_cast<std::uint8_t>(text.size() - 8)};
+    else
+        in = {0x0F, static_cast<std::uint8_t>(text.size() - 23)};
     in.insert(in.end(), text.begin(), text.end());
     bool ok = false;
     const std::string out = expand(in, text.size(), &ok);
@@ -51,7 +53,7 @@ std::string literalRun(const std::string& text) {
 
 TEST_CASE("R2007 compression: literal runs are cut into blocks stored in the opposite order") {
     // Cuts found in real files: the blocks (stream order) of 5 are 4+1, of 6 are 1+4+1, of 9 are
-    // 8+1, of 10 are 1+1+8 and of 17 are 8+1+8; every block comes out as it is, in reverse order.
+    // 8+1, of 10 are 1+8+1 and of 17 are 8+1+8; every block comes out as it is, in reverse order.
     CHECK(literalRun("ab") == "ba");
     CHECK(literalRun("abc") == "cba");
     CHECK(literalRun("abcd") == "abcd");
@@ -59,8 +61,12 @@ TEST_CASE("R2007 compression: literal runs are cut into blocks stored in the opp
     CHECK(literalRun("abcdef") == "fbcdea");
     CHECK(literalRun("abcdefgh") == "abcdefgh");
     CHECK(literalRun("abcdefghi") == "iabcdefgh");
-    CHECK(literalRun("abcdefghij") == "cdefghijba");
+    CHECK(literalRun("abcdefghij") == "jbcdefghia");
     CHECK(literalRun("abcdefghijklmnopq") == "jklmnopqiabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrstuvw") == "wvuqrstijklmnopabcdefgh");
+    // Groups of 32 bytes: four blocks of eight in reverse order.
+    CHECK(literalRun("ABCDEFGHabcdefgh01234567xyzXYZwv") == "xyzXYZwv01234567abcdefghABCDEFGH");
+    CHECK(literalRun("ABCDEFGHabcdefgh01234567xyzXYZwv!") == "xyzXYZwv01234567abcdefghABCDEFGH!");
 }
 
 TEST_CASE("R2007 compression: the section map of a real file") {
