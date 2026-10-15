@@ -578,7 +578,37 @@ public:
                     std::to_string(ctx.lastPoint().y));
     }
 };
+
+class TypedPreview final : public Command {
+public:
+    std::string_view name() const override { return "TYPEDPREVIEW"; }
+    Task run(CommandContext& ctx) override {
+        StringOptions o;
+        o.textPreview = [](const std::string& text, DisplayList& out) {
+            DisplayPolyline pl;
+            for (size_t i = 0; i < text.size(); ++i)
+                pl.pts.push_back({double(i), 0});
+            out.items.emplace_back(std::move(pl));
+        };
+        auto s = co_await ctx.getString("Text", o);
+        (void)s;
+    }
+};
 }  // namespace
+
+TEST_CASE("a string prompt previews what is being typed") {
+    Document doc;
+    Registry reg;
+    (void)reg.add(std::make_unique<TypedPreview>());
+    ScriptHost host(doc, reg);
+    auto r = host.run("TYPEDPREVIEW", {});
+    CHECK(!r.finished);
+    host.runner().textEdited("abc");
+    REQUIRE(host.preview().items.size() == 1);
+    CHECK(std::get<DisplayPolyline>(host.preview().items[0]).pts.size() == 3);
+    host.runner().textEdited("");
+    CHECK(host.preview().items.empty());
+}
 
 TEST_CASE("CommandContext::lastPoint is the click that answered a distance prompt") {
     Document doc;

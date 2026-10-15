@@ -1719,6 +1719,14 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
                 if (pl->pts.size() >= 2)
                     overlay.polyline(render::Space::World, pl->pts, pl->closed, st);
+            } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
+                // Filled shapes (text glyphs) are previewed as solid outlines.
+                render::OverlayStyle solid = st;
+                solid.dashPx = 0;
+                solid.gapPx = 0;
+                for (const auto& ring : fill->rings)
+                    if (ring.size() >= 2)
+                        overlay.polyline(render::Space::World, ring, true, solid);
             } else if (const auto* pts = std::get_if<DisplayPoints>(&item)) {
                 for (const Vec2& pt : pts->pts)
                     overlay.marker(render::Space::World, pt, render::MarkerKind::Cross, 6,

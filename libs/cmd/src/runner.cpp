@@ -247,6 +247,18 @@ void CommandRunner::pointerMoved(const RawInput& raw) {
     }
 }
 
+void CommandRunner::textEdited(const std::string& text) {
+    if (stack_.empty() || !stack_.back().ctx->hasPending())
+        return;
+    const detail::PromptRequest& req = *stack_.back().ctx->pending();
+    if (req.kind != detail::PromptKind::String || !req.textPreview)
+        return;
+    previewList_.items.clear();
+    if (!text.empty())
+        req.textPreview(text, previewList_);
+    host_.setPreview(&previewList_);
+}
+
 bool CommandRunner::undo() {
     if (active()) {
         host_.print("Finish the current command first.");

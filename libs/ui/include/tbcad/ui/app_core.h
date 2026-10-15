@@ -308,6 +308,7 @@ public:
     std::string saveAsTemplate(std::string_view name) override;
     std::string newFromTemplate(std::string_view name) override;
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
+    void textEdited(const std::string& text) { runner().textEdited(text); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
     // Panels asked for since the last call (the window opens them).
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }

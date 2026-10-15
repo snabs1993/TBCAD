@@ -1943,6 +1943,9 @@ void Gui::commandWindow() {
 
 void Gui::updateSuggestions() {
     if (input_ != suggestFor_) {
+        if (const auto* prompt = core_.promptInfo();
+            prompt && prompt->kind == cmd::PromptInfo::Kind::String)
+            core_.textEdited(input_);  // TEXT / MTEXT draw what is typed
         suggestFor_ = input_;
         suggestSel_ = 0;
         suggestDismissed_ = false;

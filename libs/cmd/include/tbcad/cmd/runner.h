@@ -29,6 +29,8 @@ public:
     CommandRunner(const CommandRunner&) = delete;
     CommandRunner& operator=(const CommandRunner&) = delete;
 
+    // The text typed so far at a string prompt that can preview it (TEXT, MTEXT).
+    void textEdited(const std::string& text);
     // Objects picked so far at the active Select objects prompt (shown as selected).
     const std::vector<EntityId>& collected() const { return collected_; }
 
