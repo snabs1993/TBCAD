@@ -617,6 +617,7 @@ TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in 
     EntityId t = f.add(Indirect<TextData>(td));
     f.host.run("FIND", {"room", "", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
+    CHECK(f.host.selection() == std::vector<EntityId>{t});  // the matches are selected
     f.host.run("FIND", {"room", "Hall", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1 / Hall 2");
     f.host.undo();
