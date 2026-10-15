@@ -2902,13 +2902,18 @@ void Gui::dialogs() {
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
         if (recovery_ && !recovery_->savedAt.empty() && recoveryCount_ <= 1)
             ImGui::Text("Backup saved: %s", recovery_->savedAt.c_str());
+        // The keyboard works too: a modal that only answers to the mouse is stuck when the
+        // window has not been clicked yet. Enter recovers (or says OK), Esc decides later.
+        const bool enterKey =
+            ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+        const bool escKey = ImGui::IsKeyPressed(ImGuiKey_Escape);
         if (!crashReport_.empty()) {
             ImGui::TextWrapped(
                 "A crash report was saved to %s. Attach it when you report the problem.",
                 crashReport_.c_str());
             if (!recovery_) {
                 ImGui::Spacing();
-                if (ImGui::Button("OK", ImVec2(110, 0))) {
+                if (ImGui::Button("OK", ImVec2(110, 0)) || enterKey) {
                     platform::acknowledgeCrashReports(core_.paths().crashDir());
                     crashReport_.clear();
                     ImGui::CloseCurrentPopup();
@@ -2916,7 +2921,7 @@ void Gui::dialogs() {
             }
         }
         ImGui::Spacing();
-        if (recovery_ && ImGui::Button("Recover", ImVec2(110, 0))) {
+        if (recovery_ && (ImGui::Button("Recover", ImVec2(110, 0)) || enterKey)) {
             platform::acknowledgeCrashReports(core_.paths().crashDir());
             crashReport_.clear();
             if (recovery_) {
@@ -2932,6 +2937,13 @@ void Gui::dialogs() {
             platform::acknowledgeCrashReports(core_.paths().crashDir());
             crashReport_.clear();
             core_.discardRecovery();
+            recovery_.reset();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Later", ImVec2(110, 0)) || escKey) {
+            // Nothing is deleted: the backup is offered again next time.
+            crashReport_.clear();
             recovery_.reset();
             ImGui::CloseCurrentPopup();
         }

@@ -225,6 +225,32 @@ TEST_CASE("a viewport can show one level only; the choice is saved and plotted")
     });
 }
 
+TEST_CASE("a small drawing in a 1:1 viewport plots its lines") {
+    Document doc;
+    {
+        auto tx = doc.begin("model");
+        REQUIRE(tx.add(line({0, 0}, {100, 0})).ok());
+        REQUIRE(tx.add(line({100, 0}, {100, 60})).ok());
+        tx.commit();
+    }
+    run(doc, "layout", [](Transaction& tx) {
+        if (auto r = createLayout(tx, "A4 sheet", "A4"); !r)
+            return r;
+        BBox2 r;
+        r.expand({10, 10});
+        r.expand({200, 140});
+        auto id = addViewport(tx, "A4 sheet", r, {50, 30}, 1);
+        return id ? Result<void>() : Result<void>(id.error());
+    });
+    auto sheet = buildLayoutSheet(doc, "A4 sheet", {}, {false});
+    REQUIRE(sheet.ok());
+    int strokes = 0;
+    for (const auto& p : sheet.value().prims)
+        if (std::holds_alternative<exportlib::PlotPath>(p))
+            ++strokes;
+    CHECK(strokes == 2);
+}
+
 TEST_CASE("freezing a layer in one viewport hides it there only, sub-layers included") {
     Document doc;
     LayerId walls = addLayer(doc, "Walls");

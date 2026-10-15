@@ -43,6 +43,13 @@ struct Fixture {
 
 }  // namespace
 
+TEST_CASE("an empty drawing starts at room size") {
+    Fixture f("roomview");
+    f.core->zoomExtents();
+    const double widthMm = f.core->camera().viewportW / f.core->camera().pixelsPerMm;
+    CHECK(widthMm == doctest::Approx(20000).epsilon(0.15));
+}
+
 TEST_CASE("command line runs commands, aliases, prompts and errors") {
     Fixture f("cmdline");
     f.core->submitText("tl");  // alias, any case
