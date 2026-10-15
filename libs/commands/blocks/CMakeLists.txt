@@ -32,6 +32,7 @@ tbcad_add_tests(block_cmds
   SOURCES
     tests/main.cpp
     tests/block_command_tests.cpp
+    tests/starter_library_tests.cpp
     tests/insert_command_tests.cpp
     tests/snap_tests.cpp
     tests/array_command_tests.cpp
@@ -45,3 +46,7 @@ tbcad_add_tests(block_cmds
     tests/palette_tests.cpp
     tests/explode_command_tests.cpp
   DEPENDS tbcad_command_registry)
+if(TARGET tbcad_block_cmds_tests)
+  target_compile_definitions(tbcad_block_cmds_tests PRIVATE
+    TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+endif()

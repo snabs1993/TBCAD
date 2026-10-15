@@ -145,6 +145,18 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     theme_ = ui::themeFor(themeMode_, systemPrefersDark());
     core_.setTheme(theme_);
     core_.setDialogsAvailable(true);
+    {
+        // The starter symbols (doors, windows, furniture) that ship with the program are the
+        // block library until the user picks another folder.
+        const std::string shipped = findBesideExecutable("assets/blocks");
+        std::error_code ec;
+        const auto current = core_.setting("block.library");
+        if (!shipped.empty() &&
+            std::filesystem::is_directory(platform::pathFromUtf8(shipped), ec) &&
+            (!current || current->empty() ||
+             !std::filesystem::is_directory(platform::pathFromUtf8(*current), ec)))
+            core_.setSetting("block.library", shipped);
+    }
     lineweights_ = core_.settings().getBool("view.lineweights", true);
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
