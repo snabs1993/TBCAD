@@ -79,3 +79,15 @@ TEST_CASE("INSERT shows a preview while the point is chosen") {
     f.host->runner().pointerMoved(in);
     CHECK_FALSE(f.host->preview().items.empty());
 }
+
+TEST_CASE("INSERT Multiple keeps placing copies until Enter; each copy is one undo step") {
+    Fixture f;
+    makeDoorBlock(f);
+    auto r = f.host->run("INSERT",
+                         {"Door", "S", "2", "M", "0,0", "10,0", "20,0", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.modelSpace().size() == 3);
+    CHECK(f.host->logContains("inserted (3)"));
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().size() == 2);
+}
