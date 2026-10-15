@@ -1494,6 +1494,24 @@ void AppCore::click(const PointerState& p) {
 }
 
 void AppCore::doubleClick(const PointerState& p) {
+    if (inPaperSpace()) {
+        // A double click inside a viewport goes to model space, showing what the viewport shows
+        // there, so the drawing can be edited from the sheet.
+        const Vec2 at = camera_.screenToWorld(p.screen);
+        if (auto lay = layout::findLayout(session_->doc, activeLayout_)) {
+            for (const layout::Viewport& vp : lay->viewports) {
+                if (!vp.on || !vp.paper.contains(at))
+                    continue;
+                const double halfW = vp.paper.width() * vp.scaleN / 2;
+                const double halfH = vp.paper.height() * vp.scaleN / 2;
+                leavePaper();
+                zoomToBox({{vp.center.x - halfW, vp.center.y - halfH},
+                           {vp.center.x + halfW, vp.center.y + halfH}});
+                return;
+            }
+        }
+        return;
+    }
     if (runner().active()) {
         click(p);
         return;
