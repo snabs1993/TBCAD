@@ -147,7 +147,7 @@ struct DialogHost : cmd::ScriptHost {
 
 }  // namespace
 
-TEST_CASE("ATTDEF opens the dialog in a window; the dialog's values leave only the start point") {
+TEST_CASE("ATTDEF opens the dialog in a window - the dialog's values leave only the start point") {
     Document doc;
     cmd::Registry reg;
     registerAllCommands(reg);
