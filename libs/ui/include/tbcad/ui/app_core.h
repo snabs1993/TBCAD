@@ -43,6 +43,7 @@ struct PointerState {
 struct Recovery {
     std::filesystem::path autosaveFile{};
     std::string originalPath{};  // empty = the drawing had never been saved
+    std::string savedAt{};       // when the backup was written, local time "2026-10-15 14:32"
 };
 
 // Shown after a command put geometry outside the working area (non-blocking notice with "Zoom to"

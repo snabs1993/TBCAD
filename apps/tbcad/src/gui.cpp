@@ -2870,6 +2870,8 @@ void Gui::dialogs() {
             ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
+        if (recovery_ && !recovery_->savedAt.empty() && recoveryCount_ <= 1)
+            ImGui::Text("Backup saved: %s", recovery_->savedAt.c_str());
         if (!crashReport_.empty()) {
             ImGui::TextWrapped(
                 "A crash report was saved to %s. Attach it when you report the problem.",

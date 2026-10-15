@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <fstream>
 #include <future>
 #include <iterator>
@@ -463,6 +465,24 @@ namespace {
 Recovery readRecovery(const fs::path& tbcadFile) {
     Recovery r;
     r.autosaveFile = tbcadFile;
+    {
+        std::error_code ec;
+        const auto ft = fs::last_write_time(tbcadFile, ec);
+        if (!ec) {
+            const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ft - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+            const std::time_t t = std::chrono::system_clock::to_time_t(sys);
+            std::tm local{};
+#ifdef _WIN32
+            localtime_s(&local, &t);
+#else
+            localtime_r(&t, &local);
+#endif
+            char buf[32];
+            if (std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", &local) > 0)
+                r.savedAt = buf;
+        }
+    }
     fs::path meta = tbcadFile;
     meta.replace_extension(".json");
     std::ifstream in(meta, std::ios::binary);
