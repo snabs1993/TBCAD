@@ -25,6 +25,7 @@ class Gui;
 struct Options {
     std::string openFile{};    // drawing to open at start
     std::string script{};      // command lines run after start, separated by ';'
+    std::string scriptFile{};  // a text file with one command line per line (# starts a comment)
     std::string screenshot{};  // write the last frame to this .ppm
     std::string report{};      // --gate: also write the report here
     int frames = 0;            // > 0: draw this many frames, then exit
@@ -65,6 +66,7 @@ private:
     bool initWindow(std::string& why);
     void shutdownWindow();
     void runScript(const std::string& script);
+    void runScriptFile(const std::string& file);
     void frame();
     void drawScene();
     int runGate();
