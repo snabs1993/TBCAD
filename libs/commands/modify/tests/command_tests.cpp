@@ -398,6 +398,8 @@ TEST_CASE("DIVIDE and MEASURE place points") {
     EntityId l = f.add(LineData{{0, 0}, {12, 0}});
     f.host.run("DIVIDE", {ScriptItem::pick(l, {6, 0}), "4"});
     CHECK(f.count(EntityKind::Point) == 3);
+    CHECK(f.host.selection().size() == 3);  // the new points are selected so they can be seen
+    CHECK(f.host.logContains("PTYPE"));
     f.host.undo();
     CHECK(f.count(EntityKind::Point) == 0);
     f.host.run("MEASURE", {ScriptItem::pick(l, {11, 0}), "5"});
