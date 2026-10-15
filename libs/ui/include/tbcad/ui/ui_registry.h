@@ -25,6 +25,9 @@ struct PanelContext {
     const render::Camera2D* camera = nullptr;
     // Runs a command line exactly as if the user had typed it ("LAYER", "-LAYER N Walls").
     std::function<void(const std::string&)> runCommand{};
+    // Ends the command waiting for input, if any, so a panel button starts clean instead of its
+    // line being read as the answer to that prompt.
+    std::function<void()> cancelCommand{};
     // Snap marker / tracking line of the point prompt in progress (overlay drawers only).
     const cmd::FilterFeedback* feedback = nullptr;
     // Cursor in drawing units and the pick aperture in mm at the current zoom.

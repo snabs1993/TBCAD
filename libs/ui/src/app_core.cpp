@@ -1533,6 +1533,10 @@ PanelContext AppCore::makePanelContext() {
     pc.apertureMm = apertureMm();
     pc.commandActive = runner().active();
     pc.runCommand = [this](const std::string& line) { submitText(line); };
+    pc.cancelCommand = [this] {
+        if (runner().active())
+            pressEscape();
+    };
     return pc;
 }
 
