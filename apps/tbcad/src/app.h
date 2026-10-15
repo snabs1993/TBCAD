@@ -31,6 +31,7 @@ struct Options {
     int frames = 0;            // > 0: draw this many frames, then exit
     int gateLines = 1000000;   // --gate: how many lines DEVGEN makes
     bool selfTest = false;     // hidden window, exit code 77 when no display / OpenGL
+    std::string gateFile{};    // --gate-file: time open, pan/zoom and select-all on this file
     bool gate = false;         // run the performance gate and exit
     bool vsync = true;
     bool mcp = false;  // --mcp: turn the MCP server on (and remember it)
@@ -70,6 +71,7 @@ private:
     void frame();
     void drawScene();
     int runGate();
+    int runGateFile();
     bool saveScreenshot(const std::string& path);
 
     Options options_;

@@ -8,11 +8,13 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <sstream>
 
 #include "app.h"
 #include "tbcad/core/dump.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::app {
 
@@ -191,6 +193,81 @@ int App::runGate() {
     }
     core_->shutdown();
     return rep.allPassed ? 0 : 1;
+}
+
+// --gate-file: the same measurements on any drawing, with whole frames (UI included) so a slow
+// panel or overlay shows up too. Nothing is asserted; it prints timings.
+int App::runGateFile() {
+    ui::AppCore& core = *core_;
+    int w = 0, h = 0;
+    glfwGetFramebufferSize(window_, &w, &h);
+    core.setViewportSize(std::max(1, w - 600), std::max(1, h - 200));
+
+    auto t0 = Clock::now();
+    auto opened = core.openFile(platform::pathFromUtf8(options_.gateFile));
+    const double openMs = msSince(t0);
+    if (!opened.ok()) {
+        std::fprintf(stderr, "gate-file: cannot open %s\n", options_.gateFile.c_str());
+        core.shutdown();
+        return 1;
+    }
+    std::printf("file: %s\n", options_.gateFile.c_str());
+    std::printf("open: %.0f ms (%zu entities in model space)\n", openMs,
+                core.document().modelSpaceCount());
+
+    auto frames = [&](int n, const std::function<void(int)>& step) {
+        std::vector<double> ms;
+        for (int i = 0; i < n; ++i) {
+            auto f0 = Clock::now();
+            step(i);
+            frame();
+            glFinish();
+            ms.push_back(msSince(f0));
+        }
+        return ms;
+    };
+    auto report = [](const char* name, const std::vector<double>& ms) {
+        const double med = percentile(ms, 0.5);
+        std::printf("%-28s median %8.2f ms (%6.1f fps)  worst %8.2f ms\n", name, med,
+                    med > 0 ? 1000.0 / med : 0.0, percentile(ms, 1.0));
+    };
+
+    core.zoomExtents();
+    t0 = Clock::now();
+    frame();
+    glFinish();
+    std::printf("zoom extents + first frame: %.0f ms\n", msSince(t0));
+    report("static view", frames(30, [](int) {}));
+
+    const render::Camera2D start = core.camera();
+    const Vec2 anchor{core.camera().viewportW * 0.5, core.camera().viewportH * 0.5};
+    report("pan/zoom", frames(120, [&](int i) {
+               core.panPixels(7, 3);
+               core.zoomAtScreen(anchor, (i / 30) % 2 == 0 ? 0.08 : -0.08);
+           }));
+    core.setCamera(start);
+
+    t0 = Clock::now();
+    core.selectAll();
+    std::printf("select all: %.0f ms (%zu selected)\n", msSince(t0), core.selection().size());
+    t0 = Clock::now();
+    frame();
+    glFinish();
+    std::printf("first frame after select all: %.0f ms\n", msSince(t0));
+    report("frames with selection", frames(30, [](int) {}));
+    report("pan/zoom with selection", frames(60, [&](int i) {
+               core.panPixels(7, 3);
+               core.zoomAtScreen(anchor, (i / 30) % 2 == 0 ? 0.08 : -0.08);
+           }));
+
+    t0 = Clock::now();
+    core.clearSelection();
+    frame();
+    glFinish();
+    std::printf("clear selection + frame: %.0f ms\n", msSince(t0));
+    std::fflush(stdout);
+    core.shutdown();
+    return 0;
 }
 
 }  // namespace tbcad::app
