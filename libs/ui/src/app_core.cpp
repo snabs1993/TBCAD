@@ -2003,6 +2003,10 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
 std::optional<std::string> AppCore::setting(std::string_view key) const {
     if (key == "document.file")
         return documentFile();
+    if (key.rfind("tmp.", 0) == 0) {  // hand-over between a command and its dialog; never saved
+        auto it = transient_.find(std::string(key));
+        return it == transient_.end() ? std::nullopt : std::optional<std::string>(it->second);
+    }
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             return std::string(settings_.getBool(key) ? "1" : "0");
@@ -2022,6 +2026,10 @@ std::optional<std::string> AppCore::takeClipboardText() {
 }
 
 void AppCore::setSetting(std::string_view key, std::string value) {
+    if (key.rfind("tmp.", 0) == 0) {
+        transient_[std::string(key)] = std::move(value);
+        return;
+    }
     if (key == "clipboard.text")
         clipboardOut_ = value;
     if (key == "layout.show") {  // LAYOUT New: switch once the command is over
