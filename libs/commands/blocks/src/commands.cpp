@@ -20,6 +20,9 @@ void registerCommands(cmd::Registry& registry) {
         });
     registerSnapProvider(drafting::SnapGeometryRegistry::instance());
     (void)registry.add(makeBlockCommand());
+    (void)registry.add(makeBEditCommand());
+    (void)registry.add(makeBSaveCommand(false));
+    (void)registry.add(makeBSaveCommand(true));
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeArrayCommand());
@@ -58,6 +61,9 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make", "B");
     ui.addMenuItem("Draw/Block/Insert Block...", "INSERT", "block.insert", "I");
     ui.addMenuItem("Draw/Block/Define Attribute...", "ATTDEF", "block.attdef");
+    ui.addMenuItem("Modify/Edit Block in Place", "BEDIT", "block.bedit");
+    ui.addMenuItem("Modify/Save Block Edit", "BSAVE", "block.bsave");
+    ui.addMenuItem("Modify/Close Block Edit", "BCLOSE", "block.bclose");
     ui.addMenuItem("Modify/Edit Attributes...", "ATTEDIT", "block.attedit");
     ui.addMenuItem("Insert/External Reference...", "XATTACH", "block.xattach");
     ui.addMenuItem("Insert/Reload External References", "XRELOAD", "block.xreload");

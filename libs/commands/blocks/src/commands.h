@@ -11,6 +11,8 @@
 namespace tbcad::block_cmds {
 
 std::unique_ptr<cmd::Command> makeBlockCommand();
+std::unique_ptr<cmd::Command> makeBEditCommand();
+std::unique_ptr<cmd::Command> makeBSaveCommand(bool close);
 std::unique_ptr<cmd::Command> makeInsertCommand();
 std::unique_ptr<cmd::Command> makeExplodeCommand();
 std::unique_ptr<cmd::Command> makeArrayCommand();

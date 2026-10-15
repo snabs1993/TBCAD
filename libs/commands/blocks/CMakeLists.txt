@@ -5,6 +5,7 @@ set(_block_cmd_sources
   src/dynamic_commands.cpp
   src/assembly_commands.cpp
   src/attribute_commands.cpp
+  src/bedit_command.cpp
   src/block_command.cpp
   src/block_count_command.cpp
   src/block_list.cpp
@@ -32,6 +33,7 @@ tbcad_add_tests(block_cmds
   SOURCES
     tests/main.cpp
     tests/block_command_tests.cpp
+    tests/bedit_command_tests.cpp
     tests/insert_command_tests.cpp
     tests/snap_tests.cpp
     tests/array_command_tests.cpp
