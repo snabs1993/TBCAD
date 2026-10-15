@@ -208,6 +208,8 @@ public:
     void zoomToEntities(const std::vector<EntityId>& ids);
     // Tessellate for the current zoom when it changed enough; call once per frame.
     void updateFrame(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+    // True while new objects are flashing (the window keeps drawing frames until it ends).
+    bool flashing() const { return !flashIds_.empty(); }
     // Snap / tracking feedback of the point prompt in progress (tooltip text for the window).
     const cmd::FilterFeedback& feedback() const { return feedback_; }
     // Pixel position of the status-bar coordinates.
@@ -388,6 +390,10 @@ private:
     render::Camera2D lastTessellatedFor_{};
     std::size_t retileCheckedAt_ = 0;  // entity count of the last fragmentation check
     void retileIfFragmented();
+    // New objects glow for a moment so a line drawn over same-coloured lines can be found.
+    void flashNew(std::vector<EntityId> ids);
+    std::vector<EntityId> flashIds_{};
+    std::chrono::steady_clock::time_point flashUntil_{};
     Vec2 cursorWorld_{};
     bool cursorInside_ = false;
     Theme theme_ = darkTheme();

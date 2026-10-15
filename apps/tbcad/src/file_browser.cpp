@@ -112,6 +112,8 @@ std::optional<fs::path> FileBrowser::draw() {
             }
         }
         ImGui::EndChild();
+        if (mode_ == Mode::Save && ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();  // type the name straight away
         ImGui::InputText("File name", &name_);
         ImGui::SameLine();
         if (ImGui::Button(mode_ == Mode::Open ? "Open" : "Save") && !name_.empty())

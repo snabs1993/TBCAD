@@ -298,6 +298,17 @@ TEST_CASE("ZOOM is transparent inside another command") {
     CHECK(f.core->document().modelSpaceCount() == 1);
 }
 
+TEST_CASE("new objects flash for a moment, then stop") {
+    Fixture f("flash");
+    f.core->submitText("DEVGEN LINES 5");
+    CHECK(f.core->flashing());
+    f.core->updateFrame(std::chrono::steady_clock::now() + std::chrono::seconds(2));
+    CHECK_FALSE(f.core->flashing());
+    // Undo does not flash.
+    f.core->undo();
+    CHECK_FALSE(f.core->flashing());
+}
+
 TEST_CASE("a drawing that outgrew its tiles is re-tiled once") {
     Fixture f("retile");
     f.core->submitText("DEVGEN LINES 40000");

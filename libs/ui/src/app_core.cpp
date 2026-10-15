@@ -62,6 +62,18 @@ public:
 
     void onChanged(const ChangeSet& cs) override {
         app_.pruneSelection();
+        if (!app_.inUndo_ && !cs.entities.empty() && cs.entities.size() <= 12) {
+            std::vector<EntityId> added;
+            for (const EntityChange& c : cs.entities) {
+                if (c.before != kNoSnapshot || c.after == kNoSnapshot) {
+                    added.clear();
+                    break;
+                }
+                added.push_back(cs.idOf(c));
+            }
+            if (!added.empty())
+                app_.flashNew(std::move(added));
+        }
         if (!cs.outOfArea.empty() && !app_.inUndo_)
             app_.outOfArea_ = OutOfAreaNotice{cs.outOfArea};
     }
@@ -1265,6 +1277,10 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             return;
     }
     retileIfFragmented();
+    if (!flashIds_.empty() && now >= flashUntil_) {
+        flashIds_.clear();
+        scene_.setHighlighted(hoverId_ ? std::vector<EntityId>{hoverId_} : std::vector<EntityId>{});
+    }
     if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
@@ -1340,7 +1356,19 @@ void AppCore::updateHover(const PointerState& p) {
             hover.push_back(*id);
     }
     hoverId_ = hover.empty() ? EntityId{} : hover.front();
+    hover.insert(hover.end(), flashIds_.begin(), flashIds_.end());
     scene_.setHighlighted(hover);
+}
+
+void AppCore::flashNew(std::vector<EntityId> ids) {
+    if (inPaperSpace())
+        return;
+    flashIds_ = std::move(ids);
+    flashUntil_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(700);
+    std::vector<EntityId> all = flashIds_;
+    if (hoverId_)
+        all.push_back(hoverId_);
+    scene_.setHighlighted(all);
 }
 
 std::string AppCore::describeEntity(EntityId id) const {
