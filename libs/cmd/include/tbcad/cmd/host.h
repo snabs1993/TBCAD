@@ -83,6 +83,10 @@ public:
         return std::nullopt;
     }
 
+    // Block that new objects go into when a command draws: null = model space. A host showing a
+    // layout sheet returns the sheet's block so drawing commands annotate the sheet.
+    virtual BlockId drawingOwner() const { return {}; }
+
     // Rubber-band preview from the active prompt; nullptr clears it.
     virtual void setPreview(const DisplayList* /*list*/) {}
 

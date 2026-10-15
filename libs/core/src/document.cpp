@@ -1234,6 +1234,7 @@ Transaction::Transaction(Transaction&& o) noexcept
       beforeSnaps_(std::move(o.beforeSnaps_)),
       touched_(std::move(o.touched_)),
       outOfArea_(std::move(o.outOfArea_)),
+      defaultOwner_(o.defaultOwner_),
       headerBefore_(std::move(o.headerBefore_)),
       order_(std::move(o.order_)),
       pLayers_(std::move(o.pLayers_)),
@@ -1304,6 +1305,8 @@ void Transaction::touchOrder(EntityId id) {
 
 Result<EntityId> Transaction::add(Entity entity, BlockId owner) {
     Document& d = doc();
+    if (!owner)
+        owner = defaultOwner_;
     if (owner && !d.block(owner))
         return makeError(ErrorCode::NotFound, "unknown block");
     Result<double> ext = validateEntity(d, entity, owner);

@@ -25,6 +25,8 @@ constexpr const char* kAttachKey = "mtext.attach";
 double autoTextHeight(CommandContext& ctx) {
     constexpr double kBase = 2.5;
     const Document& doc = ctx.doc();
+    if (ctx.host().drawingOwner())
+        return kBase;  // on a layout sheet, 2.5 mm is 2.5 mm of paper
     double n = currentAnnotationScale(doc.header());
     if (!(n > 1)) {
         BBox2 box;

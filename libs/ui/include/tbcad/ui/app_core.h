@@ -314,6 +314,7 @@ public:
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
     std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
+    BlockId drawingOwner() const override;
     void setView(const cmd::ViewState& v) override;
     void setPreview(const DisplayList* list) override;
     void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
@@ -387,6 +388,9 @@ private:
     render::Camera2D camera_{};
     std::string activeLayout_{};
     PaperView paper_{};
+    // The objects drawn on the sheet, for picking and snapping while a layout is on screen.
+    index::SpatialIndex paperIndex_{};
+    void rebuildPaperIndex();
     render::Camera2D modelCamera_{};
     std::uint64_t paperRevision_ = 0;
     render::Camera2D lastTessellatedFor_{};

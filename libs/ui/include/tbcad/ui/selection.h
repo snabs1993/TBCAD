@@ -10,7 +10,8 @@ namespace tbcad::ui {
 
 // True when the user may pick the entity: its own flag is on, and the layer, resolved through
 // Document::effective() so sub-layers follow their parents, is visible (on and not frozen) and not
-// locked. Entities inside block definitions are never selectable.
+// locked. Entities inside block definitions are never selectable, except the objects on a layout
+// sheet.
 bool isSelectable(const Document& doc, const Entity& e);
 // True when the entity is drawn at all (locked layers are drawn, faded).
 bool isVisible(const Document& doc, const Entity& e);
