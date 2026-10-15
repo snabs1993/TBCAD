@@ -224,6 +224,35 @@ TEST_CASE("polyline display: arcs, closing, widths") {
     CHECK(tb.max.y == doctest::Approx(2));
 }
 
+TEST_CASE("wide polyline corners are mitered, including the closing corner") {
+    Document doc;
+    DisplayContext ctx;
+    PolylineData sq;
+    sq.v = {{{0, 0}, 0}, {{10, 0}, 0}, {{10, 10}, 0}, {{0, 10}, 0}};
+    sq.closed = true;
+    sq.constantWidth = 2;
+    DisplayList out;
+    buildDisplay(doc, make(sq), ctx, out);
+    // The outer corners of the square (-1,-1), (11,-1), (11,11), (-1,11) are all covered: no notch.
+    for (Vec2 corner : {Vec2{-1, -1}, Vec2{11, -1}, Vec2{11, 11}, Vec2{-1, 11}}) {
+        bool covered = false;
+        for (const DisplayItem& it : out.items)
+            if (const auto* fill = std::get_if<DisplayFill>(&it))
+                for (const auto& ring : fill->rings)
+                    for (const Vec2& p : ring)
+                        covered = covered || distance(p, corner) < 1e-9;
+        CHECK(covered);
+    }
+
+    // An open polyline has no join at its two free ends.
+    out.items.clear();
+    PolylineData open;
+    open.v = {{{0, 0}, 0}, {{10, 0}, 0}, {{10, 10}, 0}};
+    open.constantWidth = 2;
+    buildDisplay(doc, make(open), ctx, out);
+    CHECK(out.items.size() == 3);  // two strips and the one corner
+}
+
 TEST_CASE("registry supplies display and bounds for other kinds") {
     Document doc;
     DisplayRegistry::clear(EntityKind::Text);
