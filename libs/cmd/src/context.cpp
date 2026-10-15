@@ -82,6 +82,7 @@ CommandContext::Awaiter<IntResult> CommandContext::getInteger(std::string prompt
         r.min = static_cast<double>(*opts.min);
     if (opts.max)
         r.max = static_cast<double>(*opts.max);
+    r.textPreview = std::move(opts.textPreview);
     return {*this, std::move(r)};
 }
 

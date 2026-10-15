@@ -100,6 +100,7 @@ struct IntOptions {
     std::optional<long long> defaultValue{};
     std::optional<long long> min{};
     std::optional<long long> max{};
+    TextPreviewFn textPreview{};  // draws what the typed number would do
 };
 struct StringOptions {
     std::optional<std::string> defaultValue{};
