@@ -814,6 +814,11 @@ private:
                     note("dimension style " + hex(self) + " is damaged");
                     return;
                 }
+                leadingHandles(h, self, reactors, true);
+                h.handle();  // external reference block
+                const HandleRef textStyle = h.handle();
+                if (!h.failed())
+                    d.textStyle = resolveHandle(textStyle, self);
                 d.flags = (flag64 ? 64 : 0) | (xdep ? 16 : 0) | (unknown ? 1 : 0);
                 out_.dimStyles[self] = std::move(d);
                 break;
@@ -2531,7 +2536,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r52: multi-line attribute tag read from the embedded mtext layout; r51: layout "
+    return "r53: dimension text height from the fixed height of its text style; r52: multi-line "
+           "attribute tag read from the embedded mtext layout; r51: layout "
            "viewport count is a bit-long; r50: mtext background scale is a real; "
            "multi-line attributes kept; r49: data of other "
            "blocks inside each viewport counted; r48: model data inside each "

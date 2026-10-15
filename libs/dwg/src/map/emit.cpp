@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <unordered_map>
 #include <vector>
 
@@ -11,6 +12,12 @@
 namespace tbcad::dwg::detail {
 
 namespace {
+
+std::string hexHandle(std::uint64_t h) {
+    char buf[24];
+    std::snprintf(buf, sizeof buf, "%llX", static_cast<unsigned long long>(h));
+    return buf;
+}
 
 bool iequals(const std::string& a, const char* b) {
     const std::string_view bv(b);
@@ -220,6 +227,7 @@ std::string emitDxf(const Drawing& d) {
     o.group(70, static_cast<long long>(d.styles.size()));
     for (const auto& [h, s] : d.styles) {
         o.begin("STYLE");
+        o.group(5, hexHandle(h));
         o.group(2, s.name);
         o.group(70, s.flags);
         o.group(40, s.height);
@@ -238,6 +246,8 @@ std::string emitDxf(const Drawing& d) {
         o.begin("DIMSTYLE");
         o.group(2, ds.name);
         o.group(70, ds.flags);
+        if (ds.textStyle != 0)
+            o.group(340, hexHandle(ds.textStyle));
         for (const Group& g : ds.groups)
             emitGroup(o, g);
     }

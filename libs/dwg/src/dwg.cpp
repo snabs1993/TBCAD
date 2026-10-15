@@ -498,6 +498,10 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     else if (const long long* n = std::get_if<long long>(&g.value.v))
                         dsLine += std::to_string(*n);
                 }
+                const auto ts = drawing.styles.find(ds.textStyle);
+                if (ts != drawing.styles.end())
+                    dsLine += " text style \"" + ts->second.name +
+                              "\" height=" + std::to_string(ts->second.height);
                 report.info(code::kSkippedObject, dsLine);
             }
         }
