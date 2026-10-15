@@ -351,6 +351,105 @@ private:
     }
 };
 
+// DIMSETUP: gives the selected dimensions and leaders a style, or an overall scale, in one step.
+// A scale is a style of its own ("<style>-1to<N>", made from the style they use), so only the
+// selected objects change.
+class DimSetupCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMSETUP"; }
+    std::string_view description() const override {
+        return "Set the style or overall scale of the selected dimensions";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection(
+            "Select dimensions or leaders", cmd::SelectionOptions{.filter = [](const Entity& e) {
+                return kind(e) == EntityKind::Dimension || kind(e) == EntityKind::Leader;
+            }});
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Style", "Scale"};
+        ko.defaultKeyword = "Scale";
+        auto k = co_await ctx.getKeyword("Set [Style/Scale] <Scale>", ko);
+        if (!k.ok())
+            co_return;
+        cmd::StringOptions so;
+        auto v =
+            co_await ctx.getString(k.keyword == "Style" ? "Style name" : "Scale as N of 1:N", so);
+        if (!v.ok())
+            co_return;
+        const std::string text = cmd::trim(v.text);
+        std::size_t n = 0;
+        if (k.keyword == "Style") {
+            const DimStyle* st = ctx.doc().dimStyleByName(text);
+            if (!st) {
+                ctx.message("No dimension style named \"" + text + "\".");
+                co_return;
+            }
+            const DimStyleId id = st->id;
+            for (EntityId e : sel.ids)
+                n += assign(ctx, e, [&](DimStyleId) { return id; });
+        } else {
+            double scale = 0;
+            if (!parseReal(text, scale) || !(scale > 0)) {
+                ctx.message("The scale must be a number above zero.");
+                co_return;
+            }
+            char tag[40];
+            std::snprintf(tag, sizeof tag, "-1to%g", scale);
+            for (EntityId e : sel.ids)
+                n += assign(ctx, e, [&](DimStyleId current) {
+                    const DimStyle base = dim::styleOf(ctx.doc(), current);
+                    if (base.overallScale == scale)
+                        return base.id;
+                    // Derive from the original style, not from an earlier "-1toN" copy.
+                    std::string root = base.name;
+                    if (auto at = root.rfind("-1to"); at != std::string::npos && at > 0)
+                        root.resize(at);
+                    const std::string name = root + tag;
+                    if (const DimStyle* have = ctx.doc().dimStyleByName(name))
+                        return have->id;
+                    DimStyle copy = base;
+                    copy.id = {};
+                    copy.name = name;
+                    copy.overallScale = scale;
+                    auto id = ctx.tx().addDimStyle(std::move(copy));
+                    return id ? id.value() : current;
+                });
+        }
+        ctx.message(std::to_string(n) + " changed");
+        ctx.setUndoLabel("Dimension setup");
+    }
+
+private:
+    template <class F>
+    static std::size_t assign(cmd::CommandContext& ctx, EntityId e, F pick) {
+        const Entity* ent = ctx.doc().find(e);
+        if (!ent)
+            return 0;
+        DimStyleId current{};
+        if (const auto* d = entityAs<DimensionData>(*ent))
+            current = d->style;
+        else if (const auto* l = entityAs<LeaderData>(*ent))
+            current = l->style;
+        else
+            return 0;
+        if (!current.value)
+            current = ctx.doc().header().currentDimStyle;
+        const DimStyleId target = pick(current);
+        if (target == current)
+            return 0;
+        auto r = ctx.tx().modify(e, [&](Entity& x) {
+            if (auto* d = entityAs<DimensionData>(x))
+                d->style = target;
+            else if (auto* l = entityAs<LeaderData>(x))
+                l->style = target;
+        });
+        return r ? 1 : 0;
+    }
+};
+
 class DimStylesPanelCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMSTYLES"; }
@@ -365,6 +464,10 @@ public:
 
 std::unique_ptr<cmd::Command> makeDimStylesPanelCommand() {
     return std::make_unique<DimStylesPanelCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeDimSetupCommand() {
+    return std::make_unique<DimSetupCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand() {
