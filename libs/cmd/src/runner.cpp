@@ -409,6 +409,13 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     return reject(r.error().message);
                 return SubmitResult::Accepted;
             }
+            for (const auto& [typed, keyword] : req.keywordAliases) {
+                if (matchKeyword({typed}, text)) {
+                    ans.status = Status::Keyword;
+                    ans.keyword = keyword;
+                    return complete(std::move(ans));
+                }
+            }
             if (auto kw = matchKeyword(req.keywords, text)) {
                 ans.status = Status::Keyword;
                 ans.keyword = *kw;
