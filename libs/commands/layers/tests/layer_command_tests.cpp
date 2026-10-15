@@ -68,6 +68,13 @@ TEST_CASE("-LAYER New and NewSub create layers and sub-layers, one undo step") {
     CHECK(f.doc.layers().size() == 5);
 }
 
+TEST_CASE("-LAYER N means New, S means Set") {
+    Fixture f;
+    f.run("-LAYER", {"N", "Walls", "S", "Walls", cmd::ScriptItem::enter()});
+    REQUIRE(f.layer("Walls") != nullptr);
+    CHECK(f.doc.header().currentLayer == f.layer("Walls")->id);
+}
+
 TEST_CASE("-LAYER: On, Off, Freeze, Thaw, Lock, Unlock, Plot with lists and *") {
     Fixture f;
     f.run("-LAYER", {"New", "A,B,C", cmd::ScriptItem::enter()});

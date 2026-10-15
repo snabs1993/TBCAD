@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "tbcad/cmd/host.h"
@@ -48,6 +49,7 @@ struct PromptRequest {
     PromptKind kind = PromptKind::Point;
     std::string text{};
     std::vector<std::string> keywords{};
+    std::vector<std::pair<std::string, std::string>> keywordAliases{};  // typed -> keyword
     std::optional<Vec2> base{};
     PreviewFn preview{};
     EntityFilterFn filter{};

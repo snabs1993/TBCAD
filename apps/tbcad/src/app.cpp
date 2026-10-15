@@ -29,6 +29,8 @@ void printUsage() {
               "\n"
               "Usage: tbcad [file.tbcad|file.dxf] [options]\n"
               "  --script \"CMD;CMD\"   run command lines after start\n"
+              "  --script-file F      run the command lines in text file F (one per line, # = "
+              "comment)\n"
               "  --frames N           draw N frames, then exit\n"
               "  --screenshot F.ppm   save the last frame\n"
               "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
@@ -53,6 +55,8 @@ Options parseOptions(int argc, char** argv) {
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : std::string{}; };
         if (a == "--script")
             o.script = next();
+        else if (a == "--script-file")
+            o.scriptFile = next();
         else if (a == "--frames")
             o.frames = std::atoi(next().c_str());
         else if (a == "--screenshot")
@@ -158,6 +162,22 @@ void App::runScript(const std::string& script) {
         if (end == std::string::npos)
             break;
         start = end + 1;
+    }
+}
+
+void App::runScriptFile(const std::string& file) {
+    std::ifstream in(platform::pathFromUtf8(file));
+    if (!in) {
+        std::fprintf(stderr, "tbcad: cannot read script file %s\n", file.c_str());
+        return;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (!line.empty() && line.front() == '#')
+            continue;
+        core_->submitText(line);  // an empty line is Enter
     }
 }
 
@@ -441,6 +461,8 @@ int App::run() {
         (void)core_->openFile(platform::pathFromUtf8(options_.openFile));
     if (!options_.script.empty())
         runScript(options_.script);
+    if (!options_.scriptFile.empty())
+        runScriptFile(options_.scriptFile);
 
     int framesDrawn = 0;
     double last = glfwGetTime();
