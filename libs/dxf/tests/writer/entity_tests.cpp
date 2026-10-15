@@ -382,7 +382,7 @@ TEST_CASE("every palette index and RGB colour keeps its look") {
     }
 }
 
-TEST_CASE("pattern hatches embed their definition lines; a pattern library can be supplied") {
+TEST_CASE("pattern hatches embed their definition lines - a pattern library can be supplied") {
     Document doc;
     {
         auto tx = doc.begin("hatches");

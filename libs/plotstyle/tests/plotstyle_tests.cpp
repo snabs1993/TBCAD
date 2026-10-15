@@ -32,7 +32,7 @@ std::vector<std::uint8_t> makeCtb(const std::string& text) {
 
 }  // namespace
 
-TEST_CASE("palette colours map to indices; other colours do not") {
+TEST_CASE("palette colours map to indices - other colours do not") {
     CHECK(paletteIndexOf(paletteColor(1)) == 1);
     CHECK(paletteIndexOf(paletteColor(200)) == 200);
     CHECK(paletteIndexOf(Rgba{1, 2, 3, 255}) == 0);

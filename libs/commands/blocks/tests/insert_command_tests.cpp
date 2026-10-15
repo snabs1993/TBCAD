@@ -80,7 +80,7 @@ TEST_CASE("INSERT shows a preview while the point is chosen") {
     CHECK_FALSE(f.host->preview().items.empty());
 }
 
-TEST_CASE("INSERT Multiple keeps placing copies until Enter; each copy is one undo step") {
+TEST_CASE("INSERT Multiple keeps placing copies until Enter and undoes as one step") {
     Fixture f;
     makeDoorBlock(f);
     auto r = f.host->run("INSERT",
@@ -88,6 +88,6 @@ TEST_CASE("INSERT Multiple keeps placing copies until Enter; each copy is one un
     CHECK(r.finished);
     CHECK(f.modelSpace().size() == 3);
     CHECK(f.host->logContains("inserted (3)"));
-    CHECK(f.host->undo());
-    CHECK(f.modelSpace().size() == 2);
+    CHECK(f.host->undo());  // the whole series is one command
+    CHECK(f.modelSpace().empty());
 }

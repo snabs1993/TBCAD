@@ -144,7 +144,7 @@ TEST_CASE("toolLines: layer first, then the command with the saved answers") {
     CHECK(toolLines(macro, doc) == std::vector<std::string>{"ZOOM", "Extents"});
 }
 
-TEST_CASE("-PALETTE without a settings folder explains; with one it edits palettes.json") {
+TEST_CASE("-PALETTE without a settings folder explains - with one it edits palettes.json") {
     Document doc;
     cmd::Registry reg;
     registerAllCommands(reg);

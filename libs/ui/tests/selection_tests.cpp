@@ -162,7 +162,7 @@ TEST_CASE("pickAllAt lists the overlapping entities nearest first and cycling wa
     CHECK_FALSE(cycleNext({}, c).has_value());
 }
 
-TEST_CASE("lasso selects inside a concave polygon; crossing also takes what it touches") {
+TEST_CASE("lasso selects inside a concave polygon - crossing also takes what it touches") {
     Indexed d;
     EntityId inside = addLine(d.doc, {10, 10}, {20, 20});
     EntityId crossing = addLine(d.doc, {50, 50}, {150, 50});

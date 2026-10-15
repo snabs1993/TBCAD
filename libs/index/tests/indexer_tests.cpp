@@ -139,7 +139,7 @@ TEST_CASE("rolled-back transactions do not touch the index") {
     CHECK(idx.size() == 1);
 }
 
-TEST_CASE("block definition entities are not indexed; unsupported kinds are skipped") {
+TEST_CASE("block definition entities are not indexed - unsupported kinds are skipped") {
     Document doc;
     SpatialIndex idx;
     DocumentIndexer indexer(doc, idx, boundsOf);

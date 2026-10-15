@@ -61,7 +61,7 @@ TEST_CASE("the modify commands are registered with their short names") {
     }
 }
 
-TEST_CASE("OFFSET by distance, repeated, one undo step; Through; corner setting") {
+TEST_CASE("OFFSET by distance, repeated, one undo step - Through - corner setting") {
     Fixture f;
     EntityId l = f.add(LineData{{0, 0}, {10, 0}});
     auto r = f.host.run("OFFSET", {"2", ScriptItem::pick(l, {5, 0}), "5,9", ScriptItem::enter()});
@@ -565,7 +565,7 @@ TEST_CASE("typing ALL at the selection prompt and pressing Enter finishes the se
     CHECK(readGroups(f.doc).size() == 1);
 }
 
-TEST_CASE("GROUP makes a pick select the whole group; UNGROUP dissolves it") {
+TEST_CASE("GROUP makes a pick select the whole group - UNGROUP dissolves it") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {1, 0}});
     EntityId b = f.add(LineData{{0, 2}, {1, 2}});

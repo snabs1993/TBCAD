@@ -51,7 +51,7 @@ TEST_CASE("a right-angle corner is mitred") {
     CHECK(s.lines[1][1].y == doctest::Approx(-0.5));
 }
 
-TEST_CASE("a closed multiline wraps its corners; repeated points and short paths are tolerated") {
+TEST_CASE("a closed multiline wraps its corners - repeated points and short paths are tolerated") {
     Document doc;
     MlineData d;
     d.closed = true;

@@ -15,7 +15,7 @@ struct Fixture {
 };
 }  // namespace
 
-TEST_CASE("-STYLE New copies the current style, makes it current; one undo step") {
+TEST_CASE("-STYLE New copies the current style, makes it current - one undo step") {
     Fixture f;
     f.host.run("-STYLE",
                {"New", "Arch", "Edit", "Arch", "Width", "0.8", "Oblique", "15", "Done", "Done"});

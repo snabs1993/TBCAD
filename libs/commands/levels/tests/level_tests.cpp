@@ -42,7 +42,7 @@ TEST_CASE("a new document has one level and objects land on the current level") 
     CHECK(f.doc.find(a)->common.level == kLevelDefault);
 }
 
-TEST_CASE("-LEVEL New makes the level current; new objects go there, one undo step") {
+TEST_CASE("-LEVEL New makes the level current - new objects go there, one undo step") {
     Fixture f;
     EntityId a = f.addLine();
     f.run("-LEVEL", {"New", "Level 2", "3000", cmd::ScriptItem::enter()});
@@ -109,7 +109,7 @@ TEST_CASE("objects on different levels may share the same position without inter
     CHECK_FALSE(f.doc.effective(f.doc.find(b)->common).otherLevel);
 }
 
-TEST_CASE("the current level cannot be hidden; setting a hidden level current shows it") {
+TEST_CASE("the current level cannot be hidden - setting a hidden level current shows it") {
     Fixture f;
     auto tx = f.doc.begin("t");
     LevelId l2 = levels::createLevel(f.doc, tx, "Roof", 6000).value();
@@ -132,7 +132,7 @@ TEST_CASE("level names are unique and the first level cannot be deleted") {
     CHECK(f.doc.level(kLevelDefault)->name == "Ground");
 }
 
-TEST_CASE("-LEVEL Move and CHLEVEL move objects between levels; Delete moves them back") {
+TEST_CASE("-LEVEL Move and CHLEVEL move objects between levels - Delete moves them back") {
     Fixture f;
     EntityId a = f.addLine();
     EntityId b = f.addLine(5);
@@ -171,7 +171,7 @@ TEST_CASE("LEVELUP and LEVELDOWN walk the levels by elevation") {
     CHECK(f.doc.header().currentLevel == kLevelDefault);
 }
 
-TEST_CASE("LEVEL asks the application to show the panel; view option") {
+TEST_CASE("LEVEL asks the application to show the panel - view option") {
     Fixture f;
     f.run("LEVEL", {});
     CHECK(f.host.setting("ui.showPanel") == "levels");

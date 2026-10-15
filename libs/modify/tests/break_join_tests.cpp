@@ -128,7 +128,7 @@ TEST_CASE("join a chain of mixed lines, arcs and polylines into one polyline") {
     CHECK(r.created[0].common.layer == LayerId{7});
 }
 
-TEST_CASE("join a loop closes the polyline; other entities are left alone") {
+TEST_CASE("join a loop closes the polyline - other entities are left alone") {
     std::vector<Entity> v{line({0, 0}, {5, 0}), line({5, 0}, {5, 5}), line({5, 5}, {0, 0}),
                           circle({50, 50}, 3)};
     auto r = joinEntities(ptrs(v));

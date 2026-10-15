@@ -4,7 +4,7 @@ using namespace tbcad;
 using namespace tbcad::block_cmds;
 using namespace tbcad::block_cmds::test;
 
-TEST_CASE("EXPLODE turns an insert back into its geometry; undo restores the insert") {
+TEST_CASE("EXPLODE turns an insert back into its geometry - undo restores the insert") {
     Fixture f;
     EntityId a = f.addLine(10, 10, 20, 10);
     EntityId b = f.addCircle(15, 15, 2);

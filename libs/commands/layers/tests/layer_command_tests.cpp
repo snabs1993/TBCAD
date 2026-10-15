@@ -213,7 +213,7 @@ TEST_CASE("-LAYER: Isolate / ShowAll and List") {
     CHECK(f.host.logContains("off"));
 }
 
-TEST_CASE("-LAYER: Esc keeps what was done; a bad layer name only prints an error") {
+TEST_CASE("-LAYER: Esc keeps what was done - a bad layer name only prints an error") {
     Fixture f;
     f.run("-LAYER", {"New", "A", "Off", "nope"});
     f.host.clearLog();

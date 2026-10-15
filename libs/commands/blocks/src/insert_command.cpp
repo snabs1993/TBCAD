@@ -110,7 +110,7 @@ public:
             for (;;) {
                 cmd::PointOptions po;
                 po.keywords = {"Scale", "X", "Y", "Rotate", "Multiple"};
-                po.allowNone = false;
+                po.allowNone = placed > 0;  // Enter ends a Multiple series
                 po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
                     InsertData d = data;
                     d.position = cursor;
@@ -210,7 +210,7 @@ public:
                 }
             }
             if (multiple)
-                ctx.checkpoint();  // each copy is its own undo step and shows at once
+                ctx.checkpoint();  // each copy shows at once and survives Esc
             auto added = ctx.tx().add(std::move(e));
             if (!added) {
                 ctx.message(added.error().message);

@@ -84,7 +84,7 @@ TEST_CASE("opening a .tbt gives an untitled copy") {
     CHECK(f.core->document().layerByName("Walls"));
 }
 
-TEST_CASE("SAVE, QSAVE, SAVEAS, OPEN, NEW and CLOSE ask the window; SAVE is not SAVEASTEMPLATE") {
+TEST_CASE("SAVE, QSAVE, SAVEAS, OPEN, NEW and CLOSE ask the window - SAVE is not SAVEASTEMPLATE") {
     Fixture f("file-commands");
     for (const char* line : {"SAVE", "qsave", "SAVEAS", "OPEN", "NEW", "CLOSE"})
         f.core->submitText(line);

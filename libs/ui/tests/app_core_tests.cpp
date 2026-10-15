@@ -155,7 +155,7 @@ TEST_CASE("drag left to right selects inside, right to left selects touching") {
     CHECK(f.core->selection().empty());
 }
 
-TEST_CASE("Alt+click cycles through overlapping objects; lasso selects inside the path") {
+TEST_CASE("Alt+click cycles through overlapping objects - lasso selects inside the path") {
     Fixture f("cyclelasso");
     f.line("0,0", "100,0");
     f.line("0,0", "100,0");
@@ -238,7 +238,7 @@ TEST_CASE("wheel zoom keeps the point under the cursor fixed, 1.2 per notch") {
     CHECK(f.core->camera().center.x == doctest::Approx(500 - 100));
 }
 
-TEST_CASE("zoom extents fits the drawing; ZOOM and PAN work as commands") {
+TEST_CASE("zoom extents fits the drawing - ZOOM and PAN work as commands") {
     Fixture f("extents");
     f.line("0,0", "10000,0");
     f.line("0,0", "0,5000");
@@ -493,7 +493,7 @@ TEST_CASE("a command that leaves the working area raises a notice with Zoom to a
     CHECK_FALSE(f.core->outOfAreaNotice().has_value());
 }
 
-TEST_CASE("host settings are typed by what is stored; toggles live in the UI registry") {
+TEST_CASE("host settings are typed by what is stored - toggles live in the UI registry") {
     Fixture f("hostsettings");
     CHECK(f.core->setting("drafting.snap") == "0");
     f.core->setSetting("drafting.snap", "on");

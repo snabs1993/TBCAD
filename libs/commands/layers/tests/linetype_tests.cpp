@@ -84,7 +84,7 @@ TEST_CASE("loading adds missing linetypes and skips existing ones") {
     CHECK(doc.linetypeByName("Continuous") != nullptr);
 }
 
-TEST_CASE("a dashed line's display list carries the dash pattern; sub-layers inherit it") {
+TEST_CASE("a dashed line's display list carries the dash pattern - sub-layers inherit it") {
     Document doc;
     LinetypeFile f = parseLinetypes(builtinLinetypeText());
     LayerId parent, child;

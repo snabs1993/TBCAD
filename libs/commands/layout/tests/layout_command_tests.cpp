@@ -138,7 +138,7 @@ TEST_CASE("viewports can be picked by clicking, moved, resized, re-centred and d
     CHECK(layout::findLayout(f.doc, "Plan")->viewports.size() == 2);
 }
 
-TEST_CASE("commands that need a layout say so; LAYOUT List, Rename, Paper and Delete work") {
+TEST_CASE("commands that need a layout say so - LAYOUT List, Rename, Paper and Delete work") {
     Fixture f;
     f.host->run("MVIEW", {});
     CHECK(f.host->logContains("no layouts"));

@@ -198,7 +198,7 @@ TEST_CASE("density guards fall back to a solid tone") {
     CHECK(generateFill(h, oneFamily(0, 1), few).mode == FillResult::Mode::SolidTone);  // 100
 }
 
-TEST_CASE("solid fill gives rings; islands are rings too") {
+TEST_CASE("solid fill gives rings - islands are rings too") {
     Scene s;
     s.add(circle({0, 0}, 50));
     s.add(circle({0, 0}, 20));

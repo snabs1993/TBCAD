@@ -122,7 +122,7 @@ TEST_CASE("fillet and chamfer on two lines and on a polyline") {
               .find("second") != std::string::npos);
 }
 
-TEST_CASE("break_entity splits or removes a part; join_entities puts pieces back") {
+TEST_CASE("break_entity splits or removes a part - join_entities puts pieces back") {
     Rig r;
     r.initialize();
     auto ids = add(r, R"([{"kind":"line","start":[0,0],"end":[100,0]}])");

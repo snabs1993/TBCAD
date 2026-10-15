@@ -265,7 +265,7 @@ TEST_CASE("delete a whole branch of empty layers") {
     CHECK(doc.layerByName("Sibling") != nullptr);
 }
 
-TEST_CASE("delete a layer and move its children up; they keep their look") {
+TEST_CASE("delete a layer and move its children up - they keep their look") {
     Document doc;
     LayerId top = mk(doc, "Top");
     LayerId mid = mk(doc, "Mid", top);

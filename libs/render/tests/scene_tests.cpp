@@ -82,7 +82,7 @@ TEST_CASE("vertices reproduce world positions at far coordinates") {
     CHECK(std::abs(rb.y - b.y) < 1e-6);
 }
 
-TEST_CASE("entities with the same style share a batch; different styles do not") {
+TEST_CASE("entities with the same style share a batch - different styles do not") {
     Scene s;
     s.upsert({1}, lineList({0, 0}, {1, 0}), 0);
     s.upsert({2}, lineList({0, 1}, {1, 1}), 1);
