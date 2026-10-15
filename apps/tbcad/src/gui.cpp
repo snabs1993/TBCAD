@@ -1124,7 +1124,7 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         const bool overflow = layoutScrollMax_ > 1.0f;  // measured on the previous frame
         const float arrowW = ImGui::GetFrameHeight();
         const bool paper = core_.inPaperSpace();
-        const char* hint = "Layout view (read-only)";
+        const char* hint = "Sheet view: double-click a viewport to edit the model";
         const float hintW = paper ? ImGui::CalcTextSize(hint).x + 24 : 0.0f;
         float avail = ImGui::GetContentRegionAvail().x - plusW - 2 * st.ItemSpacing.x;
         if (overflow)
