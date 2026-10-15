@@ -22,7 +22,7 @@ TEST_CASE("without locks the filter does nothing and the fields follow the curso
     World w;
     auto f = fieldsOf(w, {30, 40}, Vec2{0, 0});
     REQUIRE(f.size() == 2);
-    CHECK(f[0].label == "Distance");
+    CHECK(f[0].label == "Distance (mm)");
     CHECK(f[0].text == "50");
     CHECK(f[1].label == "Angle");
     CHECK(f[1].text.rfind("53.13", 0) == 0);

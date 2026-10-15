@@ -103,7 +103,10 @@ std::vector<cmd::CursorField> DynamicInput::fields(const cmd::FilterFeedback& fb
     };
     if (fb.base) {
         const Vec2 v = fb.point - *fb.base;
-        out.push_back({"Distance", dist_ ? len(*dist_) : len(length(v)), dist_.has_value()});
+        std::string label = "Distance";
+        if (const std::string_view unit = unitSuffix(uf.unit); !unit.empty())
+            label += " (" + std::string(unit) + ")";  // "Distance (mm)"
+        out.push_back({label, dist_ ? len(*dist_) : len(length(v)), dist_.has_value()});
         out.push_back(
             {"Angle", angle_ ? ang(*angle_) : ang(std::atan2(v.y, v.x)), angle_.has_value()});
     } else {
