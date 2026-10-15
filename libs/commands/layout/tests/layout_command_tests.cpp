@@ -87,6 +87,24 @@ TEST_CASE("VPLEVEL shows one level in a viewport") {
     CHECK(f.host->logContains("No level named"));
 }
 
+TEST_CASE("MVIEW with Enter at the centre prompt shows the middle of the drawing") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("plan");
+        Entity a;
+        a.data = LineData{{0, 0}, {10000, 4000}};
+        REQUIRE(tx.add(std::move(a)));
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    auto r = f.host->run("MVIEW", {"10,10", "410,287", "1:50", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    auto l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l->viewports.size() == 1);
+    CHECK(l->viewports[0].center.x == doctest::Approx(5000));
+    CHECK(l->viewports[0].center.y == doctest::Approx(2000));
+}
+
 TEST_CASE("commands that need a layout say so; LAYOUT List, Rename, Paper and Delete work") {
     Fixture f;
     f.host->run("MVIEW", {});

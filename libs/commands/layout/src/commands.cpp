@@ -3,6 +3,7 @@
 #include <cstdlib>
 
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/layoutcmd/layoutcmd.h"
 
@@ -201,13 +202,28 @@ public:
             co_return;
         }
         cmd::PointOptions co;
-        auto center = co_await ctx.getPoint("Specify the model point at the viewport centre", co);
-        if (!center.ok())
+        auto center = co_await ctx.getPoint(
+            "Specify the model point at the viewport centre <centre of the drawing>", co);
+        Vec2 centre{};
+        if (center.status == Status::None) {  // Enter: show the middle of the drawing
+            BBox2 box;
+            for (EntityId id : ctx.doc().modelSpace())
+                if (const Entity* e = ctx.doc().find(id))
+                    box.merge(geom::bounds(*e, ctx.doc()));
+            if (box.empty()) {
+                ctx.message("The drawing is empty: type the model point.");
+                co_return;
+            }
+            centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+        } else if (center.ok()) {
+            centre = center.point;
+        } else {
             co_return;
+        }
         BBox2 rect;
         rect.expand(a.point);
         rect.expand(b.point);
-        auto id = layout::addViewport(ctx.tx(), target, rect, center.point, n);
+        auto id = layout::addViewport(ctx.tx(), target, rect, centre, n);
         ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target + "\"."
                        : id.error().message);
     }
