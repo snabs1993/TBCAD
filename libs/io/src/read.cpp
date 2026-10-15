@@ -6,6 +6,7 @@
 
 #include "chunks.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::io {
 
@@ -810,7 +811,7 @@ Result<std::unique_ptr<Document>> readTbcad(std::span<const std::uint8_t> bytes,
 
 Result<std::unique_ptr<Document>> readTbcad(const std::filesystem::path& path, IoReport& report,
                                             const ReadOptions& options) {
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    std::ifstream in(platform::longPath(path), std::ios::binary | std::ios::ate);
     if (!in)
         return makeError(ErrorCode::Io, "cannot open " + path.string());
     std::streamoff size = in.tellg();

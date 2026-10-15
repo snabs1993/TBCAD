@@ -51,3 +51,21 @@ TEST_CASE("no environment still gives usable relative folders") {
     CHECK_FALSE(p.configDir.empty());
     CHECK_FALSE(p.dataDir.empty());
 }
+
+TEST_CASE("long paths: only Windows paths of 240 characters or more get the prefix") {
+    const std::filesystem::path shortPath("//server/share/a.dwg");
+    CHECK(longPath(shortPath, true) == shortPath);
+    const std::string longName(250, 'x');
+    const std::filesystem::path longUnc("//server/share/" + longName + ".dwg");
+    CHECK(longPath(longUnc, false) == longUnc);
+    CHECK(longPath({}, true).empty());
+#ifdef _WIN32
+    // Path semantics of the other platforms differ (a double slash is not a share there).
+    CHECK(longPath(longUnc, true) ==
+          std::filesystem::path(L"\\\\?\\UNC\\server\\share\\" +
+                                std::wstring(longName.begin(), longName.end()) + L".dwg"));
+    const std::filesystem::path prefixed(L"\\\\?\\C:\\" +
+                                         std::wstring(longName.begin(), longName.end()));
+    CHECK(longPath(prefixed, true) == prefixed);
+#endif
+}

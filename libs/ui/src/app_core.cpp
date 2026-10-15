@@ -21,6 +21,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/platform/json.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/settings_model.h"
@@ -768,7 +769,7 @@ void AppCore::printOpenFailure(const std::string& text) {
 }
 
 Result<void> AppCore::openDxf(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(platform::longPath(path), std::ios::binary);
     if (!in) {
         printOpenFailure("Cannot open " + path.string());
         settings_.removeRecentFile(platform::pathToUtf8(path));
