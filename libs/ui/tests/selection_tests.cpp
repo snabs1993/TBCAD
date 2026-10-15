@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "tbcad/hatch/hatch.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/selection.h"
 #include "test_support.h"
 
@@ -200,4 +201,31 @@ TEST_CASE("a click inside a hatch picks it, but a line under the pointer wins") 
     CHECK(pickEntity(d.doc, d.idx, {30, 20}, 1) == hatch);
     CHECK(pickEntity(d.doc, d.idx, {30, 50}, 1) == line);
     CHECK_FALSE(pickEntity(d.doc, d.idx, {130, 20}, 1).has_value());
+}
+
+TEST_CASE("a crossing and a window both select every attribute definition inside") {
+    text::registerDisplay();
+    Indexed d;
+    auto addAttDef = [&](const char* tag, Vec2 at) {
+        TextData t;
+        t.position = at;
+        t.height = 2.5;
+        t.utf8 = tag;
+        AttDefInfo info;
+        info.tag = tag;
+        t.attdef = info;
+        auto tx = d.doc.begin("attdef");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        auto id = tx.add(std::move(e));
+        tx.commit();
+        return id.value();
+    };
+    EntityId name = addAttDef("NAME", {0, 500});
+    EntityId area = addAttDef("AREA", {0, 0});
+    BBox2 box;
+    box.expand({-100, -100});
+    box.expand({300, 700});
+    CHECK(selectInBox(d.doc, d.idx, box, true) == std::vector<EntityId>{name, area});
+    CHECK(selectInBox(d.doc, d.idx, box, false) == std::vector<EntityId>{name, area});
 }

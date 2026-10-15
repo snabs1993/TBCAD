@@ -1,0 +1,92 @@
+#include "support.h"
+
+using namespace tbcad;
+using namespace tbcad::block_cmds;
+using namespace tbcad::block_cmds::test;
+
+namespace {
+
+// A block "Sym" of one 10 mm line, inserted at the origin and at (100,50).
+struct BEditFixture : Fixture {
+    EntityId second{};
+    BEditFixture() {
+        EntityId line = addLine(0, 0, 10, 0);
+        host->setSelection({line});
+        host->run("BLOCK", {"Sym", "0,0", "C"});
+        const BlockDef& def = doc.blocks().begin()->second;
+        Entity e;
+        e.data = Indirect<InsertData>(InsertData{def.id, {100, 50}, {1, 1}, 0});
+        second = add(std::move(e));
+    }
+    const BlockDef& def() const { return doc.blocks().begin()->second; }
+    std::size_t lines() const {
+        std::size_t n = 0;
+        for (EntityId id : modelSpace())
+            if (kind(*doc.find(id)) == EntityKind::Line)
+                ++n;
+        return n;
+    }
+};
+
+}  // namespace
+
+TEST_CASE(
+    "BEDIT copies the block next to its insert; BCLOSE writes the edit back to every insert") {
+    BEditFixture f;
+    REQUIRE(f.lines() == 0);
+    auto r = f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    CHECK(r.finished);
+    REQUIRE(f.lines() == 1);
+    EntityId copy;
+    for (EntityId id : f.modelSpace())
+        if (kind(*f.doc.find(id)) == EntityKind::Line)
+            copy = id;
+    const auto* ln = entityAs<LineData>(*f.doc.find(copy));
+    CHECK(near(ln->a, {100, 50}));
+    CHECK(near(ln->b, {110, 50}));
+
+    {
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(copy, [](Entity& e) { entityAs<LineData>(e)->b = {130, 50}; }).ok());
+        tx.commit();
+    }
+    f.host->run("BCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(f.lines() == 0);  // the working copies are gone
+    REQUIRE(f.def().entities.size() == 1);
+    const auto* back = entityAs<LineData>(*f.doc.find(f.def().entities[0]));
+    CHECK(near(back->a, {0, 0}));
+    CHECK(near(back->b, {30, 0}));  // back in block space
+    // BEDIT again is possible once the first edit is closed.
+    f.host->run("BEDIT", {"Name", "Sym"});
+    CHECK(f.lines() == 1);
+}
+
+TEST_CASE("BCLOSE Discard drops the copies and leaves the block alone; BSAVE keeps editing") {
+    BEditFixture f;
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    f.host->run("BCLOSE", {"Discard"});
+    CHECK(f.lines() == 0);
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
+
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    EntityId copy;
+    for (EntityId id : f.modelSpace())
+        if (kind(*f.doc.find(id)) == EntityKind::Line)
+            copy = id;
+    {
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(copy, [](Entity& e) { entityAs<LineData>(e)->b = {160, 50}; }).ok());
+        tx.commit();
+    }
+    f.host->run("BSAVE", {});
+    CHECK(f.lines() == 1);  // still editing
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {60, 0}));
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    CHECK(f.host->logContains("already being edited"));
+}
+
+TEST_CASE("BSAVE and BCLOSE without BEDIT explain themselves") {
+    BEditFixture f;
+    f.host->run("BSAVE", {});
+    CHECK(f.host->logContains("No block is being edited"));
+}

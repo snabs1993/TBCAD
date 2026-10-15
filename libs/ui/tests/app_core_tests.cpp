@@ -6,6 +6,7 @@
 
 #include "tbcad/core/dump.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/xref/xref.h"
 #include "test_support.h"
@@ -153,6 +154,37 @@ TEST_CASE("drag left to right selects inside, right to left selects touching") {
     CHECK(f.core->selection().size() == 2);
     f.core->dragSelect(b, a, PointerState{a, true, false});  // shift removes
     CHECK(f.core->selection().empty());
+}
+
+TEST_CASE("a drag over the whole drawing selects every attribute definition") {
+    text::registerDisplay();
+    Fixture f("dragattdef");
+    EntityId ids[2];
+    int n = 0;
+    for (Vec2 at : {Vec2{0, 500}, Vec2{0, 0}}) {
+        TextData t;
+        t.position = at;
+        t.height = 2.5;
+        t.utf8 = n == 0 ? "NAME" : "AREA";
+        AttDefInfo info;
+        info.tag = t.utf8;
+        t.attdef = info;
+        auto tx = f.core->document().begin("attdef");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        ids[n++] = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    f.core->updateFrame();
+    f.core->zoomExtents();
+    Vec2 a = {5, 5};
+    Vec2 b = {f.core->camera().screenToWorld({995, 795})};
+    b = f.core->camera().worldToScreen(b);
+    f.core->dragSelect(a, b, PointerState{b, false, false});
+    CHECK(f.core->selection().size() == 2);
+    f.core->clearSelection();
+    f.core->dragSelect(b, a, PointerState{a, false, false});
+    CHECK(f.core->selection().size() == 2);
 }
 
 TEST_CASE("Alt+click cycles through overlapping objects - lasso selects inside the path") {

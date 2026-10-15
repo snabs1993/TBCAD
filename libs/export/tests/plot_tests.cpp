@@ -188,6 +188,31 @@ TEST_CASE("plot area window and errors") {
     CHECK_FALSE(computeLayout(doc, s).ok());
 }
 
+TEST_CASE("a plot window clips the sheet to the window") {
+    Document doc;
+    addEntity(doc, line({0, 0}, {100, 100}));
+    PlotSettings s;
+    s.area = PlotArea::Window;
+    s.window.min = {0, 0};
+    s.window.max = {50, 50};
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    const auto& prims = sheet.value().prims;
+    REQUIRE(prims.size() >= 3);
+    const auto* begin = std::get_if<PlotClip>(&prims.front());
+    const auto* end = std::get_if<PlotClip>(&prims.back());
+    REQUIRE(begin);
+    REQUIRE(end);
+    CHECK(begin->begin);
+    CHECK_FALSE(end->begin);
+    CHECK(begin->rect.width() == doctest::Approx(277));
+
+    s.area = PlotArea::Extents;  // the whole drawing fits: nothing to clip
+    auto whole = buildSheet(doc, s);
+    REQUIRE(whole.ok());
+    CHECK_FALSE(std::get_if<PlotClip>(&whole.value().prims.front()));
+}
+
 TEST_CASE("monochrome turns red black - white is always black - greyscale") {
     CHECK(plotColor(Rgba{255, 0, 0, 255}, ColorMode::Monochrome) == Rgba{0, 0, 0, 255});
     CHECK(plotColor(Rgba{255, 0, 0, 255}, ColorMode::AsDisplayed) == Rgba{255, 0, 0, 255});
