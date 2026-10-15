@@ -1399,7 +1399,7 @@ private:
             l.extents[5] = b.z;
         }
         if (fmt_.r2004)
-            r.rl();  // viewport count
+            r.bl();  // viewport count (a long in real files, not the raw long of the spec)
         tally(kLayoutObject, r);
         BitReader h(body, objBits);
         leadingHandles(h, self, reactors, true);
@@ -2505,7 +2505,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r50: mtext background scale is a real; multi-line attributes kept; r49: data of other "
+    return "r51: layout viewport count is a bit-long; r50: mtext background scale is a real; multi-line attributes kept; r49: data of other "
            "blocks inside each viewport counted; r48: model data inside each "
            "viewport counted; r47: viewport direction and twist "
            "listed; r46: paper rectangle moved to the sheet "
