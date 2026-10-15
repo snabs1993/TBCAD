@@ -119,6 +119,39 @@ TEST_CASE("DIMSTYLE Rename keeps the id, refuses Standard and duplicates") {
     CHECK(f.host->undo());
 }
 
+TEST_CASE("the first dimension seen from far away gets a scaled style so its text can be read") {
+    Fixture f;
+    f.host->setView({{0, 0}, 10.0, {900, 600}});  // 10 mm per pixel: a plan in millimetres
+    f.host->run("DIMLINEAR", {"0,0", "6000,0", "3000,500"});
+    f.host->run("DIMLINEAR", {"0,1000", "6000,1000", "3000,1500"});
+    const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
+    REQUIRE(scaled);  // 12 px * 10 mm / 2.5 mm = 48, nearest 1-2-5 step is 50
+    CHECK(scaled->overallScale == doctest::Approx(50));
+    CHECK(f.doc.header().currentDimStyle == scaled->id);
+    CHECK(f.doc.dimStyles().size() == 2);  // the second dimension reuses it
+    // A normal zoom leaves the Standard style alone.
+    Fixture g;
+    g.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});
+    CHECK(g.doc.dimStyles().size() == 1);
+}
+
+TEST_CASE("without a view a big drawing still gets readable dimension text") {
+    Fixture f;  // a script: no view, but a 20 m plan
+    {
+        auto tx = f.doc.begin("plan");
+        Entity a, b;
+        a.data = LineData{{0, 0}, {20000, 0}};
+        b.data = LineData{{0, 0}, {0, 12000}};
+        REQUIRE(tx.add(std::move(a)));
+        REQUIRE(tx.add(std::move(b)));
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,0", "20000,0", "10000,-800"});
+    const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
+    REQUIRE(scaled);  // 20000 / 160 / 2.5 = 50
+    CHECK(f.doc.header().currentDimStyle == scaled->id);
+}
+
 TEST_CASE("DIMSETUP gives only the selected dimensions a style or an overall scale") {
     Fixture f;
     f.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});

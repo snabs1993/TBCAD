@@ -82,6 +82,7 @@ public:
                          "Off",    "Freeze",   "Thaw",       "Lock",    "Unlock",
                          "Color",  "Linetype", "Lineweight", "Plot",    "NoPlot",
                          "Rename", "Delete",   "Isolate",    "ShowAll", "List"};
+        opts.aliases = {{"N", "New"}, {"S", "Set"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
             if (!k.ok())

@@ -106,6 +106,8 @@ struct StringOptions {
 struct KeywordOptions {
     std::vector<std::string> keywords{};
     std::optional<std::string> defaultKeyword{};  // returned on Enter
+    // Short forms that would be ambiguous as prefixes, e.g. {"N", "New"}; not shown in the prompt.
+    std::vector<std::pair<std::string, std::string>> aliases{};
 };
 struct SelectionOptions {
     std::vector<std::string> keywords{};

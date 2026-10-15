@@ -24,6 +24,7 @@ TEST_CASE("switching to a layout shows the sheet and goes back to the model view
 
     CHECK(core.setActiveLayout("Sheet 1"));
     CHECK(core.inPaperSpace());
+    CHECK(core.settings().getString("plot.layout", "?") == "Sheet 1");  // PLOT plots this sheet
     CHECK(&core.renderScene() != &core.scene());
     CHECK(core.renderScene().entityCount() > 0);  // at least the white sheet
 
@@ -43,6 +44,7 @@ TEST_CASE("switching to a layout shows the sheet and goes back to the model view
 
     CHECK(core.setActiveLayout(""));
     CHECK_FALSE(core.inPaperSpace());
+    CHECK(core.settings().getString("plot.layout", "?").empty());
     CHECK(core.camera().center.x == doctest::Approx(model.center.x));
     CHECK(core.camera().pixelsPerMm == doctest::Approx(model.pixelsPerMm));
 

@@ -334,6 +334,9 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
     if (r.failed() || units < 0 || units > 20 || !std::isfinite(v.ltscale) || v.ltscale <= 0 ||
         v.ltscale > 1e9) {
         notes.push_back("the drawing units could not be read from the header; unitless assumed");
+        notes.push_back("header diagnostics: ltscale " + std::to_string(v.ltscale) + ", units " +
+                        std::to_string(units) + ", failed " + (r.failed() ? "yes" : "no") +
+                        ", bit " + std::to_string(r.bitPos()));
         v.valid = false;
         return;
     }

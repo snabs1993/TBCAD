@@ -247,3 +247,22 @@ TEST_CASE("preview is produced while MOVE waits for the second point") {
     f.host.feed({ScriptItem::esc()});
     CHECK(near(get<LineData>(f.doc, a).a, {0, 0}));
 }
+
+TEST_CASE("Select objects accepts All, Last and Previous typed like AutoCAD") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{1, 1}, {5, 3}});
+    auto b = add(f.doc, LineData{{1, 2}, {5, 4}});
+    f.host.run("MIRROR", {"ALL", ScriptItem::enter(), "0,0", "10,0", ScriptItem::enter()});
+    CHECK(f.doc.modelSpaceCount() == 4);  // both lines mirrored, sources kept
+    Fixture g;
+    add(g.doc, LineData{{1, 1}, {5, 3}});
+    auto last = add(g.doc, LineData{{1, 2}, {5, 4}});
+    g.host.run("MIRROR", {"Last", ScriptItem::enter(), "0,0", "10,0", "Yes"});
+    CHECK(near(get<LineData>(g.doc, last).a, {1, -2}));
+    Fixture h;
+    add(h.doc, LineData{{1, 1}, {5, 3}});
+    h.host.run("MIRROR", {"Nonsense", "Cancel"});
+    CHECK(h.host.logContains("type All, Last or Previous"));
+    (void)a;
+    (void)b;
+}

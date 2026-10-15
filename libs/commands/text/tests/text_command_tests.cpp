@@ -79,6 +79,20 @@ TEST_CASE("TEXT remembers the last height as the next default") {
     CHECK(n == 2);
 }
 
+TEST_CASE("TEXT in a big drawing or at a set annotation scale defaults to readable height") {
+    Fixture f;
+    f.host.run("LINE", {"0,0", "20000,0", ""});  // a 20 m plan
+    f.host.run("TEXT", {"0,0", "", "0", "a"});
+    CHECK(f.firstText()->height == doctest::Approx(125));  // 2.5 * 50
+    // The automatic height is not remembered as a user choice.
+    CHECK(f.host.setting("text.height").value_or("").empty());
+
+    Fixture g;
+    g.host.run("CANNOSCALE", {"20"});
+    g.host.run("TEXT", {"0,0", "", "0", "b"});
+    CHECK(g.firstText()->height == doctest::Approx(50));
+}
+
 TEST_CASE("TEXT Justify options") {
     Fixture f;
     f.host.run("TEXT", {"J", "MC", "5,5", "4", "0", "mid"});
