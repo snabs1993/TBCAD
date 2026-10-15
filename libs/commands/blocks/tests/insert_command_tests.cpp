@@ -62,7 +62,7 @@ TEST_CASE("INSERT remembers the last block as the default") {
     CHECK(f.modelSpace().size() == 2);
 }
 
-TEST_CASE("INSERT without blocks says so; Esc inserts nothing") {
+TEST_CASE("INSERT without blocks says so - Esc inserts nothing") {
     Fixture f;
     f.host->run("INSERT", {});
     CHECK(f.host->logContains("no blocks"));

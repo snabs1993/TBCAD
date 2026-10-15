@@ -55,7 +55,7 @@ TEST_CASE("Latin text and mixed text: only Thai runs get breaks") {
     CHECK(thaiWordBreaks("").empty());
 }
 
-TEST_CASE("unknown words stay together; a repetition mark never starts a line") {
+TEST_CASE("unknown words stay together - a repetition mark never starts a line") {
     // A made-up unknown sequence between two known words is not split internally.
     std::string s = "ครับกกกกผม";  // ครับ กกกก ผม
     auto p = pieces(s);

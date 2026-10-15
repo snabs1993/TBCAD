@@ -36,7 +36,7 @@ TEST_CASE("the display generator is registered and draws lines, arrows and text"
     CHECK(c.fills >= 3);      // two arrowheads and at least one glyph
 }
 
-TEST_CASE("ByBlock style colours take the dimension's own colour; style colours override") {
+TEST_CASE("ByBlock style colours take the dimension's own colour - style colours override") {
     registerDisplay();
     Document doc;
     Entity e = entityOf(Indirect<DimensionData>(linear({0, 0}, {100, 0}, {50, 10})));

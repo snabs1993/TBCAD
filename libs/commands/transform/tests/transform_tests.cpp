@@ -35,7 +35,7 @@ TEST_CASE("MOVE with pre-selection: base point and second point, one undo step")
     CHECK_FALSE(f.host.undoStack().canUndo());
 }
 
-TEST_CASE("MOVE selects objects first when nothing is selected; Enter uses base as displacement") {
+TEST_CASE("MOVE selects objects first when nothing is selected - Enter uses base as displacement") {
     Fixture f;
     auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
     auto r =

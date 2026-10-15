@@ -31,7 +31,7 @@ TEST_CASE("STYLE creates a style and makes it current") {
     CHECK(f.doc.header().currentTextStyle == kTextStyleStandard);
 }
 
-TEST_CASE("STYLE changes an existing style; font files and families are stored") {
+TEST_CASE("STYLE changes an existing style - font files and families are stored") {
     Fixture f;
     f.host.run("STYLE", {"Standard", "Some Family", "1", "0"});
     const TextStyle* s = f.doc.textStyleByName("Standard");
@@ -45,7 +45,7 @@ TEST_CASE("STYLE changes an existing style; font files and families are stored")
     CHECK(s->fontFamily.empty());
 }
 
-TEST_CASE("STYLE ? lists the styles; Esc changes nothing") {
+TEST_CASE("STYLE ? lists the styles - Esc changes nothing") {
     Fixture f;
     f.host.run("STYLE", {"?"});
     CHECK(f.host.logContains("Standard"));

@@ -24,7 +24,7 @@ TEST_CASE("grip collection follows geom::gripPoints and respects the limit") {
     CHECK(tf::hitGrip(grips, {50, 50}, 1.0) == nullptr);
 }
 
-TEST_CASE("GRIPEDIT stretches a line end; one undo step") {
+TEST_CASE("GRIPEDIT stretches a line end - one undo step") {
     Fixture f;
     auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
     f.host.setSelection({a});
@@ -120,7 +120,7 @@ TEST_CASE("grip rotate, scale and mirror use the base point") {
     }
 }
 
-TEST_CASE("Copy mode keeps the original and repeats until Exit; all copies undo together") {
+TEST_CASE("Copy mode keeps the original and repeats until Exit - all copies undo together") {
     Fixture f;
     auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
     f.host.setSelection({a});

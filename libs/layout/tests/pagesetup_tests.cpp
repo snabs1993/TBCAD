@@ -82,7 +82,7 @@ TEST_CASE("page setups round trip through the document and its undo") {
     CHECK(pageSetups(doc)[0].settings.scaleN == doctest::Approx(50));
 }
 
-TEST_CASE("assigning a page setup gives the layout its paper; rename and delete follow") {
+TEST_CASE("assigning a page setup gives the layout its paper - rename and delete follow") {
     Document doc;
     run(doc, [](Transaction& tx) { return createLayout(tx, "Plan", "A4", true); });
     run(doc, [](Transaction& tx) { return savePageSetup(tx, sample()); });

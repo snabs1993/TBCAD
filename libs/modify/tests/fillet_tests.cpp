@@ -48,7 +48,7 @@ TEST_CASE("fillet picks the solution on the side of the pick points") {
     CHECK(near(lb.b, {0, 10}));
 }
 
-TEST_CASE("fillet without trim only adds the arc; radius 0 makes a sharp corner") {
+TEST_CASE("fillet without trim only adds the arc - radius 0 makes a sharp corner") {
     Entity a = line({0, 0}, {10, 0}), b = line({0, 0}, {0, 10});
     auto nt = filletEntities(a, {8, 0}, b, {0, 8}, fr(5, false));
     REQUIRE(nt.ok());

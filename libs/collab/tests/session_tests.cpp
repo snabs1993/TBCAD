@@ -224,7 +224,7 @@ TEST_CASE("session: a guest that uses up its ids asks for another block") {
     CHECK(canonicalDump(docOf(a)) == canonicalDump(net.hostDoc));
 }
 
-TEST_CASE("session: two people edit one line; the second is told who got there first") {
+TEST_CASE("session: two people edit one line - the second is told who got there first") {
     Net net;
     EntityId id = drawLine(net.hostDoc, {0, 0}, {10, 0});
     auto& a = net.add("Somchai");

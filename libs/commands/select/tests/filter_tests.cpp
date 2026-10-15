@@ -38,7 +38,7 @@ TEST_CASE("FILTER builds a list, applies it, saves it and uses it again") {
     CHECK(f.host.selection()[0] == l1);
 }
 
-TEST_CASE("encode and decode of a filter round-trip; bad values are refused") {
+TEST_CASE("encode and decode of a filter round-trip - bad values are refused") {
     std::vector<select::Query> q{{select::Property::Layer, "Walls, north", true},
                                  {select::Property::Color, "1", false}};
     auto back = select::decodeFilter(select::encodeFilter(q));

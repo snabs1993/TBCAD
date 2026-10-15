@@ -178,7 +178,7 @@ TEST_CASE("objects inside an object stream are found") {
     CHECK(polylines(*doc.value()).size() == 1);
 }
 
-TEST_CASE("text and images are counted but not drawn; inline images are skipped") {
+TEST_CASE("text and images are counted but not drawn - inline images are skipped") {
     std::string pdf = simplePdf(
         "BT /F1 12 Tf 10 10 Td (Hello) Tj ET\n"
         "q 10 0 0 10 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x01 EI Q\n"

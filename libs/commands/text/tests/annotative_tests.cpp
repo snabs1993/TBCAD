@@ -59,7 +59,7 @@ TEST_CASE("annotation scale list and current scale are stored in the drawing") {
     CHECK(annotationScaleList(f.doc.header()).size() == 13);
 }
 
-TEST_CASE("annotative text grows with the scale; ordinary text does not") {
+TEST_CASE("annotative text grows with the scale - ordinary text does not") {
     Fixture f;
     f.host.run("TEXT", {"0,0", "2.5", "0", "Hi"});
     f.host.run("TEXT", {"0,10", "2.5", "0", "Hi"});
@@ -82,7 +82,7 @@ TEST_CASE("annotative text grows with the scale; ordinary text does not") {
           doctest::Approx(h1 * 10).epsilon(0.01));
 }
 
-TEST_CASE("an object keeps its own scales; new objects follow ANNONEW") {
+TEST_CASE("an object keeps its own scales - new objects follow ANNONEW") {
     Fixture f;
     f.host.run("TEXT", {"0,0", "2.5", "0", "Hi"});
     EntityId id{};

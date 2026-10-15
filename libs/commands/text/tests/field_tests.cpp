@@ -48,7 +48,7 @@ TEST_CASE("fields work out length, area, text, file name and sheet") {
     CHECK(x("no field, 100%") == "no field, 100%");
 }
 
-TEST_CASE("FIELD makes a text; the text follows the object it measures") {
+TEST_CASE("FIELD makes a text - the text follows the object it measures") {
     Fixture f;
     f.host.run("LINE", {"0,0", "100,0", cmd::ScriptItem::enter()});
     const EntityId line = f.last();
@@ -63,12 +63,19 @@ TEST_CASE("FIELD makes a text; the text follows the object it measures") {
         DisplayList d;
         geom::buildDisplay(f.doc, *f.doc.find(f.last()), geom::DisplayContext{}, d);
         double lo = 1e30, hi = -1e30;
-        for (const auto& item : d.items)
+        auto take = [&](Vec2 v) {
+            lo = std::min(lo, v.x);
+            hi = std::max(hi, v.x);
+        };
+        for (const auto& item : d.items) {
             if (const auto* p = std::get_if<DisplayPolyline>(&item))
-                for (Vec2 v : p->pts) {
-                    lo = std::min(lo, v.x);
-                    hi = std::max(hi, v.x);
-                }
+                for (Vec2 v : p->pts)
+                    take(v);
+            if (const auto* fl = std::get_if<DisplayFill>(&item))  // filled glyphs
+                for (const auto& ring : fl->rings)
+                    for (Vec2 v : ring)
+                        take(v);
+        }
         return hi - lo;
     };
     const double before = width();

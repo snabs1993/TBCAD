@@ -61,7 +61,7 @@ TEST_CASE(
     CHECK(f.lines() == 1);
 }
 
-TEST_CASE("BCLOSE Discard drops the copies and leaves the block alone; BSAVE keeps editing") {
+TEST_CASE("BCLOSE Discard drops the copies and leaves the block alone - BSAVE keeps editing") {
     BEditFixture f;
     f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
     f.host->run("BCLOSE", {"Discard"});

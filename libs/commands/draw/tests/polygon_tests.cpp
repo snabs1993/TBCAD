@@ -90,7 +90,7 @@ TEST_CASE("POLYGON remembers the number of sides for the next run") {
     CHECK(as<PolylineData>(g.entities()[0]).v.size() == 4);
 }
 
-TEST_CASE("POLYGON: a zero radius is refused; Esc draws nothing") {
+TEST_CASE("POLYGON: a zero radius is refused - Esc draws nothing") {
     Fixture f;
     f.host.run("POL", {"4", "0,0", "", "0,0"});
     CHECK(f.entities().empty());

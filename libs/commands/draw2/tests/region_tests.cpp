@@ -48,7 +48,7 @@ TEST_CASE("SUBTRACT cuts a circle out of a box and leaves a hole") {
     CHECK(std::abs(totalArea(f) - (10000 + 100 * kPi)) < 1.0);  // outer area plus hole area
 }
 
-TEST_CASE("INTERSECT keeps the shared area; fewer than two objects is refused") {
+TEST_CASE("INTERSECT keeps the shared area - fewer than two objects is refused") {
     Fixture f;
     auto a = f.addEntity(box(0, 0, 10, 10));
     auto b = f.addEntity(box(5, 5, 15, 15));
