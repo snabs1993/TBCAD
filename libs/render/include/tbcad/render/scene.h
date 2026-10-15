@@ -26,7 +26,9 @@ struct TileKey {
     friend auto operator<=>(const TileKey&, const TileKey&) = default;
 };
 
-enum class BatchKind : std::uint8_t { Fill = 0, Stroke = 1, Point = 2 };
+// Mask: a fill in the background colour (a wipeout). It hides what was drawn before it and is
+// drawn between the batches of `level`s: see BatchKey::level.
+enum class BatchKind : std::uint8_t { Fill = 0, Stroke = 1, Point = 2, Mask = 3 };
 
 // Everything that makes two pieces of geometry drawable with the same GL state.
 struct BatchKey {
@@ -35,6 +37,10 @@ struct BatchKey {
     std::uint32_t rgba = 0;         // r | g<<8 | b<<16 | a<<24
     std::int32_t lineweightUm = 0;  // lineweight in micrometres
     std::uint32_t pattern = 0;      // index into Scene::pattern(); 0 = continuous
+    // Number of masks drawn before this geometry (masks with a lower draw order). Everything of
+    // level n is drawn before the n-th mask and after the (n-1)-th, so a mask hides only what is
+    // below it. Always 0 in a drawing without masks.
+    std::uint32_t level = 0;
     friend bool operator==(const BatchKey&, const BatchKey&) = default;
     friend auto operator<=>(const BatchKey&, const BatchKey&) = default;
 };
@@ -58,6 +64,7 @@ struct hash<tbcad::render::BatchKey> {
         mix(k.rgba);
         mix(static_cast<size_t>(k.lineweightUm));
         mix(k.pattern);
+        mix(k.level);
         return h;
     }
 };
@@ -154,6 +161,14 @@ public:
     // from the camera's. Entities upserted with builtPixelsPerMm == 0 never appear.
     std::vector<EntityId> staleEntities(const Camera2D& camera) const;
 
+    // Wipeouts (masks) are drawn in draw order between other geometry. The scene builds batches
+    // for the masks it knew when adoptMaskOrders() was last called; when a mask is added, removed
+    // or reordered this is true, and the owner must call adoptMaskOrders() and upsert every
+    // entity again (keeping its drawOrderOf()).
+    bool needsRelevel() const;
+    void adoptMaskOrders();
+    std::uint32_t drawOrderOf(EntityId id) const;
+
     // Batches to draw: visible tiles only, hidden layers removed, ordered fills, strokes, points
     // and by drawOrder inside each kind.
     std::vector<VisibleBatch> visibleBatches(const Camera2D& camera) const;
@@ -172,6 +187,7 @@ public:
 private:
     struct EntityRec {
         std::uint32_t drawOrder = 0;
+        bool mask = false;
         std::vector<std::pair<TileKey, BatchKey>> refs{};
     };
     struct SelCache {
@@ -184,7 +200,9 @@ private:
     void addPolyline(Cursor& c, const DisplayPolyline& pl);
     void addFill(Cursor& c, const DisplayFill& fill);
     void addPoints(Cursor& c, const DisplayPoints& pts);
-    BatchKey styleKey(BatchKind kind, const DisplayStyle& style);
+    BatchKey styleKey(BatchKind kind, const DisplayStyle& style, std::uint32_t level);
+    std::vector<std::uint32_t> maskOrders() const;
+    std::uint32_t levelBelow(std::uint32_t drawOrder) const;
     std::uint32_t internPattern(const DisplayStyle& style);
     void eraseRefs(EntityId id, const EntityRec& rec);
     const SelectionGeometry& geometryFor(const std::unordered_set<EntityId>& set,
@@ -196,6 +214,8 @@ private:
     std::unordered_set<LayerId> hiddenLayers_{};
     std::unordered_set<EntityId> highlighted_{};
     std::unordered_set<EntityId> selected_{};
+    std::unordered_map<EntityId, std::uint32_t> masks_{};  // entities with mask fills -> order
+    std::vector<std::uint32_t> levelOrders_{};  // sorted draw orders of the masks batches use
     std::vector<DashPattern> patterns_;
     std::map<std::vector<double>, std::uint32_t> patternIds_{};
     std::vector<std::uint64_t> deleted_{};

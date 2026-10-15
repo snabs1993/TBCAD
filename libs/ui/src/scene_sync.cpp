@@ -74,7 +74,7 @@ bool SceneSync::hiddenByLevel(const Entity& e) const {
     return doc_.effective(e.common.layer).on && !doc_.effective(e.common).on;
 }
 
-void SceneSync::upsertEntity(const Entity& e) {
+void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawOrder) {
     const EntityId id = e.common.id;
     if (!e.common.visible || doc_.ownerBlock(id) || hiddenByLevel(e)) {
         scene_.remove(id);
@@ -94,7 +94,11 @@ void SceneSync::upsertEntity(const Entity& e) {
     }
     if (doc_.effective(e.common).locked)
         fade(list);
-    scene_.upsert(id, list, drawOrderOf(id), needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
+    // An object already in the scene keeps its place in the draw order.
+    scene_.upsert(
+        id, list,
+        drawOrder.value_or(scene_.contains(id) ? scene_.drawOrderOf(id) : drawOrderOf(id)),
+        needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
 }
 
 void SceneSync::syncLayers() {
@@ -141,7 +145,27 @@ void SceneSync::rebuildDrawOrder() {
     }
 }
 
+// A wipeout was added, removed or moved in the draw order: everything is drawn in levels between
+// the wipeouts, so each object is built again (with the draw order it has).
+void SceneSync::relevelMasks() {
+    if (!scene_.needsRelevel())
+        return;
+    scene_.adoptMaskOrders();
+    std::vector<EntityId> ids;
+    doc_.forEachEntity([&](const Entity& e) {
+        if (scene_.contains(e.common.id))
+            ids.push_back(e.common.id);
+    });
+    for (EntityId id : ids)
+        if (const Entity* e = doc_.find(id))
+            upsertEntity(*e, scene_.drawOrderOf(id));
+}
+
 void SceneSync::onChanged(const ChangeSet& cs) {
+    struct Relevel {
+        SceneSync& s;
+        ~Relevel() { s.relevelMasks(); }
+    } relevel{*this};
     bool blockTouched = !cs.blocks.empty();
     std::vector<EntityId> removed;
     for (const EntityChange& c : cs.entities)
@@ -198,6 +222,7 @@ void SceneSync::rebuildAll(double tileSizeMm) {
             lockedLayers_.insert(id);
     render::syncLayerVisibility(scene_, doc_);
     doc_.forEachEntity([&](const Entity& e) { upsertEntity(e); });
+    relevelMasks();
 }
 
 std::size_t SceneSync::refreshStale(const render::Camera2D& camera, std::size_t limit) {

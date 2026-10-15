@@ -318,6 +318,37 @@ TEST_CASE("draw order sorts fills, strokes and points, then drawOrder") {
     CHECK(v[3].batch->key.kind == BatchKind::Point);
 }
 
+TEST_CASE("a mask (wipeout) hides only what was drawn before it") {
+    DisplayList mask;
+    DisplayFill f;
+    f.rings = {{{0, 0}, {5, 0}, {5, 5}, {0, 5}}};
+    f.style = style(kBackgroundColor);
+    mask.items.push_back(f);
+
+    Scene s;
+    s.upsert({1}, lineList({0, 0}, {5, 5}, style(kRed)), 1);  // below the mask
+    s.upsert({2}, mask, 5);
+    s.upsert({3}, lineList({0, 1}, {5, 6}, style(kGreen)), 9);  // above the mask
+    CHECK(s.needsRelevel());  // the scene was built before it knew about the mask
+    s.adoptMaskOrders();
+    CHECK_FALSE(s.needsRelevel());
+    s.upsert({1}, lineList({0, 0}, {5, 5}, style(kRed)), 1);
+    s.upsert({2}, mask, 5);
+    s.upsert({3}, lineList({0, 1}, {5, 6}, style(kGreen)), 9);
+    CHECK_FALSE(s.needsRelevel());
+
+    auto v = s.visibleBatches(cameraAt({2, 2}));
+    REQUIRE(v.size() == 3);
+    CHECK(v[0].batch->key.kind == BatchKind::Stroke);
+    CHECK(v[0].batch->minDrawOrder == 1);
+    CHECK(v[1].batch->key.kind == BatchKind::Mask);
+    CHECK(v[2].batch->key.kind == BatchKind::Stroke);
+    CHECK(v[2].batch->minDrawOrder == 9);
+
+    s.remove({2});
+    CHECK(s.needsRelevel());  // the levels are stale until the owner rebuilds
+}
+
 TEST_CASE("batch versions change whenever geometry changes") {
     Scene s;
     s.upsert({1}, lineList({0, 0}, {1, 0}), 0);
