@@ -1277,6 +1277,60 @@ void Gui::xrefNotice() {
     ImGui::End();
 }
 
+// Right-click on the OSNAP button: tick the snap modes (as AutoCAD's Object Snap settings).
+void Gui::snapModesPopup() {
+    struct Mode {
+        const char* key;
+        const char* label;
+    };
+    static constexpr Mode kModes[] = {{"endpoint", "Endpoint"},
+                                      {"midpoint", "Midpoint"},
+                                      {"center", "Center"},
+                                      {"node", "Node"},
+                                      {"quadrant", "Quadrant"},
+                                      {"intersection", "Intersection"},
+                                      {"perpendicular", "Perpendicular"},
+                                      {"tangent", "Tangent"},
+                                      {"nearest", "Nearest"}};
+    if (ImGui::BeginPopupContextItem("##snapmodes", ImGuiPopupFlags_MouseButtonRight)) {
+        const std::string stored = core_.settings().getString(
+            "drafting.osnap.modes", "endpoint,midpoint,center,intersection,quadrant,node");
+        auto has = [&](const std::string& modes, const std::string& key) {
+            std::string padded = "," + modes + ",";
+            std::string clean;
+            for (char c : padded)
+                if (c != ' ')
+                    clean += c;
+            return clean.find("," + key + ",") != std::string::npos ||
+                   clean.find(",all,") != std::string::npos;
+        };
+        std::string next;
+        bool changed = false;
+        for (const Mode& m : kModes) {
+            bool on = has(stored, m.key);
+            if (ImGui::Checkbox(m.label, &on))
+                changed = true;
+            if (on)
+                next += (next.empty() ? "" : ",") + std::string(m.key);
+        }
+        ImGui::Separator();
+        if (ImGui::SmallButton("Select all")) {
+            changed = true;
+            next.clear();
+            for (const Mode& m : kModes)
+                next += (next.empty() ? "" : ",") + std::string(m.key);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Clear all")) {
+            changed = true;
+            next.clear();
+        }
+        if (changed)
+            core_.setSetting("drafting.osnap.modes", next.empty() ? "none" : next);
+        ImGui::EndPopup();
+    }
+}
+
 void Gui::statusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -1319,6 +1373,11 @@ void Gui::statusBar() {
                 t.set(!on);
             if (on)
                 ImGui::PopStyleColor();
+            if (t.id == "osnap") {
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Object snap. Right-click to choose the snap modes.");
+                snapModesPopup();
+            }
         }
         const Layer* layer = doc.layer(doc.header().currentLayer);
         ImGui::SameLine();
