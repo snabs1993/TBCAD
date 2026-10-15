@@ -23,7 +23,8 @@ public:
         auto what = co_await ctx.getString("Find what");
         if (!what.ok() || what.text.empty())
             co_return;
-        auto with = co_await ctx.getString("Replace with (Enter to only count)");
+        auto with = co_await ctx.getString("Replace with (Enter to only count)",
+                                           cmd::StringOptions{.allowEmpty = true});
         if (!with.ok())
             co_return;
         cmd::KeywordOptions ko;
@@ -36,6 +37,8 @@ public:
         bool replace = !with.text.empty();
         std::size_t objects = 0;
         int matches = 0;
+        std::vector<EntityId> found;
+        BBox2 foundBox;
         std::vector<EntityId> ids = ctx.doc().modelSpace();
         for (EntityId id : ids) {
             const Entity* e = ctx.doc().find(id);
@@ -46,8 +49,22 @@ public:
                 continue;
             ++objects;
             matches += r->count;
+            found.push_back(id);
+            foundBox.merge(geom::bounds(*e, ctx.doc()));
             if (replace && isModifiable(ctx.doc(), *e))
                 (void)ctx.tx().modify(id, [&](Entity& x) { x = std::move(r->entity); });
+        }
+        if (!found.empty() && !replace) {
+            // Show where the matches are: select them and bring them into view.
+            ctx.host().setSelection(found);
+            cmd::ViewState v = ctx.host().view();
+            if (!foundBox.empty() && v.sizePx.x > 0 && v.sizePx.y > 0) {
+                v.center = foundBox.center();
+                const double needX = foundBox.width() * 1.2 / v.sizePx.x;
+                const double needY = foundBox.height() * 1.2 / v.sizePx.y;
+                v.scale = std::max({v.scale, needX, needY});
+                ctx.host().setView(v);
+            }
         }
         if (objects == 0)
             ctx.message("No match for \"" + what.text + "\".");
