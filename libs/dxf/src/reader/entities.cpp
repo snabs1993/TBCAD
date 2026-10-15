@@ -199,6 +199,23 @@ bool Importer::frameOf(const Record& r, Frame& f, std::string_view type) {
         f.mirror = nz < 0;
         return true;
     }
+    // Up to about 25 degrees the object is drawn as seen from above: its coordinate axes follow
+    // the arbitrary axis algorithm and the tilt is dropped.
+    if (std::abs(nz) >= 0.9) {
+        double ax = -ny, ay = nx;  // Wz x N, or Wy x N for a vertical-ish normal (not reached here)
+        const double al = std::hypot(ax, ay);
+        ax /= al;
+        ay /= al;
+        // Y axis = N x X axis, projected on the XY plane.
+        const double bx = ny * 0 - nz * ay;
+        const double by = nz * ax - nx * 0;
+        const double det = ax * by - ay * bx;
+        f.mirror = det < 0;
+        f.rot = f.mirror ? std::atan2(-ay, -ax) : std::atan2(ay, ax);
+        if (flattened_++ == 0)
+            firstFlattenedLine_ = r.line;
+        return true;
+    }
     report_.warn(code::kExtrusion3d,
                  std::string(type) + " lies in a tilted 3D plane (extrusion " + formatDouble(nx) +
                      ", " + formatDouble(ny) + ", " + formatDouble(nz) + "); skipped",
@@ -876,7 +893,7 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             d.block = block;
             d.position = f.p(p);
             d.scale = f.mirror ? Vec2{-sx, sy} : Vec2{sx, sy};
-            d.rotation = f.mirror ? -rot : rot;
+            d.rotation = f.rot + (f.mirror ? -rot : rot);
             d.attribs = values;
             d.clip = clip;
             d.clipOn = clipOn;

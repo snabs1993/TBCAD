@@ -2,6 +2,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -28,12 +29,23 @@ Color mapAci(int aci);
 // `dropped` counts the formatting codes that were removed, keyed by code letter.
 std::string convertMText(std::string_view utf8, double unitScale, std::map<char, int>& dropped);
 
-// Frame of an entity's object coordinate system: either the WCS or the WCS mirrored about the
-// Y axis (extrusion (0, 0, -1)).
+// Frame of an entity's object coordinate system seen from above: the WCS, the WCS mirrored about
+// the Y axis (extrusion (0, 0, -1)), and either of these turned by `rot` (a slightly tilted
+// extrusion: the arbitrary axis algorithm turns the object x axis, and the tilt itself is
+// dropped by the projection onto the XY plane).
 struct Frame {
     bool mirror = false;
-    Vec2 p(Vec2 v) const { return mirror ? Vec2{-v.x, v.y} : v; }
-    double angle(double a) const { return mirror ? kPi - a : a; }
+    double rot = 0;
+    Vec2 v(Vec2 a) const {  // a direction or offset
+        if (mirror)
+            a = Vec2{-a.x, a.y};
+        if (rot == 0)
+            return a;
+        const double c = std::cos(rot), s = std::sin(rot);
+        return Vec2{a.x * c - a.y * s, a.x * s + a.y * c};
+    }
+    Vec2 p(Vec2 a) const { return v(a); }
+    double angle(double a) const { return rot + (mirror ? kPi - a : a); }
     double bulge(double b) const { return mirror ? -b : b; }
 };
 

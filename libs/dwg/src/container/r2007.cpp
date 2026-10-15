@@ -124,7 +124,7 @@ bool pageMapPlausible(const std::vector<std::uint8_t>& pm) {
 
 // A section map starts with a section description whose name length is small.
 bool sectionMapPlausible(const std::vector<std::uint8_t>& sm) {
-    return sm.size() >= 0x40 && le64(sm, 0x20) <= 256 && le64(sm, 0x38) <= 1'000'000;
+    return sm.size() >= 0x40 && le64(sm, 0x20) <= 512 && le64(sm, 0x38) <= 1'000'000;
 }
 
 }  // namespace
@@ -264,14 +264,16 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
         const std::uint64_t encoding = le64(sm, pos + 0x30);
         const std::uint64_t numPages = le64(sm, pos + 0x38);
         pos += 0x40;
-        if (nameLen > 256 || numPages > 1'000'000)
+        // The name length counts bytes of UTF-16 text including the terminator (checked against a
+        // real section map: 34 for "AcDb:FileDepList").
+        if (nameLen > 512 || numPages > 1'000'000)
             break;
         std::string name;
-        const std::size_t nameBytes = static_cast<std::size_t>(nameLen) * 2 + (nameLen ? 2 : 0);
+        const std::size_t nameBytes = static_cast<std::size_t>(nameLen);
         if (pos + nameBytes > sm.size())
             break;
-        for (std::size_t i = 0; i < nameLen; ++i)
-            name += static_cast<char>(sm[pos + i * 2]);  // section names are ASCII
+        for (std::size_t i = 0; i + 1 < nameBytes && sm[pos + i] != 0; i += 2)
+            name += static_cast<char>(sm[pos + i]);  // section names are ASCII
         pos += nameBytes;
         if (numPages > (sm.size() - pos) / 56) {
             notes.push_back("the section map is cut off");
