@@ -491,6 +491,8 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
     // for a single selected object.
     if (ctx.selection->size() == 1 && ctx.drawPropertySections)
         ctx.drawPropertySections(ctx.selection->front());
+    else if (ctx.selection->size() > 1 && ctx.drawMultiSections)
+        ctx.drawMultiSections();  // sections that can edit several objects at once
 }
 
 }  // namespace tbcad::layers

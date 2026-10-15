@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 #include "icons.h"
@@ -2305,10 +2306,24 @@ void Gui::panels() {
         const Entity* e = core_.document().find(id);
         if (!e)
             return;
+        pc.multiSelection = false;
         for (const auto* section : registry_.sectionsFor(kind(*e))) {
             ImGui::Separator();
             section->draw(pc, id);
         }
+    };
+    pc.drawMultiSections = [this, &pc]() {
+        // One call per kind in the selection, each with the first object of that kind.
+        std::set<EntityKind> seen;
+        pc.multiSelection = true;
+        for (EntityId id : *pc.selection) {
+            const Entity* e = core_.document().find(id);
+            if (!e || !seen.insert(kind(*e)).second)
+                continue;
+            for (const auto* section : registry_.sectionsFor(kind(*e)))
+                section->draw(pc, id);
+        }
+        pc.multiSelection = false;
     };
     for (const std::string& id : core_.takePanelRequests())
         panelOpen_[id] = true;

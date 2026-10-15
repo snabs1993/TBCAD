@@ -147,7 +147,7 @@ void drawPanel(ui::PanelContext& pc) {
 // ---- Properties panel: Hatch section ---------------------------------------------------------
 
 void drawSection(ui::PanelContext& pc, EntityId id) {
-    if (!pc.doc || !pc.runCommand)
+    if (!pc.doc || !pc.runCommand || pc.multiSelection)
         return;
     const Entity* e = pc.doc->find(id);
     const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;
