@@ -40,4 +40,5 @@ tbcad_add_tests(appcore
     tests/drag_payload_tests.cpp
     tests/workspace_tests.cpp
     tests/headless_file_tests.cpp
-    tests/paper_view_tests.cpp)
+    tests/paper_view_tests.cpp
+    tests/selectall_bench_tests.cpp)

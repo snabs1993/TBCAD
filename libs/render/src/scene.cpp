@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <set>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 
 #include "tbcad/render/fill.h"
@@ -305,6 +307,65 @@ void Scene::remove(EntityId id) {
     ++changeCounter_;
 }
 
+void Scene::removeMany(std::span<const EntityId> ids) {
+    if (ids.size() <= 8) {
+        for (EntityId id : ids)
+            remove(id);
+        return;
+    }
+    // Erasing one object shifts every later range of its batches, so erasing many one by one is
+    // quadratic. Here each touched batch is compacted once.
+    const std::unordered_set<EntityId> drop(ids.begin(), ids.end());
+    std::set<std::pair<TileKey, BatchKey>> touched;
+    for (EntityId id : drop) {
+        auto it = entities_.find(id);
+        if (it == entities_.end())
+            continue;
+        for (const auto& ref : it->second.refs)
+            touched.insert(ref);
+        entities_.erase(it);
+    }
+    for (const auto& [tk, bk] : touched) {
+        auto tit = tiles_.find(tk);
+        if (tit == tiles_.end())
+            continue;
+        Tile& tile = tit->second;
+        auto bit = tile.batches.find(bk);
+        if (bit == tile.batches.end())
+            continue;
+        Batch& batch = bit->second;
+        std::vector<BatchRange> ranges;
+        std::vector<GpuVertex> verts;
+        ranges.reserve(batch.ranges.size());
+        verts.reserve(batch.verts.size());
+        for (BatchRange r : batch.ranges) {
+            if (drop.count(r.entity))
+                continue;
+            const std::uint32_t from = r.begin;
+            r.begin = static_cast<std::uint32_t>(verts.size());
+            verts.insert(verts.end(), batch.verts.begin() + from,
+                         batch.verts.begin() + from + r.count);
+            ranges.push_back(r);
+        }
+        batch.ranges = std::move(ranges);
+        batch.verts = std::move(verts);
+        ++batch.version;
+        if (batch.ranges.empty()) {
+            deleted_.push_back(batch.id);
+            tile.batches.erase(bit);
+        } else {
+            batch.minDrawOrder = batch.ranges[0].drawOrder;
+            for (const BatchRange& r : batch.ranges)
+                batch.minDrawOrder = std::min(batch.minDrawOrder, r.drawOrder);
+        }
+        if (tile.batches.empty())
+            tiles_.erase(tit);
+        else
+            tile.boundsDirty = true;
+    }
+    ++changeCounter_;
+}
+
 void Scene::clear() {
     for (auto& [tk, tile] : tiles_)
         for (auto& [bk, batch] : tile.batches)
@@ -346,34 +407,58 @@ const SelectionGeometry& Scene::geometryFor(const std::unordered_set<EntityId>& 
     cache.geometry.version = changeCounter_;
     cache.geometry.tiles.clear();
     std::map<std::pair<TileKey, std::int32_t>, std::size_t> index;
-    for (EntityId id : set) {
-        auto eit = entities_.find(id);
-        if (eit == entities_.end())
-            continue;
-        for (const auto& [tk, bk] : eit->second.refs) {
+    auto tileFor = [&](const TileKey& tk, const Tile& tile, const BatchKey& bk) -> SelectionTile& {
+        auto [iit, fresh] = index.try_emplace({tk, bk.lineweightUm}, cache.geometry.tiles.size());
+        if (fresh) {
+            SelectionTile st;
+            st.origin = tile.origin;
+            st.lineweightMm = bk.lineweightUm / 1000.0;
+            cache.geometry.tiles.push_back(std::move(st));
+        }
+        return cache.geometry.tiles[iit->second];
+    };
+    constexpr std::size_t kWalkEntitiesBelow = 64;
+    if (set.size() <= kWalkEntitiesBelow) {
+        // A few objects: go straight to their batches.
+        for (EntityId id : set) {
+            auto eit = entities_.find(id);
+            if (eit == entities_.end())
+                continue;
+            for (const auto& [tk, bk] : eit->second.refs) {
+                if (bk.kind != BatchKind::Stroke || !layerVisible(bk.layer))
+                    continue;
+                auto tit = tiles_.find(tk);
+                if (tit == tiles_.end())
+                    continue;
+                auto bit = tit->second.batches.find(bk);
+                if (bit == tit->second.batches.end())
+                    continue;
+                SelectionTile& st = tileFor(tk, tit->second, bk);
+                const Batch& batch = bit->second;
+                for (const BatchRange& r : batch.ranges) {
+                    if (r.entity != id)
+                        continue;
+                    st.verts.insert(st.verts.end(), batch.verts.begin() + r.begin,
+                                    batch.verts.begin() + r.begin + r.count);
+                }
+            }
+        }
+        return cache.geometry;
+    }
+    // Many objects (select all): look each range up in the set once. Walking the ranges of a
+    // batch for every selected object is quadratic in the number of objects per tile.
+    for (const auto& [tk, tile] : tiles_) {
+        for (const auto& [bk, batch] : tile.batches) {
             if (bk.kind != BatchKind::Stroke || !layerVisible(bk.layer))
                 continue;
-            auto tit = tiles_.find(tk);
-            if (tit == tiles_.end())
-                continue;
-            auto bit = tit->second.batches.find(bk);
-            if (bit == tit->second.batches.end())
-                continue;
-            auto [iit, fresh] =
-                index.try_emplace({tk, bk.lineweightUm}, cache.geometry.tiles.size());
-            if (fresh) {
-                SelectionTile st;
-                st.origin = tit->second.origin;
-                st.lineweightMm = bk.lineweightUm / 1000.0;
-                cache.geometry.tiles.push_back(std::move(st));
-            }
-            SelectionTile& st = cache.geometry.tiles[iit->second];
-            const Batch& batch = bit->second;
+            SelectionTile* st = nullptr;
             for (const BatchRange& r : batch.ranges) {
-                if (r.entity != id)
+                if (!set.count(r.entity))
                     continue;
-                st.verts.insert(st.verts.end(), batch.verts.begin() + r.begin,
-                                batch.verts.begin() + r.begin + r.count);
+                if (!st)
+                    st = &tileFor(tk, tile, bk);
+                st->verts.insert(st->verts.end(), batch.verts.begin() + r.begin,
+                                 batch.verts.begin() + r.begin + r.count);
             }
         }
     }

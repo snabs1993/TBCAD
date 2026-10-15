@@ -132,6 +132,8 @@ public:
     void upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder,
                 double builtPixelsPerMm = 0);
     void remove(EntityId id);
+    // Same for many objects at once; much faster than calling remove for each.
+    void removeMany(std::span<const EntityId> ids);
     void clear();
     bool contains(EntityId id) const { return entities_.count(id) != 0; }
     std::size_t entityCount() const { return entities_.size(); }
