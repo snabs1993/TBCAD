@@ -371,4 +371,10 @@ TEST_CASE("ACTIVEONLY locks every layer outside the current layer's branch") {
     CHECK(f.doc.header().activeOnly);
     CHECK(f.host.undo());
     CHECK_FALSE(f.doc.header().activeOnly);
+
+    // Typing the alias again at the prompt toggles, like Enter.
+    f.run("ACTIVEONLY", {"AO"});
+    CHECK(f.doc.header().activeOnly);
+    f.run("ACTIVEONLY", {cmd::ScriptItem::enter()});
+    CHECK_FALSE(f.doc.header().activeOnly);
 }

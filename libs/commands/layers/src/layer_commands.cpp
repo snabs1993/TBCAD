@@ -328,15 +328,24 @@ public:
     }
     Task run(CommandContext& ctx) override {
         ctx.setUndoLabel("ACTIVEONLY");
-        cmd::KeywordOptions opts;
-        opts.keywords = {"On", "Off", "Toggle"};
-        opts.defaultKeyword = "Toggle";
-        auto k = co_await ctx.getKeyword("Active only", opts);
-        if (!k.ok())
-            co_return;
-        bool on = k.keyword == "On"    ? true
-                  : k.keyword == "Off" ? false
-                                       : !ctx.doc().header().activeOnly;
+        // Free text, so typing the command or its alias again at the prompt toggles, like Enter.
+        cmd::StringOptions so;
+        so.allowEmpty = true;
+        so.defaultValue = "Toggle";
+        std::string text;
+        for (;;) {
+            auto k = co_await ctx.getString("Active only [On/Off/Toggle] <Toggle>", so);
+            if (!k.ok())
+                co_return;
+            text = cmd::trim(k.text);
+            for (char& c : text)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            if (text.empty() || text == "T" || text == "TOGGLE" || text == "AO" ||
+                text == "ACTIVEONLY" || text == "ON" || text == "OFF")
+                break;
+            ctx.message("Type On, Off or Toggle.");
+        }
+        bool on = text == "ON" ? true : text == "OFF" ? false : !ctx.doc().header().activeOnly;
         auto r = setActiveOnly(ctx.doc(), ctx.tx(), on);
         if (!r) {
             ctx.message(r.error().message);
