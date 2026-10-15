@@ -127,8 +127,10 @@ public:
             auto r =
                 layout::createLayout(ctx.tx(), name.text, paperName, orient.keyword == "Landscape");
             report(ctx, r, "Layout \"" + name.text + "\" created.");
-            if (r)
+            if (r) {
                 ctx.host().setSetting("layout.current", name.text);
+                ctx.host().setSetting("layout.show", name.text);  // the window follows
+            }
             co_return;
         }
         // The rest work on a named layout, defaulting to the current one.
@@ -147,6 +149,7 @@ public:
         if (kw == "Set") {
             ctx.host().setSetting("layout.current",
                                   layout::findLayout(ctx.doc(), named.text)->name);
+            ctx.host().setSetting("layout.show", named.text);
             ctx.message("Current layout: " + named.text);
         } else if (kw == "Delete") {
             report(ctx, layout::deleteLayout(ctx.tx(), named.text),

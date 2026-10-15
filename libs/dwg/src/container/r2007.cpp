@@ -124,7 +124,7 @@ bool pageMapPlausible(const std::vector<std::uint8_t>& pm) {
 
 // A section map starts with a section description whose name length is small.
 bool sectionMapPlausible(const std::vector<std::uint8_t>& sm) {
-    return sm.size() >= 0x40 && le64(sm, 0x20) <= 256 && le64(sm, 0x38) <= 1'000'000;
+    return sm.size() >= 0x40 && le64(sm, 0x20) <= 512 && le64(sm, 0x38) <= 1'000'000;
 }
 
 }  // namespace
@@ -202,8 +202,14 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
        ", factor " + std::to_string(sectionsMapFactor));
 
     std::vector<std::uint8_t> pm;
-    if (!readSystemPage(file, kStreamBase + pagesMapOffset, pagesMapComp, pagesMapExpanded, 0, pm,
-                        notes, "page map", pageMapPlausible))
+    // The "correction factor" in the file header gives the number of code blocks:
+    // ceil(compressed size rounded up to 8 * factor / 239) (checked against a real file).
+    const std::uint64_t pagesMapBlocks =
+        pagesMapFactor > 0 && pagesMapFactor < 1000
+            ? (((pagesMapComp + 7) & ~std::uint64_t{7}) * pagesMapFactor + 238) / 239
+            : 0;
+    if (!readSystemPage(file, kStreamBase + pagesMapOffset, pagesMapComp, pagesMapExpanded,
+                        pagesMapBlocks, pm, notes, "page map", pageMapPlausible))
         return makeError(ErrorCode::Parse, "the DWG page map is damaged");
     struct Page {
         std::int64_t id = 0;
@@ -258,14 +264,16 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
         const std::uint64_t encoding = le64(sm, pos + 0x30);
         const std::uint64_t numPages = le64(sm, pos + 0x38);
         pos += 0x40;
-        if (nameLen > 256 || numPages > 1'000'000)
+        // The name length counts bytes of UTF-16 text including the terminator (checked against a
+        // real section map: 34 for "AcDb:FileDepList").
+        if (nameLen > 512 || numPages > 1'000'000)
             break;
         std::string name;
-        const std::size_t nameBytes = static_cast<std::size_t>(nameLen) * 2 + (nameLen ? 2 : 0);
+        const std::size_t nameBytes = static_cast<std::size_t>(nameLen);
         if (pos + nameBytes > sm.size())
             break;
-        for (std::size_t i = 0; i < nameLen; ++i)
-            name += static_cast<char>(sm[pos + i * 2]);  // section names are ASCII
+        for (std::size_t i = 0; i + 1 < nameBytes && sm[pos + i] != 0; i += 2)
+            name += static_cast<char>(sm[pos + i]);  // section names are ASCII
         pos += nameBytes;
         if (numPages > (sm.size() - pos) / 56) {
             notes.push_back("the section map is cut off");
@@ -304,6 +312,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
             bool done = false;
             std::string why;
             std::string config;
+            std::string head;
             for (std::uint64_t blocks : {floorBlocks, floorBlocks + 1}) {
                 for (std::size_t perBlock : {std::size_t{251}, std::size_t{239}}) {
                     for (int il = 0; il < 2 && !done; ++il) {
@@ -329,10 +338,12 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                             else if (why.empty())
                                 why = w;
                         }
-                        if (done)
+                        if (done) {
                             config = std::to_string(blocks) + " blocks of " +
                                      std::to_string(perBlock) +
                                      (inter ? ", interleaved" : ", plain");
+                            head = hexBytes(raw, 0, 64);
+                        }
                     }
                     if (done)
                         break;
@@ -350,7 +361,8 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                 continue;
             }
             if (trace && k < 2)
-                tr("  page " + std::to_string(pageId) + " read as " + config);
+                tr("  page " + std::to_string(pageId) + " read as " + config + "; stream starts " +
+                   head + "; expanded starts " + hexBytes(page, 0, 32));
             if (offset < data.size())
                 std::memcpy(data.data() + offset, page.data(),
                             std::min<std::size_t>(page.size(), data.size() - offset));

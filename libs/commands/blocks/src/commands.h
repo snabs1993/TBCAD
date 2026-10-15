@@ -27,6 +27,7 @@ std::unique_ptr<cmd::Command> makeAsmInfoCommand();
 std::unique_ptr<cmd::Command> makeJoinAsmCommand(bool join);
 std::unique_ptr<cmd::Command> makeAsmSetSelectedCommand();
 std::unique_ptr<cmd::Command> makeAttDefCommand();
+std::unique_ptr<cmd::Command> makeAttDefLineCommand();
 std::unique_ptr<cmd::Command> makeAttEditCommand();
 std::unique_ptr<cmd::Command> makeAttSyncCommand();
 std::unique_ptr<cmd::Command> makeXAttachCommand();

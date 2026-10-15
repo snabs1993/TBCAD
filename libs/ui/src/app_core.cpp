@@ -656,6 +656,19 @@ bool AppCore::autosaveNow() {
 }
 
 void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
+    // Changed settings reach settings.json within a moment, not only at a clean exit, so a crash
+    // or a kill does not lose them.
+    if (settings_.dirty()) {
+        if (!settingsDirtySeen_) {
+            settingsDirtySeen_ = true;
+            settingsDirtyAt_ = now;
+        } else if (now - settingsDirtyAt_ >= std::chrono::seconds(1)) {
+            (void)settings_.save(paths_.settingsFile());
+            settingsDirtySeen_ = false;
+        }
+    } else {
+        settingsDirtySeen_ = false;
+    }
     if (!autosaveClockStarted_) {
         lastAutosave_ = now;
         autosaveClockStarted_ = true;
@@ -1113,6 +1126,7 @@ void AppCore::submitText(std::string_view text) {
     struct ViewStateGuard {
         AppCore& core;
         ~ViewStateGuard() {
+            core.applyPendingLayout();
             if (core.viewStatePending_ && !core.runner().active()) {
                 core.viewStatePending_ = false;
                 core.session_->savedRevision = core.session_->doc.revision();
@@ -1320,7 +1334,16 @@ std::vector<render::ImageDraw> AppCore::underlayImages() {
     return out;
 }
 
+void AppCore::applyPendingLayout() {
+    if (pendingLayout_.empty() || runner().active())
+        return;
+    const std::string name = std::move(pendingLayout_);
+    pendingLayout_.clear();
+    setActiveLayout(name);
+}
+
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
+    applyPendingLayout();
     tickAutosave(now);
     tickXrefs(now);
     if (inPaperSpace()) {
@@ -1980,6 +2003,10 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
 std::optional<std::string> AppCore::setting(std::string_view key) const {
     if (key == "document.file")
         return documentFile();
+    if (key.rfind("tmp.", 0) == 0) {  // hand-over between a command and its dialog; never saved
+        auto it = transient_.find(std::string(key));
+        return it == transient_.end() ? std::nullopt : std::optional<std::string>(it->second);
+    }
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             return std::string(settings_.getBool(key) ? "1" : "0");
@@ -1999,8 +2026,16 @@ std::optional<std::string> AppCore::takeClipboardText() {
 }
 
 void AppCore::setSetting(std::string_view key, std::string value) {
+    if (key.rfind("tmp.", 0) == 0) {
+        transient_[std::string(key)] = std::move(value);
+        return;
+    }
     if (key == "clipboard.text")
         clipboardOut_ = value;
+    if (key == "layout.show") {  // LAYOUT New: switch once the command is over
+        pendingLayout_ = std::move(value);
+        return;
+    }
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             settings_.setBool(key, isTrue(value));

@@ -422,6 +422,18 @@ TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
     CHECK_FALSE(second.pendingRecovery().has_value());
 }
 
+TEST_CASE("a changed setting is written to settings.json without waiting for a clean exit") {
+    Fixture f("settings_write");
+    const auto now = std::chrono::steady_clock::now();
+    f.core->updateFrame(now);
+    f.core->setSetting("autosave.minutes", "1");
+    f.core->updateFrame(now + std::chrono::milliseconds(100));  // noticed, debounced
+    f.core->updateFrame(now + std::chrono::seconds(3));         // written
+    platform::Settings loaded;
+    REQUIRE(loaded.load(platform::AppPaths{f.dir / "cfg", f.dir / "data"}.settingsFile()));
+    CHECK(loaded.getNumber("autosave.minutes", 10) == doctest::Approx(1));
+}
+
 TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
     Fixture f("autosave_multi");
     f.line("0,0", "100,0");

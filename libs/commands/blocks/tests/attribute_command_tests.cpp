@@ -134,3 +134,91 @@ TEST_CASE("redefining a block updates its inserts - ATTSYNC does the same on dem
     CHECK(ins->attribs[0].value == "Zed");
     CHECK(ins->attribs[1].value == "e0");
 }
+
+namespace {
+
+// A host with a window: ATTDEF opens the dialog instead of asking on the command line.
+struct DialogHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    std::vector<std::string> opened;
+    bool dialogsAvailable() const override { return true; }
+    void openPanel(std::string_view id) override { opened.emplace_back(id); }
+};
+
+}  // namespace
+
+TEST_CASE("ATTDEF opens the dialog in a window; the dialog's values leave only the start point") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    DialogHost host(doc, reg);
+
+    auto first = host.run("ATTDEF", {});
+    CHECK(first.finished);
+    REQUIRE(host.opened.size() == 1);
+    CHECK(host.opened[0] == "attdef");
+    CHECK(doc.modelSpace().empty());
+
+    // What the dialog stores when OK is pressed.
+    host.setSetting("tmp.attdef.tag", "PART");
+    host.setSetting("tmp.attdef.prompt", "Part number");
+    host.setSetting("tmp.attdef.default", "P-1");
+    host.setSetting("tmp.attdef.invisible", "1");
+    host.setSetting("attdef.height", "4");
+    host.setSetting("tmp.attdef.rotation", "90");
+    host.setSetting("tmp.attdef.go", "1");
+    auto r = host.run("ATTDEF", {"5,5"});
+    CHECK(r.finished);
+    REQUIRE(doc.modelSpace().size() == 1);
+    const Entity* e = doc.find(doc.modelSpace().front());
+    const auto* t = entityAs<TextData>(*e);
+    REQUIRE(t);
+    CHECK(t->attdef->tag == "PART");
+    CHECK(t->attdef->prompt == "Part number");
+    CHECK(t->attdef->defaultValue == "P-1");
+    CHECK(t->attdef->invisible);
+    CHECK(t->height == doctest::Approx(4));
+    CHECK(t->rotation == doctest::Approx(3.14159265358979 / 2));
+    CHECK(host.setting("tmp.attdef.go") == std::optional<std::string>("0"));  // one use per dialog
+}
+
+TEST_CASE("-ATTDEF always asks on the command line") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    DialogHost host(doc, reg);
+    auto r = host.run("-ATTDEF", {"", "tag1", "Tag one", "x", "0,0", "2", "0"});
+    CHECK(r.finished);
+    CHECK(host.opened.empty());
+    CHECK(doc.modelSpace().size() == 1);
+}
+
+TEST_CASE("INSERT in a window asks the attribute values in one dialog") {
+    Fixture f;
+    makeTagBlock(f);  // NAME (editable, default Anon) and a constant KEY
+    DialogHost host(f.doc, f.reg);
+
+    // The insert is placed, then the dialog is opened and INSERT waits for its OK.
+    auto r = host.run("INSERT", {"Tag", "50,50"});
+    CHECK_FALSE(r.finished);
+    REQUIRE(host.opened.size() == 1);
+    CHECK(host.opened[0] == "attvalues");
+    const std::string fields = host.setting("tmp.insatt.fields").value_or("");
+    CHECK(fields.find("NAME") != std::string::npos);
+    CHECK(fields.find("KEY") == std::string::npos);  // constant: not asked
+
+    // What the dialog does on OK: store the values, then press Enter.
+    host.setSetting("tmp.insatt.result", std::string("NAME\x1f") + "Ada\x1e");
+    r = host.feed({cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    bool found = false;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* ins = entityAs<InsertData>(e))
+            for (const AttribValue& v : ins->attribs)
+                if (v.tag == "NAME") {
+                    found = true;
+                    CHECK(v.value == "Ada");
+                }
+    });
+    CHECK(found);
+}

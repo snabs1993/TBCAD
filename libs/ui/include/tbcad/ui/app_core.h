@@ -310,6 +310,10 @@ public:
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
     void textEdited(const std::string& text) { runner().textEdited(text); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
+    void closePanel(std::string_view panelId) override { panelCloses_.emplace_back(panelId); }
+    bool dialogsAvailable() const override { return dialogsAvailable_; }
+    void setDialogsAvailable(bool on) { dialogsAvailable_ = on; }
+    std::vector<std::string> takePanelCloses() { return std::exchange(panelCloses_, {}); }
     // Panels asked for since the last call (the window opens them).
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
@@ -375,6 +379,9 @@ private:
     std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
     std::vector<std::string> panelRequests_{};
+    std::vector<std::string> panelCloses_{};
+    bool dialogsAvailable_ = false;
+    std::map<std::string, std::string> transient_{};  // "tmp.*" settings: not saved
     platform::Settings settings_;
     platform::Keybindings keybindings_;
     std::vector<std::string> startupWarnings_{};
@@ -424,10 +431,14 @@ private:
     std::optional<std::string> clipboardOut_{};
 
     std::chrono::steady_clock::time_point lastAutosave_{};
+    std::chrono::steady_clock::time_point settingsDirtyAt_{};
+    bool settingsDirtySeen_ = false;
     bool autosaveClockStarted_ = false;
     std::chrono::steady_clock::time_point lastXrefCheck_{};
     int xrefReloadWait_ = 0;
     bool viewStatePending_ = false;
+    std::string pendingLayout_;  // layout to show when the running command ends
+    void applyPendingLayout();
     underlay::ImageCache imageCache_{};
 };
 

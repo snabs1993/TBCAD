@@ -54,6 +54,10 @@ public:
     // Asks the application to show a registered panel (UiRegistry::addPanel id). No-op in hosts
     // without a window.
     virtual void openPanel(std::string_view /*panelId*/) {}
+    virtual void closePanel(std::string_view /*panelId*/) {}
+    // True when the host has a window where dialogs (panels) can be shown; commands with a dialog
+    // then use it, and ask their questions on the command line otherwise.
+    virtual bool dialogsAvailable() const { return false; }
 
     // Folder holding aliases.json, keybindings.json ... Empty = none.
     virtual std::filesystem::path settingsFolder() const { return {}; }

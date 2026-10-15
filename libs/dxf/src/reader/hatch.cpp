@@ -199,7 +199,7 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
                     HatchEllipseEdge ee;
                     ee.center = f.p(pt10(0));
                     Vec2 major{ef.x11[0] * k_, ef.y11[0] * k_};
-                    ee.majorAxis = f.mirror ? Vec2{-major.x, major.y} : major;
+                    ee.majorAxis = f.v(major);
                     ee.ratio = ef.c40[0];
                     double s = ef.c50 * kDeg, en = ef.c51 * kDeg;
                     ee.startParam = f.mirror ? -s : s;
