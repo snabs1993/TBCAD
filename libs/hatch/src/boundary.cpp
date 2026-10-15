@@ -588,6 +588,17 @@ std::size_t BoundaryFinder::graphEdges() const {
     return impl_->set ? impl_->set->graph.edges.size() : 0;
 }
 
+std::vector<Vec2> BoundaryFinder::openEnds() const {
+    std::vector<Vec2> ends;
+    if (!impl_->set)
+        return ends;
+    const Graph& g = impl_->set->graph;
+    for (std::size_t i = 0; i < g.nodes.size(); ++i)
+        if (g.out[i].size() == 1)
+            ends.push_back(g.nodes[i]);
+    return ends;
+}
+
 Result<Boundary> BoundaryFinder::find(Vec2 pick) const {
     if (!impl_->set)
         return impl_->error;

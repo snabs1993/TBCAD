@@ -166,6 +166,17 @@ TEST_CASE("HATCH: SOLID makes a solid hatch; unknown patterns are refused; ? lis
     CHECK(hs[0]->pattern == "SOLID");
 }
 
+TEST_CASE("HATCH: an outline with a small gap says how big the gap is") {
+    Fixture f;
+    f.addEntity(LineData{{0, 0}, {10, 0}});
+    f.addEntity(LineData{{10, 0}, {10, 10}});
+    f.addEntity(LineData{{10, 10}, {0, 10}});
+    f.addEntity(LineData{{0, 10}, {0, 0.4}});  // stops 0.4 short of the first corner
+    f.host->run("HATCH", {"5,5", ScriptItem::esc()});
+    CHECK(f.hatches().empty());
+    CHECK(f.host->logContains("Set Gap to 0.4"));
+}
+
 TEST_CASE(
     "HATCH: a point with no closed boundary reports it and asks again; Esc keeps earlier work") {
     Fixture f;

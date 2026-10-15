@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <optional>
 
 #include "hatch_params.h"
 #include "tbcad/cmd/cmd.h"
@@ -80,6 +81,45 @@ const char* loopWord(std::size_t n) {
     return n == 1 ? "loop" : "loops";
 }
 
+// ---- Gaps -----------------------------------------------------------------------------------
+
+// The free ends nearest to `at` (the likely reason there is no closed boundary there).
+std::vector<Vec2> nearestOpenEnds(const BoundaryFinder& finder, Vec2 at, std::size_t count) {
+    std::vector<Vec2> ends = finder.openEnds();
+    std::sort(ends.begin(), ends.end(),
+              [&](const Vec2& a, const Vec2& b) { return distance(a, at) < distance(b, at); });
+    if (ends.size() > count)
+        ends.resize(count);
+    return ends;
+}
+
+// The smallest distance between two of the free ends: a Gap setting at least this big closes it.
+std::optional<double> smallestGap(const std::vector<Vec2>& ends) {
+    std::optional<double> best;
+    for (std::size_t i = 0; i < ends.size(); ++i)
+        for (std::size_t j = i + 1; j < ends.size(); ++j) {
+            const double d = distance(ends[i], ends[j]);
+            if (d > 0 && (!best || d < *best))
+                best = d;
+        }
+    return best;
+}
+
+// Red rings on the free ends around the cursor, so a leak in the boundary can be seen.
+void drawOpenEnds(const BoundaryFinder& finder, Vec2 at, double mmPerPx, DisplayList& out) {
+    for (const Vec2& p : nearestOpenEnds(finder, at, 12)) {
+        DisplayPolyline ring;
+        const double r = 7 * mmPerPx;
+        for (int i = 0; i < 16; ++i) {
+            const double a = i * kPi / 8;
+            ring.pts.push_back({p.x + r * std::cos(a), p.y + r * std::sin(a)});
+        }
+        ring.closed = true;
+        ring.style.color = Rgba{255, 70, 70, 255};
+        out.items.emplace_back(std::move(ring));
+    }
+}
+
 // ---- Hover preview -------------------------------------------------------------------------
 
 // The boundary graph of the view, rebuilt only when the drawing, the view or the gap changes, so
@@ -91,9 +131,11 @@ public:
         if (!finder_ || !finder_->ok())
             return;
         auto b = finder_->find(cursor);
-        if (!b.ok())
-            return;
         const cmd::ViewState view = ctx.host().view();
+        if (!b.ok()) {
+            drawOpenEnds(*finder_, cursor, view.scale, out);
+            return;
+        }
         const Rgba line{255, 200, 40, 255};
         HatchData d;
         d.loops = b.value().loops;
@@ -332,9 +374,16 @@ private:
 
     std::size_t hatchPoint(cmd::CommandContext& ctx, const Params& p, Vec2 at) {
         std::vector<Candidate> cands = viewCandidates(ctx.doc(), ctx.host());
-        auto b = findBoundary(cands, at, options(p));
+        BoundaryFinder finder(cands, options(p));
+        auto b = finder.find(at);
         if (!b.ok()) {
             ctx.message(b.error().message);
+            if (finder.ok()) {
+                if (auto gap = smallestGap(nearestOpenEnds(finder, at, 12)))
+                    ctx.message("The outline is open near a free end, " + number(*gap) +
+                                " apart from another. Set Gap to " + number(*gap * 1.01) +
+                                " or more to close it.");
+            }
             return 0;
         }
         return add(ctx, p, b.value());

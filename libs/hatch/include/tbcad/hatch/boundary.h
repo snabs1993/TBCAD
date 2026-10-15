@@ -68,6 +68,10 @@ public:
     const Error& error() const;
     std::size_t graphEdges() const;
 
+    // Free ends of lines and arcs (a point where only one edge ends): the usual reason why no
+    // closed boundary exists. Empty when the graph could not be built.
+    std::vector<Vec2> openEnds() const;
+
     // As findBoundary / boundaryFromObjects.
     Result<Boundary> find(Vec2 pick) const;
     Result<std::vector<Boundary>> outermost() const;
