@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <functional>
 
+#include "tbcad/layers/linetype_file.h"
+
 namespace tbcad::layers {
 
 namespace {
@@ -588,6 +590,24 @@ Result<LinetypeId> parseLinetype(const Document& doc, std::string_view text) {
         return lt->id;
     return err(ErrorCode::NotFound,
                "Linetype " + quoted(std::string(text)) + " is not loaded (see -LINETYPE Load).");
+}
+
+Result<LinetypeId> resolveLinetype(const Document& doc, Transaction& tx, std::string_view text) {
+    auto found = parseLinetype(doc, text);
+    if (found || trimView(text).empty() || trimView(text).front() == '#')
+        return found;
+    std::string name(trimView(text));
+    if (lower(name) == "dash")
+        name = "Dashed";  // what people type
+    static const LinetypeFile builtin = parseLinetypes(builtinLinetypeText());
+    bool known = false;
+    for (const Linetype& lt : builtin.linetypes)
+        known = known || lower(lt.name) == lower(name);
+    if (!known)
+        return found;
+    if (auto loaded = loadLinetypes(doc, tx, builtin, {name}); !loaded)
+        return loaded.error();
+    return parseLinetype(doc, name);
 }
 
 std::string linetypeName(const Document& doc, LinetypeId id) {

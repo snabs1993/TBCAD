@@ -95,7 +95,7 @@ public:
                 else
                     ctx.message(c ? "ByParent applies to layers only." : c.error().message);
             } else if (k.keyword == "Linetype") {
-                auto lt = parseLinetype(ctx.doc(), v.text);
+                auto lt = resolveLinetype(ctx.doc(), ctx.tx(), v.text);
                 good = bool(lt) && lt.value() != kLinetypeByParent;
                 if (good)
                     edit.linetype = lt.value();
@@ -280,7 +280,7 @@ public:
                 }
                 r = ctx.tx().modifyHeader([&](Header& h) { h.currentColor = c.value(); });
             } else if (k.keyword == "Linetype") {
-                auto lt = parseLinetype(ctx.doc(), v.text);
+                auto lt = resolveLinetype(ctx.doc(), ctx.tx(), v.text);
                 if (!lt) {
                     ctx.message(lt.error().message);
                     continue;

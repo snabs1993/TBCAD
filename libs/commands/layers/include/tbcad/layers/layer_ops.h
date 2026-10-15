@@ -92,6 +92,9 @@ Result<LineWeight> parseLineweight(std::string_view text);
 std::string lineweightName(LineWeight w);
 // Linetype by name, "#id", "ByLayer", "ByBlock" or "ByParent".
 Result<LinetypeId> parseLinetype(const Document& doc, std::string_view text);
+// Like parseLinetype, but a linetype that ships with TBCAD ("Dash", "Center", ...) and is not in
+// the drawing yet is loaded into it first, so typing its name just works.
+Result<LinetypeId> resolveLinetype(const Document& doc, Transaction& tx, std::string_view text);
 std::string linetypeName(const Document& doc, LinetypeId id);
 
 }  // namespace tbcad::layers

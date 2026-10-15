@@ -212,7 +212,7 @@ private:
                 for (LayerId id : ids)
                     report(ctx, setLayerColor(doc, ctx.tx(), id, c.value()));
             } else if (option == "Linetype") {
-                auto lt = parseLinetype(doc, value);
+                auto lt = resolveLinetype(doc, ctx.tx(), value);
                 if (!lt) {
                     ctx.message(lt.error().message);
                     co_return;
