@@ -168,6 +168,10 @@ public:
     void checkpoint();
     bool rollbackToCheckpoint();  // false when there is no checkpoint
     std::size_t checkpointCount() const { return marks_.size(); }
+    // Commits what the command has added since its last checkpoint, so the drawing shows it while
+    // the command waits for the next point. Only for commands that use checkpoints; Undo still
+    // removes it. Called by the runner whenever the command asks for more input.
+    void publishPending();
 
     // True once the user pressed Esc at one of this command's prompts. Later prompts answer
     // Cancel immediately, so a command that keeps looping still terminates.

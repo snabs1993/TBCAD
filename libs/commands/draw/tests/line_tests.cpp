@@ -135,3 +135,12 @@ TEST_CASE("LINE accepts clicked points as well as typed ones") {
     f.host.run("LINE", {ScriptItem::click({1, 1}), ScriptItem::click({2, 2}), ""});
     CHECK(f.entities().size() == 1);
 }
+
+TEST_CASE("LINE: each segment is in the drawing while the command still waits for the next point") {
+    Fixture f;
+    auto r = f.host.run("LINE", {"0,0", "100,0"});
+    CHECK_FALSE(r.finished);  // still asking for the next point
+    CHECK(f.entities().size() == 1);
+    f.host.feed({"100,50"});
+    CHECK(f.entities().size() == 2);
+}
