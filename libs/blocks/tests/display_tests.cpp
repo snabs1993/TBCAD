@@ -56,7 +56,7 @@ TEST_CASE("an associative array displays its block once per item") {
     CHECK(snapGeometry(doc, *doc.find(i)).size() == 6);
 }
 
-TEST_CASE("ByBlock colour and lineweight come from the insert; layer 0 takes its layer") {
+TEST_CASE("ByBlock colour and lineweight come from the insert - layer 0 takes its layer") {
     registerInsertDisplay();
     Document doc;
     LayerId walls;

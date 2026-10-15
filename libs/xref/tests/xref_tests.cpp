@@ -169,7 +169,7 @@ TEST_CASE("reload replaces the content and keeps the inserts") {
     CHECK(siteLayers == 1);
 }
 
-TEST_CASE("detach removes inserts, blocks and unused layers; bind keeps everything") {
+TEST_CASE("detach removes inserts, blocks and unused layers - bind keeps everything") {
     Document host;
     Source src = sourceOf(makeSource());
     BlockId b;

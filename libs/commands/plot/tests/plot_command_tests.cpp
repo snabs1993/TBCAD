@@ -95,7 +95,7 @@ TEST_CASE("EXPORTSVG: orientation, paper and colour options") {
     CHECK(s.color == exportlib::ColorMode::Monochrome);
 }
 
-TEST_CASE("an extension is added; Esc leaves nothing behind") {
+TEST_CASE("an extension is added - Esc leaves nothing behind") {
     Fixture f;
     auto base = f.path("noext");
     auto r = f.host->run("PLOT", {"", base});
@@ -117,7 +117,7 @@ TEST_CASE("bad paper and bad scale are refused with a message") {
     CHECK(plot::loadSettings(*f.host).paperName == "A3");
 }
 
-TEST_CASE("window area uses two corners; an empty drawing reports an error") {
+TEST_CASE("window area uses two corners - an empty drawing reports an error") {
     Fixture f;
     auto out = f.path("win.pdf");
     auto r = f.host->run("EXPORTPDF", {"Area", "Window", "0,0", "5000,100", "", out});
@@ -170,7 +170,7 @@ struct DocHost : cmd::ScriptHost {
 };
 }  // namespace
 
-TEST_CASE("the default file name follows the open drawing; PLOTPANEL opens the panel") {
+TEST_CASE("the default file name follows the open drawing - PLOTPANEL opens the panel") {
     Fixture f;
     DocHost h(f.doc, f.reg);
     CHECK(plot::defaultFile(h, plot::Format::Pdf) == "drawing.pdf");
@@ -206,7 +206,7 @@ TEST_CASE("the Layout option plots a layout at 1:1 instead of model space") {
     CHECK_FALSE(std::filesystem::exists(bad));
 }
 
-TEST_CASE("PLOTSTYLE selects a table; the default is monochrome and None plots as drawn") {
+TEST_CASE("PLOTSTYLE selects a table - the default is monochrome and None plots as drawn") {
     Fixture f;
     {
         auto tx = f.doc.begin("red");
@@ -275,7 +275,7 @@ TEST_CASE("EXPORTPNG and EXPORTJPG write images at the chosen resolution") {
     CHECK(bad.finished);
 }
 
-TEST_CASE("forFormat swaps an export extension; dpi and quality have defaults") {
+TEST_CASE("forFormat swaps an export extension - dpi and quality have defaults") {
     CHECK(plot::forFormat("a.pdf", plot::Format::Png) == "a.png");
     CHECK(plot::forFormat("dir.x/a", plot::Format::Jpeg) == "dir.x/a.jpg");
     CHECK(plot::forFormat("a.JPEG", plot::Format::Svg) == "a.svg");

@@ -37,7 +37,7 @@ TEST_CASE("explode a linear dimension into lines, solid arrowheads and text") {
     CHECK(texts == 1);
 }
 
-TEST_CASE("explode an angular dimension keeps its arc as an arc; a leader gives MText") {
+TEST_CASE("explode an angular dimension keeps its arc as an arc - a leader gives MText") {
     Document doc;
     EntityId a = add(
         doc,

@@ -54,7 +54,7 @@ TEST_CASE("DONUT remembers its diameters") {
     CHECK(close(as<PolylineData>(es[0]).constantWidth, 5));
 }
 
-TEST_CASE("DONUT: Esc keeps the rings placed; undo removes them in one step") {
+TEST_CASE("DONUT: Esc keeps the rings placed - undo removes them in one step") {
     Fixture f;
     f.host.run("DO", {"5", "10", "0,0", "10,0", ScriptItem::esc()});
     CHECK(f.entities().size() == 2);

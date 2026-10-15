@@ -144,7 +144,7 @@ TEST_CASE("the status toggles keep ortho and polar exclusive") {
     CHECK_FALSE(find("ortho").get());
 }
 
-TEST_CASE("snap markers and the grid are drawn by the overlay; the F-keys are bound") {
+TEST_CASE("snap markers and the grid are drawn by the overlay - the F-keys are bound") {
     App app;
     app.line({100, 100}, {300, 100});
     app.core->submitText("TWOLINE");
@@ -160,6 +160,7 @@ TEST_CASE("snap markers and the grid are drawn by the overlay; the F-keys are bo
     render::Overlay withGrid;
     app.core->buildUnderlay(withGrid, &app.uiReg);
     CHECK_FALSE(withGrid.empty());
+    app.core->pointerMoved(app.at({301, 101}));  // the transparent command cleared the snap marker
     render::Overlay over;
     app.core->buildOverlay(over, &app.uiReg);
     CHECK(over.build(app.core->camera()).vertices.size() ==

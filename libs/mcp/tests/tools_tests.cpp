@@ -51,7 +51,7 @@ TEST_CASE("add_entities: unknown layer needs create_layers, errors name the enti
     CHECK(r.session.undoStack().undoCount() == 0);
 }
 
-TEST_CASE("one AI call is one undo step; undo and redo restore the drawing") {
+TEST_CASE("one AI call is one undo step - undo and redo restore the drawing") {
     Rig r;
     r.initialize();
     std::string before = r.dumpDoc();

@@ -60,7 +60,7 @@ TEST_CASE("open rejects input that cannot be DXF") {
     CHECK_FALSE(Lexer::open(badBinary, r).ok());
 }
 
-TEST_CASE("string values are slices of the input; code 0 is trimmed, others are exact") {
+TEST_CASE("string values are slices of the input - code 0 is trimmed, others are exact") {
     Report r;
     const auto g = lexAll("0\nTEXT \n1\n  two  words \n0\nEOF\n", r);
     REQUIRE(g.size() == 3);
@@ -69,7 +69,7 @@ TEST_CASE("string values are slices of the input; code 0 is trimmed, others are 
     CHECK(r.empty());
 }
 
-TEST_CASE("handles keep their text; non-hex handles are flagged") {
+TEST_CASE("handles keep their text - non-hex handles are flagged") {
     Report r;
     const auto g = lexAll("5\n1F\n5\nARROW\n105\n  ff \n0\nEOF\n", r);
     REQUIRE(g.size() == 4);
@@ -113,7 +113,7 @@ TEST_CASE("far coordinates stay exact doubles") {
     CHECK(g[0].number() == 123456789012.123456);
 }
 
-TEST_CASE("lone CR, CRLF and LF all end lines; line numbers count each") {
+TEST_CASE("lone CR, CRLF and LF all end lines - line numbers count each") {
     Report r;
     const auto g = lexAll("0\rSECTION\r\n2\nHEADER\r0\nEOF", r);
     REQUIRE(g.size() == 3);

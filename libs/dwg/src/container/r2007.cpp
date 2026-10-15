@@ -259,7 +259,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
     std::vector<std::uint8_t> sm;
     if (!readSystemPage(file, kStreamBase + smIt->second.offset, sectionsMapComp,
                         sectionsMapExpanded, smIt->second.size / 255, sm, notes, "section map",
-                        sectionMapPlausible))
+                        sectionMapPlausible, &streamHex))
         return makeError(ErrorCode::Parse, "the DWG section map is damaged");
     tr("section map stream: " + streamHex);
     tr("section map expanded: " + std::to_string(sm.size()) + " bytes: " + hexBytes(sm, 0, 200));
@@ -285,9 +285,10 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
             name += static_cast<char>(sm[pos + i]);  // section names are ASCII
         pos += nameBytes;
         if (!name.empty() && name.rfind("AcDb:", 0) != 0) {
+            // The records are positional, so the scan goes on; the section is listed but not used.
             notes.push_back("the section map holds a section with the odd name \"" + name +
-                            "\"; the rest of it is not read");
-            break;
+                            "\"; it is skipped");
+            name.clear();
         }
         if (numPages > (sm.size() - pos) / 56) {
             notes.push_back("the section map is cut off");

@@ -49,6 +49,18 @@ TEST_CASE("LAYER asks the application to show the panel") {
     CHECK(f.host.setting("ui.showPanel") == std::optional<std::string>("layers"));
 }
 
+TEST_CASE("-LAYER Make creates a missing layer, or reuses one, and makes it current") {
+    Fixture f;
+    auto r = f.run("-LAYER", {"Make", "Doors", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    REQUIRE(f.layer("Doors") != nullptr);
+    CHECK(f.doc.header().currentLayer == f.layer("Doors")->id);
+    const std::size_t count = f.doc.layers().size();
+    f.run("-LAYER", {"Make", "0", cmd::ScriptItem::enter()});
+    CHECK(f.doc.layers().size() == count);
+    CHECK(f.doc.header().currentLayer == f.layer("0")->id);
+}
+
 TEST_CASE("-LAYER New and NewSub create layers and sub-layers, one undo step") {
     Fixture f;
     auto r = f.run("-LAYER", {"New", "S-FLOOR,Walls", "NewSub", "S-FLOOR", "Floor hidden,edge",
@@ -213,7 +225,7 @@ TEST_CASE("-LAYER: Isolate / ShowAll and List") {
     CHECK(f.host.logContains("off"));
 }
 
-TEST_CASE("-LAYER: Esc keeps what was done; a bad layer name only prints an error") {
+TEST_CASE("-LAYER: Esc keeps what was done - a bad layer name only prints an error") {
     Fixture f;
     f.run("-LAYER", {"New", "A", "Off", "nope"});
     f.host.clearLog();

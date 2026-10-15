@@ -62,7 +62,7 @@ TEST_CASE("keybindings.json overrides defaults and reports problems") {
     CHECK(again.label("edit.undo") == "Ctrl+U");
 }
 
-TEST_CASE("a missing keybindings file is fine; a broken one is an error") {
+TEST_CASE("a missing keybindings file is fine - a broken one is an error") {
     fs::path dir = fs::temp_directory_path() / "tbcad_platform_kb2";
     fs::remove_all(dir);
     fs::create_directories(dir);

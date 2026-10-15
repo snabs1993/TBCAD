@@ -222,7 +222,7 @@ struct Fixture {
 
 }  // namespace
 
-TEST_CASE("two-point command creates the line; undo removes it; redo restores it") {
+TEST_CASE("two-point command creates the line - undo removes it - redo restores it") {
     Fixture f;
     ScriptHost host(f.doc, f.reg);
     auto r = host.run("TWOLINE", {"0,0", "@100,0"});
@@ -370,7 +370,7 @@ TEST_CASE("typed values for distance, angle, integer, real, string, keyword") {
     CHECK(host.logContains("kw Fast"));
 }
 
-TEST_CASE("Enter takes defaults; clicks measure distance and angle from the base") {
+TEST_CASE("Enter takes defaults - clicks measure distance and angle from the base") {
     Fixture f;
     ScriptHost host(f.doc, f.reg);
     host.run("EVERYTHING", {ScriptItem::click({3, 4}), ScriptItem::click({0, 2}), "", "", "x", ""});

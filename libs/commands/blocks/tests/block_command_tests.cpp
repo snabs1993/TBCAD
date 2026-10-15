@@ -15,7 +15,7 @@ TEST_CASE("the block commands are registered with their aliases") {
     CHECK(f.reg.find("AR") == f.reg.find("ARRAY"));
 }
 
-TEST_CASE("BLOCK converts the selection into a block and one insert; undo restores it") {
+TEST_CASE("BLOCK converts the selection into a block and one insert - undo restores it") {
     Fixture f;
     EntityId a = f.addLine(10, 10, 20, 10);
     EntityId b = f.addCircle(15, 15, 2);

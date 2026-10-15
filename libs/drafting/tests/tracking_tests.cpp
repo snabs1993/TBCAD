@@ -98,7 +98,7 @@ TEST_CASE("osnap beats polar, polar beats grid snap") {
     CHECK(near(w.hover({133, 8}), {130, 10}));
 }
 
-TEST_CASE("grid snap rounds to the spacing around the origin; off means off") {
+TEST_CASE("grid snap rounds to the spacing around the origin - off means off") {
     World w;
     w.set(keys::snap, "1");
     w.set(keys::snapSpacing, "2.5");

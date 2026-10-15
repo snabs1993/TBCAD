@@ -156,7 +156,7 @@ TEST_CASE("fit to paper picks the scale from the extent") {
     CHECK(lay.value().paperPerUnit == doctest::Approx(190.0 / 2000));
 }
 
-TEST_CASE("fixed scale larger than the paper reports overflow; offset places the drawing") {
+TEST_CASE("fixed scale larger than the paper reports overflow - offset places the drawing") {
     Document doc;
     addEntity(doc, line({0, 0}, {1000, 500}));
     PlotSettings s;
@@ -213,7 +213,7 @@ TEST_CASE("a plot window clips the sheet to the window") {
     CHECK_FALSE(std::get_if<PlotClip>(&whole.value().prims.front()));
 }
 
-TEST_CASE("monochrome turns red black; white is always black; greyscale") {
+TEST_CASE("monochrome turns red black - white is always black - greyscale") {
     CHECK(plotColor(Rgba{255, 0, 0, 255}, ColorMode::Monochrome) == Rgba{0, 0, 0, 255});
     CHECK(plotColor(Rgba{255, 0, 0, 255}, ColorMode::AsDisplayed) == Rgba{255, 0, 0, 255});
     CHECK(plotColor(Rgba{255, 255, 255, 255}, ColorMode::AsDisplayed) == Rgba{0, 0, 0, 255});
@@ -291,7 +291,7 @@ TEST_CASE("a plot style table maps colour, lineweight and screening per palette 
     CHECK(black == 2);  // the two palette-coloured lines; the true colour stays
 }
 
-TEST_CASE("lineweights are absolute on paper; dashes scale with the plot scale") {
+TEST_CASE("lineweights are absolute on paper - dashes scale with the plot scale") {
     Document doc;
     {
         auto tx = doc.begin("lt");
@@ -398,7 +398,7 @@ TEST_CASE("SVG: well-formed XML in millimetres") {
     std::filesystem::remove(path);
 }
 
-TEST_CASE("culling: entities outside a window are not plotted; 20,000 lines plot quickly") {
+TEST_CASE("culling: entities outside a window are not plotted - 20,000 lines plot quickly") {
     Document doc;
     {
         auto tx = doc.begin("many");
@@ -503,7 +503,7 @@ TEST_CASE("PNG: signature, dimensions, resolution and pixels survive a round tri
     CHECK(back == img.rgb);
 }
 
-TEST_CASE("JPEG: markers, dimensions and density; files are written") {
+TEST_CASE("JPEG: markers, dimensions and density - files are written") {
     Document doc;
     addEntity(doc, line({0, 0}, {100, 0}));
     PlotSettings s;

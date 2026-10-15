@@ -29,7 +29,7 @@ struct Fixture {
 };
 }  // namespace
 
-TEST_CASE("MLEADERSTYLE New/Edit sets arrow, gap, text style and content; MLEADER uses it") {
+TEST_CASE("MLEADERSTYLE New/Edit sets arrow, gap, text style and content - MLEADER uses it") {
     Fixture f;
     f.host->run("MLEADERSTYLE", {"New", "Note", "Edit", "Note", "Arrow", "Tick", "Gap", "2",
                                  "Content", "None", "Done", "Done"});

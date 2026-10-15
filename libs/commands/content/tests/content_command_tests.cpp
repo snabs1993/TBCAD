@@ -89,7 +89,7 @@ TEST_CASE("CONTENTIMPORT copies all layers and styles with *, skips what exists"
     CHECK(f.host.logContains("already in the drawing"));
 }
 
-TEST_CASE("CONTENTIMPORT List shows what a file offers; bad paths are reported") {
+TEST_CASE("CONTENTIMPORT List shows what a file offers - bad paths are reported") {
     TempDir dir;
     const fs::path file = writeSource(dir.path);
     Fixture f;
@@ -98,7 +98,7 @@ TEST_CASE("CONTENTIMPORT List shows what a file offers; bad paths are reported")
     CHECK(f.host.logContains("Layer     walls~inner"));
     f.host.run("CONTENTIMPORT", {(dir.path / "missing.tbcad").string()});
     CHECK(f.host.logContains("Cannot find"));
-    f.host.run("CONTENTIMPORT", {file.string(), "Block", "  "});
+    f.host.run("CONTENTIMPORT", {file.string(), "Block", " | "});
     CHECK(f.host.logContains("Nothing to copy"));
 }
 
