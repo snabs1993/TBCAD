@@ -2536,7 +2536,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r55: class fields tried with both version layouts; r54: header read diagnostics; r53: "
+    return "r56: R2007 container; r55: class fields tried with both version layouts; r54: header "
+           "read diagnostics; r53: "
            "dimension text height from the fixed height of its "
            "text style; r52: multi-line "
            "attribute tag read from the embedded mtext layout; r51: layout "

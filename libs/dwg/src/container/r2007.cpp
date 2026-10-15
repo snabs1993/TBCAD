@@ -45,8 +45,7 @@ std::string hexBytes(Bytes b, std::size_t from, std::size_t count) {
 bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint64_t expanded,
                     std::uint64_t factor, std::vector<std::uint8_t>& out,
                     std::vector<std::string>& notes, const char* what) {
-    if (comp == 0 || comp > kMaxSection || expanded > kMaxSection || factor == 0 ||
-        factor > 1000) {
+    if (comp == 0 || comp > kMaxSection || expanded > kMaxSection || factor == 0 || factor > 1000) {
         notes.push_back(std::string("the ") + what + " has impossible sizes");
         return false;
     }
@@ -74,8 +73,8 @@ bool readSystemPage(Bytes file, std::uint64_t at, std::uint64_t comp, std::uint6
 
 }  // namespace
 
-std::vector<std::uint8_t> rsDataBytes(Bytes coded, std::size_t blocks, std::size_t k,
-                                      std::size_t n, bool interleaved) {
+std::vector<std::uint8_t> rsDataBytes(Bytes coded, std::size_t blocks, std::size_t k, std::size_t n,
+                                      bool interleaved) {
     std::vector<std::uint8_t> out(blocks * k, 0);
     for (std::size_t b = 0; b < blocks; ++b) {
         for (std::size_t j = 0; j < k; ++j) {
@@ -102,7 +101,8 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
 
     // The file header: three interleaved code words of (255, 239); its decoded data is a
     // 0x20-byte prefix (CRC, key, compressed CRC, compressed size, size) and the header fields.
-    const std::vector<std::uint8_t> hd = rsDataBytes(file.subspan(0x80, 3 * 255), 3, 239, 255, true);
+    const std::vector<std::uint8_t> hd =
+        rsDataBytes(file.subspan(0x80, 3 * 255), 3, 239, 255, true);
     tr("file header decoded bytes: " + hexBytes(hd, 0, 64));
     const std::int32_t comprLen = static_cast<std::int32_t>(le32(hd, 0x18));
     const std::uint32_t length2 = le32(hd, 0x1C);
