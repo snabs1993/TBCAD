@@ -53,8 +53,12 @@ public:
         // 3. Objects.
         auto sel = co_await ctx.getSelection(
             "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
-        if (!sel.ok() || sel.ids.empty())
+        if (sel.status == cmd::Status::Cancel)
             co_return;
+        if (sel.ids.empty()) {
+            ctx.message("No objects selected. The block was not made.");
+            co_return;
+        }
         const std::vector<EntityId> ids = detail::inDrawOrder(doc, sel.ids);
         if (ids.empty()) {
             ctx.message("Nothing selectable to put in a block");
