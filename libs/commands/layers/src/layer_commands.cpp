@@ -78,10 +78,10 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"New",    "NewSub",   "Parent",     "Set",     "On",
-                         "Off",    "Freeze",   "Thaw",       "Lock",    "Unlock",
-                         "Color",  "Linetype", "Lineweight", "Plot",    "NoPlot",
-                         "Rename", "Delete",   "Isolate",    "ShowAll", "List"};
+        opts.keywords = {"Make",     "New",        "NewSub", "Parent", "Set",    "On",
+                         "Off",      "Freeze",     "Thaw",   "Lock",   "Unlock", "Color",
+                         "Linetype", "Lineweight", "Plot",   "NoPlot", "Rename", "Delete",
+                         "Isolate",  "ShowAll",    "List"};
         opts.aliases = {{"N", "New"}, {"S", "Set"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
@@ -95,7 +95,28 @@ private:
     static Task runOption(CommandContext& ctx, std::string option) {
         Document& doc = ctx.doc();
         bool ok = false;
-        if (option == "New") {
+        if (option == "Make") {
+            // AutoCAD's -LAYER Make: use the layer if it exists, otherwise create it, and make it
+            // the current layer.
+            std::string name;
+            co_await askText(ctx, "Name of the layer to make current", name, ok);
+            if (!ok)
+                co_return;
+            auto existing = resolveLayer(doc, name);
+            LayerId id{};
+            if (existing) {
+                id = existing.value();
+            } else {
+                auto created = createLayer(doc, ctx.tx(), cmd::trim(name));
+                if (!created) {
+                    ctx.message(created.error().message);
+                    co_return;
+                }
+                id = created.value();
+                ctx.message("Created layer " + layerPath(doc, id) + ".");
+            }
+            report(ctx, setCurrentLayer(doc, ctx.tx(), id));
+        } else if (option == "New") {
             std::string names;
             co_await askText(ctx, "Name(s) for new layer(s), separated by commas", names, ok);
             if (!ok)

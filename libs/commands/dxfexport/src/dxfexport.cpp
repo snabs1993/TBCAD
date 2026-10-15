@@ -39,6 +39,22 @@ public:
         if (!path.ok())
             co_return;
 
+        // A bare name gets .dxf, so the file opens by double-click.
+        std::string fileName = path.text;
+        if (pathOf(fileName).extension().empty())
+            fileName += ".dxf";
+        if (std::error_code exists; fs::exists(pathOf(fileName), exists)) {
+            cmd::KeywordOptions yn;
+            yn.keywords = {"Yes", "No"};
+            yn.defaultKeyword = "No";
+            auto answer =
+                co_await ctx.getKeyword(fileName + " already exists. Replace it?", std::move(yn));
+            if (answer.status != cmd::Status::Keyword || answer.keyword != "Yes") {
+                ctx.message("Export cancelled; the existing file was not changed.");
+                co_return;
+            }
+        }
+
         cmd::KeywordOptions ko;
         ko.keywords = {"R2000", "R12", "R2007"};
         ko.defaultKeyword = "R2000";
@@ -54,14 +70,14 @@ public:
             ctx.message("EXPORTDXF failed: " + res.error().message);
             co_return;
         }
-        const fs::path out = pathOf(path.text);
+        const fs::path out = pathOf(fileName);
         const fs::path tmp = fs::path(out).concat(".tmp");
         {
             std::ofstream f(tmp, std::ios::binary);
             f.write(res.value().bytes.data(),
                     static_cast<std::streamsize>(res.value().bytes.size()));
             if (!f) {
-                ctx.message("Cannot write " + path.text);
+                ctx.message("Cannot write " + fileName);
                 co_return;
             }
         }
@@ -69,10 +85,10 @@ public:
         fs::rename(tmp, out, ec);
         if (ec) {
             fs::remove(tmp, ec);
-            ctx.message("Cannot write " + path.text);
+            ctx.message("Cannot write " + fileName);
             co_return;
         }
-        ctx.message("Saved " + path.text + " (" + std::string(dxf::versionCode(opt.version)) +
+        ctx.message("Saved " + fileName + " (" + std::string(dxf::versionCode(opt.version)) +
                     "), " + summaryLine(report));
     }
 };
