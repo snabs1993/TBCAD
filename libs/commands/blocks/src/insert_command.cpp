@@ -102,107 +102,127 @@ public:
 
         // Placement. Scale and rotation can be changed before the point is picked.
         InsertData data{block, {}, {1, 1}, 0};
-        data.attribs = blocks::defaultAttribs(doc, block);
-        for (;;) {
-            cmd::PointOptions po;
-            po.keywords = {"Scale", "X", "Y", "Rotate"};
-            po.allowNone = false;
-            po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
-                InsertData d = data;
-                d.position = cursor;
-                Entity e;
-                e.common.layer = doc.header().currentLayer;
-                e.data = Indirect<InsertData>(d);
-                geom::DisplayContext dc;
-                dc.pixelSizeMm = ctx.host().view().scale;
-                blocks::buildInsertDisplay(doc, e, dc, out);
-            };
-            auto p = co_await ctx.getPoint("Specify insertion point or [Scale/X/Y/Rotate]",
-                                           std::move(po));
-            if (p.status == cmd::Status::Cancel || p.status == cmd::Status::None)
-                co_return;
-            if (p.ok()) {
-                data.position = p.point;
-                break;
-            }
-            if (p.keyword == "Scale") {
-                auto s = co_await ctx.getReal("Specify scale factor <1>",
-                                              cmd::RealOptions{.defaultValue = 1});
-                if (!s.ok())
+        // Keeps placing copies (same scale and rotation) until Enter or Esc, like a drafter
+        // dropping furniture symbols one after another.
+        bool multiple = false;
+        for (std::size_t placed = 0;; ++placed) {
+            data.attribs = blocks::defaultAttribs(doc, block);
+            for (;;) {
+                cmd::PointOptions po;
+                po.keywords = {"Scale", "X", "Y", "Rotate", "Multiple"};
+                po.allowNone = false;
+                po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
+                    InsertData d = data;
+                    d.position = cursor;
+                    Entity e;
+                    e.common.layer = doc.header().currentLayer;
+                    e.data = Indirect<InsertData>(d);
+                    geom::DisplayContext dc;
+                    dc.pixelSizeMm = ctx.host().view().scale;
+                    blocks::buildInsertDisplay(doc, e, dc, out);
+                };
+                auto p = co_await ctx.getPoint(
+                    placed == 0 ? "Specify insertion point or [Scale/X/Y/Rotate/Multiple]"
+                                : "Specify next insertion point or "
+                                  "[Scale/X/Y/Rotate], Enter to finish",
+                    std::move(po));
+                if (p.status == cmd::Status::Cancel || p.status == cmd::Status::None)
                     co_return;
-                if (s.value == 0) {
-                    ctx.message("A scale factor cannot be zero");
-                    continue;
+                if (p.ok()) {
+                    data.position = p.point;
+                    break;
                 }
-                data.scale = {s.value, s.value};
-            } else if (p.keyword == "X" || p.keyword == "Y") {
-                auto s = co_await ctx.getReal("Specify " + p.keyword + " scale factor <1>",
-                                              cmd::RealOptions{.defaultValue = 1});
-                if (!s.ok())
-                    co_return;
-                if (s.value == 0) {
-                    ctx.message("A scale factor cannot be zero");
-                    continue;
-                }
-                (p.keyword == "X" ? data.scale.x : data.scale.y) = s.value;
-            } else if (p.keyword == "Rotate") {
-                auto a = co_await ctx.getAngle("Specify rotation angle <0>",
-                                               cmd::AngleOptions{.defaultValue = 0.0});
-                if (!a.ok())
-                    co_return;
-                data.rotation = normalizeAngle(a.value);
-            }
-        }
-
-        // Attribute values. Preset and constant attributes are not asked for.
-        if (ctx.host().setting(kAttReqSetting).value_or("1") != "0") {
-            for (const Entity* ad : blocks::attributeDefinitions(doc, block)) {
-                const AttDefInfo& info = *entityAs<TextData>(*ad)->attdef;
-                if (info.constant || info.preset)
-                    continue;
-                for (AttribValue& v : data.attribs) {
-                    if (v.tag != info.tag)
-                        continue;
-                    const std::string label = info.prompt.empty() ? info.tag : info.prompt;
-                    auto r = co_await ctx.getString(
-                        "Enter attribute value for " + label + " <" + v.value + ">",
-                        cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
-                    if (!r.ok())
+                if (p.keyword == "Scale") {
+                    auto s = co_await ctx.getReal("Specify scale factor <1>",
+                                                  cmd::RealOptions{.defaultValue = 1});
+                    if (!s.ok())
                         co_return;
-                    v.value = r.text;
-                    if (info.verify) {
-                        auto again = co_await ctx.getString(
-                            "Verify attribute value for " + label + " <" + v.value + ">",
+                    if (s.value == 0) {
+                        ctx.message("A scale factor cannot be zero");
+                        continue;
+                    }
+                    data.scale = {s.value, s.value};
+                } else if (p.keyword == "X" || p.keyword == "Y") {
+                    auto s = co_await ctx.getReal("Specify " + p.keyword + " scale factor <1>",
+                                                  cmd::RealOptions{.defaultValue = 1});
+                    if (!s.ok())
+                        co_return;
+                    if (s.value == 0) {
+                        ctx.message("A scale factor cannot be zero");
+                        continue;
+                    }
+                    (p.keyword == "X" ? data.scale.x : data.scale.y) = s.value;
+                } else if (p.keyword == "Multiple") {
+                    multiple = true;
+                    ctx.commitOnCancel();  // Esc ends the series and keeps the copies already
+                                           // placed
+                    ctx.message("Placing several copies: Enter or Esc to finish.");
+                } else if (p.keyword == "Rotate") {
+                    auto a = co_await ctx.getAngle("Specify rotation angle <0>",
+                                                   cmd::AngleOptions{.defaultValue = 0.0});
+                    if (!a.ok())
+                        co_return;
+                    data.rotation = normalizeAngle(a.value);
+                }
+            }
+
+            // Attribute values. Preset and constant attributes are not asked for.
+            if (ctx.host().setting(kAttReqSetting).value_or("1") != "0") {
+                for (const Entity* ad : blocks::attributeDefinitions(doc, block)) {
+                    const AttDefInfo& info = *entityAs<TextData>(*ad)->attdef;
+                    if (info.constant || info.preset)
+                        continue;
+                    for (AttribValue& v : data.attribs) {
+                        if (v.tag != info.tag)
+                            continue;
+                        const std::string label = info.prompt.empty() ? info.tag : info.prompt;
+                        auto r = co_await ctx.getString(
+                            "Enter attribute value for " + label + " <" + v.value + ">",
                             cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
-                        if (!again.ok())
+                        if (!r.ok())
                             co_return;
-                        v.value = again.text;
+                        v.value = r.text;
+                        if (info.verify) {
+                            auto again = co_await ctx.getString(
+                                "Verify attribute value for " + label + " <" + v.value + ">",
+                                cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                            if (!again.ok())
+                                co_return;
+                            v.value = again.text;
+                        }
                     }
                 }
             }
-        }
 
-        Entity e;
-        e.data = Indirect<InsertData>(data);
-        applyCurrentProperties(ctx.doc().header(), e);
-        // Symbols drawn at 1:1 are sized for the current annotation scale when the drawing asks.
-        if (annotateNewObjects(ctx.doc().header())) {
-            const BlockDef* annoDef = ctx.doc().block(data.block);
-            const double n = currentAnnotationScale(ctx.doc().header());
-            if (annoDef && annoDef->xrefPath.empty() && !data.array) {
-                e.common.annotative = true;
-                e.common.annoScales = ScaleList(std::vector<double>{n});
-                if (auto* ins = entityAs<InsertData>(e))
-                    ins->scale = ins->scale * n;
+            Entity e;
+            e.data = Indirect<InsertData>(data);
+            applyCurrentProperties(ctx.doc().header(), e);
+            // Symbols drawn at 1:1 are sized for the current annotation scale when the drawing
+            // asks.
+            if (annotateNewObjects(ctx.doc().header())) {
+                const BlockDef* annoDef = ctx.doc().block(data.block);
+                const double n = currentAnnotationScale(ctx.doc().header());
+                if (annoDef && annoDef->xrefPath.empty() && !data.array) {
+                    e.common.annotative = true;
+                    e.common.annoScales = ScaleList(std::vector<double>{n});
+                    if (auto* ins = entityAs<InsertData>(e))
+                        ins->scale = ins->scale * n;
+                }
             }
+            if (multiple)
+                ctx.checkpoint();  // each copy is its own undo step and shows at once
+            auto added = ctx.tx().add(std::move(e));
+            if (!added) {
+                ctx.message(added.error().message);
+                co_return;
+            }
+            ctx.host().setSelection({added.value()});
+            ctx.setUndoLabel("Insert " + def->name);
+            ctx.message("Block \"" + def->name + "\" inserted" +
+                        (multiple ? " (" + std::to_string(placed + 1) + ")" : ""));
+            if (!multiple)
+                co_return;
         }
-        auto added = ctx.tx().add(std::move(e));
-        if (!added) {
-            ctx.message(added.error().message);
-            co_return;
-        }
-        ctx.host().setSelection({added.value()});
-        ctx.setUndoLabel("Insert " + def->name);
     }
 };
 
