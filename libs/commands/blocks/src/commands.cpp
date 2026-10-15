@@ -42,6 +42,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeAttDefCommand());
     (void)registry.add(makeAttDefLineCommand());
     (void)registry.add(makeAttEditCommand());
+    (void)registry.add(makeAttExtCommand());
     (void)registry.add(makeAttSyncCommand());
     (void)registry.add(makeXAttachCommand());
     (void)registry.add(makePdfAttachCommand());
@@ -66,6 +67,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Save Block Edit", "BSAVE", "block.bsave");
     ui.addMenuItem("Modify/Close Block Edit", "BCLOSE", "block.bclose");
     ui.addMenuItem("Modify/Edit Attributes...", "ATTEDIT", "block.attedit");
+    ui.addMenuItem("Tools/Extract Attributes to CSV...", "ATTEXT", "block.attext");
     ui.addMenuItem("Insert/External Reference...", "XATTACH", "block.xattach");
     ui.addMenuItem("Insert/Reload External References", "XRELOAD", "block.xreload");
     ui.addMenuItem("Modify/Clip Block or Xref...", "XCLIP", "modify.xclip");
