@@ -202,8 +202,14 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
        ", factor " + std::to_string(sectionsMapFactor));
 
     std::vector<std::uint8_t> pm;
-    if (!readSystemPage(file, kStreamBase + pagesMapOffset, pagesMapComp, pagesMapExpanded, 0, pm,
-                        notes, "page map", pageMapPlausible))
+    // The "correction factor" in the file header gives the number of code blocks:
+    // ceil(compressed size rounded up to 8 * factor / 239) (checked against a real file).
+    const std::uint64_t pagesMapBlocks =
+        pagesMapFactor > 0 && pagesMapFactor < 1000
+            ? (((pagesMapComp + 7) & ~std::uint64_t{7}) * pagesMapFactor + 238) / 239
+            : 0;
+    if (!readSystemPage(file, kStreamBase + pagesMapOffset, pagesMapComp, pagesMapExpanded,
+                        pagesMapBlocks, pm, notes, "page map", pageMapPlausible))
         return makeError(ErrorCode::Parse, "the DWG page map is damaged");
     struct Page {
         std::int64_t id = 0;
@@ -304,6 +310,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
             bool done = false;
             std::string why;
             std::string config;
+            std::string head;
             for (std::uint64_t blocks : {floorBlocks, floorBlocks + 1}) {
                 for (std::size_t perBlock : {std::size_t{251}, std::size_t{239}}) {
                     for (int il = 0; il < 2 && !done; ++il) {
@@ -329,10 +336,12 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                             else if (why.empty())
                                 why = w;
                         }
-                        if (done)
+                        if (done) {
                             config = std::to_string(blocks) + " blocks of " +
                                      std::to_string(perBlock) +
                                      (inter ? ", interleaved" : ", plain");
+                            head = hexBytes(raw, 0, 64);
+                        }
                     }
                     if (done)
                         break;
@@ -350,7 +359,8 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                 continue;
             }
             if (trace && k < 2)
-                tr("  page " + std::to_string(pageId) + " read as " + config);
+                tr("  page " + std::to_string(pageId) + " read as " + config + "; stream starts " +
+                   head + "; expanded starts " + hexBytes(page, 0, 32));
             if (offset < data.size())
                 std::memcpy(data.data() + offset, page.data(),
                             std::min<std::size_t>(page.size(), data.size() - offset));
