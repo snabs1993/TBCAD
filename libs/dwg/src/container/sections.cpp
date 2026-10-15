@@ -184,6 +184,9 @@ HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,
             return b;
     }
     notes.push_back("the drawing units could not be read from the header; unitless assumed");
+    for (const std::string& t : tried)
+        if (t.rfind("header diagnostics", 0) == 0)
+            notes.push_back(t);
     return v;
 }
 
