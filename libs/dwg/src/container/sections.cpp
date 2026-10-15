@@ -57,11 +57,22 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::s
     const Bytes data = sectionData(section, kClassStart, extra, notes, "class");
     if (data.empty())
         return out;
+    // R2007 has a long for the largest class number and one flag; from R2010 on a short and
+    // two bytes before the flag.
+    auto classHeader = [&](BitReader& h) {
+        if (fmt.r2010) {
+            const std::uint32_t m = h.bs();
+            h.rc();
+            h.rc();
+            h.b();
+            return m;
+        }
+        const std::uint32_t m = h.bl();
+        h.b();
+        return m;
+    };
     BitReader r(data);
-    const std::uint32_t maxClass = r.bs();  // maximum class number
-    r.rc();
-    r.rc();
-    r.b();
+    const std::uint32_t maxClass = classHeader(r);  // maximum class number
     const std::size_t count = maxClass >= 500 && maxClass < 100000 ? maxClass - 499 : 0;
     if (!fmt.r2007) {
         // Older releases: names inline with the fields.
@@ -95,10 +106,7 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::s
     int bestScore = -1;
     for (int variant = 0; variant < 2; ++variant) {
         BitReader fr(data, 0);
-        fr.bs();
-        fr.rc();
-        fr.rc();
-        fr.b();
+        classHeader(fr);
         std::vector<ClassInfo> got;
         bool sequential = true;
         for (std::size_t i = 0; i < count && !fr.failed(); ++i) {
@@ -167,9 +175,10 @@ std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int mainte
                                     std::vector<std::string>& notes) {
     // The size of the words between the size and the data depends on the release (a real R2018
     // file has two); the first reading that yields classes wins.
-    const std::size_t known = fmt.r2018 ? 8 : (fmt.r2010 && maintenance > 3 ? 4 : 0);
+    const std::size_t known =
+        fmt.r2018 ? 8 : (((fmt.r2010 && maintenance > 3) || (fmt.r2007 && !fmt.r2010)) ? 4 : 0);
     std::vector<std::size_t> tries{known};
-    if (fmt.r2010)
+    if (fmt.r2007)
         for (std::size_t x : {8u, 4u, 0u})
             if (x != known)
                 tries.push_back(x);
@@ -189,11 +198,32 @@ std::vector<ClassInfo> parseClasses(Bytes section, const Format& fmt, int mainte
     return {};
 }
 
+namespace {
+HeaderVars parseHeaderWith(Bytes section, const Format& fmt, std::size_t extraBytes,
+                           std::vector<std::string>& notes);
+}
+
 HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,
                        std::vector<std::string>& notes) {
-    HeaderVars v;
     const bool extra = fmt.r2018 || (fmt.r2010 && maintenance > 3);
-    const Bytes data = sectionData(section, kHeaderStart, extra ? 4 : 0, notes, "header");
+    if (fmt.r2007 && !fmt.r2010) {
+        // R2007: whether a second size word follows the first is not documented.
+        std::vector<std::string> first;
+        HeaderVars v = parseHeaderWith(section, fmt, 4, first);
+        if (v.valid) {
+            notes.insert(notes.end(), first.begin(), first.end());
+            return v;
+        }
+        return parseHeaderWith(section, fmt, 0, notes);
+    }
+    return parseHeaderWith(section, fmt, extra ? 4 : 0, notes);
+}
+
+namespace {
+HeaderVars parseHeaderWith(Bytes section, const Format& fmt, std::size_t extraBytes,
+                           std::vector<std::string>& notes) {
+    HeaderVars v;
+    const Bytes data = sectionData(section, kHeaderStart, extraBytes, notes, "header");
     if (data.empty())
         return v;
     std::vector<std::string> tried;
@@ -231,5 +261,7 @@ HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,
             notes.push_back(t);
     return v;
 }
+
+}  // namespace
 
 }  // namespace tbcad::dwg::detail
