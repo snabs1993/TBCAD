@@ -110,6 +110,7 @@ private:
     DimStyleId dimStyleFor(std::string_view raw) const;
     DimStyleId dimStyleWithOverrides(const Record& r, DimStyleId base);
     std::map<std::string, DimStyleId> dimOverrideStyles_{};
+    std::map<std::string, double> styleHeights_{};  // STYLE handle -> fixed text height (DXF units)
     Vec2 P(const Record& r, int cx, int cy) const { return {r.num(cx) * k_, r.num(cy) * k_}; }
     void note3d(const Record& r);
     void bad(const Record& r, std::string_view type, const std::string& message);
