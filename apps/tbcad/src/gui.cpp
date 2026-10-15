@@ -930,6 +930,8 @@ void Gui::menuBar() {
     if (ImGui::BeginMenu("Help")) {
         if (ImGui::MenuItem("Quick Start", keys.label("help.quickStart").c_str()))
             showQuickStart_ = true;
+        if (ImGui::MenuItem("Command List"))
+            showCommandList_ = true;
         if (ImGui::MenuItem("About TBCAD"))
             showAbout_ = true;
         if (ImGui::MenuItem("Third-Party Notices"))
@@ -3048,6 +3050,64 @@ void Gui::dialogs() {
         ImGui::PushTextWrapPos(0.0f);
         drawMarkdownLite(quickStartText_);
         ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+        if (ImGui::Button("Close", ImVec2(110, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (showCommandList_) {
+        ImGui::OpenPopup("Command List");
+        showCommandList_ = false;
+        commandFilter_.clear();
+    }
+    ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Command List", nullptr)) {
+        ImGui::SetNextItemWidth(320);
+        if (ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();
+        ImGui::InputTextWithHint("##cmdfilter", "Type to search commands", &commandFilter_);
+        ImGui::SameLine();
+        ImGui::TextDisabled("Click a command to run it.");
+        ImGui::BeginChild("##cmdlist", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+        if (ImGui::BeginTable("##cmdtable", 3,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+            ImGui::TableSetupColumn("Command");
+            ImGui::TableSetupColumn("Shortcut");
+            ImGui::TableSetupColumn("What it does", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            auto lower = [](std::string t) {
+                for (char& c : t)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return t;
+            };
+            const std::string needle = lower(commandFilter_);
+            for (cmd::Command* c : core_.registry().list()) {
+                if (c->description().empty())
+                    continue;
+                std::string aliases;
+                for (const std::string& a : core_.registry().aliasesOf(c->name()))
+                    aliases += (aliases.empty() ? "" : ", ") + a;
+                const std::string name(c->name());
+                const std::string desc(c->description());
+                if (!needle.empty() &&
+                    lower(name + " " + aliases + " " + desc).find(needle) == std::string::npos)
+                    continue;
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
+                    if (core_.runner().active())
+                        core_.pressEscape();
+                    core_.submitText(name);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(aliases.c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextWrapped("%s", desc.c_str());
+            }
+            ImGui::EndTable();
+        }
         ImGui::EndChild();
         if (ImGui::Button("Close", ImVec2(110, 0)))
             ImGui::CloseCurrentPopup();

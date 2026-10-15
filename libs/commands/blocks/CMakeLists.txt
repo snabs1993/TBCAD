@@ -4,7 +4,9 @@ set(_block_cmd_sources
   src/array_command.cpp
   src/dynamic_commands.cpp
   src/assembly_commands.cpp
+  src/attext_command.cpp
   src/attribute_commands.cpp
+  src/bedit_command.cpp
   src/block_command.cpp
   src/block_count_command.cpp
   src/block_list.cpp
@@ -33,14 +35,13 @@ tbcad_add_tests(block_cmds
     tests/main.cpp
     tests/block_command_tests.cpp
     tests/starter_library_tests.cpp
+    tests/bedit_command_tests.cpp
     tests/insert_command_tests.cpp
     tests/snap_tests.cpp
     tests/array_command_tests.cpp
     tests/dynamic_command_tests.cpp
     tests/assembly_command_tests.cpp
-    tests/attribute_command_tests.cpp
-    tests/xref_command_tests.cpp
-    tests/palette_tests.cpp
+    tests/attext_command_tests.cpp
     tests/attribute_command_tests.cpp
     tests/xref_command_tests.cpp
     tests/palette_tests.cpp

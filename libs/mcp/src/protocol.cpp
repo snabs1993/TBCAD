@@ -207,10 +207,14 @@ Json McpServerCore::callTool(Client& client, const std::string& name, const Json
         return finish(errorResult("Invalid arguments: " + schemaError), false, schemaError);
 
     if (tool->edit != Edit::None) {
-        if (permission(client) != EditDecision::Allow) {
+        if (const EditDecision d = permission(client); d != EditDecision::Allow) {
             std::string msg =
-                "Editing is not allowed for this session. The user can allow it in TBCAD "
-                "(Tools > MCP Server).";
+                d == EditDecision::ReadOnly
+                    ? "Editing is turned off in TBCAD (read-only). The user can allow it in "
+                      "Tools > MCP Server."
+                    : "The user did not allow editing: the request was declined, or nobody "
+                      "answered the dialog in TBCAD within two minutes. Ask them to allow it "
+                      "(Tools > MCP Server) and try again.";
             return finish(errorResult(msg), false, msg);
         }
     }

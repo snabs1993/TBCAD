@@ -106,8 +106,17 @@ void polylineDisplay(const PolylineData& pl, double tol, const DisplayStyle& sty
         out.items.push_back(std::move(d));
         return;
     }
-    // Wide segments become filled strips; zero-width segments stay thin lines.
+    // Wide segments become filled strips; zero-width segments stay thin lines. A strip ends square,
+    // so the corner between two strips is filled with a miter (or a bevel when it is too sharp).
+    struct Ends {
+        bool wide = false;
+        Vec2 startTan{}, endTan{}, p0{}, p1{};
+        double w0 = 0, w1 = 0;
+    };
+    std::vector<Ends> ends(segs.size());
+    std::size_t segIndex = 0;
     for (const Segment& s : segs) {
+        Ends& en = ends[segIndex++];
         const PolyVertex& va = pl.v[static_cast<std::size_t>(s.index)];
         double w0 = segmentWidth(pl, va, true), w1 = segmentWidth(pl, va, false);
         if (!(w0 > 0) && !(w1 > 0)) {
@@ -133,6 +142,15 @@ void polylineDisplay(const PolylineData& pl, double tol, const DisplayStyle& sty
             std::reverse(pts.begin(), pts.end());
             std::reverse(us.begin(), us.end());
         }
+        if (pts.size() >= 2) {
+            en.wide = true;
+            en.startTan = pts[1] - pts[0];
+            en.endTan = pts.back() - pts[pts.size() - 2];
+            en.p0 = s.p0;
+            en.p1 = s.p1;
+            en.w0 = w0;
+            en.w1 = w1;
+        }
         DisplayFill fill;
         fill.style = style;
         std::vector<Vec2> left, right;
@@ -154,6 +172,46 @@ void polylineDisplay(const PolylineData& pl, double tol, const DisplayStyle& sty
             pushRing(ring, *it);
         fill.rings.push_back(std::move(ring));
         out.items.push_back(std::move(fill));
+    }
+    const std::size_t n = ends.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        const bool last = i + 1 == n;
+        if (last && !pl.closed)
+            break;
+        const Ends& a = ends[i];
+        const Ends& b = ends[last ? 0 : i + 1];
+        if (!a.wide || !b.wide || distance(a.p1, b.p0) > 1e-9)
+            continue;
+        Vec2 t1 = normalized(a.endTan), t2 = normalized(b.startTan);
+        const double turn = cross(t1, t2);
+        if (std::abs(turn) < 1e-9)
+            continue;  // straight on: nothing to fill
+        // Outer side of the turn: right of the path for a left turn, left for a right turn.
+        const double side = turn > 0 ? -1.0 : 1.0;
+        const Vec2 n1 = perp(t1) * side, n2 = perp(t2) * side;
+        const Vec2 pa = a.p1 + n1 * (0.5 * a.w1);
+        const Vec2 pb = b.p0 + n2 * (0.5 * b.w0);
+        // Miter point: intersection of the two outer edges.
+        Vec2 corner = pa;
+        bool miter = false;
+        const double denom = cross(t1, t2);
+        if (std::abs(denom) > 1e-9) {
+            const double k = cross(pb - pa, t2) / denom;
+            const Vec2 m = pa + t1 * k;
+            const double halfMax = 0.5 * std::max(a.w1, b.w0);
+            if (halfMax > 0 && distance(m, a.p1) <= 4.0 * halfMax) {
+                corner = m;
+                miter = true;
+            }
+        }
+        DisplayFill join;
+        join.style = style;
+        std::vector<Vec2> ring{a.p1, pa};
+        if (miter)
+            ring.push_back(corner);
+        ring.push_back(pb);
+        join.rings.push_back(std::move(ring));
+        out.items.push_back(std::move(join));
     }
 }
 

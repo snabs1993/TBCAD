@@ -146,14 +146,32 @@ public:
 
 // ---- DIVIDE / MEASURE ---------------------------------------------------------------------------
 
+// Adds the points, selects them (a default point is a single pixel, so they would otherwise be
+// hard to see) and, while the point style is still the default dot, says how to make them bigger.
 Result<void> addPoints(cmd::CommandContext& ctx, const std::vector<Vec2>& pts, const Entity& like) {
+    std::vector<EntityId> made;
+    struct Finish {
+        cmd::CommandContext& ctx;
+        std::vector<EntityId>& made;
+        ~Finish() {
+            if (made.empty())
+                return;
+            ctx.host().setSelection(made);
+            if (ctx.doc().header().custom.find("pdmode") == ctx.doc().header().custom.end())
+                ctx.message(
+                    "The points are drawn as tiny dots. Use PTYPE to choose a bigger "
+                    "point style.");
+        }
+    } finish{ctx, made};
     for (Vec2 p : pts) {
         Entity pt;
         pt.common = like.common;
         pt.common.id = {};
         pt.data = PointData{p};
-        if (auto r = ctx.tx().add(std::move(pt)); !r)
+        auto r = ctx.tx().add(std::move(pt));
+        if (!r)
             return r.error();
+        made.push_back(r.value());
     }
     return Result<void>{};
 }

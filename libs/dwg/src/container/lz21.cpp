@@ -4,12 +4,14 @@ namespace tbcad::dwg::detail {
 
 namespace {
 
-// A literal run is not stored in the order it is written: it is cut into blocks that appear in the
-// stream in the opposite order to the output, each block itself in the output order. Single bytes
-// therefore come out reversed, a block of four or eight bytes comes out as it is. The cuts are
-// known for the lengths found in the system pages of real R2007 files (checked against the section
-// map names and hash codes and the page map); other lengths are read back to front.
-void copyLiteral(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
+// A literal run is not stored in the order it is written. Groups of 32 bytes are stored as four
+// blocks of eight in the opposite order (block 3, 2, 1, 0 of the group make the output); what is
+// left after the groups (fewer than 32 bytes) is cut into blocks that appear in the stream in the
+// opposite order to the output, each block itself in the output order, so single bytes come out
+// reversed. The cuts are known for the lengths found in real R2007 files (checked against the
+// section map names and hash codes, the page map, the section sentinels and the sizes in the file
+// header); other lengths are read back to front.
+void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
     // Block sizes in stream order.
     static const std::uint8_t kCut1[] = {1};
     static const std::uint8_t kCut2[] = {1, 1};
@@ -19,8 +21,9 @@ void copyLiteral(const std::uint8_t* in, std::size_t length, std::uint8_t* out) 
     static const std::uint8_t kCut6[] = {1, 4, 1};
     static const std::uint8_t kCut8[] = {8};
     static const std::uint8_t kCut9[] = {8, 1};
-    static const std::uint8_t kCut10[] = {1, 1, 8};
+    static const std::uint8_t kCut10[] = {1, 8, 1};
     static const std::uint8_t kCut17[] = {8, 1, 8};
+    static const std::uint8_t kCut23[] = {8, 8, 4, 1, 1, 1};
     const std::uint8_t* cut = nullptr;
     std::size_t blocks = 0;
     auto pick = [&](const std::uint8_t* c, std::size_t n) {
@@ -58,6 +61,9 @@ void copyLiteral(const std::uint8_t* in, std::size_t length, std::uint8_t* out) 
         case 17:
             pick(kCut17, 3);
             break;
+        case 23:
+            pick(kCut23, 6);
+            break;
         default:
             break;
     }
@@ -74,6 +80,18 @@ void copyLiteral(const std::uint8_t* in, std::size_t length, std::uint8_t* out) 
             out[to + k] = in[from + k];
         from += cut[b];
     }
+}
+
+void copyLiteral(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
+    while (length >= 32) {
+        for (std::size_t blk = 0; blk < 4; ++blk)
+            for (std::size_t k = 0; k < 8; ++k)
+                out[blk * 8 + k] = in[(3 - blk) * 8 + k];
+        in += 32;
+        out += 32;
+        length -= 32;
+    }
+    copyRemainder(in, length, out);
 }
 
 }  // namespace
