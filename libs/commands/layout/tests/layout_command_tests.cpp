@@ -87,6 +87,57 @@ TEST_CASE("VPLEVEL shows one level in a viewport") {
     CHECK(f.host->logContains("No level named"));
 }
 
+TEST_CASE("MVIEW with Enter at the centre prompt shows the middle of the drawing") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("plan");
+        Entity a;
+        a.data = LineData{{0, 0}, {10000, 4000}};
+        REQUIRE(tx.add(std::move(a)));
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    auto r = f.host->run("MVIEW", {"10,10", "410,287", "1:50", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    auto l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l->viewports.size() == 1);
+    CHECK(l->viewports[0].center.x == doctest::Approx(5000));
+    CHECK(l->viewports[0].center.y == doctest::Approx(2000));
+}
+
+TEST_CASE("viewports can be picked by clicking, moved, resized, re-centred and deleted") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "110,110", "1:50", "2500,1000"});
+    f.host->run("MVIEW", {"150,10", "250,110", "1:100", "0,0"});
+    auto vp = [&](int id) { return *layout::findLayout(f.doc, "Plan")->findViewport(id); };
+
+    f.host->run("VPSCALE", {cmd::ScriptItem::click({200, 50}), "1:20"});  // the second one
+    CHECK(vp(2).scaleN == doctest::Approx(20));
+    CHECK(vp(1).scaleN == doctest::Approx(50));
+
+    f.host->run("VPMOVE", {"1", "0,0", "5,5"});
+    CHECK(vp(1).paper.min.x == doctest::Approx(15));
+    CHECK(vp(1).paper.min.y == doctest::Approx(15));
+    CHECK(vp(1).paper.width() == doctest::Approx(100));
+
+    f.host->run("VPRESIZE", {"2", "150,10", "280,150"});
+    CHECK(vp(2).paper.width() == doctest::Approx(130));
+    CHECK(vp(2).paper.height() == doctest::Approx(140));
+    f.host->run("VPRESIZE", {"2", "5,5", "5,50"});  // no width
+    CHECK(f.host->logContains("needs a size"));
+
+    f.host->run("VPCENTER", {"1", "400,300"});
+    CHECK(vp(1).center.x == doctest::Approx(400));
+
+    f.host->run("VPDELETE", {cmd::ScriptItem::click({300, 200})});  // outside every viewport
+    CHECK(f.host->logContains("No viewport there"));
+    f.host->run("VPDELETE", {"1"});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports.size() == 1);
+    CHECK(f.host->undo());
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports.size() == 2);
+}
+
 TEST_CASE("commands that need a layout say so; LAYOUT List, Rename, Paper and Delete work") {
     Fixture f;
     f.host->run("MVIEW", {});

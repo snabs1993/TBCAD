@@ -338,6 +338,18 @@ Result<void> setViewportCenter(Transaction& tx, const std::string& layoutName, i
     return store(tx, ed.all);
 }
 
+Result<void> setViewportRect(Transaction& tx, const std::string& layoutName, int id,
+                             const BBox2& rect) {
+    if (rect.empty() || !(rect.width() > 0) || !(rect.height() > 0))
+        return makeError(ErrorCode::InvalidArgument, "The viewport needs a size.");
+    auto e = openEdit(tx, layoutName, id);
+    if (!e)
+        return e.error();
+    Edit ed = std::move(e.value());
+    ed.vp->paper = rect;
+    return store(tx, ed.all);
+}
+
 Result<void> setViewportOn(Transaction& tx, const std::string& layoutName, int id, bool on) {
     auto e = openEdit(tx, layoutName, id);
     if (!e)
