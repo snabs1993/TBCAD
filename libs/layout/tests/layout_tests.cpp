@@ -6,6 +6,7 @@
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/pdf/pdf.h"
@@ -422,4 +423,56 @@ TEST_CASE("layouts imported from a DXF file are read by the layout table") {
     const BlockDef* sheet = doc.block(all[0].content);
     REQUIRE(sheet != nullptr);
     CHECK(sheet->entities.size() == 1);
+}
+
+TEST_CASE("layouts survive a DXF export and import") {
+    Document doc;
+    const LayerId walls = addLayer(doc, "Walls");
+    run(doc, "new", [](Transaction& tx) { return createLayout(tx, "Plan", "A3"); });
+    run(doc, "new", [](Transaction& tx) { return createLayout(tx, "Detail", "A4", false); });
+    run(doc, "tb", [](Transaction& tx) {
+        return addTitleBlock(tx, "Plan", TitleBlockFields{"P", "D", "1:100", "today", "1"});
+    });
+    int vp = 0;
+    run(doc, "vp", [&](Transaction& tx) {
+        auto r = addViewport(tx, "Plan", BBox2{{10, 10}, {300, 200}}, {5000, 3000}, 100);
+        if (!r.ok())
+            return Result<void>(r.error());
+        vp = r.value();
+        return setViewportLayerFrozen(tx, "Plan", vp, walls, true);
+    });
+    run(doc, "vp2", [&](Transaction& tx) {
+        auto r = addViewport(tx, "Detail", BBox2{{5, 5}, {100, 100}}, {10, 20}, 20);
+        return r.ok() ? Result<void>() : Result<void>(r.error());
+    });
+    const std::size_t planObjects = doc.block(layouts(doc)[0].content)->entities.size();
+    REQUIRE(planObjects > 0);
+
+    dxf::Report report;
+    for (dxf::DxfVersion version : {dxf::DxfVersion::R2000, dxf::DxfVersion::R2007}) {
+        dxf::ExportOptions opts;
+        opts.version = version;
+        auto out = dxf::exportDxf(doc, opts, report);
+        REQUIRE(out.ok());
+        auto in = dxf::importDxf(
+            std::span<const std::byte>(reinterpret_cast<const std::byte*>(out.value().bytes.data()),
+                                       out.value().bytes.size()),
+            {}, report);
+        REQUIRE(in.ok());
+        const Document& back = *in.value().document;
+        const std::vector<Layout> all = layouts(back);
+        REQUIRE(all.size() == 2);
+        CHECK(all[0].name == "Plan");
+        CHECK(all[0].widthMm == doctest::Approx(420));
+        CHECK(all[1].name == "Detail");
+        CHECK(all[1].widthMm == doctest::Approx(210));
+        REQUIRE(all[0].viewports.size() == 1);
+        CHECK(all[0].viewports[0].scaleN == doctest::Approx(100));
+        CHECK(all[0].viewports[0].center.x == doctest::Approx(5000));
+        CHECK(all[0].viewports[0].paper.max.x == doctest::Approx(300));
+        CHECK(all[0].viewports[0].frozen.size() == 1);
+        REQUIRE(all[1].viewports.size() == 1);
+        CHECK(all[1].viewports[0].scaleN == doctest::Approx(20));
+        CHECK(back.block(all[0].content)->entities.size() == planObjects);
+    }
 }

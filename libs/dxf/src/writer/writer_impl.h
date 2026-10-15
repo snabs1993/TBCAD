@@ -217,6 +217,26 @@ private:
     std::uint64_t layoutModel_ = 0, layoutPaper_ = 0;
     std::vector<BlockId> userBlocks_{};  // blocks written to BLOCKS, in id order
 
+    // Paper-space layouts (the table in Header::custom["tbcad.layouts"], see libs/layout): the
+    // first is written as *Paper_Space, the others as *Paper_Space0, *Paper_Space1, ...
+    struct SheetViewport {
+        int id = 0;
+        Vec2 min{}, max{}, center{};
+        double scaleN = 1;
+        bool on = true;
+        std::vector<LayerId> frozen{};
+    };
+    struct Sheet {
+        std::string name{};
+        BlockId content{};
+        double w = 420, h = 297;
+        std::uint64_t rec = 0, layout = 0;
+        std::vector<SheetViewport> viewports{};
+    };
+    std::vector<Sheet> sheets_{};
+    void prepareSheets();
+    void writeSheetBlock(Out& o, const Sheet& sheet, const std::string& blockName);
+
     struct DimBlock {
         std::string name{};
         std::uint64_t rec = 0;

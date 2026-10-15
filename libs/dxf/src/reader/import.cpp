@@ -960,7 +960,17 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
 
 void Importer::readLayoutObject(const Record& r) {
     LayoutRow row;
-    row.name = dec(r.raw(1));
+    // The page setup part of a LAYOUT also has a group 1 (the setup name): the layout's own name
+    // is the first one after the AcDbLayout marker.
+    bool inLayout = false;
+    for (const Group& g : r.g) {
+        if (g.code == 100 && g.str() == "AcDbLayout")
+            inLayout = true;
+        else if (inLayout && g.code == 1 && row.name.empty())
+            row.name = dec(g.str());
+    }
+    if (row.name.empty())
+        row.name = dec(r.raw(1));
     row.tab = static_cast<int>(r.integer(71, 0));
     row.width = r.num(44);
     row.height = r.num(45);

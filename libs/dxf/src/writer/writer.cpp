@@ -181,6 +181,114 @@ void Writer::prepareBlocks() {
     }
 }
 
+namespace {
+
+std::vector<std::string> splitOn(const std::string& s, char sep) {
+    std::vector<std::string> out;
+    std::size_t i = 0;
+    for (;;) {
+        const std::size_t j = s.find(sep, i);
+        if (j == std::string::npos) {
+            out.push_back(s.substr(i));
+            return out;
+        }
+        out.push_back(s.substr(i, j - i));
+        i = j + 1;
+    }
+}
+
+}  // namespace
+
+void Writer::prepareSheets() {
+    if (r12_)
+        return;
+    const auto it = doc_.header().custom.find("tbcad.layouts");
+    if (it == doc_.header().custom.end())
+        return;
+    for (const std::string& line : splitOn(it->second, '\n')) {
+        const std::vector<std::string> f = splitOn(line, '\t');
+        if (f.size() >= 8 && f[0] == "L") {
+            Sheet s;
+            s.name = f[2];
+            s.w = std::strtod(f[5].c_str(), nullptr);
+            s.h = std::strtod(f[6].c_str(), nullptr);
+            if (!(s.w > 0) || !(s.h > 0)) {
+                s.w = 420;
+                s.h = 297;
+            }
+            s.content =
+                BlockId{static_cast<std::uint32_t>(std::strtoul(f[7].c_str(), nullptr, 10))};
+            sheets_.push_back(std::move(s));
+        } else if (f.size() >= 10 && f[0] == "V" && !sheets_.empty()) {
+            SheetViewport v;
+            v.id = std::atoi(f[1].c_str());
+            v.min = {std::strtod(f[2].c_str(), nullptr), std::strtod(f[3].c_str(), nullptr)};
+            v.max = {std::strtod(f[4].c_str(), nullptr), std::strtod(f[5].c_str(), nullptr)};
+            v.center = {std::strtod(f[6].c_str(), nullptr), std::strtod(f[7].c_str(), nullptr)};
+            v.scaleN = std::strtod(f[8].c_str(), nullptr);
+            v.on = f[9] == "1";
+            if (f.size() > 10 && !f[10].empty())
+                for (const std::string& id : splitOn(f[10], ','))
+                    v.frozen.push_back(
+                        LayerId{static_cast<std::uint32_t>(std::strtoul(id.c_str(), nullptr, 10))});
+            sheets_.back().viewports.push_back(std::move(v));
+        }
+    }
+    // The sheets' own blocks are written as the paper space blocks, not as user blocks.
+    for (const Sheet& s : sheets_)
+        userBlocks_.erase(std::remove(userBlocks_.begin(), userBlocks_.end(), s.content),
+                          userBlocks_.end());
+    for (std::size_t i = 0; i < sheets_.size(); ++i) {
+        Sheet& s = sheets_[i];
+        if (i == 0) {
+            s.rec = paperRec_;
+            s.layout = layoutPaper_;
+        } else {
+            s.rec = newHandle();
+            s.layout = newHandle();
+            blockSet_.add("*Paper_Space" + std::to_string(i - 1));
+        }
+    }
+}
+
+void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& blockName) {
+    blockBegin(o, blockName, sheet.rec, {0, 0}, 0, true);
+    if (const BlockDef* def = doc_.block(sheet.content)) {
+        Out* saved = o_;
+        o_ = &o;
+        writeEntityList(def->entities, sheet.rec);
+        o_ = saved;
+    }
+    // The viewports: where the window sits on the paper (10/20, 40/41) and which model area it
+    // shows (view centre 12/22, view height 45); the frozen layers are TBCAD XDATA.
+    for (const SheetViewport& v : sheet.viewports) {
+        const double w = v.max.x - v.min.x, h = v.max.y - v.min.y;
+        o.zero("VIEWPORT");
+        o.h(5, newHandle());
+        o.h(330, sheet.rec);
+        o.raw(100, "AcDbEntity");
+        o.i(67, 1);
+        o.raw(8, "0");
+        o.raw(100, "AcDbViewport");
+        o.pt(10, {(v.min.x + v.max.x) / 2, (v.min.y + v.max.y) / 2});
+        o.d(40, w);
+        o.d(41, h);
+        o.i(68, v.on ? 1 : 0);
+        o.i(69, v.id + 1);  // 1 is the sheet's own overall viewport
+        o.d(12, v.center.x);
+        o.d(22, v.center.y);
+        o.pt(16, {0, 0}, 1);
+        o.pt(17, {0, 0}, 0);
+        o.d(45, h * v.scaleN);
+        if (!v.frozen.empty()) {
+            o.raw(1001, "TBCAD");
+            for (LayerId id : v.frozen)
+                o.str(1000, "frozen=" + layerNameOf(id));
+        }
+    }
+    blockEnd(o, sheet.rec, true);
+}
+
 std::string Writer::layerNameOf(LayerId id) const {
     auto it = layerName_.find(id.value);
     if (it != layerName_.end())
@@ -416,11 +524,18 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
 }
 
 void Writer::writeBlockRecords(Out& o, std::uint64_t table) {
-    tableBegin(o, "BLOCK_RECORD", table, userBlocks_.size() + dimBlocks_.size() + 2);
+    tableBegin(
+        o, "BLOCK_RECORD", table,
+        userBlocks_.size() + dimBlocks_.size() + 2 + (sheets_.size() > 1 ? sheets_.size() - 1 : 0));
     tableRecord(o, "BLOCK_RECORD", modelRec_, table, "AcDbBlockTableRecord", "*Model_Space", -1);
     o.h(340, layoutModel_);
     tableRecord(o, "BLOCK_RECORD", paperRec_, table, "AcDbBlockTableRecord", "*Paper_Space", -1);
     o.h(340, layoutPaper_);
+    for (std::size_t i = 1; i < sheets_.size(); ++i) {
+        tableRecord(o, "BLOCK_RECORD", sheets_[i].rec, table, "AcDbBlockTableRecord",
+                    "*Paper_Space" + std::to_string(i - 1), -1);
+        o.h(340, sheets_[i].layout);
+    }
     for (BlockId id : userBlocks_) {
         tableRecord(o, "BLOCK_RECORD", blockRec_[id.value], table, "AcDbBlockTableRecord",
                     blockName_[id.value], -1);
@@ -660,8 +775,14 @@ std::string Writer::objectsSection() {
     }
 
     ownedDict(layoutDict);
-    o.raw(3, "Layout1");
-    o.h(350, layoutPaper_);
+    if (sheets_.empty()) {
+        o.raw(3, "Layout1");
+        o.h(350, layoutPaper_);
+    }
+    for (const Sheet& s : sheets_) {
+        o.str(3, s.name);
+        o.h(350, s.layout);
+    }
     o.raw(3, "Model");
     o.h(350, layoutModel_);
 
@@ -710,8 +831,8 @@ std::string Writer::objectsSection() {
     o.i(62, 256);
     o.raw(6, "BYLAYER");
 
-    auto layout = [&](std::uint64_t handle, const char* name, int tab, std::uint64_t rec,
-                      int flags) {
+    auto layout = [&](std::uint64_t handle, const std::string& name, int tab, std::uint64_t rec,
+                      int flags, double paperW = 0, double paperH = 0) {
         o.zero("LAYOUT");
         o.h(5, handle);
         o.raw(102, "{ACAD_REACTORS");
@@ -724,7 +845,7 @@ std::string Writer::objectsSection() {
         o.raw(4, "");
         o.raw(6, "");
         for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48, 49})
-            o.d(code, 0);
+            o.d(code, code == 44 ? paperW : (code == 45 ? paperH : 0));
         o.d(140, 0);
         o.d(141, 0);
         o.d(142, 1);
@@ -739,14 +860,14 @@ std::string Writer::objectsSection() {
         o.d(148, 0);
         o.d(149, 0);
         o.raw(100, "AcDbLayout");
-        o.raw(1, name);
+        o.str(1, name);
         o.i(70, 1);
         o.i(71, tab);
         o.pt2(10, {0, 0});
-        o.pt2(11, {420, 297});
+        o.pt2(11, {paperW > 0 ? paperW : 420, paperH > 0 ? paperH : 297});
         o.pt(12, {0, 0});
         o.pt(14, {0, 0});
-        o.pt(15, {0, 0});
+        o.pt(15, paperW > 0 ? Vec2{paperW, paperH} : Vec2{0, 0});
         o.d(146, 0);
         o.pt(13, {0, 0});
         o.pt(16, {1, 0});
@@ -755,7 +876,13 @@ std::string Writer::objectsSection() {
         o.h(330, rec);
     };
     layout(layoutModel_, "Model", 0, modelRec_, 1712);
-    layout(layoutPaper_, "Layout1", 1, paperRec_, 688);
+    if (sheets_.empty()) {
+        layout(layoutPaper_, "Layout1", 1, paperRec_, 688);
+    } else {
+        for (std::size_t i = 0; i < sheets_.size(); ++i)
+            layout(sheets_[i].layout, sheets_[i].name, static_cast<int>(i) + 1, sheets_[i].rec, 688,
+                   sheets_[i].w, sheets_[i].h);
+    }
 
     o.zero("ENDSEC");
     return std::move(o.buf);
@@ -833,6 +960,7 @@ Result<ExportResult> Writer::run() {
     rootDict_ = newHandle();
     layoutModel_ = newHandle();
     layoutPaper_ = newHandle();
+    prepareSheets();
 
     // Extents of model space for $EXTMIN/$EXTMAX and the active viewport.
     std::vector<EntityId> model = doc_.modelSpace();
@@ -874,8 +1002,10 @@ Result<ExportResult> Writer::run() {
         o.raw(2, "BLOCKS");
         blockBegin(o, "*Model_Space", modelRec_, {0, 0}, 0, false);
         blockEnd(o, modelRec_, false);
-        blockBegin(o, "*Paper_Space", paperRec_, {0, 0}, 0, true);
-        blockEnd(o, paperRec_, true);
+        if (sheets_.empty()) {
+            blockBegin(o, "*Paper_Space", paperRec_, {0, 0}, 0, true);
+            blockEnd(o, paperRec_, true);
+        }
         for (BlockId id : userBlocks_) {
             const BlockDef& def = *doc_.block(id);
             std::uint64_t rec = blockRec_[id.value];
@@ -887,6 +1017,10 @@ Result<ExportResult> Writer::run() {
             o_ = saved;
             blockEnd(o, rec, false);
         }
+        // The sheets come after the blocks they insert, so an INSERT finds its definition.
+        for (std::size_t i = 0; i < sheets_.size(); ++i)
+            writeSheetBlock(o, sheets_[i],
+                            i == 0 ? "*Paper_Space" : "*Paper_Space" + std::to_string(i - 1));
         // Dimension blocks may be added while the blocks above are written, so index.
         for (std::size_t i = 0; i < dimBlocks_.size(); ++i) {
             const DimBlock& b = dimBlocks_[i];
