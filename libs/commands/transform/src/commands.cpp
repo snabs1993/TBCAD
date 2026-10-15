@@ -138,6 +138,7 @@ public:
         if (!base.ok())
             co_return;
         bool first = true;
+        int copies = 0;
         for (;;) {
             PointOptions o;
             o.base = base.point;
@@ -147,7 +148,8 @@ public:
             });
             auto to = co_await ctx.getPoint(
                 first ? "Specify second point or [Array] <use first point as displacement>"
-                      : "Specify second point or [Array/Exit]",
+                      : "Specify second point or [Array/Exit] (" + std::to_string(copies) +
+                            (copies == 1 ? " copy" : " copies") + " made, Enter to finish)",
                 std::move(o));
             if (to.status == Status::Keyword && to.keyword == "Array") {
                 co_await arrayCopies(ctx, ids, base.point);
@@ -160,6 +162,7 @@ public:
             if (!to.ok())
                 co_return;  // Enter, Exit or Esc ends the repeat
             first = false;
+            ++copies;
             report(ctx,
                    applyTransform(ctx, ids, Transform2::translate(to.point - base.point), true));
         }

@@ -247,6 +247,18 @@ void CommandRunner::pointerMoved(const RawInput& raw) {
     }
 }
 
+void CommandRunner::textEdited(const std::string& text) {
+    if (stack_.empty() || !stack_.back().ctx->hasPending())
+        return;
+    const detail::PromptRequest& req = *stack_.back().ctx->pending();
+    if (req.kind != detail::PromptKind::String || !req.textPreview)
+        return;
+    previewList_.items.clear();
+    if (!text.empty())
+        req.textPreview(text, previewList_);
+    host_.setPreview(&previewList_);
+}
+
 bool CommandRunner::undo() {
     if (active()) {
         host_.print("Finish the current command first.");
@@ -328,6 +340,12 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 return;
         }
         collected_.push_back(id);
+    };
+    // "3 found, 5 total", as AutoCAD says it after every pick or window.
+    auto reportFound = [&](std::size_t n) {
+        host_.print(std::to_string(n) + " found" +
+                    (collected_.size() > n ? ", " + std::to_string(collected_.size()) + " total"
+                                           : std::string()));
     };
     // A picked member brings its whole group along (GROUP).
     auto addWithGroup = [&](EntityId id) {
@@ -598,12 +616,14 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             if (req.kind == K::Selection) {
                 if (!accepts(in.entity))
                     return reject("That object cannot be selected here.");
+                const std::size_t before = collected_.size();
                 addWithGroup(in.entity);
                 if (req.single) {
                     ans.status = Status::Ok;
                     ans.ids = collected_;
                     return complete(std::move(ans));
                 }
+                reportFound(collected_.size() - before);
                 return SubmitResult::Accepted;
             }
             return SubmitResult::Ignored;
@@ -613,6 +633,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             if (req.kind != K::Selection)
                 return SubmitResult::Ignored;
             std::size_t added = 0;
+            const std::size_t before = collected_.size();
             for (EntityId id : in.ids) {
                 if (accepts(id)) {
                     addWithGroup(id);
@@ -626,6 +647,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 ans.ids = collected_;
                 return complete(std::move(ans));
             }
+            reportFound(collected_.size() - before);
             return SubmitResult::Accepted;
         }
     }

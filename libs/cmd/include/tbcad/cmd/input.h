@@ -65,6 +65,8 @@ struct SelectionResult {
 // Live preview while the cursor moves: draw into `out` what the command would create if the
 // user clicked at `cursor` (already passed through the point filters).
 using PreviewFn = std::function<void(Vec2 cursor, DisplayList& out)>;
+// Preview of what a text prompt would create with the text typed so far (drawn while typing).
+using TextPreviewFn = std::function<void(const std::string& text, DisplayList& out)>;
 using EntityFilterFn = std::function<bool(const Entity&)>;
 
 struct PointOptions {
@@ -102,6 +104,7 @@ struct IntOptions {
 struct StringOptions {
     std::optional<std::string> defaultValue{};
     bool allowEmpty = false;  // Enter returns Ok with "" instead of None
+    TextPreviewFn textPreview{};
 };
 struct KeywordOptions {
     std::vector<std::string> keywords{};

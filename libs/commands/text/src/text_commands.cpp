@@ -209,7 +209,17 @@ public:
             rememberHeight(ctx, height);
         ctx.host().setSetting(kJustifyKey, just.name);
 
-        auto t = co_await ctx.getString("Enter text");
+        cmd::StringOptions textOpts;
+        textOpts.textPreview = [&ctx, d](const std::string& typed, DisplayList& out) {
+            TextData shown = d;
+            shown.utf8 = typed;
+            Entity e{{}, std::move(shown)};
+            e.common.layer = ctx.doc().header().currentLayer;
+            geom::DisplayContext dc;
+            dc.pixelSizeMm = std::max(ctx.host().view().scale, 1e-9);
+            geom::buildDisplay(ctx.doc(), e, dc, out);
+        };
+        auto t = co_await ctx.getString("Enter text", std::move(textOpts));
         if (!t.ok())
             co_return;
         d.utf8 = t.text;
@@ -381,7 +391,17 @@ public:
         if (d.width < tol::kLinear)
             d.width = 0;
 
-        auto t = co_await ctx.getString("Enter text (\\P starts a new line)");
+        cmd::StringOptions textOpts;
+        textOpts.textPreview = [&ctx, d](const std::string& typed, DisplayList& out) {
+            MTextData shown = d;
+            shown.utf8 = typed;
+            Entity e{{}, std::move(shown)};
+            e.common.layer = ctx.doc().header().currentLayer;
+            geom::DisplayContext dc;
+            dc.pixelSizeMm = std::max(ctx.host().view().scale, 1e-9);
+            geom::buildDisplay(ctx.doc(), e, dc, out);
+        };
+        auto t = co_await ctx.getString("Enter text (\\P starts a new line)", std::move(textOpts));
         if (!t.ok())
             co_return;
         d.utf8 = t.text;

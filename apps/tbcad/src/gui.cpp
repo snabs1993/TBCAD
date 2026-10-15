@@ -1124,7 +1124,7 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         const bool overflow = layoutScrollMax_ > 1.0f;  // measured on the previous frame
         const float arrowW = ImGui::GetFrameHeight();
         const bool paper = core_.inPaperSpace();
-        const char* hint = "Layout view (read-only)";
+        const char* hint = "Sheet view: double-click a viewport to edit the model";
         const float hintW = paper ? ImGui::CalcTextSize(hint).x + 24 : 0.0f;
         float avail = ImGui::GetContentRegionAvail().x - plusW - 2 * st.ItemSpacing.x;
         if (overflow)
@@ -1943,6 +1943,9 @@ void Gui::commandWindow() {
 
 void Gui::updateSuggestions() {
     if (input_ != suggestFor_) {
+        if (const auto* prompt = core_.promptInfo();
+            prompt && prompt->kind == cmd::PromptInfo::Kind::String)
+            core_.textEdited(input_);  // TEXT / MTEXT draw what is typed
         suggestFor_ = input_;
         suggestSel_ = 0;
         suggestDismissed_ = false;
@@ -2394,8 +2397,12 @@ void Gui::panels() {
         }
         pc.multiSelection = false;
     };
-    for (const std::string& id : core_.takePanelRequests())
+    for (const std::string& id : core_.takePanelRequests()) {
         panelOpen_[id] = true;
+        for (const auto& panel : registry_.panels())
+            if (panel.id == id)
+                focusPanel_ = panel.title;  // bring its tab to the front
+    }
     // A panel the saved layout has never seen (imgui.ini from an older version, or a panel added
     // later) is docked beside the Object Properties panel instead of floating over the tabs.
     ImGuiID sideDock = 0;
@@ -2775,6 +2782,10 @@ ViewportRect Gui::frame() {
         frontLayersIn_ = 0;
     if (frontLayersIn_ > 0 && --frontLayersIn_ == 0)
         ImGui::SetWindowFocus("Layers");
+    if (!focusPanel_.empty()) {
+        ImGui::SetWindowFocus(focusPanel_.c_str());
+        focusPanel_.clear();
+    }
     anyActivity_ = anyActivity_ || frontLayersIn_ > 0 || core_.flashing();
     logWindow();
 
@@ -2862,6 +2873,8 @@ void Gui::dialogs() {
             ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
         if (recovery_ && !recovery_->originalPath.empty())
             ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
+        if (recovery_ && !recovery_->savedAt.empty() && recoveryCount_ <= 1)
+            ImGui::Text("Backup saved: %s", recovery_->savedAt.c_str());
         if (!crashReport_.empty()) {
             ImGui::TextWrapped(
                 "A crash report was saved to %s. Attach it when you report the problem.",

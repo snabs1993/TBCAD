@@ -43,6 +43,7 @@ struct PointerState {
 struct Recovery {
     std::filesystem::path autosaveFile{};
     std::string originalPath{};  // empty = the drawing had never been saved
+    std::string savedAt{};       // when the backup was written, local time "2026-10-15 14:32"
 };
 
 // Shown after a command put geometry outside the working area (non-blocking notice with "Zoom to"
@@ -307,6 +308,7 @@ public:
     std::string saveAsTemplate(std::string_view name) override;
     std::string newFromTemplate(std::string_view name) override;
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
+    void textEdited(const std::string& text) { runner().textEdited(text); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
     // Panels asked for since the last call (the window opens them).
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
@@ -394,6 +396,8 @@ private:
     void flashNew(std::vector<EntityId> ids);
     std::vector<EntityId> flashIds_{};
     std::chrono::steady_clock::time_point flashUntil_{};
+    std::size_t shownPicked_ =
+        0;  // objects picked at a Select objects prompt that are drawn selected
     Vec2 cursorWorld_{};
     bool cursorInside_ = false;
     Theme theme_ = darkTheme();

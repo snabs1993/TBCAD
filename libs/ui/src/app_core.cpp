@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <fstream>
 #include <future>
 #include <iterator>
@@ -463,6 +465,24 @@ namespace {
 Recovery readRecovery(const fs::path& tbcadFile) {
     Recovery r;
     r.autosaveFile = tbcadFile;
+    {
+        std::error_code ec;
+        const auto ft = fs::last_write_time(tbcadFile, ec);
+        if (!ec) {
+            const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                ft - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+            const std::time_t t = std::chrono::system_clock::to_time_t(sys);
+            std::tm local{};
+#ifdef _WIN32
+            localtime_s(&local, &t);
+#else
+            localtime_r(&t, &local);
+#endif
+            char buf[32];
+            if (std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", &local) > 0)
+                r.savedAt = buf;
+        }
+    }
     fs::path meta = tbcadFile;
     meta.replace_extension(".json");
     std::ifstream in(meta, std::ios::binary);
@@ -1279,6 +1299,16 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             return;
     }
     retileIfFragmented();
+    {
+        // Objects picked so far at "Select objects:" show as selected, so the drafter sees them.
+        const std::vector<EntityId>& picked = runner().collected();
+        if (picked.size() != shownPicked_) {
+            shownPicked_ = picked.size();
+            std::vector<EntityId> all = selection_;
+            all.insert(all.end(), picked.begin(), picked.end());
+            scene_.setSelected(all);
+        }
+    }
     if (!flashIds_.empty() && now >= flashUntil_) {
         flashIds_.clear();
         scene_.setHighlighted(hoverId_ ? std::vector<EntityId>{hoverId_} : std::vector<EntityId>{});
@@ -1549,12 +1579,15 @@ void AppCore::doubleClick(const PointerState& p) {
     Vec2 world = makeRaw(p).worldCursor;
     auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
     const Entity* e = id ? session_->doc.find(*id) : nullptr;
-    if (!e || (kind(*e) != EntityKind::Text && kind(*e) != EntityKind::MText)) {
+    if (!e) {
         click(p);
         return;
     }
     applyPick({*id}, false);
-    submitText("TEXTEDIT");
+    if (kind(*e) == EntityKind::Text || kind(*e) == EntityKind::MText)
+        submitText("TEXTEDIT");
+    else
+        openPanel("properties");  // like AutoCAD: double click an object to see its properties
 }
 
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
@@ -1686,6 +1719,14 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
                 if (pl->pts.size() >= 2)
                     overlay.polyline(render::Space::World, pl->pts, pl->closed, st);
+            } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
+                // Filled shapes (text glyphs) are previewed as solid outlines.
+                render::OverlayStyle solid = st;
+                solid.dashPx = 0;
+                solid.gapPx = 0;
+                for (const auto& ring : fill->rings)
+                    if (ring.size() >= 2)
+                        overlay.polyline(render::Space::World, ring, true, solid);
             } else if (const auto* pts = std::get_if<DisplayPoints>(&item)) {
                 for (const Vec2& pt : pts->pts)
                     overlay.marker(render::Space::World, pt, render::MarkerKind::Cross, 6,
