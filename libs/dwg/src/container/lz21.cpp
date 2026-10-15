@@ -3,7 +3,7 @@
 namespace tbcad::dwg::detail {
 
 bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
-                    std::vector<std::uint8_t>& out, std::string* why) {
+                    std::vector<std::uint8_t>& out, std::string* why, std::size_t* consumed) {
     out.assign(expected, 0);
     std::size_t src = 0, dst = 0;
     bool bad = false;
@@ -98,8 +98,11 @@ bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
         src += literal;
         dst += literal;
         literal = 0;
-        if (dst == expected)
+        if (dst == expected) {
+            if (consumed)
+                *consumed = src;
             return true;
+        }
         if (src >= in.size())
             return fail("ends early");
         op = in[src++];
@@ -122,8 +125,11 @@ bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
                 op &= 15;
             instruction(offset, length);
         }
-        if (dst == expected && literal == 0)
+        if (dst == expected && literal == 0) {
+            if (consumed)
+                *consumed = src;
             return true;
+        }
     }
 }
 
