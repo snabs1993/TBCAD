@@ -36,7 +36,7 @@ std::string lowerAscii(std::string s) {
 class PropCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "-PROP"; }
-    std::vector<std::string> defaultAliases() const override { return {"-PR"}; }
+    std::vector<std::string> defaultAliases() const override { return {"-PR", "CHPROP"}; }
     std::string_view description() const override {
         return "Change properties of the selected objects from the command line";
     }
@@ -95,7 +95,7 @@ public:
                 else
                     ctx.message(c ? "ByParent applies to layers only." : c.error().message);
             } else if (k.keyword == "Linetype") {
-                auto lt = parseLinetype(ctx.doc(), v.text);
+                auto lt = resolveLinetype(ctx.doc(), ctx.tx(), v.text);
                 good = bool(lt) && lt.value() != kLinetypeByParent;
                 if (good)
                     edit.linetype = lt.value();
@@ -280,7 +280,7 @@ public:
                 }
                 r = ctx.tx().modifyHeader([&](Header& h) { h.currentColor = c.value(); });
             } else if (k.keyword == "Linetype") {
-                auto lt = parseLinetype(ctx.doc(), v.text);
+                auto lt = resolveLinetype(ctx.doc(), ctx.tx(), v.text);
                 if (!lt) {
                     ctx.message(lt.error().message);
                     continue;

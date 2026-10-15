@@ -68,6 +68,17 @@ TEST_CASE("-LAYER New and NewSub create layers and sub-layers, one undo step") {
     CHECK(f.doc.layers().size() == 5);
 }
 
+TEST_CASE("-LAYER Linetype loads a linetype that ships with the program when it is named") {
+    Fixture f;
+    f.run("-LAYER", {"New", "Hid", "Linetype", "Dash", "Hid", cmd::ScriptItem::enter()});
+    REQUIRE(f.layer("Hid") != nullptr);
+    const Linetype* dash = f.doc.linetypeByName("Dashed");
+    REQUIRE(dash != nullptr);
+    CHECK(f.layer("Hid")->linetype == dash->id);
+    f.run("-LAYER", {"Linetype", "NoSuchType", "Hid", cmd::ScriptItem::enter()});
+    CHECK(f.doc.linetypeByName("NoSuchType") == nullptr);
+}
+
 TEST_CASE("-LAYER: On, Off, Freeze, Thaw, Lock, Unlock, Plot with lists and *") {
     Fixture f;
     f.run("-LAYER", {"New", "A,B,C", cmd::ScriptItem::enter()});
@@ -113,11 +124,10 @@ TEST_CASE("-LAYER: Color, Linetype and Lineweight, including ByParent") {
     f.run("-LAYER", {"Color", "ByParent", "P~C", cmd::ScriptItem::enter()});
     CHECK(f.doc.effective(f.layer("P~C")->id).color == Color::index(1));
 
-    // A linetype must be loaded first.
+    // A linetype the program does not know is refused; the bundled ones load by themselves.
     f.host.clearLog();
-    f.run("-LAYER", {"Linetype", "Dashed", "P", cmd::ScriptItem::enter()});
+    f.run("-LAYER", {"Linetype", "Wiggly", "P", cmd::ScriptItem::enter()});
     CHECK(f.host.logContains("not loaded"));
-    f.run("-LINETYPE", {"Load", "Dashed", cmd::ScriptItem::enter()});
     f.run("-LAYER", {"Linetype", "Dashed", "P", cmd::ScriptItem::enter()});
     CHECK(f.doc.linetype(f.layer("P")->linetype)->name == "Dashed");
     CHECK(f.doc.effective(f.layer("P~C")->id).linetype == f.layer("P")->linetype);
@@ -371,4 +381,9 @@ TEST_CASE("ACTIVEONLY locks every layer outside the current layer's branch") {
     CHECK(f.doc.header().activeOnly);
     CHECK(f.host.undo());
     CHECK_FALSE(f.doc.header().activeOnly);
+}
+
+TEST_CASE("CHPROP is the familiar name for -PROP") {
+    Fixture f;
+    CHECK(f.reg.find("CHPROP") == f.reg.find("-PROP"));
 }
