@@ -156,7 +156,7 @@ TEST_CASE("registerUi adds the File menu entries") {
     plot::registerUi(ui);
     bool plotItem = false;
     for (const auto& m : ui.menuItems())
-        plotItem |= m.command == "PLOT";
+        plotItem |= m.command == "PLOTPANEL";
     CHECK(plotItem);
 }
 

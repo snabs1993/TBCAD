@@ -109,6 +109,7 @@ void CommandRunner::afterResume() {
     if (a.task.done()) {
         finishTop(false, {}, true);
     } else if (a.ctx->hasPending()) {
+        a.ctx->publishPending();
         refreshPrompt();
     } else {
         finishTop(true, "the command suspended without asking for input", true);

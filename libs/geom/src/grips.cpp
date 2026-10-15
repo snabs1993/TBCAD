@@ -192,7 +192,15 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             if (seg >= segmentCount(pl))
                 return badGrip();
             PolyVertex& a = pl.v[static_cast<std::size_t>(seg)];
-            const PolyVertex& b = pl.v[static_cast<std::size_t>((seg + 1) % n)];
+            PolyVertex& b = pl.v[static_cast<std::size_t>((seg + 1) % n)];
+            if (a.bulge == 0) {
+                // A straight edge: its midpoint grip stretches the edge, both ends follow the
+                // drag (dragging a rectangle's edge moves that edge), like AutoCAD.
+                const Vec2 delta = to - (a.p + b.p) * 0.5;
+                a.p = a.p + delta;
+                b.p = b.p + delta;
+                return out;
+            }
             auto bu = bulgeThrough(a.p, to, b.p);
             a.bulge = bu ? *bu : 0.0;
             return out;

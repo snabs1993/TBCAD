@@ -3,8 +3,10 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "../src/dim_internal.h"
@@ -278,31 +280,87 @@ void drawPanel(ui::PanelContext& pc) {
     ImGui::EndGroup();
 }
 
-void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
-    if (!pc.doc || pc.multiSelection)
-        return;
-    const Entity* e = pc.doc->find(id);
-    const DimensionData* d = e ? entityAs<DimensionData>(*e) : nullptr;
-    if (!d)
-        return;
-    const DimStyle& s = dim::styleOf(*pc.doc, d->style);
-    ImGui::SeparatorText("Dimension");
-    ImGui::Text("Style: %s", s.name.c_str());
-    ImGui::Text("Text: %s", dim::dimensionText(s, *d).c_str());
-    if (!d->textOverride.empty())
-        ImGui::TextDisabled("Text is overridden");
+bool isDimOrLeader(const Document& doc, EntityId id) {
+    const Entity* e = doc.find(id);
+    return e && (kind(*e) == EntityKind::Dimension || kind(*e) == EntityKind::Leader);
 }
 
-void drawLeaderSection(ui::PanelContext& pc, EntityId id) {
-    if (!pc.doc || pc.multiSelection)
+DimStyleId styleIdOf(const Entity& e, const Document& doc) {
+    DimStyleId id{};
+    if (const auto* d = entityAs<DimensionData>(e))
+        id = d->style;
+    else if (const auto* l = entityAs<LeaderData>(e))
+        id = l->style;
+    return id.value ? id : doc.header().currentDimStyle;
+}
+
+// Style and overall scale of the selected dimensions and leaders; with several selected the field
+// shows *VARIES* when they differ, and an edit applies to all of them.
+void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
+    if (!pc.doc)
         return;
-    const Entity* e = pc.doc->find(id);
-    const LeaderData* l = e ? entityAs<LeaderData>(*e) : nullptr;
-    if (!l)
+    std::vector<EntityId> ids;
+    if (pc.multiSelection && pc.selection) {
+        for (EntityId s : *pc.selection)
+            if (isDimOrLeader(*pc.doc, s))
+                ids.push_back(s);
+        if (ids.empty() || ids.front() != id)
+            return;  // one section for the whole selection
+    } else if (isDimOrLeader(*pc.doc, id)) {
+        ids.push_back(id);
+    }
+    if (ids.empty())
         return;
-    ImGui::SeparatorText("Leader");
-    ImGui::Text("Style: %s", dim::styleOf(*pc.doc, l->style).name.c_str());
-    ImGui::Text("%zu vertices", l->vertices.size());
+    const Entity* first = pc.doc->find(ids.front());
+    const bool leader = kind(*first) == EntityKind::Leader;
+    ImGui::SeparatorText(ids.size() > 1 ? "Dimensions and leaders"
+                         : leader       ? "Leader"
+                                        : "Dimension");
+    if (ids.size() > 1)
+        ImGui::TextDisabled("%zu objects", ids.size());
+
+    bool sameStyle = true, sameScale = true;
+    const DimStyleId style0 = styleIdOf(*first, *pc.doc);
+    const double scale0 = dim::styleOf(*pc.doc, style0).overallScale;
+    for (EntityId i : ids) {
+        const DimStyleId si = styleIdOf(*pc.doc->find(i), *pc.doc);
+        sameStyle = sameStyle && si == style0;
+        sameScale = sameScale && dim::styleOf(*pc.doc, si).overallScale == scale0;
+    }
+    const DimStyle& s0 = dim::styleOf(*pc.doc, style0);
+
+    ImGui::BeginDisabled(pc.commandActive);
+    ImGui::SetNextItemWidth(fieldWidth());
+    if (ImGui::BeginCombo("Style", sameStyle ? s0.name.c_str() : "*VARIES*")) {
+        for (const auto& [sid, st] : pc.doc->dimStyles())
+            if (!hasSpace(st.name) &&
+                ImGui::Selectable(st.name.c_str(), sameStyle && sid == style0))
+                pc.runCommand("DIMSETUP Style " + st.name);
+        ImGui::EndCombo();
+    }
+    char buf[40];
+    if (sameScale)
+        std::snprintf(buf, sizeof buf, "%g", scale0);
+    else
+        std::snprintf(buf, sizeof buf, "*VARIES*");
+    ImGui::SetNextItemWidth(fieldWidth());
+    if (ImGui::InputText(
+            "Overall scale", buf, sizeof buf,
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
+        double v = 0;
+        auto [ptr, ec] = std::from_chars(buf, buf + std::strlen(buf), v);
+        if (ec == std::errc() && ptr == buf + std::strlen(buf) && v > 0)
+            pc.runCommand("DIMSETUP Scale " + std::string(buf));
+    }
+    ImGui::EndDisabled();
+    if (ids.size() == 1 && !leader) {
+        const DimensionData* d = entityAs<DimensionData>(*first);
+        ImGui::Text("Text: %s", dim::dimensionText(s0, *d).c_str());
+        if (!d->textOverride.empty())
+            ImGui::TextDisabled("Text is overridden");
+    } else if (ids.size() == 1) {
+        ImGui::Text("%zu vertices", entityAs<LeaderData>(*first)->vertices.size());
+    }
 }
 
 }  // namespace
@@ -317,7 +375,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Format/Dimension Style Manager", "DIMSTYLES", "format.dimstyles");
     ui.addPanel("dimstyles", "Dimension Styles", drawPanel, false);
     ui.addPropertySection(EntityKind::Dimension, drawDimensionSection);
-    ui.addPropertySection(EntityKind::Leader, drawLeaderSection);
+    ui.addPropertySection(EntityKind::Leader, drawDimensionSection);
 }
 
 }  // namespace tbcad::dimcmd

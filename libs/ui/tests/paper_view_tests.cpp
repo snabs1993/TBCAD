@@ -94,3 +94,27 @@ TEST_CASE("an xref whose file is gone is listed as missing when the drawing open
     core.dismissXrefNotice();
     CHECK_FALSE(core.xrefNoticeVisible());
 }
+
+TEST_CASE("double click in a viewport goes to model space showing that viewport") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper3") / "cfg", tempDir("paper3") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.zoomExtents();
+    // Outside every viewport: stays on the sheet.
+    core.doubleClick({core.camera().worldToScreen({300, 250}), false, false});
+    CHECK(core.inPaperSpace());
+    core.doubleClick({core.camera().worldToScreen({100, 100}), false, false});
+    CHECK_FALSE(core.inPaperSpace());
+    CHECK(core.camera().center.x == doctest::Approx(5000).epsilon(0.01));
+    CHECK(core.camera().center.y == doctest::Approx(3000).epsilon(0.01));
+    // 200 mm of sheet at 1:50 is 10 m of model across, so the view shows about that much.
+    CHECK(core.camera().visibleWorld().max.x - core.camera().visibleWorld().min.x >= 10000);
+}
