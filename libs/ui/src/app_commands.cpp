@@ -213,6 +213,25 @@ public:
     }
 };
 
+// NEW, OPEN, SAVE, SAVEAS, CLOSE typed on the command line do what the File menu does: the window
+// owns the dialogs, so the command only asks it ("action:file.save").
+class FileActionCommand final : public cmd::Command {
+public:
+    FileActionCommand(const char* name, const char* action, const char* description)
+        : name_(name), action_(action), description_(description) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi(std::string("action:") + action_);
+        co_return;
+    }
+
+private:
+    const char* name_;
+    const char* action_;
+    const char* description_;
+};
+
 class SaveAsTemplateCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SAVEASTEMPLATE"; }
@@ -421,6 +440,18 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
     (void)registry.add(std::make_unique<SettingsPageCommand>());
+    (void)registry.add(
+        std::make_unique<FileActionCommand>("NEW", "file.new", "Start a new drawing"));
+    (void)registry.add(
+        std::make_unique<FileActionCommand>("OPEN", "file.open", "Open a drawing file"));
+    (void)registry.add(std::make_unique<FileActionCommand>(
+        "SAVE", "file.save", "Save the drawing (asks for a name the first time)"));
+    (void)registry.add(std::make_unique<FileActionCommand>("QSAVE", "file.save",
+                                                           "Save the drawing (same as SAVE)"));
+    (void)registry.add(std::make_unique<FileActionCommand>(
+        "SAVEAS", "file.saveAs", "Save the drawing under another name or format"));
+    (void)registry.add(
+        std::make_unique<FileActionCommand>("CLOSE", "file.close", "Close the current drawing"));
     (void)registry.add(std::make_unique<SaveAsTemplateCommand>());
     (void)registry.add(std::make_unique<NewFromTemplateCommand>());
     (void)registry.add(std::make_unique<TemplateDefaultCommand>());

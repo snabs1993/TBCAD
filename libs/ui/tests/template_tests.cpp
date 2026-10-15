@@ -83,3 +83,15 @@ TEST_CASE("opening a .tbt gives an untitled copy") {
     CHECK_FALSE(f.core->hasFile());
     CHECK(f.core->document().layerByName("Walls"));
 }
+
+TEST_CASE("SAVE, QSAVE, SAVEAS, OPEN, NEW and CLOSE ask the window; SAVE is not SAVEASTEMPLATE") {
+    Fixture f("file-commands");
+    for (const char* line : {"SAVE", "qsave", "SAVEAS", "OPEN", "NEW", "CLOSE"})
+        f.core->submitText(line);
+    const std::vector<std::string> asked = f.core->takeUiRequests();
+    const std::vector<std::string> expected = {"action:file.save",   "action:file.save",
+                                               "action:file.saveAs", "action:file.open",
+                                               "action:file.new",    "action:file.close"};
+    CHECK(asked == expected);
+    CHECK_FALSE(f.core->runner().active());  // nothing is waiting for a template name
+}
