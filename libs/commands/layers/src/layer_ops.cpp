@@ -129,7 +129,7 @@ Result<LayerId> resolveLayer(const Document& doc, std::string_view ref) {
     if (ref.front() == '#') {
         unsigned long v = 0;
         if (!parseUInt(ref.substr(1), v) || !doc.layer(LayerId{static_cast<std::uint32_t>(v)}))
-            return err(ErrorCode::NotFound, "No layer " + std::string(ref) + ".");
+            return err(ErrorCode::NotFound, "Layer " + std::string(ref) + " not found.");
         return LayerId{static_cast<std::uint32_t>(v)};
     }
     LayerId parent{};
@@ -156,7 +156,7 @@ Result<LayerId> resolveLayer(const Document& doc, std::string_view ref) {
                                "Several sub-layers are called " + quoted(std::string(part)) +
                                    "; use the full path (Parent" + kPathSeparator + "Child).");
             }
-            return err(ErrorCode::NotFound, "No layer " + quoted(std::string(ref)) + ".");
+            return err(ErrorCode::NotFound, "Layer " + quoted(std::string(ref)) + " not found.");
         }
         parent = l->id;
         if (next == std::string_view::npos)
