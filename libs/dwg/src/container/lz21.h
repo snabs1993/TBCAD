@@ -11,8 +11,10 @@
 namespace tbcad::dwg::detail {
 
 // Expands `in` into exactly `expected` bytes. Returns false when the stream is damaged or ends
-// early; `why` (optional) then says where. `out` is replaced.
+// early; `why` (optional) then says where. `consumed` (optional) receives the number of input
+// bytes used on success. `out` is replaced.
 bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
-                    std::vector<std::uint8_t>& out, std::string* why = nullptr);
+                    std::vector<std::uint8_t>& out, std::string* why = nullptr,
+                    std::size_t* consumed = nullptr);
 
 }  // namespace tbcad::dwg::detail

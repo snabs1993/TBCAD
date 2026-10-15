@@ -257,7 +257,7 @@ HeaderVars parseHeaderWith(Bytes section, const Format& fmt, std::size_t extraBy
     }
     notes.push_back("the drawing units could not be read from the header; unitless assumed");
     for (const std::string& t : tried)
-        if (t.rfind("header diagnostics", 0) == 0)
+        if (t.rfind("header ", 0) == 0)
             notes.push_back(t);
     return v;
 }

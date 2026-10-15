@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "bits/bit_reader.h"
 
@@ -242,12 +243,20 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
         skipH(1);           // UCSBASE
         skipBd(18);         // six UCSORG* points
     };
+    std::string stages;
+    auto stage = [&](const char* name, double value) {
+        char b[96];
+        std::snprintf(b, sizeof b, "%s=%g@%zu ", name, value, r.bitPos());
+        stages += b;
+    };
     if (fmt.r2013)
-        r.bll();  // REQUIRED VERSIONS
-    skipBd(4);
+        stage("required", static_cast<double>(r.bll()));  // REQUIRED VERSIONS
     for (int i = 0; i < 4; ++i)
-        r.textBytes();
-    skipBl(2);
+        stage("bd", r.bd());
+    for (int i = 0; i < 4; ++i)
+        stage("text", static_cast<double>(r.textBytes().size()));
+    for (int i = 0; i < 2; ++i)
+        stage("bl", r.bl());
     if (!r2004)
         r.handle();  // current viewport entity header
     skipBits(2);     // DIMASO, DIMSHO
@@ -266,16 +275,21 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
         skipBl(3);
     skipBs(5);  // USERI1..5
     skipBs(14);
+    stage("pre", 0);
     v.ltscale = r.bd();
+    stage("ltscale", v.ltscale);
     skipBd(20);
     if (!r2007)
         r.textBytes();  // MENUNAME (up to R2004)
     skipBl(4);          // TDCREATE, TDUPDATE
     if (r2004)
         skipBl(3);
-    skipBl(4);             // TDINDWG, TDUSRTIMER
-    r.cmc(r2004);          // CECOLOR
-    r.handle();            // HANDSEED (always in this stream)
+    skipBl(4);  // TDINDWG, TDUSRTIMER
+    stage("tdindwg", 0);
+    r.cmc(r2004);  // CECOLOR
+    stage("cecolor", 0);
+    r.handle();  // HANDSEED (always in this stream)
+    stage("handseed", 0);
     skipH(r2007 ? 6 : 5);  // CLAYER, TEXTSTYLE, CELTYPE, [CMATERIAL], DIMSTYLE, CMLSTYLE
     r.bd();                // PSVPSCALE
     skipSpace();           // paper space
@@ -337,6 +351,7 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
         notes.push_back("header diagnostics: ltscale " + std::to_string(v.ltscale) + ", units " +
                         std::to_string(units) + ", failed " + (r.failed() ? "yes" : "no") +
                         ", bit " + std::to_string(r.bitPos()));
+        notes.push_back("header stages: " + stages);
         v.valid = false;
         return;
     }
