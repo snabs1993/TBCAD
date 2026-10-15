@@ -47,16 +47,29 @@ void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
     const DimStyle& cur = dim::styleOf(doc, doc.header().currentDimStyle);
     if (cur.id != kDimStyleStandard || cur.overallScale != 1)
         return;
-    const double pixelMm = ctx.host().view().scale;
-    if (!(pixelMm > 0) || !std::isfinite(pixelMm))
-        return;
-    const double wanted = 12.0 * pixelMm / std::max(cur.textHeight, 1e-6);
-    if (wanted < 8)
-        return;  // the normal case: the text is readable as it is
+    // How big the drawing is decides too (a script has no view; a plan printed on a sheet needs
+    // text about extent/160 tall): the larger of the two wishes wins.
     bool any = false;
-    doc.forEachEntity([&](const Entity& e) { any = any || kind(e) == EntityKind::Dimension; });
+    BBox2 box;
+    doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            any = true;
+        else if (!doc.ownerBlock(e.common.id))
+            box.merge(geom::bounds(e, doc));
+    });
     if (any)
         return;
+    double wanted = 0;
+    const double pixelMm = ctx.host().view().scale;
+    if (pixelMm > 0 && std::isfinite(pixelMm))
+        wanted = 12.0 * pixelMm / std::max(cur.textHeight, 1e-6);
+    if (!box.empty()) {
+        const double extent = std::max(box.max.x - box.min.x, box.max.y - box.min.y);
+        if (std::isfinite(extent))
+            wanted = std::max(wanted, extent / 160.0 / std::max(cur.textHeight, 1e-6));
+    }
+    if (wanted < 8)
+        return;  // the normal case: the text is readable as it is
     double n = 1;
     for (double decade = 1; decade <= 1e7; decade *= 10)
         for (double step : {1.0, 2.0, 5.0})

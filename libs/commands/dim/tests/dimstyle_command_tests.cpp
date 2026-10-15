@@ -134,3 +134,20 @@ TEST_CASE("the first dimension seen from far away gets a scaled style so its tex
     g.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});
     CHECK(g.doc.dimStyles().size() == 1);
 }
+
+TEST_CASE("without a view a big drawing still gets readable dimension text") {
+    Fixture f;  // a script: no view, but a 20 m plan
+    {
+        auto tx = f.doc.begin("plan");
+        Entity a, b;
+        a.data = LineData{{0, 0}, {20000, 0}};
+        b.data = LineData{{0, 0}, {0, 12000}};
+        REQUIRE(tx.add(std::move(a)));
+        REQUIRE(tx.add(std::move(b)));
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,0", "20000,0", "10000,-800"});
+    const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
+    REQUIRE(scaled);  // 20000 / 160 / 2.5 = 50
+    CHECK(f.doc.header().currentDimStyle == scaled->id);
+}
