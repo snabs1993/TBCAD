@@ -28,6 +28,7 @@ TEST_CASE("LAYOUT New creates a layout, makes it current, and undo removes it") 
     REQUIRE(l.has_value());
     CHECK(l->widthMm == doctest::Approx(420));
     CHECK(layoutcmd::currentLayout(*f.host, f.doc) == "Plan");
+    CHECK(f.host->setting("layout.show") == std::optional<std::string>("Plan"));  // window follows
     CHECK(f.host->undoStack().undoLabel() == "LAYOUT");
     CHECK(f.host->undo());
     CHECK(layout::layouts(f.doc).empty());

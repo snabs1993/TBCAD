@@ -1113,6 +1113,7 @@ void AppCore::submitText(std::string_view text) {
     struct ViewStateGuard {
         AppCore& core;
         ~ViewStateGuard() {
+            core.applyPendingLayout();
             if (core.viewStatePending_ && !core.runner().active()) {
                 core.viewStatePending_ = false;
                 core.session_->savedRevision = core.session_->doc.revision();
@@ -1320,7 +1321,16 @@ std::vector<render::ImageDraw> AppCore::underlayImages() {
     return out;
 }
 
+void AppCore::applyPendingLayout() {
+    if (pendingLayout_.empty() || runner().active())
+        return;
+    const std::string name = std::move(pendingLayout_);
+    pendingLayout_.clear();
+    setActiveLayout(name);
+}
+
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
+    applyPendingLayout();
     tickAutosave(now);
     tickXrefs(now);
     if (inPaperSpace()) {
@@ -2001,6 +2011,10 @@ std::optional<std::string> AppCore::takeClipboardText() {
 void AppCore::setSetting(std::string_view key, std::string value) {
     if (key == "clipboard.text")
         clipboardOut_ = value;
+    if (key == "layout.show") {  // LAYOUT New: switch once the command is over
+        pendingLayout_ = std::move(value);
+        return;
+    }
     switch (settings_.kindOf(key)) {
         case platform::Settings::Kind::Bool:
             settings_.setBool(key, isTrue(value));
