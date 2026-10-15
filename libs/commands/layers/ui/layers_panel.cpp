@@ -200,6 +200,9 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
         }
         if (dimmed)
             ImGui::PopStyleColor();
+        // The name cell is narrow in a docked panel: the tooltip always shows the whole path.
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && !ImGui::IsMouseDown(0))
+            ImGui::SetTooltip("%s", layerPath(doc, row.id).c_str());
         if (ImGui::IsItemHovered() && ImGui::IsKeyPressed(ImGuiKey_F2)) {
             st.renaming = row.id;
             st.renameBuf = l->name;
@@ -420,7 +423,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 110);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 170);
         ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 28);
         ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
