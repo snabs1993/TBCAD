@@ -151,7 +151,7 @@ TEST_CASE("PDFATTACH attaches a PDF page as a faded underlay - the fade is store
     CHECK(r.finished);
     const BlockDef* def = f.doc.blockByName("site");
     REQUIRE(def);
-    CHECK(def->xrefPath == file.string() + "#fade=70");
+    CHECK(def->xrefPath == file.generic_string() + "#fade=70");
     CHECK(def->entities.size() == 2);
     CHECK(xref::isUnderlay(f.doc, def->id));
     CHECK(f.doc.layerByName("site") != nullptr);
@@ -234,7 +234,7 @@ TEST_CASE("IMAGEATTACH attaches a picture with a fade - the path is stored, not 
     CHECK(r.finished);
     const BlockDef* def = f.doc.blockByName("site");
     REQUIRE(def);
-    CHECK(def->xrefPath == file.string());
+    CHECK(fs::path(def->xrefPath) == file);
     CHECK(def->entities.size() == 1);  // the frame
     CHECK(xref::isUnderlay(f.doc, def->id));
     CHECK(underlay::imageParams(f.doc.header(), "site").fade == 40);
