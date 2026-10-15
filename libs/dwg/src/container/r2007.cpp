@@ -255,15 +255,15 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
             std::string why;
             std::string config;
             for (std::uint64_t blocks : {floorBlocks, floorBlocks + 1}) {
-                for (std::size_t k : {std::size_t{251}, std::size_t{239}}) {
+                for (std::size_t perBlock : {std::size_t{251}, std::size_t{239}}) {
                     for (int il = 0; il < 2 && !done; ++il) {
                         const bool inter = (encoding == 4) == (il == 0);
-                        if (blocks == 0 || !has(file, at, blocks * 255) || comp > blocks * k)
+                        if (blocks == 0 || !has(file, at, blocks * 255) || comp > blocks * perBlock)
                             continue;
                         const std::vector<std::uint8_t> raw =
                             rsDataBytes(file.subspan(static_cast<std::size_t>(at),
                                                      static_cast<std::size_t>(blocks * 255)),
-                                        static_cast<std::size_t>(blocks), k, 255, inter);
+                                        static_cast<std::size_t>(blocks), perBlock, 255, inter);
                         if (comp == expanded) {
                             page.assign(raw.begin(),
                                         raw.begin() + static_cast<std::ptrdiff_t>(comp));
@@ -280,7 +280,8 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                                 why = w;
                         }
                         if (done)
-                            config = std::to_string(blocks) + " blocks of " + std::to_string(k) +
+                            config = std::to_string(blocks) + " blocks of " +
+                                     std::to_string(perBlock) +
                                      (inter ? ", interleaved" : ", plain");
                     }
                     if (done)
