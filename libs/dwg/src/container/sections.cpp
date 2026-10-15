@@ -88,34 +88,76 @@ std::vector<ClassInfo> parseClassesWith(Bytes section, const Format& fmt, std::s
     // R2007 and later: all the fields of every class come first, then one run of UTF-16
     // strings (application, C++ name and DXF name per class) that starts right after them
     // (checked against a real R2018 file; the end-of-data flag of object records is not there).
-    for (std::size_t i = 0; i < count && !r.failed(); ++i) {
-        ClassInfo c;
-        c.number = r.bs();
-        r.bs();  // proxy flags
-        r.b();   // was a zombie
-        c.entity = r.bs() == 0x1F2;
-        r.bl();  // objects of this class
-        r.bs();  // version
-        r.bs();  // maintenance release
-        r.bl();
-        r.bl();
-        if (r.failed() || c.number < 500)
-            break;
-        out.push_back(std::move(c));
-    }
-    BitReader strings(data, r.bitPos());
-    for (ClassInfo& c : out) {
-        c.app = strings.textUnicode();
-        c.cppName = strings.textUnicode();
-        c.dxfName = strings.textUnicode();
-        if (strings.failed()) {
-            notes.push_back("the class names are cut off");
-            break;
+    // The spec gives the version and maintenance fields as BS in one place and BL in another;
+    // the reading whose class numbers run 500, 501, ... and whose strings all fit wins.
+    std::vector<ClassInfo> best;
+    std::vector<std::string> bestNotes;
+    int bestScore = -1;
+    for (int variant = 0; variant < 2; ++variant) {
+        BitReader fr(data, 0);
+        fr.bs();
+        fr.rc();
+        fr.rc();
+        fr.b();
+        std::vector<ClassInfo> got;
+        bool sequential = true;
+        for (std::size_t i = 0; i < count && !fr.failed(); ++i) {
+            ClassInfo c;
+            c.number = fr.bs();
+            fr.bs();  // proxy flags
+            fr.b();   // was a zombie
+            c.entity = fr.bs() == 0x1F2;
+            fr.bl();  // objects of this class
+            if (variant == 0) {
+                fr.bs();  // version
+                fr.bs();  // maintenance release
+            } else {
+                fr.bl();
+                fr.bl();
+            }
+            fr.bl();
+            fr.bl();
+            if (fr.failed() || c.number < 500)
+                break;
+            sequential = sequential && c.number == 500 + static_cast<int>(i);
+            got.push_back(std::move(c));
+        }
+        std::vector<std::string> n;
+        BitReader strings(data, fr.bitPos());
+        bool namesFit = true;
+        for (ClassInfo& c : got) {
+            c.app = strings.textUnicode();
+            c.cppName = strings.textUnicode();
+            c.dxfName = strings.textUnicode();
+            if (strings.failed()) {
+                n.push_back("the class names are cut off");
+                namesFit = false;
+                break;
+            }
+        }
+        if (got.size() != count)
+            n.push_back("the class section lists " + std::to_string(got.size()) + " of " +
+                        std::to_string(count) + " classes (field layout " +
+                        std::to_string(variant) + ")");
+        const int score =
+            static_cast<int>(got.size()) * 4 + (namesFit ? 2 : 0) + (sequential ? 1 : 0);
+        if (score > bestScore) {
+            bestScore = score;
+            best = std::move(got);
+            bestNotes = std::move(n);
         }
     }
-    if (out.size() != count)
-        notes.push_back("the class section lists " + std::to_string(out.size()) + " of " +
-                        std::to_string(count) + " classes");
+    if (best.size() != count) {
+        std::string hex;
+        char b[4];
+        for (std::size_t i = 0; i < data.size() && i < 160; ++i) {
+            std::snprintf(b, sizeof b, "%02X", data[i]);
+            hex += b;
+        }
+        bestNotes.push_back("class data starts " + hex);
+    }
+    out = std::move(best);
+    notes.insert(notes.end(), bestNotes.begin(), bestNotes.end());
     return out;
 }
 
