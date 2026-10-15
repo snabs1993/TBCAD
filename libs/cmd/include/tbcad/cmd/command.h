@@ -57,6 +57,7 @@ struct PromptRequest {
     std::optional<double> defaultReal{};
     std::optional<long long> defaultInt{};
     std::optional<std::string> defaultText{};
+    std::optional<TextEditorHint> editor{};
     std::optional<double> min{};
     std::optional<double> max{};
     bool allowNone = true;

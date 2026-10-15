@@ -1917,10 +1917,9 @@ void Gui::commandWindow() {
         ImGui::TextUnformatted(prompt.c_str());
         ImGui::SameLine(0, 0);
         ImGui::SetNextItemWidth(-1);
-        if (refocusInput_) {
+        if (refocusInput_ && !textEditorActive_)
             ImGui::SetKeyboardFocusHere();
-            refocusInput_ = false;
-        }
+        refocusInput_ = false;
         updateSuggestions();
         const ImGuiInputTextFlags flags =
             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
@@ -2259,6 +2258,119 @@ void Gui::startPage(const ViewportRect& rect) {
     }
     ImGui::End();
     ImGui::PopStyleVar();
+}
+
+namespace {
+
+// Newlines typed in the box become the \P the text commands expect, and back.
+std::string newlinesToCodes(const std::string& text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r')
+            continue;
+        if (text[i] == '\n')
+            out += "\\P";
+        else
+            out += text[i];
+    }
+    return out;
+}
+
+std::string codesToNewlines(const std::string& text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\\' && i + 1 < text.size() && text[i + 1] == 'P') {
+            out += '\n';
+            ++i;
+        } else {
+            out += text[i];
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+// TEXT, MTEXT and TEXTEDIT: type the text in a box where it will go. The command line keeps
+// working; what is typed in either place shows in the drawing as it is typed.
+void Gui::textEditor(const ViewportRect& rect) {
+    const auto* prompt = core_.promptInfo();
+    if (!prompt || prompt->kind != cmd::PromptInfo::Kind::String || !prompt->editor) {
+        textEditorActive_ = false;
+        return;
+    }
+    const cmd::TextEditorHint& hint = *prompt->editor;
+    if (!textEditorActive_) {
+        textEditorActive_ = true;
+        textEditorFocus_ = 2;
+        textEditorBuf_ = codesToNewlines(prompt->defaultText.value_or(""));
+        textEditorSent_ = textEditorBuf_;
+        if (!textEditorBuf_.empty())
+            core_.textEdited(newlinesToCodes(textEditorBuf_));
+    }
+    const float s = ImGui::GetIO().DisplayFramebufferScale.x;
+    const Vec2 top = core_.camera().worldToScreen(hint.anchor);
+    const float lineH = ImGui::GetTextLineHeightWithSpacing();
+    int lines = 1;
+    for (char c : textEditorBuf_)
+        lines += c == '\n';
+    // The box grows with the text: at least the rectangle drawn, at least one line.
+    const float maxW = std::max(120.0f, rect.w - 24.0f);
+    const float maxH = std::max(80.0f, rect.h - 64.0f * dpiScale_);
+    const float boxW =
+        std::min(maxW, std::max(240.0f * dpiScale_,
+                                static_cast<float>(hint.widthMm * core_.camera().pixelsPerMm) / s));
+    const float drawnH = static_cast<float>(hint.heightMm * core_.camera().pixelsPerMm) / s;
+    const float boxH =
+        std::min(maxH, std::max({drawnH, lineH * static_cast<float>(lines) + 10.0f, lineH * 2}));
+    ImVec2 pos(rect.x + static_cast<float>(top.x) / s, rect.y + static_cast<float>(top.y) / s);
+    pos.x = std::clamp(pos.x, rect.x, std::max(rect.x, rect.x + rect.w - boxW));
+    pos.y = std::clamp(pos.y, rect.y, std::max(rect.y, rect.y + rect.h - boxH - 32.0f * dpiScale_));
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.96f);
+    const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
+    bool accept = false;
+    // The window is hidden for its first frame, and a new focus request every frame would
+    // restart the search: ask once, on the second frame.
+    auto focusEditor = [&] {
+        if (textEditorFocus_ > 0 && --textEditorFocus_ == 0)
+            ImGui::ActivateItemByID(ImGui::GetItemID());
+    };
+    if (ImGui::Begin("##textedit", nullptr, wf)) {
+        const ImGuiInputTextFlags flags = hint.multiline ? ImGuiInputTextFlags_AllowTabInput
+                                                         : ImGuiInputTextFlags_EnterReturnsTrue;
+        if (hint.multiline) {
+            ImGui::InputTextMultiline("##text", &textEditorBuf_, ImVec2(boxW, boxH), flags);
+            focusEditor();
+            if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Enter))
+                accept = true;
+        } else {
+            ImGui::SetNextItemWidth(boxW);
+            accept = ImGui::InputText("##text", &textEditorBuf_, flags);
+            focusEditor();
+        }
+        if (ImGui::SmallButton("OK"))
+            accept = true;
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancel"))
+            core_.pressEscape();
+        ImGui::SameLine();
+        ImGui::TextDisabled(hint.multiline ? "Ctrl+Enter accepts, Esc cancels"
+                                           : "Enter accepts, Esc cancels");
+    }
+    ImGui::End();
+    if (textEditorBuf_ != textEditorSent_) {
+        textEditorSent_ = textEditorBuf_;
+        core_.textEdited(newlinesToCodes(textEditorBuf_));
+    }
+    if (accept) {
+        textEditorActive_ = false;
+        core_.submitText(newlinesToCodes(textEditorBuf_));
+        refocusInput_ = true;
+        anyActivity_ = true;
+    }
 }
 
 void Gui::quickProperties(const ViewportRect& rect) {
@@ -2834,6 +2946,7 @@ ViewportRect Gui::frame() {
     cursorHud(rect);
     hoverTooltip();
     quickProperties(rect);
+    textEditor(rect);
     drawToasts(rect);
 
     // Non-blocking notice when a command put geometry outside the working area.

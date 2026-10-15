@@ -102,8 +102,17 @@ struct IntOptions {
     std::optional<long long> max{};
     TextPreviewFn textPreview{};  // draws what the typed number would do
 };
+// Asks the application to edit a text prompt in the drawing, in a box at `anchor` (top-left
+// corner, world mm), instead of on the command line. `widthMm`/`heightMm` size the box.
+struct TextEditorHint {
+    Vec2 anchor{};
+    double widthMm = 0;
+    double heightMm = 0;
+    bool multiline = true;  // false: Enter accepts (a single line of text)
+};
 struct StringOptions {
     std::optional<std::string> defaultValue{};
+    std::optional<TextEditorHint> editor{};
     bool allowEmpty = false;  // Enter returns Ok with "" instead of None
     TextPreviewFn textPreview{};
 };

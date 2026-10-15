@@ -74,8 +74,10 @@ void ScriptHost::setPreview(const DisplayList* list) {
 }
 
 void ScriptHost::promptChanged(const PromptInfo* prompt) {
-    if (prompt)
+    if (prompt) {
         prompts_.push_back(prompt->display());
+        textEditor_ = prompt->editor;
+    }
 }
 
 }  // namespace tbcad::cmd

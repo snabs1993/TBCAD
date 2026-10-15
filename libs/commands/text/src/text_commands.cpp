@@ -212,6 +212,7 @@ public:
         ctx.host().setSetting(kJustifyKey, just.name);
 
         cmd::StringOptions textOpts;
+        textOpts.editor = cmd::TextEditorHint{{d.position.x, d.position.y + d.height}, 0, 0, false};
         textOpts.textPreview = [&ctx, d](const std::string& typed, DisplayList& out) {
             TextData shown = d;
             shown.utf8 = typed;
@@ -394,6 +395,11 @@ public:
             d.width = 0;
 
         cmd::StringOptions textOpts;
+        // The text is typed in a box at the rectangle just drawn (the command line works too).
+        textOpts.editor =
+            cmd::TextEditorHint{{std::min(first.x, second.x), std::max(first.y, second.y)},
+                                std::abs(second.x - first.x),
+                                std::abs(second.y - first.y)};
         textOpts.textPreview = [&ctx, d](const std::string& typed, DisplayList& out) {
             MTextData shown = d;
             shown.utf8 = typed;
@@ -457,6 +463,10 @@ public:
 
         cmd::StringOptions o;
         o.defaultValue = current;
+        if (const auto* m = entityAs<MTextData>(*e))
+            o.editor = cmd::TextEditorHint{m->position, m->width, 0};
+        else if (const auto* t = entityAs<TextData>(*e))
+            o.editor = cmd::TextEditorHint{{t->position.x, t->position.y + t->height}, 0, 0, false};
         auto r = co_await ctx.getString("Enter new text", o);
         if (!r.ok())
             co_return;

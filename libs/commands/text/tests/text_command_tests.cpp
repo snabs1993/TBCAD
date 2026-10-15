@@ -155,6 +155,23 @@ TEST_CASE("MTEXT: corners give width and top-left insertion point") {
     CHECK(m->utf8 == "line one\\Pline two");
 }
 
+TEST_CASE("MTEXT, TEXT and TEXTEDIT ask for a text box where the text goes") {
+    Fixture f;
+    f.host.run("MT", {"0,100", "40,60"});  // stops at the text prompt
+    REQUIRE(f.host.textEditor());
+    CHECK(f.host.textEditor()->anchor == Vec2{0, 100});
+    CHECK(f.host.textEditor()->widthMm == doctest::Approx(40));
+    CHECK(f.host.textEditor()->heightMm == doctest::Approx(40));
+    CHECK(f.host.textEditor()->multiline);
+    f.host.run("", {cmd::ScriptItem::esc()});
+
+    Fixture g;
+    g.host.run("TEXT", {"10,10", "2.5", "0"});
+    REQUIRE(g.host.textEditor());
+    CHECK_FALSE(g.host.textEditor()->multiline);
+    CHECK(g.host.textEditor()->anchor == Vec2{10, 12.5});
+}
+
 TEST_CASE("MTEXT: Justify, Width, Rotation options and corner order") {
     Fixture f;
     f.host.run("MTEXT", {"J", "BR", "W", "25", "10,10", "50,0", "x"});
