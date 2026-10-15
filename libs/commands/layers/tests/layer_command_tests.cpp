@@ -119,6 +119,12 @@ TEST_CASE("-LAYER: Set makes a layer current and refuses a frozen one") {
     CHECK_FALSE(f.layer("A")->frozen);
 }
 
+TEST_CASE("-LAYER Set with an unknown layer says so") {
+    Fixture f;
+    f.run("-LAYER", {"Set", "Nope", cmd::ScriptItem::enter()});
+    CHECK(f.host.logContains("Layer \"Nope\" not found."));
+}
+
 TEST_CASE("-LAYER: Color, Linetype and Lineweight, including ByParent") {
     Fixture f;
     f.run("-LAYER", {"New", "P", "NewSub", "P", "C", cmd::ScriptItem::enter()});
