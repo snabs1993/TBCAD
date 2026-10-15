@@ -1215,9 +1215,9 @@ BBox2 AppCore::drawingExtents() const {
         }
     });
     // A few stray objects far from everything else (common in imported files) would shrink the
-    // real drawing to a speck: when the outermost 2% of the objects stretch the view more than
+    // real drawing to a speck: when the outermost 5% of the objects stretch the view more than
     // fivefold, frame the rest.
-    if (boxes.size() >= 50) {
+    if (boxes.size() >= 10) {
         std::vector<double> xs, ys;
         for (const BBox2& b : boxes) {
             xs.push_back(b.center().x);
@@ -1225,7 +1225,7 @@ BBox2 AppCore::drawingExtents() const {
         }
         std::sort(xs.begin(), xs.end());
         std::sort(ys.begin(), ys.end());
-        const std::size_t cut = boxes.size() / 50;
+        const std::size_t cut = std::max<std::size_t>(1, boxes.size() / 20);
         const double spanX = xs[xs.size() - 1 - cut] - xs[cut];
         const double spanY = ys[ys.size() - 1 - cut] - ys[cut];
         BBox2 core;
@@ -1241,8 +1241,12 @@ BBox2 AppCore::drawingExtents() const {
     return box.empty() ? session_->index.bounds() : box;
 }
 
+BBox2 AppCore::viewExtents() const {
+    return inPaperSpace() ? paper_.sheet() : drawingExtents();
+}
+
 void AppCore::zoomExtents() {
-    zoomToBox(inPaperSpace() ? paper_.sheet() : drawingExtents());
+    zoomToBox(viewExtents());
 }
 
 void AppCore::zoomToBox(const BBox2& box) {

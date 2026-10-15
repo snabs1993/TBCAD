@@ -72,6 +72,9 @@ public:
     // View. A host without a viewport keeps the defaults.
     virtual ViewState view() const { return {}; }
     virtual void setView(const ViewState& /*view*/) {}
+    // The box ZOOM Extents frames: the sheet on a layout, the drawing otherwise (stray far-away
+    // objects ignored). An empty box means the host has no opinion; the command scans the document.
+    virtual BBox2 viewExtents() const { return {}; }
 
     // Asks the application window to open something ("settings"). Hosts without a window ignore it.
     virtual void requestUi(std::string_view /*what*/) {}

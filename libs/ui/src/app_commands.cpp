@@ -39,6 +39,8 @@ BBox2 boxOfEntities(const Document& doc) {
     // Every kind counts (text, hatches, dimensions, inserts ...), so ZOOM Extents agrees with the
     // toolbar button, which uses the spatial index built from the same bounds.
     doc.forEachEntity([&](const Entity& e) {
+        if (!geom::countsForExtents(e))
+            return;
         BBox2 b = geom::bounds(e, doc);
         if (!b.empty())
             box.merge(b);
@@ -55,14 +57,16 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
-        opts.keywords = {"Extents", "Window", "In", "Out"};
+        opts.keywords = {"Extents", "All", "Window", "In", "Out"};
         auto first = co_await ctx.getPoint(
-            "Specify first corner of the window or [Extents/Window/In/Out]", opts);
+            "Specify first corner of the window or [Extents/All/Window/In/Out]", opts);
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
             render::Camera2D cam = cameraOf(v);
-            if (first.keyword == "Extents") {
-                BBox2 box = boxOfEntities(ctx.doc());
+            if (first.keyword == "Extents" || first.keyword == "All") {
+                BBox2 box = ctx.host().viewExtents();
+                if (box.empty())
+                    box = boxOfEntities(ctx.doc());
                 if (box.empty()) {
                     ctx.message("Nothing to zoom to.");
                     co_return;
