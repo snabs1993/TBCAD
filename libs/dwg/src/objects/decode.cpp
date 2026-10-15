@@ -2543,7 +2543,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r65: R2007 literal runs cut into blocks (section map, hash codes and page map now "
+    return "r66: R2007 section names read by their byte length, slightly tilted planes drawn from "
+           "above; r65: R2007 literal runs cut into blocks (section map, hash codes and page map "
+           "now "
            "read), "
            "block count from the correction factor; r64: R2007 section map page position traced, "
            "full page list; r63: R2004 entities read "
