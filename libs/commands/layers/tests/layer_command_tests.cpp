@@ -382,8 +382,3 @@ TEST_CASE("ACTIVEONLY locks every layer outside the current layer's branch") {
     CHECK(f.host.undo());
     CHECK_FALSE(f.doc.header().activeOnly);
 }
-
-TEST_CASE("CHPROP is the familiar name for -PROP") {
-    Fixture f;
-    CHECK(f.reg.find("CHPROP") == f.reg.find("-PROP"));
-}

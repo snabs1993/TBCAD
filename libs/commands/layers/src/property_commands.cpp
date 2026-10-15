@@ -36,7 +36,7 @@ std::string lowerAscii(std::string s) {
 class PropCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "-PROP"; }
-    std::vector<std::string> defaultAliases() const override { return {"-PR", "CHPROP"}; }
+    std::vector<std::string> defaultAliases() const override { return {"-PR"}; }
     std::string_view description() const override {
         return "Change properties of the selected objects from the command line";
     }
