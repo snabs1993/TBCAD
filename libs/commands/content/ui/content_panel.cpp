@@ -151,6 +151,8 @@ void drawFiles(ui::PanelContext& pc, State& st) {
         if (pc.host)
             pc.host->setSetting(kFolderSetting, st.folder);
     }
+    if (ImGui::IsItemHovered() && !st.folderEdit.empty())
+        ImGui::SetTooltip("%s", st.folderEdit.c_str());  // the box is narrow in a docked panel
     std::vector<fs::path> dirs, files;
     std::error_code ec;
     for (fs::directory_iterator it(pathOf(st.folder), ec), end; !ec && it != end;

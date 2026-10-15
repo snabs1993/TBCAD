@@ -117,8 +117,22 @@ void drawPreview(ui::PanelContext& pc, const DimStyle& style) {
     ImGui::Dummy(size);
 }
 
+// Input boxes take part of the panel's width, so the labels beside them stay readable when the
+// panel is docked narrow (a fixed 120 px box pushed the label out of view).
+float fieldWidth() {
+    return std::clamp(ImGui::GetContentRegionAvail().x * 0.42f, 70.0f, 160.0f);
+}
+
+// An input box that leaves room for a button of the given label on its row.
+float boxBeside(const char* buttonLabel) {
+    const ImGuiStyle& st = ImGui::GetStyle();
+    const float button = ImGui::CalcTextSize(buttonLabel).x + st.FramePadding.x * 2;
+    return std::max(60.0f, ImGui::GetContentRegionAvail().x - button - st.ItemSpacing.x);
+}
+
 void enumCombo(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
                int current, const std::vector<std::pair<const char*, const char*>>& options) {
+    ImGui::SetNextItemWidth(fieldWidth());
     if (ImGui::BeginCombo(label, options[static_cast<std::size_t>(current)].first)) {
         for (std::size_t i = 0; i < options.size(); ++i)
             if (ImGui::Selectable(options[i].first, static_cast<int>(i) == current))
@@ -130,7 +144,7 @@ void enumCombo(ui::PanelContext& pc, const DimStyle& s, const char* label, const
 void realField(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
                double value) {
     double v = value;
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(fieldWidth());
     if (ImGui::InputDouble(label, &v, 0, 0, "%.6g", kEnter) && v != value)
         pc.runCommand(editLine(s.name, key, number(v)));
 }
@@ -139,7 +153,7 @@ void textField(ui::PanelContext& pc, const DimStyle& s, const char* label, const
                const std::string& value) {
     char buf[64];
     std::snprintf(buf, sizeof buf, "%s", value.c_str());
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(fieldWidth());
     if (ImGui::InputText(label, buf, sizeof buf, kEnter)) {
         std::string v = buf;
         std::replace(v.begin(), v.end(), ' ', '_');
@@ -151,7 +165,7 @@ void colorField(ui::PanelContext& pc, const DimStyle& s, const char* label, cons
                 const Color& value) {
     char buf[32];
     std::snprintf(buf, sizeof buf, "%s", colorText(value).c_str());
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(fieldWidth());
     if (ImGui::InputText(label, buf, sizeof buf, kEnter))
         pc.runCommand(editLine(s.name, key, buf));
 }
@@ -189,7 +203,7 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
     enumCombo(pc, s, "Units", "Units", static_cast<int>(s.units),
               {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
     int prec = s.precision;
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(fieldWidth());
     if (ImGui::InputInt("Decimals", &prec, 1, 1, kEnter) && prec != s.precision)
         pc.runCommand(editLine(s.name, "Precision", std::to_string(std::clamp(prec, 0, 8))));
     realField(pc, s, "Round off", "RoundOff", s.roundOff);
@@ -213,7 +227,9 @@ void drawPanel(ui::PanelContext& pc) {
     if (!pc.doc->dimStyle(st.selected))
         st.selected = current;
 
-    ImGui::BeginChild("dimstyle-list", ImVec2(170, 0), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("dimstyle-list",
+                      ImVec2(std::clamp(ImGui::GetContentRegionAvail().x * 0.3f, 90.0f, 170.0f), 0),
+                      ImGuiChildFlags_Borders);
     for (const auto& [id, s] : pc.doc->dimStyles()) {
         std::string label = s.name + (id == current ? "  (current)" : "");
         if (ImGui::Selectable(label.c_str(), id == st.selected))
@@ -235,7 +251,7 @@ void drawPanel(ui::PanelContext& pc) {
         if (ImGui::Button("Delete"))
             pc.runCommand("DIMSTYLE Delete " + sel->name + " Done");
         ImGui::EndDisabled();
-        ImGui::SetNextItemWidth(160);
+        ImGui::SetNextItemWidth(boxBeside("Rename"));
         ImGui::InputText("##renamedimstyle", st.renameTo, sizeof st.renameTo);
         ImGui::SameLine();
         ImGui::BeginDisabled(st.selected == kDimStyleStandard || hasSpace(sel->name) ||
@@ -247,7 +263,7 @@ void drawPanel(ui::PanelContext& pc) {
         }
         ImGui::EndDisabled();
     }
-    ImGui::SetNextItemWidth(160);
+    ImGui::SetNextItemWidth(boxBeside("New from current"));
     ImGui::InputText("##newdimstyle", st.newName, sizeof st.newName);
     ImGui::SameLine();
     ImGui::BeginDisabled(hasSpace(st.newName) || pc.doc->dimStyleByName(st.newName) != nullptr);
