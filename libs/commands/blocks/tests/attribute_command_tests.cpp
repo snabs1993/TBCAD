@@ -134,3 +134,61 @@ TEST_CASE("redefining a block updates its inserts; ATTSYNC does the same on dema
     CHECK(ins->attribs[0].value == "Zed");
     CHECK(ins->attribs[1].value == "e0");
 }
+
+namespace {
+
+// A host with a window: ATTDEF opens the dialog instead of asking on the command line.
+struct DialogHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    std::vector<std::string> opened;
+    bool dialogsAvailable() const override { return true; }
+    void openPanel(std::string_view id) override { opened.emplace_back(id); }
+};
+
+}  // namespace
+
+TEST_CASE("ATTDEF opens the dialog in a window; the dialog's values leave only the start point") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    DialogHost host(doc, reg);
+
+    auto first = host.run("ATTDEF", {});
+    CHECK(first.finished);
+    REQUIRE(host.opened.size() == 1);
+    CHECK(host.opened[0] == "attdef");
+    CHECK(doc.modelSpace().empty());
+
+    // What the dialog stores when OK is pressed.
+    host.setSetting("attdef.tag", "PART");
+    host.setSetting("attdef.prompt", "Part number");
+    host.setSetting("attdef.default", "P-1");
+    host.setSetting("attdef.invisible", "1");
+    host.setSetting("attdef.height", "4");
+    host.setSetting("attdef.rotation", "90");
+    host.setSetting("attdef.go", "1");
+    auto r = host.run("ATTDEF", {"5,5"});
+    CHECK(r.finished);
+    REQUIRE(doc.modelSpace().size() == 1);
+    const Entity* e = doc.find(doc.modelSpace().front());
+    const auto* t = entityAs<TextData>(*e);
+    REQUIRE(t);
+    CHECK(t->attdef->tag == "PART");
+    CHECK(t->attdef->prompt == "Part number");
+    CHECK(t->attdef->defaultValue == "P-1");
+    CHECK(t->attdef->invisible);
+    CHECK(t->height == doctest::Approx(4));
+    CHECK(t->rotation == doctest::Approx(3.14159265358979 / 2));
+    CHECK(host.setting("attdef.go") == std::optional<std::string>("0"));  // one use per dialog
+}
+
+TEST_CASE("-ATTDEF always asks on the command line") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    DialogHost host(doc, reg);
+    auto r = host.run("-ATTDEF", {"", "tag1", "Tag one", "x", "0,0", "2", "0"});
+    CHECK(r.finished);
+    CHECK(host.opened.empty());
+    CHECK(doc.modelSpace().size() == 1);
+}

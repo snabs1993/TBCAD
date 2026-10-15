@@ -1,4 +1,5 @@
 #include <cfloat>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -8,6 +9,7 @@
 #include "tbcad/block_cmds/block_cmds.h"
 #include "tbcad/block_cmds/block_list.h"
 #include "tbcad/block_cmds/palette.h"
+#include "tbcad/blocks/tbcad_blocks.h"
 
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
 #include <imgui.h>
@@ -267,6 +269,75 @@ void drawBlockPanel(ui::PanelContext& ctx) {
     }
 }
 
+// The Define Attribute dialog: collects what -ATTDEF asks on the command line, stores it in the
+// "attdef.*" settings and runs ATTDEF again, which then only needs the start point.
+struct AttDefForm {
+    std::string tag, prompt, defaultValue;
+    double height = 2.5, rotation = 0;
+    bool invisible = false, constant = false, verify = false, preset = false;
+    std::string error;
+    bool loaded = false;
+};
+
+void drawAttDefPanel(ui::PanelContext& ctx) {
+    static AttDefForm f;
+    if (!ctx.host)
+        return;
+    if (!f.loaded) {
+        if (auto h = ctx.host->setting("attdef.height"))
+            if (double v = std::strtod(h->c_str(), nullptr); v > 0)
+                f.height = v;
+        f.loaded = true;
+    }
+    ImGui::TextUnformatted("Attribute");
+    ImGui::InputText("Tag", &f.tag, ImGuiInputTextFlags_AutoSelectAll);
+    ImGui::InputText("Prompt", &f.prompt, ImGuiInputTextFlags_AutoSelectAll);
+    ImGui::InputText("Default value", &f.defaultValue, ImGuiInputTextFlags_AutoSelectAll);
+    ImGui::Separator();
+    ImGui::TextUnformatted("Mode");
+    ImGui::Checkbox("Invisible", &f.invisible);
+    ImGui::SameLine();
+    ImGui::Checkbox("Constant", &f.constant);
+    ImGui::SameLine();
+    ImGui::Checkbox("Verify", &f.verify);
+    ImGui::SameLine();
+    ImGui::Checkbox("Preset", &f.preset);
+    ImGui::Separator();
+    ImGui::InputDouble("Text height", &f.height, 0, 0, "%.6g");
+    ImGui::InputDouble("Rotation (deg)", &f.rotation, 0, 0, "%.6g");
+    if (!f.error.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", f.error.c_str());
+    if (ImGui::Button("OK, pick the start point")) {
+        const std::string tag = blocks::normalizeTag(f.tag);
+        if (auto ok = blocks::validateTag(tag); !ok.ok()) {
+            f.error = ok.error().message;
+        } else if (!(f.height > 0)) {
+            f.error = "The text height must be above zero.";
+        } else {
+            f.error.clear();
+            auto flag = [](bool v) { return std::string(v ? "1" : "0"); };
+            ctx.host->setSetting("attdef.tag", tag);
+            ctx.host->setSetting("attdef.prompt", f.prompt);
+            ctx.host->setSetting("attdef.default", f.defaultValue);
+            ctx.host->setSetting("attdef.invisible", flag(f.invisible));
+            ctx.host->setSetting("attdef.constant", flag(f.constant));
+            ctx.host->setSetting("attdef.verify", flag(f.verify));
+            ctx.host->setSetting("attdef.preset", flag(f.preset));
+            ctx.host->setSetting("attdef.height", std::to_string(f.height));
+            ctx.host->setSetting("attdef.rotation", std::to_string(f.rotation));
+            ctx.host->setSetting("attdef.go", "1");
+            ctx.host->closePanel("attdef");
+            if (ctx.cancelCommand)
+                ctx.cancelCommand();
+            if (ctx.runCommand)
+                ctx.runCommand("ATTDEF");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel"))
+        ctx.host->closePanel("attdef");
+}
+
 }  // namespace
 
 #endif
@@ -274,6 +345,7 @@ void drawBlockPanel(ui::PanelContext& ctx) {
 void registerBlockPanel(ui::UiRegistry& ui) {
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
     ui.addPanel("blocks", "Blocks", drawBlockPanel, false);
+    ui.addPanel("attdef", "Define Attribute", drawAttDefPanel, false);
 #else
     (void)ui;
 #endif

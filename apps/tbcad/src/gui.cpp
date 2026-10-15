@@ -144,6 +144,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     themeMode_ = ui::parseThemeMode(core_.settings().getString("ui.theme", "dark"));
     theme_ = ui::themeFor(themeMode_, systemPrefersDark());
     core_.setTheme(theme_);
+    core_.setDialogsAvailable(true);
     lineweights_ = core_.settings().getBool("view.lineweights", true);
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
@@ -2402,6 +2403,8 @@ void Gui::panels() {
         }
         pc.multiSelection = false;
     };
+    for (const std::string& id : core_.takePanelCloses())
+        panelOpen_[id] = false;
     for (const std::string& id : core_.takePanelRequests()) {
         panelOpen_[id] = true;
         for (const auto& panel : registry_.panels())

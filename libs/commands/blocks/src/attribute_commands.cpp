@@ -16,16 +16,47 @@ std::string formatNumber(double v) {
     return o.str();
 }
 
+std::string settingOf(cmd::IHost& host, const char* key) {
+    return host.setting(key).value_or("");
+}
+
 // ATTDEF [ATT]: defines an attribute, a piece of text that each insert of the block fills in.
+// In the window it opens the Define Attribute dialog, which fills the "attdef.*" settings and runs
+// ATTDEF again to pick the start point; -ATTDEF (and any host without a window) asks everything on
+// the command line.
 class AttDefCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "ATTDEF"; }
-    std::vector<std::string> defaultAliases() const override { return {"ATT"}; }
+    explicit AttDefCommand(bool lineOnly) : lineOnly_(lineOnly) {}
+    std::string_view name() const override { return lineOnly_ ? "-ATTDEF" : "ATTDEF"; }
+    std::vector<std::string> defaultAliases() const override {
+        return lineOnly_ ? std::vector<std::string>{} : std::vector<std::string>{"ATT"};
+    }
     std::string_view description() const override { return "Define a block attribute"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         AttDefInfo info;
-        for (;;) {
+        const bool dialog = !lineOnly_ && ctx.host().dialogsAvailable();
+        if (dialog && settingOf(ctx.host(), "attdef.go") != "1") {
+            ctx.host().openPanel("attdef");
+            co_return;
+        }
+        if (dialog) {
+            ctx.host().setSetting("attdef.go", "0");
+            info.tag = blocks::normalizeTag(cmd::trim(settingOf(ctx.host(), "attdef.tag")));
+            info.invisible = settingOf(ctx.host(), "attdef.invisible") == "1";
+            info.constant = settingOf(ctx.host(), "attdef.constant") == "1";
+            info.verify = settingOf(ctx.host(), "attdef.verify") == "1";
+            info.preset = settingOf(ctx.host(), "attdef.preset") == "1";
+            info.prompt = info.constant ? std::string() : settingOf(ctx.host(), "attdef.prompt");
+            if (info.prompt.empty() && !info.constant)
+                info.prompt = info.tag;
+            info.defaultValue = settingOf(ctx.host(), "attdef.default");
+            if (auto ok = blocks::validateTag(info.tag); !ok.ok()) {
+                ctx.message(ok.error().message);
+                co_return;
+            }
+        }
+        for (; !dialog;) {
             auto m = co_await ctx.getKeyword(
                 "Attribute mode: Invisible=" + yn(info.invisible) +
                     " Constant=" + yn(info.constant) + " Verify=" + yn(info.verify) + " Preset=" +
@@ -47,7 +78,7 @@ public:
                 info.preset = !info.preset;
         }
 
-        for (;;) {
+        for (; !dialog;) {
             auto t = co_await ctx.getString("Enter attribute tag");
             if (!t.ok())
                 co_return;
@@ -58,14 +89,14 @@ public:
             ctx.message(ok.error().message);
         }
 
-        if (!info.constant) {
+        if (!dialog && !info.constant) {
             auto p = co_await ctx.getString("Enter attribute prompt <" + info.tag + ">",
                                             cmd::StringOptions{.allowEmpty = true});
             if (p.status == cmd::Status::Cancel)
                 co_return;
             info.prompt = p.text.empty() ? info.tag : p.text;
         }
-        {
+        if (!dialog) {
             auto d = co_await ctx.getString(
                 info.constant ? "Enter the constant value" : "Enter default attribute value",
                 cmd::StringOptions{.allowEmpty = true});
@@ -82,20 +113,28 @@ public:
         if (auto last = ctx.host().setting(kHeightSetting))
             height = std::strtod(last->c_str(), nullptr) > 0 ? std::strtod(last->c_str(), nullptr)
                                                              : height;
-        auto h = co_await ctx.getReal("Specify text height <" + formatNumber(height) + ">",
-                                      cmd::RealOptions{.defaultValue = height, .min = 1e-9});
-        if (!h.ok())
-            co_return;
-        auto a = co_await ctx.getAngle("Specify rotation angle <0>",
-                                       cmd::AngleOptions{.defaultValue = 0.0});
-        if (!a.ok())
-            co_return;
-        ctx.host().setSetting(kHeightSetting, formatNumber(h.value));
+        double heightValue = height, rotation = 0.0;
+        if (dialog) {  // the dialog already asked
+            const std::string r = settingOf(ctx.host(), "attdef.rotation");
+            rotation = std::strtod(r.c_str(), nullptr) * kPi / 180.0;
+        } else {
+            auto h = co_await ctx.getReal("Specify text height <" + formatNumber(height) + ">",
+                                          cmd::RealOptions{.defaultValue = height, .min = 1e-9});
+            if (!h.ok())
+                co_return;
+            auto a = co_await ctx.getAngle("Specify rotation angle <0>",
+                                           cmd::AngleOptions{.defaultValue = 0.0});
+            if (!a.ok())
+                co_return;
+            heightValue = h.value;
+            rotation = a.value;
+            ctx.host().setSetting(kHeightSetting, formatNumber(h.value));
+        }
 
         TextData text;
         text.position = pos.point;
-        text.height = h.value;
-        text.rotation = normalizeAngle(a.value);
+        text.height = heightValue;
+        text.rotation = normalizeAngle(rotation);
         text.utf8 = info.tag;
         text.attdef = info;
         Entity e;
@@ -114,6 +153,7 @@ public:
 
 private:
     static std::string yn(bool v) { return v ? "Yes" : "No"; }
+    bool lineOnly_;
 };
 
 // ATTEDIT [ATE]: changes the attribute values of one block insert.
@@ -205,7 +245,11 @@ public:
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeAttDefCommand() {
-    return std::make_unique<AttDefCommand>();
+    return std::make_unique<AttDefCommand>(false);
+}
+
+std::unique_ptr<cmd::Command> makeAttDefLineCommand() {
+    return std::make_unique<AttDefCommand>(true);
 }
 std::unique_ptr<cmd::Command> makeAttEditCommand() {
     return std::make_unique<AttEditCommand>();

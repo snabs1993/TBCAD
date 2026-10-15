@@ -37,6 +37,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeJoinAsmCommand(false));
     (void)registry.add(makeAsmSetSelectedCommand());
     (void)registry.add(makeAttDefCommand());
+    (void)registry.add(makeAttDefLineCommand());
     (void)registry.add(makeAttEditCommand());
     (void)registry.add(makeAttSyncCommand());
     (void)registry.add(makeXAttachCommand());

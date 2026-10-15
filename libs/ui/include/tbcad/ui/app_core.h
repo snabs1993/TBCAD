@@ -310,6 +310,10 @@ public:
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
     void textEdited(const std::string& text) { runner().textEdited(text); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
+    void closePanel(std::string_view panelId) override { panelCloses_.emplace_back(panelId); }
+    bool dialogsAvailable() const override { return dialogsAvailable_; }
+    void setDialogsAvailable(bool on) { dialogsAvailable_ = on; }
+    std::vector<std::string> takePanelCloses() { return std::exchange(panelCloses_, {}); }
     // Panels asked for since the last call (the window opens them).
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
@@ -375,6 +379,8 @@ private:
     std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
     std::vector<std::string> panelRequests_{};
+    std::vector<std::string> panelCloses_{};
+    bool dialogsAvailable_ = false;
     platform::Settings settings_;
     platform::Keybindings keybindings_;
     std::vector<std::string> startupWarnings_{};
