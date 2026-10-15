@@ -24,7 +24,8 @@ struct PromptInfo {
     std::string text{};                   // "Specify next point"
     std::vector<std::string> keywords{};  // "Close", "Undo"
     std::optional<std::string> defaultText{};
-    std::string command{};  // name of the running command
+    std::optional<TextEditorHint> editor{};  // edit the text in the drawing
+    std::string command{};                   // name of the running command
 
     // "Specify next point or [Close/Undo]: "
     std::string display() const;
