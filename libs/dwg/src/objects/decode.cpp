@@ -2539,7 +2539,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r61: R2004 objects found by walking the stream like R2010; r60: R2007 page map and "
+    return "r62: R2007 system pages tried with 239 and 251 data bytes per block and a plausibility "
+           "check; r61: R2004 objects found by walking the stream like R2010; r60: R2007 page map "
+           "and "
            "section map block counts found by trial, data page coding "
            "tried; r59: header stage trace; r58: R2007 literal runs stored back to front; r57: "
            "HATCH read "
