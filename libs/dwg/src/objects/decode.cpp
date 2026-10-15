@@ -2543,7 +2543,10 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r64: R2007 section map page position traced, full page list; r63: R2004 entities read "
+    return "r65: R2007 literal runs cut into blocks (section map, hash codes and page map now "
+           "read), "
+           "block count from the correction factor; r64: R2007 section map page position traced, "
+           "full page list; r63: R2004 entities read "
            "without the "
            "links flag, data end exact; r62: R2007 system "
            "pages tried with 239 and 251 data bytes per block and a plausibility "

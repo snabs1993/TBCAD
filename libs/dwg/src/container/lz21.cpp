@@ -2,6 +2,82 @@
 
 namespace tbcad::dwg::detail {
 
+namespace {
+
+// A literal run is not stored in the order it is written: it is cut into blocks that appear in the
+// stream in the opposite order to the output, each block itself in the output order. Single bytes
+// therefore come out reversed, a block of four or eight bytes comes out as it is. The cuts are
+// known for the lengths found in the system pages of real R2007 files (checked against the section
+// map names and hash codes and the page map); other lengths are read back to front.
+void copyLiteral(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
+    // Block sizes in stream order.
+    static const std::uint8_t kCut1[] = {1};
+    static const std::uint8_t kCut2[] = {1, 1};
+    static const std::uint8_t kCut3[] = {1, 1, 1};
+    static const std::uint8_t kCut4[] = {4};
+    static const std::uint8_t kCut5[] = {4, 1};
+    static const std::uint8_t kCut6[] = {1, 4, 1};
+    static const std::uint8_t kCut8[] = {8};
+    static const std::uint8_t kCut9[] = {8, 1};
+    static const std::uint8_t kCut10[] = {1, 1, 8};
+    static const std::uint8_t kCut17[] = {8, 1, 8};
+    const std::uint8_t* cut = nullptr;
+    std::size_t blocks = 0;
+    auto pick = [&](const std::uint8_t* c, std::size_t n) {
+        cut = c;
+        blocks = n;
+    };
+    switch (length) {
+        case 1:
+            pick(kCut1, 1);
+            break;
+        case 2:
+            pick(kCut2, 2);
+            break;
+        case 3:
+            pick(kCut3, 3);
+            break;
+        case 4:
+            pick(kCut4, 1);
+            break;
+        case 5:
+            pick(kCut5, 2);
+            break;
+        case 6:
+            pick(kCut6, 3);
+            break;
+        case 8:
+            pick(kCut8, 1);
+            break;
+        case 9:
+            pick(kCut9, 2);
+            break;
+        case 10:
+            pick(kCut10, 3);
+            break;
+        case 17:
+            pick(kCut17, 3);
+            break;
+        default:
+            break;
+    }
+    if (!cut) {
+        for (std::size_t k = 0; k < length; ++k)
+            out[k] = in[length - 1 - k];
+        return;
+    }
+    std::size_t from = 0;
+    std::size_t to = length;
+    for (std::size_t b = 0; b < blocks; ++b) {
+        to -= cut[b];
+        for (std::size_t k = 0; k < cut[b]; ++k)
+            out[to + k] = in[from + k];
+        from += cut[b];
+    }
+}
+
+}  // namespace
+
 bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
                     std::vector<std::uint8_t>& out, std::string* why, std::size_t* consumed) {
     out.assign(expected, 0);
@@ -91,10 +167,7 @@ bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
         }
         if (bad || literal > in.size() - src || literal > expected - dst)
             return fail("a literal run does not fit");
-        // Literal runs are stored back to front (checked against real files: the sizes in the
-        // file header only come out right that way).
-        for (std::uint32_t k = 0; k < literal; ++k)
-            out[dst + k] = in[src + literal - 1 - k];
+        copyLiteral(in.data() + src, literal, out.data() + dst);
         src += literal;
         dst += literal;
         literal = 0;
@@ -116,7 +189,7 @@ bool lz21Decompress(std::span<const std::uint8_t> in, std::size_t expected,
             for (std::uint32_t k = 0; k < length; ++k, ++dst)
                 out[dst] = out[dst - offset];
             literal = op & 7;
-            if (literal != 0 || src >= in.size())
+            if (literal != 0 || src >= in.size() || dst == expected)
                 break;
             op = in[src++];
             if ((op >> 4) == 0)
