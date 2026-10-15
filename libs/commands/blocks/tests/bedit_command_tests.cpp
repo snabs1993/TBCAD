@@ -30,7 +30,8 @@ struct BEditFixture : Fixture {
 
 }  // namespace
 
-TEST_CASE("BEDIT copies the block next to its insert; BCLOSE writes the edit back to every insert") {
+TEST_CASE(
+    "BEDIT copies the block next to its insert; BCLOSE writes the edit back to every insert") {
     BEditFixture f;
     REQUIRE(f.lines() == 0);
     auto r = f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
