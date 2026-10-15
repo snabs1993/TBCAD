@@ -260,6 +260,16 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         return fail(input + ": " + result.error().message, report);
     dxf::ImportResult& imported = result.value();
 
+    // A DWG file whose objects could not be read must not leave an empty drawing behind with a
+    // success code.
+    if (fromDwg && imported.document->modelSpaceCount() == 0 && imported.summary.layers == 0) {
+        std::size_t read = 0;
+        for (const auto& entry : imported.summary.entities)
+            read += entry.second.read;
+        if (read == 0)
+            return fail(input + ": no drawing objects could be read from this file", report);
+    }
+
     if (fromDwg && lower(std::filesystem::path(output).extension().string()) == ".dxf") {
         Result<dxf::ExportResult> exported =
             dxf::exportDxf(*imported.document, exportOptions, report);
