@@ -2765,6 +2765,10 @@ ViewportRect Gui::frame() {
     if (!cleanScreen_) {
         panels();
     }
+    // Focusing a window closes an open popup, so a dialog (the recovery prompt at start-up) wins.
+    if (frontLayersIn_ > 0 &&
+        ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+        frontLayersIn_ = 0;
     if (frontLayersIn_ > 0 && --frontLayersIn_ == 0)
         ImGui::SetWindowFocus("Layers");
     anyActivity_ = anyActivity_ || frontLayersIn_ > 0;
