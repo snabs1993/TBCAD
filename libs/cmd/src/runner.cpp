@@ -4,10 +4,18 @@
 #include <cmath>
 #include <cstdlib>
 #include <span>
+#include <string>
 
 namespace tbcad::cmd {
 
 namespace {
+
+std::string upper(std::string s) {
+    for (char& c : s)
+        if (c >= 'a' && c <= 'z')
+            c = static_cast<char>(c - 'a' + 'A');
+    return s;
+}
 
 PromptInfo::Kind infoKind(detail::PromptKind k) {
     switch (k) {
@@ -342,6 +350,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     } else {
                         ans.status = Status::Ok;
                         ans.ids = collected_;
+                        previousSelection_ = collected_;
                     }
                     return complete(std::move(ans));
                 case K::Point:
@@ -420,6 +429,49 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 ans.status = Status::Keyword;
                 ans.keyword = *kw;
                 return complete(std::move(ans));
+            }
+            if (req.kind == K::Selection) {
+                // AutoCAD habits at "Select objects:": All, Last, Previous.
+                const std::string up = upper(text);
+                std::vector<EntityId> found;
+                if (up == "ALL" || up == "A") {
+                    doc_.forEachEntity([&](const Entity& e) {
+                        if (e.common.visible && !doc_.ownerBlock(e.common.id) &&
+                            accepts(e.common.id))
+                            found.push_back(e.common.id);
+                    });
+                } else if (up == "LAST" || up == "L") {
+                    const Entity* last = nullptr;
+                    doc_.forEachEntity([&](const Entity& e) {
+                        if (e.common.visible && !doc_.ownerBlock(e.common.id) &&
+                            accepts(e.common.id) && (!last || e.common.id > last->common.id))
+                            last = &e;
+                    });
+                    if (last)
+                        found.push_back(last->common.id);
+                } else if (up == "PREVIOUS" || up == "P") {
+                    for (EntityId id : previousSelection_)
+                        if (accepts(id))
+                            found.push_back(id);
+                } else {
+                    return reject("Invalid option \"" + text +
+                                  "\". Pick objects, or type All, Last or Previous.");
+                }
+                std::size_t added = 0;
+                for (EntityId id : found) {
+                    addWithGroup(id);
+                    ++added;
+                }
+                if (added == 0)
+                    return reject("No objects found.");
+                host_.print(std::to_string(added) + " found, " + std::to_string(collected_.size()) +
+                            " total");
+                if (req.single) {
+                    ans.status = Status::Ok;
+                    ans.ids = collected_;
+                    return complete(std::move(ans));
+                }
+                return SubmitResult::Accepted;
             }
             switch (req.kind) {
                 case K::Point: {
@@ -502,8 +554,16 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     ans.integer = v;
                     return complete(std::move(ans));
                 }
-                default:
-                    return reject("Invalid option \"" + text + "\".");
+                default: {
+                    std::string why = "Invalid option \"" + text + "\".";
+                    if (!req.keywords.empty()) {
+                        why += " Options:";
+                        for (std::size_t i = 0; i < req.keywords.size(); ++i)
+                            why += (i ? ", " : " ") + req.keywords[i];
+                        why += ".";
+                    }
+                    return reject(why);
+                }
             }
         }
 
