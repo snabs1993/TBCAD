@@ -251,14 +251,20 @@ TEST_CASE("grip points and moving grips") {
     CHECK(sg.size() == 8);  // 4 vertices + 4 segment midpoints
     auto mv = moveGrip(st, 0, {-1, -1});
     CHECK(entityAs<PolylineData>(mv.value())->v[0].p == Vec2{-1, -1});
-    // Dragging the midpoint grip of the first (straight) segment bulges it.
+    // Dragging the midpoint grip of a straight segment moves that edge: both ends follow.
+    const PolylineData& before = *entityAs<PolylineData>(st);
     auto bg = moveGrip(st, 4, {1.5, -0.5});
     REQUIRE(bg.ok());
-    CHECK(entityAs<PolylineData>(bg.value())->v[0].bulge > 0);
-    CHECK(distance(bg.value(), Vec2{1.5, -0.5}) < 1e-9);
-    // Dragging back onto the chord straightens it.
-    auto flat = moveGrip(bg.value(), 4, {1.5, 0});
-    CHECK(entityAs<PolylineData>(flat.value())->v[0].bulge == 0);
+    const PolylineData& after = *entityAs<PolylineData>(bg.value());
+    CHECK(after.v[0].bulge == 0);
+    CHECK(after.v[0].p.y == doctest::Approx(before.v[0].p.y - 0.5));
+    CHECK(after.v[1].p.y == doctest::Approx(before.v[1].p.y - 0.5));
+    CHECK(after.v[0].p.x == doctest::Approx(before.v[0].p.x));
+    // The midpoint of a curved segment still reshapes the curve through the dragged point.
+    auto curved = moveGrip(st, 5, gripPoints(st)[5]);
+    REQUIRE(curved.ok());
+    CHECK(entityAs<PolylineData>(curved.value())->v[1].bulge ==
+          doctest::Approx(before.v[1].bulge).epsilon(1e-6));
 
     Entity el = ellipseEntity();
     CHECK(gripPoints(el).size() == 5);
