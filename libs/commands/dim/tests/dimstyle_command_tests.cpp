@@ -118,3 +118,19 @@ TEST_CASE("DIMSTYLE Rename keeps the id, refuses Standard and duplicates") {
     CHECK(f.doc.dimStyleByName("Standard"));
     CHECK(f.host->undo());
 }
+
+TEST_CASE("the first dimension seen from far away gets a scaled style so its text can be read") {
+    Fixture f;
+    f.host->setView({{0, 0}, 10.0, {900, 600}});  // 10 mm per pixel: a plan in millimetres
+    f.host->run("DIMLINEAR", {"0,0", "6000,0", "3000,500"});
+    f.host->run("DIMLINEAR", {"0,1000", "6000,1000", "3000,1500"});
+    const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
+    REQUIRE(scaled);  // 12 px * 10 mm / 2.5 mm = 48, nearest 1-2-5 step is 50
+    CHECK(scaled->overallScale == doctest::Approx(50));
+    CHECK(f.doc.header().currentDimStyle == scaled->id);
+    CHECK(f.doc.dimStyles().size() == 2);  // the second dimension reuses it
+    // A normal zoom leaves the Standard style alone.
+    Fixture g;
+    g.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});
+    CHECK(g.doc.dimStyles().size() == 1);
+}

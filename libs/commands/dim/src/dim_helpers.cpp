@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 #include "dim_internal.h"
@@ -35,8 +36,51 @@ void previewDim(cmd::CommandContext& ctx, const DimensionData& d, DisplayList& o
     previewEntity(ctx, dimEntity(ctx.doc(), d), out);
 }
 
+namespace {
+
+// The first dimension in a drawing drawn at a large scale (a plan in millimetres, seen from far
+// away) would carry 2.5 mm text, too small to see at that zoom. Give it a style scaled to the
+// current view so its text is readable (about 12 screen pixels), as 1-2-5 steps like 1:50, 1:100.
+// Later dimensions use the same style, and the style can still be changed in Properties.
+void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
+    const Document& doc = ctx.doc();
+    const DimStyle& cur = dim::styleOf(doc, doc.header().currentDimStyle);
+    if (cur.id != kDimStyleStandard || cur.overallScale != 1)
+        return;
+    const double pixelMm = ctx.host().view().scale;
+    if (!(pixelMm > 0) || !std::isfinite(pixelMm))
+        return;
+    const double wanted = 12.0 * pixelMm / std::max(cur.textHeight, 1e-6);
+    if (wanted < 8)
+        return;  // the normal case: the text is readable as it is
+    bool any = false;
+    doc.forEachEntity([&](const Entity& e) { any = any || kind(e) == EntityKind::Dimension; });
+    if (any)
+        return;
+    double n = 1;
+    for (double decade = 1; decade <= 1e7; decade *= 10)
+        for (double step : {1.0, 2.0, 5.0})
+            if (std::fabs(std::log(decade * step / wanted)) < std::fabs(std::log(n / wanted)))
+                n = decade * step;
+    char tag[40];
+    std::snprintf(tag, sizeof tag, "-1to%g", n);
+    DimStyle copy = cur;
+    copy.id = {};
+    copy.name = cur.name + tag;
+    copy.overallScale = n;
+    if (const DimStyle* have = doc.dimStyleByName(copy.name)) {
+        (void)ctx.tx().modifyHeader([id = have->id](Header& h) { h.currentDimStyle = id; });
+        return;
+    }
+    if (auto id = ctx.tx().addDimStyle(std::move(copy)))
+        (void)ctx.tx().modifyHeader([i = id.value()](Header& h) { h.currentDimStyle = i; });
+}
+
+}  // namespace
+
 bool addDim(cmd::CommandContext& ctx, DimensionData d) {
     ctx.setUndoLabel(std::string(ctx.commandName()));
+    scaleFirstDimensionToView(ctx);
     auto id = ctx.tx().add(dimEntity(ctx.doc(), std::move(d)));
     if (!id) {
         ctx.message(id.error().message);
