@@ -183,6 +183,11 @@ void CommandContext::checkpoint() {
     marks_.push_back(segments_.size());
 }
 
+void CommandContext::publishPending() {
+    if (!parent_ && !marks_.empty())
+        commitOpen();
+}
+
 bool CommandContext::rollbackToCheckpoint() {
     if (parent_)
         throw std::logic_error("rollbackToCheckpoint() is not available in a transparent command");
