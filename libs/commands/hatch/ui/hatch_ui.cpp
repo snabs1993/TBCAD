@@ -117,6 +117,7 @@ void drawPanel(ui::PanelContext& pc) {
     ImGui::SetNextItemWidth(120);
     if (ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g") && scale > 0) {
         p.scale = scale;
+        p.scaleAuto = false;
         changed = true;
     }
     double angle = p.angle * 180.0 / kPi;

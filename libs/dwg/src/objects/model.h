@@ -60,6 +60,7 @@ struct DimStyleRec {
     std::uint64_t handle = 0;
     std::string name{};
     int flags = 0;
+    std::uint64_t textStyle = 0;  // handle of the text style (DIMTXSTY), 0 when not read
     std::vector<Group> groups{};
 };
 

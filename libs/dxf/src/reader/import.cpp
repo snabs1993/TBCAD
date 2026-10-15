@@ -429,6 +429,8 @@ void Importer::readStyle(const Record& r) {
     // Shape files (flag bit 0) are not text styles.
     if (r.integer(70) & 1)
         return;
+    if (r.has(5) && r.num(40) > 0)
+        styleHeights_[std::string(r.raw(5))] = r.num(40) * k_;
     TextStyle ts;
     ts.name = name;
     ts.fontFile = dec(r.raw(3));
@@ -484,9 +486,16 @@ void Importer::readDimStyle(const Record& r) {
                 out = v;
         }
     };
-    positive(140, k_, ds.textHeight);          // DIMTXT
-    positive(41, k_, ds.arrowSize);            // DIMASZ
-    positive(40, 1.0, ds.overallScale);        // DIMSCALE
+    positive(140, k_, ds.textHeight);    // DIMTXT
+    positive(41, k_, ds.arrowSize);      // DIMASZ
+    positive(40, 1.0, ds.overallScale);  // DIMSCALE
+    // A text style with a fixed height decides the dimension text height: DIMTXT and DIMSCALE
+    // do not apply to it. The style keeps the product the dimension generator multiplies.
+    if (r.has(340)) {
+        const auto fixed = styleHeights_.find(std::string(r.raw(340)));
+        if (fixed != styleHeights_.end() && ds.overallScale > 0)
+            ds.textHeight = fixed->second / ds.overallScale;
+    }
     nonNegative(147, k_, ds.textGap);          // DIMGAP
     nonNegative(42, k_, ds.extLineOffset);     // DIMEXO
     nonNegative(44, k_, ds.extLineExtension);  // DIMEXE

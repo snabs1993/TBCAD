@@ -509,8 +509,10 @@ void Gui::doOpenPath(const std::string& path) {
     core_.setEchoOpenFailures(true);
     if (!r)
         lastError_ = r.error().message;
-    else
+    else {
         toast("Opened " + platform::pathFromUtf8(path).filename().string());
+        frontLayersIn_ = 3;  // the Levels tab must not stay in front of Layers after an open
+    }
 }
 
 void Gui::openPending() {
@@ -547,8 +549,10 @@ void Gui::openPending() {
     if (auto done = core_.pollOpen()) {
         if (!*done)
             lastError_ = done->error().message;
-        else
+        else {
             toast("Opened " + openingName);
+            frontLayersIn_ = 3;
+        }
     }
     core_.setEchoOpenFailures(true);
     if (pendingOpen_.empty())
@@ -2767,7 +2771,7 @@ ViewportRect Gui::frame() {
     }
     if (frontLayersIn_ > 0 && --frontLayersIn_ == 0)
         ImGui::SetWindowFocus("Layers");
-    anyActivity_ = anyActivity_ || frontLayersIn_ > 0;
+    anyActivity_ = anyActivity_ || frontLayersIn_ > 0 || core_.flashing();
     logWindow();
 
     ViewportRect rect{vp->WorkPos.x, vp->WorkPos.y, vp->WorkSize.x, vp->WorkSize.y};

@@ -116,6 +116,21 @@ TEST_CASE("HATCH: a pick point inside a closed shape adds one hatch with the cur
     CHECK(f.hatches().empty());
 }
 
+TEST_CASE("HATCH: a big area gets a bigger pattern scale until the user sets one") {
+    Fixture f;
+    f.rect({0, 0}, {1200, 800});
+    f.host->run("HATCH", {"600,400", ""});
+    auto hs = f.hatches();
+    REQUIRE(hs.size() == 1);
+    CHECK(hs[0]->patternScale == doctest::Approx(10));  // 1200 / 100 = 12 -> 10
+    CHECK_FALSE(f.host->setting("hatch.scale").has_value());
+    f.host->run("HATCH", {"S", "3", "600,400", ""});
+    hs = f.hatches();
+    REQUIRE(hs.size() == 2);
+    CHECK(hs[1]->patternScale == doctest::Approx(3));
+    CHECK(f.host->setting("hatch.scale").value() == "3");
+}
+
 TEST_CASE("HATCH: options change pattern, scale, angle and base; the choices are remembered") {
     Fixture f;
     f.rect({0, 0}, {100, 100});

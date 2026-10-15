@@ -814,6 +814,11 @@ private:
                     note("dimension style " + hex(self) + " is damaged");
                     return;
                 }
+                leadingHandles(h, self, reactors, true);
+                h.handle();  // external reference block
+                const HandleRef textStyle = h.handle();
+                if (!h.failed())
+                    d.textStyle = resolveHandle(textStyle, self);
                 d.flags = (flag64 ? 64 : 0) | (xdep ? 16 : 0) | (unknown ? 1 : 0);
                 out_.dimStyles[self] = std::move(d);
                 break;
@@ -2134,8 +2139,34 @@ private:
         if (fmt_.r2018) {
             const int kind = r.rc();
             if (kind != 1) {
-                // A multi-line attribute carries an embedded MTEXT after the text fields; the
-                // text fields already hold its plain text, so the rest is left unread.
+                // A multi-line attribute carries an embedded MTEXT after the text fields. The
+                // spec does not say whether the embedded block starts with an entity mode, nor
+                // what follows the annotative data, so each layout is tried on a copy and kept
+                // only when it ends exactly where the object's main data ends.
+                for (int withMode = 0; withMode < 2; ++withMode) {
+                    for (int withUnknown = 0; withUnknown < 2; ++withUnknown) {
+                        BitReader t = r;
+                        EntityRec scratch;
+                        if (withMode)
+                            t.bb();
+                        mtext(t, scratch);
+                        const int annot = t.bs();
+                        for (int i = 0; i < annot && i < 100000 && !t.failed(); ++i)
+                            t.rc();
+                        if (annot > 0 && withUnknown)
+                            t.bs();
+                        const std::string tag = t.textBytes();
+                        t.bs();
+                        const int flags = t.rc();
+                        t.b();  // lock position
+                        if (t.failed() || t.bitPos() != mainEnd_)
+                            continue;
+                        r = t;
+                        add(e, 2, tag);
+                        add(e, 70, flags);
+                        return;
+                    }
+                }
                 add(e, 2, def ? "MLATTDEF" : "MLATTRIB");
                 add(e, 70, 0);
                 return;
@@ -2505,7 +2536,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r51: layout viewport count is a bit-long; r50: mtext background scale is a real; "
+    return "r53: dimension text height from the fixed height of its text style; r52: multi-line "
+           "attribute tag read from the embedded mtext layout; r51: layout "
+           "viewport count is a bit-long; r50: mtext background scale is a real; "
            "multi-line attributes kept; r49: data of other "
            "blocks inside each viewport counted; r48: model data inside each "
            "viewport counted; r47: viewport direction and twist "
