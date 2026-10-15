@@ -7,6 +7,7 @@
 #include <system_error>
 
 #include "tbcad/io/tbcad.h"
+#include "tbcad/platform/paths.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -107,7 +108,9 @@ Result<void> replaceFile(const fs::path& tmp, const fs::path& target, const fs::
 
 }  // namespace
 
-Result<void> writeTbcad(const Document& doc, const fs::path& path, const WriteOptions& options) {
+Result<void> writeTbcad(const Document& doc, const fs::path& requested,
+                        const WriteOptions& options) {
+    const fs::path path = platform::longPath(requested);
     Result<std::vector<std::uint8_t>> bytes = writeTbcadToMemory(doc, options);
     if (!bytes)
         return bytes.error();

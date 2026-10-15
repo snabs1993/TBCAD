@@ -1,6 +1,7 @@
 #include "tbcad/platform/paths.h"
 
 #include <cstdlib>
+#include <string>
 #include <system_error>
 
 namespace tbcad::platform {
@@ -55,6 +56,29 @@ AppPaths defaultAppPaths(EnvLookup lookup, bool windows) {
     if (p.dataDir.empty())
         p.dataDir = std::filesystem::path("TBCAD-data");
     return p;
+}
+
+std::filesystem::path longPath(const std::filesystem::path& p, bool windows) {
+    if (!windows || p.empty())
+        return p;
+    const std::wstring text = p.generic_wstring();
+    // Windows only applies the limit to paths of 260 characters and more; leave the rest alone.
+    if (text.size() < 240 || text.rfind(L"//?/", 0) == 0 || text.rfind(L"//./", 0) == 0)
+        return p;
+    std::filesystem::path abs = p;
+    std::error_code ec;
+    if (!abs.is_absolute()) {
+        abs = std::filesystem::absolute(p, ec);
+        if (ec)
+            return p;
+    }
+    std::wstring w = abs.lexically_normal().generic_wstring();
+    for (wchar_t& c : w)
+        if (c == L'/')
+            c = L'\\';
+    if (w.rfind(L"\\\\", 0) == 0)  // \\server\share\...
+        return std::filesystem::path(L"\\\\?\\UNC\\" + w.substr(2));
+    return std::filesystem::path(L"\\\\?\\" + w);
 }
 
 bool ensureDirectory(const std::filesystem::path& dir) {
