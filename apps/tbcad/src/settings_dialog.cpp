@@ -46,9 +46,14 @@ void SettingsDialog::draw(ui::AppCore& core) {
     ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Appearing);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
                             ImVec2(0.5f, 0.5f));
-    open_ = ImGui::BeginPopupModal("Settings", nullptr, ImGuiWindowFlags_NoSavedSettings);
+    bool keepOpen = true;  // the title-bar X closes it, like Close and Esc
+    open_ = ImGui::BeginPopupModal("Settings", &keepOpen, ImGuiWindowFlags_NoSavedSettings);
     if (!open_)
         return;
+    if (!keepOpen) {
+        capturing_.clear();
+        ImGui::CloseCurrentPopup();
+    }
     const bool capturingAtStart = !capturing_.empty();
     if (ImGui::BeginTabBar("##settingsPages")) {
         if (ImGui::BeginTabItem("General", nullptr, pageFlags("General"))) {
