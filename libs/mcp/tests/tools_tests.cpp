@@ -352,7 +352,7 @@ TEST_CASE("permission: deny, read-only and allow-once") {
         std::string before = r.dumpDoc();
         std::string e =
             r.fails("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}]})"));
-        CHECK(e.find("not allowed") != std::string::npos);
+        CHECK(e.find("did not allow editing") != std::string::npos);
         CHECK(r.dumpDoc() == before);
         r.ok("get_drawing_info");
     }
