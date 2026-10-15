@@ -20,8 +20,10 @@ CommandContext::~CommandContext() = default;
 Transaction& CommandContext::tx() {
     if (parent_)
         return parent_->tx();
-    if (!tx_)
+    if (!tx_) {
         tx_.emplace(doc_.begin(label_));
+        tx_->setDefaultOwner(host_.drawingOwner());
+    }
     return *tx_;
 }
 

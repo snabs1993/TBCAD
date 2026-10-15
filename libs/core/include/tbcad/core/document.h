@@ -352,6 +352,9 @@ public:
 
     // Entities. `owner` null = model space, otherwise the block definition that gets the entity.
     Result<EntityId> add(Entity entity, BlockId owner = {});
+    // Where add() puts an entity when no owner is given: a drawing command run on a layout sheet
+    // draws on the sheet, not in model space. Null = model space.
+    void setDefaultOwner(BlockId owner) { defaultOwner_ = owner; }
     Result<void> modify(EntityId id, const std::function<void(Entity&)>& fn);
     Result<void> erase(EntityId id);
     Result<void> bringToFront(EntityId id);
@@ -428,6 +431,7 @@ private:
     std::vector<Entity> beforeSnaps_{};                      // pre-existing entities touched
     std::unordered_map<EntityId, std::uint32_t> touched_{};  // id -> index into beforeSnaps_
     std::vector<EntityId> outOfArea_{};
+    BlockId defaultOwner_{};
     std::optional<Header> headerBefore_{};
     std::map<EntityId, OrderChange> order_{};
     Pending<Layer, LayerId> pLayers_{};

@@ -455,14 +455,16 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 std::vector<EntityId> found;
                 if (up == "ALL" || up == "A") {
                     doc_.forEachEntity([&](const Entity& e) {
-                        if (e.common.visible && !doc_.ownerBlock(e.common.id) &&
+                        if (e.common.visible &&
+                            doc_.ownerBlock(e.common.id) == host_.drawingOwner() &&
                             accepts(e.common.id))
                             found.push_back(e.common.id);
                     });
                 } else if (up == "LAST" || up == "L") {
                     const Entity* last = nullptr;
                     doc_.forEachEntity([&](const Entity& e) {
-                        if (e.common.visible && !doc_.ownerBlock(e.common.id) &&
+                        if (e.common.visible &&
+                            doc_.ownerBlock(e.common.id) == host_.drawingOwner() &&
                             accepts(e.common.id) && (!last || e.common.id > last->common.id))
                             last = &e;
                     });

@@ -47,6 +47,8 @@ void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
     const DimStyle& cur = dim::styleOf(doc, doc.header().currentDimStyle);
     if (cur.id != kDimStyleStandard || cur.overallScale != 1)
         return;
+    if (ctx.host().drawingOwner())
+        return;  // on a sheet, millimetres are paper millimetres: the style fits as it is
     // How big the drawing is decides too (a script has no view; a plan printed on a sheet needs
     // text about extent/160 tall): the larger of the two wishes wins.
     bool any = false;

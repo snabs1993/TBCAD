@@ -38,7 +38,7 @@ TEST_CASE("switching to a layout shows the sheet and goes back to the model view
     CHECK(core.camera().screenToWorld({0, 0}).x <= 1.0);  // the sheet starts at x = 0
     CHECK(core.camera().pixelsPerMm < 5);
 
-    // Clicks do nothing in a read-only layout view.
+    // Clicking an empty sheet selects nothing.
     core.click({core.camera().worldToScreen({100, 100}), false, false});
     CHECK(core.selection().empty());
 
@@ -119,4 +119,44 @@ TEST_CASE("double click in a viewport goes to model space showing that viewport"
     CHECK(core.camera().center.y == doctest::Approx(3000).epsilon(0.01));
     // 200 mm of sheet at 1:50 is 10 m of model across, so the view shows about that much.
     CHECK(core.camera().visibleWorld().max.x - core.camera().visibleWorld().min.x >= 10000);
+}
+
+TEST_CASE("objects can be drawn on, picked and erased from a layout sheet") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper4") / "cfg", tempDir("paper4") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.zoomExtents();
+    core.submitText("TESTLINE");
+    core.submitText("10,10");
+    core.submitText("200,10");
+    // The line is on the sheet, not in model space.
+    CHECK(core.document().modelSpace().empty());
+    const auto lay = layout::findLayout(core.document(), "A");
+    REQUIRE(lay);
+    const BlockDef* sheet = core.document().block(lay->content);
+    REQUIRE(sheet);
+    REQUIRE(sheet->entities.size() == 1);
+    core.updateFrame();
+
+    // Clicking it selects it; ERASE removes it.
+    core.click({core.camera().worldToScreen({100, 10}), false, false});
+    CHECK(core.selection().size() == 1);
+    core.submitText("TESTERASE");
+    core.updateFrame();
+    CHECK(core.document().block(lay->content)->entities.empty());
+
+    // Back in model space nothing of that is left over.
+    CHECK(core.setActiveLayout(""));
+    CHECK(core.selection().empty());
+    core.submitText("TESTLINE");
+    core.submitText("0,0");
+    core.submitText("50,0");
+    CHECK(core.document().modelSpace().size() == 1);
 }

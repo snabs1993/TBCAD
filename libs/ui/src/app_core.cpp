@@ -210,7 +210,10 @@ void AppCore::leavePaper() {
     camera_.viewportH = h;
     activeLayout_.clear();
     paper_.clear();
+    paperIndex_.bulkLoad(std::span<const index::IdBox>{});
+    selection_.clear();
     lastTessellatedFor_ = {};
+    notifySessionHooks();
     settings_.setString("plot.layout", "");  // PLOT follows what is on screen
 }
 
@@ -237,6 +240,8 @@ bool AppCore::setActiveLayout(const std::string& name) {
     activeLayout_ = name;
     settings_.setString("plot.layout", name);  // PLOT follows what is on screen
     paperRevision_ = session_->doc.revision();
+    rebuildPaperIndex();
+    notifySessionHooks();
     camera_.fit(paper_.sheet());
     return true;
 }
@@ -440,7 +445,32 @@ const Document& AppCore::document() const {
     return session_->doc;
 }
 const index::SpatialIndex& AppCore::spatialIndex() const {
-    return session_->index;
+    return inPaperSpace() ? paperIndex_ : session_->index;
+}
+
+BlockId AppCore::drawingOwner() const {
+    if (!session_ || !inPaperSpace())
+        return {};
+    const auto lay = layout::findLayout(session_->doc, activeLayout_);
+    return lay ? lay->content : BlockId{};
+}
+
+void AppCore::rebuildPaperIndex() {
+    std::vector<index::IdBox> items;
+    if (session_ && inPaperSpace()) {
+        const Document& d = session_->doc;
+        if (const BlockDef* b = d.block(drawingOwner())) {
+            for (EntityId id : b->entities) {
+                const Entity* e = d.find(id);
+                if (!e)
+                    continue;
+                const BBox2 box = geom::bounds(*e, d);
+                if (!box.empty())
+                    items.emplace_back(id, box);
+            }
+        }
+    }
+    paperIndex_.bulkLoad(items);
 }
 cmd::UndoStack& AppCore::undoStack() {
     return session_->undo;
@@ -1294,6 +1324,8 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         } else if (session_->doc.revision() != paperRevision_) {
             paperRevision_ = session_->doc.revision();
             paper_.build(session_->doc, activeLayout_);
+            rebuildPaperIndex();
+            pruneSelection();
         }
         if (inPaperSpace())
             return;
@@ -1376,18 +1408,18 @@ cmd::RawInput AppCore::makeRaw(const PointerState& p) const {
 }
 
 void AppCore::updateHover(const PointerState& p) {
-    if (inPaperSpace())
-        return;
     std::vector<EntityId> hover;
     bool wantsHover =
         !runner().active() || (prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Selection ||
                                            prompt_->kind == cmd::PromptInfo::Kind::Entity));
     if (wantsHover) {
         Vec2 w = camera_.screenToWorld(p.screen);
-        if (auto id = pickEntity(session_->doc, session_->index, w, apertureMm()))
+        if (auto id = pickEntity(session_->doc, spatialIndex(), w, apertureMm()))
             hover.push_back(*id);
     }
     hoverId_ = hover.empty() ? EntityId{} : hover.front();
+    if (inPaperSpace())
+        return;  // the sheet draws its own highlight (buildOverlay)
     hover.insert(hover.end(), flashIds_.begin(), flashIds_.end());
     scene_.setHighlighted(hover);
 }
@@ -1429,8 +1461,6 @@ std::string AppCore::describeEntity(EntityId id) const {
 }
 
 void AppCore::pointerMoved(const PointerState& p) {
-    if (inPaperSpace())
-        return;
     lastPointer_ = p;
     cursorInside_ = true;
     cmd::RawInput raw = makeRaw(p);
@@ -1513,8 +1543,6 @@ bool AppCore::pressOnGrip(const PointerState& p) {
 }
 
 void AppCore::click(const PointerState& p) {
-    if (inPaperSpace())
-        return;
     cmd::RawInput raw = makeRaw(p);
     Vec2 world = raw.worldCursor;
     cmd::CommandRunner& run = runner();
@@ -1529,7 +1557,7 @@ void AppCore::click(const PointerState& p) {
                 break;
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:
-                if (auto id = pickEntity(session_->doc, session_->index, world, apertureMm()))
+                if (auto id = pickEntity(session_->doc, spatialIndex(), world, apertureMm()))
                     run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
             default:
@@ -1544,7 +1572,7 @@ void AppCore::click(const PointerState& p) {
                 return;
         }
     }
-    auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
+    auto id = pickEntity(session_->doc, spatialIndex(), world, apertureMm());
     if (!id) {
         if (!p.shift)
             clearSelection();
@@ -1554,7 +1582,10 @@ void AppCore::click(const PointerState& p) {
 }
 
 void AppCore::doubleClick(const PointerState& p) {
-    if (inPaperSpace()) {
+    const bool onSheetObject =
+        inPaperSpace() && !runner().active() &&
+        pickEntity(session_->doc, spatialIndex(), camera_.screenToWorld(p.screen), apertureMm());
+    if (inPaperSpace() && !onSheetObject && !runner().active()) {
         // A double click inside a viewport goes to model space, showing what the viewport shows
         // there, so the drawing can be edited from the sheet.
         const Vec2 at = camera_.screenToWorld(p.screen);
@@ -1577,7 +1608,7 @@ void AppCore::doubleClick(const PointerState& p) {
         return;
     }
     Vec2 world = makeRaw(p).worldCursor;
-    auto id = pickEntity(session_->doc, session_->index, world, apertureMm());
+    auto id = pickEntity(session_->doc, spatialIndex(), world, apertureMm());
     const Entity* e = id ? session_->doc.find(*id) : nullptr;
     if (!e) {
         click(p);
@@ -1591,15 +1622,13 @@ void AppCore::doubleClick(const PointerState& p) {
 }
 
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
-    if (inPaperSpace())
-        return;
     const bool crossing = dragIsCrossing(a.x, b.x);
     Vec2 wa = camera_.screenToWorld(a);
     Vec2 wb = camera_.screenToWorld(b);
     BBox2 box;
     box.expand(wa);
     box.expand(wb);
-    std::vector<EntityId> ids = selectInBox(session_->doc, session_->index, box, crossing);
+    std::vector<EntityId> ids = selectInBox(session_->doc, spatialIndex(), box, crossing);
     cmd::CommandRunner& run = runner();
     if (run.active()) {
         if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
@@ -1613,8 +1642,6 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
 }
 
 void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
-    if (inPaperSpace())
-        return;
     if (screenPath.size() < 3)
         return;
     std::vector<Vec2> poly;
@@ -1622,7 +1649,7 @@ void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerStat
     for (const Vec2& s : screenPath)
         poly.push_back(camera_.screenToWorld(s));
     const bool crossing = dragIsCrossing(screenPath.front().x, screenPath.back().x);
-    std::vector<EntityId> ids = selectInPolygon(session_->doc, session_->index, poly, crossing);
+    std::vector<EntityId> ids = selectInPolygon(session_->doc, spatialIndex(), poly, crossing);
     cmd::CommandRunner& run = runner();
     if (run.active()) {
         if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
@@ -1642,7 +1669,7 @@ void AppCore::cycleClick(const PointerState& p) {
         return click(p);
     // A new spot starts a new stack; the same spot goes on to the next object in it.
     if (cycleStack_.empty() || distance(world, cycleAt_) > aperture) {
-        cycleStack_ = pickAllAt(session_->doc, session_->index, world, aperture);
+        cycleStack_ = pickAllAt(session_->doc, spatialIndex(), world, aperture);
         cycleCurrent_.reset();
         cycleAt_ = world;
     }
@@ -1706,12 +1733,11 @@ void AppCore::pruneSelection() {
 
 void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     overlay.clear();
-    if (inPaperSpace())
-        return;
     // Command preview (rubber band, ghost geometry).
     if (hasPreview_) {
         render::OverlayStyle st;
-        st.color = {255, 255, 255, 255};
+        const Rgba ink = inPaperSpace() ? Rgba{20, 20, 20, 255} : Rgba{255, 255, 255, 255};
+        st.color = ink;
         st.widthPx = 1.0;
         st.dashPx = 6;
         st.gapPx = 4;
@@ -1729,8 +1755,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
                         overlay.polyline(render::Space::World, ring, true, solid);
             } else if (const auto* pts = std::get_if<DisplayPoints>(&item)) {
                 for (const Vec2& pt : pts->pts)
-                    overlay.marker(render::Space::World, pt, render::MarkerKind::Cross, 6,
-                                   {255, 255, 255, 255});
+                    overlay.marker(render::Space::World, pt, render::MarkerKind::Cross, 6, ink);
             }
         }
     }
@@ -1780,7 +1805,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         const double arm = mode == "short" ? std::max(8.0, camera_.viewportW * 0.05)
                                            : std::max(camera_.viewportW, camera_.viewportH);
         render::OverlayStyle cross;
-        cross.color = ui::withAlpha(theme_.text, 0.6);
+        cross.color = inPaperSpace() ? Rgba{110, 110, 110, 200} : ui::withAlpha(theme_.text, 0.6);
         cross.widthPx = 1.0;
         if (mode != "off") {
             overlay.line(render::Space::Screen, {c.x - arm, c.y}, {c.x + arm, c.y}, cross);
@@ -1795,7 +1820,7 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             Vec2 box[4] = {
                 {c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}};
             render::OverlayStyle pb;
-            pb.color = ui::withAlpha(theme_.text, 0.85);
+            pb.color = inPaperSpace() ? Rgba{90, 90, 90, 230} : ui::withAlpha(theme_.text, 0.85);
             overlay.polyline(render::Space::Screen, box, true, pb);
         }
     }
@@ -1822,6 +1847,37 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             outlineHatch(id, theme_.select);
         if (hoverId_ && !std::count(selection_.begin(), selection_.end(), hoverId_))
             outlineHatch(hoverId_, ui::withAlpha(theme_.select, 0.5));
+    }
+    if (inPaperSpace()) {
+        // The sheet is a flat picture, so what is selected or under the pointer is outlined here.
+        geom::DisplayContext dc;
+        dc.pixelSizeMm = camera_.pixelSizeMm();
+        auto outline = [&](EntityId id, Rgba color) {
+            const Entity* e = session_->doc.find(id);
+            if (!e)
+                return;
+            DisplayList dl;
+            geom::buildDisplay(session_->doc, *e, dc, dl);
+            render::OverlayStyle st;
+            st.color = color;
+            st.widthPx = 2.0;
+            for (const auto& item : dl.items) {
+                if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
+                    if (pl->pts.size() >= 2)
+                        overlay.polyline(render::Space::World, pl->pts, pl->closed, st);
+                } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
+                    for (const auto& ring : fill->rings)
+                        if (ring.size() >= 2)
+                            overlay.polyline(render::Space::World, ring, true, st);
+                }
+            }
+        };
+        for (EntityId id : selection_)
+            outline(id, theme_.select);
+        for (EntityId id : runner().collected())
+            outline(id, theme_.select);
+        if (hoverId_ && !std::count(selection_.begin(), selection_.end(), hoverId_))
+            outline(hoverId_, ui::withAlpha(theme_.select, 0.5));
     }
     if (ui) {
         PanelContext pc = makePanelContext();
@@ -1877,7 +1933,7 @@ void AppCore::applyUiKeybindings(const UiRegistry& ui) {
 void AppCore::notifySessionHooks() {
     if (!ui_ || !session_)
         return;
-    SessionInfo info{&session_->doc, &session_->index, this};
+    SessionInfo info{&session_->doc, &spatialIndex(), this};
     for (const auto& hook : ui_->sessionHooks())
         hook(info);
 }
