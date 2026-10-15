@@ -160,3 +160,20 @@ TEST_CASE("objects can be drawn on, picked and erased from a layout sheet") {
     core.submitText("50,0");
     CHECK(core.document().modelSpace().size() == 1);
 }
+
+TEST_CASE("a layout asked for by a command is shown once the command is over") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper6") / "cfg", tempDir("paper6") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "Plan", "A3").ok());
+        tx.commit();
+    }
+    CHECK_FALSE(core.inPaperSpace());
+    core.setSetting("layout.show", "Plan");
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(core.inPaperSpace());
+    CHECK(core.settings().getString("plot.layout", "?") == "Plan");
+}

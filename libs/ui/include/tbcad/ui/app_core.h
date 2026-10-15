@@ -427,6 +427,8 @@ private:
     std::chrono::steady_clock::time_point lastXrefCheck_{};
     int xrefReloadWait_ = 0;
     bool viewStatePending_ = false;
+    std::string pendingLayout_;  // layout to show when the running command ends
+    void applyPendingLayout();
     underlay::ImageCache imageCache_{};
 };
 
