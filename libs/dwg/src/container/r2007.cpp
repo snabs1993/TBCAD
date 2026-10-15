@@ -225,7 +225,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
     {
         std::string list;
         std::uint64_t at = 0;
-        for (std::size_t i = 0; i + 16 <= pm.size() && i < 16 * 40; i += 16) {
+        for (std::size_t i = 0; i + 16 <= pm.size() && i < 16 * 400; i += 16) {
             list += " " + std::to_string(static_cast<std::int64_t>(le64(pm, i + 8))) + ":" +
                     std::to_string(le64(pm, i)) + "@" + std::to_string(at);
             at += le64(pm, i);
@@ -237,6 +237,11 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
     const auto smIt = pages.find(static_cast<std::int64_t>(sectionsMapId));
     if (smIt == pages.end())
         return makeError(ErrorCode::Parse, "the DWG section map is missing");
+    tr("section map page: id " + std::to_string(sectionsMapId) + ", size " +
+       std::to_string(smIt->second.size) + " at data offset " +
+       std::to_string(smIt->second.offset) + " (file offset " +
+       std::to_string(kStreamBase + smIt->second.offset) + "), first bytes " +
+       hexBytes(file, static_cast<std::size_t>(kStreamBase + smIt->second.offset), 64));
     std::vector<std::uint8_t> sm;
     if (!readSystemPage(file, kStreamBase + smIt->second.offset, sectionsMapComp,
                         sectionsMapExpanded, smIt->second.size / 255, sm, notes, "section map",

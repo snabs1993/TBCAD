@@ -2543,7 +2543,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r63: R2004 entities read without the links flag, data end exact; r62: R2007 system "
+    return "r64: R2007 section map page position traced, full page list; r63: R2004 entities read "
+           "without the "
+           "links flag, data end exact; r62: R2007 system "
            "pages tried with 239 and 251 data bytes per block and a plausibility "
            "check; r61: R2004 objects found by walking the stream like R2010; r60: R2007 page map "
            "and "
