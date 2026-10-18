@@ -11,10 +11,10 @@
 
 #include "gui.h"
 
-using tbcad::app::Gui;
-using tbcad::app::ViewportRect;
 using tbcad::app::applyTheme;
 using tbcad::app::buildFonts;
+using tbcad::app::Gui;
+using tbcad::app::ViewportRect;
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/cmd/registry.h"
 #include "tbcad/mcp/png.h"
@@ -39,14 +39,19 @@ void onImGuiError(ImGuiContext*, void*, const char* msg) {
 
 // The text a person sees on a widget: its label up to "##".
 std::string visibleText(const std::string& label) {
-    const auto at = label.find("##");
-    return at == std::string::npos ? label : label.substr(0, at);
+    std::string s = label.substr(0, label.find("##"));
+    const auto a = s.find_first_not_of(' ');  // tree rows are indented with spaces
+    if (a == std::string::npos)
+        return {};
+    return s.substr(a, s.find_last_not_of(' ') - a + 1);
 }
 
+// Combos and a few other widgets report no label. Their id is the hash of the label they were
+// created with, so a query like "##filters" is recognised by hashing it with the same seed.
 bool labelMatches(const imgui_items::Item& it, const std::string& want) {
-    if (it.label.empty())
-        return false;
-    return it.label == want || visibleText(it.label) == want;
+    if (!it.label.empty() && (it.label == want || visibleText(it.label) == want))
+        return true;
+    return it.seed != 0 && ImHashStr(want.c_str(), 0, it.seed) == it.id;
 }
 
 // ---- software rasteriser -------------------------------------------------------------------
@@ -67,11 +72,11 @@ void fillTriangle(Image& img, const ImDrawVert& a, const ImDrawVert& b, const Im
     if (area == 0)
         return;
     const float minX = std::max({0.0f, clip.x, std::floor(std::min({a.pos.x, b.pos.x, c.pos.x}))});
-    const float maxX = std::min({float(img.width), clip.z,
-                                 std::ceil(std::max({a.pos.x, b.pos.x, c.pos.x}))});
+    const float maxX =
+        std::min({float(img.width), clip.z, std::ceil(std::max({a.pos.x, b.pos.x, c.pos.x}))});
     const float minY = std::max({0.0f, clip.y, std::floor(std::min({a.pos.y, b.pos.y, c.pos.y}))});
-    const float maxY = std::min({float(img.height), clip.w,
-                                 std::ceil(std::max({a.pos.y, b.pos.y, c.pos.y}))});
+    const float maxY =
+        std::min({float(img.height), clip.w, std::ceil(std::max({a.pos.y, b.pos.y, c.pos.y}))});
     const float inv = 1.0f / area;
     // Top-left rule: a pixel centre exactly on an edge belongs to one of the two triangles only.
     auto owns = [&](const ImVec2& p, const ImVec2& q) {
@@ -201,8 +206,8 @@ bool matchesGolden(const Image& img, const std::string& name, const Tolerance& t
     }
     if (want->width != img.width || want->height != img.height) {
         writePng(failureDir() / (name + ".actual.png"), img);
-        MESSAGE("golden " << name << " is " << want->width << "x" << want->height << ", the frame is "
-                          << img.width << "x" << img.height);
+        MESSAGE("golden " << name << " is " << want->width << "x" << want->height
+                          << ", the frame is " << img.width << "x" << img.height);
         return false;
     }
     Image diff = img;
@@ -432,9 +437,11 @@ void Harness::scroll(float x, float y, float dy) {
 }
 
 bool Harness::clickAt(const imgui_items::Item& item, int button) {
-    // The centre can be hidden behind another window; the left edge of the item is the better bet
-    // for wide widgets, so try the middle first and fall back to a point near the left.
-    click((item.min.x + item.max.x) * 0.5f, (item.min.y + item.max.y) * 0.5f, button);
+    // Wide items (a table row spanning every column) have column dividers in the middle that a
+    // press would grab, so those are clicked near their left end; the rest in the centre.
+    const float width = item.max.x - item.min.x;
+    const float x = width > 220.0f ? item.min.x + 24.0f : (item.min.x + item.max.x) * 0.5f;
+    click(x, (item.min.y + item.max.y) * 0.5f, button);
     return true;
 }
 
@@ -509,7 +516,7 @@ bool Harness::enterText(const std::string& label, const std::string& text,
 
 void Harness::command(const std::string& line) {
     // The command window keeps keyboard focus for typing; clicking its input makes sure.
-    if (const imgui_items::Item* in = find("##cmd")) {
+    if (const imgui_items::Item* in = find("##command")) {
         const imgui_items::Item copy = *in;
         clickAt(copy, 0);
     }

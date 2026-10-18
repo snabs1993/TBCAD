@@ -13,6 +13,8 @@ namespace tbcad::imgui_items {
 
 struct Item {
     ImGuiID id = 0;
+    ImGuiID seed =
+        0;  // top of the ID stack when the widget was added: id == ImHashStr(label, 0, seed)
     ImVec2 min{}, max{};   // screen rectangle
     std::string window{};  // name of the window it was added to
     std::string label{};   // from ImGuiTestEngineHook_ItemInfo, empty when the widget gave none

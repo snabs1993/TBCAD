@@ -108,6 +108,26 @@ tbcad [file.tbcad|file.dxf] [--script "CMD;CMD"] [--frames N] [--screenshot out.
 was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenGL 3.3, unless
 `TBCAD_REQUIRE_GUI` is set. `--gate` runs the M1 measurements (see the pull request for the limits).
 
+## Automated GUI tests
+
+`tbcad_gui_tests` (apps/tbcad/tests) drives the real window code (menus, panels, dialogs, command
+window) without a display or a GPU: GLFW runs on its null platform, Dear ImGui receives queued mouse
+and keyboard events, and a small software rasteriser paints the draw lists into a picture. It runs
+in ctest on every platform, so a panel that compiles but does nothing fails a pull request.
+
+- `guitest::Harness` (`gui_harness.h`): `click("Label", "Window")`, `rightClick`, `enterText`,
+  `key`, `holdCtrl`, `command("LINE")`, `windowShot("Layers")`. Widgets are found by the label they
+  were created with (recorded by `cmake/deps/imgui_extra/tbcad_imgui_items.*`); combo boxes and
+  other unlabelled widgets by their `"##id"`. Only the front tab of a docked group draws, so click
+  its tab first. Open popups and combos are windows named `##Popup...`, `##Combo...`, `##Menu...`.
+- Panel state is shared between tests in one run (the panels keep it in statics), so each test
+  filters or selects what it needs instead of relying on a clean panel.
+- `matchesGolden(image, "name")` compares with `apps/tbcad/tests/golden/name.png`, allowing a small
+  per-channel difference and a small share of differing pixels. On a mismatch the actual and
+  difference pictures are written to `<build>/apps/tbcad/gui-test-failures`. Run with
+  `TBCAD_UPDATE_GOLDEN=1` to write the golden files after a change on purpose, and look at them
+  before committing. Take golden pictures of one window, never of text that holds a path.
+
 ## Key bindings
 
 Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Action ids:

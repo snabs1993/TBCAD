@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <map>
 #include <set>
+#include <sstream>
 
 #include "panel_util.h"
 #include "panels.h"
@@ -88,7 +89,26 @@ std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
     std::string f = lowered(st.filter);
     // "name:S-* frozen", "branch:Walls" ... use the filter language of -LAYERFILTER; plain text is
     // a substring of the layer path.
-    const bool expression = f.find(':') != std::string::npos;
+    // A filter made only of state words ("off", "frozen locked", "not:used") is an expression too;
+    // that is what the Filters... drop-down sets.
+    auto onlyStateWords = [&] {
+        static const char* const kWords[] = {"on",     "off",      "frozen", "thawed",
+                                             "locked", "unlocked", "plot",   "noplot",
+                                             "used",   "empty",    "current"};
+        std::istringstream in(f);
+        std::string w;
+        bool any = false;
+        while (in >> w) {
+            if (w.compare(0, 4, "not:") == 0)
+                w = w.substr(4);
+            if (std::find_if(std::begin(kWords), std::end(kWords),
+                             [&](const char* k) { return w == k; }) == std::end(kWords))
+                return false;
+            any = true;
+        }
+        return any;
+    };
+    const bool expression = f.find(':') != std::string::npos || onlyStateWords();
     auto matches = [&](LayerId id) {
         if (f.empty())
             return true;
@@ -769,6 +789,12 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                         st.collapsed.erase(row.id.value);
                     else
                         st.collapsed.insert(row.id.value);
+                }
+                // The name cell's menu can merge or delete this very layer.
+                l = doc.layer(row.id);
+                if (!l) {
+                    ImGui::PopID();
+                    continue;
                 }
 
                 if (dimmed)

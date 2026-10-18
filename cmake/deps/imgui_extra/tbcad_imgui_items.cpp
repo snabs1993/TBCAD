@@ -48,12 +48,16 @@ void ImGuiTestEngineHook_ItemAdd(ImGuiContext* ctx, ImGuiID id, const ImRect& bb
     it.id = id;
     it.min = bb.Min;
     it.max = bb.Max;
-    if (ctx->CurrentWindow)
+    if (ctx->CurrentWindow) {
         it.window = ctx->CurrentWindow->Name;
+        if (ctx->CurrentWindow->IDStack.Size > 0)
+            it.seed = ctx->CurrentWindow->IDStack.back();
+    }
     tbcad::imgui_items::state().items.push_back(std::move(it));
 }
 
-void ImGuiTestEngineHook_ItemInfo(ImGuiContext*, ImGuiID id, const char* label, ImGuiItemStatusFlags) {
+void ImGuiTestEngineHook_ItemInfo(ImGuiContext*, ImGuiID id, const char* label,
+                                  ImGuiItemStatusFlags) {
     if (label)
         tbcad::imgui_items::state().labels[id] = label;
 }
