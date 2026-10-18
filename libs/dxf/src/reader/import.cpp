@@ -516,6 +516,22 @@ void Importer::readDimStyle(const Record& r) {
         if (fixed != styleHeights_.end() && ds.overallScale > 0)
             ds.textHeight = fixed->second / ds.overallScale;
     }
+    // DIMBLK: the name of a built-in arrow block (a file that stores a handle there matches none).
+    {
+        std::string arrow = std::string(r.raw(342));
+        if (arrow.empty())
+            arrow = std::string(r.raw(343));
+        for (char& c : arrow)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (arrow == "_ARCHTICK" || arrow == "_OBLIQUE")
+            ds.arrowType = ArrowType::ArchTick;
+        else if (arrow == "_DOT" || arrow == "_DOTSMALL" || arrow == "_DOTBLANK")
+            ds.arrowType = ArrowType::Dot;
+        else if (arrow == "_OPEN30" || arrow == "_OPEN")
+            ds.arrowType = ArrowType::Open30;
+        else if (arrow == "_NONE")
+            ds.arrowType = ArrowType::None;
+    }
     nonNegative(147, k_, ds.textGap);          // DIMGAP
     nonNegative(42, k_, ds.extLineOffset);     // DIMEXO
     nonNegative(44, k_, ds.extLineExtension);  // DIMEXE
