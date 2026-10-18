@@ -222,3 +222,30 @@ TEST_CASE("INSERT in a window asks the attribute values in one dialog") {
     });
     CHECK(found);
 }
+
+TEST_CASE("two attributes far apart both reach the insert") {
+    Fixture f;
+    REQUIRE(f.host->run("-ATTDEF", {"", "NAME", "Name", "Anon", "0,500", "2", "0"}).finished);
+    REQUIRE(f.host->run("-ATTDEF", {"", "AREA", "Area m2", "0", "0,0", "2", "0"}).finished);
+    f.host->setSelection(f.modelSpace());
+    f.host->run("BLOCK", {"RT4", "0,0", "D"});
+    REQUIRE(f.doc.blockByName("RT4"));
+    CHECK(f.doc.blockByName("RT4")->entities.size() == 2);
+    f.host->run("INSERT", {"RT4", "100,100", "", "", "", "Alice", "12"});
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.modelSpace().back()));
+    REQUIRE(ins);
+    CHECK(ins->attribs.size() == 2);
+}
+
+TEST_CASE("the insert dialog asks for both far apart attributes") {
+    Fixture f;
+    REQUIRE(f.host->run("-ATTDEF", {"", "NAME", "Name", "Anon", "0,500", "2", "0"}).finished);
+    REQUIRE(f.host->run("-ATTDEF", {"", "AREA", "Area m2", "0", "0,0", "2", "0"}).finished);
+    f.host->setSelection(f.modelSpace());
+    f.host->run("BLOCK", {"RT4", "0,0", "D"});
+    DialogHost host(f.doc, f.reg);
+    host.run("INSERT", {"RT4", "100,100"});
+    const std::string fields = host.setting("tmp.insatt.fields").value_or("");
+    CHECK(fields.find("NAME") != std::string::npos);
+    CHECK(fields.find("AREA") != std::string::npos);
+}

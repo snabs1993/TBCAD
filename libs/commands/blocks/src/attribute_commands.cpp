@@ -146,7 +146,8 @@ public:
             ctx.message(added.error().message);
             co_return;
         }
-        ctx.host().setSelection({added.value()});
+        // Not left selected: BLOCK would take the lone selected attribute as its pre-selection
+        // and never ask for the others.
         ctx.setUndoLabel("Define attribute " + info.tag);
         ctx.message("Attribute " + info.tag +
                     " defined. Select it with the other objects in BLOCK.");

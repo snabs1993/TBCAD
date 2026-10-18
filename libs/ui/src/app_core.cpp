@@ -1918,8 +1918,36 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
                     overlay.polyline(render::Space::World, pts, true, outline);
             }
         };
+        // The selected hatches' outlines only change with the selection, the drawing or a zoom
+        // step, so they are kept between frames: select-all on a drawing with thousands of
+        // hatches would otherwise flatten every boundary on every pan frame.
+        std::uint64_t key = session_->doc.revision() * 1000003ull + selection_.size();
         for (EntityId id : selection_)
-            outlineHatch(id, theme_.select);
+            key = (key ^ id.value) * 1099511628211ull;
+        key = key * 1000003ull +
+              static_cast<std::uint64_t>(
+                  static_cast<std::int64_t>(std::floor(std::log2(camera_.pixelSizeMm()) * 2.0)) +
+                  4096);
+        if (key != hatchOutlines_.key) {
+            hatchOutlines_.key = key;
+            hatchOutlines_.loops.clear();
+            for (EntityId id : selection_) {
+                const Entity* e = session_->doc.find(id);
+                const auto* h = e ? entityAs<HatchData>(*e) : nullptr;
+                if (!h)
+                    continue;
+                for (const HatchLoop& loop : h->loops) {
+                    std::vector<Vec2> pts;
+                    for (const geom::CurveRef& c : hatch::loopCurves(loop))
+                        geom::flatten(c, camera_.pixelSizeMm(), pts);
+                    if (pts.size() >= 2)
+                        hatchOutlines_.loops.push_back(std::move(pts));
+                }
+            }
+        }
+        outline.color = theme_.select;
+        for (const auto& pts : hatchOutlines_.loops)
+            overlay.polyline(render::Space::World, pts, true, outline);
         if (hoverId_ && !std::count(selection_.begin(), selection_.end(), hoverId_))
             outlineHatch(hoverId_, ui::withAlpha(theme_.select, 0.5));
     }
