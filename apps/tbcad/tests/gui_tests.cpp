@@ -1369,3 +1369,56 @@ TEST_CASE("text editor: TEXT is typed in the box on the drawing, Thai included")
         CHECK((*t)->height == doctest::Approx(5));
     });
 }
+
+TEST_CASE("object properties: annotation section, scales and *varies* with a mixed selection") {
+    Harness h(1920, 1080);
+    run(h, "-LAYER New A-One");
+    run(h, "-LAYER Make 0");
+    h.core().submitText("TEXT");
+    h.core().submitText("0,0");
+    h.core().submitText("2.5");
+    h.core().submitText("0");
+    h.frame(6);
+    h.type("Note");
+    h.key(ImGuiKey_Enter);
+    h.frame(4);
+    REQUIRE(entityCount(h) == 1);
+    h.core().selectAll();
+    h.frame(2);
+    REQUIRE(h.click("Object Properties", "DockSpace"));
+    h.frame(3);
+    auto textAnno = [&] {
+        bool on = false;
+        h.core().document().forEachEntity([&](const Entity& e) { on = e.common.annotative; });
+        return on;
+    };
+
+    // The section is there for text; the checkbox makes it annotative in one undo step.
+    REQUIRE(h.has("Annotative", "Object Properties"));
+    CHECK_FALSE(textAnno());
+    REQUIRE(h.click("Annotative", "Object Properties"));
+    h.frame(3);
+    h.core().pressEscape();
+    CHECK(textAnno());
+    CHECK(h.has("Change...", "Object Properties"));
+    CHECK(matchesGolden(h.windowShot("Object Properties"), "object_properties_text_annotative"));
+    h.command("U");
+    h.frame(3);
+    CHECK_FALSE(textAnno());
+
+    // A circle on another layer joins the selection: the layer reads *varies*, geometry hides.
+    h.core().submitText("-LAYER Make A-One");
+    h.core().pressEscape();
+    h.core().submitText("CIRCLE");
+    h.core().submitText("50,0");
+    h.core().submitText("5");
+    h.core().selectAll();
+    h.frame(4);
+    REQUIRE(h.has("##layer", "Object Properties"));
+    CHECK_FALSE(h.has("##v", "Object Properties"));  // no geometry fields for two kinds
+    // Narrowing to the circle shows its geometry again.
+    REQUIRE(h.click("##type", "Object Properties"));
+    REQUIRE(h.click("Circle (1)", "Combo"));
+    h.frame(3);
+    CHECK(h.has("##v", "Object Properties"));
+}
