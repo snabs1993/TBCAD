@@ -224,11 +224,6 @@ ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& comman
     option("orientation", "Orientation");
     option("scale", "Scale");
     option("area", "Area");
-    option("color", "Color");
-    if (const Json* st = a.find("style"); st && st->isString()) {
-        inputs.emplace_back("Style");
-        inputs.push_back(Json(Json::Object{{"text", st->asString()}}));
-    }
     if (image) {
         if (const Json* d = a.find("dpi"); d && d->isNumber()) {
             inputs.emplace_back("Resolution");
@@ -238,6 +233,13 @@ ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& comman
     // Always set the layout so an earlier call's choice does not stick: "" = model space.
     inputs.emplace_back("Layout");
     inputs.push_back(Json(Json::Object{{"text", argString(a, "layout")}}));
+    // The layout's own page setup (including its plot style table) is applied when the layout is
+    // chosen, so the caller's colour and style come after it and win.
+    option("color", "Color");
+    if (const Json* st = a.find("style"); st && st->isString()) {
+        inputs.emplace_back("Style");
+        inputs.push_back(Json(Json::Object{{"text", st->asString()}}));
+    }
     inputs.emplace_back("Export");
     inputs.emplace_back(path);
     return runWith(ctx, cmdName, inputs, false);
