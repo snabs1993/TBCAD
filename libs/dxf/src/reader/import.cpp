@@ -1155,6 +1155,8 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
                 const std::string t = dec(g.str());
                 if (t.rfind("frozen=", 0) == 0) {
                     v.frozen.push_back(t.substr(7));
+                } else if (t.rfind("vlevel=", 0) == 0) {
+                    v.level = t.substr(7);
                 } else if (t == "locked=1") {
                     v.locked = true;
                 } else if (t == "border=0" || t == "border=1") {
@@ -1347,6 +1349,10 @@ void Importer::finishLayouts() {
             std::string clipText;
             for (std::size_t i = 0; i < v.clip.size(); ++i)
                 clipText += (i ? ";" : "") + num(v.clip[i].x) + ":" + num(v.clip[i].y);
+            std::string levelId = "0";
+            if (!v.level.empty())
+                if (auto lt = levelByFold_.find(fold(v.level)); lt != levelByFold_.end())
+                    levelId = std::to_string(lt->second.value);
             std::string frozenIds;
             for (const std::string& ln : v.frozen) {
                 const auto it = layerByFold_.find(fold(ln));
@@ -1356,7 +1362,7 @@ void Importer::finishLayouts() {
             text += "V\t" + std::to_string(v.id) + "\t" + num(v.min.x) + "\t" + num(v.min.y) +
                     "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
                     num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
-                    frozenIds + "\t0\t" + (v.locked ? "1" : "0") + "\t" + clipText + "\t" +
+                    frozenIds + "\t" + levelId + "\t" + (v.locked ? "1" : "0") + "\t" + clipText + "\t" +
                     (border ? "1" : "0") + "\n";
         }
     }

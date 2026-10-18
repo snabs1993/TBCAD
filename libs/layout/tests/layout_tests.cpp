@@ -455,6 +455,14 @@ TEST_CASE("layouts imported from a DXF file are read by the layout table") {
 TEST_CASE("layouts survive a DXF export and import") {
     Document doc;
     const LayerId walls = addLayer(doc, "Walls");
+    LevelId upper;
+    {
+        auto tx = doc.begin("levels");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        tx.commit();
+    }
     run(doc, "new", [](Transaction& tx) { return createLayout(tx, "Plan", "A3"); });
     run(doc, "new", [](Transaction& tx) { return createLayout(tx, "Detail", "A4", false); });
     run(doc, "tb", [](Transaction& tx) {
@@ -686,6 +694,14 @@ TEST_CASE("a layout with six viewports on a big drawing builds quickly") {
 TEST_CASE("a copied layout keeps the sheet, the viewports and every viewport setting") {
     Document doc;
     const LayerId walls = addLayer(doc, "Walls");
+    LevelId upper;
+    {
+        auto tx = doc.begin("levels");
+        Level l;
+        l.name = "Upper";
+        upper = tx.addLevel(l).value();
+        tx.commit();
+    }
     run(doc, "new", [](Transaction& tx) { return createLayout(tx, "Plan", "A3"); });
     run(doc, "tb", [](Transaction& tx) {
         return addTitleBlock(tx, "Plan", TitleBlockFields{"P", "D", "1:100", "today", "1"});
@@ -703,6 +719,8 @@ TEST_CASE("a copied layout keeps the sheet, the viewports and every viewport set
         if (auto c = setViewportClip(tx, "Plan", b, {{210, 10}, {400, 10}, {300, 200}}); !c)
             return c;
         if (auto c = setViewportLocked(tx, "Plan", b, true); !c)
+            return c;
+        if (auto c = setViewportLevel(tx, "Plan", b, upper); !c)
             return c;
         return setViewportOn(tx, "Plan", a, false);
     });
@@ -736,6 +754,8 @@ TEST_CASE("a copied layout keeps the sheet, the viewports and every viewport set
         }
         CHECK_FALSE(cpy->viewports[0].on);
         CHECK(cpy->viewports[1].locked);
+        REQUIRE(d.level(cpy->viewports[1].level));
+        CHECK(d.level(cpy->viewports[1].level)->name == "Upper");
         CHECK(cpy->viewports[1].clip.size() == 3);
         CHECK(cpy->viewports[0].frozen.size() == 1);
     };
