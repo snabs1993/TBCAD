@@ -264,6 +264,7 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
     tr("section map stream: " + streamHex);
     tr("section map expanded: " + std::to_string(sm.size()) + " bytes: " + hexBytes(sm, 0, 200));
 
+    std::size_t dumped = 0;  // bytes of compressed streams put in the trace so far
     std::size_t pos = 0;
     while (pos + 0x40 <= sm.size()) {
         const std::uint64_t dataSize = le64(sm, pos);
@@ -360,10 +361,17 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                                      std::to_string(perBlock) +
                                      (inter ? ", interleaved" : ", plain");
                             head = hexBytes(raw, 0, 64);
-                            if (comp <= 2000 &&
-                                (name == "AcDb:Header" || name == "AcDb:Classes" ||
-                                 name == "AcDb:Handles" || name == "AcDb:AuxHeader"))
+                            // The compressed streams of the sections with a known layout are kept
+                            // in the trace: they are what the literal-run cuts are worked out from.
+                            const bool wanted =
+                                name == "AcDb:Header" || name == "AcDb:AuxHeader" ||
+                                name == "AcDb:AppInfo" || name == "AcDb:AppInfoHistory" ||
+                                name == "AcDb:SummaryInfo" || name == "AcDb:Template" ||
+                                name == "AcDb:Classes" || (name == "AcDb:Handles" && k < 3);
+                            if (wanted && comp <= 70000 && dumped + comp <= 400000) {
                                 fullStream = hexBytes(raw, 0, static_cast<std::size_t>(comp));
+                                dumped += static_cast<std::size_t>(comp);
+                            }
                         }
                     }
                     if (done)
@@ -382,8 +390,9 @@ Result<SectionSet> readSections2007(Bytes file, std::vector<std::string>& notes,
                 continue;
             }
             if (trace && !fullStream.empty())
-                tr("  stream of \"" + name + "\" (" + std::to_string(expanded) +
-                   " bytes): " + fullStream);
+                tr("  stream of \"" + name + "\" page " + std::to_string(k) + " (" +
+                   std::to_string(expanded) + " bytes, compressed " + std::to_string(comp) +
+                   "): " + fullStream);
             if (trace && k < 2)
                 tr("  page " + std::to_string(pageId) + " read as " + config + "; stream starts " +
                    head + "; expanded starts " + hexBytes(page, 0, 32));

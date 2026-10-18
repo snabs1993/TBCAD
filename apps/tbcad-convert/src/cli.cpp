@@ -260,9 +260,10 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         return fail(input + ": " + result.error().message, report);
     dxf::ImportResult& imported = result.value();
 
-    // A DWG file whose objects could not be read must not leave an empty drawing behind with a
-    // success code.
-    if (fromDwg && imported.document->modelSpaceCount() == 0 && imported.summary.layers == 0) {
+    // A DWG file whose objects could not be read must not leave an empty drawing behind. A drawing
+    // that really is empty reads without complaints, so only an empty result with warnings fails.
+    if (fromDwg && imported.document->modelSpaceCount() == 0 &&
+        report.count(dxf::Severity::Warning) + report.count(dxf::Severity::Error) > 0) {
         std::size_t read = 0;
         for (const auto& entry : imported.summary.entities)
             read += entry.second.read;
