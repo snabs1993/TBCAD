@@ -279,6 +279,26 @@ TEST_CASE("TXT2MTXT merges lines top to bottom into one multiline text") {
     CHECK(f.firstMText() == nullptr);
 }
 
+TEST_CASE("TXTEXP turns text into closed polylines and undo brings the text back") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "10", "0", "HOH"});
+    REQUIRE(f.firstText() != nullptr);
+    EntityId text = f.doc.modelSpace().front();
+    REQUIRE(
+        f.host.run("TXTEXP", {cmd::ScriptItem::select({text}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.firstText() == nullptr);
+    std::size_t closed = 0;
+    for (EntityId id : f.doc.modelSpace()) {
+        const auto* pl = entityAs<PolylineData>(*f.doc.find(id));
+        REQUIRE(pl != nullptr);
+        CHECK(pl->closed);
+        ++closed;
+    }
+    CHECK(closed >= 3);
+    CHECK(f.host.undo());
+    CHECK(f.firstText() != nullptr);
+}
+
 TEST_CASE("TCOUNT numbers text objects in selection order") {
     Fixture f;
     std::vector<EntityId> ids;
