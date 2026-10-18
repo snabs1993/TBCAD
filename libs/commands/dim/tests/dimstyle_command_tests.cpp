@@ -248,3 +248,19 @@ TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first di
     g.host->run("MLEADER", {"0,0", ScriptItem::esc()});
     CHECK(g.doc.dimStyles().size() == 1);
 }
+
+TEST_CASE("MLEADEREDIT adds and removes leader lines") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    f.host->run("MLEADEREDIT", {ScriptItem::pick(id, {5, 5}), "Add", "0,20", ""});
+    REQUIRE(entityAs<MLeaderData>(*f.doc.find(id))->lines.size() == 2);
+    CHECK(entityAs<MLeaderData>(*f.doc.find(id))->lines[1].front().y == doctest::Approx(20));
+    f.host->run("MLEADEREDIT", {ScriptItem::pick(id, {5, 5}), "Remove", "0,19", ""});
+    const auto* m = entityAs<MLeaderData>(*f.doc.find(id));
+    REQUIRE(m->lines.size() == 1);
+    CHECK(m->lines[0].front().y == doctest::Approx(0));
+    f.host->run("MLEADEREDIT", {ScriptItem::pick(id, {5, 5}), "Remove"});
+    CHECK(f.host->logContains("at least one"));
+}

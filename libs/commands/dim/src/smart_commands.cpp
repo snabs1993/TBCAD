@@ -446,10 +446,87 @@ public:
     }
 };
 
+// ---- MLEADEREDIT -------------------------------------------------------------------------------
+
+// Adds an arrowhead (a leader line to the landing) to a multileader, or removes the one nearest
+// to the pick point.
+class MLeaderEditCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MLEADEREDIT"; }
+    std::vector<std::string> defaultAliases() const override { return {"MLE"}; }
+    std::string_view description() const override {
+        return "Add or remove leader lines (arrowheads) of a multileader";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) { return entityAs<MLeaderData>(e) != nullptr; };
+        auto pick = co_await ctx.getEntity("Select a multileader", eo);
+        if (!pick.ok())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Add", "Remove"};
+        ko.defaultKeyword = "Add";
+        auto k = co_await ctx.getKeyword("Leader lines [Add/Remove] <Add>", ko);
+        if (!k.ok())
+            co_return;
+        if (k.keyword == "Add") {
+            for (;;) {
+                auto tip = co_await ctx.getPoint("Specify arrowhead location or Enter to finish",
+                                                 cmd::PointOptions{});
+                if (tip.status == cmd::Status::None)
+                    co_return;
+                if (!tip.ok())
+                    co_return;
+                ctx.setUndoLabel("MLEADEREDIT");
+                const Vec2 at = tip.point;
+                (void)ctx.tx().modify(pick.id, [at](Entity& e) {
+                    auto* m = entityAs<MLeaderData>(e);
+                    m->lines.push_back({at, m->landing});
+                });
+            }
+        } else {
+            for (;;) {
+                const Entity* e = ctx.doc().find(pick.id);
+                const auto* m = e ? entityAs<MLeaderData>(*e) : nullptr;
+                if (!m || m->lines.size() < 2) {
+                    ctx.message("A multileader keeps at least one leader line.");
+                    co_return;
+                }
+                auto at = co_await ctx.getPoint(
+                    "Specify the arrowhead to remove (nearest one) or Enter to finish",
+                    cmd::PointOptions{});
+                if (!at.ok())
+                    co_return;
+                std::size_t best = 0;
+                double bestDist = 1e300;
+                for (std::size_t i = 0; i < m->lines.size(); ++i) {
+                    if (m->lines[i].empty())
+                        continue;
+                    const double d = distance(m->lines[i].front(), at.point);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = i;
+                    }
+                }
+                ctx.setUndoLabel("MLEADEREDIT");
+                (void)ctx.tx().modify(pick.id, [best](Entity& en) {
+                    auto* md = entityAs<MLeaderData>(en);
+                    md->lines.erase(md->lines.begin() + static_cast<std::ptrdiff_t>(best));
+                });
+            }
+        }
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeSmartDimCommand() {
     return std::make_unique<SmartDimCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeMLeaderEditCommand() {
+    return std::make_unique<MLeaderEditCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeMLeaderAlignCommand() {
