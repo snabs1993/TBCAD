@@ -418,6 +418,8 @@ private:
         BBox2 box{};
     } extentsCache_{};
     std::vector<std::pair<std::string, double>> openTimings_;
+    std::chrono::steady_clock::time_point openLapAt_{};
+    void openLap(const std::string& name);
 
     render::Camera2D camera_{};
     std::string activeLayout_{};

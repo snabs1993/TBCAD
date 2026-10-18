@@ -282,6 +282,35 @@ int App::runGateFile() {
                core.zoomAtScreen(anchor, (i / 30) % 2 == 0 ? 0.08 : -0.08);
            }));
 
+    // Editing everything at once, and taking it back.
+    for (const char* edit : {"MOVE;ALL;;0,0;100,0", "ERASE;ALL;"}) {
+        std::string cmds = edit;
+        t0 = Clock::now();
+        for (std::size_t at = 0; at <= cmds.size();) {
+            const std::size_t end = cmds.find(';', at);
+            core.submitText(cmds.substr(at, end == std::string::npos ? end : end - at));
+            if (end == std::string::npos)
+                break;
+            at = end + 1;
+        }
+        frame();
+        glFinish();
+        const double doMs = msSince(t0);
+        t0 = Clock::now();
+        core.submitText("UNDO");
+        frame();
+        glFinish();
+        const double undoMs = msSince(t0);
+        t0 = Clock::now();
+        core.submitText("REDO");
+        frame();
+        glFinish();
+        std::printf("%-22s %8.0f ms, undo %6.0f ms, redo %6.0f ms (%zu objects after)\n", edit,
+                    doMs, undoMs, msSince(t0), core.document().modelSpaceCount());
+        core.submitText("UNDO");
+        frame();
+    }
+
     t0 = Clock::now();
     core.clearSelection();
     frame();

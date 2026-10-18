@@ -1,5 +1,6 @@
 #include "tbcad/dwgopen/dwgopen.h"
 
+#include <chrono>
 #include <fstream>
 #include <iterator>
 
@@ -51,6 +52,13 @@ std::string productOf(const std::string& code) {
 }  // namespace
 
 Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
+    auto stepAt = std::chrono::steady_clock::now();
+    std::vector<std::pair<std::string, double>> timings;
+    auto step = [&](const char* name) {
+        const auto t = std::chrono::steady_clock::now();
+        timings.emplace_back(name, std::chrono::duration<double, std::milli>(t - stepAt).count());
+        stepAt = t;
+    };
     std::ifstream f(platform::longPath(path), std::ios::binary);
     if (!f)
         return makeError(ErrorCode::Io, "The file cannot be read.");
@@ -58,9 +66,11 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
     std::vector<std::byte> bytes(raw.size());
     for (std::size_t i = 0; i < raw.size(); ++i)
         bytes[i] = static_cast<std::byte>(raw[i]);
+    step("load file bytes");
 
     dxf::Report report;
     Result<dxf::ImportResult> imported = dwg::importDwg(bytes, {}, report);
+    step("decode, convert and import (importDwg)");
     if (!imported) {
         // One plain sentence for the message box; the reader's reason follows it.
         const dwg::VersionInfo v = dwg::detectVersion(bytes);
@@ -81,6 +91,7 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
                                                   " layers, " + std::to_string(r.summary.blocks) +
                                                   " blocks.");
     out.document = std::move(r.document);
+    out.timings = std::move(timings);
     return out;
 }
 
