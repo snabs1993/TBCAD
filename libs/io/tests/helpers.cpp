@@ -147,7 +147,7 @@ std::unique_ptr<Document> makeRichDocument() {
         add(make(ArcData{{0, 0}, 100, 0.25, 4.5}, edge));
         add(make(
             PolylineData{
-                {{{0, 0}, 0.5, 1, 2}, {{10, 0}, 0, 0, 0}, {{10, 10}, -1, 3, 4}}, true, 0.2},
+                {{{0, 0}, 0.5, 1, 2}, {{10, 0}, 0, 0, 0}, {{10, 10}, -1, 3, 4}}, true, false, 0.2},
             wall));
         add(make(PointData{{3, 4}}, l0));
         add(make(EllipseData{{1, 2}, {30, 0}, 0.5, 0.1, 3}, l0));
