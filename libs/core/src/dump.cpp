@@ -249,6 +249,8 @@ struct DataDumper {
         o << " text" << d.textPos << " user" << d.textPosUser << " ";
         o.quoted(d.textOverride);
         o << " style" << d.style << " m" << d.measurement;
+        for (const DimBreak& b : d.breaks)
+            o << " break " << b.a << ">" << b.b;
     }
     void operator()(const LeaderData& d) {
         o << "LEADER style" << d.style << " text" << d.textPos << " ";

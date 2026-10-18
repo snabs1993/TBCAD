@@ -411,6 +411,113 @@ public:
     }
 };
 
+// DIMBREAK [DBR]: opens gaps in the dimension and extension lines where other objects cross them,
+// or closes the gaps again. The gaps are stored with the dimension (DimensionData::breaks).
+class BreakCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMBREAK"; }
+    std::vector<std::string> defaultAliases() const override { return {"DBR"}; }
+    std::string_view description() const override {
+        return "Break dimension and extension lines where other objects cross them";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::SelectionOptions so;
+        so.filter = isAnyDim;
+        auto dims = co_await ctx.getSelection("Select dimensions to add or remove breaks", so);
+        if (!dims.ok() || dims.ids.empty())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Auto", "Remove"};
+        ko.defaultKeyword = "Auto";
+        auto mode = co_await ctx.getKeyword("Break [Auto/Remove] <Auto>", ko);
+        if (!mode.ok())
+            co_return;
+
+        std::vector<EntityId> cutters;
+        if (mode.keyword == "Auto") {
+            cmd::SelectionOptions co;
+            co.allowPreselection = false;
+            co.keywords = {"All"};
+            auto picked = co_await ctx.getSelection(
+                "Select objects to break dimensions with or [All] <All>", co);
+            if (picked.status == Status::Cancel)
+                co_return;
+            if (picked.ok() && !picked.ids.empty())
+                cutters = picked.ids;
+            else
+                cutters.assign(ctx.doc().modelSpace().begin(), ctx.doc().modelSpace().end());
+        }
+
+        ctx.setUndoLabel("DIMBREAK");
+        std::size_t changed = 0, gaps = 0;
+        for (EntityId id : dims.ids) {
+            const Entity* e = ctx.doc().find(id);
+            const auto* d0 = e ? entityAs<DimensionData>(*e) : nullptr;
+            if (!d0)
+                continue;
+            std::vector<DimBreak> found;
+            if (mode.keyword == "Auto") {
+                DimensionData bare = *d0;
+                bare.breaks.clear();
+                const dim::Layout L = dim::layoutDimension(ctx.doc(), bare);
+                const DimStyle& st = dim::styleOf(ctx.doc(), d0->style);
+                const double gap = 1.5 * st.arrowSize * (st.overallScale > 0 ? st.overallScale : 1);
+                for (const dim::Layout::Line& line : L.lines) {
+                    if (line.pts.size() != 2 || line.role == dim::Role::Text)
+                        continue;
+                    const Vec2 a = line.pts[0], dir = line.pts[1] - a;
+                    const double len = std::hypot(dir.x, dir.y);
+                    if (!(len > 1e-9))
+                        continue;
+                    Entity seg;
+                    seg.data = LineData{line.pts[0], line.pts[1]};
+                    for (EntityId cid : cutters) {
+                        const Entity* c = ctx.doc().find(cid);
+                        if (!c || cid == id || kind(*c) == EntityKind::Dimension)
+                            continue;
+                        std::vector<geom::EntityIntersection> hits;
+                        if (!geom::intersectEntities(seg, *c, hits))
+                            continue;
+                        for (const geom::EntityIntersection& h : hits) {
+                            const double t = h.tA;
+                            if (t < 1e-6 || t > 1 - 1e-6)
+                                continue;
+                            const double half = gap / 2 / len;
+                            DimBreak b;
+                            b.a = a + dir * std::max(0.0, t - half);
+                            b.b = a + dir * std::min(1.0, t + half);
+                            if (std::find(found.begin(), found.end(), b) == found.end())
+                                found.push_back(b);
+                        }
+                    }
+                }
+            }
+            auto r = ctx.tx().modify(id, [&](Entity& ent) {
+                auto* d = entityAs<DimensionData>(ent);
+                if (!d)
+                    return;
+                if (mode.keyword == "Remove")
+                    d->breaks.clear();
+                else
+                    d->breaks = found;
+            });
+            if (!r) {
+                ctx.message(r.error().message);
+                continue;
+            }
+            ++changed;
+            gaps += found.size();
+        }
+        if (mode.keyword == "Remove")
+            ctx.message(std::to_string(changed) + " dimension(s): breaks removed.");
+        else
+            ctx.message(std::to_string(gaps) + " break(s) in " + std::to_string(changed) +
+                        " dimension(s).");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeEditCommand() {
@@ -433,6 +540,10 @@ std::unique_ptr<cmd::Command> makeSpaceCommand() {
 
 std::unique_ptr<cmd::Command> makeQuickDimCommand() {
     return std::make_unique<QuickDimCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeBreakCommand() {
+    return std::make_unique<BreakCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeTextEditCommand() {

@@ -251,6 +251,14 @@ struct PayloadWriter {
         str(d.textOverride);
         w.varint(d.style.value);
         w.f64(d.measurement);
+        if (!d.breaks.empty()) {  // tag 1: DIMBREAK gaps (a file without breaks has no tail)
+            w.u8(1);
+            w.varint(d.breaks.size());
+            for (const DimBreak& b : d.breaks) {
+                w.vec2(b.a);
+                w.vec2(b.b);
+            }
+        }
     }
     void operator()(const LeaderData& d) {
         points(d.vertices);
@@ -604,6 +612,18 @@ struct PayloadReader {
                 d.textOverride = str();
                 d.style = id<DimStyleId>();
                 d.measurement = r.f64();
+                while (r.remaining() > 0) {
+                    if (r.u8() != 1)
+                        break;  // a tail of a newer minor version: ignored
+                    std::size_t n = r.count(32);
+                    d.breaks.reserve(n);
+                    for (std::size_t i = 0; i < n; ++i) {
+                        DimBreak b;
+                        b.a = r.vec2();
+                        b.b = r.vec2();
+                        d.breaks.push_back(b);
+                    }
+                }
                 return make(std::move(d));
             }
             case EntityKind::Leader: {

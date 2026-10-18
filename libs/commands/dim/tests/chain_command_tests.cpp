@@ -4,6 +4,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/dimcmd/dimcmd.h"
 
 using namespace tbcad;
@@ -149,4 +150,48 @@ TEST_CASE("DIMEDIT New replaces the text and Home restores it") {
     CHECK(f.dims()[0]->textOverride.empty());
     CHECK(f.host->undo());
     CHECK(f.dims()[0]->textOverride == "TYP");
+}
+
+TEST_CASE("DIMBREAK opens a gap in the dimension line where another object crosses it") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    {
+        auto tx = f.doc.begin("cutter");
+        Entity cut;
+        cut.data = LineData{{40, -50}, {40, 10}};  // crosses the dimension line (y = -30) at x = 40
+        REQUIRE(tx.add(std::move(cut)).ok());
+        tx.commit();
+    }
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    auto count = [&] {
+        const Entity* e = f.doc.find(id);
+        const dim::Layout L = dim::layoutDimension(f.doc, *entityAs<DimensionData>(*e));
+        std::size_t dimLines = 0;
+        for (const auto& l : L.lines)
+            if (l.role == dim::Role::DimLine)
+                ++dimLines;
+        return dimLines;
+    };
+    const std::size_t before = count();
+    REQUIRE(f.host->run("DIMBREAK", {ScriptItem::select({id}), ScriptItem::enter(), "Auto", "All"})
+                .finished);
+    const auto* d = entityAs<DimensionData>(*f.doc.find(id));
+    REQUIRE(d->breaks.size() == 1);
+    CHECK(d->breaks[0].a.x < 40);
+    CHECK(d->breaks[0].b.x > 40);
+    CHECK(count() == before + 1);  // the line is now in two pieces
+
+    // The gaps are saved with the dimension.
+    CHECK(f.host->undo());
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.empty());
+    REQUIRE(f.host->run("DIMBREAK", {ScriptItem::select({id}), ScriptItem::enter(), "Auto", "All"})
+                .finished);
+    REQUIRE(f.host->run("DIMBREAK", {ScriptItem::select({id}), ScriptItem::enter(), "Remove"})
+                .finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.empty());
+    CHECK(count() == before);
 }
