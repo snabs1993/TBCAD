@@ -473,6 +473,83 @@ public:
     }
 };
 
+// CHSPACE [CS]: moves objects between model space and the current sheet. In model space the
+// objects go onto the sheet, at the size they appear in the chosen viewport; on the sheet they go
+// back into model space.
+class ChSpaceCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "CHSPACE"; }
+    std::vector<std::string> defaultAliases() const override { return {"CS"}; }
+    std::string_view description() const override {
+        return "Move objects between model space and the sheet";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        const BlockId owner = ctx.host().drawingOwner();
+        const bool toModel = static_cast<bool>(owner);
+        cmd::SelectionOptions so;
+        so.filter = [&doc = ctx.doc(), owner](const Entity& e) {
+            return doc.ownerBlock(e.common.id) == owner;
+        };
+        auto sel = co_await ctx.getSelection(toModel ? "Select objects to move into model space"
+                                                     : "Select objects to move to the sheet",
+                                             so);
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        const auto lay = layout::findLayout(ctx.doc(), target);
+        const layout::Viewport* vp = lay ? lay->findViewport(vpId) : nullptr;
+        if (!vp) {
+            ctx.message("No viewport " + std::to_string(vpId) + ".");
+            co_return;
+        }
+        // sheet mm -> model units: the viewport centre sits at the middle of its rectangle.
+        const Vec2 mid = (vp->paper.min + vp->paper.max) * 0.5;
+        const Transform2 sheetToModel = Transform2::translate(vp->center) *
+                                        Transform2::scale(vp->scaleN, vp->scaleN) *
+                                        Transform2::translate(mid * -1.0);
+        Transform2 t = sheetToModel;
+        if (!toModel) {
+            auto inv = sheetToModel.inverse();
+            if (!inv) {
+                ctx.message(inv.error().message);
+                co_return;
+            }
+            t = inv.value();
+        }
+        const BlockId dest = toModel ? BlockId{} : lay->content;
+        std::size_t moved = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e)
+                continue;
+            auto copy = geom::transformed(*e, t);
+            if (!copy) {
+                ctx.message(copy.error().message);
+                continue;
+            }
+            Entity n = std::move(copy.value());
+            if (!ctx.tx().erase(id))
+                continue;
+            ctx.tx().setDefaultOwner(dest);
+            if (auto added = ctx.tx().add(std::move(n), dest); !added) {
+                ctx.message(added.error().message);
+                co_return;
+            }
+            ++moved;
+        }
+        ctx.setUndoLabel("CHSPACE");
+        ctx.message(std::to_string(moved) + (toModel ? " objects moved into model space."
+                                                     : " objects moved to the sheet."));
+    }
+};
+
 // VPCLIP [VC]: gives a viewport an outline of any shape, from a closed polyline on the sheet or
 // from points picked one after another, or turns it back into a rectangle.
 class VpClipCommand final : public cmd::Command {
@@ -680,6 +757,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<VpResizeCommand>());
     (void)registry.add(std::make_unique<VpClipCommand>());
     (void)registry.add(std::make_unique<VpCenterCommand>());
+    (void)registry.add(std::make_unique<ChSpaceCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
 }
 
