@@ -2684,6 +2684,10 @@ void Gui::panels() {
         if (ImGui::Begin(p.title.c_str(), &open))
             p.draw(pc);
         ImGui::End();
+        // Layer Walk puts the layers back when its window is closed (unless told to keep them).
+        if (!open && p.id == "laywalk" && core_.setting("laywalk.restore").value_or("1") != "0" &&
+            !core_.setting("tmp.laywalk.state").value_or("").empty())
+            core_.submitText("-LAYWALK Restore");
     }
 }
 

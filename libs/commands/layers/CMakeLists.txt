@@ -15,6 +15,7 @@ set(_layers_sources
   src/properties.cpp
   src/layer_commands.cpp
   src/layer_tools.cpp
+  src/laywalk.cpp
   src/property_commands.cpp
   src/register.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/builtin_linetypes.cpp")
@@ -24,7 +25,7 @@ set(_layers_deps tbcad::cmd tbcad::ui tbcad::core tbcad::geom tbcad::blocks tbca
 # the panels are registered as empty stubs, so headless builds and tests still link.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _layers_sources ui/color_picker.cpp ui/layers_panel.cpp ui/properties_panel.cpp)
+  list(APPEND _layers_sources ui/color_picker.cpp ui/layers_panel.cpp ui/laywalk_panel.cpp ui/properties_panel.cpp)
   list(APPEND _layers_deps tbcad::imgui)
 else()
   list(APPEND _layers_sources src/panels_stub.cpp)
