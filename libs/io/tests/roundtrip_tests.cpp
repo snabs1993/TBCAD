@@ -854,6 +854,7 @@ Entity fuzzEntity(std::mt19937_64& rng) {
                 p.v.push_back(
                     PolyVertex{fuzzPoint(rng), fuzzNumber(rng), fuzzNumber(rng), fuzzNumber(rng)});
             p.closed = rng() % 2;
+            p.restartLinetype = rng() % 3 == 0;
             e.data = std::move(p);
             break;
         }

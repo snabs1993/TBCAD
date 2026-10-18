@@ -639,6 +639,24 @@ TEST_CASE("PEDIT Multiple joins with a fuzz distance and turns lines into polyli
     CHECK(f.count(EntityKind::Polyline) == 1);
 }
 
+TEST_CASE("PEDIT Fit makes arcs through the vertices and Ltypegen OFF is kept") {
+    Fixture f;
+    EntityId a = f.add(PolylineData{
+        {{{0, 0}, 0, 0, 0}, {{10, 8}, 0, 0, 0}, {{20, 0}, 0, 0, 0}, {{30, 8}, 0, 0, 0}}, false, 0});
+    f.host.run("PEDIT", {ScriptItem::pick(a, {5, 4}), "Fit", "Ltypegen", "OFF", "Exit"});
+    const auto* pl = entityAs<PolylineData>(f.get(a));
+    REQUIRE(pl);
+    CHECK(pl->v.size() == 7);  // each of the three segments became two arcs
+    CHECK(pl->restartLinetype);
+    CHECK(near(pl->v[2].p, {10, 8}));
+    bool curved = false;
+    for (const auto& v : pl->v)
+        curved = curved || v.bulge != 0;
+    CHECK(curved);
+    CHECK(f.host.undo());
+    CHECK(entityAs<PolylineData>(f.get(a))->v.size() == 4);
+}
+
 TEST_CASE("EXTRIM cuts several objects on one side of an edge") {
     Fixture f;
     EntityId edge = f.add(LineData{{5, -10}, {5, 10}});

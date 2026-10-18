@@ -337,3 +337,39 @@ TEST_CASE("buildDisplay applies layer and object transparency, and the TPY switc
     ctx.showTransparency = false;
     CHECK(alphaOf(line, ctx) == 255);
 }
+
+TEST_CASE("a polyline with Ltype gen off draws each segment on its own so the pattern restarts") {
+    Document doc;
+    LinetypeId dashed;
+    {
+        Transaction tx = doc.begin("lt");
+        Linetype lt;
+        lt.name = "DASHED";
+        lt.pattern = {6, -3};
+        auto lid = tx.addLinetype(lt);
+        REQUIRE(lid.ok());
+        dashed = lid.value();
+        tx.commit();
+    }
+    PolylineData pl;
+    pl.v = {{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0.5, 0, 0}, {{20, 10}, 0, 0, 0}};
+    Entity e = make(pl);
+    e.common.linetype = dashed;
+    DisplayContext ctx;
+    ctx.pixelSizeMm = 0.4;
+    DisplayList on;
+    buildDisplay(doc, e, ctx, on);
+    CHECK(on.items.size() == 1);  // one run: the pattern continues round the corners
+    PolylineData off = pl;
+    off.restartLinetype = true;
+    Entity e2 = make(off);
+    e2.common.linetype = dashed;
+    DisplayList split;
+    buildDisplay(doc, e2, ctx, split);
+    CHECK(split.items.size() == 3);  // three segments
+    // Continuous lines are unaffected: nothing to restart.
+    Entity solid = make(off);
+    DisplayList cont;
+    buildDisplay(doc, solid, ctx, cont);
+    CHECK(cont.items.size() == 1);
+}

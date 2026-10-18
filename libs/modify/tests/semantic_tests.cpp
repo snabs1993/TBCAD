@@ -285,3 +285,39 @@ TEST_CASE("splines joined end to end keep their shape; either direction, any ord
         CHECK(near(geom::length(j.created[0]), L, 2e-3 * (1 + L)));
     }
 }
+
+TEST_CASE("fit curve passes through every vertex, with a continuous tangent, as arcs only") {
+    for (std::uint64_t seed = 1; seed <= 200; ++seed) {
+        Rng r(seed);
+        std::vector<PolyVertex> v;
+        Vec2 p = r.point();
+        const int n = 3 + r.pick(6);
+        for (int i = 0; i < n; ++i) {
+            v.push_back({p, 0, 0, 0});
+            p = p + Vec2{r.uni(5, 20), r.uni(-12, 12)};
+        }
+        const bool closed = seed % 3 == 0;
+        Entity src = poly(v, closed);
+        auto fit = fitPolylineCurve(src);
+        REQUIRE_MESSAGE(fit.ok(), "seed " << seed);
+        const auto& pl = as<PolylineData>(fit.value());
+        // Every original vertex is still a vertex of the result, in order.
+        std::size_t at = 0;
+        for (const PolyVertex& ov : v) {
+            while (at < pl.v.size() && !near(pl.v[at].p, ov.p, 1e-9))
+                ++at;
+            CHECK_MESSAGE(at < pl.v.size(), "seed " << seed << " lost a vertex");
+            ++at;
+        }
+        CHECK(pl.closed == closed);
+        // The curve is smooth: at each joint the two arcs share a tangent direction.
+        const auto segs = polylineSegs(pl);
+        for (std::size_t i = 0; i < segs.size(); ++i) {
+            if (!closed && i + 1 == segs.size())
+                break;
+            const Seg &a = segs[i], &b = segs[(i + 1) % segs.size()];
+            const Vec2 ta = segTangent(a, 1.0), tb = segTangent(b, 0.0);
+            CHECK_MESSAGE(dot(ta, tb) > 1 - 1e-6, "seed " << seed << " kink at seg " << i);
+        }
+    }
+}

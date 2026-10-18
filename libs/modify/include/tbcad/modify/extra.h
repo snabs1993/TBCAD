@@ -75,6 +75,9 @@ OverkillResult overkill(const std::vector<const Entity*>& entities,
 Result<Entity> toPolylineEntity(const Entity& e);
 // Cubic spline through the vertices of a polyline (arcs are sampled).
 Result<Entity> polylineToSpline(const Entity& e);
+// PEDIT Fit: each segment becomes two tangent-continuous arcs; the curve passes through every
+// vertex. Existing bulges are ignored.
+Result<Entity> fitPolylineCurve(const Entity& e);
 // Polyline that follows a spline within `tolerance` mm.
 Result<Entity> splineToPolyline(const Entity& e, double tolerance);
 // Sets the constant width of every segment of a polyline entity.

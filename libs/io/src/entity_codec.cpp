@@ -113,7 +113,7 @@ struct PayloadWriter {
         w.f64(d.endAngle);
     }
     void operator()(const PolylineData& d) {
-        w.u8(d.closed ? 1 : 0);
+        w.u8((d.closed ? 1 : 0) | (d.restartLinetype ? 2 : 0));
         w.f64(d.constantWidth);
         polyVertices(d.v);
     }
@@ -604,7 +604,9 @@ struct PayloadReader {
             }
             case EntityKind::Polyline: {
                 PolylineData d;
-                d.closed = r.boolean();
+                const std::uint8_t flags = r.u8();
+                d.closed = (flags & 1) != 0;
+                d.restartLinetype = (flags & 2) != 0;
                 d.constantWidth = r.f64();
                 d.v = polyVertices();
                 return make(std::move(d));

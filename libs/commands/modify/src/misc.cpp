@@ -727,17 +727,20 @@ public:
                                "Join",
                                "Fuzz",
                                "Width",
+                               "Fit",
                                "Spline",
+                               "Ltypegen",
                                "Vertices",
                                "Reverse",
                                "Exit"};
             }
             ko.defaultKeyword = "Exit";
-            auto k = co_await ctx.getKeyword(
-                isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
-                         : "Enter an option "
-                           "[Close/Open/Join/Fuzz/Width/Spline/Vertices/Reverse/Exit] <Exit>",
-                ko);
+            auto k =
+                co_await ctx.getKeyword(isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
+                                                 : "Enter an option "
+                                                   "[Close/Open/Join/Fuzz/Width/Fit/Spline/"
+                                                   "Ltypegen/Vertices/Reverse/Exit] <Exit>",
+                                        ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
             if (k.keyword == "Close" || k.keyword == "Open") {
@@ -792,6 +795,27 @@ public:
                         ctx.message(edit.error().message);
                     else
                         (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
+                }
+            } else if (k.keyword == "Fit") {
+                auto fit = modify::fitPolylineCurve(*e);
+                if (!fit)
+                    ctx.message(fit.error().message);
+                else
+                    (void)replaceEntity(ctx.tx(), id, fit.value());
+            } else if (k.keyword == "Ltypegen") {
+                cmd::KeywordOptions lo;
+                lo.keywords = {"ON", "OFF"};
+                lo.defaultKeyword = "ON";
+                auto l = co_await ctx.getKeyword(
+                    "Full PLINE linetype generation [ON/OFF] <ON> (OFF restarts the pattern at "
+                    "each vertex)",
+                    lo);
+                if (l.ok()) {
+                    Entity copy = *ctx.doc().find(id);
+                    if (auto* pl = entityAs<PolylineData>(copy)) {
+                        pl->restartLinetype = l.keyword == "OFF";
+                        (void)replaceEntity(ctx.tx(), id, copy);
+                    }
                 }
             } else if (k.keyword == "Fuzz") {
                 cmd::DistanceOptions d;
@@ -900,11 +924,12 @@ private:
         }
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Close",  "Open",    "Join",    "Fuzz", "Width",
-                           "Spline", "Decurve", "Reverse", "Exit"};
+            ko.keywords = {"Close",  "Open",    "Join",     "Fuzz",    "Width", "Fit",
+                           "Spline", "Decurve", "Ltypegen", "Reverse", "Exit"};
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                "Enter an option [Close/Open/Join/Fuzz/Width/Spline/Decurve/Reverse/Exit] <Exit>",
+                "Enter an option "
+                "[Close/Open/Join/Fuzz/Width/Fit/Spline/Decurve/Ltypegen/Reverse/Exit] <Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
@@ -944,6 +969,17 @@ private:
                 }
             } else {
                 double width = 0;
+                bool restartPattern = false;
+                if (k.keyword == "Ltypegen") {
+                    cmd::KeywordOptions lo;
+                    lo.keywords = {"ON", "OFF"};
+                    lo.defaultKeyword = "ON";
+                    auto l =
+                        co_await ctx.getKeyword("Full PLINE linetype generation [ON/OFF] <ON>", lo);
+                    if (!l.ok())
+                        continue;
+                    restartPattern = l.keyword == "OFF";
+                }
                 if (k.keyword == "Width") {
                     cmd::DistanceOptions d;
                     d.defaultValue = 0;
@@ -974,6 +1010,19 @@ private:
                         edit = modify::setPolylineWidth(*e, width);
                     } else if (k.keyword == "Reverse") {
                         edit = modify::reverseEntity(*e);
+                    } else if (k.keyword == "Fit") {
+                        auto fit = modify::fitPolylineCurve(*e);
+                        if (fit && replaceEntity(ctx.tx(), id, fit.value()))
+                            ++changed;
+                        continue;
+                    } else if (k.keyword == "Ltypegen") {
+                        Entity copy = *e;
+                        auto* pl = entityAs<PolylineData>(copy);
+                        if (pl && pl->restartLinetype != restartPattern &&
+                            (pl->restartLinetype = restartPattern, true) &&
+                            replaceEntity(ctx.tx(), id, copy))
+                            ++changed;
+                        continue;
                     } else if (k.keyword == "Spline" || k.keyword == "Decurve") {
                         const bool toSpline = k.keyword == "Spline";
                         if (toSpline == spline)
