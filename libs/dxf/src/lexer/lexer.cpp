@@ -438,10 +438,133 @@ void Lexer::finish() {
     }
 }
 
+Lexer Lexer::fromBuffer(const GroupBuffer& buffer, Report& report) {
+    Lexer lx;
+    lx.report_ = &report;
+    lx.buffer_ = &buffer;
+    return lx;
+}
+
+namespace {
+
+void appendDouble(std::string& out, double v) {
+    char buf[40];
+    const auto r = std::to_chars(buf, buf + sizeof buf, v);
+    const std::size_t at = out.size();
+    out.append(buf, r.ptr);
+    if (out.find_first_of(".eEn", at) == std::string::npos)
+        out += ".0";
+}
+
+}  // namespace
+
+std::string GroupBuffer::str() const {
+    std::string out;
+    out.reserve(items_.size() * 14);
+    for (const Item& it : items_) {
+        const std::string c = std::to_string(it.code);
+        if (c.size() < 3)
+            out.append(3 - c.size(), ' ');
+        out += c;
+        out.push_back('\n');
+        switch (it.kind) {
+            case Kind::Text:
+                out.append(arena_, static_cast<std::size_t>(it.payload), it.len);
+                break;
+            case Kind::Double: {
+                double v;
+                std::memcpy(&v, &it.payload, 8);
+                appendDouble(out, v);
+                break;
+            }
+            case Kind::Int:
+                out += std::to_string(static_cast<std::int64_t>(it.payload));
+                break;
+        }
+        out.push_back('\n');
+    }
+    return out;
+}
+
+std::string_view Lexer::keep(std::string&& s) {
+    return scratch_.emplace_back(std::move(s));
+}
+
+std::optional<Group> Lexer::nextBuffered() {
+    const auto& items = buffer_->items_;
+    if (next_ >= items.size()) {
+        finish();
+        return std::nullopt;
+    }
+    const GroupBuffer::Item& it = items[next_];
+    Group g;
+    g.code = it.code;
+    // The line the group would have in the text: two lines per group.
+    g.line = static_cast<int>(2 * next_ + 1);
+    ++next_;
+    const int line = g.line + 1;
+    const ValueType type = valueTypeForCode(it.code);
+    switch (it.kind) {
+        case GroupBuffer::Kind::Double:
+            if (type == ValueType::Double) {
+                double v;
+                std::memcpy(&v, &it.payload, 8);
+                if (std::isfinite(v)) {
+                    g.value = v;
+                    break;
+                }
+            }
+            {
+                std::string text;
+                double v;
+                std::memcpy(&v, &it.payload, 8);
+                appendDouble(text, v);
+                g.value = makeAsciiValue(it.code, keep(std::move(text)), line, *report_);
+            }
+            break;
+        case GroupBuffer::Kind::Int: {
+            const auto v = static_cast<std::int64_t>(it.payload);
+            switch (type) {
+                case ValueType::Int16:
+                    g.value = toInt16(v, line, *report_);
+                    break;
+                case ValueType::Int32:
+                    g.value = toInt32(v, line, *report_);
+                    break;
+                case ValueType::Int64:
+                    g.value = v;
+                    break;
+                case ValueType::Bool:
+                    g.value = v != 0;
+                    break;
+                default:
+                    g.value = makeAsciiValue(it.code, keep(std::to_string(v)), line, *report_);
+                    break;
+            }
+            break;
+        }
+        case GroupBuffer::Kind::Text:
+            g.value = makeAsciiValue(it.code,
+                                     std::string_view(buffer_->arena_)
+                                         .substr(static_cast<std::size_t>(it.payload), it.len),
+                                     line, *report_);
+            break;
+    }
+    if (it.code == 0) {
+        if (const auto* s = std::get_if<std::string_view>(&g.value); s && *s == "EOF") {
+            sawEof_ = true;
+            done_ = true;
+        }
+    }
+    return g;
+}
+
 std::optional<Group> Lexer::next() {
     if (done_) {
         return std::nullopt;
     }
+    if (buffer_)
+        return nextBuffered();
     return binary_ ? nextBinary() : nextAscii();
 }
 

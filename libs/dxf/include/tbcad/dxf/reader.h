@@ -11,6 +11,7 @@
 
 #include "tbcad/core/document.h"
 #include "tbcad/dxf/encoding.h"
+#include "tbcad/dxf/lexer.h"
 #include "tbcad/dxf/report.h"
 
 namespace tbcad::dxf {
@@ -70,6 +71,11 @@ struct ImportResult {
 // (AC1009). Everything else produces a document plus diagnostics in `report`.
 Result<ImportResult> importDxf(std::span<const std::byte> bytes, const ImportOptions& options,
                                Report& report);
+
+// The same for groups already in memory (what the DWG reader produces): no text is written
+// and lexed again. Imports exactly what importDxf would from `groups.str()`.
+Result<ImportResult> importDxfGroups(const GroupBuffer& groups, const ImportOptions& options,
+                                     Report& report);
 
 // Stable diagnostic codes of the reader (in addition to those of the lexer and encoding).
 namespace code {

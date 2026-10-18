@@ -1589,7 +1589,15 @@ void Importer::finish() {
 }
 
 Result<ImportResult> Importer::run() {
-    HeaderHints hints = scanHeaderHints(bytes_);
+    HeaderHints hints;
+    if (groups_) {
+        // (a scratch report: the main pass reports the problems of the groups once)
+        Report scratch;
+        Lexer headerLexer = Lexer::fromBuffer(*groups_, scratch);
+        hints = scanHeaderHints(headerLexer);
+    } else {
+        hints = scanHeaderHints(bytes_);
+    }
     acadVer_ = hints.acadVer;
     int vnum = versionNumber(acadVer_);
     if (vnum != 0 && vnum < 1009) {
@@ -1600,17 +1608,29 @@ Result<ImportResult> Importer::run() {
     sum_.acadVer = acadVer_;
     sum_.version = versionName(acadVer_);
 
-    Result<Lexer> opened = Lexer::open(bytes_, report_);
-    if (!opened)
-        return opened.error();
-    Lexer lexer = std::move(opened.value());
+    std::optional<Lexer> lexerHolder;
+    if (groups_) {
+        lexerHolder.emplace(Lexer::fromBuffer(*groups_, report_));
+    } else {
+        Result<Lexer> opened = Lexer::open(bytes_, report_);
+        if (!opened)
+            return opened.error();
+        lexerHolder.emplace(std::move(opened.value()));
+    }
+    Lexer& lexer = *lexerHolder;
     sum_.binary = lexer.isBinary();
 
     std::size_t guessesBefore = report_.countCode(code::kEncodingGuess);
     if (opts_.encoding) {
         enc_ = *opts_.encoding;
     } else {
-        enc_ = detectEncoding(bytes_, hints.acadVer, hints.dwgCodepage, report_);
+        // (all the non-ASCII bytes of a buffer are in its text values)
+        const std::span<const std::byte> seen =
+            groups_ ? std::span<const std::byte>(
+                          reinterpret_cast<const std::byte*>(groups_->arena().data()),
+                          groups_->arena().size())
+                    : bytes_;
+        enc_ = detectEncoding(seen, hints.acadVer, hints.dwgCodepage, report_);
     }
     sum_.encoding = enc_;
     sum_.encodingGuessed = report_.countCode(code::kEncodingGuess) > guessesBefore;
@@ -1716,6 +1736,12 @@ namespace tbcad::dxf {
 Result<ImportResult> importDxf(std::span<const std::byte> bytes, const ImportOptions& options,
                                Report& report) {
     detail::Importer importer(bytes, options, report);
+    return importer.run();
+}
+
+Result<ImportResult> importDxfGroups(const GroupBuffer& groups, const ImportOptions& options,
+                                     Report& report) {
+    detail::Importer importer(groups, options, report);
     return importer.run();
 }
 
