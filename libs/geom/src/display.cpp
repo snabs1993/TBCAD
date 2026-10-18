@@ -354,7 +354,14 @@ DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayCon
                 pattern = &lt->pattern;
     }
     s.pattern = pattern;
-    s.patternScale = c.linetypeScale * doc.header().ltScale;
+    // Linetypes in a viewport follow the viewport scale unless PSLTSCALE is off; in model space
+    // they follow the annotation scale when MSLTSCALE is on.
+    double view = 1;
+    if (ctx.annoScale > 0)
+        view = psLtScale(doc.header()) ? ctx.annoScale : 1;
+    else if (!ctx.paperSpace && msLtScale(doc.header()))
+        view = currentAnnotationScale(doc.header());
+    s.patternScale = c.linetypeScale * doc.header().ltScale * view;
     s.layer = c.layer;
     return s;
 }

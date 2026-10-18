@@ -601,6 +601,7 @@ bool Importer::convLwPolyline(const Record& r, const Frame& f, std::vector<Entit
     for (PolyVertex& v : pl.v)
         v.p = f.p(v.p);
     pl.closed = (r.integer(70) & 1) != 0;
+    pl.restartLinetype = (r.integer(70) & 128) == 0;  // flag 128: the linetype runs on
     pl.constantWidth = std::max(0.0, r.num(43) * k_);
     if (pl.v.size() < 2) {
         bad(r, "LWPOLYLINE", "fewer than two vertices; skipped");
@@ -650,6 +651,7 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
         pv.bulge = f.bulge(pv.bulge);
     }
     pl.closed = (flags & 1) != 0;
+    pl.restartLinetype = (flags & 128) == 0;
     if (pl.v.size() < 2) {
         bad(r, "POLYLINE", "fewer than two vertices; skipped");
         return false;

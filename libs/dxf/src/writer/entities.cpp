@@ -556,7 +556,7 @@ void Writer::writeArc(const Props& p, const ArcData& d, std::uint64_t owner) {
 }
 
 void Writer::writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& v, bool closed,
-                                 double constantWidth, std::uint64_t owner) {
+                                 double constantWidth, std::uint64_t owner, bool runsOn) {
     // R12 has no LWPOLYLINE: a POLYLINE followed by VERTEX records and SEQEND.
     head("POLYLINE", p, owner, "AcDb2dPolyline");
     Out& o = *o_;
@@ -566,7 +566,7 @@ void Writer::writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& 
         o.d(40, constantWidth);
         o.d(41, constantWidth);
     }
-    o.i(70, closed ? 1 : 0);
+    o.i(70, (closed ? 1 : 0) | (runsOn ? 128 : 0));
     emitLevelTag();  // XDATA of the polyline comes before its vertices
     for (const PolyVertex& pv : v) {
         o.zero("VERTEX");
@@ -590,7 +590,7 @@ void Writer::writePolyline(const Props& p, const PolylineData& d, std::uint64_t 
         return;
     }
     if (r12_) {
-        writeVertexPolyline(p, d.v, d.closed, d.constantWidth, owner);
+        writeVertexPolyline(p, d.v, d.closed, d.constantWidth, owner, !d.restartLinetype);
         return;
     }
     head("LWPOLYLINE", p, owner, "AcDbPolyline");

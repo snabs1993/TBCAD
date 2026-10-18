@@ -33,8 +33,11 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
 
     exportlib::PlotSheet sheet;
     sheet.layout = lay.value();
-    if (const BlockDef* block = doc.block(l.content))
-        exportlib::appendEntities(sheet, doc, block->entities, sheet.layout, s);
+    if (const BlockDef* block = doc.block(l.content)) {
+        exportlib::PlotLayout paperLay = sheet.layout;
+        paperLay.paperSpace = true;
+        exportlib::appendEntities(sheet, doc, block->entities, paperLay, s);
+    }
 
     const std::vector<EntityId> model = doc.modelSpace();
     // Every viewport only needs the objects that reach its window. The bounds are worked out once

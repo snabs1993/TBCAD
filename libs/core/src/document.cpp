@@ -1968,6 +1968,33 @@ void Transaction::rollback() {
     doc_ = nullptr;
 }
 
+namespace {
+bool customFlag(const Header& h, const char* key, bool fallback) {
+    auto it = h.custom.find(key);
+    if (it == h.custom.end())
+        return fallback;
+    return it->second != "0";
+}
+}  // namespace
+
+double ceLtScale(const Header& h) {
+    auto it = h.custom.find(kCeLtScaleKey);
+    if (it == h.custom.end())
+        return 1.0;
+    char* end = nullptr;
+    double v = std::strtod(it->second.c_str(), &end);
+    return end != it->second.c_str() && std::isfinite(v) && v > 0 ? v : 1.0;
+}
+bool psLtScale(const Header& h) {
+    return customFlag(h, kPsLtScaleKey, true);
+}
+bool msLtScale(const Header& h) {
+    return customFlag(h, kMsLtScaleKey, true);
+}
+bool plineGen(const Header& h) {
+    return customFlag(h, kPlineGenKey, true);
+}
+
 double currentAnnotationScale(const Header& h) {
     auto it = h.custom.find(kAnnoScaleKey);
     if (it == h.custom.end())

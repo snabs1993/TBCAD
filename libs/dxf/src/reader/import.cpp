@@ -176,7 +176,8 @@ void Importer::parseHeader(const Record& rec) {
     std::string var;
     int insunits = 0;
     bool haveUnits = false;
-    double ltscale = 1;
+    double ltscale = 1, celtscale = 1;
+    std::int64_t psltscale = -1, msltscale = -1, plinegen = -1;
     std::string clayer;
     for (const Group& g : rec.g) {
         if (g.code == 9) {
@@ -190,6 +191,14 @@ void Importer::parseHeader(const Record& rec) {
             haveUnits = true;
         } else if (var == "$LTSCALE" && g.code == 40) {
             ltscale = g.number();
+        } else if (var == "$CELTSCALE" && g.code == 40) {
+            celtscale = g.number();
+        } else if (var == "$PSLTSCALE" && g.code == 70) {
+            psltscale = g.integer();
+        } else if (var == "$MSLTSCALE" && g.code == 70) {
+            msltscale = g.integer();
+        } else if (var == "$PLINEGEN" && g.code == 70) {
+            plinegen = g.integer();
         } else if (var == "$CLAYER" && g.code == 8) {
             clayer = std::string(g.str());
         }
@@ -198,6 +207,14 @@ void Importer::parseHeader(const Record& rec) {
     (void)tx_->modifyHeader([&](Header& h) {
         if (std::isfinite(ltscale) && ltscale > 0)
             h.ltScale = ltscale;
+        if (std::isfinite(celtscale) && celtscale > 0 && celtscale != 1)
+            h.custom[kCeLtScaleKey] = std::to_string(celtscale);
+        if (psltscale >= 0)
+            h.custom[kPsLtScaleKey] = psltscale ? "1" : "0";
+        if (msltscale >= 0)
+            h.custom[kMsLtScaleKey] = msltscale ? "1" : "0";
+        if (plinegen >= 0)
+            h.custom[kPlineGenKey] = plinegen ? "1" : "0";
         h.createdBy = "tbcad-convert";
         h.custom["dxf.acadver"] = acadVer_;
         if (!clayer.empty())

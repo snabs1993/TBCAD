@@ -262,6 +262,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeSpaceTransCommand());
     (void)registry.add(makeDelayCommand());
     (void)registry.add(makeSetvarCommand());
+    for (const char* v : {"CELTSCALE", "PSLTSCALE", "MSLTSCALE", "PLINEGEN"})
+        (void)registry.add(makeVarCommand(v));
     (void)registry.add(makeViewCommand());
     (void)registry.add(makeAddSelectedCommand());
 }

@@ -200,7 +200,7 @@ private:
     void writeSolid(const Props& p, const std::vector<Vec2>& ring, std::uint64_t owner);
     void writeCurveFallback(const Entity& e, const Props& p, std::uint64_t owner);
     void writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& v, bool closed,
-                             double constantWidth, std::uint64_t owner);
+                             double constantWidth, std::uint64_t owner, bool runsOn = true);
     // Writes the dimension at ids[index] and returns how many ids it used (>= 1).
     std::size_t writeDimension(const std::vector<EntityId>& ids, std::size_t index,
                                std::uint64_t owner);
