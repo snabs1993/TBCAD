@@ -39,6 +39,7 @@ struct LayerRec {
     int lineweight = -3;
     std::uint64_t linetype = 0;
     std::uint64_t xdic = 0;  // extension dictionary handle, 0 when none
+    std::string description{};  // second string of the AcAecLayerStandard extended data
     std::string eed{};       // extended data blocks as hex (first bytes), for the trace
     std::string colorRaw{};  // the colour words as read, for the trace
 };
