@@ -76,6 +76,13 @@ struct TextStyle {
     // Fixed text height (AutoCAD's STYLE height). 0 = variable: the height is asked for or taken
     // from the drawing's sizing; above 0 every TEXT / MTEXT in this style gets that height.
     double height = 0;
+    // The AutoCAD shape font (and big font) a DXF/DWG style named, for example "romans.shx". Used
+    // when the file can be found; else the stroke font stands in (fontFamily). widthFactor then
+    // includes the stand-in's 1/0.92 correction, which a real SHX font undoes.
+    std::string shxFile{};
+    std::string bigFontFile{};
+    // New text in this style is annotative (sized by the annotation scale).
+    bool annotative = false;
 };
 
 enum class ArrowType { ClosedFilled, Open30, ArchTick, Dot, None };

@@ -660,16 +660,34 @@ void Importer::readStyle(const Record& r) {
             ts.fontFile += ".shx";
     }
     if (endsWithNoCase(ts.fontFile, ".shx")) {
-        // AutoCAD compiled shape fonts are not read; the style gets TBCAD's own stroke font.
+        // The style keeps the shape font's name: the real font is used when the file is found on
+        // this machine, else TBCAD's own stroke font stands in.
         std::string shx = ts.fontFile;
         std::string big = dec(r.raw(4));
+        ts.shxFile = shx;
+        ts.bigFontFile = big;
         ts.fontFile.clear();
         ts.fontFamily = "TBCAD Stroke";
         report_.info(code::kShxFont,
                      "text style \"" + name + "\": SHX font \"" + shx +
-                         "\" is replaced by the TBCAD Stroke font" +
-                         (big.empty() ? std::string() : " (big font \"" + big + "\" dropped)"),
+                         "\" is drawn with the real font when its file is found, else with the "
+                         "TBCAD Stroke font" +
+                         (big.empty() ? std::string() : " (big font \"" + big + "\" is not read)"),
                      r.line);
+    }
+    // AcadAnnotative extended data: "AnnotativeData", { 1070 1 (on) 1070 0 }.
+    {
+        bool inAnno = false, seenData = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                inAnno = g.str() == "AcadAnnotative";
+            else if (inAnno && g.code == 1000 && g.str() == "AnnotativeData")
+                seenData = true;
+            else if (inAnno && seenData && g.code == 1070) {
+                ts.annotative = g.integer() == 1;
+                break;
+            }
+        }
     }
     double wf = r.num(41, 1);
     ts.widthFactor = (std::isfinite(wf) && wf > 0) ? wf : 1;
@@ -692,6 +710,9 @@ void Importer::readStyle(const Record& r) {
             t.widthFactor = ts.widthFactor;
             t.oblique = ts.oblique;
             t.height = ts.height;
+            t.shxFile = ts.shxFile;
+            t.bigFontFile = ts.bigFontFile;
+            t.annotative = ts.annotative;
         });
         styleRawWidth_[id.value] = rawWidth;
         return;

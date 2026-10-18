@@ -1212,6 +1212,28 @@ TEST_CASE(
         }
     });
     CHECK(found);
+
+TEST_CASE("a shape font name and the annotative flag of a text style survive DXF") {
+    Document doc;
+    {
+        auto tx = doc.begin("styles");
+        TextStyle a;
+        a.name = "Plan";
+        a.shxFile = "romans.shx";
+        a.bigFontFile = "bigfont.shx";
+        a.fontFamily = "TBCAD Stroke";
+        a.widthFactor = 0.9 / 0.92;
+        a.annotative = true;
+        REQUIRE(tx.addTextStyle(a).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const TextStyle* got = rt.back->textStyleByName("Plan");
+    REQUIRE(got);
+    CHECK(got->shxFile == "romans.shx");
+    CHECK(got->bigFontFile == "bigfont.shx");
+    CHECK(got->annotative);
+    CHECK(got->widthFactor == doctest::Approx(0.9 / 0.92));
 }
 
 }  // namespace tbcad::dxf

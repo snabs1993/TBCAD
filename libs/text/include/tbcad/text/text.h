@@ -30,6 +30,26 @@ font::FontLibrary& fonts();
 inline constexpr font::FontId kNoFont{0xFFFFFFFFu};
 font::FontId fontForStyle(const TextStyle* style, bool bold = false, bool italic = false);
 
+/// Folders searched for .shx font files, besides the bundled assets/fonts/shx, the folders in the
+/// environment variable TBCAD_FONT_PATH and the system font folders.
+void setFontSearchPaths(std::vector<std::filesystem::path> dirs);
+/// True for a name ending in .shx (any case).
+bool isShxName(std::string_view name);
+/// The file for a font name such as "romans.shx" or "C:/fonts/thai.shx"; empty when not found.
+std::filesystem::path locateFontFile(const std::string& name);
+
+/// How a style gets its font on this machine.
+struct FontResolution {
+    enum class Kind : std::uint8_t { Installed, Shx, Substitute } kind = Kind::Installed;
+    std::string wanted{};  // the font the style asks for (file or family)
+    std::string used{};    // what is drawn
+};
+FontResolution resolveStyleFont(const TextStyle& style);
+/// One entry per text style whose font is missing and replaced (Kind::Substitute).
+std::vector<std::pair<std::string, FontResolution>> missingFonts(const Document& doc);
+/// Width factor the layout applies: the style's, corrected for a real SHX font (see TextStyle).
+double effectiveWidthFactor(const TextStyle* style);
+
 /// True for the family name of the bundled single-stroke font ("TBCAD Stroke", case-insensitive).
 bool isStrokeFamily(std::string_view family);
 /// True for a font file name ending in .tbsf (own single-stroke format).

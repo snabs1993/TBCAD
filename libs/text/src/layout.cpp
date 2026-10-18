@@ -477,7 +477,7 @@ double measureWidth(const TextStyle* style, std::string_view utf8, double height
 static TextLayout layoutTextRaw(const Document& doc, const TextData& d) {
     TextLayout out;
     const TextStyle* style = styleFor(doc, d.style);
-    const double styleWf = style ? style->widthFactor : 1.0;
+    const double styleWf = effectiveWidthFactor(style);
     const double styleObl = style ? style->oblique : 0.0;
     double wf = styleWf * (d.widthFactor > 0 ? d.widthFactor : 1.0);
     const double obl = styleObl + d.oblique;
@@ -578,7 +578,7 @@ static TextLayout layoutTextRaw(const Document& doc, const TextData& d) {
 static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
     TextLayout out;
     const TextStyle* style = styleFor(doc, d.style);
-    const double wf = style ? style->widthFactor : 1.0;
+    const double wf = effectiveWidthFactor(style);
     const double obl = style ? style->oblique : 0.0;
     const double height = d.height > 0 ? d.height : 2.5;
 

@@ -85,6 +85,7 @@ public:
         loadLinetypes(tx);
         loadLinetypeMarks(tx);
         loadTextStyles(tx);
+        loadTextStyleExtras(tx);
         loadTextHeights(tx);
         loadDimStyles(tx);
         loadDimStyleExtras(tx);
@@ -115,6 +116,7 @@ private:
                 case kTsth:
                 case kDstx:
                 case kLtmk:
+                case kTstx:
                 case kDsty:
                 case kLayr:
                 case kLvls:
@@ -365,6 +367,32 @@ private:
                 bad("internal id mismatch");
             ++next;
         });
+    }
+
+    void loadTextStyleExtras(Transaction& tx) {
+        const RawChunk* c = find(kTstx);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(4);
+        for (std::size_t i = 0; i < n; ++i) {
+            const TextStyleId id{id32(r)};
+            const std::uint8_t flags = r.u8();
+            std::string shx = str(r);
+            std::string big = str(r);
+            if (!doc_->textStyle(id))
+                continue;
+            check(tx.modifyTextStyle(id,
+                                     [&](TextStyle& t) {
+                                         t.annotative = (flags & 1) != 0;
+                                         t.shxFile = std::move(shx);
+                                         t.bigFontFile = std::move(big);
+                                     }),
+                  "text style");
+        }
+        if (!r.atEnd())
+            bad("trailing data in TSTX");
     }
 
     void loadLinetypeMarks(Transaction& tx) {

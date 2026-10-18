@@ -37,6 +37,9 @@ public:
     // Single-stroke fonts (TBCAD's own .tbsf format, see docs/font.md). A stroke font has FontId,
     // metrics and shaping like an outline font (glyph id = code point, no outlines), and its
     // glyphs come from strokes(). Characters it lacks fall back like for any other font.
+    // Also reads compiled AutoCAD shape fonts (.shx: shapes 1.0/1.1 and unifont 1.0; big fonts are
+    // not read). Shapes fonts numbered by Windows-874 (Thai) are recognised by a file name that
+    // starts with "th" or contains "thai"; other fonts read codes above 0x9F as Latin-1.
     Result<FontId> loadStroke(const std::filesystem::path& path);
     Result<FontId> loadStrokeFromMemory(std::string_view tbsfText);
     // "tbcad-stroke" (Latin + Thai), looked up in <bundled directory>/stroke.

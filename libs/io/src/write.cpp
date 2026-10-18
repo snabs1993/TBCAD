@@ -150,6 +150,18 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             ++ltmkCount;
         }
 
+        ByteWriter tstx;
+        std::size_t tstxCount = 0;
+        for (const auto& [id, r] : doc.textStyles()) {
+            if (r.shxFile.empty() && r.bigFontFile.empty() && !r.annotative)
+                continue;
+            tstx.varint(id.value);
+            tstx.u8(r.annotative ? 1 : 0);
+            tstx.varint(st.intern(r.shxFile));
+            tstx.varint(st.intern(r.bigFontFile));
+            ++tstxCount;
+        }
+
         ByteWriter tsty;
         tsty.varint(doc.textStyles().size());
         for (const auto& [id, r] : doc.textStyles()) {
@@ -473,6 +485,12 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
         addRaw(kStrs, std::move(strs.bytes()));
         addRaw(kLtyp, std::move(ltyp.bytes()));
         addRaw(kTsty, std::move(tsty.bytes()));
+        if (tstxCount > 0) {
+            ByteWriter body;
+            body.varint(tstxCount);
+            body.raw(tstx.bytes());
+            addRaw(kTstx, std::move(body.bytes()));
+        }
         if (ltmkCount > 0) {
             ByteWriter body;
             body.varint(ltmkCount);

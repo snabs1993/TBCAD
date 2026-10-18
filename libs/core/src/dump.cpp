@@ -438,6 +438,13 @@ std::string canonicalDump(const Document& doc) {
         o << " wf" << r.widthFactor << " ob" << r.oblique;
         if (r.height > 0)
             o << " h" << r.height;
+        if (!r.shxFile.empty() || !r.bigFontFile.empty() || r.annotative) {
+            o << " shx=";
+            o.quoted(r.shxFile);
+            o << " big=";
+            o.quoted(r.bigFontFile);
+            o << " anno" << r.annotative;
+        }
         o << "\n";
     }
     for (const auto& [id, r] : doc.dimStyles()) {

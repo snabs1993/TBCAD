@@ -26,7 +26,7 @@ bool looksLikeFontFile(const std::string& s) {
                 return false;
         return true;
     };
-    return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf");
+    return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf") || ends(".shx");
 }
 
 bool parseNumber(const std::string& s, double& out) {
@@ -46,12 +46,24 @@ std::string applyProperty(TextStyle& s, const std::string& key, const std::strin
     if (same("Font")) {
         s.fontFile.clear();
         s.fontFamily.clear();
+        s.shxFile.clear();
+        s.bigFontFile.clear();
         if (value.empty() || cmd::toUpperAscii(value) == "DEFAULT" || value == "Sarabun")
             return {};
         if (looksLikeFontFile(value))
             s.fontFile = value;
         else
             s.fontFamily = value;
+        return {};
+    }
+    if (same("Annotative")) {
+        const std::string u = cmd::toUpperAscii(value);
+        if (u == "1" || u == "YES" || u == "ON")
+            s.annotative = true;
+        else if (u == "0" || u == "NO" || u == "OFF")
+            s.annotative = false;
+        else
+            return "Annotative is Yes or No.";
         return {};
     }
     double v = 0;
@@ -75,7 +87,7 @@ std::string applyProperty(TextStyle& s, const std::string& key, const std::strin
         s.height = v;
         return {};
     }
-    return "Unknown property " + key + " (Font, Width, Oblique, Height).";
+    return "Unknown property " + key + " (Font, Width, Oblique, Height, Annotative).";
 }
 
 class StyleManagerCommand final : public cmd::Command {

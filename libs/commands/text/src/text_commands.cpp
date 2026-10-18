@@ -225,6 +225,7 @@ public:
         d.utf8 = t.text;
         Entity created{{}, std::move(d)};
         applyCurrentProperties(ctx.doc().header(), created);
+        applyStyleAnnotative(ctx.doc(), created);
         auto id = ctx.tx().add(std::move(created));
         if (!id)
             ctx.message(id.error().message);
@@ -481,6 +482,7 @@ public:
         ctx.host().setSetting(kAttachKey, attachName(d.attach));
         Entity created{{}, std::move(d)};
         applyCurrentProperties(ctx.doc().header(), created);
+        applyStyleAnnotative(ctx.doc(), created);
         auto id = ctx.tx().add(std::move(created));
         if (!id)
             ctx.message(id.error().message);

@@ -113,3 +113,36 @@ TEST_CASE("-STYLE Edit sets the fixed height") {
     f.host.run("-STYLE", {"Edit", "Standard", "Height", "-1", "Done", "Done"});
     CHECK(f.doc.textStyle(kTextStyleStandard)->height == doctest::Approx(3.5));
 }
+
+TEST_CASE("a shape font that is not installed is reported by FONTCHECK and stands in") {
+    Fixture f;
+    f.host.run("STYLE", {"Plan", "romans.shx", "1", "0", "0"});
+    const TextStyle* s = f.doc.textStyleByName("Plan");
+    REQUIRE(s);
+    CHECK(s->fontFile == "romans.shx");
+    f.host.run("FONTCHECK", {});
+    CHECK(f.host.logContains("Style Plan"));
+    CHECK(f.host.logContains("romans.shx not found"));
+    // Choosing a normal font again forgets the shape font.
+    f.host.run("STYLE", {"Plan", "Sarabun", "1", "0", "0"});
+    CHECK(f.doc.textStyleByName("Plan")->fontFile.empty());
+    f.host.run("FONTCHECK", {});
+    CHECK(f.host.logContains("All fonts used"));
+}
+
+TEST_CASE("text in an annotative style is annotative") {
+    Fixture f;
+    f.host.run("ST", {"Note", "Sarabun", "1", "0", "0"});
+    {
+        auto tx = f.doc.begin("anno");
+        REQUIRE(tx.modifyTextStyle(f.doc.textStyleByName("Note")->id, [](TextStyle& t) {
+                      t.annotative = true;
+                  }).ok());
+        tx.commit();
+    }
+    f.host.run("TEXT", {"0,0", "2.5", "0", "A"});
+    int anno = 0, plain = 0;
+    f.doc.forEachEntity([&](const Entity& e) { (e.common.annotative ? anno : plain)++; });
+    CHECK(anno == 1);
+    CHECK(plain == 0);
+}
