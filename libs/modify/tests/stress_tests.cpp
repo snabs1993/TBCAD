@@ -298,3 +298,74 @@ TEST_CASE("stress: fillet, chamfer and break on awkward input stay finite") {
     }
     CHECK(worked > 200);
 }
+
+TEST_CASE("stress: trim, extend, offset and fillet with ellipses and splines stay finite") {
+    std::mt19937 rng(555);
+    std::uniform_real_distribution<double> coord(-25, 25), unit(0, 1);
+    const auto ellipse = [&]() {
+        EllipseData d;
+        d.center = {coord(rng), coord(rng)};
+        const double a = 3 + 10 * unit(rng), t = unit(rng) * 6.28;
+        d.majorAxis = {a * std::cos(t), a * std::sin(t)};
+        d.ratio = 0.2 + 0.8 * unit(rng);
+        if (rng() % 2) {
+            d.startParam = unit(rng) * 3;
+            d.endParam = d.startParam + 0.5 + unit(rng) * 4;
+        }
+        return make(std::move(d));
+    };
+    const auto spline = [&]() {
+        SplineData d;
+        d.degree = 3;
+        d.knots = {0, 0, 0, 0, 1, 2, 3, 3, 3, 3};
+        for (int i = 0; i < 6; ++i)
+            d.control.push_back({coord(rng), coord(rng)});
+        return make(std::move(d));
+    };
+    const auto curveAt = [](const Entity& e) {
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(e, cs);
+        return cs.empty()
+                   ? Vec2{}
+                   : cs[0].pointAt(cs[0].t0() + 0.4 * (cs[0].isLine() ? 1.0 : cs[0].sweep()));
+    };
+    int worked = 0;
+    for (int iter = 0; iter < 300; ++iter) {
+        const Entity target = iter % 2 ? ellipse() : spline();
+        std::vector<Entity> edges{ellipse(), spline(),
+                                  line({coord(rng), coord(rng)}, {coord(rng), coord(rng)}),
+                                  circle({coord(rng), coord(rng)}, 4 + unit(rng) * 8)};
+        const Vec2 pick = curveAt(target);
+        for (bool extendEdges : {false, true}) {
+            TrimOptions opt;
+            opt.extendEdges = extendEdges;
+            for (int mode = 0; mode < 2; ++mode) {
+                auto r = mode == 0 ? trimEntity(target, pick, ptrs(edges), opt)
+                                   : extendEntity(target, pick, ptrs(edges), opt);
+                if (!r.ok())
+                    continue;
+                ++worked;
+                if (r.value().modified)
+                    CHECK(sane(*r.value().modified));
+                for (const auto& e : r.value().added)
+                    CHECK(sane(e));
+            }
+        }
+        for (double d : {-3.0, 2.0}) {
+            auto r = offsetEntity(target, d, OffsetOptions{});
+            if (!r.ok())
+                continue;
+            ++worked;
+            for (const auto& e : r.value())
+                CHECK(sane(e));
+        }
+        auto f =
+            filletEntities(target, pick, edges[2], curveAt(edges[2]), FilletOptions{1.5, true});
+        if (f.ok()) {
+            ++worked;
+            for (const auto& e : f.value().added)
+                CHECK(sane(e));
+        }
+    }
+    CHECK(worked > 300);
+}
