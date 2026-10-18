@@ -198,3 +198,12 @@ line = 64.2 | 8.17,6.66 | 2.65,7.99 | 2.5,-13.63
 line = 112.3 | 1.99,3.81 | 2.94,6.07 | 2.6,-10.41
 line = 93.0 | 9.33,6.66 | 1.64,8.96 | 2.7,-13.84
 line = 123.4 | 5.62,3.79 | 0.45,7.02 | 2.5,-14.79
+
+[ANSI31]
+description = Steel / general section: diagonal lines 3.175 mm apart
+line = 45 | 0,0 | 0,3.175 |
+
+[ANSI37]
+description = Diagonal crosshatch 3.175 mm apart
+line = 45 | 0,0 | 0,3.175 |
+line = 135 | 0,0 | 0,3.175 |

@@ -77,3 +77,12 @@ TEST_CASE("user patterns shadow built-in ones and show up in names()") {
     CHECK_FALSE(PatternRegistry::find("LINE45")->solid);
     CHECK(PatternRegistry::find("MYHATCH") == nullptr);
 }
+
+TEST_CASE("pattern names from other programs resolve: ANSI31, AR-CONC, AR-B816") {
+    const Pattern* ansi = PatternRegistry::find("ansi31");
+    REQUIRE(ansi);
+    REQUIRE(ansi->families.size() == 1);
+    CHECK(ansi->families[0].delta.y == doctest::Approx(3.175));
+    CHECK(PatternRegistry::find("AR-CONC") == PatternRegistry::find("CONCRETE"));
+    CHECK(PatternRegistry::find("AR-B816") == PatternRegistry::find("BRICK"));
+}

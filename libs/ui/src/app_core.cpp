@@ -1867,10 +1867,17 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         flashIds_.clear();
         scene_.setHighlighted(hoverId_ ? std::vector<EntityId>{hoverId_} : std::vector<EntityId>{});
     }
-    if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
+    if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_) ||
+        (staleWaiting_ && !(lastTessellatedFor_ == camera_))) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
-        lastTessellatedFor_ = camera_;
+        staleWaiting_ = session_->sync->staleOffscreen();
+        // Keep the zoom the waiting objects were measured against: only a pan re-checks.
+        const bool zoomed = render::Scene::needsRetessellation(lastTessellatedFor_, camera_);
+        if (zoomed || !staleWaiting_)
+            lastTessellatedFor_ = camera_;
+        else
+            lastTessellatedFor_.center = camera_.center;
     }
     // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
     if (session_->sync->pumpPending(camera_) > 0)
