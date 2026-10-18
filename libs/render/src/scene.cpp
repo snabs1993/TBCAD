@@ -445,11 +445,11 @@ void Scene::discardAll() {
     if (graveyard_.valid())
         graveyard_.get();
     if (entities_.size() >= kAsyncMin) {
-        graveyard_ = std::async(std::launch::async,
-                                [tiles = std::move(tiles_), entities = std::move(entities_)]() mutable {
-                                    tiles.clear();
-                                    entities.clear();
-                                });
+        graveyard_ = std::async(std::launch::async, [tiles = std::move(tiles_),
+                                                     entities = std::move(entities_)]() mutable {
+            tiles.clear();
+            entities.clear();
+        });
     }
     tiles_.clear();
     entities_.clear();
