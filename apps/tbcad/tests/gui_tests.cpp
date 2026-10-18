@@ -384,3 +384,77 @@ TEST_CASE("plot panel: options change the exported PDF") {
     CHECK(port.first < port.second);
     CHECK(port.first == doctest::Approx(land.second).epsilon(0.01));
 }
+
+namespace {
+
+// Pixels of the X arrow's red inside the viewport (x < 1420, between the toolbar and the tabs).
+struct RedSpot {
+    int count = 0;
+    double cx = 0, cy = 0;
+};
+RedSpot redSpot(const Image& img) {
+    RedSpot r;
+    for (int y = 95; y < 860 && y < img.height; ++y)
+        for (int x = 0; x < 1420 && x < img.width; ++x) {
+            const std::uint8_t* p = &img.rgba[(static_cast<std::size_t>(y) * img.width + x) * 4];
+            if (p[0] > 200 && p[1] < 110 && p[2] < 110) {
+                ++r.count;
+                r.cx += x;
+                r.cy += y;
+            }
+        }
+    if (r.count) {
+        r.cx /= r.count;
+        r.cy /= r.count;
+    }
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("UCS icon: on, off, origin, noorigin, rotated and the world marker") {
+    Harness h(1920, 1080);
+    h.core().setSetting("display.originIcon", "0");  // the plain axes landmark, not under test
+    h.core().submitText("LINE");  // the start page hides the icon while the drawing is untouched
+    h.core().submitText("500,500");
+    h.core().submitText("900,500");
+    h.core().pressEscape();
+    h.frame(3);
+    Vec2 o = h.core().camera().worldToScreen({0, 0});
+    o.y += 92;  // the viewport starts below the menu, toolbar and tabs
+
+    // On by default, at the world origin.
+    const RedSpot on = redSpot(h.screenshot());
+    CHECK(on.count > 20);
+    CHECK(on.cx == doctest::Approx(o.x + 18).epsilon(0.5));  // the arrow lies to the right
+    const Image atOrigin =
+        crop(h.screenshot(), static_cast<int>(o.x) - 30, static_cast<int>(o.y) - 70, 130, 110);
+    CHECK(matchesGolden(atOrigin, "ucsicon_world"));
+
+    // Noorigin: the icon moves to the lower-left corner of the viewport.
+    run(h, "UCSICON Noorigin");
+    const RedSpot corner = redSpot(h.screenshot());
+    CHECK(corner.count > 20);
+    CHECK(corner.cx < 120);
+    CHECK(corner.cy > 700);
+    run(h, "UCSICON ORigin");
+    CHECK(redSpot(h.screenshot()).cx == doctest::Approx(on.cx).epsilon(0.01));
+
+    // Rotated UCS: the X arrow turns, the world marker goes away.
+    h.core().submitText("UCS");
+    h.core().submitText("Rotate");
+    h.core().submitText("90");
+    h.frame(3);
+    const RedSpot turned = redSpot(h.screenshot());
+    CHECK(turned.count > 20);
+    CHECK(turned.cy < on.cy - 10);  // pointing up now (screen y grows downwards)
+    const Image rotated =
+        crop(h.screenshot(), static_cast<int>(o.x) - 30, static_cast<int>(o.y) - 70, 130, 110);
+    CHECK(matchesGolden(rotated, "ucsicon_rotated"));
+
+    // Off.
+    run(h, "UCSICON OFF");
+    CHECK(redSpot(h.screenshot()).count == 0);
+    run(h, "UCSICON ON");
+    CHECK(redSpot(h.screenshot()).count > 20);
+}

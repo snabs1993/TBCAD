@@ -18,6 +18,7 @@
 #include "icons.h"
 #include "key_map.h"
 #include "tbcad/drafting/settings.h"
+#include "tbcad/drafting/ucs.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
@@ -3307,7 +3308,7 @@ ViewportRect Gui::frame() {
     gripMenu(rect);
     // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.
     if (!core_.inPaperSpace() && core_.settings().getBool("display.originIcon", true) &&
-        !startPage_) {
+        !ucsIconShown()) {
         const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
         const Vec2 o = core_.camera().worldToScreen({0, 0});
         const ImVec2 at(rect.x + static_cast<float>(o.x / sc),
@@ -3382,6 +3383,73 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
     ImDrawList* bg = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     bg->AddImage(static_cast<ImTextureID>(texture), ImVec2(rect.x, rect.y),
                  ImVec2(rect.x + rect.w, rect.y + rect.h), ImVec2(0, 1), ImVec2(1, 0));
+    ucsIcon(rect);  // after the picture, so it lies on top of the drawing
+}
+
+bool Gui::ucsIconShown() const {
+    // The start page covers an untouched drawing; the icon waits for the first change.
+    const bool startPageShown =
+        startPage_ && core_.isPristine() && core_.documentCount() == 1 && !core_.runner().active();
+    return !startPageShown && !core_.inPaperSpace() &&
+           drafting::parseBoolSetting(core_.setting(drafting::keys::ucsIcon).value_or("1"), true);
+}
+
+// The coordinate-system icon (UCSICON): an X and a Y arrow along the axes of the current UCS, at
+// the UCS origin or, with "Noorigin" or when the origin is off screen, in the lower-left corner.
+// A "W" next to it says the system is the world system; a small square marks the real origin.
+void Gui::ucsIcon(const ViewportRect& rect) {
+    if (!ucsIconShown())
+        return;
+    const drafting::Ucs ucs = drafting::currentUcs(&core_.document(), &core_);
+    const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
+    const float len = 36.0f * dpiScale_;
+    ImVec2 at(rect.x + 44.0f * dpiScale_, rect.y + rect.h - 44.0f * dpiScale_);
+    bool atOrigin = false;
+    if (drafting::parseBoolSetting(core_.setting(drafting::keys::ucsIconOrigin).value_or("1"),
+                                   true)) {
+        const Vec2 o = core_.camera().worldToScreen(ucs.origin);
+        const ImVec2 p(rect.x + static_cast<float>(o.x / sc),
+                       rect.y + static_cast<float>(o.y / sc));
+        const float margin = len + 20.0f * dpiScale_;  // the whole icon stays inside the viewport
+        if (p.x >= rect.x + margin * 0.3f && p.y >= rect.y + margin &&
+            p.x < rect.x + rect.w - margin && p.y < rect.y + rect.h - margin * 0.3f) {
+            at = p;
+            atOrigin = true;
+        }
+    }
+    const float c = static_cast<float>(std::cos(ucs.angle));
+    const float sn = static_cast<float>(std::sin(ucs.angle));
+    const ImVec2 dx(c, -sn), dy(-sn, -c);  // screen directions of the UCS axes (y grows downwards)
+    const ImU32 xCol = IM_COL32(230, 80, 80, 235), yCol = IM_COL32(80, 200, 100, 235);
+    ImDrawList* dl = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
+    dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h));
+    auto arrow = [&](ImVec2 d, ImU32 col, const char* name) {
+        const ImVec2 tip(at.x + d.x * len, at.y + d.y * len);
+        const ImVec2 n(-d.y, d.x);
+        const float h = 7.0f * dpiScale_;
+        dl->AddLine(at, tip, col, 1.6f);
+        dl->AddTriangleFilled(tip,
+                              ImVec2(tip.x - d.x * h * 1.6f + n.x * h * 0.5f,
+                                     tip.y - d.y * h * 1.6f + n.y * h * 0.5f),
+                              ImVec2(tip.x - d.x * h * 1.6f - n.x * h * 0.5f,
+                                     tip.y - d.y * h * 1.6f - n.y * h * 0.5f),
+                              col);
+        const ImVec2 ts = ImGui::CalcTextSize(name);
+        dl->AddText(ImVec2(tip.x + d.x * 8.0f * dpiScale_ - ts.x * 0.5f,
+                           tip.y + d.y * 8.0f * dpiScale_ - ts.y * 0.5f),
+                    col, name);
+    };
+    arrow(dx, xCol, "X");
+    arrow(dy, yCol, "Y");
+    if (atOrigin) {
+        const float q = 3.5f * dpiScale_;
+        dl->AddRect(ImVec2(at.x - q, at.y - q), ImVec2(at.x + q, at.y + q),
+                    IM_COL32(140, 145, 155, 240));
+    }
+    if (ucs.isWorld())
+        dl->AddText(ImVec2(at.x + 6.0f * dpiScale_, at.y + 3.0f * dpiScale_),
+                    IM_COL32(140, 145, 155, 240), "W");
+    dl->PopClipRect();
 }
 
 // ---- dialogs -----------------------------------------------------------------------------------
