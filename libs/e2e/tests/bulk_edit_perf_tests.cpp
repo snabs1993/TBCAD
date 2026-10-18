@@ -10,6 +10,7 @@
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/drafting/osnap.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/ui/app_core.h"
 
@@ -337,6 +338,9 @@ TEST_CASE("perf: pointer movement with snaps on a big drawing") {
     };
     run("idle (hover)");
     big.core->submitText("LINE");
+    std::printf("  prompt: %s, active %d, osnap %s\n", big.core->promptText().c_str(),
+                big.core->runner().active() ? 1 : 0,
+                big.core->setting("drafting.osnap").value_or("?").c_str());
     run("LINE, first point");
     big.core->submitText("0,0");
     run("LINE, second point");
@@ -350,4 +354,32 @@ TEST_CASE("perf: pointer movement with snaps on a big drawing") {
     big.core->submitText("LINE");
     run("zoomed in, LINE");
     big.core->pressEscape();
+}
+
+TEST_CASE("perf: snap lookup with every mode on a big drawing") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Big big;
+    std::printf("snap lookup on %d objects\n", 2 * big.n);
+    const double w = 500 * 30.0, h = (big.n / 500) * 30.0;
+    for (double aperture : {0.5, 5.0, 50.0, 500.0, 5000.0}) {
+        drafting::SnapRequest req;
+        req.apertureMm = aperture;
+        req.modes = drafting::kAllSnapModes;
+        req.base = Vec2{0, 0};
+        double worst = 0, total = 0;
+        std::size_t found = 0;
+        const int steps = 100;
+        for (int i = 0; i < steps; ++i) {
+            req.cursor = {(i * 7919) % static_cast<int>(w), (i * 104729) % static_cast<int>(h)};
+            auto t = std::chrono::steady_clock::now();
+            const auto c =
+                drafting::findSnapCandidates(big.core->document(), big.core->spatialIndex(), req);
+            const double d = ms(t);
+            found += c.size();
+            worst = std::max(worst, d);
+            total += d;
+        }
+        std::printf("  aperture %7.1f mm: mean %.3f ms, worst %.3f ms, %.1f candidates\n", aperture,
+                    total / steps, worst, static_cast<double>(found) / steps);
+    }
 }
