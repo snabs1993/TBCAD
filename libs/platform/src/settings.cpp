@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <system_error>
 
@@ -23,6 +24,24 @@ Settings Settings::withDefaults() {
     o["pick.aperturePx"] = 6;
     o["files.defaultFormat"] = "tbcad";
     return s;
+}
+
+void Settings::resetToDefaults() {
+    // The options of the Settings dialog; recent files, workspaces and folders stay.
+    static constexpr std::string_view kPrefixes[] = {
+        "ui.theme", "ui.scale",  "ui.wheel.", "ui.rightClick",      "view.", "hover.", "hud.",
+        "pick.",    "autosave.", "drafting.", "files.defaultFormat"};
+    auto& o = root_.object();
+    for (auto it = o.begin(); it != o.end();) {
+        bool drop = false;
+        for (std::string_view p : kPrefixes)
+            drop = drop || it->first.rfind(p, 0) == 0;
+        it = drop ? o.erase(it) : std::next(it);
+    }
+    Settings defaults = withDefaults();  // a named object: it must outlive the loop
+    for (const auto& [k, v] : defaults.root_.object())
+        o[k] = v;
+    dirty_ = true;
 }
 
 Result<void> Settings::load(const std::filesystem::path& file) {

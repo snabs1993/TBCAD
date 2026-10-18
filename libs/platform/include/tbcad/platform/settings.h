@@ -19,6 +19,9 @@ public:
 
     // The defaults of every setting the application itself defines.
     static Settings withDefaults();
+    // Puts the options of the Settings dialog back to their defaults (not recent files,
+    // workspaces or folders).
+    void resetToDefaults();
 
     // Missing file: not an error (defaults stay). Broken file: error, defaults stay, and the
     // caller is expected to tell the user.
