@@ -47,11 +47,25 @@ bool inPolygon(const std::vector<Vec2>& poly, Vec2 p) {
     return in;
 }
 
+// Objects whose bounding box lies in a convex window move whole, whatever their grips are.
+bool simpleKind(const Entity& e) {
+    switch (kind(e)) {
+        case EntityKind::Line:
+        case EntityKind::Arc:
+        case EntityKind::Polyline:
+        case EntityKind::Circle:
+        case EntityKind::Point:
+            return true;
+        default:
+            return false;
+    }
+}
+
 template <class Contains, class ContainsBox>
 std::vector<std::pair<EntityId, Entity>> stretchImpl(const Document& doc,
                                                      const std::vector<EntityId>& ids,
                                                      Contains contains, ContainsBox containsBox,
-                                                     Vec2 delta, std::string* error) {
+                                                     Vec2 delta, std::string* error, bool convex) {
     std::vector<std::pair<EntityId, Entity>> out;
     const Transform2 shift = Transform2::translate(delta);
     auto fail = [&](const std::string& msg) {
@@ -62,6 +76,14 @@ std::vector<std::pair<EntityId, Entity>> stretchImpl(const Document& doc,
         const Entity* src = doc.find(id);
         if (!src)
             continue;
+        if (convex && simpleKind(*src) && containsBox(geom::bounds(*src, doc))) {
+            auto moved = geom::transformed(*src, shift);
+            if (moved)
+                out.emplace_back(id, std::move(moved).value());
+            else
+                fail(moved.error().message);
+            continue;
+        }
         const std::vector<Vec2> grips = geom::gripPoints(*src);
         const int nv = vertexGrips(*src, grips.size());
         bool whole = false;
@@ -111,7 +133,7 @@ std::vector<std::pair<EntityId, Entity>> stretchByWindow(const Document& doc,
                                                          std::string* error) {
     return stretchImpl(
         doc, ids, [&](Vec2 p) { return window.contains(p); },
-        [&](const BBox2& b) { return window.containsBox(b); }, delta, error);
+        [&](const BBox2& b) { return window.containsBox(b); }, delta, error, true);
 }
 
 std::vector<std::pair<EntityId, Entity>> stretchByPolygon(const Document& doc,
@@ -126,7 +148,7 @@ std::vector<std::pair<EntityId, Entity>> stretchByPolygon(const Document& doc,
             return inPolygon(polygon, b.min) && inPolygon(polygon, b.max) &&
                    inPolygon(polygon, {b.min.x, b.max.y}) && inPolygon(polygon, {b.max.x, b.min.y});
         },
-        delta, error);
+        delta, error, false);
 }
 
 }  // namespace tbcad::transform

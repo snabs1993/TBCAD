@@ -229,3 +229,8 @@ TEST_CASE("perf: COPY of everything alone") {
     Big big;
     big.bench("COPY", {"COPY", "0,0", "5,5", ""});
 }
+
+TEST_CASE("perf: STRETCH of everything alone") {
+    Big big;
+    big.bench("STRETCH", {"STRETCH", "-100000,-100000", "100000,100000", "0,0", "5,0"});
+}
