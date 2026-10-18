@@ -18,6 +18,7 @@ Two modules (W5-2):
 | `BREAKATPOINT` | `BAP` | `breakAtPoint` |
 | `JOIN` | `J` | `joinEntities` |
 | `ERASE` | `E` | (only registered when nobody else did) |
+| `OOPS` | | puts back the objects the last ERASE removed, even after other commands (kept per drawing, for the session only). |
 
 Every algorithm returns the new geometry and touches nothing; the command applies it to the
 document in one transaction (one undo step). Results keep every property of the source entity

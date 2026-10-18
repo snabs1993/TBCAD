@@ -15,6 +15,7 @@ std::unique_ptr<cmd::Command> makeBreak();
 std::unique_ptr<cmd::Command> makeBreakAtPoint();
 std::unique_ptr<cmd::Command> makeJoin();
 std::unique_ptr<cmd::Command> makeErase();
+std::unique_ptr<cmd::Command> makeOops();
 std::unique_ptr<cmd::Command> makeLengthen();
 std::unique_ptr<cmd::Command> makeReverse();
 std::unique_ptr<cmd::Command> makeDivide();

@@ -33,6 +33,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeCopyToLayer());
     if (!registry.find("ERASE"))
         (void)registry.add(makeErase());
+    (void)registry.add(makeOops());
 }
 
 }  // namespace tbcad::modifycmd
