@@ -477,6 +477,38 @@ TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
     CHECK_FALSE(second.pendingRecovery().has_value());
 }
 
+TEST_CASE("a damaged autosave is reported, can be discarded, and does not stop the next start") {
+    Fixture f("autosave_damaged");
+    f.line("0,0", "100,0");
+    f.line("0,10", "100,10");
+    REQUIRE(f.core->autosaveNow());
+    fs::path saved;
+    for (const auto& e : fs::directory_iterator(f.dir / "data"))
+        if (e.path().extension() == ".tbcad")
+            saved = e.path();
+    if (saved.empty())
+        for (const auto& e : fs::recursive_directory_iterator(f.dir))
+            if (e.path().extension() == ".tbcad" &&
+                e.path().filename().string().rfind("recovery", 0) == 0)
+                saved = e.path();
+    REQUIRE_FALSE(saved.empty());
+    const auto size = fs::file_size(saved);
+    fs::resize_file(saved, size / 2);  // as if the disk filled up
+
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    auto rec = second.pendingRecovery();
+    REQUIRE(rec.has_value());
+    auto res = second.recover(*rec);  // either the intact part or a clean error, never a crash
+    if (!res.ok())
+        CHECK_FALSE(res.error().message.empty());
+    second.discardRecovery();
+    CHECK_FALSE(second.pendingRecovery().has_value());
+    // The session is still usable.
+    second.newDocument();
+    CHECK(second.document().modelSpaceCount() == 0);
+}
+
 TEST_CASE("a changed setting is written to settings.json without waiting for a clean exit") {
     Fixture f("settings_write");
     const auto now = std::chrono::steady_clock::now();
