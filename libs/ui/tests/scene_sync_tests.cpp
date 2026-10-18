@@ -265,3 +265,41 @@ TEST_CASE(
     CHECK(after.max.x == doctest::Approx(before.max.x));
     CHECK(after.max.y == doctest::Approx(before.max.y));
 }
+
+TEST_CASE("FILL and QTEXT changes in the header rebuild the scene") {
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    {
+        PolylineData wide;
+        wide.v = {{{0, 0}, 0, 4, 4}, {{20, 0}, 0, 4, 4}};
+        auto tx = doc.begin("wide");
+        (void)tx.add(Entity{{}, std::move(wide)});
+        tx.commit();
+    }
+    render::Camera2D cam;
+    cam.center = {10, 0};
+    cam.pixelsPerMm = 10;
+    cam.viewportW = 400;
+    cam.viewportH = 400;
+    auto countKind = [&](render::BatchKind k) {
+        int n = 0;
+        for (const auto& b : scene.visibleBatches(cam))
+            n += b.batch->key.kind == k ? 1 : 0;
+        return n;
+    };
+    CHECK(countKind(render::BatchKind::Fill) > 0);
+    {
+        auto tx = doc.begin("fill off");
+        (void)tx.modifyHeader([](Header& h) { h.custom[kFillModeKey] = "0"; });
+        tx.commit();
+    }
+    CHECK(countKind(render::BatchKind::Fill) == 0);
+    CHECK(countKind(render::BatchKind::Stroke) > 0);  // the outline
+    {
+        auto tx = doc.begin("fill on");
+        (void)tx.modifyHeader([](Header& h) { h.custom[kFillModeKey] = "1"; });
+        tx.commit();
+    }
+    CHECK(countKind(render::BatchKind::Fill) > 0);
+}

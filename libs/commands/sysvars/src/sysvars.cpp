@@ -426,6 +426,9 @@ void registerCommands(cmd::Registry& registry) {
         "CONVERTPOLY", "Convert old-style polylines to the optimized form",
         "Polylines are always kept in the optimized form; there is nothing to convert."));
     (void)registry.add(std::make_unique<QTextCommand>());
+    (void)registry.add(std::make_unique<NoteCommand>(
+        "UPDATEFIELD", "Update fields",
+        "Fields are worked out each time they are drawn, so they are always up to date."));
     (void)registry.add(std::make_unique<MultipleCommand>());
     (void)registry.add(std::make_unique<AttDispCommand>());
     (void)registry.add(makeRenameCommand());
