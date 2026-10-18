@@ -164,18 +164,19 @@ void drawSection(ui::PanelContext& pc, EntityId id) {
         }
         ImGui::EndCombo();
     }
-    constexpr ImGuiInputTextFlags kEnter =
-        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll;
+    // InputDouble does not take EnterReturnsTrue: the edit counts when the field is left.
+    constexpr ImGuiInputTextFlags kEnter = ImGuiInputTextFlags_AutoSelectAll;
     double scale = h->patternScale;
-    if (ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g", kEnter) && scale > 0 &&
-        scale != h->patternScale)
+    ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g", kEnter);
+    if (ImGui::IsItemDeactivatedAfterEdit() && scale > 0 && scale != h->patternScale)
         pc.runCommand("HATCHEDIT S " + number(scale) + " D");
     double angle = h->patternAngle * 180.0 / kPi;
-    if (ImGui::InputDouble("Angle", &angle, 0, 0, "%.6g", kEnter))
+    ImGui::InputDouble("Angle", &angle, 0, 0, "%.6g", kEnter);
+    if (ImGui::IsItemDeactivatedAfterEdit())
         pc.runCommand("HATCHEDIT A " + number(angle) + " D");
     double base[2] = {h->patternOrigin.x, h->patternOrigin.y};
-    if (ImGui::InputScalarN("Origin", ImGuiDataType_Double, base, 2, nullptr, nullptr, "%.6g",
-                            kEnter))
+    ImGui::InputScalarN("Origin", ImGuiDataType_Double, base, 2, nullptr, nullptr, "%.6g", kEnter);
+    if (ImGui::IsItemDeactivatedAfterEdit())
         pc.runCommand("HATCHEDIT B " + number(base[0]) + "," + number(base[1]) + " D");
     ImGui::TextDisabled("%zu loop(s)", h->loops.size());
 }

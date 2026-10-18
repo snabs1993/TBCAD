@@ -128,25 +128,20 @@ void drawEditor(ui::PanelContext& pc, const TextStyle& s) {
     ImGui::SeparatorText("Shape");
     double w = s.widthFactor;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble(
-            "Width factor", &w, 0, 0, "%.4g",
-            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) &&
-        w != s.widthFactor)
+    ImGui::InputDouble("Width factor", &w, 0, 0, "%.4g", ImGuiInputTextFlags_AutoSelectAll);
+    if (ImGui::IsItemDeactivatedAfterEdit() && w != s.widthFactor)
         send(pc, {head, "Edit", s.name, "Width", number(w), "Done", "Done"});
     double ob = s.oblique * 180.0 / kPi;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble(
-            "Oblique angle", &ob, 0, 0, "%.4g",
-            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) &&
-        std::abs(ob - s.oblique * 180.0 / kPi) > 1e-9)
+    ImGui::InputDouble("Oblique angle", &ob, 0, 0, "%.4g", ImGuiInputTextFlags_AutoSelectAll);
+    if (ImGui::IsItemDeactivatedAfterEdit() && std::abs(ob - s.oblique * 180.0 / kPi) > 1e-9)
         send(pc, {head, "Edit", s.name, "Oblique", number(ob), "Done", "Done"});
 
     double fh = s.height;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble(
-            "Fixed height (0 = variable)", &fh, 0, 0, "%.4g",
-            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) &&
-        fh != s.height && fh >= 0)
+    ImGui::InputDouble("Fixed height (0 = variable)", &fh, 0, 0, "%.4g",
+                       ImGuiInputTextFlags_AutoSelectAll);
+    if (ImGui::IsItemDeactivatedAfterEdit() && fh != s.height && fh >= 0)
         send(pc, {head, "Edit", s.name, "Height", number(fh), "Done", "Done"});
 
     ImGui::SeparatorText("Preview");
