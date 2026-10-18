@@ -119,6 +119,13 @@ Lift liftFor(const Ctx& c, Vec2 lineDir, double rotText) {
     return l;
 }
 
+// Text that sits on the dimension line (which then breaks around it). Text lifted exactly its own
+// clearance above the line is not on it; the margin keeps rounding noise (far from the origin)
+// from toggling the break.
+bool textOnLine(const Ctx& c, double lateral) {
+    return lateral < c.th / 2 + c.gap - 1e-6 * std::max(1.0, c.th + c.gap);
+}
+
 // ---- linear and aligned ------------------------------------------------------------------------
 
 void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
@@ -211,7 +218,7 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     bool brk = false;
     if (tw > 0 && textIn) {
         double lateral = std::abs(dot(center - A, perp(uu)));
-        if (lateral < c.th / 2 + c.gap) {
+        if (textOnLine(c, lateral)) {
             double tc = dot(center - A, uu);
             double hb = he + c.gap;
             b0 = tc - hb;
@@ -268,7 +275,7 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
     // Dimension line: the whole diameter / radius, broken around text lying on it; text outside
     // the circle gets a short leader from the circle point.
     double lateral = std::abs(dot(center - A, perp(dir)));
-    if (inside && tw > 0 && lateral < c.th / 2 + c.gap) {
+    if (inside && tw > 0 && textOnLine(c, lateral)) {
         double tc = dot(center - A, dir);
         double hb = he + c.gap;
         if (tc - hb > c.tol)

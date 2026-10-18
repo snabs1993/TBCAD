@@ -164,6 +164,15 @@ moves, scales and saves with it.
 **MLEADEREDIT** (MLE) adds leader lines to a multileader (**Add**: pick arrowhead points, Enter ends) or removes the
 one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays.
 
+## What the commands accept
+
+- DIMLINEAR and DIMALIGNED (and DIM): a line, an arc (its ends), the polyline segment nearest the pick, an
+  elliptical arc or spline (end to end; a full ellipse across its major axis).
+- DIMRADIUS, DIMDIAMETER, DIMJOGGED: a circle, an arc, or the bulged polyline segment nearest the pick.
+- DIMANGULAR: two lines or polyline segments, an arc (the angle it spans), or three points.
+- DIMORDINATE measures from the origin of the current UCS (angle 0; a rotated UCS still measures along world axes).
+- Changing a dimension or text style redraws every dimension, leader, text and table that uses it, also inside blocks.
+
 ## DIMREGEN and DIMINSPECT
 
 `DIMREGEN` brings every associative dimension up to the current position of the points it follows and refreshes its measurement and text. `DIMINSPECT` marks selected dimensions as inspection dimensions: the text becomes `<measurement> [label rate%]` (Add, with an optional label and a rate of 0 to 100), and Remove takes the mark off.

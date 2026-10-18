@@ -12,5 +12,6 @@ tbcad_add_tests(dim
     tests/main.cpp
     tests/format_tests.cpp
     tests/layout_tests.cpp
+    tests/survey_tests.cpp
     tests/display_tests.cpp
     tests/explode_tests.cpp)

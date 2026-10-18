@@ -416,6 +416,37 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         });
         upsertMany(all);
     }
+    if (!cs.dimStyles.empty() || !cs.textStyles.empty()) {
+        // A style changed (or came back by undo): what is drawn with it is built again. Dimension
+        // styles reach dimensions and leaders, text styles also text, tables and their notes.
+        flushPending();
+        const bool text = !cs.textStyles.empty();
+        std::vector<const Entity*> styled;
+        doc_.forEachEntity([&](const Entity& e) {
+            if (doc_.ownerBlock(e.common.id))
+                return;
+            switch (kind(e)) {
+                case EntityKind::Dimension:
+                case EntityKind::Leader:
+                case EntityKind::MLeader:
+                    styled.push_back(&e);
+                    break;
+                case EntityKind::Text:
+                case EntityKind::MText:
+                case EntityKind::Table:
+                    if (text)
+                        styled.push_back(&e);
+                    break;
+                default:
+                    break;
+            }
+        });
+        if (lazyOk(styled.size()))
+            queueLazy(styled);
+        else
+            upsertMany(styled);
+        blockTouched = true;  // inserts show blocks that hold such objects
+    }
     if (blockTouched) {
         // Inserts show the contents of their block: redraw them.
         flushPending();
