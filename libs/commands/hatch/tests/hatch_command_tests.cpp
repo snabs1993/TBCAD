@@ -102,6 +102,7 @@ TEST_CASE("HATCH: a pick point inside a closed shape adds one hatch with the cur
     CHECK(hs[0]->patternScale == doctest::Approx(1));
     CHECK(hs[0]->sourceBoundary.size() == 4);
     CHECK(f.host->logContains("Hatch created (1 loop)"));
+    CHECK(f.host->setting("ui.showPanel") == std::optional<std::string>("hatch"));
     CHECK(f.host->undoStack().undoLabel() == "HATCH");
     // The hatch is on the current layer.
     const Entity* e = nullptr;

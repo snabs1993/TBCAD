@@ -208,6 +208,7 @@ public:
         using cmd::Status;
         ctx.commitOnCancel();  // Esc ends the command but keeps the hatches already made
         Params p = loadParams(ctx.host());
+        ctx.host().setSetting("ui.showPanel", "hatch");  // like AutoCAD's contextual tab
         std::size_t made = 0;
         HoverPreview hover;
         for (;;) {
