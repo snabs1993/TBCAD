@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 
 #include "commands.h"
@@ -516,7 +517,15 @@ public:
         } else {
             cmd::PointOptions po;
             po.base = p1.point;
-            auto p2 = co_await ctx.getPoint("Specify the opposite corner", std::move(po));
+            // The rectangle follows the pointer, so the drafter sees what will be kept.
+            po.preview = [first = p1.point](Vec2 c, DisplayList& out) {
+                DisplayPolyline pl;
+                pl.closed = true;
+                pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
+                out.items.emplace_back(std::move(pl));
+            };
+            auto p2 =
+                co_await ctx.getPoint("Specify the opposite corner of the clip", std::move(po));
             if (!p2.ok())
                 co_return;
             // World point to picture fractions (u from the left, v from the top).
@@ -544,8 +553,15 @@ public:
             co_return;
         }
         ctx.setUndoLabel("Clip " + blockName);
-        ctx.message(params.clipped() ? "Clipped \"" + blockName + "\""
-                                     : "\"" + blockName + "\" is shown in full");
+        if (params.clipped()) {
+            char kept[96];
+            std::snprintf(kept, sizeof kept, "%.0f%% x %.0f%% of the picture is shown",
+                          (params.u1 - params.u0) * 100, (params.v1 - params.v0) * 100);
+            ctx.message("Clipped \"" + blockName + "\": " + kept +
+                        ". The frame still outlines the whole picture.");
+        } else {
+            ctx.message("\"" + blockName + "\" is shown in full");
+        }
     }
 };
 
