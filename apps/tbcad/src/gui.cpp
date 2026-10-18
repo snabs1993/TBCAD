@@ -1539,6 +1539,18 @@ void Gui::statusBar() {
                 t.set(!on);
             if (on)
                 ImGui::PopStyleColor();
+            // Right-click on a drafting toggle opens its settings.
+            if (t.id == "snap" || t.id == "grid" || t.id == "polar" || t.id == "ortho" ||
+                t.id == "dyn") {
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Right-click for the drafting settings.");
+                if (ImGui::BeginPopupContextItem(("##ds" + t.id).c_str(),
+                                                 ImGuiPopupFlags_MouseButtonRight)) {
+                    if (ImGui::MenuItem("Drafting settings..."))
+                        settings_.open("Drafting");
+                    ImGui::EndPopup();
+                }
+            }
             if (t.id == "osnap") {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Object snap. Right-click to choose the snap modes.");
