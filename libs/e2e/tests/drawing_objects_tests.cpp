@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <map>
 #include <random>
 #include <string>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/mline/mline.h"
 #include "tbcad/transform/grips.h"
 
 using namespace tbcad;
@@ -353,5 +355,124 @@ TEST_CASE(
                 CHECK(canonicalDump(*back.value()) == base);
             }
         }
+    }
+}
+
+namespace {
+std::string kindsOf(const Document& doc) {
+    std::map<int, int> n;
+    doc.forEachEntity([&](const Entity& e) { ++n[static_cast<int>(kind(e))]; });
+    std::string out;
+    for (auto [k, c] : n)
+        out += std::to_string(k) + "x" + std::to_string(c) + " ";
+    return out;
+}
+}  // namespace
+
+TEST_CASE("DXF round trip keeps the kind and the defining numbers of every drawing object") {
+    for (const Maker& mk : makers())
+        for (Vec2 o : kOrigins) {
+            CAPTURE(mk.name);
+            CAPTURE(o.x);
+            Rig r;
+            mk.make(r, o);
+            dxf::Report rep;
+            auto out = dxf::exportDxf(r.doc, {}, rep);
+            REQUIRE(out.ok());
+            dxf::Report rep2;
+            const auto& s = out.value().bytes;
+            auto in = dxf::importDxf(
+                std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()),
+                {}, rep2);
+            REQUIRE(in.ok());
+            const Document& d2 = *in.value().document;
+            CHECK(kindsOf(r.doc) == kindsOf(d2));
+            const Entity* a = nullptr;
+            const Entity* b = nullptr;
+            r.doc.forEachEntity([&](const Entity& e) { a = &e; });
+            d2.forEachEntity([&](const Entity& e) { b = &e; });
+            REQUIRE(a);
+            REQUIRE(b);
+            if (kind(*a) != EntityKind::Ray)
+                CHECK(std::abs(geom::length(*a) - geom::length(*b)) <= 1e-5 * geom::length(*a));
+            if (const auto* x = entityAs<RayData>(*a)) {
+                const auto* y = entityAs<RayData>(*b);
+                REQUIRE(y);
+                CHECK(distance(x->origin, y->origin) < 1e-6);
+                CHECK(distance(x->dir, y->dir) < 1e-9);
+                CHECK(x->infinite == y->infinite);
+            } else if (const auto* x = entityAs<SplineData>(*a)) {
+                const auto* y = entityAs<SplineData>(*b);
+                REQUIRE(y);
+                CHECK(x->degree == y->degree);
+                CHECK(x->closed == y->closed);
+                CHECK(x->control.size() == y->control.size());
+            } else if (const auto* x = entityAs<EllipseData>(*a)) {
+                const auto* y = entityAs<EllipseData>(*b);
+                REQUIRE(y);
+                CHECK(distance(x->center, y->center) < 1e-6);
+                CHECK(std::abs(x->ratio - y->ratio) < 1e-9);
+                CHECK(std::abs(normalizeAngle(x->startParam) - normalizeAngle(y->startParam)) <
+                      1e-9);
+                CHECK(std::abs(normalizeAngle(x->endParam) - normalizeAngle(y->endParam)) < 1e-9);
+            } else if (const auto* x = entityAs<MlineData>(*a)) {
+                const auto* y = entityAs<MlineData>(*b);
+                REQUIRE(y);
+                CHECK(x->v.size() == y->v.size());
+                CHECK(x->style == y->style);
+                CHECK(x->justification == y->justification);
+                CHECK(std::abs(x->scale - y->scale) < 1e-9);
+            } else if (const auto* x = entityAs<PolylineData>(*a)) {
+                const auto* y = entityAs<PolylineData>(*b);
+                REQUIRE(y);
+                CHECK(x->v.size() == y->v.size());
+                CHECK(x->closed == y->closed);
+                CHECK(a->common.wipeout == b->common.wipeout);
+                if (std::string(mk.name) == "wipeout")
+                    CHECK(a->common.wipeout);
+                for (std::size_t i = 0; i < std::min(x->v.size(), y->v.size()); ++i)
+                    CHECK(std::abs(x->v[i].bulge - y->v[i].bulge) < 1e-9);
+            }
+        }
+}
+
+TEST_CASE("a custom MLSTYLE and the multiline drawn with it survive .tbcad and DXF") {
+    for (Vec2 o : kOrigins) {
+        CAPTURE(o.x);
+        Rig r;
+        r.host.run("MLSTYLE", {"New", "WALL", "1 0 -1", "Both"});
+        r.host.run("MLSTYLE", {"Current", "WALL"});
+        r.host.run("MLINE", {"Scale", "50", P(o, 0, 0), P(o, 1000, 0), P(o, 1000, 500), ""});
+        const std::string dump = canonicalDump(r.doc);
+        auto bytes = io::writeTbcadToMemory(r.doc);
+        REQUIRE(bytes.ok());
+        io::IoReport rep;
+        auto back = io::readTbcad(bytes.value(), rep);
+        REQUIRE(back.ok());
+        CHECK(canonicalDump(*back.value()) == dump);
+
+        dxf::Report dr;
+        auto out = dxf::exportDxf(r.doc, {}, dr);
+        REQUIRE(out.ok());
+        dxf::Report dr2;
+        const auto& s = out.value().bytes;
+        auto in = dxf::importDxf(
+            std::span<const std::byte>(reinterpret_cast<const std::byte*>(s.data()), s.size()), {},
+            dr2);
+        REQUIRE(in.ok());
+        const Document& d2 = *in.value().document;
+        const MlineData* m = nullptr;
+        d2.forEachEntity([&](const Entity& e) {
+            if (const auto* x = entityAs<MlineData>(e))
+                m = x;
+        });
+        REQUIRE(m);
+        CHECK(m->style == "WALL");
+        CHECK(m->v.size() == 3);
+        auto style = mline::findStyle(d2, "WALL");
+        REQUIRE(style);
+        CHECK(style->offsets.size() == 3);
+        CHECK(style->startCap);
+        CHECK(style->endCap);
     }
 }
