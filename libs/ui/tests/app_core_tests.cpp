@@ -66,6 +66,22 @@ TEST_CASE("command line runs commands, aliases, prompts and errors") {
     CHECK(f.core->promptText() == "Command: ");
 }
 
+TEST_CASE("lines a panel sends are echoed with short numbers, and answers are not echoed") {
+    Fixture f("panelecho");
+    f.core->submitPanelText("TESTLINE 3787.4686716791975,5741.311612364243");
+    bool shortened = false, raw = false;
+    for (const std::string& h : f.core->history()) {
+        shortened = shortened || h.find("3787.4687,5741.3116") != std::string::npos;
+        raw = raw || h.find("3787.4686716") != std::string::npos;
+    }
+    CHECK(shortened);
+    CHECK_FALSE(raw);
+    const std::size_t before = f.core->history().size();
+    f.core->submitPanelText("10,10");  // answers the next prompt: no echo of its own
+    for (std::size_t i = before; i < f.core->history().size(); ++i)
+        CHECK(f.core->history()[i].find("10,10") == std::string::npos);
+}
+
 TEST_CASE("words after the command name answer its prompts") {
     Fixture f("words");
     f.core->submitText("TESTLINE 0,0 10,10");

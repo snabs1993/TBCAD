@@ -140,8 +140,9 @@ void drawSection(ui::PanelContext& pc, EntityId id) {
 }  // namespace
 
 void registerAnnotationSection(ui::UiRegistry& ui) {
-    for (EntityKind k : {EntityKind::Text, EntityKind::MText, EntityKind::Dimension,
-                         EntityKind::Leader, EntityKind::MLeader, EntityKind::Table, EntityKind::Insert})
+    for (EntityKind k :
+         {EntityKind::Text, EntityKind::MText, EntityKind::Dimension, EntityKind::Leader,
+          EntityKind::MLeader, EntityKind::Table, EntityKind::Insert})
         ui.addPropertySection(k, drawSection);
 }
 

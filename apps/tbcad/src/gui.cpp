@@ -2746,7 +2746,7 @@ void Gui::panels() {
     pc.host = &core_;
     pc.selection = &core_.selection();
     pc.camera = &core_.camera();
-    pc.runCommand = [this](const std::string& line) { core_.submitText(line); };
+    pc.runCommand = [this](const std::string& line) { core_.submitPanelText(line); };
     pc.cancelCommand = [this] {
         if (core_.runner().active())
             core_.pressEscape();

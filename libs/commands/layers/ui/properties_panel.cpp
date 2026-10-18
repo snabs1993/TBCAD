@@ -167,7 +167,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
                 std::string label(static_cast<std::size_t>(layerDepth(doc, id)) * 2, ' ');
                 label += doc.layer(id)->name;
                 if (ImGui::Selectable(label.c_str(), !p.layer.varies && p.layer.value == id))
-                    prop("Layer", "#" + std::to_string(id.value));
+                    prop("Layer", layerPath(doc, id));
             }
             ImGui::EndCombo();
         }
@@ -220,7 +220,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
             for (const auto& [id, lt] : doc.linetypes())
                 if (ImGui::Selectable(lt.name.c_str(),
                                       !p.linetype.varies && p.linetype.value == id))
-                    prop("Linetype", "#" + std::to_string(id.value));
+                    prop("Linetype", lt.name);
             ImGui::EndCombo();
         }
 
@@ -305,7 +305,7 @@ void currentSection(tbcad::ui::PanelContext& ctx) {
             set("Linetype", "ByBlock");
         for (const auto& [id, lt] : doc.linetypes())
             if (ImGui::Selectable(lt.name.c_str(), h.currentLinetype == id))
-                set("Linetype", "#" + std::to_string(id.value));
+                set("Linetype", lt.name);
         ImGui::EndCombo();
     }
 

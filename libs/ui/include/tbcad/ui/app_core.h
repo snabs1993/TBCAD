@@ -183,6 +183,9 @@ public:
     // remaining words answer its prompts ("DEVGEN LINES 1000000"); empty text repeats the last
     // command (or, in a prompt, takes the default).
     void submitText(std::string_view text);
+    // The same for a line a panel sends: the command line shows names instead of the internal
+    // "#id" references the panels use, and answers to prompts are not echoed a second time.
+    void submitPanelText(std::string_view text);
     void pressEscape();
     const std::vector<std::string>& history() const { return history_; }
     void print(std::string_view message) override;
@@ -457,6 +460,9 @@ private:
     std::chrono::steady_clock::time_point lastXrefCheck_{};
     int xrefReloadWait_ = 0;
     bool viewStatePending_ = false;
+    enum class EchoMode { Typed, Names, None };
+    EchoMode echoMode_ = EchoMode::Typed;
+    std::string friendlyEcho(const std::string& line) const;
     std::string pendingLayout_;  // layout to show when the running command ends
     void applyPendingLayout();
     underlay::ImageCache imageCache_{};
