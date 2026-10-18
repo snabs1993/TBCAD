@@ -3,6 +3,12 @@
 
 namespace tbcad::draftingcmds {
 
+void forgetUi() {
+    ModuleState& st = moduleState();
+    st.dyn = nullptr;
+    st.osnap = nullptr;
+}
+
 void registerUi(ui::UiRegistry& ui) {
     ModuleState& st = moduleState();
 
