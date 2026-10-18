@@ -575,3 +575,21 @@ TEST_CASE("LENGTHEN an elliptical arc and an open spline") {
         CHECK_FALSE(lengthenableLength(make(Indirect<SplineData>(closed))).has_value());
     }
 }
+
+TEST_CASE("BLEND from an elliptical arc end is tangent to it") {
+    EllipseData el;
+    el.majorAxis = {10, 0};
+    el.ratio = 0.5;
+    el.startParam = 0;
+    el.endParam = kPi / 2;  // ends at (0, 5) heading in -x
+    Entity e = make(el);
+    Entity l = line({-20, 10}, {-30, 10});
+    auto r = blendCurves(e, {0, 5}, l, {-20, 10});
+    REQUIRE(r.ok());
+    const geom::CurveRef c = curveOf(r.value());
+    CHECK(near(c.startPoint(), {0, 5}, 1e-6));
+    CHECK(near(c.endPoint(), {-20, 10}, 1e-6));
+    const Vec2 t = c.tangentAt(c.t0());
+    CHECK(t.x < -0.99);
+    CHECK(std::abs(t.y) < 0.15);
+}

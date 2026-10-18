@@ -385,6 +385,71 @@ Result<PairEdit> filletCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2
     return out;
 }
 
+// ---- Chamfer between any two curves ----------------------------------------------------------
+
+// The point `d` along the curve from the parameter `t` towards the side holding `pick`.
+std::optional<Vec2> walkFrom(const CurveRef& c, double t, Vec2 pick, double d) {
+    const bool forward = c.paramAt(pick) >= t;
+    auto part = forward ? c.subcurve(t, c.t1()) : c.subcurve(c.t0(), t);
+    if (!part)
+        return std::nullopt;
+    const double len = part.value().length();
+    if (d > len - tol::kLinear)
+        return std::nullopt;
+    const CurveRef& q = part.value();
+    return q.pointAt(q.paramAtLength(forward ? d : len - d));
+}
+
+Result<PairEdit> chamferCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
+                               const ChamferOptions& opt) {
+    if (opt.distance1 < 0 || opt.distance2 < 0)
+        return err("Chamfer distances cannot be negative.");
+    struct Cand {
+        CurveRef A, B;
+        Vec2 x;
+        double tA, tB, score;
+    };
+    std::optional<Cand> best;
+    for (const CurveRef& A : nearestPieces(a, pickA, 3)) {
+        for (const CurveRef& B : nearestPieces(b, pickB, 3)) {
+            std::vector<geom::Intersection> xs;
+            geom::intersect(A, B, xs);
+            for (const auto& x : xs) {
+                const double score = distance(x.p, pickA) + distance(x.p, pickB);
+                if (!best || score < best->score)
+                    best = Cand{A, B, x.p, A.paramAt(x.p), B.paramAt(x.p), score};
+            }
+        }
+    }
+    if (!best)
+        return err("The two objects do not meet.");
+    double d1 = opt.distance1, d2 = opt.distance2;
+    if (opt.byAngle) {
+        // The angle is measured against the first object's tangent at the corner.
+        const Vec2 ta = best->A.tangentAt(best->tA), tb = best->B.tangentAt(best->tB);
+        Vec2 va = ta * (best->A.paramAt(pickA) >= best->tA ? 1.0 : -1.0);
+        Vec2 vb = tb * (best->B.paramAt(pickB) >= best->tB ? 1.0 : -1.0);
+        const double gamma = std::acos(std::clamp(dot(va, vb), -1.0, 1.0));
+        if (opt.angle <= 0 || opt.angle + gamma >= kPi - 1e-9)
+            return err("That angle does not fit between the two objects.");
+        d2 = d1 * std::sin(opt.angle) / std::sin(gamma + opt.angle);
+    }
+    auto p1 = walkFrom(best->A, best->tA, pickA, d1);
+    auto p2 = walkFrom(best->B, best->tB, pickB, d2);
+    if (!p1 || !p2)
+        return err("The chamfer distance is longer than the object.");
+    PairEdit out;
+    if (opt.trim) {
+        if (d1 > tol::kLinear)
+            out.modifiedA = keepPartAt(a, *p1, pickA);
+        if (d2 > tol::kLinear)
+            out.modifiedB = keepPartAt(b, *p2, pickB);
+    }
+    if (!tol::isZeroLength(*p2 - *p1))
+        out.added.push_back(withData(a, LineData{*p1, *p2}));
+    return out;
+}
+
 }  // namespace
 
 Result<PairEdit> filletEntities(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
@@ -618,8 +683,12 @@ Result<PairEdit> chamferEntities(const Entity& a, Vec2 pickA, const Entity& b, V
                                  const ChamferOptions& opt) {
     const auto* la = entityAs<LineData>(a);
     const auto* lb = entityAs<LineData>(b);
-    if (!la || !lb)
-        return err("Chamfer works on straight lines (or the corner of a polyline).");
+    if (!la || !lb) {
+        std::vector<CurveRef> ca, cb;
+        if (!geom::curvesOf(a, ca) || ca.empty() || !geom::curvesOf(b, cb) || cb.empty())
+            return err("Chamfer works on lines, arcs, ellipses, splines and polylines.");
+        return chamferCurves(a, pickA, b, pickB, opt);
+    }
     auto pA = primOf(a), pB = primOf(b);
     if (!pA || !pB)
         return err("A line has no length.");

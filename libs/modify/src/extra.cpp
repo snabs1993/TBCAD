@@ -1079,7 +1079,11 @@ Result<EndInfo> endNearest(const Entity& e, Vec2 pick) {
         Vec2 t = segTangent(s, 0.0);
         return EndInfo{s.p0, t * -1.0};
     }
-    if (const auto* sp = entityAs<SplineData>(e); sp && !sp->closed && !sp->periodic) {
+    const auto* sp = entityAs<SplineData>(e);
+    const auto* el = entityAs<EllipseData>(e);
+    const bool openSpline = sp && !sp->closed && !sp->periodic;
+    const bool openEllipse = el && normalizeAngle(el->endParam - el->startParam) > 1e-12;
+    if (openSpline || openEllipse) {
         std::vector<CurveRef> cs;
         if (geom::curvesOf(e, cs) && !cs.empty()) {
             const CurveRef& f = cs.front();
@@ -1091,7 +1095,7 @@ Result<EndInfo> endNearest(const Entity& e, Vec2 pick) {
             return EndInfo{a, normalized(f.tangentAt(t0)) * -1.0};
         }
     }
-    return err("BLEND works on lines, arcs and open polylines and splines.");
+    return err("BLEND works on lines, arcs, elliptical arcs and open polylines and splines.");
 }
 
 }  // namespace

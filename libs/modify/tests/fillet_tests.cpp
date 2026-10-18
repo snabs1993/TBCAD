@@ -313,3 +313,61 @@ TEST_CASE("fillet an ellipse with a line and a polyline with a line") {
     CHECK(near(cutPl.v.front().p, {0, 0}));
     CHECK(near(cutPl.v.back().p, {8, 0}));
 }
+
+TEST_CASE("chamfer between curves of any kind: distances along each object") {
+    for (double ox : {0.0, 500123.456}) {
+        const double oy = ox * 3;
+        Entity sp = wave(ox, oy);
+        Entity ln = line({ox + 20, oy - 30}, {ox + 20, oy + 30});
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(sp, cs);
+        // Where the line crosses the wave.
+        std::vector<geom::CurveRef> lc;
+        geom::curvesOf(ln, lc);
+        std::vector<geom::Intersection> xs;
+        geom::intersect(cs[0], lc[0], xs);
+        REQUIRE(!xs.empty());
+        const Vec2 X = xs[0].p;
+        const Vec2 pickS = cs[0].pointAt(0.3), pickL = {ox + 20, oy + 28};
+        ChamferOptions o;
+        o.distance1 = 3;
+        o.distance2 = 4;
+        auto r = chamferEntities(sp, pickS, ln, pickL, o);
+        REQUIRE(r.ok());
+        REQUIRE(r.value().added.size() == 1);
+        const auto& cl = as<LineData>(r.value().added[0]);
+        // One end sits 4 along the line from the crossing, the other 3 along the spline.
+        const Vec2 onLine = (std::abs(cl.a.x - (ox + 20)) < 1e-6) ? cl.a : cl.b;
+        const Vec2 onSpline = (std::abs(cl.a.x - (ox + 20)) < 1e-6) ? cl.b : cl.a;
+        CHECK(near(distance(onLine, X), 4, 1e-6));
+        CHECK(geom::distance(sp, onSpline) < 1e-6);
+        CHECK(near(cs[0].lengthBetween(std::min(cs[0].paramAt(onSpline), cs[0].paramAt(X)),
+                                       std::max(cs[0].paramAt(onSpline), cs[0].paramAt(X))),
+                   3, 1e-5));
+        REQUIRE(r.value().modifiedA.has_value());
+        REQUIRE(r.value().modifiedB.has_value());
+        // By angle, and Shift-style distance 0 keeps the corner sharp.
+        ChamferOptions ang;
+        ang.distance1 = 2;
+        ang.byAngle = true;
+        ang.angle = kPi / 4;
+        CHECK(chamferEntities(sp, pickS, ln, pickL, ang).ok());
+        ChamferOptions zero;
+        auto z = chamferEntities(sp, pickS, ln, pickL, zero);
+        REQUIRE(z.ok());
+        CHECK(z.value().added.empty());
+        // Longer than the line: refused.
+        o.distance2 = 1000;
+        CHECK_FALSE(chamferEntities(sp, pickS, ln, pickL, o).ok());
+    }
+    // Arc and polyline segment.
+    Entity a = arc({0, 0}, 10, 0, kPi / 2);
+    Entity pl = poly(pts({{-5, 5}, {20, 5}, {20, 20}}), false);
+    ChamferOptions o;
+    o.distance1 = 2;
+    o.distance2 = 2;
+    auto r = chamferEntities(a, {10, 0.5}, pl, {15, 5}, o);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().added.size() == 1);
+    CHECK(geom::distance(a, as<LineData>(r.value().added[0]).a) < 1e-6);
+}
