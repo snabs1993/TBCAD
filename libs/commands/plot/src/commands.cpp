@@ -108,7 +108,11 @@ public:
                 if (!file.ok())
                     co_return;
                 std::error_code existsEc;
-                if (std::filesystem::exists(
+                // With FILEDIA 0 (scripts, command-line use) an existing file is replaced without
+                // a question: nobody is there to answer it.
+                const bool askOverwrite = ctx.host().setting("files.filedia").value_or("1") != "0";
+                if (askOverwrite &&
+                    std::filesystem::exists(
                         platform::pathFromUtf8(withExtension(file.text, format)), existsEc)) {
                     KeywordOptions ow;
                     ow.keywords = {"Yes", "No"};
