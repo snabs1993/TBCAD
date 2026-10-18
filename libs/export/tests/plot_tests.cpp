@@ -702,3 +702,43 @@ TEST_CASE("a table that keeps grey object colours leaves a layer of index colour
     CHECK(sheet.value().trace[0].find("ACI 253") != std::string::npos);
     CHECK(sheet.value().trace[0].find("130,130,130, 1 uses") != std::string::npos);
 }
+
+TEST_CASE("a PDF has one optional-content group per layer, bound xref layers named with a bar") {
+    Document doc;
+    {
+        auto tx = doc.begin("layers");
+        Layer a;
+        a.name = "WALLS";
+        Layer b;
+        b.name = "x_col_03$0$S-COL";
+        const LayerId la = tx.addLayer(a).value();
+        const LayerId lb = tx.addLayer(b).value();
+        Entity e1 = line({0, 0}, {50, 0});
+        e1.common.layer = la;
+        Entity e2 = line({0, 5}, {50, 5});
+        e2.common.layer = lb;
+        Entity e3 = line({0, 9}, {50, 9});
+        e3.common.layer = la;
+        REQUIRE(tx.add(e1).ok());
+        REQUIRE(tx.add(e2).ok());
+        REQUIRE(tx.add(e3).ok());
+        tx.commit();
+    }
+    PlotSettings s;
+    auto sheet = buildSheet(doc, s).value();
+    REQUIRE(sheet.layerNames.size() == 2);
+    auto pdf = pdfBytes(sheet);
+    REQUIRE(pdf.ok());
+    const std::string& t = pdf.value();
+    CHECK(t.rfind("%PDF-1.5", 0) == 0);
+    CHECK(t.find("/Type /OCG /Name (WALLS)") != std::string::npos);
+    CHECK(t.find("/Type /OCG /Name (x_col_03|S-COL)") != std::string::npos);
+    CHECK(t.find("/OCProperties") != std::string::npos);
+    std::size_t bdc = 0, emc = 0;
+    for (std::size_t at = 0; (at = t.find(" BDC", at)) != std::string::npos; ++at)
+        ++bdc;
+    for (std::size_t at = 0; (at = t.find("\nEMC\n", at)) != std::string::npos; ++at)
+        ++emc;
+    CHECK(bdc == 3);  // WALLS, xref layer, WALLS again
+    CHECK(emc == 3);
+}

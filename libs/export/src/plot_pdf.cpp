@@ -1,4 +1,6 @@
+#include <map>
 #include <sstream>
+#include <string>
 
 #include "tbcad/export/plot.h"
 #include "tbcad/pdf/pdf.h"
@@ -13,9 +15,28 @@ bool sameStyle(const PlotStyle& a, const PlotStyle& b) {
 
 class PdfPainter {
 public:
-    explicit PdfPainter(pdf::Page& page) : page_(page) {}
+    // `docLayers[i]` is the PDF layer of the sheet's layer i + 1.
+    PdfPainter(pdf::Page& page, const std::vector<int>& docLayers)
+        : page_(page), docLayers_(docLayers) {}
+
+    // Marked content for the layer of the next thing drawn; layer 0 closes the open one.
+    void layer(std::uint32_t l) {
+        if (l == layer_)
+            return;
+        closeLayer();
+        if (l >= 1 && l <= docLayers_.size()) {
+            page_.beginLayer(docLayers_[l - 1]);
+            layer_ = l;
+        }
+    }
+    void closeLayer() {
+        if (layer_ != 0)
+            page_.endLayer();
+        layer_ = 0;
+    }
 
     void path(const PlotPath& p) {
+        layer(p.style.layer);
         apply(p.style, p.style.dashMm.empty() ? pdf::LineCap::Round : pdf::LineCap::Butt);
         page_.moveTo(p.pts[0].x, p.pts[0].y);
         for (std::size_t i = 1; i < p.pts.size(); ++i)
@@ -26,6 +47,7 @@ public:
     }
 
     void arc(const PlotArc& a) {
+        layer(a.style.layer);
         apply(a.style, a.style.dashMm.empty() ? pdf::LineCap::Round : pdf::LineCap::Butt);
         if (a.full) {
             page_.moveTo(a.center.x + a.radius, a.center.y);
@@ -38,6 +60,7 @@ public:
     }
 
     void fill(const PlotFill& f) {
+        layer(f.layer);
         page_.setFillRGB(f.color.r / 255.0, f.color.g / 255.0, f.color.b / 255.0);
         for (const auto& ring : f.rings) {
             page_.moveTo(ring[0].x, ring[0].y);
@@ -49,6 +72,7 @@ public:
     }
 
     void dots(const PlotDots& d) {
+        layer(d.style.layer);
         PlotStyle st = d.style;
         apply(st, pdf::LineCap::Round);
         for (const Vec2& p : d.pts) {
@@ -80,19 +104,28 @@ private:
     }
 
     pdf::Page& page_;
+    const std::vector<int>& docLayers_;
+    std::uint32_t layer_ = 0;
     PlotStyle last_{};
     bool have_ = false;
     pdf::LineCap cap_ = pdf::LineCap::Butt;
 };
 
-void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
+void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, std::map<std::string, int>& layerIds) {
+    std::vector<int> docLayers;
+    for (const std::string& name : sheet.layerNames) {
+        auto it = layerIds.find(name);
+        if (it == layerIds.end())
+            it = layerIds.emplace(name, doc.addLayer(name)).first;
+        docLayers.push_back(it->second);
+    }
     const PlotLayout& lay = sheet.layout;
     pdf::Page& page = doc.addPage(lay.pageWidthMm, lay.pageHeightMm);
     page.save();
     page.clipRect(lay.printable.min.x, lay.printable.min.y, lay.printable.width(),
                   lay.printable.height());
     page.setLineJoin(pdf::LineJoin::Round);
-    PdfPainter painter(page);
+    PdfPainter painter(page, docLayers);
     for (const PlotPrimitive& prim : sheet.prims) {
         if (const auto* p = std::get_if<PlotPath>(&prim))
             painter.path(*p);
@@ -103,9 +136,11 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
         else if (const auto* d = std::get_if<PlotDots>(&prim))
             painter.dots(*d);
         else if (const auto* im = std::get_if<PlotImage>(&prim)) {
+            painter.closeLayer();
             page.drawImage(im->data, im->corners[0].x, im->corners[0].y, im->corners[1].x,
                            im->corners[1].y, im->corners[3].x, im->corners[3].y, im->opacity);
         } else if (const auto* c = std::get_if<PlotClip>(&prim)) {
+            painter.closeLayer();
             if (c->begin) {
                 page.save();
                 if (c->poly.size() >= 3) {
@@ -124,6 +159,7 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
             }
         }
     }
+    painter.closeLayer();
     page.restore();
 }
 
@@ -139,8 +175,9 @@ Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::stri
     pdf::PdfDocument doc;
     doc.setCompression(compress);
     doc.setInfo(title, "TBCAD");
+    std::map<std::string, int> layerIds;
     for (const PlotSheet& sheet : sheets)
-        paint(sheet, doc);
+        paint(sheet, doc, layerIds);
     return doc.writeFile(path);
 }
 
@@ -148,7 +185,8 @@ Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
     pdf::PdfDocument doc;
     doc.setCompression(compress);
     doc.setInfo("TBCAD drawing", "TBCAD");
-    paint(sheet, doc);
+    std::map<std::string, int> layerIds;
+    paint(sheet, doc, layerIds);
     std::ostringstream out;
     Result<void> r = doc.write(out);
     if (!r)

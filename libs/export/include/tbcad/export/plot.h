@@ -95,6 +95,7 @@ struct PlotStyle {
     Rgba color{};
     double widthMm = 0.25;
     std::vector<double> dashMm{};  // alternating on/off lengths in paper mm; empty = continuous
+    std::uint32_t layer = 0;       // 1-based index into PlotSheet::layerNames; 0 = none
 };
 
 struct PlotPath {
@@ -112,6 +113,7 @@ struct PlotArc {    // counter-clockwise from start to end in drawing space; a f
 struct PlotFill {  // even-odd
     std::vector<std::vector<Vec2>> rings{};
     Rgba color{};
+    std::uint32_t layer = 0;  // as in PlotStyle
 };
 struct PlotDots {
     std::vector<Vec2> pts{};
@@ -138,6 +140,9 @@ struct PlotSheet {
     std::size_t entityCount = 0;  // entities plotted
     // With PlotSettings::traceColors: one line per drawn colour (palette entry, pen, result).
     std::vector<std::string> trace{};
+    // Layers of the plotted objects, in order of first use; PlotStyle::layer counts from 1. Names
+    // of bound external references read "xref|layer", as in AutoCAD's PDF.
+    std::vector<std::string> layerNames{};
 };
 
 // Plot-time colour: white / near-white becomes black (the sheet is always white), then the colour

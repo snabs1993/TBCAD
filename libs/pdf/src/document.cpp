@@ -112,6 +112,11 @@ void PdfDocument::setInfo(std::string_view title, std::string_view creator) {
     creator_ = creator;
 }
 
+int PdfDocument::addLayer(std::string_view name) {
+    layerNames_.emplace_back(name);
+    return static_cast<int>(layerNames_.size()) - 1;
+}
+
 Page& PdfDocument::addPage(double widthMm, double heightMm) {
     pages_.push_back(Page(widthMm, heightMm));
     return pages_.back();
@@ -123,7 +128,8 @@ Result<void> PdfDocument::write(std::ostream& out) const {
     std::string buf;
     std::vector<size_t> offsets;  // offsets[i] = byte offset of object i+1
 
-    buf += "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+    // Optional content (layers) needs PDF 1.5.
+    buf += layerNames_.empty() ? "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n" : "%PDF-1.5\n%\xE2\xE3\xCF\xD3\n";
     auto begin = [&](size_t num) {
         offsets.push_back(buf.size());
         buf += std::to_string(num) + " 0 obj\n";
@@ -151,9 +157,19 @@ Result<void> PdfDocument::write(std::ostream& out) const {
             picObjs[pic.data.get()] = o;
         }
 
+    const size_t ocgObj0 = nextObj;
+    nextObj += layerNames_.size();
+
     auto resources = [&](const Page& p) {
+        std::string props;
+        if (!p.layersUsed_.empty()) {
+            props = "/Properties << ";
+            for (int k : p.layersUsed_)
+                props += "/L" + std::to_string(k) + " " + std::to_string(ocgObj0 + k) + " 0 R ";
+            props += ">> ";
+        }
         if (p.pics_.empty())
-            return std::string("<< >>");
+            return props.empty() ? std::string("<< >>") : "<< " + props + ">>";
         std::string xo, gs;
         for (size_t k = 0; k < p.pics_.size(); ++k) {
             xo += "/Im" + std::to_string(k) + " " +
@@ -161,11 +177,18 @@ Result<void> PdfDocument::write(std::ostream& out) const {
             gs += "/Gs" + std::to_string(k) + " << /ca " + formatNumber(p.pics_[k].opacity) +
                   " /CA " + formatNumber(p.pics_[k].opacity) + " >> ";
         }
-        return "<< /XObject << " + xo + ">> /ExtGState << " + gs + ">> >>";
+        return "<< " + props + "/XObject << " + xo + ">> /ExtGState << " + gs + ">> >>";
     };
 
     begin(1);
-    buf += "<< /Type /Catalog /Pages 2 0 R >>\n";
+    buf += "<< /Type /Catalog /Pages 2 0 R";
+    if (!layerNames_.empty()) {
+        std::string refs;
+        for (size_t k = 0; k < layerNames_.size(); ++k)
+            refs += std::to_string(ocgObj0 + k) + " 0 R ";
+        buf += " /OCProperties << /OCGs [" + refs + "] /D << /Order [" + refs + "] >> >>";
+    }
+    buf += " >>\n";
     end();
 
     begin(2);
@@ -262,6 +285,12 @@ Result<void> PdfDocument::write(std::ostream& out) const {
             buf += "\nendstream\n";
             end();
         }
+    }
+
+    for (size_t k = 0; k < layerNames_.size(); ++k) {
+        begin(ocgObj0 + k);
+        buf += "<< /Type /OCG /Name " + textString(layerNames_[k]) + " >>\n";
+        end();
     }
 
     const size_t xrefPos = buf.size();
