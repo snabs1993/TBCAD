@@ -11,6 +11,7 @@ tbcad_add_tests(e2e
     tests/command_fuzz_tests.cpp
     tests/hatch_follow_tests.cpp
     tests/undo_stress_tests.cpp
+    tests/table_ops_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry)
 # The target exists only when tests are built (the ezdxf and fuzz jobs configure without them).
 if(TARGET tbcad_e2e_tests)
