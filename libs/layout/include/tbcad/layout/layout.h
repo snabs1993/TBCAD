@@ -63,6 +63,9 @@ Result<void> validateLayoutName(const Document& doc, std::string_view name,
 Result<void> createLayout(Transaction& tx, const std::string& name,
                           const std::string& paperName = "A3", bool landscape = true);
 Result<void> deleteLayout(Transaction& tx, const std::string& name);
+// Copies a layout under a new name: the paper, the page setup, the viewports (same ids, scales,
+// frozen layers) and every object on the sheet.
+Result<void> copyLayout(Transaction& tx, const std::string& name, const std::string& newName);
 Result<void> renameLayout(Transaction& tx, const std::string& name, const std::string& newName);
 // Changes the sheet; viewports and objects stay where they are (in millimetres).
 // Sets only the name of the page setup the layout uses (see pagesetup.h; use assignPageSetup).

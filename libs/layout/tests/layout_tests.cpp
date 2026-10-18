@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <regex>
 #include <sstream>
 
@@ -622,4 +623,148 @@ TEST_CASE("a block's contents on a layer frozen in the viewport are not plotted 
     for (const auto& p : sheet.prims)
         paths += std::holds_alternative<exportlib::PlotPath>(p);
     CHECK(paths == 1);
+}
+
+// A layout with six viewports over a big model drawing (a 393 000-object topographic survey is the
+// reference): building the sheet must not take seconds. Debug builds use a smaller drawing.
+TEST_CASE("a layout with six viewports on a big drawing builds quickly") {
+#ifdef NDEBUG
+    constexpr int kObjects = 393000;
+#else
+    constexpr int kObjects = 20000;
+#endif
+    Document doc;
+    {
+        auto tx = doc.begin("fill");
+        for (int i = 0; i < kObjects; ++i) {
+            const double x = (i % 700) * 20.0, y = (i / 700) * 20.0;
+            Entity e;
+            switch (i % 4) {
+                case 0:
+                    e.data = LineData{{x, y}, {x + 15, y + 9}};
+                    break;
+                case 1:
+                    e.data = CircleData{{x, y}, 4};
+                    break;
+                case 2: {
+                    PolylineData p;
+                    for (int k = 0; k < 5; ++k)
+                        p.v.push_back({{x + k * 3.0, y + (k % 2) * 4.0}, 0, 0, 0});
+                    e.data = std::move(p);
+                    break;
+                }
+                default:
+                    e.data = ArcData{{x, y}, 6, 0.3, 2.5};
+            }
+            REQUIRE(tx.add(std::move(e)).ok());
+        }
+        tx.commit();
+    }
+    run(doc, "layout", [&](Transaction& tx) { return createLayout(tx, "Sheet", "A1", true); });
+    const double wide = 700 * 20.0, high = (kObjects / 700 + 1) * 20.0;
+    for (int v = 0; v < 6; ++v) {
+        const double px = 20 + (v % 3) * 270.0, py = 20 + (v / 3) * 280.0;
+        auto tx = doc.begin("viewport");
+        REQUIRE(addViewport(tx, "Sheet", BBox2{{px, py}, {px + 250, py + 250}},
+                            {wide * (0.15 + 0.3 * (v % 3)), high * (0.25 + 0.5 * (v / 3))}, 20.0)
+                    .ok());
+        tx.commit();
+    }
+    auto t0 = std::chrono::steady_clock::now();
+    auto sheet = buildLayoutSheet(doc, "Sheet");
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    REQUIRE(sheet.ok());
+    MESSAGE(kObjects << " objects, 6 viewports: " << ms << " ms, " << sheet.value().entityCount
+                     << " objects drawn");
+    CHECK(sheet.value().entityCount > 100);
+#ifdef NDEBUG
+    CHECK(ms < 1000);
+#endif
+}
+
+TEST_CASE("a copied layout keeps the sheet, the viewports and every viewport setting") {
+    Document doc;
+    const LayerId walls = addLayer(doc, "Walls");
+    run(doc, "new", [](Transaction& tx) { return createLayout(tx, "Plan", "A3"); });
+    run(doc, "tb", [](Transaction& tx) {
+        return addTitleBlock(tx, "Plan", TitleBlockFields{"P", "D", "1:100", "today", "1"});
+    });
+    int a = 0, b = 0;
+    run(doc, "vps", [&](Transaction& tx) {
+        auto r1 = addViewport(tx, "Plan", BBox2{{10, 10}, {200, 200}}, {5000, 3000}, 100);
+        auto r2 = addViewport(tx, "Plan", BBox2{{210, 10}, {400, 200}}, {-20, 7}, 25);
+        if (!r1.ok() || !r2.ok())
+            return Result<void>(Error{});
+        a = r1.value();
+        b = r2.value();
+        if (auto c = setViewportLayerFrozen(tx, "Plan", a, walls, true); !c)
+            return c;
+        if (auto c = setViewportClip(tx, "Plan", b, {{210, 10}, {400, 10}, {300, 200}}); !c)
+            return c;
+        if (auto c = setViewportLocked(tx, "Plan", b, true); !c)
+            return c;
+        return setViewportOn(tx, "Plan", a, false);
+    });
+    run(doc, "copy", [](Transaction& tx) { return copyLayout(tx, "plan", "Plan (2)"); });
+    {
+        auto tx = doc.begin("bad");
+        CHECK_FALSE(copyLayout(tx, "Nope", "X").ok());
+        CHECK_FALSE(copyLayout(tx, "Plan", "PLAN (2)").ok());  // the name is taken
+    }
+    REQUIRE(layouts(doc).size() == 2);
+
+    auto check = [&](const Document& d) {
+        auto src = findLayout(d, "Plan"), cpy = findLayout(d, "Plan (2)");
+        REQUIRE(src.has_value());
+        REQUIRE(cpy.has_value());
+        CHECK(cpy->content != src->content);
+        REQUIRE(d.block(cpy->content));
+        REQUIRE(d.block(src->content));
+        CHECK(d.block(cpy->content)->entities.size() == d.block(src->content)->entities.size());
+        REQUIRE(cpy->viewports.size() == 2);
+        for (std::size_t i = 0; i < 2; ++i) {
+            const Viewport &x = src->viewports[i], &y = cpy->viewports[i];
+            CHECK(y.id == x.id);
+            CHECK(y.scaleN == doctest::Approx(x.scaleN));
+            CHECK(y.center.x == doctest::Approx(x.center.x));
+            CHECK(y.on == x.on);
+            CHECK(y.locked == x.locked);
+            CHECK(y.border == x.border);
+            CHECK(y.frozen == x.frozen);
+            CHECK(y.clip.size() == x.clip.size());
+        }
+        CHECK_FALSE(cpy->viewports[0].on);
+        CHECK(cpy->viewports[1].locked);
+        CHECK(cpy->viewports[1].clip.size() == 3);
+        CHECK(cpy->viewports[0].frozen.size() == 1);
+    };
+    check(doc);
+
+    // The copy is independent: removing a viewport from it leaves the original alone, and
+    // deleting the original leaves the copy's sheet objects.
+    run(doc, "rm", [&](Transaction& tx) { return removeViewport(tx, "Plan (2)", a); });
+    CHECK(findLayout(doc, "Plan")->viewports.size() == 2);
+    run(doc, "rm", [&](Transaction& tx) { return removeViewport(tx, "Plan (2)", b); });
+    run(doc, "again", [&](Transaction& tx) { return deleteLayout(tx, "Plan (2)"); });
+    run(doc, "copy2", [](Transaction& tx) { return copyLayout(tx, "Plan", "Plan (2)"); });
+
+    // Save and load.
+    auto bytes = io::writeTbcadToMemory(doc);
+    REQUIRE(bytes.ok());
+    io::IoReport report;
+    auto loaded = io::readTbcad(bytes.value(), report);
+    REQUIRE(loaded.ok());
+    check(*loaded.value());
+
+    // DXF export and import.
+    dxf::Report dreport;
+    auto out = dxf::exportDxf(doc, dxf::ExportOptions{}, dreport);
+    REQUIRE(out.ok());
+    auto in = dxf::importDxf(
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(out.value().bytes.data()),
+                                   out.value().bytes.size()),
+        {}, dreport);
+    REQUIRE(in.ok());
+    check(*in.value().document);
 }

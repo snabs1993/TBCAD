@@ -315,3 +315,21 @@ TEST_CASE("VPCLIP gives a viewport a polygonal outline, from points or a closed 
     CHECK(vp().clip.size() == 4);
     CHECK(vp().paper.max.y == doctest::Approx(60));
 }
+
+TEST_CASE("LAYOUT Copy duplicates a layout with its viewports and makes the copy current") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"20,20", "200,200", "1:100", "1000,1000"});
+    auto before = layout::findLayout(f.doc, "Plan");
+    REQUIRE(before.has_value());
+    const std::size_t views = before->viewports.size();
+    f.host->run("LAYOUT", {"Copy", "Plan", "Plan copy"});
+    auto copy = layout::findLayout(f.doc, "Plan copy");
+    REQUIRE(copy.has_value());
+    CHECK(copy->viewports.size() == views);
+    CHECK(f.host->setting("layout.current") == std::optional<std::string>("Plan copy"));
+    CHECK(f.host->undo());
+    CHECK_FALSE(layout::findLayout(f.doc, "Plan copy").has_value());
+    f.host->run("LAYOUT", {"Copy", "Plan", "plan"});
+    CHECK(f.host->logContains("already"));
+}

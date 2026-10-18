@@ -94,7 +94,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions menu;
-        menu.keywords = {"New", "Delete", "Rename", "Paper", "Set", "List"};
+        menu.keywords = {"New", "Copy", "Delete", "Rename", "Paper", "Set", "List"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Layout", menu);
         if (choice.status == Status::Cancel)
@@ -161,6 +161,18 @@ public:
         } else if (kw == "Delete") {
             report(ctx, layout::deleteLayout(ctx.tx(), named.text),
                    "Layout \"" + named.text + "\" deleted.");
+        } else if (kw == "Copy") {
+            cmd::StringOptions co;
+            co.defaultValue = named.text + " (2)";
+            auto nn = co_await ctx.getString("Name of the copy", co);
+            if (!nn.ok())
+                co_return;
+            auto r = layout::copyLayout(ctx.tx(), named.text, nn.text);
+            report(ctx, r, "Layout \"" + named.text + "\" copied to \"" + nn.text + "\".");
+            if (r) {
+                ctx.host().setSetting("layout.current", nn.text);
+                ctx.host().setSetting("layout.show", nn.text);
+            }
         } else if (kw == "Rename") {
             auto nn = co_await ctx.getString("New name");
             if (!nn.ok())
