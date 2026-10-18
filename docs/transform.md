@@ -9,12 +9,13 @@ Module `libs/commands/transform`. All commands run in one transaction, so each i
 | ROTATE | RO | angle or Reference; Copy keeps the source |
 | SCALE | SC | factor or Reference; Copy keeps the source |
 | MIRROR | MI | two points; optionally erase the source |
-| STRETCH | S | crossing window, base point, second point |
+| STRETCH | S | crossing window or CPolygon, base point, second point |
 | GRIPEDIT | | started by clicking a grip of the selection (Ctrl: copy) |
 
 ## STRETCH
 
-Pick two corners of a crossing window, then a base point and a second point. Only what lies in
+the window moves (`stretchByWindow` in `stretch.h`). Type `CP` at the first prompt to outline a crossing
+polygon instead (Enter closes it, `stretchByPolygon`); a point is inside when it lies in the polygon.
 the window moves (`stretchByWindow` in `stretch.h`):
 
 - Lines, arcs, polylines, splines and leaders: the vertices inside the window move, the others stay.

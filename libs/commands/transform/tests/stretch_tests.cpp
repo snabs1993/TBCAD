@@ -79,3 +79,16 @@ TEST_CASE("COPY Array makes a row of copies with a fixed spacing or fitted to a 
     });
     CHECK(found == 1);
 }
+
+TEST_CASE("STRETCH CPolygon moves only the vertices inside the polygon") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {100, 0}});
+    auto b =
+        add(f.doc, LineData{{0, 40}, {100, 40}});  // end inside the box but outside the triangle
+    auto r = f.host.run("STRETCH", {"CP", "90,-10", "120,-10", "120,20", cmd::ScriptItem::enter(),
+                                    "100,0", "110,0"});
+    CHECK(r.finished);
+    CHECK(near(get<LineData>(f.doc, a).a, {0, 0}));
+    CHECK(near(get<LineData>(f.doc, a).b, {110, 0}));
+    CHECK(near(get<LineData>(f.doc, b).b, {100, 40}));
+}

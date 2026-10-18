@@ -34,10 +34,24 @@ int vertexGrips(const Entity& e, std::size_t gripCount) {
 
 }  // namespace
 
-std::vector<std::pair<EntityId, Entity>> stretchByWindow(const Document& doc,
-                                                         const std::vector<EntityId>& ids,
-                                                         const BBox2& window, Vec2 delta,
-                                                         std::string* error) {
+namespace {
+
+bool inPolygon(const std::vector<Vec2>& poly, Vec2 p) {
+    bool in = false;
+    for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+        const Vec2 a = poly[i];
+        const Vec2 b = poly[j];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    }
+    return in;
+}
+
+template <class Contains, class ContainsBox>
+std::vector<std::pair<EntityId, Entity>> stretchImpl(const Document& doc,
+                                                     const std::vector<EntityId>& ids,
+                                                     Contains contains, ContainsBox containsBox,
+                                                     Vec2 delta, std::string* error) {
     std::vector<std::pair<EntityId, Entity>> out;
     const Transform2 shift = Transform2::translate(delta);
     auto fail = [&](const std::string& msg) {
@@ -53,12 +67,12 @@ std::vector<std::pair<EntityId, Entity>> stretchByWindow(const Document& doc,
         bool whole = false;
         std::vector<int> inside;
         if (nv < 0) {
-            whole = !grips.empty() && window.contains(grips[0]);
+            whole = !grips.empty() && contains(grips[0]);
         } else if (nv == 0) {
-            whole = window.containsBox(geom::bounds(*src, doc));
+            whole = containsBox(geom::bounds(*src, doc));
         } else {
             for (int i = 0; i < nv && i < static_cast<int>(grips.size()); ++i)
-                if (window.contains(grips[i]))
+                if (contains(grips[i]))
                     inside.push_back(i);
             whole = static_cast<int>(inside.size()) == nv;
         }
@@ -87,6 +101,32 @@ std::vector<std::pair<EntityId, Entity>> stretchByWindow(const Document& doc,
             out.emplace_back(id, std::move(cur));
     }
     return out;
+}
+
+}  // namespace
+
+std::vector<std::pair<EntityId, Entity>> stretchByWindow(const Document& doc,
+                                                         const std::vector<EntityId>& ids,
+                                                         const BBox2& window, Vec2 delta,
+                                                         std::string* error) {
+    return stretchImpl(
+        doc, ids, [&](Vec2 p) { return window.contains(p); },
+        [&](const BBox2& b) { return window.containsBox(b); }, delta, error);
+}
+
+std::vector<std::pair<EntityId, Entity>> stretchByPolygon(const Document& doc,
+                                                          const std::vector<EntityId>& ids,
+                                                          const std::vector<Vec2>& polygon,
+                                                          Vec2 delta, std::string* error) {
+    if (polygon.size() < 3)
+        return {};
+    return stretchImpl(
+        doc, ids, [&](Vec2 p) { return inPolygon(polygon, p); },
+        [&](const BBox2& b) {
+            return inPolygon(polygon, b.min) && inPolygon(polygon, b.max) &&
+                   inPolygon(polygon, {b.min.x, b.max.y}) && inPolygon(polygon, {b.max.x, b.min.y});
+        },
+        delta, error);
 }
 
 }  // namespace tbcad::transform
