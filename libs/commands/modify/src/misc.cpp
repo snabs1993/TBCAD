@@ -2,6 +2,7 @@
 #include <cmath>
 
 #include "commands.h"
+#include "tbcad/blocks/tbcad_blocks.h"
 #include "util.h"
 
 namespace tbcad::modifycmd {
@@ -176,6 +177,67 @@ Result<void> addPoints(cmd::CommandContext& ctx, const std::vector<Vec2>& pts, c
     return Result<void>{};
 }
 
+// DIVIDE and MEASURE with the Block option: inserts of a block instead of points, turned along the
+// object when `align` is set.
+Result<void> addBlocks(cmd::CommandContext& ctx, const std::vector<Vec2>& pts, const Entity& like,
+                       BlockId block, bool align) {
+    std::vector<geom::CurveRef> curves;
+    const bool haveCurves = geom::curvesOf(like, curves) && !curves.empty();
+    std::vector<EntityId> made;
+    for (Vec2 p : pts) {
+        double rotation = 0;
+        if (align && haveCurves) {
+            const geom::CurveRef* best = &curves.front();
+            double bestDist = best->distanceTo(p);
+            for (const geom::CurveRef& c : curves)
+                if (const double d = c.distanceTo(p); d < bestDist) {
+                    best = &c;
+                    bestDist = d;
+                }
+            const Vec2 t = best->tangentAt(best->paramAt(p));
+            if (t.x != 0 || t.y != 0)
+                rotation = std::atan2(t.y, t.x);
+        }
+        InsertData data{block, p, {1, 1}, rotation};
+        data.attribs = blocks::defaultAttribs(ctx.doc(), block);
+        Entity ins;
+        ins.common = like.common;
+        ins.common.id = {};
+        ins.common.color = Color::byLayer();
+        ins.common.linetype = kLinetypeByLayer;
+        ins.common.lineweight = LineWeight::byLayer();
+        ins.data = Indirect<InsertData>(std::move(data));
+        auto r = ctx.tx().add(std::move(ins));
+        if (!r)
+            return r.error();
+        made.push_back(r.value());
+    }
+    ctx.host().setSelection(made);
+    return Result<void>{};
+}
+
+// Asks which block to place and whether to turn it along the object. `ok` is false on cancel.
+cmd::Task askBlockOption(cmd::CommandContext& ctx, BlockId& block, bool& align, bool& ok) {
+    ok = false;
+    for (;;) {
+        auto name = co_await ctx.getString("Enter name of block to insert");
+        if (!name.ok())
+            co_return;
+        if (const BlockDef* def = ctx.doc().blockByName(cmd::trim(name.text))) {
+            block = def->id;
+            break;
+        }
+        ctx.message("No block named \"" + cmd::trim(name.text) + "\".");
+    }
+    auto yn = co_await ctx.getKeyword(
+        "Align block with object? [Yes/No] <Yes>",
+        cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
+    if (!yn.ok())
+        co_return;
+    align = yn.keyword == "Yes";
+    ok = true;
+}
+
 bool dividable(const Entity& e) {
     switch (kind(e)) {
         case EntityKind::Line:
@@ -209,7 +271,18 @@ public:
         cmd::IntOptions io;
         io.min = 2;
         io.max = 32767;
-        auto n = co_await ctx.getInteger("Enter the number of segments", io);
+        BlockId block{};
+        bool align = true;
+        io.keywords = {"Block"};
+        auto n = co_await ctx.getInteger("Enter the number of segments or [Block]", io);
+        if (n.status == cmd::Status::Keyword) {
+            bool ok = false;
+            co_await askBlockOption(ctx, block, align, ok);
+            if (!ok)
+                co_return;
+            io.keywords = {};
+            n = co_await ctx.getInteger("Enter the number of segments", io);
+        }
         if (!n.ok())
             co_return;
         const Entity* e = ctx.doc().find(pick.id);
@@ -224,10 +297,15 @@ public:
         like.common.color = Color::byLayer();
         like.common.linetype = kLinetypeByLayer;
         like.common.lineweight = LineWeight::byLayer();
-        if (auto r = addPoints(ctx, pts.value(), like); !r)
+        const bool blocksOut = static_cast<bool>(block);
+        if (auto r = blocksOut ? addBlocks(ctx, pts.value(), *e, block, align)
+                               : addPoints(ctx, pts.value(), like);
+            !r)
             ctx.message(r.error().message);
         else
-            ctx.message(plural(pts.value().size(), "point", "points") + " placed.");
+            ctx.message(plural(pts.value().size(), blocksOut ? "block" : "point",
+                               blocksOut ? "blocks" : "points") +
+                        " placed.");
     }
 };
 
@@ -249,7 +327,18 @@ public:
             co_return;
         cmd::DistanceOptions d;
         d.allowZero = false;
-        auto len = co_await ctx.getDistance("Specify length of segment", d);
+        d.keywords = {"Block"};
+        BlockId block{};
+        bool align = true;
+        auto len = co_await ctx.getDistance("Specify length of segment or [Block]", d);
+        if (len.status == cmd::Status::Keyword) {
+            bool ok = false;
+            co_await askBlockOption(ctx, block, align, ok);
+            if (!ok)
+                co_return;
+            d.keywords = {};
+            len = co_await ctx.getDistance("Specify length of segment", d);
+        }
         if (!len.ok())
             co_return;
         const Entity* e = ctx.doc().find(pick.id);
@@ -272,10 +361,15 @@ public:
         like.common.color = Color::byLayer();
         like.common.linetype = kLinetypeByLayer;
         like.common.lineweight = LineWeight::byLayer();
-        if (auto r = addPoints(ctx, pts.value(), like); !r)
+        const bool blocksOut = static_cast<bool>(block);
+        if (auto r = blocksOut ? addBlocks(ctx, pts.value(), *e, block, align)
+                               : addPoints(ctx, pts.value(), like);
+            !r)
             ctx.message(r.error().message);
         else
-            ctx.message(plural(pts.value().size(), "point", "points") + " placed.");
+            ctx.message(plural(pts.value().size(), blocksOut ? "block" : "point",
+                               blocksOut ? "blocks" : "points") +
+                        " placed.");
     }
 };
 
