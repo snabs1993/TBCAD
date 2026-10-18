@@ -797,4 +797,34 @@ TEST_CASE("attributes: flags, prompt, an unknown tag stays visible as text") {
     CHECK_FALSE(texts[0]->attdef.has_value());
 }
 
+TEST_CASE("MLEADER: leader lines and text come in as leaders") {
+    Pairs p;
+    p.g(0, "MLEADER").g(8, "0").g(100, "AcDbMLeader").g(270, 2);
+    p.g(300, "CONTEXT_DATA{").g(40, 1.0).g(10, 50.0).g(20, 20.0).g(30, 0.0);
+    p.g(41, 2.5).g(290, 1).g(304, "Room {\\C1;A}");
+    p.g(12, 50.0).g(22, 20.0).g(32, 0.0);
+    p.g(302, "LEADER{").g(290, 1).g(291, 1).g(10, 40.0).g(20, 20.0).g(30, 0.0);
+    p.g(11, 1.0).g(21, 0.0).g(31, 0.0).g(90, 0).g(40, 5.0);
+    p.g(304, "LEADER_LINE{").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(10, 20.0).g(20, 10.0).g(30, 0.0);
+    p.g(10, 40.0).g(20, 20.0).g(30, 0.0).g(91, 0).g(305, "}").g(303, "}");
+    p.g(301, "}");
+    Loaded l = load(entitiesOnly(p.text));
+    auto leaders = modelEntities<LeaderData>(l.doc());
+    REQUIRE(leaders.size() == 1);
+    const LeaderData& d = *leaders[0];
+    // From the arrowhead at the far end to the end of the dogleg.
+    CHECK(near(d.vertices.front(), Vec2{0, 0}));
+    CHECK(near(d.vertices.back(), Vec2{45, 20}));
+    CHECK(near(d.textPos, Vec2{50, 20}));
+    CHECK(d.utf8.find("Room") != std::string::npos);
+}
+
+TEST_CASE("3DFACE: the visible edges in plan") {
+    Pairs p;
+    p.g(0, "3DFACE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 10.0).g(21, 0.0).g(31, 5.0);
+    p.g(12, 10.0).g(22, 10.0).g(32, 5.0).g(13, 0.0).g(23, 10.0).g(33, 0.0).g(70, 2);
+    Loaded l = load(entitiesOnly(p.text));
+    CHECK(modelEntities<LineData>(l.doc()).size() == 3);  // edge 2 is invisible
+}
+
 }  // namespace tbcad::dxf

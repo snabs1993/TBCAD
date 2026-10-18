@@ -237,3 +237,7 @@ machine can regenerate). Codepages: 874, 932, 936, 949, 950, 1250-1258 and 1361 
 5 GB2312 (936). `libs/dxf/tools/gen_mplus_vectors.py` writes `tests/corpus/encoding/mplus_vectors.txt`
 (about 2100 sample escapes and the characters the platform codecs give for them), and the encoding
 tests check `decodeText` against it.
+
+## MLEADER and 3DFACE
+
+An MLEADER comes in as plain leaders: one per leader line, the first carrying the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane.

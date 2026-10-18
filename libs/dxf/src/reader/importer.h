@@ -143,6 +143,8 @@ private:
     bool blockHasAttDef(BlockId block, const std::string& tag) const;
     bool convSolid(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convLeader(const Record& r, std::vector<Entity>& out);
+    bool convMLeader(const Record& r, std::vector<Entity>& out);
+    bool conv3dFace(const Record& r, std::vector<Entity>& out);
     bool convProxy(const Record& r, std::vector<Entity>& out);
     // An entity of another application (AEC, Civil, ACIS ...) that carries proxy graphics.
     bool convForeign(const Record& r, std::vector<Entity>& out);

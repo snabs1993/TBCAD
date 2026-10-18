@@ -365,6 +365,11 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convDimension(r, out, owner);
     } else if (t == "LEADER") {
         convLeader(r, out);
+    } else if (t == "MLEADER") {
+        if (!convMLeader(r, out) && !convForeign(r, out))
+            return false;
+    } else if (t == "3DFACE") {
+        conv3dFace(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
         convProxy(r, out);
     } else if (!convForeign(r, out)) {
@@ -949,6 +954,123 @@ bool Importer::convLeader(const Record& r, std::vector<Entity>& out) {
     d.textPos = d.vertices.back();
     out.push_back(makeEntity(std::move(d)));
     return true;
+}
+
+// MLEADER: the leader lines and the text of a multileader, as plain LEADER entities (the first one
+// carries the text). Block content and the leader style's look are not read.
+bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
+    struct Branch {
+        std::vector<Vec2> pts{};
+        Vec2 last{};
+        Vec2 dir{};
+        double dogLen = 0;
+        bool hasLast = false, hasDir = false;
+    };
+    std::vector<Branch> branches;
+    std::string rawText;
+    Vec2 base{}, textLoc{};
+    bool hasBase = false, hasTextLoc = false;
+    bool inCtx = false, inLeader = false, inLine = false;
+    for (const Group& g : r.g) {
+        const std::string_view s = g.code >= 300 && g.code < 320 ? g.str() : std::string_view{};
+        if (g.code == 300 && s == "CONTEXT_DATA{") {
+            inCtx = true;
+        } else if (g.code == 301) {
+            inCtx = false;
+        } else if (g.code == 302 && s == "LEADER{") {
+            inLeader = true;
+            branches.emplace_back();
+        } else if (g.code == 303) {
+            inLeader = false;
+        } else if (g.code == 304 && s == "LEADER_LINE{") {
+            inLine = true;
+        } else if (g.code == 305) {
+            inLine = false;
+        } else if (g.code == 304 && inCtx && !inLeader) {
+            rawText += g.str();
+        } else if (inLine && !branches.empty()) {
+            if (g.code == 10)
+                branches.back().pts.push_back({g.number() * k_, 0});
+            else if (g.code == 20 && !branches.back().pts.empty())
+                branches.back().pts.back().y = g.number() * k_;
+        } else if (inLeader && !branches.empty()) {
+            Branch& b = branches.back();
+            if (g.code == 10) {
+                b.last.x = g.number() * k_;
+                b.hasLast = true;
+            } else if (g.code == 20) {
+                b.last.y = g.number() * k_;
+            } else if (g.code == 11) {
+                b.dir.x = g.number();
+                b.hasDir = true;
+            } else if (g.code == 21) {
+                b.dir.y = g.number();
+            } else if (g.code == 40) {
+                b.dogLen = g.number() * k_;
+            }
+        } else if (inCtx) {
+            if (g.code == 10) {
+                base.x = g.number() * k_;
+                hasBase = true;
+            } else if (g.code == 20) {
+                base.y = g.number() * k_;
+            } else if (g.code == 12) {
+                textLoc.x = g.number() * k_;
+                hasTextLoc = true;
+            } else if (g.code == 22) {
+                textLoc.y = g.number() * k_;
+            }
+        }
+    }
+    const std::string text = convertMText(dec(rawText), k_, mtextDropped_);
+    const Vec2 anchor = hasTextLoc ? textLoc : base;
+    const DimStyleId style = dimStyleFor(r.raw(3));
+    bool first = true;
+    for (Branch& b : branches) {
+        if (b.pts.empty())
+            continue;
+        // The vertices run from one end to the other: the end nearer the text is the landing.
+        const Vec2 near = b.hasLast ? b.last : anchor;
+        if (distance(b.pts.front(), near) < distance(b.pts.back(), near))
+            std::reverse(b.pts.begin(), b.pts.end());
+        LeaderData d;
+        d.vertices = b.pts;  // arrowhead first
+        if (b.hasLast && distance(d.vertices.back(), b.last) > tol::kLinear)
+            d.vertices.push_back(b.last);
+        if (b.hasDir && b.dogLen > 0 && !tol::isZeroLength(b.dir))
+            d.vertices.push_back(d.vertices.back() + normalized(b.dir) * b.dogLen);
+        if (d.vertices.size() < 2)
+            continue;
+        d.style = style;
+        d.textPos = hasTextLoc || hasBase ? anchor : d.vertices.back();
+        if (first)
+            d.utf8 = text;
+        first = false;
+        out.push_back(makeEntity(std::move(d)));
+    }
+    if (out.empty() && !text.empty()) {
+        MTextData m;
+        m.utf8 = text;
+        m.position = anchor;
+        m.height = 2.5;
+        out.push_back(makeEntity(std::move(m)));
+    }
+    return !out.empty();
+}
+
+// 3DFACE: the visible edges of the face projected on the XY plane.
+bool Importer::conv3dFace(const Record& r, std::vector<Entity>& out) {
+    Vec2 p[4] = {P(r, 10, 20), P(r, 11, 21), P(r, 12, 22), r.has(13) ? P(r, 13, 23) : P(r, 12, 22)};
+    const std::int64_t hidden = r.integer(70);
+    const int n = tol::nearlyEqual(p[2], p[3]) ? 3 : 4;
+    for (int i = 0; i < n; ++i) {
+        if (hidden & (1 << i))
+            continue;
+        const Vec2 a = p[i], b = p[(i + 1) % n];
+        if (distance(a, b) > tol::kLinear)
+            out.push_back(makeEntity(LineData{a, b}));
+    }
+    return !out.empty();
 }
 
 bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {
