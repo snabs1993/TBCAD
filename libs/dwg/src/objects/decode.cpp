@@ -189,13 +189,15 @@ public:
                 found = w->second - e.offset;
                 ok = true;
             }
-            // The search costs 16000 frame probes; once many objects in a row had nothing nearby
-            // the search is tried on every 64th object only (it took seconds on a file
-            // with thousands of such objects).
-            const bool search = searchMisses_ < 60 || ++searchSkipped_ % 64 == 0;
+            // The search probes up to 16000 places per object. Neighbouring objects probe the
+            // same places, so on a file of moderate size every place is looked at once
+            // (cached); on a very large file the search backs off to every 64th object after 60
+            // misses in a row.
+            const bool cached = file_.size() <= kProbeCacheMax;
+            const bool search = cached || searchMisses_ < 60 || ++searchSkipped_ % 64 == 0;
             for (std::int64_t d = 1; !ok && search && d <= 8192; ++d) {
                 for (std::int64_t sd : {d, -d}) {
-                    if (frameHandle(e.offset + sd) == e.handle) {
+                    if (frameHandleCached(e.offset + sd, cached) == e.handle) {
                         found = sd;
                         ok = true;
                         break;
@@ -236,6 +238,18 @@ private:
 
     bool quiet_ = false;
     bool framed_ = true;
+    static constexpr std::size_t kProbeCacheMax = 12u * 1024 * 1024;
+    std::vector<std::uint64_t> probeCache_;  // frameHandle per offset, ~0 = not looked at yet
+    std::uint64_t frameHandleCached(std::int64_t offset, bool cached) {
+        if (!cached || offset < 0 || static_cast<std::size_t>(offset) >= file_.size())
+            return frameHandle(offset);
+        if (probeCache_.empty())
+            probeCache_.assign(file_.size(), ~std::uint64_t{0});
+        std::uint64_t& slot = probeCache_[static_cast<std::size_t>(offset)];
+        if (slot == ~std::uint64_t{0})
+            slot = frameHandle(offset);
+        return slot;
+    }
     int searchSkipped_ = 0;
     int searchMisses_ = 0;  // objects in a row whose frame was not found near the map's place
     // A problem with the frame of an object: silent while the caller may still look elsewhere.
