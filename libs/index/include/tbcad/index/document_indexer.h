@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 
 #include "tbcad/core/document.h"
 #include "tbcad/index/spatial_index.h"
@@ -22,7 +23,10 @@ public:
     using BoundsFn = std::function<BBox2(const Entity&)>;
 
     // Registers with `doc` and loads every model-space entity into `index` (replacing its content).
-    DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds);
+    // `batch`, when set, is called before a run of many bounds calls (loading, a big change) and
+    // the object it returns is kept until the run ends: a hook for caches that help a run.
+    using BatchFn = std::function<std::shared_ptr<void>()>;
+    DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds, BatchFn batch = {});
     ~DocumentIndexer() override;
     DocumentIndexer(const DocumentIndexer&) = delete;
     DocumentIndexer& operator=(const DocumentIndexer&) = delete;
@@ -38,6 +42,7 @@ private:
     Document& doc_;
     SpatialIndex& index_;
     BoundsFn bounds_;
+    BatchFn batch_;
 };
 
 }  // namespace tbcad::index

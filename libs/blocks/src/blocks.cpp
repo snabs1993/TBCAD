@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "internal.h"
@@ -137,11 +138,85 @@ BBox2 limitToClip(BBox2 box, const InsertData& ins, const Transform2& t) {
     return out;
 }
 
+// What measuring has learned about blocks. A block with no attributes, dynamic parameters or
+// assembly looks the same through every reference, so its bounds are worked out once (in its own
+// space) and moved into place for each further use. Without this a block nested five deep with
+// four references per level was measured 4^4 times over for every reference to it. The memo lives
+// for one call, or for a BoundsMemoScope (many measurements while the drawing does not change).
+struct Local {
+    bool plain = false;
+    BBox2 box{};
+    std::size_t leaves = 0;  // drawn objects below it, counting nested ones (capped)
+};
+using Memo = std::unordered_map<BlockId, Local>;
+
+thread_local Memo* g_memo = nullptr;
+
+constexpr std::size_t kLooseAbove = 512;  // leaves; see contentBounds
+
+bool axisAligned(const Transform2& t) {
+    const double eps =
+        1e-12 * (std::abs(t.m00) + std::abs(t.m01) + std::abs(t.m10) + std::abs(t.m11));
+    return (std::abs(t.m01) <= eps && std::abs(t.m10) <= eps) ||
+           (std::abs(t.m00) <= eps && std::abs(t.m11) <= eps);
+}
+
 BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& t, int depth,
-                    const InsertData* owner = nullptr) {
+                    const InsertData* owner, Memo& memo, bool bypass = false);
+
+// Fills the memo entry of `def` (and of the blocks below it).
+Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
+    if (auto it = memo.find(def.id); it != memo.end())
+        return it->second;
+    memo[def.id] = {};  // (a block that contains itself stays "not plain")
+    Local loc;
+    if (def.assembly || def.dynamic || depth > kMaxNesting)
+        return loc;
+    bool plain = true;
+    std::size_t leaves = 0;
+    for (EntityId id : def.entities) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        if (const auto* td = entityAs<TextData>(*e); td && td->attdef) {
+            plain = false;
+            break;
+        }
+        if (const auto* ins = entityAs<InsertData>(*e)) {
+            const BlockDef* inner = doc.block(ins->block);
+            if (!inner)
+                continue;
+            const Local il = localOf(doc, *inner, memo, depth + 1);
+            if (!il.plain) {
+                plain = false;
+                break;
+            }
+            leaves = std::min<std::size_t>(
+                leaves + il.leaves * instanceTransforms(*ins, inner->base).size(), 1u << 30);
+        } else {
+            ++leaves;
+        }
+    }
+    loc.plain = plain;
+    loc.leaves = leaves;
+    if (plain)
+        loc.box = contentBounds(doc, def, Transform2::identity(), depth, nullptr, memo, true);
+    memo[def.id] = loc;
+    return loc;
+}
+
+BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& t, int depth,
+                    const InsertData* owner, Memo& memo, bool bypass) {
     BBox2 box;
     if (depth > kMaxNesting)
         return box;
+    if (!bypass) {
+        const Local loc = localOf(doc, def, memo, depth);
+        // Moved into place: exact when the transform keeps the axes; for a turned view of a block
+        // with very many objects the box of the turned box is used (a little larger, but cheap).
+        if (loc.plain && (axisAligned(t) || loc.leaves > kLooseAbove))
+            return t.applyToBox(loc.box);
+    }
     std::optional<AsmResolved> res;
     const InsertData* eff = owner;
     if (def.assembly && owner) {
@@ -155,8 +230,8 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
         if (const auto* ins = entityAs<InsertData>(*e)) {
             if (const BlockDef* inner = doc.block(ins->block))
                 for (const Transform2& it : instanceTransforms(*ins, inner->base))
-                    box.merge(limitToClip(contentBounds(doc, *inner, t * it, depth + 1, ins), *ins,
-                                          t * it));
+                    box.merge(limitToClip(contentBounds(doc, *inner, t * it, depth + 1, ins, memo),
+                                          *ins, t * it));
             continue;
         }
         std::optional<Entity> shown;
@@ -180,6 +255,18 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
 
 }  // namespace
 
+BoundsMemoScope::BoundsMemoScope() {
+    if (!g_memo) {
+        memo_ = std::make_shared<Memo>();
+        g_memo = static_cast<Memo*>(memo_.get());
+    }
+}
+
+BoundsMemoScope::~BoundsMemoScope() {
+    if (memo_)
+        g_memo = nullptr;
+}
+
 BBox2 insertBounds(const Document& doc, const Entity& insert) {
     const auto* ins = entityAs<InsertData>(insert);
     if (!ins)
@@ -188,14 +275,18 @@ BBox2 insertBounds(const Document& doc, const Entity& insert) {
     if (!def)
         return {};
     BBox2 box;
+    Memo own;
+    Memo& memo = g_memo ? *g_memo : own;
     for (const Transform2& t : instanceTransforms(*ins, def->base))
-        box.merge(limitToClip(contentBounds(doc, *def, t, 0, ins), *ins, t));
+        box.merge(limitToClip(contentBounds(doc, *def, t, 0, ins, memo), *ins, t));
     return box;
 }
 
 BBox2 blockBounds(const Document& doc, BlockId block) {
     const BlockDef* def = doc.block(block);
-    return def ? contentBounds(doc, *def, Transform2::identity(), 0) : BBox2{};
+    Memo own;
+    Memo& memo = g_memo ? *g_memo : own;
+    return def ? contentBounds(doc, *def, Transform2::identity(), 0, nullptr, memo) : BBox2{};
 }
 
 std::vector<Entity> snapGeometry(const Document& doc, const Entity& insert) {

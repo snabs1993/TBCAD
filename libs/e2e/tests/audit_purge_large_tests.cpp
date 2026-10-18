@@ -13,6 +13,13 @@
 #include "tbcad/core/dump.h"
 #include "tbcad/ui/app_core.h"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 using namespace tbcad;
 
 namespace {
@@ -29,7 +36,8 @@ struct Big {
     int usedLayers = 0, unusedLayers = 0, unusedBlocks = 0;
 
     Big() {
-        dir = std::filesystem::temp_directory_path() / "tbcad_audit_purge_large";
+        dir = std::filesystem::temp_directory_path() /
+              ("tbcad_audit_purge_large_" + std::to_string(::getpid()));
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
         registerAllCommands(registry);

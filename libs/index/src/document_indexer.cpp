@@ -13,8 +13,8 @@ bool usable(const BBox2& b) {
 
 }  // namespace
 
-DocumentIndexer::DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds)
-    : doc_(doc), index_(index), bounds_(std::move(bounds)) {
+DocumentIndexer::DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds, BatchFn batch)
+    : doc_(doc), index_(index), bounds_(std::move(bounds)), batch_(std::move(batch)) {
     rebuild();
     doc_.addObserver(this);
 }
@@ -24,6 +24,7 @@ DocumentIndexer::~DocumentIndexer() {
 }
 
 void DocumentIndexer::rebuild() {
+    std::shared_ptr<void> run = batch_ ? batch_() : nullptr;
     std::vector<IdBox> items;
     items.reserve(doc_.modelSpaceCount());
     doc_.forEachEntity([&](const Entity& e) {
@@ -56,6 +57,7 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
         rebuild();
         return;
     }
+    std::shared_ptr<void> run = (batch_ && n > 8) ? batch_() : nullptr;
     for (const EntityChange& c : changes.entities)
         reindex(changes.idOf(c));
 }

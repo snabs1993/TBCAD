@@ -88,16 +88,25 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     geom::DisplayContext ctx;
     ctx.pixelSizeMm = pixelSizeMm_;
     ctx.showTransparency = showTransparency_;
+    const bool locked = doc_.effective(e.common).locked;
+    // An object already in the scene keeps its place in the draw order.
+    const std::uint32_t order = drawOrder.value_or(orderFor(id));
+    const double builtZoom = needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0;
     DisplayList list;
     {
         blocks::BlockDisplayScope scope(blockCache_);
+        // A reference to a block is drawn from the block's shared geometry and one transform.
+        if (!locked && kind(e) == EntityKind::Insert) {
+            blocks::InsertInstance inst;
+            if (blocks::buildInsertInstance(doc_, e, ctx, inst) &&
+                scene_.upsertInstance(id, inst.blockSpace, inst.transform, order, builtZoom))
+                return;
+        }
         geom::buildDisplay(doc_, e, ctx, list);
     }
-    if (doc_.effective(e.common).locked)
+    if (locked)
         fade(list);
-    // An object already in the scene keeps its place in the draw order.
-    scene_.upsert(id, list, drawOrder.value_or(orderFor(id)),
-                  needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
+    scene_.upsert(id, list, order, builtZoom);
 }
 
 // Where an object goes in the draw order: where it already is, or where it was waiting to be

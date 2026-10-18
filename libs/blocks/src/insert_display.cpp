@@ -213,6 +213,59 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         detail::joinClip(doc, insert, *def, ctx, out, firstItem);
 }
 
+bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::DisplayContext& ctx,
+                         InsertInstance& out) {
+    const auto* ins = entityAs<InsertData>(insert);
+    BlockDisplayCache* cache = g_active;
+    if (!ins || !cache || g_depth != 0)
+        return false;
+    const BlockDef* def = doc.block(ins->block);
+    if (!def || def->entities.empty() || def->dynamic || def->assembly)
+        return false;
+    if ((ins->clipOn && ins->clip.size() >= 3) || ins->array ||
+        instanceTransforms(*ins, def->base).size() != 1)
+        return false;
+    // Attribute values are drawn per insert, so such blocks keep the full path.
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        const auto* t = entityAs<TextData>(*e);
+        if (t && t->attdef && e->common.visible)
+            return false;
+    }
+    DepthGuard guard;
+    geom::DisplayContext opaque = ctx;
+    opaque.showTransparency = false;
+    const DisplayStyle self = geom::resolveStyle(doc, insert, opaque);
+    const Transform2 t = instanceTransform(*ins, def->base);
+    geom::DisplayContext child = ctx;
+    child.byBlockColor = self.color;
+    child.byBlockLineweightMm = self.lineweight;
+    child.byBlockPattern = self.pattern;
+    child.byBlockTransparency = geom::resolveTransparency(doc, insert, ctx);
+    child.chordTolMm = quantizeTolerance(ctx.tolerance() / std::max(maxStretch(t), 1e-12));
+
+    cache->sync(doc.revision());
+    const BlockDisplayCache::Key key{def->id,
+                                     insert.common.layer,
+                                     self.color,
+                                     self.lineweight,
+                                     self.pattern,
+                                     child.chordTolMm,
+                                     ctx.showTransparency ? child.byBlockTransparency : -1};
+    std::shared_ptr<const DisplayList> blockSpace = cache->find(key);
+    if (!blockSpace) {
+        blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);
+        cache->countBuild();
+        cache->put(key, blockSpace);
+    }
+    // (an array insert has been refused above, so there is exactly one transform)
+    out.blockSpace = std::move(blockSpace);
+    out.transform = t;
+    return true;
+}
+
 void registerInsertDisplay() {
     static std::once_flag once;
     std::call_once(once, [] {
