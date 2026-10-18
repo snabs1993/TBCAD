@@ -46,6 +46,10 @@ public:
 private:
     bool hiddenByLevel(const Entity& e) const;
     void upsertEntity(const Entity& e, std::optional<std::uint32_t> drawOrder = {});
+    // Rebuilds many entities, each keeping its place in the draw order. Taking them out of the
+    // scene one by one costs a pass over their batches each (quadratic for a whole drawing), so
+    // they are taken out in chunks first.
+    void upsertMany(const std::vector<const Entity*>& list);
     void relevelMasks();
     void syncLayers();
     void rebuildDrawOrder();
