@@ -56,6 +56,35 @@ public:
     }
 };
 
+class UndoMarkCommand final : public Command {
+public:
+    std::string_view name() const override { return "UNDOMARK"; }
+    std::string_view description() const override { return "Mark this place in the undo history"; }
+    Task run(CommandContext& ctx) override {
+        if (ctx.undoStack().undoCount() == 0 && !ctx.undoStack().inGroup())
+            ctx.message("Nothing to mark: the undo history is empty.");
+        else
+            ctx.undoStack().mark();
+        co_return;
+    }
+};
+
+class UndoBackCommand final : public Command {
+public:
+    std::string_view name() const override { return "UNDOBACK"; }
+    std::string_view description() const override {
+        return "Undo back to the mark set by UNDOMARK";
+    }
+    Task run(CommandContext& ctx) override {
+        const std::size_t n = ctx.undoStack().undoToMark(ctx.doc());
+        if (n == UndoStack::npos)
+            ctx.message("No mark: use UNDOMARK first.");
+        else
+            ctx.message("Undid " + std::to_string(n) + " step(s) back to the mark.");
+        co_return;
+    }
+};
+
 class AliasesCommand final : public Command {
 public:
     std::string_view name() const override { return "ALIASES"; }
@@ -85,6 +114,8 @@ void registerBuiltinCommands(Registry& registry) {
     (void)registry.add(std::make_unique<RedoCommand>());
     (void)registry.add(std::make_unique<UndoBeginCommand>());
     (void)registry.add(std::make_unique<UndoEndCommand>());
+    (void)registry.add(std::make_unique<UndoMarkCommand>());
+    (void)registry.add(std::make_unique<UndoBackCommand>());
     (void)registry.add(std::make_unique<AliasesCommand>());
 }
 

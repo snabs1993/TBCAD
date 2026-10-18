@@ -138,6 +138,9 @@ void UndoStack::trim() {
         ++dropped;
     }
     if (dropped > 0) {
+        for (std::size_t& m : marks_)
+            m = m > dropped ? m - dropped : 0;
+        std::erase(marks_, 0);  // the history it pointed into is gone
         dropped_ += dropped;
         if (sink_)
             sink_("Undo history is full: dropped the " + std::to_string(dropped) +
@@ -160,6 +163,8 @@ bool UndoStack::undo(Document& doc) {
     Entry e = std::move(undo_.back());
     undo_.pop_back();
     used_ -= std::min(used_, e.bytes);
+    while (!marks_.empty() && marks_.back() > undo_.size())
+        marks_.pop_back();  // stepped back past a mark: it no longer means anything
     if (guard_) {
         std::string why = guard_(doc, e.sets, Direction::Undo);
         if (!why.empty()) {
@@ -212,7 +217,31 @@ bool UndoStack::endGroup() {
     return true;
 }
 
+void UndoStack::mark() {
+    if (groupDepth_ > 0 || undo_.empty())
+        return;  // nothing to come back to
+    if (marks_.empty() || marks_.back() != undo_.size())
+        marks_.push_back(undo_.size());
+}
+
+std::size_t UndoStack::undoToMark(Document& doc) {
+    if (marks_.empty() || groupDepth_ > 0)
+        return npos;
+    const std::size_t target = marks_.back();
+    std::size_t n = 0;
+    while (undo_.size() > target) {
+        if (!undo(doc))
+            return n ? n : npos;
+        ++n;
+    }
+    // (undo() dropped the marks above the new depth) this one is used up; earlier ones remain
+    if (!marks_.empty() && marks_.back() == target)
+        marks_.pop_back();
+    return n;
+}
+
 void UndoStack::clear() {
+    marks_.clear();
     undo_.clear();
     redo_.clear();
     used_ = 0;
