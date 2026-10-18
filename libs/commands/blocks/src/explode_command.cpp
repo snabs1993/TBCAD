@@ -23,8 +23,12 @@ public:
             "Select objects to explode", cmd::SelectionOptions{.filter = [base](const Entity& e) {
                 return base(e) && blocks::canExplode(kind(e));
             }});
-        if (!sel.ok() || sel.ids.empty())
+        if (!sel.ok())
             co_return;
+        if (sel.ids.empty()) {
+            ctx.message("0 found. Nothing to explode was selected.");
+            co_return;
+        }
 
         std::vector<EntityId> created;
         std::size_t exploded = 0;

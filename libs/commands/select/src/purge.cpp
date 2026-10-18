@@ -100,6 +100,12 @@ public:
             kinds = static_cast<unsigned>(PurgeKind::Linetypes);
         else if (k.keyword == "Dimstyles")
             kinds = static_cast<unsigned>(PurgeKind::DimStyles);
+        std::vector<std::string> layerNames, blockNames;
+        for (const auto& [id, row] : ctx.doc().layers())
+            layerNames.push_back(row.name);
+        for (const auto& [id, row] : ctx.doc().blocks())
+            if (!row.anonymous)
+                blockNames.push_back(row.name);
         const PurgeCounts n = purgeUnused(ctx.doc(), ctx.tx(), kinds);
         if (n.total() == 0) {
             ctx.message("Nothing to purge.");
@@ -117,6 +123,24 @@ public:
         add(n.dimStyles, "dimension style");
         msg.back() = '.';
         ctx.message(msg);
+        // Name what went, so a layer that vanished is not a mystery (Undo brings it back).
+        auto list = [&](const char* what, const std::vector<std::string>& before, auto exists) {
+            std::string names;
+            int gone = 0;
+            for (const std::string& name : before) {
+                if (exists(name))
+                    continue;
+                if (++gone <= 8)
+                    names += (names.empty() ? "" : ", ") + name;
+            }
+            if (gone)
+                ctx.message(std::string(what) + ": " + names + (gone > 8 ? ", ..." : "") +
+                            ". Undo brings them back.");
+        };
+        list("Layers purged", layerNames,
+             [&](const std::string& nm) { return ctx.doc().layerByName(nm) != nullptr; });
+        list("Blocks purged", blockNames,
+             [&](const std::string& nm) { return ctx.doc().blockByName(nm) != nullptr; });
     }
 };
 
