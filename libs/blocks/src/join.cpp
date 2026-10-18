@@ -29,7 +29,7 @@ thread_local ClassCache g_cache;
 double area(const std::vector<Vec2>& ring) {
     double a = 0;
     for (std::size_t i = 0; i < ring.size(); ++i)
-        a += cross(ring[i], ring[(i + 1) % ring.size()]);
+        a += cross(ring[i] - ring[0], ring[(i + 1) % ring.size()] - ring[0]);
     return 0.5 * a;
 }
 

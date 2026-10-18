@@ -241,6 +241,11 @@ std::size_t Importer::decodeProxyGraphics(std::span<const std::uint8_t> data,
     };
     // Centre of the circle through three points in the XY plane (false when collinear).
     auto circumcircle = [](V3 a, V3 b, V3 c, double& cx, double& cy, double& r) {
+        // Worked out around `a`: survey-sized coordinates would lose every digit of the squares.
+        b = {b.x - a.x, b.y - a.y, b.z};
+        c = {c.x - a.x, c.y - a.y, c.z};
+        const double ax = a.x, ay = a.y;
+        a = {0, 0, a.z};
         double d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
         if (std::abs(d) < 1e-12)
             return false;
@@ -248,6 +253,8 @@ std::size_t Importer::decodeProxyGraphics(std::span<const std::uint8_t> data,
         cx = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d;
         cy = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d;
         r = std::hypot(a.x - cx, a.y - cy);
+        cx += ax;
+        cy += ay;
         return std::isfinite(r) && r > 0;
     };
 

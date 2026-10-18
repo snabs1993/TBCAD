@@ -10,9 +10,11 @@ namespace tbcad::geom {
 namespace {
 
 double ringArea(const Ring& r) {
+    // Measured from the first vertex: with survey-sized coordinates (1e9 mm) the products of
+    // absolute coordinates would have lost every digit of an area of a few thousand mm2.
     double a = 0;
-    for (std::size_t i = 0; i < r.size(); ++i)
-        a += cross(r[i], r[(i + 1) % r.size()]);
+    for (std::size_t i = 1; i + 1 < r.size(); ++i)
+        a += cross(r[i] - r[0], r[i + 1] - r[0]);
     return 0.5 * a;
 }
 
@@ -218,7 +220,48 @@ bool contains(const Region& region, Vec2 p, double eps) {
     return parityInside(region.rings, p);
 }
 
+namespace {
+
+Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps);
+
+}  // namespace
+
+// The work is done around a local origin near the shapes: coordinates of 1e9 mm leave a double
+// only 2e-7 mm, and the tolerances and cross products below need much more than that.
 Region boolean(const Region& ina, const Region& inb, BoolOp op, double eps) {
+    double minX = 1e300, minY = 1e300, maxX = -1e300, maxY = -1e300;
+    for (const Region* r : {&ina, &inb})
+        for (const Ring& ring : r->rings)
+            for (Vec2 p : ring) {
+                minX = std::min(minX, p.x);
+                maxX = std::max(maxX, p.x);
+                minY = std::min(minY, p.y);
+                maxY = std::max(maxY, p.y);
+            }
+    if (minX > maxX)
+        return booleanLocal(ina, inb, op, eps);
+    const Vec2 origin{std::round((minX + maxX) / 2), std::round((minY + maxY) / 2)};
+    if (std::fabs(origin.x) < 1e5 && std::fabs(origin.y) < 1e5)
+        return booleanLocal(ina, inb, op, eps);
+    auto shift = [&](const Region& in, Vec2 by) {
+        Region out;
+        for (const Ring& ring : in.rings) {
+            Ring r;
+            r.reserve(ring.size());
+            for (Vec2 p : ring)
+                r.push_back(p + by);
+            out.rings.push_back(std::move(r));
+        }
+        return out;
+    };
+    return shift(booleanLocal(shift(ina, {-origin.x, -origin.y}),
+                              shift(inb, {-origin.x, -origin.y}), op, eps),
+                 origin);
+}
+
+namespace {
+
+Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps) {
     const Region a = normalized(ina, eps), b = normalized(inb, eps);
     if (a.rings.empty() || b.rings.empty()) {
         if (op == BoolOp::Union)
@@ -300,5 +343,7 @@ Region boolean(const Region& ina, const Region& inb, BoolOp op, double eps) {
     }
     return normalized(std::move(out), eps);
 }
+
+}  // namespace
 
 }  // namespace tbcad::geom

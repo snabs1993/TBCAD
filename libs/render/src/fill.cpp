@@ -13,7 +13,7 @@ using Ring = std::vector<Vec2>;
 double signedArea(const Ring& r) {
     double a = 0;
     for (std::size_t i = 0, n = r.size(); i < n; ++i)
-        a += cross(r[i], r[(i + 1) % n]);
+        a += cross(r[i] - r[0], r[(i + 1) % n] - r[0]);
     return a * 0.5;
 }
 
