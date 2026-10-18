@@ -1016,3 +1016,47 @@ TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
     CHECK_FALSE(h.core().runner().active());
     CHECK(h.windowShot("##Popup").empty());
 }
+
+TEST_CASE("file dialogs: Save As and Open round trip a drawing from the keyboard") {
+    const fs::path dir = scratchDir("filedlg");
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    h.frame(3);
+    REQUIRE(entityCount(h) == 1);
+
+    // Ctrl+Shift+S opens the picker; pick the scratch folder, type a name, Save.
+    h.key(ImGuiKey_S, true, true);
+    h.frame(3);
+    REQUIRE(h.windowOpen("File"));
+    CHECK(h.enterText("Folder", dir.string(), "File"));
+    h.frame(2);
+    CHECK(h.enterText("File name", "round.tbcad", "File"));
+    h.frame(2);
+    if (h.windowOpen("File"))
+        h.click("Save", "File");
+    h.frame(5);
+    CHECK_FALSE(h.windowOpen("File"));
+    CHECK(fs::exists(dir / "round.tbcad"));
+    CHECK(h.core().hasFile());
+
+    // A fresh drawing is empty; Ctrl+O brings the saved one back.
+    h.core().newDocument();
+    h.frame(3);
+    REQUIRE(entityCount(h) == 0);
+    h.key(ImGuiKey_O, true);
+    h.frame(3);
+    REQUIRE(h.windowOpen("File"));
+    CHECK(h.enterText("Folder", dir.string(), "File"));
+    h.frame(2);
+    CHECK(h.enterText("File name", "round.tbcad", "File"));
+    h.frame(2);
+    if (h.windowOpen("File"))
+        h.click("Open", "File");
+    for (int i = 0; i < 30 && entityCount(h) == 0; ++i)
+        h.frame(5);
+    CHECK_FALSE(h.windowOpen("File"));
+    CHECK(entityCount(h) == 1);
+}
