@@ -333,6 +333,42 @@ TEST_CASE("JOIN merges and erases the sources in one undo step") {
     CHECK(g.count(EntityKind::Line) == 2);
 }
 
+TEST_CASE("JOIN fills the gap between collinear lines and between arcs of one circle") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {4, 0}});
+    EntityId b = f.add(LineData{{6, 0}, {10, 0}});  // a gap of 2 between them
+    f.host.run("JOIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
+    REQUIRE(f.count(EntityKind::Line) == 1);
+    for (EntityId id : f.doc.modelSpace()) {
+        const auto* l = entityAs<LineData>(*f.doc.find(id));
+        REQUIRE(l);
+        CHECK(std::min(l->a.x, l->b.x) == doctest::Approx(0));
+        CHECK(std::max(l->a.x, l->b.x) == doctest::Approx(10));
+    }
+    f.host.undo();
+    CHECK(f.count(EntityKind::Line) == 2);
+
+    // Lines that are not on one line stay apart, with or without a gap.
+    Fixture g;
+    EntityId x = g.add(LineData{{0, 0}, {4, 0}});
+    EntityId y = g.add(LineData{{6, 0.5}, {10, 0.5}});
+    g.host.run("JOIN", {ScriptItem::select({x, y}), ScriptItem::enter()});
+    CHECK(g.count(EntityKind::Line) == 2);
+
+    // Two arcs of one circle with a gap become one arc over the gap.
+    Fixture h;
+    EntityId p = h.add(ArcData{{0, 0}, 5, 0, kPi / 4});
+    EntityId q = h.add(ArcData{{0, 0}, 5, kPi / 2, kPi});
+    h.host.run("JOIN", {ScriptItem::select({p, q}), ScriptItem::enter()});
+    REQUIRE(h.count(EntityKind::Arc) == 1);
+    for (EntityId id : h.doc.modelSpace()) {
+        const auto* arc = entityAs<ArcData>(*h.doc.find(id));
+        REQUIRE(arc);
+        CHECK(arc->startAngle == doctest::Approx(0));
+        CHECK(arc->endAngle == doctest::Approx(kPi));
+    }
+}
+
 TEST_CASE("ERASE removes the selection") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {4, 0}});

@@ -27,7 +27,9 @@ struct JoinResult {
 //   arcs on one circle         -> one arc, or a circle when they close up
 //   chains of lines, arcs and open polylines -> one polyline (closed when the chain closes)
 // Other entities, and entities that find no partner, are left out of `consumed`. The results take
-// the properties of the first entity of each group in the list.
-JoinResult joinEntities(const std::vector<const Entity*>& entities, double tolerance = 1e-4);
+// the properties of the first entity of each group in the list. With `bridgeGaps`, collinear
+// lines and arcs of one circle join even when there is a gap between them (the gap is filled).
+JoinResult joinEntities(const std::vector<const Entity*>& entities, double tolerance = 1e-4,
+                        bool bridgeGaps = false);
 
 }  // namespace tbcad::modify
