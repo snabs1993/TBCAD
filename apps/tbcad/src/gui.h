@@ -105,6 +105,8 @@ private:
     float layoutTabsHeight() const;
     void layoutTabs(const ViewportRect& rect);
     void dockLayout(ImGuiID dockspace);
+    void dockEdgeDrop();
+    void keepOnScreen();
     // Workspaces (saved window layouts). Switching applies the panels at once and the docking
     // layout through Dear ImGui's ini data.
     void applyWorkspace(const ui::Workspace& ws);
