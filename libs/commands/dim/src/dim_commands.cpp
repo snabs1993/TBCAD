@@ -573,6 +573,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMLeaderCollectCommand());
     (void)registry.add(makeMLeaderEditCommand());
     (void)registry.add(makeDimReassocCommand());
+    (void)registry.add(makeDimRegenCommand());
+    (void)registry.add(makeDimInspectCommand());
     (void)registry.add(makeDimDisassocCommand());
     (void)registry.add(makeMLeaderStyleCommand());
     (void)registry.add(makeContinueCommand());
