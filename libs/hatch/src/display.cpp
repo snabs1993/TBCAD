@@ -61,6 +61,16 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
     FillOptions opt;
     opt.tolerance = ctx.tolerance();
     opt.pixelSizeMm = ctx.pixelSizeMm;
+    if (ctx.pixelSizeMm > 0) {
+        // The screen cannot show more dashes than its area holds: a hatch covering a few pixels
+        // gets a small budget, so thousands of them in view stay cheap.
+        const BBox2 box = hatchBounds(*h);
+        const double px = box.empty() ? 0 : box.width() / ctx.pixelSizeMm;
+        const double py = box.empty() ? 0 : box.height() / ctx.pixelSizeMm;
+        const double budget =
+            std::clamp(px * py / 16.0, 2000.0, static_cast<double>(opt.maxSegments));
+        opt.maxSegments = static_cast<std::size_t>(budget);
+    }
     const Pattern* pattern = PatternRegistry::find(h->pattern);
     Pattern solidTone;
     solidTone.solid = true;

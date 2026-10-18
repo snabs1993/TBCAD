@@ -213,6 +213,67 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         detail::joinClip(doc, insert, *def, ctx, out, firstItem);
 }
 
+bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::DisplayContext& ctx,
+                         InsertInstance& out) {
+    const auto* ins = entityAs<InsertData>(insert);
+    BlockDisplayCache* cache = g_active;
+    if (!ins || !cache || g_depth != 0)
+        return false;
+    const BlockDef* def = doc.block(ins->block);
+    if (!def || def->entities.empty() || def->dynamic || def->assembly)
+        return false;
+    if (ins->clipOn && ins->clip.size() >= 3)
+        return false;
+    std::vector<Transform2> items = instanceTransforms(*ins, def->base);
+    if (items.empty())
+        return false;
+    DepthGuard guard;
+    geom::DisplayContext opaque = ctx;
+    opaque.showTransparency = false;
+    const DisplayStyle self = geom::resolveStyle(doc, insert, opaque);
+    const Transform2 t = instanceTransform(*ins, def->base);
+    geom::DisplayContext child = ctx;
+    child.byBlockColor = self.color;
+    child.byBlockLineweightMm = self.lineweight;
+    child.byBlockPattern = self.pattern;
+    child.byBlockTransparency = geom::resolveTransparency(doc, insert, ctx);
+    child.chordTolMm = quantizeTolerance(ctx.tolerance() / std::max(maxStretch(t), 1e-12));
+
+    cache->sync(doc.revision());
+    const BlockDisplayCache::Key key{def->id,
+                                     insert.common.layer,
+                                     self.color,
+                                     self.lineweight,
+                                     self.pattern,
+                                     child.chordTolMm,
+                                     ctx.showTransparency ? child.byBlockTransparency : -1};
+    std::shared_ptr<const DisplayList> blockSpace = cache->find(key);
+    if (!blockSpace) {
+        blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);
+        cache->countBuild();
+        cache->put(key, blockSpace);
+    }
+    // Attribute values differ per insert: drawn here, once per array item.
+    out.extra.items.clear();
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        if (!e || !e->common.visible)
+            continue;
+        auto text = attributeText(*e, *ins);
+        if (!text)
+            continue;
+        if (text->common.layer == kLayerZero)
+            text->common.layer = insert.common.layer;
+        DisplayList own;
+        geom::buildDisplay(doc, *text, child, own);
+        for (const Transform2& it : items)
+            transformList(own, it, out.extra);
+    }
+    out.blockSpace = std::move(blockSpace);
+    out.placements = std::move(items);
+    return true;
+}
+
 void registerInsertDisplay() {
     static std::once_flag once;
     std::call_once(once, [] {

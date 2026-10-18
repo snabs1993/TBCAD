@@ -40,6 +40,7 @@ void BlockIndexRefresher::onChanged(const ChangeSet& cs) {
             if (set.count(ins->block) && !doc_.ownerBlock(e.common.id))
                 inserts.push_back(e.common.id);
     });
+    BoundsMemoScope memo;  // one measuring of each block serves every reference to it
     for (EntityId id : inserts)
         indexer_.reindex(id);
 }

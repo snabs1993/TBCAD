@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -46,6 +47,21 @@ std::vector<BlockId> dependentBlocks(const Document& doc, const std::vector<Bloc
 // Bounds of an Insert in the space it lives in (nested inserts included). Empty for a missing or
 // empty block.
 BBox2 insertBounds(const Document& doc, const Entity& insert);
+
+// While one of these is alive on a thread, what insertBounds / blockBounds learn about blocks is
+// kept and reused by later calls on that thread. Use it around a loop that measures many inserts
+// while the drawing does not change (re-indexing after a block edit, loading the index); never
+// edit the drawing inside the scope. Scopes do not nest: an inner one does nothing.
+class BoundsMemoScope {
+public:
+    BoundsMemoScope();
+    ~BoundsMemoScope();
+    BoundsMemoScope(const BoundsMemoScope&) = delete;
+    BoundsMemoScope& operator=(const BoundsMemoScope&) = delete;
+
+private:
+    std::shared_ptr<void> memo_{};
+};
 // Bounds of the block definition in block space.
 BBox2 blockBounds(const Document& doc, BlockId block);
 

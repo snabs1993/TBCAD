@@ -311,11 +311,16 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
             add(out, rq, SnapMode::Quadrant, p, n.id);
         for (Vec2 p : g.nodes)
             add(out, rq, SnapMode::Node, p, n.id);
+        for (Vec2 p : g.insertions)
+            add(out, rq, SnapMode::Insertion, p, n.id);
         for (const geom::CurveRef& c : g.curves)
             curveSnapPoints(c, rq, out, n.id);
         items.push_back(std::move(item));
     }
 
+    // Intersections are worked out among the nearest few objects only: that is where the wanted
+    // one is, and every pair costs.
+    constexpr std::size_t kIntersectItems = 40;
     if (rq.modes & maskOf(SnapMode::Intersection)) {
         // Only curves that pass through the aperture can produce an intersection inside it. Of
         // those, only pairs whose boxes overlap are intersected (a sweep along x).
@@ -325,9 +330,6 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
             BBox2 box;
         };
         std::vector<Cand> curves;
-        // Intersections are worked out among the nearest few objects only: that is where the
-        // wanted one is, and every pair costs.
-        constexpr std::size_t kIntersectItems = 40;
         const BBox2 ap{{rq.cursor.x - rq.apertureMm, rq.cursor.y - rq.apertureMm},
                        {rq.cursor.x + rq.apertureMm, rq.cursor.y + rq.apertureMm}};
         for (std::size_t i = 0; i < std::min(items.size(), kIntersectItems); ++i)
@@ -352,6 +354,43 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
                 for (const geom::Intersection& h : hits)
                     add(out, rq, SnapMode::Intersection, h.p, items[curves[a].item].id,
                         items[curves[b].item].id);
+            }
+    }
+
+    if (rq.modes & maskOf(SnapMode::ApparentIntersection)) {
+        // Where two objects that pass near the cursor would meet if they were long enough: a line
+        // runs on as an unbounded line, an arc as a full circle. A real crossing is the
+        // Intersection mode's business.
+        struct Cand {
+            std::size_t item;
+            const geom::CurveRef* curve;
+        };
+        std::vector<Cand> curves;
+        // Only the few nearest objects: this is for a corner that does not quite close.
+        constexpr std::size_t kApparentItems = 12;
+        for (std::size_t i = 0; i < std::min(items.size(), kApparentItems); ++i)
+            for (const geom::CurveRef& c : items[i].geometry.curves)
+                if ((c.kind() == geom::CurveRef::Kind::Line ||
+                     c.kind() == geom::CurveRef::Kind::Arc) &&
+                    c.distanceTo(rq.cursor) <= 2 * rq.apertureMm)
+                    curves.push_back({i, &c});
+        std::vector<geom::Intersection> hits;
+        for (std::size_t a = 0; a < curves.size(); ++a)
+            for (std::size_t b = a + 1; b < curves.size(); ++b) {
+                if (curves[a].item == curves[b].item)
+                    continue;
+                hits.clear();
+                geom::intersect(*curves[a].curve, *curves[b].curve, hits, true, true);
+                for (const geom::Intersection& h : hits) {
+                    if (distance(h.p, rq.cursor) > rq.apertureMm)
+                        continue;
+                    const double eps = 1e-9 * (1 + std::abs(h.p.x) + std::abs(h.p.y));
+                    if (curves[a].curve->distanceTo(h.p) <= eps &&
+                        curves[b].curve->distanceTo(h.p) <= eps)
+                        continue;
+                    add(out, rq, SnapMode::ApparentIntersection, h.p, items[curves[a].item].id,
+                        items[curves[b].item].id);
+                }
             }
     }
 

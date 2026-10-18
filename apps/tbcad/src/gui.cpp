@@ -17,6 +17,7 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/drafting/settings.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
@@ -821,9 +822,7 @@ void Gui::shortcuts() {
                 std::string line = input_ + typedWhileUnfocused_;
                 input_.clear();
                 typedWhileUnfocused_.clear();
-                if (inputHistory_.empty() || inputHistory_.back() != line)
-                    inputHistory_.push_back(line);
-                historyPos_ = -1;
+                inputHistory_.push(line);
                 core_.submitText(line);
                 refocusInput_ = true;
             }
@@ -1430,54 +1429,34 @@ void Gui::xrefNotice() {
 
 // Right-click on the OSNAP button: tick the snap modes (as AutoCAD's Object Snap settings).
 void Gui::snapModesPopup() {
-    struct Mode {
-        const char* key;
-        const char* label;
-    };
-    static constexpr Mode kModes[] = {{"endpoint", "Endpoint"},
-                                      {"midpoint", "Midpoint"},
-                                      {"center", "Center"},
-                                      {"node", "Node"},
-                                      {"quadrant", "Quadrant"},
-                                      {"intersection", "Intersection"},
-                                      {"perpendicular", "Perpendicular"},
-                                      {"tangent", "Tangent"},
-                                      {"nearest", "Nearest"}};
     if (ImGui::BeginPopupContextItem("##snapmodes", ImGuiPopupFlags_MouseButtonRight)) {
-        const std::string stored = core_.settings().getString(
-            "drafting.osnap.modes", "endpoint,midpoint,center,intersection,quadrant,node");
-        auto has = [&](const std::string& modes, const std::string& key) {
-            std::string padded = "," + modes + ",";
-            std::string clean;
-            for (char c : padded)
-                if (c != ' ')
-                    clean += c;
-            return clean.find("," + key + ",") != std::string::npos ||
-                   clean.find(",all,") != std::string::npos;
-        };
-        std::string next;
+        const drafting::DraftingSettings cur = drafting::DraftingSettings::read(core_);
+        drafting::SnapModeMask mask = cur.modes;
         bool changed = false;
-        for (const Mode& m : kModes) {
-            bool on = has(stored, m.key);
-            if (ImGui::Checkbox(m.label, &on))
+        for (int i = 0; i < drafting::kSnapModeCount; ++i) {
+            const auto mode = static_cast<drafting::SnapMode>(i);
+            bool on = (mask & drafting::maskOf(mode)) != 0;
+            const std::string label(drafting::snapModeLabel(mode));
+            if (ImGui::Checkbox(label.c_str(), &on)) {
+                mask = on ? (mask | drafting::maskOf(mode)) : (mask & ~drafting::maskOf(mode));
                 changed = true;
-            if (on)
-                next += (next.empty() ? "" : ",") + std::string(m.key);
+            }
         }
         ImGui::Separator();
         if (ImGui::SmallButton("Select all")) {
+            mask = drafting::kAllSnapModes;
             changed = true;
-            next.clear();
-            for (const Mode& m : kModes)
-                next += (next.empty() ? "" : ",") + std::string(m.key);
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("Clear all")) {
+            mask = 0;
             changed = true;
-            next.clear();
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Settings..."))
+            settings_.open("Drafting");
         if (changed)
-            core_.setSetting("drafting.osnap.modes", next.empty() ? "none" : next);
+            core_.setSetting(drafting::keys::osnapModes, drafting::formatSnapModes(mask));
         ImGui::EndPopup();
     }
 }
@@ -1908,19 +1887,11 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
                                                               : std::min(n - 1, suggestSel_ + 1);
                 return 0;
             }
-            if (inputHistory_.empty())
+            const std::string now(d->Buf, static_cast<std::size_t>(d->BufTextLen));
+            const std::string text = d->EventKey == ImGuiKey_UpArrow ? inputHistory_.older(now)
+                                                                     : inputHistory_.newer(now);
+            if (text == now)
                 return 0;
-            if (d->EventKey == ImGuiKey_UpArrow) {
-                historyPos_ = historyPos_ < 0 ? static_cast<int>(inputHistory_.size()) - 1
-                                              : std::max(0, historyPos_ - 1);
-            } else if (historyPos_ >= 0) {
-                ++historyPos_;
-                if (historyPos_ >= static_cast<int>(inputHistory_.size()))
-                    historyPos_ = -1;
-            }
-            const std::string& text = historyPos_ < 0
-                                          ? std::string()
-                                          : inputHistory_[static_cast<std::size_t>(historyPos_)];
             d->DeleteChars(0, d->BufTextLen);
             d->InsertChars(0, text.c_str());
             return 0;
@@ -2178,9 +2149,7 @@ void Gui::commandWindow() {
             } else {
                 input_.clear();
                 paletteOpen_ = false;
-                if (!line.empty() && (inputHistory_.empty() || inputHistory_.back() != line))
-                    inputHistory_.push_back(line);
-                historyPos_ = -1;
+                inputHistory_.push(line);
                 core_.submitText(line);
                 refocusInput_ = true;
                 anyActivity_ = true;
@@ -3212,8 +3181,8 @@ void Gui::viewportMenu() {
             run("");
         // The commands typed lately (latest first), each once; a click runs it.
         std::vector<std::string> recent;
-        for (auto it = inputHistory_.rbegin(); it != inputHistory_.rend() && recent.size() < 8;
-             ++it) {
+        for (auto it = inputHistory_.lines().rbegin();
+             it != inputHistory_.lines().rend() && recent.size() < 8; ++it) {
             std::string word = it->substr(0, it->find(' '));
             std::transform(word.begin(), word.end(), word.begin(),
                            [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });

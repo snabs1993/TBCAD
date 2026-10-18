@@ -111,8 +111,10 @@ void runBench(double ox, double oy, const char* label, double extent,
             const double tol = 1e-7 * (1 + std::abs(ox) + std::abs(oy)) + 1e-6;
             for (const auto& c : found) {
                 REQUIRE(c.distance <= rq.apertureMm + 1e-6);
-                if (c.mode == SnapMode::Center)
-                    continue;  // a centre is not on the curve
+                // A centre, an insertion point and an apparent intersection are not on the curve.
+                if (c.mode == SnapMode::Center || c.mode == SnapMode::Insertion ||
+                    c.mode == SnapMode::ApparentIntersection)
+                    continue;
                 CHECK(distanceToEntity(w.doc, c.entity, c.point) < tol);
                 if (c.mode == SnapMode::Intersection)
                     CHECK(distanceToEntity(w.doc, c.entity2, c.point) < tol);

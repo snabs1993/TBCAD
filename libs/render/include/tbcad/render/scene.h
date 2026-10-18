@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <future>
 #include <map>
+#include <memory>
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
@@ -141,6 +142,18 @@ public:
     // were tessellated for (0 = unknown), see staleEntities().
     void upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder,
                 double builtPixelsPerMm = 0);
+    // Adds or replaces an entity drawn as `blockSpace` moved by `t`, the same result as upsert
+    // of the transformed list without copying it per reference: the geometry of a shared list is
+    // prepared once (grouped by style, triangulated) and each reference only transforms and
+    // packs it. False, with the entity untouched, for a list this cannot take (dashed lines,
+    // wipeouts): the caller then builds the transformed list and calls upsert.
+    bool upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
+                        const Transform2& t, std::uint32_t drawOrder, double builtPixelsPerMm = 0);
+    // The same for a reference drawn at several places (an array) and with `extra` geometry that
+    // is not shared (attribute values), already in drawing space.
+    bool upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
+                        std::span<const Transform2> placements, const DisplayList* extra,
+                        std::uint32_t drawOrder, double builtPixelsPerMm = 0);
     void remove(EntityId id);
     // Same for many objects at once; much faster than calling remove for each.
     // Drops everything when `ids` (distinct) are exactly the entities of the scene; false and
@@ -218,6 +231,16 @@ private:
     void eraseRefs(EntityId id, const EntityRec& rec);
     const SelectionGeometry& geometryFor(const std::unordered_set<EntityId>& set,
                                          SelCache& cache) const;
+
+    struct InstanceTemplate;
+    struct InstanceTemplateDeleter {
+        void operator()(InstanceTemplate*) const;
+    };
+    const InstanceTemplate* templateFor(const std::shared_ptr<const DisplayList>& list);
+    // Prepared shared lists, kept alive with the list so the address stays unique.
+    std::unordered_map<const DisplayList*,
+                       std::unique_ptr<InstanceTemplate, InstanceTemplateDeleter>>
+        templates_{};
 
     double tileSize_;
     // Frees a scene's worth of geometry on another thread (see discardAll).

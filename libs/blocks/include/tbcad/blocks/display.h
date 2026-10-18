@@ -66,6 +66,19 @@ private:
 void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::DisplayContext& ctx,
                         DisplayList& out);
 
+// An Insert drawn as a shared block-space display list plus one transform, for renderers that can
+// place the same geometry many times without copying it per reference. Only inserts whose look is
+// "the block's list moved by transforms, plus the attribute values" qualify: no clipping,
+// dynamic parameters or assembly. Needs an active BlockDisplayScope; false means build the full
+// display list with buildInsertDisplay instead.
+struct InsertInstance {
+    std::shared_ptr<const DisplayList> blockSpace{};
+    std::vector<Transform2> placements{};  // one per array item (one for a plain reference)
+    DisplayList extra{};  // attribute values: drawn per reference, already in drawing space
+};
+bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::DisplayContext& ctx,
+                         InsertInstance& out);
+
 // Registers the Insert display and bounds generators with geom::DisplayRegistry. Safe to call
 // more than once; the application calls it at start-up (the command module does it from
 // registerCommands).

@@ -82,6 +82,24 @@ void polylineDisplay(const PolylineData& pl, double tol, const DisplayStyle& sty
         out.items.push_back(std::move(pts));
         return;
     }
+    if (pl.restartLinetype && !hasWidth(pl) && style.pattern && !style.pattern->empty()) {
+        // Ltype gen off: every segment is its own line, so the pattern starts again at each vertex.
+        for (const Segment& s : segments(pl)) {
+            DisplayPolyline d;
+            d.style = style;
+            if (s.curve.kind() == CurveRef::Kind::Line) {
+                d.pts = {s.p0, s.p1};
+            } else {
+                flatten(s.curve, tol, d.pts);
+                if (s.reversed)
+                    std::reverse(d.pts.begin(), d.pts.end());
+                d.pts.front() = s.p0;
+                d.pts.back() = s.p1;
+            }
+            out.items.push_back(std::move(d));
+        }
+        return;
+    }
     if (!hasWidth(pl)) {
         bool straight = true;
         for (const PolyVertex& v : pl.v)

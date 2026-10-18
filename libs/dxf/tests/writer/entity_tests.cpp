@@ -382,7 +382,7 @@ TEST_CASE("pattern hatches embed their definition lines - a pattern library can 
     Document doc;
     {
         auto tx = doc.begin("hatches");
-        for (const char* name : {"LINE45", "CROSS45", "BRICK", "ANSI31", "MYPAT"}) {
+        for (const char* name : {"LINE45", "CROSS45", "BRICK", "ANSI99", "MYPAT"}) {
             HatchData h;
             h.solid = false;
             h.pattern = name;
@@ -437,7 +437,7 @@ TEST_CASE("pattern hatches embed their definition lines - a pattern library can 
     CHECK(count("LINE45", 53) == 1);
     CHECK(count("CROSS45", 53) == 2);
     CHECK(count("BRICK", 53) == 3);
-    CHECK(count("ANSI31", 53) == 0);  // unknown here: the name only
+    CHECK(count("ANSI99", 53) == 0);  // unknown here: the name only
     CHECK(count("MYPAT", 53) == 0);
     CHECK(report.countCode(wcode::kUnknownPattern) == 2);
 

@@ -236,6 +236,9 @@ struct PolylineData {
     std::vector<PolyVertex> v{};
     bool closed = false;
     double constantWidth = 0;
+    // PEDIT Ltype gen off: a dashed linetype starts again at every vertex instead of running on
+    // along the whole polyline.
+    bool restartLinetype = false;
 };
 
 struct PointData {

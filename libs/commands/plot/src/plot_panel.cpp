@@ -34,6 +34,7 @@ struct PanelState {
     std::string styleLoaded{};
     std::string setupName{};         // text field of "Save as"
     std::string confirmOverwrite{};  // file the user was warned about; a second click replaces it
+    bool refreshPreview = false;     // big drawing: the user asked for a new preview
     bool reloadWhenIdle = false;     // a command changed the host settings; read them again
 };
 
@@ -58,6 +59,12 @@ ImU32 col(Rgba c) {
     return IM_COL32(c.r, c.g, c.b, 255);
 }
 
+// Drawings with more objects than this get a preview that is built on request, and the preview
+// draws a sample of the primitives: building the sheet takes seconds and drawing every primitive
+// of a few hundred thousand objects would cost a frame each.
+constexpr std::size_t kBigDrawing = 50000;
+constexpr std::size_t kPreviewPrims = 30000;
+
 void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
     const auto& lay = sheet.layout;
     ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -81,7 +88,11 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
 
     // Same primitives as the exported file; line widths use the real paper width, at least 1 px.
     std::vector<ImVec2> pts;
-    for (const auto& prim : sheet.prims) {
+    const std::size_t step = sheet.prims.size() > kPreviewPrims
+                                 ? (sheet.prims.size() + kPreviewPrims - 1) / kPreviewPrims
+                                 : 1;
+    for (std::size_t pi = 0; pi < sheet.prims.size(); pi += step) {
+        const auto& prim = sheet.prims[pi];
         if (const auto* p = std::get_if<exportlib::PlotPath>(&prim)) {
             pts.clear();
             for (const Vec2& v : p->pts)
@@ -315,7 +326,27 @@ void draw(ui::PanelContext& pc) {
         built.window = view;
     std::string key = keyOf(built, view) + "|" + plotLayout(*pc.host) + "|" + st.styleLoaded +
                       (plotStampOn(*pc.host) ? "|" + plotStampText(*pc.host) : "");
-    if (key != st.builtKey || pc.doc->revision() != st.builtRevision) {
+    const bool big = pc.doc->entityCount() > kBigDrawing;
+    bool build = key != st.builtKey || pc.doc->revision() != st.builtRevision;
+    if (big && st.builtRevision != ~0ull) {
+        // A big drawing is not rebuilt after every edit.
+        build = st.refreshPreview;
+        if (!build) {
+            ImGui::TextDisabled("Large drawing: the preview is not updated while you work.");
+            if (ImGui::Button("Update preview"))
+                st.refreshPreview = true;
+        }
+    } else if (big) {
+        build = st.refreshPreview;
+        if (!build) {
+            ImGui::TextDisabled("Large drawing: the preview takes a moment to build.");
+            if (ImGui::Button("Build preview"))
+                st.refreshPreview = true;
+        }
+    }
+    const bool havePreview = build || st.builtRevision != ~0ull;
+    if (build) {
+        st.refreshPreview = false;
         const std::string name = plotLayout(*pc.host);
         auto sheet = buildPlotSheet(*pc.doc, *pc.host, built);
         st.sheetError = sheet ? std::string() : sheet.error().message;
@@ -326,7 +357,9 @@ void draw(ui::PanelContext& pc) {
     ImGui::Separator();
     ImVec2 avail = ImGui::GetContentRegionAvail();
     float previewH = std::clamp(avail.y - 110.0f, 160.0f, 520.0f);
-    if (!st.sheetError.empty()) {
+    if (!havePreview) {
+        ImGui::Dummy({avail.x, 4});
+    } else if (!st.sheetError.empty()) {
         ImGui::TextDisabled("%s", st.sheetError.c_str());
     } else {
         drawPreview(st.sheet, {avail.x, previewH});

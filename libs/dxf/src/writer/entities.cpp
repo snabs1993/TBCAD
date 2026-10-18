@@ -596,7 +596,7 @@ void Writer::writePolyline(const Props& p, const PolylineData& d, std::uint64_t 
     head("LWPOLYLINE", p, owner, "AcDbPolyline");
     Out& o = *o_;
     o.i(90, static_cast<long long>(d.v.size()));
-    o.i(70, d.closed ? 1 : 0);
+    o.i(70, (d.closed ? 1 : 0) | (d.restartLinetype ? 0 : 128));  // 128: linetype runs on
     if (d.constantWidth != 0)
         o.d(43, d.constantWidth);
     for (const PolyVertex& v : d.v) {

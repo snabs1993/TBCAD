@@ -14,6 +14,7 @@
 #include <unordered_set>
 
 #include "app_commands.h"
+#include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/index_refresh.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
@@ -230,7 +231,8 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     auto s = std::make_unique<Session>(std::move(doc));
     Document& d = s->doc;
     s->indexer = std::make_unique<index::DocumentIndexer>(
-        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); });
+        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); },
+        [] { return std::make_shared<blocks::BoundsMemoScope>(); });
     s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
     s->sync = std::make_unique<SceneSync>(d, scene_);
     s->observer = std::make_unique<AppObserver>(d, *this);
@@ -1706,6 +1708,29 @@ void AppCore::enterViewport(const std::string& layoutName, const layout::Viewpor
     zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
     editingLayout_ = layoutName;
     editingViewport_ = vp.id;
+    annoSyncRevision_ = 0;
+}
+
+// While a locked viewport is being edited its scale is fixed, so the annotation scale follows it:
+// a CANNOSCALE typed meanwhile is put back.
+void AppCore::followLockedViewport() {
+    if (editingLayout_.empty() || !session_ || runner().active())
+        return;
+    const std::uint64_t rev = session_->doc.revision();
+    if (rev == annoSyncRevision_)
+        return;
+    annoSyncRevision_ = rev;
+    const auto lay = layout::findLayout(session_->doc, editingLayout_);
+    const layout::Viewport* vp = lay ? lay->findViewport(editingViewport_) : nullptr;
+    if (!vp || !vp->locked || !(vp->scaleN > 0) ||
+        currentAnnotationScale(session_->doc.header()) == vp->scaleN)
+        return;
+    char buf[40];
+    std::snprintf(buf, sizeof buf, "%.12g", vp->scaleN);
+    print(std::string("The viewport is locked: the annotation scale stays 1:") + buf + ".");
+    submitText("CANNOSCALE");
+    submitText(buf);
+    annoSyncRevision_ = session_->doc.revision();
 }
 
 // ZOOM nXP: sets the scale of the viewport on the sheet (the selected one, else the only one) or
@@ -1826,6 +1851,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         if (inPaperSpace())
             return;
     }
+    followLockedViewport();
     retileIfFragmented();
     {
         // Objects picked so far at "Select objects:" show as selected, so the drafter sees them.
@@ -1841,10 +1867,17 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         flashIds_.clear();
         scene_.setHighlighted(hoverId_ ? std::vector<EntityId>{hoverId_} : std::vector<EntityId>{});
     }
-    if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_)) {
+    if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_) ||
+        (staleWaiting_ && !(lastTessellatedFor_ == camera_))) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
         session_->sync->refreshStale(camera_);
-        lastTessellatedFor_ = camera_;
+        staleWaiting_ = session_->sync->staleOffscreen();
+        // Keep the zoom the waiting objects were measured against: only a pan re-checks.
+        const bool zoomed = render::Scene::needsRetessellation(lastTessellatedFor_, camera_);
+        if (zoomed || !staleWaiting_)
+            lastTessellatedFor_ = camera_;
+        else
+            lastTessellatedFor_.center = camera_.center;
     }
     // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
     if (session_->sync->pumpPending(camera_) > 0)

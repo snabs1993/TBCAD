@@ -72,6 +72,7 @@ void registerSnapProvider(drafting::SnapGeometryRegistry& registry) {
                          append(out.centers, g.centers);
                          append(out.quadrants, g.quadrants);
                          append(out.nodes, g.nodes);
+                         append(out.insertions, g.insertions);
                          append(out.curves, g.curves);
                      });
                  });

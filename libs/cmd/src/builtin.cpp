@@ -59,7 +59,7 @@ public:
 class AliasesCommand final : public Command {
 public:
     std::string_view name() const override { return "ALIASES"; }
-    std::string_view description() const override { return "Reload aliases.json"; }
+    std::string_view description() const override { return "Reload aliases.json and acad.pgp"; }
     Task run(CommandContext& ctx) override {
         const auto folder = ctx.host().settingsFolder();
         AliasReport r;

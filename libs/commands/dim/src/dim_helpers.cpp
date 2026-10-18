@@ -124,7 +124,44 @@ bool isLine(const Entity& e) {
     return kind(e) == EntityKind::Line;
 }
 
+bool straightPieceAt(const Entity& e, Vec2 pick, Vec2& a, Vec2& b) {
+    if (const auto* l = entityAs<LineData>(e)) {
+        a = l->a;
+        b = l->b;
+        return true;
+    }
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return false;
+    // The straight segment nearest to the pick.
+    const std::size_t n = pl->v.size();
+    const std::size_t segs = pl->closed ? n : (n ? n - 1 : 0);
+    double best = std::numeric_limits<double>::infinity();
+    bool found = false;
+    for (std::size_t i = 0; i < segs; ++i) {
+        const Vec2 p = pl->v[i].p, q = pl->v[(i + 1) % n].p;
+        if (pl->v[i].bulge != 0 || distance(p, q) < tol::kLinear)
+            continue;
+        const Vec2 d = q - p;
+        const double t = std::clamp(dot(pick - p, d) / lengthSquared(d), 0.0, 1.0);
+        const double dist = distance(pick, p + d * t);
+        if (dist < best) {
+            best = dist;
+            a = p;
+            b = q;
+            found = true;
+        }
+    }
+    return found;
+}
+
 bool isCircleOrArc(const Entity& e) {
+    if (const auto* pl = entityAs<PolylineData>(e)) {
+        for (const PolyVertex& v : pl->v)
+            if (v.bulge != 0)
+                return true;
+        return false;
+    }
     return kind(e) == EntityKind::Circle || kind(e) == EntityKind::Arc;
 }
 
@@ -135,6 +172,8 @@ bool isMeasurable(const Entity& e) {
         case EntityKind::Line:
         case EntityKind::Arc:
         case EntityKind::Polyline:
+        case EntityKind::Ellipse:
+        case EntityKind::Spline:
             return true;
         default:
             return false;
@@ -172,10 +211,57 @@ bool measurableEnds(const Entity& e, Vec2 pick, Vec2& a, Vec2& b) {
         }
         return true;
     }
+    // An ellipse or spline is measured end to end (a full ellipse across its major axis).
+    if (const auto* el = entityAs<EllipseData>(e)) {
+        if (std::abs((el->endParam - el->startParam) - kTwoPi) < 1e-9) {
+            a = el->center - el->majorAxis;
+            b = el->center + el->majorAxis;
+            return true;
+        }
+    }
+    if (kind(e) == EntityKind::Ellipse || kind(e) == EntityKind::Spline) {
+        const std::vector<Vec2> ends = geom::endpoints(e);
+        if (ends.size() < 2)
+            return false;
+        a = ends.front();
+        b = ends.back();
+        return true;
+    }
     return false;
 }
 
-bool circleOf(const Entity& e, Vec2& c, double& r) {
+bool circleOf(const Entity& e, Vec2& c, double& r, const Vec2* pick) {
+    if (const auto* pl = entityAs<PolylineData>(e)) {
+        // The bulged segment nearest to the pick (the first one without a pick).
+        const std::size_t n = pl->v.size();
+        const std::size_t segs = pl->closed ? n : (n ? n - 1 : 0);
+        double best = std::numeric_limits<double>::infinity();
+        bool found = false;
+        for (std::size_t i = 0; i < segs; ++i) {
+            const PolyVertex& v = pl->v[i];
+            const auto arc = geom::bulgeArc(v.p, pl->v[(i + 1) % n].p, v.bulge);
+            if (!arc || !(arc->radius > 0))
+                continue;
+            double dist = 0;
+            if (pick) {
+                // Distance to the arc itself, not to its circle.
+                const double a = std::atan2(pick->y - arc->center.y, pick->x - arc->center.x);
+                double rel = std::fmod(a - arc->startAngle, kTwoPi);
+                if (rel < 0)
+                    rel += kTwoPi;
+                dist = rel <= arc->sweep
+                           ? std::abs(distance(*pick, arc->center) - arc->radius)
+                           : std::min(distance(*pick, v.p), distance(*pick, pl->v[(i + 1) % n].p));
+            }
+            if (!found || dist < best) {
+                best = dist;
+                c = arc->center;
+                r = arc->radius;
+                found = true;
+            }
+        }
+        return found;
+    }
     if (const auto* ci = entityAs<CircleData>(e)) {
         c = ci->center;
         r = ci->radius;

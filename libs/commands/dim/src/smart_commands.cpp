@@ -52,7 +52,7 @@ public:
             LineData first{};
             LineData second{};
             if (isCircleOrArc(*e)) {
-                if (!circleOf(*e, center, radius)) {
+                if (!circleOf(*e, center, radius, &o.pickPoint)) {
                     ctx.message("Select an arc or a circle.");
                     continue;
                 }

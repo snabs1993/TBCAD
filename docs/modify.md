@@ -79,6 +79,7 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
   arc running counter-clockwise from the first to the second point (AutoCAD's rule), so the remaining
   arc runs from the second point counter-clockwise to the first. A closed polyline opens.
 * `breakAtPoint` splits in two; circles need two points.
+* `joinEntities` also joins elliptical arcs of one ellipse (a full turn becomes an ellipse) and clamped splines whose ends touch (one spline with a C0 joint, same curve), and `EXPLODE` breaks multiline text into one single-line text per line.
 * `joinEntities` first fuses collinear lines and arcs of one circle (overlapping or touching), then
   chains line, arc and open-polyline pieces whose ends are within `tolerance` (command setting
   `join.tolerance`, default 0.001 mm) into a polyline, closed when the chain closes. Two arcs that
@@ -104,7 +105,7 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
 | `ALIGN` | `AL` | One or two source/destination point pairs, optional scaling for the second pair. |
 | `MATCHPROP` | `MA` | Copies layer, level, colour, linetype, linetype scale, lineweight and transparency, plus text height/style, polyline width, hatch pattern/scale/angle/fill, dimension, leader and multileader style, and the annotative flag and scales, from one object to others. `Settings` at the destination prompt switches the groups Basic, Text, Dimension, Hatch, Polyline and Annotative on and off; the choice is remembered. |
 | `OVERKILL` | | Deletes duplicates (lines, circles, arcs, points, ellipses, polylines, also reversed) and merges overlapping or touching collinear lines and arcs of one circle. Settings: `overkill.tolerance`, `overkill.ignoreproperties`, `overkill.overlapping`, `overkill.endtoend`. |
-| `PEDIT` | `PE` | Turn a line or arc into a polyline, Close/Open, Join, Width, Reverse, Spline (polyline to spline entity) and Decurve (spline to polyline). Per-vertex editing is not included yet. |
+| `PEDIT` | `PE` | Turn a line or arc into a polyline, Close/Open, Join (with a Fuzz distance), Width, Fit (each segment becomes two tangent-continuous arcs through the vertices), Ltypegen (OFF restarts a dashed pattern at every vertex; ON runs it on, the default), Reverse, Spline (polyline to spline entity) and Decurve (spline to polyline). `Multiple` at the first prompt applies Close/Open/Join/Fuzz/Width/Spline/Decurve/Reverse to every selected object. |
 
 DIVIDE and MEASURE also take the option **Block**: they insert a named block at each division instead of a point, turned along the object when you answer Yes to "Align block with object?".
 

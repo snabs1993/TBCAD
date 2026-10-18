@@ -7,7 +7,7 @@ tbcad_add_library(dim_commands
     src/dim_assoc_commands.cpp
     src/dimstyle_command.cpp
     src/mleader_style.cpp
-  DEPENDS tbcad::cmd tbcad::dim tbcad::blocks tbcad::geom tbcad::text)
+  DEPENDS tbcad::cmd tbcad::dim tbcad::blocks tbcad::drafting tbcad::geom tbcad::text)
 
 if(TBCAD_BUILD_APP)
   include(deps/imgui)

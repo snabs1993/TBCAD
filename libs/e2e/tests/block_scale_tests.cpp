@@ -16,9 +16,24 @@
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/ui/app_core.h"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 using namespace tbcad;
 
 namespace {
+
+// The budgets are wall-clock: unoptimised builds, and tests running next to each other under
+// ctest -j, need room.
+#ifdef NDEBUG
+constexpr double kSlack = 2;
+#else
+constexpr double kSlack = 6;
+#endif
 
 double ms(std::chrono::steady_clock::time_point t) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
@@ -33,7 +48,8 @@ struct Big {
     std::vector<BlockId> level;  // level[0] = leaf ... level[4] = outermost
 
     Big() {
-        dir = std::filesystem::temp_directory_path() / "tbcad_block_scale";
+        dir = std::filesystem::temp_directory_path() /
+              ("tbcad_block_scale_" + std::to_string(::getpid()));
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
         registerAllCommands(registry);
@@ -95,7 +111,9 @@ TEST_CASE("perf: 50,000 references, five levels deep - draw, INSERT, block edit"
     big.buildBlocks();
     auto t = std::chrono::steady_clock::now();
     big.placeInserts();
-    std::printf("place %d references of a 5-level block: %.0f ms\n", big.n, ms(t));
+    const double placeMs = ms(t);
+    std::printf("place %d references of a 5-level block: %.0f ms\n", big.n, placeMs);
+    CHECK(placeMs < 5000 * kSlack);
     t = std::chrono::steady_clock::now();
     big.core->zoomExtents();
     big.core->updateFrame();
@@ -132,8 +150,8 @@ TEST_CASE("perf: 50,000 references, five levels deep - draw, INSERT, block edit"
     CHECK(big.core->undo());
     big.core->updateFrame();
     std::printf("undo of the block edit: %.0f ms\n", ms(t));
-    CHECK(insertMs < 20000);
-    CHECK(bcloseMs < 20000);
+    CHECK(insertMs < 20000 * kSlack);
+    CHECK(bcloseMs < 20000 * kSlack);
 }
 
 TEST_CASE("perf: ATTEXT on 10,000 attributes and a block edit that adds an attribute") {
@@ -184,7 +202,7 @@ TEST_CASE("perf: ATTEXT on 10,000 attributes and a block edit that adds an attri
     std::printf("ATTEXT of %d attributes: %.0f ms (%zu lines)\n", refs * 10, extMs, rows);
     CHECK(rows == static_cast<std::size_t>(refs) + 1);
     CHECK(text.find("No.999") != std::string::npos);
-    CHECK(extMs < 10000);
+    CHECK(extMs < 10000 * kSlack);
 
     // A new attribute definition reaches every reference (what BSAVE does for the block).
     t = std::chrono::steady_clock::now();
@@ -208,7 +226,7 @@ TEST_CASE("perf: ATTEXT on 10,000 attributes and a block edit that adds an attri
                 ++withExtra;
     });
     CHECK(withExtra == static_cast<std::size_t>(refs));
-    CHECK(ms(t) < 10000);
+    CHECK(ms(t) < 10000 * kSlack);
 }
 
 TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
@@ -240,7 +258,7 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
     std::printf("WBLOCK of %zu objects with 5 nested blocks: %.0f ms (%.2f MB)\n",
                 big.doc().modelSpaceCount(), wbMs,
                 static_cast<double>(std::filesystem::file_size(file)) / 1e6);
-    CHECK(wbMs < 10000);
+    CHECK(wbMs < 10000 * kSlack);
 
     // A fresh drawing takes the file in as a block and places it.
     ui::AppCore other(big.registry, platform::AppPaths{big.dir / "cfg2", big.dir / "data2"});
@@ -259,7 +277,7 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
     CHECK(other.document().blockByName("part") != nullptr);
     // 20,000 lines + 500 references, each pulling in the five nested blocks once
     CHECK(other.document().blocks().size() == 1 + 5);
-    CHECK(insMs < 10000);
+    CHECK(insMs < 10000 * kSlack);
 }
 
 TEST_CASE("perf: PURGE removes a chain of unused nested blocks, keeps the used ones") {
@@ -309,7 +327,7 @@ TEST_CASE("perf: PURGE removes a chain of unused nested blocks, keeps the used o
     CHECK(big.doc().blockByName("C299") == nullptr);
     CHECK(big.doc().blockByName("Outer") != nullptr);
     CHECK(big.doc().blockByName("Inner") != nullptr);
-    CHECK(ms1 < 20000);
+    CHECK(ms1 < 20000 * kSlack);
     CHECK(big.core->undo());
     CHECK(big.doc().blockByName("C150") != nullptr);
 }

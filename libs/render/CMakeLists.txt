@@ -12,6 +12,7 @@ tbcad_add_library(render
     src/overlay.cpp
     src/pattern.cpp
     src/scene.cpp
+    src/scene_instance.cpp
     src/gl/renderer.cpp
     src/gl/shaders.cpp
   DEPENDS tbcad::core)

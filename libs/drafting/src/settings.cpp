@@ -10,11 +10,20 @@ namespace tbcad::drafting {
 namespace {
 
 constexpr std::array<std::string_view, kSnapModeCount> kNames = {
-    "endpoint",      "intersection", "midpoint", "center", "quadrant",
-    "perpendicular", "tangent",      "nearest",  "node"};
-constexpr std::array<std::string_view, kSnapModeCount> kLabels = {
-    "Endpoint",      "Intersection", "Midpoint", "Center", "Quadrant",
-    "Perpendicular", "Tangent",      "Nearest",  "Node"};
+    "endpoint", "intersection", "midpoint", "center",    "quadrant", "perpendicular",
+    "tangent",  "nearest",      "node",     "insertion", "apparent", "extension"};
+constexpr std::array<std::string_view, kSnapModeCount> kLabels = {"Endpoint",
+                                                                  "Intersection",
+                                                                  "Midpoint",
+                                                                  "Center",
+                                                                  "Quadrant",
+                                                                  "Perpendicular",
+                                                                  "Tangent",
+                                                                  "Nearest",
+                                                                  "Node",
+                                                                  "Insertion",
+                                                                  "Apparent intersection",
+                                                                  "Extension"};
 
 std::string lower(std::string_view s) {
     std::string r(s);

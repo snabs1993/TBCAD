@@ -13,6 +13,13 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/ui/app_core.h"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 using namespace tbcad;
 
 namespace {
@@ -28,7 +35,8 @@ struct Big {
     int n = 0;
 
     Big() {
-        dir = std::filesystem::temp_directory_path() / "tbcad_bulk_edit_perf";
+        dir = std::filesystem::temp_directory_path() /
+              ("tbcad_bulk_edit_perf_" + std::to_string(::getpid()));
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
         registerAllCommands(registry);

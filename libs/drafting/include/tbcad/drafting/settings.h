@@ -22,9 +22,12 @@ enum class SnapMode : std::uint8_t {
     Perpendicular,
     Tangent,
     Nearest,
-    Node,  // Point entities (always on while OSNAP is on)
+    Node,                  // Point entities (always on while OSNAP is on)
+    Insertion,             // insertion point of text, mtext, blocks
+    ApparentIntersection,  // where two objects would meet if extended, near the cursor
+    Extension,             // along the extension of a line or arc end the cursor rested on
 };
-inline constexpr int kSnapModeCount = 9;
+inline constexpr int kSnapModeCount = 12;
 
 using SnapModeMask = std::uint32_t;
 constexpr SnapModeMask maskOf(SnapMode m) {

@@ -94,7 +94,12 @@ Result<std::vector<Seg>> changeEnd(std::vector<Seg> segs, double delta) {
             if (!g || std::abs(g->theta) * u >= kTwoPi - 1e-6)
                 return err("The arc would become a full circle.");
         }
-        s = segWithEnd(s, segPoint(s, u));
+        // Built from the sweep, not from the new end point: an arc extended past half of the
+        // remaining circle would otherwise read as lying before its start.
+        Seg longer{s.p0, segPoint(s, u), 0};
+        if (s.isArc())
+            longer.bulge = std::tan(4.0 * std::atan(s.bulge) * u / 4.0);
+        s = longer;
         return segs;
     }
     double rem = -delta;
@@ -665,6 +670,95 @@ Result<Entity> polylineToSpline(const Entity& e) {
     if (!sp)
         return err("The spline could not be fitted: " + sp.error().message);
     return withData(e, Indirect<SplineData>(std::move(sp.value())));
+}
+
+// Fit curve: every segment between two vertices becomes a pair of arcs that meet with a common
+// tangent, and the curve passes through each vertex along the bisector of its two chords.
+Result<Entity> fitPolylineCurve(const Entity& e) {
+    const auto* p = entityAs<PolylineData>(e);
+    if (!p)
+        return err("Select a polyline.");
+    PolylineData clean = cleanPolyline(*p);
+    const std::size_t n = clean.v.size();
+    if (n < 3 && !(n == 2 && !clean.closed))
+        return err("The polyline needs at least two segments.");
+    const bool closed = clean.closed;
+    auto at = [&](std::ptrdiff_t i) { return clean.v[static_cast<std::size_t>((i + n) % n)].p; };
+    auto dirTo = [&](Vec2 a, Vec2 b) { return normalized(b - a); };
+    std::vector<Vec2> tangent(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto k = static_cast<std::ptrdiff_t>(i);
+        if (!closed && (i == 0 || i + 1 == n)) {
+            // An end follows the mirror image of the neighbouring tangent, so the first pair of
+            // arcs degenerates to one arc.
+            const std::ptrdiff_t nb = i == 0 ? 1 : k - 1;
+            const std::ptrdiff_t nb2 = i == 0 ? 2 : k - 2;
+            Vec2 chord = i == 0 ? dirTo(at(0), at(1)) : dirTo(at(k - 1), at(k));
+            Vec2 tn = n > 2
+                          ? normalized(dirTo(at(nb), at(nb2)) + dirTo(at(nb == 1 ? 0 : k), at(nb)))
+                          : chord;
+            if (n > 2 && i + 1 == n)
+                tn = normalized(dirTo(at(k - 2), at(k - 1)) + dirTo(at(k - 1), at(k)));
+            if (length(tn) < 0.5)
+                tn = chord;
+            tangent[i] = normalized(chord * (2 * dot(chord, tn)) - tn);
+            if (length(tangent[i]) < 0.5)
+                tangent[i] = chord;
+            continue;
+        }
+        Vec2 in = dirTo(at(k - 1), at(k)), out = dirTo(at(k), at(k + 1));
+        Vec2 t = in + out;
+        tangent[i] = length(t) < 1e-9 ? Vec2{-in.y, in.x} : normalized(t);
+    }
+    PolylineData out;
+    out.closed = closed;
+    out.constantWidth = clean.constantWidth;
+    const std::size_t segCount = closed ? n : n - 1;
+    for (std::size_t i = 0; i < segCount; ++i) {
+        const Vec2 p0 = clean.v[i].p, p1 = clean.v[(i + 1) % n].p;
+        const Vec2 t0 = tangent[i], t1 = tangent[(i + 1) % n];
+        const Vec2 v = p1 - p0;
+        // Joint of the two arcs: midpoint of the tangent-line points P0 + d t0 and P1 - d t1,
+        // with d chosen so both arcs are isosceles about those points.
+        const double a = 2 * (dot(t0, t1) - 1), b = -2 * dot(v, t0 + t1), c = dot(v, v);
+        double d = 0;
+        if (std::abs(a) < 1e-12) {
+            d = std::abs(b) > 1e-12 ? -c / b : length(v) / 2;
+        } else {
+            const double disc = b * b - 4 * a * c;
+            const double sq = std::sqrt(std::max(0.0, disc));
+            const double r1 = (-b + sq) / (2 * a), r2 = (-b - sq) / (2 * a);
+            d = std::max(r1, r2);
+            if (d <= 0)
+                d = std::min(r1, r2) > 0 ? std::min(r1, r2) : length(v) / 2;
+        }
+        const Vec2 j = ((p0 + t0 * d) + (p1 - t1 * d)) * 0.5;
+        auto bulgeFor = [](Vec2 from, Vec2 to, Vec2 tangentAtFrom) {
+            const Vec2 ch = to - from;
+            const double ang = std::atan2(cross(tangentAtFrom, ch), dot(tangentAtFrom, ch));
+            return std::tan(ang / 2);
+        };
+        PolyVertex v0;
+        v0.p = p0;
+        PolyVertex vj;
+        vj.p = j;
+        if (distance(j, p0) < 1e-9 || distance(j, p1) < 1e-9) {
+            v0.bulge = 0;
+            out.v.push_back(v0);
+            continue;
+        }
+        v0.bulge = bulgeFor(p0, j, t0);
+        // The second arc is the first one of the reversed pair, which ends along -t1.
+        vj.bulge = -bulgeFor(p1, j, -t1);
+        out.v.push_back(v0);
+        out.v.push_back(vj);
+    }
+    if (!closed) {
+        PolyVertex last;
+        last.p = clean.v.back().p;
+        out.v.push_back(last);
+    }
+    return withData(e, std::move(out));
 }
 
 Result<Entity> splineToPolyline(const Entity& e, double tolerance) {
