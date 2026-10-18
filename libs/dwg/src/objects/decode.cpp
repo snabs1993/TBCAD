@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -139,7 +140,14 @@ public:
                 if (e.offset > 0 && frameHandle(e.offset) == e.handle)
                     anchors_.push_back(e.offset);
             std::sort(anchors_.begin(), anchors_.end());
+            const auto tWalk = std::chrono::steady_clock::now();
             walkStream();
+            out_.walkNotes.push_back(
+                "stream walk took " +
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now() - tWalk)
+                                   .count()) +
+                " ms");
             if (walkedList_.size() * 10 >= map.size() * 7) {
                 calibrate();
                 for (const auto& [h, off] : walkedList_) {
@@ -397,7 +405,7 @@ private:
             std::int64_t scan = 0;
             for (std::int64_t d = 1; d <= 4096 && off + d + 8 < end; ++d) {
                 const std::size_t l1 = frameLength(off + d);
-                if (frameHandle(off + d) != 0 && l1 != 0 &&
+                if (l1 != 0 && frameHandle(off + d) != 0 &&
                     frameHandle(off + d + static_cast<std::int64_t>(l1) + 2) != 0) {
                     scan = d;
                     break;
