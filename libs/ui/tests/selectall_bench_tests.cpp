@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/layout/layout.h"
@@ -128,4 +129,129 @@ TEST_CASE("perf: erase all of polylines and texts") {
     t = std::chrono::steady_clock::now();
     core.updateFrame();
     std::printf("heavy updateFrame after erase: %.0f ms\n", ms(t));
+}
+
+namespace {
+double rssMb() {
+    std::FILE* f = std::fopen("/proc/self/status", "r");
+    if (!f)
+        return 0;
+    char line[256];
+    double kb = 0;
+    while (std::fgets(line, sizeof line, f))
+        if (std::sscanf(line, "VmRSS: %lf kB", &kb) == 1)
+            break;
+    std::fclose(f);
+    return kb / 1024.0;
+}
+}  // namespace
+
+TEST_CASE("perf: memory of a large mixed drawing") {
+    {
+        // A bare document (no scene, no index observers) and its undo set, for comparison.
+        const char* env0 = std::getenv("TBCAD_BENCH_N");
+        const int m = env0 ? std::atoi(env0) : 100000;
+        const double b0 = rssMb();
+        Document bare;
+        {
+            auto tx = bare.begin("gen");
+            for (int i = 0; i < m; ++i) {
+                const double x = (i % 500) * 30.0, y = (i / 500) * 30.0;
+                (void)tx.add(Entity{{}, LineData{{x, y}, {x + 20, y + 10}}});
+                (void)tx.add(Entity{{}, CircleData{{x, y}, 3}});
+                PolylineData p;
+                for (int k = 0; k < 8; ++k)
+                    p.v.push_back({{x + k, y + k % 3}, 0, 0, 0});
+                Entity e;
+                e.data = std::move(p);
+                (void)tx.add(std::move(e));
+                TextData t;
+                t.position = {x, y};
+                t.utf8 = "label " + std::to_string(i);
+                Entity te;
+                te.data = std::move(t);
+                (void)tx.add(std::move(te));
+            }
+            const double beforeCommit = rssMb();
+            tx.commit();
+            std::printf("bare document, %d entities: %.0f MB before commit, %.0f MB after (%.0f B "
+                        "each)\n",
+                        4 * m, beforeCommit - b0, rssMb() - b0,
+                        (rssMb() - b0) * 1048576 / (4.0 * m));
+        }
+    }
+    auto registry = makeRegistry();
+    AppCore core(*registry, platform::AppPaths{tempDir("memmix") / "cfg", tempDir("memmix") / "data"});
+    core.setViewportSize(1400, 900);
+    const char* env = std::getenv("TBCAD_BENCH_N");
+    const int n = env ? std::atoi(env) : 100000;  // n lines + n polylines + n texts + n circles
+    const double base = rssMb();
+    {
+        auto tx = core.document().begin("gen");
+        for (int i = 0; i < n; ++i) {
+            const double x = (i % 500) * 30.0, y = (i / 500) * 30.0;
+            (void)tx.add(Entity{{}, LineData{{x, y}, {x + 20, y + 10}}});
+            (void)tx.add(Entity{{}, CircleData{{x, y}, 3}});
+            PolylineData p;
+            for (int k = 0; k < 8; ++k)
+                p.v.push_back({{x + k, y + k % 3}, 0, 0, 0});
+            Entity e;
+            e.data = std::move(p);
+            (void)tx.add(std::move(e));
+            TextData t;
+            t.position = {x, y};
+            t.utf8 = "label " + std::to_string(i);
+            Entity te;
+            te.data = std::move(t);
+            (void)tx.add(std::move(te));
+        }
+        tx.commit();
+    }
+    const double afterDoc = rssMb();
+    core.updateFrame();
+    const double afterScene = rssMb();
+    core.zoomExtents();
+    core.updateFrame();
+    const double afterFrame = rssMb();
+    std::printf("memory for %d entities: document+index+undo %.0f MB (%.0f B each), scene %.0f MB "
+                "(%.0f B each), after zoom %.0f MB\n",
+                4 * n, afterDoc - base, (afterDoc - base) * 1048576 / (4.0 * n),
+                afterScene - afterDoc, (afterScene - afterDoc) * 1048576 / (4.0 * n),
+                afterFrame - afterScene);
+}
+
+TEST_CASE("perf: memory after opening a large DXF") {
+    const char* env = std::getenv("TBCAD_BENCH_N");
+    const int n = env ? std::atoi(env) : 100000;
+    const auto dir = tempDir("memdxf");
+    const auto path = dir / "big.dxf";
+    {
+        std::ofstream o(path);
+        o << "0\nSECTION\n2\nENTITIES\n";
+        for (int i = 0; i < n; ++i) {
+            const double x = (i % 500) * 30.0, y = (i / 500) * 30.0;
+            o << "0\nLINE\n8\n0\n10\n" << x << "\n20\n" << y << "\n11\n" << x + 20 << "\n21\n"
+              << y + 10 << "\n";
+            o << "0\nCIRCLE\n8\n0\n10\n" << x << "\n20\n" << y << "\n40\n3\n";
+            o << "0\nLWPOLYLINE\n8\n0\n90\n8\n70\n0\n";
+            for (int k = 0; k < 8; ++k)
+                o << "10\n" << x + k << "\n20\n" << y + k % 3 << "\n";
+            o << "0\nTEXT\n8\n0\n10\n" << x << "\n20\n" << y << "\n40\n2.5\n1\nlabel " << i << "\n";
+        }
+        o << "0\nENDSEC\n0\nEOF\n";
+    }
+    auto registry = makeRegistry();
+    const double base = rssMb();
+    AppCore core(*registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    core.setViewportSize(1400, 900);
+    auto t = std::chrono::steady_clock::now();
+    REQUIRE(core.openFile(path).ok());
+    const double afterOpen = rssMb();
+    const double openMs = ms(t);
+    core.zoomExtents();
+    core.updateFrame();
+    const double afterFrame = rssMb();
+    std::printf("open %d entities: %.0f ms, RSS +%.0f MB (%.0f B each), after first frame +%.0f MB\n",
+                4 * n, openMs, afterOpen - base, (afterOpen - base) * 1048576 / (4.0 * n),
+                afterFrame - base);
 }
