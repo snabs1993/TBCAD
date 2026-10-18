@@ -434,6 +434,20 @@ void Importer::readStyle(const Record& r) {
     TextStyle ts;
     ts.name = name;
     ts.fontFile = dec(r.raw(3));
+    // DWG files often name a shape font without its extension ("romans", "simplex").
+    bool bareShx = false;
+    if (!ts.fontFile.empty() && ts.fontFile.find('.') == std::string::npos) {
+        static constexpr std::string_view kBare[] = {
+            "romans", "romanc",   "romand", "romant", "simplex", "complex", "txt",     "monotxt",
+            "isocp",  "isocpeur", "iso",    "italic", "italicc", "scripts", "gothice", "greeks"};
+        std::string low = ts.fontFile;
+        for (char& c : low)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (std::string_view k : kBare)
+            bareShx = bareShx || low == k;
+        if (bareShx)
+            ts.fontFile += ".shx";
+    }
     if (endsWithNoCase(ts.fontFile, ".shx")) {
         // AutoCAD compiled shape fonts are not read; the style gets TBCAD's own stroke font.
         std::string shx = ts.fontFile;

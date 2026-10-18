@@ -292,6 +292,17 @@ TEST_CASE("text styles: SHX fonts map to the TBCAD Stroke font and are reported"
     CHECK(l.report.countCode(code::kShxFont) == 2);
 }
 
+TEST_CASE("text styles: a shape font named without its extension is the stroke font too") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 1);
+    p.g(0, "STYLE").g(2, "Plain").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "RomanS");
+    p.g(0, "ENDTAB").end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const TextStyle* a = l.doc().textStyleByName("Plain");
+    REQUIRE(a);
+    CHECK(a->fontFamily == "TBCAD Stroke");
+}
+
 TEST_CASE("sub-layers: TBCAD XDATA restores the tree and the ByParent flags") {
     Loaded l = loadCorpus("xdata_sublayers.dxf");
     const Document& d = l.doc();
