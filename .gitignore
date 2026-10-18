@@ -14,3 +14,7 @@ compile_commands.json
 *.pdb
 __pycache__/
 *.pyc
+
+# Stray outputs
+*.whl
+20,20.*
