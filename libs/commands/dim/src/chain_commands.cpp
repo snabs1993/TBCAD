@@ -276,7 +276,57 @@ public:
             ctx.message("Nothing to dimension.");
             co_return;
         }
-        auto at = co_await ctx.getPoint("Specify dimension line position");
+        bool baseline = false;
+        cmd::PointResult at;
+        for (;;) {
+            cmd::PointOptions po;
+            po.keywords = {"Continuous", "Baseline", "Radius", "Diameter"};
+            at = co_await ctx.getPoint(
+                std::string("Specify dimension line position or [Continuous/Baseline/Radius/"
+                            "Diameter] <") +
+                    (baseline ? "Baseline" : "Continuous") + ">",
+                po);
+            if (at.status != cmd::Status::Keyword)
+                break;
+            if (at.keyword == "Continuous" || at.keyword == "Baseline") {
+                baseline = at.keyword == "Baseline";
+                continue;
+            }
+            // Radius and Diameter dimension every circle and arc of the selection at once.
+            const bool radius = at.keyword == "Radius";
+            int made = 0;
+            for (EntityId id : sel.ids) {
+                const Entity* e = ctx.doc().find(id);
+                if (!e)
+                    continue;
+                Vec2 centre{};
+                double r = 0;
+                if (const auto* c = entityAs<CircleData>(*e)) {
+                    centre = c->center;
+                    r = c->radius;
+                } else if (const auto* a = entityAs<ArcData>(*e)) {
+                    centre = a->center;
+                    r = a->radius;
+                } else {
+                    continue;
+                }
+                const Vec2 dir{std::cos(kPi / 4), std::sin(kPi / 4)};
+                DimensionData d;
+                d.kind = radius ? DimKind::Radius : DimKind::Diameter;
+                if (radius) {
+                    d.defPts = {centre, centre + dir * r, Vec2{}, Vec2{}};
+                } else {
+                    d.defPts = {centre - dir * r, centre + dir * r, Vec2{}, Vec2{}};
+                }
+                dim::refresh(ctx.doc(), d);
+                if (!addDim(ctx, std::move(d)))
+                    co_return;
+                ++made;
+            }
+            ctx.message(made ? std::to_string(made) + " dimensions created."
+                             : "No circles or arcs in the selection.");
+            co_return;
+        }
         if (!at.ok())
             co_return;
         // Outside the box vertically: horizontal dimensions; otherwise vertical ones.
@@ -292,11 +342,22 @@ public:
             ctx.message("The key points are all at the same place along that direction.");
             co_return;
         }
+        const DimStyle& st = dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
+        const double k = st.overallScale > 0 ? st.overallScale : 1.0;
+        const double spacing = st.textHeight * 2.5 * k;
+        const Vec2 normal{-std::sin(rotation), std::cos(rotation)};
+        const double side = dot(at.point - box.center(), normal) >= 0 ? 1.0 : -1.0;
         for (std::size_t i = 0; i + 1 < uniq.size(); ++i) {
             DimensionData d;
             d.kind = DimKind::Linear;
             d.rotation = rotation;
-            d.defPts = {uniq[i], uniq[i + 1], at.point, Vec2{}};
+            if (baseline) {
+                // Every dimension starts at the first key point; each sits one step further out.
+                d.defPts = {uniq[0], uniq[i + 1], at.point + normal * (side * spacing * double(i)),
+                            Vec2{}};
+            } else {
+                d.defPts = {uniq[i], uniq[i + 1], at.point, Vec2{}};
+            }
             dim::refresh(ctx.doc(), d);
             if (!addDim(ctx, std::move(d)))
                 co_return;

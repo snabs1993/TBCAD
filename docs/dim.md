@@ -146,7 +146,7 @@ moves, scales and saves with it.
   leader end: moving mostly up or down measures X, mostly sideways measures Y; **Xdatum** / **Ydatum** force the axis.
   Ordinate dimensions round trip through DXF (type 6, bit 64 = X datum).
 - **QDIM** dimensions the key points (line ends, polyline vertices, centres) of the selected objects as one chain of linear
-  dimensions. Click above or below the objects for horizontal dimensions, beside them for vertical ones.
+  dimensions. Click above or below the objects for horizontal dimensions, beside them for vertical ones. At the position prompt the options are **Continuous** (the default, a chain), **Baseline** (every dimension starts at the first key point and each line sits one step further out) and **Radius** / **Diameter** (one dimension for every circle and arc of the selection).
 
 ## Chains and text editing (Q67)
 
