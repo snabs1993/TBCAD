@@ -1541,7 +1541,7 @@ void Gui::statusBar() {
                 ImGui::PopStyleColor();
             // Right-click on a drafting toggle opens its settings.
             if (t.id == "snap" || t.id == "grid" || t.id == "polar" || t.id == "ortho" ||
-                t.id == "dyn") {
+                t.id == "otrack" || t.id == "dyn") {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Right-click for the drafting settings.");
                 if (ImGui::BeginPopupContextItem(("##ds" + t.id).c_str(),
@@ -1551,6 +1551,10 @@ void Gui::statusBar() {
                     ImGui::EndPopup();
                 }
             }
+            if (t.id == "selcyc" && ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Selection cycling: click the same spot again for the next object "
+                    "under it.");
             if (t.id == "osnap") {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Object snap. Right-click to choose the snap modes.");
@@ -3076,7 +3080,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 core_.lassoSelect(lassoPath_, ps);
             } else if (dragging_) {
                 core_.dragSelect(pressPos_, mouse, ps);
-            } else if (io.KeyAlt) {
+            } else if (io.KeyAlt ||
+                       (core_.settings().getBool("ui.selectionCycling", false) && !doubleClick_)) {
                 core_.cycleClick(ps);
             } else if (doubleClick_)
                 core_.doubleClick(ps);

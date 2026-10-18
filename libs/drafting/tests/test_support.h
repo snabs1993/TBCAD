@@ -42,6 +42,8 @@ struct World {
     cmd::ScriptHost host;
     DraftingEnv env;
     OsnapFilter osnap{&env};
+    OtrackFilter otrack{&env, &osnap};
+    OtrackAcquirer otrackAcquire{&env, &osnap, &otrack};
     DynamicUcsFilter dynUcs{&env};
     PolarOrthoFilter polar{&env};
     GridSnapFilter grid{&env};
@@ -54,7 +56,9 @@ struct World {
         env.index = &idx;
         env.host = &host;
         host.filters().add(&dyn, kDynamicInputOrder);
+        host.filters().add(&otrackAcquire, kOtrackAcquireOrder);
         host.filters().add(&osnap, kOsnapOrder);
+        host.filters().add(&otrack, kOtrackOrder);
         host.filters().add(&dynUcs, kDynamicUcsOrder);
         host.filters().add(&polar, kPolarOrder);
         host.filters().add(&grid, kGridSnapOrder);
