@@ -72,3 +72,29 @@ TEST_CASE("CHANGE moves the nearest line end, sets a radius, and can change prop
     f.host.run("CHANGE", {"Properties", "Color", "3"});
     CHECK(f.doc.find(b)->common.color == Color::index(3));
 }
+
+TEST_CASE("SELECTALL selects shown objects and skips those on off or locked layers") {
+    Fixture f;
+    const LayerId off = f.addLayer("Off");
+    const LayerId locked = f.addLayer("Locked");
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(CircleData{{0, 0}, 5});
+    auto c = f.addEntity(LineData{{0, 1}, {10, 1}});
+    auto d = f.addEntity(LineData{{0, 2}, {10, 2}});
+    f.host.setSelection({a});
+    f.host.run("CH", {"Layer", "Off"});  // a goes to Off
+    f.host.setSelection({c});
+    f.host.run("CH", {"Layer", "Locked"});
+    {
+        Transaction tx = f.doc.begin("layers");
+        REQUIRE(tx.modifyLayer(off, [](Layer& l) { l.on = false; }));
+        REQUIRE(tx.modifyLayer(locked, [](Layer& l) { l.locked = true; }));
+        tx.commit();
+    }
+    f.host.setSelection({});
+    REQUIRE(f.host.run("SELECTALL", {}).finished);
+    const auto sel = f.host.selection();
+    CHECK(sel.size() == 2);
+    CHECK(std::find(sel.begin(), sel.end(), b) != sel.end());
+    CHECK(std::find(sel.begin(), sel.end(), d) != sel.end());
+}

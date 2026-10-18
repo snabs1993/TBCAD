@@ -480,3 +480,28 @@ TEST_CASE(
     CHECK(f.dims()[0]->measurement == doctest::Approx(before));
     CHECK(f.host->undo());
 }
+
+TEST_CASE("DIMUPDATE gives dimensions the current style") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId dimId;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    f.host->run("DIMSTYLE", {"New", "Alt", "Done"});
+    DimStyleId alt{};
+    for (const auto& [id, st] : f.doc.dimStyles())
+        if (st.name == "Alt")
+            alt = id;
+    REQUIRE(alt);
+    {
+        Transaction tx = f.doc.begin("style");
+        REQUIRE(tx.modify(dimId, [&](Entity& e) { entityAs<DimensionData>(e)->style = alt; }));
+        tx.commit();
+    }
+    REQUIRE(f.dims()[0]->style == alt);
+    f.host->setSelection({dimId});
+    REQUIRE(f.host->run("DIMUPDATE", {}).finished);
+    CHECK(f.dims()[0]->style == f.doc.header().currentDimStyle);
+}
