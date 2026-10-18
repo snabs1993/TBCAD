@@ -44,6 +44,7 @@ enum Type : std::uint32_t {
     kHatch = 100000,
     kLayoutObject = 0x52,
     kSortEnts = 200000,
+    kMLeader = 300000,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
@@ -392,6 +393,8 @@ private:
                 type = kLwPolyline;
             else if (cls == "HATCH")
                 type = kHatch;
+            else if (cls == "MULTILEADER" || cls == "MLEADER")
+                type = kMLeader;
             else if (cls == "SORTENTSTABLE")
                 type = kSortEnts;
             else if (cls == "LAYOUT") {
@@ -458,6 +461,7 @@ private:
             case kHatch:
             case kViewport:
             case kLeader:
+            case kMLeader:
             case kDimOrdinate:
             case kDimLinear:
             case kDimAligned:
@@ -1144,6 +1148,9 @@ private:
             case kLeader:
                 leader(r, e);
                 wantLeader = true;
+                break;
+            case kMLeader:
+                mleader(r, e);
                 break;
             case kDimOrdinate:
             case kDimLinear:
@@ -2431,6 +2438,132 @@ private:
         extrusionGroups(e, n);
     }
 
+    // MULTILEADER (R2010+): the embedded MLeaderAnnotContext carries the leader lines and the
+    // note. It is passed on as the DXF group structure (CONTEXT_DATA / LEADER / LEADER_LINE) the
+    // importer reads; the entity's own style overrides after it are not needed.
+    void mleader(BitReader& r, EntityRec& e) {
+        e.dxfType = "MULTILEADER";
+        if (!fmt_.r2010) {
+            r.fail();
+            return;
+        }
+        const auto str = [&](int code, const char* v) { add(e, code, Value(std::string(v))); };
+        r.bs();  // version (2)
+        add(e, 270, 2);
+        str(300, "CONTEXT_DATA{");
+        const std::uint32_t roots = r.bl();
+        if (roots > 64) {
+            r.fail();
+            return;
+        }
+        struct Root {
+            Vec3 connection, dir;
+            double landing = 0;
+            std::vector<std::vector<Vec3>> lines;
+        };
+        std::vector<Root> list;
+        for (std::uint32_t i = 0; i < roots && !r.failed(); ++i) {
+            Root root;
+            r.b();
+            r.b();
+            root.connection = bd3(r);
+            root.dir = bd3(r);
+            const std::uint32_t breaks = r.bl();
+            if (breaks > 10000) {
+                r.fail();
+                return;
+            }
+            for (std::uint32_t k = 0; k < breaks; ++k) {
+                bd3(r);
+                bd3(r);
+            }
+            r.bl();  // leader index
+            root.landing = r.bd();
+            const std::uint32_t lines = r.bl();
+            if (lines > 1000) {
+                r.fail();
+                return;
+            }
+            for (std::uint32_t k = 0; k < lines && !r.failed(); ++k) {
+                const std::uint32_t n = r.bl();
+                if (n > 100000) {
+                    r.fail();
+                    return;
+                }
+                std::vector<Vec3> pts;
+                for (std::uint32_t q = 0; q < n && !r.failed(); ++q)
+                    pts.push_back(bd3(r));
+                const std::uint32_t info = r.bl();  // break info count
+                if (info > 10000) {
+                    r.fail();
+                    return;
+                }
+                if (info != 0) {
+                    r.bl();  // segment index
+                    const std::uint32_t pairs = r.bl();
+                    if (pairs > 10000) {
+                        r.fail();
+                        return;
+                    }
+                    for (std::uint32_t q = 0; q < pairs; ++q) {
+                        bd3(r);
+                        bd3(r);
+                    }
+                }
+                r.bl();  // leader line index
+                r.bs();  // leader type
+                readCmc(r, 7);
+                r.bl();  // line weight
+                r.bd();  // arrow size
+                r.bl();  // override flags
+                root.lines.push_back(std::move(pts));
+            }
+            r.bs();  // attachment direction
+            list.push_back(std::move(root));
+        }
+        if (r.failed())
+            return;
+        const double scale = r.bd();
+        const Vec3 base = bd3(r);
+        const double textHeight = r.bd();
+        r.bd();  // arrow head size
+        r.bd();  // landing gap
+        r.bs();
+        r.bs();
+        r.bs();
+        r.bs();
+        std::string text;
+        Vec3 loc{};
+        bool hasLoc = false;
+        if (r.b()) {  // has text
+            text = r.textBytes();
+            bd3(r);  // normal
+            loc = bd3(r);
+            hasLoc = true;
+        }
+        add(e, 40, scale);
+        point3(e, 10, base);
+        add(e, 41, textHeight);
+        if (hasLoc)
+            point3(e, 12, loc);
+        if (!text.empty())
+            add(e, 304, Value(text));
+        for (const Root& root : list) {
+            str(302, "LEADER{");
+            point3(e, 10, root.connection);
+            point3(e, 11, root.dir);
+            add(e, 40, root.landing);
+            for (const auto& pts : root.lines) {
+                str(304, "LEADER_LINE{");
+                for (const Vec3& p : pts)
+                    point3(e, 10, p);
+                str(305, "}");
+            }
+            str(303, "}");
+        }
+        str(301, "}");
+    }
+
     void insert(BitReader& r, EntityRec& e, bool multi) {
         e.dxfType = "INSERT";
         const Vec3 p = bd3(r);
@@ -2693,7 +2826,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r88: layers with transparency listed by name and value; r88: the stream walk is used "
+    return "r89: MULTILEADER read from its embedded annotation context (leader lines and note); "
+           "r88: layers with transparency listed by name and value; r88: the stream walk is used "
            "when it finds 70% of the map entries, stray damaged "
            "layouts left out, up to 200 lost places listed; r87: entity and layer transparency "
            "passed on (DXF 440), counted per layer in the "

@@ -42,4 +42,30 @@ TEST_CASE("draw order: a sort table puts a block's entities in the order of its 
     CHECK(sorted.find("333") < sorted.find("111"));
 }
 
+TEST_CASE("MULTILEADER groups keep their CONTEXT_DATA / LEADER structure in the DXF text") {
+    detail::Drawing d;
+    detail::BlockRec model;
+    model.handle = 1;
+    model.name = "*Model_Space";
+    d.blocks[1] = model;
+    EntityRec e;
+    e.handle = 0x20;
+    e.dxfType = "MULTILEADER";
+    e.entmode = 0;
+    e.owner = 1;
+    e.groups.push_back({300, Value{std::string("CONTEXT_DATA{")}});
+    e.groups.push_back({304, Value{std::string("Note")}});
+    e.groups.push_back({302, Value{std::string("LEADER{")}});
+    e.groups.push_back({304, Value{std::string("LEADER_LINE{")}});
+    e.groups.push_back({10, Value{5.0}});
+    e.groups.push_back({305, Value{std::string("}")}});
+    e.groups.push_back({303, Value{std::string("}")}});
+    e.groups.push_back({301, Value{std::string("}")}});
+    d.entities.push_back(e);
+    const std::string dxf = detail::emitDxf(d);
+    CHECK(dxf.find("MULTILEADER") != std::string::npos);
+    CHECK(dxf.find("CONTEXT_DATA{") < dxf.find("Note"));
+    CHECK(dxf.find("Note") < dxf.find("LEADER_LINE{"));
+}
+
 }  // namespace tbcad::dwg::test
