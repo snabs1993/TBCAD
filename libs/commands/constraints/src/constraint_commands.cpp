@@ -4,6 +4,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/constraints/constraints.h"
 #include "tbcad/constraintscmd/constraintscmd.h"
+#include "tbcad/expr/expr.h"
 
 namespace tbcad::constraintscmd {
 
@@ -95,11 +96,31 @@ cmd::Task pickConstrainable(cmd::CommandContext& ctx, const char* prompt, cmd::E
     out = co_await ctx.getEntity(prompt, std::move(eo));
 }
 
+// Asks for a formula over the drawing's parameters and sets the constraint's expression and value.
+// `scale` is the diameter factor (the formula gives the diameter; the constraint holds the radius).
+cmd::Task askFormula(cmd::CommandContext& ctx, Constraint& c, double scale, bool& ok) {
+    ok = false;
+    const ParameterSet params = loadParameters(ctx.doc());
+    auto text = co_await ctx.getString(params.empty() ? "Formula (no parameters defined yet)"
+                                                      : "Formula using the parameters");
+    if (!text.ok())
+        co_return;
+    const std::string src = cmd::trim(text.text);
+    auto v = params.evaluate(src);
+    if (!v) {
+        ctx.message(v.error().message);
+        co_return;
+    }
+    c.expr = src;
+    c.value = c.kind == Kind::Angle ? v.value() * kPi / 180.0 : v.value() / scale;
+    ok = true;
+}
+
 // GEOMCON: Coincident, Horizontal, Vertical, Parallel, Perpendicular, Equal, Tangent, Fix.
 class GeomCon final : public cmd::Command {
 public:
     std::string_view name() const override { return "GEOMCON"; }
-    std::vector<std::string> defaultAliases() const override { return {"GCON"}; }
+    std::vector<std::string> defaultAliases() const override { return {"GCON", "GEOMCONSTRAINT"}; }
     std::string_view description() const override {
         return "Add a geometric constraint between objects";
     }
@@ -176,7 +197,7 @@ public:
 class DimCon final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMCON"; }
-    std::vector<std::string> defaultAliases() const override { return {"DCON"}; }
+    std::vector<std::string> defaultAliases() const override { return {"DCON", "DIMCONSTRAINT"}; }
     std::string_view description() const override {
         return "Add a dimensional constraint (distance, radius, angle)";
     }
@@ -248,21 +269,182 @@ public:
         if (c.kind == Kind::Angle) {
             cmd::AngleOptions ao;
             ao.defaultValue = now.value();
-            auto v = co_await ctx.getAngle("Angle", std::move(ao));
-            if (!v.ok())
+            ao.keywords = {"Formula"};
+            auto v = co_await ctx.getAngle("Angle or [Formula]", std::move(ao));
+            if (v.status == cmd::Status::Keyword) {
+                bool got = false;
+                co_await askFormula(ctx, c, 1.0, got);
+                if (!got)
+                    co_return;
+            } else if (!v.ok()) {
                 co_return;
-            c.value = v.value;
+            } else {
+                c.value = v.value;
+            }
         } else {
             cmd::DistanceOptions dopt;
             dopt.defaultValue = now.value() * scale;
             dopt.allowZero = c.kind == Kind::Distance;
-            auto v = co_await ctx.getDistance(type == "Diameter" ? "Diameter" : "Value",
-                                              std::move(dopt));
-            if (!v.ok())
+            dopt.keywords = {"Formula"};
+            auto v = co_await ctx.getDistance(
+                type == "Diameter" ? "Diameter or [Formula]" : "Value or [Formula]",
+                std::move(dopt));
+            if (v.status == cmd::Status::Keyword) {
+                bool got = false;
+                co_await askFormula(ctx, c, scale, got);
+                if (!got)
+                    co_return;
+            } else if (!v.ok()) {
                 co_return;
-            c.value = v.value / scale;
+            } else {
+                c.value = v.value / scale;
+            }
         }
         (void)apply(ctx, c);
+    }
+};
+
+// AUTOCONSTRAIN: adds every constraint the selected objects already satisfy.
+class AutoConstrainCmd final : public cmd::Command {
+public:
+    std::string_view name() const override { return "AUTOCONSTRAIN"; }
+    std::vector<std::string> defaultAliases() const override { return {"AUTOCON"}; }
+    std::string_view description() const override {
+        return "Add the constraints the selected objects already satisfy";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.filter = [](const Entity& e) { return constrainable(e); };
+        auto sel = co_await ctx.getSelection("Select objects to constrain", so);
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        ConstraintSet set = load(ctx.doc());
+        const std::vector<Constraint> found = autoConstrain(ctx.doc(), sel.ids, set);
+        if (found.empty()) {
+            ctx.message("No new constraints found.");
+            co_return;
+        }
+        std::size_t added = 0, refused = 0;
+        for (const Constraint& c : found) {
+            if (!validate(ctx.doc(), c)) {
+                ++refused;
+                continue;
+            }
+            ConstraintSet trial = set;
+            trial.add(c);
+            auto res = solve(ctx.tx(), trial);
+            if (res && res.value().converged) {
+                set = std::move(trial);
+                ++added;
+            } else {
+                ++refused;
+            }
+        }
+        if (added == 0) {
+            ctx.message("None of the " + std::to_string(found.size()) +
+                        " candidate constraints could be added.");
+            co_return;
+        }
+        if (auto ok = store(ctx.tx(), set); !ok) {
+            ctx.message(ok.error().message);
+            co_return;
+        }
+        std::string msg = std::to_string(added) + " constraint(s) added";
+        if (refused)
+            msg += ", " + std::to_string(refused) + " skipped because they conflict";
+        ctx.message(msg + ".");
+    }
+};
+
+// PARAMETERS: the named values dimensional constraints can use.
+class ParametersCmd final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PARAMETERS"; }
+    std::vector<std::string> defaultAliases() const override { return {"PARAM"}; }
+    std::string_view description() const override {
+        return "Define named parameters that drive dimensional constraints";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.commitOnCancel();
+        for (;;) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Set", "Delete", "List", "Exit"};
+            ko.defaultKeyword = "Exit";
+            auto k = co_await ctx.getKeyword("Parameters [Set/Delete/List/Exit] <Exit>", ko);
+            if (!k.ok() || k.keyword == "Exit")
+                co_return;
+            ParameterSet params = loadParameters(ctx.doc());
+            if (k.keyword == "List") {
+                if (params.empty()) {
+                    ctx.message("No parameters.");
+                    continue;
+                }
+                auto vals = params.values();
+                for (const Parameter& p : params.all()) {
+                    std::string line = p.name + " = " + p.expr;
+                    if (vals)
+                        line +=
+                            "  (" + expr::Value::ofNumber(vals.value().at(p.name)).toString() + ")";
+                    ctx.message(line);
+                }
+                continue;
+            }
+            auto name = co_await ctx.getString("Parameter name");
+            if (!name.ok())
+                co_return;
+            const std::string n = cmd::trim(name.text);
+            ParameterSet next = params;
+            if (k.keyword == "Delete") {
+                if (!next.remove(n)) {
+                    ctx.message("No parameter named " + n + ".");
+                    continue;
+                }
+                const ConstraintSet cs = load(ctx.doc());
+                bool used = false;
+                for (const Constraint& c : cs.all())
+                    if (!c.expr.empty() && !next.unknownNames(c.expr).empty())
+                        used = true;
+                if (!next.values())
+                    used = true;  // another parameter still refers to it
+                if (used) {
+                    ctx.message("Constraints still use " + n + ".");
+                    continue;
+                }
+                if (auto ok = storeParameters(ctx.tx(), next); !ok)
+                    ctx.message(ok.error().message);
+                continue;
+            }
+            const Parameter* old = params.find(n);
+            auto formula = co_await ctx.getString(old ? "Formula for " + n + " <" + old->expr + ">"
+                                                      : "Formula for " + n);
+            if (!formula.ok())
+                co_return;
+            std::string src = cmd::trim(formula.text);
+            if (src.empty() && old)
+                src = old->expr;
+            if (auto ok = next.set(n, src); !ok) {
+                ctx.message(ok.error().message);
+                continue;
+            }
+            ConstraintSet cs = load(ctx.doc());
+            auto res = applyParameters(ctx.tx(), cs, next);
+            if (!res) {
+                ctx.message(res.error().message);
+                continue;
+            }
+            if (!res.value().converged) {
+                ctx.message("The drawing cannot follow that value" + std::string(".") + " " +
+                            failText(res.value(), ctx.doc(), cs));
+                continue;
+            }
+            if (auto ok = storeParameters(ctx.tx(), next); !ok) {
+                ctx.message(ok.error().message);
+                continue;
+            }
+            auto vals = next.values();
+            ctx.message(n + " = " +
+                        (vals ? expr::Value::ofNumber(vals.value().at(n)).toString() : src));
+        }
     }
 };
 
@@ -368,6 +550,8 @@ void keepInStep(Document& doc, Transaction& tx) {
 void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<GeomCon>());
     (void)registry.add(std::make_unique<DimCon>());
+    (void)registry.add(std::make_unique<AutoConstrainCmd>());
+    (void)registry.add(std::make_unique<ParametersCmd>());
     (void)registry.add(std::make_unique<ShowCon>());
     (void)registry.add(std::make_unique<DelCon>());
     (void)registry.add(std::make_unique<SolveCon>());

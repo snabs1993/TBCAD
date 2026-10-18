@@ -112,6 +112,8 @@ std::string describe(const Document& doc, const Constraint& c) {
         std::snprintf(buf, sizeof buf, " = %.6g deg", c.value * 180.0 / kPi);
         s += buf;
     }
+    if (!c.expr.empty())
+        s += "  [" + c.expr + "]";
     return s;
 }
 
@@ -226,11 +228,16 @@ std::string ConstraintSet::toText() const {
     std::string out;
     char buf[160];
     for (const Constraint& c : items_) {
-        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g\n", c.id,
+        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g", c.id,
                       static_cast<int>(c.kind), static_cast<unsigned long long>(c.a.entity.value),
                       static_cast<int>(c.a.part), static_cast<unsigned long long>(c.b.entity.value),
                       static_cast<int>(c.b.part), c.value);
         out += buf;
+        if (!c.expr.empty()) {
+            out += " |";
+            out += c.expr;
+        }
+        out += '\n';
     }
     return out;
 }
@@ -254,6 +261,11 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
         c.a = {EntityId{a}, static_cast<Part>(pa)};
         c.b = {EntityId{b}, static_cast<Part>(pb)};
         c.value = value;
+        if (const auto bar = line.find('|'); bar != std::string::npos) {
+            c.expr = line.substr(bar + 1);
+            while (!c.expr.empty() && (c.expr.back() == '\r' || c.expr.back() == ' '))
+                c.expr.pop_back();
+        }
         set.items_.push_back(c);
         set.next_ = std::max(set.next_, id + 1);
     }
