@@ -235,3 +235,57 @@ TEST_CASE("measure gives the current value of a dimension") {
           doctest::Approx(kPi / 2 - std::atan2(4, 3)));
     CHECK_FALSE(measure(f.doc, make(Kind::Parallel, whole(a), whole(b))).ok());
 }
+
+TEST_CASE("concentric circles share a centre") {
+    Fixture f;
+    const EntityId c1 = f.circle({0, 0}, 10);
+    const EntityId c2 = f.circle({3, 4}, 5);
+    auto r = f.solveWith({make(Kind::Concentric, at(c1, Part::Center), at(c2, Part::Center)),
+                          make(Kind::Fix, whole(c1))});
+    CHECK(r.converged);
+    CHECK(f.getCircle(c2).center.x == doctest::Approx(0).epsilon(1e-6));
+    CHECK(f.getCircle(c2).center.y == doctest::Approx(0).epsilon(1e-6));
+    CHECK(f.getCircle(c2).radius == doctest::Approx(5));
+}
+
+TEST_CASE("a point on a line and on a circle") {
+    Fixture f;
+    const EntityId ln = f.line({0, 0}, {10, 0});
+    const EntityId pt = f.line({5, 3}, {5, 8});  // its start is the point
+    const EntityId ci = f.circle({20, 0}, 5);
+    const EntityId arcEnd = f.line({26, 2}, {30, 2});
+    auto r = f.solveWith({make(Kind::PointOnObject, at(pt, Part::Start), whole(ln)),
+                          make(Kind::PointOnObject, at(arcEnd, Part::Start), whole(ci)),
+                          make(Kind::Fix, whole(ln)), make(Kind::Fix, whole(ci))});
+    CHECK(r.converged);
+    CHECK(f.getLine(pt).a.y == doctest::Approx(0).epsilon(1e-6));
+    const Vec2 p = f.getLine(arcEnd).a;
+    CHECK(length(p - Vec2{20, 0}) == doctest::Approx(5).epsilon(1e-6));
+}
+
+TEST_CASE("midpoint and collinear") {
+    Fixture f;
+    const EntityId base = f.line({0, 0}, {10, 2});
+    const EntityId other = f.line({3, 5}, {4, 9});
+    const EntityId third = f.line({20, 20}, {30, 21});
+    auto r = f.solveWith({make(Kind::Midpoint, at(other, Part::Start), whole(base)),
+                          make(Kind::Collinear, whole(base), whole(third)),
+                          make(Kind::Fix, whole(base))});
+    CHECK(r.converged);
+    const Vec2 m = f.getLine(other).a;
+    CHECK(m.x == doctest::Approx(5).epsilon(1e-6));
+    CHECK(m.y == doctest::Approx(1).epsilon(1e-6));
+    const LineData t = f.getLine(third);
+    CHECK(std::abs(cross(Vec2{10, 2}, t.a)) < 1e-6);
+    CHECK(std::abs(cross(Vec2{10, 2}, t.b)) < 1e-6);
+}
+
+TEST_CASE("the new kinds survive the text form") {
+    ConstraintSet set;
+    set.add(make(Kind::Concentric, at(EntityId{1}, Part::Center), at(EntityId{2}, Part::Center)));
+    set.add(make(Kind::Collinear, whole(EntityId{3}), whole(EntityId{4})));
+    const ConstraintSet back = ConstraintSet::fromText(set.toText());
+    REQUIRE(back.all().size() == 2);
+    CHECK(back.all()[0].kind == Kind::Concentric);
+    CHECK(back.all()[1].kind == Kind::Collinear);
+}

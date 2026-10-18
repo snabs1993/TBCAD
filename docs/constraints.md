@@ -16,10 +16,14 @@ solver (`libs/constraints`, no third-party solver). Commands live in `libs/comma
 | Distance | two points | length in mm (also the length of a line) |
 | Radius | circle or arc | radius in mm (DIMCON also takes a diameter) |
 | Angle | two lines | angle from the first line's direction to the second's |
+| Concentric | circles, arcs or points | the centres coincide |
+| PointOnObject | a point and a line, circle or arc | the point lies on the line's infinite extension or the full circle |
+| Midpoint | a point and a line | the point sits at the middle of the line |
+| Collinear | two lines | both lie on one common line |
 
 ## Commands
 
-- `GEOMCON` (`GCON`): pick the type, then the objects. For Coincident and the two-point forms the
+- `GEOMCON` (`GCON`): pick the type (also Concentric, PointOn, Midpoint, Collinear), then the objects. For Coincident and the two-point forms the
   point of the object nearest to the click is used.
 - `DIMCON` (`DCON`): Distance, Length, Radius, Diameter or Angle; the prompt default is the current
   value.
@@ -70,5 +74,4 @@ formulas.
 
 ## Not done yet
 
-Constraints on polylines, ellipses and splines; point-on-object, symmetric and concentric
-constraints; constraint display icons and a parameter panel in the UI.
+Constraints on polylines, ellipses and splines; symmetric constraints; constraint display icons and a parameter panel in the UI.

@@ -13,7 +13,8 @@ namespace {
 
 constexpr std::string_view kNames[] = {"Coincident",    "Horizontal", "Vertical", "Parallel",
                                        "Perpendicular", "Equal",      "Tangent",  "Fix",
-                                       "Distance",      "Radius",     "Angle"};
+                                       "Distance",      "Radius",     "Angle",    "Concentric",
+                                       "PointOnObject", "Midpoint",   "Collinear"};
 
 enum class Type { None, Line, Circle, Arc, Point };
 
@@ -161,6 +162,26 @@ Result<void> validate(const Document& doc, const Constraint& c) {
                 return bad("Tangent takes a line and a circle/arc, or two circles/arcs");
             break;
         }
+        case Kind::Concentric: {
+            const bool ca = ta == Type::Circle || ta == Type::Arc || ta == Type::Point;
+            const bool cb = tb == Type::Circle || tb == Type::Arc || tb == Type::Point;
+            if (!ca || !cb || c.a.entity == c.b.entity)
+                return bad("Concentric takes two different circles, arcs or points");
+            break;
+        }
+        case Kind::PointOnObject:
+            if (!isPointRef(ta, c.a.part) || c.a.entity == c.b.entity ||
+                (tb != Type::Line && tb != Type::Circle && tb != Type::Arc))
+                return bad("Point on object takes a point and a line, circle or arc");
+            break;
+        case Kind::Midpoint:
+            if (!isPointRef(ta, c.a.part) || tb != Type::Line || c.a.entity == c.b.entity)
+                return bad("Midpoint takes a point and a line");
+            break;
+        case Kind::Collinear:
+            if (ta != Type::Line || tb != Type::Line || c.a.entity == c.b.entity)
+                return bad("Collinear takes two different lines");
+            break;
         case Kind::Fix:
             if (c.a.part != Part::Whole && !isPointRef(ta, c.a.part))
                 return bad("Fix takes an object or one of its points");
@@ -253,7 +274,7 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
         std::istringstream fields(line);
         if (!(fields >> id >> kind >> a >> pa >> b >> pb >> value))
             continue;
-        if (kind > static_cast<unsigned>(Kind::Angle) || pa > 3 || pb > 3 || a == 0 || id == 0)
+        if (kind > static_cast<unsigned>(Kind::Collinear) || pa > 3 || pb > 3 || a == 0 || id == 0)
             continue;
         Constraint c;
         c.id = id;

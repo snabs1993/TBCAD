@@ -34,6 +34,10 @@ enum class Kind : std::uint8_t {
     Distance,       // a, b: points; value in mm
     Radius,         // a: circle or arc; value in mm
     Angle,          // a, b: lines; value in radians, from a's direction to b's
+    Concentric,     // a, b: circles, arcs or points; the centres coincide
+    PointOnObject,  // a: point; b: line (its infinite extension), circle or arc (full circle)
+    Midpoint,       // a: point; b: line; the point sits at the middle of the line
+    Collinear,      // a, b: lines on one common line
 };
 
 struct Constraint {

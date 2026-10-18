@@ -231,6 +231,37 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
             out.push_back(wrapPi(std::atan2(cross(da, db), dot(da, db)) - c.value));
             break;
         }
+        case Kind::Concentric: {
+            const Vec2 d =
+                m.point(v, {c.a.entity, Part::Center}) - m.point(v, {c.b.entity, Part::Center});
+            out.push_back(d.x);
+            out.push_back(d.y);
+            break;
+        }
+        case Kind::PointOnObject: {
+            const Vec2 p = m.point(v, c.a);
+            if (m.isLine(c.b.entity)) {
+                const Vec2 a = m.lineA(v, c.b.entity), b = m.lineB(v, c.b.entity);
+                out.push_back(cross(b - a, p - a) / std::max(length(b - a), kTiny));
+            } else {
+                out.push_back(length(p - m.center(v, c.b.entity)) - m.radius(v, c.b.entity));
+            }
+            break;
+        }
+        case Kind::Midpoint: {
+            const Vec2 mid = (m.lineA(v, c.b.entity) + m.lineB(v, c.b.entity)) * 0.5;
+            const Vec2 d = m.point(v, c.a) - mid;
+            out.push_back(d.x);
+            out.push_back(d.y);
+            break;
+        }
+        case Kind::Collinear: {
+            const Vec2 a = m.lineA(v, c.a.entity), da = m.lineB(v, c.a.entity) - a;
+            const double n = std::max(length(da), kTiny);
+            out.push_back(cross(da, m.lineA(v, c.b.entity) - a) / n);
+            out.push_back(cross(da, m.lineB(v, c.b.entity) - a) / n);
+            break;
+        }
     }
 }
 
@@ -398,7 +429,7 @@ Outcome run(const Model& m, const SolveOptions& opt, const std::set<EntityId>& p
         for (int attempt = 0; attempt < 12 && !improved; ++attempt) {
             std::vector<double> Ad = A, d;
             for (std::size_t a = 0; a < n; ++a)
-                Ad[a * n + a] += lambda * std::max(A[a * n + a], 1e-9);
+                Ad[a * n + a] += lambda * std::max(A[a * n + a], 1.0);
             if (cholesky(Ad, g, n, d)) {
                 trial = out.x;
                 for (std::size_t a = 0; a < n; ++a)
