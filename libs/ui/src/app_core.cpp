@@ -206,6 +206,7 @@ std::vector<std::string> AppCore::layoutNames() const {
 void AppCore::leavePaper() {
     if (activeLayout_.empty())
         return;
+    lastLayout_ = activeLayout_;
     const int w = camera_.viewportW, h = camera_.viewportH;
     camera_ = modelCamera_;
     camera_.viewportW = w;
@@ -1500,7 +1501,59 @@ std::vector<render::ImageDraw> AppCore::underlayImages() {
     return out;
 }
 
+void AppCore::enterViewport(const BBox2& paper, Vec2 center, double scaleN) {
+    const double halfW = paper.width() * scaleN / 2;
+    const double halfH = paper.height() * scaleN / 2;
+    leavePaper();
+    zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
+}
+
+// MSPACE: edit the model through a viewport (the selected one, else the only or first one).
+// PSPACE: back to the sheet that was left.
+void AppCore::applyPendingSpace() {
+    if (pendingSpace_.empty() || runner().active() || !session_)
+        return;
+    const std::string what = std::move(pendingSpace_);
+    pendingSpace_.clear();
+    if (what == "paper") {
+        if (inPaperSpace()) {
+            print("Already on the sheet.");
+            return;
+        }
+        std::string name = lastLayout_;
+        if (name.empty() || !layout::findLayout(session_->doc, name)) {
+            const auto all = layout::layouts(session_->doc);
+            name = all.empty() ? std::string() : all.front().name;
+        }
+        if (name.empty())
+            print("This drawing has no layouts. Use LAYOUT > New.");
+        else
+            setActiveLayout(name);
+        return;
+    }
+    if (!inPaperSpace()) {
+        print("Already in model space.");
+        return;
+    }
+    const auto lay = layout::findLayout(session_->doc, activeLayout_);
+    if (!lay || lay->viewports.empty()) {
+        print("\"" + activeLayout_ + "\" has no viewports. Use MVIEW to add one.");
+        return;
+    }
+    const layout::Viewport* pick = nullptr;
+    const std::string sel = setting("tmp.layout.viewport").value_or("");
+    if (const auto colon = sel.find(':');
+        colon != std::string::npos && sel.substr(0, colon) == activeLayout_)
+        pick = lay->findViewport(std::atoi(sel.c_str() + colon + 1));
+    for (const layout::Viewport& v : lay->viewports)
+        if (!pick && v.on)
+            pick = &v;
+    if (pick)
+        enterViewport(pick->paper, pick->center, pick->scaleN);
+}
+
 void AppCore::applyPendingLayout() {
+    applyPendingSpace();
     if (pendingLayout_.empty() || runner().active())
         return;
     const std::string name = std::move(pendingLayout_);
@@ -1791,11 +1844,7 @@ void AppCore::doubleClick(const PointerState& p) {
             for (const layout::Viewport& vp : lay->viewports) {
                 if (!vp.on || !layout::viewportContains(vp, at))
                     continue;
-                const double halfW = vp.paper.width() * vp.scaleN / 2;
-                const double halfH = vp.paper.height() * vp.scaleN / 2;
-                leavePaper();
-                zoomToBox({{vp.center.x - halfW, vp.center.y - halfH},
-                           {vp.center.x + halfW, vp.center.y + halfH}});
+                enterViewport(vp.paper, vp.center, vp.scaleN);
                 return;
             }
         }

@@ -306,18 +306,31 @@ public:
         std::string target;
         if (!requireLayout(ctx, target))
             co_return;
-        cmd::KeywordOptions ko;
-        ko.keywords = {"On", "Off"};
-        ko.defaultKeyword = "On";
-        auto mode = co_await ctx.getKeyword("Viewport lock [On/Off] <On>", ko);
-        if (!mode.ok())
-            co_return;
+        // A viewport already selected on the sheet is locked straight away; otherwise ask which
+        // one first, then whether to lock or unlock it.
+        const bool preselected = selectedViewport(ctx.host(), ctx.doc()) != 0;
         int vpId = 0;
         bool picked = false;
         co_await askViewport(ctx, target, vpId, picked);
         if (!picked)
             co_return;
-        const bool on = mode.keyword == "On";
+        bool on = true;
+        if (!preselected) {
+            bool locked = false;
+            if (auto lay = layout::findLayout(ctx.doc(), target))
+                for (const layout::Viewport& v : lay->viewports)
+                    if (v.id == vpId)
+                        locked = v.locked;
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Lock", "Unlock"};
+            ko.defaultKeyword = locked ? "Unlock" : "Lock";
+            auto mode = co_await ctx.getKeyword(
+                "Viewport " + std::to_string(vpId) + " [Lock/Unlock] <" + *ko.defaultKeyword + ">",
+                ko);
+            if (!mode.ok())
+                co_return;
+            on = mode.keyword == "Lock";
+        }
         report(ctx, layout::setViewportLocked(ctx.tx(), target, vpId, on),
                "Viewport " + std::to_string(vpId) + (on ? " is locked." : " is unlocked."));
     }

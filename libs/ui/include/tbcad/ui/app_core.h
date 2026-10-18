@@ -330,7 +330,12 @@ public:
     void setView(const cmd::ViewState& v) override;
     BBox2 viewExtents() const override;
     void setPreview(const DisplayList* list) override;
-    void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
+    void requestUi(std::string_view what) override {
+        if (what.rfind("space:", 0) == 0)
+            pendingSpace_ = what.substr(6);  // MSPACE / PSPACE, applied when the command ends
+        else
+            uiRequests_.emplace_back(what);
+    }
     // Requests commands made since the last call ("settings"), oldest first.
     std::vector<std::string> takeUiRequests() { return std::exchange(uiRequests_, {}); }
     void promptChanged(const cmd::PromptInfo* prompt) override;
@@ -465,6 +470,10 @@ private:
     std::string friendlyEcho(const std::string& line) const;
     std::string pendingLayout_;  // layout to show when the running command ends
     void applyPendingLayout();
+    std::string pendingSpace_;  // "model" or "paper"
+    std::string lastLayout_;    // the sheet we last left for model space
+    void applyPendingSpace();
+    void enterViewport(const BBox2& paper, Vec2 center, double scaleN);
     underlay::ImageCache imageCache_{};
 };
 
