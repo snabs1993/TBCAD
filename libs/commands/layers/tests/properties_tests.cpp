@@ -1,10 +1,11 @@
 #include <doctest/doctest.h>
 
+#include <cstdio>
+
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
-#include <cstdio>
 
 using namespace tbcad;
 using namespace tbcad::layers;

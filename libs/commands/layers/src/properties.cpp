@@ -484,7 +484,8 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
         out.push_back({"style", "Style", styleNameOf(doc, t->style), true, styleNames(doc)});
         std::string j = "Left";
         for (const JustRow& r : kJustify) {
-            const bool special = r.h == HAlign::Aligned || r.h == HAlign::Middle || r.h == HAlign::Fit;
+            const bool special =
+                r.h == HAlign::Aligned || r.h == HAlign::Middle || r.h == HAlign::Fit;
             if (special ? t->h == r.h : (t->h == r.h && t->v == r.v)) {
                 j = r.name;
                 break;
@@ -515,14 +516,14 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
     return out;
 }
 
-Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id,
-                            const std::string& f, const std::string& value) {
+Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, const std::string& f,
+                            const std::string& value) {
     const Entity* cur = doc.find(id);
     if (!cur)
         return makeError(ErrorCode::NotFound, "No such object.");
     auto fields = stringFields(doc, *cur);
-    auto it = std::find_if(fields.begin(), fields.end(),
-                           [&](const StringField& x) { return x.id == f; });
+    auto it =
+        std::find_if(fields.begin(), fields.end(), [&](const StringField& x) { return x.id == f; });
     if (it == fields.end())
         return makeError(ErrorCode::InvalidArgument,
                          std::string(kindLabel(kind(*cur))) + " has no field \"" + f + "\".");
@@ -536,8 +537,8 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id,
             if (lowerWord(c) == want)
                 hit = &c;
         if (!hit)
-            return makeError(ErrorCode::InvalidArgument, "\"" + value + "\" is not a choice for " +
-                                                             it->label + ".");
+            return makeError(ErrorCode::InvalidArgument,
+                             "\"" + value + "\" is not a choice for " + it->label + ".");
         chosen = *hit;
     }
     if (f == "contents" && chosen.empty())

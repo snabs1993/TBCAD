@@ -36,7 +36,7 @@ struct Cache {
         StringField field{};
         bool varies = false;
     };
-    std::vector<Words> words{};  // contents, style, justification ...
+    std::vector<Words> words{};   // contents, style, justification ...
     std::size_t pickedIndex = 0;  // entities shown in the Geometry section
     std::vector<EntityId> shown{};
 };
