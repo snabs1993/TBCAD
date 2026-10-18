@@ -32,7 +32,17 @@ bool filletable(const Document& doc, const Entity& e) {
 bool chamferable(const Document& doc, const Entity& e) {
     if (!isEditable(doc, e))
         return false;
-    return kind(e) == EntityKind::Line || kind(e) == EntityKind::Polyline;
+    switch (kind(e)) {
+        case EntityKind::Line:
+        case EntityKind::Arc:
+        case EntityKind::Circle:
+        case EntityKind::Ellipse:
+        case EntityKind::Spline:
+        case EntityKind::Polyline:
+            return true;
+        default:
+            return false;
+    }
 }
 
 // Applies a two-entity edit.
@@ -91,12 +101,6 @@ void cornerOp(cmd::CommandContext& ctx, Corner what, const cmd::EntityResult& fi
         }
         if (auto r = replaceEntity(ctx.tx(), first.id, res.value()); !r)
             ctx.message(r.error().message);
-        return;
-    }
-    if (!fillet && (kind(*a) == EntityKind::Polyline || kind(*b) == EntityKind::Polyline)) {
-        ctx.message(
-            "A polyline can only be rounded or cut at its own corners: pick two of its "
-            "segments.");
         return;
     }
     modify::FilletOptions fo;

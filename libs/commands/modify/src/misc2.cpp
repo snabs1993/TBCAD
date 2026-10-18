@@ -27,7 +27,7 @@ public:
                 return false;
             auto k = kind(e);
             return k == EntityKind::Line || k == EntityKind::Arc || k == EntityKind::Polyline ||
-                   k == EntityKind::Spline;
+                   k == EntityKind::Spline || k == EntityKind::Ellipse;
         };
         auto a = co_await ctx.getEntity("Select first object near the end to blend", eo);
         if (!a.ok())
