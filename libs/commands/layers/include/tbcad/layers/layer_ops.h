@@ -60,6 +60,9 @@ Result<void> deleteLayer(const Document& doc, Transaction& tx, LayerId id, Delet
 Result<void> setActiveOnly(const Document& doc, Transaction& tx, bool on);
 
 Result<void> setCurrentLayer(const Document& doc, Transaction& tx, LayerId id);
+// LAYERP: puts the layer settings (on, frozen, locked, plot, colour, linetype, lineweight,
+// transparency) back to what they were before the last transaction that changed them.
+Result<void> restorePreviousLayers(const Document& doc, Transaction& tx);
 Result<void> setOn(const Document& doc, Transaction& tx, LayerId id, bool on);
 Result<void> setFrozen(const Document& doc, Transaction& tx, LayerId id, bool frozen);
 Result<void> setLocked(const Document& doc, Transaction& tx, LayerId id, bool locked);
