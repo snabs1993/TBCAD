@@ -112,3 +112,5 @@ the side: **Outside** (the default; reads left to right along the top, letters s
 tops away from the centre) or **Inside** (letters' tops point to the centre; on a circle the text sits at the
 bottom). The text is centred on the middle of the arc. Each letter is its own text object, so the result is
 not linked to the arc and is edited letter by letter; one undo step removes it all.
+
+`MTEDIT` is another name for `TEXTEDIT`.

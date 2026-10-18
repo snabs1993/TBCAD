@@ -481,7 +481,7 @@ private:
 class TextEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "TEXTEDIT"; }
-    std::vector<std::string> defaultAliases() const override { return {"ED", "DDEDIT"}; }
+    std::vector<std::string> defaultAliases() const override { return {"ED", "DDEDIT", "MTEDIT"}; }
     std::string_view description() const override { return "Edit the content of a text object"; }
 
     Task run(CommandContext& ctx) override {

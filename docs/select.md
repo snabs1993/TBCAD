@@ -27,3 +27,5 @@ When on, a small box in the corner of the viewport shows the common layer, colou
 **CHANGE** takes the selection and a point: the nearest end of a line moves to it, a circle's radius reaches it, text and
 inserts move there (arcs and the rest are left alone). The keyword **Properties** works like CHPROP (layer, colour, linetype,
 lineweight, linetype scale). One undo step.
+
+`SELECTALL` selects every object that is shown and sits on a layer that is on, thawed and unlocked.

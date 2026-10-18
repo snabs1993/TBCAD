@@ -176,8 +176,43 @@ public:
     }
 };
 
+// DIMUPDATE: gives the selected dimensions the current dimension style and refreshes them.
+class DimUpdateCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMUPDATE"; }
+    std::string_view description() const override {
+        return "Apply the current dimension style to the selected dimensions";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.filter = isDim;
+        auto sel = co_await ctx.getSelection("Select dimensions to update", so);
+        if (!sel.ok())
+            co_return;
+        ctx.setUndoLabel("DIMUPDATE");
+        const DimStyleId style = ctx.doc().header().currentDimStyle;
+        const Document& doc = ctx.doc();
+        int n = 0;
+        for (EntityId id : sel.ids) {
+            if (ctx.tx().modify(id, [&](Entity& x) {
+                    if (auto* d = entityAs<DimensionData>(x)) {
+                        d->style = style;
+                        if (auto fn = dimRefresh())
+                            fn(doc, x);
+                    }
+                }))
+                ++n;
+        }
+        ctx.message(std::to_string(n) + " dimensions updated.");
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeDimUpdateCommand() {
+    return std::make_unique<DimUpdateCommand>();
+}
 std::unique_ptr<cmd::Command> makeDimRegenCommand() {
     return std::make_unique<DimRegenCommand>();
 }

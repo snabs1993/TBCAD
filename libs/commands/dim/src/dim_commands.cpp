@@ -485,7 +485,7 @@ public:
 class LeaderCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LEADER"; }
-    std::vector<std::string> defaultAliases() const override { return {"LE"}; }
+    std::vector<std::string> defaultAliases() const override { return {"LE", "QLEADER"}; }
     std::string_view description() const override {
         return "Draw a line with an arrowhead and a text note";
     }
@@ -574,6 +574,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMLeaderEditCommand());
     (void)registry.add(makeDimReassocCommand());
     (void)registry.add(makeDimRegenCommand());
+    (void)registry.add(makeDimUpdateCommand());
     (void)registry.add(makeDimInspectCommand());
     (void)registry.add(makeDimDisassocCommand());
     (void)registry.add(makeMLeaderStyleCommand());
