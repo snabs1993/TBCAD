@@ -376,3 +376,21 @@ TEST_CASE("a closed CV spline has one grip per vertex and moving one keeps it cl
     REQUIRE(curvesOf(m.value(), cs));
     CHECK(distance(cs[0].startPoint(), cs[0].endPoint()) < 1e-9);
 }
+
+TEST_CASE("a ray has an origin grip and a direction grip that turns it") {
+    RayData r;
+    r.origin = {500123.456, 4500987.654};
+    r.dir = {1, 0};
+    Entity e = make(r);
+    auto g = gripPoints(e);
+    REQUIRE(g.size() == 2);
+    CHECK(distance(g[1], r.origin + Vec2{kRayGripReach, 0}) < 1e-9);
+    auto m = moveGrip(e, 1, r.origin + Vec2{0, 40});
+    REQUIRE(m.ok());
+    CHECK(distance(entityAs<RayData>(m.value())->dir, Vec2{0, 1}) < 1e-12);
+    CHECK(distance(entityAs<RayData>(m.value())->origin, r.origin) < 1e-12);
+    CHECK_FALSE(moveGrip(e, 1, r.origin).ok());
+    auto o = moveGrip(e, 0, {1, 2});
+    REQUIRE(o.ok());
+    CHECK(distance(entityAs<RayData>(o.value())->dir, Vec2{1, 0}) < 1e-12);
+}
