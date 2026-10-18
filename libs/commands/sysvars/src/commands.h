@@ -17,5 +17,7 @@ std::unique_ptr<cmd::Command> makeAddSelectedCommand();
 std::unique_ptr<cmd::Command> makeHyperlinkCommand();
 std::unique_ptr<cmd::Command> makeSpaceTransCommand();
 std::unique_ptr<cmd::Command> makeDelayCommand();
+// SCRIPT, or RSCRIPT when `repeat`.
+std::unique_ptr<cmd::Command> makeScriptCommand(bool repeat);
 
 }  // namespace tbcad::sysvars

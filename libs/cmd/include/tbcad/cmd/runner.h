@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -64,6 +65,12 @@ public:
     bool undo();
     bool redo();
 
+    // SCRIPT: lines typed one after the other as if the user had entered them, `repeat` times
+    // through. They run after the command that queued them finishes. A line that finds a command
+    // waiting answers it; an empty line is Enter. Esc drops what is left.
+    void queueScript(std::vector<std::string> lines, int repeat = 1);
+    bool scriptRunning() const { return !script_.empty(); }
+
     // Not owned; may be null.
     void setFilterChain(PointFilterChain* chain) { chain_ = chain; }
     void setLineParser(CommandLineParser* parser) { parser_ = parser; }
@@ -76,6 +83,11 @@ private:
         std::unique_ptr<CommandContext> ctx{};
         Task task{};
     };
+
+    SubmitResult submitInput(const Input& input);
+    void pumpScript();
+    std::deque<std::string> script_{};
+    int entry_ = 0;  // depth of submit/start calls: scripts are pumped by the outermost one
 
     Result<void> startImpl(std::string_view nameOrAlias, bool transparent);
     void afterResume();

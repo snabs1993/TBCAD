@@ -3,6 +3,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -67,15 +68,30 @@ struct Rig {
         if (core->runner().active())
             core->pressEscape();
     }
+    // A command that must change the drawing (a grip that misses would leave both drawings equal).
+    void runChanging(const std::string& command, std::vector<std::string> items) {
+        const auto rev = core->document().revision();
+        run(command, std::move(items));
+        CHECK_MESSAGE(core->document().revision() != rev, command << " changed nothing");
+    }
     // A mouse click at a UCS-local position (picks objects, or gives a point).
     void click(Vec2 local) {
         core->click(ui::PointerState{core->camera().worldToScreen(ucs.toWorld(local))});
     }
     std::vector<EntityId> ids() const {
         std::vector<EntityId> v;
-        core->document().forEachEntity([&](const Entity& e) { v.push_back(e.common.id); });
+        core->document().forEachEntity([&](const Entity& e) {
+            if (!core->document().ownerBlock(e.common.id))  // model space only
+                v.push_back(e.common.id);
+        });
         std::sort(v.begin(), v.end());
         return v;
+    }
+    // The newest object (the one a command just made).
+    void selectNewest() {
+        const auto all = ids();
+        if (!all.empty())
+            core->setSelection({all.back()});
     }
     void select(std::initializer_list<std::size_t> indices) {
         const auto all = ids();
@@ -171,12 +187,36 @@ Diff compare(const Rig& a, const Rig& b) {
             const auto* y = entityAs<RayData>(eb);
             if (!close(u.toWorld(x->origin), y->origin) || !close(u.dirToWorld(x->dir), y->dir))
                 d.fail(at + "ray");
+        } else if (const auto* x = entityAs<InsertData>(ea)) {
+            const auto* y = entityAs<InsertData>(eb);
+            // (an array is placed at the corner of the box of its source, which differs when the
+            // source is turned; its grid is what matters)
+            const bool arr = x->array.has_value() && y->array.has_value();
+            if (x->array.has_value() != y->array.has_value() ||
+                (arr &&
+                 (x->array->rows != y->array->rows || x->array->columns != y->array->columns ||
+                  std::abs(x->array->rowSpacing - y->array->rowSpacing) > 1e-6 ||
+                  std::abs(x->array->columnSpacing - y->array->columnSpacing) > 1e-6)) ||
+                (!arr && !close(u.toWorld(x->position), y->position)) ||
+                std::abs(x->scale.x - y->scale.x) > 1e-6 ||
+                std::abs(x->scale.y - y->scale.y) > 1e-6 ||
+                std::abs(wrap(x->rotation + (x->array ? x->array->angle : 0) + u.angle -
+                              y->rotation - (y->array ? y->array->angle : 0) + kPi) -
+                         kPi) > 1e-6)
+                d.fail(at + "insert (rotation " + std::to_string(x->rotation) + " -> " +
+                       std::to_string(y->rotation) + ", array angle " +
+                       std::to_string(x->array ? x->array->angle : -9) + " -> " +
+                       std::to_string(y->array ? y->array->angle : -9) + ")");
         } else if (const auto* x = entityAs<DimensionData>(ea)) {
             const auto* y = entityAs<DimensionData>(eb);
             if (x->kind != y->kind) {
                 d.fail(at + "dimension kind");
                 break;
             }
+            if (x->kind == DimKind::Linear || x->kind == DimKind::Aligned)
+                for (std::size_t k = 0; k < 3; ++k)
+                    if (!close(u.toWorld(x->defPts[k]), y->defPts[k]))
+                        d.fail(at + "dimension point " + std::to_string(k));
             const DimStyle& sa = dim::styleOf(a.core->document(), x->style);
             const DimStyle& sb = dim::styleOf(b.core->document(), y->style);
             if (dim::dimensionText(sa, *x) != dim::dimensionText(sb, *y))
@@ -188,6 +228,7 @@ Diff compare(const Rig& a, const Rig& b) {
         } else if (const auto* x = entityAs<HatchData>(ea)) {
             const auto* y = entityAs<HatchData>(eb);
             if (x->loops.size() != y->loops.size() ||
+                std::abs(x->patternScale - y->patternScale) > 1e-6 ||
                 (!x->solid &&
                  std::abs(wrap(x->patternAngle + u.angle - y->patternAngle + kPi) - kPi) > 1e-6))
                 d.fail(at + "hatch");
@@ -274,7 +315,88 @@ std::vector<Scenario> scenarios() {
     v.push_back({"ARRAY rectangular", [](Rig& r) {
                      r.run("RECTANGLE", {"0,0", "10,6"});
                      r.select({0});
-                     r.run("ARRAYRECT", {"2", "3", "15", "20"});
+                     r.run("ARRAYRECT", {"Rows", "2", "Columns", "3", "Spacing", "20", "15", ""});
+                 }});
+    // Transforms of the objects that carry more than points: hatches, dimensions, nested blocks.
+    struct Xf {
+        const char* name;
+        std::function<void(Rig&)> apply;
+    };
+    const std::vector<Xf> xfs{
+        {"MOVE", [](Rig& r) { r.run("MOVE", {"0,0", "15,-10"}); }},
+        {"ROTATE", [](Rig& r) { r.run("ROTATE", {"10,10", "40"}); }},
+        {"SCALE", [](Rig& r) { r.run("SCALE", {"10,10", "1.5"}); }},
+        {"MIRROR", [](Rig& r) { r.run("MIRROR", {"0,0", "0,10", "N"}); }},
+        {"ROTATE copy", [](Rig& r) { r.run("ROTATE", {"10,10", "C", "-25"}); }},
+    };
+    for (const Xf& x : xfs) {
+        const std::string n = x.name;
+        v.push_back({strdup(("hatch and its boundary: " + n).c_str()), [x](Rig& r) {
+                         r.run("RECTANGLE", {"10,10", "70,45"});
+                         r.run("HATCH", {"20,20", ""});
+                         r.select({0, 1});
+                         x.apply(r);
+                     }});
+        v.push_back({strdup(("linear dimension: " + n).c_str()), [x](Rig& r) {
+                         r.run("DIMLINEAR", {"0,0", "80,30", "40,-20"});
+                         r.select({0});
+                         x.apply(r);
+                     }});
+        v.push_back({strdup(("nested block insert: " + n).c_str()), [x](Rig& r) {
+                         // INNER: two lines; OUTER: a line and an insert of INNER, turned 20
+                         // degrees
+                         {
+                             auto tx = r.core->document().begin("blocks");
+                             BlockId inner = tx.addBlock({.name = "INNER"}).value();
+                             Entity l1;
+                             l1.data = LineData{{0, 0}, {10, 0}};
+                             (void)tx.add(std::move(l1), inner);
+                             Entity l2;
+                             l2.data = LineData{{10, 0}, {10, 6}};
+                             (void)tx.add(std::move(l2), inner);
+                             BlockId outer = tx.addBlock({.name = "OUTER"}).value();
+                             Entity l3;
+                             l3.data = LineData{{0, 0}, {0, 15}};
+                             (void)tx.add(std::move(l3), outer);
+                             Entity in;
+                             in.data = InsertData{inner, {5, 5}, {1, 1}, 20 * kPi / 180};
+                             (void)tx.add(std::move(in), outer);
+                             tx.commit();
+                         }
+                         r.run("INSERT", {"OUTER", "12,8"});
+                         r.selectNewest();
+                         x.apply(r);
+                     }});
+    }
+    // Grips (the hot grip and its new place are typed in the UCS).
+    v.push_back({"grip: dimension extension origin", [](Rig& r) {
+                     r.run("DIMLINEAR", {"0,0", "80,30", "40,-20"});
+                     r.select({0});
+                     r.runChanging("GRIPEDIT", {"0,0", "-5,-5"});
+                 }});
+    v.push_back({"grip: dimension line", [](Rig& r) {
+                     r.run("DIMLINEAR", {"0,0", "80,30", "40,-20"});
+                     r.select({0});
+                     r.runChanging("GRIPEDIT", {"40,-20", "40,-35"});
+                 }});
+    v.push_back({"grip: boundary vertex of a hatch", [](Rig& r) {
+                     r.run("RECTANGLE", {"10,10", "70,45"});
+                     r.run("HATCH", {"20,20", ""});
+                     r.select({0, 1});
+                     r.runChanging("GRIPEDIT", {"10,10", "4,4"});
+                 }});
+    v.push_back({"grip: insert point of a block", [](Rig& r) {
+                     {
+                         auto tx = r.core->document().begin("blocks");
+                         BlockId b = tx.addBlock({.name = "B"}).value();
+                         Entity l;
+                         l.data = LineData{{0, 0}, {10, 6}};
+                         (void)tx.add(std::move(l), b);
+                         tx.commit();
+                     }
+                     r.run("INSERT", {"B", "12,8"});
+                     r.selectNewest();
+                     r.runChanging("GRIPEDIT", {"12,8", "20,25"});
                  }});
     return v;
 }
@@ -292,6 +414,7 @@ TEST_CASE("commands in a rotated UCS give the world result turned by the UCS") {
         s.script(world);
         Rig turned("t", tilt);
         s.script(turned);
+        CHECK_FALSE(world.ids().empty());
         const Diff d = compare(world, turned);
         INFO(d.text);
         CHECK(d.ok);

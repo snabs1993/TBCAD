@@ -76,7 +76,58 @@ CommandRunner::~CommandRunner() {
 }
 
 Result<void> CommandRunner::start(std::string_view nameOrAlias) {
-    return startImpl(nameOrAlias, false);
+    ++entry_;
+    auto r = startImpl(nameOrAlias, false);
+    --entry_;
+    if (entry_ == 0)
+        pumpScript();
+    return r;
+}
+
+void CommandRunner::queueScript(std::vector<std::string> lines, int repeat) {
+    constexpr std::size_t kMaxLines = 2'000'000;
+    // (in front of what is left: a script that runs another script finishes that one first)
+    std::deque<std::string> add;
+    for (int i = 0; i < repeat && add.size() < kMaxLines; ++i)
+        for (const std::string& l : lines)
+            add.push_back(l);
+    script_.insert(script_.begin(), std::make_move_iterator(add.begin()),
+                   std::make_move_iterator(add.end()));
+}
+
+void CommandRunner::pumpScript() {
+    ++entry_;
+    while (!script_.empty()) {
+        std::string line = std::move(script_.front());
+        script_.pop_front();
+        // A script line "CIRCLE 0,0 5" starts the command and answers its prompts one by one.
+        if (stack_.empty() && !line.empty() && line.front() != '\'' &&
+            line.find_first_of(" \t") != std::string::npos) {
+            const std::size_t sp = line.find_first_of(" \t");
+            if (registry_.find(line.substr(0, sp))) {
+                std::deque<std::string> rest;
+                std::size_t i = sp;
+                while (i < line.size()) {
+                    while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                        ++i;
+                    const std::size_t j = line.find_first_of(" \t", i);
+                    if (i < line.size())
+                        rest.push_back(line.substr(i, j == std::string::npos ? j : j - i));
+                    i = j == std::string::npos ? line.size() : j;
+                }
+                // a trailing space is an Enter in a script
+                if (line.back() == ' ')
+                    rest.emplace_back();
+                script_.insert(script_.begin(), rest.begin(), rest.end());
+                line = line.substr(0, sp);
+            }
+        }
+        if (line.empty())
+            (void)submitInput(Input::enter());
+        else
+            (void)submitInput(Input::typed(line));
+    }
+    --entry_;
 }
 
 Result<void> CommandRunner::startTransparent(std::string_view nameOrAlias) {
@@ -295,6 +346,17 @@ bool CommandRunner::redo() {
 }
 
 SubmitResult CommandRunner::submit(const Input& input) {
+    if (input.kind == Input::Kind::Cancel)
+        script_.clear();
+    ++entry_;
+    const SubmitResult r = submitInput(input);
+    --entry_;
+    if (entry_ == 0)
+        pumpScript();
+    return r;
+}
+
+SubmitResult CommandRunner::submitInput(const Input& input) {
     if (stack_.empty()) {
         std::string name;
         if (input.kind == Input::Kind::Enter) {
