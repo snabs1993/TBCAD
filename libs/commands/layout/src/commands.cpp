@@ -58,6 +58,13 @@ cmd::Task askViewport(cmd::CommandContext& ctx, const std::string& layoutName, i
         ctx.message("\"" + layoutName + "\" has no viewports. Use MVIEW to add one.");
         co_return;
     }
+    // A viewport selected on the sheet by clicking its border is the answer.
+    if (const int chosen = selectedViewport(ctx.host(), ctx.doc())) {
+        id = chosen;
+        ok = true;
+        ctx.message("Using the selected viewport " + std::to_string(chosen) + ".");
+        co_return;
+    }
     cmd::PointOptions po;
     po.allowNone = false;
     for (const layout::Viewport& v : lay->viewports)

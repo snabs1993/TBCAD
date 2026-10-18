@@ -96,6 +96,7 @@ private:
     void readOnlyBanner();
     void xrefNotice();
     bool xrefListOpen_ = false;
+    int statusRows_ = 1;               // rows the status bar needed last frame
     std::string dismissedReadOnly_{};  // read-only notice text the user closed
     void docTabs();
     void startPage(const ViewportRect& rect);

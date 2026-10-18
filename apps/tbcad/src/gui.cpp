@@ -1415,8 +1415,24 @@ void Gui::statusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
-    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    // The controls wrap onto further rows when the window is narrow (a side panel open), instead
+    // of running off the right edge. The row count comes from the previous frame.
+    const float h = statusRows_ * ImGui::GetFrameHeight() +
+                    (statusRows_ - 1) * ImGui::GetStyle().ItemSpacing.y +
+                    ImGui::GetStyle().WindowPadding.y * 0.8f;
     if (ImGui::BeginViewportSideBar("##statusbar", vp, ImGuiDir_Down, h, flags)) {
+        int rows = 1;
+        const ImGuiStyle& sty = ImGui::GetStyle();
+        // Continue on this row when `w` more pixels fit after the last item, else start a new one.
+        const auto place = [&](float w) {
+            const float right = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
+            if (right + sty.ItemSpacing.x + w <= ImGui::GetWindowWidth() - sty.WindowPadding.x) {
+                ImGui::SameLine();
+            } else {
+                ++rows;
+            }
+        };
+        const auto textW = [](const char* t) { return ImGui::CalcTextSize(t).x; };
         const Document& doc = core_.document();
         UnitFormat fmt;
         fmt.unit = doc.header().units;
@@ -1444,7 +1460,7 @@ void Gui::statusBar() {
             ImGui::Dummy({pad, 1});
         }
         for (const auto& t : registry_.statusToggles()) {
-            ImGui::SameLine();
+            place(textW(t.label.c_str()) + sty.FramePadding.x * 2);
             bool on = t.get();
             if (on)
                 ImGui::PushStyleColor(ImGuiCol_Button,
@@ -1460,10 +1476,11 @@ void Gui::statusBar() {
             }
         }
         const Layer* layer = doc.layer(doc.header().currentLayer);
-        ImGui::SameLine();
+        const float layerW = ImGui::CalcTextSize("A-WALL~interior").x + 30.0f;
+        place(textW("  Layer:") + sty.ItemSpacing.x + layerW);
         ImGui::TextUnformatted("  Layer:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::CalcTextSize("A-WALL~interior").x + 30.0f);
+        ImGui::SetNextItemWidth(layerW);
         if (ImGui::BeginCombo("##layersw", layer ? layer->name.c_str() : "0",
                               ImGuiComboFlags_HeightLarge)) {
             for (const auto& [id, l] : doc.layers()) {
@@ -1477,7 +1494,7 @@ void Gui::statusBar() {
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Layer new objects are drawn on.");
-        ImGui::SameLine();
+        place(130);
         ImGui::SetNextItemWidth(130);
         if (ImGui::BeginCombo("##workspace",
                               workspaceName_.empty() ? "Workspace" : workspaceName_.c_str(),
@@ -1491,10 +1508,11 @@ void Gui::statusBar() {
         // Level switcher: pick the level to work on (highest first, like a section).
         {
             const Level* cur = doc.level(doc.header().currentLevel);
-            ImGui::SameLine();
+            const float levelW = ImGui::CalcTextSize("Level 00 (mmm)").x + 40.0f;
+            place(textW("  Level:") + sty.ItemSpacing.x + levelW);
             ImGui::TextUnformatted("  Level:");
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(ImGui::CalcTextSize("Level 00 (mmm)").x + 40.0f);
+            ImGui::SetNextItemWidth(levelW);
             if (ImGui::BeginCombo("##levelsw", cur ? cur->name.c_str() : "?")) {
                 std::vector<const Level*> order;
                 for (const auto& [id, l] : doc.levels())
@@ -1521,7 +1539,8 @@ void Gui::statusBar() {
             const double cur = currentAnnotationScale(doc.header());
             char label[48];
             std::snprintf(label, sizeof label, "1:%g", cur);
-            ImGui::SameLine();
+            place(textW("  Scale") + sty.ItemSpacing.x + 72 + sty.ItemSpacing.x + textW("ANNO") +
+                  sty.FramePadding.x * 2);
             ImGui::TextUnformatted("  Scale");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(72);
@@ -1572,6 +1591,7 @@ void Gui::statusBar() {
             ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);
             ImGui::TextUnformatted(right.c_str());
         }
+        statusRows_ = rows;
     }
     ImGui::End();
 }
