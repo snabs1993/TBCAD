@@ -1,6 +1,7 @@
 #include "tbcad/dwg/dwg.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -116,6 +117,11 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.error(code::kUnsupportedVersion, msg);
         return makeError(ErrorCode::Parse, msg);
     }
+    using Clock = std::chrono::steady_clock;
+    const auto tStart = Clock::now();
+    auto msSince = [](Clock::time_point t) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count();
+    };
     const Bytes file(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
     std::vector<std::string> notes;
     detail::Drawing drawing;
@@ -124,6 +130,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                             : readR2004Plus(file, v.version, drawing, notes, report);
     if (!read)
         return read.error();
+    const long long readMs = msSince(tStart);
+    const auto tDiag = Clock::now();
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
@@ -729,10 +737,20 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         }
         report.summary(code::kSkippedObject, ins);
     }
+    const long long diagMs = msSince(tDiag);
+    const auto tEmit = Clock::now();
     const std::string text = detail::emitDxf(drawing);
+    const long long emitMs = msSince(tEmit);
+    const auto tImport = Clock::now();
     auto result = dxf::importDxf(
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
         options, report);
+    report.summary(code::kSkippedObject,
+                   "timing (ms): read " + std::to_string(readMs) + ", diagnostics " +
+                       std::to_string(diagMs) + ", to DXF text " + std::to_string(emitMs) + " (" +
+                       std::to_string(text.size() / 1024) + " KB), DXF import " +
+                       std::to_string(msSince(tImport)) + ", total " +
+                       std::to_string(msSince(tStart)));
     if (result) {
         report.summary(code::kSkippedObject,
                        "layouts imported: " + std::to_string(result.value().summary.layouts));
