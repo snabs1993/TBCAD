@@ -867,6 +867,12 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
     d.rotation = f.angle(rot);
     d.attach = static_cast<Attachment>(std::clamp<std::int64_t>(r.integer(71, 1) - 1, 0, 8));
     d.style = textStyleFor(r.raw(7));
+    if (r.integer(75, 0) > 0 && r.integer(76, 1) > 1) {
+        d.columns = static_cast<std::uint8_t>(std::clamp<std::int64_t>(r.integer(76, 1), 1, 16));
+        if (r.has(48) && r.num(48) > 0)
+            d.width = r.num(48) * k_;
+        d.columnGap = std::max(0.0, r.num(49) * k_);
+    }
     if (f.mirror) {
         if (mirroredText_++ == 0)
             firstMirroredLine_ = r.line;

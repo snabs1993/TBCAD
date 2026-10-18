@@ -417,3 +417,13 @@ TEST_CASE("ARCTEXT puts one text object per letter along the arc") {
     CHECK(f.host.undo());
     CHECK(f.doc.modelSpace().size() == 1);
 }
+
+TEST_CASE("MTEXT: the Columns option cuts the rectangle into columns") {
+    Fixture f;
+    f.host.run("MTEXT", {"C", "3", "H", "2", "0,100", "100,50", "a\\Pb\\Pc"});
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->columns == 3);
+    CHECK(m->columnGap == doctest::Approx(4));  // two text heights
+    CHECK(m->width == doctest::Approx((100 - 2 * 4) / 3.0));
+}

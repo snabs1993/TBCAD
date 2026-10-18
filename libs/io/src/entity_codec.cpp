@@ -155,6 +155,10 @@ struct PayloadWriter {
         w.u8(static_cast<std::uint8_t>(d.attach));
         w.varint(d.style.value);
         str(d.utf8);
+        if (d.columns > 1) {  // a tail that older readers ignore
+            w.u8(d.columns);
+            w.f64(d.columnGap);
+        }
     }
     void operator()(const HatchData& d) {
         w.u8(d.solid ? 1 : 0);
@@ -659,6 +663,10 @@ struct PayloadReader {
                     enumeration<Attachment>(static_cast<std::uint8_t>(Attachment::BottomRight));
                 d.style = id<TextStyleId>();
                 d.utf8 = str();
+                if (r.remaining() > 0) {
+                    d.columns = std::max<std::uint8_t>(1, r.u8());
+                    d.columnGap = r.f64();
+                }
                 return make(std::move(d));
             }
             case EntityKind::Hatch:

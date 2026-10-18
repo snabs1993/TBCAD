@@ -251,6 +251,7 @@ struct MTextState {
     double width = -1;  // -1 = from the corners
     Attachment attach = Attachment::TopLeft;
     TextStyleId style{};
+    int columns = 1;  // > 1: the corners give the whole width, split into this many columns
 };
 
 // Handles one of the MTEXT options at the corner prompts.
@@ -287,6 +288,14 @@ Task mtextOption(CommandContext& ctx, MTextState& st, const std::string& option,
         if (r.ok())
             if (auto id = styleByName(ctx, r.text))
                 st.style = *id;
+    } else if (option == "Columns") {
+        cmd::IntOptions o;
+        o.defaultValue = st.columns;
+        o.min = 1;
+        o.max = 8;
+        auto r = co_await ctx.getInteger("Number of columns", o);
+        if (r.ok())
+            st.columns = static_cast<int>(r.value);
     } else if (option == "Width") {
         cmd::DistanceOptions o;
         o.base = base;
@@ -311,7 +320,8 @@ public:
                 if (*s == a.name)
                     st.attach = a.a;
 
-        const std::vector<std::string> keywords{"Height", "Justify", "Rotation", "Style", "Width"};
+        const std::vector<std::string> keywords{"Height", "Justify", "Rotation",
+                                                "Style",  "Width",   "Columns"};
         Vec2 first{};
         for (;;) {
             cmd::PointOptions po;
@@ -397,6 +407,16 @@ public:
         d.width = st.width >= 0 ? st.width : (xmax - xmin);
         if (d.width < tol::kLinear)
             d.width = 0;
+        if (st.columns > 1 && d.width > 0) {
+            // The rectangle is the whole text block: cut it into columns with a gap of two lines.
+            const double gap = 2 * d.height;
+            const double each = (d.width - gap * (st.columns - 1)) / st.columns;
+            if (each > d.height) {
+                d.columns = static_cast<std::uint8_t>(st.columns);
+                d.columnGap = gap;
+                d.width = each;
+            }
+        }
 
         // The text box offers Height, Justify and Style while typing: it changes these settings
         // and the drawing follows them, so the command line is not asked again.
