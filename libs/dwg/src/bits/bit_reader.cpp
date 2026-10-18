@@ -14,7 +14,7 @@ void BitReader::seekBit(std::size_t bit) {
     pos_ = bit;
 }
 
-std::uint64_t BitReader::bits(unsigned n) {
+std::uint64_t BitReader::bitsSlow(unsigned n) {
     if (n == 0)
         return 0;
     if (failed_ || n > 64 || bitsLeft() < n) {
@@ -50,15 +50,14 @@ unsigned BitReader::b3() {
 }
 
 std::uint16_t BitReader::rs() {
-    const std::uint32_t lo = rc();
-    const std::uint32_t hi = rc();
-    return failed_ ? 0 : static_cast<std::uint16_t>(lo | (hi << 8));
+    const std::uint32_t v = static_cast<std::uint32_t>(bits(16));  // the two bytes, first on top
+    return failed_ ? 0 : static_cast<std::uint16_t>(((v & 0xFFu) << 8) | (v >> 8));
 }
 
 std::uint32_t BitReader::rl() {
-    const std::uint32_t a = rs();
-    const std::uint32_t b = rs();
-    return failed_ ? 0 : a | (b << 16);
+    const std::uint32_t v = static_cast<std::uint32_t>(bits(32));
+    return failed_ ? 0
+                   : ((v & 0xFFu) << 24) | ((v & 0xFF00u) << 8) | ((v >> 8) & 0xFF00u) | (v >> 24);
 }
 
 std::uint64_t BitReader::rll() {

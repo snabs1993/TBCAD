@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 #include "dwg_builder.h"
 #include "tbcad/dwg/dwg.h"
@@ -992,4 +995,42 @@ TEST_CASE("a linear dimension with its style and drawn block imports") {
         }
     }
     CHECK(dims == 1);
+}
+
+// Open time of a big drawing: lines, lightweight polylines and circles, with the stage timings
+// the reader reports. Size: TBCAD_BENCH_N objects of each kind (default 700, a quick check).
+TEST_CASE("perf: open of a big DWG") {
+    const char* env = std::getenv("TBCAD_BENCH_N");
+    const int n = env ? std::atoi(env) : 700;
+    DwgFile f;
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kWalls, layer(kWalls, "WALLS", 3, kLtype, 16, true));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    std::uint64_t h = 0x1000;
+    for (int i = 0; i < n; ++i) {
+        const double x = (i % 500) * 30.0, y = (i / 500) * 30.0;
+        f.add(h, line(h, 2, 0, x, y, x + 20, y + 10));
+        ++h;
+        f.add(h, lwpolyline(h, i % 2 == 0));
+        ++h;
+        f.add(h, circle(h, x, y, 5, kWalls));
+        ++h;
+    }
+    const std::vector<std::uint8_t> file = f.build();
+    dxf::Report report;
+    dxf::ImportOptions options;
+    options.diagnostics = false;
+    const auto t0 = std::chrono::steady_clock::now();
+    auto r = importDwg(asBytes(file), options, report);
+    const double total =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    CHECK(r.value().document->modelSpaceCount() == static_cast<std::size_t>(3 * n));
+    for (const dxf::Diagnostic& d : report.diagnostics())
+        if (d.message.rfind("timing (ms)", 0) == 0 || d.message.rfind("read stages", 0) == 0)
+            std::printf("  %s\n", d.message.c_str());
+    std::printf("  open of %d objects (%zu KB file): %.0f ms\n", 3 * n, file.size() / 1024, total);
 }

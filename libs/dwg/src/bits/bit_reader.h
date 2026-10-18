@@ -5,8 +5,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <string>
+#if defined(_MSC_VER)
+#include <stdlib.h>
+#endif
 
 namespace tbcad::dwg {
 
@@ -34,7 +38,19 @@ public:
     std::size_t bytePos() const { return (pos_ + 7) / 8; }
 
     // Raw bits, most significant first; n <= 64.
-    std::uint64_t bits(unsigned n);
+    std::uint64_t bits(unsigned n) {
+        // Fast path: one 8 byte load covers the bits (n + position in the byte <= 64).
+        const std::size_t byte = pos_ >> 3;
+        const unsigned used = static_cast<unsigned>(pos_ & 7);
+        if (n != 0 && n + used <= 64 && !failed_ && byte + 8 <= data_.size()) {
+            std::uint64_t w;
+            std::memcpy(&w, data_.data() + byte, 8);
+            w = swap64(w);  // first byte of the stream to the top
+            pos_ += n;
+            return (w << used) >> (64 - n);
+        }
+        return bitsSlow(n);
+    }
     bool b() { return bits(1) != 0; }                         // B
     unsigned bb() { return static_cast<unsigned>(bits(2)); }  // BB
     unsigned b3();                                            // 3B
@@ -68,6 +84,16 @@ public:
     std::string textUnicode();
 
 private:
+    static std::uint64_t swap64(std::uint64_t v) {
+#if defined(_MSC_VER)
+        return _byteswap_uint64(v);
+#elif defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        return v;
+#else
+        return __builtin_bswap64(v);
+#endif
+    }
+    std::uint64_t bitsSlow(unsigned n);
     std::span<const std::uint8_t> data_{};
     std::size_t pos_ = 0;
     bool failed_ = false;
