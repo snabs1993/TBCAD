@@ -132,3 +132,57 @@ TEST_CASE("BLOCKREPLACE swaps the block and keeps the placement") {
     CHECK(f.host->undo());
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->block != newId);
 }
+
+#include "tbcad/text/text.h"
+
+TEST_CASE(
+    "annotative text inside a block follows the annotation scale; extents match the drawing") {
+    text::registerDisplay();
+    Fixture f;
+    BlockId blk;
+    {
+        Transaction tx = f.doc.begin("block");
+        blk = tx.addBlock(BlockDef{.name = "Tag"}).value();
+        Entity t;
+        MTextData m;
+        m.height = 2.5;
+        m.utf8 = "ห้อง A-101";
+        t.data = Indirect<MTextData>(m);
+        t.common.annotative = true;
+        REQUIRE(tx.add(std::move(t), blk).ok());
+        REQUIRE(tx.modifyHeader([](Header& h) { h.custom[kAnnoScaleKey] = "100"; }).ok());
+        tx.commit();
+    }
+    Entity ins;
+    ins.data = Indirect<InsertData>(InsertData{blk, {1000, 500}, {2, 2}, 0});
+    EntityId id = f.add(std::move(ins));
+    const Entity* e = f.doc.find(id);
+    REQUIRE(e);
+
+    auto drawn = [&](double annoScale) {
+        geom::DisplayContext ctx;
+        ctx.pixelSizeMm = 1e-3;
+        ctx.annoScale = annoScale;
+        DisplayList out;
+        geom::buildDisplay(f.doc, *e, ctx, out);
+        BBox2 b;
+        for (const auto& it : out.items)
+            if (const auto* fl = std::get_if<DisplayFill>(&it))
+                for (const auto& r : fl->rings)
+                    for (const Vec2& p : r)
+                        b.expand(p);
+        return b;
+    };
+    const BBox2 shown = drawn(0), bounds = geom::bounds(*e, f.doc);
+    REQUIRE_FALSE(shown.empty());
+    CHECK(bounds.min.x <= shown.min.x + 1e-6);
+    CHECK(bounds.min.y <= shown.min.y + 1e-6);
+    CHECK(bounds.max.x >= shown.max.x - 1e-6);
+    CHECK(bounds.max.y >= shown.max.y - 1e-6);
+    // At 1:100 and insert scale 2 the capital height is 2.5 * 100 * 2 = 500.
+    CHECK(shown.height() > 400);
+    // A viewport at 1:50 draws it half as big.
+    const BBox2 half = drawn(50);
+    CHECK(half.height() < shown.height() * 0.6);
+    CHECK(half.height() > shown.height() * 0.4);
+}

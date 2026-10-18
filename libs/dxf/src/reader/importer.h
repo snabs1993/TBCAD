@@ -233,6 +233,8 @@ private:
         std::vector<Vec2> clip{};           // non-rectangular outline on the sheet (mm)
         std::string layer{};                // group 8: the border plots with this layer
         std::string clipHandle{};           // group 340: the boundary polyline, found at the end
+        bool locked = false;                // TBCAD XDATA "locked=1"
+        int border = -1;                    // TBCAD XDATA "border=0/1"; -1 = from the layer
     };
     struct Sheet {
         std::string foldedName{};
