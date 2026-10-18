@@ -371,3 +371,38 @@ TEST_CASE("JOINT Revolute pins two block inserts at the connection points; undo 
     CHECK(f.host->undo());
     CHECK(constraints::load(f.doc).empty());
 }
+
+TEST_CASE("JOINTLIMIT keeps the angle between two inserts in a range") {
+    Fixture f;
+    BlockId arm;
+    {
+        auto tx = f.doc.begin("arm");
+        arm = tx.addBlock(BlockDef{.name = "Arm"}).value();
+        REQUIRE(tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}}, arm).ok());
+        tx.commit();
+    }
+    auto addInsert = [&](Vec2 pos, double rot) {
+        auto tx = f.doc.begin("insert");
+        InsertData in;
+        in.block = arm;
+        in.position = pos;
+        in.rotation = rot;
+        auto id = tx.add(Entity{{}, std::move(in)}).value();
+        tx.commit();
+        return id;
+    };
+    const EntityId a = addInsert({0, 100}, 0);
+    const EntityId b = addInsert({30, 120}, 1.4);  // 80 degrees
+    // allow 0 to 45 degrees: b is turned back to 45
+    REQUIRE(
+        f.host->run("JOINTLIMIT", {"Angle", f.pick(a, {1, 100}), f.pick(b, {31, 120}), "0", "45"})
+            .finished);
+    const auto set = constraints::load(f.doc);
+    REQUIRE(set.all().size() == 1);
+    CHECK(set.all()[0].kind == constraints::Kind::AngleRange);
+    const auto* ib = entityAs<InsertData>(*f.doc.find(b));
+    REQUIRE(ib);
+    // both turn the minimum needed: what counts is the angle between them
+    CHECK(ib->rotation - entityAs<InsertData>(*f.doc.find(a))->rotation ==
+          doctest::Approx(kPi / 4).epsilon(1e-4));
+}

@@ -44,13 +44,16 @@ enum class Kind : std::uint8_t {
     PointOnObject,  // a: point; b: line (its infinite extension), circle or arc (full circle)
     Midpoint,       // a: point; b: line; the point sits at the middle of the line
     Collinear,      // a, b: lines on one common line
+    DistanceRange,  // a, b: points; the distance stays between value and value2 (mm): a joint limit
+    AngleRange,     // a, b: directions; the angle from a to b stays between value and value2 (rad)
 };
 
 struct Constraint {
     std::uint32_t id = 0;
     Kind kind = Kind::Coincident;
     Ref a{}, b{};
-    double value = 0;  // Distance, Radius, Angle
+    double value = 0;   // Distance, Radius, Angle; the lower limit of a range
+    double value2 = 0;  // the upper limit of a range
     // Dimensional constraints only: a formula over the named parameters (angles in degrees). When
     // set, `value` follows it each time applyParameters runs.
     std::string expr{};

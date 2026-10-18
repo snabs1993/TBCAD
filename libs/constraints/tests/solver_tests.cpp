@@ -580,3 +580,42 @@ TEST_CASE("insert connection points: a slider keeps the direction and slides on 
     REQUIRE(an.ok());
     CHECK(an.value().degreesOfFreedom == 1);
 }
+
+TEST_CASE("joint limits: ranges leave the geometry alone inside and push it back outside") {
+    Fixture f;
+    const BlockId arm = armBlock(f.doc);
+    const EntityId a = insertOf(f.doc, arm, {0, 0}, 0);
+    const EntityId b = insertOf(f.doc, arm, {10, 0}, 1.4);  // 80 degrees from a
+    Constraint lim = make(Kind::AngleRange, Ref{a, Part::Whole, 0}, Ref{b, Part::Whole, 0});
+    lim.value = -0.5;  // about -29 .. 46 degrees
+    lim.value2 = 0.8;
+    // angle 1.4 is outside: b turns back to the upper limit and no further
+    auto r = f.solveWith({make(Kind::Fix, whole(a)),
+                          make(Kind::Coincident, at(a, Part::Start), at(b, Part::Start)), lim});
+    CHECK(r.converged);
+    CHECK(entityAs<InsertData>(*f.doc.find(b))->rotation == doctest::Approx(0.8).epsilon(1e-5));
+    // inside the range nothing moves
+    auto r2 = f.solveWith({make(Kind::Fix, whole(a)), lim});
+    CHECK(r2.converged);
+    CHECK(entityAs<InsertData>(*f.doc.find(b))->rotation == doctest::Approx(0.8).epsilon(1e-5));
+    CHECK(validate(f.doc, make(Kind::AngleRange, Ref{a, Part::Whole, 0}, Ref{b, Part::Whole, 0}))
+              .ok());
+
+    Constraint dist = make(Kind::DistanceRange, at(a, Part::Start), at(b, Part::Start));
+    dist.value = 20;
+    dist.value2 = 30;
+    auto r3 = f.solveWith({make(Kind::Fix, whole(a)), dist});
+    CHECK(r3.converged);
+    const double d = length(entityAs<InsertData>(*f.doc.find(b))->position);
+    CHECK(d == doctest::Approx(20).epsilon(1e-5));
+    // text form keeps both limits
+    ConstraintSet set;
+    set.add(dist);
+    const ConstraintSet back = ConstraintSet::fromText(set.toText());
+    REQUIRE(back.all().size() == 1);
+    CHECK(back.all()[0].value2 == doctest::Approx(30));
+    // a range with the limits the wrong way round is refused
+    Constraint bad = dist;
+    bad.value = 40;
+    CHECK_FALSE(validate(f.doc, bad).ok());
+}

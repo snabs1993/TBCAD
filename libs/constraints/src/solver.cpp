@@ -280,6 +280,19 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
             out.push_back(wrapPi(std::atan2(cross(da, db), dot(da, db)) - c.value));
             break;
         }
+        case Kind::DistanceRange: {
+            const double d = length(m.point(v, c.a) - m.point(v, c.b));
+            out.push_back(d < c.value ? d - c.value : d > c.value2 ? d - c.value2 : 0.0);
+            break;
+        }
+        case Kind::AngleRange: {
+            const Vec2 da = m.lineB(v, c.a) - m.lineA(v, c.a);
+            const Vec2 db = m.lineB(v, c.b) - m.lineA(v, c.b);
+            const double mid = (c.value + c.value2) / 2, half = (c.value2 - c.value) / 2;
+            const double off = wrapPi(std::atan2(cross(da, db), dot(da, db)) - mid);
+            out.push_back(std::abs(off) > half ? off - std::copysign(half, off) : 0.0);
+            break;
+        }
         case Kind::Concentric: {
             const Vec2 d =
                 m.point(v, {c.a.entity, Part::Center}) - m.point(v, {c.b.entity, Part::Center});

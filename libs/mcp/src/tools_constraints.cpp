@@ -54,6 +54,12 @@ Json constraintJson(const Document& doc, const Constraint& c) {
             o["unit"] = "mm";
         }
     }
+    if (c.kind == Kind::DistanceRange || c.kind == Kind::AngleRange) {
+        const bool deg = c.kind == Kind::AngleRange;
+        o["min"] = deg ? c.value * 180.0 / kPiLocal : c.value;
+        o["max"] = deg ? c.value2 * 180.0 / kPiLocal : c.value2;
+        o["unit"] = deg ? "degrees" : "mm";
+    }
     return Json(std::move(o));
 }
 
@@ -87,7 +93,7 @@ Result<Ref> refFromJson(const Json& j) {
 std::optional<Kind> kindFromName(std::string name) {
     for (char& c : name)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (int i = 0; i <= static_cast<int>(Kind::Collinear); ++i) {
+    for (int i = 0; i <= static_cast<int>(Kind::AngleRange); ++i) {
         Kind k = static_cast<Kind>(i);
         std::string n(kindName(k));
         for (char& c : n)
@@ -169,6 +175,18 @@ ToolResult addConstraint(ToolContext& ctx, const Json& a) {
             return ToolResult::fail("value is required for " + kname + " (mm; degrees for angle)");
         c.value = c.kind == Kind::Angle ? v->asNumber() * kPiLocal / 180.0 : v->asNumber();
     }
+    if (c.kind == Kind::DistanceRange || c.kind == Kind::AngleRange) {
+        const Json* lo = a.find("value");
+        const Json* hi = a.find("value2");
+        if (!lo || !lo->isNumber() || !hi || !hi->isNumber())
+            return ToolResult::fail(
+                "value (lower limit) and value2 (upper limit) are required "
+                "for " +
+                kname + " (mm; degrees for angles)");
+        const double f = c.kind == Kind::AngleRange ? kPiLocal / 180.0 : 1.0;
+        c.value = lo->asNumber() * f;
+        c.value2 = hi->asNumber() * f;
+    }
     if (auto ok = validate(doc, c); !ok)
         return ToolResult::fail(ok.error().message);
     if (std::string why = whyReadOnly(doc, *doc.find(c.a.entity)); !why.empty())
@@ -245,18 +263,20 @@ void registerConstraintTools(ToolSet& tools) {
                "Parallel, Perpendicular, Equal, Tangent (a, b), Fix (a), Distance (a, b points; "
                "value mm), Radius (a; value mm), Angle (a, b lines; value degrees), Concentric, "
                "PointOnObject (a point, b line/circle), Midpoint "
-               "(a point, b line), Collinear. A reference may carry index: the vertex (part "
+               "(a point, b line), Collinear, DistanceRange / AngleRange (limits value..value2: "
+               "joint limits). A reference may carry index: the vertex (part "
                "start) or segment (part whole) of a polyline, from 0; inserts are points (start) "
                "and directions (whole); their index 0 is the insertion point and k the k-th POINT "
                "inside the block. Fails, "
                "leaving the drawing unchanged, when the constraints conflict.",
-               tObject({{"kind",
-                         tEnum({"Coincident", "Horizontal", "Vertical", "Parallel", "Perpendicular",
-                                "Equal", "Tangent", "Fix", "Distance", "Radius", "Angle",
-                                "Concentric", "PointOnObject", "Midpoint", "Collinear"})},
+               tObject({{"kind", tEnum({"Coincident", "Horizontal", "Vertical", "Parallel",
+                                        "Perpendicular", "Equal", "Tangent", "Fix", "Distance",
+                                        "Radius", "Angle", "Concentric", "PointOnObject",
+                                        "Midpoint", "Collinear", "DistanceRange", "AngleRange"})},
                         {"a", ref},
                         {"b", ref},
-                        {"value", tNumber("mm, or degrees for Angle")}},
+                        {"value", tNumber("mm, or degrees for Angle; the lower limit of a range")},
+                        {"value2", tNumber("the upper limit of DistanceRange / AngleRange")}},
                        {"kind", "a"}),
                outSchema({"constraint", "degreesOfFreedom"}), Edit::Document, false, false, true,
                addConstraint});
