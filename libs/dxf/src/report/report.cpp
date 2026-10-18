@@ -99,6 +99,11 @@ void Report::add(Severity severity, std::string_view code, std::string message, 
     items_.push_back({severity, std::string(code), std::move(message), line, handle});
 }
 
+void Report::summary(std::string_view code, std::string message) {
+    ++counts_[static_cast<int>(Severity::Info)];
+    items_.push_back({Severity::Info, std::string(code), std::move(message), 0, std::nullopt});
+}
+
 std::size_t Report::countCode(std::string_view code) const {
     std::size_t n = 0;
     for (const Diagnostic& d : items_) {

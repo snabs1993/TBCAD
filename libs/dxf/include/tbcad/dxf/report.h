@@ -64,6 +64,10 @@ public:
         add(Severity::Error, code, std::move(message), line, handle);
     }
 
+    // A summary line the caller keeps even when the file already filled the report: the few
+    // lines that describe a whole file must not be lost to thousands of per-object notes.
+    void summary(std::string_view code, std::string message);
+
     const std::vector<Diagnostic>& diagnostics() const { return items_; }
     // Count per severity, including diagnostics dropped after kMaxDiagnostics.
     std::size_t count(Severity severity) const { return counts_[static_cast<int>(severity)]; }
