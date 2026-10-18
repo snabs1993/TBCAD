@@ -285,3 +285,15 @@ TEST_CASE("PICKTRACE lists the objects drawn near a point") {
     host.run("PICKTRACE", {"1", "5,20"});
     CHECK(host.logContains("Nothing is drawn"));
 }
+
+TEST_CASE("CAL calculates expressions and remembers the last result as ans") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("CAL", {"2 + 3 * 4", "ans / 7", "sqrt(16) ^ 2", "1 / 0", "nonsense +"});
+    CHECK(host.logContains("= 14"));
+    CHECK(host.logContains("= 2"));
+    CHECK(host.logContains("= 16"));
+    CHECK(host.log().size() >= 5);  // the two errors were reported, not fatal
+    CHECK(f.reg.find("QC") == f.reg.find("CAL"));
+    CHECK_FALSE(host.undoStack().canUndo());
+}

@@ -10,8 +10,9 @@ tbcad_add_library(inquiry
     src/picktrace.cpp
     src/quick.cpp
     src/quickcmd.cpp
+    src/calc.cpp
     src/ui.cpp
-  DEPENDS tbcad::cmd tbcad::geom tbcad::layout tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::expr tbcad::geom tbcad::layout tbcad::ui)
 
 tbcad_add_tests(inquiry
   SOURCES
