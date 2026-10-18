@@ -81,6 +81,24 @@ int nearestPaletteIndex(Rgba color) {
     return best;
 }
 
+int penIndexOfTrueColor(Rgba color) {
+    if (int exact = paletteIndexOf(color))
+        return exact;
+    int best = 0;
+    long bestD = -1;
+    for (int i = 1; i < 250; ++i) {
+        const Rgba p = paletteColor(static_cast<std::uint8_t>(i));
+        const long dr = static_cast<long>(p.r) - color.r, dg = static_cast<long>(p.g) - color.g,
+                   db = static_cast<long>(p.b) - color.b;
+        const long d = dr * dr + dg * dg + db * db;
+        if (bestD < 0 || d < bestD) {
+            bestD = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
 Rgba applyEntry(const PlotStyleEntry& e, Rgba base) {
     Rgba c = e.color.value_or(base);
     if (e.grayscale) {

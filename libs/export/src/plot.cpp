@@ -154,7 +154,7 @@ struct Builder {
         if (s.styleTable) {
             // True colours use the entry of the nearest palette colour, so monochrome.ctb also
             // blackens them. An entry that keeps the object colour leaves them as they are.
-            if (int aci = plotstyle::nearestPaletteIndex(c)) {
+            if (int aci = plotstyle::penIndexOfTrueColor(c)) {
                 const plotstyle::PlotStyleEntry& e = s.styleTable->forIndex(aci);
                 Rgba shaded = plotstyle::applyEntry(e, plotColor(c, ColorMode::AsDisplayed));
                 if (s.color == ColorMode::AsDisplayed)
@@ -235,6 +235,10 @@ Rgba plotColor(Rgba c, ColorMode mode) {
         return {0, 0, 0, 255};
     if (lum > 0.9)  // white lines would vanish on the white sheet
         return {0, 0, 0, 255};
+    // AutoCAD's sheets print index colour 253 as grey 186, not the screen's 130 (measured in the
+    // PDF it makes of the S2312 sheet, where the column fills have layer colour 253).
+    if (base == paletteColor(253))
+        base = {186, 186, 186, 255};
     if (mode == ColorMode::Greyscale) {
         auto g = static_cast<std::uint8_t>(std::lround(lum * 255.0));
         return {g, g, g, 255};

@@ -694,11 +694,11 @@ TEST_CASE("a table that keeps grey object colours leaves a layer of index colour
     bool found = false;
     for (const auto& p : sheet.value().prims)
         if (const auto* pp = std::get_if<PlotPath>(&p)) {
-            CHECK(pp->style.color == Rgba{130, 130, 130, 255});
+            CHECK(pp->style.color == Rgba{186, 186, 186, 255});
             found = true;
         }
     CHECK(found);
     REQUIRE(sheet.value().trace.size() == 1);
     CHECK(sheet.value().trace[0].find("ACI 253") != std::string::npos);
-    CHECK(sheet.value().trace[0].find("130,130,130, 1 uses") != std::string::npos);
+    CHECK(sheet.value().trace[0].find("186,186,186, 1 uses") != std::string::npos);
 }
