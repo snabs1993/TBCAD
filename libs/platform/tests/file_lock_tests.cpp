@@ -11,9 +11,7 @@ TEST_CASE("a second lock on the same drawing is refused until the first is relea
     const fs::path dir = fs::temp_directory_path() / "tbcad_file_lock_test";
     fs::create_directories(dir);
     const fs::path drawing = dir / "plan.tbcad";
-    {
-        std::ofstream(drawing) << "x";
-    }
+    { std::ofstream(drawing) << "x"; }
     {
         FileLock first(drawing);
         CHECK(first.held());

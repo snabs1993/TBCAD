@@ -173,8 +173,8 @@ public:
                     return std::to_string(
                         std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count());
                 };
-                out_.walkNotes.push_back("calibrate took " + ms(tCal, tDec) + " ms, walked decode " +
-                                         ms(tDec, tEnd) + " ms");
+                out_.walkNotes.push_back("calibrate took " + ms(tCal, tDec) +
+                                         " ms, walked decode " + ms(tDec, tEnd) + " ms");
                 // Map entries the walk did not meet but whose frame carries their handle.
                 for (const MapEntry& e : map)
                     if (!walked_.count(e.handle) && e.offset > 0 &&

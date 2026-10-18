@@ -174,14 +174,15 @@ TEST_CASE("perf: memory of a large mixed drawing") {
             }
             const double beforeCommit = rssMb();
             tx.commit();
-            std::printf("bare document, %d entities: %.0f MB before commit, %.0f MB after (%.0f B "
-                        "each)\n",
-                        4 * m, beforeCommit - b0, rssMb() - b0,
-                        (rssMb() - b0) * 1048576 / (4.0 * m));
+            std::printf(
+                "bare document, %d entities: %.0f MB before commit, %.0f MB after (%.0f B "
+                "each)\n",
+                4 * m, beforeCommit - b0, rssMb() - b0, (rssMb() - b0) * 1048576 / (4.0 * m));
         }
     }
     auto registry = makeRegistry();
-    AppCore core(*registry, platform::AppPaths{tempDir("memmix") / "cfg", tempDir("memmix") / "data"});
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("memmix") / "cfg", tempDir("memmix") / "data"});
     core.setViewportSize(1400, 900);
     const char* env = std::getenv("TBCAD_BENCH_N");
     const int n = env ? std::atoi(env) : 100000;  // n lines + n polylines + n texts + n circles
@@ -213,11 +214,11 @@ TEST_CASE("perf: memory of a large mixed drawing") {
     core.zoomExtents();
     core.updateFrame();
     const double afterFrame = rssMb();
-    std::printf("memory for %d entities: document+index+undo %.0f MB (%.0f B each), scene %.0f MB "
-                "(%.0f B each), after zoom %.0f MB\n",
-                4 * n, afterDoc - base, (afterDoc - base) * 1048576 / (4.0 * n),
-                afterScene - afterDoc, (afterScene - afterDoc) * 1048576 / (4.0 * n),
-                afterFrame - afterScene);
+    std::printf(
+        "memory for %d entities: document+index+undo %.0f MB (%.0f B each), scene %.0f MB "
+        "(%.0f B each), after zoom %.0f MB\n",
+        4 * n, afterDoc - base, (afterDoc - base) * 1048576 / (4.0 * n), afterScene - afterDoc,
+        (afterScene - afterDoc) * 1048576 / (4.0 * n), afterFrame - afterScene);
 }
 
 TEST_CASE("perf: memory after opening a large DXF") {
@@ -230,7 +231,10 @@ TEST_CASE("perf: memory after opening a large DXF") {
         o << "0\nSECTION\n2\nENTITIES\n";
         for (int i = 0; i < n; ++i) {
             const double x = (i % 500) * 30.0, y = (i / 500) * 30.0;
-            o << "0\nLINE\n8\n0\n10\n" << x << "\n20\n" << y << "\n11\n" << x + 20 << "\n21\n"
+            o << "0\nLINE\n8\n0\n10\n"
+              << x << "\n20\n"
+              << y << "\n11\n"
+              << x + 20 << "\n21\n"
               << y + 10 << "\n";
             o << "0\nCIRCLE\n8\n0\n10\n" << x << "\n20\n" << y << "\n40\n3\n";
             o << "0\nLWPOLYLINE\n8\n0\n90\n8\n70\n0\n";
@@ -251,7 +255,8 @@ TEST_CASE("perf: memory after opening a large DXF") {
     core.zoomExtents();
     core.updateFrame();
     const double afterFrame = rssMb();
-    std::printf("open %d entities: %.0f ms, RSS +%.0f MB (%.0f B each), after first frame +%.0f MB\n",
-                4 * n, openMs, afterOpen - base, (afterOpen - base) * 1048576 / (4.0 * n),
-                afterFrame - base);
+    std::printf(
+        "open %d entities: %.0f ms, RSS +%.0f MB (%.0f B each), after first frame +%.0f MB\n",
+        4 * n, openMs, afterOpen - base, (afterOpen - base) * 1048576 / (4.0 * n),
+        afterFrame - base);
 }
