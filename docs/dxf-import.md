@@ -31,11 +31,12 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 
 | DXF | Result |
 |---|---|
-| HEADER | `$ACADVER`, `$DWGCODEPAGE` (encoding), `$INSUNITS` (units), `$LTSCALE`, `$CLAYER` |
+| HEADER | `$ACADVER`, `$DWGCODEPAGE` (encoding), `$INSUNITS` (units), `$LTSCALE`, `$CLAYER`; every other variable that holds no handle is kept in `Header::custom` (`dxf.hv.<name>`) and written back |
 | TABLES | LAYER, LTYPE (dashes only), STYLE (an `.shx` font file becomes the TBCAD Stroke font, with an info message in the report), DIMSTYLE (text height, arrow size, gaps, scale, decimals); VPORT, VIEW, UCS, APPID, BLOCK_RECORD are ignored |
 | BLOCKS | `BlockDef` (name, base point, entities); `*Model_Space` and `*Paper_Space*` are skipped; anonymous blocks (`*D1`, `*U2`) are kept with `anonymous = true`; a block used before it is defined works |
 | ENTITIES | see below; paper space entities (group 67 = 1) are skipped and counted |
-| OBJECTS, CLASSES, THUMBNAILIMAGE | skipped |
+| CLASSES | kept in `Header::custom` (`dxf.classes`) and written back |
+| OBJECTS, THUMBNAILIMAGE | skipped |
 
 | Entity | Result |
 |---|---|
@@ -55,7 +56,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | MLINE | one polyline per style element (offset along the miter); closed if the closed flag is set |
 | IMAGE (+ IMAGEDEF) | a picture block like IMAGEATTACH makes (docs/underlay.md); fade and a rectangle clip are kept, a polygon clip shows the whole picture |
 | TOLERANCE | a feature control frame block `TB_TOL_n` like the TOLERANCE command makes (docs/annotative.md): symbol, value, diameter, material condition and up to three datums are read from the gdt-font text, the size from the named dimension style (text height x overall scale), and the rotation from the direction vector; text that is not a frame stays a placeholder |
-| everything else (3DSOLID, REGION, RAY, XLINE, ...) | skipped; one warning per type with the number of entities |
+| everything else (3DSOLID, REGION, SURFACE, ...) | a read-only `ProxyData` that holds the record's groups (`ProxyData::raw`, see `kProxyDxfFresh`) and the proxy graphics when there are any. It is not shown when it has no graphics. Saving as DXF writes the record back as it was read (layer, colour and the other common properties come from the document; handles and extension dictionaries are not kept, XDATA is). Moving, rotating or scaling it marks the groups stale and only the graphics are written. Skipped, with one warning per type, when the record has nothing but common properties or the drawing's units were scaled |
 
 `ImportSummary::entities` counts, per DXF type, the records read (model space and block
 definitions), the TBCAD entities produced and the records dropped.

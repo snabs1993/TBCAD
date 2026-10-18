@@ -162,3 +162,71 @@ TEST_CASE("header variables and classes TBCAD does not model survive open, save 
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("an entity type without a reader is written back as it was, until it is moved") {
+    const std::string src =
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\n3DSOLID\n  5\nAB\n330\n1F\n100\nAcDbEntity\n  8\nWALLS\n 62\n     3\n"
+        "100\nAcDbModelerGeometry\n 70\n     1\n  1\nSOLID DATA \xE0\xB8\x81\n  3\nmore data\n"
+        "310\n0A0B0C\n 40\n2.5\n350\n77\n1001\nMYAPP\n1000\nkept xdata\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+    Report r1;
+    Result<ImportResult> first = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(first.ok());
+    Document& doc = *first.value().document;
+    REQUIRE(doc.modelSpace().size() == 1);
+
+    auto exportText = [&](const Document& d) {
+        Report r;
+        Result<ExportResult> out = exportDxf(d, ExportOptions{}, r);
+        REQUIRE(out.ok());
+        return out.value().bytes;
+    };
+
+    auto saved = io::writeTbcadToMemory(doc);
+    REQUIRE(saved.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(saved.value(), ioReport);
+    REQUIRE(reopened.ok());
+
+    const std::string text = exportText(*reopened.value());
+    const std::size_t at = text.find("\r\n3DSOLID\r\n");
+    REQUIRE(at != std::string::npos);
+    const std::string rec = text.substr(at, text.find("\r\n0\r\n", at + 4) - at);
+    CHECK(rec.find("\r\n8\r\nWALLS\r\n") != std::string::npos);
+    CHECK(rec.find("\r\n100\r\nAcDbModelerGeometry\r\n") != std::string::npos);
+    CHECK(rec.find("\r\n1\r\nSOLID DATA \\U+0E01\r\n") != std::string::npos);
+    CHECK(rec.find("\r\n3\r\nmore data\r\n") != std::string::npos);
+    CHECK(rec.find("\r\n310\r\n0A0B0C\r\n") != std::string::npos);
+    CHECK(rec.find("\r\n40\r\n2.5\r\n") != std::string::npos);
+    CHECK(rec.find("kept xdata") != std::string::npos);
+    CHECK(rec.find("\r\n350\r\n77\r\n") == std::string::npos);  // handles are the source file's
+
+    // Written once, and a second generation is the same record.
+    CHECK(text.find("\r\n3DSOLID\r\n") == text.rfind("\r\n3DSOLID\r\n"));
+    Report r3;
+    Result<ImportResult> again = importDxf(std::as_bytes(std::span(text)), ImportOptions{}, r3);
+    REQUIRE(again.ok());
+    const std::string text2 = exportText(*again.value().document);
+    const std::size_t at2 = text2.find("\r\n3DSOLID\r\n");
+    REQUIRE(at2 != std::string::npos);
+    CHECK(text2.substr(at2, text2.find("\r\n0\r\n", at2 + 4) - at2).find("\r\n310\r\n0A0B0C\r\n") !=
+          std::string::npos);
+
+    // Moved: the groups no longer fit, so the entity is no longer written as it was.
+    Document& d = *reopened.value();
+    {
+        auto tx = d.begin("move");
+        REQUIRE(tx.modify(d.modelSpace()[0], [](Entity& e) {
+                      staleProxyDxf(*entityAs<ProxyData>(e));
+                  }).ok());
+        tx.commit();
+    }
+    CHECK(exportText(d).find("\r\n3DSOLID\r\n") == std::string::npos);
+}
+
+}  // namespace tbcad::dxf

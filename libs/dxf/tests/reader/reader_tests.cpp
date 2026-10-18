@@ -817,7 +817,7 @@ TEST_CASE("an older version than R12 is refused") {
 TEST_CASE("the JSON report lists counts, units, encoding and diagnostics") {
     Loaded l = loadCorpus("unknown_entities.dxf");
     std::string json = l.result.summary.toJson(l.report);
-    CHECK(json.find("\"3DSOLID\":{\"read\":2,\"imported\":0,\"skipped\":2}") != std::string::npos);
+    CHECK(json.find("\"3DSOLID\":{\"read\":2,\"imported\":1,\"skipped\":1}") != std::string::npos);
     CHECK(json.find("\"encoding\":\"ANSI_1252\"") != std::string::npos);
     CHECK(json.find("dxf.reader.skipped_entity") != std::string::npos);
 }

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "importer.h"
+#include "keep.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/spline.h"
 #include "tbcad/mline/mline.h"
@@ -1507,22 +1508,54 @@ bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {
 // is kept when it carries proxy graphics: they are drawn as a read-only proxy named after the
 // DXF type. Without graphics it is skipped, as before.
 bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
-    std::vector<std::uint8_t> gfx = proxyGraphicsOf(r);
-    if (gfx.size() < 16)
-        return false;
     ProxyData d;
     d.originalType = std::string(r.type);
     std::vector<Entity> texts;
+    std::size_t unknown = 0;
     std::string problem;
-    std::size_t unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
-    if (d.graphics.items.empty() && texts.empty())
+    std::vector<std::uint8_t> gfx = proxyGraphicsOf(r);
+    if (gfx.size() >= 16)
+        unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
+
+    // The record itself, to be written back unchanged (valid while the units were not scaled).
+    std::string kept;
+    if (k_ == 1) {
+        std::string body;
+        for (const Group& g : r.g) {
+            const int c = g.code;
+            if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 ||
+                c == 102 || c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 ||
+                c >= 1000 || handleCode(c) || (c >= 480 && c <= 481) ||
+                (c == 100 && g.str() == "AcDbEntity"))
+                continue;
+            std::string text;
+            if (!keptValue(g, [&](std::string_view v) { return dec(v); }, text)) {
+                body.clear();
+                break;
+            }
+            packGroup(body, c, text);
+        }
+        if (!body.empty()) {
+            kept = std::string(kProxyDxfFresh) + body;
+            d.raw.assign(kept.begin(), kept.end());
+        }
+    }
+    if (d.graphics.items.empty() && texts.empty() && kept.empty())
         return false;
     std::string type(r.type);
     if (foreignShown_.insert(type).second) {
-        report_.info(
-            code::kProxyGraphics,
-            type + ": no reader for this object; shown from its proxy graphics (read-only)",
-            r.line);
+        if (!d.graphics.items.empty() || !texts.empty()) {
+            report_.info(
+                code::kProxyGraphics,
+                type + ": no reader for this object; shown from its proxy graphics (read-only)",
+                r.line);
+        } else {
+            report_.info(code::kProxyGraphics,
+                         type +
+                             ": no reader for this object; kept as it is and written back to "
+                             "DXF (not shown)",
+                         r.line);
+        }
     }
     if (!problem.empty())
         report_.warn(code::kProxyDamaged, type + ": " + problem, r.line, handleOf(r));
