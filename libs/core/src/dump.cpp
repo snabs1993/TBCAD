@@ -366,7 +366,10 @@ std::string canonicalDump(const Document& doc) {
         o.quoted(r.fontFamily);
         o << " ";
         o.quoted(r.fontFile);
-        o << " wf" << r.widthFactor << " ob" << r.oblique << "\n";
+        o << " wf" << r.widthFactor << " ob" << r.oblique;
+        if (r.height > 0)
+            o << " h" << r.height;
+        o << "\n";
     }
     for (const auto& [id, r] : doc.dimStyles()) {
         o << "dimstyle " << id << " ";

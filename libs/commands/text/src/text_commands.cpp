@@ -31,6 +31,13 @@ double autoTextHeight(CommandContext& ctx) {
                                                   kBase);
 }
 
+// The fixed height of a text style (0 = variable). A null id means the document's current style.
+double fixedStyleHeight(CommandContext& ctx, TextStyleId id) {
+    const Document& doc = ctx.doc();
+    const TextStyle* s = doc.textStyle(id ? id : doc.header().currentTextStyle);
+    return s && s->height > 0 ? s->height : 0;
+}
+
 double settingNumber(CommandContext& ctx, const char* key, double fallback) {
     if (auto s = ctx.host().setting(key)) {
         char* end = nullptr;
@@ -168,7 +175,11 @@ public:
                 co_return;
             d.alignPoint = e.point;
         }
-        if (just.h != HAlign::Aligned) {
+        // A style with a fixed height sets it; no question, as in AutoCAD.
+        const double fixed = fixedStyleHeight(ctx, style);
+        if (fixed > 0) {
+            height = fixed;
+        } else if (just.h != HAlign::Aligned) {
             cmd::DistanceOptions dop;
             dop.base = start;
             dop.defaultValue = height;
@@ -188,7 +199,7 @@ public:
             d.rotation = a.value;
         }
         d.height = height;
-        if (just.h != HAlign::Aligned)
+        if (just.h != HAlign::Aligned && fixed <= 0)
             rememberHeight(ctx, height);
         ctx.host().setSetting(kJustifyKey, just.name);
 
@@ -231,6 +242,7 @@ private:
 
 struct MTextState {
     double height = 2.5;
+    bool heightChosen = false;  // the Height option was used: it beats the style's fixed height
     double rotation = 0;
     double width = -1;  // -1 = from the corners
     Attachment attach = Attachment::TopLeft;
@@ -245,8 +257,10 @@ Task mtextOption(CommandContext& ctx, MTextState& st, const std::string& option,
         o.defaultValue = st.height;
         o.allowZero = false;
         auto r = co_await ctx.getDistance("Specify height", o);
-        if (r.ok())
+        if (r.ok()) {
             st.height = r.value;
+            st.heightChosen = true;
+        }
     } else if (option == "Justify") {
         cmd::KeywordOptions o;
         for (const Attach& a : kAttach)
@@ -369,7 +383,8 @@ public:
         d.position = first + Vec2{c * local.x - s * local.y, s * local.x + c * local.y};
         d.rotation = st.rotation;
         d.attach = st.attach;
-        d.height = st.height;
+        const double fixed = st.heightChosen ? 0 : fixedStyleHeight(ctx, st.style);
+        d.height = fixed > 0 ? fixed : st.height;
         d.style = st.style;
         d.width = st.width >= 0 ? st.width : (xmax - xmin);
         if (d.width < tol::kLinear)
@@ -394,7 +409,8 @@ public:
         if (!t.ok())
             co_return;
         d.utf8 = t.text;
-        rememberHeight(ctx, st.height);
+        if (fixed <= 0)
+            rememberHeight(ctx, st.height);
         for (const Attach& a : kAttach)
             if (a.a == st.attach)
                 ctx.host().setSetting(kAttachKey, a.name);

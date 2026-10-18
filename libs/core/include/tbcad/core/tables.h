@@ -51,6 +51,9 @@ struct TextStyle {
     std::string fontFile{};
     double widthFactor = 1;
     double oblique = 0;  // radians
+    // Fixed text height (AutoCAD's STYLE height). 0 = variable: the height is asked for or taken
+    // from the drawing's sizing; above 0 every TEXT / MTEXT in this style gets that height.
+    double height = 0;
 };
 
 enum class ArrowType { ClosedFilled, Open30, ArchTick, Dot, None };

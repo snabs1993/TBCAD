@@ -75,6 +75,7 @@ TEST_CASE("all geometry kinds, properties and tables survive an export and re-im
         arial.fontFile = "arial.ttf";
         arial.widthFactor = 0.8;
         arial.oblique = 0.2;
+        arial.height = 4;
         TextStyleId arialId = tx.addTextStyle(arial).value();
         DimStyle arch;
         arch.name = "Arch";

@@ -83,10 +83,20 @@ is done by the renderer from the rings.
 | `MTEXT` | `MT` | first corner `[Height/Justify/Rotation/Style/Width]`, opposite corner (rectangle preview), text (type `\P` for a new line) |
 | `TXT2MTXT` | | select single-line and multiline text; they are merged top to bottom into one multiline text and the originals are erased |
 | `TCOUNT` | | select single-line text in the order you want, then give a start number, an increment, a prefix and a suffix; each text is replaced by its number |
-| `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle; makes it current |
+| `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle, fixed height (0 = variable); makes it current |
 | `TEXTEDIT` | `ED`, `DDEDIT` | selected text (pre-selection works), new text; the old text is the default |
 
 The **Text** panel (View > panels) edits the single selected text object in a multiline input
 with B / I / Height buttons that wrap the selected text in markup. Apply runs `TEXTEDIT`, so an
 edit is one undo step. It uses the ordinary ImGui text input, so the Windows IME works as it does
 in the command line.
+
+## Fixed text height
+
+A text style has a height like AutoCAD's STYLE height (`TextStyle::height`). 0 means variable: TEXT
+asks for the height and MTEXT starts from the size the drawing needs (annotation scale, the view,
+the size of the drawing). Above 0, every TEXT in the style gets that height without asking, and
+MTEXT too unless the Height option is used. Set it with STYLE, `-STYLE` Edit Height, or the text
+style panel. It is read from and written to DXF (group 40 of the STYLE record; DWG goes through the
+same reader). In `.tbcad` it is a separate `TSTH` chunk (format minor 11) that programs which do not
+know it keep unchanged; collaboration change records are version 3 (version 2 is still read).

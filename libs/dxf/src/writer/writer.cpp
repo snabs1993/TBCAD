@@ -496,7 +496,7 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
     for (const auto& [id, ts] : doc_.textStyles()) {
         tableRecord(o, "STYLE", newHandle(), table, "AcDbTextStyleTableRecord", tsName_[id.value],
                     0);
-        o.d(40, 0);
+        o.d(40, ts.height);
         o.d(41, ts.widthFactor);
         o.d(50, ts.oblique * kDeg);
         o.i(71, 0);

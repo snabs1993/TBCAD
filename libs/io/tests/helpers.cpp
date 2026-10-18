@@ -45,7 +45,8 @@ std::unique_ptr<Document> makeRichDocument() {
                                                  .fontFamily = "Sarabun",
                                                  .fontFile = "Sarabun-Regular.ttf",
                                                  .widthFactor = 0.9,
-                                                 .oblique = 0.1}));
+                                                 .oblique = 0.1,
+                                                 .height = 3.5}));
         must(tx.modifyTextStyle(kTextStyleStandard, [](TextStyle& t) { t.fontFamily = "Lato"; }));
         DimStyle arch;
         arch.name = "Arch";

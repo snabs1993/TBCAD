@@ -69,7 +69,13 @@ std::string applyProperty(TextStyle& s, const std::string& key, const std::strin
         s.oblique = v * kPi / 180.0;
         return {};
     }
-    return "Unknown property " + key + " (Font, Width, Oblique).";
+    if (same("Height")) {
+        if (v < 0)
+            return "The height cannot be negative (0 = variable).";
+        s.height = v;
+        return {};
+    }
+    return "Unknown property " + key + " (Font, Width, Oblique, Height).";
 }
 
 class StyleManagerCommand final : public cmd::Command {
@@ -157,7 +163,7 @@ public:
             } else if (k.keyword == "Edit") {
                 for (;;) {
                     cmd::KeywordOptions po;
-                    po.keywords = {"Font", "Width", "Oblique", "Done"};
+                    po.keywords = {"Font", "Width", "Oblique", "Height", "Done"};
                     po.defaultKeyword = "Done";
                     auto p = co_await ctx.getKeyword("Property of \"" + name + "\"", po);
                     if (!p.ok() || p.keyword == "Done")

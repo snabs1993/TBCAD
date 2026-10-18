@@ -17,12 +17,13 @@ struct Fixture {
 
 TEST_CASE("STYLE creates a style and makes it current") {
     Fixture f;
-    auto r = f.host.run("ST", {"Narrow", "Sarabun", "0.8", "15"});
+    auto r = f.host.run("ST", {"Narrow", "Sarabun", "0.8", "15", "5"});
     CHECK(r.finished);
     const TextStyle* s = f.doc.textStyleByName("Narrow");
     REQUIRE(s);
     CHECK(s->widthFactor == doctest::Approx(0.8));
     CHECK(s->oblique == doctest::Approx(15 * kPi / 180));
+    CHECK(s->height == doctest::Approx(5));
     CHECK(s->fontFamily.empty());  // the bundled font needs no family
     CHECK(f.doc.header().currentTextStyle == s->id);
     CHECK(f.host.undoStack().undoLabel() == "STYLE");
@@ -33,13 +34,13 @@ TEST_CASE("STYLE creates a style and makes it current") {
 
 TEST_CASE("STYLE changes an existing style - font files and families are stored") {
     Fixture f;
-    f.host.run("STYLE", {"Standard", "Some Family", "1", "0"});
+    f.host.run("STYLE", {"Standard", "Some Family", "1", "0", "0"});
     const TextStyle* s = f.doc.textStyleByName("Standard");
     REQUIRE(s);
     CHECK(s->fontFamily == "Some Family");
     CHECK(f.host.logContains("Font not found"));  // reported, still stored
 
-    f.host.run("STYLE", {"Standard", "D:\\fonts\\My.ttf", "1", "0"});
+    f.host.run("STYLE", {"Standard", "D:\\fonts\\My.ttf", "1", "0", "0"});
     s = f.doc.textStyleByName("Standard");
     CHECK(s->fontFile == "D:\\fonts\\My.ttf");
     CHECK(s->fontFamily.empty());
@@ -56,7 +57,7 @@ TEST_CASE("STYLE ? lists the styles - Esc changes nothing") {
 TEST_CASE("text style drives the layout: width factor changes the text width") {
     Fixture f;
     f.host.run("TEXT", {"0,0", "10", "0", "TBCAD"});
-    f.host.run("STYLE", {"Half", "Sarabun", "0.5", "0"});
+    f.host.run("STYLE", {"Half", "Sarabun", "0.5", "0", "0"});
     f.host.run("TEXT", {"0,0", "10", "0", "TBCAD"});
     std::vector<double> widths;
     for (EntityId id : f.doc.modelSpace()) {
@@ -68,4 +69,47 @@ TEST_CASE("text style drives the layout: width factor changes the text width") {
     double full = text::measureWidth(f.doc.textStyle(kTextStyleStandard), "TBCAD", 10);
     CHECK(widths[0] == doctest::Approx(full / 2));
     CHECK(widths[1] == doctest::Approx(full / 2));
+}
+
+TEST_CASE("a style with a fixed height sets the height of TEXT and MTEXT - 0 keeps it variable") {
+    Fixture f;
+    f.host.run("ST", {"Fixed", "Sarabun", "1", "0", "7"});
+    // TEXT asks no height: start point, rotation, then the text.
+    f.host.run("TEXT", {"0,0", "0", "label"});
+    const TextData* t = nullptr;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<TextData>(e))
+            t = d;
+    });
+    REQUIRE(t);
+    CHECK(t->height == doctest::Approx(7));
+    // MTEXT takes it too, unless the Height option is used.
+    f.host.run("MTEXT", {"0,50", "40,20", "boxed"});
+    f.host.run("MTEXT", {"H", "3", "0,90", "40,60", "chosen"});
+    std::vector<double> heights;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* m = entityAs<MTextData>(e))
+            heights.push_back(m->height);
+    });
+    REQUIRE(heights.size() == 2);
+    CHECK(heights[0] == doctest::Approx(7));
+    CHECK(heights[1] == doctest::Approx(3));
+    // Back to variable: the height question returns.
+    f.host.run("ST", {"Fixed", "Sarabun", "1", "0", "0"});
+    CHECK(f.doc.textStyleByName("Fixed")->height == 0);
+    f.host.run("TEXT", {"0,200", "4", "0", "free"});
+    double last = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<TextData>(e))
+            last = d->height;
+    });
+    CHECK(last == doctest::Approx(4));
+}
+
+TEST_CASE("-STYLE Edit sets the fixed height") {
+    Fixture f;
+    f.host.run("-STYLE", {"Edit", "Standard", "Height", "3.5", "Done", "Done"});
+    CHECK(f.doc.textStyle(kTextStyleStandard)->height == doctest::Approx(3.5));
+    f.host.run("-STYLE", {"Edit", "Standard", "Height", "-1", "Done", "Done"});
+    CHECK(f.doc.textStyle(kTextStyleStandard)->height == doctest::Approx(3.5));
 }

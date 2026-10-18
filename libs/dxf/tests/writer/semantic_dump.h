@@ -277,7 +277,8 @@ private:
             // An empty font is written as "txt", AutoCAD's default.
             rows.push_back("textstyle " + s.name + " font " +
                            (s.fontFile.empty() ? std::string("txt") : s.fontFile) + " wf " +
-                           formatDouble(s.widthFactor) + " ob " + formatDouble(s.oblique));
+                           formatDouble(s.widthFactor) + " ob " + formatDouble(s.oblique) + " h " +
+                           formatDouble(s.height));
         }
         std::sort(rows.begin(), rows.end());
         lines_.insert(lines_.end(), rows.begin(), rows.end());

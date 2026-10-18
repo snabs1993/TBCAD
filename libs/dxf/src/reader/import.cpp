@@ -468,6 +468,9 @@ void Importer::readStyle(const Record& r) {
     }
     double wf = r.num(41, 1);
     ts.widthFactor = (std::isfinite(wf) && wf > 0) ? wf : 1;
+    ts.height = r.num(40, 0);
+    if (!std::isfinite(ts.height) || ts.height < 0)
+        ts.height = 0;
     ts.oblique = r.num(50, 0) * kPi / 180.0;
     if (!std::isfinite(ts.oblique))
         ts.oblique = 0;
@@ -478,6 +481,7 @@ void Importer::readStyle(const Record& r) {
             t.fontFamily = ts.fontFamily;
             t.widthFactor = ts.widthFactor;
             t.oblique = ts.oblique;
+            t.height = ts.height;
         });
         return;
     }
