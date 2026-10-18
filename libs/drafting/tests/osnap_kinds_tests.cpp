@@ -118,3 +118,41 @@ TEST_CASE("tangent from an external point touches a spline where the chord is ta
     const Vec2 t = snapped(w, {13, 8}, "tangent", Vec2{30, 0});
     CHECK(near(t, {x0, 2 * x0 - x0 * x0 / 10}, 1e-2));
 }
+
+TEST_CASE("intersection snaps on ellipse, spline and polyline arcs") {
+    {
+        World w;
+        addEllipse(w, {0, 0}, {40, 0}, 0.5);
+        w.line({-50, 10}, {50, 10});
+        // y = 10: x = 40 * sqrt(1 - 0.25) = 34.641016
+        const double x = 40 * std::sqrt(0.75);
+        CHECK(near(snapped(w, {x - 3, 11}, "intersection"), {x, 10}, 1e-6));
+        CHECK(near(snapped(w, {-x + 3, 9}, "intersection"), {-x, 10}, 1e-6));
+    }
+    {
+        World w;
+        addSpline(w);
+        w.line({0, 5}, {20, 5});
+        // y = 2x - x^2/10 = 5  ->  x = 10 - sqrt(50)
+        const double x = 10 - std::sqrt(50.0);
+        CHECK(near(snapped(w, {x + 2, 6}, "intersection"), {x, 5}, 1e-4));
+    }
+    {
+        World w;
+        addBulged(w);
+        w.line({5, -10}, {5, 10});
+        // The half circle below the chord crosses x = 5 at (5, -5); the chord is not a segment of
+        // the polyline, so only the arc and the line (10,0)-(10,10) matter.
+        CHECK(near(snapped(w, {6, -4}, "intersection"), {5, -5}, 1e-6));
+    }
+    {
+        World w;
+        addEllipse(w, {0, 0}, {40, 0}, 0.5);
+        w.circle({0, 0}, 20);
+        // The circle of radius 20 touches the ellipse at (0, +-20) (tangent): a double
+        // intersection must not produce NaN or hang, whichever it reports.
+        const Vec2 p = snapped(w, {2, 19}, "intersection");
+        CHECK(std::isfinite(p.x));
+        CHECK(std::isfinite(p.y));
+    }
+}
