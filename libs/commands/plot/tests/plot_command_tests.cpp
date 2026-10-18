@@ -491,3 +491,20 @@ TEST_CASE("PLOT offers monochrome.ctb when the layout's style table cannot be fo
     CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
     CHECK(std::filesystem::exists(out));
 }
+
+TEST_CASE("a plot style chosen after the layout overrides the layout's page setup") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Detail", "A3", true).ok());
+        tx.commit();
+    }
+    CHECK(f.host->run("EXPORTSVG", {"Style", "none", "", f.path("x.svg")}).finished);
+    CHECK(f.host->run("PAGESETUP", {"Save", "Plain"}).finished);
+    CHECK(f.host->run("PAGESETUP", {"Assign", "Plain", "Detail"}).finished);
+    CHECK(f.host
+              ->run("EXPORTSVG",
+                    {"Layout", "Detail", "Style", "monochrome.ctb", "Export", f.path("z.svg")})
+              .finished);
+    CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
+}
