@@ -23,6 +23,7 @@ std::unique_ptr<cmd::Command> makeFieldCommand();
 std::unique_ptr<cmd::Command> makeScaleListCommand();
 std::unique_ptr<cmd::Command> makeTxt2MTxtCommand();
 std::unique_ptr<cmd::Command> makeTCountCommand();
+std::unique_ptr<cmd::Command> makeSpellCommand();
 std::unique_ptr<cmd::Command> makeTxtExpCommand();
 std::unique_ptr<cmd::Command> makeTextAlignCommand();
 std::unique_ptr<cmd::Command> makeArcTextCommand();

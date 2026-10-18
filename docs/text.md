@@ -84,6 +84,7 @@ is done by the renderer from the rings.
 | `MTEXT` | `MT` | first corner `[Height/Justify/Rotation/Style/Width]`, opposite corner (rectangle preview), text (type `\P` for a new line) |
 | `TXT2MTXT` | | select single-line and multiline text; they are merged top to bottom into one multiline text and the originals are erased |
 | `TCOUNT` | | select single-line text in the order you want, then give a start number, an increment, a prefix and a suffix; each text is replaced by its number |
+| `SPELL` | | select text; each English word that is not in the dictionary asks Ignore / Change / Add / All. Words with Thai or other non-ASCII letters, digits or all capitals are never flagged. Added words are saved in the drawing |
 | `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle, fixed height (0 = variable); makes it current |
 | `TEXTEDIT` | `ED`, `DDEDIT` | selected text (pre-selection works), new text; the old text is the default |
 
