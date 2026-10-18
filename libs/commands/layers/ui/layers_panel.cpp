@@ -563,7 +563,19 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             ImGui::TableSetColumnEnabled(3, static_cast<bool>(vp));
             vpShown = static_cast<bool>(vp);
         }
+        const float headerTop = ImGui::GetCursorScreenPos().y;
         ImGui::TableHeadersRow();
+        {
+            const int col = ImGui::TableGetHoveredColumn();
+            const float my = ImGui::GetMousePos().y;
+            const char* tip = col == 3   ? "Freeze this layer in the selected layout viewport only"
+                              : col == 2 ? "Freeze in the whole drawing"
+                              : col == 1 ? "Show or hide the layer"
+                              : col == 4 ? "Lock: visible but cannot be edited"
+                                         : nullptr;
+            if (tip && my >= headerTop && my <= headerTop + ImGui::GetFrameHeight())
+                ImGui::SetTooltip("%s", tip);
+        }
 
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(rows.size()));

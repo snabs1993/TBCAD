@@ -341,6 +341,26 @@ private:
     const char* description_;
 };
 
+// MSPACE / PSPACE: switch between editing the model through a viewport and the sheet.
+class SpaceCommand final : public cmd::Command {
+public:
+    SpaceCommand(const char* name, const char* alias, const char* space, const char* description)
+        : name_(name), alias_(alias), space_(space), description_(description) {}
+    std::string_view name() const override { return name_; }
+    std::vector<std::string> defaultAliases() const override { return {alias_}; }
+    std::string_view description() const override { return description_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi(std::string("space:") + space_);
+        co_return;
+    }
+
+private:
+    const char* name_;
+    const char* alias_;
+    const char* space_;
+    const char* description_;
+};
+
 class SaveAsTemplateCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SAVEASTEMPLATE"; }
@@ -545,6 +565,10 @@ private:
 
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
+    (void)registry.add(std::make_unique<SpaceCommand>(
+        "MSPACE", "MS", "model", "Edit the model through the selected viewport of a layout"));
+    (void)registry.add(std::make_unique<SpaceCommand>(
+        "PSPACE", "PS", "paper", "Go back to the layout sheet from model space"));
     (void)registry.add(std::make_unique<ZoomCommand>("ZE", "Extents"));
     (void)registry.add(std::make_unique<PanCommand>());
     (void)registry.add(std::make_unique<DevGenCommand>());

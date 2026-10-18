@@ -121,6 +121,25 @@ TEST_CASE("double click in a viewport goes to model space showing that viewport"
     CHECK(core.camera().visibleWorld().max.x - core.camera().visibleWorld().min.x >= 10000);
 }
 
+TEST_CASE("MSPACE enters the model through a viewport and PSPACE returns to the sheet") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper4") / "cfg", tempDir("paper4") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.submitText("MSPACE");
+    CHECK_FALSE(core.inPaperSpace());
+    CHECK(core.camera().center.x == doctest::Approx(5000).epsilon(0.01));
+    core.submitText("PSPACE");
+    CHECK(core.inPaperSpace());
+}
+
 TEST_CASE("objects can be drawn on, picked and erased from a layout sheet") {
     auto registry = makeRegistry();
     AppCore core(*registry,
