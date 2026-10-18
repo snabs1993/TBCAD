@@ -9,6 +9,8 @@
 #include <filesystem>
 
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/core/dump.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/ui/app_core.h"
 
 using namespace tbcad;
@@ -105,4 +107,77 @@ TEST_CASE("perf: whole-drawing edits with undo and redo") {
     big.core->submitText("Other");
     big.core->submitText("");
     big.bench("CHPROP-L", {"CHPROP", "Layer", "Other", ""});
+}
+
+namespace {
+double rssMb() {
+    std::FILE* f = std::fopen("/proc/self/status", "r");
+    if (!f)
+        return 0;
+    char line[256];
+    double kb = 0;
+    while (std::fgets(line, sizeof line, f))
+        if (std::sscanf(line, "VmRSS: %lf kB", &kb) == 1)
+            break;
+    std::fclose(f);
+    return kb / 1024.0;
+}
+}  // namespace
+
+TEST_CASE("perf: memory of the undo stack after 50 whole-drawing edits") {
+    Big big;
+    const double base = rssMb();
+    std::printf("undo memory: %zu objects, %.0f MB before any edit, limit %.0f MB\n",
+                big.core->document().modelSpaceCount(), base,
+                static_cast<double>(big.core->undoStack().limitBytes()) / 1048576.0);
+    for (int i = 1; i <= 50; ++i) {
+        big.core->selectAll();
+        for (const char* l : {"MOVE", "0,0", "1,1"})
+            big.core->submitText(l);
+        if (i % 10 == 0 || i == 1)
+            std::printf("  after %2d edits: %zu steps kept, stack says %.0f MB, process %.0f MB\n",
+                        i, big.core->undoStack().undoCount(),
+                        static_cast<double>(big.core->undoStack().usedBytes()) / 1048576.0,
+                        rssMb());
+    }
+    CHECK(big.core->undoStack().usedBytes() <= big.core->undoStack().limitBytes());
+}
+
+TEST_CASE("perf: save and open of a big drawing keep every object") {
+    Big big;
+    const std::size_t count = big.core->document().modelSpaceCount();
+    const auto path = big.dir / "big.tbcad";
+    auto t = std::chrono::steady_clock::now();
+    auto saved = big.core->saveAs(path);
+    const double saveMs = ms(t);
+    REQUIRE(saved.ok());
+    {
+        t = std::chrono::steady_clock::now();
+        auto mem = io::writeTbcadToMemory(big.core->document());
+        const double encodeMs = ms(t);
+        REQUIRE(mem.ok());
+        io::WriteOptions raw;
+        raw.compress = false;
+        t = std::chrono::steady_clock::now();
+        auto memRaw = io::writeTbcadToMemory(big.core->document(), raw);
+        const double rawMs = ms(t);
+        io::IoReport rep;
+        t = std::chrono::steady_clock::now();
+        auto back = io::readTbcad(std::span<const std::uint8_t>(mem.value()), rep);
+        const double decodeMs = ms(t);
+        std::printf("  encode %.0f ms (%.1f MB), without deflate %.0f ms (%.1f MB), decode %.0f ms\n",
+                    encodeMs, static_cast<double>(mem.value().size()) / 1e6, rawMs,
+                    static_cast<double>(memRaw.value().size()) / 1e6, decodeMs);
+    }
+    ui::AppCore fresh(big.registry, platform::AppPaths{big.dir / "cfg2", big.dir / "data2"});
+    fresh.setViewportSize(1400, 900);
+    t = std::chrono::steady_clock::now();
+    auto opened = fresh.openFile(path);
+    fresh.updateFrame();
+    const double openMs = ms(t);
+    REQUIRE(opened.ok());
+    std::printf("save %zu objects: %.0f ms (%.1f MB)   open: %.0f ms\n", count, saveMs,
+                static_cast<double>(std::filesystem::file_size(path)) / 1e6, openMs);
+    CHECK(fresh.document().modelSpaceCount() == count);
+    CHECK(canonicalDump(fresh.document()) == canonicalDump(big.core->document()));
 }
