@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -109,6 +110,38 @@ TEST_CASE("SHX font styles: found file is drawn, missing file is reported and re
     DisplayList l = build(doc, e);
     CHECK(maxY(l) == doctest::Approx(5.0).epsilon(0.02));
 
+    setFontSearchPaths({});
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("SHX font styles: 20,000 texts lay out without scanning the font folders each time") {
+    const auto dir = std::filesystem::temp_directory_path() / "tbcad_shx_many";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    for (int i = 0; i < 3000; ++i)
+        std::ofstream(dir / ("font" + std::to_string(i) + ".shx"), std::ios::binary) << "x";
+    Document doc;
+    TextStyleId style;
+    {
+        Transaction tx = doc.begin("style");
+        TextStyle s;
+        s.name = "Romans";
+        s.shxFile = "romans.shx";  // not in the folder: the stroke font stands in
+        s.fontFamily = "TBCAD Stroke";
+        style = tx.addTextStyle(s).value();
+        tx.commit();
+    }
+    setFontSearchPaths({dir});
+    TextData t;
+    t.utf8 = "12.5";
+    t.height = 2;
+    t.style = style;
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 20000; ++i)
+        (void)layoutText(doc, t);
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    CHECK(ms < 3000);
     setFontSearchPaths({});
     std::filesystem::remove_all(dir);
 }
