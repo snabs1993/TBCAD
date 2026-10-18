@@ -880,7 +880,7 @@ void SpatialIndex::queryImpl(const BBox2& window, Visitor visit) const {
             return;
     if (im.root == kNil)
         return;
-    std::uint32_t stack[64];
+    std::uint32_t stack[512];  // depth * (kMaxEntries - 1) + 1, with room to spare
     int top = 0;
     stack[top++] = im.root;
     while (top > 0) {

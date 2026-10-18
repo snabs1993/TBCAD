@@ -262,7 +262,7 @@ TEST_CASE("Select objects accepts All, Last and Previous typed like AutoCAD") {
     Fixture h;
     add(h.doc, LineData{{1, 1}, {5, 3}});
     h.host.run("MIRROR", {"Nonsense", "Cancel"});
-    CHECK(h.host.logContains("type All, Last or Previous"));
+    CHECK(h.host.logContains("type Window, Crossing, WPolygon"));
     (void)a;
     (void)b;
 }

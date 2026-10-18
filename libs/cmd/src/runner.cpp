@@ -160,6 +160,10 @@ void CommandRunner::finishTop(bool failed, std::string_view error, bool notify) 
 void CommandRunner::refreshPrompt() {
     collected_.clear();
     collectedSet_.clear();
+    shape_ = SelShape::None;
+    shapePts_.clear();
+    removeMode_ = false;
+    selUndo_.clear();
     previewList_.items.clear();
     if (stack_.empty() || !stack_.back().ctx->hasPending()) {
         prompt_.reset();
@@ -355,6 +359,94 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         }
     };
 
+    // Adds (or, in Remove mode / with Shift, removes) a batch of objects at "Select objects:".
+    auto applyBatch = [&](const std::vector<EntityId>& ids, bool shift,
+                          const std::string& none) -> SubmitResult {
+        const bool remove = !req.single && (removeMode_ || shift);
+        std::vector<EntityId> hit;
+        if (remove) {
+            hit.reserve(ids.size());
+            for (EntityId id : ids)
+                if (collectedSet_.count(id))
+                    hit.push_back(id);
+        } else {
+            hit.reserve(ids.size());
+            for (EntityId id : ids)
+                if (accepts(id))
+                    hit.push_back(id);
+        }
+        if (hit.empty())
+            return reject(none);
+        selUndo_.push_back(collected_);
+        if (selUndo_.size() > 20)
+            selUndo_.erase(selUndo_.begin());
+        const std::vector<EntityId> all = expandGroups(doc_, hit);
+        if (remove) {
+            std::unordered_set<EntityId> drop;
+            drop.reserve(all.size());
+            for (EntityId id : all)
+                if (collectedSet_.count(id))
+                    drop.insert(id);
+            std::erase_if(collected_, [&](EntityId id) { return drop.count(id) != 0; });
+            for (EntityId id : drop)
+                collectedSet_.erase(id);
+            host_.print(std::to_string(drop.size()) + " removed, " +
+                        std::to_string(collected_.size()) + " total");
+            return SubmitResult::Accepted;
+        }
+        const std::size_t before = collected_.size();
+        const bool plain = all.size() == hit.size();
+        for (EntityId id : all)
+            if (plain || accepts(id))
+                addCollected(id);
+        if (req.single) {
+            ans.status = Status::Ok;
+            ans.ids = collected_;
+            return complete(std::move(ans));
+        }
+        reportFound(collected_.size() - before);
+        return SubmitResult::Accepted;
+    };
+    // The last point of a typed Window / Crossing / polygon / fence arrived: select.
+    auto finishShape = [&]() -> SubmitResult {
+        const SelShape sh = shape_;
+        std::vector<Vec2> pts = std::move(shapePts_);
+        shape_ = SelShape::None;
+        shapePts_.clear();
+        IHost::SelectShape kind = IHost::SelectShape::Window;
+        switch (sh) {
+            case SelShape::Crossing:
+                kind = IHost::SelectShape::Crossing;
+                break;
+            case SelShape::WPolygon:
+                kind = IHost::SelectShape::WPolygon;
+                break;
+            case SelShape::CPolygon:
+                kind = IHost::SelectShape::CPolygon;
+                break;
+            case SelShape::Fence:
+                kind = IHost::SelectShape::Fence;
+                break;
+            default:
+                break;
+        }
+        auto found = host_.selectShape(kind, pts);
+        if (!found)
+            return reject("This application cannot select by window, polygon or fence.");
+        return applyBatch(*found, false, "No objects found.");
+    };
+    auto addShapePoint = [&](Vec2 p) -> SubmitResult {
+        lastPoint_ = p;
+        shapePts_.push_back(p);
+        if ((shape_ == SelShape::Window || shape_ == SelShape::Crossing) && shapePts_.size() == 2)
+            return finishShape();
+        host_.print(shape_ == SelShape::Window || shape_ == SelShape::Crossing
+                        ? "Specify opposite corner:"
+                    : shape_ == SelShape::Fence ? "Specify next fence point or [Undo]:"
+                                                : "Specify endpoint of polygon or [Undo]:");
+        return SubmitResult::Accepted;
+    };
+
     switch (in.kind) {
         case Input::Kind::Cancel:
             ans.status = Status::Cancel;
@@ -363,6 +455,19 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         case Input::Kind::Enter: {
             switch (req.kind) {
                 case K::Selection:
+                    if (shape_ != SelShape::None) {
+                        const std::size_t need =
+                            shape_ == SelShape::Fence                                        ? 2
+                            : (shape_ == SelShape::WPolygon || shape_ == SelShape::CPolygon) ? 3
+                                                                                             : 99;
+                        if (shapePts_.size() >= need) {
+                            return finishShape();
+                        }
+                        shape_ = SelShape::None;
+                        shapePts_.clear();
+                        host_.print("Select objects:");
+                        return SubmitResult::Accepted;
+                    }
                     if (collected_.empty()) {
                         ans.status = Status::None;
                     } else {
@@ -449,17 +554,77 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 return complete(std::move(ans));
             }
             if (req.kind == K::Selection) {
-                // AutoCAD habits at "Select objects:": All, Last, Previous.
                 const std::string up = upper(text);
+                // A prefix of `full` that is at least `minLen` letters long ("W" = Window).
+                auto opt = [&](std::string_view full, std::size_t minLen) {
+                    return up.size() >= minLen && up.size() <= full.size() &&
+                           full.substr(0, up.size()) == up;
+                };
+                if (shape_ != SelShape::None) {
+                    if (opt("UNDO", 1)) {
+                        if (!shapePts_.empty())
+                            shapePts_.pop_back();
+                        else
+                            shape_ = SelShape::None;
+                        return SubmitResult::Accepted;
+                    }
+                    const PointParseContext pc = parseContext(req);
+                    std::optional<Vec2> p;
+                    if (parser_)
+                        p = parser_->parsePoint(text, pc);
+                    if (!p)
+                        p = parsePointText(text, pc);
+                    if (!p)
+                        return reject("Invalid point \"" + text + "\".");
+                    return addShapePoint(*p);
+                }
+                auto startShape = [&](SelShape sh, const char* prompt) {
+                    shape_ = sh;
+                    shapePts_.clear();
+                    host_.print(prompt);
+                    return SubmitResult::Accepted;
+                };
+                if (opt("WINDOW", 1))
+                    return startShape(SelShape::Window, "Specify first corner:");
+                if (opt("CROSSING", 1))
+                    return startShape(SelShape::Crossing, "Specify first corner:");
+                if (opt("WPOLYGON", 2))
+                    return startShape(SelShape::WPolygon, "Specify first polygon point:");
+                if (opt("CPOLYGON", 2))
+                    return startShape(SelShape::CPolygon, "Specify first polygon point:");
+                if (opt("FENCE", 1))
+                    return startShape(SelShape::Fence, "Specify first fence point:");
+                if (opt("REMOVE", 1)) {
+                    removeMode_ = true;
+                    host_.print("Remove objects:");
+                    return SubmitResult::Accepted;
+                }
+                if (opt("ADD", 1)) {
+                    removeMode_ = false;
+                    host_.print("Select objects:");
+                    return SubmitResult::Accepted;
+                }
+                if (opt("UNDO", 1)) {
+                    if (selUndo_.empty()) {
+                        host_.print("Nothing to undo.");
+                        return SubmitResult::Accepted;
+                    }
+                    collected_ = std::move(selUndo_.back());
+                    selUndo_.pop_back();
+                    collectedSet_.clear();
+                    collectedSet_.insert(collected_.begin(), collected_.end());
+                    host_.print(std::to_string(collected_.size()) + " total");
+                    return SubmitResult::Accepted;
+                }
                 std::vector<EntityId> found;
-                if (up == "ALL" || up == "A") {
+                if (opt("ALL", 2)) {
                     doc_.forEachEntity([&](const Entity& e) {
                         if (e.common.visible &&
                             doc_.ownerBlock(e.common.id) == host_.drawingOwner() &&
                             accepts(e.common.id))
                             found.push_back(e.common.id);
                     });
-                } else if (up == "LAST" || up == "L") {
+                } else if (opt("LAST", 1)) {
                     const Entity* last = nullptr;
                     doc_.forEachEntity([&](const Entity& e) {
                         if (e.common.visible &&
@@ -469,29 +634,16 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     });
                     if (last)
                         found.push_back(last->common.id);
-                } else if (up == "PREVIOUS" || up == "P") {
+                } else if (opt("PREVIOUS", 1)) {
                     for (EntityId id : previousSelection_)
                         if (accepts(id))
                             found.push_back(id);
                 } else {
                     return reject("Invalid option \"" + text +
-                                  "\". Pick objects, or type All, Last or Previous.");
+                                  "\". Pick objects, or type Window, Crossing, WPolygon, CPolygon, "
+                                  "Fence, All, Last, Previous, Add, Remove or Undo.");
                 }
-                std::size_t added = 0;
-                for (EntityId id : found) {
-                    addWithGroup(id);
-                    ++added;
-                }
-                if (added == 0)
-                    return reject("No objects found.");
-                host_.print(std::to_string(added) + " found, " + std::to_string(collected_.size()) +
-                            " total");
-                if (req.single) {
-                    ans.status = Status::Ok;
-                    ans.ids = collected_;
-                    return complete(std::move(ans));
-                }
-                return SubmitResult::Accepted;
+                return applyBatch(found, false, "No objects found.");
             }
             switch (req.kind) {
                 case K::Point: {
@@ -593,6 +745,12 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         }
 
         case Input::Kind::Point: {
+            if (req.kind == K::Selection && shape_ != SelShape::None) {
+                const Vec2 p = filtered(in.raw, true,
+                                        shapePts_.empty() ? std::optional<Vec2>{}
+                                                          : std::optional<Vec2>{shapePts_.back()});
+                return addShapePoint(p);
+            }
             if (req.kind != K::Point && req.kind != K::Distance && req.kind != K::Angle)
                 return SubmitResult::Ignored;
             const Vec2 p = filtered(in.raw, true, req.base);
@@ -621,41 +779,22 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 return complete(std::move(ans));
             }
             if (req.kind == K::Selection) {
-                if (!accepts(in.entity))
+                if (shape_ != SelShape::None)
+                    return SubmitResult::Ignored;
+                const bool remove = in.raw.shift || removeMode_;
+                if (!remove && !accepts(in.entity))
                     return reject("That object cannot be selected here.");
-                const std::size_t before = collected_.size();
-                addWithGroup(in.entity);
-                if (req.single) {
-                    ans.status = Status::Ok;
-                    ans.ids = collected_;
-                    return complete(std::move(ans));
-                }
-                reportFound(collected_.size() - before);
-                return SubmitResult::Accepted;
+                return applyBatch({in.entity}, in.raw.shift, "That object is not selected.");
             }
             return SubmitResult::Ignored;
         }
 
         case Input::Kind::Selection: {
-            if (req.kind != K::Selection)
+            if (req.kind != K::Selection || shape_ != SelShape::None)
                 return SubmitResult::Ignored;
-            std::size_t added = 0;
-            const std::size_t before = collected_.size();
-            for (EntityId id : in.ids) {
-                if (accepts(id)) {
-                    addWithGroup(id);
-                    ++added;
-                }
-            }
-            if (added == 0)
-                return reject("No valid objects selected.");
-            if (req.single) {
-                ans.status = Status::Ok;
-                ans.ids = collected_;
-                return complete(std::move(ans));
-            }
-            reportFound(collected_.size() - before);
-            return SubmitResult::Accepted;
+            return applyBatch(in.ids, in.raw.shift,
+                              removeMode_ || in.raw.shift ? "No selected objects found."
+                                                          : "No valid objects selected.");
         }
     }
     return SubmitResult::Ignored;

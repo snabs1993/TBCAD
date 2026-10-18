@@ -34,6 +34,10 @@ std::optional<EntityId> cycleNext(const std::vector<EntityId>& stack,
 std::vector<EntityId> selectInPolygon(const Document& doc, const index::SpatialIndex& index,
                                       const std::vector<Vec2>& polygon, bool crossing);
 
+// Fence selection: entities whose outline touches the open polyline `fence`. Ascending id order.
+std::vector<EntityId> selectAlongFence(const Document& doc, const index::SpatialIndex& index,
+                                       const std::vector<Vec2>& fence);
+
 // Window selection (crossing == false): entities lying completely inside the box. Crossing
 // selection: entities that touch or lie inside it. Ascending id order.
 std::vector<EntityId> selectInBox(const Document& doc, const index::SpatialIndex& index,

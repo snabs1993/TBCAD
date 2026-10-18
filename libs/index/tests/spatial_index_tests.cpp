@@ -435,3 +435,15 @@ TEST_CASE("an edit right after bulk load works without any lookup first") {
     CHECK(idx.size() == 3000);
     CHECK(idx.validate());
 }
+
+TEST_CASE("a window over a very large index visits every entry (traversal stack depth)") {
+    SpatialIndex idx;
+    const int n = 600000;
+    for (int i = 0; i < n; ++i) {
+        const double x = (i % 800) * 10.0, y = (i / 800) * 10.0;
+        REQUIRE(idx.insert(id(static_cast<std::uint64_t>(i) + 1), box(x, y, x + 5, y + 5)));
+    }
+    std::size_t seen = 0;
+    idx.query(box(-1, -1, 1e6, 1e6), [&](EntityId, const BBox2&) { ++seen; });
+    CHECK(seen == static_cast<std::size_t>(n));
+}

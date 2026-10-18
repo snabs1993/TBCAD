@@ -350,6 +350,20 @@ void SettingsDialog::drafting(ui::AppCore& core) {
         flag("Selection cycling (SELCYC)", "ui.selectionCycling", false,
              "Click the same spot again to pick the next object under it. Alt-click does this "
              "whenever the switch is off.");
+        {
+            const bool pickAdd = core.setting("selection.pickadd").value_or("2") != "0";
+            bool on = pickAdd;
+            if (ImGui::Checkbox("Picks add to the selection (PICKADD)", &on))
+                core.setSetting("selection.pickadd", on ? "2" : "0");
+            ImGui::TextDisabled(
+                "On: Shift removes. Off: a pick replaces the selection and Shift adds.");
+            ImGui::Spacing();
+            bool first = core.setting("selection.pickfirst").value_or("1") != "0";
+            if (ImGui::Checkbox("Select objects before a command (PICKFIRST)", &first))
+                core.setSetting("selection.pickfirst", first ? "1" : "0");
+            ImGui::TextDisabled("On: a command uses the objects already selected.");
+            ImGui::Spacing();
+        }
         flag("Quick properties", "ui.quickProps", false,
              "A small panel next to the cursor shows the common properties of the selection.");
         ImGui::EndTabItem();
