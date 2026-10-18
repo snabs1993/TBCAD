@@ -102,6 +102,30 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
         needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
 }
 
+void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
+    constexpr std::size_t kChunk = 16384;
+    if (list.size() <= 8) {
+        for (const Entity* e : list)
+            upsertEntity(*e);
+        return;
+    }
+    std::vector<EntityId> ids;
+    std::vector<std::uint32_t> orders;
+    for (std::size_t from = 0; from < list.size(); from += kChunk) {
+        const std::size_t to = std::min(list.size(), from + kChunk);
+        ids.clear();
+        orders.clear();
+        for (std::size_t i = from; i < to; ++i) {
+            const EntityId id = list[i]->common.id;
+            ids.push_back(id);
+            orders.push_back(scene_.contains(id) ? scene_.drawOrderOf(id) : drawOrderOf(id));
+        }
+        scene_.removeMany(ids);
+        for (std::size_t i = from; i < to; ++i)
+            upsertEntity(*list[i], orders[i - from]);
+    }
+}
+
 void SceneSync::syncLayers() {
     render::syncLayerVisibility(scene_, doc_);
     // Entities whose layer became locked or unlocked change appearance.
@@ -131,20 +155,27 @@ void SceneSync::syncLayers() {
         if (!locked.count(id))
             changed.insert(id);
     lockedLayers_ = std::move(locked);
+    std::vector<const Entity*> redraw;
     doc_.forEachEntity([&](const Entity& e) {
         if (changed.count(e.common.layer))
-            upsertEntity(e);
+            redraw.push_back(&e);
     });
+    upsertMany(redraw);
 }
 
 void SceneSync::rebuildDrawOrder() {
     // Draw order overrides (bring to front / send to back) change the order of existing
     // entities: rebuild every entity with its position in the document's draw order.
-    std::uint32_t rank = 0;
+    std::vector<EntityId> order;
     for (EntityId id : doc_.modelSpace()) {
         const Entity* e = doc_.find(id);
-        if (!e || !e->common.visible || hiddenByLevel(*e))
-            continue;
+        if (e && e->common.visible && !hiddenByLevel(*e))
+            order.push_back(id);
+    }
+    scene_.removeMany(order);  // one pass instead of one per object
+    std::uint32_t rank = 0;
+    for (EntityId id : order) {
+        const Entity* e = doc_.find(id);
         geom::DisplayContext ctx;
         ctx.pixelSizeMm = pixelSizeMm_;
         ctx.showTransparency = showTransparency_;
@@ -170,9 +201,11 @@ void SceneSync::relevelMasks() {
         if (scene_.contains(e.common.id))
             ids.push_back(e.common.id);
     });
+    std::vector<const Entity*> redraw;
     for (EntityId id : ids)
         if (const Entity* e = doc_.find(id))
-            upsertEntity(*e, scene_.drawOrderOf(id));
+            redraw.push_back(e);
+    upsertMany(redraw);
 }
 
 void SceneSync::onChanged(const ChangeSet& cs) {
@@ -186,6 +219,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         if (!cs.after(c))
             removed.push_back(cs.idOf(c));
     scene_.removeMany(removed);
+    std::vector<const Entity*> redraw;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
         if (!after)
@@ -196,8 +230,9 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         }
         const Entity* live = doc_.find(after->common.id);
         if (live)
-            upsertEntity(*live);
+            redraw.push_back(live);
     }
+    upsertMany(redraw);
     if (!fieldTexts_.empty() && (!cs.entities.empty() || cs.header)) {
         std::vector<EntityId> ids(fieldTexts_.begin(), fieldTexts_.end());
         for (EntityId id : ids)
@@ -212,17 +247,21 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         (cs.header && (cs.header->before.currentLevel != cs.header->after.currentLevel ||
                        cs.header->before.levelView != cs.header->after.levelView))) {
         // Level visibility, the current level or the view of other levels changed.
+        std::vector<const Entity*> all;
         doc_.forEachEntity([&](const Entity& e) {
             if (!doc_.ownerBlock(e.common.id))
-                upsertEntity(e);
+                all.push_back(&e);
         });
+        upsertMany(all);
     }
     if (blockTouched) {
         // Inserts show the contents of their block: redraw them.
+        std::vector<const Entity*> inserts;
         doc_.forEachEntity([&](const Entity& e) {
             if (kind(e) == EntityKind::Insert)
-                upsertEntity(e);
+                inserts.push_back(&e);
         });
+        upsertMany(inserts);
     }
     if (!cs.order.empty())
         rebuildDrawOrder();
@@ -247,16 +286,15 @@ std::size_t SceneSync::refreshStale(const render::Camera2D& camera, std::size_t 
     if (stale.empty())
         return 0;
     pixelSizeMm_ = camera.pixelSizeMm();
-    std::size_t n = 0;
+    std::vector<const Entity*> redraw;
     for (EntityId id : stale) {
-        if (n >= limit)
+        if (redraw.size() >= limit)
             break;
-        if (const Entity* e = doc_.find(id)) {
-            upsertEntity(*e);
-            ++n;
-        }
+        if (const Entity* e = doc_.find(id))
+            redraw.push_back(e);
     }
-    return n;
+    upsertMany(redraw);
+    return redraw.size();
 }
 
 }  // namespace tbcad::ui
