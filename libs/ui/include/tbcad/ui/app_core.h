@@ -305,8 +305,11 @@ public:
     // The picture underlays (IMAGEATTACH) that are visible, to draw before the scene. Pictures are
     // read from disk once and kept while the drawing shows them.
     std::vector<render::ImageDraw> underlayImages();
-    // Writes the autosave of every open drawing that has unsaved changes. True if any was written.
+    // Writes the autosave of every open drawing that has unsaved changes and waits until it is on
+    // disk. True if any was written. (tickAutosave does the same without waiting.)
     bool autosaveNow();
+    // Waits until the autosaves started by tickAutosave are on disk (tests, and before quitting).
+    void waitForAutosave();
 
     // ---- cmd::IHost --------------------------------------------------------------------------
     std::optional<std::string> setting(std::string_view key) const override;
@@ -355,6 +358,11 @@ private:
     Result<void> openDxf(const std::filesystem::path& path);
     Result<void> saveDxf(const std::filesystem::path& path);
     void clearTransientState();
+    // Background autosave: starts one (false if nothing to save or one is running), collects a
+    // finished one (or waits for it), starts one per drawing without waiting.
+    bool startAutosave(DocSlot& slot);
+    void reapAutosave(DocSlot& slot, bool wait);
+    void autosaveInBackground();
     void leavePaper();  // back to Model, restoring the model view
     void scanMissingXrefs();
     // Replaces the active drawing.

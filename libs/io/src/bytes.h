@@ -43,11 +43,18 @@ public:
     }
     // LEB128, 1..10 bytes.
     void varint(std::uint64_t v) {
+        if (v < 0x80) {
+            b_.push_back(static_cast<std::uint8_t>(v));
+            return;
+        }
+        std::uint8_t tmp[10];
+        int n = 0;
         while (v >= 0x80) {
-            b_.push_back(static_cast<std::uint8_t>(v | 0x80));
+            tmp[n++] = static_cast<std::uint8_t>(v | 0x80);
             v >>= 7;
         }
-        b_.push_back(static_cast<std::uint8_t>(v));
+        tmp[n++] = static_cast<std::uint8_t>(v);
+        b_.insert(b_.end(), tmp, tmp + n);
     }
     void raw(const void* p, std::size_t n) {
         const auto* c = static_cast<const std::uint8_t*>(p);
@@ -60,6 +67,7 @@ public:
     }
 
 private:
+    // One resize and then plain stores: far fewer capacity checks than a push_back per byte.
     void le(std::uint64_t v, int n) {
         const std::size_t at = b_.size();
         b_.resize(at + static_cast<std::size_t>(n));

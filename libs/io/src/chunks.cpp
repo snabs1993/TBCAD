@@ -22,23 +22,43 @@ void appendStoredChunk(ByteWriter& out, std::uint32_t type, std::uint32_t flags,
     out.u32(tbcadCrc32(stored));
 }
 
-void appendChunk(ByteWriter& out, std::uint32_t type, std::span<const std::uint8_t> raw,
-                 bool compress) {
+PreparedChunk prepareChunk(std::span<const std::uint8_t> raw, bool compress) {
+    PreparedChunk out;
     if (compress && raw.size() >= 64 && raw.size() < 0x7FFFFFFF) {
-        mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(raw.size()));
-        std::vector<std::uint8_t> z(bound);
+        const mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(raw.size()));
+        // 8 bytes for the uncompressed size, then the deflate stream, in one buffer.
+        std::vector<std::uint8_t> z(bound + 8);
         mz_ulong zlen = bound;
-        int rc = mz_compress2(z.data(), &zlen, raw.data(), static_cast<mz_ulong>(raw.size()), 1);
+        const int rc =
+            mz_compress2(z.data() + 8, &zlen, raw.data(), static_cast<mz_ulong>(raw.size()), 1);
         if (rc == MZ_OK && zlen + 8 < raw.size()) {
-            ByteWriter payload;
-            payload.reserve(zlen + 8);
-            payload.u64(raw.size());
-            payload.raw(z.data(), zlen);
-            appendStoredChunk(out, type, kChunkDeflate, payload.bytes());
-            return;
+            const std::uint64_t n = raw.size();
+            for (int i = 0; i < 8; ++i)
+                z[i] = static_cast<std::uint8_t>(n >> (8 * i));
+            z.resize(zlen + 8);
+            out.flags = kChunkDeflate;
+            out.stored = std::move(z);
+            out.crc = tbcadCrc32(out.stored);
+            return out;
         }
     }
-    appendStoredChunk(out, type, 0, raw);
+    out.flags = 0;
+    out.stored.assign(raw.begin(), raw.end());
+    out.crc = tbcadCrc32(raw);
+    return out;
+}
+
+void appendPrepared(ByteWriter& out, std::uint32_t type, const PreparedChunk& chunk) {
+    out.u32(type);
+    out.u32(chunk.flags);
+    out.u64(chunk.stored.size());
+    out.raw(chunk.stored);
+    out.u32(chunk.crc);
+}
+
+void appendChunk(ByteWriter& out, std::uint32_t type, std::span<const std::uint8_t> raw,
+                 bool compress) {
+    appendPrepared(out, type, prepareChunk(raw, compress));
 }
 
 ParsedFile parseFile(std::span<const std::uint8_t> bytes, bool verifyCrc) {

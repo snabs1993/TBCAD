@@ -57,7 +57,7 @@ error, an unknown chunk is kept whatever its flags.
 | `DYNB` | dynamic block parameters and actions (since 1.4) | 0..1, only when a block is dynamic |
 | `XRFO` | overlay flags of xrefs (since 1.5) | 0..1, only when an xref is an overlay |
 | `ASMB` | parametric assembly definitions (since 1.8) | 0..1, only when a block is an assembly |
-| `ENTS` | entity records | 0..n (each about 8 MiB of raw data) |
+| `ENTS` | entity records | 0..n (each about 4 MiB of raw data) |
 | `ELVL` | level of each entity not on the first level (since 1.7) | 0..1 |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
 | *anything else* | unknown | kept |
@@ -271,6 +271,13 @@ permutation is ignored with a warning.
 2. write `<path>.tmp`, flush and sync it (`fsync` / `FlushFileBuffers`);
 3. keep the old file as `<path>.bak` (`keepBackup`, default on);
 4. replace `<path>` with the temporary file (`rename` on POSIX, `ReplaceFileW` on Windows).
+
+Speed: the entity chunks are deflated on worker threads while the next chunk is still being
+encoded, the CRC-32 is computed eight bytes at a time, and on POSIX the `.bak` is a hard link
+instead of a copy. One million random lines (a 34 MB file) take about 0.45 s to write and 0.4 s
+to read on four cores in a release build (before: 1.5 s to write). `writeTbcadAsync` encodes on
+the calling thread and does the deflating, writing, syncing and replacing on other threads; the
+drawing may change as soon as it returns.
 
 If the process dies before step 4 the original file is untouched and still opens; a stale
 `.tmp` is overwritten by the next save. The output is deterministic: the same document and

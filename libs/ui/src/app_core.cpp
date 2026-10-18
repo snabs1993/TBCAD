@@ -125,6 +125,10 @@ struct AppCore::DocSlot {
     std::vector<EntityId> selection{};
     bool viewSaved = false;
     std::uint64_t autosavedRevision = ~std::uint64_t{0};  // revision last written to the autosave
+    // An autosave being finished on another thread (the drawing was encoded when it started), and
+    // the revision it holds.
+    std::future<bool> autosaveJob{};
+    std::uint64_t autosaveJobRevision = 0;
 };
 
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
@@ -674,7 +678,19 @@ void AppCore::discardRecovery() {
     removeAutosaveFiles();
 }
 
+// Collects a finished background autosave; with `wait` also waits for one still running.
+void AppCore::reapAutosave(DocSlot& slot, bool wait) {
+    if (!slot.autosaveJob.valid())
+        return;
+    if (!wait && slot.autosaveJob.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return;
+    if (slot.autosaveJob.get())
+        slot.autosavedRevision = slot.autosaveJobRevision;
+}
+
 void AppCore::removeAutosaveFiles() {
+    for (DocSlot& slot : slots_)
+        reapAutosave(slot, true);
     std::error_code ec;
     std::vector<fs::path> files;
     for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
@@ -686,6 +702,9 @@ void AppCore::removeAutosaveFiles() {
 }
 
 void AppCore::removeAutosaveOf(std::uint64_t slotId) {
+    for (DocSlot& slot : slots_)
+        if (slot.id == slotId && slot.autosaveJob.valid())
+            (void)slot.autosaveJob.get();  // finished, and its result no longer counts
     std::error_code ec;
     const std::string base = "recovery-" + std::to_string(slotId);
     fs::remove(paths_.autosaveDir() / (base + ".tbcad"), ec);
@@ -698,24 +717,30 @@ void AppCore::shutdown() {
     removeAutosaveFiles();
 }
 
-bool AppCore::autosaveNow() {
-    bool wrote = false;
-    for (DocSlot& slot : slots_) {
-        Session& ses = *slot.session;
-        if (ses.doc.revision() == ses.savedRevision || slot.autosavedRevision == ses.doc.revision())
-            continue;
-        if (!platform::ensureDirectory(paths_.autosaveDir()))
-            return wrote;
-        const std::string base = "recovery-" + std::to_string(slot.id);
-        io::WriteOptions opt;
-        opt.keepBackup = false;
-        if (!io::writeTbcad(ses.doc, paths_.autosaveDir() / (base + ".tbcad"), opt))
-            continue;
-        {
+// Starts the autosave of one drawing: the drawing is encoded now and the rest (deflate, write,
+// sync, rename) runs on other threads, so the window does not freeze on a big drawing.
+bool AppCore::startAutosave(DocSlot& slot) {
+    Session& ses = *slot.session;
+    if (slot.autosaveJob.valid() || ses.doc.revision() == ses.savedRevision ||
+        slot.autosavedRevision == ses.doc.revision())
+        return false;
+    if (!platform::ensureDirectory(paths_.autosaveDir()))
+        return false;
+    const std::string base = "recovery-" + std::to_string(slot.id);
+    io::WriteOptions opt;
+    opt.keepBackup = false;
+    std::future<Result<void>> written =
+        io::writeTbcadAsync(ses.doc, paths_.autosaveDir() / (base + ".tbcad"), opt);
+    slot.autosaveJobRevision = ses.doc.revision();
+    const fs::path meta = paths_.autosaveDir() / (base + ".json");
+    const std::string original = platform::pathToUtf8(ses.file);
+    slot.autosaveJob = std::async(
+        std::launch::async, [written = std::move(written), meta, original]() mutable -> bool {
+            if (!written.get())
+                return false;
             platform::Json::Object o;
-            o["original"] = platform::pathToUtf8(ses.file);
+            o["original"] = original;
             // Written beside and renamed over, so a kill in the middle never leaves half a file.
-            const fs::path meta = paths_.autosaveDir() / (base + ".json");
             fs::path tmp = meta;
             tmp += ".tmp";
             {
@@ -726,11 +751,33 @@ bool AppCore::autosaveNow() {
             fs::rename(tmp, meta, ec);
             if (ec)
                 fs::remove(tmp, ec);
-        }
-        slot.autosavedRevision = ses.doc.revision();
-        wrote = true;
+            return true;
+        });
+    return true;
+}
+
+bool AppCore::autosaveNow() {
+    bool wrote = false;
+    for (DocSlot& slot : slots_) {
+        reapAutosave(slot, true);
+        if (!startAutosave(slot))
+            continue;
+        reapAutosave(slot, true);
+        wrote = wrote || slot.autosavedRevision == slot.autosaveJobRevision;
     }
     return wrote;
+}
+
+void AppCore::waitForAutosave() {
+    for (DocSlot& slot : slots_)
+        reapAutosave(slot, true);
+}
+
+void AppCore::autosaveInBackground() {
+    for (DocSlot& slot : slots_) {
+        reapAutosave(slot, false);
+        (void)startAutosave(slot);
+    }
 }
 
 void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
@@ -747,6 +794,8 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
     } else {
         settingsDirtySeen_ = false;
     }
+    for (DocSlot& slot : slots_)
+        reapAutosave(slot, false);
     if (!autosaveClockStarted_) {
         lastAutosave_ = now;
         autosaveClockStarted_ = true;
@@ -773,7 +822,7 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
         } else if (now - quickJournalAt_ >= std::chrono::seconds(30)) {
             quickJournalPending_ = false;
             lastAutosave_ = now;
-            autosaveNow();
+            autosaveInBackground();
             return;
         }
     }
@@ -781,7 +830,7 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
     if (now - lastAutosave_ < std::chrono::duration<double, std::ratio<60>>(minutes))
         return;
     lastAutosave_ = now;
-    autosaveNow();
+    autosaveInBackground();
 }
 
 // ---- files -------------------------------------------------------------------------------------

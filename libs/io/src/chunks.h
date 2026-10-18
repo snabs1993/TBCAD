@@ -11,6 +11,15 @@ void appendFileHeader(ByteWriter& out);
 // Appends a chunk holding `raw`, deflated when `compress` is set and it pays off.
 void appendChunk(ByteWriter& out, std::uint32_t type, std::span<const std::uint8_t> raw,
                  bool compress);
+// A chunk ready to be appended: deflated (flags kChunkDeflate) or stored, with its CRC. Building
+// one touches no shared state, so several can be built on different threads.
+struct PreparedChunk {
+    std::uint32_t flags = 0;
+    std::vector<std::uint8_t> stored{};
+    std::uint32_t crc = 0;
+};
+PreparedChunk prepareChunk(std::span<const std::uint8_t> raw, bool compress);
+void appendPrepared(ByteWriter& out, std::uint32_t type, const PreparedChunk& chunk);
 // Appends a chunk exactly as stored (used for opaque chunks).
 void appendStoredChunk(ByteWriter& out, std::uint32_t type, std::uint32_t flags,
                        std::span<const std::uint8_t> stored);

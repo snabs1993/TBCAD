@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <memory>
 #include <optional>
 #include <span>
@@ -63,6 +64,15 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
 // <path>.bak (when keepBackup), then the temporary file replaces <path>.
 Result<void> writeTbcad(const Document& doc, const std::filesystem::path& path,
                         const WriteOptions& options = {});
+// The second half of writeTbcad: saves a file image atomically (see writeTbcad).
+Result<void> saveTbcadBytes(std::span<const std::uint8_t> bytes, const std::filesystem::path& path,
+                            const WriteOptions& options = {});
+// Saves without holding the caller up for long. The document is encoded on the calling thread
+// (a few hundred milliseconds for a million objects); deflating the chunks, writing, syncing and
+// the final replace then run on other threads. The document may be changed as soon as this
+// returns. The future holds the same result writeTbcad would give.
+std::future<Result<void>> writeTbcadAsync(const Document& doc, const std::filesystem::path& path,
+                                          const WriteOptions& options = {});
 
 // The (inflated) payload of the optional chunk `type` that readTbcad kept for a file with chunks
 // this build does not interpret itself, or nothing.

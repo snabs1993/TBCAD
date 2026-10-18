@@ -538,6 +538,7 @@ TEST_CASE("autosave timer follows the setting") {
     f.core->tickAutosave(t0 + std::chrono::seconds(30));
     CHECK_FALSE(f.core->pendingRecovery().has_value());
     f.core->tickAutosave(t0 + std::chrono::seconds(61));
+    f.core->waitForAutosave();  // the file is finished on another thread
     CHECK(f.core->pendingRecovery().has_value());
 }
 
@@ -552,7 +553,26 @@ TEST_CASE("the first change after a save is journalled within about 30 seconds")
     f.core->tickAutosave(t0 + std::chrono::seconds(20));
     CHECK_FALSE(f.core->pendingRecovery().has_value());
     f.core->tickAutosave(t0 + std::chrono::seconds(32));
+    f.core->waitForAutosave();
     CHECK(f.core->pendingRecovery().has_value());
+}
+
+TEST_CASE(
+    "a background autosave holds the drawing as it was, and closing the drawing leaves no file") {
+    Fixture f("autosave_bg");
+    f.core->settings().setNumber("autosave.minutes", 1);
+    f.line("0,0", "100,0");
+    auto t0 = std::chrono::steady_clock::now();
+    f.core->tickAutosave(t0);
+    f.core->tickAutosave(t0 + std::chrono::seconds(61));  // starts the autosave, does not wait
+    f.line("0,10", "100,10");                             // changed while it is being written
+    f.core->waitForAutosave();
+    REQUIRE(f.core->pendingRecovery().has_value());
+    // The drawing has a second line now; the autosave has the first only and a newer one follows.
+    CHECK(f.core->autosaveNow());
+    f.core->closeDocument(0);
+    f.core->waitForAutosave();
+    CHECK_FALSE(f.core->pendingRecovery().has_value());
 }
 
 TEST_CASE("a command that leaves the working area raises a notice with Zoom to and Undo") {

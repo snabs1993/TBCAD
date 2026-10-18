@@ -70,7 +70,8 @@ Owns the `Document`, `UndoStack`, `SpatialIndex` (kept current by `DocumentIndex
 - **Scene**: `SceneSync` mirrors every commit, undo and redo into the scene (`geom::buildDisplay`),
   re-tessellates curves when the zoom changes by more than 4x, and redraws entities when their
   layer is locked or unlocked.
-- **Autosave**: `tickAutosave` writes `recovery.tbcad` every `autosave.minutes` (default 10) while
+- **Autosave**: `tickAutosave` writes `recovery.tbcad` in the background (the drawing is encoded on
+  the UI thread, the rest runs on other threads; `autosaveNow()` and `waitForAutosave()` wait for it) every `autosave.minutes` (default 10) while
   there are unsaved changes; a normal save, new, open or exit removes it. At the next start
   `pendingRecovery()` finds a leftover and the window offers to recover it.
 - **Working area**: a commit that puts geometry outside the working area raises

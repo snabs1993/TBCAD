@@ -95,9 +95,17 @@ Result<void> replaceFile(const fs::path& tmp, const fs::path& target, const fs::
     return {};
 #else
     if (exists && !backup.empty()) {
-        fs::copy_file(target, backup, fs::copy_options::overwrite_existing, ec);
-        if (ec)
-            return ioError("cannot create backup", backup, ec);
+        // A hard link keeps the old content under the backup name without copying it; the rename
+        // below then gives `target` a new file, so the backup stays as it was.
+        fs::remove(backup, ec);
+        ec.clear();
+        fs::create_hard_link(target, backup, ec);
+        if (ec) {
+            ec.clear();
+            fs::copy_file(target, backup, fs::copy_options::overwrite_existing, ec);
+            if (ec)
+                return ioError("cannot create backup", backup, ec);
+        }
     }
     fs::rename(tmp, target, ec);  // atomic on POSIX file systems
     if (ec)
@@ -108,15 +116,12 @@ Result<void> replaceFile(const fs::path& tmp, const fs::path& target, const fs::
 
 }  // namespace
 
-Result<void> writeTbcad(const Document& doc, const fs::path& requested,
-                        const WriteOptions& options) {
+Result<void> saveTbcadBytes(std::span<const std::uint8_t> bytes, const fs::path& requested,
+                            const WriteOptions& options) {
     const fs::path path = platform::longPath(requested);
-    Result<std::vector<std::uint8_t>> bytes = writeTbcadToMemory(doc, options);
-    if (!bytes)
-        return bytes.error();
     fs::path tmp = path;
     tmp += ".tmp";
-    if (Result<void> r = writeAndSync(tmp, bytes.value()); !r) {
+    if (Result<void> r = writeAndSync(tmp, bytes); !r) {
         std::error_code ec;
         fs::remove(tmp, ec);
         return r;
@@ -134,6 +139,14 @@ Result<void> writeTbcad(const Document& doc, const fs::path& requested,
         fs::remove(tmp, ec);
     }
     return r;
+}
+
+Result<void> writeTbcad(const Document& doc, const fs::path& requested,
+                        const WriteOptions& options) {
+    Result<std::vector<std::uint8_t>> bytes = writeTbcadToMemory(doc, options);
+    if (!bytes)
+        return bytes.error();
+    return saveTbcadBytes(bytes.value(), requested, options);
 }
 
 }  // namespace tbcad::io
