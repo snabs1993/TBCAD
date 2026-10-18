@@ -6,6 +6,7 @@
 #include <set>
 #include <sstream>
 
+#include "keep.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/underlay/image.h"
@@ -1142,6 +1143,21 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.zero("SECTION");
     o.raw(2, "HEADER");
     auto var = [&](const char* name) { o.raw(9, name); };
+    const auto& custom = doc_.header().custom;
+    // A variable the source file had (the ones in the default list below are written with the
+    // value they had when they differ from the fixed one).
+    auto kept = [&](const char* name) {
+        auto it = custom.find(std::string(kKeptVarPrefix) + name);
+        if (it == custom.end())
+            return false;
+        const KeptGroups g = unpackGroups(it->second);
+        if (g.empty())
+            return false;
+        var(name);
+        for (const auto& [code, value] : g)
+            o.str(code, value);
+        return true;
+    };
     var("$ACADVER");
     o.raw(1, versionCode(opt_.version));
     if (!r12_) {
@@ -1150,8 +1166,10 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     }
     var("$DWGCODEPAGE");
     o.raw(3, "ANSI_1252");
-    var("$INSBASE");
-    o.pt(10, {0, 0});
+    if (!kept("$INSBASE")) {
+        var("$INSBASE");
+        o.pt(10, {0, 0});
+    }
     if (auto it = doc_.header().custom.find("tbcad.ucs.current");
         it != doc_.header().custom.end()) {
         // the current coordinate system: name TAB x TAB y TAB angle (name empty when unnamed)
@@ -1178,10 +1196,14 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.pt(10, extents_.empty() ? Vec2{1e20, 1e20} : extents_.min, extents_.empty() ? 1e20 : 0);
     var("$EXTMAX");
     o.pt(10, extents_.empty() ? Vec2{-1e20, -1e20} : extents_.max, extents_.empty() ? -1e20 : 0);
-    var("$LIMMIN");
-    o.pt2(10, {0, 0});
-    var("$LIMMAX");
-    o.pt2(10, {420, 297});
+    if (!kept("$LIMMIN")) {
+        var("$LIMMIN");
+        o.pt2(10, {0, 0});
+    }
+    if (!kept("$LIMMAX")) {
+        var("$LIMMAX");
+        o.pt2(10, {420, 297});
+    }
     var("$LTSCALE");
     o.d(40, doc_.header().ltScale);
     var("$CELTSCALE");
@@ -1192,29 +1214,49 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.i(70, msLtScale(doc_.header()) ? 1 : 0);
     var("$PLINEGEN");
     o.i(70, plineGen(doc_.header()) ? 1 : 0);
-    var("$CECOLOR");
-    o.i(62, 256);
-    var("$CELTYPE");
-    o.raw(6, "BYLAYER");
+    if (!kept("$CECOLOR")) {
+        var("$CECOLOR");
+        o.i(62, 256);
+    }
+    if (!kept("$CELTYPE")) {
+        var("$CELTYPE");
+        o.raw(6, "BYLAYER");
+    }
     var("$CLAYER");
     o.str(8, layerNameOf(doc_.header().currentLayer));
     var("$TEXTSTYLE");
     o.str(7, textStyleNameOf(doc_.header().currentTextStyle));
     var("$DIMSTYLE");
     o.str(2, dimStyleNameOf(doc_.header().currentDimStyle));
-    var("$LUNITS");
-    o.i(70, 2);
-    var("$LUPREC");
-    o.i(70, 4);
-    var("$AUNITS");
-    o.i(70, 0);
-    var("$AUPREC");
-    o.i(70, 0);
+    if (!kept("$LUNITS")) {
+        var("$LUNITS");
+        o.i(70, 2);
+    }
+    if (!kept("$LUPREC")) {
+        var("$LUPREC");
+        o.i(70, 4);
+    }
+    if (!kept("$AUNITS")) {
+        var("$AUNITS");
+        o.i(70, 0);
+    }
+    if (!kept("$AUPREC")) {
+        var("$AUPREC");
+        o.i(70, 0);
+    }
     if (!r12_) {
         var("$MEASUREMENT");
         o.i(70, 1);
         var("$INSUNITS");
         o.i(70, 4);  // millimetres: every TBCAD length is in mm
+        for (const auto& [key, value] : custom) {
+            if (key.compare(0, kKeptVarPrefix.size(), kKeptVarPrefix) != 0)
+                continue;
+            const std::string name = key.substr(kKeptVarPrefix.size());
+            if (ownedHeaderVar(name))
+                continue;
+            kept(name.c_str());
+        }
     }
     o.zero("ENDSEC");
     return std::move(o.buf);
@@ -1327,6 +1369,13 @@ Result<ExportResult> Writer::run() {
             out +=
                 "  0\r\nCLASS\r\n  1\r\nIMAGEDEF_REACTOR\r\n  2\r\nAcDbRasterImageDefReactor\r\n"
                 "  3\r\nISM\r\n 90\r\n1\r\n280\r\n0\r\n281\r\n0\r\n";
+        }
+        if (auto it = doc_.header().custom.find(kKeptClassesKey);
+            it != doc_.header().custom.end()) {
+            Out c(utf8_, false);
+            for (const auto& [code, value] : unpackGroups(it->second))
+                c.str(code, value);
+            out += c.buf;
         }
         out += "  0\r\nENDSEC\r\n";
     }

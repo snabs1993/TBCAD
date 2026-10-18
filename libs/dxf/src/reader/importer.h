@@ -110,6 +110,7 @@ private:
     void processEntities(RecordReader& rr);
     void skipSection(RecordReader& rr);
     void processObjects(RecordReader& rr);
+    void processClasses(RecordReader& rr);
     BlockId blockFor(std::string_view dxfName);
     void finish();
     void finishLayouts();
