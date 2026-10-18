@@ -21,6 +21,7 @@
 #include "tbcad/hatch/fill.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/platform/file_lock.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
@@ -104,6 +105,12 @@ struct AppCore::Session {
     fs::path file{};
     std::uint64_t savedRevision = 0;
     std::string readOnlyFormat{};  // "DWG" while the drawing came from a read-only format
+    // The drawing file is marked as open here; the stamp is its modification time when this
+    // window last read or wrote it, to notice that another program changed it meanwhile.
+    std::unique_ptr<platform::FileLock> lock{};
+    bool lockedElsewhere = false;
+    std::optional<fs::file_time_type> diskStamp{};
+    bool overwriteConfirmed = false;  // saved again after being told the file had changed
     // File stamp of each xref that a reload was already tried for (a failed reload is not retried
     // until the file changes again).
     std::map<BlockId, std::int64_t> xrefTried{};
@@ -175,6 +182,45 @@ AppCore::~AppCore() {
     slots_.clear();
 }
 
+namespace {
+
+// Locks the session's file and records its modification time. Only our own formats are locked:
+// a read-only DWG is never touched, and no lock file is left next to it.
+template <class Sess>
+void watchFile(Sess& s) {
+    s.lock.reset();
+    s.lockedElsewhere = false;
+    s.diskStamp.reset();
+    s.overwriteConfirmed = false;
+    if (s.file.empty())
+        return;
+    std::string ext = s.file.extension().string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".tbcad" || ext == ".dxf") {
+        s.lock = std::make_unique<platform::FileLock>(s.file);
+        s.lockedElsewhere = s.lock->heldElsewhere();
+        if (!s.lock->held())
+            s.lock.reset();
+    }
+    std::error_code ec;
+    const auto t = fs::last_write_time(s.file, ec);
+    if (!ec)
+        s.diskStamp = t;
+}
+
+// The file has a different modification time than when this window last read or wrote it.
+template <class Sess>
+bool changedOnDisk(const Sess& s) {
+    if (!s.diskStamp || s.file.empty())
+        return false;
+    std::error_code ec;
+    const auto t = fs::last_write_time(s.file, ec);
+    return !ec && t != *s.diskStamp;
+}
+
+}  // namespace
+
 std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document> doc,
                                                        fs::path file) {
     auto s = std::make_unique<Session>(std::move(doc));
@@ -191,6 +237,10 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     s->file = std::move(file);
     d.setFilePath(platform::pathToUtf8(s->file));
     s->savedRevision = d.revision();
+    watchFile(*s);
+    if (s->lockedElsewhere)
+        print(s->file.filename().string() +
+              " is also open in another TBCAD window. Changes saved there may be overwritten here.");
     return s;
 }
 
@@ -663,9 +713,18 @@ bool AppCore::autosaveNow() {
         {
             platform::Json::Object o;
             o["original"] = platform::pathToUtf8(ses.file);
-            std::ofstream out(paths_.autosaveDir() / (base + ".json"),
-                              std::ios::binary | std::ios::trunc);
-            out << platform::toJson(platform::Json(std::move(o)));
+            // Written beside and renamed over, so a kill in the middle never leaves half a file.
+            const fs::path meta = paths_.autosaveDir() / (base + ".json");
+            fs::path tmp = meta;
+            tmp += ".tmp";
+            {
+                std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+                out << platform::toJson(platform::Json(std::move(o)));
+            }
+            std::error_code ec;
+            fs::rename(tmp, meta, ec);
+            if (ec)
+                fs::remove(tmp, ec);
         }
         slot.autosavedRevision = ses.doc.revision();
         wrote = true;
@@ -1083,6 +1142,14 @@ Result<void> AppCore::save() {
                          session_->readOnlyFormat + " files are read-only: use Save As.");
     if (session_->file.empty())
         return makeError(ErrorCode::InvalidArgument, "This drawing has no file name yet.");
+    if (changedOnDisk(*session_) && !session_->overwriteConfirmed) {
+        session_->overwriteConfirmed = true;
+        const std::string msg = session_->file.filename().string() +
+                                " was changed by another program or window since it was opened. "
+                                "Save again to overwrite it, or use Save As to keep both.";
+        print(msg);
+        return makeError(ErrorCode::Conflict, msg);
+    }
     return saveAs(session_->file);
 }
 
@@ -1110,10 +1177,20 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         print("Cannot save " + path.string() + ": " + r.error().message);
         return r;
     }
+    const bool sameFile = session_->file == path;
     session_->file = path;
     session_->doc.setFilePath(platform::pathToUtf8(path));
     session_->readOnlyFormat.clear();
     session_->savedRevision = session_->doc.revision();
+    if (sameFile && session_->lock) {
+        // Keep the lock; only the stamp moves to the file just written.
+        std::error_code ec;
+        const auto t = fs::last_write_time(path, ec);
+        session_->diskStamp = ec ? std::nullopt : std::optional(t);
+        session_->overwriteConfirmed = false;
+    } else {
+        watchFile(*session_);
+    }
     removeAutosaveOf(slots_[active_].id);
     if (!anyDocumentModified())
         removeAutosaveFiles();
