@@ -310,7 +310,79 @@ public:
     }
 };
 
+// ---- TEXTTOFRONT / HATCHTOBACK ------------------------------------------------------------------
+
+// Puts every text, dimension or hatch of model space in front of or behind everything else,
+// keeping their order among themselves.
+class KindOrderCommand final : public cmd::Command {
+public:
+    enum class Mode { TextToFront, HatchToBack };
+    explicit KindOrderCommand(Mode m) : mode_(m) {}
+
+    std::string_view name() const override {
+        return mode_ == Mode::TextToFront ? "TEXTTOFRONT" : "HATCHTOBACK";
+    }
+    std::string_view description() const override {
+        return mode_ == Mode::TextToFront
+                   ? "Bring all text and dimensions in front of other objects"
+                   : "Send all hatches behind other objects";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string which = "Both";
+        if (mode_ == Mode::TextToFront) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Text", "Dimensions", "Both"};
+            ko.defaultKeyword = "Both";
+            auto k = co_await ctx.getKeyword("Bring to front [Text/Dimensions/Both] <Both>", ko);
+            if (!k.ok())
+                co_return;
+            which = k.keyword;
+        }
+        auto wanted = [&](const Entity& e) {
+            switch (kind(e)) {
+                case EntityKind::Text:
+                case EntityKind::MText:
+                    return mode_ == Mode::TextToFront && which != "Dimensions";
+                case EntityKind::Dimension:
+                case EntityKind::Leader:
+                case EntityKind::MLeader:
+                    return mode_ == Mode::TextToFront && which != "Text";
+                case EntityKind::Hatch:
+                    return mode_ == Mode::HatchToBack;
+                default:
+                    return false;
+            }
+        };
+        std::vector<EntityId> moving;
+        for (EntityId id : ctx.doc().modelSpace()) {
+            const Entity* e = ctx.doc().find(id);
+            if (e && wanted(*e) && isModifiable(ctx.doc(), *e))
+                moving.push_back(id);
+        }
+        ctx.setUndoLabel(std::string(name()));
+        if (mode_ == Mode::TextToFront) {
+            for (EntityId id : moving)
+                (void)ctx.tx().bringToFront(id);
+        } else {
+            for (auto it = moving.rbegin(); it != moving.rend(); ++it)
+                (void)ctx.tx().sendToBack(*it);
+        }
+        ctx.message(std::to_string(moving.size()) + " objects reordered.");
+    }
+
+private:
+    Mode mode_;
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeTextToFront() {
+    return std::make_unique<KindOrderCommand>(KindOrderCommand::Mode::TextToFront);
+}
+std::unique_ptr<cmd::Command> makeHatchToBack() {
+    return std::make_unique<KindOrderCommand>(KindOrderCommand::Mode::HatchToBack);
+}
 
 std::unique_ptr<cmd::Command> makeGroup() {
     return std::make_unique<GroupCommand>();

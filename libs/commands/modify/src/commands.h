@@ -29,6 +29,8 @@ std::unique_ptr<cmd::Command> makeGroup();
 std::unique_ptr<cmd::Command> makeUngroup();
 std::unique_ptr<cmd::Command> makeGroupEdit();
 std::unique_ptr<cmd::Command> makeDrawOrder();
+std::unique_ptr<cmd::Command> makeTextToFront();
+std::unique_ptr<cmd::Command> makeHatchToBack();
 std::unique_ptr<cmd::Command> makeJustifyText();
 std::unique_ptr<cmd::Command> makeSplineEdit();
 std::unique_ptr<cmd::Command> makeExtrim();

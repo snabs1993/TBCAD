@@ -686,6 +686,28 @@ TEST_CASE("DRAWORDER front, back and above/below an object") {
     CHECK(order() == std::vector<EntityId>{b, a, c});
 }
 
+TEST_CASE("TEXTTOFRONT and HATCHTOBACK reorder by kind and keep the order inside a kind") {
+    Fixture f;
+    TextData td;
+    td.utf8 = "t";
+    HatchData hd;
+    EntityId t1 = f.add(Indirect<TextData>(td));
+    EntityId h = f.add(Indirect<HatchData>(hd));
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId t2 = f.add(Indirect<TextData>(td));
+    EntityId b = f.add(LineData{{0, 1}, {1, 1}});
+    f.host.run("TEXTTOFRONT", {"Text"});
+    CHECK(f.doc.modelSpace() == std::vector<EntityId>{h, a, b, t1, t2});
+    f.host.run("HATCHTOBACK", {});
+    CHECK(f.doc.modelSpace() == std::vector<EntityId>{h, a, b, t1, t2});
+    f.host.run("DRAWORDER", {ScriptItem::select({h}), ScriptItem::enter(), "Front"});
+    CHECK(f.doc.modelSpace().back() == h);
+    f.host.run("HATCHTOBACK", {});
+    CHECK(f.doc.modelSpace().front() == h);
+    f.host.undo();
+    CHECK(f.doc.modelSpace().back() == h);
+}
+
 TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in one step") {
     Fixture f;
     TextData td;

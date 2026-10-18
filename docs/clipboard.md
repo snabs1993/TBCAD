@@ -36,6 +36,9 @@ that are erased disappear from their group. Code: `libs/core/groups.h`.
 moved objects is kept. Moving above or below a reference re-stacks every object from that position
 up to the front.
 
+`TEXTTOFRONT` brings every text (and, by option, every dimension and leader) of model space in front of
+the other objects; `HATCHTOBACK` sends every hatch behind them. Their order among themselves is kept.
+
 `MASSPROP` (in the inquiry commands) reports area, perimeter, bounding box, centroid, second moments of
 inertia and radii of gyration of a closed polyline, circle, ellipse or closed spline.
 
