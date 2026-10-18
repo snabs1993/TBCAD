@@ -223,3 +223,8 @@ from `palette.h`, which the tests cover.
 
 **XPLODE** explodes like EXPLODE but first lets you set the **Layer** (by name) and **Color** (1-255 or ByLayer)
 the parts get; **Explode** (the default) then does it. Without an option the parts keep what EXPLODE gives them.
+
+## BATTMAN
+
+**BATTMAN** lists the attribute definitions of a block (tag, prompt, default, invisible). **Edit** a tag to change its **Tag**,
+**Prompt**, **Default** or **Invisible** flag; when you finish, the inserts of the block are brought in line like ATTSYNC does.

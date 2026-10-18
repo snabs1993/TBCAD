@@ -48,6 +48,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeAttExtCommand());
     (void)registry.add(makeAttTableCommand());
     (void)registry.add(makeAttSyncCommand());
+    (void)registry.add(makeBattManCommand());
     (void)registry.add(makeXAttachCommand());
     (void)registry.add(makePdfAttachCommand());
     (void)registry.add(makeImageAttachCommand());

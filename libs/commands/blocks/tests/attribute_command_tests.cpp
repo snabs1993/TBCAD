@@ -263,3 +263,21 @@ TEST_CASE("-ATTDEF text height follows the drawing size like TEXT does") {
     REQUIRE(t);
     CHECK(t->height > 2.5);
 }
+
+TEST_CASE("BATTMAN edits the default of a block attribute and updates the inserts") {
+    Fixture f;
+    BlockId tag = makeTagBlock(f);
+    f.host->run("INSERT", {"Tag", "0,0", "Zed"});
+    auto r = f.host->run("BATTMAN", {"Tag", "Edit", "name", "Default", "Bob", "Done"});
+    CHECK(r.finished);
+    bool found = false;
+    for (EntityId id : f.doc.block(tag)->entities)
+        if (const auto* t = entityAs<TextData>(*f.doc.find(id));
+            t && t->attdef && t->attdef->tag == "NAME") {
+            found = true;
+            CHECK(t->attdef->defaultValue == "Bob");
+        }
+    CHECK(found);
+    CHECK(f.host->logContains("NAME"));
+    CHECK(f.host->undo());
+}

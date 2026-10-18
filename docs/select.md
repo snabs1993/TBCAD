@@ -21,3 +21,9 @@
 ## Quick Properties
 
 When on, a small box in the corner of the viewport shows the common layer, colour, linetype and lineweight of the selection (`*VARIES*` when they differ). Changing a field runs `CHPROP`, so the edit is one undo step.
+
+## CHANGE
+
+**CHANGE** takes the selection and a point: the nearest end of a line moves to it, a circle's radius reaches it, text and
+inserts move there (arcs and the rest are left alone). The keyword **Properties** works like CHPROP (layer, colour, linetype,
+lineweight, linetype scale). One undo step.
