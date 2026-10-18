@@ -17,6 +17,7 @@ Settings Settings::withDefaults() {
     o["autosave.minutes"] = 10;
     o["view.lineweights"] = true;
     o["view.transparency"] = true;
+    o["files.filedia"] = true;  // 0: OPEN / SAVEAS ask for the path on the command line
     o["view.grid"] = false;
     o["drafting.snap"] = false;
     o["drafting.ortho"] = false;

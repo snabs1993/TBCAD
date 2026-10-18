@@ -326,11 +326,30 @@ public:
 // owns the dialogs, so the command only asks it ("action:file.save").
 class FileActionCommand final : public cmd::Command {
 public:
-    FileActionCommand(const char* name, const char* action, const char* description)
-        : name_(name), action_(action), description_(description) {}
+    // `pathPrompt`: the question asked on the command line when FILEDIA is 0 ("" = never asks).
+    FileActionCommand(const char* name, const char* action, const char* description,
+                      const char* pathPrompt = "")
+        : name_(name), action_(action), description_(description), pathPrompt_(pathPrompt) {}
     std::string_view name() const override { return name_; }
     std::string_view description() const override { return description_; }
     cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool open = std::string_view(action_) == "file.open";
+        // Plain SAVE only needs a name for a drawing that has none yet.
+        const bool needsName =
+            open || std::string_view(action_) == "file.saveAs" || ctx.host().documentFile().empty();
+        const bool dialogs = ctx.host().setting("files.filedia").value_or("1") != "0";
+        if (*pathPrompt_ && needsName && !dialogs) {
+            auto path = co_await ctx.getString(pathPrompt_);
+            if (!path.ok())
+                co_return;
+            std::string text = cmd::trim(path.text);
+            if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
+                text = text.substr(1, text.size() - 2);
+            if (text.empty())
+                co_return;
+            ctx.host().requestUi(std::string(open ? "openpath:" : "saveaspath:") + text);
+            co_return;
+        }
         ctx.host().requestUi(std::string("action:") + action_);
         co_return;
     }
@@ -339,6 +358,33 @@ private:
     const char* name_;
     const char* action_;
     const char* description_;
+    const char* pathPrompt_;
+};
+
+// FILEDIA: 1 shows file dialogs, 0 asks for file names on the command line.
+class FilediaCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "FILEDIA"; }
+    std::string_view description() const override {
+        return "Choose file dialogs (1) or file names typed on the command line (0)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool on = ctx.host().setting("files.filedia").value_or("1") != "0";
+        cmd::StringOptions so;
+        so.defaultValue = on ? "1" : "0";
+        auto v = co_await ctx.getString(
+            "New value for FILEDIA (1 = dialogs, 0 = command line) <" + *so.defaultValue + ">", so);
+        if (!v.ok())
+            co_return;
+        const std::string t = cmd::trim(v.text);
+        if (t != "0" && t != "1") {
+            ctx.message("Type 0 or 1.");
+            co_return;
+        }
+        ctx.host().setSetting("files.filedia", t);
+        ctx.message(t == "0" ? "OPEN, SAVEAS and PLOT now ask for the file name here."
+                             : "OPEN and SAVEAS show the file dialog.");
+    }
 };
 
 // MSPACE / PSPACE: switch between editing the model through a viewport and the sheet.
@@ -565,6 +611,7 @@ private:
 
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
+    (void)registry.add(std::make_unique<FilediaCommand>());
     (void)registry.add(std::make_unique<SpaceCommand>(
         "MSPACE", "MS", "model", "Edit the model through the selected viewport of a layout"));
     (void)registry.add(std::make_unique<SpaceCommand>(
@@ -576,14 +623,16 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<SettingsPageCommand>());
     (void)registry.add(
         std::make_unique<FileActionCommand>("NEW", "file.new", "Start a new drawing"));
-    (void)registry.add(
-        std::make_unique<FileActionCommand>("OPEN", "file.open", "Open a drawing file"));
     (void)registry.add(std::make_unique<FileActionCommand>(
-        "SAVE", "file.save", "Save the drawing (asks for a name the first time)"));
-    (void)registry.add(std::make_unique<FileActionCommand>("QSAVE", "file.save",
-                                                           "Save the drawing (same as SAVE)"));
+        "OPEN", "file.open", "Open a drawing file", "File name to open"));
     (void)registry.add(std::make_unique<FileActionCommand>(
-        "SAVEAS", "file.saveAs", "Save the drawing under another name or format"));
+        "SAVE", "file.save", "Save the drawing (asks for a name the first time)",
+        "Save as (file name)"));
+    (void)registry.add(std::make_unique<FileActionCommand>(
+        "QSAVE", "file.save", "Save the drawing (same as SAVE)", "Save as (file name)"));
+    (void)registry.add(std::make_unique<FileActionCommand>(
+        "SAVEAS", "file.saveAs", "Save the drawing under another name or format",
+        "Save as (file name)"));
     (void)registry.add(
         std::make_unique<FileActionCommand>("CLOSE", "file.close", "Close the current drawing"));
     (void)registry.add(std::make_unique<SaveAsTemplateCommand>());
