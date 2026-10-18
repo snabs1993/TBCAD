@@ -1160,3 +1160,48 @@ TEST_CASE("viewport menu: selection items fit the picked object and run") {
     CHECK_FALSE(layer(h, "A-Doors")->on);
     CHECK(layer(h, "0")->on);
 }
+
+TEST_CASE("layout tabs: add, switch, rename, delete and back to Model") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.has("Model", "##layouttabs"));
+    CHECK_FALSE(h.core().inPaperSpace());
+
+    // "+" asks for a name, OK makes a sheet and shows it.
+    REQUIRE(h.click("+", "##layouttabs"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Popup"));
+    CHECK(h.enterText("##n", "Plan A", "Popup"));
+    h.frame(5);
+    CHECK(h.has("Plan A", "##layouttabs"));
+    CHECK(h.core().inPaperSpace());
+    CHECK(h.core().activeLayout() == "Plan A");
+
+    // Model tab goes back to model space; the layout tab returns to the sheet.
+    REQUIRE(h.click("Model", "##layouttabs"));
+    h.frame(3);
+    CHECK_FALSE(h.core().inPaperSpace());
+    REQUIRE(h.click("Plan A", "##layouttabs"));
+    h.frame(3);
+    CHECK(h.core().inPaperSpace());
+
+    // Right click on the tab: Rename...
+    REQUIRE(h.rightClick("Plan A", "##layouttabs"));
+    h.frame(2);
+    REQUIRE(h.click("Rename...", "Popup"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Popup"));
+    CHECK(h.enterText("##n", "Plan B", "Popup"));
+    h.frame(5);
+    CHECK(h.has("Plan B", "##layouttabs"));
+    CHECK_FALSE(h.has("Plan A", "##layouttabs"));
+    CHECK(h.core().activeLayout() == "Plan B");
+
+    // ... and Delete drops the sheet and returns to Model.
+    REQUIRE(h.rightClick("Plan B", "##layouttabs"));
+    h.frame(2);
+    REQUIRE(h.click("Delete", "Popup"));
+    h.frame(5);
+    CHECK_FALSE(h.has("Plan B", "##layouttabs"));
+    CHECK_FALSE(h.core().inPaperSpace());
+}
