@@ -91,10 +91,10 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
         opts.keywords = {"Extents", "All",    "Window", "Previous", "Center",
-                         "Scale",   "Object", "In",     "Out"};
+                         "Scale",   "Object", "Double", "Half"};
         auto first = co_await ctx.getPoint(
             "Specify first corner of the window or "
-            "[Extents/All/Window/Previous/Center/Scale/Object/In/Out]",
+            "[Extents/All/Window/Previous/Center/Scale/Object/Double/Half]",
             opts);
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
@@ -158,9 +158,9 @@ public:
                     co_return;
                 }
                 cam.fit(box);
-            } else if (first.keyword == "In") {
+            } else if (first.keyword == "Double") {
                 cam.zoomAt({cam.viewportW / 2.0, cam.viewportH / 2.0}, 2.0);
-            } else if (first.keyword == "Out") {
+            } else if (first.keyword == "Half") {
                 cam.zoomAt({cam.viewportW / 2.0, cam.viewportH / 2.0}, 0.5);
             } else {
                 // Window: ask for the corners.
