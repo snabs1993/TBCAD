@@ -719,3 +719,13 @@ TEST_CASE("OFFSET Erase removes the source object") {
     CHECK(f.doc.contains(m));
     CHECK(f.count(EntityKind::Line) == 3);
 }
+
+TEST_CASE("TRIM Remove deletes the objects picked") {
+    Fixture f;
+    EntityId edge = f.add(LineData{{0, -5}, {0, 5}});
+    EntityId stray = f.add(LineData{{20, 0}, {30, 0}});
+    f.host.run("TRIM", {ScriptItem::enter(), "Remove", ScriptItem::select({stray}),
+                        ScriptItem::enter(), ScriptItem::enter()});
+    CHECK(f.doc.contains(edge));
+    CHECK_FALSE(f.doc.contains(stray));
+}

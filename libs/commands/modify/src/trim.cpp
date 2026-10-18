@@ -144,16 +144,31 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
     for (;;) {
         cmd::EntityOptions eo;
         eo.keywords = {"Fence", "Crossing", "Edge", "Undo"};
+        if (trimMode)
+            eo.keywords.insert(eo.keywords.begin() + 3, "Remove");
         eo.filter = [&doc = ctx.doc()](const Entity& e) { return isEditable(doc, e); };
         auto pick = co_await ctx.getEntity(
             trimMode
-                ? "Select object to trim or Shift-select to extend or [Fence/Crossing/Edge/Undo]"
+                ? "Select object to trim or Shift-select to extend or "
+                  "[Fence/Crossing/Edge/Remove/Undo]"
                 : "Select object to extend or Shift-select to trim or [Fence/Crossing/Edge/Undo]",
             eo);
         if (pick.status == cmd::Status::Keyword) {
             if (pick.keyword == "Undo") {
                 ctx.message(ctx.rollbackToCheckpoint() ? "Last change undone."
                                                        : "Nothing to undo.");
+            } else if (pick.keyword == "Remove") {
+                cmd::SelectionOptions so;
+                so.filter = [&doc = ctx.doc()](const Entity& e) { return isEditable(doc, e); };
+                so.allowPreselection = false;
+                auto sel = co_await ctx.getSelection("Select objects to erase <exit>", so);
+                if (sel.ok()) {
+                    std::size_t n = 0;
+                    for (EntityId id : sel.ids)
+                        if (ctx.tx().erase(id))
+                            ++n;
+                    ctx.message(std::to_string(n) + " erased.");
+                }
             } else if (pick.keyword == "Edge") {
                 cmd::KeywordOptions k;
                 k.keywords = {"Extend", "No extend"};
