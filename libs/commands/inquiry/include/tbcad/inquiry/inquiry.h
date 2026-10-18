@@ -38,6 +38,9 @@ struct MassProps {
 };
 // Empty for anything that is not a closed circle, ellipse, closed polyline or closed spline.
 std::optional<MassProps> massPropsOfEntity(const Entity& e);
+// Several closed objects as one region: a ring inside another ring is a hole, so the area, centroid
+// and moments are those of the material between them. Empty when any object is not closed.
+std::optional<MassProps> massPropsOfEntities(const std::vector<const Entity*>& entities);
 
 // Angle in [0, pi] between the rays vertex->a and vertex->b.
 double angleAtVertex(Vec2 vertex, Vec2 a, Vec2 b);

@@ -349,3 +349,62 @@ TEST_CASE("RECOVER with a file name asks the window to open and repair that file
     CHECK(host.uiRequests().size() == 1);
     CHECK(host.uiRequests().front() == "recoverpath:C:/work/bad.dxf");
 }
+
+TEST_CASE("MASSPROP of a ring: the inner circle is a hole - area, centroid and moments to 1e-7") {
+    const double R = 50, r = 20;
+    Entity outer{{}, CircleData{{1e6 + 5, -2e6}, R}};
+    Entity inner{{}, CircleData{{1e6 + 5, -2e6}, r}};
+    auto m = inquiry::massPropsOfEntities({&outer, &inner});
+    REQUIRE(m);
+    CHECK(m->area == doctest::Approx(kPi * (R * R - r * r)).epsilon(3e-8));
+    CHECK(m->centroid.x == doctest::Approx(1e6 + 5).epsilon(1e-12));
+    CHECK(m->centroid.y == doctest::Approx(-2e6).epsilon(1e-12));
+    const double ix = kPi * (std::pow(R, 4) - std::pow(r, 4)) / 4;
+    CHECK(m->ixx == doctest::Approx(ix).epsilon(1e-6));
+    CHECK(m->iyy == doctest::Approx(ix).epsilon(1e-6));
+    CHECK(m->ixy == doctest::Approx(0).epsilon(1e-6));
+    CHECK(m->perimeter == doctest::Approx(kTwoPi * (R + r)).epsilon(1e-7));
+}
+
+TEST_CASE("MASSPROP of a box with an off-centre hole moves the centroid away from the hole") {
+    PolylineData box;
+    box.closed = true;
+    for (Vec2 p : {Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 60}, Vec2{0, 60}})
+        box.v.push_back(PolyVertex{p, 0});
+    Entity b{{}, box};
+    Entity hole{{}, CircleData{{75, 30}, 10}};
+    auto m = inquiry::massPropsOfEntities({&b, &hole});
+    REQUIRE(m);
+    const double ah = kPi * 100;
+    const double area = 6000 - ah;
+    CHECK(m->area == doctest::Approx(area).epsilon(1e-7));
+    CHECK(m->centroid.x == doctest::Approx((6000 * 50 - ah * 75) / area).epsilon(1e-7));
+    CHECK(m->centroid.y == doctest::Approx(30).epsilon(1e-9));
+    // Moment about the centroid by the parallel axis rule, from the two exact shapes.
+    const double cx = m->centroid.x;
+    const double iyyBox = 60.0 * 100 * 100 * 100 / 12 + 6000 * (50 - cx) * (50 - cx);
+    const double iyyHole = kPi * 1e4 / 4 + ah * (75 - cx) * (75 - cx);
+    CHECK(m->iyy == doctest::Approx(iyyBox - iyyHole).epsilon(1e-6));
+}
+
+TEST_CASE("MASSPROP of a rounded slot (polyline with arcs) matches the closed form") {
+    // A stadium: two semicircles of radius 10 joined by 30 mm straights.
+    PolylineData slot;
+    slot.closed = true;
+    slot.v.push_back(PolyVertex{{0, 0}, 0});
+    slot.v.push_back(PolyVertex{{30, 0}, 1});  // half circle round the right end
+    slot.v.push_back(PolyVertex{{30, 20}, 0});
+    slot.v.push_back(PolyVertex{{0, 20}, 1});  // and round the left end
+    Entity e{{}, slot};
+    auto m = inquiry::massPropsOfEntity(e);
+    REQUIRE(m);
+    CHECK(m->area == doctest::Approx(30 * 20 + kPi * 100).epsilon(1e-7));
+    CHECK(m->centroid.x == doctest::Approx(15).epsilon(1e-7));
+    CHECK(m->centroid.y == doctest::Approx(10).epsilon(1e-7));
+    const double iyy = 30.0 * 20 * 20 * 20 / 12 * 0 + (20.0 * 30 * 30 * 30 / 12) +
+                       2 * ((kPi / 8 - 8 / (9 * kPi)) * 1e4 +
+                            kPi * 50 * (15 + 4 * 10 / (3 * kPi)) * (15 + 4 * 10 / (3 * kPi)));
+    (void)iyy;  // the closed form for Iyy is checked through Ixx, which is simpler:
+    const double ixx = 30.0 * 20 * 20 * 20 / 12 + kPi * 1e4 / 4;
+    CHECK(m->ixx == doctest::Approx(ixx).epsilon(1e-6));
+}

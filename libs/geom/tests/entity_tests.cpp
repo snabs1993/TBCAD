@@ -328,3 +328,27 @@ TEST_CASE("multileader: transform keeps its shape, grips move lines, landing and
           Vec2{-1, -1});
     CHECK_FALSE(moveGrip(e, 6, {0, 0}).ok());
 }
+
+TEST_CASE("outlinePoints follows the travel direction and is finer than flatten's limit") {
+    Entity circle;
+    circle.data = CircleData{{1e6, 5}, 50};
+    std::vector<Vec2> pts;
+    REQUIRE(outlinePoints(circle, 1e-7, pts));
+    CHECK(pts.size() > 4096);  // flatten() stops at 4096 segments
+    double area = 0;
+    for (std::size_t i = 0; i < pts.size(); ++i) {
+        const Vec2 a = pts[i] - Vec2{1e6, 5}, b = pts[(i + 1) % pts.size()] - Vec2{1e6, 5};
+        area += cross(a, b) / 2;
+    }
+    CHECK(area == doctest::Approx(kPi * 2500).epsilon(1e-8));
+
+    // A clockwise polyline arc is walked from its start to its end.
+    PolylineData pl;
+    pl.v = {PolyVertex{{0, 0}, -1.0}, PolyVertex{{10, 0}, 0}};
+    Entity e;
+    e.data = pl;
+    REQUIRE(outlinePoints(e, 1e-3, pts));
+    CHECK(distance(pts.front(), {0, 0}) < 1e-9);
+    CHECK(distance(pts.back(), {10, 0}) < 1e-9);
+    CHECK(pts[pts.size() / 2].y > 0);  // a negative bulge from left to right bows upward
+}

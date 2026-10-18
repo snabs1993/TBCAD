@@ -175,6 +175,53 @@ std::optional<Vec2> closestOnDisplay(const DisplayList& list, Vec2 p) {
 
 }  // namespace
 
+namespace {
+
+void sampleCurve(const CurveRef& c, double tol, bool reversed, std::vector<Vec2>& pts) {
+    std::vector<Vec2> part;
+    if (c.kind() == CurveRef::Kind::Arc && c.radius() > 0) {
+        const double step = std::sqrt(8 * std::max(tol, 1e-12) / c.radius());
+        const auto n = static_cast<std::size_t>(
+            std::clamp(std::ceil(c.sweep() / std::min(step, 1.0)), 4.0, 262144.0));
+        part.reserve(n + 1);
+        for (std::size_t i = 0; i <= n; ++i)
+            part.push_back(c.pointAt(c.startAngle() +
+                                     c.sweep() * static_cast<double>(i) / static_cast<double>(n)));
+        part.front() = c.startPoint();
+        part.back() = c.endPoint();
+    } else {
+        flatten(c, std::max(tol, 1e-12), part);
+    }
+    if (reversed)
+        std::reverse(part.begin(), part.end());
+    for (const Vec2& p : part)
+        if (pts.empty() || distance(pts.back(), p) > 0)
+            pts.push_back(p);
+}
+
+}  // namespace
+
+bool outlinePoints(const Entity& e, double tol, std::vector<Vec2>& out) {
+    out.clear();
+    if (const auto* pl = entityAs<PolylineData>(e)) {
+        for (const Segment& s : segments(*pl))
+            sampleCurve(s.curve, tol, s.reversed, out);
+        if (pl->closed && out.size() > 1 && distance(out.front(), out.back()) <= 0)
+            out.pop_back();
+        return !out.empty();
+    }
+    std::vector<CurveRef> curves;
+    if (!curvesOf(e, curves) || curves.empty())
+        return false;
+    for (const CurveRef& c : curves)
+        sampleCurve(c, tol, false, out);
+    const double dup = 1e-9 * (1 + std::max(std::fabs(out.front().x), std::fabs(out.front().y)));
+    if (curves.size() == 1 && curves[0].isClosed() && out.size() > 1 &&
+        distance(out.front(), out.back()) <= dup)
+        out.pop_back();
+    return !out.empty();
+}
+
 bool curvesOf(const Entity& e, std::vector<CurveRef>& out) {
     switch (kind(e)) {
         case EntityKind::Line: {

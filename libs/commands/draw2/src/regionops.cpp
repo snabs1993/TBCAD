@@ -8,7 +8,22 @@ namespace tbcad::draw2::detail {
 
 namespace {
 
-constexpr double kChord = 0.005;  // drawing units; arcs and circles become polygons this fine
+constexpr double kMaxChord = 0.005;  // drawing units; arcs and circles become polygons this fine
+constexpr double kMinChord = 4e-7;   // above the merge distance of the boolean operations
+
+// How finely an object is flattened: its curves deviate from the polygon by at most this much,
+// which keeps areas accurate to a few parts in a million whatever the size of the shape.
+double chordFor(const Entity& e) {
+    std::vector<geom::CurveRef> curves;
+    if (!geom::curvesOf(e, curves) || curves.empty())
+        return kMaxChord;
+    BBox2 b = curves.front().bounds();
+    for (const geom::CurveRef& c : curves) {
+        b.expand(c.bounds().min);
+        b.expand(c.bounds().max);
+    }
+    return std::clamp(distance(b.min, b.max) * 5e-7, kMinChord, kMaxChord);
+}
 
 // The outline of a closed object (closed polyline, circle, full ellipse, closed spline) as a
 // polygon with arcs flattened. False for anything open or not a curve.
@@ -37,15 +52,7 @@ bool ringOf(const Entity& e, geom::Ring& ring) {
         return false;
     if (kind(e) == EntityKind::Spline && !curves[0].isClosed())
         return false;
-    ring.clear();
-    for (const geom::CurveRef& c : curves) {
-        std::vector<Vec2> pts;
-        geom::flatten(c, kChord, pts);
-        if (!pts.empty())
-            pts.pop_back();  // the next piece starts where this one ends
-        ring.insert(ring.end(), pts.begin(), pts.end());
-    }
-    return ring.size() >= 3;
+    return geom::outlinePoints(e, chordFor(e), ring) && ring.size() >= 3;
 }
 
 bool closedObject(const Entity& e) {
@@ -71,15 +78,39 @@ geom::Region regionOfSelection(cmd::CommandContext& ctx, const std::vector<Entit
     return acc;
 }
 
-PolylineData polylineOf(const geom::Ring& ring) {
-    PolylineData d;
-    d.closed = true;
-    for (const Vec2& p : ring) {
-        PolyVertex v;
-        v.p = p;
-        d.v.push_back(v);
+// The ring as a closed polyline, with the arcs of the original objects brought back. A ring that
+// is a single circle comes back as a circle.
+Entity ringEntity(const geom::Ring& ring, double chord, const EntityCommon& common,
+                  bool allowCircle = true) {
+    const geom::ArcFit fit = geom::fitArcs(ring, chord);
+    Entity e;
+    if (fit.circle && !allowCircle) {
+        // Two half circles: the outline as a closed polyline.
+        PolylineData d;
+        d.closed = true;
+        for (double sign : {1.0, -1.0}) {
+            PolyVertex v;
+            v.p = fit.center + Vec2{fit.radius * sign, 0};
+            v.bulge = (ring.size() > 2 && cross(ring[1] - ring[0], ring[2] - ring[1]) < 0) ? -1 : 1;
+            d.v.push_back(v);
+        }
+        e.data = std::move(d);
+    } else if (fit.circle) {
+        e.data = CircleData{fit.center, fit.radius};
+    } else {
+        PolylineData d;
+        d.closed = true;
+        for (const geom::ArcVertex& av : fit.vertices) {
+            PolyVertex v;
+            v.p = av.p;
+            v.bulge = av.bulge;
+            d.v.push_back(v);
+        }
+        e.data = std::move(d);
     }
-    return d;
+    e.common = common;
+    e.common.id = {};
+    return e;
 }
 
 // Replaces the sources by the polygons of `result`, which take the first source's properties.
@@ -87,13 +118,14 @@ void replace(cmd::CommandContext& ctx, const std::vector<EntityId>& sources,
              const geom::Region& result) {
     const Entity* first = sources.empty() ? nullptr : ctx.doc().find(sources.front());
     const EntityCommon common = first ? first->common : EntityCommon{};
+    double chord = kMinChord;
+    for (EntityId id : sources)
+        if (const Entity* e = ctx.doc().find(id))
+            chord = std::max(chord, chordFor(*e));
     for (EntityId id : sources)
         (void)ctx.tx().erase(id);
     for (const geom::Ring& r : result.rings) {
-        Entity e{{}, polylineOf(r)};
-        e.common = common;
-        e.common.id = {};
-        auto id = ctx.tx().add(std::move(e));
+        auto id = ctx.tx().add(ringEntity(r, chord, common));
         if (!id)
             ctx.message(id.error().message);
     }
@@ -123,12 +155,9 @@ public:
             geom::Ring r;
             if (!e || !ringOf(*e, r))
                 continue;
-            Entity out{{},
-                       polylineOf(geom::normalized({{r}}).rings.empty()
-                                      ? r
-                                      : geom::normalized({{r}}).rings[0])};
-            out.common = e->common;
-            out.common.id = {};
+            const geom::Region norm = geom::normalized({{r}});
+            Entity out =
+                ringEntity(norm.rings.empty() ? r : norm.rings[0], chordFor(*e), e->common, false);
             if (!made)
                 ctx.checkpoint();
             (void)ctx.tx().erase(id);
