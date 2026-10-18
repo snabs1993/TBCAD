@@ -930,3 +930,38 @@ TEST_CASE("TRIM and EXTEND Mode: Quick uses every object as an edge, Standard as
     CHECK((near(entityAs<LineData>(f.get(h))->a, {3, 0}) ||
            near(entityAs<LineData>(f.get(h))->b, {3, 0})));
 }
+
+TEST_CASE("FILLET Multiple keeps asking for pairs until Enter, one undo step") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 0}, {0, 10}});
+    EntityId c = f.add(LineData{{30, 0}, {40, 0}});
+    EntityId d = f.add(LineData{{30, 0}, {30, 10}});
+    auto r = f.host.run("FILLET", {"R", "2", "M", ScriptItem::pick(a, {8, 0}),
+                                   ScriptItem::pick(b, {0, 8}), ScriptItem::pick(c, {38, 0}),
+                                   ScriptItem::pick(d, {30, 8}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Arc) == 2);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Arc) == 0);
+}
+
+TEST_CASE("CHAMFER Multiple adds one chamfer per pair") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 0}, {0, 10}});
+    EntityId c = f.add(LineData{{30, 0}, {40, 0}});
+    EntityId d = f.add(LineData{{30, 0}, {30, 10}});
+    f.host.run("CHAMFER",
+               {"D", "2", "2", "Mu", ScriptItem::pick(a, {8, 0}), ScriptItem::pick(b, {0, 8}),
+                ScriptItem::pick(c, {38, 0}), ScriptItem::pick(d, {30, 8}), ScriptItem::enter()});
+    CHECK(f.count(EntityKind::Line) == 6);
+
+    Fixture g;
+    EntityId v = g.add(LineData{{0, 0}, {10, 0}});
+    g.add(LineData{{3, -5}, {3, 5}});
+    g.add(LineData{{7, -5}, {7, 5}});
+    g.host.run("TRIM", {ScriptItem::enter(), "C", "4,-1", "6,1", ScriptItem::esc()});
+    CHECK(g.count(EntityKind::Line) == 4);
+    CHECK(near(entityAs<LineData>(g.get(v))->b, {3, 0}));
+}
