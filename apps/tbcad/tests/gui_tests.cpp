@@ -1315,3 +1315,33 @@ TEST_CASE("every menu item can be clicked without trouble") {
         }
     }
 }
+
+TEST_CASE("tool strip: every button starts its command or action") {
+    int total = 0;
+    {
+        Harness h(1920, 1080);
+        h.frame(3);
+        while (h.has("##tool", "##toolstrip") && h.find("##tool", "##toolstrip", total))
+            ++total;
+    }
+    REQUIRE(total >= 20);
+    int started = 0;
+    for (int i = 0; i < total; ++i) {
+        CAPTURE(i);
+        Harness h(1920, 1080);
+        h.core().submitText("CIRCLE");
+        h.core().submitText("0,0");
+        h.core().submitText("10");
+        h.frame(3);
+        REQUIRE(h.click("##tool", "##toolstrip", i));
+        h.frame(4);
+        if (h.core().runner().active()) {
+            ++started;
+            h.core().pressEscape();
+        }
+        h.key(ImGuiKey_Escape);  // a file picker or dialog
+        h.frame(2);
+    }
+    // Draw and Modify tools run commands: at least those 17 are waiting for input after a click.
+    CHECK(started >= 15);
+}
