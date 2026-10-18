@@ -7,6 +7,7 @@
 #include <functional>
 
 #include "importer.h"
+#include "keep.h"
 #include "tbcad/dim/dim.h"
 
 namespace tbcad::dxf::detail {
@@ -172,6 +173,37 @@ void Importer::setUnits(int insunits, bool assumed) {
     }
 }
 
+// The value of a group as text, for content that is carried to the writer unread. `dec` decodes a
+// string value; false when the value has no text form (binary chunks).
+template <class Dec>
+bool keptValue(const Group& g, Dec&& dec, std::string& out) {
+    switch (g.type()) {
+        case ValueType::String:
+            out = dec(g.str());
+            return true;
+        case ValueType::Double: {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.17g", g.number());
+            out = buf;
+            return true;
+        }
+        case ValueType::Int16:
+        case ValueType::Int32:
+        case ValueType::Int64:
+        case ValueType::Bool:
+            out = std::to_string(g.integer());
+            return true;
+        case ValueType::Handle: {
+            const Handle& h = std::get<Handle>(g.value);
+            out = h.valid ? std::string(h.text) : std::string();
+            return h.valid;
+        }
+        case ValueType::Binary:
+            break;
+    }
+    return false;
+}
+
 void Importer::parseHeader(const Record& rec) {
     std::string var;
     int insunits = 0;
@@ -218,7 +250,39 @@ void Importer::parseHeader(const Record& rec) {
         }
     }
     setUnits(insunits, !haveUnits);
+
+    // Variables the writer does not derive from the drawing are kept as they were read.
+    std::vector<std::pair<std::string, std::string>> kept;
+    {
+        std::string name, packed;
+        bool usable = true;
+        auto flush = [&] {
+            if (!name.empty() && usable && !packed.empty() &&
+                (!ownedHeaderVar(name) || overridableHeaderVar(name)))
+                kept.emplace_back(name, packed);
+            name.clear();
+            packed.clear();
+            usable = true;
+        };
+        for (const Group& g : rec.g) {
+            if (g.code == 9) {
+                flush();
+                name = std::string(g.str());
+                continue;
+            }
+            if (name.empty())
+                continue;
+            std::string text;
+            if (handleCode(g.code) ||
+                !keptValue(g, [&](std::string_view v) { return dec(v); }, text))
+                usable = false;
+            packGroup(packed, g.code, text);
+        }
+        flush();
+    }
     (void)tx_->modifyHeader([&](Header& h) {
+        for (auto& [n, v] : kept)
+            h.custom[std::string(kKeptVarPrefix) + n] = std::move(v);
         if (std::isfinite(ltscale) && ltscale > 0)
             h.ltScale = ltscale;
         if (std::isfinite(celtscale) && celtscale > 0 && celtscale != 1)
@@ -263,6 +327,33 @@ void Importer::skipSection(RecordReader& rr) {
             return;
         }
     }
+}
+
+// CLASSES: kept as read, except the classes the writer adds itself for the images it writes.
+void Importer::processClasses(RecordReader& rr) {
+    std::string kept;
+    Record r;
+    while (rr.next(r)) {
+        if (r.type == "ENDSEC")
+            break;
+        if (r.type == "SECTION" || r.type == "EOF") {
+            rr.pushBack(std::move(r));
+            break;
+        }
+        if (r.type != "CLASS")
+            continue;
+        const std::string_view cls = r.raw(1);
+        if (cls == "IMAGE" || cls == "IMAGEDEF" || cls == "IMAGEDEF_REACTOR")
+            continue;
+        packGroup(kept, 0, "CLASS");
+        for (const Group& g : r.g) {
+            std::string text;
+            if (keptValue(g, [&](std::string_view v) { return dec(v); }, text))
+                packGroup(kept, g.code, text);
+        }
+    }
+    if (!kept.empty())
+        (void)tx_->modifyHeader([&](Header& h) { h.custom[kKeptClassesKey] = std::move(kept); });
 }
 
 // OBJECTS: only our annotation-scale note is read (the current scale and the scale list); the
@@ -1692,6 +1783,8 @@ Result<ImportResult> Importer::run() {
             processEntities(rr);
         else if (name == "OBJECTS")
             processObjects(rr);
+        else if (name == "CLASSES")
+            processClasses(rr);
         else
             skipSection(rr);
     }

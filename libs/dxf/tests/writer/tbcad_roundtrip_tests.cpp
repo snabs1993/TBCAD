@@ -83,3 +83,82 @@ TEST_CASE("every DXF survives DXF -> document -> .tbcad -> document, and exports
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+namespace {
+
+// The groups of one header variable ("" when absent), as the text from its name to the next
+// variable or section end.
+std::string headerVar(const std::string& dxf, const std::string& name) {
+    const std::string key = "\r\n9\r\n" + name + "\r\n";
+    const std::size_t at = dxf.find(key);
+    if (at == std::string::npos)
+        return {};
+    const std::size_t end = std::min(dxf.find("\r\n9\r\n", at + 3), dxf.find("\r\n0\r\n", at + 3));
+    return dxf.substr(at, end - at);
+}
+
+}  // namespace
+
+TEST_CASE("header variables and classes TBCAD does not model survive open, save and open again") {
+    const std::string src =
+        "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1027\n"
+        "  9\n$TDCREATE\n 40\n2460000.5\n"
+        "  9\n$PROJECTNAME\n  1\nPlant \xE0\xB8\x81\n"
+        "  9\n$FINGERPRINTGUID\n  2\n{ABCD-1234}\n"
+        "  9\n$CMATERIAL\n347\n3F\n"
+        "  9\n$LUNITS\n 70\n     4\n"
+        "  9\n$CECOLOR\n 62\n     1\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nCLASSES\n"
+        "  0\nCLASS\n  1\nACDBPLACEHOLDER\n  2\nAcDbPlaceHolder\n  3\nObjectDBX Classes\n"
+        " 90\n        0\n 91\n        5\n280\n     0\n281\n     0\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 11\n5\n 21\n5\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+
+    Report r1;
+    Result<ImportResult> first = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(first.ok());
+
+    // through a .tbcad file
+    auto saved = io::writeTbcadToMemory(*first.value().document);
+    REQUIRE(saved.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(saved.value(), ioReport);
+    REQUIRE(reopened.ok());
+
+    Report r2;
+    Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string dxf(reinterpret_cast<const char*>(out.value().bytes.data()),
+                          out.value().bytes.size());
+
+    CHECK(headerVar(dxf, "$TDCREATE").find("2460000.5") != std::string::npos);
+    CHECK(headerVar(dxf, "$FINGERPRINTGUID").find("{ABCD-1234}") != std::string::npos);
+    CHECK(headerVar(dxf, "$PROJECTNAME").find("Plant") != std::string::npos);
+    CHECK(headerVar(dxf, "$CMATERIAL").empty());  // points at an object of the source file
+    CHECK(headerVar(dxf, "$LUNITS") == "\r\n9\r\n$LUNITS\r\n70\r\n4");
+    CHECK(headerVar(dxf, "$CECOLOR") == "\r\n9\r\n$CECOLOR\r\n62\r\n1");
+    CHECK(dxf.find("ACDBPLACEHOLDER") != std::string::npos);
+    CHECK(dxf.find("ObjectDBX Classes") != std::string::npos);
+    // each variable once
+    CHECK(dxf.find("$LUNITS") == dxf.rfind("$LUNITS"));
+    CHECK(dxf.find("$TDCREATE") == dxf.rfind("$TDCREATE"));
+
+    // and a second generation changes nothing
+    Report r3;
+    Result<ImportResult> again =
+        importDxf(std::as_bytes(std::span(out.value().bytes)), ImportOptions{}, r3);
+    REQUIRE(again.ok());
+    Report r4;
+    Result<ExportResult> out2 = exportDxf(*again.value().document, ExportOptions{}, r4);
+    REQUIRE(out2.ok());
+    CHECK(headerVar(std::string(reinterpret_cast<const char*>(out2.value().bytes.data()),
+                                out2.value().bytes.size()),
+                    "$TDCREATE") == headerVar(dxf, "$TDCREATE"));
+}
+
+}  // namespace tbcad::dxf
