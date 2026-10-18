@@ -136,7 +136,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
         report.summary(code::kSkippedObject, drawing.walkSummary);
-    {
+    if (options.diagnostics) {
         std::map<std::string, std::map<long long, std::size_t>> perLayer;
         std::size_t layersWith = 0;
         for (const auto& [h, l] : drawing.layers)
@@ -737,27 +737,27 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         }
         report.summary(code::kSkippedObject, ins);
     }
-    const long long diagMs = msSince(tDiag);
-    const auto tEmit = Clock::now();
-    const std::string text = detail::emitDxf(drawing);
-    const long long emitMs = msSince(tEmit);
-    const auto tImport = Clock::now();
-    auto result = dxf::importDxf(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
-        options, report);
+}
+const long long diagMs = msSince(tDiag);
+const auto tEmit = Clock::now();
+const std::string text = detail::emitDxf(drawing);
+const long long emitMs = msSince(tEmit);
+const auto tImport = Clock::now();
+auto result = dxf::importDxf(
+    std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
+    options, report);
+report.summary(code::kSkippedObject,
+               "timing (ms): read " + std::to_string(readMs) + ", diagnostics " +
+                   std::to_string(diagMs) + ", to DXF text " + std::to_string(emitMs) + " (" +
+                   std::to_string(text.size() / 1024) + " KB), DXF import " +
+                   std::to_string(msSince(tImport)) + ", total " + std::to_string(msSince(tStart)));
+if (result) {
     report.summary(code::kSkippedObject,
-                   "timing (ms): read " + std::to_string(readMs) + ", diagnostics " +
-                       std::to_string(diagMs) + ", to DXF text " + std::to_string(emitMs) + " (" +
-                       std::to_string(text.size() / 1024) + " KB), DXF import " +
-                       std::to_string(msSince(tImport)) + ", total " +
-                       std::to_string(msSince(tStart)));
-    if (result) {
-        report.summary(code::kSkippedObject,
-                       "layouts imported: " + std::to_string(result.value().summary.layouts));
-        result.value().summary.acadVer = v.code;
-        result.value().summary.version = v.name;
-    }
-    return result;
+                   "layouts imported: " + std::to_string(result.value().summary.layouts));
+    result.value().summary.acadVer = v.code;
+    result.value().summary.version = v.name;
+}
+return result;
 }
 
 std::string readerRevision() {
