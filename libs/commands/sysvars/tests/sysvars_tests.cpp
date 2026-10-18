@@ -76,3 +76,21 @@ TEST_CASE("RENAME renames layers and styles and refuses clashes") {
     f.host.run("RENAME", {"Block", "Nope", "B"});
     CHECK(f.host.logContains("There is no block"));
 }
+
+TEST_CASE("SETVAR reads and changes drawing variables by name") {
+    Fixture f;
+    f.host.run("SETVAR", {"ltscale", "3"});
+    CHECK(f.doc.header().ltScale == doctest::Approx(3));
+    f.host.run("SETVAR", {"CECOLOR", "red"});
+    CHECK(f.doc.header().currentColor == Color::index(1));
+    f.host.run("SETVAR", {"INSUNITS", "meters"});
+    CHECK(f.doc.header().units == LengthUnit::Meter);
+    CHECK(f.host.undo());
+    CHECK(f.doc.header().units == LengthUnit::Millimeter);
+    f.host.run("SETVAR", {"CLAYER", "NoSuchLayer"});
+    CHECK(f.host.logContains("no layer"));
+    f.host.run("SETVAR", {"NOPE"});
+    CHECK(f.host.logContains("Unknown variable"));
+    f.host.run("SETVAR", {"?"});
+    CHECK(f.host.logContains("CELWEIGHT"));
+}
