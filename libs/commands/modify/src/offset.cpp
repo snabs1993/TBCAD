@@ -7,6 +7,7 @@ namespace {
 
 constexpr const char* kDistanceKey = "offset.distance";
 constexpr const char* kRoundKey = "offset.roundcorners";
+constexpr const char* kLayerKey = "offset.currentlayer";
 
 modify::OffsetOptions optionsFrom(const cmd::IHost& host) {
     modify::OffsetOptions o;
@@ -28,11 +29,11 @@ public:
         bool through = false;
         for (;;) {
             cmd::DistanceOptions d;
-            d.keywords = {"Through", "Corners"};
+            d.keywords = {"Through", "Corners", "Layer"};
             d.allowZero = false;
             if (dist > 0)
                 d.defaultValue = dist;
-            std::string prompt = "Specify offset distance or [Through/Corners]";
+            std::string prompt = "Specify offset distance or [Through/Corners/Layer]";
             auto r = co_await ctx.getDistance(prompt, d);
             if (r.status == cmd::Status::Keyword && r.keyword == "Corners") {
                 cmd::KeywordOptions k;
@@ -41,6 +42,15 @@ public:
                 auto c = co_await ctx.getKeyword("Corner type at polyline bends [Round/Sharp]", k);
                 if (c.ok())
                     putFlag(ctx.host(), kRoundKey, c.keyword == "Round");
+                continue;
+            }
+            if (r.status == cmd::Status::Keyword && r.keyword == "Layer") {
+                cmd::KeywordOptions k;
+                k.keywords = {"Current", "Source"};
+                k.defaultKeyword = getFlag(ctx.host(), kLayerKey, false) ? "Current" : "Source";
+                auto c = co_await ctx.getKeyword("Layer of the new objects [Current/Source]", k);
+                if (c.ok())
+                    putFlag(ctx.host(), kLayerKey, c.keyword == "Current");
                 continue;
             }
             if (r.status == cmd::Status::Keyword) {
@@ -88,7 +98,10 @@ public:
                 ctx.message(res.error().message);
                 continue;
             }
+            const bool onCurrent = getFlag(ctx.host(), kLayerKey, false);
             for (Entity& e : res.value()) {
+                if (onCurrent)
+                    e.common.layer = ctx.doc().header().currentLayer;
                 auto id = ctx.tx().add(std::move(e));
                 if (!id)
                     ctx.message(id.error().message);
