@@ -278,7 +278,9 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
     if (!solid)
         h.pattern = pattern;
     for (std::size_t j = i; j < n; ++j) {
-        if (g[j].code == 52)
+        if (g[j].code == 77)
+            h.doubled = g[j].integer() != 0;
+        else if (g[j].code == 52)
             h.patternAngle = f.angle(g[j].number() * kDeg);
         else if (g[j].code == 41) {
             double s = g[j].number();

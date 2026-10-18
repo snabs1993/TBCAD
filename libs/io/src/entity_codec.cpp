@@ -143,7 +143,9 @@ struct PayloadWriter {
             for (const auto& edge : loop.edges)
                 std::visit([&](const auto& e) { hatchEdge(e); }, edge);
         }
-        // A gradient is appended after the loops; readers that do not know it skip the bytes.
+        // Optional tail: 0xF0 marks a double pattern, then a gradient may follow.
+        if (d.doubled)
+            w.u8(0xF0);
         if (d.gradient) {
             w.u8(static_cast<std::uint8_t>(d.gradient->kind));
             color(d.gradient->color1);
@@ -817,15 +819,21 @@ struct PayloadReader {
         }
         if (r.remaining() > 0) {
             std::uint8_t k = r.u8();
-            if (k != static_cast<std::uint8_t>(GradientKind::Linear) &&
-                k != static_cast<std::uint8_t>(GradientKind::Cylinder))
-                bad("unknown gradient kind");
-            GradientData g;
-            g.kind = static_cast<GradientKind>(k);
-            g.color1 = color();
-            g.color2 = color();
-            g.angle = r.f64();
-            d.gradient = g;
+            if (k == 0xF0) {  // a double pattern; a gradient may still follow
+                d.doubled = true;
+                k = r.remaining() > 0 ? r.u8() : std::uint8_t{0};
+            }
+            if (k != 0) {
+                if (k != static_cast<std::uint8_t>(GradientKind::Linear) &&
+                    k != static_cast<std::uint8_t>(GradientKind::Cylinder))
+                    bad("unknown gradient kind");
+                GradientData g;
+                g.kind = static_cast<GradientKind>(k);
+                g.color1 = color();
+                g.color2 = color();
+                g.angle = r.f64();
+                d.gradient = g;
+            }
         }
         return make(std::move(d));
     }

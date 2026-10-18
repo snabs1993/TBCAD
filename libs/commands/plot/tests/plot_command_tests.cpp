@@ -173,9 +173,11 @@ struct DocHost : cmd::ScriptHost {
 TEST_CASE("the default file name follows the open drawing - PLOTPANEL opens the panel") {
     Fixture f;
     DocHost h(f.doc, f.reg);
-    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "drawing.pdf");
-    // The plot goes to the plots folder, never next to the (maybe read-only) drawing.
+    // The plot goes to the plots folder, never next to the (maybe read-only) drawing; an unsaved
+    // drawing is no exception.
     h.setSetting("plot.defaultFolder", "/home/u/Documents/TBCAD plots");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) ==
+          "/home/u/Documents/TBCAD plots/drawing-plot.pdf");
     h.file = "C:\\work\\plan.v2.tbcad";
     CHECK(plot::defaultFile(h, plot::Format::Pdf) ==
           "/home/u/Documents/TBCAD plots/plan.v2-plot.pdf");

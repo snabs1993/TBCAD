@@ -401,10 +401,11 @@ std::string folderKey(std::string dir) {
 
 std::string defaultFile(const cmd::IHost& h, Format f) {
     std::string doc = h.documentFile();
-    if (doc.empty())
-        return lastFile(h, f);
+    // An unsaved drawing plots as "drawing" into the same folder a saved one would use.
     auto slash = doc.find_last_of("/\\");
-    std::string stem = slash == std::string::npos ? doc : doc.substr(slash + 1);
+    std::string stem = doc.empty()                  ? "drawing"
+                       : slash == std::string::npos ? doc
+                                                    : doc.substr(slash + 1);
     if (auto dot = stem.find_last_of('.'); dot != std::string::npos && dot > 0)
         stem.resize(dot);
     // The folder used for the last plot, else Documents\TBCAD plots.

@@ -157,6 +157,16 @@ public:
                       << geom::resolveTransparency(ctx.doc(), e, dc) << "%\n";
                     emit(t.str());
                 }
+                if (const auto* h = entityAs<HatchData>(e)) {
+                    std::ostringstream t;
+                    t << "    hatch: "
+                      << (h->gradient ? "gradient"
+                          : h->solid  ? "solid"
+                                      : "pattern " + h->pattern)
+                      << ", scale " << h->patternScale << ", angle " << h->patternAngle << ", "
+                      << h->loops.size() << " loop(s)\n";
+                    emit(t.str());
+                }
                 if (!fillNote.empty())
                     emit(fillNote);
                 // Text: the style, font and width factors decide how wide the letters come out.
