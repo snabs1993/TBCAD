@@ -30,7 +30,7 @@ std::string toCsv(const TableData& t) {
             if (c)
                 out += ',';
             if (!cell.covered)
-                out += quoteField(text::plainText(cell.utf8));
+                out += quoteField(text::plainText(displayText(t, r, c)));
         }
         out += "\r\n";
     }

@@ -66,6 +66,40 @@ bool unmerge(TableData& t, std::size_t row, std::size_t col);
 bool setColumnWidth(TableData& t, std::size_t col, double width);
 bool setRowHeight(TableData& t, std::size_t row, double height);
 
+// ---- table styles (TABLESTYLE) ---------------------------------------------------------------
+
+// A named set of the sizes a new table starts with. Kept in Header::custom, so it is saved with the
+// drawing. "Standard" always exists (30 x 8, text 2.8, margin 1) and can be redefined, not deleted.
+struct TableStyle {
+    std::string name{};
+    double colWidth = 30;
+    double rowHeight = 8;
+    double textHeight = 2.8;
+    double margin = 1.0;
+    std::string textStyle{};  // text style name; empty = the drawing's current one
+};
+// The name without characters a style name cannot hold, trimmed; empty when nothing is left.
+std::string validStyleName(const std::string& raw);
+std::vector<TableStyle> tableStyles(const Header& h);  // Standard first
+std::optional<TableStyle> findTableStyle(const Header& h, const std::string& name);  // any case
+void setTableStyle(Header& h, const TableStyle& s);  // adds or replaces
+bool deleteTableStyle(Header& h, const std::string& name);
+std::string currentTableStyleName(const Header& h);
+void setCurrentTableStyle(Header& h, const std::string& name);
+
+// ---- formulas -------------------------------------------------------------------------------
+
+// A cell whose text starts with "=" is a formula, worked out when the table is drawn, exported
+// to CSV or exploded: + - * / ^, brackets, numbers, cell names (A1: column letters, row number
+// from 1) and the functions SUM, AVERAGE (AVG), MIN, MAX, COUNT over cells, ranges (A1:C3) and
+// numbers, plus ABS, SQRT and ROUND(x, digits). A cell holding text that reads as a number counts
+// as that number; an empty cell as 0. Mistakes show as #ERR, #REF (outside the table), #NAME,
+// #VALUE (text where a number is needed), #DIV/0 or #LOOP (a formula that needs itself).
+bool isFormula(const std::string& text);
+std::string cellName(std::size_t row, std::size_t col);  // 0,0 -> "A1"
+// What the cell shows: its text, or the value of its formula.
+std::string displayText(const TableData& t, std::size_t row, std::size_t col);
+
 // ---- text form (kept in DXF extended data so a re-import gets the table back) -----------------
 
 // ASCII-only, one line. The text style is not part of it.

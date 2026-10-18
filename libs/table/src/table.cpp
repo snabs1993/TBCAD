@@ -354,7 +354,7 @@ Layout layout(const TableData& t) {
             const Rect rc = cellRect(t, r, c);
             TextItem item;
             item.rotation = t.rotation;
-            item.utf8 = cell.utf8;
+            item.utf8 = displayText(t, r, c);
             item.width = std::max(0.0, rc.x1 - rc.x0 - 2 * t.margin);
             const double cy = (rc.y0 + rc.y1) / 2;
             if (t.titleRow && r == 0) {

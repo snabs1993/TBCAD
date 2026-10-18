@@ -2,6 +2,8 @@
 # See docs/table.md.
 tbcad_add_library(table
   SOURCES
+    src/formula.cpp
+    src/style.cpp
     src/table.cpp
     src/display.cpp
     src/csv.cpp

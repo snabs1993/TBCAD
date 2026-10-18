@@ -26,6 +26,12 @@ void previewTable(cmd::CommandContext& ctx, const TableData& t, DisplayList& out
     }
 }
 
+std::string shortNumber(double v) {
+    char buf[48];
+    std::snprintf(buf, sizeof buf, "%g", v);
+    return buf;
+}
+
 bool isTable(const Entity& e) {
     return kind(e) == EntityKind::Table;
 }
@@ -40,6 +46,11 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
+        // Sizes come from the current table style.
+        const table::TableStyle style =
+            table::findTableStyle(ctx.doc().header(),
+                                  table::currentTableStyleName(ctx.doc().header()))
+                .value_or(table::TableStyle{});
         cmd::IntOptions io;
         io.min = 1;
         io.max = 100;
@@ -54,12 +65,14 @@ public:
             co_return;
         cmd::DistanceOptions dop;
         dop.allowZero = false;
-        dop.defaultValue = 30.0;
-        auto cw = co_await ctx.getDistance("Column width <30>", dop);
+        dop.defaultValue = style.colWidth;
+        auto cw =
+            co_await ctx.getDistance("Column width <" + shortNumber(style.colWidth) + ">", dop);
         if (!cw.ok())
             co_return;
-        dop.defaultValue = 8.0;
-        auto rh = co_await ctx.getDistance("Row height <8>", dop);
+        dop.defaultValue = style.rowHeight;
+        auto rh =
+            co_await ctx.getDistance("Row height <" + shortNumber(style.rowHeight) + ">", dop);
         if (!rh.ok())
             co_return;
         cmd::StringOptions so;
@@ -71,7 +84,9 @@ public:
 
         const std::size_t nrows =
             static_cast<std::size_t>(rows.value) + (titleText.empty() ? 0u : 1u);
-        const double textHeight = rh.value * 0.35;
+        const double textHeight = rh.value == style.rowHeight
+                                      ? style.textHeight
+                                      : style.textHeight * rh.value / style.rowHeight;
         auto build = [=](Vec2 at) {
             return table::make(nrows, static_cast<std::size_t>(cols.value), cw.value, rh.value,
                                titleText, at, textHeight);
@@ -86,7 +101,11 @@ public:
             co_return;
         ctx.setUndoLabel("TABLE");
         TableData t = build(where.point);
+        t.margin = style.margin;
         t.style = ctx.doc().header().currentTextStyle;
+        if (!style.textStyle.empty())
+            if (const TextStyle* ts = ctx.doc().textStyleByName(style.textStyle))
+                t.style = ts->id;
         Entity e;
         e.data = Indirect<TableData>(std::move(t));
         applyAnnotativeDefault(ctx.doc().header(), e);
@@ -228,6 +247,159 @@ public:
     }
 };
 
+// ---- TABLESTYLE --------------------------------------------------------------------------------
+
+// TABLESTYLE: named sets of sizes new tables start with. Set makes one current; New and Modify
+// ask for the sizes; Apply gives the sizes of a style to tables already drawn.
+class TableStyleCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TABLESTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"TS"}; }
+    std::string_view description() const override {
+        return "Define table styles and choose the one new tables use";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        const std::string cur = table::currentTableStyleName(ctx.doc().header());
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Set", "New", "Modify", "Delete", "Apply", "List"};
+        ko.defaultKeyword = "List";
+        auto k = co_await ctx.getKeyword(
+            "Table style [Set/New/Modify/Delete/Apply/List] <List>, current is " + cur, ko);
+        if (!k.ok())
+            co_return;
+        if (k.keyword == "List") {
+            for (const table::TableStyle& s : table::tableStyles(ctx.doc().header()))
+                ctx.message((s.name == cur ? "* " : "  ") + s.name + ": columns " +
+                            shortNumber(s.colWidth) + " x rows " + shortNumber(s.rowHeight) +
+                            ", text " + shortNumber(s.textHeight) + ", margin " +
+                            shortNumber(s.margin) +
+                            (s.textStyle.empty() ? "" : ", text style " + s.textStyle));
+            co_return;
+        }
+        auto n = co_await ctx.getString("Style name");
+        if (!n.ok())
+            co_return;
+        const std::string name = table::validStyleName(n.text);
+        if (name.empty()) {
+            ctx.message("A style needs a name.");
+            co_return;
+        }
+        auto existing = table::findTableStyle(ctx.doc().header(), name);
+        if (k.keyword == "Set") {
+            if (!existing) {
+                ctx.message("No table style named \"" + name + "\".");
+                co_return;
+            }
+            ctx.setUndoLabel("TABLESTYLE");
+            const std::string set = existing->name;
+            (void)ctx.tx().modifyHeader([&](Header& h) { table::setCurrentTableStyle(h, set); });
+            ctx.message("Table style " + set + " is current.");
+        } else if (k.keyword == "Delete") {
+            if (!existing || existing->name == "Standard") {
+                ctx.message(existing ? "Standard cannot be deleted."
+                                     : "No table style named \"" + name + "\".");
+                co_return;
+            }
+            ctx.setUndoLabel("TABLESTYLE");
+            const std::string del = existing->name;
+            (void)ctx.tx().modifyHeader([&](Header& h) { table::deleteTableStyle(h, del); });
+        } else if (k.keyword == "New" || k.keyword == "Modify") {
+            if (k.keyword == "New" && existing) {
+                ctx.message("A table style named \"" + existing->name + "\" exists; use Modify.");
+                co_return;
+            }
+            if (k.keyword == "Modify" && !existing) {
+                ctx.message("No table style named \"" + name + "\".");
+                co_return;
+            }
+            table::TableStyle s = existing.value_or(table::TableStyle{});
+            s.name = existing ? existing->name : name;
+            cmd::DistanceOptions dop;
+            dop.allowZero = false;
+            dop.defaultValue = s.colWidth;
+            auto cw =
+                co_await ctx.getDistance("Column width <" + shortNumber(s.colWidth) + ">", dop);
+            if (!cw.ok())
+                co_return;
+            dop.defaultValue = s.rowHeight;
+            auto rh =
+                co_await ctx.getDistance("Row height <" + shortNumber(s.rowHeight) + ">", dop);
+            if (!rh.ok())
+                co_return;
+            dop.defaultValue = s.textHeight;
+            auto th =
+                co_await ctx.getDistance("Text height <" + shortNumber(s.textHeight) + ">", dop);
+            if (!th.ok())
+                co_return;
+            dop.defaultValue = s.margin;
+            dop.allowZero = true;
+            auto mg = co_await ctx.getDistance("Cell margin <" + shortNumber(s.margin) + ">", dop);
+            if (!mg.ok())
+                co_return;
+            cmd::StringOptions so;
+            so.allowEmpty = true;
+            so.defaultValue = s.textStyle;
+            auto ts = co_await ctx.getString(
+                "Text style name <" + (s.textStyle.empty() ? std::string("current") : s.textStyle) +
+                    ">, - for the current one",
+                so);
+            if (!ts.ok() && ts.status != Status::None)
+                co_return;
+            s.colWidth = cw.value;
+            s.rowHeight = rh.value;
+            s.textHeight = th.value;
+            s.margin = mg.value;
+            if (ts.ok()) {
+                if (ts.text == "-") {
+                    s.textStyle.clear();
+                } else if (const TextStyle* found = ctx.doc().textStyleByName(ts.text)) {
+                    s.textStyle = found->name;
+                } else if (!ts.text.empty()) {
+                    ctx.message("No text style named \"" + ts.text +
+                                "\"; the style keeps the current one.");
+                    s.textStyle.clear();
+                }
+            }
+            ctx.setUndoLabel("TABLESTYLE");
+            (void)ctx.tx().modifyHeader([&](Header& h) { table::setTableStyle(h, s); });
+            ctx.message("Table style " + s.name + (existing ? " changed." : " created."));
+        } else {  // Apply
+            if (!existing) {
+                ctx.message("No table style named \"" + name + "\".");
+                co_return;
+            }
+            auto sel = co_await ctx.getSelection("Select tables to restyle",
+                                                 cmd::SelectionOptions{.filter = isTable});
+            if (!sel.ok())
+                co_return;
+            const table::TableStyle s = *existing;
+            const TextStyle* ts =
+                s.textStyle.empty() ? nullptr : ctx.doc().textStyleByName(s.textStyle);
+            ctx.setUndoLabel("TABLESTYLE");
+            int n2 = 0;
+            for (EntityId id : sel.ids) {
+                auto r = ctx.tx().modify(id, [&](Entity& e) {
+                    if (auto* t = entityAs<TableData>(e)) {
+                        for (double& w : t->colWidths)
+                            w = s.colWidth;
+                        for (double& h : t->rowHeights)
+                            h = s.rowHeight;
+                        t->textHeight = s.textHeight;
+                        t->margin = s.margin;
+                        if (ts)
+                            t->style = ts->id;
+                    }
+                });
+                if (r)
+                    ++n2;
+            }
+            ctx.message("Style " + s.name + " applied to " + std::to_string(n2) + " tables.");
+        }
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -242,12 +414,14 @@ void registerCommands(cmd::Registry& registry) {
         });
     (void)registry.add(std::make_unique<TableCommand>());
     (void)registry.add(std::make_unique<TableEditCommand>());
+    (void)registry.add(std::make_unique<TableStyleCommand>());
     registerCsvCommands(registry);
 }
 
 void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Table", "TABLE");
     ui.addMenuItem("Modify/Edit Table", "TABLEEDIT");
+    ui.addMenuItem("Format/Table Style...", "TABLESTYLE");
     ui.addMenuItem("Draw/Table from CSV...", "TABLEIMPORT");
     ui.addMenuItem("Modify/Export Table to CSV...", "TABLEEXPORT");
 }
