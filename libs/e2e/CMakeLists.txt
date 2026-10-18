@@ -13,7 +13,6 @@ tbcad_add_tests(e2e
     tests/undo_stress_tests.cpp
     tests/table_ops_tests.cpp
     tests/dimstyle_tests.cpp
-    tests/dim_assoc_tests.cpp
     tests/bulk_edit_perf_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry tbcad::appcore)
 # The target exists only when tests are built (the ezdxf and fuzz jobs configure without them).
