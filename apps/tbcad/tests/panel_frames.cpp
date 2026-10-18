@@ -139,8 +139,8 @@ TEST_CASE("panel frame time stays under 1 ms with 393k objects selected") {
     ImGuiScope gui;
     Rig rig;
     rig.core->submitText("DEVGEN LINES 393000");
-    for (const char* line : {"-LAYER New Walls", "CIRCLE 50,50 30", "TEXT 5,5 2.5 0 Hello",
-                             "RECTANGLE 10,10 40,40"}) {
+    for (const char* line :
+         {"-LAYER New Walls", "CIRCLE 50,50 30", "TEXT 5,5 2.5 0 Hello", "RECTANGLE 10,10 40,40"}) {
         rig.core->submitText(line);
         rig.core->pressEscape();
     }

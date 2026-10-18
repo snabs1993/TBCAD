@@ -17,6 +17,7 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/drafting/settings.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
@@ -1430,54 +1431,34 @@ void Gui::xrefNotice() {
 
 // Right-click on the OSNAP button: tick the snap modes (as AutoCAD's Object Snap settings).
 void Gui::snapModesPopup() {
-    struct Mode {
-        const char* key;
-        const char* label;
-    };
-    static constexpr Mode kModes[] = {{"endpoint", "Endpoint"},
-                                      {"midpoint", "Midpoint"},
-                                      {"center", "Center"},
-                                      {"node", "Node"},
-                                      {"quadrant", "Quadrant"},
-                                      {"intersection", "Intersection"},
-                                      {"perpendicular", "Perpendicular"},
-                                      {"tangent", "Tangent"},
-                                      {"nearest", "Nearest"}};
     if (ImGui::BeginPopupContextItem("##snapmodes", ImGuiPopupFlags_MouseButtonRight)) {
-        const std::string stored = core_.settings().getString(
-            "drafting.osnap.modes", "endpoint,midpoint,center,intersection,quadrant,node");
-        auto has = [&](const std::string& modes, const std::string& key) {
-            std::string padded = "," + modes + ",";
-            std::string clean;
-            for (char c : padded)
-                if (c != ' ')
-                    clean += c;
-            return clean.find("," + key + ",") != std::string::npos ||
-                   clean.find(",all,") != std::string::npos;
-        };
-        std::string next;
+        const drafting::DraftingSettings cur = drafting::DraftingSettings::read(core_);
+        drafting::SnapModeMask mask = cur.modes;
         bool changed = false;
-        for (const Mode& m : kModes) {
-            bool on = has(stored, m.key);
-            if (ImGui::Checkbox(m.label, &on))
+        for (int i = 0; i < drafting::kSnapModeCount; ++i) {
+            const auto mode = static_cast<drafting::SnapMode>(i);
+            bool on = (mask & drafting::maskOf(mode)) != 0;
+            const std::string label(drafting::snapModeLabel(mode));
+            if (ImGui::Checkbox(label.c_str(), &on)) {
+                mask = on ? (mask | drafting::maskOf(mode)) : (mask & ~drafting::maskOf(mode));
                 changed = true;
-            if (on)
-                next += (next.empty() ? "" : ",") + std::string(m.key);
+            }
         }
         ImGui::Separator();
         if (ImGui::SmallButton("Select all")) {
+            mask = drafting::kAllSnapModes;
             changed = true;
-            next.clear();
-            for (const Mode& m : kModes)
-                next += (next.empty() ? "" : ",") + std::string(m.key);
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("Clear all")) {
+            mask = 0;
             changed = true;
-            next.clear();
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Settings..."))
+            settings_.open("Drafting");
         if (changed)
-            core_.setSetting("drafting.osnap.modes", next.empty() ? "none" : next);
+            core_.setSetting(drafting::keys::osnapModes, drafting::formatSnapModes(mask));
         ImGui::EndPopup();
     }
 }

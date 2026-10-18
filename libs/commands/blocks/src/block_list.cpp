@@ -1,8 +1,8 @@
 #include "tbcad/block_cmds/block_list.h"
 
-#include <cstdint>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <unordered_map>
 
 namespace tbcad::block_cmds {
