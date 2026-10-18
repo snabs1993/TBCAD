@@ -500,6 +500,11 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         layerNumbers[{li.value, xref}] = n;
         return n;
     };
+    struct LayerTrace {
+        std::size_t uses = 0;
+        std::vector<std::string> samples;
+    };
+    std::map<std::uint32_t, LayerTrace> layerTrace;
     BBox2 paperWindow;
     paperWindow.expand(lay.toPaper(lay.area.min));
     paperWindow.expand(lay.toPaper(lay.area.max));
@@ -561,6 +566,32 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             const std::uint32_t layer = li != LayerId{} && li != e->common.layer
                                             ? layerOf(li, xrefBlock)
                                             : layerOf(e->common.layer);
+            if (s.traceColors) {
+                auto& tr = layerTrace[layer];
+                ++tr.uses;
+                if (tr.samples.size() < 3) {
+                    BBox2 pb;
+                    for (std::size_t k = before; k < sheet.prims.size(); ++k)
+                        if (const auto* path = std::get_if<PlotPath>(&sheet.prims[k]))
+                            for (const Vec2& v : path->pts)
+                                pb.expand(v);
+                    const Layer* el = doc.layer(e->common.layer);
+                    const Layer* pl = doc.layer(li);
+                    const std::string xrefText =
+                        xrefBlock ? " xref=" + xrefBlock->xrefPath : std::string();
+                    char buf[768];
+                    std::snprintf(
+                        buf, sizeof buf,
+                        "  <- entity %llu kind %d on '%s'%s, part layer '%s', block '%s'%s, "
+                        "part at paper (%.1f,%.1f)-(%.1f,%.1f), window (%.1f,%.1f)-(%.1f,%.1f)",
+                        static_cast<unsigned long long>(id.value), static_cast<int>(kind(*e)),
+                        el ? el->name.c_str() : "?", ins ? " insert" : "",
+                        pl ? pl->name.c_str() : "-", insBlock ? insBlock->name.c_str() : "-",
+                        xrefText.c_str(), pb.min.x, pb.min.y, pb.max.x, pb.max.y, paperWindow.min.x,
+                        paperWindow.min.y, paperWindow.max.x, paperWindow.max.y);
+                    tr.samples.emplace_back(buf);
+                }
+            }
             for (std::size_t k = before; k < sheet.prims.size(); ++k) {
                 if (auto* path = std::get_if<PlotPath>(&sheet.prims[k]))
                     path->style.layer = layer;
@@ -569,6 +600,17 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
                 else if (auto* dots = std::get_if<PlotDots>(&sheet.prims[k]))
                     dots->style.layer = layer;
             }
+        }
+    }
+    if (s.traceColors) {
+        for (const auto& [n, tr] : layerTrace) {
+            if (n == 0 || n > sheet.layerNames.size())
+                continue;
+            std::string line =
+                "layer '" + sheet.layerNames[n - 1] + "': " + std::to_string(tr.uses) + " parts";
+            for (const std::string& sample : tr.samples)
+                line += sample;
+            sheet.trace.push_back(std::move(line));
         }
     }
     if (s.traceColors)
