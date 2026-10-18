@@ -97,6 +97,7 @@ TEST_CASE("perf: whole-drawing edits with undo and redo") {
     big.bench("ROTATE", {"ROTATE", "0,0", "30"});
     big.bench("SCALE", {"SCALE", "0,0", "1.5"});
     big.bench("MIRROR", {"MIRROR", "0,0", "10,0", "N"});
+    big.bench("STRETCH", {"STRETCH", "-100000,-100000", "100000,100000", "0,0", "5,0"});
     big.bench("ERASE", {"ERASE"});
     big.bench("CHPROP-C", {"CHPROP", "Color", "1", ""});
     big.core->submitText("-LAYER");
