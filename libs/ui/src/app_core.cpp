@@ -678,6 +678,29 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
     }
     if (!settings_.getBool("autosave.enabled", true))
         return;
+    // Crash journal: the first change after a save or open is written out within about 30 s, so
+    // a crash or kill soon after starting to draw still leaves something to recover.
+    {
+        bool fresh = false;
+        for (const DocSlot& slot : slots_) {
+            const Session& ses = *slot.session;
+            if (ses.doc.revision() != ses.savedRevision &&
+                (slot.autosavedRevision == ~std::uint64_t{0} ||
+                 slot.autosavedRevision < ses.savedRevision))
+                fresh = true;
+        }
+        if (!fresh) {
+            quickJournalPending_ = false;
+        } else if (!quickJournalPending_) {
+            quickJournalPending_ = true;
+            quickJournalAt_ = now;
+        } else if (now - quickJournalAt_ >= std::chrono::seconds(30)) {
+            quickJournalPending_ = false;
+            lastAutosave_ = now;
+            autosaveNow();
+            return;
+        }
+    }
     double minutes = std::max(0.1, settings_.getNumber("autosave.minutes", 10));
     if (now - lastAutosave_ < std::chrono::duration<double, std::ratio<60>>(minutes))
         return;
@@ -1029,8 +1052,14 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     if (!path.has_extension())
         path += settings_.getString("files.defaultFormat", "tbcad") == "dxf" ? ".dxf" : ".tbcad";
     if (runner().active()) {
-        print("Finish the current command first.");
-        return makeError(ErrorCode::Conflict, "A command is running.");
+        // Saving is an explicit request: end the waiting command (as Esc would) rather than
+        // refuse and leave the work unsaved.
+        runner().submit(cmd::Input::cancel());
+        if (runner().active()) {
+            print("Finish the current command first.");
+            return makeError(ErrorCode::Conflict, "A command is running.");
+        }
+        print("The running command was cancelled to save.");
     }
     const std::string ext = lowerExtension(path);
     if (ext != ".tbcad" && ext != ".dxf") {

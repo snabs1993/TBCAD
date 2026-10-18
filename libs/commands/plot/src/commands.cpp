@@ -399,13 +399,39 @@ public:
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         KeywordOptions menu;
-        menu.keywords = {"Select", "List", "Import", "Edit", "Save", "Paths"};
+        menu.keywords = {"Select", "List", "Import", "Edit", "Save", "Paths", "Pen"};
         menu.defaultKeyword = "List";
         auto choice =
             co_await ctx.getKeyword("Plot style table: " + plotStyleName(ctx.host()), menu);
         if (!choice.ok())
             co_return;
         const std::string& kw = choice.keyword;
+        if (kw == "Pen") {  // what the table does to one colour (palette index 1..255)
+            auto t = resolveStyleTable(ctx.host(), plotStyleName(ctx.host()));
+            if (!t || !t.value()) {
+                ctx.message(t ? "No plot style table is selected." : t.error().message);
+                co_return;
+            }
+            cmd::IntOptions io;
+            io.defaultValue = 7;
+            io.min = 1;
+            io.max = 255;
+            auto n = co_await ctx.getInteger("Colour index (1-255)", io);
+            if (!n.ok())
+                co_return;
+            const auto& e = t.value()->forIndex(static_cast<int>(n.value));
+            std::string line =
+                "Pen " + std::to_string(n.value) + " in " + plotStyleName(ctx.host()) + ": ";
+            line += e.color ? "colour " + std::to_string(e.color->r) + "," +
+                                  std::to_string(e.color->g) + "," + std::to_string(e.color->b)
+                            : std::string("object colour");
+            line += ", screening " + std::to_string(e.screen) + "%";
+            line += e.grayscale ? ", greyscale" : "";
+            line += e.lineweightMm ? ", lineweight " + std::to_string(*e.lineweightMm) + " mm"
+                                   : std::string(", object lineweight");
+            ctx.message(line);
+            co_return;
+        }
         if (kw == "Paths") {
             cmd::KeywordOptions po;
             po.keywords = {"Add", "Remove", "Reset", "Show"};

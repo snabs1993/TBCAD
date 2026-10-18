@@ -452,6 +452,8 @@ private:
     std::chrono::steady_clock::time_point settingsDirtyAt_{};
     bool settingsDirtySeen_ = false;
     bool autosaveClockStarted_ = false;
+    bool quickJournalPending_ = false;
+    std::chrono::steady_clock::time_point quickJournalAt_{};
     std::chrono::steady_clock::time_point lastXrefCheck_{};
     int xrefReloadWait_ = 0;
     bool viewStatePending_ = false;

@@ -146,6 +146,37 @@ public:
                 emit(line.str());
                 if (!fillNote.empty())
                     emit(fillNote);
+                // Text: the style, font and width factors decide how wide the letters come out.
+                {
+                    TextStyleId sid{};
+                    double height = 0, wf = 1;
+                    std::string str;
+                    if (const auto* t = entityAs<TextData>(e)) {
+                        sid = t->style;
+                        height = t->height;
+                        wf = t->widthFactor;
+                        str = t->utf8;
+                    } else if (const auto* m = entityAs<MTextData>(e)) {
+                        sid = m->style;
+                        height = m->height;
+                        str = m->utf8;
+                    }
+                    if (!str.empty() || sid.value) {
+                        const TextStyle* ts = ctx.doc().textStyle(
+                            sid.value ? sid : ctx.doc().header().currentTextStyle);
+                        if (str.size() > 40)
+                            str = str.substr(0, 40) + "...";
+                        std::ostringstream t;
+                        t << "    text \"" << str << "\" height " << height
+                          << ", object width factor " << wf;
+                        if (ts)
+                            t << "; style \"" << ts->name << "\" font \"" << ts->fontFamily
+                              << "\" file \"" << ts->fontFile << "\" width factor "
+                              << ts->widthFactor << " oblique " << ts->oblique;
+                        t << "\n";
+                        emit(t.str());
+                    }
+                }
                 pick.push_back(e.common.id);
                 // An insert: show what inside the block draws the longest single segment.
                 if (const auto* ins = entityAs<InsertData>(e)) {
