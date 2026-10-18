@@ -43,6 +43,10 @@ struct PanelState {
     std::string filter{};
     std::string lastCommandFilter{};  // last layers.filter.serial we applied
     std::string stateName{};
+    bool invert = false;        // show the layers the filter does NOT match
+    std::string newName{};      // text field of the "Save filter" / "New group" popups
+    std::string stateRename{};  // new name typed for a layer state
+    bool restoreHide = false;   // "turn off layers not in the state" on Restore
     std::set<std::uint32_t> collapsed{};
     std::set<std::string> collapsedXrefs{};  // external references whose layers are folded away
     LayerId selected{};
@@ -88,9 +92,12 @@ std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
     auto matches = [&](LayerId id) {
         if (f.empty())
             return true;
+        bool hit;
         if (expression)
-            return layerMatchesFilter(doc, id, st.filter);
-        return lowered(layerPath(doc, id)).find(f) != std::string::npos;
+            hit = layerMatchesFilter(doc, id, st.filter);
+        else
+            hit = lowered(layerPath(doc, id)).find(f) != std::string::npos;
+        return st.invert ? !hit : hit;
     };
     // A layer shows when it or any descendant matches.
     auto subtreeMatches = [&](auto&& self, LayerId id) -> bool {
@@ -378,6 +385,28 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
             if (ImGui::MenuItem("Select Objects"))
                 selectObjectsOn(ctx, row.id);
             ImGui::Separator();
+            if (ImGui::BeginMenu(("Add to Group" + group).c_str())) {
+                for (const std::string& g : layerGroupNames(*ctx.doc))
+                    if (ImGui::MenuItem(g.c_str()))
+                        exec(ctx, {"-LAYERFILTER AddTo " + g, selectedRefs(st)});
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(("Merge" + group + " Into").c_str())) {
+                for (LayerId target : layerTreeOrder(*ctx.doc)) {
+                    if (st.multi.count(target.value))
+                        continue;
+                    std::string label(static_cast<std::size_t>(layerDepth(*ctx.doc, target)) * 2,
+                                      ' ');
+                    label += ctx.doc->layer(target)->name;
+                    if (ImGui::MenuItem(label.c_str()))
+                        exec(ctx, {"-LAYER Merge " + selectedRefs(st), idRef(target)});
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Move everything on the selected layers to the chosen layer,\n"
+                    "then delete the selected layers");
             if (row.id != kLayerZero && ImGui::MenuItem("Delete")) {
                 if (row.hasKids)
                     st.deleteAsk = row.id;
@@ -529,6 +558,67 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     nextButton("Show All");
     if (ImGui::Button("Show All"))
         exec(ctx, {"-LAYER ShowAll"});
+    // Filter drop-down: ready-made filters, the drawing's saved filters and group filters.
+    ImGui::SetNextItemWidth(std::min(180.0f, ImGui::GetContentRegionAvail().x));
+    if (ImGui::BeginCombo("##filters", "Filters...")) {
+        auto pick = [&](const char* label, const std::string& expr) {
+            if (ImGui::Selectable(label))
+                st.filter = expr;
+        };
+        pick("All layers", "");
+        pick("All used layers", "used");
+        pick("Unused layers", "empty");
+        pick("Layers that are off", "off");
+        pick("Frozen layers", "frozen");
+        pick("Locked layers", "locked");
+        if (const auto names = layerFilterNames(doc); !names.empty()) {
+            ImGui::SeparatorText("Saved filters");
+            for (const std::string& n : names)
+                pick(n.c_str(), "filter:" + n);
+        }
+        if (const auto groups = layerGroupNames(doc); !groups.empty()) {
+            ImGui::SeparatorText("Groups");
+            for (const std::string& n : groups)
+                pick(n.c_str(), "group:" + n);
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Invert", &st.invert);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Show the layers the filter does not match");
+    ImGui::SameLine();
+    const bool haveFilter = !st.filter.empty();
+    ImGui::BeginDisabled(!haveFilter);
+    if (ImGui::Button("Save filter..."))
+        ImGui::OpenPopup("##savefilter");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!st.selected || !doc.layer(st.selected));
+    if (ImGui::Button("New group..."))
+        ImGui::OpenPopup("##newgroup");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Make a group filter from the selected layers");
+    ImGui::EndDisabled();
+    for (const char* popup : {"##savefilter", "##newgroup"}) {
+        if (!ImGui::BeginPopup(popup))
+            continue;
+        const bool isFilter = std::string(popup) == "##savefilter";
+        ImGui::TextUnformatted(isFilter ? "Save the current filter as"
+                                        : "Group of the selected layers");
+        ImGui::SetNextItemWidth(180);
+        const bool enter =
+            ImGui::InputText("##name", &st.newName, ImGuiInputTextFlags_EnterReturnsTrue);
+        if ((ImGui::Button("Save") || enter) && !st.newName.empty()) {
+            if (isFilter)
+                exec(ctx, {"-LAYERFILTER Save " + st.newName, st.filter});
+            else
+                exec(ctx, {"-LAYERFILTER Group " + st.newName, selectedRefs(st)});
+            st.newName.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "Filter layers (text, or name:S-* frozen ...)",
                              &st.filter);
@@ -536,9 +626,35 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     // Named layer states: pick one to restore it, or save the current state under a new name.
     ImGui::SetNextItemWidth(std::min(220.0f, ImGui::GetContentRegionAvail().x));
     if (ImGui::BeginCombo("##states", "Layer states...")) {
-        for (const std::string& n : layerStateNames(doc))
+        ImGui::Checkbox("Turn off layers not in the state", &st.restoreHide);
+        for (const std::string& n : layerStateNames(doc)) {
+            ImGui::PushID(n.c_str());
             if (ImGui::Selectable(n.c_str()))
-                exec(ctx, {"-LAYERSTATE", "Restore", n, "All"});
+                exec(ctx, {"-LAYERSTATE", "Restore", n, st.restoreHide ? "HideOthers" : "All"});
+            if (ImGui::BeginPopupContextItem("##stctx")) {
+                for (const char* part : {"Visibility", "Lock", "Plot", "Look"})
+                    if (ImGui::MenuItem((std::string("Restore ") + part + " only").c_str()))
+                        exec(ctx, {"-LAYERSTATE", "Restore", n, part});
+                if (ImGui::MenuItem("Update from current layers"))
+                    exec(ctx, {"-LAYERSTATE", "Save", n});
+                ImGui::SetNextItemWidth(140);
+                if (ImGui::InputTextWithHint("##rn", "Rename to", &st.stateRename,
+                                             ImGuiInputTextFlags_EnterReturnsTrue) &&
+                    !st.stateRename.empty()) {
+                    exec(ctx, {"-LAYERSTATE", "Rename", n, st.stateRename});
+                    st.stateRename.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::MenuItem("Delete")) {
+                    exec(ctx, {"-LAYERSTATE", "Delete", n});
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+            ImGui::PopID();
+        }
+        if (!layerStateNames(doc).empty())
+            ImGui::TextDisabled("Right-click a state for more.");
         ImGui::Separator();
         ImGui::SetNextItemWidth(120);
         ImGui::InputTextWithHint("##newstate", "Save as", &st.stateName);

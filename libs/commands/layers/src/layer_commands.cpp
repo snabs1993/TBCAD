@@ -78,10 +78,11 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Make",     "New",        "NewSub", "Parent",       "Set",        "On",
-                         "Off",      "Freeze",     "Thaw",   "Lock",         "Unlock",     "Color",
-                         "Linetype", "Lineweight", "Plot",   "NoPlot",       "Rename",     "Delete",
-                         "Isolate",  "ShowAll",    "List",   "Transparency", "Description"};
+        opts.keywords = {"Make",   "New",          "NewSub",      "Parent",     "Set",
+                         "On",     "Off",          "Freeze",      "Thaw",       "Lock",
+                         "Unlock", "Color",        "Linetype",    "Lineweight", "Plot",
+                         "NoPlot", "Rename",       "Delete",      "Isolate",    "ShowAll",
+                         "List",   "Transparency", "Description", "Merge"};
         opts.aliases = {{"N", "New"}, {"S", "Set"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
@@ -303,6 +304,29 @@ private:
                 ctx.message("Deleted layer " + path + ".");
             else
                 ctx.message(r.error().message);
+        } else if (option == "Merge") {
+            // Moves everything on the named layers to the target layer and deletes the named
+            // layers (AutoCAD's LAYMRG, by name).
+            std::vector<LayerId> from;
+            co_await askLayers(ctx, "Layer(s) to merge away", from, ok);
+            if (!ok)
+                co_return;
+            std::vector<LayerId> into;
+            co_await askLayers(ctx, "Layer to merge them into", into, ok);
+            if (!ok)
+                co_return;
+            if (into.size() != 1) {
+                ctx.message("Give exactly one target layer.");
+                co_return;
+            }
+            for (LayerId id : from) {
+                if (id == into[0])
+                    continue;
+                const std::string path = layerPath(doc, id);
+                auto r = mergeLayer(doc, ctx.tx(), id, into[0]);
+                ctx.message(r ? "Merged " + path + " into " + layerPath(doc, into[0]) + "."
+                              : r.error().message);
+            }
         } else if (option == "Isolate") {
             std::vector<LayerId> ids;
             co_await askLayers(ctx, "Layer(s) to isolate", ids, ok);

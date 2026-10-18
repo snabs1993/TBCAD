@@ -209,3 +209,136 @@ TEST_CASE("-LAYERSTATE and -LAYERFILTER are registered and work from the command
     f.host.run("-LAYERFILTER", {"Apply", "wibble:2", cmd::ScriptItem::enter()});
     CHECK(f.host.logContains("Unknown filter word"));
 }
+
+TEST_CASE(
+    "group filters: pick layers by hand, edit, survive a rename or delete, filter by group:") {
+    Fixture f;
+    f.build();
+    f.edit([&](Transaction& tx) {
+        REQUIRE(saveLayerGroup(f.doc, tx, "Plan", {f.id("Walls"), f.id("S-FLOOR~edge")}).ok());
+    });
+    CHECK(layerGroupNames(f.doc) == std::vector<std::string>{"plan"});
+    auto m = layerGroupMembers(f.doc, "PLAN");
+    REQUIRE(m.ok());
+    CHECK(m.value().size() == 2);
+    CHECK(layerMatchesFilter(f.doc, f.id("Walls"), "group:Plan"));
+    CHECK_FALSE(layerMatchesFilter(f.doc, f.id("S-FLOOR~hidden"), "group:Plan"));
+    CHECK(layerMatchesFilter(f.doc, f.id("S-FLOOR~hidden"), "not:group:Plan"));
+    std::string why;
+    CHECK_FALSE(layerMatchesFilter(f.doc, f.id("Walls"), "group:Nope", &why));
+    CHECK(why.find("No layer group") != std::string::npos);
+
+    f.edit([&](Transaction& tx) {
+        REQUIRE(addToLayerGroup(f.doc, tx, "Plan", {f.id("S-FLOOR~hidden")}).ok());
+        REQUIRE(removeFromLayerGroup(f.doc, tx, "Plan", {f.id("Walls")}).ok());
+    });
+    CHECK(layerGroupMembers(f.doc, "Plan").value().size() == 2);
+    CHECK_FALSE(layerMatchesFilter(f.doc, f.id("Walls"), "group:Plan"));
+
+    // A deleted layer drops out of the group.
+    f.edit([&](Transaction& tx) {
+        REQUIRE(deleteLayer(f.doc, tx, f.id("S-FLOOR~hidden"), DeleteMode::LeafOnly).ok());
+    });
+    CHECK(layerGroupMembers(f.doc, "Plan").value().size() == 1);
+
+    f.edit([&](Transaction& tx) { REQUIRE(deleteLayerGroup(f.doc, tx, "plan").ok()); });
+    CHECK(layerGroupNames(f.doc).empty());
+    f.edit([&](Transaction& tx) { CHECK_FALSE(deleteLayerGroup(f.doc, tx, "plan").ok()); });
+}
+
+TEST_CASE("a saved filter can use another saved filter and groups; circles are refused") {
+    Fixture f;
+    f.build();
+    f.edit([&](Transaction& tx) {
+        REQUIRE(saveLayerFilter(f.doc, tx, "floors", "branch:S-FLOOR").ok());
+        REQUIRE(saveLayerFilter(f.doc, tx, "floorsOn", "filter:floors on").ok());
+    });
+    f.edit([&](Transaction& tx) { REQUIRE(setOn(f.doc, tx, f.id("S-FLOOR~hidden"), false).ok()); });
+    auto ids = filterLayers(f.doc, "filter:floorsOn");
+    REQUIRE(ids.ok());
+    CHECK(ids.value().size() == 2);
+    f.edit([&](Transaction& tx) {
+        // Overwrite "floors" with one that points back at "floorsOn": a circle.
+        REQUIRE(f.doc.header().custom.count("tbcad.layerfilter.floors") == 1);
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom["tbcad.layerfilter.floors"] = "filter:floorsOn";
+                  }).ok());
+    });
+    CHECK_FALSE(filterLayers(f.doc, "filter:floorsOn").ok());
+}
+
+TEST_CASE("restoring a state brings back the current layer and can turn off new layers") {
+    Fixture f;
+    f.build();
+    f.edit([&](Transaction& tx) { REQUIRE(setCurrentLayer(f.doc, tx, f.id("Walls")).ok()); });
+    f.edit([&](Transaction& tx) { REQUIRE(saveLayerState(f.doc, tx, "base").ok()); });
+    LayerId extra;
+    f.edit([&](Transaction& tx) {
+        extra = createLayer(f.doc, tx, "Extra").value();
+        REQUIRE(setCurrentLayer(f.doc, tx, extra).ok());
+    });
+    f.edit([&](Transaction& tx) {
+        StateParts p;
+        REQUIRE(restoreLayerState(f.doc, tx, "base", p).ok());
+    });
+    CHECK(f.doc.header().currentLayer == f.id("Walls"));
+    CHECK(f.doc.layer(extra)->on);  // layers added later are left alone by default
+    f.edit([&](Transaction& tx) {
+        StateParts p;
+        p.hideOthers = true;
+        REQUIRE(restoreLayerState(f.doc, tx, "base", p).ok());
+    });
+    CHECK_FALSE(f.doc.layer(extra)->on);
+    CHECK(f.doc.layer(f.id("Walls"))->on);
+
+    // Part restores leave the current layer alone.
+    f.edit([&](Transaction& tx) { REQUIRE(setCurrentLayer(f.doc, tx, extra).ok()); });
+    f.host.run("-LAYERSTATE", {"Restore", "base", "Lock", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().currentLayer == extra);
+    f.host.run("-LAYERSTATE", {"Restore", "base", "HideOthers", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().currentLayer == f.id("Walls"));
+}
+
+TEST_CASE(
+    "-LAYER Merge moves objects to the target and deletes the merged layers; undoes in one step") {
+    Fixture f;
+    f.build();
+    EntityId a, b;
+    f.edit([&](Transaction& tx) {
+        Entity e{{}, LineData{{0, 0}, {1, 0}}};
+        e.common.layer = f.id("Walls");
+        a = tx.add(std::move(e)).value();
+        Entity g{{}, LineData{{0, 0}, {2, 0}}};
+        g.common.layer = f.id("S-FLOOR~edge");
+        b = tx.add(std::move(g)).value();
+    });
+    f.host.run("-LAYER",
+               {"Merge", "Walls,S-FLOOR~edge", "S-FLOOR~hidden", cmd::ScriptItem::enter()});
+    CHECK(f.doc.find(a)->common.layer == f.id("S-FLOOR~hidden"));
+    CHECK(f.doc.find(b)->common.layer == f.id("S-FLOOR~hidden"));
+    CHECK_FALSE(resolveLayer(f.doc, "Walls").ok());
+    CHECK(f.host.undo());
+    CHECK(resolveLayer(f.doc, "Walls").ok());
+    CHECK(f.doc.find(a)->common.layer == f.id("Walls"));
+    f.host.clearLog();
+    f.host.run("-LAYER", {"Merge", "0", "Walls", cmd::ScriptItem::enter()});
+    CHECK(f.host.logContains("0"));  // layer 0 cannot be merged away
+    CHECK(resolveLayer(f.doc, "0").ok());
+}
+
+TEST_CASE("-LAYERFILTER Group / AddTo / RemoveFrom / DeleteGroup from the command line") {
+    Fixture f;
+    f.build();
+    f.host.run("-LAYERFILTER", {"Group", "Mine", "Walls,S-FLOOR", cmd::ScriptItem::enter()});
+    CHECK(layerGroupMembers(f.doc, "Mine").value().size() == 2);
+    f.host.run("-LAYERFILTER", {"AddTo", "Mine", "S-FLOOR~edge", "RemoveFrom", "Mine", "Walls",
+                                cmd::ScriptItem::enter()});
+    CHECK(layerGroupMembers(f.doc, "Mine").value().size() == 2);
+    f.host.run("-LAYERFILTER", {"Apply", "group:Mine", cmd::ScriptItem::enter()});
+    CHECK(f.host.logContains("2 layer(s) match"));
+    f.host.clearLog();
+    f.host.run("-LAYERFILTER", {"List", cmd::ScriptItem::enter()});
+    CHECK(f.host.logContains("Layer groups: mine"));
+    f.host.run("-LAYERFILTER", {"DeleteGroup", "Mine", cmd::ScriptItem::enter()});
+    CHECK(layerGroupNames(f.doc).empty());
+}
