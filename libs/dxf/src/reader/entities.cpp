@@ -1206,7 +1206,7 @@ bool Importer::conv3dFace(const Record& r, std::vector<Entity>& out) {
     const std::int64_t hidden = r.integer(70);
     const int n = tol::nearlyEqual(p[2], p[3]) ? 3 : 4;
     for (int i = 0; i < n; ++i) {
-        if (hidden & (1 << i))
+        if (hidden & (std::int64_t{1} << i))
             continue;
         const Vec2 a = p[i], b = p[(i + 1) % n];
         if (distance(a, b) > tol::kLinear)

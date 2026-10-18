@@ -166,7 +166,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 std::size_t listed = 0;
                 for (const auto& [h, l] : drawing.layers)
                     if (l.transparency != 0 && listed++ < 40) {
-                        char hx[16];
+                        char hx[24];
                         std::snprintf(hx, sizeof hx, "%llX",
                                       static_cast<unsigned long long>(l.transparency));
                         t += std::string(listed == 1 ? " [" : ", ") + l.name + "=" + hx;
