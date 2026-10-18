@@ -1195,6 +1195,72 @@ Result<EntityEdit> movePolylineVertex(const Entity& e, Vec2 near, Vec2 to) {
     return r;
 }
 
+Result<EntityEdit> setPolylineVertexWidth(const Entity& e, Vec2 near, double startWidth,
+                                          double endWidth) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    if (startWidth < 0 || endWidth < 0)
+        return err("The width cannot be negative.");
+    PolylineData out = *pl;
+    const std::size_t i = nearestVertex(out, near);
+    if (!out.closed && i + 1 >= out.v.size())
+        return err("The last vertex of an open polyline starts no segment.");
+    out.v[i].startWidth = startWidth;
+    out.v[i].endWidth = endWidth;
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+Result<EntityEdit> straightenPolyline(const Entity& e, Vec2 a, Vec2 b) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    std::size_t ia = nearestVertex(*pl, a), ib = nearestVertex(*pl, b);
+    if (ia == ib)
+        return err("Pick two different vertices.");
+    if (ia > ib)
+        std::swap(ia, ib);
+    PolylineData out = *pl;
+    out.v[ia].bulge = 0;
+    // Widths of the dropped stretch go with it; the new segment takes the first one's.
+    out.v.erase(out.v.begin() + static_cast<std::ptrdiff_t>(ia) + 1,
+                out.v.begin() + static_cast<std::ptrdiff_t>(ib));
+    if (out.v.size() < 2 || (out.closed && out.v.size() < 2))
+        return err("Nothing would be left of the polyline.");
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
+Result<EntityEdit> taperPolyline(const Entity& e, double startWidth, double endWidth) {
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl)
+        return err("Select a polyline.");
+    if (startWidth < 0 || endWidth < 0)
+        return err("The width cannot be negative.");
+    PolylineData out = *pl;
+    const std::vector<Seg> segs = polylineSegs(*pl);
+    double total = 0;
+    for (const Seg& s : segs)
+        total += segLength(s);
+    if (total <= tol::kLinear || segs.size() != (pl->closed ? pl->v.size() : pl->v.size() - 1))
+        return err("The polyline has no length to taper over.");
+    double run = 0;
+    for (std::size_t i = 0; i < segs.size(); ++i) {
+        const double w0 = startWidth + (endWidth - startWidth) * (run / total);
+        run += segLength(segs[i]);
+        const double w1 = startWidth + (endWidth - startWidth) * (run / total);
+        out.v[i].startWidth = w0;
+        out.v[i].endWidth = w1;
+    }
+    out.constantWidth = 0;
+    EntityEdit r;
+    r.modified = withData(e, std::move(out));
+    return r;
+}
+
 // ---- SPLINEDIT ----------------------------------------------------------------------------------
 
 Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b) {

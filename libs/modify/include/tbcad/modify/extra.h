@@ -107,6 +107,13 @@ Result<EntityEdit> insertPolylineVertex(const Entity& e, Vec2 p);
 Result<EntityEdit> removePolylineVertex(const Entity& e, Vec2 near);
 // Moves the vertex nearest to `near` to `to`; arc bulges are kept.
 Result<EntityEdit> movePolylineVertex(const Entity& e, Vec2 near, Vec2 to);
+// Gives the segment that starts at the vertex nearest to `near` a start and an end width.
+Result<EntityEdit> setPolylineVertexWidth(const Entity& e, Vec2 near, double startWidth,
+                                          double endWidth);
+// Replaces everything between the vertices nearest to `a` and `b` by one straight segment.
+Result<EntityEdit> straightenPolyline(const Entity& e, Vec2 a, Vec2 b);
+// Widths that change evenly along the whole length, from `startWidth` to `endWidth`.
+Result<EntityEdit> taperPolyline(const Entity& e, double startWidth, double endWidth);
 
 enum class SplineFitOp { Add, Delete, Move, Close, Open };
 // Edits the fit points of a spline and fits it again. Add: a new fit point on the curve closest to

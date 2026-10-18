@@ -3,6 +3,7 @@
 #include "commands.h"
 #include "common.h"
 #include "tbcad/geom/polybool.h"
+#include "tbcad/modify/break_join.h"
 
 namespace tbcad::draw2::detail {
 
@@ -131,6 +132,19 @@ void replace(cmd::CommandContext& ctx, const std::vector<EntityId>& sources,
     }
 }
 
+// A curve that may be one piece of a closed loop.
+bool openPiece(const Entity& e) {
+    switch (kind(e)) {
+        case EntityKind::Line:
+        case EntityKind::Arc:
+            return true;
+        case EntityKind::Polyline:
+            return !entityAs<PolylineData>(e)->closed;
+        default:
+            return false;
+    }
+}
+
 cmd::SelectionOptions closedOnly() {
     cmd::SelectionOptions so;
     so.filter = [](const Entity& e) { return closedObject(e); };
@@ -146,10 +160,42 @@ public:
         return "Turn closed objects into closed polylines (regions)";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
-        auto sel = co_await ctx.getSelection("Select closed objects", closedOnly());
+        cmd::SelectionOptions so;
+        so.filter = [](const Entity& e) { return closedObject(e) || openPiece(e); };
+        auto sel = co_await ctx.getSelection(
+            "Select closed objects or lines and arcs that form loops", so);
         if (!sel.ok() || sel.ids.empty())
             co_return;
         int made = 0;
+        // Lines, arcs and open polylines that meet end to end become closed loops first.
+        std::vector<EntityId> pieces;
+        for (EntityId id : sel.ids)
+            if (const Entity* e = ctx.doc().find(id); e && openPiece(*e))
+                pieces.push_back(id);
+        if (!pieces.empty()) {
+            std::vector<const Entity*> es;
+            for (EntityId id : pieces)
+                es.push_back(ctx.doc().find(id));
+            modify::JoinResult joined = modify::joinEntities(es, 1e-4);
+            const auto isLoop = [](const Entity& e) {
+                const auto* pl = entityAs<PolylineData>(e);
+                return kind(e) == EntityKind::Circle || (pl && pl->closed);
+            };
+            if (!joined.created.empty() &&
+                std::all_of(joined.created.begin(), joined.created.end(),
+                            [&](const Entity& e) { return isLoop(e); })) {
+                ctx.checkpoint();
+                for (std::size_t i : joined.consumed)
+                    (void)ctx.tx().erase(pieces[i]);
+                for (Entity& e : joined.created) {
+                    // Circles from two arcs come out as plain closed polylines like all regions.
+                    if (ctx.tx().add(std::move(e)))
+                        ++made;
+                }
+            } else {
+                ctx.message("Those lines and arcs do not form closed loops.");
+            }
+        }
         for (EntityId id : sel.ids) {
             const Entity* e = ctx.doc().find(id);
             geom::Ring r;
