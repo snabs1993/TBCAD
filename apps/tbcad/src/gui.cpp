@@ -1168,6 +1168,30 @@ void Gui::readOnlyBanner() {
     ImGui::End();
 }
 
+// While BEDIT is open the drawing shows the block's contents: say so, and offer the way out.
+void Gui::blockEditBar() {
+    const std::string block = core_.setting("tmp.bedit.block").value_or("");
+    if (block.empty())
+        return;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
+    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.55f, 0.32f, 0.05f, 1.0f));
+    if (ImGui::BeginViewportSideBar("##beditbar", vp, ImGuiDir_Up, h, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Editing block \"%s\"", block.c_str());
+        ImGui::SameLine(0, 24);
+        if (ImGui::SmallButton("Save changes"))
+            core_.submitText("BSAVE");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Close block editor"))
+            core_.submitText("BCLOSE");
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+}
+
 float Gui::layoutTabsHeight() const {
     return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2.0f;
 }
@@ -3237,6 +3261,7 @@ ViewportRect Gui::frame() {
         toolStrip();
         docTabs();
         readOnlyBanner();
+        blockEditBar();
         xrefNotice();  // the list window the bar opens
         statusBar();
     }

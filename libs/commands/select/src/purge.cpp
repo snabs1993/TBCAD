@@ -106,10 +106,42 @@ public:
         for (const auto& [id, row] : ctx.doc().blocks())
             if (!row.anonymous)
                 blockNames.push_back(row.name);
+        ctx.checkpoint();
         const PurgeCounts n = purgeUnused(ctx.doc(), ctx.tx(), kinds);
         if (n.total() == 0) {
             ctx.message("Nothing to purge.");
             co_return;
+        }
+        // Show what would go and ask first: a layer made a moment ago is "unused" too.
+        {
+            std::string names;
+            int gone = 0;
+            for (const std::string& name : layerNames)
+                if (!ctx.doc().layerByName(name) && ++gone <= 6)
+                    names += (names.empty() ? "" : ", ") + name;
+            for (const std::string& name : blockNames)
+                if (!ctx.doc().blockByName(name) && ++gone <= 6)
+                    names += (names.empty() ? "" : ", ") + name;
+            std::string what;
+            auto part = [&](int count, const char* word) {
+                if (count)
+                    what += (what.empty() ? "" : ", ") + plural(count, word);
+            };
+            part(n.layers, "layer");
+            part(n.blocks, "block");
+            part(n.textStyles, "text style");
+            part(n.linetypes, "linetype");
+            part(n.dimStyles, "dimension style");
+            if (!names.empty())
+                ctx.message("Unused: " + names + (gone > 6 ? ", ..." : "") + ".");
+            auto yes = co_await ctx.getKeyword(
+                "Remove " + what + "? [Yes/No] <No>",
+                cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "No"});
+            if (!yes.ok() || yes.keyword != "Yes") {
+                ctx.rollbackToCheckpoint();
+                ctx.message("Nothing was purged.");
+                co_return;
+            }
         }
         std::string msg = "Purged";
         auto add = [&](int count, const char* what) {

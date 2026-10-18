@@ -2305,6 +2305,10 @@ void AppCore::setSetting(std::string_view key, std::string value) {
         transient_[std::string(key)] = std::move(value);
         return;
     }
+    if (key == "ui.showPanel") {  // a command asks the window to show a panel
+        openPanel(value);
+        return;
+    }
     if (key == "clipboard.text")
         clipboardOut_ = value;
     if (key == "layout.show") {  // LAYOUT New: switch once the command is over
