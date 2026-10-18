@@ -16,7 +16,9 @@ struct SnapRequest {
     SnapModeMask modes = kDefaultSnapModes;
     // At most this many entities (the ones nearest to the cursor) are examined; intersections
     // are only computed among them.
-    std::size_t maxEntities = 200;
+    std::size_t maxEntities = 100;
+    // Only this many of the best candidates are returned (Tab cycles through them).
+    std::size_t maxCandidates = 64;
 };
 
 struct SnapCandidate {

@@ -23,4 +23,5 @@ tbcad_add_tests(drafting
     tests/tracking_tests.cpp
     tests/dyninput_tests.cpp
     tests/grid_tests.cpp
-    tests/ucs_tests.cpp)
+    tests/ucs_tests.cpp
+    tests/osnap_perf_tests.cpp)
