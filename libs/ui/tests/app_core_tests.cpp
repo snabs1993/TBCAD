@@ -1204,3 +1204,15 @@ TEST_CASE("ZOOM Previous returns to the view before the last zoom - Scale and Ce
     CHECK(f.core->camera().center.x == doctest::Approx(500));
     CHECK(f.core->camera().visibleWorld().height() == doctest::Approx(1000).epsilon(0.01));
 }
+
+TEST_CASE("ZOOM O is Object and ZOOM Double zooms in") {
+    Fixture f("zoomobj");
+    f.line("0,0", "10000,0");
+    f.core->zoomExtents();
+    const double before = f.core->camera().pixelsPerMm;
+    f.core->submitText("ZOOM Double");
+    CHECK(f.core->camera().pixelsPerMm == doctest::Approx(before * 2).epsilon(1e-6));
+    f.core->submitText("ZOOM O");
+    CHECK(f.core->runner().active());  // waiting for "Select objects"
+    f.core->pressEscape();
+}
