@@ -272,6 +272,21 @@ struct PayloadWriter {
             for (const Vec2& p : d.jogs)
                 w.vec2(p);
         }
+        std::uint8_t linked = 0;
+        for (std::size_t i = 0; i < d.assoc.size(); ++i)
+            if (d.assoc[i].kind != DimAssoc::Kind::None)
+                linked |= static_cast<std::uint8_t>(1u << i);
+        if (linked) {  // tag 4: associative dimension points, one entry per set bit
+            w.u8(4);
+            w.u8(linked);
+            for (const DimAssoc& a : d.assoc) {
+                if (a.kind == DimAssoc::Kind::None)
+                    continue;
+                w.u8(static_cast<std::uint8_t>(a.kind));
+                w.varint(a.target.value);
+                w.varint(a.index);
+            }
+        }
     }
     void operator()(const LeaderData& d) {
         points(d.vertices);
@@ -653,6 +668,20 @@ struct PayloadReader {
                         d.jogs.reserve(nj);
                         for (std::size_t i = 0; i < nj; ++i)
                             d.jogs.push_back(r.vec2());
+                        continue;
+                    }
+                    if (tag == 4) {
+                        const std::uint8_t linked = r.u8();
+                        for (std::size_t i = 0; i < d.assoc.size(); ++i) {
+                            if (!(linked & (1u << i)))
+                                continue;
+                            DimAssoc a;
+                            a.kind = enumeration<DimAssoc::Kind>(
+                                static_cast<std::uint8_t>(DimAssoc::Kind::Center));
+                            a.target = id<EntityId>();
+                            a.index = static_cast<std::uint32_t>(r.varint());
+                            d.assoc[i] = a;
+                        }
                         continue;
                     }
                     if (tag != 1)

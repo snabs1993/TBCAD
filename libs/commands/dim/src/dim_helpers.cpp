@@ -5,6 +5,7 @@
 #include <set>
 
 #include "dim_internal.h"
+#include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/text/annotation_size.h"
@@ -104,6 +105,7 @@ bool addDim(cmd::CommandContext& ctx, DimensionData d) {
                         std::to_string(static_cast<int>(annoScale)) +
                         ", so sizes multiply. Set the style's overall scale to 1.");
     }
+    linkDimension(ctx.doc(), d, ctx.tx().defaultOwner());
     auto id = ctx.tx().add(dimEntity(ctx.doc(), std::move(d)));
     if (!id) {
         ctx.message(id.error().message);

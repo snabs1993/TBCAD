@@ -4,6 +4,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
+#include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/dimcmd/dimcmd.h"
 
@@ -280,4 +281,82 @@ TEST_CASE("DIMJOGLINE puts a Z-shaped jog in the dimension line and Remove takes
     auto t = geom::transformed(moved, Transform2::translate({5, 5}));
     REQUIRE(t.ok());
     CHECK(entityAs<DimensionData>(t.value())->jogs[0].x == doctest::Approx(25));
+}
+
+TEST_CASE("an associative dimension follows its line; a dimension moved alone loses the link") {
+    Chain f;
+    EntityId line;
+    {
+        auto tx = f.doc.begin("line");
+        Entity e;
+        e.data = LineData{{0, 0}, {100, 0}};
+        line = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    REQUIRE(f.dims().size() == 1);
+    CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::Vertex);
+    CHECK(f.dims()[0]->assoc[0].target == line);
+    CHECK(f.dims()[0]->assoc[1].index == 1);
+
+    // Stretch the end of the line: the dimension point and the measurement follow.
+    {
+        auto tx = f.doc.begin("stretch");
+        REQUIRE(tx.modify(line, [](Entity& e) { entityAs<LineData>(e)->b = {150, 20}; }));
+        tx.commit();
+    }
+    const DimensionData* d = f.dims()[0];
+    CHECK(d->defPts[1].x == doctest::Approx(150));
+    CHECK(d->defPts[1].y == doctest::Approx(20));
+    CHECK(d->measurement == doctest::Approx(150));
+    CHECK(f.host->undo());
+    CHECK(f.dims()[0]->defPts[1].x == doctest::Approx(100));
+
+    // Moving the dimension alone cuts the link; the line then no longer drags it.
+    EntityId dimId;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    {
+        auto tx = f.doc.begin("move dim");
+        REQUIRE(tx.modify(dimId, [](Entity& e) {
+            auto* dm = entityAs<DimensionData>(e);
+            for (Vec2& p : dm->defPts)
+                p += Vec2{0, 500};
+        }));
+        tx.commit();
+    }
+    CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::None);
+    {
+        auto tx = f.doc.begin("stretch again");
+        REQUIRE(tx.modify(line, [](Entity& e) { entityAs<LineData>(e)->b = {300, 0}; }));
+        tx.commit();
+    }
+    CHECK(f.dims()[0]->defPts[1].x == doctest::Approx(100));
+
+    // DIMREASSOC links by position again only where a point sits on the line's ends.
+    f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
+    CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::None);
+}
+
+TEST_CASE("DIMDISASSOC cuts the links of a dimension") {
+    Chain f;
+    {
+        auto tx = f.doc.begin("line");
+        Entity e;
+        e.data = LineData{{0, 0}, {100, 0}};
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId dimId;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    f.host->run("DIMDISASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
+    CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::None);
+    f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
+    CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::Vertex);
 }

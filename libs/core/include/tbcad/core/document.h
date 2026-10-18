@@ -361,6 +361,7 @@ public:
     // Where add() puts an entity when no owner is given: a drawing command run on a layout sheet
     // draws on the sheet, not in model space. Null = model space.
     void setDefaultOwner(BlockId owner) { defaultOwner_ = owner; }
+    BlockId defaultOwner() const { return defaultOwner_; }
     Result<void> modify(EntityId id, const std::function<void(Entity&)>& fn);
     Result<void> erase(EntityId id);
     Result<void> bringToFront(EntityId id);
@@ -426,6 +427,7 @@ private:
     void touchRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id);
 
     void touchEntity(EntityId id);
+    void followAssociations();  // associative dimensions, at the start of commit()
     void touchBlock(BlockId id);
     void touchOrder(EntityId id);
     Document& doc() const;

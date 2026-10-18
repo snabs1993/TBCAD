@@ -368,6 +368,16 @@ struct DimBreak {
     friend bool operator==(const DimBreak&, const DimBreak&) = default;
 };
 
+// A definition point of a dimension that follows a point of another object (an associative
+// dimension). Vertex: a line's end (0 = a, 1 = b), a polyline vertex, an arc's end (0 = start,
+// 1 = end) or a point object. Center: the centre of a circle or an arc.
+struct DimAssoc {
+    enum class Kind : std::uint8_t { None, Vertex, Center };
+    Kind kind = Kind::None;
+    EntityId target{};
+    std::uint32_t index = 0;
+};
+
 struct DimensionData {
     DimKind kind = DimKind::Linear;
     double rotation = 0;  // Linear only
@@ -387,6 +397,10 @@ struct DimensionData {
     // DIMJOGLINE: where the dimension line of a linear or aligned dimension has a jog (a Z-shaped
     // kink that says the measured length is shortened on the drawing). Points on the line.
     std::vector<Vec2> jogs{};
+    // Associative dimensions: the objects whose points the definition points follow. When such an
+    // object is edited the point moves with it; moving the dimension alone, or copying it, cuts the
+    // link.
+    std::array<DimAssoc, 4> assoc{};
 };
 
 struct LeaderData {

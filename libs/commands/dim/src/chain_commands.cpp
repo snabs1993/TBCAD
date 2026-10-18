@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "dim_internal.h"
+#include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
 
 namespace tbcad::dimcmd {
@@ -110,6 +111,7 @@ public:
                 ctx.message("The extension line origins coincide.");
                 continue;
             }
+            linkDimension(ctx.doc(), d, ctx.tx().defaultOwner());
             dim::refresh(ctx.doc(), d);
             Entity e;
             e.data = Indirect<DimensionData>(std::move(d));
