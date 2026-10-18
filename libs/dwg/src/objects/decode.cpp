@@ -167,6 +167,11 @@ public:
             }
             if (ok) {
                 ++out_.relocated[found];
+                if (out_.relocatedSamples.size() < 24 &&
+                    (out_.relocatedSamples.size() < 8 || out_.relocated.size() % 50 == 0))
+                    out_.relocatedSamples.push_back({static_cast<std::int64_t>(e.handle),
+                                                     static_cast<std::int64_t>(e.offset),
+                                                     static_cast<std::int64_t>(e.offset) + found});
                 MapEntry moved = e;
                 moved.offset += found;
                 decodeOne(moved);
@@ -2610,7 +2615,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r82: draw order tables (SORTENTSTABLE) read and applied; r81: dimension style arrow "
+    return "r83: object map blocks with offsets outside the data are listed; r83: samples of "
+           "objects found away from the object map place are listed; r82: draw order tables "
+           "(SORTENTSTABLE) read and applied; r81: dimension style arrow "
            "blocks decoded; r80: --lz21-search tries every cut into "
            "blocks of 1, 4 and 8 bytes; r76: distinct "
            "layer extended data listed; r75: all dictionary entry names and layer "

@@ -127,6 +127,17 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
         report.info(code::kSkippedObject, drawing.walkSummary);
+    if (!drawing.relocatedSamples.empty()) {
+        std::string t = "moved objects (handle: map offset -> found offset):";
+        for (const auto& smp : drawing.relocatedSamples) {
+            char b[96];
+            std::snprintf(b, sizeof b, " %llX: %lld -> %lld",
+                          static_cast<unsigned long long>(smp[0]), static_cast<long long>(smp[1]),
+                          static_cast<long long>(smp[2]));
+            t += b;
+        }
+        report.info(code::kSkippedObject, t);
+    }
     if (!drawing.relocated.empty()) {
         std::size_t total = 0;
         std::string first;
