@@ -266,17 +266,21 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 return 0.0;
             };
             {
-                std::string off = "layers not to plot:", frz = "layers frozen:";
-                std::size_t no = 0, nf = 0;
+                std::string off = "layers not to plot:", frz = "layers frozen:",
+                            hid = "layers off:";
+                std::size_t no = 0, nf = 0, nh = 0;
                 for (const auto& kv : drawing.layers) {
                     if (!kv.second.plot && no++ < 30)
                         off += " " + kv.second.name;
                     if (kv.second.frozen && nf++ < 30)
                         frz += " " + kv.second.name;
+                    if (kv.second.color < 0 && nh++ < 30)
+                        hid += " " + kv.second.name;
                 }
                 report.info(code::kSkippedObject, off + " (" + std::to_string(no) + " of " +
                                                       std::to_string(drawing.layers.size()) + ")");
                 report.info(code::kSkippedObject, frz + " (" + std::to_string(nf) + ")");
+                report.info(code::kSkippedObject, hid + " (" + std::to_string(nh) + ")");
             }
             int n = 0;
             for (const detail::EntityRec& e : drawing.entities) {
@@ -363,6 +367,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     l.insBase[0], l.insBase[1], l.extents[0], l.extents[1], l.extents[3],
                     l.extents[4]);
                 ls += t;
+                ls += " style sheet [" + l.styleSheet + "];";
             }
             for (const auto& [dh, items] : drawing.dictionaries)
                 for (const auto& [name, target] : items)

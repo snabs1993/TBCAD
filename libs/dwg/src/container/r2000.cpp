@@ -294,9 +294,12 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
     stage("tdindwg", 0);
     r.cmc(r2004);  // CECOLOR
     stage("cecolor", 0);
+    bool early = false;  // everything up to HANDSEED read, so LTSCALE is trustworthy
     {
         const HandleRef seed = r.handle();  // HANDSEED (always in this stream)
         stage("handseed", static_cast<double>(seed.value));
+        early = !r.failed() && seed.value > 0 && std::isfinite(v.ltscale) && v.ltscale > 0 &&
+                v.ltscale <= 1e9;
     }
     skipH(r2007 ? 6 : 5);  // CLAYER, TEXTSTYLE, CELTYPE, [CMATERIAL], DIMSTYLE, CMLSTYLE
     stage("layer handles", 0);
@@ -367,6 +370,12 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
                         std::to_string(units) + ", failed " + (r.failed() ? "yes" : "no") +
                         ", bit " + std::to_string(r.bitPos()));
         notes.push_back("header stages: " + stages);
+        if (early) {
+            // The line type scale is read; the units after the dimension variables are not.
+            v.valid = true;
+            v.insunits = 0;
+            return;
+        }
         v.valid = false;
         return;
     }

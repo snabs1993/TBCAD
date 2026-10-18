@@ -252,17 +252,44 @@ HeaderVars parseHeaderWith(Bytes section, const Format& fmt, std::size_t extraBy
     // R2007 and later: strings are in a stream at the end of the data. The way that stream is
     // found is the one used for objects; if the result is not plausible the strings are tried
     // inline. Neither has been confirmed against a real file.
-    {
+    // The section carries its data size in bits just before the data; the string stream ends a few
+    // bits short of it (14 on a real AC1032 file), so the nearest end that gives readable strings
+    // is taken, then the end of the whole buffer.
+    std::vector<std::size_t> ends;
+    if (extraBytes >= 4 && section.size() >= 20 + extraBytes) {
+        const std::size_t bits = le32(section, 20 + extraBytes - 4);
+        for (std::size_t e = std::min(bits, data.size() * 8); e >= 64 && e + 64 >= bits; --e)
+            ends.push_back(e);
+    }
+    const std::size_t plain = ends.size();
+    ends.push_back(data.size() * 8);
+    for (std::size_t i = 0; i < ends.size(); ++i) {
         BitReader r(data);
         BitReader strings;
-        if (locateStringStream(data, data.size() * 8, strings)) {
-            if (strings.bitSize() != 0)
-                r.setStringStream(&strings);
-            HeaderVars a;
-            parseHeaderVariables(r, fmt, a, tried);
-            if (a.valid)
-                return a;
+        if (!locateStringStream(data, ends[i], strings))
+            continue;
+        if (i < plain) {
+            // Only an end whose first strings are readable counts.
+            BitReader probe = strings;
+            bool ok = strings.bitSize() != 0;
+            for (int k = 0; ok && k < 4; ++k) {
+                for (unsigned char c : probe.textUnicode())
+                    if (c < 0x20)
+                        ok = false;
+                if (probe.failed())
+                    ok = false;
+            }
+            if (!ok)
+                continue;
         }
+        if (strings.bitSize() != 0)
+            r.setStringStream(&strings);
+        HeaderVars a;
+        parseHeaderVariables(r, fmt, a, tried);
+        if (a.valid)
+            return a;
+        if (i < plain)
+            break;
     }
     {
         BitReader r(data);

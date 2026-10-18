@@ -20,14 +20,15 @@ std::vector<std::byte> asBytes(const std::vector<std::uint8_t>& v) {
 constexpr std::uint64_t kLayer0 = 0x10, kWalls = 0x11, kLtype = 0x12, kStyle = 0x13, kModel = 0x14,
                         kPaper = 0x15, kDoor = 0x16;
 
-std::vector<std::uint8_t> layer(std::uint64_t h, const char* name, int color, std::uint64_t lt) {
+std::vector<std::uint8_t> layer(std::uint64_t h, const char* name, int color, std::uint64_t lt,
+                                int flags = 16) {
     ObjectWriter o(0x33, h);
     o.objectCommon();
     o.main.text(name);
     o.main.b(false);
     o.main.bs(0);
     o.main.b(false);
-    o.main.bs(16);  // plot flag only
+    o.main.bs(flags);  // plot flag only unless given
     o.cmc(color);
     o.handles.handle(4, 0x02);  // layer control
     o.xdic();
@@ -436,6 +437,8 @@ DwgFile sampleFile() {
     f.add(kLtype, linetype(kLtype, "Continuous"));
     f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
     f.add(kWalls, layer(kWalls, "WALLS", 3, kLtype));
+    f.add(0x17, layer(0x17, "HIDDENLAYER", 5, kLtype, 16 | 2 | 1));  // off and frozen
+    f.add(0x18, layer(0x18, "NOPLOT", 6, kLtype, 0));
     f.add(kStyle, style(kStyle, "Standard"));
     f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
     f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
@@ -481,6 +484,13 @@ TEST_CASE("an R2000 file with tables, entities and a block imports") {
     CHECK(report.count(dxf::Severity::Error) == 0);
 
     CHECK(doc.layerByName("WALLS") != nullptr);
+    CHECK(doc.layerByName("WALLS")->on);
+    CHECK(doc.layerByName("WALLS")->plot);
+    REQUIRE(doc.layerByName("HIDDENLAYER") != nullptr);
+    CHECK_FALSE(doc.layerByName("HIDDENLAYER")->on);
+    CHECK(doc.layerByName("HIDDENLAYER")->frozen);
+    REQUIRE(doc.layerByName("NOPLOT") != nullptr);
+    CHECK_FALSE(doc.layerByName("NOPLOT")->plot);
     CHECK(doc.blockByName("DOOR") != nullptr);
     CHECK(doc.block(doc.blockByName("DOOR")->id)->entities.size() == 1);
 
