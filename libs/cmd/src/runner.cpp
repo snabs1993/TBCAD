@@ -168,6 +168,7 @@ void CommandRunner::afterResume() {
     if (a.task.done()) {
         finishTop(false, {}, true);
     } else if (a.ctx->hasPending()) {
+        multipleHadPrompt_ = true;
         a.ctx->publishPending();
         refreshPrompt();
     } else {
@@ -205,6 +206,17 @@ void CommandRunner::finishTop(bool failed, std::string_view error, bool notify) 
         feedback_ = FilterFeedback{};
         host_.feedbackChanged(feedback_);
         refreshPrompt();
+    }
+    // MULTIPLE: the next run of the repeated command. A run that never asked for anything would
+    // repeat forever, so it ends the repeating.
+    if (!multiple_.empty() && stack_.empty()) {
+        if (failed || a.ctx->cancelled() || !multipleHadPrompt_) {
+            multiple_.clear();
+        } else {
+            multipleHadPrompt_ = false;
+            const std::string again = multiple_;
+            (void)startImpl(again, false);
+        }
     }
 }
 

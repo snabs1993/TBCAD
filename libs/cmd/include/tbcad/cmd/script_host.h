@@ -76,6 +76,10 @@ public:
         runner_.queueScript(std::move(lines), repeat);
         return true;
     }
+    bool repeatCommand(const std::string& name) override {
+        runner_.setMultiple(name);
+        return true;
+    }
     void clearLog() { log_.clear(); }
 
     // Last preview list set by the active prompt (empty when none).
