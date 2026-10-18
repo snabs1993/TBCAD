@@ -90,7 +90,7 @@ public:
             // "Multiple" keeps offsetting the same object, one side point after the other, until
             // Enter.
             bool multiple = false;
-            for (int placed = 0;; ++placed) {
+            for (;;) {
                 cmd::PointOptions po;
                 po.keywords = {"Multiple"};
                 po.allowNone = multiple;
