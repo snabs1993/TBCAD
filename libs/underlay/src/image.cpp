@@ -249,6 +249,18 @@ std::vector<ImageInstance> collectImages(
     const Document& doc, ImageCache& cache,
     const std::function<std::filesystem::path(std::string_view)>& resolve) {
     std::vector<ImageInstance> out;
+    // Called every frame: a drawing without image blocks (almost all of them) must not pay for a
+    // walk over every object.
+    bool anyImageBlock = false;
+    for (const auto& [id, def] : doc.blocks())
+        if (!def.xrefPath.empty() && isImagePath(def.xrefPath)) {
+            anyImageBlock = true;
+            break;
+        }
+    if (!anyImageBlock) {
+        cache.sweep();
+        return out;
+    }
     const ImageParamTable params = readImageParams(doc.header());
     for (EntityId id : doc.modelSpace()) {
         const Entity* e = doc.find(id);

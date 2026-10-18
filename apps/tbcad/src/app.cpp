@@ -237,15 +237,16 @@ void profileReport(const char* label, double gpuWaitMs, int frames) {
     if (label)
         std::printf(
             "  %-26s update %.2f  ui %.2f  composite %.2f  scene.draw %.2f  overlay.build %.2f  "
-            "overlay.draw %.2f  gpu wait %.2f\n",
+            "overlay.draw %.2f  underlay %.2f  gpu wait %.2f\n",
             label, gPhase[0] / n, gPhase[1] / n, gPhase[2] / n, gPhase[3] / n, gPhase[4] / n,
-            gPhase[5] / n, gpuWaitMs / n);
+            gPhase[5] / n, gPhase[6] / n, gpuWaitMs / n);
     for (double& v : gPhase)
         v = 0;
     gPhaseFrames = 0;
 }
 
 void App::drawScene() {
+    PhaseTimer pt;
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
@@ -256,7 +257,8 @@ void App::drawScene() {
     renderer_.draw(core_->underlayImages());
     core_->buildUnderlay(underlay_, uiRegistry_.get());
     renderer_.draw(underlay_);
-    PhaseTimer pt;
+    if (PhaseTimer::enabled())
+        gPhase[6] += pt.lap();
     renderer_.draw(core_->renderScene());
     if (PhaseTimer::enabled())
         gPhase[3] += pt.lap();
