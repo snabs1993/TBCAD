@@ -224,6 +224,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeSetvarCommand());
+    (void)registry.add(makeAddSelectedCommand());
 }
 
 }  // namespace tbcad::sysvars

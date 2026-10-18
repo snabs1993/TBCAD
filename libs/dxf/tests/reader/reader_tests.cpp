@@ -923,7 +923,8 @@ TEST_CASE("WIPEOUT: the clip boundary becomes a closed polyline that hides what 
         if (!pl)
             return;
         found = true;
-        CHECK(e.common.wipeout);
+        const bool wipeout = e.common.wipeout;
+        CHECK(wipeout);
         CHECK(pl->closed);
         REQUIRE(pl->v.size() == 4);
         BBox2 b;
