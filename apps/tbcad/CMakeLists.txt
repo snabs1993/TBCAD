@@ -122,6 +122,7 @@ if(TBCAD_BUILD_TESTS)
   target_include_directories(tbcad_gui_tests PRIVATE tests)
   target_compile_definitions(tbcad_gui_tests PRIVATE
     TBCAD_GUI_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden"
+    TBCAD_GUI_FONT_DIR="${CMAKE_SOURCE_DIR}/assets/fonts"
     TBCAD_GUI_FAILURE_DIR="${CMAKE_CURRENT_BINARY_DIR}/gui-test-failures")
   target_link_libraries(tbcad_gui_tests PRIVATE tbcad_gui tbcad_mcp tbcad_underlay doctest::doctest)
   doctest_discover_tests(tbcad_gui_tests PROPERTIES TIMEOUT 600)

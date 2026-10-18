@@ -10,6 +10,7 @@
 #include <fstream>
 
 #include "gui.h"
+#include "tbcad/text/text.h"
 
 using tbcad::app::applyTheme;
 using tbcad::app::buildFonts;
@@ -256,6 +257,8 @@ struct Harness::Impl {
 };
 
 Harness::Harness(int width, int height) : impl_(std::make_unique<Impl>()) {
+    // Text is drawn with the bundled fonts, as in the application.
+    tbcad::text::fonts().setBundledDirectory(TBCAD_GUI_FONT_DIR);
     impl_->width = width;
     impl_->height = height;
     glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
