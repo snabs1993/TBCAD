@@ -1,5 +1,6 @@
-// FINDSTRAY: finds objects whose drawn shape reaches far outside their own bounds (a long line
-// that cannot be selected), at 1:1 and at the scale of every layout viewport.
+// FINDSTRAY: ranks objects (and the objects inside blocks) whose drawn shape has a stray segment:
+// a vertex far outside the object's own extents, or one segment much longer than the rest of its
+// curve. Checked at 1:1 and at the scale of every layout viewport.
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -13,11 +14,25 @@ namespace tbcad::inquiry {
 
 namespace {
 
-// First display point of `e` outside its bounds grown by a margin, if any.
-bool stray(const Document& doc, const Entity& e, double scale, Vec2& at) {
+const char* kindName(EntityKind k) {
+    static const char* names[] = {"Line",   "Circle", "Arc",   "Polyline", "Point",  "Ellipse",
+                                  "Spline", "Text",   "MText", "Hatch",    "Insert", "Dimension",
+                                  "Leader", "Proxy",  "Table", "Ray",      "MLine"};
+    const auto i = static_cast<std::size_t>(k);
+    return i < sizeof names / sizeof *names ? names[i] : "?";
+}
+
+struct Hit {
+    double score = 0;  // 1 = as far as the object is big, or one segment as long as its curve
+    EntityId id{};
+    EntityKind kind{};
+    std::string layer, why;
+};
+
+void check(const Document& doc, const Entity& e, double scale, std::vector<Hit>& hits) {
     const BBox2 box = geom::bounds(e, doc);
     if (box.empty())
-        return false;
+        return;
     const double diag = std::hypot(box.width(), box.height());
     geom::DisplayContext dc;
     dc.pixelSizeMm = 0.1 * scale;
@@ -26,22 +41,70 @@ bool stray(const Document& doc, const Entity& e, double scale, Vec2& at) {
     DisplayList list;
     geom::buildDisplay(doc, e, dc, list);
     const BBox2 reach = box.inflated(0.25 * diag + 10 * dc.pixelSizeMm + 4 * dc.chordTolMm);
+    const EntityKind k = kind(e);
+    const bool curved =
+        k != EntityKind::Line && k != EntityKind::Polyline && k != EntityKind::Point;
+
+    Hit best;
+    best.id = e.common.id;
+    best.kind = k;
+    auto consider = [&](double score, std::string why) {
+        if (score > best.score) {
+            best.score = score;
+            best.why = std::move(why);
+        }
+    };
+    auto outside = [&](Vec2 p) {
+        if (reach.contains(p))
+            return;
+        const double dx = std::max({reach.min.x - p.x, 0.0, p.x - reach.max.x});
+        const double dy = std::max({reach.min.y - p.y, 0.0, p.y - reach.max.y});
+        consider(std::hypot(dx, dy) / std::max(diag, dc.pixelSizeMm),
+                 "point " + std::to_string(p.x) + ", " + std::to_string(p.y) + " outside extents");
+    };
     for (const DisplayItem& item : list.items) {
-        std::vector<Vec2> pts;
-        if (const auto* pl = std::get_if<DisplayPolyline>(&item))
-            pts = pl->pts;
-        else if (const auto* f = std::get_if<DisplayFill>(&item))
-            for (const auto& ring : f->rings)
-                pts.insert(pts.end(), ring.begin(), ring.end());
-        else if (const auto* d = std::get_if<DisplayPoints>(&item))
-            pts = d->pts;
-        for (const Vec2& p : pts)
-            if (!reach.contains(p)) {
-                at = p;
-                return true;
+        if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
+            for (const Vec2& p : pl->pts)
+                outside(p);
+            // One segment far longer than all the others of a curve.
+            if (curved && pl->pts.size() >= 8) {
+                double longest = 0, second = 0, total = 0;
+                std::size_t at = 0;
+                for (std::size_t i = 1; i < pl->pts.size(); ++i) {
+                    const double len = std::hypot(pl->pts[i].x - pl->pts[i - 1].x,
+                                                  pl->pts[i].y - pl->pts[i - 1].y);
+                    total += len;
+                    if (len > longest) {
+                        second = longest;
+                        longest = len;
+                        at = i;
+                    } else if (len > second) {
+                        second = len;
+                    }
+                }
+                if (longest > 20 * dc.pixelSizeMm && longest > 8 * second && longest > 0.3 * total)
+                    consider(longest / std::max(diag, dc.pixelSizeMm),
+                             "one segment of length " + std::to_string(longest) + " near " +
+                                 std::to_string(pl->pts[at].x) + ", " +
+                                 std::to_string(pl->pts[at].y));
             }
+        } else if (const auto* f = std::get_if<DisplayFill>(&item)) {
+            for (const auto& ring : f->rings)
+                for (const Vec2& p : ring)
+                    outside(p);
+        } else if (const auto* d = std::get_if<DisplayPoints>(&item)) {
+            for (const Vec2& p : d->pts)
+                outside(p);
+        }
     }
-    return false;
+    if (best.score > 0) {
+        const Layer* ly = doc.layer(e.common.layer);
+        best.layer = ly ? ly->name : std::string("?");
+        best.why += " at 1:" + std::to_string(scale);
+        if (const BlockDef* b = doc.block(doc.ownerBlock(e.common.id)))
+            best.why += " (in block " + b->name + ")";
+        hits.push_back(std::move(best));
+    }
 }
 
 class FindStray final : public cmd::Command {
@@ -57,36 +120,39 @@ public:
             for (const layout::Viewport& vp : l.viewports)
                 if (vp.scaleN > 0)
                     scales.insert(vp.scaleN);
-        std::vector<EntityId> found;
-        int shown = 0, total = 0;
+        std::vector<Hit> hits;
+        std::size_t inBlocks = 0;
         ctx.doc().forEachEntity([&](const Entity& e) {
             const EntityKind k = kind(e);
-            if (ctx.doc().ownerBlock(e.common.id) || k == EntityKind::Ray ||
-                k == EntityKind::Proxy || e.common.annotative)
+            if (k == EntityKind::Ray || k == EntityKind::Proxy || e.common.annotative)
                 return;
-            for (double s : scales) {
-                Vec2 at{};
-                if (!stray(ctx.doc(), e, s, at))
-                    continue;
-                ++total;
-                found.push_back(e.common.id);
-                if (shown++ < 20) {
-                    const Layer* ly = ctx.doc().layer(e.common.layer);
-                    ctx.message("Object " + std::to_string(e.common.id.value) + " (kind " +
-                                std::to_string(static_cast<int>(k)) + ", layer " +
-                                (ly ? ly->name : std::string("?")) + ") draws to " +
-                                std::to_string(at.x) + ", " + std::to_string(at.y) +
-                                " at scale 1:" + std::to_string(s));
-                }
-                break;
-            }
+            const bool owned = ctx.doc().ownerBlock(e.common.id) != BlockId{};
+            const std::size_t before = hits.size();
+            for (double s : scales)
+                check(ctx.doc(), e, s, hits);
+            if (owned)
+                inBlocks += hits.size() - before;
         });
-        if (found.empty()) {
+        if (hits.empty()) {
             ctx.message("No stray lines found.");
             co_return;
         }
-        ctx.host().setSelection(found);
-        ctx.message(std::to_string(total) + " object(s) selected.");
+        std::stable_sort(hits.begin(), hits.end(),
+                         [](const Hit& a, const Hit& b) { return a.score > b.score; });
+        std::vector<EntityId> pick;
+        for (std::size_t i = 0; i < hits.size() && i < 20; ++i) {
+            const Hit& h = hits[i];
+            ctx.message("#" + std::to_string(h.id.value) + " " + kindName(h.kind) + " layer " +
+                        h.layer + ": " + h.why + " (x" + std::to_string(h.score).substr(0, 5) +
+                        ")");
+        }
+        for (const Hit& h : hits)
+            if (ctx.doc().ownerBlock(h.id) == BlockId{})
+                pick.push_back(h.id);
+        ctx.message(std::to_string(hits.size()) + " suspect(s), " + std::to_string(inBlocks) +
+                    " inside blocks; " + std::to_string(pick.size()) + " selected.");
+        if (!pick.empty())
+            ctx.host().setSelection(pick);
     }
 };
 
