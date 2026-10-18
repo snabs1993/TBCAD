@@ -27,6 +27,7 @@ MLeaderStyle currentMLeaderStyle(const Document& doc);
 std::unique_ptr<cmd::Command> makeContinueCommand();
 std::unique_ptr<cmd::Command> makeBaselineCommand();
 std::unique_ptr<cmd::Command> makeTextEditCommand();
+std::unique_ptr<cmd::Command> makeSpaceCommand();
 
 // Shared by the dimension commands (dim_helpers.cpp).
 void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out);

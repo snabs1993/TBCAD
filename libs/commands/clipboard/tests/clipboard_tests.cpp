@@ -3,6 +3,9 @@
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/io/tbcad.h"
+
+#include <filesystem>
 
 using namespace tbcad;
 using cmd::ScriptItem;
@@ -178,4 +181,30 @@ TEST_CASE("blocks referenced by copied inserts travel with the clip") {
     REQUIRE(made != nullptr);
     CHECK(made->entities.size() == 1);
     CHECK(dst.count(EntityKind::Insert) == 1);
+}
+
+TEST_CASE("WBLOCK writes the selection to a drawing file at the base point") {
+    Fixture f;
+    LineData l;
+    l.a = {100, 100};
+    l.b = {150, 100};
+    EntityId a = f.add(l);
+    const auto path = std::filesystem::temp_directory_path() / "tbcad_wblock_test.tbcad";
+    std::filesystem::remove(path);
+    auto r = f.host.run("WBLOCK", {ScriptItem::select({a}), ScriptItem::enter(), "100,100",
+                                   path.string()});
+    CHECK(r.finished);
+    io::IoReport report;
+    auto doc = io::readTbcad(path, report);
+    REQUIRE(doc);
+    std::size_t n = 0;
+    doc.value()->forEachEntity([&](const Entity& e) {
+        const auto* ln = entityAs<LineData>(e);
+        REQUIRE(ln);
+        CHECK(near(ln->a, {0, 0}));
+        CHECK(near(ln->b, {50, 0}));
+        ++n;
+    });
+    CHECK(n == 1);
+    std::filesystem::remove(path);
 }

@@ -1,4 +1,4 @@
-// DIMCONTINUE, DIMBASELINE and DIMTEDIT: chains of linear dimensions and dimension text editing.
+// DIMCONTINUE, DIMBASELINE, DIMSPACE and DIMTEDIT: chains of linear dimensions and dimension text editing.
 #include <algorithm>
 #include <cmath>
 
@@ -130,6 +130,110 @@ private:
     std::string description_;
 };
 
+
+// Signed distance of a length dimension's line along `n` (a unit vector across the dimension).
+double lineOffset(const DimensionData& d, Vec2 n) {
+    return dot(d.defPts[2], n);
+}
+
+class SpaceCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMSPACE"; }
+    std::vector<std::string> defaultAliases() const override { return {"DSP"}; }
+    std::string_view description() const override {
+        return "Even out the spacing between parallel linear dimensions";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::EntityOptions eo;
+        eo.filter = isLengthDim;
+        auto base = co_await ctx.getEntity("Select base dimension", eo);
+        if (!base.ok())
+            co_return;
+        const Entity* be = ctx.doc().find(base.id);
+        const auto* b = be ? entityAs<DimensionData>(*be) : nullptr;
+        if (!b)
+            co_return;
+        const DimensionData baseDim = *b;
+        const Vec2 n = normalOf(baseDim);
+        const double baseOff = lineOffset(baseDim, n);
+
+        cmd::SelectionOptions so;
+        so.allowPreselection = false;
+        so.filter = isLengthDim;
+        auto sel = co_await ctx.getSelection("Select dimensions to space", so);
+        if (!sel.ok())
+            co_return;
+
+        struct Item {
+            EntityId id;
+            double off;
+        };
+        std::vector<Item> items;
+        for (EntityId id : sel.ids) {
+            if (id == base.id)
+                continue;
+            const Entity* e = ctx.doc().find(id);
+            const auto* d = e ? entityAs<DimensionData>(*e) : nullptr;
+            if (!d || !isLengthDim(*e))
+                continue;
+            const Vec2 dn = normalOf(*d);
+            if (std::abs(cross(dn, n)) > 1e-6)
+                continue;  // not parallel to the base
+            const double sign = dot(dn, n) >= 0 ? 1.0 : -1.0;
+            items.push_back({id, sign * lineOffset(*d, dn)});
+        }
+        if (items.empty()) {
+            ctx.message("No dimensions parallel to the base dimension were selected.");
+            co_return;
+        }
+
+        const DimStyle& st = dim::styleOf(ctx.doc(), baseDim.style);
+        const double autoGap = 2.0 * st.textHeight * (st.overallScale > 0 ? st.overallScale : 1.0);
+        cmd::DistanceOptions dopt;
+        dopt.keywords = {"Auto"};
+        dopt.defaultValue = autoGap;
+        auto gap = co_await ctx.getDistance("Enter value or [Auto] <Auto>", dopt);
+        double spacing = autoGap;
+        if (gap.status == Status::Ok)
+            spacing = gap.value;
+        else if (!(gap.status == Status::Keyword && gap.keyword == "Auto"))
+            co_return;
+
+        std::vector<Item> above, below;
+        for (const Item& it : items)
+            (it.off >= baseOff ? above : below).push_back(it);
+        std::sort(above.begin(), above.end(),
+                  [](const Item& a, const Item& c) { return a.off < c.off; });
+        std::sort(below.begin(), below.end(),
+                  [](const Item& a, const Item& c) { return a.off > c.off; });
+
+        ctx.setUndoLabel("DIMSPACE");
+        auto place = [&](const std::vector<Item>& list, double dir) {
+            for (std::size_t i = 0; i < list.size(); ++i) {
+                const double target = baseOff + dir * spacing * static_cast<double>(i + 1);
+                const double delta = target - list[i].off;
+                (void)ctx.tx().modify(list[i].id, [&](Entity& ent) {
+                    auto* d = entityAs<DimensionData>(ent);
+                    if (!d)
+                        return;
+                    const Vec2 dn = normalOf(*d);
+                    const double sign = dot(dn, n) >= 0 ? 1.0 : -1.0;
+                    const Vec2 move = dn * (sign * delta);
+                    d->defPts[2] = d->defPts[2] + move;
+                    if (d->textPosUser)
+                        d->textPos = d->textPos + move;
+                    dim::refresh(ctx.doc(), *d);
+                });
+            }
+        };
+        place(above, 1.0);
+        place(below, -1.0);
+        ctx.message("Spaced " + std::to_string(items.size()) + " dimensions.");
+    }
+};
+
 class TextEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMTEDIT"; }
@@ -196,6 +300,10 @@ std::unique_ptr<cmd::Command> makeContinueCommand() {
 std::unique_ptr<cmd::Command> makeBaselineCommand() {
     return std::make_unique<ChainCommand>("DIMBASELINE", "DBA", true,
                                           "Stack dimensions from the same first extension line");
+}
+
+std::unique_ptr<cmd::Command> makeSpaceCommand() {
+    return std::make_unique<SpaceCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeTextEditCommand() {

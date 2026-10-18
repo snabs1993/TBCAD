@@ -4,6 +4,7 @@ tbcad_add_library(inquiry
     src/areatable.cpp
     src/audit.cpp
     src/measure.cpp
+    src/massprop.cpp
     src/quick.cpp
     src/quickcmd.cpp
     src/ui.cpp

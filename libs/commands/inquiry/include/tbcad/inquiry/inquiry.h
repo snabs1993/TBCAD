@@ -28,6 +28,17 @@ std::optional<AreaResult> areaOfEntity(const Entity& e);
 // Area and perimeter of the polygon through the points (straight segments, closed by a chord).
 AreaResult areaOfPoints(const std::vector<Vec2>& pts);
 
+// Second moments of a closed shape (MASSPROP), all about the centroid, in mm^2 / mm^4.
+struct MassProps {
+    double area = 0, perimeter = 0;
+    Vec2 centroid{};
+    double ixx = 0, iyy = 0, ixy = 0;
+    double rx = 0, ry = 0;  // radii of gyration
+    BBox2 bounds{};
+};
+// Empty for anything that is not a closed circle, ellipse, closed polyline or closed spline.
+std::optional<MassProps> massPropsOfEntity(const Entity& e);
+
 // Angle in [0, pi] between the rays vertex->a and vertex->b.
 double angleAtVertex(Vec2 vertex, Vec2 a, Vec2 b);
 

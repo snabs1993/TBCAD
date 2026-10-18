@@ -225,3 +225,31 @@ TEST_CASE("AUDIT reports broken objects and removes them on request") {
     host.run("AUDIT", {});
     CHECK(host.logContains("No problems found"));
 }
+
+TEST_CASE("MASSPROP: rectangle centroid and moments") {
+    Document doc;
+    PolylineData pl;
+    pl.closed = true;
+    for (Vec2 p : {Vec2{10, 20}, Vec2{40, 20}, Vec2{40, 60}, Vec2{10, 60}})
+        pl.v.push_back(PolyVertex{p, 0});
+    Entity e{{}, pl};
+    auto m = inquiry::massPropsOfEntity(e);
+    REQUIRE(m);
+    CHECK(m->area == doctest::Approx(1200));
+    CHECK(m->centroid.x == doctest::Approx(25));
+    CHECK(m->centroid.y == doctest::Approx(40));
+    CHECK(m->ixx == doctest::Approx(30.0 * 40 * 40 * 40 / 12));
+    CHECK(m->iyy == doctest::Approx(40.0 * 30 * 30 * 30 / 12));
+    CHECK(m->ixy == doctest::Approx(0).epsilon(1e-6));
+}
+
+TEST_CASE("MASSPROP: circle moment is pi r^4 / 4") {
+    CircleData c;
+    c.center = {5, 5};
+    c.radius = 10;
+    Entity e{{}, c};
+    auto m = inquiry::massPropsOfEntity(e);
+    REQUIRE(m);
+    CHECK(m->ixx == doctest::Approx(kPi * 1e4 / 4).epsilon(1e-3));
+    CHECK(m->centroid.x == doctest::Approx(5).epsilon(1e-4));
+}

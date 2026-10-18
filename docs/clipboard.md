@@ -10,6 +10,7 @@
 | `PASTECLIP` | Ctrl+V | Pastes with the base point on the point you pick; the new objects are selected. |
 | `PASTEBLOCK` | Ctrl+Shift+V | Pastes everything as one insert of a new block named `A$C1`, `A$C2` ... |
 | `PASTEORIG` | | Pastes at the original coordinates, without asking for a point. |
+| `WBLOCK` | W | Writes the selected objects to a `.tbcad` drawing file; the base point you pick becomes the file's origin. |
 
 The clip carries the layers, levels, linetypes, text styles, dimension styles and the block
 definitions its objects use, found again by name in the target drawing and created when missing,
@@ -34,3 +35,6 @@ that are erased disappear from their group. Code: `libs/core/groups.h`.
 `DRAWORDER` [DR]: Front, Back, or Above / Below a reference object. The relative order of the
 moved objects is kept. Moving above or below a reference re-stacks every object from that position
 up to the front.
+
+`MASSPROP` (in the inquiry commands) reports area, perimeter, bounding box, centroid, second moments of
+inertia and radii of gyration of a closed polyline, circle, ellipse or closed spline.
