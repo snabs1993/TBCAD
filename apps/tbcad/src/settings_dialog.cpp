@@ -11,6 +11,7 @@
 
 #include "key_map.h"
 #include "tbcad/cmd/input.h"
+#include "tbcad/drafting/settings.h"
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
@@ -235,8 +236,9 @@ void SettingsDialog::display(ui::AppCore& core) {
 
 void SettingsDialog::drafting(ui::AppCore& core) {
     auto& s = core.settings();
-    auto toggle = [&](const char* label, const char* key) {
-        bool on = s.getBool(key, false);
+    const drafting::DraftingSettings cur = drafting::DraftingSettings::read(core);
+    auto toggle = [&](const char* label, const char* key, bool fallback = false) {
+        bool on = s.getBool(key, fallback);
         if (ImGui::Checkbox(label, &on)) {
             core.setSetting(key, on ? "1" : "0");
             // Ortho and polar tracking exclude each other.
@@ -246,13 +248,96 @@ void SettingsDialog::drafting(ui::AppCore& core) {
                 s.setBool("drafting.ortho", false);
         }
     };
-    toggle("Object snap (OSNAP)", "drafting.osnap");
-    toggle("Grid snap (SNAP)", "drafting.snap");
-    toggle("Ortho (ORTHO)", "drafting.ortho");
-    toggle("Polar tracking (POLAR)", "drafting.polar");
-    ImGui::TextDisabled(
-        "Snap spacing, polar increment and snap modes: use the SNAP, POLAR and "
-        "OSNAP commands.");
+    // A number kept as text in the settings; applied when the field is left and the text parses.
+    auto number = [&](const char* label, const char* key, double shown, const char* format) {
+        double v = shown;
+        ImGui::SetNextItemWidth(140);
+        ImGui::InputDouble(label, &v, 0, 0, format, ImGuiInputTextFlags_AutoSelectAll);
+        if (ImGui::IsItemDeactivatedAfterEdit() && v > 0 && std::isfinite(v)) {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.10g", v);
+            core.setSetting(key, buf);
+        }
+    };
+    if (!ImGui::BeginTabBar("##drafttabs"))
+        return;
+    if (ImGui::BeginTabItem("Snap and Grid")) {
+        toggle("Snap on (F9)", drafting::keys::snap);
+        number("Snap spacing", drafting::keys::snapSpacing, cur.snapSpacing, "%.6g");
+        ImGui::Separator();
+        toggle("Grid on (F7)", drafting::keys::grid);
+        number("Grid spacing", drafting::keys::gridSpacing, cur.gridSpacing, "%.6g");
+        int style = cur.gridLines ? 1 : 0;
+        ImGui::SetNextItemWidth(140);
+        if (ImGui::Combo("Grid style", &style, "Dots\0Lines\0"))
+            core.setSetting(drafting::keys::gridStyle, style == 1 ? "lines" : "dots");
+        ImGui::Separator();
+        toggle("Dynamic UCS", drafting::keys::dynUcs);
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Polar Tracking")) {
+        toggle("Polar tracking on (F10)", drafting::keys::polar);
+        toggle("Ortho on (F8)", drafting::keys::ortho);
+        std::string inc;
+        for (double d : cur.polarIncrementsDeg) {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.10g", d);
+            inc += (inc.empty() ? "" : ",") + std::string(buf);
+        }
+        static std::string text;
+        static std::string shownFor;
+        if (shownFor != inc) {
+            text = inc;
+            shownFor = inc;
+        }
+        ImGui::SetNextItemWidth(140);
+        ImGui::InputText("Increment angles (deg)", &text);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            if (drafting::parsePolarIncrements(text).empty())
+                text = inc;  // not valid: put the old value back
+            else
+                core.setSetting(drafting::keys::polarIncrement, text);
+        }
+        ImGui::TextDisabled("Angles between 0 and 180, separated by commas: 90 or 30,45.");
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Object Snap")) {
+        toggle("Object snap on (F3)", drafting::keys::osnap, true);
+        ImGui::Separator();
+        auto mask = cur.modes;
+        bool changed = false;
+        for (int i = 0; i < drafting::kSnapModeCount; ++i) {
+            const auto mode = static_cast<drafting::SnapMode>(i);
+            bool on = (mask & drafting::maskOf(mode)) != 0;
+            const std::string label(drafting::snapModeLabel(mode));
+            if (ImGui::Checkbox(label.c_str(), &on)) {
+                mask = on ? (mask | drafting::maskOf(mode)) : (mask & ~drafting::maskOf(mode));
+                changed = true;
+            }
+        }
+        if (ImGui::SmallButton("Select all")) {
+            mask = drafting::kAllSnapModes;
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Clear all")) {
+            mask = 0;
+            changed = true;
+        }
+        if (changed)
+            core.setSetting(drafting::keys::osnapModes, drafting::formatSnapModes(mask));
+        ImGui::Separator();
+        number("Aperture (pixels)", drafting::keys::osnapAperture, cur.aperturePx, "%.0f");
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Dynamic Input")) {
+        toggle("Dynamic input on (F12)", drafting::keys::dynInput, true);
+        ImGui::TextDisabled(
+            "Distance and angle (or X and Y) next to the cursor; Tab moves "
+            "between the fields.");
+        ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
 }
 
 void SettingsDialog::files(ui::AppCore& core) {

@@ -322,6 +322,21 @@ public:
     }
 };
 
+// DSETTINGS [DS, OSETTINGS]: the Drafting page of the Settings dialog (snap, grid, polar, object
+// snap, dynamic input).
+class DraftingSettingsCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DSETTINGS"; }
+    std::vector<std::string> defaultAliases() const override { return {"DS", "OSETTINGS"}; }
+    std::string_view description() const override {
+        return "Drafting settings: snap, grid, polar tracking, object snap, dynamic input";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi("settings:Drafting");
+        co_return;
+    }
+};
+
 // NEW, OPEN, SAVE, SAVEAS, CLOSE typed on the command line do what the File menu does: the window
 // owns the dialogs, so the command only asks it ("action:file.save").
 class FileActionCommand final : public cmd::Command {
@@ -621,6 +636,7 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
     (void)registry.add(std::make_unique<SettingsPageCommand>());
+    (void)registry.add(std::make_unique<DraftingSettingsCommand>());
     (void)registry.add(
         std::make_unique<FileActionCommand>("NEW", "file.new", "Start a new drawing"));
     (void)registry.add(std::make_unique<FileActionCommand>(
