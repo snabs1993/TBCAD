@@ -1610,7 +1610,7 @@ void Transaction::followAssociations() {
         bool moved;
         Vec2 shift{};  // average move of the followed points, for a text placed by hand
         int followed = 0;
-        Vec2 first{};  // the move of the first followed point
+        Vec2 first{};         // the move of the first followed point
         bool uniform = true;  // every followed point moved by the same vector
     };
     std::vector<Plan> plans;
