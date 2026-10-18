@@ -366,6 +366,23 @@ void Importer::processObjects(RecordReader& rr) {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
             continue;
         }
+        if (r.type == "SCALE") {
+            const double paper = r.num(140, 0), drawing = r.num(141, 0);
+            if (std::isfinite(paper) && std::isfinite(drawing) && paper > 0 && drawing > 0)
+                scaleFactors_[std::string(r.raw(5))] = drawing / paper;
+            continue;
+        }
+        {  // AcDbObjectContextData: the first 340 after the marker is the scale it is for
+            bool inCtx = false;
+            for (const Group& cg : r.g) {
+                if (cg.code == 100 && cg.str() == "AcDbObjectContextData")
+                    inCtx = true;
+                else if (inCtx && cg.code == 340) {
+                    contextScale_[std::string(r.raw(5))] = std::string(cg.str());
+                    break;
+                }
+            }
+        }
         if (r.type == "DICTIONARY") {
             auto& entries = dicts_[std::string(r.raw(5))];
             std::string key;

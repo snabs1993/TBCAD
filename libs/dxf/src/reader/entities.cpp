@@ -184,6 +184,34 @@ ExtData Importer::extOf(const Record& r) {
     return x;
 }
 
+// The scales an AutoCAD annotative object lists: its extension dictionary holds
+// AcDbContextDataManager > ACDB_ANNOTATIONSCALES > one context-data object per scale.
+ScaleList Importer::annotativeScalesOf(const std::vector<std::pair<std::string, std::string>>& xd) {
+    auto child = [&](const std::vector<std::pair<std::string, std::string>>& entries,
+                     const char* name) -> const std::vector<std::pair<std::string, std::string>>* {
+        for (const auto& [key, handle] : entries)
+            if (key == name) {
+                const auto it = dicts_.find(handle);
+                return it == dicts_.end() ? nullptr : &it->second;
+            }
+        return nullptr;
+    };
+    const auto* mgr = child(xd, "AcDbContextDataManager");
+    const auto* scales = mgr ? child(*mgr, "ACDB_ANNOTATIONSCALES") : nullptr;
+    std::vector<double> found;
+    if (scales)
+        for (const auto& entry : *scales) {
+            const auto ctx = contextScale_.find(entry.second);
+            if (ctx == contextScale_.end())
+                continue;
+            const auto sc = scaleFactors_.find(ctx->second);
+            if (sc != scaleFactors_.end() && found.size() < 64 &&
+                std::find(found.begin(), found.end(), sc->second) == found.end())
+                found.push_back(sc->second);
+        }
+    return ScaleList(std::move(found));
+}
+
 // Fills the pending extension dictionaries of all entities from the OBJECTS section.
 void Importer::resolveExtDictionaries() {
     std::vector<EntityId> todo;
@@ -206,6 +234,8 @@ void Importer::resolveExtDictionaries() {
                 const auto dict = dicts_.find(d.items.empty() ? std::string() : d.items[0].text);
                 if (dict == dicts_.end())
                     continue;
+                if (e.common.annotative && e.common.annoScales.empty())
+                    e.common.annoScales = annotativeScalesOf(dict->second);
                 for (const auto& [key, handle] : dict->second) {
                     const auto rec = xrecItems_.find(handle);
                     if (rec == xrecItems_.end() || resolved.size() >= 256)
@@ -261,6 +291,19 @@ EntityCommon Importer::commonOf(const Record& r) {
     }
     c.visible = r.integer(60, 0) == 0;
     c.ext = ExtDataPtr(extOf(r));
+    {  // AutoCAD: AcadAnnotative XDATA "AnnotativeData", { 1070 1 (annotative) ... }
+        bool inAnno = false, seenData = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                inAnno = g.str() == "AcadAnnotative";
+            else if (inAnno && g.code == 1000 && g.str() == "AnnotativeData")
+                seenData = true;
+            else if (inAnno && seenData && g.code == 1070) {
+                c.annotative = g.integer() != 0;
+                break;
+            }
+        }
+    }
     bool ours = false;
     for (const Group& g : r.g) {
         if (g.code == 1001)

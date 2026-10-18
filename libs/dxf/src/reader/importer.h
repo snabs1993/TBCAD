@@ -209,6 +209,10 @@ private:
     std::vector<std::pair<std::string, std::string>> layerXdicts_{};
     std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> dicts_{};
     std::unordered_map<std::string, std::int64_t> xrecNumbers_{};
+    // AutoCAD annotative scales: SCALE object handle -> drawing units per paper unit, and
+    // object-context-data handle -> the handle of the SCALE it is for.
+    std::unordered_map<std::string, double> scaleFactors_{};
+    std::unordered_map<std::string, std::string> contextScale_{};
     // Items of every XRECORD by handle, for extension dictionaries of entities.
     std::unordered_map<std::string, std::vector<DataItem>> xrecItems_{};
     // Every OBJECTS record as read (groups as text), for the part that is kept as it is.
@@ -223,6 +227,7 @@ private:
     std::vector<std::pair<std::uint64_t, std::uint64_t>> srcHandles_{};
     ExtData extOf(const Record& r);
     void resolveExtDictionaries();
+    ScaleList annotativeScalesOf(const std::vector<std::pair<std::string, std::string>>& xd);
     void applyLayerAlphaXrecords();
     std::vector<std::string> layerRawNames_{};  // raw bytes of each row's name
     bool layersCreated_ = false;

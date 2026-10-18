@@ -43,6 +43,10 @@ and sized for a plot scale afterwards.
 - DXF keeps the same in TBCAD's extended data (per object) and in an `XRECORD` in the root
   dictionary (current scale and list). R2007 files also get real `ACAD_SCALELIST` / `SCALE`
   objects. Other programs show the objects at the size last drawn.
+- AutoCAD's own annotative objects open as annotative: the `AcadAnnotative` flag of an entity and
+  the scales in its context data (extension dictionary > `AcDbContextDataManager` >
+  `ACDB_ANNOTATIONSCALES`, each pointing at a `SCALE` object) become the object's scale list.
+  Scales are read as drawing units per paper unit (1:50 is 50). Saving writes TBCAD's own form.
 
 ## Wipeout
 
