@@ -1114,32 +1114,33 @@ TEST_CASE("zoom extents ignores stray points far from the drawing") {
     CHECK(vis.width() < 100000);
     CHECK(vis.min.x <= 0);
     CHECK(vis.max.x >= 10000);
+}
 
-    TEST_CASE("a selected hatch is outlined, and the outline follows the selection") {
-        Fixture f("hatchoutline");
-        EntityId hatchId;
-        {
-            HatchData h;
-            HatchLoop loop;
-            HatchPolylineEdge pe;
-            for (Vec2 q : {Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 100}, Vec2{0, 100}})
-                pe.v.push_back(PolyVertex{q});
-            pe.closed = true;
-            loop.edges.push_back(pe);
-            h.loops.push_back(loop);
-            Transaction tx = f.core->document().begin("hatch");
-            hatchId = tx.add(Entity{{}, h}).value();
-            tx.commit();
-        }
-        render::Overlay overlay;
-        f.core->buildOverlay(overlay, nullptr);
-        CHECK(overlay.empty());
-        f.core->setSelection({hatchId});
-        f.core->buildOverlay(overlay, nullptr);
-        CHECK_FALSE(overlay.empty());
-        f.core->buildOverlay(overlay, nullptr);  // a second frame reuses the outline
-        CHECK_FALSE(overlay.empty());
-        f.core->clearSelection();
-        f.core->buildOverlay(overlay, nullptr);
-        CHECK(overlay.empty());
+TEST_CASE("a selected hatch is outlined, and the outline follows the selection") {
+    Fixture f("hatchoutline");
+    EntityId hatchId;
+    {
+        HatchData h;
+        HatchLoop loop;
+        HatchPolylineEdge pe;
+        for (Vec2 q : {Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 100}, Vec2{0, 100}})
+            pe.v.push_back(PolyVertex{q});
+        pe.closed = true;
+        loop.edges.push_back(pe);
+        h.loops.push_back(loop);
+        Transaction tx = f.core->document().begin("hatch");
+        hatchId = tx.add(Entity{{}, h}).value();
+        tx.commit();
     }
+    render::Overlay overlay;
+    f.core->buildOverlay(overlay, nullptr);
+    CHECK(overlay.empty());
+    f.core->setSelection({hatchId});
+    f.core->buildOverlay(overlay, nullptr);
+    CHECK_FALSE(overlay.empty());
+    f.core->buildOverlay(overlay, nullptr);  // a second frame reuses the outline
+    CHECK_FALSE(overlay.empty());
+    f.core->clearSelection();
+    f.core->buildOverlay(overlay, nullptr);
+    CHECK(overlay.empty());
+}
