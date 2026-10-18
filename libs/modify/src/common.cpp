@@ -148,6 +148,19 @@ PolylineData cleanPolyline(const PolylineData& pl) {
     }
     if (out.closed && out.v.size() > 1 && samePoint(out.v.back().p, out.v.front().p))
         out.v.pop_back();
+    // An arc that bulges by less than a ten-millionth of a millimetre is a straight segment: its
+    // radius would be so large that every intersection with it is numerical noise.
+    for (std::size_t i = 0; i < out.v.size(); ++i) {
+        const PolyVertex& a = out.v[i];
+        if (a.bulge == 0)
+            continue;
+        const bool last = i + 1 == out.v.size();
+        if (last && !out.closed)
+            continue;
+        const PolyVertex& b = out.v[last ? 0 : i + 1];
+        if (std::abs(a.bulge) * distance(a.p, b.p) * 0.5 < 1e-7)
+            out.v[i].bulge = 0;
+    }
     return out;
 }
 

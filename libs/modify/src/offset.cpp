@@ -166,36 +166,95 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
         }
     }
 
-    // 5. Keep the pieces that stay at least |d| away from the source.
+    // 4b. A raw segment can also run into the offset distance of the opposite side of the source
+    // (a thin feature, the tip of a spike) without crossing any other raw segment. The edge of the
+    // zone closer than |d| to the source is made of the offsets of both sides and of circles
+    // around the vertices; where a raw segment meets those it may enter or leave the zone. These
+    // extra cuts are only kept where they separate a surviving piece from a discarded one.
     const double absd = std::abs(d);
+    std::vector<Seg> zoneEdge;
+    for (const Seg& s0 : segs) {
+        bool ok = false;
+        const Seg o = offsetSeg(s0, -d, ok);
+        if (ok)
+            zoneEdge.push_back(o);
+        for (const Vec2 v : {s0.p0, s0.p1}) {
+            zoneEdge.push_back(Seg{v + Vec2{absd, 0}, v - Vec2{absd, 0}, 1.0});
+            zoneEdge.push_back(Seg{v - Vec2{absd, 0}, v + Vec2{absd, 0}, 1.0});
+        }
+    }
+    std::vector<std::vector<double>> extras(cn);
+    if (cn * zoneEdge.size() <= 4000000) {
+        std::vector<CurveRef> zc;
+        std::vector<BBox2> zb;
+        for (const Seg& z : zoneEdge) {
+            zc.push_back(segCurve(z));
+            zb.push_back(zc.back().bounds().inflated(1e-7));
+        }
+        for (std::size_t i = 0; i < cn; ++i)
+            for (std::size_t j = 0; j < zc.size(); ++j) {
+                if (!boxes[i].intersects(zb[j]))
+                    continue;
+                std::vector<geom::Intersection> xs;
+                geom::intersect(curves[i], zc[j], xs);
+                for (const auto& x : xs) {
+                    const double ui = segParam(chain[i], x.p);
+                    if (ui > 1e-9 && ui < 1.0 - 1e-9)
+                        extras[i].push_back(ui);
+                }
+            }
+    }
+
+    // 5. Keep the pieces that stay at least |d| away from the source.
     const double validTol = 1e-6 * std::max(1.0, absd);
     std::vector<Seg> valid;
+    const auto addValid = [&](const Seg& piece) {
+        // Two raw segments can run over the same stretch (a vanishing bridge): keep it once.
+        const bool duplicate = std::any_of(valid.begin(), valid.end(), [&](const Seg& v) {
+            return (samePoint(v.p0, piece.p0, kJoinTol) && samePoint(v.p1, piece.p1, kJoinTol) &&
+                    std::abs(v.bulge - piece.bulge) < 1e-7) ||
+                   (samePoint(v.p0, piece.p1, kJoinTol) && samePoint(v.p1, piece.p0, kJoinTol) &&
+                    std::abs(v.bulge + piece.bulge) < 1e-7);
+        });
+        if (!duplicate)
+            valid.push_back(piece);
+    };
     for (std::size_t i = 0; i < cn; ++i) {
-        std::vector<double> bounds{0.0};
-        std::sort(cuts[i].begin(), cuts[i].end());
-        for (double u : cuts[i]) {
-            if (u - bounds.back() > 1e-9)
-                bounds.push_back(u);
+        // Every cut with a flag: true for the extra ones.
+        std::vector<std::pair<double, bool>> all;
+        for (double u : cuts[i])
+            all.emplace_back(u, false);
+        for (double u : extras[i])
+            all.emplace_back(u, true);
+        std::sort(all.begin(), all.end());
+        std::vector<std::pair<double, bool>> bounds{{0.0, false}};
+        for (const auto& c : all) {
+            if (c.first - bounds.back().first > 1e-9)
+                bounds.push_back(c);
+            else if (!c.second)
+                bounds.back().second = false;  // a real cut at the same place
         }
-        bounds.push_back(1.0);
-        for (std::size_t b = 0; b + 1 < bounds.size(); ++b) {
-            Seg piece = segSub(chain[i], bounds[b], bounds[b + 1]);
+        bounds.emplace_back(1.0, false);
+        const std::size_t count = bounds.size() - 1;
+        std::vector<char> good(count, 0);
+        for (std::size_t b = 0; b < count; ++b) {
+            const Seg piece = segSub(chain[i], bounds[b].first, bounds[b + 1].first);
             if (segLength(piece) <= tol::kLinear)
                 continue;
-            Vec2 mid = segPoint(chain[i], 0.5 * (bounds[b] + bounds[b + 1]));
-            if (distanceToSegs(segs, mid) < absd - validTol)
-                continue;  // inside the offset distance: part of a loop that gets cut away
-            // Two raw segments can run over the same stretch (a vanishing bridge): keep it once.
-            bool duplicate = std::any_of(valid.begin(), valid.end(), [&](const Seg& v) {
-                return (samePoint(v.p0, piece.p0, kJoinTol) &&
-                        samePoint(v.p1, piece.p1, kJoinTol) &&
-                        std::abs(v.bulge - piece.bulge) < 1e-7) ||
-                       (samePoint(v.p0, piece.p1, kJoinTol) &&
-                        samePoint(v.p1, piece.p0, kJoinTol) &&
-                        std::abs(v.bulge + piece.bulge) < 1e-7);
-            });
-            if (!duplicate)
-                valid.push_back(piece);
+            const Vec2 mid = segPoint(chain[i], 0.5 * (bounds[b].first + bounds[b + 1].first));
+            good[b] = distanceToSegs(segs, mid) >= absd - validTol;  // else inside the distance
+        }
+        for (std::size_t b = 0; b < count;) {
+            if (!good[b]) {
+                ++b;
+                continue;
+            }
+            std::size_t e = b + 1;
+            // An extra cut between two surviving pieces is not a cut at all.
+            while (e < count && good[e] && bounds[e].second)
+                ++e;
+            addValid(segSub(chain[i], bounds[b].first, bounds[e].first));
+            b = e;
         }
     }
 
