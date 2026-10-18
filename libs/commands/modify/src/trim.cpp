@@ -10,6 +10,7 @@ namespace tbcad::modifycmd {
 namespace {
 
 constexpr const char* kEdgeExtendKey = "trim.edgeextend";
+constexpr const char* kQuickKey = "trim.quick";  // Quick mode: every object is an edge
 
 struct EdgeSet {
     std::vector<EntityId> ids{};
@@ -139,7 +140,7 @@ void batch(cmd::CommandContext& ctx, std::vector<std::pair<EntityId, Vec2>> pick
 cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
     ctx.commitOnCancel();
     EdgeSet set;
-    {
+    if (!getFlag(ctx.host(), kQuickKey, false)) {
         cmd::SelectionOptions so;
         so.filter = [&doc = ctx.doc()](const Entity& e) { return isUsableBoundary(doc, e); };
         auto sel = co_await ctx.getSelection(
@@ -154,16 +155,16 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
     }
     for (;;) {
         cmd::EntityOptions eo;
-        eo.keywords = {"Fence", "Crossing", "Edge", "Undo"};
+        eo.keywords = {"Fence", "Crossing", "Edge", "Mode", "Undo"};
         if (trimMode)
-            eo.keywords.insert(eo.keywords.begin() + 3, "Remove");
+            eo.keywords.insert(eo.keywords.begin() + 4, "Remove");
         eo.filter = [&doc = ctx.doc()](const Entity& e) { return isEditable(doc, e); };
-        auto pick = co_await ctx.getEntity(
-            trimMode
-                ? "Select object to trim or Shift-select to extend or "
-                  "[Fence/Crossing/Edge/Remove/Undo]"
-                : "Select object to extend or Shift-select to trim or [Fence/Crossing/Edge/Undo]",
-            eo);
+        auto pick =
+            co_await ctx.getEntity(trimMode ? "Select object to trim or Shift-select to extend or "
+                                              "[Fence/Crossing/Edge/Mode/Remove/Undo]"
+                                            : "Select object to extend or Shift-select to trim or "
+                                              "[Fence/Crossing/Edge/Mode/Undo]",
+                                   eo);
         if (pick.status == cmd::Status::Keyword) {
             if (pick.keyword == "Undo") {
                 ctx.message(ctx.rollbackToCheckpoint() ? "Last change undone."
@@ -179,6 +180,31 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
                         if (ctx.tx().erase(id))
                             ++n;
                     ctx.message(std::to_string(n) + " erased.");
+                }
+            } else if (pick.keyword == "Mode") {
+                cmd::KeywordOptions k;
+                k.keywords = {"Quick", "Standard"};
+                k.defaultKeyword = getFlag(ctx.host(), kQuickKey, false) ? "Quick" : "Standard";
+                auto r = co_await ctx.getKeyword("Mode [Quick/Standard]", k);
+                if (r.ok()) {
+                    const bool quick = r.keyword == "Quick";
+                    putFlag(ctx.host(), kQuickKey, quick);
+                    if (quick) {
+                        set = EdgeSet{};  // every object that can cut
+                    } else {
+                        cmd::SelectionOptions so;
+                        so.filter = [&doc = ctx.doc()](const Entity& e) {
+                            return isUsableBoundary(doc, e);
+                        };
+                        auto sel = co_await ctx.getSelection(
+                            trimMode ? "Select cutting edges <select all>"
+                                     : "Select boundary edges <select all>",
+                            so);
+                        if (sel.status == cmd::Status::Ok) {
+                            set.ids = sel.ids;
+                            set.all = false;
+                        }
+                    }
                 }
             } else if (pick.keyword == "Edge") {
                 cmd::KeywordOptions k;
