@@ -12,6 +12,9 @@ namespace tbcad::tablecmd {
 // explode hook with the blocks module's ExplodeRegistry.
 void registerCommands(cmd::Registry& registry);
 
+// TABLEEXPORT and TABLEIMPORT (CSV); registerCommands calls it.
+void registerCsvCommands(cmd::Registry& registry);
+
 // Menu entries for TABLE and TABLEEDIT.
 void registerUi(ui::UiRegistry& ui);
 

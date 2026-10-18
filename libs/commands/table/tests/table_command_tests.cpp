@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <filesystem>
+
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
@@ -105,4 +107,39 @@ TEST_CASE("a table has an explode hook that gives lines and text") {
     Fx f;
     CHECK(blocks::ExplodeRegistry::has(EntityKind::Table));
     CHECK(geom::DisplayRegistry::has(EntityKind::Table));
+}
+
+TEST_CASE("TABLEEXPORT writes a CSV that TABLEIMPORT turns back into the same table") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_table_csv";
+    fs::create_directories(dir);
+    const std::string file = (dir / "t.csv").string();
+    Fx f;
+    REQUIRE(f.host->run("TABLE", {"2", "2", "30", "8", "", "0,0"}).finished);
+    const EntityId id = f.tableId();
+    {
+        auto tx = f.doc.begin("fill");
+        REQUIRE(tx.modify(id, [](Entity& e) {
+            auto* t = entityAs<TableData>(e);
+            table::setText(*t, 0, 0, "Door");
+            table::setText(*t, 0, 1, "W, mm");
+            table::setText(*t, 1, 0, "D1");
+            table::setText(*t, 1, 1, "900");
+        }));
+        tx.commit();
+    }
+    REQUIRE(f.host->run("TABLEEXPORT", {ScriptItem::pick(id, {1, -1}), file}).finished);
+    REQUIRE(fs::exists(file));
+    REQUIRE(f.host->run("TABLEIMPORT", {file, "100,0"}).finished);
+    int tables = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TableData>(e); t && t->origin.x == 100) {
+            ++tables;
+            CHECK(table::rowCount(*t) == 2);
+            CHECK(table::cellAt(*t, 0, 1).utf8 == "W, mm");
+            CHECK(table::cellAt(*t, 1, 1).utf8 == "900");
+        }
+    });
+    CHECK(tables == 1);
+    fs::remove_all(dir);
 }

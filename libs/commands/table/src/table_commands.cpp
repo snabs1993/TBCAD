@@ -242,11 +242,14 @@ void registerCommands(cmd::Registry& registry) {
         });
     (void)registry.add(std::make_unique<TableCommand>());
     (void)registry.add(std::make_unique<TableEditCommand>());
+    registerCsvCommands(registry);
 }
 
 void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Table", "TABLE");
     ui.addMenuItem("Modify/Edit Table", "TABLEEDIT");
+    ui.addMenuItem("Draw/Table from CSV...", "TABLEIMPORT");
+    ui.addMenuItem("Modify/Export Table to CSV...", "TABLEEXPORT");
 }
 
 }  // namespace tbcad::tablecmd

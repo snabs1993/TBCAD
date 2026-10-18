@@ -245,3 +245,24 @@ TEST_CASE("grips: the origin moves it, the far corner rescales the grid") {
     CHECK(t->rowHeights[1] == doctest::Approx(20));
     CHECK_FALSE(geom::moveGrip(e, 1, {50, 300}).ok());
 }
+
+TEST_CASE(
+    "CSV: quotes, doubled quotes, line ends, BOM and semicolons are read; export quotes back") {
+    auto rows = table::parseCsv(
+        "\xEF\xBB\xBF"
+        "Door,\"W, mm\",Note\r\nD1,900,\"say \"\"hi\"\"\"\n\nD2,800,\n");
+    REQUIRE(rows.size() == 3);
+    CHECK(rows[0] == std::vector<std::string>{"Door", "W, mm", "Note"});
+    CHECK(rows[1] == std::vector<std::string>{"D1", "900", "say \"hi\""});
+    CHECK(rows[2] == std::vector<std::string>{"D2", "800", ""});
+
+    auto semi = table::parseCsv("a;b;c\n1;2;3\n");
+    REQUIRE(semi.size() == 2);
+    CHECK(semi[1] == std::vector<std::string>{"1", "2", "3"});
+
+    TableData t = table::fromRows(rows, {0, 0}, 2.5, nullptr);
+    CHECK(table::rowCount(t) == 3);
+    CHECK(table::colCount(t) == 3);
+    const std::string csv = table::toCsv(t);
+    CHECK(table::parseCsv(csv) == rows);
+}
