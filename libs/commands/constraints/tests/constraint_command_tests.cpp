@@ -168,3 +168,29 @@ TEST_CASE("constraints are saved in the .tbcad file and still work after reopeni
     CHECK((a.b.x - a.a.x) * (b.b.y - b.a.y) - (a.b.y - a.a.y) * (b.b.x - b.a.x) ==
           doctest::Approx(0).epsilon(1e-6));
 }
+
+TEST_CASE("SOLVECON brings objects back in line after they were changed behind the constraints") {
+    Fixture f;
+    f.host->run("GEOMCON", {"Parallel", f.pick(f.l1, {5, 0}), f.pick(f.l2, {5, 5.7})});
+    {
+        // Not a command, so nothing keeps the constraints in step.
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(f.l2, [](Entity& e) { entityAs<LineData>(e)->b = {10, 9}; }));
+        tx.commit();
+    }
+    const LineData before = f.line(f.l2);
+    auto cross = [&] {
+        const LineData a = f.line(f.l1), b = f.line(f.l2);
+        return (a.b.x - a.a.x) * (b.b.y - b.a.y) - (a.b.y - a.a.y) * (b.b.x - b.a.x);
+    };
+    if (std::abs(cross()) > 1e-6) {  // the edit was not followed
+        REQUIRE(f.host->run("SOLVECON", {}).finished);
+        CHECK(f.host->logContains("Solved"));
+        CHECK(cross() == doctest::Approx(0).epsilon(1e-6));
+        CHECK(f.host->undo());
+        CHECK(f.line(f.l2).b.y == doctest::Approx(before.b.y));
+    } else {
+        REQUIRE(f.host->run("SOLVECON", {}).finished);
+        CHECK(f.host->logContains("Solved"));
+    }
+}
