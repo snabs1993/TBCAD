@@ -10,7 +10,7 @@ tbcad_add_library(text
     src/display.cpp
     src/annotation_size.cpp
     src/field.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::font)
+  DEPENDS tbcad::core tbcad::geom tbcad::font tbcad::hatch)
 target_compile_definitions(tbcad_text PRIVATE
   TBCAD_TEXT_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets/dictionaries")
 

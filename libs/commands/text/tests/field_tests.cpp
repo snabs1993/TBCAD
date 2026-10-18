@@ -120,3 +120,68 @@ TEST_CASE("DXF export writes the shown value of a field") {
     std::error_code ec;
     std::filesystem::remove(file, ec);
 }
+
+namespace {
+HatchLoop squareLoop(double x0, double y0, double x1, double y1, bool outer) {
+    HatchLoop l;
+    l.outer = outer;
+    l.edges = {HatchLineEdge{{x0, y0}, {x1, y0}}, HatchLineEdge{{x1, y0}, {x1, y1}},
+               HatchLineEdge{{x1, y1}, {x0, y1}}, HatchLineEdge{{x0, y1}, {x0, y0}}};
+    return l;
+}
+}  // namespace
+
+TEST_CASE("fields: hatch and ellipse area, radius, position, layer, block, attribute, scale") {
+    Fixture f;
+    EntityId hatch{}, ell{}, circle{}, ins{};
+    {
+        auto tx = f.doc.begin("objects");
+        HatchData h;
+        h.loops = {squareLoop(0, 0, 100, 100, true), squareLoop(20, 20, 40, 40, false)};
+        hatch = tx.add(Entity{{}, std::move(h)}).value();
+        EllipseData e;
+        e.center = {5, 6};
+        e.majorAxis = {10, 0};
+        e.ratio = 0.5;
+        ell = tx.add(Entity{{}, e}).value();
+        circle = tx.add(Entity{{}, CircleData{{7, 8}, 25}}).value();
+        auto blk = tx.addBlock(BlockDef{.name = "Door"});
+        REQUIRE(blk.ok());
+        InsertData d{blk.value(), {30, 40}, {1, 1}, 0};
+        d.attribs = {{"TAG1", "value one"}};
+        ins = tx.add(Entity{{}, std::move(d)}).value();
+        tx.commit();
+    }
+    auto x = [&](const std::string& s) { return text::expandFields(f.doc, s, "2026-10-13"); };
+    auto id = [](EntityId e) { return std::to_string(e.value); };
+    CHECK(x("%<area:#" + id(hatch) + ":0>%") == "9600");  // 100x100 minus the 20x20 island
+    CHECK(x("%<area:#" + id(ell) + ":1>%") == "157.1");   // pi * 10 * 5
+    CHECK(x("%<radius:#" + id(circle) + ">%") == "25.00");
+    CHECK(x("%<diameter:#" + id(circle) + ":0>%") == "50");
+    CHECK(x("%<x:#" + id(circle) + ">% %<y:#" + id(circle) + ">%") == "7.00 8.00");
+    CHECK(x("%<x:#" + id(ins) + ":1>%") == "30.0");
+    CHECK(x("%<layer:#" + id(circle) + ">%") == "0");
+    CHECK(x("%<block:#" + id(ins) + ">%") == "Door");
+    CHECK(x("%<attr:#" + id(ins) + ":tag1>%") == "value one");
+    CHECK(x("%<attr:#" + id(ins) + ":nope>%") == "####");
+    CHECK(x("%<block:#" + id(circle) + ">%") == "####");
+    CHECK(x("%<perimeter:#" + id(circle) + ":0>%") == "157");
+    CHECK(x("%<scale>%") == "1:1");
+}
+
+TEST_CASE("FIELD offers layer, block, attribute and radius") {
+    Fixture f;
+    f.host.run("CIRCLE", {"0,0", "10"});
+    const EntityId circle = f.last();
+    REQUIRE(
+        f.host.run("FIELD", {"Radius", cmd::ScriptItem::pick(circle, {10, 0}), "0,20"}).finished);
+    const auto* t = entityAs<TextData>(*f.doc.find(f.last()));
+    REQUIRE(t);
+    CHECK(t->utf8 == "%<radius:#" + std::to_string(circle.value) + ":2>%");
+    REQUIRE(
+        f.host.run("FIELD", {"Layer", cmd::ScriptItem::pick(circle, {10, 0}), "0,30"}).finished);
+    CHECK(entityAs<TextData>(*f.doc.find(f.last()))->utf8 ==
+          "%<layer:#" + std::to_string(circle.value) + ">%");
+    REQUIRE(f.host.run("FIELD", {"Scale", "0,40"}).finished);
+    CHECK(entityAs<TextData>(*f.doc.find(f.last()))->utf8 == "%<scale>%");
+}
