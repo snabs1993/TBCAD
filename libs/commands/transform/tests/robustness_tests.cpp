@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/transform/grips.h"
 
 using namespace tbtest;
 
@@ -13,8 +14,10 @@ namespace {
 bool hasNonFinite(const std::string& dump) {
     for (const char* bad : {"nan", "inf"}) {
         std::string low = dump;
-        for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (low.find(bad) != std::string::npos) return true;
+        for (auto& c : low)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (low.find(bad) != std::string::npos)
+            return true;
     }
     return false;
 }
@@ -60,10 +63,10 @@ TEST_CASE("transforms keep every entity kind finite and undo back to the exact o
         std::vector<cmd::ScriptItem> in;
     };
     const Case cases[] = {
-        {"MOVE", {"0,0", "13.5,-7.25"}},       {"MOVE", {"0,0", "1e6,-1e6"}},
-        {"ROTATE", {"3,4", "37"}},              {"ROTATE", {"0,0", "180"}},
-        {"SCALE", {"1,1", "2.5"}},              {"SCALE", {"0,0", "0.001"}},
-        {"MIRROR", {"0,0", "10,3", "No"}},      {"MIRROR", {"0,0", "0,10", "Yes"}},
+        {"MOVE", {"0,0", "13.5,-7.25"}},   {"MOVE", {"0,0", "1e6,-1e6"}},
+        {"ROTATE", {"3,4", "37"}},         {"ROTATE", {"0,0", "180"}},
+        {"SCALE", {"1,1", "2.5"}},         {"SCALE", {"0,0", "0.001"}},
+        {"MIRROR", {"0,0", "10,3", "No"}}, {"MIRROR", {"0,0", "0,10", "Yes"}},
     };
     for (const auto& c : cases) {
         CAPTURE(c.cmd);
@@ -112,4 +115,40 @@ TEST_CASE("scaling by zero or a negative factor is refused without touching the 
     f.host.setSelection(ids);
     f.host.run("SCALE", {"0,0", "-2"});
     CHECK(canonicalDump(f.doc) == before);
+}
+
+TEST_CASE("dragging any grip of any entity kind stays finite and undoes exactly") {
+    Fixture f0;
+    std::vector<EntityId> ids0;
+    addSamples(f0.doc, ids0);
+    std::size_t gripCount = 0;
+    for (EntityId id : ids0)
+        gripCount += tbcad::transform::collectGrips(f0.doc, std::vector<EntityId>{id}).size();
+    CHECK(gripCount > 20);
+    for (std::size_t k = 0; k < ids0.size(); ++k) {
+        const std::size_t n =
+            tbcad::transform::collectGrips(f0.doc, std::vector<EntityId>{ids0[k]}).size();
+        for (std::size_t g = 0; g < n; ++g) {
+            CAPTURE(k);
+            CAPTURE(g);
+            Fixture f;
+            std::vector<EntityId> ids;
+            addSamples(f.doc, ids);
+            const auto gs = tbcad::transform::collectGrips(f.doc, std::vector<EntityId>{ids[k]});
+            REQUIRE(g < gs.size());
+            const std::string before = canonicalDump(f.doc);
+            f.host.setSelection({ids[k]});
+            const Vec2 from = gs[g].pos;
+            const std::string src = std::to_string(from.x) + "," + std::to_string(from.y);
+            const std::string dst =
+                std::to_string(from.x + 3.5) + "," + std::to_string(from.y - 2.25);
+            f.host.run("GRIPEDIT", {src, dst});
+            const std::string after = canonicalDump(f.doc);
+            CHECK_FALSE(hasNonFinite(after));
+            if (after != before) {
+                CHECK(f.host.undo());
+                CHECK(canonicalDump(f.doc) == before);
+            }
+        }
+    }
 }
