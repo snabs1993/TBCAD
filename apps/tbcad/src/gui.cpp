@@ -3203,7 +3203,15 @@ ViewportRect Gui::frame() {
             settings_.open(what.substr(9));
         else if (what.rfind("action:", 0) == 0)
             runAction(what.substr(7));
-        else if (what.rfind("workspace:load:", 0) == 0)
+        else if (what.rfind("openpath:", 0) == 0)
+            doOpenPath(what.substr(9));
+        else if (what.rfind("saveaspath:", 0) == 0) {
+            auto r = core_.saveAs(platform::pathFromUtf8(what.substr(11)));
+            if (!r)
+                lastError_ = r.error().message;
+            else
+                toast("Saved " + platform::pathToUtf8(core_.file()));
+        } else if (what.rfind("workspace:load:", 0) == 0)
             switchWorkspace(what.substr(15));
         else if (what.rfind("workspace:save:", 0) == 0)
             saveWorkspace(what.substr(15));

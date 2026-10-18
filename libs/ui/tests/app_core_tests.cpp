@@ -893,6 +893,29 @@ TEST_CASE("the window query is answered by the spatial index") {
     CHECK(both->size() == 1);
 }
 
+TEST_CASE("FILEDIA 0 makes OPEN and SAVEAS ask for the path on the command line") {
+    Fixture f("filedia");
+    f.core->submitText("SAVEAS");  // dialogs on: the window is asked
+    auto req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "action:file.saveAs");
+    f.core->submitText("FILEDIA");
+    f.core->submitText("0");
+    CHECK(f.core->setting("files.filedia") == "0");
+    f.core->submitText("SAVEAS");
+    CHECK(f.core->runner().active());
+    CHECK(f.core->takeUiRequests().empty());
+    f.core->submitText("\"C:/work/a b.tbcad\"");
+    req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "saveaspath:C:/work/a b.tbcad");
+    f.core->submitText("OPEN");
+    f.core->submitText("C:/x.dxf");
+    req = f.core->takeUiRequests();
+    REQUIRE(req.size() == 1);
+    CHECK(req[0] == "openpath:C:/x.dxf");
+}
+
 TEST_CASE("SETTINGS asks the window to open the dialog") {
     Fixture f("settings_cmd");
     f.core->submitText("op");  // alias
