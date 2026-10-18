@@ -374,3 +374,15 @@ TEST_CASE("underline and overline: %%u and %%o in TEXT, \\L and \\O in MTEXT") {
     m.utf8 = "plain";
     CHECK(layoutMText(doc, m).lines[0].rules.empty());
 }
+
+TEST_CASE("MTEXT with a raw newline breaks the line like a paragraph mark") {
+    Document doc;
+    MTextData m;
+    m.height = 10;
+    m.utf8 = "one\ntwo";  // what the DXF importer produces for \P
+    TextLayout raw = layoutMText(doc, m);
+    m.utf8 = "one\\Ptwo";
+    TextLayout esc = layoutMText(doc, m);
+    CHECK(esc.lines.size() == 2);
+    CHECK(raw.lines.size() == 2);
+}
