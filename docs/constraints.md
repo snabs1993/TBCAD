@@ -66,6 +66,12 @@ click:
 - **Slider**: the two x axes stay parallel and the second point lies on the first axis; the part slides.
 - **Rigid**: a pin plus the current angle between the two parts held.
 
+`JOINTLIMIT` keeps a joint in a range: **Angle** (the angle between two parts) or **Distance** (between
+two connection points). Inside the range nothing moves; outside it the parts are pushed back to the
+nearest limit (constraint kinds AngleRange and DistanceRange; MCP: `add_constraint` with `value` and
+`value2`). A joint is driven by `DIMCON` Angle (a number or a parameter formula) on the two parts, or a
+Distance for a slider.
+
 All three are ordinary constraints (Coincident, Parallel, PointOnObject, Angle), so they can be driven
 with `DIMCON` (an Angle between the parts) or a parameter formula, edited with `DELCONSTRAINT`, and
 are saved in the file.

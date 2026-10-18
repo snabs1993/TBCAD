@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -506,8 +508,169 @@ private:
     bool join_;
 };
 
+// One bill-of-materials row: an assembly block with one set of parameter values and how many
+// inserts in model space carry it.
+struct BomRow {
+    std::string block{};
+    std::vector<std::pair<std::string, std::string>> values{};  // parameter name, shown value
+    std::size_t count = 0;
+};
+
+std::string plainValue(const AsmParam& p, const AsmValue& v) {
+    if (p.kind == AsmParam::Kind::Text || p.kind == AsmParam::Kind::Choice)
+        return v.text;
+    return expr::Value::ofNumber(v.number).toString();
+}
+
+std::vector<BomRow> assemblyBom(const Document& doc) {
+    std::vector<BomRow> rows;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity* e = doc.find(id);
+        const auto* in = e ? entityAs<InsertData>(*e) : nullptr;
+        const BlockDef* def = in ? doc.block(in->block) : nullptr;
+        if (!def || !def->assembly)
+            continue;
+        BomRow row;
+        row.block = def->name;
+        const auto eff = blocks::asmEffectiveValues(*def->assembly, *in);
+        for (std::size_t i = 0; i < def->assembly->params.size() && i < eff.size(); ++i)
+            row.values.emplace_back(def->assembly->params[i].name,
+                                    plainValue(def->assembly->params[i], eff[i]));
+        auto same = std::find_if(rows.begin(), rows.end(), [&](const BomRow& r) {
+            return r.block == row.block && r.values == row.values;
+        });
+        if (same != rows.end())
+            ++same->count;
+        else {
+            row.count = 1;
+            rows.push_back(std::move(row));
+        }
+    }
+    std::sort(rows.begin(), rows.end(), [](const BomRow& a, const BomRow& b) {
+        return a.block != b.block ? a.block < b.block : a.values < b.values;
+    });
+    return rows;
+}
+
+std::string csvQuote(const std::string& s) {
+    if (s.find_first_of(",\"\r\n") == std::string::npos)
+        return s;
+    std::string q = "\"";
+    for (char c : s) {
+        if (c == '"')
+            q += '"';
+        q += c;
+    }
+    return q + "\"";
+}
+
+std::string valuesText(const BomRow& r) {
+    std::string t;
+    for (const auto& [n, v] : r.values)
+        t += (t.empty() ? "" : ", ") + n + "=" + v;
+    return t;
+}
+
+// ASMBOM: the bill of materials of the assemblies in the drawing - one line per block and set of
+// parameter values, with the quantity - as a list, a CSV file or a table.
+class AsmBomCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ASMBOM"; }
+    std::vector<std::string> defaultAliases() const override { return {"BOM"}; }
+    std::string_view description() const override {
+        return "List the assemblies with their parameter values and quantities";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::vector<BomRow> rows = assemblyBom(ctx.doc());
+        if (rows.empty()) {
+            ctx.message("No assemblies are inserted in model space.");
+            co_return;
+        }
+        std::size_t total = 0;
+        for (const BomRow& r : rows) {
+            ctx.message(r.block + " [" + valuesText(r) + "]: " + std::to_string(r.count));
+            total += r.count;
+        }
+        ctx.message(std::to_string(rows.size()) + " line(s), " + std::to_string(total) +
+                    " assembly insert(s)");
+        auto out = co_await ctx.getKeyword(
+            "Output [Table/Csv/None] <None>",
+            cmd::KeywordOptions{.keywords = {"Table", "Csv", "None"}, .defaultKeyword = "None"});
+        if (!out.ok() || out.keyword == "None")
+            co_return;
+        if (out.keyword == "Csv") {
+            auto f = co_await ctx.getString("Enter the CSV file name <bom.csv>",
+                                            cmd::StringOptions{.defaultValue = "bom.csv"});
+            if (!f.ok())
+                co_return;
+            const std::string file = cmd::trim(f.text);
+            std::ofstream o(std::filesystem::path(std::u8string(file.begin(), file.end())),
+                            std::ios::binary);
+            if (!o) {
+                ctx.message("Cannot write " + file);
+                co_return;
+            }
+            o << "Assembly,Parameters,Quantity\r\n";
+            for (const BomRow& r : rows)
+                o << csvQuote(r.block) << ',' << csvQuote(valuesText(r)) << ',' << r.count
+                  << "\r\n";
+            ctx.message("Wrote " + file);
+            co_return;
+        }
+        auto p = co_await ctx.getPoint("Specify the top left corner of the table");
+        if (!p.ok())
+            co_return;
+        constexpr double h = 2.5;
+        std::size_t c0 = 8, c1 = 10;
+        for (const BomRow& r : rows) {
+            c0 = std::max(c0, r.block.size());
+            c1 = std::max(c1, valuesText(r).size());
+        }
+        TableData t;
+        t.origin = p.point;
+        t.textHeight = h;
+        t.titleRow = true;
+        const double charW = h * 0.7;
+        t.colWidths = {static_cast<double>(c0) * charW + 2 * t.margin,
+                       static_cast<double>(c1) * charW + 2 * t.margin, 10 * charW};
+        t.rowHeights.assign(rows.size() + 2, h * 2);
+        auto cell = [](std::string s) {
+            TableCell c;
+            c.utf8 = std::move(s);
+            return c;
+        };
+        t.cells.push_back(cell("Bill of materials"));
+        for (int i = 0; i < 2; ++i) {
+            TableCell c;
+            c.covered = true;
+            t.cells.push_back(c);
+        }
+        t.cells[0].colSpan = 3;
+        for (const char* head : {"Assembly", "Parameters", "Quantity"})
+            t.cells.push_back(cell(head));
+        for (const BomRow& r : rows) {
+            t.cells.push_back(cell(r.block));
+            t.cells.push_back(cell(valuesText(r)));
+            t.cells.push_back(cell(std::to_string(r.count)));
+        }
+        Entity e;
+        e.data = Indirect<TableData>(std::move(t));
+        auto id = ctx.tx().add(std::move(e));
+        if (!id) {
+            ctx.message(id.error().message);
+            co_return;
+        }
+        ctx.host().setSelection({id.value()});
+        ctx.setUndoLabel("Bill of materials");
+        ctx.message("Table made with " + std::to_string(rows.size()) + " line(s)");
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeAsmBomCommand() {
+    return std::make_unique<AsmBomCommand>();
+}
 std::unique_ptr<cmd::Command> makeAsmDefCommand() {
     return std::make_unique<AsmDefCommand>();
 }

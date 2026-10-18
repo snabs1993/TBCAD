@@ -11,10 +11,10 @@ namespace tbcad::constraints {
 
 namespace {
 
-constexpr std::string_view kNames[] = {"Coincident",    "Horizontal", "Vertical", "Parallel",
-                                       "Perpendicular", "Equal",      "Tangent",  "Fix",
-                                       "Distance",      "Radius",     "Angle",    "Concentric",
-                                       "PointOnObject", "Midpoint",   "Collinear"};
+constexpr std::string_view kNames[] = {
+    "Coincident",    "Horizontal", "Vertical",  "Parallel",      "Perpendicular", "Equal",
+    "Tangent",       "Fix",        "Distance",  "Radius",        "Angle",         "Concentric",
+    "PointOnObject", "Midpoint",   "Collinear", "DistanceRange", "AngleRange"};
 
 enum class Type { None, Line, Circle, Arc, Point, Polyline, Ellipse, Insert };
 
@@ -202,6 +202,13 @@ std::string describe(const Document& doc, const Constraint& c) {
     } else if (c.kind == Kind::Angle) {
         std::snprintf(buf, sizeof buf, " = %.6g deg", c.value * 180.0 / kPi);
         s += buf;
+    } else if (c.kind == Kind::DistanceRange) {
+        std::snprintf(buf, sizeof buf, " in %.6g .. %.6g", c.value, c.value2);
+        s += buf;
+    } else if (c.kind == Kind::AngleRange) {
+        std::snprintf(buf, sizeof buf, " in %.6g .. %.6g deg", c.value * 180.0 / kPi,
+                      c.value2 * 180.0 / kPi);
+        s += buf;
     }
     if (!c.expr.empty())
         s += "  [" + c.expr + "]";
@@ -264,6 +271,21 @@ Result<void> validate(const Document& doc, const Constraint& c) {
                 return bad("Distance measures between two points");
             if (!(c.value >= 0) || !std::isfinite(c.value))
                 return bad("the distance must be zero or more");
+            break;
+        case Kind::DistanceRange:
+            if (!pointOk(doc, c.a) || !pointOk(doc, c.b) || c.a == c.b)
+                return bad("Distance range measures between two points");
+            if (!(c.value >= 0) || !(c.value2 >= c.value) || !std::isfinite(c.value2))
+                return bad("the distance limits must be 0 or more, smallest first");
+            break;
+        case Kind::AngleRange:
+            if (!axisOk(doc, c.a) || !axisOk(doc, c.b) || c.a == c.b)
+                return bad("Angle range takes two different lines, polyline segments or inserts");
+            if (!std::isfinite(c.value) || !(c.value2 >= c.value) || !std::isfinite(c.value2) ||
+                c.value2 - c.value > 2 * kPi)
+                return bad(
+                    "the angle limits must be numbers, smallest first, at most 360 degrees "
+                    "apart");
             break;
         case Kind::Radius:
             if (ta != Type::Circle && ta != Type::Arc)
@@ -344,10 +366,10 @@ std::string ConstraintSet::toText() const {
     std::string out;
     char buf[160];
     for (const Constraint& c : items_) {
-        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g %u %u", c.id,
+        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g %u %u %.17g", c.id,
                       static_cast<int>(c.kind), static_cast<unsigned long long>(c.a.entity.value),
                       static_cast<int>(c.a.part), static_cast<unsigned long long>(c.b.entity.value),
-                      static_cast<int>(c.b.part), c.value, c.a.index, c.b.index);
+                      static_cast<int>(c.b.part), c.value, c.a.index, c.b.index, c.value2);
         out += buf;
         if (!c.expr.empty()) {
             out += " |";
@@ -370,9 +392,12 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
         if (!(fields >> id >> kind >> a >> pa >> b >> pb >> value))
             continue;
         unsigned ia = 0, ib = 0;
+        double value2 = 0;
         if (!(fields >> ia >> ib))
             ia = ib = 0;
-        if (kind > static_cast<unsigned>(Kind::Collinear) || pa > 3 || pb > 3 || a == 0 || id == 0)
+        else if (!(fields >> value2))
+            value2 = 0;
+        if (kind > static_cast<unsigned>(Kind::AngleRange) || pa > 3 || pb > 3 || a == 0 || id == 0)
             continue;
         Constraint c;
         c.id = id;
@@ -380,6 +405,7 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
         c.a = {EntityId{a}, static_cast<Part>(pa), ia};
         c.b = {EntityId{b}, static_cast<Part>(pb), ib};
         c.value = value;
+        c.value2 = value2;
         if (const auto bar = line.find('|'); bar != std::string::npos) {
             c.expr = line.substr(bar + 1);
             while (!c.expr.empty() && (c.expr.back() == '\r' || c.expr.back() == ' '))

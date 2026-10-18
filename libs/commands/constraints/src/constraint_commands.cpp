@@ -36,7 +36,7 @@ struct PartPoint {
     Vec2 p;
 };
 
-std::vector<PartPoint> pointsOf(const Entity& e) {
+std::vector<PartPoint> pointsOf(const Document& doc, const Entity& e) {
     if (const auto* l = entityAs<LineData>(e))
         return {{Part::Start, 0, l->a}, {Part::End, 0, l->b}};
     if (const auto* c = entityAs<CircleData>(e))
@@ -52,9 +52,16 @@ std::vector<PartPoint> pointsOf(const Entity& e) {
         return {{Part::Start, 0, p->p}};
     if (const auto* el = entityAs<EllipseData>(e))
         return {{Part::Center, 0, el->center}};
-    if (const auto* in = entityAs<InsertData>(e))
-        return {{Part::Start, 0, in->position}};
     std::vector<PartPoint> out;
+    if (const auto* in = entityAs<InsertData>(e)) {
+        const std::vector<Vec2> anchors = insertAnchors(doc, *in);
+        const double c = std::cos(in->rotation), sn = std::sin(in->rotation);
+        for (std::size_t i = 0; i < anchors.size(); ++i)
+            out.push_back({Part::Start, static_cast<std::uint32_t>(i),
+                           in->position + Vec2{c * anchors[i].x - sn * anchors[i].y,
+                                               sn * anchors[i].x + c * anchors[i].y}});
+        return out;
+    }
     if (const auto* pl = entityAs<PolylineData>(e)) {
         for (std::size_t i = 0; i < pl->v.size(); ++i)
             out.push_back({Part::Start, static_cast<std::uint32_t>(i), pl->v[i].p});
@@ -63,10 +70,10 @@ std::vector<PartPoint> pointsOf(const Entity& e) {
 }
 
 // The point of the picked entity closest to where the user clicked.
-Ref nearestPoint(EntityId id, const Entity& e, Vec2 pick) {
+Ref nearestPoint(const Document& doc, EntityId id, const Entity& e, Vec2 pick) {
     Ref best{id, Part::Center};
     double bestD = 1e300;
-    for (const PartPoint& pp : pointsOf(e)) {
+    for (const PartPoint& pp : pointsOf(doc, e)) {
         const double d = length(pp.p - pick);
         if (d < bestD) {
             bestD = d;
@@ -208,7 +215,7 @@ public:
                 (void)apply(ctx, c);
                 co_return;
             }
-            c.a = nearestPoint(first.id, *e1, first.pickPoint);
+            c.a = nearestPoint(ctx.doc(), first.id, *e1, first.pickPoint);
             cmd::EntityResult second;
             co_await pickConstrainable(ctx, "Select second point object", second);
             if (!second.ok())
@@ -216,7 +223,7 @@ public:
             const Entity* e2 = ctx.doc().find(second.id);
             if (!e2)
                 co_return;
-            c.b = nearestPoint(second.id, *e2, second.pickPoint);
+            c.b = nearestPoint(ctx.doc(), second.id, *e2, second.pickPoint);
             (void)apply(ctx, c);
             co_return;
         }
@@ -230,12 +237,12 @@ public:
             co_return;
         if (type == "Coincident") {
             c.kind = Kind::Coincident;
-            c.a = nearestPoint(first.id, *e1, first.pickPoint);
-            c.b = nearestPoint(second.id, *e2, second.pickPoint);
+            c.a = nearestPoint(ctx.doc(), first.id, *e1, first.pickPoint);
+            c.b = nearestPoint(ctx.doc(), second.id, *e2, second.pickPoint);
         } else if (type == "PointOn" || type == "Midpoint") {
             // the first pick is the point, the second the line, circle or arc it sits on
             c.kind = type == "PointOn" ? Kind::PointOnObject : Kind::Midpoint;
-            c.a = nearestPoint(first.id, *e1, first.pickPoint);
+            c.a = nearestPoint(ctx.doc(), first.id, *e1, first.pickPoint);
             c.b = wholeRef(second.id, *e2, second.pickPoint);
         } else {
             c.kind = type == "Parallel"        ? Kind::Parallel
@@ -283,8 +290,8 @@ public:
             if (!e1 || !e2)
                 co_return;
             c.kind = Kind::Distance;
-            c.a = nearestPoint(first.id, *e1, first.pickPoint);
-            c.b = nearestPoint(second.id, *e2, second.pickPoint);
+            c.a = nearestPoint(ctx.doc(), first.id, *e1, first.pickPoint);
+            c.b = nearestPoint(ctx.doc(), second.id, *e2, second.pickPoint);
         } else if (type == "Length") {
             co_await pickConstrainable(ctx, "Select line", first);
             if (!first.ok())
@@ -780,6 +787,81 @@ public:
     }
 };
 
+// JOINTLIMIT: keeps a joint inside a range - the angle between two parts or the distance between
+// two connection points. The parts can move freely inside the range and stop at its ends.
+class JointLimit final : public cmd::Command {
+public:
+    std::string_view name() const override { return "JOINTLIMIT"; }
+    std::string_view description() const override {
+        return "Limit the angle or distance between two block inserts";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Angle", "Distance"};
+        auto k = co_await ctx.getKeyword("Limit [Angle/Distance]", std::move(ko));
+        if (k.status != cmd::Status::Keyword)
+            co_return;
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) { return kind(e) == EntityKind::Insert; };
+        auto first = co_await ctx.getEntity("Select first block", eo);
+        if (!first.ok())
+            co_return;
+        auto second = co_await ctx.getEntity("Select second block", eo);
+        if (!second.ok())
+            co_return;
+        const Entity* e1 = ctx.doc().find(first.id);
+        const Entity* e2 = ctx.doc().find(second.id);
+        const auto* in1 = e1 ? entityAs<InsertData>(*e1) : nullptr;
+        const auto* in2 = e2 ? entityAs<InsertData>(*e2) : nullptr;
+        if (!in1 || !in2 || first.id == second.id) {
+            ctx.message("Pick two different block inserts.");
+            co_return;
+        }
+        const std::uint32_t k1 = nearestAnchor(ctx.doc(), *in1, first.pickPoint);
+        const std::uint32_t k2 = nearestAnchor(ctx.doc(), *in2, second.pickPoint);
+        Constraint c;
+        if (k.keyword == "Angle") {
+            c.kind = Kind::AngleRange;
+            c.a = {first.id, Part::Whole, k1};
+            c.b = {second.id, Part::Whole, k2};
+            auto now = measure(ctx.doc(), Constraint{.kind = Kind::Angle, .a = c.a, .b = c.b});
+            cmd::AngleOptions lo;
+            if (now)
+                lo.defaultValue = now.value();
+            auto mn = co_await ctx.getAngle("Smallest angle", lo);
+            if (!mn.ok())
+                co_return;
+            cmd::AngleOptions hi;
+            hi.defaultValue = mn.value;
+            auto mx = co_await ctx.getAngle("Largest angle", hi);
+            if (!mx.ok())
+                co_return;
+            c.value = mn.value;
+            c.value2 = mx.value;
+            if (c.value2 < c.value)
+                c.value2 += 2 * kPi;
+        } else {
+            c.kind = Kind::DistanceRange;
+            c.a = {first.id, Part::Start, k1};
+            c.b = {second.id, Part::Start, k2};
+            cmd::DistanceOptions lo;
+            lo.allowZero = true;
+            auto mn = co_await ctx.getDistance("Smallest distance", lo);
+            if (!mn.ok())
+                co_return;
+            cmd::DistanceOptions hi;
+            hi.allowZero = true;
+            hi.defaultValue = mn.value;
+            auto mx = co_await ctx.getDistance("Largest distance", hi);
+            if (!mx.ok())
+                co_return;
+            c.value = std::min(mn.value, mx.value);
+            c.value2 = std::max(mn.value, mx.value);
+        }
+        (void)apply(ctx, c);
+    }
+};
+
 class SolveCon final : public cmd::Command {
 public:
     std::string_view name() const override { return "SOLVECON"; }
@@ -843,6 +925,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ConstraintBar>());
     (void)registry.add(std::make_unique<DelConstraint>());
     (void)registry.add(std::make_unique<Joint>());
+    (void)registry.add(std::make_unique<JointLimit>());
     (void)registry.add(std::make_unique<SolveCon>());
     registry.addCommitHook(keepInStep);
 }

@@ -45,11 +45,17 @@ A formula that cannot be evaluated is skipped and listed by `ASMINFO`, the MCP t
 | --- | --- |
 | `ASMDEF` | block name, then `Parameter` (name, type, default, limits or choices), `Bind` (what to drive, the target, the formula; nested inserts are numbered by their position in the block, 1 = first object), `Preset` (name, then a value per parameter), `Join` (see below) or `Check`. |
 | `ASMSET` | pick an assembly, name a parameter (or `Preset`) and give the value. |
+| `ASMBOM` (`BOM`) | lists every assembly in model space, grouped by block and parameter values, with the quantity; output as a list, a CSV file or a table in the drawing. |
 | `ASMINFO` | pick an assembly; lists its parameters, values and formula problems. |
 | `-ASMSET` | for panels and scripts: sets a parameter (or `@preset`) on every selected assembly, repeating until an empty parameter name. One undo step. |
 
 The Object Properties panel shows an **Assembly** section for a selection of inserts of one assembly block:
 a field per parameter (a drop-down for choices), a preset list and the join check box.
+
+## Mating assemblies
+
+Block inserts (assemblies included) can be mated with `JOINT` and limited with `JOINTLIMIT`; see
+`docs/constraints.md`.
 
 ## Joint assemblies
 

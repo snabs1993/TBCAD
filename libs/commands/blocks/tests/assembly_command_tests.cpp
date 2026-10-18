@@ -113,3 +113,29 @@ TEST_CASE("ASMDEF Join sets the class, UNJOINASM and JOINASM toggle inserts") {
     f.host->run("ASMDEF", {"Bar", "Join", ""});
     CHECK(f.doc.block(b)->assembly->joinClass.empty());
 }
+
+TEST_CASE("ASMBOM groups inserts by assembly and parameter values and can make a table") {
+    Fixture f;
+    BlockId b = makeBar(f);
+    f.host->run("ASMDEF", {"Bar", "Parameter", "Len", "Number", "10", "1", "100"});
+    EntityId a = insertBar(f, b);
+    EntityId c = insertBar(f, b);
+    EntityId d = insertBar(f, b);
+    f.host->run("ASMSET", {cmd::ScriptItem::pick(c), "Len", "30"});
+    (void)a;
+    (void)d;
+    auto r = f.host->run("ASMBOM", {"None"});
+    CHECK(r.finished);
+    CHECK(f.host->logContains("Bar [Len=10]: 2"));
+    CHECK(f.host->logContains("Bar [Len=30]: 1"));
+    const std::size_t before = f.doc.modelSpace().size();
+    REQUIRE(f.host->run("ASMBOM", {"Table", "0,0"}).finished);
+    CHECK(f.doc.modelSpace().size() == before + 1);
+    const Entity* t = f.doc.find(f.doc.modelSpace().back());
+    REQUIRE(t);
+    const auto* table = entityAs<TableData>(*t);
+    REQUIRE(table);
+    CHECK(table->cells.size() == 3 * 4);  // title row, header row, two lines
+    CHECK(f.host->undo());
+    CHECK(f.doc.modelSpace().size() == before);
+}
