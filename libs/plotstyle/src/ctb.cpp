@@ -43,7 +43,7 @@ std::string unquote(std::string v) {
 //
 // Entry k of plot_style is palette colour k+1. `color` is -1 for "use object colour", otherwise a
 // 32-bit value with the flag byte on top and R, G, B below.
-Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
+Result<std::string> ctbText(std::span<const std::uint8_t> bytes) {
     const std::size_t hl = sizeof kHeader - 1;
     if (bytes.size() < hl + 12 || std::memcmp(bytes.data(), kHeader, hl) != 0)
         return Error{ErrorCode::Parse, "Not a compressed .ctb plot style table"};
@@ -57,6 +57,14 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
                       static_cast<mz_ulong>(bytes.size() - hl - 12)) != MZ_OK)
         return Error{ErrorCode::Parse, "The .ctb data cannot be decompressed"};
     text.resize(outLen);
+    return text;
+}
+
+Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
+    auto decoded = ctbText(bytes);
+    if (!decoded)
+        return decoded.error();
+    std::string text = std::move(decoded.value());
 
     PlotStyleTable t;
     std::vector<double> weights;  // lineweight_table, mm
