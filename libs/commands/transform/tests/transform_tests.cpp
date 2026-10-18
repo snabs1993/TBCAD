@@ -266,3 +266,20 @@ TEST_CASE("Select objects accepts All, Last and Previous typed like AutoCAD") {
     (void)a;
     (void)b;
 }
+
+TEST_CASE("MOVE and COPY Displacement take a vector instead of two points") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    f.host.run("MOVE", {"Displacement", "3,4"});
+    CHECK(near(get<LineData>(f.doc, a).a, {3, 4}));
+    f.host.setSelection({a});
+    f.host.run("COPY", {"Displacement", "0,10"});
+    CHECK(near(get<LineData>(f.doc, a).a, {3, 4}));
+    int lines = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e); l && near(l->a, {3, 14}))
+            ++lines;
+    });
+    CHECK(lines == 1);
+}

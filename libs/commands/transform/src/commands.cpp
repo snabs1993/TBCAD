@@ -101,7 +101,15 @@ public:
         co_await askObjects(ctx, ids);
         if (ids.empty())
             co_return;
-        auto base = co_await ctx.getPoint("Specify base point");
+        PointOptions bo;
+        bo.keywords = {"Displacement"};
+        auto base = co_await ctx.getPoint("Specify base point or [Displacement]", std::move(bo));
+        if (base.status == Status::Keyword) {
+            auto d = co_await ctx.getPoint("Specify displacement");
+            if (d.ok())
+                report(ctx, applyTransform(ctx, ids, Transform2::translate(d.point), false));
+            co_return;
+        }
         if (!base.ok())
             co_return;
         PointOptions o;
@@ -134,7 +142,15 @@ public:
         co_await askObjects(ctx, ids);
         if (ids.empty())
             co_return;
-        auto base = co_await ctx.getPoint("Specify base point");
+        PointOptions bo;
+        bo.keywords = {"Displacement"};
+        auto base = co_await ctx.getPoint("Specify base point or [Displacement]", std::move(bo));
+        if (base.status == Status::Keyword) {
+            auto d = co_await ctx.getPoint("Specify displacement");
+            if (d.ok())
+                report(ctx, applyTransform(ctx, ids, Transform2::translate(d.point), true));
+            co_return;
+        }
         if (!base.ok())
             co_return;
         bool first = true;
