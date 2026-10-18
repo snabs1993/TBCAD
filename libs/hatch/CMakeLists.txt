@@ -38,4 +38,5 @@ tbcad_add_tests(hatch
     tests/boundary_tests.cpp
     tests/fill_tests.cpp
     tests/pattern_tests.cpp
-    tests/perf_tests.cpp)
+    tests/perf_tests.cpp
+    tests/fuzz_tests.cpp)
