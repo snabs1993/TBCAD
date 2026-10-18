@@ -48,6 +48,10 @@ struct PanelState {
     std::string newName{};      // text field of the "Save filter" / "New group" popups
     std::string stateRename{};  // new name typed for a layer state
     bool restoreHide = false;   // "turn off layers not in the state" on Restore
+    // Layer States Manager dialog.
+    std::string mgrSel{};   // the state picked in the list
+    std::string mgrName{};  // text field for the new name / the rename
+    bool mgrVisibility = true, mgrLock = true, mgrPlot = true, mgrLook = true, mgrCurrent = true;
     std::set<std::uint32_t> collapsed{};
     std::set<std::string> collapsedXrefs{};  // external references whose layers are folded away
     LayerId selected{};
@@ -513,6 +517,86 @@ void drawDescriptionCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
 
 }  // namespace
 
+// The Layer States Manager: the saved states in a list, what a restore should apply as check
+// boxes, and the actions (restore, update, rename, delete, new from the current layers).
+void layerStatesManager(ui::PanelContext& ctx, const Document& doc, PanelState& st) {
+    ImGui::SetNextWindowSize(ImVec2(440, 470), ImGuiCond_Appearing);
+    bool open = true;
+    if (!ImGui::BeginPopupModal("Layer States Manager", &open, ImGuiWindowFlags_NoSavedSettings))
+        return;
+    const std::vector<std::string> names = layerStateNames(doc);
+    if (!st.mgrSel.empty() && std::find(names.begin(), names.end(), st.mgrSel) == names.end())
+        st.mgrSel.clear();
+    ImGui::TextUnformatted("Saved layer states");
+    if (ImGui::BeginChild("##statelist", ImVec2(0, 130), true)) {
+        for (const std::string& n : names)
+            if (ImGui::Selectable(n.c_str(), n == st.mgrSel))
+                st.mgrSel = n;
+        if (names.empty())
+            ImGui::TextDisabled("None yet. Type a name below and press New.");
+    }
+    ImGui::EndChild();
+
+    const bool picked = !st.mgrSel.empty();
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputTextWithHint("##mgrname", "Name", &st.mgrName);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(st.mgrName.empty());
+    if (ImGui::Button("New")) {
+        exec(ctx, {"-LAYERSTATE", "Save", st.mgrName});
+        st.mgrSel = st.mgrName;
+        st.mgrName.clear();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!picked);
+    if (ImGui::Button("Rename") && picked) {
+        exec(ctx, {"-LAYERSTATE", "Rename", st.mgrSel, st.mgrName});
+        st.mgrSel = st.mgrName;
+        st.mgrName.clear();
+    }
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+
+    ImGui::BeginDisabled(!picked);
+    if (ImGui::Button("Update from current layers"))
+        exec(ctx, {"-LAYERSTATE", "Save", st.mgrSel});
+    ImGui::SameLine();
+    if (ImGui::Button("Delete") && picked) {
+        exec(ctx, {"-LAYERSTATE", "Delete", st.mgrSel});
+        st.mgrSel.clear();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Restore these properties");
+    ImGui::Checkbox("On / frozen", &st.mgrVisibility);
+    ImGui::SameLine();
+    ImGui::Checkbox("Locked", &st.mgrLock);
+    ImGui::SameLine();
+    ImGui::Checkbox("Plot", &st.mgrPlot);
+    ImGui::Checkbox("Colour, linetype, lineweight", &st.mgrLook);
+    ImGui::Checkbox("Current layer", &st.mgrCurrent);
+    ImGui::Checkbox("Turn off layers not in the state", &st.restoreHide);
+    ImGui::BeginDisabled(!picked);
+    if (ImGui::Button("Restore") && picked) {
+        std::string parts;
+        for (auto [on, word] :
+             {std::pair{st.mgrVisibility, "Visibility"}, std::pair{st.mgrLock, "Lock"},
+              std::pair{st.mgrPlot, "Plot"}, std::pair{st.mgrLook, "Look"},
+              std::pair{st.mgrCurrent, "Current"}, std::pair{st.restoreHide, "HideOthers"}})
+            if (on)
+                parts += (parts.empty() ? "" : " ") + std::string(word);
+        if (parts.empty())
+            ImGui::CloseCurrentPopup();
+        else
+            exec(ctx, {"-LAYERSTATE", "Restore", st.mgrSel, "Custom", parts});
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Close") || !open)
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
 void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     if (!ctx.doc)
         return;
@@ -685,6 +769,15 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         }
         ImGui::EndCombo();
     }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Manager...")) {
+        st.mgrSel.clear();
+        ImGui::OpenPopup("Layer States Manager");
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Save, restore, rename and delete layer states");
+    layerStatesManager(ctx, doc, st);
 
     std::vector<Row> rows = buildRows(doc, st);
     st.order.clear();

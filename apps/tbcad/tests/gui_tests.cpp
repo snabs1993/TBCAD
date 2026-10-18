@@ -1513,3 +1513,56 @@ TEST_CASE("SELECTIONANNODISPLAY: a selected annotative object shows its other sc
     h.frame(2);
     CHECK(overlayVertices() < on);
 }
+
+TEST_CASE("layer states manager: new, restore chosen properties, rename, delete") {
+    Harness h(1920, 1080);
+    threeLayers(h);  // A-Walls, A-Doors, A-Notes on; current layer A-Notes
+    REQUIRE(h.has("Manager...", "Layers"));
+    REQUIRE(h.click("Manager...", "Layers"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Layer States Manager"));
+
+    // New saves the layers as they are now.
+    REQUIRE(h.enterText("##mgrname", "all-on", "Layer States Manager"));
+    h.frame(2);
+    REQUIRE(h.click("New", "Layer States Manager"));
+    h.frame(3);
+    CHECK(h.has("all-on", "Layer States Manager"));
+    CHECK(layers::layerStateNames(h.core().document()).size() == 1);
+
+    // Change things, then restore only Visibility: A-Doors comes back on, the lock stays.
+    h.core().submitText("-LAYER Off A-Doors");
+    h.core().pressEscape();
+    h.core().submitText("-LAYER Lock A-Walls");
+    h.core().pressEscape();
+    h.frame(3);
+    REQUIRE_FALSE(layer(h, "A-Doors")->on);
+    REQUIRE(layer(h, "A-Walls")->locked);
+    REQUIRE(h.windowOpen("Layer States Manager"));
+    REQUIRE(h.click("all-on", "Layer States Manager"));
+    REQUIRE(h.click("Locked", "Layer States Manager"));  // untick the lock part
+    REQUIRE(h.click("Plot", "Layer States Manager"));
+    REQUIRE(h.click("Colour, linetype, lineweight", "Layer States Manager"));
+    REQUIRE(h.click("Current layer", "Layer States Manager"));
+    h.frame(2);
+    REQUIRE(h.click("Restore", "Layer States Manager"));
+    h.frame(3);
+    CHECK(layer(h, "A-Doors")->on);
+    CHECK(layer(h, "A-Walls")->locked);
+    CHECK(matchesGolden(h.windowShot("Layer States Manager"), "layer_states_manager"));
+
+    // Rename, then Delete.
+    REQUIRE(h.windowOpen("Layer States Manager"));
+    REQUIRE(h.enterText("##mgrname", "base", "Layer States Manager"));
+    h.frame(2);
+    REQUIRE(h.click("Rename", "Layer States Manager"));
+    h.frame(3);
+    CHECK(h.has("base", "Layer States Manager"));
+    CHECK_FALSE(h.has("all-on", "Layer States Manager"));
+    REQUIRE(h.click("Delete", "Layer States Manager"));
+    h.frame(3);
+    CHECK(layers::layerStateNames(h.core().document()).empty());
+    REQUIRE(h.click("Close", "Layer States Manager"));
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Layer States Manager"));
+}
