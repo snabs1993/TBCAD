@@ -90,3 +90,16 @@ TEST_CASE("BSAVE and BCLOSE without BEDIT explain themselves") {
     f.host->run("BSAVE", {});
     CHECK(f.host->logContains("No block is being edited"));
 }
+
+TEST_CASE("BSAVE keeps objects drawn during BEDIT and BEDIT takes a typed block name") {
+    BEditFixture f;
+    f.host->run("BEDIT", {"Sym"});  // the block name typed at the prompt
+    REQUIRE(f.lines() == 1);
+    f.addLine(0, 20, 5, 20);  // drawn while editing
+    f.host->run("BSAVE", {});
+    CHECK(f.host->logContains("updated from 2 objects"));
+    CHECK(f.def().entities.size() == 2);
+    f.host->run("BCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(f.lines() == 0);
+    CHECK(f.def().entities.size() == 2);
+}

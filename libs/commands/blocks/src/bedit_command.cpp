@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <cstdlib>
 #include <sstream>
+#include <unordered_set>
 
 #include "commands.h"
 #include "tbcad/blocks/blocks.h"
@@ -18,6 +20,7 @@ namespace {
 constexpr const char* kBlockKey = "tmp.bedit.block";
 constexpr const char* kIdsKey = "tmp.bedit.ids";
 constexpr const char* kXformKey = "tmp.bedit.xform";
+constexpr const char* kMarkKey = "tmp.bedit.mark";  // highest object id before BEDIT
 
 std::string encodeXform(const Transform2& t) {
     std::ostringstream os;
@@ -54,10 +57,23 @@ std::string editedBlock(const cmd::IHost& host) {
     return host.setting(kBlockKey).value_or("");
 }
 
+// The copies made by BEDIT plus every object drawn since (their ids are above the mark).
+std::vector<EntityId> editedIds(const Document& doc, const cmd::IHost& host) {
+    std::vector<EntityId> ids = decodeIds(host.setting(kIdsKey).value_or(""));
+    const std::uint64_t mark =
+        std::strtoull(host.setting(kMarkKey).value_or("0").c_str(), nullptr, 10);
+    std::unordered_set<EntityId> have(ids.begin(), ids.end());
+    for (EntityId id : doc.modelSpace())
+        if (id.value > mark && !have.count(id))
+            ids.push_back(id);
+    return ids;
+}
+
 void forget(cmd::IHost& host) {
     host.setSetting(kBlockKey, "");
     host.setSetting(kIdsKey, "");
     host.setSetting(kXformKey, "");
+    host.setSetting(kMarkKey, "");
 }
 
 // Writes the copies back into the definition. Returns false (with a message) when it cannot.
@@ -77,7 +93,7 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
     }
     std::vector<Entity> content;
     std::vector<EntityId> live;
-    for (EntityId id : decodeIds(ctx.host().setting(kIdsKey).value_or(""))) {
+    for (EntityId id : editedIds(doc, ctx.host())) {
         const Entity* e = doc.find(id);
         if (!e)
             continue;
@@ -144,15 +160,23 @@ public:
         for (;;) {
             cmd::EntityOptions eo;
             eo.keywords = {"Name"};
+            // A block name typed at the prompt works as well as the Name option.
+            for (const auto& [id, b] : doc.blocks())
+                if (!b.name.empty() && b.name.front() != '*' && eo.keywords.size() < 400)
+                    eo.keywords.push_back(b.name);
             eo.filter = [](const Entity& e) { return kind(e) == EntityKind::Insert; };
             auto pick = co_await ctx.getEntity("Select a block reference or [Name]", eo);
             if (pick.status == cmd::Status::Keyword) {
-                auto n = co_await ctx.getString("Enter block name");
-                if (!n.ok())
-                    co_return;
-                def = doc.blockByName(cmd::trim(n.text));
+                std::string wanted = pick.keyword;
+                if (wanted == "Name") {
+                    auto n = co_await ctx.getString("Enter block name");
+                    if (!n.ok())
+                        co_return;
+                    wanted = cmd::trim(n.text);
+                }
+                def = doc.blockByName(wanted);
                 if (!def) {
-                    ctx.message("No block named \"" + cmd::trim(n.text) + "\".");
+                    ctx.message("No block named \"" + wanted + "\".");
                     continue;
                 }
                 xf = Transform2::translate(def->base * -1.0);
@@ -173,6 +197,10 @@ public:
             co_return;
         }
         ctx.commitOnCancel();
+        std::uint64_t mark = 0;
+        for (EntityId id : doc.modelSpace())
+            mark = std::max(mark, id.value);
+        ctx.host().setSetting(kMarkKey, std::to_string(mark));
         std::vector<EntityId> made;
         const std::vector<EntityId> source = def->entities;
         for (EntityId id : source) {

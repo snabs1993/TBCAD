@@ -654,9 +654,20 @@ void Gui::doSaveAs() {
         ext = "tbcad";
         suggested = core_.file().stem().string() + ".tbcad";
     }
+    // Very long names and folders make the shell dialog unusable, so keep both short. A drawing
+    // opened read-only from a project archive starts in the last folder used for saving (or
+    // Documents) instead of the huge folder the original lives in.
+    constexpr std::size_t kMaxSuggested = 120;
+    if (suggested.size() > kMaxSuggested)
+        suggested = suggested.substr(0, kMaxSuggested - ext.size() - 1) + "." + ext;
+    std::filesystem::path folder = dialogFolder();
+    if (core_.readOnlyOrigin())
+        folder = platform::pathFromUtf8(core_.settings().getString("files.lastFolder", ""));
+    if (platform::pathToUtf8(folder).size() > 200)
+        folder.clear();
     if (platform::nativeDialogsAvailable()) {
         if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
-                                              "Save drawing as", ext, suggested, dialogFolder())) {
+                                              "Save drawing as", ext, suggested, folder)) {
             rememberFolder(*p);
             auto r = core_.saveAs(*p);
             if (!r)

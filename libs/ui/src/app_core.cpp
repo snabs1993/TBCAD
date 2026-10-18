@@ -4,6 +4,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <future>
@@ -995,8 +996,15 @@ Result<void> AppCore::openFile(const fs::path& path) {
         return doc.error();
     }
     addSession(std::move(doc.value()), path);
-    for (const auto& w : report.warnings)
+    for (const auto& w : report.warnings) {
+        // Reader diagnostics for developers ("header stages: required=...") are not for the user.
+        if (w.find("header stages") != std::string::npos ||
+            w.find("required=") != std::string::npos) {
+            std::fprintf(stderr, "tbcad: %s\n", w.c_str());
+            continue;
+        }
         print("Warning: " + w);
+    }
     if (report.unknownEntityKinds > 0)
         print(std::to_string(report.unknownEntityKinds) +
               " object(s) from a newer version are kept read-only.");
