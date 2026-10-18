@@ -210,6 +210,7 @@ private:
     // Autocomplete / command palette.
     std::vector<ui::CommandMatch> suggestions_{};
     int suggestSel_ = 0;
+    bool suggestNavigated_ = false;  // an arrow key or click chose a row (Enter then runs it)
     bool suggestVisible_ = false;
     bool suggestDismissed_ = false;
     bool paletteOpen_ = false;

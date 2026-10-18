@@ -1317,8 +1317,9 @@ void AppCore::zoomExtents() {
         const double aspect = static_cast<double>(std::max(camera_.viewportH, 1)) /
                               static_cast<double>(std::max(camera_.viewportW, 1));
         BBox2 room;
-        room.expand({0, 0});
-        room.expand({kRoomMm, kRoomMm * aspect});
+        // The origin sits a little inside the corner, so it is visible and not under the edge.
+        room.expand({-0.06 * kRoomMm, -0.06 * kRoomMm});
+        room.expand({0.94 * kRoomMm, (0.94 * aspect - 0.06 * (1.0 - aspect)) * kRoomMm});
         camera_.fit(room);
         return;
     }
