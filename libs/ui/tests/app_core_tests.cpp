@@ -1144,3 +1144,28 @@ TEST_CASE("a selected hatch is outlined, and the outline follows the selection")
     f.core->buildOverlay(overlay, nullptr);
     CHECK(overlay.empty());
 }
+
+TEST_CASE("zoom extents leaves out objects on frozen layers") {
+    Fixture f("extentsfrozen");
+    f.line("0,0", "10000,0");
+    f.line("0,0", "0,5000");
+    LayerId hidden;
+    {
+        Transaction tx = f.core->document().begin("layer");
+        Layer l;
+        l.name = "backup";
+        hidden = tx.addLayer(l).value();
+        tx.commit();
+    }
+    {
+        Transaction tx = f.core->document().begin("far");
+        Entity e;
+        e.common.layer = hidden;
+        e.data = LineData{{900000, 900000}, {910000, 910000}};
+        tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    modifyLayer(f.core->document(), hidden, [](Layer& l) { l.frozen = true; });
+    f.core->zoomExtents();
+    CHECK(f.core->camera().visibleWorld().width() < 100000);
+}
