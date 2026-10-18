@@ -407,3 +407,43 @@ TEST_CASE("entities keep the handles they had; new ones get handles that clash w
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("the page setup of a layout is written back while its paper size is the same") {
+    const std::string src =
+        "  0\nSECTION\n  2\nBLOCKS\n"
+        "  0\nBLOCK\n  2\n*Paper_Space\n 70\n     0\n 10\n0\n 20\n0\n 30\n0\n"
+        "  0\nLINE\n  8\n0\n 67\n     1\n 10\n5\n 20\n5\n 11\n100\n 21\n5\n"
+        "  0\nENDBLK\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n"
+        "  0\nLAYOUT\n  5\nA0\n100\nAcDbPlotSettings\n  1\nSetup A1\n  2\nDWG To PDF.pc3\n"
+        "  4\nISO full bleed A1 (841.00 x 594.00 MM)\n  6\n\n 40\n0.0\n 41\n0.0\n 42\n0.0\n"
+        " 43\n0.0\n 44\n841.0\n 45\n594.0\n 70\n  1024\n 73\n     1\n  7\n_EP-100.ctb\n"
+        " 75\n    16\n147\n1.0\n"
+        "100\nAcDbLayout\n  1\nSheet A1\n 70\n     1\n 71\n     1\n"
+        "  0\nLAYOUT\n  5\nA1\n100\nAcDbPlotSettings\n  1\n\n  2\nnone_device\n"
+        "100\nAcDbLayout\n  1\nModel\n 70\n     1\n 71\n     0\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+    Report r1;
+    Result<ImportResult> first = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(first.ok());
+    auto saved = io::writeTbcadToMemory(*first.value().document);
+    REQUIRE(saved.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(saved.value(), ioReport);
+    REQUIRE(reopened.ok());
+    Report r2;
+    Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string& text = out.value().bytes;
+    CHECK(text.find("DWG To PDF.pc3") != std::string::npos);
+    CHECK(text.find("_EP-100.ctb") != std::string::npos);
+    CHECK(text.find("\r\nSetup A1\r\n") != std::string::npos);
+    CHECK(text.find("none_device") != std::string::npos);  // the model layout has no setup kept
+}
+
+}  // namespace tbcad::dxf

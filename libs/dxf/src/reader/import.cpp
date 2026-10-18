@@ -1659,6 +1659,27 @@ void Importer::readLayoutObject(const Record& r) {
     }
     if (row.name.empty())
         return;
+    // The page setup (the AcDbPlotSettings part: device, paper, plot style table, scale, origin)
+    // is kept as read, to be written back with the layout while the paper size is unchanged.
+    {
+        std::string packed;
+        bool in = false;
+        for (const Group& g : r.g) {
+            if (g.code == 100) {
+                in = g.str() == "AcDbPlotSettings";
+                if (in)
+                    continue;
+            }
+            std::string text;
+            if (!in || g.code == 102 || handleCode(g.code) ||
+                !keptValue(g, [&](std::string_view v) { return dec(v); }, text))
+                continue;
+            packGroup(packed, g.code, text);
+        }
+        if (!packed.empty())
+            (void)tx_->modifyHeader(
+                [&](Header& h) { h.custom[std::string(kKeptPlotSetPrefix) + row.name] = packed; });
+    }
     layoutRows_.push_back(std::move(row));
 }
 
