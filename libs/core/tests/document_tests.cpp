@@ -515,7 +515,8 @@ TEST_CASE("every entity kind round-trips through the document") {
     all.push_back(line(0, 0, 1, 1));
     all.push_back(Entity{{}, CircleData{{1, 2}, 3}});
     all.push_back(Entity{{}, ArcData{{1, 2}, 3, 0.5, 2.5}});
-    all.push_back(Entity{{}, PolylineData{{{{0, 0}, 0.5, 1, 2}, {{1, 0}, 0, 0, 0}}, true, 0.1}});
+    all.push_back(
+        Entity{{}, PolylineData{{{{0, 0}, 0.5, 1, 2}, {{1, 0}, 0, 0, 0}}, true, false, 0.1}});
     all.push_back(Entity{{}, PointData{{4, 5}}});
     all.push_back(Entity{{}, EllipseData{{0, 0}, {3, 1}, 0.4, 0.1, 3}});
     SplineData sp;

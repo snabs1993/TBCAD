@@ -235,10 +235,11 @@ struct PolyVertex {
 struct PolylineData {
     std::vector<PolyVertex> v{};
     bool closed = false;
-    double constantWidth = 0;
     // PEDIT Ltype gen off: a dashed linetype starts again at every vertex instead of running on
-    // along the whole polyline.
+    // along the whole polyline. (Next to `closed` so the two flags share one word: an Entity
+    // stays within 96 bytes.)
     bool restartLinetype = false;
+    double constantWidth = 0;
 };
 
 struct PointData {
