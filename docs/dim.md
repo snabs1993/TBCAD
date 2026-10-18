@@ -25,7 +25,7 @@ radians for angles). `dim::refresh(doc, d)` updates the cache and, unless `textP
 Dimensions are **associative**: a definition point that was placed on an end, vertex or centre of a
 line, polyline, arc, circle or point (an object-snapped point) is linked to it when the dimension is
 made, and follows when that object is moved, stretched, rotated, scaled, trimmed or edited with grips.
-The measurement and text position are refreshed; a text placed by hand moves along. The link lives
+The measurement and text position are refreshed; a text placed by hand moves along. When the whole measured object is only moved (not stretched or rotated), the free dimension-line point moves with it, so the dimension keeps its offset. The link lives
 in `DimensionData::assoc` and is saved in the file. Moving a dimension alone, or copying it, cuts the
 link (the point no longer sits where the object's point was). **DIMDISASSOC** cuts the links of the
 selected dimensions; **DIMREASSOC** links their points again where they sit exactly on an object's

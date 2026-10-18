@@ -403,3 +403,43 @@ TEST_CASE("DIMDISASSOC cuts the links of a dimension") {
     f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
     CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::Vertex);
 }
+
+TEST_CASE("moving the measured line moves the dimension line with it; stretching does not") {
+    Chain f;
+    EntityId line;
+    {
+        auto tx = f.doc.begin("line");
+        Entity e;
+        e.data = LineData{{0, 0}, {6000, 0}};
+        line = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "6000,0", "3000,-800"}).finished);
+    REQUIRE(f.dims().size() == 1);
+
+    // The whole line moves 500 up: the dimension line keeps its 800 distance.
+    {
+        auto tx = f.doc.begin("move");
+        REQUIRE(tx.modify(line, [](Entity& e) {
+            auto* l = entityAs<LineData>(e);
+            l->a = {0, 500};
+            l->b = {6000, 500};
+        }));
+        tx.commit();
+    }
+    const DimensionData* d = f.dims()[0];
+    CHECK(d->defPts[0].y == doctest::Approx(500));
+    CHECK(d->defPts[1].y == doctest::Approx(500));
+    CHECK(d->defPts[2].x == doctest::Approx(3000));
+    CHECK(d->defPts[2].y == doctest::Approx(-300));
+    CHECK(d->measurement == doctest::Approx(6000));
+
+    // One end moves: the dimension line stays where it is.
+    {
+        auto tx = f.doc.begin("stretch");
+        REQUIRE(tx.modify(line, [](Entity& e) { entityAs<LineData>(e)->b = {7000, 700}; }));
+        tx.commit();
+    }
+    CHECK(f.dims()[0]->defPts[2].y == doctest::Approx(-300));
+    CHECK(f.dims()[0]->defPts[1].x == doctest::Approx(7000));
+}
