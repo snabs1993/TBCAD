@@ -80,6 +80,12 @@ Result<Source> loadStored(std::string_view stored, const std::filesystem::path& 
 bool isUnderlayPath(std::string_view stored);
 bool isUnderlay(const Document& doc, BlockId block);
 
+// BASE: the point of a drawing that lands on the insertion point when the drawing is inserted as a
+// block or attached as an xref. Kept in the file as Header::custom "tbcad.insbase"; (0,0) when
+// not set.
+Vec2 insertionBase(const Document& doc);
+std::string insertionBaseText(Vec2 base);  // the stored form, "x,y"
+
 // Creates the block `name` as an xref of `stored` (the path as the user typed it) and fills it
 // from `source`. The block name must be free. `overlay`: an overlay xref is left out when this
 // drawing is used as an xref by another one. Returns the new block.

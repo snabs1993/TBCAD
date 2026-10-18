@@ -530,3 +530,23 @@ TEST_CASE("unload empties the xref, keeps inserts and layer states, reload bring
     Transaction tx = host.begin("bad");
     CHECK_FALSE(unload(tx, host, BlockId{9999}).ok());
 }
+
+TEST_CASE("the insertion base of the source drawing becomes the block base") {
+    Document host;
+    auto srcDoc = makeSource();
+    {
+        Transaction tx = srcDoc->begin("base");
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      h.custom["tbcad.insbase"] = insertionBaseText({12.5, -3});
+                  }).ok());
+        tx.commit();
+    }
+    CHECK(insertionBase(*srcDoc) == Vec2{12.5, -3});
+    CHECK(insertionBase(host) == Vec2{});
+    Source src = sourceOf(std::move(srcDoc));
+    Transaction tx = host.begin("import");
+    auto r = importAsBlock(tx, host, "part", src);
+    REQUIRE(r.ok());
+    tx.commit();
+    CHECK(host.block(r.value())->base == Vec2{12.5, -3});
+}

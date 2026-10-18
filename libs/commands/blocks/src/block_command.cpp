@@ -3,6 +3,7 @@
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::block_cmds {
 
@@ -180,7 +181,42 @@ public:
     }
 };
 
+// BASE: the point of this drawing that lands on the insertion point when it is inserted into
+// another drawing as a block or attached as an xref.
+class BaseCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "BASE"; }
+    std::string_view description() const override {
+        return "Set the insertion base point of this drawing";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const Vec2 cur = xref::insertionBase(ctx.doc());
+        auto p = co_await ctx.getPoint("Enter base point <" + xref::insertionBaseText(cur) + ">");
+        if (p.status == cmd::Status::None) {
+            ctx.message("Base point stays at " + xref::insertionBaseText(cur) + ".");
+            co_return;
+        }
+        if (!p.ok())
+            co_return;
+        const std::string text = xref::insertionBaseText(p.point);
+        (void)ctx.tx().modifyHeader([&](Header& h) {
+            if (p.point == Vec2{})
+                h.custom.erase("tbcad.insbase");
+            else
+                h.custom["tbcad.insbase"] = text;
+        });
+        ctx.setUndoLabel("BASE");
+        ctx.message("Base point set to " + text +
+                    ". It applies when this drawing is inserted or attached.");
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeBaseCommand() {
+    return std::make_unique<BaseCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeBlockCommand() {
     return std::make_unique<BlockCommand>();

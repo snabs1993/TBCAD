@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <functional>
 #include <iterator>
@@ -544,6 +545,7 @@ Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
     row.xrefPath = std::string(stored);
     row.xrefStamp = source.stamp;
     row.xrefOverlay = overlay;
+    row.base = insertionBase(*source.doc);
     auto block = tx.addBlock(std::move(row));
     if (!block)
         return block.error();
@@ -554,6 +556,26 @@ Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
     return block.value();
 }
 
+Vec2 insertionBase(const Document& doc) {
+    const auto it = doc.header().custom.find("tbcad.insbase");
+    if (it == doc.header().custom.end())
+        return {};
+    const std::size_t comma = it->second.find(',');
+    if (comma == std::string::npos)
+        return {};
+    try {
+        return {std::stod(it->second.substr(0, comma)), std::stod(it->second.substr(comma + 1))};
+    } catch (...) {
+        return {};
+    }
+}
+
+std::string insertionBaseText(Vec2 base) {
+    char buf[96];
+    std::snprintf(buf, sizeof buf, "%.9g,%.9g", base.x, base.y);
+    return buf;
+}
+
 Result<BlockId> importAsBlock(Transaction& tx, Document& doc, std::string_view name,
                               const Source& source, Summary* summary) {
     if (!source.doc)
@@ -562,6 +584,7 @@ Result<BlockId> importAsBlock(Transaction& tx, Document& doc, std::string_view n
         return ok.error();
     BlockDef row;
     row.name = std::string(name);
+    row.base = insertionBase(*source.doc);
     auto block = tx.addBlock(std::move(row));
     if (!block)
         return block.error();
@@ -583,7 +606,10 @@ Result<void> reload(Transaction& tx, Document& doc, BlockId block, const Source&
     std::set<BlockId> nested = nestedBlocks(doc, block);
     eraseContent(tx, doc, block);
     eraseBlocks(tx, std::move(nested));
-    (void)tx.modifyBlock(block, [&](BlockDef& d) { d.xrefStamp = source.stamp; });
+    (void)tx.modifyBlock(block, [&](BlockDef& d) {
+        d.xrefStamp = source.stamp;
+        d.base = insertionBase(*source.doc);
+    });
     Summary local;
     Filler fill(tx, doc, *source.doc, name, summary ? *summary : local);
     return fill.run(block);
