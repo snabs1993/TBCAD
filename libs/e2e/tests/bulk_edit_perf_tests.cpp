@@ -240,9 +240,18 @@ TEST_CASE("perf: other whole-drawing commands") {
     Big big;
     std::printf("other commands on %d objects\n", 2 * big.n);
     big.bench("EXPLODE", {"EXPLODE"});
-    big.bench("ARRAYRECT", {"ARRAYRECT", "2", "2", "100000", "100000"});
-    big.bench("ALIGN", {"ALIGN", "0,0", "5,5", "", ""});
-    big.bench("OFFSET", {"OFFSET", "5", "0,0", "10,10"});
+    big.bench("ARRAYRECT", {"ARRAYRECT", ""});
+    big.bench("ALIGN", {"ALIGN", "0,0", "5,5", ""});
     big.bench("JOIN", {"JOIN"});
-    big.bench("PEDIT", {"PEDIT", "Multiple"});
+    big.bench("PEDIT", {"PEDIT", "Multiple", "Yes", "Join", "0.001", ""});
+}
+
+TEST_CASE("perf: layer and block commands on a big drawing") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Big big;
+    std::printf("layer and block commands on %d objects\n", 2 * big.n);
+    big.bench("LAYER-OFF", {"-LAYER", "Off", "0", ""});
+    big.bench("LAYER-FRZ", {"-LAYER", "Freeze", "0", ""});
+    big.bench("LAYER-LOCK", {"-LAYER", "Lock", "0", ""});
+    big.bench("BLOCK", {"BLOCK", "Everything", "0,0"});
 }

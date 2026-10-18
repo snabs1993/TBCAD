@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <deque>
 #include <map>
 
@@ -21,8 +22,8 @@ struct EdgeSet {
 // looks at edges far from it.
 // Curves taken out of block references are kept alive in `owned`.
 std::vector<const Entity*> collectEdges(const Document& doc, const EdgeSet& set, EntityId target,
-                                        bool trimming, bool extendEdges,
-                                        std::deque<Entity>& owned) {
+                                        bool trimming, bool extendEdges, std::deque<Entity>& owned,
+                                        const cmd::IHost* host = nullptr) {
     std::vector<const Entity*> out;
     const Entity* t = doc.find(target);
     BBox2 box;
@@ -46,8 +47,20 @@ std::vector<const Entity*> collectEdges(const Document& doc, const EdgeSet& set,
         out.push_back(e);
     };
     if (set.all) {
-        for (EntityId id : doc.modelSpace())
-            consider(id);
+        // Trimming only needs the edges near the target: the spatial index finds them without
+        // looking at every object (a click would otherwise cost time in proportion to the drawing).
+        std::optional<std::vector<EntityId>> near;
+        if (prune && host)
+            near = host->entitiesInWindow(box);
+        if (near) {
+            std::sort(near->begin(), near->end(),
+                      [](EntityId a, EntityId b) { return a.value < b.value; });
+            for (EntityId id : *near)
+                consider(id);
+        } else {
+            for (EntityId id : doc.modelSpace())
+                consider(id);
+        }
     } else {
         for (EntityId id : set.ids)
             consider(id);
@@ -64,7 +77,7 @@ std::optional<std::vector<EntityId>> doOne(cmd::CommandContext& ctx, EntityId id
     modify::TrimOptions opt;
     opt.extendEdges = getFlag(ctx.host(), kEdgeExtendKey, false);
     std::deque<Entity> owned;
-    auto edges = collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges, owned);
+    auto edges = collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges, owned, &ctx.host());
     auto edit = trimming ? modify::trimEntity(*target, pick, edges, opt)
                          : modify::extendEntity(*target, pick, edges, opt);
     if (!edit) {
