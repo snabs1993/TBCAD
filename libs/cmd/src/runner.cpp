@@ -191,6 +191,7 @@ void CommandRunner::refreshPrompt() {
         case detail::PromptKind::String:
         case detail::PromptKind::Keyword:
             info.defaultText = req.defaultText;
+            info.editor = req.editor;
             break;
         default:
             break;

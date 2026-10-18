@@ -118,6 +118,7 @@ private:
     void logWindow();
     std::string actionLabel(const std::string& action) const;
     void quickProperties(const ViewportRect& rect);
+    void textEditor(const ViewportRect& rect);
     void panels();
     void dialogs();
     void viewportInput(const ViewportRect& rect);
@@ -194,6 +195,10 @@ private:
     std::vector<std::string> inputHistory_{};
     int historyPos_ = -1;
     bool refocusInput_ = false;
+    bool textEditorActive_ = false;  // a text prompt is edited in a box in the drawing
+    int textEditorFocus_ = 0;
+    std::string textEditorBuf_{};
+    std::string textEditorSent_{};
     bool spaceAsEnter_ = false;
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;

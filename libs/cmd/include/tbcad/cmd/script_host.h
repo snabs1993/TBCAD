@@ -75,6 +75,8 @@ public:
     const DisplayList& preview() const { return preview_; }
     // Prompts seen, oldest first (display text); useful to assert on the flow.
     const std::vector<std::string>& prompts() const { return prompts_; }
+    // The text box a string prompt asked for, if it did (the last one shown).
+    const std::optional<TextEditorHint>& textEditor() const { return textEditor_; }
 
     // IHost
     void print(std::string_view message) override { log_.emplace_back(message); }
@@ -107,6 +109,7 @@ private:
     CommandRunner runner_;
     std::vector<std::string> log_{};
     std::vector<std::string> prompts_{};
+    std::optional<TextEditorHint> textEditor_{};
     std::vector<EntityId> selection_{};
     std::vector<std::pair<std::string, std::string>> settings_{};
     std::filesystem::path settingsFolder_{};
