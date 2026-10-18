@@ -131,3 +131,46 @@ TEST_CASE("FILLET and CHAMFER between every pair of curve kinds are finite and u
     MESSAGE("FILLET/CHAMFER changed the drawing in " << changed << " of 60 runs");
     CHECK(changed > 0);
 }
+
+TEST_CASE("block references: BREAK, LENGTHEN, FILLET, CHAMFER and STRETCH never corrupt them") {
+    for (const char* which : {"BREAK", "LENGTHEN", "FILLET", "CHAMFER", "STRETCH"}) {
+        CAPTURE(which);
+        Rig r;
+        BlockId post;
+        {
+            auto tx = r.doc.begin("block");
+            post = tx.addBlock(BlockDef{.name = "Post"}).value();
+            REQUIRE(tx.add(Entity{{}, LineData{{0, -5}, {0, 5}}}, post).ok());
+            REQUIRE(tx.add(Entity{{}, CircleData{{0, 0}, 3}}, post).ok());
+            tx.commit();
+        }
+        InsertData ins;
+        ins.block = post;
+        ins.position = {6, 0};
+        EntityId b = r.add(ins);
+        EntityId l = r.add(LineData{{0, 0}, {10, 0}});
+        const std::string before = canonicalDump(r.doc);
+        const std::string w = which;
+        if (w == "BREAK")
+            r.host.run("BREAK", {ScriptItem::pick(b, {6, 5}), "6,-5"});
+        else if (w == "LENGTHEN")
+            r.host.run("LENGTHEN",
+                       {"Delta", "3", ScriptItem::pick(b, {6, 5}), ScriptItem::enter()});
+        else if (w == "FILLET")
+            r.host.run("FILLET",
+                       {"R", "1", ScriptItem::pick(b, {6, 5}), ScriptItem::pick(l, {2, 0})});
+        else if (w == "CHAMFER")
+            r.host.run("CHAMFER",
+                       {"D", "1", "1", ScriptItem::pick(b, {6, 5}), ScriptItem::pick(l, {2, 0})});
+        else
+            r.host.run("STRETCH", {"3,-8", "9,8", "0,0", "2,1"});
+        const std::string after = canonicalDump(r.doc);
+        CHECK(finiteDump(after));
+        // The block definition itself must never be edited by a command on a reference.
+        CHECK(r.doc.find(b) != nullptr);
+        if (after != before) {
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == before);
+        }
+    }
+}
