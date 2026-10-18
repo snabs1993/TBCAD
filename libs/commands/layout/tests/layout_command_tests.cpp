@@ -18,6 +18,12 @@ struct Fixture {
     }
 };
 
+// A host that is "on a sheet", as the application is while a layout is shown.
+struct SheetHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    BlockId drawingOwner() const override { return BlockId{1}; }
+};
+
 }  // namespace
 
 TEST_CASE("LAYOUT New creates a layout, makes it current, and undo removes it") {
@@ -80,6 +86,25 @@ TEST_CASE("VPLOCK stops VPSCALE until it is switched off") {
     f.host->run("VPLOCK", {"Off", "1"});
     f.host->run("VPSCALE", {"1", "1:100"});
     CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].scaleN == doctest::Approx(100));
+}
+
+TEST_CASE("a viewport selected on the sheet is used without asking") {
+    Document doc;
+    cmd::Registry reg;
+    layoutcmd::registerCommands(reg);
+    SheetHost host(doc, reg);
+    host.run("LAYOUT", {"New", "Plan", "A3", ""});
+    host.run("MVIEW", {"10,10", "200,200", "1:50", "100,100"});
+    host.run("MVIEW", {"210,10", "410,200", "1:50", "900,100"});
+    CHECK(layoutcmd::selectedViewport(host, doc) == 0);
+    host.setSetting("tmp.layout.viewport", "Plan:2");
+    CHECK(layoutcmd::selectedViewport(host, doc) == 2);
+    host.run("VPSCALE", {"1:200"});  // no viewport answer: the selected one is taken
+    CHECK(layout::findLayout(doc, "Plan")->viewports[0].scaleN == doctest::Approx(50));
+    CHECK(layout::findLayout(doc, "Plan")->viewports[1].scaleN == doctest::Approx(200));
+    CHECK(host.logContains("selected viewport 2"));
+    host.setSetting("tmp.layout.viewport", "Other:2");  // another sheet: not ours
+    CHECK(layoutcmd::selectedViewport(host, doc) == 0);
 }
 
 TEST_CASE("VPLEVEL shows one level in a viewport") {
