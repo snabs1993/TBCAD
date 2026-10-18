@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "tbcad/geom/geom.h"
@@ -473,7 +474,13 @@ public:
         o.preview = [&ctx, &ids, &stretchWith, b = base.point](Vec2 c, DisplayList& out) {
             geom::DisplayContext dc;
             dc.pixelSizeMm = ctx.host().view().scale > 0 ? ctx.host().view().scale : 1;
-            for (auto& [id, e] : stretchWith(ids, c - b, nullptr))
+            // A drawing-sized selection would rebuild every object on each mouse move; the
+            // preview shows the first few thousand.
+            constexpr std::size_t kPreviewMax = 4000;
+            const std::vector<EntityId> shown(
+                ids.begin(), ids.begin() + static_cast<std::ptrdiff_t>(
+                                               std::min(ids.size(), kPreviewMax)));
+            for (auto& [id, e] : stretchWith(shown, c - b, nullptr))
                 geom::buildDisplay(ctx.doc(), e, dc, out);
         };
         auto to = co_await ctx.getPoint("Specify second point or <use first point as displacement>",
