@@ -301,6 +301,27 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     val(e, 51), static_cast<unsigned>(e.frozenCount), e.frozenLayers.size(),
                     val(e, 68) != 0 ? "on" : "off");
                 report.info(code::kSkippedObject, t);
+                {
+                    char xb[64];
+                    std::snprintf(xb, sizeof xb, "viewport %llX extension dictionary %llX:",
+                                  static_cast<unsigned long long>(e.handle),
+                                  static_cast<unsigned long long>(e.xdic));
+                    std::string xl = xb;
+                    const auto xd = drawing.dictionaries.find(e.xdic);
+                    if (xd == drawing.dictionaries.end())
+                        xl += " not read";
+                    else
+                        for (const auto& [nm, th] : xd->second) {
+                            const auto ty = drawing.rawType.find(th);
+                            char hb[48];
+                            std::snprintf(hb, sizeof hb, " %llX type ",
+                                          static_cast<unsigned long long>(th));
+                            xl += " [" + nm + "]" + hb +
+                                  (ty == drawing.rawType.end() ? std::string("absent")
+                                                               : std::to_string(ty->second));
+                        }
+                    report.info(code::kSkippedObject, xl);
+                }
                 if (!e.frozenLayers.empty()) {
                     std::string f = "viewport " + std::to_string(e.handle) + " frozen layers:";
                     for (std::size_t i = 0; i < e.frozenLayers.size() && i < 24; ++i) {

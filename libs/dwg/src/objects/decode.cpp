@@ -704,8 +704,9 @@ private:
             owner = resolveHandle(h.handle(), self);
         for (std::uint32_t i = 0; i < reactors && i < 100000 && !h.failed(); ++i)
             h.handle();
+        lastXdic_ = 0;
         if (!xdicMissing_)
-            h.handle();  // xdictionary (always stored up to R2000, possibly null)
+            lastXdic_ = resolveHandle(h.handle(), self);  // xdictionary (always stored up to R2000)
         return owner;
     }
 
@@ -1144,6 +1145,7 @@ private:
             e.style = resolveHandle(h.handle(), self);
         if (wantBlock)
             e.blockHeader = resolveHandle(h.handle(), self);
+        e.xdic = lastXdic_;
         if (wantViewport) {
             e.frozenCount = viewportFrozen_;
             for (std::uint32_t i = 0; i < viewportFrozen_ && i < 100000 && !h.failed(); ++i)
@@ -2445,7 +2447,8 @@ private:
     Drawing& out_;
     std::vector<std::string>& notes_;
     Format fmt_;
-    bool xdicMissing_ = false;  // R2004+: the object stores no extension dictionary handle
+    std::uint64_t lastXdic_ = 0;  // extension dictionary handle of the object read last
+    bool xdicMissing_ = false;    // R2004+: the object stores no extension dictionary handle
     std::int32_t ownedCount_ = 0;
 };
 
@@ -2547,7 +2550,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r73: R2007 literal runs of 12, 14, 16, 18, 20, 22, 24, 25, 27 and 30 bytes cut right; "
+    return "r73: viewport extension dictionary trace; R2007 literal runs of 12, 14, 16, 18, 20, "
+           "22, 24, 25, 27 and 30 bytes cut right; "
            "r72: R2018 header read right (plain 3-bit BLL, string stream end found, LTSCALE 800 on "
            "the reference sheet), layers that are off are off, viewport and style sheet trace; "
            "r71: layout plot style table reaches the page setup, AC1032 header tried at several "
