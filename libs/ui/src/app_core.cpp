@@ -239,8 +239,9 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     s->savedRevision = d.revision();
     watchFile(*s);
     if (s->lockedElsewhere)
-        print(s->file.filename().string() +
-              " is also open in another TBCAD window. Changes saved there may be overwritten here.");
+        print(
+            s->file.filename().string() +
+            " is also open in another TBCAD window. Changes saved there may be overwritten here.");
     return s;
 }
 

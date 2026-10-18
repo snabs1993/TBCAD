@@ -20,6 +20,9 @@ std::unique_ptr<cmd::Command> makeMLeaderAlignCommand();
 std::unique_ptr<cmd::Command> makeMLeaderCollectCommand();
 std::unique_ptr<cmd::Command> makeMLeaderEditCommand();
 std::unique_ptr<cmd::Command> makeDimReassocCommand();
+std::unique_ptr<cmd::Command> makeDimRegenCommand();
+std::unique_ptr<cmd::Command> makeDimUpdateCommand();
+std::unique_ptr<cmd::Command> makeDimInspectCommand();
 std::unique_ptr<cmd::Command> makeDimDisassocCommand();
 std::unique_ptr<cmd::Command> makeMLeaderStyleCommand();
 

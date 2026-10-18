@@ -21,6 +21,7 @@ constexpr const char* kBlockKey = "tmp.bedit.block";
 constexpr const char* kIdsKey = "tmp.bedit.ids";
 constexpr const char* kXformKey = "tmp.bedit.xform";
 constexpr const char* kMarkKey = "tmp.bedit.mark";  // highest object id before BEDIT
+constexpr const char* kExclKey = "tmp.bedit.excl";  // drawn since BEDIT but taken out by REFSET
 
 std::string encodeXform(const Transform2& t) {
     std::ostringstream os;
@@ -63,8 +64,10 @@ std::vector<EntityId> editedIds(const Document& doc, const cmd::IHost& host) {
     const std::uint64_t mark =
         std::strtoull(host.setting(kMarkKey).value_or("0").c_str(), nullptr, 10);
     std::unordered_set<EntityId> have(ids.begin(), ids.end());
+    const std::vector<EntityId> excl = decodeIds(host.setting(kExclKey).value_or(""));
+    const std::unordered_set<EntityId> out(excl.begin(), excl.end());
     for (EntityId id : doc.modelSpace())
-        if (id.value > mark && !have.count(id))
+        if (id.value > mark && !have.count(id) && !out.count(id))
             ids.push_back(id);
     return ids;
 }
@@ -74,6 +77,7 @@ void forget(cmd::IHost& host) {
     host.setSetting(kIdsKey, "");
     host.setSetting(kXformKey, "");
     host.setSetting(kMarkKey, "");
+    host.setSetting(kExclKey, "");
 }
 
 // Writes the copies back into the definition. Returns false (with a message) when it cannot.
@@ -272,7 +276,64 @@ private:
     bool close_;
 };
 
+// REFSET: changes the working set of the block being edited. Add pulls drawing objects into the
+// set (BSAVE moves them into the block), Remove leaves them in the drawing.
+class RefSetCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "REFSET"; }
+    std::string_view description() const override {
+        return "Add objects to or remove them from the block being edited";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        if (editedBlock(ctx.host()).empty()) {
+            ctx.message("No block is being edited. Use BEDIT first.");
+            co_return;
+        }
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Add", "Remove"};
+        ko.defaultKeyword = "Add";
+        auto k = co_await ctx.getKeyword("Enter an option [Add/Remove] <Add>", std::move(ko));
+        if (!k.ok())
+            co_return;
+        const bool add = k.keyword != "Remove";
+        auto sel = co_await ctx.getSelection(add ? "Select objects to add to the working set"
+                                                 : "Select objects to remove from the working set");
+        if (!sel.ok())
+            co_return;
+        std::vector<EntityId> ids = decodeIds(ctx.host().setting(kIdsKey).value_or(""));
+        std::vector<EntityId> excl = decodeIds(ctx.host().setting(kExclKey).value_or(""));
+        const std::vector<EntityId> current = editedIds(doc, ctx.host());
+        const std::unordered_set<EntityId> inSet(current.begin(), current.end());
+        auto drop = [](std::vector<EntityId>& v, EntityId id) {
+            v.erase(std::remove(v.begin(), v.end(), id), v.end());
+        };
+        std::size_t n = 0;
+        for (EntityId id : sel.ids) {
+            if (!doc.find(id))
+                continue;
+            if (add && !inSet.count(id)) {
+                ids.push_back(id);
+                drop(excl, id);
+                ++n;
+            } else if (!add && inSet.count(id)) {
+                drop(ids, id);
+                excl.push_back(id);
+                ++n;
+            }
+        }
+        ctx.host().setSetting(kIdsKey, encodeIds(ids));
+        ctx.host().setSetting(kExclKey, encodeIds(excl));
+        ctx.message(std::to_string(n) + (add ? " objects added to" : " objects removed from") +
+                    " the working set.");
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeRefSetCommand() {
+    return std::make_unique<RefSetCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeBEditCommand() {
     return std::make_unique<BEditCommand>();

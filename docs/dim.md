@@ -163,3 +163,9 @@ moves, scales and saves with it.
 
 **MLEADEREDIT** (MLE) adds leader lines to a multileader (**Add**: pick arrowhead points, Enter ends) or removes the
 one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays.
+
+## DIMREGEN and DIMINSPECT
+
+`DIMREGEN` brings every associative dimension up to the current position of the points it follows and refreshes its measurement and text. `DIMINSPECT` marks selected dimensions as inspection dimensions: the text becomes `<measurement> [label rate%]` (Add, with an optional label and a rate of 0 to 100), and Remove takes the mark off.
+
+`DIMUPDATE` gives the selected dimensions the current dimension style. `QLEADER` is another name for `LEADER`.

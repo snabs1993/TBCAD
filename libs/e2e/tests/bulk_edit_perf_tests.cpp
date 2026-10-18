@@ -32,8 +32,8 @@ struct Big {
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
         registerAllCommands(registry);
-        core = std::make_unique<ui::AppCore>(registry,
-                                             platform::AppPaths{dir / "cfg", dir / "data"});
+        core =
+            std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
         core->setViewportSize(1400, 900);
         const char* env = std::getenv("TBCAD_BENCH_N");
         n = env ? std::atoi(env) : 100000;
@@ -80,10 +80,11 @@ struct Big {
         const bool redone = core->redo();
         core->updateFrame();
         const double redoMs = ms(t);
-        std::printf("%-8s run %6.0f ms   undo %6.0f ms   redo %6.0f ms   (%zu objects before, %zu "
-                    "now)%s\n",
-                    label, run, undoMs, redoMs, before, core->document().modelSpaceCount(),
-                    done && undone && redone ? "" : "  [command, undo or redo did not run]");
+        std::printf(
+            "%-8s run %6.0f ms   undo %6.0f ms   redo %6.0f ms   (%zu objects before, %zu "
+            "now)%s\n",
+            label, run, undoMs, redoMs, before, core->document().modelSpaceCount(),
+            done && undone && redone ? "" : "  [command, undo or redo did not run]");
         core->undo();
         core->updateFrame();
     }

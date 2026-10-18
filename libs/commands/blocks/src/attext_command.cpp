@@ -97,7 +97,7 @@ std::string attributeCsv(const Document& doc, const std::string& onlyBlock, std:
 class AttExtCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ATTEXT"; }
-    std::vector<std::string> defaultAliases() const override { return {"DX"}; }
+    std::vector<std::string> defaultAliases() const override { return {"DX", "DATAEXTRACTION"}; }
     std::string_view description() const override {
         return "Write the attribute values of block inserts to a CSV file";
     }

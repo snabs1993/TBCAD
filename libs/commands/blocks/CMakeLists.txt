@@ -9,6 +9,7 @@ set(_block_cmd_sources
   src/bedit_command.cpp
   src/block_command.cpp
   src/block_count_command.cpp
+  src/blockreplace_command.cpp
   src/block_list.cpp
   src/block_panel.cpp
   src/commands.cpp

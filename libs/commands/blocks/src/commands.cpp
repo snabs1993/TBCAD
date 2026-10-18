@@ -24,6 +24,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBEditCommand());
     (void)registry.add(makeBSaveCommand(false));
     (void)registry.add(makeBSaveCommand(true));
+    (void)registry.add(makeRefSetCommand());
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeXplodeCommand());
@@ -64,6 +65,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXPathCommand());
     (void)registry.add(makeXRelinkCommand());
     (void)registry.add(makeBlockCountCommand());
+    (void)registry.add(makeBlockReplaceCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {

@@ -182,6 +182,39 @@ public:
     }
 };
 
+// LAYCHANGE: moves the selected objects to a layer given by name.
+class LayChangeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LAYCHANGE"; }
+    std::string_view description() const override {
+        return "Move the selected objects to a layer you name";
+    }
+    Task run(CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select objects to change");
+        if (!sel.ok())
+            co_return;
+        for (;;) {
+            auto name = co_await ctx.getString("Name of the destination layer");
+            if (!name.ok())
+                co_return;
+            auto to = resolveLayer(ctx.doc(), name.text);
+            if (!to) {
+                ctx.message(to.error().message);
+                continue;
+            }
+            const LayerId dest = to.value();
+            ctx.setUndoLabel("LAYCHANGE");
+            std::size_t n = 0;
+            for (EntityId id : sel.ids)
+                if (ctx.tx().modify(id, [&](Entity& e) { e.common.layer = dest; }))
+                    ++n;
+            ctx.message(std::to_string(n) + " object(s) moved to " + layerPath(ctx.doc(), dest) +
+                        ".");
+            co_return;
+        }
+    }
+};
+
 class LayMrgCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYMRG"; }
@@ -316,6 +349,7 @@ void registerLayerTools(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LayOnCommand>("LAYON", "Turn on all layers", false));
     (void)registry.add(std::make_unique<LayOnCommand>("LAYTHW", "Thaw all layers", true));
     (void)registry.add(std::make_unique<LayMchCommand>());
+    (void)registry.add(std::make_unique<LayChangeCommand>());
     (void)registry.add(std::make_unique<LayMrgCommand>());
     (void)registry.add(std::make_unique<LayDelCommand>());
     (void)registry.add(makeLayTransCommand());

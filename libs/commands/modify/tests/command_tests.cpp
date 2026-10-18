@@ -965,3 +965,51 @@ TEST_CASE("CHAMFER Multiple adds one chamfer per pair") {
     CHECK(g.count(EntityKind::Line) == 4);
     CHECK(near(entityAs<LineData>(g.get(v))->b, {3, 0}));
 }
+
+TEST_CASE(
+    "TRIM and EXTEND use nested, rotated, scaled and xref inserts as edges at survey coordinates") {
+    Fixture f;
+    const Vec2 far{600000000.0, 1500000000.0};
+    BlockId post, outer, xr;
+    {
+        auto tx = f.doc.begin("blocks");
+        post = tx.addBlock(BlockDef{.name = "Post"}).value();
+        Entity e;
+        e.data = LineData{{0, -5}, {0, 5}};  // vertical, 10 long
+        REQUIRE(tx.add(std::move(e), post).ok());
+        outer = tx.addBlock(BlockDef{.name = "Outer"}).value();
+        Entity n;
+        n.data = Indirect<InsertData>(InsertData{post, {3, 0}, {1, 1}, 0});
+        REQUIRE(tx.add(std::move(n), outer).ok());
+        BlockDef x;
+        x.name = "Ref";
+        x.xrefPath = "ref.tbcad";
+        xr = tx.addBlock(std::move(x)).value();
+        Entity xe;
+        xe.data = LineData{{0, -5}, {0, 5}};
+        REQUIRE(tx.add(std::move(xe), xr).ok());
+        tx.commit();
+    }
+    // Outer rotated 90 degrees and scaled 2: the nested post becomes a horizontal line of 20
+    // at y = 6 (x = far.x + [-10, 10]).
+    InsertData oi;
+    oi.block = outer;
+    oi.position = far;
+    oi.scale = {2, 2};
+    oi.rotation = kPi / 2;
+    f.add(oi);
+    EntityId v = f.add(LineData{{far.x, far.y - 20}, {far.x, far.y + 20}});
+    f.host.run("TRIM",
+               {ScriptItem::enter(), ScriptItem::pick(v, {far.x, far.y + 15}), ScriptItem::esc()});
+    CHECK(near(entityAs<LineData>(f.get(v))->b, {far.x, far.y + 6}, 1e-3));
+
+    // An xref at far coordinates bounds an extension too.
+    InsertData xi;
+    xi.block = xr;
+    xi.position = {far.x + 30, far.y};
+    f.add(xi);
+    EntityId h = f.add(LineData{{far.x + 10, far.y}, {far.x + 12, far.y}});
+    f.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(h, {far.x + 11.5, far.y}),
+                          ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(h))->b, {far.x + 30, far.y}, 1e-3));
+}
