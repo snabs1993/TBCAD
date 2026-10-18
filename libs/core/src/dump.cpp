@@ -265,6 +265,17 @@ struct DataDumper {
     void operator()(const RayData& d) {
         o << (d.infinite ? "XLINE" : "RAY") << " at" << d.origin << " dir" << d.dir;
     }
+    void operator()(const MLeaderData& d) {
+        o << "MLEADER style" << d.style << " content" << static_cast<int>(d.content) << " landing"
+          << d.landing << " at" << d.contentPos << " dogleg" << d.dogleg << " th" << d.textHeight
+          << " block" << d.block << " bs" << d.blockScale << " br" << d.blockRotation << " ";
+        o.quoted(d.utf8);
+        for (const auto& line : d.lines) {
+            o << " line";
+            for (const Vec2& p : line)
+                o << " " << p;
+        }
+    }
     void operator()(const MlineData& d) {
         o << "MLINE ";
         o.quoted(d.style);

@@ -283,7 +283,8 @@ void drawPanel(ui::PanelContext& pc) {
 
 bool isDimOrLeader(const Document& doc, EntityId id) {
     const Entity* e = doc.find(id);
-    return e && (kind(*e) == EntityKind::Dimension || kind(*e) == EntityKind::Leader);
+    return e && (kind(*e) == EntityKind::Dimension || kind(*e) == EntityKind::Leader ||
+                 kind(*e) == EntityKind::MLeader);
 }
 
 DimStyleId styleIdOf(const Entity& e, const Document& doc) {
@@ -292,6 +293,8 @@ DimStyleId styleIdOf(const Entity& e, const Document& doc) {
         id = d->style;
     else if (const auto* l = entityAs<LeaderData>(e))
         id = l->style;
+    else if (const auto* m = entityAs<MLeaderData>(e))
+        id = m->style;
     return id.value ? id : doc.header().currentDimStyle;
 }
 
@@ -313,7 +316,7 @@ void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
     if (ids.empty())
         return;
     const Entity* first = pc.doc->find(ids.front());
-    const bool leader = kind(*first) == EntityKind::Leader;
+    const bool leader = kind(*first) == EntityKind::Leader || kind(*first) == EntityKind::MLeader;
     ImGui::SeparatorText(ids.size() > 1 ? "Dimensions and leaders"
                          : leader       ? "Leader"
                                         : "Dimension");
@@ -360,7 +363,10 @@ void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
         if (!d->textOverride.empty())
             ImGui::TextDisabled("Text is overridden");
     } else if (ids.size() == 1) {
-        ImGui::Text("%zu vertices", entityAs<LeaderData>(*first)->vertices.size());
+        if (const auto* m = entityAs<MLeaderData>(*first))
+            ImGui::Text("%zu leader lines", m->lines.size());
+        else
+            ImGui::Text("%zu vertices", entityAs<LeaderData>(*first)->vertices.size());
     }
 }
 
@@ -377,6 +383,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addPanel("dimstyles", "Dimension Styles", drawPanel, false);
     ui.addPropertySection(EntityKind::Dimension, drawDimensionSection);
     ui.addPropertySection(EntityKind::Leader, drawDimensionSection);
+    ui.addPropertySection(EntityKind::MLeader, drawDimensionSection);
 }
 
 }  // namespace tbcad::dimcmd

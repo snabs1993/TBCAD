@@ -245,7 +245,11 @@ private:
             d->style = mapDimStyle(d->style);
         else if (auto* l = entityAs<LeaderData>(e))
             l->style = mapDimStyle(l->style);
-        else if (auto* ins = entityAs<InsertData>(e))
+        else if (auto* ml = entityAs<MLeaderData>(e)) {
+            ml->style = mapDimStyle(ml->style);
+            if (ml->block)
+                ml->block = mapBlock(ml->block, depth);
+        } else if (auto* ins = entityAs<InsertData>(e))
             ins->block = mapBlock(ins->block, depth);
         return e;
     }

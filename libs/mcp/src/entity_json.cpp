@@ -646,6 +646,8 @@ std::string kindName(EntityKind kind) {
             return "ray";
         case EntityKind::MLine:
             return "mline";
+        case EntityKind::MLeader:
+            return "mleader";
     }
     return "proxy";
 }
@@ -1088,6 +1090,30 @@ Json entityToJson(const Document& doc, const Entity& e) {
             o["justification"] = static_cast<double>(d.justification);
             o["closed"] = d.closed;
             o["vertices"] = pointsToJson(d.v);
+        } else if constexpr (std::is_same_v<T, MLeaderData>) {
+            if (d.style)
+                o["dimStyle"] = dimStyleName(doc, d.style);
+            std::vector<Json> lines;
+            for (const auto& line : d.lines)
+                lines.push_back(pointsToJson(line));
+            o["lines"] = Json(std::move(lines));
+            o["landing"] = pointToJson(d.landing);
+            o["contentPosition"] = pointToJson(d.contentPos);
+            o["dogleg"] = d.dogleg;
+            if (d.content == MLeaderData::Content::Block) {
+                o["content"] = "block";
+                const BlockDef* b = doc.block(d.block);
+                o["block"] = b ? b->name : std::string("?");
+                o["blockScale"] = d.blockScale;
+                o["blockRotation"] = d.blockRotation;
+            } else if (d.content == MLeaderData::Content::Text) {
+                o["content"] = "text";
+                o["text"] = d.utf8;
+                if (d.textHeight > 0)
+                    o["textHeight"] = d.textHeight;
+            } else {
+                o["content"] = "none";
+            }
         } else if constexpr (std::is_same_v<T, LeaderData>) {
             if (d.style)
                 o["dimStyle"] = dimStyleName(doc, d.style);
@@ -1337,6 +1363,45 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             e.data = Indirect<DimensionData>(dimensionFromJson(doc, j));
         } else if (k == "leader") {
             e.data = Indirect<LeaderData>(leaderFromJson(doc, j));
+        } else if (k == "mleader") {
+            MLeaderData m;
+            m.style = dimStyleFromJson(doc, j);
+            for (const Json& line : req(j, "lines").asArray()) {
+                auto pts = pointsFrom(line, "lines");
+                if (pts.size() < 2)
+                    fail("each multileader line needs at least two points");
+                m.lines.push_back(std::move(pts));
+            }
+            if (m.lines.empty())
+                fail("a multileader needs at least one line");
+            m.landing = j.find("landing") ? pt(j, "landing") : m.lines[0].back();
+            const DimStyle& st = dim::styleOf(doc, m.style);
+            const double sk = st.overallScale > 0 ? st.overallScale : 1.0;
+            const Vec2 prev = m.lines[0].size() > 1 ? m.lines[0][m.lines[0].size() - 2] : m.landing;
+            const double sign = m.landing.x >= prev.x ? 1 : -1;
+            m.contentPos = j.find("contentPosition")
+                               ? pt(j, "contentPosition")
+                               : m.landing + Vec2{sign * (st.arrowSize + st.textGap) * sk, 0};
+            m.dogleg = boolOr(j, "dogleg", true);
+            const std::string content = strOr(j, "content", j.find("block") ? "block" : "text");
+            if (content == "block") {
+                std::string bn = strOr(j, "block");
+                const BlockDef* b = doc.blockByName(bn);
+                if (!b)
+                    fail("unknown block \"" + bn + "\"");
+                m.content = MLeaderData::Content::Block;
+                m.block = b->id;
+                m.blockScale = lenOr(j, "blockScale", 1);
+                m.blockRotation = angOr(j, "blockRotation", 0);
+            } else if (content == "none") {
+                m.content = MLeaderData::Content::None;
+            } else if (content == "text") {
+                m.utf8 = strOr(j, "text");
+                m.textHeight = lenOr(j, "textHeight", 0);
+            } else {
+                fail("content is text, block or none");
+            }
+            e.data = Indirect<MLeaderData>(std::move(m));
         } else if (k == "ray" || k == "xline") {
             RayData r;
             r.origin = pt(j, "origin");

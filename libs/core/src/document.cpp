@@ -351,6 +351,21 @@ struct Checker {
         p(d.textPos);
         dimStyleOk(d.style);
     }
+    void operator()(MLeaderData& d) {
+        for (const auto& line : d.lines)
+            for (const auto& q : line)
+                p(q);
+        p(d.landing);
+        p(d.contentPos);
+        finite(d.textHeight);
+        finite(d.blockScale);
+        finite(d.blockRotation);
+        if (d.textHeight < 0)
+            bad("multileader text height must not be negative");
+        if (d.lines.size() > 10000)
+            bad("multileader is too large");
+        dimStyleOk(d.style);
+    }
     void operator()(RayData& d) {
         p(d.origin);
         p(d.dir);
@@ -680,6 +695,8 @@ bool inUse(const Document& d, DimStyleId id) {
         if (const auto* t = entityAs<DimensionData>(e))
             used = used || t->style == id;
         if (const auto* t = entityAs<LeaderData>(e))
+            used = used || t->style == id;
+        if (const auto* t = entityAs<MLeaderData>(e))
             used = used || t->style == id;
     });
     return used;
@@ -1741,6 +1758,7 @@ LayerId commandLayerFor(const Header& h, const Entity& e) {
     switch (kind(e)) {
         case EntityKind::Dimension:
         case EntityKind::Leader:
+        case EntityKind::MLeader:
             key = kDimLayerKey;
             break;
         case EntityKind::Hatch:

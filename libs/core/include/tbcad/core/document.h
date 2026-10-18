@@ -452,7 +452,7 @@ private:
 // Kinds whose size can follow the annotation scale on their own.
 inline bool canScaleAnnotatively(EntityKind k) {
     return k == EntityKind::Text || k == EntityKind::MText || k == EntityKind::Dimension ||
-           k == EntityKind::Leader || k == EntityKind::Table;
+           k == EntityKind::Leader || k == EntityKind::MLeader || k == EntityKind::Table;
 }
 bool annotateNewObjects(const Header& h);
 // New objects start annotative at the current scale when the drawing asks for it.

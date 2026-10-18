@@ -557,7 +557,7 @@ void registerReadTools(ToolSet& tools) {
          tObject({{"ids", idArray()},
                   {"kinds", tArray(tEnum({"line", "circle", "arc", "polyline", "point", "ellipse",
                                           "spline", "text", "mtext", "hatch", "insert", "dimension",
-                                          "leader", "table", "ray", "mline", "proxy"}))},
+                                          "leader", "table", "ray", "mline", "mleader", "proxy"}))},
                   {"layers", tArray(tString(), "Layer paths such as S-FLOOR~edge")},
                   {"levels", tArray(tString(), "Level names")},
                   {"include_sublayers", tBool("default true")},

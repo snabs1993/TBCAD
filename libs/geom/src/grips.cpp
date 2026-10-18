@@ -94,6 +94,14 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             g.push_back(d.textPos);
             break;
         }
+        case EntityKind::MLeader: {
+            const auto& d = *entityAs<MLeaderData>(e);
+            for (const auto& line : d.lines)
+                g.insert(g.end(), line.begin(), line.end());
+            g.push_back(d.landing);
+            g.push_back(d.contentPos);
+            break;
+        }
         case EntityKind::Ray:
             g = {entityAs<RayData>(e)->origin};
             break;
@@ -304,6 +312,29 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
                 d.textPos = to;
             else
                 return badGrip();
+            return out;
+        }
+        case EntityKind::MLeader: {
+            auto& d = *entityAs<MLeaderData>(out);
+            int at = index;
+            for (auto& line : d.lines) {
+                if (at < static_cast<int>(line.size())) {
+                    line[static_cast<std::size_t>(at)] = to;
+                    return out;
+                }
+                at -= static_cast<int>(line.size());
+            }
+            if (at == 0) {
+                // The lines that ended at the landing follow it.
+                for (auto& line : d.lines)
+                    if (!line.empty() && distance(line.back(), d.landing) < 1e-9)
+                        line.back() = to;
+                d.landing = to;
+            } else if (at == 1) {
+                d.contentPos = to;
+            } else {
+                return badGrip();
+            }
             return out;
         }
         case EntityKind::Ray: {

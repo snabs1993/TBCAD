@@ -18,6 +18,7 @@ int vertexGrips(const Entity& e, std::size_t gripCount) {
             return static_cast<int>(std::get<PolylineData>(e.data).v.size());
         case EntityKind::Spline:
         case EntityKind::Leader:
+        case EntityKind::MLeader:
             return static_cast<int>(gripCount);
         case EntityKind::Circle:
         case EntityKind::Ellipse:

@@ -397,6 +397,22 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
             o.textPos = t.apply(o.textPos);
             return out;
         }
+        case EntityKind::MLeader: {
+            if (!uniform)
+                return makeError(ErrorCode::Unsupported,
+                                 "multileaders cannot be scaled non-uniformly");
+            auto& o = *entityAs<MLeaderData>(out);
+            for (auto& line : o.lines)
+                for (Vec2& p : line)
+                    p = t.apply(p);
+            o.landing = t.apply(o.landing);
+            o.contentPos = t.apply(o.contentPos);
+            if (o.content == MLeaderData::Content::Block) {
+                o.blockScale *= s;
+                o.blockRotation = rotationOf(t, o.blockRotation);
+            }
+            return out;
+        }
         case EntityKind::Ray: {
             auto& o = *entityAs<RayData>(out);
             const Vec2 p0 = t.apply(o.origin);

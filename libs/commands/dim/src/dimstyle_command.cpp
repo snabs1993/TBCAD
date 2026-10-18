@@ -364,7 +364,8 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         auto sel = co_await ctx.getSelection(
             "Select dimensions or leaders", cmd::SelectionOptions{.filter = [](const Entity& e) {
-                return kind(e) == EntityKind::Dimension || kind(e) == EntityKind::Leader;
+                return kind(e) == EntityKind::Dimension || kind(e) == EntityKind::Leader ||
+                       kind(e) == EntityKind::MLeader;
             }});
         if (!sel.ok() || sel.ids.empty())
             co_return;
@@ -433,6 +434,8 @@ private:
             current = d->style;
         else if (const auto* l = entityAs<LeaderData>(*ent))
             current = l->style;
+        else if (const auto* m = entityAs<MLeaderData>(*ent))
+            current = m->style;
         else
             return 0;
         if (!current.value)
@@ -445,6 +448,8 @@ private:
                 d->style = target;
             else if (auto* l = entityAs<LeaderData>(x))
                 l->style = target;
+            else if (auto* m = entityAs<MLeaderData>(x))
+                m->style = target;
         });
         return r ? 1 : 0;
     }

@@ -214,6 +214,8 @@ std::vector<std::string> describeEntity(const Document& doc, const Entity& e, Pr
             out.push_back("  Measurement = " + fixed(d.measurement, prec));
         } else if constexpr (std::is_same_v<T, LeaderData>) {
             out.push_back("  " + std::to_string(d.vertices.size()) + " vertices");
+        } else if constexpr (std::is_same_v<T, MLeaderData>) {
+            out.push_back("  " + std::to_string(d.lines.size()) + " leader lines");
         } else if constexpr (std::is_same_v<T, ProxyData>) {
             out.push_back("  Imported type: " + d.originalType);
         }

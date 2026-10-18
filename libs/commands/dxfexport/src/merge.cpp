@@ -37,7 +37,10 @@ void remap(Entity& e, const Maps& m) {
         d->style = Maps::get(m.dimStyle, d->style);
     else if (auto* l = entityAs<LeaderData>(e))
         l->style = Maps::get(m.dimStyle, l->style);
-    else if (auto* h = entityAs<HatchData>(e))
+    else if (auto* ml = entityAs<MLeaderData>(e)) {
+        ml->style = Maps::get(m.dimStyle, ml->style);
+        ml->block = Maps::get(m.block, ml->block);
+    } else if (auto* h = entityAs<HatchData>(e))
         h->sourceBoundary.clear();  // the boundary objects keep their old ids
     else if (auto* p = entityAs<ProxyData>(e)) {
         for (auto& item : p->graphics.items) {

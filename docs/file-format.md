@@ -177,7 +177,8 @@ or duplicate sibling names rejects the file as corrupt.
 ```
 u16 kind            EntityKind: 0 Line, 1 Circle, 2 Arc, 3 Polyline, 4 Point, 5 Ellipse,
                     6 Spline, 7 Text, 8 MText, 9 Hatch, 10 Insert, 11 Dimension, 12 Leader,
-                    13 Proxy
+                    13 Proxy, 14 Table, 15 Ray, 16 MLine, 17 MLeader (format 1.12; older readers
+                    keep it as a proxy)
 u16 recordVersion   1 for every kind in format 1.0
 u32 length          bytes that follow (common properties + payload)
 common properties

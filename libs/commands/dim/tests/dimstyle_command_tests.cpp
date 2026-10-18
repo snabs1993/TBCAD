@@ -191,12 +191,14 @@ TEST_CASE("MLEADERALIGN lines landing ends up in a column or a row") {
     REQUIRE(ids.size() == 2);
     f.host->run("MLEADERALIGN", {ScriptItem::select(ids), ScriptItem::enter(),
                                  ScriptItem::pick(ids[0], {5, 5}), "Vertical"});
-    const auto* a = entityAs<LeaderData>(*f.doc.find(ids[0]));
-    const auto* b = entityAs<LeaderData>(*f.doc.find(ids[1]));
-    CHECK(b->vertices.back().x == doctest::Approx(a->vertices.back().x));
-    CHECK(b->vertices.front().x == doctest::Approx(0));  // the arrow stays put
+    const auto* a = entityAs<MLeaderData>(*f.doc.find(ids[0]));
+    const auto* b = entityAs<MLeaderData>(*f.doc.find(ids[1]));
+    CHECK(b->landing.x == doctest::Approx(a->landing.x));
+    CHECK(b->lines[0].back().x == doctest::Approx(a->landing.x));
+    CHECK(b->contentPos.x > b->landing.x);
+    CHECK(b->lines[0].front().x == doctest::Approx(0));  // the arrow stays put
     CHECK(f.host->undo());
-    CHECK(entityAs<LeaderData>(*f.doc.find(ids[1]))->vertices.back().x == doctest::Approx(30));
+    CHECK(entityAs<MLeaderData>(*f.doc.find(ids[1]))->landing.x == doctest::Approx(30));
 }
 
 TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first dimension") {
@@ -209,12 +211,11 @@ TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first di
     CHECK(f.doc.header().currentDimStyle == scaled->id);
     bool leader = false;
     f.doc.forEachEntity([&](const Entity& e) {
-        if (const auto* l = entityAs<LeaderData>(e)) {
+        if (const auto* l = entityAs<MLeaderData>(e)) {
             leader = true;
             CHECK(l->style == scaled->id);
-            // The note sits one scaled arrow + gap away from the landing point.
-            CHECK(std::abs(l->textPos.x - l->vertices.back().x) ==
-                  doctest::Approx((2.5 + 0.625) * 50));
+            // The dogleg is one scaled arrow long.
+            CHECK(std::abs(l->contentPos.x - l->landing.x) == doctest::Approx(2.5 * 50));
         }
     });
     CHECK(leader);

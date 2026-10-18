@@ -325,6 +325,14 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
         case EntityKind::Leader:
             writeLeader(p, *entityAs<LeaderData>(e), owner);
             break;
+        case EntityKind::MLeader: {
+            downgrade("MULTILEADER",
+                      "is written as leaders, a line for the dogleg, and the note or block");
+            if (auto parts = dim::mleaderAsLeaders(doc_, e))
+                for (const Entity& part : parts.value())
+                    writeEntity(part, owner);
+            break;
+        }
         case EntityKind::Proxy:
             writeProxy(p, *entityAs<ProxyData>(e), owner);
             break;

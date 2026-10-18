@@ -982,8 +982,8 @@ bool Importer::convLeader(const Record& r, std::vector<Entity>& out) {
     return true;
 }
 
-// MLEADER: the leader lines and the text of a multileader, as plain LEADER entities (the first one
-// carries the text). Block content and the leader style's look are not read.
+// MLEADER: the leader lines, the dogleg and the text of a multileader, as one multileader. Block
+// content and the leader style's look are not read.
 bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
     struct Branch {
         std::vector<Vec2> pts{};
@@ -1051,7 +1051,9 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
     const std::string text = convertMText(dec(rawText), k_, mtextDropped_);
     const Vec2 anchor = hasTextLoc ? textLoc : base;
     const DimStyleId style = dimStyleFor(r.raw(3));
-    bool first = true;
+    MLeaderData m;
+    m.style = style;
+    bool haveLanding = false, haveDog = false;
     for (Branch& b : branches) {
         if (b.pts.empty())
             continue;
@@ -1059,27 +1061,35 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
         const Vec2 near = b.hasLast ? b.last : anchor;
         if (distance(b.pts.front(), near) < distance(b.pts.back(), near))
             std::reverse(b.pts.begin(), b.pts.end());
-        LeaderData d;
-        d.vertices = b.pts;  // arrowhead first
-        if (b.hasLast && distance(d.vertices.back(), b.last) > tol::kLinear)
-            d.vertices.push_back(b.last);
-        if (b.hasDir && b.dogLen > 0 && !tol::isZeroLength(b.dir))
-            d.vertices.push_back(d.vertices.back() + normalized(b.dir) * b.dogLen);
-        if (d.vertices.size() < 2)
+        std::vector<Vec2> line = b.pts;  // arrowhead first
+        if (b.hasLast && distance(line.back(), b.last) > tol::kLinear)
+            line.push_back(b.last);
+        if (line.size() < 2)
             continue;
-        d.style = style;
-        d.textPos = hasTextLoc || hasBase ? anchor : d.vertices.back();
-        if (first)
-            d.utf8 = text;
-        first = false;
-        out.push_back(makeEntity(std::move(d)));
+        if (!haveLanding) {
+            m.landing = line.back();
+            haveLanding = true;
+        }
+        if (!haveDog && b.hasDir && b.dogLen > 0 && !tol::isZeroLength(b.dir)) {
+            m.contentPos = m.landing + normalized(b.dir) * b.dogLen;
+            haveDog = true;
+        }
+        m.lines.push_back(std::move(line));
     }
-    if (out.empty() && !text.empty()) {
-        MTextData m;
+    if (!m.lines.empty()) {
+        if (!haveDog)
+            m.contentPos = hasTextLoc || hasBase ? anchor : m.landing;
+        m.dogleg = distance(m.landing, m.contentPos) > tol::kLinear;
+        if (text.empty())
+            m.content = MLeaderData::Content::None;
         m.utf8 = text;
-        m.position = anchor;
-        m.height = 2.5;
         out.push_back(makeEntity(std::move(m)));
+    } else if (!text.empty()) {
+        MTextData mt;
+        mt.utf8 = text;
+        mt.position = anchor;
+        mt.height = 2.5;
+        out.push_back(makeEntity(std::move(mt)));
     }
     return !out.empty();
 }
