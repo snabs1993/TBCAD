@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 #include <unordered_map>
+#include <variant>
 
 #include "container/lz21.h"
 #include "container/r2000.h"
@@ -183,21 +184,16 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 " lineweight " + std::to_string(e.lineweight) + " xdic " + std::to_string(e.xdic) +
                 " groups:";
             std::size_t n = 0;
-            for (const Group& g : e.groups) {
+            for (const auto& g : e.groups) {
                 if (n++ >= 40)
                     break;
                 t += " " + std::to_string(g.code) + "=";
-                switch (g.type()) {
-                    case ValueType::String:
-                        t += std::string(g.str());
-                        break;
-                    case ValueType::Double:
-                        t += std::to_string(g.number());
-                        break;
-                    default:
-                        t += std::to_string(g.integer());
-                        break;
-                }
+                if (const auto* str = std::get_if<std::string>(&g.value.v))
+                    t += *str;
+                else if (const auto* d = std::get_if<double>(&g.value.v))
+                    t += std::to_string(*d);
+                else
+                    t += std::to_string(std::get<long long>(g.value.v));
             }
             report.summary(code::kSkippedObject, t);
         }
