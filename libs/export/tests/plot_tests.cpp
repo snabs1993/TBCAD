@@ -698,9 +698,12 @@ TEST_CASE("a table that keeps grey object colours leaves a layer of index colour
             found = true;
         }
     CHECK(found);
-    REQUIRE(sheet.value().trace.size() == 1);
-    CHECK(sheet.value().trace[0].find("ACI 253") != std::string::npos);
-    CHECK(sheet.value().trace[0].find("186,186,186, 1 uses") != std::string::npos);
+    std::string colourLine, layerLine;
+    for (const std::string& t : sheet.value().trace)
+        (t.rfind("layer '", 0) == 0 ? layerLine : colourLine) = t;
+    CHECK(colourLine.find("ACI 253") != std::string::npos);
+    CHECK(colourLine.find("186,186,186, 1 uses") != std::string::npos);
+    CHECK(layerLine.find("1 parts") != std::string::npos);
 }
 
 TEST_CASE("a PDF has one optional-content group per layer, bound xref layers named with a bar") {
