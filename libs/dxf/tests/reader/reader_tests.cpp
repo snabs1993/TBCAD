@@ -1057,7 +1057,7 @@ TEST_CASE("layer transparency is read from the layer's ADSK_XREC_LAYER_ALPHA rec
         "0\nENDTAB\n0\nENDSEC\n"
         "0\nSECTION\n2\nOBJECTS\n"
         "0\nDICTIONARY\n5\nA1\n100\nAcDbDictionary\n3\nADSK_XREC_LAYER_ALPHA\n350\nB2\n"
-        "0\nXRECORD\n5\nB2\n100\nAcDbXrecord\n280\n1\n1071\n33554561\n"
+        "0\nXRECORD\n5\nB2\n100\nAcDbXrecord\n280\n1\n1071\n33554560\n"
         "0\nENDSEC\n0\nEOF\n";
     Loaded l = load(text);
     const Layer* layer = nullptr;
@@ -1065,7 +1065,7 @@ TEST_CASE("layer transparency is read from the layer's ADSK_XREC_LAYER_ALPHA rec
         if (lay.name == "COL")
             layer = &lay;
     REQUIRE(layer != nullptr);
-    CHECK(layer->transparency == 50);  // 0x02000081: alpha 129 of 255
+    CHECK(layer->transparency == 50);  // 0x02000080: alpha 128 of 255
 }
 
 }  // namespace tbcad::dxf
