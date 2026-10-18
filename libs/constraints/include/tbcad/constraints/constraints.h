@@ -8,17 +8,22 @@
 
 #include "tbcad/core/document.h"
 
-// Geometric and dimensional constraints between LINE, CIRCLE, ARC and POINT entities, solved by
+// Geometric and dimensional constraints between LINE, CIRCLE, ARC, POINT, polyline (straight
+// segments), ELLIPSE (centre) and INSERT (position and rotation) entities, solved by
 // our own Levenberg-Marquardt solver (docs/constraints.md). The constraint list lives in the
 // document header, so it is saved with the drawing and follows undo and redo.
 namespace tbcad::constraints {
 
-// Which point of an entity a constraint refers to. Whole = the entity itself.
+// Which point of an entity a constraint refers to. Whole = the entity itself. On a polyline,
+// Start + `index` is vertex `index` and Whole + `index` is the straight segment from vertex `index`
+// to the next one. An insert is a point (its insertion point, Start) and a direction (Whole: the
+// x axis of the insert).
 enum class Part : std::uint8_t { Whole, Start, End, Center };
 
 struct Ref {
     EntityId entity{};
     Part part = Part::Whole;
+    std::uint32_t index = 0;
     friend bool operator==(const Ref&, const Ref&) = default;
 };
 

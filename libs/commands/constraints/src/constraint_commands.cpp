@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <set>
 
@@ -12,48 +13,97 @@ namespace {
 
 using namespace tbcad::constraints;
 
-// The picked object is a line, circle, arc or point.
+// The picked object is a line, circle, arc, point, ellipse, insert or a polyline with a straight
+// segment.
 bool constrainable(const Entity& e) {
     switch (kind(e)) {
         case EntityKind::Line:
         case EntityKind::Circle:
         case EntityKind::Arc:
         case EntityKind::Point:
+        case EntityKind::Ellipse:
+        case EntityKind::Insert:
+        case EntityKind::Polyline:
             return true;
         default:
             return false;
     }
 }
 
-std::vector<std::pair<Part, Vec2>> pointsOf(const Entity& e) {
+struct PartPoint {
+    Part part;
+    std::uint32_t index;
+    Vec2 p;
+};
+
+std::vector<PartPoint> pointsOf(const Entity& e) {
     if (const auto* l = entityAs<LineData>(e))
-        return {{Part::Start, l->a}, {Part::End, l->b}};
+        return {{Part::Start, 0, l->a}, {Part::End, 0, l->b}};
     if (const auto* c = entityAs<CircleData>(e))
-        return {{Part::Center, c->center}};
+        return {{Part::Center, 0, c->center}};
     if (const auto* a = entityAs<ArcData>(e)) {
-        return {{Part::Center, a->center},
-                {Part::Start,
+        return {{Part::Center, 0, a->center},
+                {Part::Start, 0,
                  a->center + Vec2{std::cos(a->startAngle), std::sin(a->startAngle)} * a->radius},
-                {Part::End,
+                {Part::End, 0,
                  a->center + Vec2{std::cos(a->endAngle), std::sin(a->endAngle)} * a->radius}};
     }
     if (const auto* p = entityAs<PointData>(e))
-        return {{Part::Start, p->p}};
-    return {};
+        return {{Part::Start, 0, p->p}};
+    if (const auto* el = entityAs<EllipseData>(e))
+        return {{Part::Center, 0, el->center}};
+    if (const auto* in = entityAs<InsertData>(e))
+        return {{Part::Start, 0, in->position}};
+    std::vector<PartPoint> out;
+    if (const auto* pl = entityAs<PolylineData>(e)) {
+        for (std::size_t i = 0; i < pl->v.size(); ++i)
+            out.push_back({Part::Start, static_cast<std::uint32_t>(i), pl->v[i].p});
+    }
+    return out;
 }
 
 // The point of the picked entity closest to where the user clicked.
-Part nearestPart(const Entity& e, Vec2 pick) {
-    Part best = Part::Center;
+Ref nearestPoint(EntityId id, const Entity& e, Vec2 pick) {
+    Ref best{id, Part::Center};
     double bestD = 1e300;
-    for (const auto& [part, p] : pointsOf(e)) {
-        const double d = length(p - pick);
+    for (const PartPoint& pp : pointsOf(e)) {
+        const double d = length(pp.p - pick);
         if (d < bestD) {
             bestD = d;
-            best = part;
+            best = {id, pp.part, pp.index};
         }
     }
     return best;
+}
+
+// The whole object, or for a polyline the straight segment closest to the click.
+Ref wholeRef(EntityId id, const Entity& e, Vec2 pick) {
+    Ref r{id, Part::Whole};
+    const auto* pl = entityAs<PolylineData>(e);
+    if (!pl || pl->v.size() < 2)
+        return r;
+    double bestD = 1e300;
+    const std::size_t n = pl->v.size(), segs = pl->closed ? n : n - 1;
+    for (std::size_t i = 0; i < segs; ++i) {
+        if (pl->v[i].bulge != 0)
+            continue;
+        const Vec2 a = pl->v[i].p, b = pl->v[(i + 1) % n].p;
+        const Vec2 d = b - a;
+        const double len2 = dot(d, d);
+        const double t = len2 > 0 ? std::clamp(dot(pick - a, d) / len2, 0.0, 1.0) : 0.0;
+        const double dist = length(pick - (a + d * t));
+        if (dist < bestD) {
+            bestD = dist;
+            r.index = static_cast<std::uint32_t>(i);
+        }
+    }
+    return r;
+}
+
+// Does the entity act as a direction (line, polyline segment, insert)?
+bool isDirection(const Entity& e) {
+    const EntityKind k = kind(e);
+    return k == EntityKind::Line || k == EntityKind::Polyline || k == EntityKind::Insert;
 }
 
 std::string failText(const SolveResult& r, const Document& doc, const ConstraintSet& set) {
@@ -153,12 +203,12 @@ public:
         }
         if (type == "Horizontal" || type == "Vertical") {
             c.kind = type == "Horizontal" ? Kind::Horizontal : Kind::Vertical;
-            if (kind(*e1) == EntityKind::Line) {
-                c.a = {first.id, Part::Whole};
+            if (isDirection(*e1)) {
+                c.a = wholeRef(first.id, *e1, first.pickPoint);
                 (void)apply(ctx, c);
                 co_return;
             }
-            c.a = {first.id, nearestPart(*e1, first.pickPoint)};
+            c.a = nearestPoint(first.id, *e1, first.pickPoint);
             cmd::EntityResult second;
             co_await pickConstrainable(ctx, "Select second point object", second);
             if (!second.ok())
@@ -166,7 +216,7 @@ public:
             const Entity* e2 = ctx.doc().find(second.id);
             if (!e2)
                 co_return;
-            c.b = {second.id, nearestPart(*e2, second.pickPoint)};
+            c.b = nearestPoint(second.id, *e2, second.pickPoint);
             (void)apply(ctx, c);
             co_return;
         }
@@ -180,13 +230,13 @@ public:
             co_return;
         if (type == "Coincident") {
             c.kind = Kind::Coincident;
-            c.a = {first.id, nearestPart(*e1, first.pickPoint)};
-            c.b = {second.id, nearestPart(*e2, second.pickPoint)};
+            c.a = nearestPoint(first.id, *e1, first.pickPoint);
+            c.b = nearestPoint(second.id, *e2, second.pickPoint);
         } else if (type == "PointOn" || type == "Midpoint") {
             // the first pick is the point, the second the line, circle or arc it sits on
             c.kind = type == "PointOn" ? Kind::PointOnObject : Kind::Midpoint;
-            c.a = {first.id, nearestPart(*e1, first.pickPoint)};
-            c.b = {second.id, Part::Whole};
+            c.a = nearestPoint(first.id, *e1, first.pickPoint);
+            c.b = wholeRef(second.id, *e2, second.pickPoint);
         } else {
             c.kind = type == "Parallel"        ? Kind::Parallel
                      : type == "Concentric"    ? Kind::Concentric
@@ -194,8 +244,8 @@ public:
                      : type == "Perpendicular" ? Kind::Perpendicular
                      : type == "Equal"         ? Kind::Equal
                                                : Kind::Tangent;
-            c.a = {first.id, Part::Whole};
-            c.b = {second.id, Part::Whole};
+            c.a = wholeRef(first.id, *e1, first.pickPoint);
+            c.b = wholeRef(second.id, *e2, second.pickPoint);
         }
         (void)apply(ctx, c);
     }
@@ -233,15 +283,25 @@ public:
             if (!e1 || !e2)
                 co_return;
             c.kind = Kind::Distance;
-            c.a = {first.id, nearestPart(*e1, first.pickPoint)};
-            c.b = {second.id, nearestPart(*e2, second.pickPoint)};
+            c.a = nearestPoint(first.id, *e1, first.pickPoint);
+            c.b = nearestPoint(second.id, *e2, second.pickPoint);
         } else if (type == "Length") {
             co_await pickConstrainable(ctx, "Select line", first);
             if (!first.ok())
                 co_return;
             c.kind = Kind::Distance;
-            c.a = {first.id, Part::Start};
-            c.b = {first.id, Part::End};
+            const Entity* line = ctx.doc().find(first.id);
+            if (!line)
+                co_return;
+            const Ref seg = wholeRef(first.id, *line, first.pickPoint);
+            if (const auto* pl = entityAs<PolylineData>(*line)) {
+                c.a = {first.id, Part::Start, seg.index};
+                c.b = {first.id, Part::Start,
+                       static_cast<std::uint32_t>((seg.index + 1) % pl->v.size())};
+            } else {
+                c.a = {first.id, Part::Start};
+                c.b = {first.id, Part::End};
+            }
         } else if (type == "Radius" || type == "Diameter") {
             co_await pickConstrainable(ctx, "Select circle or arc", first);
             if (!first.ok())
@@ -256,9 +316,13 @@ public:
             co_await pickConstrainable(ctx, "Select second line", second);
             if (!second.ok())
                 co_return;
+            const Entity* l1 = ctx.doc().find(first.id);
+            const Entity* l2 = ctx.doc().find(second.id);
+            if (!l1 || !l2)
+                co_return;
             c.kind = Kind::Angle;
-            c.a = {first.id, Part::Whole};
-            c.b = {second.id, Part::Whole};
+            c.a = wholeRef(first.id, *l1, first.pickPoint);
+            c.b = wholeRef(second.id, *l2, second.pickPoint);
         }
 
         // Validate with a placeholder value so the user is not asked about nonsense.

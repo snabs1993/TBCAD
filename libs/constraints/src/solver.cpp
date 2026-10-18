@@ -9,15 +9,17 @@ namespace tbcad::constraints {
 
 namespace {
 
-enum class Type { Line, Circle, Arc, Point };
+enum class Type { Line, Circle, Arc, Point, Polyline, Ellipse, Insert };
 
 // Variables per entity: Line {ax, ay, bx, by}, Circle {cx, cy, r}, Arc {cx, cy, r, a0, a1},
-// Point {x, y}.
+// Point {x, y}, Polyline {x0, y0, x1, y1, ...}, Ellipse {cx, cy, mx, my} (major axis vector),
+// Insert {x, y, rotation}.
 struct Slot {
     EntityId id{};
     Type type = Type::Point;
     std::size_t offset = 0;
     std::size_t count = 0;
+    bool closed = false;  // polylines
 };
 
 struct Model {
@@ -42,7 +44,13 @@ struct Model {
             case Type::Line:
                 return r.part == Part::End ? Vec2{p[2], p[3]} : Vec2{p[0], p[1]};
             case Type::Circle:
+            case Type::Ellipse:
+            case Type::Insert:
                 return {p[0], p[1]};
+            case Type::Polyline: {
+                const std::size_t i = std::min<std::size_t>(r.index, s.count / 2 - 1);
+                return {p[2 * i], p[2 * i + 1]};
+            }
             case Type::Arc: {
                 if (r.part == Part::Start)
                     return {p[0] + p[2] * std::cos(p[3]), p[1] + p[2] * std::sin(p[3])};
@@ -53,14 +61,26 @@ struct Model {
         }
         return {};
     }
-    Vec2 lineA(const std::vector<double>& v, EntityId id) const {
-        const double* p = v.data() + slot(id).offset;
-        return {p[0], p[1]};
+    // The two ends of a straight segment (line, polyline segment) or the x axis of an insert as a
+    // unit vector from its insertion point.
+    std::pair<Vec2, Vec2> seg(const std::vector<double>& v, const Ref& r) const {
+        const Slot& s = slot(r.entity);
+        const double* p = v.data() + s.offset;
+        switch (s.type) {
+            case Type::Polyline: {
+                const std::size_t n = s.count / 2;
+                const std::size_t i = std::min<std::size_t>(r.index, n - 1);
+                const std::size_t j = (i + 1) % n;
+                return {{p[2 * i], p[2 * i + 1]}, {p[2 * j], p[2 * j + 1]}};
+            }
+            case Type::Insert:
+                return {{p[0], p[1]}, {p[0] + std::cos(p[2]), p[1] + std::sin(p[2])}};
+            default:
+                return {{p[0], p[1]}, {p[2], p[3]}};
+        }
     }
-    Vec2 lineB(const std::vector<double>& v, EntityId id) const {
-        const double* p = v.data() + slot(id).offset;
-        return {p[2], p[3]};
-    }
+    Vec2 lineA(const std::vector<double>& v, const Ref& r) const { return seg(v, r).first; }
+    Vec2 lineB(const std::vector<double>& v, const Ref& r) const { return seg(v, r).second; }
     Vec2 center(const std::vector<double>& v, EntityId id) const {
         const double* p = v.data() + slot(id).offset;
         return {p[0], p[1]};
@@ -68,7 +88,9 @@ struct Model {
     double radius(const std::vector<double>& v, EntityId id) const {
         return v[slot(id).offset + 2];
     }
-    bool isLine(EntityId id) const { return slot(id).type == Type::Line; }
+    bool isLine(EntityId id) const {
+        return slot(id).type == Type::Line || slot(id).type == Type::Polyline;
+    }
 };
 
 double wrapPi(double a) {
@@ -104,6 +126,19 @@ bool addSlot(Model& m, EntityId id) {
     } else if (const auto* p = entityAs<PointData>(*e)) {
         s.type = Type::Point;
         m.x.insert(m.x.end(), {p->p.x, p->p.y});
+    } else if (const auto* pl = entityAs<PolylineData>(*e)) {
+        if (pl->v.empty())
+            return false;
+        s.type = Type::Polyline;
+        s.closed = pl->closed;
+        for (const PolyVertex& pv : pl->v)
+            m.x.insert(m.x.end(), {pv.p.x, pv.p.y});
+    } else if (const auto* el = entityAs<EllipseData>(*e)) {
+        s.type = Type::Ellipse;
+        m.x.insert(m.x.end(), {el->center.x, el->center.y, el->majorAxis.x, el->majorAxis.y});
+    } else if (const auto* in = entityAs<InsertData>(*e)) {
+        s.type = Type::Insert;
+        m.x.insert(m.x.end(), {in->position.x, in->position.y, in->rotation});
     } else {
         return false;
     }
@@ -165,8 +200,8 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
         case Kind::Vertical: {
             Vec2 p, q;
             if (!c.b.entity) {
-                p = m.lineA(v, c.a.entity);
-                q = m.lineB(v, c.a.entity);
+                p = m.lineA(v, c.a);
+                q = m.lineB(v, c.a);
             } else {
                 p = m.point(v, c.a);
                 q = m.point(v, c.b);
@@ -176,16 +211,16 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
         }
         case Kind::Parallel:
         case Kind::Perpendicular: {
-            const Vec2 da = m.lineB(v, c.a.entity) - m.lineA(v, c.a.entity);
-            const Vec2 db = m.lineB(v, c.b.entity) - m.lineA(v, c.b.entity);
+            const Vec2 da = m.lineB(v, c.a) - m.lineA(v, c.a);
+            const Vec2 db = m.lineB(v, c.b) - m.lineA(v, c.b);
             const double n = std::max(length(da) * length(db), kTiny);
             out.push_back((c.kind == Kind::Parallel ? cross(da, db) : dot(da, db)) / n);
             break;
         }
         case Kind::Equal: {
             if (m.isLine(c.a.entity)) {
-                out.push_back(length(m.lineB(v, c.a.entity) - m.lineA(v, c.a.entity)) -
-                              length(m.lineB(v, c.b.entity) - m.lineA(v, c.b.entity)));
+                out.push_back(length(m.lineB(v, c.a) - m.lineA(v, c.a)) -
+                              length(m.lineB(v, c.b) - m.lineA(v, c.b)));
             } else {
                 out.push_back(m.radius(v, c.a.entity) - m.radius(v, c.b.entity));
             }
@@ -194,7 +229,7 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
         case Kind::Tangent: {
             const bool aLine = m.isLine(c.a.entity), bLine = m.isLine(c.b.entity);
             if (aLine || bLine) {
-                const EntityId le = aLine ? c.a.entity : c.b.entity;
+                const Ref& le = aLine ? c.a : c.b;
                 const EntityId ce = aLine ? c.b.entity : c.a.entity;
                 const Vec2 a = m.lineA(v, le), b = m.lineB(v, le);
                 const Vec2 dir = b - a;
@@ -226,8 +261,8 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
             out.push_back(m.radius(v, c.a.entity) - c.value);
             break;
         case Kind::Angle: {
-            const Vec2 da = m.lineB(v, c.a.entity) - m.lineA(v, c.a.entity);
-            const Vec2 db = m.lineB(v, c.b.entity) - m.lineA(v, c.b.entity);
+            const Vec2 da = m.lineB(v, c.a) - m.lineA(v, c.a);
+            const Vec2 db = m.lineB(v, c.b) - m.lineA(v, c.b);
             out.push_back(wrapPi(std::atan2(cross(da, db), dot(da, db)) - c.value));
             break;
         }
@@ -241,7 +276,7 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
         case Kind::PointOnObject: {
             const Vec2 p = m.point(v, c.a);
             if (m.isLine(c.b.entity)) {
-                const Vec2 a = m.lineA(v, c.b.entity), b = m.lineB(v, c.b.entity);
+                const Vec2 a = m.lineA(v, c.b), b = m.lineB(v, c.b);
                 out.push_back(cross(b - a, p - a) / std::max(length(b - a), kTiny));
             } else {
                 out.push_back(length(p - m.center(v, c.b.entity)) - m.radius(v, c.b.entity));
@@ -249,17 +284,17 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
             break;
         }
         case Kind::Midpoint: {
-            const Vec2 mid = (m.lineA(v, c.b.entity) + m.lineB(v, c.b.entity)) * 0.5;
+            const Vec2 mid = (m.lineA(v, c.b) + m.lineB(v, c.b)) * 0.5;
             const Vec2 d = m.point(v, c.a) - mid;
             out.push_back(d.x);
             out.push_back(d.y);
             break;
         }
         case Kind::Collinear: {
-            const Vec2 a = m.lineA(v, c.a.entity), da = m.lineB(v, c.a.entity) - a;
+            const Vec2 a = m.lineA(v, c.a), da = m.lineB(v, c.a) - a;
             const double n = std::max(length(da), kTiny);
-            out.push_back(cross(da, m.lineA(v, c.b.entity) - a) / n);
-            out.push_back(cross(da, m.lineB(v, c.b.entity) - a) / n);
+            out.push_back(cross(da, m.lineA(v, c.b) - a) / n);
+            out.push_back(cross(da, m.lineB(v, c.b) - a) / n);
             break;
         }
     }
@@ -486,8 +521,8 @@ Result<double> measure(const Document& doc, const Constraint& c) {
         case Kind::Radius:
             return m.radius(m.x, c.a.entity);
         case Kind::Angle: {
-            const Vec2 da = m.lineB(m.x, c.a.entity) - m.lineA(m.x, c.a.entity);
-            const Vec2 db = m.lineB(m.x, c.b.entity) - m.lineA(m.x, c.b.entity);
+            const Vec2 da = m.lineB(m.x, c.a) - m.lineA(m.x, c.a);
+            const Vec2 db = m.lineB(m.x, c.b) - m.lineA(m.x, c.b);
             return std::atan2(cross(da, db), dot(da, db));
         }
         default:
@@ -540,6 +575,15 @@ Result<SolveResult> solve(Transaction& tx, const ConstraintSet& set, const Solve
                 a->endAngle = normalizeAngle(p[4]);
             } else if (auto* pt = entityAs<PointData>(e)) {
                 pt->p = {p[0], p[1]};
+            } else if (auto* pl = entityAs<PolylineData>(e)) {
+                for (std::size_t k = 0; k < pl->v.size() && 2 * k + 1 < s.count; ++k)
+                    pl->v[k].p = {p[2 * k], p[2 * k + 1]};
+            } else if (auto* el = entityAs<EllipseData>(e)) {
+                el->center = {p[0], p[1]};
+                el->majorAxis = {p[2], p[3]};
+            } else if (auto* in = entityAs<InsertData>(e)) {
+                in->position = {p[0], p[1]};
+                in->rotation = normalizeAngle(p[2]);
             }
         });
         if (!edited)

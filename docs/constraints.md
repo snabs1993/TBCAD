@@ -21,6 +21,17 @@ solver (`libs/constraints`, no third-party solver). Commands live in `libs/comma
 | Midpoint | a point and a line | the point sits at the middle of the line |
 | Collinear | two lines | both lie on one common line |
 
+## Which objects
+
+Lines, circles, arcs and points; **polylines** (every straight segment, a segment with a bulge is
+refused; the vertices are points, and the other vertices and the bulges stay as they are);
+**ellipses** (the centre is a point; the axes are kept); **inserts** (the insertion point is a point,
+the x axis of the insert is a direction, so Parallel, Perpendicular, Angle, Horizontal and Vertical
+work on an insert). Inserts with constraints are how block instances are mated: Fix one, then
+Coincident / Distance / Parallel the others to it. A reference carries an `index`: the vertex (point)
+or segment (Whole) of a polyline, counted from 0. In the commands the vertex or segment nearest to
+the click is used.
+
 ## Commands
 
 - `GEOMCON` (`GCON`): pick the type (also Concentric, PointOn, Midpoint, Collinear), then the objects. For Coincident and the two-point forms the
@@ -62,7 +73,7 @@ parallel/perpendicular normalised by the line lengths, angles wrapped to (-pi, p
 ## Storage
 
 The list is kept in `Header::custom["tbcad.constraints"]`, one line per constraint
-(`id kind entityA partA entityB partB value`). It is saved in the .tbcad file and follows undo and
+(`id kind entityA partA entityB partB value indexA indexB`; older files without the indices still load). It is saved in the .tbcad file and follows undo and
 redo like any header change. Entity ids are never reused (PR #53), so references stay valid. A
 constraint with a formula ends with `|formula`. Parameters are in `Header::custom["tbcad.parameters"]`,
 one `name<TAB>formula` per line.
@@ -74,4 +85,4 @@ formulas.
 
 ## Not done yet
 
-Constraints on polylines, ellipses and splines; symmetric constraints; constraint display icons and a parameter panel in the UI.
+Constraints on splines and on polyline arc segments; symmetric constraints; constraint display icons and a parameter panel in the UI.

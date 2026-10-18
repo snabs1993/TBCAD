@@ -289,3 +289,142 @@ TEST_CASE("the new kinds survive the text form") {
     CHECK(back.all()[0].kind == Kind::Concentric);
     CHECK(back.all()[1].kind == Kind::Collinear);
 }
+
+namespace {
+
+EntityId polyline(Document& doc, std::vector<Vec2> pts, bool closed = false) {
+    auto tx = doc.begin("polyline");
+    PolylineData pl;
+    for (Vec2 p : pts)
+        pl.v.push_back(PolyVertex{p});
+    pl.closed = closed;
+    auto id = tx.add(Entity{{}, std::move(pl)});
+    REQUIRE(id.ok());
+    tx.commit();
+    return id.value();
+}
+
+EntityId insertAt(Document& doc, Vec2 pos, double rot) {
+    auto tx = doc.begin("insert");
+    auto blk = tx.addBlock(BlockDef{.name = "B" + std::to_string(doc.blocks().size())});
+    REQUIRE(blk.ok());
+    InsertData in;
+    in.block = blk.value();
+    in.position = pos;
+    in.rotation = rot;
+    auto id = tx.add(Entity{{}, std::move(in)});
+    REQUIRE(id.ok());
+    tx.commit();
+    return id.value();
+}
+
+Ref seg(EntityId e, std::uint32_t i) {
+    return {e, Part::Whole, i};
+}
+Ref vtx(EntityId e, std::uint32_t i) {
+    return {e, Part::Start, i};
+}
+
+}  // namespace
+
+TEST_CASE("polyline segments take part in constraints; bulges and other vertices stay") {
+    Fixture f;
+    const EntityId pl = polyline(f.doc, {{0, 0}, {10, 1}, {12, 8}, {20, 9}});
+    const EntityId ln = f.line({0, 20}, {10, 20});
+    auto r = f.solveWith({make(Kind::Horizontal, seg(pl, 0)), make(Kind::Vertical, seg(pl, 1)),
+                          make(Kind::Parallel, seg(pl, 2), whole(ln)), make(Kind::Fix, whole(ln)),
+                          make(Kind::Distance, vtx(pl, 0), vtx(pl, 1), 10),
+                          make(Kind::Fix, vtx(pl, 0))});
+    CHECK(r.converged);
+    const auto* p = entityAs<PolylineData>(*f.doc.find(pl));
+    REQUIRE(p);
+    CHECK(p->v[0].p.y == doctest::Approx(p->v[1].p.y).epsilon(1e-6));
+    CHECK(p->v[1].p.x == doctest::Approx(p->v[2].p.x).epsilon(1e-6));
+    CHECK(p->v[3].p.y == doctest::Approx(p->v[2].p.y).epsilon(1e-6));
+    CHECK(length(p->v[1].p - p->v[0].p) == doctest::Approx(10).epsilon(1e-6));
+}
+
+TEST_CASE("a polyline segment with a bulge is refused") {
+    Fixture f;
+    auto tx = f.doc.begin("arcpoly");
+    PolylineData pl;
+    pl.v.push_back(PolyVertex{{0, 0}});
+    PolyVertex b{{10, 0}};
+    pl.v[0].bulge = 0.5;
+    pl.v.push_back(b);
+    pl.v.push_back(PolyVertex{{10, 10}});
+    auto id = tx.add(Entity{{}, std::move(pl)});
+    REQUIRE(id.ok());
+    tx.commit();
+    CHECK_FALSE(validate(f.doc, make(Kind::Horizontal, seg(id.value(), 0))).ok());
+    CHECK(validate(f.doc, make(Kind::Vertical, seg(id.value(), 1))).ok());
+    CHECK_FALSE(validate(f.doc, make(Kind::Vertical, seg(id.value(), 5))).ok());
+}
+
+TEST_CASE("inserts mate: point on point, aligned rotation, offset") {
+    Fixture f;
+    const EntityId a = insertAt(f.doc, {0, 0}, 0.3);
+    const EntityId b = insertAt(f.doc, {50, 40}, 1.0);
+    const EntityId wall = f.line({100, 0}, {100, 100});
+    auto r = f.solveWith({make(Kind::Fix, whole(a)), make(Kind::Parallel, whole(a), whole(b)),
+                          make(Kind::Distance, at(a, Part::Start), at(b, Part::Start), 30),
+                          make(Kind::Fix, whole(wall))});
+    CHECK(r.converged);
+    const auto* ia = entityAs<InsertData>(*f.doc.find(a));
+    const auto* ib = entityAs<InsertData>(*f.doc.find(b));
+    REQUIRE(ia);
+    REQUIRE(ib);
+    CHECK(ia->rotation == doctest::Approx(0.3));
+    CHECK(length(ib->position - ia->position) == doctest::Approx(30).epsilon(1e-6));
+    CHECK(std::sin(ib->rotation - ia->rotation) == doctest::Approx(0).epsilon(1e-6));
+}
+
+TEST_CASE("insert mating with a point on a line and an ellipse centre") {
+    Fixture f;
+    const EntityId a = insertAt(f.doc, {5, 5}, 0);
+    const EntityId wall = f.line({0, 0}, {40, 0});
+    EntityId el;
+    {
+        auto tx = f.doc.begin("ellipse");
+        EllipseData e;
+        e.center = {30, 10};
+        e.majorAxis = {10, 0};
+        e.ratio = 0.5;
+        auto id = tx.add(Entity{{}, e});
+        REQUIRE(id.ok());
+        tx.commit();
+        el = id.value();
+    }
+    auto r = f.solveWith({make(Kind::PointOnObject, at(a, Part::Start), whole(wall)),
+                          make(Kind::Coincident, at(a, Part::Start), at(el, Part::Center)),
+                          make(Kind::Fix, whole(wall)), make(Kind::Fix, whole(el))});
+    // the ellipse centre is at y = 10, the wall at y = 0: the two cannot both hold
+    CHECK_FALSE(r.converged);
+    auto r2 = f.solveWith({make(Kind::Horizontal, at(a, Part::Start), at(el, Part::Center)),
+                           make(Kind::Distance, at(a, Part::Start), at(el, Part::Center), 12),
+                           make(Kind::Fix, whole(el))});
+    CHECK(r2.converged);
+    const auto* ia = entityAs<InsertData>(*f.doc.find(a));
+    REQUIRE(ia);
+    CHECK(ia->position.y == doctest::Approx(10).epsilon(1e-6));
+    CHECK(std::abs(ia->position.x - 30) == doctest::Approx(12).epsilon(1e-6));
+}
+
+TEST_CASE("indices survive the text form") {
+    ConstraintSet set;
+    set.add(make(Kind::Parallel, seg(EntityId{1}, 2), seg(EntityId{1}, 0)));
+    Constraint withFormula = make(Kind::Distance, vtx(EntityId{1}, 3), vtx(EntityId{1}, 4), 5);
+    withFormula.expr = "Width * 2";
+    set.add(withFormula);
+    const ConstraintSet back = ConstraintSet::fromText(set.toText());
+    REQUIRE(back.all().size() == 2);
+    CHECK(back.all()[0].a.index == 2);
+    CHECK(back.all()[0].b.index == 0);
+    CHECK(back.all()[1].a.index == 3);
+    CHECK(back.all()[1].b.index == 4);
+    CHECK(back.all()[1].expr == "Width * 2");
+    // the old format (no indices) still reads
+    const ConstraintSet old = ConstraintSet::fromText("1 3 7 0 8 0 0\n");
+    REQUIRE(old.all().size() == 1);
+    CHECK(old.all()[0].a.index == 0);
+}

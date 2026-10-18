@@ -16,7 +16,7 @@ constexpr std::string_view kNames[] = {"Coincident",    "Horizontal", "Vertical"
                                        "Distance",      "Radius",     "Angle",    "Concentric",
                                        "PointOnObject", "Midpoint",   "Collinear"};
 
-enum class Type { None, Line, Circle, Arc, Point };
+enum class Type { None, Line, Circle, Arc, Point, Polyline, Ellipse, Insert };
 
 Type typeOf(const Document& doc, EntityId id) {
     const Entity* e = doc.find(id);
@@ -31,6 +31,12 @@ Type typeOf(const Document& doc, EntityId id) {
             return Type::Arc;
         case EntityKind::Point:
             return Type::Point;
+        case EntityKind::Polyline:
+            return Type::Polyline;
+        case EntityKind::Ellipse:
+            return Type::Ellipse;
+        case EntityKind::Insert:
+            return Type::Insert;
         default:
             return Type::None;
     }
@@ -46,6 +52,12 @@ const char* typeName(Type t) {
             return "arc";
         case Type::Point:
             return "point";
+        case Type::Polyline:
+            return "polyline";
+        case Type::Ellipse:
+            return "ellipse";
+        case Type::Insert:
+            return "insert";
         default:
             return "object";
     }
@@ -62,9 +74,53 @@ bool isPointRef(Type t, Part p) {
             return p == Part::Center;
         case Type::Arc:
             return p == Part::Start || p == Part::End || p == Part::Center;
+        case Type::Polyline:
+            return p == Part::Start;
+        case Type::Ellipse:
+            return p == Part::Center;
+        case Type::Insert:
+            return p == Part::Whole || p == Part::Start;
         default:
             return false;
     }
+}
+
+// Polyline geometry the references are checked against.
+const PolylineData* polylineOf(const Document& doc, EntityId id) {
+    const Entity* e = doc.find(id);
+    return e ? entityAs<PolylineData>(*e) : nullptr;
+}
+
+// A point of the entity: the part names a point of its type and the index a vertex that exists.
+bool pointOk(const Document& doc, const Ref& r) {
+    const Type t = typeOf(doc, r.entity);
+    if (!isPointRef(t, r.part))
+        return false;
+    if (t == Type::Polyline) {
+        const PolylineData* pl = polylineOf(doc, r.entity);
+        return pl && r.index < pl->v.size();
+    }
+    return r.index == 0;
+}
+
+// A straight segment: a line, or a polyline segment without a bulge.
+bool segOk(const Document& doc, const Ref& r) {
+    const Type t = typeOf(doc, r.entity);
+    if (t == Type::Line)
+        return r.part == Part::Whole && r.index == 0;
+    if (t != Type::Polyline || r.part != Part::Whole)
+        return false;
+    const PolylineData* pl = polylineOf(doc, r.entity);
+    if (!pl || pl->v.size() < 2)
+        return false;
+    const std::size_t n = pl->v.size();
+    return r.index < (pl->closed ? n : n - 1) && pl->v[r.index].bulge == 0;
+}
+
+// A direction: a straight segment, or the x axis of an insert.
+bool axisOk(const Document& doc, const Ref& r) {
+    return segOk(doc, r) ||
+           (typeOf(doc, r.entity) == Type::Insert && r.part == Part::Whole && r.index == 0);
 }
 
 Error bad(std::string message) {
@@ -74,6 +130,10 @@ Error bad(std::string message) {
 std::string refText(const Document& doc, const Ref& r) {
     std::string s = typeName(typeOf(doc, r.entity));
     s += " " + std::to_string(r.entity.value);
+    if (typeOf(doc, r.entity) == Type::Polyline) {
+        s += (r.part == Part::Whole ? " segment " : " vertex ") + std::to_string(r.index + 1);
+        return s;
+    }
     switch (r.part) {
         case Part::Start:
             s += " start";
@@ -122,72 +182,55 @@ Result<void> validate(const Document& doc, const Constraint& c) {
     const Type ta = typeOf(doc, c.a.entity);
     const Type tb = c.b.entity ? typeOf(doc, c.b.entity) : Type::None;
     if (ta == Type::None)
-        return bad("the first object cannot be constrained (lines, circles, arcs and points can)");
+        return bad(
+            "the first object cannot be constrained (lines, circles, arcs, points, "
+            "polylines, ellipses and inserts can)");
     const bool needsB = c.kind != Kind::Fix && c.kind != Kind::Radius &&
                         !(c.kind == Kind::Horizontal || c.kind == Kind::Vertical);
     if (needsB && tb == Type::None)
         return bad(std::string(kindName(c.kind)) + " needs a second object");
+    const bool circA = ta == Type::Circle || ta == Type::Arc;
+    const bool circB = tb == Type::Circle || tb == Type::Arc;
     switch (c.kind) {
         case Kind::Coincident:
-            if (!isPointRef(ta, c.a.part) || !isPointRef(tb, c.b.part))
-                return bad("Coincident joins two points (line ends, arc ends or centres, points)");
+            if (!pointOk(doc, c.a) || !pointOk(doc, c.b))
+                return bad(
+                    "Coincident joins two points (line ends, polyline vertices, arc ends "
+                    "or centres, ellipse centres, insert points, points)");
             if (c.a == c.b)
                 return bad("Coincident needs two different points");
             break;
         case Kind::Horizontal:
         case Kind::Vertical:
-            if (ta == Type::Line && c.a.part == Part::Whole && !c.b.entity)
+            if (!c.b.entity && axisOk(doc, c.a))
                 break;
-            if (isPointRef(ta, c.a.part) && isPointRef(tb, c.b.part) && !(c.a == c.b))
+            if (c.b.entity && pointOk(doc, c.a) && pointOk(doc, c.b) && !(c.a == c.b))
                 break;
-            return bad(std::string(kindName(c.kind)) + " takes one line or two points");
+            return bad(std::string(kindName(c.kind)) +
+                       " takes one line, polyline segment or insert, or two points");
         case Kind::Parallel:
         case Kind::Perpendicular:
-            if (ta != Type::Line || tb != Type::Line || c.a.entity == c.b.entity)
-                return bad(std::string(kindName(c.kind)) + " takes two different lines");
+            if (!axisOk(doc, c.a) || !axisOk(doc, c.b) || c.a == c.b)
+                return bad(std::string(kindName(c.kind)) +
+                           " takes two different lines, polyline segments or inserts");
             break;
         case Kind::Equal:
-            if (c.a.entity == c.b.entity)
-                return bad("Equal takes two different objects");
-            if (!((ta == Type::Line && tb == Type::Line) ||
-                  ((ta == Type::Circle || ta == Type::Arc) &&
-                   (tb == Type::Circle || tb == Type::Arc))))
-                return bad("Equal takes two lines or two circles/arcs");
-            break;
-        case Kind::Tangent: {
-            const bool ca = ta == Type::Circle || ta == Type::Arc;
-            const bool cb = tb == Type::Circle || tb == Type::Arc;
+            if (segOk(doc, c.a) && segOk(doc, c.b) && !(c.a == c.b))
+                break;
+            if (circA && circB && c.a.entity != c.b.entity)
+                break;
+            return bad("Equal takes two lines (or polyline segments) or two circles/arcs");
+        case Kind::Tangent:
             if (c.a.entity == c.b.entity ||
-                !((ta == Type::Line && cb) || (ca && tb == Type::Line) || (ca && cb)))
+                !((segOk(doc, c.a) && circB) || (circA && segOk(doc, c.b)) || (circA && circB)))
                 return bad("Tangent takes a line and a circle/arc, or two circles/arcs");
             break;
-        }
-        case Kind::Concentric: {
-            const bool ca = ta == Type::Circle || ta == Type::Arc || ta == Type::Point;
-            const bool cb = tb == Type::Circle || tb == Type::Arc || tb == Type::Point;
-            if (!ca || !cb || c.a.entity == c.b.entity)
-                return bad("Concentric takes two different circles, arcs or points");
-            break;
-        }
-        case Kind::PointOnObject:
-            if (!isPointRef(ta, c.a.part) || c.a.entity == c.b.entity ||
-                (tb != Type::Line && tb != Type::Circle && tb != Type::Arc))
-                return bad("Point on object takes a point and a line, circle or arc");
-            break;
-        case Kind::Midpoint:
-            if (!isPointRef(ta, c.a.part) || tb != Type::Line || c.a.entity == c.b.entity)
-                return bad("Midpoint takes a point and a line");
-            break;
-        case Kind::Collinear:
-            if (ta != Type::Line || tb != Type::Line || c.a.entity == c.b.entity)
-                return bad("Collinear takes two different lines");
-            break;
         case Kind::Fix:
-            if (c.a.part != Part::Whole && !isPointRef(ta, c.a.part))
+            if (c.a.part != Part::Whole && !pointOk(doc, c.a))
                 return bad("Fix takes an object or one of its points");
             break;
         case Kind::Distance:
-            if (!isPointRef(ta, c.a.part) || !isPointRef(tb, c.b.part) || c.a == c.b)
+            if (!pointOk(doc, c.a) || !pointOk(doc, c.b) || c.a == c.b)
                 return bad("Distance measures between two points");
             if (!(c.value >= 0) || !std::isfinite(c.value))
                 return bad("the distance must be zero or more");
@@ -199,10 +242,31 @@ Result<void> validate(const Document& doc, const Constraint& c) {
                 return bad("the radius must be more than zero");
             break;
         case Kind::Angle:
-            if (ta != Type::Line || tb != Type::Line || c.a.entity == c.b.entity)
-                return bad("Angle takes two different lines");
+            if (!axisOk(doc, c.a) || !axisOk(doc, c.b) || c.a == c.b)
+                return bad("Angle takes two different lines, polyline segments or inserts");
             if (!std::isfinite(c.value))
                 return bad("the angle must be a number");
+            break;
+        case Kind::Concentric: {
+            const bool ca = circA || ta == Type::Point || ta == Type::Ellipse;
+            const bool cb = circB || tb == Type::Point || tb == Type::Ellipse;
+            if (!ca || !cb || c.a.entity == c.b.entity)
+                return bad("Concentric takes two different circles, arcs, ellipses or points");
+            break;
+        }
+        case Kind::PointOnObject:
+            if (!pointOk(doc, c.a) || c.a.entity == c.b.entity || !(segOk(doc, c.b) || circB))
+                return bad(
+                    "Point on object takes a point and a line, polyline segment, circle "
+                    "or arc");
+            break;
+        case Kind::Midpoint:
+            if (!pointOk(doc, c.a) || !segOk(doc, c.b) || c.a.entity == c.b.entity)
+                return bad("Midpoint takes a point and a line or polyline segment");
+            break;
+        case Kind::Collinear:
+            if (!segOk(doc, c.a) || !segOk(doc, c.b) || c.a == c.b)
+                return bad("Collinear takes two different lines or polyline segments");
             break;
     }
     return {};
@@ -244,15 +308,16 @@ bool ConstraintSet::involves(EntityId e) const {
     return false;
 }
 
-// Line format: "<id> <kind> <entityA> <partA> <entityB> <partB> <value>"; entity 0 = none.
+// Line format: "<id> <kind> <entityA> <partA> <entityB> <partB> <value> <indexA> <indexB>"; entity
+// 0 = none. Files from before the indices were added end after the value.
 std::string ConstraintSet::toText() const {
     std::string out;
     char buf[160];
     for (const Constraint& c : items_) {
-        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g", c.id,
+        std::snprintf(buf, sizeof buf, "%u %d %llu %d %llu %d %.17g %u %u", c.id,
                       static_cast<int>(c.kind), static_cast<unsigned long long>(c.a.entity.value),
                       static_cast<int>(c.a.part), static_cast<unsigned long long>(c.b.entity.value),
-                      static_cast<int>(c.b.part), c.value);
+                      static_cast<int>(c.b.part), c.value, c.a.index, c.b.index);
         out += buf;
         if (!c.expr.empty()) {
             out += " |";
@@ -274,13 +339,16 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
         std::istringstream fields(line);
         if (!(fields >> id >> kind >> a >> pa >> b >> pb >> value))
             continue;
+        unsigned ia = 0, ib = 0;
+        if (!(fields >> ia >> ib))
+            ia = ib = 0;
         if (kind > static_cast<unsigned>(Kind::Collinear) || pa > 3 || pb > 3 || a == 0 || id == 0)
             continue;
         Constraint c;
         c.id = id;
         c.kind = static_cast<Kind>(kind);
-        c.a = {EntityId{a}, static_cast<Part>(pa)};
-        c.b = {EntityId{b}, static_cast<Part>(pb)};
+        c.a = {EntityId{a}, static_cast<Part>(pa), ia};
+        c.b = {EntityId{b}, static_cast<Part>(pb), ib};
         c.value = value;
         if (const auto bar = line.find('|'); bar != std::string::npos) {
             c.expr = line.substr(bar + 1);
