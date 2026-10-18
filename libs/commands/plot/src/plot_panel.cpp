@@ -44,12 +44,13 @@ PanelState& state() {
 
 std::string keyOf(const PlotSettings& s, const BBox2& displayWindow) {
     char buf[512];
-    std::snprintf(buf, sizeof buf, "%s|%g|%g|%d|%d|%g,%g,%g,%g|%d|%g|%d|%g,%g|%g|%d|%d|%g,%g,%g,%g",
+    std::snprintf(buf, sizeof buf,
+                  "%s|%g|%g|%d|%d|%g,%g,%g,%g|%d|%g|%d|%g,%g|%g|%d|%d|%g,%g,%g,%g|%d",
                   s.paperName.c_str(), s.customWidthMm, s.customHeightMm, s.landscape, int(s.area),
                   s.window.min.x, s.window.min.y, s.window.max.x, s.window.max.y, s.fitToPaper,
                   s.scaleN, s.centerOnPaper, s.offsetMm.x, s.offsetMm.y, s.marginMm, s.lineweights,
                   int(s.color), displayWindow.min.x, displayWindow.min.y, displayWindow.max.x,
-                  displayWindow.max.y);
+                  displayWindow.max.y, s.transparency);
     return buf;
 }
 
@@ -285,6 +286,7 @@ void draw(ui::PanelContext& pc) {
 
     // Appearance
     changed |= ImGui::Checkbox("Plot lineweights", &s.lineweights);
+    changed |= ImGui::Checkbox("Plot transparency", &s.transparency);
     {
         bool stamp = plotStampOn(*pc.host);
         if (ImGui::Checkbox("Plot stamp", &stamp))

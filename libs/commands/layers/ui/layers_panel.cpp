@@ -420,6 +420,17 @@ void drawLineweightCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
     }
 }
 
+void drawTransparencyCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
+    ImGui::SetNextItemWidth(-1);
+    const std::string shown = std::to_string(l.transparency) + "%";
+    if (ImGui::BeginCombo("##tr", shown.c_str(), ImGuiComboFlags_HeightLarge)) {
+        for (int v = 0; v <= 90; v += 10)
+            if (ImGui::Selectable((std::to_string(v) + "%").c_str(), l.transparency == v))
+                exec(ctx, {"-LAYER Transparency " + std::to_string(v), idRef(l.id)});
+        ImGui::EndCombo();
+    }
+}
+
 }  // namespace
 
 void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
@@ -518,7 +529,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Hideable;
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
     const float availWidth = ImGui::GetContentRegionAvail().x;
-    if (ImGui::BeginTable("##layers2", 9, kFlags, ImVec2(0, -footer))) {
+    if (ImGui::BeginTable("##layers2", 10, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
@@ -544,6 +555,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
             56);
         ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 34);
+        ImGui::TableSetupColumn(
+            "Transp.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, 56);
         // VP Frz only exists while a layout viewport is the target.
         static bool vpShown = false;
         if (vpShown != static_cast<bool>(vp) || ImGui::GetFrameCount() < 3) {
@@ -654,6 +667,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                 ImGui::TableSetColumnIndex(7);
                 drawLineweightCell(ctx, *l);
                 flag(8, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
+                ImGui::TableSetColumnIndex(9);
+                drawTransparencyCell(ctx, *l);
                 if (dimmed)
                     ImGui::PopStyleColor();
                 ImGui::PopID();

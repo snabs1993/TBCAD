@@ -251,6 +251,23 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
                     prop("Lineweight", w);
             ImGui::EndCombo();
         }
+
+        // Transparency.
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Transparency");
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-1);
+        std::string trText =
+            p.transparency.varies ? "*varies*" : transparencyName(p.transparency.value);
+        if (ImGui::BeginCombo("##tr", trText.c_str(), ImGuiComboFlags_HeightLarge)) {
+            static const char* const kSteps[] = {"ByLayer", "ByBlock", "0",  "10", "20", "30",
+                                                 "40",      "50",      "60", "70", "80", "90"};
+            for (const char* t : kSteps)
+                if (ImGui::Selectable(t, false))
+                    prop("Transparency", t);
+            ImGui::EndCombo();
+        }
         ImGui::EndTable();
     }
 }
@@ -323,6 +340,21 @@ void currentSection(tbcad::ui::PanelContext& ctx) {
         for (const char* w : kWeights)
             if (ImGui::Selectable(w, false))
                 set("Lineweight", w);
+        ImGui::EndCombo();
+    }
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted("Transparency");
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##curtr", transparencyName(h.currentTransparency).c_str(),
+                          ImGuiComboFlags_HeightLarge)) {
+        static const char* const kSteps[] = {"ByLayer", "ByBlock", "0",  "10", "20", "30",
+                                             "40",      "50",      "60", "70", "80", "90"};
+        for (const char* t : kSteps)
+            if (ImGui::Selectable(t, false))
+                set("Transparency", t);
         ImGui::EndCombo();
     }
     ImGui::EndTable();

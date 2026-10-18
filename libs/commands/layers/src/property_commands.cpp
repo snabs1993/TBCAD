@@ -48,12 +48,12 @@ public:
             co_return;
         std::optional<EntityKind> only;
         cmd::KeywordOptions opts;
-        opts.keywords = {"Only",    "Layer",      "Color", "Linetype",
-                         "LTScale", "Lineweight", "Set",   "Delete"};
+        opts.keywords = {"Only",       "Layer",        "Color", "Linetype", "LTScale",
+                         "Lineweight", "Transparency", "Set",   "Delete"};
         while (true) {
             auto k = co_await ctx.getKeyword(
                 "Property [Only/Layer/Color/Linetype/LTScale/"
-                "Lineweight/Set/Delete]",
+                "Lineweight/Transparency/Set/Delete]",
                 opts);
             if (!k.ok())
                 co_return;
@@ -85,7 +85,9 @@ public:
             }
             auto v = co_await ctx.getString(k.keyword == "Only"  ? "Object type"
                                             : k.keyword == "Set" ? "Field name"
-                                                                 : "New value");
+                                            : k.keyword == "Transparency"
+                                                ? "Transparency (ByLayer, ByBlock or 0 to 90)"
+                                                : "New value");
             if (!v.ok())
                 co_return;
             if (k.keyword == "Only") {
@@ -135,6 +137,13 @@ public:
                     edit.linetypeScale = n.value();
                 else
                     ctx.message(n.error().message);
+            } else if (k.keyword == "Transparency") {
+                auto tr = parseTransparency(v.text);
+                good = bool(tr);
+                if (good)
+                    edit.transparency = tr.value();
+                else
+                    ctx.message(tr.error().message);
             } else {
                 auto lw = parseLineweight(v.text);
                 good = bool(lw) && !lw.value().isByParent();
@@ -280,7 +289,7 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("CURRENT PROPERTIES");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Color", "Linetype", "Lineweight", "List"};
+        opts.keywords = {"Color", "Linetype", "Lineweight", "Transparency", "List"};
         while (true) {
             auto k = co_await ctx.getKeyword("Current property", opts);
             if (!k.ok())
@@ -289,13 +298,15 @@ public:
                 const Header& h = ctx.doc().header();
                 ctx.message("Colour " + colorName(h.currentColor) + ", linetype " +
                             linetypeName(ctx.doc(), h.currentLinetype) + ", lineweight " +
-                            lineweightName(h.currentLineweight));
+                            lineweightName(h.currentLineweight) + ", transparency " +
+                            transparencyName(h.currentTransparency));
                 continue;
             }
             auto v = co_await ctx.getString(
-                k.keyword == "Color"      ? "Colour (ByLayer, ByBlock, name, 1-255 or r,g,b)"
-                : k.keyword == "Linetype" ? "Linetype (ByLayer, ByBlock or a loaded name)"
-                                          : "Lineweight (ByLayer, ByBlock, Default or mm)");
+                k.keyword == "Color"          ? "Colour (ByLayer, ByBlock, name, 1-255 or r,g,b)"
+                : k.keyword == "Linetype"     ? "Linetype (ByLayer, ByBlock or a loaded name)"
+                : k.keyword == "Transparency" ? "Transparency (ByLayer, ByBlock or 0 to 90)"
+                                              : "Lineweight (ByLayer, ByBlock, Default or mm)");
             if (!v.ok())
                 co_return;
             Result<void> r;
@@ -313,6 +324,15 @@ public:
                     continue;
                 }
                 r = ctx.tx().modifyHeader([&](Header& h) { h.currentLinetype = lt.value(); });
+            } else if (k.keyword == "Transparency") {
+                auto tr = parseTransparency(v.text);
+                if (!tr) {
+                    ctx.message(tr.error().message);
+                    continue;
+                }
+                r = ctx.tx().modifyHeader([&](Header& h) {
+                    h.currentTransparency = static_cast<std::int8_t>(tr.value());
+                });
             } else {
                 auto lw = parseLineweight(v.text);
                 if (!lw) {
@@ -327,8 +347,50 @@ public:
     }
 };
 
+// TRANSPARENCY: the objects' own transparency (the layer's applies for ByLayer).
+class TransparencyCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TRANSPARENCY"; }
+    std::string_view description() const override {
+        return "Set the transparency of the selected objects";
+    }
+
+    Task run(CommandContext& ctx) override {
+        ctx.setUndoLabel("TRANSPARENCY");
+        auto sel = co_await ctx.getSelection("Select objects");
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        cmd::StringOptions so;
+        so.defaultValue = "ByLayer";
+        auto in =
+            co_await ctx.getString("Transparency (ByLayer, ByBlock or 0 to 90) <ByLayer>", so);
+        if (!in.ok())
+            co_return;
+        auto tr = parseTransparency(in.text.empty() ? "ByLayer" : in.text);
+        if (!tr) {
+            ctx.message(tr.error().message);
+            co_return;
+        }
+        CommonEdit edit;
+        edit.transparency = tr.value();
+        auto r = applyCommon(ctx.doc(), ctx.tx(), sel.ids, edit, std::nullopt);
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message(std::to_string(r.value().changed) + " object(s) are " +
+                    transparencyName(tr.value()) + " transparent." +
+                    (r.value().skippedLocked ? " " + std::to_string(r.value().skippedLocked) +
+                                                   " on locked layers were not changed."
+                                             : ""));
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeTransparencyCommand() {
+    return std::make_unique<TransparencyCommand>();
+}
 std::unique_ptr<cmd::Command> makeCurrentCommand() {
     return std::make_unique<CurrentCommand>();
 }

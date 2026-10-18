@@ -93,6 +93,7 @@ CommonProps readCommon(const Document& doc, const std::vector<EntityId>& ids,
         accumulate(p.linetype, first, c.linetype);
         accumulate(p.linetypeScale, first, static_cast<double>(c.linetypeScale));
         accumulate(p.lineweight, first, c.lineweight);
+        accumulate(p.transparency, first, static_cast<int>(c.transparency));
         ++p.count;
     }
     return p;
@@ -105,6 +106,8 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
         return makeError(ErrorCode::NotFound, "No such layer.");
     if (edit.color && (edit.color->kind == ColorKind::ByParent))
         return makeError(ErrorCode::InvalidArgument, "ByParent applies to layers only.");
+    if (edit.transparency && !validObjectTransparency(*edit.transparency))
+        return makeError(ErrorCode::InvalidArgument, "Transparency must be 0 to 90.");
     if (edit.linetypeScale && !(*edit.linetypeScale > 0 && std::isfinite(*edit.linetypeScale)))
         return makeError(ErrorCode::InvalidArgument, "Linetype scale must be greater than zero.");
     EditSummary sum;
@@ -127,6 +130,8 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
                 x.common.linetypeScale = static_cast<float>(*edit.linetypeScale);
             if (edit.lineweight)
                 x.common.lineweight = *edit.lineweight;
+            if (edit.transparency)
+                x.common.transparency = static_cast<std::int8_t>(*edit.transparency);
         });
         if (!r)
             return r.error();

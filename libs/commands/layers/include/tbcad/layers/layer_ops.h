@@ -70,6 +70,7 @@ Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id,
                               LinetypeId linetype);
 Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id,
                                 LineWeight weight);
+Result<void> setLayerTransparency(const Document& doc, Transaction& tx, LayerId id, int percent);
 // Turns off every layer except `keep`, its ancestors and its descendants.
 Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep);
 // Same, keeping several layers (each with its ancestors and descendants).
@@ -90,6 +91,10 @@ std::string colorName(Color c);
 // Millimetres ("0.25"), "Default", "ByLayer", "ByBlock", "ByParent".
 Result<LineWeight> parseLineweight(std::string_view text);
 std::string lineweightName(LineWeight w);
+// "ByLayer", "ByBlock" or 0 to 90 (a trailing % is allowed); returns the value as stored in
+// EntityCommon::transparency.
+Result<int> parseTransparency(std::string_view text);
+std::string transparencyName(int v);
 // Linetype by name, "#id", "ByLayer", "ByBlock" or "ByParent".
 Result<LinetypeId> parseLinetype(const Document& doc, std::string_view text);
 // Like parseLinetype, but a linetype that ships with TBCAD ("Dash", "Center", ...) and is not in

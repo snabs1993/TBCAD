@@ -98,6 +98,18 @@ struct Builder {
 
     // Plotted colour: the style table's entry for palette colours, then the global colour mode.
     Rgba color(Rgba c) const {
+        // Translucent colours (transparency, dense hatch tones) are mixed with the white sheet
+        // after the pen of the style table has been applied: a black pen at 50 % prints grey.
+        if (c.a < 255 && !isBackgroundColor(c) && s.styleTable) {
+            const double k = c.a / 255.0;
+            Rgba opaque = c;
+            opaque.a = 255;
+            const Rgba pen = color(opaque);
+            auto mix = [k](std::uint8_t v) {
+                return static_cast<std::uint8_t>(std::lround(v * k + 255.0 * (1.0 - k)));
+            };
+            return {mix(pen.r), mix(pen.g), mix(pen.b), 255};
+        }
         if (s.styleTable) {
             // True colours use the entry of the nearest palette colour, so monochrome.ctb also
             // blackens them. An entry that keeps the object colour leaves them as they are.
@@ -297,6 +309,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     ctx.pixelSizeMm = s.hairlineMm / lay.paperPerUnit;
     ctx.defaultLineweightMm = 0.25;
     ctx.byBlockLineweightMm = 0.25;
+    ctx.showTransparency = s.transparency;
     // Slight growth so lines on the border are not culled away.
     const BBox2 cull = lay.area.inflated(1.0 / lay.paperPerUnit);
 

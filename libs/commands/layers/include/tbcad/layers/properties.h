@@ -27,6 +27,7 @@ struct CommonProps {
     Shared<LinetypeId> linetype{};
     Shared<double> linetypeScale{};
     Shared<LineWeight> lineweight{};
+    Shared<int> transparency{};
 };
 
 // Reads the common properties of `ids` (ids that no longer exist are skipped). With a `kind`
@@ -40,7 +41,10 @@ struct CommonEdit {
     std::optional<LinetypeId> linetype{};
     std::optional<double> linetypeScale{};
     std::optional<LineWeight> lineweight{};
-    bool empty() const { return !layer && !color && !linetype && !linetypeScale && !lineweight; }
+    std::optional<int> transparency{};  // percent, ByLayer or ByBlock
+    bool empty() const {
+        return !layer && !color && !linetype && !linetypeScale && !lineweight && !transparency;
+    }
 };
 
 // Applies the edit to every entity in `ids` (optionally only one kind). Entities on locked

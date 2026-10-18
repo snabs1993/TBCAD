@@ -277,6 +277,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
                          selection_.end());
     }
     session_->sync->setPixelSize(camera_.pixelSizeMm());
+    session_->sync->setShowTransparency(settings_.getBool("view.transparency", true));
     session_->sync->rebuildAll(render::Scene::suggestTileSize(drawingExtents()));
     scene_.setSelected(selection_);
     ++generation_;
@@ -2201,6 +2202,19 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("osnap", "OSNAP", "drafting.osnap");
     toggle("dyn", "DYN", "drafting.dynInput", true);
     toggle("lwt", "LWT", "view.lineweights", true);
+    // Transparency is baked into the scene's colours, so the switch rebuilds the scene.
+    ui.addStatusToggle(
+        "tpy", "TPY", [this] { return settings_.getBool("view.transparency", true); },
+        [this](bool on) {
+            settings_.setBool("view.transparency", on);
+            if (!session_)
+                return;
+            session_->sync->setShowTransparency(on);
+            session_->sync->rebuildAll(scene_.tileSize());
+            scene_.setSelected(selection_);
+            ++generation_;
+            lastTessellatedFor_ = camera_;
+        });
     // Active-only mode lives in the drawing (Header::activeOnly); the command that owns it is
     // registered by the layers module, so this is a no-op in builds without it.
     ui.addStatusToggle(

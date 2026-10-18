@@ -461,3 +461,32 @@ TEST_CASE("-LAYWALK shows only the picked layers and restores the earlier state"
     CHECK(on("Doors"));
     CHECK_FALSE(on("Hidden"));  // it was off before the walk
 }
+
+TEST_CASE("transparency: TRANSPARENCY, -PROP, -LAYER and CETRANSPARENCY") {
+    Fixture f;
+    EntityId id = f.addLine();
+    f.host.setSelection({id});
+    auto r = f.run("TRANSPARENCY", {"60"});
+    CHECK(r.finished);
+    CHECK(f.doc.find(id)->common.transparency == 60);
+    f.host.setSelection({id});
+    f.run("TRANSPARENCY", {"ByBlock"});
+    CHECK(f.doc.find(id)->common.transparency == kTransparencyByBlock);
+    f.host.setSelection({id});
+    f.run("TRANSPARENCY", {"95"});  // refused, the old value stays
+    CHECK(f.doc.find(id)->common.transparency == kTransparencyByBlock);
+    f.host.setSelection({id});
+    f.run("-PROP", {"Transparency", "25%", cmd::ScriptItem::enter()});
+    CHECK(f.doc.find(id)->common.transparency == 25);
+
+    f.run("-LAYER", {"Transparency", "40", "0", cmd::ScriptItem::enter()});
+    CHECK(f.doc.layer(kLayerZero)->transparency == 40);
+    f.run("-LAYER", {"Transparency", "ByBlock", "0", cmd::ScriptItem::enter()});
+    CHECK(f.doc.layer(kLayerZero)->transparency == 40);  // a layer has no ByBlock
+
+    f.run("CETRANSPARENCY", {"30"});
+    CHECK(f.doc.header().currentTransparency == 30);
+    Entity e{{}, LineData{{0, 0}, {1, 1}}};
+    applyCurrentProperties(f.doc.header(), e);
+    CHECK(e.common.transparency == 30);
+}

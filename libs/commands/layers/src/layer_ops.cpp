@@ -403,6 +403,13 @@ Result<void> setLayerLineweight(const Document&, Transaction& tx, LayerId id, Li
     return editLayer(tx, id, [&](Layer& l) { l.lineweight = weight; });
 }
 
+Result<void> setLayerTransparency(const Document&, Transaction& tx, LayerId id, int percent) {
+    if (percent < 0 || percent > kTransparencyMax)
+        return err(ErrorCode::InvalidArgument, "A layer transparency is 0 to 90.");
+    return editLayer(tx, id,
+                     [&](Layer& l) { l.transparency = static_cast<std::uint8_t>(percent); });
+}
+
 Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep) {
     if (keep.empty())
         return err(ErrorCode::InvalidArgument, "No layers to isolate.");
@@ -569,6 +576,28 @@ std::string lineweightName(LineWeight w) {
     char buf[32];
     std::snprintf(buf, sizeof buf, "%.2f mm", w.toMm());
     return buf;
+}
+
+Result<int> parseTransparency(std::string_view text) {
+    std::string t = lower(trimView(text));
+    if (t == "bylayer")
+        return int{kTransparencyByLayer};
+    if (t == "byblock")
+        return int{kTransparencyByBlock};
+    if (!t.empty() && t.back() == '%')
+        t.pop_back();
+    double v = 0;
+    if (!parseDouble(t, v) || v < 0 || v > kTransparencyMax || v != std::floor(v))
+        return err(ErrorCode::Parse, "Transparency must be ByLayer, ByBlock or 0 to 90.");
+    return static_cast<int>(v);
+}
+
+std::string transparencyName(int v) {
+    if (v == kTransparencyByLayer)
+        return "ByLayer";
+    if (v == kTransparencyByBlock)
+        return "ByBlock";
+    return std::to_string(v) + "%";
 }
 
 Result<LinetypeId> parseLinetype(const Document& doc, std::string_view text) {
