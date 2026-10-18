@@ -536,10 +536,13 @@ public:
                         out.items.emplace_back(std::move(pl));
                 };
                 po.allowNone = outline.size() >= 3;
-                auto p = co_await ctx.getPoint(outline.size() < 3
-                                                   ? "Specify point on the sheet (mm)"
-                                                   : "Specify next point or [Close] <accept>",
-                                               po);
+                const std::string prompt =
+                    outline.size() < 3
+                        ? "Specify point " + std::to_string(outline.size() + 1) +
+                              " of the outline on the sheet (mm)"
+                        : "Specify point " + std::to_string(outline.size() + 1) +
+                              " or [Close] <accept " + std::to_string(outline.size()) + " points>";
+                auto p = co_await ctx.getPoint(prompt, po);
                 if (p.status == Status::Keyword || p.status == Status::None)
                     break;
                 if (!p.ok())

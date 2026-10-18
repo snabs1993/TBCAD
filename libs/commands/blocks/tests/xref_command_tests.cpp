@@ -259,6 +259,17 @@ TEST_CASE("IMAGECLIP keeps a rectangle of the picture - Delete shows it all") {
     CHECK(p.v0 == doctest::Approx(0.8));
     CHECK(p.v1 == doctest::Approx(1.0));
     CHECK(p.clipped());
+    // What is drawn shrinks to the rectangle.
+    {
+        underlay::ImageCache cache;
+        auto resolve = [](std::string_view s) { return fs::path(std::string(s)); };
+        auto imgs = underlay::collectImages(f.doc, cache, resolve);
+        REQUIRE(imgs.size() == 1);
+        CHECK(imgs[0].corners[0].x == doctest::Approx(20));
+        CHECK(imgs[0].corners[2].x == doctest::Approx(40));
+        CHECK(imgs[0].corners[2].y == doctest::Approx(10));
+        CHECK(imgs[0].corners[0].y == doctest::Approx(0));
+    }
     f.host->run("IMAGECLIP", {"Delete"});
     CHECK_FALSE(underlay::imageParams(f.doc.header(), "site").clipped());
 }

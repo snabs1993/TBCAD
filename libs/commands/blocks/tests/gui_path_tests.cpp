@@ -4,6 +4,7 @@
 
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/ui/app_core.h"
 
@@ -39,4 +40,45 @@ TEST_CASE("attributes made with -ATTDEF and caught by a crossing window both rea
     const BlockDef* def = core.document().blockByName("RT4");
     REQUIRE(def);
     CHECK(def->entities.size() == 2);
+}
+
+TEST_CASE("VPCLIP takes its outline points from mouse clicks on the sheet") {
+    fs::path dir = fs::temp_directory_path() / "tbcad_gui_path_vpclip";
+    fs::remove_all(dir);
+    cmd::Registry registry;
+    registerAllCommands(registry);
+    ui::AppCore core(registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", {{20, 20}, {220, 170}}, {0, 0}, 1).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.zoomExtents();
+    core.updateFrame();
+    core.submitText("VPCLIP");
+    if (core.runner().active() &&
+        core.runner().prompt()->text.find("viewport") != std::string::npos)
+        core.submitText("1");
+    core.submitText("Polygonal");
+    REQUIRE(core.runner().active());
+    auto clickAt = [&](Vec2 w) {
+        core.updateFrame();
+        core.click({core.camera().worldToScreen(w), false, false});
+    };
+    clickAt({30, 30});
+    REQUIRE(core.runner().active());
+    CHECK(core.runner().prompt()->text.find("point 2") != std::string::npos);
+    clickAt({200, 40});
+    CHECK(core.runner().prompt()->text.find("point 3") != std::string::npos);
+    clickAt({100, 160});
+    REQUIRE(core.runner().active());
+    CHECK(core.runner().prompt()->text.find("Close") != std::string::npos);
+    core.submitText("");
+    const auto lay = layout::findLayout(core.document(), "A");
+    REQUIRE(lay);
+    REQUIRE(lay->findViewport(1));
+    CHECK(lay->findViewport(1)->clip.size() == 3);
 }
