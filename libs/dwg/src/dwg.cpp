@@ -127,6 +127,27 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
         report.info(code::kSkippedObject, drawing.walkSummary);
+    {
+        std::map<std::string, std::size_t> perLayer;
+        std::size_t layersWith = 0;
+        for (const auto& [h, l] : drawing.layers)
+            if (l.transparency != 0)
+                ++layersWith;
+        for (const auto& e : drawing.entities)
+            if (e.transparency != 0) {
+                const auto l = drawing.layers.find(e.layer);
+                ++perLayer[l == drawing.layers.end() ? std::string("?") : l->second.name];
+            }
+        if (layersWith != 0 || !perLayer.empty()) {
+            std::string t = "transparency: " + std::to_string(layersWith) +
+                            " layers carry it; entities with their own transparency per layer:";
+            std::size_t shown = 0;
+            for (const auto& [name, c] : perLayer)
+                if (shown++ < 12)
+                    t += " " + name + " x" + std::to_string(c);
+            report.info(code::kSkippedObject, t);
+        }
+    }
     if (!drawing.entityFailures.empty()) {
         std::string t = "entities left out (damaged / number out of range):";
         for (const auto& [type, c] : drawing.entityFailures)
