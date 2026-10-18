@@ -2543,7 +2543,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r69: R2007 literal runs of 7, 11, 13 and 15 bytes read in the right order (all section "
+    return "r70: compressed streams of the small sections in the trace, converter fails (and "
+           "writes nothing) when an unreadable DWG gives an empty drawing; r69: R2007 literal runs "
+           "of 7, 11, 13 and 15 bytes read in the right order (all section "
            "names of a real file read); r68: R2007 odd section names no longer stop the map scan, "
            "section map stream traced; "
            "r67: R2007 literal runs in groups of 32 and more cuts, streams dumped in the trace, "
