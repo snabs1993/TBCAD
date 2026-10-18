@@ -19,6 +19,10 @@ using KeptGroups = std::vector<std::pair<int, std::string>>;
 
 inline constexpr std::string_view kKeptVarPrefix = "dxf.hv.";  // + "$NAME"
 inline constexpr const char* kKeptClassesKey = "dxf.classes";
+// OBJECTS records kept as they are (handles as @N tokens) and the root dictionary entries that
+// lead to them ("name TAB @N" lines).
+inline constexpr const char* kKeptObjectsKey = "dxf.objects";
+inline constexpr const char* kKeptObjectRootKey = "dxf.objroot";
 
 inline void packGroup(std::string& out, int code, std::string_view value) {
     out += std::to_string(code);

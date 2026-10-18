@@ -111,6 +111,8 @@ private:
     void skipSection(RecordReader& rr);
     void processObjects(RecordReader& rr);
     void processClasses(RecordReader& rr);
+    void storeObject(const Record& r);
+    void keepObjects();
     BlockId blockFor(std::string_view dxfName);
     void finish();
     void finishLayouts();
@@ -207,6 +209,14 @@ private:
     std::unordered_map<std::string, std::int64_t> xrecNumbers_{};
     // Items of every XRECORD by handle, for extension dictionaries of entities.
     std::unordered_map<std::string, std::vector<DataItem>> xrecItems_{};
+    // Every OBJECTS record as read (groups as text), for the part that is kept as it is.
+    struct ObjRec {
+        std::string type{};
+        std::vector<std::pair<int, std::string>> g{};
+    };
+    std::unordered_map<std::string, ObjRec> objStore_{};
+    std::size_t objStoreBytes_ = 0;
+    std::string objRoot_{};  // handle of the root dictionary
     ExtData extOf(const Record& r);
     void resolveExtDictionaries();
     void applyLayerAlphaXrecords();

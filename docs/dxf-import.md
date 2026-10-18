@@ -36,7 +36,8 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | BLOCKS | `BlockDef` (name, base point, entities); `*Model_Space` and `*Paper_Space*` are skipped; anonymous blocks (`*D1`, `*U2`) are kept with `anonymous = true`; a block used before it is defined works |
 | ENTITIES | see below; paper space entities (group 67 = 1) are skipped and counted |
 | CLASSES | kept in `Header::custom` (`dxf.classes`) and written back |
-| OBJECTS, THUMBNAILIMAGE | skipped |
+| OBJECTS | LAYOUT, IMAGEDEF, DICTIONARY (for the lookups below) and the annotation-scale note are read. Every other object that hangs off the root dictionary under a name the writer does not make itself (materials, visual styles, multileader and table styles, page setups, application dictionaries and data) is kept in `Header::custom` (`dxf.objects`, `dxf.objroot`) with its handles replaced by tokens, and written back with new handles; a pointer to something that is not kept (an entity, a table record, a layout) becomes the null handle. Reactors and extension dictionaries of these objects are not kept |
+| THUMBNAILIMAGE | skipped |
 
 | Entity | Result |
 |---|---|

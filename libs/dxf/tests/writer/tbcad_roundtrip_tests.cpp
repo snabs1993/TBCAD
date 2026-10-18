@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
+#include <sstream>
 
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
@@ -227,6 +229,99 @@ TEST_CASE("an entity type without a reader is written back as it was, until it i
         tx.commit();
     }
     CHECK(exportText(d).find("\r\n3DSOLID\r\n") == std::string::npos);
+}
+
+}  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("objects of other programs hang on under their dictionary with fresh handles") {
+    const std::string src =
+        "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  5\nE1\n  8\n0\n 10\n0\n 20\n0\n 11\n5\n 21\n5\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n"
+        "  0\nDICTIONARY\n  5\nC\n330\n0\n100\nAcDbDictionary\n281\n     1\n"
+        "  3\nACAD_GROUP\n350\nD1\n  3\nMYAPP_DATA\n350\nA1\n  3\nACAD_MATERIAL\n350\nB1\n"
+        "  0\nDICTIONARY\n  5\nD1\n330\nC\n100\nAcDbDictionary\n281\n     1\n"
+        "  0\nDICTIONARY\n  "
+        "5\nA1\n102\n{ACAD_REACTORS\n330\nC\n102\n}\n330\nC\n100\nAcDbDictionary\n"
+        "281\n     1\n  3\nSETTINGS\n350\nA2\n"
+        "  0\nXRECORD\n  5\nA2\n330\nA1\n100\nAcDbXrecord\n280\n     1\n  1\nvalue \xE0\xB8\x81\n"
+        " 70\n     7\n340\nE1\n"
+        "  0\nDICTIONARY\n  5\nB1\n330\nC\n100\nAcDbDictionary\n281\n     1\n  3\nSteel\n350\nB2\n"
+        "  0\nMATERIAL\n  5\nB2\n330\nB1\n100\nAcDbMaterial\n  1\nSteel\n 43\n0.25\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+    Report r1;
+    Result<ImportResult> first = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(first.ok());
+
+    auto saved = io::writeTbcadToMemory(*first.value().document);
+    REQUIRE(saved.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(saved.value(), ioReport);
+    REQUIRE(reopened.ok());
+    Report r2;
+    Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string& text = out.value().bytes;
+
+    // the groups of the output, as code/value pairs
+    std::vector<std::pair<int, std::string>> g;
+    {
+        std::istringstream in(text);
+        std::string a, b;
+        while (std::getline(in, a) && std::getline(in, b)) {
+            while (!a.empty() && (a.back() == '\r' || a.back() == ' '))
+                a.pop_back();
+            while (!b.empty() && b.back() == '\r')
+                b.pop_back();
+            g.emplace_back(std::atoi(a.c_str()), b);
+        }
+    }
+    auto record = [&](const std::string& type) {
+        std::vector<std::pair<int, std::string>> rec;
+        for (std::size_t i = 0; i < g.size(); ++i)
+            if (g[i].first == 0 && g[i].second == type) {
+                for (++i; i < g.size() && g[i].first != 0; ++i)
+                    rec.push_back(g[i]);
+                break;
+            }
+        return rec;
+    };
+    auto find = [](const std::vector<std::pair<int, std::string>>& rec, int code) {
+        for (const auto& [c, v] : rec)
+            if (c == code)
+                return v;
+        return std::string("<none>");
+    };
+
+    const auto xr = record("XRECORD");
+    REQUIRE(!xr.empty());
+    CHECK(find(xr, 1) == "value \\U+0E01");
+    CHECK(find(xr, 70) == "7");
+    CHECK(find(xr, 340) == "0");  // the line is not an object that is kept
+    const auto mat = record("MATERIAL");
+    REQUIRE(!mat.empty());
+    CHECK(find(mat, 43) == "0.25");
+
+    // each handle is defined once, and every pointer finds its target
+    std::set<std::string> defined;
+    for (const auto& [c, v] : g)
+        if (c == 5)
+            CHECK_MESSAGE(defined.insert(v).second, "handle " << v << " defined twice");
+    for (const auto& [c, v] : g)
+        if (c >= 330 && c <= 369 && v != "0")
+            CHECK_MESSAGE(defined.count(v) > 0, "dangling pointer " << v);
+
+    // the xrecord is owned by the dictionary under MYAPP_DATA, which hangs on the root
+    std::string myapp;
+    for (std::size_t i = 0; i + 1 < g.size(); ++i)
+        if (g[i].first == 3 && g[i].second == "MYAPP_DATA")
+            myapp = g[i + 1].second;
+    CHECK(!myapp.empty());
+    CHECK(find(xr, 330) != "<none>");
 }
 
 }  // namespace tbcad::dxf
