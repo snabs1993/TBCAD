@@ -177,6 +177,30 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             writeColor(dsty, r.textColor);
         }
 
+        // Alternate units and tolerances: a separate chunk, only for the styles that use them, so
+        // that older programs still read the file.
+        ByteWriter dstx;
+        std::size_t dstxCount = 0;
+        for (const auto& [id, r] : doc.dimStyles()) {
+            if (!r.altUnits && r.altScale == 1 && r.altUnit == LengthUnit::Inch &&
+                r.altPrecision == 2 && r.altPrefix.empty() && r.altSuffix.empty() &&
+                r.tolerance == DimTolerance::None && r.tolUpper == 0 && r.tolLower == 0 &&
+                r.tolPrecision == 2)
+                continue;
+            dstx.varint(id.value);
+            dstx.u8(r.altUnits ? 1 : 0);
+            dstx.f64(r.altScale);
+            dstx.u8(static_cast<std::uint8_t>(r.altUnit));
+            dstx.i32(r.altPrecision);
+            dstx.varint(st.intern(r.altPrefix));
+            dstx.varint(st.intern(r.altSuffix));
+            dstx.u8(static_cast<std::uint8_t>(r.tolerance));
+            dstx.f64(r.tolUpper);
+            dstx.f64(r.tolLower);
+            dstx.i32(r.tolPrecision);
+            ++dstxCount;
+        }
+
         // Layers carry their parent id; ByParent colour / linetype / lineweight are stored as the
         // special values of those fields (colour kind 4, linetype 0xFFFFFFFD, lineweight -4).
         ByteWriter layr;
@@ -435,6 +459,12 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             addRaw(kTsth, std::move(body.bytes()));
         }
         addRaw(kDsty, std::move(dsty.bytes()));
+        if (dstxCount > 0) {
+            ByteWriter body;
+            body.varint(dstxCount);
+            body.raw(dstx.bytes());
+            addRaw(kDstx, std::move(body.bytes()));
+        }
         addRaw(kLayr, std::move(layr.bytes()));
         if (writeLvls)
             addRaw(kLvls, std::move(lvls.bytes()));

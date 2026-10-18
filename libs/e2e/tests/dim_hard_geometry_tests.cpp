@@ -288,3 +288,80 @@ TEST_CASE("changing a dimension style redraws the dimensions that use it, undo a
     REQUIRE(undo.redo(doc));
     CHECK(scene.bounds().max.y == doctest::Approx(big.max.y));
 }
+
+TEST_CASE("alternate units and tolerances: command, text, undo, .tbcad and DXF") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    REQUIRE(host.run("DIMSTYLE", {"New", "Plan", "Done"}).finished);
+    REQUIRE(host.run("DIMSTYLE", {"Edit",      "Plan",         "AltUnits", "On",        "AltUnit",
+                                  "in",        "AltPrecision", "1",        "AltSuffix", "in",
+                                  "Tolerance", "Deviation",    "TolUpper", "0.05",      "TolLower",
+                                  "0.02",      "TolPrecision", "2",        "Done",      "Done"})
+                .finished);
+    REQUIRE(host.run("DIMSTYLE", {"Current", "Plan", "Done"}).finished);
+    const DimStyle* plan = doc.dimStyleByName("Plan");
+    REQUIRE(plan);
+    CHECK(plan->altUnits);
+    CHECK(plan->altUnit == LengthUnit::Inch);
+    CHECK(plan->tolerance == DimTolerance::Deviation);
+    // Bad values change nothing.
+    const std::string before = canonicalDump(doc);
+    (void)host.run("DIMSTYLE", {"Edit", "Plan", "TolUpper", "-1", "AltScale", "0", "AltUnit", "yd",
+                                "Tolerance", "Wide", "Done", "Done"});
+    CHECK(canonicalDump(doc) == before);
+
+    REQUIRE(host.run("DIMLINEAR", {"0,0", "254,0", "100,20"}).finished);
+    EntityId dimId{};
+    doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    REQUIRE(dimId);
+    auto textOf = [&](const Document& d, EntityId id) {
+        const auto* dd = entityAs<DimensionData>(*d.find(id));
+        return dim::dimensionText(dim::styleOf(d, dd->style), *dd);
+    };
+    CHECK(textOf(doc, dimId) == "254.00 +0.05 -0.02 [10.0in]");
+
+    // Each tolerance mode survives the file and DXF with the same text.
+    for (const char* mode : {"Symmetrical", "Deviation", "Limits", "None"}) {
+        CAPTURE(mode);
+        REQUIRE(host.run("DIMSTYLE", {"Edit", "Plan", "Tolerance", mode, "Done", "Done"}).finished);
+        const std::string want = textOf(doc, dimId);
+        const auto file = std::filesystem::temp_directory_path() / "tbcad_dimtol.tbcad";
+        REQUIRE(io::writeTbcad(doc, file).ok());
+        io::IoReport ir;
+        auto back = io::readTbcad(file, ir);
+        REQUIRE(back.ok());
+        CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+        std::error_code ec;
+        std::filesystem::remove(file, ec);
+
+        dxf::Report er;
+        auto out = dxf::exportDxf(doc, dxf::ExportOptions{}, er);
+        REQUIRE(out.ok());
+        const std::string& text = out.value().bytes;
+        std::vector<std::byte> bytes(text.size());
+        for (std::size_t i = 0; i < text.size(); ++i)
+            bytes[i] = static_cast<std::byte>(text[i]);
+        dxf::Report imr;
+        auto in = dxf::importDxf(bytes, dxf::ImportOptions{}, imr);
+        REQUIRE_MESSAGE(in.ok(), (in.ok() ? "" : in.error().message));
+        EntityId got{};
+        in.value().document->forEachEntity([&](const Entity& e) {
+            if (entityAs<DimensionData>(e))
+                got = e.common.id;
+        });
+        REQUIRE(got);
+        CHECK(textOf(*in.value().document, got) == want);
+    }
+
+    // The style edits undo and redo as single steps.
+    const std::string withNone = canonicalDump(doc);
+    REQUIRE(host.undo());
+    CHECK(canonicalDump(doc) != withNone);
+    REQUIRE(host.redo());
+    CHECK(canonicalDump(doc) == withNone);
+}

@@ -222,6 +222,39 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
     if (ImGui::Checkbox("Suppress trailing zeros", &trail))
         pc.runCommand(editLine(s.name, "TrailingZeros", trail ? "Suppress" : "Show"));
 
+    ImGui::SeparatorText("Alternate units");
+    bool alt = s.altUnits;
+    if (ImGui::Checkbox("Show alternate units", &alt))
+        pc.runCommand(editLine(s.name, "AltUnits", alt ? "On" : "Off"));
+    ImGui::BeginDisabled(!s.altUnits);
+    enumCombo(pc, s, "Alt units", "AltUnit", static_cast<int>(s.altUnit),
+              {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
+    realField(pc, s, "Multiplier", "AltScale", s.altScale);
+    int altPrec = s.altPrecision;
+    ImGui::SetNextItemWidth(fieldWidth());
+    ImGui::InputInt("Alt decimals", &altPrec, 1, 1, kNumber);
+    if (ImGui::IsItemDeactivatedAfterEdit() && altPrec != s.altPrecision)
+        pc.runCommand(editLine(s.name, "AltPrecision", std::to_string(std::clamp(altPrec, 0, 8))));
+    textField(pc, s, "Alt prefix", "AltPrefix", s.altPrefix);
+    textField(pc, s, "Alt suffix", "AltSuffix", s.altSuffix);
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Tolerance");
+    enumCombo(pc, s, "Tolerance", "Tolerance", static_cast<int>(s.tolerance),
+              {{"None", "None"},
+               {"Symmetrical", "Symmetrical"},
+               {"Deviation", "Deviation"},
+               {"Limits", "Limits"}});
+    ImGui::BeginDisabled(s.tolerance == DimTolerance::None);
+    realField(pc, s, "Upper", "TolUpper", s.tolUpper);
+    realField(pc, s, "Lower", "TolLower", s.tolLower);
+    int tolPrec = s.tolPrecision;
+    ImGui::SetNextItemWidth(fieldWidth());
+    ImGui::InputInt("Tol decimals", &tolPrec, 1, 1, kNumber);
+    if (ImGui::IsItemDeactivatedAfterEdit() && tolPrec != s.tolPrecision)
+        pc.runCommand(editLine(s.name, "TolPrecision", std::to_string(std::clamp(tolPrec, 0, 8))));
+    ImGui::EndDisabled();
+
     ImGui::SeparatorText("Scale");
     realField(pc, s, "Overall scale", "Scale", s.overallScale);
 }

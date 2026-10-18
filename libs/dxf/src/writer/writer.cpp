@@ -563,6 +563,18 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         if (ds.roundOff > 0)
             o.d(45, ds.roundOff);
         o.d(46, ds.dimLineExtension);
+        if (ds.tolerance != DimTolerance::None) {
+            o.i(ds.tolerance == DimTolerance::Limits ? 72 : 71, 1);
+            o.d(47, ds.tolUpper);
+            o.d(48, ds.tolerance == DimTolerance::Symmetrical ? ds.tolUpper : ds.tolLower);
+        }
+        if (ds.altUnits) {
+            o.i(170, 1);
+            o.d(143, ds.altScale / mmPerUnit(ds.altUnit));
+            o.i(171, std::clamp(ds.altPrecision, 0, 16));
+            if (!ds.altPrefix.empty() || !ds.altSuffix.empty())
+                o.str(4, ds.altPrefix + "[]" + ds.altSuffix);
+        }
         o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);
         o.i(74, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);
         o.i(77, ds.textPlacement == DimTextPlacement::AboveLine ? 1 : 0);
@@ -572,8 +584,11 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(176, clr(ds.dimLineColor));
         o.i(177, clr(ds.extLineColor));
         o.i(178, clr(ds.textColor));
-        if (!r12_)
+        if (!r12_) {
             o.i(271, std::clamp(ds.precision, 0, 16));
+            if (ds.tolerance != DimTolerance::None)
+                o.i(272, std::clamp(ds.tolPrecision, 0, 16));
+        }
     }
     tableEnd(o);
 }

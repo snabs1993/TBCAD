@@ -43,6 +43,19 @@ where the cursor is.
 override replaces everything, with `<>` standing for the measured text. `overallScale` multiplies
 text height, gap, arrow size and the extension distances, never the measurement.
 
+### Alternate units and tolerances
+
+DIMSTYLE has `AltUnits` (On/Off), `AltUnit` (mm, cm, m, in, ft), `AltScale` (a multiplier applied to the
+millimetres first), `AltPrecision`, `AltPrefix` and `AltSuffix`: the text gets ` [alternate]` after the
+measurement (length dimensions only). `Tolerance` is None, Symmetrical (`100.00 ±0.05`), Deviation
+(`100.00 +0.05 -0.02`) or Limits (`100.05 / 99.98`, replacing the measurement), with `TolUpper`, `TolLower`
+(millimetres; degrees for angular dimensions) and `TolPrecision`. The order is kind prefix, style prefix,
+measurement, style suffix, tolerance, alternate; `<>` in a text override stands for all of it. The text is
+one line (not stacked), so the fit rules use its real width. Files: `.tbcad` keeps both in an extra DSTX chunk
+older programs skip; DXF writes DIMTOL/DIMLIM/DIMTP/DIMTM/DIMTDEC and DIMALT/DIMALTF/DIMALTD/DIMAPOST and reads
+them (also in a dimension's own DSTYLE overrides). DXF cannot say "inches" for the alternate value, so it comes
+back as millimetres times a factor with the same text.
+
 ## Fit rules (linear and aligned)
 
 `L` is the distance between the extension lines, `tw` the text width, `g` the text gap and `a`

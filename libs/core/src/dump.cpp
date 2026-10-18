@@ -444,7 +444,22 @@ std::string canonicalDump(const Document& doc) {
         o.quoted(r.suffix);
         o << " round" << r.roundOff << " scale" << r.overallScale << " slz"
           << r.suppressLeadingZeros << " stz" << r.suppressTrailingZeros << " c" << r.dimLineColor
-          << "/" << r.extLineColor << "/" << r.textColor << "\n";
+          << "/" << r.extLineColor << "/" << r.textColor;
+        // Alternate units and tolerances are shown only when used, so drawings without them dump
+        // as before.
+        if (r.altUnits || !r.altPrefix.empty() || !r.altSuffix.empty() || r.altScale != 1 ||
+            r.altUnit != LengthUnit::Inch || r.altPrecision != 2) {
+            o << " alt" << r.altUnits << "/" << r.altScale << "/" << static_cast<int>(r.altUnit)
+              << "/" << r.altPrecision << "/";
+            o.quoted(r.altPrefix);
+            o << "/";
+            o.quoted(r.altSuffix);
+        }
+        if (r.tolerance != DimTolerance::None || r.tolUpper != 0 || r.tolLower != 0 ||
+            r.tolPrecision != 2)
+            o << " tol" << static_cast<int>(r.tolerance) << "/" << r.tolUpper << "/" << r.tolLower
+              << "/" << r.tolPrecision;
+        o << "\n";
     }
     for (const auto& [id, r] : doc.blocks()) {
         o << "block " << id << " ";

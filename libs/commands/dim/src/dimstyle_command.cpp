@@ -83,7 +83,9 @@ const std::vector<std::string> kProps = {
     "TextHeight",   "TextGap",       "TextStyle", "ArrowType", "ArrowSize",    "ExtOffset",
     "ExtExtension", "LineExtension", "Placement", "Alignment", "Units",        "Precision",
     "Prefix",       "Suffix",        "RoundOff",  "Scale",     "LeadingZeros", "TrailingZeros",
-    "LineColor",    "ExtColor",      "TextColor"};
+    "LineColor",    "ExtColor",      "TextColor", "AltUnits",  "AltScale",     "AltUnit",
+    "AltPrecision", "AltPrefix",     "AltSuffix", "Tolerance", "TolUpper",     "TolLower",
+    "TolPrecision"};
 
 std::string num(double v) {
     char buf[40];
@@ -109,6 +111,7 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
     const TextStyle* ts = s.textStyle.value ? doc.textStyle(s.textStyle) : nullptr;
     const char* arrow[] = {"Filled", "Open", "Tick", "Dot", "None"};
     const char* unit[] = {"mm", "cm", "m", "in", "ft"};
+    const char* tol[] = {"None", "Symmetrical", "Deviation", "Limits"};
     return {
         {"TextHeight", num(s.textHeight)},
         {"TextGap", num(s.textGap)},
@@ -131,6 +134,16 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"LineColor", colourText(s.dimLineColor)},
         {"ExtColor", colourText(s.extLineColor)},
         {"TextColor", colourText(s.textColor)},
+        {"AltUnits", s.altUnits ? "On" : "Off"},
+        {"AltScale", num(s.altScale)},
+        {"AltUnit", unit[static_cast<int>(s.altUnit)]},
+        {"AltPrecision", std::to_string(s.altPrecision)},
+        {"AltPrefix", s.altPrefix.empty() ? "none" : s.altPrefix},
+        {"AltSuffix", s.altSuffix.empty() ? "none" : s.altSuffix},
+        {"Tolerance", tol[static_cast<int>(s.tolerance)]},
+        {"TolUpper", num(s.tolUpper)},
+        {"TolLower", num(s.tolLower)},
+        {"TolPrecision", std::to_string(s.tolPrecision)},
     };
 }
 
@@ -226,21 +239,64 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             return "Alignment is WithLine or Horizontal.";
         return {};
     }
-    if (same(key, "Units")) {
+    if (same(key, "Units") || same(key, "AltUnit")) {
+        LengthUnit u{};
         if (same(value, "mm"))
-            s.units = LengthUnit::Millimeter;
+            u = LengthUnit::Millimeter;
         else if (same(value, "cm"))
-            s.units = LengthUnit::Centimeter;
+            u = LengthUnit::Centimeter;
         else if (same(value, "m"))
-            s.units = LengthUnit::Meter;
+            u = LengthUnit::Meter;
         else if (same(value, "in"))
-            s.units = LengthUnit::Inch;
+            u = LengthUnit::Inch;
         else if (same(value, "ft"))
-            s.units = LengthUnit::Foot;
+            u = LengthUnit::Foot;
         else
             return "Units are mm, cm, m, in or ft.";
+        (same(key, "Units") ? s.units : s.altUnit) = u;
         return {};
     }
+    if (same(key, "AltUnits")) {
+        bool b = false;
+        if (!parseBool(value, b))
+            return "Answer On or Off.";
+        s.altUnits = b;
+        return {};
+    }
+    if (same(key, "AltScale"))
+        return real(s.altScale, true);
+    if (same(key, "AltPrecision") || same(key, "TolPrecision")) {
+        int p = 0;
+        if (!parseInt(value, p) || p < 0 || p > 8)
+            return "Precision is a whole number from 0 to 8.";
+        (same(key, "AltPrecision") ? s.altPrecision : s.tolPrecision) = p;
+        return {};
+    }
+    if (same(key, "AltPrefix")) {
+        s.altPrefix = spaced(value);
+        return {};
+    }
+    if (same(key, "AltSuffix")) {
+        s.altSuffix = spaced(value);
+        return {};
+    }
+    if (same(key, "Tolerance")) {
+        if (same(value, "None"))
+            s.tolerance = DimTolerance::None;
+        else if (same(value, "Symmetrical") || same(value, "Symmetric"))
+            s.tolerance = DimTolerance::Symmetrical;
+        else if (same(value, "Deviation"))
+            s.tolerance = DimTolerance::Deviation;
+        else if (same(value, "Limits"))
+            s.tolerance = DimTolerance::Limits;
+        else
+            return "Tolerance is None, Symmetrical, Deviation or Limits.";
+        return {};
+    }
+    if (same(key, "TolUpper"))
+        return real(s.tolUpper, false);
+    if (same(key, "TolLower"))
+        return real(s.tolLower, false);
     if (same(key, "Prefix")) {
         s.prefix = spaced(value);
         return {};

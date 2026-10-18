@@ -351,14 +351,6 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     (collected_.size() > n ? ", " + std::to_string(collected_.size()) + " total"
                                            : std::string()));
     };
-    // A picked member brings its whole group along (GROUP).
-    auto addWithGroup = [&](EntityId id) {
-        for (EntityId m : expandGroups(doc_, std::span<const EntityId>(&id, 1))) {
-            if (m == id || accepts(m))
-                addCollected(m);
-        }
-    };
-
     // Adds (or, in Remove mode / with Shift, removes) a batch of objects at "Select objects:".
     auto applyBatch = [&](const std::vector<EntityId>& ids, bool shift,
                           const std::string& none) -> SubmitResult {

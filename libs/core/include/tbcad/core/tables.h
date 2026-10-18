@@ -61,6 +61,9 @@ struct TextStyle {
 enum class ArrowType { ClosedFilled, Open30, ArchTick, Dot, None };
 enum class DimTextPlacement { AboveLine, Centered };
 enum class DimTextAlign { WithDimLine, Horizontal };
+// How a dimension shows its tolerance next to the measurement: "±0.05", "+0.05 -0.02", or the two
+// limits "100.05 / 99.98".
+enum class DimTolerance : std::uint8_t { None, Symmetrical, Deviation, Limits };
 
 struct DimStyle {
     DimStyleId id{};
@@ -86,6 +89,23 @@ struct DimStyle {
     Color dimLineColor = Color::byBlock();
     Color extLineColor = Color::byBlock();
     Color textColor = Color::byBlock();
+    // Alternate units: the measurement a second time, in brackets after the first
+    // ("100.00 [3.94]"). `altScale` multiplies the millimetres before they are shown in
+    // `altUnit` (25.4 would turn millimetres into inches by itself; the unit does that already,
+    // so the default 1 reads "the same length in another unit"). Length dimensions only.
+    bool altUnits = false;
+    double altScale = 1;
+    LengthUnit altUnit = LengthUnit::Inch;
+    Precision altPrecision = 2;
+    std::string altPrefix{};
+    std::string altSuffix{};
+    // Tolerances, in millimetres (degrees for angular dimensions). Symmetrical uses `tolUpper`
+    // for both signs; Deviation shows +tolUpper and -tolLower; Limits shows measurement + upper
+    // and measurement - lower.
+    DimTolerance tolerance = DimTolerance::None;
+    double tolUpper = 0;
+    double tolLower = 0;
+    Precision tolPrecision = 2;
 };
 
 // ---- Dynamic blocks --------------------------------------------------------------------------

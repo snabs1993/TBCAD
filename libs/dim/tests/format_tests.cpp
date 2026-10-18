@@ -82,3 +82,74 @@ TEST_CASE("angular dimension of perpendicular lines reads 90 degrees") {
     three.defPts = {Vec2{10, 0}, Vec2{0, 10}, Vec2{0, 0}, Vec2{5, 5}};
     CHECK(measurement(three) == doctest::Approx(kPi / 2));
 }
+
+TEST_CASE("tolerances: symmetrical, deviation and limits") {
+    DimensionData d = aligned({0, 0}, {100, 0}, {0, 10});
+    DimStyle s;
+    s.tolerance = DimTolerance::Symmetrical;
+    s.tolUpper = 0.05;
+    CHECK(dimensionText(s, d) ==
+          "100.00 \xC2\xB1"
+          "0.05");
+    s.tolerance = DimTolerance::Deviation;
+    s.tolLower = 0.02;
+    CHECK(dimensionText(s, d) == "100.00 +0.05 -0.02");
+    s.tolerance = DimTolerance::Limits;
+    CHECK(dimensionText(s, d) == "100.05 / 99.98");
+    s.tolPrecision = 3;
+    CHECK(dimensionText(s, d) == "100.050 / 99.980");
+    // Prefix, suffix and a kind prefix wrap the whole tolerance form.
+    DimensionData r = radial(DimKind::Radius, {0, 0}, {10, 0});
+    s.tolerance = DimTolerance::Symmetrical;
+    s.tolPrecision = 1;
+    s.suffix = "mm";
+    CHECK(dimensionText(s, r) ==
+          "R10.00mm \xC2\xB1"
+          "0.1");
+    // "<>" in a text override stands for all of it.
+    d.textOverride = "(<>)";
+    s.suffix.clear();
+    CHECK(dimensionText(s, d) ==
+          "(100.00 \xC2\xB1"
+          "0.1)");
+    // Angles: the tolerance is in degrees.
+    DimensionData a = angular2({0, 0}, {10, 0}, {0, 0}, {0, 10}, {3, 3});
+    s.tolUpper = 0.5;
+    s.tolPrecision = 1;
+    CHECK(dimensionText(s, a) ==
+          "90.00\xC2\xB0 \xC2\xB1"
+          "0.5\xC2\xB0");
+    s.tolerance = DimTolerance::Limits;
+    s.tolLower = 0.25;
+    s.tolPrecision = 2;
+    CHECK(dimensionText(s, a) == "90.50\xC2\xB0 / 89.75\xC2\xB0");
+}
+
+TEST_CASE("alternate units follow the measurement in brackets") {
+    DimensionData d = aligned({0, 0}, {254, 0}, {0, 10});
+    DimStyle s;
+    s.altUnits = true;
+    CHECK(dimensionText(s, d) == "254.00 [10.00]");
+    s.altPrecision = 1;
+    s.altSuffix = "in";
+    CHECK(dimensionText(s, d) == "254.00 [10.0in]");
+    s.altUnit = LengthUnit::Meter;
+    s.altScale = 2;
+    s.altPrecision = 3;
+    s.altPrefix = "~";
+    s.altSuffix.clear();
+    CHECK(dimensionText(s, d) == "254.00 [~0.508]");
+    // With a tolerance the bracket comes last; angles have no alternate form.
+    s.tolerance = DimTolerance::Symmetrical;
+    s.tolUpper = 0.1;
+    CHECK(dimensionText(s, d) ==
+          "254.00 \xC2\xB1"
+          "0.10 [~0.508]");
+    CHECK(dimensionText(s, angular2({0, 0}, {10, 0}, {0, 0}, {0, 10}, {3, 3})) ==
+          "90.00\xC2\xB0 \xC2\xB1"
+          "0.10\xC2\xB0");
+    s.altUnits = false;
+    CHECK(dimensionText(s, d) ==
+          "254.00 \xC2\xB1"
+          "0.10");
+}
