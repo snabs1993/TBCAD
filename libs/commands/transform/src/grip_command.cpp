@@ -3,6 +3,7 @@
 
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/apply.h"
+#include "tbcad/transform/grip_menu.h"
 #include "tbcad/transform/grips.h"
 
 namespace tbcad::transform {
@@ -70,6 +71,7 @@ public:
             ~HotScope() { setHotGrip(std::nullopt); }
         } hotScope(hot.pos);
 
+        const std::vector<GripAction> menu = gripActions(ctx.doc(), hot);
         GripMode mode = GripMode::Stretch;
         bool copy = false;
         Vec2 base = hot.pos;
@@ -78,6 +80,9 @@ public:
             o.base = (mode == GripMode::Stretch || mode == GripMode::Move) ? hot.pos : base;
             o.keywords = {"Base", "Copy",   "Undo",  "Exit",  "Stretch",
                           "Move", "Rotate", "Scale", "Mirror"};
+            for (GripAction a : menu)
+                if (a != GripAction::Stretch)
+                    o.keywords.emplace_back(gripActionKeyword(a));
             o.preview = [&ctx, &sel, &grips, hot, &mode, &base](Vec2 c, DisplayList& out) {
                 const double px = ctx.host().view().scale;
                 if (mode == GripMode::Stretch) {
@@ -115,6 +120,51 @@ public:
                     auto b = co_await ctx.getPoint("Specify new base point", std::move(bo));
                     if (b.ok())
                         base = b.point;
+                } else if (GripAction act; gripActionFromKeyword(k, act) &&
+                                           act != GripAction::Stretch &&
+                                           std::find(menu.begin(), menu.end(), act) != menu.end()) {
+                    // A menu action of this grip (Add vertex, Lengthen, Radius ...).
+                    Vec2 target = hot.pos;
+                    if (gripActionNeedsPoint(act)) {
+                        PointOptions ao;
+                        ao.base = hot.pos;
+                        ao.preview = [&ctx, hot, act](Vec2 c, DisplayList& out) {
+                            const Entity* src = ctx.doc().find(hot.entity);
+                            if (!src)
+                                return;
+                            auto res = applyGripAction(*src, hot.index, act, c);
+                            if (!res)
+                                return;
+                            geom::DisplayContext dc;
+                            const double px = ctx.host().view().scale;
+                            dc.pixelSizeMm = px > 0 ? px : 1;
+                            geom::buildDisplay(ctx.doc(), res.value(), dc, out);
+                        };
+                        auto pr = co_await ctx.getPoint(
+                            std::string("Specify point for ") + gripActionLabel(act),
+                            std::move(ao));
+                        if (!pr.ok())
+                            continue;
+                        target = pr.point;
+                    }
+                    const Entity* src = ctx.doc().find(hot.entity);
+                    if (!src)
+                        co_return;
+                    auto res = applyGripAction(*src, hot.index, act, target);
+                    if (!res) {
+                        ctx.message(std::string(gripActionLabel(act)) + ": " + res.error().message);
+                        continue;
+                    }
+                    ctx.checkpoint();
+                    Entity changed = std::move(res).value();
+                    if (copy) {
+                        (void)ctx.tx().add(std::move(changed));
+                    } else {
+                        (void)ctx.tx().modify(
+                            hot.entity, [&](Entity& tgt) { tgt.data = std::move(changed.data); });
+                    }
+                    if (!copy)
+                        co_return;
                 } else if (k == "Stretch") {
                     mode = GripMode::Stretch;
                 } else if (k == "Move") {
