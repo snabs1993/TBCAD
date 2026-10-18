@@ -6,6 +6,8 @@
 #include <set>
 #include <sstream>
 
+#include "tbcad/cmd/pgp.h"
+
 namespace tbcad::cmd {
 
 namespace {
@@ -392,31 +394,81 @@ AliasReport Registry::setUserAliases(const std::map<std::string, std::string>& u
     return r;
 }
 
+// The user's aliases: aliases.json, plus an AutoCAD style acad.pgp or aliases.pgp next to it. A
+// .json entry beats a .pgp one. Lines of a .pgp file that do not fit (unknown commands, aliases
+// that are command names or already in effect) are reported as warnings, never as errors.
 AliasReport Registry::loadUserAliases(const std::filesystem::path& file) {
     user_.clear();
-    if (file.empty()) {
+    if (file.empty())
         return rebuild();
-    }
     std::error_code ec;
-    if (!std::filesystem::exists(file, ec)) {
-        return rebuild();  // no user file: defaults only
+    std::map<std::string, std::string> merged;
+    std::vector<std::string> notes;
+    std::string jsonError;
+    bool jsonLoaded = false;
+    if (std::filesystem::exists(file, ec)) {
+        std::ifstream in(file, std::ios::binary);
+        if (!in) {
+            jsonError = "cannot read " + file.string();
+        } else {
+            std::ostringstream buf;
+            buf << in.rdbuf();
+            auto parsed = parseAliasJson(buf.str());
+            if (!parsed)
+                jsonError = file.filename().string() + ": " + parsed.error().message +
+                            "; using the default aliases";
+            else {
+                merged = parsed.value();
+                jsonLoaded = true;
+            }
+        }
     }
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
-        AliasReport r = rebuild();
-        r.errors.push_back("cannot read " + file.string());
-        return r;
+    bool pgpLoaded = false;
+    for (const char* pgpName : {"acad.pgp", "aliases.pgp"}) {
+        const auto pgpFile = file.parent_path() / pgpName;
+        if (!std::filesystem::exists(pgpFile, ec))
+            continue;
+        std::ifstream in(pgpFile, std::ios::binary);
+        if (!in) {
+            notes.push_back(std::string("cannot read ") + pgpName);
+            continue;
+        }
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        if (!pgpLoaded) {
+            user_.clear();
+            rebuild();  // the built-in aliases, to tell what a line would change
+            pgpLoaded = true;
+        }
+        PgpParse pgp = parsePgp(buf.str());
+        for (const std::string& s : pgp.skipped)
+            notes.push_back(std::string(pgpName) + ": " + s);
+        for (const auto& [alias, command] : pgp.aliases) {
+            if (!commands_.count(command)) {
+                notes.push_back(std::string(pgpName) + ": " + alias + " -> " + command +
+                                ": no such command here");
+                continue;
+            }
+            if (commands_.count(alias))
+                continue;  // a command name, as in acad.pgp's "LINE, *LINE"
+            if (auto cur = aliases_.find(alias); cur != aliases_.end() && cur->second == command)
+                continue;  // already so
+            bool taken = false;
+            for (const auto& [k, v] : merged)
+                if (toUpperAscii(trim(k)) == alias)
+                    taken = true;
+            if (!taken)
+                merged[alias] = command;
+        }
     }
-    std::ostringstream buf;
-    buf << in.rdbuf();
-    auto parsed = parseAliasJson(buf.str());
-    if (!parsed) {
-        AliasReport r = rebuild();
-        r.errors.insert(r.errors.begin(), file.filename().string() + ": " + parsed.error().message +
-                                              "; using the default aliases");
-        return r;
-    }
-    return setUserAliases(parsed.value());
+    user_.clear();
+    AliasReport r = (jsonLoaded || !merged.empty()) ? setUserAliases(merged) : rebuild();
+    r.userFileLoaded = jsonLoaded;
+    if (!jsonError.empty())
+        r.errors.insert(r.errors.begin(), jsonError);
+    for (std::string& n : notes)
+        r.warnings.push_back(std::move(n));
+    return r;
 }
 
 }  // namespace tbcad::cmd

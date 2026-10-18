@@ -160,3 +160,32 @@ TEST_CASE("ALIASES command reloads the file from the settings folder") {
     CHECK(reg.find("LL") == nullptr);
     CHECK(reg.find("L")->name() == "LINE");
 }
+
+TEST_CASE("an acad.pgp next to aliases.json adds aliases, json wins, odd lines are warnings") {
+    Fx f;
+    auto dir = tempDir("pgp");
+    write(dir / "acad.pgp",
+          "; my aliases\n[Command]\nLL, *LINE\nCCC, *circle\nL, *CIRCLE\nXX, *NOSUCH\n"
+          "LINE, *LINE\nC, *CIRCLE\nBAD\n[External Commands]\nNOTEPAD, START NOTEPAD, 1,\n");
+    // The pgp alone, no aliases.json.
+    AliasReport r = f.reg.loadUserAliases(dir / "aliases.json");
+    CHECK(r.errors.empty());
+    CHECK(f.reg.find("LL")->name() == "LINE");
+    CHECK(f.reg.find("ccc")->name() == "CIRCLE");
+    CHECK(f.reg.find("L")->name() == "CIRCLE");  // a pgp line may override a built-in alias
+    CHECK(f.reg.find("XX") == nullptr);
+    // "LINE, *LINE" (a command name) and "C, *CIRCLE" (already so) are silent; the rest warn.
+    std::string all;
+    for (const auto& w : r.warnings)
+        all += w + "\n";
+    CHECK(all.find("XX -> NOSUCH") != std::string::npos);
+    CHECK(all.find("no comma") != std::string::npos);
+    CHECK(all.find("C -> CIRCLE") == std::string::npos);
+    CHECK(all.find("LINE -> LINE") == std::string::npos);
+    // A json entry for the same alias wins.
+    write(dir / "aliases.json", R"({"LL": "CIRCLE"})");
+    r = f.reg.loadUserAliases(dir / "aliases.json");
+    CHECK(r.userFileLoaded);
+    CHECK(f.reg.find("LL")->name() == "CIRCLE");
+    CHECK(f.reg.find("CCC")->name() == "CIRCLE");
+}

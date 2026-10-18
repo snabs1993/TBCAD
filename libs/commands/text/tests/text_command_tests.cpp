@@ -58,7 +58,7 @@ TEST_CASE("TEXT: start point, height, rotation, text") {
 
 TEST_CASE("TEXT accepts Thai text") {
     Fixture f;
-    f.host.run("T", {"0,0", "", "", kHong});
+    f.host.run("DT", {"0,0", "", "", kHong});
     const TextData* t = f.firstText();
     REQUIRE(t);
     CHECK(t->utf8 == kHong);

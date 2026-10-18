@@ -99,7 +99,7 @@ TEST_CASE("XRELOAD picks up a changed file - XLIST reports the state") {
     CHECK(f.doc.blockByName("plan")->entities.size() == 5);
     CHECK(f.modelSpace().size() == 1);  // the insert stays
     f.host->clearLog();
-    f.host->run("XREF", {});  // the AutoCAD name lists them too
+    f.host->run("XLIST", {});
     CHECK(f.host->logContains("up to date"));
     CHECK(f.host->undo());
     CHECK(f.doc.blockByName("plan")->entities.size() == 2);
