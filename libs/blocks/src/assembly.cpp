@@ -393,4 +393,100 @@ std::vector<std::string> asmValidate(const Document& doc, const BlockDef& def) {
     return problems;
 }
 
+namespace {
+
+std::size_t arrayItems(const InsertData& in) {
+    if (!in.array)
+        return 1;
+    const ArrayInfo& a = *in.array;
+    const long long n = a.kind == ArrayInfo::Kind::Rectangular
+                            ? static_cast<long long>(a.rows) * a.columns
+                            : static_cast<long long>(a.count);
+    return static_cast<std::size_t>(std::max<long long>(n, 1));
+}
+
+std::string shownValue(const AsmParam& p, const AsmValue& v) {
+    if (p.kind == AsmParam::Kind::Text || p.kind == AsmParam::Kind::Choice)
+        return v.text;
+    return expr::Value::ofNumber(v.number).toString();
+}
+
+void bomInsert(const Document& doc, const InsertData& in, std::size_t times, int depth,
+               std::vector<BomRow>& rows) {
+    const BlockDef* def = doc.block(in.block);
+    if (!def || depth > 8)
+        return;
+    times *= arrayItems(in);
+    if (def->assembly) {
+        BomRow row;
+        row.block = def->name;
+        const auto eff = asmEffectiveValues(*def->assembly, in);
+        for (std::size_t i = 0; i < def->assembly->params.size() && i < eff.size(); ++i)
+            row.values.emplace_back(def->assembly->params[i].name,
+                                    shownValue(def->assembly->params[i], eff[i]));
+        auto same = std::find_if(rows.begin(), rows.end(), [&](const BomRow& r) {
+            return r.block == row.block && r.values == row.values;
+        });
+        if (same != rows.end())
+            same->count += times;
+        else {
+            row.count = times;
+            rows.push_back(std::move(row));
+        }
+    }
+    // inserts inside the block, with the values this insert's bindings give them
+    std::vector<Entity> inner;
+    for (EntityId id : def->entities)
+        if (const Entity* e = doc.find(id))
+            if (entityAs<InsertData>(*e))
+                inner.push_back(*e);
+    if (inner.empty())
+        return;
+    if (def->assembly)
+        applyNested(doc, inner, resolveAssembly(doc, *def, in).nested);
+    for (const Entity& e : inner)
+        if (const auto* child = entityAs<InsertData>(e))
+            bomInsert(doc, *child, times, depth + 1, rows);
+}
+
+}  // namespace
+
+std::vector<BomRow> assemblyBom(const Document& doc) {
+    std::vector<BomRow> rows;
+    for (EntityId id : doc.modelSpace())
+        if (const Entity* e = doc.find(id))
+            if (const auto* in = entityAs<InsertData>(*e))
+                bomInsert(doc, *in, 1, 0, rows);
+    std::sort(rows.begin(), rows.end(), [](const BomRow& a, const BomRow& b) {
+        return a.block != b.block ? a.block < b.block : a.values < b.values;
+    });
+    return rows;
+}
+
+std::string bomValuesText(const BomRow& r) {
+    std::string t;
+    for (const auto& [n, v] : r.values)
+        t += (t.empty() ? "" : ", ") + n + "=" + v;
+    return t;
+}
+
+std::string assemblyBomCsv(const std::vector<BomRow>& rows) {
+    auto quote = [](const std::string& s) {
+        if (s.find_first_of(",\"\r\n") == std::string::npos)
+            return s;
+        std::string q = "\"";
+        for (char c : s) {
+            if (c == '"')
+                q += '"';
+            q += c;
+        }
+        return q + "\"";
+    };
+    std::string out = "Assembly,Parameters,Quantity\r\n";
+    for (const BomRow& r : rows)
+        out +=
+            quote(r.block) + "," + quote(bomValuesText(r)) + "," + std::to_string(r.count) + "\r\n";
+    return out;
+}
+
 }  // namespace tbcad::blocks

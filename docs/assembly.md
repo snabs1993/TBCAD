@@ -45,7 +45,7 @@ A formula that cannot be evaluated is skipped and listed by `ASMINFO`, the MCP t
 | --- | --- |
 | `ASMDEF` | block name, then `Parameter` (name, type, default, limits or choices), `Bind` (what to drive, the target, the formula; nested inserts are numbered by their position in the block, 1 = first object), `Preset` (name, then a value per parameter), `Join` (see below) or `Check`. |
 | `ASMSET` | pick an assembly, name a parameter (or `Preset`) and give the value. |
-| `ASMBOM` (`BOM`) | lists every assembly in model space, grouped by block and parameter values, with the quantity; output as a list, a CSV file or a table in the drawing. |
+| `ASMBOM` (`BOM`) | lists every assembly in model space and nested inside the placed ones (with their bound values and array items), grouped by block and parameter values, with the quantity; output as a list, a CSV file or a table in the drawing. |
 | `ASMINFO` | pick an assembly; lists its parameters, values and formula problems. |
 | `-ASMSET` | for panels and scripts: sets a parameter (or `@preset`) on every selected assembly, repeating until an empty parameter name. One undo step. |
 
@@ -85,3 +85,5 @@ assembly as plain objects, as for dynamic blocks.
 `list_assembly_parameters` (`id`) returns the parameters with type, value, limits and choices, the preset
 names and formula problems. `set_assembly_parameters` (`id`, `values`: name to number or text, optional
 `preset`) changes them in one undo step; a value the parameter does not allow is an error.
+
+MCP: `assembly_bom` returns the same bill of materials (lines with block, parameter values and quantity).

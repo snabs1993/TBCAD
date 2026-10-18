@@ -264,3 +264,76 @@ TEST_CASE("assembly: attribute texts come from formulas") {
     CHECK(res.insert.attribs[0].value == "Bar 7 x bar");
     CHECK(asmValidate(b.doc, *b.doc.block(b.block)).empty());
 }
+
+TEST_CASE("assemblyBom counts placed, nested and arrayed assemblies by parameter values") {
+    Document doc;
+    BlockId leaf, room;
+    EntityId inner;
+    {
+        auto tx = doc.begin("blocks");
+        leaf = tx.addBlock(BlockDef{.name = "Leg"}).value();
+        REQUIRE(tx.add(Entity{{}, LineData{{0, 0}, {0, 10}}}, leaf).ok());
+        REQUIRE(tx.modifyBlock(leaf, [](BlockDef& d) {
+                      AssemblyDef a;
+                      AsmParam p;
+                      p.name = "Len";
+                      p.kind = AsmParam::Kind::Number;
+                      p.defaultNumber = 10;
+                      a.params.push_back(p);
+                      d.assembly = a;
+                  }).ok());
+        room = tx.addBlock(BlockDef{.name = "Table"}).value();
+        InsertData li;
+        li.block = leaf;
+        li.array = ArrayInfo{};
+        li.array->rows = 1;
+        li.array->columns = 4;
+        auto id = tx.add(Entity{{}, std::move(li)}, room);
+        REQUIRE(id.ok());
+        inner = id.value();
+        REQUIRE(tx.modifyBlock(room, [&](BlockDef& d) {
+                      AssemblyDef a;
+                      AsmParam p;
+                      p.name = "H";
+                      p.kind = AsmParam::Kind::Number;
+                      p.defaultNumber = 70;
+                      a.params.push_back(p);
+                      AsmBinding b;
+                      b.kind = AsmBinding::Kind::Nested;
+                      b.entity = inner;
+                      b.target = "Len";
+                      b.formula = "H";
+                      a.bindings.push_back(b);
+                      d.assembly = a;
+                  }).ok());
+        InsertData t1;
+        t1.block = room;
+        REQUIRE(tx.add(Entity{{}, t1}).ok());
+        InsertData t2;
+        t2.block = room;
+        t2.asmValues.push_back(AsmValue{"H", false, 90, ""});
+        REQUIRE(tx.add(Entity{{}, t2}).ok());
+        InsertData loose;
+        loose.block = leaf;
+        REQUIRE(tx.add(Entity{{}, loose}).ok());
+        tx.commit();
+    }
+    const auto rows = blocks::assemblyBom(doc);
+    std::size_t legsDefault = 0, legs70 = 0, legs90 = 0, tables = 0;
+    for (const auto& r : rows) {
+        if (r.block == "Table")
+            tables += r.count;
+        else if (r.values[0].second == "10")
+            legsDefault += r.count;
+        else if (r.values[0].second == "70")
+            legs70 += r.count;
+        else if (r.values[0].second == "90")
+            legs90 += r.count;
+    }
+    CHECK(tables == 2);
+    CHECK(legsDefault == 1);  // the loose one
+    CHECK(legs70 == 4);       // the first table, four in the array
+    CHECK(legs90 == 4);       // the second table through its binding
+    const std::string csv = blocks::assemblyBomCsv(rows);
+    CHECK(csv.rfind("Assembly,Parameters,Quantity", 0) == 0);
+}
