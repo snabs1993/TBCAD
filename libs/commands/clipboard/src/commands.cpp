@@ -137,7 +137,6 @@ private:
     Mode mode_;
 };
 
-
 // WBLOCK [W]: writes the selected objects, with the layers, styles and blocks they use, to a
 // drawing file whose origin is the chosen base point.
 class WBlockCommand final : public cmd::Command {

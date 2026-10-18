@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
+#include <filesystem>
+
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/io/tbcad.h"
-
-#include <filesystem>
 
 using namespace tbcad;
 using cmd::ScriptItem;
@@ -191,8 +191,8 @@ TEST_CASE("WBLOCK writes the selection to a drawing file at the base point") {
     EntityId a = f.add(l);
     const auto path = std::filesystem::temp_directory_path() / "tbcad_wblock_test.tbcad";
     std::filesystem::remove(path);
-    auto r = f.host.run("WBLOCK", {ScriptItem::select({a}), ScriptItem::enter(), "100,100",
-                                   path.string()});
+    auto r = f.host.run("WBLOCK",
+                        {ScriptItem::select({a}), ScriptItem::enter(), "100,100", path.string()});
     CHECK(r.finished);
     io::IoReport report;
     auto doc = io::readTbcad(path, report);

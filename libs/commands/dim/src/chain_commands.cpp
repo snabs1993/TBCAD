@@ -1,4 +1,5 @@
-// DIMCONTINUE, DIMBASELINE, DIMSPACE and DIMTEDIT: chains of linear dimensions and dimension text editing.
+// DIMCONTINUE, DIMBASELINE, DIMSPACE and DIMTEDIT: chains of linear dimensions and dimension text
+// editing.
 #include <algorithm>
 #include <cmath>
 
@@ -129,7 +130,6 @@ private:
     bool baseline_;
     std::string description_;
 };
-
 
 // Signed distance of a length dimension's line along `n` (a unit vector across the dimension).
 double lineOffset(const DimensionData& d, Vec2 n) {

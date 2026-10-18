@@ -99,8 +99,9 @@ TEST_CASE("DIMSPACE evens out the gaps between parallel dimensions") {
     std::vector<EntityId> ids;
     f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
     std::sort(ids.begin(), ids.end(), [](EntityId a, EntityId b) { return a.value < b.value; });
-    auto r = f.host->run("DIMSPACE", {ScriptItem::pick(ids[0], {50, -30}),
-                                       ScriptItem::select({ids[1], ids[2]}), ScriptItem::enter(), "20"});
+    auto r =
+        f.host->run("DIMSPACE", {ScriptItem::pick(ids[0], {50, -30}),
+                                 ScriptItem::select({ids[1], ids[2]}), ScriptItem::enter(), "20"});
     CHECK(r.finished);
     CHECK(entityAs<DimensionData>(*f.doc.find(ids[1]))->defPts[2].y == doctest::Approx(-50));
     CHECK(entityAs<DimensionData>(*f.doc.find(ids[2]))->defPts[2].y == doctest::Approx(-70));
