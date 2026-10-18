@@ -154,3 +154,36 @@ TEST_CASE(
     }
     CHECK(changedRuns >= 10);  // the sweep really edits the drawing before it cancels
 }
+
+// Typing nonsense where a point, number or keyword is asked must be refused or ignored, never
+// crash, corrupt the drawing or leave the command stuck.
+TEST_CASE("nonsense typed at any prompt of the edit commands is harmless") {
+    const char* garbage[] = {"abc", "1,",  "@",  "<45",     ",",  "1e999",
+                             "-0",  "nan", "  ", "0,0,0,0", "R R"};
+    const char* names[] = {"OFFSET", "TRIM", "EXTEND", "FILLET", "CHAMFER", "BREAK", "LENGTHEN"};
+    for (const char* name : names) {
+        for (const char* g : garbage) {
+            for (int at = 0; at < 3; ++at) {
+                CAPTURE(name);
+                CAPTURE(g);
+                CAPTURE(at);
+                Rig r;
+                const std::string before = canonicalDump(r.doc);
+                std::vector<ScriptItem> items;
+                for (int i = 0; i < at; ++i)
+                    items.push_back(ScriptItem::enter());
+                items.push_back(g);
+                items.push_back(ScriptItem::pick(r.a, {5, 0}));
+                items.push_back(g);
+                items.push_back(ScriptItem::esc());
+                items.push_back(ScriptItem::esc());
+                auto res = r.host.run(name, items);
+                CHECK(res.finished);
+                CHECK(finite(canonicalDump(r.doc)));
+                for (int i = 0; i < 20 && r.host.undo(); ++i) {
+                }
+                CHECK(canonicalDump(r.doc) == before);
+            }
+        }
+    }
+}
