@@ -2542,6 +2542,10 @@ private:
             r.fail();
             return;
         }
+        if (mleaderNotes_ < 12)
+            out_.walkNotes.push_back("MULTILEADER " + hex(currentHandle_) + " starts at bit " +
+                                     std::to_string(r.bitPos()) + " of " +
+                                     std::to_string(mainEnd_));
         const auto str = [&](int code, const char* v) { add(e, code, Value(std::string(v))); };
         r.bs();  // version (2)
         add(e, 270, 2);
@@ -2657,7 +2661,18 @@ private:
             str(303, "}");
         }
         str(301, "}");
+        if (mleaderNotes_++ < 12) {
+            std::size_t lines = 0;
+            for (const Root& root : list)
+                lines += root.lines.size();
+            out_.walkNotes.push_back("MULTILEADER " + hex(currentHandle_) + ": " +
+                                     std::to_string(list.size()) + " roots, " +
+                                     std::to_string(lines) + " lines, text '" + text.substr(0, 40) +
+                                     "', read to bit " + std::to_string(r.bitPos()) + " of " +
+                                     std::to_string(mainEnd_) + (r.failed() ? ", failed" : ""));
+        }
     }
+    int mleaderNotes_ = 0;
 
     void insert(BitReader& r, EntityRec& e, bool multi) {
         e.dxfType = "INSERT";
