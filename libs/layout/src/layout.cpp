@@ -55,7 +55,7 @@ std::string serialize(const std::vector<Layout>& all) {
               << num(v.center.y) << '\t' << num(v.scaleN) << '\t' << (v.on ? 1 : 0) << '\t';
             for (std::size_t i = 0; i < v.frozen.size(); ++i)
                 o << (i ? "," : "") << v.frozen[i].value;
-            o << '\t' << v.level.value << '\n';
+            o << '\t' << v.level.value << '\t' << (v.locked ? 1 : 0) << '\n';
         }
     }
     return o.str();
@@ -151,6 +151,7 @@ std::vector<Layout> layouts(const Document& doc) {
             if (f.size() > 11)
                 v.level =
                     LevelId{static_cast<std::uint32_t>(std::strtoul(f[11].c_str(), nullptr, 10))};
+            v.locked = f.size() > 12 && f[12] == "1";
             out.back().viewports.push_back(std::move(v));
         }
     }
@@ -325,6 +326,8 @@ Result<void> setViewportScale(Transaction& tx, const std::string& layoutName, in
     if (!e)
         return e.error();
     Edit ed = std::move(e.value());
+    if (ed.vp->locked)
+        return err(ErrorCode::Conflict, "Viewport is locked. Use VPLOCK Off first.");
     ed.vp->scaleN = scaleN;
     return store(tx, ed.all);
 }
@@ -334,7 +337,19 @@ Result<void> setViewportCenter(Transaction& tx, const std::string& layoutName, i
     if (!e)
         return e.error();
     Edit ed = std::move(e.value());
+    if (ed.vp->locked)
+        return err(ErrorCode::Conflict, "Viewport is locked. Use VPLOCK Off first.");
     ed.vp->center = c;
+    return store(tx, ed.all);
+}
+
+Result<void> setViewportLocked(Transaction& tx, const std::string& layoutName, int id,
+                               bool locked) {
+    auto e = openEdit(tx, layoutName, id);
+    if (!e)
+        return e.error();
+    Edit ed = std::move(e.value());
+    ed.vp->locked = locked;
     return store(tx, ed.all);
 }
 

@@ -68,6 +68,20 @@ TEST_CASE("MVIEW, VPSCALE and VPLAYER edit the current layout") {
     CHECK(f.host->logContains("No layer named"));
 }
 
+TEST_CASE("VPLOCK stops VPSCALE until it is switched off") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "2500,1000"});
+    f.host->run("VPLOCK", {"On", "1"});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].locked);
+    f.host->run("VPSCALE", {"1", "1:100"});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].scaleN == doctest::Approx(50));
+    CHECK(f.host->logContains("locked"));
+    f.host->run("VPLOCK", {"Off", "1"});
+    f.host->run("VPSCALE", {"1", "1:100"});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].scaleN == doctest::Approx(100));
+}
+
 TEST_CASE("VPLEVEL shows one level in a viewport") {
     Fixture f;
     LevelId upper;

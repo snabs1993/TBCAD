@@ -26,6 +26,7 @@ struct Viewport {
     bool on = true;
     std::vector<LayerId> frozen{};  // frozen in this viewport (their sub-layers too)
     LevelId level{};                // shows only this level when set (0 = every visible level)
+    bool locked = false;            // scale and view centre cannot be changed (VPLOCK)
 };
 
 struct Layout {
@@ -66,6 +67,8 @@ Result<int> addViewport(Transaction& tx, const std::string& layout, const BBox2&
                         Vec2 modelCenter, double scaleN);
 Result<void> removeViewport(Transaction& tx, const std::string& layout, int id);
 Result<void> setViewportScale(Transaction& tx, const std::string& layout, int id, double scaleN);
+// A locked viewport refuses setViewportScale and setViewportCenter (VPLOCK).
+Result<void> setViewportLocked(Transaction& tx, const std::string& layoutName, int id, bool locked);
 Result<void> setViewportCenter(Transaction& tx, const std::string& layout, int id, Vec2 center);
 // Moves or resizes the rectangle on the sheet; what it shows keeps its scale and centre.
 Result<void> setViewportRect(Transaction& tx, const std::string& layout, int id,
