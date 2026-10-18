@@ -18,6 +18,7 @@ tbcad_add_tests(e2e
     tests/bulk_edit_perf_tests.cpp
     tests/plot_perf_tests.cpp
     tests/audit_purge_large_tests.cpp
+    tests/block_scale_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry tbcad::appcore)
 # The target exists only when tests are built (the ezdxf and fuzz jobs configure without them).
 if(TARGET tbcad_e2e_tests)

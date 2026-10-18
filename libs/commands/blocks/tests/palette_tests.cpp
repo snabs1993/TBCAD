@@ -171,3 +171,14 @@ TEST_CASE("block count: direct and nested inserts, CSV, table") {
     none.host->run("BLOCKCOUNT", {});
     CHECK(none.host->logContains("No blocks are inserted"));
 }
+
+TEST_CASE("INSERT in a drawing with no blocks still takes a typed drawing file") {
+    Dir dir("tbcad_insert_first_file");
+    writeBox(dir.path / "Frame.tbcad", 10, 20);
+    Fixture f;
+    REQUIRE(f.doc.blocks().empty());
+    const std::string file = (dir.path / "Frame.tbcad").string();
+    CHECK(f.host->run("INSERT", {file, "5,5"}).finished);
+    CHECK(f.doc.blockByName("Frame") != nullptr);
+    CHECK(f.modelSpace().size() == 1);
+}
