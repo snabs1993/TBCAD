@@ -377,6 +377,69 @@ public:
     }
 };
 
+// ---- MLEADERCOLLECT ----------------------------------------------------------------------------
+
+// Merges several note multileaders into the first one: every arrow keeps its place and its line now
+// ends at the first leader's landing, and the notes are joined, one per line. Leaders whose content
+// is a block are left alone.
+class MLeaderCollectCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MLEADERCOLLECT"; }
+    std::vector<std::string> defaultAliases() const override { return {"MLC"}; }
+    std::string_view description() const override {
+        return "Merge several multileader notes into one multileader";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.filter = [](const Entity& e) {
+            const auto* m = entityAs<MLeaderData>(e);
+            return m && m->content == MLeaderData::Content::Text;
+        };
+        auto sel =
+            co_await ctx.getSelection("Select multileaders to collect (the first stays)", so);
+        if (!sel.ok())
+            co_return;
+        std::vector<EntityId> ids;
+        for (EntityId id : sel.ids)
+            if (const Entity* e = ctx.doc().find(id); e && so.filter(*e))
+                ids.push_back(id);
+        if (ids.size() < 2) {
+            ctx.message("Select at least two multileaders with a text note.");
+            co_return;
+        }
+        ctx.setUndoLabel("MLEADERCOLLECT");
+        const EntityId keep = ids.front();
+        const auto* first = entityAs<MLeaderData>(*ctx.doc().find(keep));
+        const Vec2 landing = first->landing;
+        std::vector<std::vector<Vec2>> lines = first->lines;
+        std::string text = first->utf8;
+        for (std::size_t i = 1; i < ids.size(); ++i) {
+            const auto* m = entityAs<MLeaderData>(*ctx.doc().find(ids[i]));
+            const Vec2 d = landing - m->landing;
+            for (auto line : m->lines) {
+                // The landing end joins the first leader's landing; the arrow end stays.
+                if (!line.empty() && distance(line.back(), m->landing) < 1e-9)
+                    line.back() += d;
+                else
+                    line.push_back(landing);
+                lines.push_back(std::move(line));
+            }
+            if (!m->utf8.empty())
+                text += (text.empty() ? "" : "\\P") + m->utf8;
+        }
+        if (!ctx.tx().modify(keep, [&](Entity& e) {
+                auto* m = entityAs<MLeaderData>(e);
+                m->lines = std::move(lines);
+                m->utf8 = std::move(text);
+            }))
+            co_return;
+        for (std::size_t i = 1; i < ids.size(); ++i)
+            (void)ctx.tx().erase(ids[i]);
+        ctx.message(std::to_string(ids.size()) + " multileaders collected into one.");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeSmartDimCommand() {
@@ -385,6 +448,10 @@ std::unique_ptr<cmd::Command> makeSmartDimCommand() {
 
 std::unique_ptr<cmd::Command> makeMLeaderAlignCommand() {
     return std::make_unique<MLeaderAlignCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeMLeaderCollectCommand() {
+    return std::make_unique<MLeaderCollectCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeMLeaderCommand() {

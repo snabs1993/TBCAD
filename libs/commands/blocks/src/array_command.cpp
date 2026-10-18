@@ -160,236 +160,17 @@ public:
         ArrayInfo info;
         std::vector<Entity> copies;
         bool associative = true;
-        if (typeName == "Path") {
-            cmd::EntityOptions eo;
-            eo.filter = [](const Entity& e) {
-                std::vector<PolyVertex> v;
-                bool closed = false;
-                return pathVertices(e, v, closed);
-            };
-            auto picked =
-                co_await ctx.getEntity("Select path curve (line, arc, circle or polyline)", eo);
-            if (!picked.ok())
-                co_return;
-            info.kind = ArrayInfo::Kind::Path;
-            pathVertices(*doc.find(picked.id), info.path, info.pathClosed);
-            PolylineData pl;
-            pl.v = info.path;
-            pl.closed = info.pathClosed;
-            double total = 0;
-            for (const auto& g : geom::segments(pl))
-                total += g.curve.length();
-            if (!(total > 0)) {
-                ctx.message("The path has no length");
-                co_return;
-            }
-            const Vec2 centre = box.empty() ? Vec2{} : box.center();
-            auto base = co_await ctx.getPoint(
-                "Specify base point (the point of the objects placed on the path) <centre>");
-            if (base.status == cmd::Status::Cancel)
-                co_return;
-            info.reference = base.ok() ? base.point : centre;
-            auto method = co_await ctx.getKeyword(
-                "Method [Count/Distance] <Count>",
-                cmd::KeywordOptions{.keywords = {"Count", "Distance"}, .defaultKeyword = "Count"});
-            if (!method.ok())
-                co_return;
-            if (method.keyword == "Distance") {
-                auto d =
-                    co_await ctx.getDistance("Specify the distance between items along the path",
-                                             cmd::DistanceOptions{.allowZero = false});
-                if (!d.ok())
-                    co_return;
-                info.pathSpacing = d.value;
-                info.count = static_cast<int>(std::min<double>(
-                    blocks::kMaxArrayItems,
-                    std::floor(total / d.value + 1e-9) + (info.pathClosed ? 0 : 1)));
-            } else {
-                auto n = co_await ctx.getInteger(
-                    "Enter the number of items <6>",
-                    cmd::IntOptions{.defaultValue = 6, .min = 1, .max = blocks::kMaxArrayItems});
-                if (!n.ok())
-                    co_return;
-                info.count = static_cast<int>(n.value);
-            }
-            auto align = co_await ctx.getKeyword(
-                "Align items to the path? [Yes/No] <Yes>",
-                cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
-            if (!align.ok())
-                co_return;
-            info.rotateItems = align.keyword == "Yes";
-            createAssociative(ctx, sel.ids, info);
+        bool ok = false;
+        if (typeName == "Path")
+            co_await pathSetup(ctx, sel.ids, source, box, info, copies, associative, ok);
+        else if (typeName == "Polar")
+            co_await polarSetup(ctx, sel.ids, source, box, info, copies, associative, ok);
+        else
+            co_await rectSetup(ctx, sel.ids, source, box, info, copies, associative, ok);
+        if (!ok)
             co_return;
-        }
-        if (typeName == "Polar") {
-            auto center = co_await ctx.getPoint("Specify center point of array");
-            if (!center.ok())
-                co_return;
-            const Vec2 c = center.point;
-            int n = 6;
-            double fillAngle = kTwoPi;
-            bool rotate = true;
-            for (;;) {
-                auto opt = co_await ctx.getKeyword(
-                    "Polar array of " + std::to_string(n) + " items over " +
-                        niceNumber(fillAngle * 180 / kPi) +
-                        " degrees [Items/Angle/Rotate/Associative] <Accept>",
-                    cmd::KeywordOptions{
-                        .keywords = {"Accept", "Items", "Angle", "Rotate", "Associative"},
-                        .defaultKeyword = "Accept"});
-                if (!opt.ok())
-                    co_return;
-                if (opt.keyword == "Accept")
-                    break;
-                if (opt.keyword == "Items") {
-                    auto v = co_await ctx.getInteger(
-                        "Enter the number of items in the array (including the original) <" +
-                            std::to_string(n) + ">",
-                        cmd::IntOptions{
-                            .defaultValue = n, .min = 2, .max = blocks::kMaxArrayItems});
-                    if (!v.ok())
-                        co_return;
-                    n = static_cast<int>(v.value);
-                } else if (opt.keyword == "Angle") {
-                    const double pixel = ctx.host().view().scale;
-                    const int items = n;
-                    auto preview = [&doc, source, c, items, pixel](Vec2 cursor, DisplayList& out) {
-                        blocks::PolarArray spec{c, items, 0, true, std::nullopt};
-                        double a = std::atan2(cursor.y - c.y, cursor.x - c.x);
-                        spec.fillAngle = a > 0 ? a : a + kTwoPi;
-                        previewCopies(
-                            doc, source,
-                            blocks::polarTransforms(spec, detail::boundsOf(doc, source).center()),
-                            pixel, out);
-                    };
-                    auto fill = co_await ctx.getAngle(
-                        "Specify the angle to fill (+ = counterclockwise, - = clockwise) <" +
-                            niceNumber(fillAngle * 180 / kPi) + ">",
-                        cmd::AngleOptions{
-                            .base = c, .preview = preview, .defaultValue = fillAngle});
-                    if (!fill.ok())
-                        co_return;
-                    fillAngle = fill.value;
-                } else if (opt.keyword == "Rotate") {
-                    rotate = !rotate;
-                    ctx.message(rotate ? "Items rotate as copied" : "Items keep their direction");
-                } else {
-                    associative = !associative;
-                    ctx.message(associative ? "The array is associative"
-                                            : "The array is made of plain copies");
-                }
-            }
-            blocks::PolarArray spec{c, n, fillAngle, rotate, std::nullopt};
-            info.kind = ArrayInfo::Kind::Polar;
-            info.center = c;
-            info.count = n;
-            info.fillAngle = fillAngle;
-            info.rotateItems = rotate;
-            info.reference = box.empty() ? Vec2{} : box.center();
-            auto r = blocks::arrayPolar(source, spec);
-            if (!r) {
-                ctx.message(r.error().message);
-                co_return;
-            }
-            copies = std::move(r).value();
-        } else {
-            blocks::RectArray spec;
-            spec.rows = 3;
-            spec.columns = 4;
-            spec.columnSpacing = box.empty() || box.width() <= 0 ? 10.0 : niceSpacing(box.width());
-            spec.rowSpacing = box.empty() || box.height() <= 0 ? 10.0 : niceSpacing(box.height());
-            const double pixel = ctx.host().view().scale;
-            const Vec2 anchor = box.empty() ? Vec2{} : box.min;
-            for (;;) {
-                auto opt = co_await ctx.getKeyword(
-                    std::to_string(spec.rows) + " rows x " + std::to_string(spec.columns) +
-                        " columns, spacing " + niceNumber(spec.columnSpacing) + " x " +
-                        niceNumber(spec.rowSpacing) + ", angle " +
-                        niceNumber(spec.angle * 180 / kPi) +
-                        " [Rows/Columns/Spacing/Angle/Associative] <Accept>",
-                    cmd::KeywordOptions{.keywords = {"Accept", "Rows", "Columns", "Spacing",
-                                                     "Angle", "Associative"},
-                                        .defaultKeyword = "Accept"});
-                if (!opt.ok())
-                    co_return;
-                if (opt.keyword == "Accept")
-                    break;
-                if (opt.keyword == "Rows" || opt.keyword == "Columns") {
-                    const bool rows = opt.keyword == "Rows";
-                    const int other = rows ? spec.columns : spec.rows;
-                    auto preview = [&doc, source, spec, rows, other, pixel](
-                                       const std::string& typed, DisplayList& out) {
-                        const int k = std::atoi(typed.c_str());
-                        if (k < 1 || k > blocks::kMaxArrayItems)
-                            return;
-                        blocks::RectArray s = spec;
-                        s.rows = rows ? k : other;
-                        s.columns = rows ? other : k;
-                        previewCopies(doc, source, blocks::rectangularTransforms(s), pixel, out);
-                    };
-                    const int cur = rows ? spec.rows : spec.columns;
-                    auto v = co_await ctx.getInteger(std::string("Enter the number of ") +
-                                                         (rows ? "rows" : "columns") + " <" +
-                                                         std::to_string(cur) + ">",
-                                                     cmd::IntOptions{.defaultValue = cur,
-                                                                     .min = 1,
-                                                                     .max = blocks::kMaxArrayItems,
-                                                                     .textPreview = preview});
-                    if (!v.ok())
-                        co_return;
-                    (rows ? spec.rows : spec.columns) = static_cast<int>(v.value);
-                } else if (opt.keyword == "Spacing") {
-                    auto colSp = co_await ctx.getDistance(
-                        "Specify the distance between columns <" + niceNumber(spec.columnSpacing) +
-                            ">",
-                        cmd::DistanceOptions{.defaultValue = spec.columnSpacing,
-                                             .allowZero = false,
-                                             .allowNegative = true});
-                    if (!colSp.ok())
-                        co_return;
-                    spec.columnSpacing = colSp.value;
-                    auto preview = [&doc, source, spec, anchor, pixel](Vec2 cursor,
-                                                                       DisplayList& out) {
-                        blocks::RectArray s = spec;
-                        s.rowSpacing = distance(cursor, anchor);
-                        previewCopies(doc, source, blocks::rectangularTransforms(s), pixel, out);
-                    };
-                    auto rowSp = co_await ctx.getDistance(
-                        "Specify the distance between rows <" + niceNumber(spec.rowSpacing) + ">",
-                        cmd::DistanceOptions{.base = anchor,
-                                             .preview = preview,
-                                             .defaultValue = spec.rowSpacing,
-                                             .allowZero = false,
-                                             .allowNegative = true});
-                    if (!rowSp.ok())
-                        co_return;
-                    spec.rowSpacing = rowSp.value;
-                } else if (opt.keyword == "Angle") {
-                    auto ang = co_await ctx.getAngle("Specify the angle of the array <" +
-                                                         niceNumber(spec.angle * 180 / kPi) + ">",
-                                                     cmd::AngleOptions{.defaultValue = spec.angle});
-                    if (!ang.ok())
-                        co_return;
-                    spec.angle = ang.value;
-                } else {
-                    associative = !associative;
-                    ctx.message(associative ? "The array is associative"
-                                            : "The array is made of plain copies");
-                }
-            }
-            info.kind = ArrayInfo::Kind::Rectangular;
-            info.rows = spec.rows;
-            info.columns = spec.columns;
-            info.rowSpacing = spec.rowSpacing;
-            info.columnSpacing = spec.columnSpacing;
-            info.angle = spec.angle;
-            auto r = blocks::arrayRectangular(source, spec);
-            if (!r) {
-                ctx.message(r.error().message);
-                co_return;
-            }
-            copies = std::move(r).value();
-        }
+        if (typeName == "Path")
+            co_return;  // a path array is always associative and already made
 
         if (associative) {
             createAssociative(ctx, sel.ids, info);
@@ -411,6 +192,269 @@ public:
     }
 
 private:
+    // Path array setup. `ok` is true when the user finished the setup; a cancel leaves it false.
+    static cmd::Task pathSetup(cmd::CommandContext& ctx, const std::vector<EntityId>& ids,
+                               const std::vector<Entity>& source, const BBox2& box, ArrayInfo& info,
+                               std::vector<Entity>& copies, bool& associative, bool& ok) {
+        Document& doc = ctx.doc();
+        (void)ids;
+        (void)copies;
+        (void)associative;
+        (void)box;
+        (void)source;
+        (void)doc;
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) {
+            std::vector<PolyVertex> v;
+            bool closed = false;
+            return pathVertices(e, v, closed);
+        };
+        auto picked =
+            co_await ctx.getEntity("Select path curve (line, arc, circle or polyline)", eo);
+        if (!picked.ok())
+            co_return;
+        info.kind = ArrayInfo::Kind::Path;
+        pathVertices(*doc.find(picked.id), info.path, info.pathClosed);
+        PolylineData pl;
+        pl.v = info.path;
+        pl.closed = info.pathClosed;
+        double total = 0;
+        for (const auto& g : geom::segments(pl))
+            total += g.curve.length();
+        if (!(total > 0)) {
+            ctx.message("The path has no length");
+            co_return;
+        }
+        const Vec2 centre = box.empty() ? Vec2{} : box.center();
+        auto base = co_await ctx.getPoint(
+            "Specify base point (the point of the objects placed on the path) <centre>");
+        if (base.status == cmd::Status::Cancel)
+            co_return;
+        info.reference = base.ok() ? base.point : centre;
+        auto method = co_await ctx.getKeyword(
+            "Method [Count/Distance] <Count>",
+            cmd::KeywordOptions{.keywords = {"Count", "Distance"}, .defaultKeyword = "Count"});
+        if (!method.ok())
+            co_return;
+        if (method.keyword == "Distance") {
+            auto d = co_await ctx.getDistance("Specify the distance between items along the path",
+                                              cmd::DistanceOptions{.allowZero = false});
+            if (!d.ok())
+                co_return;
+            info.pathSpacing = d.value;
+            info.count = static_cast<int>(
+                std::min<double>(blocks::kMaxArrayItems,
+                                 std::floor(total / d.value + 1e-9) + (info.pathClosed ? 0 : 1)));
+        } else {
+            auto n = co_await ctx.getInteger(
+                "Enter the number of items <6>",
+                cmd::IntOptions{.defaultValue = 6, .min = 1, .max = blocks::kMaxArrayItems});
+            if (!n.ok())
+                co_return;
+            info.count = static_cast<int>(n.value);
+        }
+        auto align = co_await ctx.getKeyword(
+            "Align items to the path? [Yes/No] <Yes>",
+            cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
+        if (!align.ok())
+            co_return;
+        info.rotateItems = align.keyword == "Yes";
+        createAssociative(ctx, ids, info);
+        co_return;
+        ok = true;
+    }
+
+    // Polar array setup. `ok` is true when the user finished the setup; a cancel leaves it false.
+    static cmd::Task polarSetup(cmd::CommandContext& ctx, const std::vector<EntityId>& ids,
+                                const std::vector<Entity>& source, const BBox2& box,
+                                ArrayInfo& info, std::vector<Entity>& copies, bool& associative,
+                                bool& ok) {
+        Document& doc = ctx.doc();
+        (void)ids;
+        (void)copies;
+        (void)associative;
+        (void)box;
+        (void)source;
+        (void)doc;
+        auto center = co_await ctx.getPoint("Specify center point of array");
+        if (!center.ok())
+            co_return;
+        const Vec2 c = center.point;
+        int n = 6;
+        double fillAngle = kTwoPi;
+        bool rotate = true;
+        for (;;) {
+            auto opt = co_await ctx.getKeyword(
+                "Polar array of " + std::to_string(n) + " items over " +
+                    niceNumber(fillAngle * 180 / kPi) +
+                    " degrees [Items/Angle/Rotate/Associative] <Accept>",
+                cmd::KeywordOptions{
+                    .keywords = {"Accept", "Items", "Angle", "Rotate", "Associative"},
+                    .defaultKeyword = "Accept"});
+            if (!opt.ok())
+                co_return;
+            if (opt.keyword == "Accept")
+                break;
+            if (opt.keyword == "Items") {
+                auto v = co_await ctx.getInteger(
+                    "Enter the number of items in the array (including the original) <" +
+                        std::to_string(n) + ">",
+                    cmd::IntOptions{.defaultValue = n, .min = 2, .max = blocks::kMaxArrayItems});
+                if (!v.ok())
+                    co_return;
+                n = static_cast<int>(v.value);
+            } else if (opt.keyword == "Angle") {
+                const double pixel = ctx.host().view().scale;
+                const int items = n;
+                auto preview = [&doc, source, c, items, pixel](Vec2 cursor, DisplayList& out) {
+                    blocks::PolarArray spec{c, items, 0, true, std::nullopt};
+                    double a = std::atan2(cursor.y - c.y, cursor.x - c.x);
+                    spec.fillAngle = a > 0 ? a : a + kTwoPi;
+                    previewCopies(
+                        doc, source,
+                        blocks::polarTransforms(spec, detail::boundsOf(doc, source).center()),
+                        pixel, out);
+                };
+                auto fill = co_await ctx.getAngle(
+                    "Specify the angle to fill (+ = counterclockwise, - = clockwise) <" +
+                        niceNumber(fillAngle * 180 / kPi) + ">",
+                    cmd::AngleOptions{.base = c, .preview = preview, .defaultValue = fillAngle});
+                if (!fill.ok())
+                    co_return;
+                fillAngle = fill.value;
+            } else if (opt.keyword == "Rotate") {
+                rotate = !rotate;
+                ctx.message(rotate ? "Items rotate as copied" : "Items keep their direction");
+            } else {
+                associative = !associative;
+                ctx.message(associative ? "The array is associative"
+                                        : "The array is made of plain copies");
+            }
+        }
+        blocks::PolarArray spec{c, n, fillAngle, rotate, std::nullopt};
+        info.kind = ArrayInfo::Kind::Polar;
+        info.center = c;
+        info.count = n;
+        info.fillAngle = fillAngle;
+        info.rotateItems = rotate;
+        info.reference = box.empty() ? Vec2{} : box.center();
+        auto r = blocks::arrayPolar(source, spec);
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        copies = std::move(r).value();
+        ok = true;
+    }
+
+    // Rectangular array setup. `ok` is true when the user finished the setup; a cancel leaves it
+    // false.
+    static cmd::Task rectSetup(cmd::CommandContext& ctx, const std::vector<EntityId>& ids,
+                               const std::vector<Entity>& source, const BBox2& box, ArrayInfo& info,
+                               std::vector<Entity>& copies, bool& associative, bool& ok) {
+        Document& doc = ctx.doc();
+        (void)ids;
+        (void)copies;
+        (void)associative;
+        (void)box;
+        (void)source;
+        (void)doc;
+        blocks::RectArray spec;
+        spec.rows = 3;
+        spec.columns = 4;
+        spec.columnSpacing = box.empty() || box.width() <= 0 ? 10.0 : niceSpacing(box.width());
+        spec.rowSpacing = box.empty() || box.height() <= 0 ? 10.0 : niceSpacing(box.height());
+        const double pixel = ctx.host().view().scale;
+        const Vec2 anchor = box.empty() ? Vec2{} : box.min;
+        for (;;) {
+            auto opt = co_await ctx.getKeyword(
+                std::to_string(spec.rows) + " rows x " + std::to_string(spec.columns) +
+                    " columns, spacing " + niceNumber(spec.columnSpacing) + " x " +
+                    niceNumber(spec.rowSpacing) + ", angle " + niceNumber(spec.angle * 180 / kPi) +
+                    " [Rows/Columns/Spacing/Angle/Associative] <Accept>",
+                cmd::KeywordOptions{
+                    .keywords = {"Accept", "Rows", "Columns", "Spacing", "Angle", "Associative"},
+                    .defaultKeyword = "Accept"});
+            if (!opt.ok())
+                co_return;
+            if (opt.keyword == "Accept")
+                break;
+            if (opt.keyword == "Rows" || opt.keyword == "Columns") {
+                const bool rows = opt.keyword == "Rows";
+                const int other = rows ? spec.columns : spec.rows;
+                auto preview = [&doc, source, spec, rows, other, pixel](const std::string& typed,
+                                                                        DisplayList& out) {
+                    const int k = std::atoi(typed.c_str());
+                    if (k < 1 || k > blocks::kMaxArrayItems)
+                        return;
+                    blocks::RectArray s = spec;
+                    s.rows = rows ? k : other;
+                    s.columns = rows ? other : k;
+                    previewCopies(doc, source, blocks::rectangularTransforms(s), pixel, out);
+                };
+                const int cur = rows ? spec.rows : spec.columns;
+                auto v = co_await ctx.getInteger(std::string("Enter the number of ") +
+                                                     (rows ? "rows" : "columns") + " <" +
+                                                     std::to_string(cur) + ">",
+                                                 cmd::IntOptions{.defaultValue = cur,
+                                                                 .min = 1,
+                                                                 .max = blocks::kMaxArrayItems,
+                                                                 .textPreview = preview});
+                if (!v.ok())
+                    co_return;
+                (rows ? spec.rows : spec.columns) = static_cast<int>(v.value);
+            } else if (opt.keyword == "Spacing") {
+                auto colSp = co_await ctx.getDistance(
+                    "Specify the distance between columns <" + niceNumber(spec.columnSpacing) + ">",
+                    cmd::DistanceOptions{.defaultValue = spec.columnSpacing,
+                                         .allowZero = false,
+                                         .allowNegative = true});
+                if (!colSp.ok())
+                    co_return;
+                spec.columnSpacing = colSp.value;
+                auto preview = [&doc, source, spec, anchor, pixel](Vec2 cursor, DisplayList& out) {
+                    blocks::RectArray s = spec;
+                    s.rowSpacing = distance(cursor, anchor);
+                    previewCopies(doc, source, blocks::rectangularTransforms(s), pixel, out);
+                };
+                auto rowSp = co_await ctx.getDistance(
+                    "Specify the distance between rows <" + niceNumber(spec.rowSpacing) + ">",
+                    cmd::DistanceOptions{.base = anchor,
+                                         .preview = preview,
+                                         .defaultValue = spec.rowSpacing,
+                                         .allowZero = false,
+                                         .allowNegative = true});
+                if (!rowSp.ok())
+                    co_return;
+                spec.rowSpacing = rowSp.value;
+            } else if (opt.keyword == "Angle") {
+                auto ang = co_await ctx.getAngle(
+                    "Specify the angle of the array <" + niceNumber(spec.angle * 180 / kPi) + ">",
+                    cmd::AngleOptions{.defaultValue = spec.angle});
+                if (!ang.ok())
+                    co_return;
+                spec.angle = ang.value;
+            } else {
+                associative = !associative;
+                ctx.message(associative ? "The array is associative"
+                                        : "The array is made of plain copies");
+            }
+        }
+        info.kind = ArrayInfo::Kind::Rectangular;
+        info.rows = spec.rows;
+        info.columns = spec.columns;
+        info.rowSpacing = spec.rowSpacing;
+        info.columnSpacing = spec.columnSpacing;
+        info.angle = spec.angle;
+        auto r = blocks::arrayRectangular(source, spec);
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        copies = std::move(r).value();
+        ok = true;
+    }
+
     // Moves the objects into a new anonymous block and puts one Insert showing it per item.
     static void createAssociative(cmd::CommandContext& ctx, std::vector<EntityId> ids,
                                   ArrayInfo info) {
