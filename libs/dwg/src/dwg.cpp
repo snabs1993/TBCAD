@@ -328,6 +328,17 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         if (!l.eed.empty() && cnt++ < 12)
                             el += " " + l.name + " {" + l.eed + "}";
                     report.info(code::kSkippedObject, el + " (" + std::to_string(cnt) + ")");
+                    std::map<std::string, std::pair<std::size_t, std::string>> kinds;
+                    for (const auto& [lh, l] : drawing.layers)
+                        if (!l.eed.empty()) {
+                            auto& k = kinds[l.eed];
+                            if (k.first++ == 0)
+                                k.second = l.name;
+                        }
+                    std::string kl = "distinct layer extended data (hex x count, first layer):";
+                    for (const auto& [hx, k] : kinds)
+                        kl += " {" + hx + "} x" + std::to_string(k.first) + " " + k.second;
+                    report.info(code::kSkippedObject, kl);
                 }
                 std::string nl = "layer extension dictionary entry names:";
                 for (const auto& [nm, c] : names)
