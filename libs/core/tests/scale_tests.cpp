@@ -53,7 +53,7 @@ TEST_CASE("one million lines in one transaction") {
     CHECK(seconds < 1.0);
 #endif
     if (memBefore != 0)
-        CHECK(memAfter - memBefore < 200u * 1000 * 1000);
+        CHECK(memAfter - memBefore < 230u * 1000 * 1000);  // two copies of 1 M entities of 96 bytes
 
     // Undo and redo of the whole batch stay cheap and exact.
     doc.apply(cs, Direction::Undo);

@@ -686,9 +686,18 @@ std::string Writer::tablesSection() {
     }
     {
         std::uint64_t table = newHandle();
-        tableBegin(o, "APPID", table, 2);
+        // Every application that has XDATA on an entity needs a record of its own.
+        std::set<std::string> extApps;
+        doc_.forEachEntity([&](const Entity& e) {
+            for (const XdataApp& app : e.common.ext.get().xdata)
+                if (!app.app.empty() && app.app != "ACAD" && app.app != "TBCAD")
+                    extApps.insert(app.app);
+        });
+        tableBegin(o, "APPID", table, 2 + extApps.size());
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "ACAD", 0);
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "TBCAD", 0);
+        for (const std::string& app : extApps)
+            tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", app, 0);
         levelsXdata(o);
         tableEnd(o);
     }
@@ -912,6 +921,48 @@ std::string Writer::objectsSection() {
     o.d(49, -0.5);
     o.i(62, 256);
     o.raw(6, "BYLAYER");
+
+    // Extension dictionaries of entities: a dictionary per entity, one XRECORD per entry.
+    for (const PendingDict& pd : pendingDicts_) {
+        std::vector<std::uint64_t> recHandles;
+        for (std::size_t i = 0; i < pd.records.size(); ++i)
+            recHandles.push_back(newHandle());
+        o.zero("DICTIONARY");
+        o.h(5, pd.handle);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, pd.owner);
+        o.raw(102, "}");
+        o.h(330, pd.owner);
+        o.raw(100, "AcDbDictionary");
+        o.i(281, 1);
+        for (std::size_t i = 0; i < pd.records.size(); ++i) {
+            o.str(3, pd.records[i].name);
+            o.h(350, recHandles[i]);
+        }
+        for (std::size_t i = 0; i < pd.records.size(); ++i) {
+            o.zero("XRECORD");
+            o.h(5, recHandles[i]);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, pd.handle);
+            o.raw(102, "}");
+            o.h(330, pd.handle);
+            o.raw(100, "AcDbXrecord");
+            o.i(280, 1);
+            for (const DataItem& it : pd.records[i].items) {
+                switch (dataKindOf(it.code)) {
+                    case DataKind::Text:
+                        o.str(it.code, it.text);
+                        break;
+                    case DataKind::Integer:
+                        o.i(it.code, it.integer);
+                        break;
+                    case DataKind::Real:
+                        o.d(it.code, it.real);
+                        break;
+                }
+            }
+        }
+    }
 
     auto layout = [&](std::uint64_t handle, const std::string& name, int tab, std::uint64_t rec,
                       int flags, double paperW = 0, double paperH = 0) {

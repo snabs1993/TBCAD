@@ -139,6 +139,8 @@ Props Writer::propsOf(const EntityCommon& c) {
         p.ltScale = std::strtod(buf, nullptr);
     }
     p.visible = c.visible;
+    if (!c.ext.get().dict.empty())
+        p.dict = &c.ext.get().dict;
     return p;
 }
 
@@ -197,7 +199,18 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
     Out& o = *o_;
     o.zero(type);
     if (!r12_) {
-        o.h(5, newHandle());
+        const std::uint64_t self = newHandle();
+        o.h(5, self);
+        if (p.dict) {
+            PendingDict pd;
+            pd.handle = newHandle();
+            pd.owner = self;
+            pd.records = *p.dict;
+            o.raw(102, "{ACAD_XDICTIONARY");
+            o.h(360, pd.handle);
+            o.raw(102, "}");
+            pendingDicts_.push_back(std::move(pd));
+        }
         o.h(330, owner);
         o.raw(100, "AcDbEntity");
     }
@@ -272,6 +285,7 @@ void Writer::emitLevelTag() {
 
 void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
     Props p = propsOf(e.common);
+    curCommon_ = &e.common;
     setLevelTag(e.common);
     switch (kind(e)) {
         case EntityKind::Line:
@@ -361,6 +375,32 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
 // Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer
 // turns it back into the flag. Written after the last group of the record.
 void Writer::writeAnnotativeData(const Entity& e) {
+    writeTbcadFlags(e);
+    writeExtXdata(e.common);
+}
+
+// XDATA of other applications that the entity came with, written after the last group of its
+// record. Items are written as stored; the 1001 group opens each application.
+void Writer::writeExtXdata(const EntityCommon& c) {
+    for (const XdataApp& a : c.ext.get().xdata) {
+        o_->str(1001, a.app);
+        for (const DataItem& it : a.items) {
+            switch (dataKindOf(it.code)) {
+                case DataKind::Text:
+                    o_->str(it.code, it.text);
+                    break;
+                case DataKind::Integer:
+                    o_->i(it.code, it.integer);
+                    break;
+                case DataKind::Real:
+                    o_->d(it.code, it.real);
+                    break;
+            }
+        }
+    }
+}
+
+void Writer::writeTbcadFlags(const Entity& e) {
     if (!e.common.annotative && !e.common.wipeout)
         return;
     o_->raw(1001, "TBCAD");
@@ -924,6 +964,8 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                   "a clipping boundary is kept only in TBCAD XDATA; other programs "
                   "show the whole block");
     }
+    if (curCommon_)
+        writeExtXdata(*curCommon_);
     count("INSERT");
     if (defs.empty())
         return;

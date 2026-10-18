@@ -195,6 +195,10 @@ private:
     std::vector<std::pair<std::string, std::string>> layerXdicts_{};
     std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> dicts_{};
     std::unordered_map<std::string, std::int64_t> xrecNumbers_{};
+    // Items of every XRECORD by handle, for extension dictionaries of entities.
+    std::unordered_map<std::string, std::vector<DataItem>> xrecItems_{};
+    ExtData extOf(const Record& r);
+    void resolveExtDictionaries();
     void applyLayerAlphaXrecords();
     std::vector<std::string> layerRawNames_{};  // raw bytes of each row's name
     bool layersCreated_ = false;
