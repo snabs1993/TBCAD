@@ -115,6 +115,32 @@ ToolResult listConstraints(ToolContext& ctx, const Json&) {
     return ToolResult::ok(Json(Json::Object{{"constraints", Json(std::move(all))}}));
 }
 
+ToolResult analyzeConstraints(ToolContext& ctx, const Json&) {
+    Document& doc = ctx.session.document();
+    auto an = analyze(doc, load(doc));
+    if (!an)
+        return ToolResult::fail(an.error().message);
+    const Analysis& a = an.value();
+    Json::Array cons, ents;
+    for (const ConstraintStatus& c : a.constraints)
+        cons.push_back(Json(Json::Object{{"id", static_cast<double>(c.id)},
+                                         {"redundant", c.redundant},
+                                         {"conflicting", c.conflicting}}));
+    for (const EntityStatus& e : a.entities)
+        ents.push_back(
+            Json(Json::Object{{"id", idJson(e.entity)},
+                              {"degreesOfFreedom", static_cast<double>(e.degreesOfFreedom)},
+                              {"constraints", static_cast<double>(e.constraints)}}));
+    return ToolResult::ok(
+        Json(Json::Object{{"summary", a.summary()},
+                          {"solved", a.converged},
+                          {"fullyConstrained", a.fullyConstrained()},
+                          {"overConstrained", a.overConstrained()},
+                          {"degreesOfFreedom", static_cast<double>(a.degreesOfFreedom)},
+                          {"constraints", Json(std::move(cons))},
+                          {"objects", Json(std::move(ents))}}));
+}
+
 ToolResult addConstraint(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;
     Document& doc = s.document();
@@ -207,6 +233,12 @@ void registerConstraintTools(ToolSet& tools) {
     tools.add({"list_constraints", "List constraints",
                "Lists the geometric and dimensional constraints of the drawing.", tObject({}),
                outSchema({"constraints"}), Edit::None, false, true, false, listConstraints});
+    tools.add({"analyze_constraints", "Analyze constraints",
+               "Reports whether the constraints are satisfied, how many degrees of freedom are "
+               "left (overall and per object; 0 = fully constrained), and which constraints are "
+               "redundant or in conflict.",
+               tObject({}), outSchema({"summary", "solved", "degreesOfFreedom"}), Edit::None, false,
+               true, false, analyzeConstraints});
     tools.add({"add_constraint", "Add constraint",
                "Adds a constraint and solves, moving the geometry as little as possible. Kinds: "
                "Coincident (a, b points), Horizontal/Vertical (a line, or a and b points), "

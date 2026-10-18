@@ -593,4 +593,84 @@ Result<SolveResult> solve(Transaction& tx, const ConstraintSet& set, const Solve
     return res;
 }
 
+Result<Analysis> analyze(const Document& doc, const ConstraintSet& set) {
+    Analysis a;
+    if (set.empty()) {
+        a.converged = true;
+        return a;
+    }
+    auto model = buildModel(doc, set.all());
+    if (!model)
+        return model.error();
+    const Model& m = model.value();
+    const Outcome out = run(m, SolveOptions{}, {});
+    a.converged = out.converged;
+    a.worst = out.converged ? 0 : out.worst;
+    const std::size_t n = m.x.size();
+
+    // Jacobian at the solution (or where the solver stopped), all variables free.
+    std::vector<double> r0, rp, rm;
+    allResiduals(m, out.x, r0);
+    const std::size_t rows = r0.size();
+    std::vector<double> J(rows * n, 0), w = out.x;
+    for (std::size_t j = 0; j < n; ++j) {
+        const double h = 1e-6 * std::max(1.0, std::abs(out.x[j]));
+        w[j] = out.x[j] + h;
+        allResiduals(m, w, rp);
+        w[j] = out.x[j] - h;
+        allResiduals(m, w, rm);
+        w[j] = out.x[j];
+        for (std::size_t i = 0; i < rows; ++i)
+            J[i * n + j] = (rp[i] - rm[i]) / (2 * h);
+    }
+    const int rank = rankOf(J, rows, n);
+    a.rows = static_cast<int>(rows);
+    a.rank = rank;
+    a.degreesOfFreedom = static_cast<int>(n) - rank;
+
+    // Row ranges per constraint.
+    std::vector<std::size_t> first(m.constraints.size() + 1, 0);
+    for (std::size_t i = 0; i < m.constraints.size(); ++i)
+        first[i + 1] = first[i] + residualCount(m, i);
+    for (std::size_t i = 0; i < m.constraints.size(); ++i) {
+        ConstraintStatus st;
+        st.id = m.constraints[i].id;
+        if (out.converged && m.constraints.size() <= 300) {
+            std::vector<double> rest;
+            rest.reserve(J.size());
+            for (std::size_t r = 0; r < rows; ++r) {
+                if (r >= first[i] && r < first[i + 1])
+                    continue;
+                rest.insert(rest.end(), J.begin() + r * n, J.begin() + (r + 1) * n);
+            }
+            const int without = rankOf(rest, rows - (first[i + 1] - first[i]), n);
+            st.redundant = without == rank;
+        }
+        a.constraints.push_back(st);
+    }
+    if (!out.converged) {
+        for (ConstraintStatus& st : a.constraints)
+            st.conflicting = st.id == out.worst;
+    }
+
+    // Free degrees of freedom of each object: count - rank(J) + rank(J without its columns).
+    for (const Slot& s : m.slots) {
+        std::vector<double> cut;
+        cut.reserve(rows * (n - s.count));
+        for (std::size_t r = 0; r < rows; ++r)
+            for (std::size_t c = 0; c < n; ++c)
+                if (c < s.offset || c >= s.offset + s.count)
+                    cut.push_back(J[r * n + c]);
+        EntityStatus es;
+        es.entity = s.id;
+        es.degreesOfFreedom =
+            static_cast<int>(s.count) - rank + (n > s.count ? rankOf(cut, rows, n - s.count) : 0);
+        es.degreesOfFreedom = std::clamp(es.degreesOfFreedom, 0, static_cast<int>(s.count));
+        for (const Constraint& c : m.constraints)
+            es.constraints += (c.a.entity == s.id || c.b.entity == s.id) ? 1 : 0;
+        a.entities.push_back(es);
+    }
+    return a;
+}
+
 }  // namespace tbcad::constraints

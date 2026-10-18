@@ -175,6 +175,36 @@ Result<double> measure(const Document& doc, const Constraint& c);
 Result<SolveResult> applyParameters(Transaction& tx, ConstraintSet& set,
                                     const ParameterSet& params);
 
+// ---- analysis (for the constraint bar and the reports) ---------------------------------------
+
+struct ConstraintStatus {
+    std::uint32_t id = 0;
+    bool redundant = false;    // the others already imply it (over-constrained, but consistent)
+    bool conflicting = false;  // the solve cannot satisfy it together with the others
+};
+
+struct EntityStatus {
+    EntityId entity{};
+    int degreesOfFreedom =
+        0;                // how many of its own variables can still move; 0 = fully constrained
+    int constraints = 0;  // constraints that name it
+};
+
+struct Analysis {
+    bool converged = false;
+    int degreesOfFreedom = 0;  // of all constrained objects together
+    int rows = 0, rank = 0;
+    std::uint32_t worst = 0;  // when not converged: the constraint with the largest residual
+    std::vector<ConstraintStatus> constraints{};
+    std::vector<EntityStatus> entities{};
+    bool overConstrained() const;
+    bool fullyConstrained() const { return converged && degreesOfFreedom == 0; }
+    std::string summary() const;  // "Under-constrained: 5 degrees of freedom", ...
+};
+
+// Does not change the document. Redundancy is tested only up to 300 constraints.
+Result<Analysis> analyze(const Document& doc, const ConstraintSet& set);
+
 // ---- AUTOCONSTRAIN ----------------------------------------------------------------------------
 
 struct AutoOptions {

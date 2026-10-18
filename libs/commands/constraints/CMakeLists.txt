@@ -6,4 +6,4 @@ tbcad_add_tests(constraints_commands
   SOURCES
     tests/main.cpp
     tests/constraint_command_tests.cpp
-  DEPENDS tbcad::cmd tbcad::io)
+  DEPENDS tbcad::cmd tbcad::io tbcad::transform)

@@ -54,6 +54,14 @@ A new constraint is solved at once; if the constraints cannot all hold, nothing 
 message names the constraint that conflicts. The message also says how many degrees of freedom
 are left.
 
+## Checking the constraints
+
+`analyze` (library), `SHOWCON`, `CONSTRAINTBAR` and the MCP tool `analyze_constraints` report: whether
+the constraints can all hold, the degrees of freedom left (overall and per object; 0 = fully
+constrained), constraints that are **redundant** (the others already imply them: over-constrained but
+consistent) and the constraint that **conflicts** when there is no solution. `DELCONSTRAINT` removes
+constraints by the numbers `SHOWCON` shows; `DELCON` removes those of selected objects.
+
 ## Behaviour when objects are edited
 
 A commit hook runs after every command: the objects the command touched stay as the user left

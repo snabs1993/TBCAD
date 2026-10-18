@@ -530,8 +530,95 @@ public:
             ctx.message("No constraints.");
             co_return;
         }
-        for (const Constraint& c : set.all())
-            ctx.message(describe(ctx.doc(), c));
+        auto an = analyze(ctx.doc(), set);
+        for (const Constraint& c : set.all()) {
+            std::string line = describe(ctx.doc(), c);
+            if (an) {
+                for (const ConstraintStatus& st : an.value().constraints) {
+                    if (st.id != c.id)
+                        continue;
+                    if (st.conflicting)
+                        line += "  <- conflicts";
+                    else if (st.redundant)
+                        line += "  (redundant)";
+                }
+            }
+            ctx.message(line);
+        }
+        if (an)
+            ctx.message(an.value().summary());
+    }
+};
+
+// CONSTRAINTBAR: the constraints of the selected objects with the degrees of freedom they have
+// left. (The data a constraint bar next to an object shows.)
+class ConstraintBar final : public cmd::Command {
+public:
+    std::string_view name() const override { return "CONSTRAINTBAR"; }
+    std::string_view description() const override {
+        return "Show the constraints and free degrees of freedom of the selected objects";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select objects");
+        if (sel.ids.empty())
+            co_return;
+        const ConstraintSet set = load(ctx.doc());
+        auto an = analyze(ctx.doc(), set);
+        if (!an) {
+            ctx.message(an.error().message);
+            co_return;
+        }
+        for (EntityId id : sel.ids) {
+            const EntityStatus* es = nullptr;
+            for (const EntityStatus& e : an.value().entities)
+                if (e.entity == id)
+                    es = &e;
+            if (!es) {
+                ctx.message("Object " + std::to_string(id.value) + ": no constraints.");
+                continue;
+            }
+            ctx.message("Object " + std::to_string(id.value) + ": " +
+                        (es->degreesOfFreedom == 0
+                             ? std::string("fully constrained")
+                             : std::to_string(es->degreesOfFreedom) + " degrees of freedom") +
+                        ", " + std::to_string(es->constraints) + " constraint(s)");
+            for (const Constraint& c : set.all())
+                if (c.a.entity == id || c.b.entity == id)
+                    ctx.message("  " + describe(ctx.doc(), c));
+        }
+    }
+};
+
+// DELCONSTRAINT: removes constraints by their number (SHOWCON lists them), until Enter.
+class DelConstraint final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DELCONSTRAINT"; }
+    std::string_view description() const override { return "Remove a constraint by its number"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ConstraintSet set = load(ctx.doc());
+        if (set.empty()) {
+            ctx.message("No constraints.");
+            co_return;
+        }
+        std::size_t removed = 0;
+        for (;;) {
+            cmd::IntOptions io;
+            auto n = co_await ctx.getInteger("Constraint number to remove (Enter to finish)", io);
+            if (!n.ok())
+                break;
+            if (!set.remove(static_cast<std::uint32_t>(n.value))) {
+                ctx.message("There is no constraint #" + std::to_string(n.value) + ".");
+                continue;
+            }
+            ++removed;
+        }
+        if (removed == 0)
+            co_return;
+        if (auto ok = store(ctx.tx(), set); !ok) {
+            ctx.message(ok.error().message);
+            co_return;
+        }
+        ctx.message(std::to_string(removed) + " constraint(s) removed.");
     }
 };
 
@@ -626,6 +713,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ParametersCmd>());
     (void)registry.add(std::make_unique<ShowCon>());
     (void)registry.add(std::make_unique<DelCon>());
+    (void)registry.add(std::make_unique<ConstraintBar>());
+    (void)registry.add(std::make_unique<DelConstraint>());
     (void)registry.add(std::make_unique<SolveCon>());
     registry.addCommitHook(keepInStep);
 }
