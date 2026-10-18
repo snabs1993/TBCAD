@@ -160,21 +160,67 @@ Strokes strokes(const MlineData& d, const Style& style) {
         shift = -*std::max_element(style.offsets.begin(), style.offsets.end());
     else if (d.justification == 2)
         shift = -*std::min_element(style.offsets.begin(), style.offsets.end());
-    for (double off : style.offsets) {
-        const double o = (off + shift) * d.scale;
+    // Rank of each style line from the lowest offset; cuts name lines by rank.
+    std::vector<std::size_t> order(style.offsets.size());
+    for (std::size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::sort(order.begin(), order.end(),
+              [&](std::size_t a, std::size_t b) { return style.offsets[a] < style.offsets[b]; });
+    std::vector<std::size_t> rank(order.size());
+    for (std::size_t r = 0; r < order.size(); ++r)
+        rank[order[r]] = r;
+    std::vector<std::vector<Vec2>> capPoints(style.offsets.size());
+    for (std::size_t k = 0; k < style.offsets.size(); ++k) {
+        const double o = (style.offsets[k] + shift) * d.scale;
         std::vector<Vec2> line;
         line.reserve(n);
         for (std::size_t i = 0; i < n; ++i)
             line.push_back(p[i] + miter[i] * o);
-        out.lines.push_back(std::move(line));
-        out.closed.push_back(closed);
+        capPoints[k] = line;
+        std::vector<std::pair<double, double>> gaps;  // in segment + fraction units
+        for (const MlineCut& c : d.cuts)
+            if (rank[k] >= c.lo && rank[k] <= c.hi && c.seg < segs) {
+                const double a = std::clamp(c.t0, 0.0, 1.0), b = std::clamp(c.t1, 0.0, 1.0);
+                gaps.emplace_back(c.seg + std::min(a, b), c.seg + std::max(a, b));
+            }
+        if (gaps.empty()) {
+            out.lines.push_back(std::move(line));
+            out.closed.push_back(closed);
+            continue;
+        }
+        if (closed)
+            line.push_back(line.front());  // cut a closed line open at its first vertex
+        std::sort(gaps.begin(), gaps.end());
+        auto at = [&](double u) {
+            const std::size_t i = std::min(static_cast<std::size_t>(u), line.size() - 2);
+            const double t = u - static_cast<double>(i);
+            return line[i] + (line[i + 1] - line[i]) * t;
+        };
+        const double end = static_cast<double>(line.size() - 1);
+        double from = 0;
+        auto emit = [&](double a, double b) {
+            if (b - a < 1e-9)
+                return;
+            std::vector<Vec2> piece{at(a)};
+            for (std::size_t i = static_cast<std::size_t>(std::floor(a)) + 1;
+                 static_cast<double>(i) < b; ++i)
+                piece.push_back(line[i]);
+            piece.push_back(at(b));
+            out.lines.push_back(std::move(piece));
+            out.closed.push_back(false);
+        };
+        for (const auto& [a, b] : gaps) {
+            emit(from, std::max(from, a));
+            from = std::max(from, b);
+        }
+        emit(from, end);
     }
     if (!closed && out.lines.size() >= 2) {
         // A cap runs across the end, from the lowest offset to the highest.
         auto cap = [&](std::size_t idx) {
             std::vector<std::pair<double, Vec2>> ends;
             for (std::size_t i = 0; i < style.offsets.size(); ++i)
-                ends.emplace_back(style.offsets[i], out.lines[i][idx]);
+                ends.emplace_back(style.offsets[i], capPoints[i][idx]);
             std::sort(ends.begin(), ends.end(),
                       [](const auto& a, const auto& b) { return a.first < b.first; });
             out.lines.push_back({ends.front().second, ends.back().second});
@@ -253,6 +299,15 @@ std::string serialize(const MlineData& d, const Style& style) {
     for (std::size_t i = 0; i < d.v.size(); ++i)
         out += (i ? ";" : "") + num(d.v[i].x) + "," + num(d.v[i].y);
     out += "\n";
+    if (!d.cuts.empty()) {
+        out += "cuts=";
+        for (std::size_t i = 0; i < d.cuts.size(); ++i) {
+            const MlineCut& c = d.cuts[i];
+            out += (i ? ";" : "") + std::to_string(c.seg) + "," + num(c.t0) + "," + num(c.t1) +
+                   "," + std::to_string(c.lo) + "," + std::to_string(c.hi);
+        }
+        out += "\n";
+    }
     out += "style\n" + encode(style);
     return escape(out);
 }
@@ -279,6 +334,25 @@ std::optional<Parsed> parse(const std::string& packed) {
                 p.data.justification = std::stoi(val);
             } else if (key == "closed") {
                 p.data.closed = val == "1";
+            } else if (key == "cuts") {
+                std::istringstream in(val);
+                std::string item;
+                while (std::getline(in, item, ';')) {
+                    std::istringstream f(item);
+                    std::string part;
+                    std::vector<std::string> parts;
+                    while (std::getline(f, part, ','))
+                        parts.push_back(part);
+                    if (parts.size() != 5)
+                        return std::nullopt;
+                    MlineCut c;
+                    c.seg = static_cast<std::uint32_t>(std::stoul(parts[0]));
+                    c.t0 = std::stod(parts[1]);
+                    c.t1 = std::stod(parts[2]);
+                    c.lo = static_cast<std::uint8_t>(std::stoi(parts[3]));
+                    c.hi = static_cast<std::uint8_t>(std::stoi(parts[4]));
+                    p.data.cuts.push_back(c);
+                }
             } else if (key == "v") {
                 std::istringstream in(val);
                 std::string item;

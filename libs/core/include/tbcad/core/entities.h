@@ -537,12 +537,24 @@ inline Vec2 rayEnd(const RayData& d) {
 
 // A multiline: parallel lines along a path of vertices, offsets from the style (MLSTYLE).
 // justification 0 = top, 1 = zero (the path is the centre), 2 = bottom.
+// A gap in some of the lines of a multiline (MLEDIT cuts, open tees and crosses). It runs from
+// parameter t0 to t1 of segment `seg` (0 = its first vertex, 1 = the next) and hides the lines
+// whose rank, counted from the lowest style offset, lies in lo..hi.
+struct MlineCut {
+    std::uint32_t seg = 0;
+    double t0 = 0;
+    double t1 = 1;
+    std::uint8_t lo = 0;
+    std::uint8_t hi = 255;
+};
+
 struct MlineData {
     std::string style = "STANDARD";
     double scale = 1;
     int justification = 1;
     bool closed = false;
     std::vector<Vec2> v{};
+    std::vector<MlineCut> cuts{};
 };
 
 // A multileader: several leader lines that meet at one landing point, then a short dogleg to a
