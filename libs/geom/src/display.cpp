@@ -82,6 +82,30 @@ void polylineDisplay(const PolylineData& pl, double tol, const DisplayStyle& sty
         out.items.push_back(std::move(pts));
         return;
     }
+    if (!hasWidth(pl)) {
+        bool straight = true;
+        for (const PolyVertex& v : pl.v)
+            straight = straight && v.bulge == 0;
+        if (straight) {  // the common case: the vertices are the outline
+            DisplayPolyline d;
+            d.style = style;
+            d.closed = pl.closed;
+            const std::size_t n = pl.v.size();
+            const std::size_t count = static_cast<std::size_t>(segmentCount(pl));
+            d.pts.reserve(count + 1);
+            d.pts.push_back(pl.v[0].p);
+            for (std::size_t i = 0; i < count; ++i) {
+                const Vec2 a = pl.v[i].p, b = pl.v[(i + 1) % n].p;
+                if (a.x == b.x && a.y == b.y)
+                    continue;  // a zero-length segment is skipped, as in segments()
+                d.pts.push_back(b);
+            }
+            if (d.closed && d.pts.size() > 1 && distance(d.pts.front(), d.pts.back()) <= 0)
+                d.pts.pop_back();
+            out.items.push_back(std::move(d));
+            return;
+        }
+    }
     std::vector<Segment> segs = segments(pl);
     if (!hasWidth(pl)) {
         DisplayPolyline d;
@@ -430,9 +454,14 @@ BBox2 bounds(const Entity& e) {
             BBox2 b;
             for (const PolyVertex& v : pl.v)
                 b.expand(v.p);
-            for (const Segment& s : segments(pl))
-                if (s.curve.kind() != CurveRef::Kind::Line)
-                    b.merge(s.curve.bounds());
+            // Straight segments add nothing to the box of their vertices; only arcs are looked at.
+            bool anyBulge = false;
+            for (const PolyVertex& v : pl.v)
+                anyBulge = anyBulge || v.bulge != 0;
+            if (anyBulge)
+                for (const Segment& s : segments(pl))
+                    if (s.curve.kind() != CurveRef::Kind::Line)
+                        b.merge(s.curve.bounds());
             double w = pl.constantWidth;
             for (const PolyVertex& v : pl.v)
                 w = std::max({w, v.startWidth, v.endWidth});
