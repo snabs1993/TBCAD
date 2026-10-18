@@ -142,6 +142,8 @@ struct Drawing {
     std::map<std::uint32_t, std::array<std::size_t, 2>> layoutCheck{};
     // Objects found away from the place the object map gives: shift in bytes -> how many.
     std::map<std::int64_t, std::size_t> relocated{};
+    // Samples of those: handle, offset the map gives, offset found.
+    std::vector<std::array<std::int64_t, 3>> relocatedSamples{};
     std::vector<LayoutRec> layoutObjects{};
     std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
     // SORTENTSTABLE (draw order): block handle -> entity handle -> sort key. Entities that are not

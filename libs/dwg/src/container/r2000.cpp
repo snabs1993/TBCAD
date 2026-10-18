@@ -163,6 +163,7 @@ std::vector<MapEntry> readObjectMapData(Bytes file, std::size_t start, std::size
     if (limit == 0)
         limit = file.size();
     bool mixedReported = false;
+    int blockNotes = 0;
     while (pos + 2 <= end) {
         // The section size is the one big-endian value of the format.
         const std::size_t size = (static_cast<std::size_t>(file[pos]) << 8) | file[pos + 1];
@@ -197,6 +198,16 @@ std::vector<MapEntry> readObjectMapData(Bytes file, std::size_t start, std::size
                     best = mixedB;
             }
         }
+        if (best.valid < best.entries.size() && blockNotes++ < 8 && !best.entries.empty())
+            notes.push_back("object map block at byte " + std::to_string(pos - start) + ": size " +
+                            std::to_string(size) + ", " + std::to_string(best.entries.size()) +
+                            " entries, " + std::to_string(best.valid) +
+                            " inside the data, first handle " +
+                            std::to_string(best.entries.front().handle) + " offset " +
+                            std::to_string(best.entries.front().offset) + ", last handle " +
+                            std::to_string(best.entries.back().handle) + " offset " +
+                            std::to_string(best.entries.back().offset) +
+                            ", entries before: " + std::to_string(out.size()));
         out.insert(out.end(), best.entries.begin(), best.entries.end());
         state = best.end;
         if (out.size() > 50'000'000)
