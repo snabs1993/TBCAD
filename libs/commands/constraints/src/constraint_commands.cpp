@@ -128,7 +128,8 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions ko;
         ko.keywords = {"Coincident",    "Horizontal", "Vertical", "Parallel",
-                       "Perpendicular", "Equal",      "Tangent",  "Fix"};
+                       "Perpendicular", "Equal",      "Tangent",  "Fix",
+                       "Concentric",    "PointOn",    "Midpoint", "Collinear"};
         auto k = co_await ctx.getKeyword("Constraint type", std::move(ko));
         if (k.status != cmd::Status::Keyword)
             co_return;
@@ -181,8 +182,15 @@ public:
             c.kind = Kind::Coincident;
             c.a = {first.id, nearestPart(*e1, first.pickPoint)};
             c.b = {second.id, nearestPart(*e2, second.pickPoint)};
+        } else if (type == "PointOn" || type == "Midpoint") {
+            // the first pick is the point, the second the line, circle or arc it sits on
+            c.kind = type == "PointOn" ? Kind::PointOnObject : Kind::Midpoint;
+            c.a = {first.id, nearestPart(*e1, first.pickPoint)};
+            c.b = {second.id, Part::Whole};
         } else {
             c.kind = type == "Parallel"        ? Kind::Parallel
+                     : type == "Concentric"    ? Kind::Concentric
+                     : type == "Collinear"     ? Kind::Collinear
                      : type == "Perpendicular" ? Kind::Perpendicular
                      : type == "Equal"         ? Kind::Equal
                                                : Kind::Tangent;
