@@ -384,3 +384,37 @@ TEST_CASE("XPATH changes how the path is stored, XRELINK repairs a lost file") {
     CHECK(f.host->logContains("Cannot read"));
     CHECK(f.doc.blockByName("plan")->entities.size() == 4);
 }
+
+TEST_CASE("XCLIP Invert toggles, shows the outside, survives the file and DXF, Delete resets it") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 10);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    EntityId ins = f.modelSpace()[0];
+    f.host->clearLog();
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert"});
+    CHECK(f.host->logContains("no clipping boundary"));
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "", "100,0", "104,10"});
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clipInvert);
+    // Bounds of an inverted clip are the whole block again.
+    BBox2 box = blocks::insertBounds(f.doc, *f.doc.find(ins));
+    CHECK(box.max.x > 105);
+    // The file keeps it.
+    auto bytes = io::writeTbcadToMemory(f.doc);
+    REQUIRE(bytes.ok());
+    io::IoReport rep;
+    auto back = io::readTbcad(bytes.value(), rep);
+    REQUIRE(back.ok());
+    bool seen = false;
+    back.value()->forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<InsertData>(e))
+            seen = seen || (d->clipInvert && d->clip.size() == 4);
+    });
+    CHECK(seen);
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert"});
+    CHECK_FALSE(entityAs<InsertData>(*f.doc.find(ins))->clipInvert);
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert"});
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Delete"});
+    CHECK_FALSE(entityAs<InsertData>(*f.doc.find(ins))->clipInvert);
+}

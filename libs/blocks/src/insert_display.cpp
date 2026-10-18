@@ -183,7 +183,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             boundary.reserve(ins->clip.size());
             for (const Vec2& p : ins->clip)
                 boundary.push_back(p);
-            transformList(clipDisplay(*blockSpace, boundary), it, out);
+            transformList(clipDisplay(*blockSpace, boundary, ins->clipInvert), it, out);
         }
     } else {
         for (const Transform2& it : items)
@@ -203,7 +203,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         DisplayList own;
         geom::buildDisplay(doc, *text, child, own);
         if (clipped)
-            own = clipDisplay(own, ins->clip);
+            own = clipDisplay(own, ins->clip, ins->clipInvert);
         for (const Transform2& it : items)
             transformList(own, it, out);
     }

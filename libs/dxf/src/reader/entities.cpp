@@ -1000,6 +1000,7 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
     // points).
     std::vector<Vec2> clip;
     bool clipOn = true;
+    bool clipInvert = false;
     {
         bool inOurs = false;
         Vec2 pending{};
@@ -1011,6 +1012,8 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             } else if (g.code == 1000) {
                 if (g.str() == "clip=0")
                     clipOn = false;
+                else if (g.str() == "clipinvert=1")
+                    clipInvert = true;
             } else if (g.code == 1010) {
                 pending.x = g.number() * k_;
             } else if (g.code == 1020) {
@@ -1034,6 +1037,7 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             d.attribs = values;
             d.clip = clip;
             d.clipOn = clipOn;
+            d.clipInvert = clipInvert;
             out.push_back(makeEntity(std::move(d)));
         }
     }

@@ -967,6 +967,8 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         // No DXF form for a clipping boundary: TBCAD restores it from XDATA (block coordinates).
         o.raw(1001, "TBCAD");
         o.str(1000, d.clipOn ? "clip=1" : "clip=0");
+        if (d.clipInvert)
+            o.str(1000, "clipinvert=1");
         for (const Vec2& v : d.clip)
             o.pt(1010, v);
         downgrade("INSERT",

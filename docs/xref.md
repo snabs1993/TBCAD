@@ -91,6 +91,8 @@ scaled. Display, bounds and plots show only the inside; lines are cut exactly at
 filled areas are cut exactly for a convex boundary (a concave one may leave zero-width slivers).
 Snapping and picking still see the whole block. `EXPLODE` drops the boundary and says so.
 
+`XCLIP Invert` flips a boundary so that the **outside** shows and the inside is hidden (`InsertData::clipInvert`, kept in the same file section as bit 1 of the flags byte, and in DXF XDATA as `clipinvert=1`). Lines are cut exactly; filled areas are cut exactly for a convex boundary; the bounds of an inverted clip are the whole block. `New` and `Delete` reset the flag. For readers of other formats (the DWG SPATIAL_FILTER object): fill `InsertData::clip` (block coordinates), `clipOn` and `clipInvert`; nothing else needs to change.
+
 ## DXF
 
 DXF has no external reference with a snapshot, so the export writes the xref as an ordinary block

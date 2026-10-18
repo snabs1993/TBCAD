@@ -256,7 +256,8 @@ struct PayloadWriter {
         }
         if (d.clip.size() >= 3) {
             w.u8(3);
-            w.u8(d.clipOn ? 1 : 0);
+            w.u8(static_cast<std::uint8_t>((d.clipOn ? 1 : 0) |
+                                           (d.clipInvert ? 2 : 0)));  // bit 1: invert
             w.varint(d.clip.size());
             for (const Vec2& p : d.clip)
                 w.vec2(p);
@@ -688,7 +689,9 @@ struct PayloadReader {
                         continue;
                     }
                     if (tag == 3) {
-                        d.clipOn = r.boolean();
+                        const std::uint8_t flags = r.u8();
+                        d.clipOn = (flags & 1) != 0;
+                        d.clipInvert = (flags & 2) != 0;
                         std::size_t n = r.count(16);
                         d.clip.reserve(n);
                         for (std::size_t i = 0; i < n; ++i)

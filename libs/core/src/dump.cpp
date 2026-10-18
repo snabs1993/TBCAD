@@ -224,7 +224,7 @@ struct DataDumper {
             polyV(o, a.path);
         }
         if (d.clip.size() >= 3) {
-            o << " CLIP" << (d.clipOn ? "on" : "off");
+            o << " CLIP" << (d.clipOn ? "on" : "off") << (d.clipInvert ? "inv" : "");
             for (const Vec2& p : d.clip)
                 o << " " << p;
         }

@@ -35,7 +35,8 @@ void crossings(const std::vector<Vec2>& poly, Vec2 a, Vec2 b, std::vector<double
     }
 }
 
-void clipPolyline(const DisplayPolyline& in, const std::vector<Vec2>& poly, DisplayList& out) {
+void clipPolyline(const DisplayPolyline& in, const std::vector<Vec2>& poly, bool invert,
+                  DisplayList& out) {
     const std::size_t count = in.pts.size();
     if (count < 2)
         return;
@@ -61,7 +62,7 @@ void clipPolyline(const DisplayPolyline& in, const std::vector<Vec2>& poly, Disp
             const Vec2 p = a + (b - a) * ts[k];
             const Vec2 q = a + (b - a) * ts[k + 1];
             const Vec2 mid = a + (b - a) * ((ts[k] + ts[k + 1]) / 2);
-            if (insidePolygon(poly, mid)) {
+            if (insidePolygon(poly, mid) != invert) {
                 if (run.pts.empty() ||
                     std::hypot(run.pts.back().x - p.x, run.pts.back().y - p.y) > 1e-9) {
                     flush();
@@ -116,7 +117,7 @@ bool insidePolygon(const std::vector<Vec2>& polygon, Vec2 p) {
     return in;
 }
 
-DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon) {
+DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon, bool invert) {
     DisplayList out;
     if (polygon.size() < 3)
         return in;
@@ -125,16 +126,28 @@ DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon)
         std::reverse(ccw.begin(), ccw.end());
     for (const DisplayItem& item : in.items) {
         if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
-            clipPolyline(*pl, polygon, out);
+            clipPolyline(*pl, polygon, invert, out);
         } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
             DisplayFill f;
             f.style = fill->style;
             for (const auto& ring : fill->rings) {
-                std::vector<Vec2> r = ring;
-                for (std::size_t i = 0; i < ccw.size() && r.size() >= 3; ++i)
-                    r = clipHalfPlane(r, ccw[i], ccw[(i + 1) % ccw.size()]);
-                if (r.size() >= 3)
-                    f.rings.push_back(std::move(r));
+                if (!invert) {
+                    std::vector<Vec2> r = ring;
+                    for (std::size_t i = 0; i < ccw.size() && r.size() >= 3; ++i)
+                        r = clipHalfPlane(r, ccw[i], ccw[(i + 1) % ccw.size()]);
+                    if (r.size() >= 3)
+                        f.rings.push_back(std::move(r));
+                    continue;
+                }
+                // Outside a convex polygon = disjoint pieces: beyond edge i, inside edges 0..i-1.
+                std::vector<Vec2> inside = ring;
+                for (std::size_t i = 0; i < ccw.size() && inside.size() >= 3; ++i) {
+                    const Vec2 a = ccw[i], b = ccw[(i + 1) % ccw.size()];
+                    std::vector<Vec2> beyond = clipHalfPlane(inside, b, a);  // reversed edge
+                    if (beyond.size() >= 3 && std::abs(signedArea(beyond)) > 1e-12)
+                        f.rings.push_back(std::move(beyond));
+                    inside = clipHalfPlane(inside, a, b);
+                }
             }
             if (!f.rings.empty())
                 out.items.emplace_back(std::move(f));
@@ -142,7 +155,7 @@ DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon)
             DisplayPoints k;
             k.style = pts->style;
             for (const Vec2& p : pts->pts)
-                if (insidePolygon(polygon, p))
+                if (insidePolygon(polygon, p) != invert)
                     k.pts.push_back(p);
             if (!k.pts.empty())
                 out.items.emplace_back(std::move(k));

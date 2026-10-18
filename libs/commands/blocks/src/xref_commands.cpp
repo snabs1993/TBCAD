@@ -544,7 +544,10 @@ public:
         const std::filesystem::path hostFile = hostFileOf(ctx);
         for (BlockId id : ids) {
             const BlockDef* def = doc.block(id);
-            ctx.message(def->name + "  " + def->xrefPath + "  [" +
+            const std::filesystem::path found = xref::resolvePath(def->xrefPath, hostFile);
+            const std::string foundText =
+                found.string() == def->xrefPath ? "" : "  found at " + found.string();
+            ctx.message(def->name + "  " + def->xrefPath + foundText + "  [" +
                         (def->xrefOverlay ? "overlay, " : "") +
                         stateText(xref::state(doc, id, hostFile)) + ", " +
                         std::to_string(xref::useCount(doc, id)) + " inserted]");
