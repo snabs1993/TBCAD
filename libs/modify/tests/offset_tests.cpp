@@ -299,3 +299,51 @@ TEST_CASE("offset a ray and a construction line sideways, at survey coordinates 
         }
     }
 }
+
+// Random polylines with arc segments, offset by small and very large distances on both sides:
+// whatever comes back lies at the offset distance from the source, never closer, and the call
+// never produces a degenerate piece.
+TEST_CASE("property: offsets of random polylines with arcs keep the distance") {
+    std::mt19937 rng(4242);
+    std::uniform_real_distribution<double> step(2, 12), turn(-1.2, 1.2), bul(-1.0, 1.0);
+    int checked = 0, refused = 0;
+    for (int iter = 0; iter < 150; ++iter) {
+        const int n = 3 + iter % 6;
+        const bool closed = iter % 3 == 0;
+        std::vector<PolyVertex> v;
+        Vec2 p{0, 0};
+        double heading = 0;
+        for (int i = 0; i < n; ++i) {
+            v.push_back({p, (rng() % 2) ? bul(rng) : 0.0, 0, 0});
+            heading += turn(rng);
+            p = p + Vec2{std::cos(heading), std::sin(heading)} * step(rng);
+        }
+        Entity src = poly(v, closed);
+        for (double d : {0.7, -0.7, 3.0, -3.0, 15.0, -15.0, 80.0, -80.0}) {
+            auto r = offsetEntity(src, d);
+            if (!r.ok()) {
+                ++refused;
+                continue;
+            }
+            for (const auto& e : r.value()) {
+                std::vector<geom::CurveRef> cs;
+                geom::curvesOf(e, cs);
+                CHECK_FALSE(cs.empty());
+                for (const auto& c : cs) {
+                    CHECK(c.length() > 1e-9);
+                    for (double t : {0.1, 0.5, 0.9}) {
+                        Vec2 q = c.pointAt(c.isLine() ? t : c.t0() + t * c.sweep());
+                        const double dist = geom::distance(src, q);
+                        // Never closer than d. A straight connector over a corner whose offset arcs
+                        // just miss each other may sit a little farther out.
+                        const bool tooClose = dist < std::abs(d) - 1e-5 || dist > 1.5 * std::abs(d);
+                        CHECK_MESSAGE(!tooClose, "iter " << iter << " d " << d << " dist " << dist);
+                        ++checked;
+                    }
+                }
+            }
+        }
+    }
+    CHECK(checked > 500);
+    MESSAGE("checked " << checked << " samples, " << refused << " refused offsets");
+}
