@@ -335,6 +335,31 @@ TEST_CASE("TCOUNT numbers text objects in selection order") {
     CHECK(entityAs<TextData>(*f.doc.find(ids[1]))->utf8 == "P-20");
 }
 
+TEST_CASE("SPELL flags English typos, skips Thai, and Add remembers a word") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    const std::string thai = kHong + "xyzzy " + kHong;  // glued to Thai: never asked about
+    for (const std::string& s :
+         {std::string("The kichen wall"), thai, std::string("TBCAD 12mm"), std::string("zorbel")}) {
+        TextData t;
+        t.utf8 = s;
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        ids.push_back(tx.add(std::move(e)).value());
+        tx.commit();
+    }
+    REQUIRE(f.host
+                .run("SPELL", {cmd::ScriptItem::select(ids), cmd::ScriptItem::enter(), "Change",
+                               "kitchen", "Add"})
+                .finished);
+    CHECK(entityAs<TextData>(*f.doc.find(ids[0]))->utf8 == "The kitchen wall");
+    CHECK(entityAs<TextData>(*f.doc.find(ids[1]))->utf8 == thai);
+    CHECK(f.doc.header().custom.count("tbcad.spell.words") == 1);
+    // Added words are accepted next time: nothing is asked.
+    CHECK(f.host.run("SPELL", {cmd::ScriptItem::select(ids), cmd::ScriptItem::enter()}).finished);
+}
+
 TEST_CASE("MTEXT and TEXT from far away default to a height that can be read") {
     Fixture f;
     f.host.setView({{0, 0}, 10.0, {900, 600}});  // 10 mm per pixel: a plan in millimetres

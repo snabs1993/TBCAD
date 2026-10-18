@@ -10,6 +10,7 @@ set(_textcmd_sources
   src/arctext.cpp
   src/textalign.cpp
   src/tcount.cpp
+  src/spell.cpp
   src/register.cpp)
 
 # The editor panel needs Dear ImGui, which is only fetched when the application is built.
