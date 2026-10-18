@@ -113,6 +113,24 @@ bool App::initWindow(std::string& why) {
         why = "could not create an OpenGL 3.3 window";
         return false;
     }
+    // Keep the window inside the usable screen (not behind the taskbar): scaled to a high-DPI
+    // monitor 1440x900 can be larger than the work area.
+    if (!options_.selfTest && !options_.gate) {
+        int wx = 0, wy = 0, ww = 0, wh = 0;
+        glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &wx, &wy, &ww, &wh);
+        int fl = 0, ft = 0, fr = 0, fb = 0;
+        glfwGetWindowFrameSize(window_, &fl, &ft, &fr, &fb);
+        int cw = 0, ch = 0;
+        glfwGetWindowSize(window_, &cw, &ch);
+        if (ww > 0 && wh > 0) {
+            if (cw + fl + fr > ww || ch + ft + fb > wh) {
+                glfwMaximizeWindow(window_);
+            } else {
+                glfwSetWindowPos(window_, wx + std::max(fl, (ww - cw - fl - fr) / 2),
+                                 wy + std::max(ft, (wh - ch - ft - fb) / 2));
+            }
+        }
+    }
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(options_.vsync && !options_.gate ? 1 : 0);
 

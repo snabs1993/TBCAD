@@ -1843,6 +1843,7 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         case ImGuiInputTextFlags_CallbackHistory: {
             if (suggestVisible_ && !suggestions_.empty()) {
                 const int n = static_cast<int>(suggestions_.size());
+                suggestNavigated_ = true;
                 suggestSel_ = d->EventKey == ImGuiKey_UpArrow ? std::max(0, suggestSel_ - 1)
                                                               : std::min(n - 1, suggestSel_ + 1);
                 return 0;
@@ -2090,18 +2091,45 @@ void Gui::commandWindow() {
             ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackCharFilter;
         if (ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this)) {
             std::string line = input_;
-            if (suggestVisible_ && !suggestions_.empty())
-                line = suggestions_[static_cast<std::size_t>(std::clamp(
-                                        suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
-                           .name;
+            bool refused = false;
+            if (suggestVisible_ && !suggestions_.empty() &&
+                !core_.registry().find(cmd::toUpperAscii(line))) {
+                const std::string& pick =
+                    suggestions_[static_cast<std::size_t>(std::clamp(
+                                     suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
+                        .name;
+                // Enter completes a typed beginning; a looser match must be picked on purpose
+                // (arrow key, Tab or click), never run unasked: PLINE is not BLEND.
+                if (suggestNavigated_ || pick.rfind(cmd::toUpperAscii(line), 0) == 0) {
+                    line = pick;
+                } else {
+                    std::string hint = "Unknown command \"" + line + "\". Did you mean";
+                    for (std::size_t i = 0; i < suggestions_.size() && i < 4; ++i)
+                        hint += (i ? ", " : " ") + suggestions_[i].name;
+                    core_.print(hint + "? Use the arrow keys and Enter to pick one.");
+                    refused = true;
+                }
+            }
+            if (refused) {
+                refocusInput_ = true;
+                anyActivity_ = true;
+            } else {
+                input_.clear();
+                paletteOpen_ = false;
+                if (!line.empty() && (inputHistory_.empty() || inputHistory_.back() != line))
+                    inputHistory_.push_back(line);
+                historyPos_ = -1;
+                core_.submitText(line);
+                refocusInput_ = true;
+                anyActivity_ = true;
+            }
+        }
+        // Esc in the focused field first leaves the field; it must still cancel the command.
+        if (ImGui::IsItemDeactivated() && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
+            core_.runner().active()) {
+            core_.pressEscape();
             input_.clear();
-            paletteOpen_ = false;
-            if (!line.empty() && (inputHistory_.empty() || inputHistory_.back() != line))
-                inputHistory_.push_back(line);
-            historyPos_ = -1;
-            core_.submitText(line);
             refocusInput_ = true;
-            anyActivity_ = true;
         }
         inputId_ = ImGui::GetItemID();
         const ImVec2 inputMin = ImGui::GetItemRectMin();
@@ -2130,6 +2158,7 @@ void Gui::updateSuggestions() {
             core_.textEdited(input_);  // TEXT / MTEXT draw what is typed
         suggestFor_ = input_;
         suggestSel_ = 0;
+        suggestNavigated_ = false;
         suggestDismissed_ = false;
     }
     const bool word = input_.find_first_of(" \t") == std::string::npos;
@@ -2178,8 +2207,10 @@ void Gui::drawSuggestions(ImVec2 inputPos, float width) {
                 anyActivity_ = true;
             }
             if (ImGui::IsItemHovered() &&
-                (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0))
+                (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0)) {
                 suggestSel_ = static_cast<int>(i);
+                suggestNavigated_ = true;
+            }
             ImGui::SameLine(0, 0);
             ImGui::TextUnformatted(m.name.c_str());
             ImGui::SameLine(aliasX);
@@ -3185,6 +3216,24 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.
+    if (!core_.inPaperSpace() && core_.settings().getBool("display.originIcon", true) &&
+        !startPage_) {
+        const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
+        const Vec2 o = core_.camera().worldToScreen({0, 0});
+        const ImVec2 at(rect.x + static_cast<float>(o.x / sc),
+                        rect.y + static_cast<float>(o.y / sc));
+        if (at.x >= rect.x && at.y >= rect.y && at.x < rect.x + rect.w && at.y < rect.y + rect.h) {
+            const float len = 40.0f * dpiScale_;
+            ImDrawList* dl = ImGui::GetBackgroundDrawList();
+            dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h));
+            dl->AddLine(at, ImVec2(at.x + len, at.y), IM_COL32(230, 80, 80, 220), 1.5f);
+            dl->AddLine(at, ImVec2(at.x, at.y - len), IM_COL32(80, 200, 100, 220), 1.5f);
+            dl->AddText(ImVec2(at.x + len + 3, at.y - 8), IM_COL32(230, 80, 80, 220), "X");
+            dl->AddText(ImVec2(at.x + 4, at.y - len - 16), IM_COL32(80, 200, 100, 220), "Y");
+            dl->PopClipRect();
+        }
+    }
     if (const auto n = core_.dragSelectCount(); n && (*n > 0 || core_.inPaperSpace())) {
         const ImVec2 at(ImGui::GetIO().MousePos.x + 16 * dpiScale_,
                         ImGui::GetIO().MousePos.y + 20 * dpiScale_);

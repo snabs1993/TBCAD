@@ -48,7 +48,7 @@ Entity polylineEntity(std::vector<PolyVertex> v, bool closed) {
 class PolylineCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "POLYLINE"; }
-    std::vector<std::string> defaultAliases() const override { return {"PL"}; }
+    std::vector<std::string> defaultAliases() const override { return {"PL", "PLINE"}; }
     std::string_view description() const override { return "Draw a polyline of lines and arcs"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {

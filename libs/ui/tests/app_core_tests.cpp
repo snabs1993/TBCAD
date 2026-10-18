@@ -1110,6 +1110,16 @@ TEST_CASE("opening or closing a panel resizes the canvas without moving the draw
     CHECK(again.y == doctest::Approx(before.y));
 }
 
+TEST_CASE("one Escape cancels a command waiting for its first answer") {
+    Fixture f("esc_once");
+    f.line("0,0", "1000,0");
+    for (const char* name : {"BLEND", "LINE", "CIRCLE", "MOVE", "PLINE", "TRIM", "OFFSET"}) {
+        f.core->submitText(name);
+        f.core->pressEscape();
+        CHECK_MESSAGE(!f.core->runner().active(), name);
+    }
+}
+
 TEST_CASE("ZE zooms to the extents without asking") {
     Fixture f("ze");
     f.line("0,0", "1000,0");
