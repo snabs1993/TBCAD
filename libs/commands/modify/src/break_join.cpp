@@ -12,9 +12,10 @@ bool unlocked(const Document& doc, const Entity& e) {
     return !l.locked && !l.otherLevel;
 }
 
-// What the last ERASE removed, per drawing, so OOPS can bring it back even after other commands.
-std::map<const Document*, std::vector<Entity>>& lastErased() {
-    static std::map<const Document*, std::vector<Entity>> store;
+// What the last ERASE removed, per drawing (by uid: addresses get reused), so OOPS can bring it
+// back even after other commands.
+std::map<std::uint64_t, std::vector<Entity>>& lastErased() {
+    static std::map<std::uint64_t, std::vector<Entity>> store;
     return store;
 }
 
@@ -164,7 +165,7 @@ public:
             }
         }
         if (!removed.empty())
-            lastErased()[&ctx.doc()] = std::move(removed);
+            lastErased()[ctx.doc().uid()] = std::move(removed);
         ctx.host().setSelection({});
         ctx.message(std::to_string(n) + " erased.");
     }
@@ -178,7 +179,7 @@ public:
     std::string_view description() const override { return "Restore the objects last erased"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
-        auto it = lastErased().find(&ctx.doc());
+        auto it = lastErased().find(ctx.doc().uid());
         if (it == lastErased().end() || it->second.empty()) {
             ctx.message("Nothing has been erased.");
             co_return;
