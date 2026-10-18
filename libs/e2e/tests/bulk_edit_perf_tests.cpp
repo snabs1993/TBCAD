@@ -93,6 +93,8 @@ struct Big {
 }  // namespace
 
 TEST_CASE("perf: whole-drawing edits with undo and redo") {
+    // Unbuffered, so that a crash still leaves the lines printed so far (they show where it was).
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     Big big;
     std::printf("whole-drawing edits on %d objects\n", 2 * big.n);
     big.bench("MOVE", {"MOVE", "0,0", "5,5"});

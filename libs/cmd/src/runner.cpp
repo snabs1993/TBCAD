@@ -159,6 +159,7 @@ void CommandRunner::finishTop(bool failed, std::string_view error, bool notify) 
 
 void CommandRunner::refreshPrompt() {
     collected_.clear();
+    collectedSet_.clear();
     previewList_.items.clear();
     if (stack_.empty() || !stack_.back().ctx->hasPending()) {
         prompt_.reset();
@@ -337,11 +338,8 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         return e && (!req.filter || req.filter(*e));
     };
     auto addCollected = [&](EntityId id) {
-        for (EntityId x : collected_) {
-            if (x == id)
-                return;
-        }
-        collected_.push_back(id);
+        if (collectedSet_.insert(id).second)
+            collected_.push_back(id);
     };
     // "3 found, 5 total", as AutoCAD says it after every pick or window.
     auto reportFound = [&](std::size_t n) {
