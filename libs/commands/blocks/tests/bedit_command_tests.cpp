@@ -103,3 +103,23 @@ TEST_CASE("BSAVE keeps objects drawn during BEDIT and BEDIT takes a typed block 
     CHECK(f.lines() == 0);
     CHECK(f.def().entities.size() == 2);
 }
+
+TEST_CASE("REFEDIT and REFCLOSE work like BEDIT and BCLOSE; closing undoes in one step") {
+    BEditFixture f;
+    f.host->run("REFEDIT", {cmd::ScriptItem::pick(f.second)});
+    REQUIRE(f.lines() == 1);
+    EntityId copy;
+    for (EntityId id : f.modelSpace())
+        if (kind(*f.doc.find(id)) == EntityKind::Line)
+            copy = id;
+    {
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(copy, [](Entity& e) { entityAs<LineData>(e)->b = {150, 50}; }).ok());
+        tx.commit();
+    }
+    f.host->run("REFCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(f.lines() == 0);
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {50, 0}));
+    CHECK(f.host->undo());
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
+}

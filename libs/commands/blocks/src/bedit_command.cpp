@@ -139,7 +139,7 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
 class BEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BEDIT"; }
-    std::vector<std::string> defaultAliases() const override { return {"BE"}; }
+    std::vector<std::string> defaultAliases() const override { return {"BE", "REFEDIT"}; }
     std::string_view description() const override {
         return "Edit a block in place; finish with BSAVE or BCLOSE";
     }
@@ -233,7 +233,7 @@ public:
     explicit BSaveCommand(bool close) : close_(close) {}
     std::string_view name() const override { return close_ ? "BCLOSE" : "BSAVE"; }
     std::vector<std::string> defaultAliases() const override {
-        return close_ ? std::vector<std::string>{"BC"} : std::vector<std::string>{};
+        return close_ ? std::vector<std::string>{"BC", "REFCLOSE"} : std::vector<std::string>{};
     }
     std::string_view description() const override {
         return close_ ? "Finish editing a block: save the changes or discard them"

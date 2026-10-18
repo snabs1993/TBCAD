@@ -3,6 +3,7 @@
 
 #include "commands.h"
 #include "tbcad/block_cmds/palette.h"
+#include "tbcad/blocks/explode.h"
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/xref/xref.h"
 
@@ -105,11 +106,12 @@ public:
         // Keeps placing copies (same scale and rotation) until Enter or Esc, like a drafter
         // dropping furniture symbols one after another.
         bool multiple = false;
+        bool explodeAfter = false;  // place the parts, not the block
         for (std::size_t placed = 0;; ++placed) {
             data.attribs = blocks::defaultAttribs(doc, block);
             for (;;) {
                 cmd::PointOptions po;
-                po.keywords = {"Scale", "X", "Y", "Rotate", "Multiple"};
+                po.keywords = {"Scale", "X", "Y", "Rotate", "Multiple", "Explode"};
                 po.allowNone = placed > 0;  // Enter ends a Multiple series
                 po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
                     InsertData d = data;
@@ -122,7 +124,7 @@ public:
                     blocks::buildInsertDisplay(doc, e, dc, out);
                 };
                 auto p = co_await ctx.getPoint(
-                    placed == 0 ? "Specify insertion point or [Scale/X/Y/Rotate/Multiple]"
+                    placed == 0 ? "Specify insertion point or [Scale/X/Y/Rotate/Multiple/Explode]"
                                 : "Specify next insertion point or "
                                   "[Scale/X/Y/Rotate], Enter to finish",
                     std::move(po));
@@ -152,6 +154,10 @@ public:
                         continue;
                     }
                     (p.keyword == "X" ? data.scale.x : data.scale.y) = s.value;
+                } else if (p.keyword == "Explode") {
+                    explodeAfter = !explodeAfter;
+                    ctx.message(explodeAfter ? "The block will be exploded when placed."
+                                             : "The block will be placed as one object.");
                 } else if (p.keyword == "Multiple") {
                     multiple = true;
                     ctx.commitOnCancel();  // Esc ends the series and keeps the copies already
@@ -256,6 +262,26 @@ public:
             if (!added) {
                 ctx.message(added.error().message);
                 co_return;
+            }
+            if (explodeAfter) {
+                const Entity* placedEntity = ctx.doc().find(added.value());
+                if (placedEntity) {
+                    auto parts = blocks::explode(ctx.doc(), *placedEntity);
+                    if (parts) {
+                        (void)ctx.tx().erase(added.value());
+                        std::vector<EntityId> ids;
+                        for (Entity& part : parts.value().entities)
+                            if (auto a = ctx.tx().add(std::move(part)))
+                                ids.push_back(a.value());
+                        ctx.host().setSelection(ids);
+                        ctx.setUndoLabel("Insert " + def->name + " exploded");
+                        ctx.message("Block \"" + def->name + "\" inserted and exploded");
+                        if (!multiple)
+                            co_return;
+                        continue;
+                    }
+                    ctx.message(parts.error().message);
+                }
             }
             ctx.host().setSelection({added.value()});
             ctx.setUndoLabel("Insert " + def->name);

@@ -91,3 +91,17 @@ TEST_CASE("INSERT Multiple keeps placing copies until Enter and undoes as one st
     CHECK(f.host->undo());  // the whole series is one command
     CHECK(f.modelSpace().empty());
 }
+
+TEST_CASE("INSERT Explode places the parts and undoes in one step") {
+    Fixture f;
+    makeDoorBlock(f);
+    auto r = f.host->run("INSERT", {"Door", "S", "2", "E", "100,50"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == 1);
+    const Entity* e = f.doc.find(f.modelSpace()[0]);
+    REQUIRE(e);
+    CHECK(kind(*e) == EntityKind::Line);
+    CHECK(f.host->undoStack().undoLabel() == "Insert Door exploded");
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().empty());
+}
