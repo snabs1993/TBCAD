@@ -119,9 +119,7 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
             }
 
     Transaction& tx = ctx.tx();
-    const std::vector<EntityId> old = doc.block(block)->entities;
-    for (EntityId id : old)
-        (void)tx.erase(id);
+    (void)tx.eraseAllIn(block);
     for (Entity& e : content) {
         auto r = tx.add(std::move(e), block);
         if (!r) {

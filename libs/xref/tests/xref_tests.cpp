@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -647,4 +648,59 @@ TEST_CASE("changePath points the xref at another file and keeps the snapshot") {
     CHECK(host.block(b)->xrefPath == "new/site2.tbcad");
     CHECK(host.block(b)->entities.size() == count);
     CHECK(state(host, b, {}) == State::Missing);
+}
+
+TEST_CASE("perf: attach, reload, bind and undo of an xref with 300000 entities") {
+    using Clock = std::chrono::steady_clock;
+    auto ms = [](Clock::time_point a) {
+        return std::chrono::duration<double, std::milli>(Clock::now() - a).count();
+    };
+    auto srcDoc = makeSource(300000);
+    Document host;
+    Source src = sourceOf(std::move(srcDoc));
+
+    auto t0 = Clock::now();
+    BlockId id;
+    {
+        Transaction tx = host.begin("attach");
+        auto r = attach(tx, host, "site", "site.tbcad", src);
+        REQUIRE(r.ok());
+        id = r.value();
+        tx.commit();
+    }
+    const double attachMs = ms(t0);
+
+    const std::size_t members = host.block(id)->entities.size();
+    t0 = Clock::now();
+    ChangeSet reloaded;
+    {
+        Transaction tx = host.begin("reload");
+        REQUIRE(reload(tx, host, id, src).ok());
+        reloaded = tx.commit();
+    }
+    const double reloadMs = ms(t0);
+    CHECK(host.block(id)->entities.size() == members);
+    host.apply(reloaded, Direction::Undo);
+    CHECK(host.block(id)->entities.size() == members);
+    host.apply(reloaded, Direction::Redo);
+    CHECK(host.block(id)->entities.size() == members);
+
+    ChangeSet bindChanges;
+    t0 = Clock::now();
+    {
+        Transaction tx = host.begin("bind");
+        REQUIRE(bind(tx, host, id, BindMode::Insert).ok());
+        bindChanges = tx.commit();
+    }
+    const double bindMs = ms(t0);
+
+    t0 = Clock::now();
+    host.apply(bindChanges, Direction::Undo);
+    const double undoMs = ms(t0);
+    std::printf("[perf] xref 300k: attach %.0f ms, reload %.0f ms, bind %.0f ms, undo %.0f ms\n",
+                attachMs, reloadMs, bindMs, undoMs);
+    CHECK(attachMs < 5000);
+    CHECK(reloadMs < 5000);
+    CHECK(bindMs < 5000);
+    CHECK(undoMs < 5000);
 }

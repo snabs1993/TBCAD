@@ -293,9 +293,7 @@ void eraseContent(Transaction& tx, const Document& doc, BlockId block) {
     const BlockDef* def = doc.block(block);
     if (!def)
         return;
-    std::vector<EntityId> members = def->entities;
-    for (EntityId id : members)
-        (void)tx.erase(id);
+    (void)tx.eraseAllIn(block);
 }
 
 // Erases blocks that nothing references any more; a block still used elsewhere stays.
