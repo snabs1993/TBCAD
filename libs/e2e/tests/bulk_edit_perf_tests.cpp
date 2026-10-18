@@ -370,7 +370,8 @@ TEST_CASE("perf: snap lookup with every mode on a big drawing") {
         std::size_t found = 0;
         const int steps = 100;
         for (int i = 0; i < steps; ++i) {
-            req.cursor = {(i * 7919) % static_cast<int>(w), (i * 104729) % static_cast<int>(h)};
+            req.cursor = {static_cast<double>((i * 7919) % static_cast<int>(w)),
+                          static_cast<double>((i * 104729) % static_cast<int>(h))};
             auto t = std::chrono::steady_clock::now();
             const auto c =
                 drafting::findSnapCandidates(big.core->document(), big.core->spatialIndex(), req);
