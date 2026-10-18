@@ -458,6 +458,11 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
             if (layer.transparency)
                 o.i(440, transparencyGroup(layer.transparency));
         }
+        if (!layer.description.empty() && !r12_) {
+            o.raw(1001, "AcAecLayerStandard");
+            o.str(1000, "");
+            o.str(1000, layer.description);
+        }
         if (eff.on != layer.on || eff.frozen != layer.frozen || eff.locked != layer.locked ||
             eff.plot != layer.plot) {
             ++flattened;
@@ -693,6 +698,11 @@ std::string Writer::tablesSection() {
                 if (!app.app.empty() && app.app != "ACAD" && app.app != "TBCAD")
                     extApps.insert(app.app);
         });
+        bool layerNotes = false;
+        for (const auto& [lid, layer] : doc_.layers())
+            layerNotes = layerNotes || !layer.description.empty();
+        if (layerNotes && !r12_)
+            extApps.insert("AcAecLayerStandard");
         tableBegin(o, "APPID", table, 2 + extApps.size());
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "ACAD", 0);
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "TBCAD", 0);

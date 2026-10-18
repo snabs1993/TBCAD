@@ -397,6 +397,10 @@ std::string canonicalDump(const Document& doc) {
           << r.locked << " plot" << r.plot;
         if (r.transparency)
             o << " tr" << static_cast<int>(r.transparency);
+        if (!r.description.empty()) {
+            o << " desc ";
+            o.quoted(r.description);
+        }
         o << "\n";
     }
     for (const auto& [id, r] : doc.levels()) {

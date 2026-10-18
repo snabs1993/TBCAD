@@ -78,10 +78,10 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Make",     "New",        "NewSub", "Parent",      "Set",    "On",
-                         "Off",      "Freeze",     "Thaw",   "Lock",        "Unlock", "Color",
-                         "Linetype", "Lineweight", "Plot",   "NoPlot",      "Rename", "Delete",
-                         "Isolate",  "ShowAll",    "List",   "Transparency"};
+        opts.keywords = {"Make",     "New",        "NewSub", "Parent",       "Set",        "On",
+                         "Off",      "Freeze",     "Thaw",   "Lock",         "Unlock",     "Color",
+                         "Linetype", "Lineweight", "Plot",   "NoPlot",       "Rename",     "Delete",
+                         "Isolate",  "ShowAll",    "List",   "Transparency", "Description"};
         opts.aliases = {{"N", "New"}, {"S", "Set"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
@@ -212,12 +212,13 @@ private:
                 report(ctx, r);
             }
         } else if (option == "Color" || option == "Linetype" || option == "Lineweight" ||
-                   option == "Transparency") {
+                   option == "Transparency" || option == "Description") {
             std::string value;
             co_await askText(ctx,
                              option == "Color"          ? "Colour (name, 1-255, r,g,b or ByParent)"
                              : option == "Linetype"     ? "Linetype name (or ByParent)"
                              : option == "Transparency" ? "Transparency in percent (0 to 90)"
+                             : option == "Description"  ? "Description (- clears it)"
                                                         : "Lineweight in mm (Default or ByParent)",
                              value, ok);
             if (!ok)
@@ -242,6 +243,9 @@ private:
                 }
                 for (LayerId id : ids)
                     report(ctx, setLayerLinetype(doc, ctx.tx(), id, lt.value()));
+            } else if (option == "Description") {
+                for (LayerId id : ids)
+                    report(ctx, setLayerDescription(doc, ctx.tx(), id, value == "-" ? "" : value));
             } else if (option == "Transparency") {
                 auto tr = parseTransparency(value);
                 if (!tr || tr.value() < 0) {

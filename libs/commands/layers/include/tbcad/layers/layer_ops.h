@@ -71,6 +71,9 @@ Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id,
 Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id,
                                 LineWeight weight);
 Result<void> setLayerTransparency(const Document& doc, Transaction& tx, LayerId id, int percent);
+// The note shown in the Description column; empty clears it. No control characters.
+Result<void> setLayerDescription(const Document& doc, Transaction& tx, LayerId id,
+                                 std::string_view text);
 // Turns off every layer except `keep`, its ancestors and its descendants.
 Result<void> isolateLayer(const Document& doc, Transaction& tx, LayerId keep);
 // Same, keeping several layers (each with its ancestors and descendants).

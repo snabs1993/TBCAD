@@ -475,7 +475,7 @@ private:
             row.linetype = LinetypeId{r.u32()};
             row.lineweight = LineWeight{r.i16()};
             std::uint8_t f = r.u8();
-            if (f > 31)
+            if (f > 63)
                 bad("invalid layer flags");
             row.on = (f & 1) != 0;
             row.frozen = (f & 2) != 0;
@@ -486,6 +486,8 @@ private:
                 if (row.transparency > kTransparencyMax)
                     bad("invalid layer transparency");
             }
+            if (f & 32)
+                row.description = str(r);
             rows.push_back(std::move(row));
             if (id == kLayerZero.value)
                 return;

@@ -159,11 +159,13 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             writeColor(layr, r.color);
             layr.u32(r.linetype.value);
             layr.i16(r.lineweight.v);
-            layr.u8(static_cast<std::uint8_t>((r.on ? 1 : 0) | (r.frozen ? 2 : 0) |
-                                              (r.locked ? 4 : 0) | (r.plot ? 8 : 0) |
-                                              (r.transparency ? 16 : 0)));
+            layr.u8(static_cast<std::uint8_t>(
+                (r.on ? 1 : 0) | (r.frozen ? 2 : 0) | (r.locked ? 4 : 0) | (r.plot ? 8 : 0) |
+                (r.transparency ? 16 : 0) | (r.description.empty() ? 0 : 32)));
             if (r.transparency)
                 layr.u8(r.transparency);
+            if (!r.description.empty())
+                layr.varint(st.intern(r.description));
         }
 
         // Levels (LVLS) are written only when the document has more than the pristine default

@@ -1014,6 +1014,22 @@ TEST_CASE("a tolerance frame is exported as TOLERANCE and comes back as the same
     CHECK(b->entities.size() == gdt::frameEntities(spec).size());
 }
 
+TEST_CASE("a layer description travels as AcAecLayerStandard XDATA") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("t");
+        Layer walls;
+        walls.name = "WALLS";
+        walls.description = "Load bearing walls, Thai: \xE0\xB8\x81";
+        REQUIRE(tx.addLayer(walls).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("AcAecLayerStandard") != std::string::npos);
+    REQUIRE(rt.back->layerByName("WALLS"));
+    CHECK(rt.back->layerByName("WALLS")->description == "Load bearing walls, Thai: \xE0\xB8\x81");
+}
+
 TEST_CASE("transparency (group 440) and the object's own text width factor survive a round trip") {
     Document doc;
     EntityId lineId, textId;

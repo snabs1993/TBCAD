@@ -441,6 +441,27 @@ void drawTransparencyCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
     }
 }
 
+void drawDescriptionCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
+    static LayerId editing{};
+    static std::string buf;
+    ImGui::SetNextItemWidth(-1);
+    if (editing != l.id) {
+        std::string shown = l.description;
+        ImGui::InputText("##desc", &shown);
+        if (ImGui::IsItemActivated()) {
+            editing = l.id;
+            buf = l.description;
+        }
+        return;
+    }
+    ImGui::InputText("##desc", &buf);
+    if (ImGui::IsItemDeactivated()) {
+        if (buf != l.description)
+            exec(ctx, {"-LAYER Description", buf.empty() ? std::string("-") : buf, idRef(l.id)});
+        editing = LayerId{};
+    }
+}
+
 }  // namespace
 
 void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
@@ -568,6 +589,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 34);
         ImGui::TableSetupColumn(
             "Transp.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, 56);
+        ImGui::TableSetupColumn(
+            "Description", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultHide);
         // VP Frz only exists while a layout viewport is the target.
         static bool vpShown = false;
         if (vpShown != static_cast<bool>(vp) || ImGui::GetFrameCount() < 3) {
@@ -696,6 +719,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                 flag(8, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
                 ImGui::TableSetColumnIndex(9);
                 drawTransparencyCell(ctx, *l);
+                ImGui::TableSetColumnIndex(10);
+                drawDescriptionCell(ctx, *l);
                 if (dimmed)
                     ImGui::PopStyleColor();
                 ImGui::PopID();

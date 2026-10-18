@@ -490,3 +490,15 @@ TEST_CASE("transparency: TRANSPARENCY, -PROP, -LAYER and CETRANSPARENCY") {
     applyCurrentProperties(f.doc.header(), e);
     CHECK(e.common.transparency == 30);
 }
+
+TEST_CASE("-LAYER Description sets and clears the note, one undo step") {
+    Fixture f;
+    f.run("-LAYER", {"New", "WALLS", cmd::ScriptItem::enter()});
+    REQUIRE(f.layer("WALLS"));
+    f.run("-LAYER", {"Description", "Load bearing", "WALLS", cmd::ScriptItem::enter()});
+    CHECK(f.layer("WALLS")->description == "Load bearing");
+    f.run("-LAYER", {"Description", "-", "WALLS", cmd::ScriptItem::enter()});
+    CHECK(f.layer("WALLS")->description.empty());
+    CHECK(f.host.undo());
+    CHECK(f.layer("WALLS")->description == "Load bearing");
+}
