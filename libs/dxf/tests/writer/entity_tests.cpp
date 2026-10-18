@@ -1212,6 +1212,7 @@ TEST_CASE(
         }
     });
     CHECK(found);
+}
 
 TEST_CASE("a shape font name and the annotative flag of a text style survive DXF") {
     Document doc;
