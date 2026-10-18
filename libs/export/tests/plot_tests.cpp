@@ -742,3 +742,33 @@ TEST_CASE("a PDF has one optional-content group per layer, bound xref layers nam
     CHECK(bdc == 3);  // WALLS, xref layer, WALLS again
     CHECK(emc == 3);
 }
+
+TEST_CASE("Defpoints never plots and xref sub-layers keep their xref prefix in the PDF") {
+    Document doc;
+    {
+        auto tx = doc.begin("layers");
+        Layer dp;
+        dp.name = "Defpoints";
+        dp.plot = true;  // the flag is not trusted
+        Layer root;
+        root.name = "TB";
+        const LayerId ldp = tx.addLayer(dp).value();
+        const LayerId lroot = tx.addLayer(root).value();
+        Layer child;
+        child.name = "Stamp";
+        child.parent = lroot;
+        const LayerId lchild = tx.addLayer(child).value();
+        Entity d = line({0, 0}, {50, 0});
+        d.common.layer = ldp;
+        Entity c = line({0, 5}, {50, 5});
+        c.common.layer = lchild;
+        REQUIRE(tx.add(d).ok());
+        REQUIRE(tx.add(c).ok());
+        tx.commit();
+    }
+    PlotSettings s;
+    auto sheet = buildSheet(doc, s).value();
+    CHECK(sheet.entityCount == 1);
+    REQUIRE(sheet.layerNames.size() == 1);
+    CHECK(sheet.layerNames[0] == "TB|Stamp");
+}

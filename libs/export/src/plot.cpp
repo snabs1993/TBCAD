@@ -1,6 +1,7 @@
 #include "tbcad/export/plot.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -38,8 +39,23 @@ const std::vector<double>& scalePresets() {
 
 namespace {
 
+// AutoCAD never plots Defpoints (dimension definition points), whatever the layer's plot flag
+// says; the same goes for the Defpoints layer of an external reference ("xref|Defpoints").
+bool isDefpoints(const Document& doc, LayerId id) {
+    const Layer* layer = doc.layer(id);
+    if (!layer)
+        return false;
+    std::string name = layer->name;
+    for (char& c : name)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const std::size_t bar = name.find_last_of("|$");
+    if (bar != std::string::npos)
+        name = name.substr(bar + 1);
+    return name == "defpoints";
+}
+
 bool plottable(const Document& doc, const Entity& e) {
-    if (!e.common.visible)
+    if (!e.common.visible || isDefpoints(doc, e.common.layer))
         return false;
     EffectiveLayer l = doc.effective(e.common.layer);
     // Plots show every level that is switched on, whatever the on-screen view of other levels.
@@ -421,9 +437,21 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             return it->second;
         std::uint32_t n = 0;
         if (const Layer* layer = doc.layer(li)) {
+            // An external reference is a layer with the file's layers below it: "xref|layer",
+            // nested ones keep the inner "$0$". A bound one is a plain "xref$0$layer".
             std::string name = layer->name;
-            for (std::size_t at; (at = name.find("$0$")) != std::string::npos;)
-                name.replace(at, 3, "|");
+            if (layer->parent) {
+                for (LayerId up = layer->parent; up;) {
+                    const Layer* parent = doc.layer(up);
+                    if (!parent)
+                        break;
+                    name = parent->name + "|" + name;
+                    up = parent->parent;
+                }
+            } else {
+                for (std::size_t at; (at = name.find("$0$")) != std::string::npos;)
+                    name.replace(at, 3, "|");
+            }
             auto found = std::find(sheet.layerNames.begin(), sheet.layerNames.end(), name);
             if (found == sheet.layerNames.end()) {
                 sheet.layerNames.push_back(std::move(name));
@@ -476,7 +504,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             else if (const auto* fl = std::get_if<DisplayFill>(&it))
                 li = fl->style.layer;
             if (li != LayerId{} && li != e->common.layer &&
-                (!doc.effective(li).visible() || (lay.layerHidden && lay.layerHidden(li))))
+                (isDefpoints(doc, li) || !doc.effective(li).visible() ||
+                 (lay.layerHidden && lay.layerHidden(li))))
                 continue;
             b.item(it, sheet.prims, layerOf(li != LayerId{} ? li : e->common.layer));
         }
