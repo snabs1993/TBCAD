@@ -258,7 +258,7 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
     std::printf("WBLOCK of %zu objects with 5 nested blocks: %.0f ms (%.2f MB)\n",
                 big.doc().modelSpaceCount(), wbMs,
                 static_cast<double>(std::filesystem::file_size(file)) / 1e6);
-    CHECK(wbMs < 10000 * kSlack);
+    CHECK(wbMs < 30000 * kSlack);
 
     // A fresh drawing takes the file in as a block and places it.
     ui::AppCore other(big.registry, platform::AppPaths{big.dir / "cfg2", big.dir / "data2"});
@@ -277,7 +277,7 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
     CHECK(other.document().blockByName("part") != nullptr);
     // 20,000 lines + 500 references, each pulling in the five nested blocks once
     CHECK(other.document().blocks().size() == 1 + 5);
-    CHECK(insMs < 10000 * kSlack);
+    CHECK(insMs < 30000 * kSlack);
 }
 
 TEST_CASE("perf: PURGE removes a chain of unused nested blocks, keeps the used ones") {

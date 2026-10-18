@@ -1107,3 +1107,66 @@ TEST_CASE(
                           ScriptItem::enter()});
     CHECK(near(entityAs<LineData>(f.get(h))->b, {far.x + 30, far.y}, 1e-3));
 }
+
+TEST_CASE("DIVIDE and MEASURE follow a clockwise bulged polyline at survey coordinates") {
+    const double ox = 500123.456, oy = 4500987.654;
+    Fixture f;
+    PolylineData
+        pl;  // clockwise half circle of radius 10 from (ox-10,oy) over the top to (ox+10,oy)
+    pl.v = {PolyVertex{{ox - 10, oy}, -1}, PolyVertex{{ox + 10, oy}, 0}};
+    EntityId id = f.add(std::move(pl));
+    f.host.run("DIVIDE", {ScriptItem::pick(id, {ox, oy + 10}), "4"});
+    std::vector<Vec2> pts;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<PointData>(e))
+            pts.push_back(p->p);
+    });
+    REQUIRE(pts.size() == 3);
+    // Quarter points in travel order: 135, 90 and 45 degrees.
+    auto has = [&](Vec2 want) {
+        for (Vec2 p : pts)
+            if (distance(p, want) < 1e-6)
+                return true;
+        return false;
+    };
+    CHECK(has({ox - 10 * std::sqrt(0.5), oy + 10 * std::sqrt(0.5)}));
+    CHECK(has({ox, oy + 10}));
+    CHECK(has({ox + 10 * std::sqrt(0.5), oy + 10 * std::sqrt(0.5)}));
+    f.host.undo();
+    // MEASURE from the start (pick near it): points every 5 along the arc, first at 5 / 10 rad.
+    f.host.run("MEASURE", {ScriptItem::pick(id, {ox - 10, oy}), "5"});
+    pts.clear();
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<PointData>(e))
+            pts.push_back(p->p);
+    });
+    REQUIRE(pts.size() == 6);  // arc length 31.4159: 5, 10, ..., 30
+    const double a = 5.0 / 10.0;
+    CHECK(has({ox - 10 * std::cos(a), oy + 10 * std::sin(a)}));
+}
+
+TEST_CASE("MEASURE with the Block option rotates blocks along an arc at survey coordinates") {
+    const double ox = 2500000.5, oy = 7000000.25;
+    Fixture f;
+    {
+        auto tx = f.doc.begin("block");
+        tx.addBlock(BlockDef{.name = "Post"}).value();
+        tx.commit();
+    }
+    ArcData arc;
+    arc.center = {ox, oy};
+    arc.radius = 20;
+    arc.startAngle = 0;
+    arc.endAngle = kPi;
+    EntityId id = f.add(arc);
+    f.host.run("DIVIDE", {ScriptItem::pick(id, {ox, oy + 20}), "Block", "Post", "Yes", "2"});
+    int n = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e)) {
+            ++n;
+            CHECK(distance(i->position, {ox, oy + 20}) < 1e-6);
+            CHECK(i->rotation == doctest::Approx(kPi).epsilon(1e-9));  // tangent at the top
+        }
+    });
+    CHECK(n == 1);
+}

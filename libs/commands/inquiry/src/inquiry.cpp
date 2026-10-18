@@ -377,11 +377,70 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Distance", "Radius", "Angle", "Area"};
+        ko.keywords = {"Distance", "Radius", "Angle", "Area", "Volume", "Quick"};
         ko.defaultKeyword = "Distance";
-        auto k = co_await ctx.getKeyword("Measure [Distance/Radius/Angle/Area] <Distance>", ko);
+        auto k = co_await ctx.getKeyword(
+            "Measure [Distance/Radius/Angle/Area/Volume/Quick] <Distance>", ko);
         if (!k.ok())
             co_return;
+        if (k.keyword == "Quick") {
+            co_await makeQuickMeasure()->run(ctx);
+            co_return;
+        }
+        if (k.keyword == "Volume") {
+            // The area of a closed shape times a height: an extruded 2D shape.
+            const Precision p = precisionOf(ctx);
+            double area = 0;
+            cmd::PointOptions first;
+            first.keywords = {"Object"};
+            auto start = co_await ctx.getPoint("Specify first corner point or [Object]", first);
+            if (start.status == cmd::Status::Keyword) {
+                cmd::EntityOptions eo;
+                eo.filter = [](const Entity& e) { return areaOfEntity(e).has_value(); };
+                auto picked = co_await ctx.getEntity("Select an object", std::move(eo));
+                if (!picked.ok())
+                    co_return;
+                const Entity* e = ctx.doc().find(picked.id);
+                auto r = e ? areaOfEntity(*e) : std::nullopt;
+                if (!r) {
+                    ctx.message("That object has no area.");
+                    co_return;
+                }
+                area = r->area;
+            } else if (start.ok()) {
+                std::vector<Vec2> pts{start.point};
+                for (;;) {
+                    cmd::PointOptions next;
+                    next.base = pts.back();
+                    auto n = co_await ctx.getPoint(
+                        "Specify next corner point or press ENTER for total", std::move(next));
+                    if (n.status == cmd::Status::Cancel)
+                        co_return;
+                    if (n.status != cmd::Status::Ok)
+                        break;
+                    pts.push_back(n.point);
+                }
+                if (pts.size() < 3) {
+                    ctx.message("At least three points are needed.");
+                    co_return;
+                }
+                area = areaOfPoints(pts).area;
+            } else {
+                co_return;
+            }
+            cmd::DistanceOptions ho;
+            ho.allowZero = false;
+            auto height = co_await ctx.getDistance("Specify the height", ho);
+            if (!height.ok())
+                co_return;
+            const LengthUnit u = ctx.doc().header().units;
+            const double kk = mmPerUnit(u);
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "%.*f", p,
+                          area * std::abs(height.value) / (kk * kk * kk));
+            report(ctx, "Volume = " + std::string(buf) + " " + std::string(unitSuffix(u)) + "^3");
+            co_return;
+        }
         if (k.keyword == "Radius") {
             cmd::EntityOptions eo;
             eo.filter = [](const Entity& e) {
