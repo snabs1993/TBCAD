@@ -452,11 +452,11 @@ void Scene::discardAll() {
             entities.clear();
         });
 =======
-        graveyard_ = std::async(std::launch::async,
-                                [tiles = std::move(tiles_), entities = std::move(entities_)]() mutable {
-                                    tiles.clear();
-                                    entities.clear();
-                                });
+        graveyard_ = std::async(std::launch::async, [tiles = std::move(tiles_),
+                                                     entities = std::move(entities_)]() mutable {
+            tiles.clear();
+            entities.clear();
+        });
 >>>>>>> Stashed changes
     }
     tiles_.clear();
