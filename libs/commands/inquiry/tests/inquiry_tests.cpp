@@ -408,3 +408,105 @@ TEST_CASE("MASSPROP of a rounded slot (polyline with arcs) matches the closed fo
     const double ixx = 30.0 * 20 * 20 * 20 / 12 + kPi * 1e4 / 4;
     CHECK(m->ixx == doctest::Approx(ixx).epsilon(1e-6));
 }
+
+TEST_CASE("DIST, ID and AREA at survey coordinates keep millimetre accuracy") {
+    // UTM-like coordinates: 500 km easting, 4500 km northing.
+    const double ox = 500123.456, oy = 4500987.654;
+    Fixture f;
+    PolylineData pl;
+    pl.closed = true;
+    pl.v = {{{ox, oy}}, {{ox + 30, oy}}, {{ox + 30, oy + 40}}, {{ox, oy + 40}}};
+    EntityId id = f.add(Entity{{}, pl});
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "4");
+    using cmd::ScriptItem;
+    auto pt = [&](double dx, double dy) {
+        char b[80];
+        std::snprintf(b, sizeof b, "%.6f,%.6f", ox + dx, oy + dy);
+        return std::string(b);
+    };
+    host.run("DIST", {pt(0, 0), pt(3, 4)});
+    CHECK(host.logContains("Distance = 5.0000"));
+    CHECK(host.logContains("Delta X = 3.0000"));
+    host.run("ID", {pt(0.25, 0.5)});
+    CHECK(host.logContains("X = 500123.7060"));
+    CHECK(host.logContains("Y = 4500988.1540"));
+    host.run("AREA", {pt(0, 0), pt(3, 0), pt(3, 4), ""});
+    CHECK(host.logContains("Area = 6.0000"));
+    CHECK(host.logContains("Perimeter = 12.0000"));
+    host.run("AREA", {"O", ScriptItem::pick(id)});
+    CHECK(host.logContains("Area = 1200.0000"));
+    CHECK(host.logContains("Perimeter = 140.0000"));
+    host.run("LIST", {ScriptItem::pick(id), ""});
+    CHECK(host.logContains("Area = 1200.0000"));
+}
+
+TEST_CASE("AREA of a clockwise bulged polyline and a far-away circle is exact") {
+    const double ox = 2500000.5, oy = 7000000.25;
+    Fixture f;
+    PolylineData cw;  // clockwise half-disc, negative bulge on the arc
+    cw.closed = true;
+    cw.v = {PolyVertex{{ox, oy}, 0}, PolyVertex{{ox, oy + 20}, -1}};
+    EntityId a = f.add(Entity{{}, cw});
+    EntityId c = f.add(Entity{{}, CircleData{{ox, oy}, 10}});
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "3");
+    using cmd::ScriptItem;
+    host.run("AREA", {"O", ScriptItem::pick(a)});
+    CHECK(host.logContains("Area = 157.080"));  // half of pi * 10^2
+    host.run("AREA", {"O", ScriptItem::pick(c)});
+    CHECK(host.logContains("Area = 314.159"));
+}
+
+TEST_CASE("MEASUREGEOM Volume multiplies the base area by the height") {
+    Fixture f;
+    EntityId r = f.add(Entity{{}, rect(10, 20)});
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "2");
+    using cmd::ScriptItem;
+    host.run("MEASUREGEOM", {"Volume", "O", ScriptItem::pick(r), "5"});
+    CHECK(host.logContains("Volume = 1000.00"));
+    host.clearLog();
+    host.run("MEASUREGEOM", {"Volume", "0,0", "4,0", "4,3", "", "2"});
+    CHECK(host.logContains("Volume = 12.00"));
+    CHECK_FALSE(host.undoStack().canUndo());
+}
+
+TEST_CASE("units follow the document unit in DIST, AREA, LIST and MEASUREGEOM") {
+    for (auto [unit, name, scale] : {std::tuple{LengthUnit::Meter, "m", 0.001},
+                                     std::tuple{LengthUnit::Inch, "in", 1 / 25.4}}) {
+        Fixture f;
+        EntityId c = f.add(Entity{{}, CircleData{{0, 0}, 1000}});
+        {
+            Transaction tx = f.doc.begin("units");
+            REQUIRE(tx.modifyHeader([u = unit](Header& h) { h.units = u; }));
+            tx.commit();
+        }
+        cmd::ScriptHost host(f.doc, f.reg);
+        host.setSetting("inquiry.precision", "3");
+        char want[64];
+        // Typed coordinates are in drawing units; picked objects are stored in millimetres.
+        host.run("DIST", {"0,0", "1000,0"});
+        std::snprintf(want, sizeof want, "Distance = 1000.000 %s", name);
+        CHECK_MESSAGE(host.logContains(want), name);
+        host.run("MEASUREGEOM", {"Radius", cmd::ScriptItem::pick(c, {1000, 0})});
+        std::snprintf(want, sizeof want, "Radius = %.3f %s", 1000 * scale, name);
+        CHECK_MESSAGE(host.logContains(want), name);
+        host.run("AREA", {"O", cmd::ScriptItem::pick(c)});
+        std::snprintf(want, sizeof want, "Area = %.3f", kPi * 1e6 * scale * scale);
+        CHECK_MESSAGE(host.logContains(want), name);
+    }
+}
+
+TEST_CASE("MEASUREGEOM Quick measures what is under the click and never edits the drawing") {
+    Fixture f;
+    f.add(line({0, 0}, {10, 0}));
+    f.add(line({0, 4}, {10, 4}));
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "1");
+    host.run("MEASUREGEOM", {"Quick", "5,1"});
+    CHECK(host.logContains("Length 10.0 mm"));
+    CHECK(host.logContains("Distance 4.0 mm"));
+    host.feed({cmd::ScriptItem::esc()});
+    CHECK_FALSE(host.undoStack().canUndo());
+}

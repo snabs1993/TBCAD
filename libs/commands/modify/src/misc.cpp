@@ -347,12 +347,10 @@ public:
             co_return;
         // Measuring starts at the end nearest the pick.
         bool fromEnd = false;
-        std::vector<geom::CurveRef> cs;
-        if (geom::curvesOf(*e, cs) && !cs.empty()) {
-            Vec2 first = cs.front().pointAt(cs.front().t0());
-            Vec2 last = cs.back().pointAt(cs.back().t0() + cs.back().sweep());
-            fromEnd = distance(pick.pickPoint, last) < distance(pick.pickPoint, first);
-        }
+        const std::vector<Vec2> ends = geom::endpoints(*e);
+        if (ends.size() >= 2)
+            fromEnd =
+                distance(pick.pickPoint, ends.back()) < distance(pick.pickPoint, ends.front());
         auto pts = modify::measurePoints(*e, len.value, fromEnd);
         if (!pts) {
             ctx.message(pts.error().message);

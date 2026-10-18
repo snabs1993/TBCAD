@@ -688,7 +688,7 @@ std::vector<Vec2> quadrants(const Entity& e) {
 
 double signedArea(const PolylineData& pl) {
     int n = static_cast<int>(pl.v.size());
-    if (n < 3 && !(n == 2 && pl.v[0].bulge != 0))
+    if (n < 3 && !(n == 2 && (pl.v[0].bulge != 0 || (pl.closed && pl.v[1].bulge != 0))))
         return 0;
     double a = 0;
     const Vec2 o = pl.v[0].p;  // measured from the first vertex: survey-sized coordinates

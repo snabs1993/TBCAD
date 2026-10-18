@@ -161,14 +161,9 @@ bool pathOf(const Entity& e, std::vector<Vec2>& pts, bool& closed) {
     } else if (const auto* sp = entityAs<SplineData>(e)) {
         closed = sp->closed || sp->periodic;
     }
-    for (const CurveRef& c : curves) {
-        std::vector<Vec2> part;
-        geom::flatten(c, kFlat, part);
-        for (Vec2 q : part) {
-            if (pts.empty() || !samePoint(pts.back(), q, 1e-12))
-                pts.push_back(q);
-        }
-    }
+    // In the direction of travel: a polyline arc with a negative bulge runs clockwise.
+    if (!geom::outlinePoints(e, kFlat, pts))
+        return false;
     if (closed && pts.size() > 1 && samePoint(pts.front(), pts.back(), 1e-9))
         pts.pop_back();
     return pts.size() >= 2;
