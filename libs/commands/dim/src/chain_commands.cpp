@@ -561,7 +561,8 @@ public:
             if (picked.ok() && !picked.ids.empty())
                 cutters = picked.ids;
             else
-                cutters.assign(ctx.doc().modelSpace().begin(), ctx.doc().modelSpace().end());
+                cutters =
+                    ctx.doc().modelSpace();  // by value: begin() and end() of two calls differ
         }
 
         ctx.setUndoLabel("DIMBREAK");

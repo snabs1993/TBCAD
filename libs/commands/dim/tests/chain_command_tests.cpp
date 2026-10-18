@@ -352,7 +352,11 @@ TEST_CASE("an associative dimension follows its line; a dimension moved alone lo
     CHECK(d->defPts[1].x == doctest::Approx(150));
     CHECK(d->defPts[1].y == doctest::Approx(20));
     CHECK(d->measurement == doctest::Approx(150));
-    CHECK(f.host->undo());
+    {  // the transactions of this test are not on the host's undo stack: put the end back by hand
+        auto tx = f.doc.begin("stretch back");
+        REQUIRE(tx.modify(line, [](Entity& e) { entityAs<LineData>(e)->b = {100, 0}; }));
+        tx.commit();
+    }
     CHECK(f.dims()[0]->defPts[1].x == doctest::Approx(100));
 
     // Moving the dimension alone cuts the link; the line then no longer drags it.
