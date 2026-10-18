@@ -133,6 +133,7 @@ TEST_CASE("redefining a block updates its inserts - ATTSYNC does the same on dem
     REQUIRE(ins->attribs.size() == 2);
     CHECK(ins->attribs[0].value == "Zed");
     CHECK(ins->attribs[1].value == "e0");
+    CHECK(f.host->run("SYNCHRONIZE", {"Tag"}).finished);  // the alias
 }
 
 namespace {

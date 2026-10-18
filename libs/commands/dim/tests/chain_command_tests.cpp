@@ -447,3 +447,36 @@ TEST_CASE("moving the measured line moves the dimension line with it; stretching
     CHECK(f.dims()[0]->defPts[2].y == doctest::Approx(-300));
     CHECK(f.dims()[0]->defPts[1].x == doctest::Approx(7000));
 }
+
+TEST_CASE(
+    "DIMINSPECT adds and removes an inspection mark; DIMREGEN keeps linked dimensions right") {
+    Chain f;
+    {
+        auto tx = f.doc.begin("line");
+        Entity e;
+        e.data = LineData{{0, 0}, {100, 0}};
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId dimId;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    f.host->setSelection({dimId});
+    REQUIRE(f.host->run("DIMINSPECT", {"Add", "QC", "50"}).finished);
+    CHECK(f.dims()[0]->textOverride == "<> [QC 50%]");
+    f.host->setSelection({dimId});
+    f.host->run("DIMINSPECT", {"Add", "", "100"});  // replaces the earlier mark
+    CHECK(f.dims()[0]->textOverride == "<> [100%]");
+    f.host->setSelection({dimId});
+    f.host->run("DIMINSPECT", {"Remove"});
+    CHECK(f.dims()[0]->textOverride.empty());
+
+    const double before = f.dims()[0]->measurement;
+    REQUIRE(f.host->run("DIMREGEN", {}).finished);
+    CHECK(f.host->logContains("1 dimensions updated"));
+    CHECK(f.dims()[0]->measurement == doctest::Approx(before));
+    CHECK(f.host->undo());
+}

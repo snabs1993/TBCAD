@@ -1,4 +1,7 @@
 // DIMREASSOC and DIMDISASSOC: link dimensions to the objects they measure, or cut the link.
+#include <algorithm>
+#include <cstdio>
+
 #include "dim_internal.h"
 #include "tbcad/core/dim_assoc.h"
 
@@ -74,8 +77,113 @@ public:
     }
 };
 
+// DIMREGEN: every dimension takes the current position of the points it follows and refreshes its
+// measurement and text.
+class DimRegenCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMREGEN"; }
+    std::string_view description() const override {
+        return "Update all associative dimensions to the objects they measure";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.setUndoLabel("DIMREGEN");
+        int n = 0;
+        for (EntityId id : ctx.doc().modelSpace()) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e || !isDim(*e))
+                continue;
+            DimensionData d = *entityAs<DimensionData>(*e);
+            for (std::size_t i = 0; i < d.assoc.size(); ++i) {
+                if (d.assoc[i].kind == DimAssoc::Kind::None)
+                    continue;
+                const Entity* t = ctx.doc().find(d.assoc[i].target);
+                if (!t)
+                    continue;
+                if (auto p = dimAssocPoint(*t, d.assoc[i]))
+                    d.defPts[i] = *p;
+            }
+            const Document& doc = ctx.doc();
+            if (ctx.tx().modify(id, [&](Entity& x) {
+                    *entityAs<DimensionData>(x) = d;
+                    if (auto fn = dimRefresh())
+                        fn(doc, x);
+                }))
+                ++n;
+        }
+        ctx.message(std::to_string(n) + " dimensions updated.");
+        co_return;
+    }
+};
+
+// DIMINSPECT: marks dimensions as inspection dimensions, written after the measurement as
+// "<> [label rate%]"; Remove takes the mark off again.
+class DimInspectCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMINSPECT"; }
+    std::string_view description() const override {
+        return "Add or remove an inspection label and rate on dimensions";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.filter = isDim;
+        auto sel = co_await ctx.getSelection("Select dimensions to inspect", so);
+        if (!sel.ok())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Add", "Remove"};
+        ko.defaultKeyword = "Add";
+        auto act = co_await ctx.getKeyword("Inspection [Add/Remove] <Add>", ko);
+        if (!act.ok())
+            co_return;
+        std::string label;
+        double rate = 100;
+        if (act.keyword == "Add") {
+            cmd::StringOptions so2;
+            so2.allowEmpty = true;
+            auto l = co_await ctx.getString("Inspection label (Enter for none)", so2);
+            if (l.status == cmd::Status::Cancel)
+                co_return;
+            if (l.ok())
+                label = cmd::trim(l.text);
+            cmd::RealOptions ro;
+            ro.defaultValue = 100.0;
+            auto r = co_await ctx.getReal("Inspection rate in percent <100>", ro);
+            if (!r.ok())
+                co_return;
+            rate = std::clamp(r.value, 0.0, 100.0);
+        }
+        ctx.setUndoLabel("DIMINSPECT");
+        char rateText[32];
+        std::snprintf(rateText, sizeof rateText, "%g", rate);
+        const std::string mark = " [" + (label.empty() ? "" : label + " ") + rateText + "%]";
+        for (EntityId id : sel.ids) {
+            (void)ctx.tx().modify(id, [&](Entity& x) {
+                auto* d = entityAs<DimensionData>(x);
+                if (!d)
+                    return;
+                std::string t = d->textOverride.empty() ? "<>" : d->textOverride;
+                const std::size_t at = t.rfind(" [");
+                if (at != std::string::npos && t.back() == ']')
+                    t.erase(at);  // an earlier inspection mark
+                d->textOverride = act.keyword == "Add" ? t + mark : (t == "<>" ? "" : t);
+            });
+        }
+        ctx.message(std::string("Inspection ") +
+                    (act.keyword == "Add" ? "added to " : "removed from ") +
+                    std::to_string(sel.ids.size()) + " dimensions.");
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeDimRegenCommand() {
+    return std::make_unique<DimRegenCommand>();
+}
+std::unique_ptr<cmd::Command> makeDimInspectCommand() {
+    return std::make_unique<DimInspectCommand>();
+}
 std::unique_ptr<cmd::Command> makeDimReassocCommand() {
     return std::make_unique<DimReassocCommand>();
 }

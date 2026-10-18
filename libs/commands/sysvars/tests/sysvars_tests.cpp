@@ -157,3 +157,11 @@ TEST_CASE("TIME shows the current date and time") {
     f.host.run("TIME", {});
     CHECK(f.host.logContains("Current time: 20"));
 }
+
+TEST_CASE("DWGUNITS is UNITS, and FLATTEN says the drawing is flat") {
+    Fixture f;
+    f.host.run("DWGUNITS", {"Feet"});
+    CHECK(f.doc.header().units == LengthUnit::Foot);
+    f.host.run("FLATTEN", {});
+    CHECK(f.host.logContains("nothing to flatten"));
+}

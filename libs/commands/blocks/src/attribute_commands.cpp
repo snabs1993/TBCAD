@@ -279,6 +279,7 @@ private:
 class AttSyncCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ATTSYNC"; }
+    std::vector<std::string> defaultAliases() const override { return {"SYNCHRONIZE"}; }
     std::string_view description() const override {
         return "Update the inserts of a block to its current attributes";
     }

@@ -140,7 +140,7 @@ const char* unitName(LengthUnit u) {
 class UnitsCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "UNITS"; }
-    std::vector<std::string> defaultAliases() const override { return {"UN"}; }
+    std::vector<std::string> defaultAliases() const override { return {"UN", "DWGUNITS"}; }
     std::string_view description() const override {
         return "Choose the length unit of the drawing (objects are not scaled)";
     }
@@ -187,6 +187,19 @@ public:
                     ", linetype: " + layers::linetypeName(doc, h.currentLinetype) +
                     ", lineweight: " + layers::lineweightName(h.currentLineweight));
         ctx.message("Linetype scale: " + formatDouble(h.ltScale));
+        co_return;
+    }
+};
+
+// FLATTEN: the drawing is 2D, so every object already has no height; the command only says so.
+class FlattenCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "FLATTEN"; }
+    std::string_view description() const override {
+        return "Remove the Z coordinate of objects (all objects here are already flat)";
+    }
+    Task run(CommandContext& ctx) override {
+        ctx.message("TBCAD drawings are 2D: nothing to flatten.");
         co_return;
     }
 };
@@ -241,6 +254,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<UnitsCommand>());
     (void)registry.add(std::make_unique<StatusCommand>());
     (void)registry.add(std::make_unique<TimeCommand>());
+    (void)registry.add(std::make_unique<FlattenCommand>());
     (void)registry.add(std::make_unique<RefreshCommand>("REGEN", "RE"));
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
     (void)registry.add(makeRenameCommand());
