@@ -96,10 +96,142 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     if (doc_.effective(e.common).locked)
         fade(list);
     // An object already in the scene keeps its place in the draw order.
-    scene_.upsert(
-        id, list,
-        drawOrder.value_or(scene_.contains(id) ? scene_.drawOrderOf(id) : drawOrderOf(id)),
-        needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
+    scene_.upsert(id, list, drawOrder.value_or(orderFor(id)),
+                  needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0);
+}
+
+// Where an object goes in the draw order: where it already is, or where it was waiting to be
+// built, or by its id.
+std::uint32_t SceneSync::orderFor(EntityId id) {
+    if (scene_.contains(id))
+        return scene_.drawOrderOf(id);
+    if (!pending_.empty())
+        if (auto o = takePending(id))
+            return *o;
+    return drawOrderOf(id);
+}
+
+std::optional<std::uint32_t> SceneSync::takePending(EntityId id) {
+    auto it = std::lower_bound(pending_.begin(), pending_.end(), id,
+                               [](const PendingRec& r, EntityId v) { return r.id < v; });
+    if (it == pending_.end() || it->id != id || it->dead)
+        return std::nullopt;
+    it->dead = true;
+    ++pendingDead_;
+    return it->order;
+}
+
+void SceneSync::compactPending() {
+    if (pendingDead_ == 0)
+        return;
+    std::erase_if(pending_, [](const PendingRec& r) { return r.dead; });
+    pendingDead_ = 0;
+}
+
+bool SceneSync::lazyOk(std::size_t count) const {
+    constexpr std::size_t kLazyMin = 20000;
+    // Wipeouts split the draw order into levels that every object depends on: build at once.
+    return count >= kLazyMin && !scene_.needsRelevel() && !scene_.hasMasks();
+}
+
+void SceneSync::queueLazy(const std::vector<const Entity*>& list) {
+    std::vector<const Entity*> sorted = list;
+    if (!std::is_sorted(sorted.begin(), sorted.end(), [](const Entity* a, const Entity* b) {
+            return a->common.id < b->common.id;
+        }))
+        std::sort(sorted.begin(), sorted.end(),
+                  [](const Entity* a, const Entity* b) { return a->common.id < b->common.id; });
+    std::vector<EntityId> ids;
+    ids.reserve(sorted.size());
+    std::vector<PendingRec> fresh;
+    fresh.reserve(sorted.size());
+    std::size_t at = 0;  // walks pending_ in step with the sorted list
+    for (const Entity* e : sorted) {
+        const EntityId id = e->common.id;
+        ids.push_back(id);
+        PendingRec rec;
+        rec.id = id;
+        rec.box = geom::bounds(*e, doc_);
+        if (scene_.contains(id)) {
+            rec.order = scene_.drawOrderOf(id);
+        } else {
+            while (at < pending_.size() && pending_[at].id < id)
+                ++at;
+            rec.order = (at < pending_.size() && pending_[at].id == id && !pending_[at].dead)
+                            ? pending_[at].order
+                            : drawOrderOf(id);
+        }
+        fresh.push_back(rec);
+    }
+    if (!scene_.removeAllOf(ids))
+        scene_.removeMany(ids);
+    // Merge into the waiting ones; a newer record replaces an older one of the same object.
+    std::vector<PendingRec> merged;
+    merged.reserve(pending_.size() + fresh.size());
+    std::size_t i = 0, j = 0;
+    while (i < pending_.size() || j < fresh.size()) {
+        if (i < pending_.size() && pending_[i].dead) {
+            ++i;
+        } else if (j == fresh.size() || (i < pending_.size() && pending_[i].id < fresh[j].id)) {
+            merged.push_back(pending_[i++]);
+        } else if (i == pending_.size() || fresh[j].id < pending_[i].id) {
+            merged.push_back(fresh[j++]);
+        } else {
+            merged.push_back(fresh[j++]);
+            ++i;
+        }
+    }
+    pending_ = std::move(merged);
+    pendingDead_ = 0;
+}
+
+void SceneSync::buildPending(PendingRec& rec) {
+    rec.dead = true;
+    ++pendingDead_;
+    if (const Entity* e = doc_.find(rec.id))
+        upsertEntity(*e, rec.order);
+}
+
+std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t limit) {
+    if (pendingCount() == 0) {
+        pending_.clear();
+        pendingDead_ = 0;
+        return 0;
+    }
+    pixelSizeMm_ = camera.pixelSizeMm();
+    BBox2 view = camera.visibleWorld();
+    const double pad = 0.1 * std::max(view.width(), view.height());
+    view = view.inflated(pad);
+    std::size_t built = 0;
+    for (PendingRec& rec : pending_) {
+        if (built >= limit)
+            break;
+        if (!rec.dead && (rec.box.empty() || view.intersects(rec.box))) {
+            buildPending(rec);
+            ++built;
+        }
+    }
+    if (built == 0) {  // nothing in view: use the time to catch up on the rest
+        for (PendingRec& rec : pending_) {
+            if (built >= limit / 2)
+                break;
+            if (!rec.dead) {
+                buildPending(rec);
+                ++built;
+            }
+        }
+    }
+    if (pendingDead_ * 2 > pending_.size())
+        compactPending();
+    return built;
+}
+
+void SceneSync::flushPending() {
+    for (PendingRec& rec : pending_)
+        if (!rec.dead)
+            buildPending(rec);
+    pending_.clear();
+    pendingDead_ = 0;
 }
 
 void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
@@ -118,7 +250,7 @@ void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
         for (std::size_t i = from; i < to; ++i) {
             const EntityId id = list[i]->common.id;
             ids.push_back(id);
-            orders.push_back(scene_.contains(id) ? scene_.drawOrderOf(id) : drawOrderOf(id));
+            orders.push_back(orderFor(id));
         }
         scene_.removeMany(ids);
         for (std::size_t i = from; i < to; ++i)
@@ -127,6 +259,7 @@ void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
 }
 
 void SceneSync::syncLayers() {
+    flushPending();
     render::syncLayerVisibility(scene_, doc_);
     // Entities whose layer became locked or unlocked change appearance.
     std::unordered_set<LayerId> locked;
@@ -164,6 +297,7 @@ void SceneSync::syncLayers() {
 }
 
 void SceneSync::rebuildDrawOrder() {
+    flushPending();
     // Draw order overrides (bring to front / send to back) change the order of existing
     // entities: rebuild every entity with its position in the document's draw order.
     std::vector<EntityId> order;
@@ -195,6 +329,7 @@ void SceneSync::rebuildDrawOrder() {
 void SceneSync::relevelMasks() {
     if (!scene_.needsRelevel())
         return;
+    flushPending();
     scene_.adoptMaskOrders();
     std::vector<EntityId> ids;
     doc_.forEachEntity([&](const Entity& e) {
@@ -220,6 +355,9 @@ void SceneSync::onChanged(const ChangeSet& cs) {
             removed.push_back(cs.idOf(c));
     if (!scene_.removeAllOf(removed))
         scene_.removeMany(removed);
+    if (!pending_.empty())
+        for (EntityId id : removed)
+            (void)takePending(id);
     std::vector<const Entity*> redraw;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
@@ -233,7 +371,19 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         if (live)
             redraw.push_back(live);
     }
-    upsertMany(redraw);
+    // Only changes of what is already drawn wait; new objects (a paste, an undo of an erase) are
+    // built at once so the scene never lags behind what was just added.
+    const bool lazy = lazyOk(redraw.size()) &&
+                      std::none_of(redraw.begin(), redraw.end(),
+                                   [](const Entity* e) { return e->common.wipeout; }) &&
+                      2 * static_cast<std::size_t>(std::count_if(
+                              redraw.begin(), redraw.end(),
+                              [&](const Entity* e) { return scene_.contains(e->common.id); })) >=
+                          redraw.size();
+    if (lazy)
+        queueLazy(redraw);
+    else
+        upsertMany(redraw);
     if (!fieldTexts_.empty() && (!cs.entities.empty() || cs.header)) {
         std::vector<EntityId> ids(fieldTexts_.begin(), fieldTexts_.end());
         for (EntityId id : ids)
@@ -248,6 +398,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         (cs.header && (cs.header->before.currentLevel != cs.header->after.currentLevel ||
                        cs.header->before.levelView != cs.header->after.levelView))) {
         // Level visibility, the current level or the view of other levels changed.
+        flushPending();
         std::vector<const Entity*> all;
         doc_.forEachEntity([&](const Entity& e) {
             if (!doc_.ownerBlock(e.common.id))
@@ -257,6 +408,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     }
     if (blockTouched) {
         // Inserts show the contents of their block: redraw them.
+        flushPending();
         std::vector<const Entity*> inserts;
         doc_.forEachEntity([&](const Entity& e) {
             if (kind(e) == EntityKind::Insert)
@@ -269,6 +421,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
 }
 
 void SceneSync::rebuildAll(double tileSizeMm) {
+    pending_.clear();
+    pendingDead_ = 0;
     scene_.clearAndRetile(tileSizeMm);
     lockedLayers_.clear();
     layerTransparency_.clear();

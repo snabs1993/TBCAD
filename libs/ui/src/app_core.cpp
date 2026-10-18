@@ -1790,6 +1790,13 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         session_->sync->refreshStale(camera_);
         lastTessellatedFor_ = camera_;
     }
+    // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
+    if (session_->sync->pumpPending(camera_) > 0)
+        ++generation_;
+}
+
+bool AppCore::sceneBuilding() const {
+    return session_->sync->pendingCount() > 0;
 }
 
 // Tiles are sized when a drawing opens. A drawing that grew a lot since (generated, pasted,

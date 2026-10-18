@@ -218,6 +218,8 @@ public:
     void zoomToEntities(const std::vector<EntityId>& ids);
     // Tessellate for the current zoom when it changed enough; call once per frame.
     void updateFrame(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+    // True while the geometry of a big edit is still being built (frames should keep coming).
+    bool sceneBuilding() const;
     // True while new objects are flashing (the window keeps drawing frames until it ends).
     bool flashing() const { return !flashIds_.empty(); }
     // Snap / tracking feedback of the point prompt in progress (tooltip text for the window).

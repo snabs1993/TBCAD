@@ -517,7 +517,7 @@ int App::run() {
     double last = glfwGetTime();
     while (!glfwWindowShouldClose(window_) && !gui_->wantsExit()) {
         const bool scripted = options_.frames > 0;
-        if (scripted || gui_->consumeActivity())
+        if (scripted || gui_->consumeActivity() || core_->sceneBuilding())
             glfwPollEvents();
         else
             glfwWaitEventsTimeout(0.5);

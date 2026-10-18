@@ -63,6 +63,16 @@ struct Big {
             core->submitText(l);
         core->updateFrame();
         const double run = ms(t);
+        // What the first frame left unbuilt is built in the frames after it.
+        auto ts = std::chrono::steady_clock::now();
+        int frames = 0;
+        while (core->sceneBuilding() && frames < 10000) {
+            core->updateFrame();
+            ++frames;
+        }
+        const double settleMs = ms(ts);
+        std::printf("  %s: %d more frames to build the rest, %.0f ms\n", label, frames, settleMs);
+        CHECK(core->scene().entityCount() == core->document().modelSpaceCount());
         const bool done = !core->runner().active() || core->promptText().rfind("Command", 0) == 0;
         if (!done) {
             // (a command left waiting at a prompt is ended with Enter)
@@ -168,9 +178,10 @@ TEST_CASE("perf: save and open of a big drawing keep every object") {
         t = std::chrono::steady_clock::now();
         auto back = io::readTbcad(std::span<const std::uint8_t>(mem.value()), rep);
         const double decodeMs = ms(t);
-        std::printf("  encode %.0f ms (%.1f MB), without deflate %.0f ms (%.1f MB), decode %.0f ms\n",
-                    encodeMs, static_cast<double>(mem.value().size()) / 1e6, rawMs,
-                    static_cast<double>(memRaw.value().size()) / 1e6, decodeMs);
+        std::printf(
+            "  encode %.0f ms (%.1f MB), without deflate %.0f ms (%.1f MB), decode %.0f ms\n",
+            encodeMs, static_cast<double>(mem.value().size()) / 1e6, rawMs,
+            static_cast<double>(memRaw.value().size()) / 1e6, decodeMs);
     }
     ui::AppCore fresh(big.registry, platform::AppPaths{big.dir / "cfg2", big.dir / "data2"});
     fresh.setViewportSize(1400, 900);

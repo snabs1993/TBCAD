@@ -191,3 +191,77 @@ TEST_CASE("a wipeout is drawn between the objects below it and the ones above it
     CHECK(kinds[2] == render::BatchKind::Stroke);
     CHECK_FALSE(scene.needsRelevel());
 }
+
+TEST_CASE(
+    "an edit of a very large number of objects is built in slices, what the camera sees first") {
+    constexpr int kN = 30000;
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    cmd::UndoStack undo;
+    {
+        auto tx = doc.begin("gen");
+        for (int i = 0; i < kN; ++i) {
+            const double x = (i % 200) * 100.0, y = (i / 200) * 100.0;
+            (void)tx.add(Entity{{}, LineData{{x, y}, {x + 50, y + 10}}});
+        }
+        undo.push("gen", {tx.commit()});
+    }
+    REQUIRE(scene.entityCount() == kN);  // new objects are built at once
+    const auto before = scene.bounds();
+
+    // Move everything far away: the objects leave the scene and wait to be built.
+    ChangeSet moved;
+    {
+        auto tx = doc.begin("move");
+        for (EntityId id : doc.modelSpace())
+            (void)tx.modify(id, [](Entity& e) {
+                auto& l = std::get<LineData>(e.data);
+                l.a.x += 1e6;
+                l.b.x += 1e6;
+            });
+        moved = tx.commit();
+    }
+    undo.push("move", {moved});
+    CHECK(sync.pendingCount() == kN);
+    CHECK(scene.entityCount() == 0);
+
+    // A camera over a corner of the moved drawing gets its objects first.
+    render::Camera2D cam;
+    cam.center = {1e6 + 500, 500};
+    cam.pixelsPerMm = 1;
+    cam.viewportW = 1000;
+    cam.viewportH = 1000;
+    const std::size_t built = sync.pumpPending(cam, 100000);
+    CHECK(built > 0);
+    CHECK(built < static_cast<std::size_t>(kN));
+    CHECK(sync.pendingCount() == kN - built);
+    CHECK(scene.entityCount() == built);
+
+    // An edit of one object that is still waiting builds it right away, in its place.
+    EntityId waiting;
+    for (EntityId id : doc.modelSpace())
+        if (!scene.contains(id)) {
+            waiting = id;
+            break;
+        }
+    {
+        auto tx = doc.begin("one");
+        (void)tx.modify(waiting, [](Entity& e) { std::get<LineData>(e.data).b.y += 1; });
+        undo.push("one", {tx.commit()});
+    }
+    CHECK(scene.contains(waiting));
+    CHECK(sync.pendingCount() == kN - built - 1);
+
+    // Undoing the move while objects wait for the first one: all of them are rebuilt where they
+    // were, and none is left waiting for a position that no longer exists.
+    CHECK(undo.undo(doc));  // the single edit
+    CHECK(undo.undo(doc));  // the move
+    sync.flushPending();
+    CHECK(sync.pendingCount() == 0);
+    CHECK(scene.entityCount() == kN);
+    const auto after = scene.bounds();
+    CHECK(after.min.x == doctest::Approx(before.min.x));
+    CHECK(after.max.x == doctest::Approx(before.max.x));
+    CHECK(after.max.y == doctest::Approx(before.max.y));
+}
