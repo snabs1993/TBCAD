@@ -289,7 +289,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     // built once and then built again when the zoom change makes curves and text stale.
     if (fitView && (!session_->index.empty() || !slot.viewSaved)) {
         zoomExtents();
-        step("  zoom to fit");
+        step("  zoom to fit (finds the extents)");
         fitPending_ = 6;
         fitUntil_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     }
@@ -822,15 +822,15 @@ void AppCore::printOpenFailure(const std::string& text) {
         print(text);
 }
 
+void AppCore::openLap(const std::string& name) {
+    const auto t = std::chrono::steady_clock::now();
+    openTimings_.emplace_back(name,
+                              std::chrono::duration<double, std::milli>(t - openLapAt_).count());
+    openLapAt_ = t;
+}
+
 Result<void> AppCore::openDxf(const fs::path& path) {
-    openTimings_.clear();
-    auto lastLap = std::chrono::steady_clock::now();
-    auto lap = [&](const char* name) {
-        const auto t = std::chrono::steady_clock::now();
-        openTimings_.emplace_back(name,
-                                  std::chrono::duration<double, std::milli>(t - lastLap).count());
-        lastLap = t;
-    };
+    auto lap = [&](const char* name) { openLap(name); };
     std::ifstream in(platform::longPath(path), std::ios::binary);
     if (!in) {
         printOpenFailure("Cannot open " + path.string());
@@ -1026,8 +1026,18 @@ Result<void> AppCore::openFile(const fs::path& path) {
         activateDocument(*open);
         return {};
     }
-    if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end())
-        return finishForeignOpen(path, it->first, it->second.readOnly, it->second.read(path));
+    openTimings_.clear();
+    openLapAt_ = std::chrono::steady_clock::now();
+    if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
+        auto res = it->second.read(path);
+        openLap("read " + it->first + " file (all steps)");
+        if (res)
+            for (const auto& t : res.value().timings)
+                openTimings_.emplace_back("  " + t.first, t.second);
+        auto done = finishForeignOpen(path, it->first, it->second.readOnly, std::move(res));
+        openLap("index, scene, zoom (total)");
+        return done;
+    }
     if (isDxfPath(path))
         return openDxf(path);
     if (tmpl::isTemplatePath(path)) {
@@ -1392,6 +1402,7 @@ BBox2 AppCore::computeDrawingExtents() const {
     BBox2 withoutPoints;
     std::vector<BBox2> boxes;
     const Document& doc = session_->doc;
+    boxes.reserve(doc.modelSpaceCount());
     // Like AutoCAD's ZOOM Extents, only what is shown counts: objects on layers that are off or
     // frozen (an imported file's hidden backup layers) do not stretch the view. If nothing is
     // shown, fall back to everything so the command still goes somewhere.
@@ -1425,20 +1436,30 @@ BBox2 AppCore::computeDrawingExtents() const {
     // fivefold, frame the rest.
     if (boxes.size() >= 10) {
         std::vector<double> xs, ys;
+        xs.reserve(boxes.size());
+        ys.reserve(boxes.size());
         for (const BBox2& b : boxes) {
             xs.push_back(b.center().x);
             ys.push_back(b.center().y);
         }
-        std::sort(xs.begin(), xs.end());
-        std::sort(ys.begin(), ys.end());
         const std::size_t cut = std::max<std::size_t>(1, boxes.size() / 20);
-        const double spanX = xs[xs.size() - 1 - cut] - xs[cut];
-        const double spanY = ys[ys.size() - 1 - cut] - ys[cut];
+        // Only the 5% and 95% values are needed, not the whole order.
+        auto lowHigh = [&](std::vector<double>& v) {
+            std::nth_element(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(cut), v.end());
+            const double low = v[cut];
+            std::nth_element(v.begin() + static_cast<std::ptrdiff_t>(cut),
+                             v.begin() + static_cast<std::ptrdiff_t>(v.size() - 1 - cut), v.end());
+            return std::pair<double, double>{low, v[v.size() - 1 - cut]};
+        };
+        const auto [xLow, xHigh] = lowHigh(xs);
+        const auto [yLow, yHigh] = lowHigh(ys);
+        const double spanX = xHigh - xLow;
+        const double spanY = yHigh - yLow;
         BBox2 core;
         for (const BBox2& b : boxes) {
             const Vec2 c = b.center();
-            if (c.x >= xs[cut] - spanX && c.x <= xs[xs.size() - 1 - cut] + spanX &&
-                c.y >= ys[cut] - spanY && c.y <= ys[ys.size() - 1 - cut] + spanY)
+            if (c.x >= xLow - spanX && c.x <= xHigh + spanX && c.y >= yLow - spanY &&
+                c.y <= yHigh + spanY)
                 core.merge(b);
         }
         if (!core.empty() && (box.width() > 5 * core.width() || box.height() > 5 * core.height()))
