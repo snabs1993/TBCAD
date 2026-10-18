@@ -29,6 +29,7 @@ std::unique_ptr<cmd::Command> makeBaselineCommand();
 std::unique_ptr<cmd::Command> makeTextEditCommand();
 std::unique_ptr<cmd::Command> makeSpaceCommand();
 std::unique_ptr<cmd::Command> makeEditCommand();
+std::unique_ptr<cmd::Command> makeBreakCommand();
 std::unique_ptr<cmd::Command> makeQuickDimCommand();
 
 // Shared by the dimension commands (dim_helpers.cpp).

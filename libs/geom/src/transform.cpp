@@ -374,6 +374,10 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
             for (Vec2& p : o.defPts)
                 p = t.apply(p);
             o.textPos = t.apply(o.textPos);
+            for (DimBreak& b : o.breaks) {
+                b.a = t.apply(b.a);
+                b.b = t.apply(b.b);
+            }
             if (o.kind != DimKind::Angular2Line && o.kind != DimKind::Angular3Point)
                 o.measurement *= s;
             if (o.kind == DimKind::Linear)

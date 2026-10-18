@@ -348,6 +348,14 @@ enum class DimKind : std::uint8_t {
     Jogged,
 };
 
+// A gap in a dimension line or extension line (DIMBREAK): the part of the line between a and b is
+// not drawn. Both points lie on the line, so a break that no longer matches a line (the dimension
+// was moved or restyled) does nothing.
+struct DimBreak {
+    Vec2 a{}, b{};
+    friend bool operator==(const DimBreak&, const DimBreak&) = default;
+};
+
 struct DimensionData {
     DimKind kind = DimKind::Linear;
     double rotation = 0;  // Linear only
@@ -357,6 +365,7 @@ struct DimensionData {
     std::string textOverride{};
     DimStyleId style{};      // null = document's current dim style
     double measurement = 0;  // cache
+    std::vector<DimBreak> breaks{};
 };
 
 struct LeaderData {

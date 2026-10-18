@@ -203,6 +203,7 @@ std::unique_ptr<Document> makeRichDocument() {
         dim.textOverride = "<> mm";
         dim.style = arch;
         dim.measurement = 10;
+        dim.breaks = {DimBreak{{1, 0}, {2, 0}}, DimBreak{{6, 0}, {7, 0}}};
         add(make(std::move(dim), l0));
         add(make(LeaderData{{{0, 0}, {5, 5}, {8, 5}}, arch, "หมายเหตุ", {8.5, 5}}, l0));
         ProxyData proxy;
