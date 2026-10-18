@@ -2572,6 +2572,31 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         if (hoverId_ && !std::count(selection_.begin(), selection_.end(), hoverId_))
             outlineHatch(hoverId_, ui::withAlpha(theme_.select, 0.5));
     }
+    // SELECTIONANNODISPLAY: a selected annotative object also shows how it looks at its other
+    // scales, as faint dashed outlines (a few objects only; the call is cheap when the variable
+    // is off or no selected object has several scales).
+    if (!inPaperSpace() && !selection_.empty() && selection_.size() <= 200) {
+        geom::DisplayContext dc;
+        dc.pixelSizeMm = camera_.pixelSizeMm();
+        render::OverlayStyle ghost;
+        ghost.color = ui::withAlpha(theme_.select, 0.55);
+        ghost.widthPx = 1.0;
+        ghost.dashPx = 5;
+        ghost.gapPx = 3;
+        for (const geom::AnnotationGhost& g :
+             geom::annotationGhosts(session_->doc, selection_, dc)) {
+            for (const auto& item : g.display.items) {
+                if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
+                    if (pl->pts.size() >= 2)
+                        overlay.polyline(render::Space::World, pl->pts, pl->closed, ghost);
+                } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
+                    for (const auto& ring : fill->rings)
+                        if (ring.size() >= 2)
+                            overlay.polyline(render::Space::World, ring, true, ghost);
+                }
+            }
+        }
+    }
     if (inPaperSpace()) {
         // The sheet is a flat picture, so what is selected or under the pointer is outlined here.
         geom::DisplayContext dc;
@@ -2666,7 +2691,11 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     auto toggle = [&](const char* id, const char* label, const char* key, bool fallback = false) {
         std::string k = key;
         ui.addStatusToggle(
-            id, label, [this, k, fallback] { return settings_.getBool(k, fallback); },
+            id, label,
+            [this, k, fallback] {  // also right when the value was set as text (SETVAR, config)
+                const auto v = setting(k);
+                return v ? isTrue(*v) : fallback;
+            },
             [this, k](bool on) {
                 settings_.setBool(k, on);
                 // Ortho and polar tracking exclude each other.
@@ -2689,7 +2718,11 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("selcyc", "SELCYC", "ui.selectionCycling");
     // Transparency is baked into the scene's colours, so the switch rebuilds the scene.
     ui.addStatusToggle(
-        "tpy", "TPY", [this] { return settings_.getBool("view.transparency", true); },
+        "tpy", "TPY",
+        [this] {
+            const auto v = setting("view.transparency");
+            return v ? isTrue(*v) : true;
+        },
         [this](bool on) {
             settings_.setBool("view.transparency", on);
             if (!session_)

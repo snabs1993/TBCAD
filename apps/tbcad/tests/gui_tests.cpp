@@ -10,6 +10,7 @@
 
 #include "gui_harness.h"
 #include "tbcad/layers/layer_states.h"
+#include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/xref/xref.h"
 
@@ -1421,4 +1422,94 @@ TEST_CASE("object properties: annotation section, scales and *varies* with a mix
     REQUIRE(h.click("Circle (1)", "Combo"));
     h.frame(3);
     CHECK(h.has("##v", "Object Properties"));
+}
+
+TEST_CASE("status bar: toggles flip their setting, ORTHO and POLAR exclude each other") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    auto on = [&](const char* key) {
+        const auto v = h.core().setting(key);
+        return v && (*v == "1" || *v == "true");
+    };
+    struct T {
+        const char* label;
+        const char* key;
+    };
+    for (const T& t : {T{"SNAP", "drafting.snap"}, T{"GRID", "view.grid"},
+                       T{"OTRACK", "drafting.otrack"}, T{"SELCYC", "ui.selectionCycling"}}) {
+        CAPTURE(t.label);
+        REQUIRE(h.has(t.label, "##statusbar"));
+        const bool before = on(t.key);
+        REQUIRE(h.click(t.label, "##statusbar"));
+        h.frame(2);
+        CHECK(on(t.key) == !before);
+        REQUIRE(h.click(t.label, "##statusbar"));
+        h.frame(2);
+        CHECK(on(t.key) == before);
+    }
+    REQUIRE(h.click("ORTHO", "##statusbar"));
+    h.frame(2);
+    CHECK(on("drafting.ortho"));
+    REQUIRE(h.click("POLAR", "##statusbar"));
+    h.frame(2);
+    CHECK(on("drafting.polar"));
+    CHECK_FALSE(on("drafting.ortho"));
+
+    // Right click on a drafting toggle opens the drafting settings.
+    REQUIRE(h.rightClick("POLAR", "##statusbar"));
+    h.frame(2);
+    REQUIRE(h.click("Drafting settings...", "Popup"));
+    h.frame(3);
+    CHECK(h.windowOpen("Settings"));
+
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+}
+
+TEST_CASE("SELECTIONANNODISPLAY: a selected annotative object shows its other scales") {
+    Harness h(1920, 1080);
+    h.core().setSetting("view.crosshair", "off");
+    h.frame(3);
+    h.core().submitText("TEXT");
+    h.core().submitText("0,0");
+    h.core().submitText("10");
+    h.core().submitText("0");
+    h.frame(6);
+    h.type("Note");
+    h.key(ImGuiKey_Enter);
+    h.frame(4);
+    REQUIRE(entityCount(h) == 1);
+    run(h, "SELECTIONANNODISPLAY 0");
+    h.core().selectAll();
+    h.core().submitText("ANNOTATIVE");
+    h.core().submitText("Scales");
+    h.core().submitText("1,2,4");
+    h.core().pressEscape();
+    h.core().submitText("CANNOSCALE");
+    h.core().submitText("1");
+    h.core().zoomExtents();
+    h.frame(30);
+    h.scroll(700, 500, -3.0f);
+    h.frame(30);
+    h.core().selectAll();
+    h.moveMouse(1300, 800);
+    h.frame(5);
+    REQUIRE(h.core().selection().size() == 1);
+    // The overlay (drawn on top of the scene) gains the ghost outlines when the variable is on.
+    auto overlayVertices = [&] {
+        render::Overlay overlay;
+        h.core().buildOverlay(overlay);
+        return overlay.build(h.core().camera()).vertices.size();
+    };
+    const std::size_t off = overlayVertices();
+    run(h, "SELECTIONANNODISPLAY 1");
+    h.core().selectAll();
+    h.frame(5);
+    REQUIRE(h.core().selection().size() == 1);
+    const std::size_t on = overlayVertices();
+    CHECK(on > off + 100);
+    // Nothing selected, nothing to show.
+    h.core().clearSelection();
+    h.frame(2);
+    CHECK(overlayVertices() < on);
 }
