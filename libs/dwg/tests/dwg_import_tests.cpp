@@ -40,6 +40,52 @@ std::vector<std::uint8_t> layer(std::uint64_t h, const char* name, int color, st
     return o.finish();
 }
 
+// A layer whose extension dictionary handle is given (R2000 layout only).
+std::vector<std::uint8_t> layerWithDict(std::uint64_t h, const char* name, std::uint64_t dict) {
+    ObjectWriter o(0x33, h);
+    o.objectCommon();
+    o.main.text(name);
+    o.main.b(false);
+    o.main.bs(0);
+    o.main.b(false);
+    o.main.bs(16);
+    o.cmc(7);
+    o.handles.handle(4, 0x02);
+    o.handles.handle(3, dict);
+    o.handles.handle(5, 0);
+    o.handles.handle(5, 0);
+    o.handles.handle(5, kLtype);
+    return o.finish();
+}
+
+std::vector<std::uint8_t> dictionaryOf(std::uint64_t h, const char* name, std::uint64_t item) {
+    ObjectWriter o(0x2A, h);
+    o.objectCommon();
+    o.main.rl(1);
+    o.main.bs(1);
+    o.main.rc(0);
+    o.main.text(name);
+    o.handles.handle(4, 0);
+    o.xdic();
+    o.handles.handle(2, item);
+    return o.finish();
+}
+
+// An XRECORD holding group 280 = 1 and group 90 = value.
+std::vector<std::uint8_t> alphaRecord(std::uint64_t h, std::uint32_t value) {
+    ObjectWriter o(0x4F, h);
+    o.objectCommon();
+    o.main.bl(2 + 2 + 2 + 4);
+    o.main.rs(280);
+    o.main.rs(1);
+    o.main.rs(90);
+    o.main.rl(value);
+    o.main.bs(1);
+    o.handles.handle(4, 0);
+    o.xdic();
+    return o.finish();
+}
+
 std::vector<std::uint8_t> linetype(std::uint64_t h, const char* name) {
     ObjectWriter o(0x39, h);
     o.objectCommon();
@@ -473,6 +519,21 @@ std::vector<std::uint8_t> sampleDrawing2004(const char* version) {
 }
 
 }  // namespace
+
+TEST_CASE("a layer's transparency is read from its ADSK_XREC_LAYER_ALPHA record") {
+    DwgFile f = sampleFile();
+    f.add(0x40, layerWithDict(0x40, "GLASS", 0x41));
+    f.add(0x41, dictionaryOf(0x41, "ADSK_XREC_LAYER_ALPHA", 0x42));
+    f.add(0x42, alphaRecord(0x42, 0x02000000u | 0x80u));
+    auto file = asBytes(f.build());
+    dxf::Report report;
+    auto r = importDwg(file, dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Layer* glass = r.value().document->layerByName("GLASS");
+    REQUIRE(glass != nullptr);
+    CHECK(glass->transparency == 50);  // alpha 0x80 of 0xFF
+    CHECK(r.value().document->layerByName("WALLS")->transparency == 0);
+}
 
 TEST_CASE("an R2000 file with tables, entities and a block imports") {
     auto file = asBytes(sampleDrawing());

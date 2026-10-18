@@ -41,6 +41,7 @@ enum Type : std::uint32_t {
     kMtext = 0x2C,
     kLeader = 0x2D,
     kDictionary = 0x2A,
+    kXRecord = 0x4F,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
     kHatch = 100000,
     kLayoutObject = 0x52,
@@ -571,6 +572,9 @@ private:
                 return;
             case kDictionary:
                 decodeDictionary(r, objBits, body, self.value);
+                return;
+            case kXRecord:
+                decodeXRecord(r, self.value);
                 return;
             case kSortEnts:
                 decodeSortEnts(r, objBits, body, self.value);
@@ -1527,6 +1531,59 @@ private:
             items.emplace_back(names[i], resolveHandle(h.handle(), self));
         if (!r.failed() && !h.failed())
             out_.dictionaries[self] = std::move(items);
+    }
+
+    // XRECORD (ODA spec 20.4.99): a byte count, then items of a group code (RS) followed by a
+    // value whose size the code range decides. Only the integer items are kept.
+    void decodeXRecord(BitReader& r, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        r.setStringStream(nullptr);
+        const std::int32_t total = r.bl();
+        if (r.failed() || total < 0 || static_cast<std::size_t>(total) * 8 > r.bitsLeft())
+            return;
+        const std::size_t end = r.bitPos() + static_cast<std::size_t>(total) * 8;
+        std::vector<std::pair<int, long long>> ints;
+        while (!r.failed() && r.bitPos() + 16 <= end) {
+            const int code = r.rs();
+            if ((code >= 1 && code <= 4) || code == 100 || code == 102 || code == 105 ||
+                (code >= 300 && code <= 309) || (code >= 430 && code <= 439) ||
+                (code >= 470 && code <= 479) || (code >= 1000 && code <= 1009)) {
+                const unsigned len = r.rs();
+                if (!fmt_.r2007)
+                    r.rc();  // code page
+                for (unsigned i = 0; i < len * (fmt_.r2007 ? 2u : 1u) && !r.failed(); ++i)
+                    r.rc();
+            } else if ((code >= 10 && code <= 59) || (code >= 110 && code <= 149) ||
+                       (code >= 460 && code <= 469) || (code >= 1010 && code <= 1059)) {
+                r.rd();
+            } else if (code >= 210 && code <= 239) {
+                r.rd();
+                r.rd();
+                r.rd();
+            } else if ((code >= 60 && code <= 79) || (code >= 170 && code <= 179) ||
+                       (code >= 270 && code <= 289) || (code >= 370 && code <= 389) ||
+                       (code >= 400 && code <= 409) || (code >= 410 && code <= 419) ||
+                       (code >= 1060 && code <= 1070)) {
+                ints.emplace_back(code, static_cast<std::int16_t>(r.rs()));
+            } else if ((code >= 90 && code <= 99) || (code >= 420 && code <= 429) ||
+                       (code >= 440 && code <= 459) || code == 1071) {
+                ints.emplace_back(code, static_cast<std::int32_t>(r.rl()));
+            } else if (code >= 290 && code <= 299) {
+                ints.emplace_back(code, r.rc());
+            } else if (code >= 310 && code <= 319) {
+                const unsigned len = r.rc();
+                for (unsigned i = 0; i < len && !r.failed(); ++i)
+                    r.rc();
+            } else if ((code >= 320 && code <= 369) || (code >= 390 && code <= 399) ||
+                       code == 480 || code == 481 || (code >= 160 && code <= 169)) {
+                r.rll();
+            } else {
+                break;
+            }
+        }
+        if (!r.failed() && !ints.empty())
+            out_.xrecordInts[self] = std::move(ints);
     }
 
     // SORTENTSTABLE: the draw order of a block. The main data is a count; the handle stream holds
@@ -2834,6 +2891,25 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
     {
+        // A layer's transparency lives in an extension-dictionary XRECORD whose group 90 holds the
+        // DXF 440 value (0x02000000 plus the alpha byte).
+        for (auto& [lh, l] : out.layers) {
+            const auto xd = out.dictionaries.find(l.xdic);
+            if (xd == out.dictionaries.end())
+                continue;
+            for (const auto& [nm, th] : xd->second) {
+                if (nm != "ADSK_XREC_LAYER_ALPHA")
+                    continue;
+                const auto xr = out.xrecordInts.find(th);
+                if (xr == out.xrecordInts.end())
+                    continue;
+                for (const auto& [code, value] : xr->second)
+                    if (code == 90)
+                        l.transparency = value;
+            }
+        }
+    }
+    {
         // Layouts whose own record could not be read are named by the layout dictionary; the
         // tab order follows the creation order (handles).
         std::map<std::uint64_t, std::string> nameOf;
@@ -2936,7 +3012,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r89: MULTILEADER read from its embedded annotation context (leader lines and note); "
+    return "r94: layer transparency read from the ADSK_XREC_LAYER_ALPHA extension record; r89: "
+           "MULTILEADER read from its embedded annotation context (leader lines and note); "
            "r88: layers with transparency listed by name and value; r88: the stream walk is used "
            "when it finds 70% of the map entries, stray damaged "
            "layouts left out, up to 200 lost places listed; r87: entity and layer transparency "
