@@ -288,6 +288,9 @@ struct DataDumper {
         o << " scale" << d.scale << " just" << d.justification << " closed" << d.closed;
         for (const Vec2& p : d.v)
             o << " " << p;
+        for (const MlineCut& c : d.cuts)
+            o << " cut" << c.seg << ":" << c.t0 << ":" << c.t1 << ":" << int(c.lo) << ":"
+              << int(c.hi);
     }
     void operator()(const TableData& d) {
         o << "TABLE at" << d.origin << " rot" << d.rotation << " th" << d.textHeight << " m"

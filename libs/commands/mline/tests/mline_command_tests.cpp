@@ -124,3 +124,58 @@ TEST_CASE("MLEDIT joins two walls at their corner and adds and deletes vertices"
     f.host->run("MLEDIT", {"Delete", ScriptItem::pick(wallY, {100, 52})});
     CHECK(entityAs<MlineData>(*f.doc.find(wallY))->v.size() == 2);  // at least two stay
 }
+
+namespace {
+std::vector<EntityId> mlineIds(const Document& doc) {
+    std::vector<EntityId> ids;
+    doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::MLine)
+            ids.push_back(e.common.id);
+    });
+    return ids;
+}
+}  // namespace
+
+TEST_CASE("MLEDIT Cut opens a gap in a wall and Weld closes it again") {
+    Fx f;
+    REQUIRE(f.host->run("MLINE", {"0,0", "100,0", ""}).finished);
+    const EntityId w = mlineIds(f.doc)[0];
+    const auto strokesBefore =
+        mline::strokes(*entityAs<MlineData>(*f.doc.find(w)), mline::standardStyle());
+    f.host->run("MLEDIT", {"Cut", ScriptItem::pick(w, {40, 0}), "60,0", "All"});
+    const auto* m = entityAs<MlineData>(*f.doc.find(w));
+    REQUIRE(m->cuts.size() == 1);
+    CHECK(m->cuts[0].t0 == doctest::Approx(0.4));
+    CHECK(m->cuts[0].t1 == doctest::Approx(0.6));
+    const auto cutStrokes = mline::strokes(*m, mline::standardStyle());
+    CHECK(cutStrokes.lines.size() >= strokesBefore.lines.size());
+    CHECK(f.host->undo());
+    CHECK(entityAs<MlineData>(*f.doc.find(w))->cuts.empty());
+    f.host->run("MLEDIT", {"Cut", ScriptItem::pick(w, {40, 0}), "60,0", "All"});
+    f.host->run("MLEDIT", {"Weld", ScriptItem::pick(w, {45, 0}), "55,0"});
+    CHECK(entityAs<MlineData>(*f.doc.find(w))->cuts.empty());
+}
+
+TEST_CASE("MLEDIT Cross and Tee cut the walls where they meet") {
+    Fx f;
+    REQUIRE(f.host->run("MLINE", {"0,0", "100,0", ""}).finished);
+    REQUIRE(f.host->run("MLINE", {"50,-50", "50,50", ""}).finished);
+    auto ids = mlineIds(f.doc);
+    REQUIRE(ids.size() == 2);
+    f.host->run("MLEDIT", {"Cross", "Closed", ScriptItem::pick(ids[0], {10, 0}),
+                           ScriptItem::pick(ids[1], {50, 30})});
+    CHECK(entityAs<MlineData>(*f.doc.find(ids[0]))->cuts.size() == 1);
+    CHECK(entityAs<MlineData>(*f.doc.find(ids[1]))->cuts.empty());
+    CHECK(f.host->undo());
+
+    // Tee: a wall ending short of another one is brought to its near edge.
+    REQUIRE(f.host->run("MLINE", {"20,40", "20,10", ""}).finished);
+    ids = mlineIds(f.doc);
+    REQUIRE(ids.size() == 3);
+    f.host->run("MLEDIT", {"Tee", "Closed", ScriptItem::pick(ids[2], {20, 12}),
+                           ScriptItem::pick(ids[0], {60, 0})});
+    const auto* t = entityAs<MlineData>(*f.doc.find(ids[2]));
+    CHECK(t->v.back().x == doctest::Approx(20));
+    CHECK(t->v.back().y > 0);
+    CHECK(t->v.back().y < 10);
+}

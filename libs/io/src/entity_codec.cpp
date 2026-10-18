@@ -339,6 +339,16 @@ struct PayloadWriter {
         w.varint(d.v.size());
         for (const Vec2& p : d.v)
             w.vec2(p);
+        if (!d.cuts.empty()) {  // optional tail: the gaps of open tees and crosses
+            w.varint(d.cuts.size());
+            for (const MlineCut& c : d.cuts) {
+                w.varint(c.seg);
+                w.f64(c.t0);
+                w.f64(c.t1);
+                w.u8(c.lo);
+                w.u8(c.hi);
+            }
+        }
     }
     void operator()(const MLeaderData& d) {
         w.varint(d.lines.size());
@@ -804,6 +814,17 @@ struct PayloadReader {
                 d.v.resize(n);
                 for (Vec2& p : d.v)
                     p = r.vec2();
+                if (r.remaining() > 0) {
+                    const std::size_t nc = r.count(18);
+                    d.cuts.resize(nc);
+                    for (MlineCut& c : d.cuts) {
+                        c.seg = static_cast<std::uint32_t>(r.varint());
+                        c.t0 = r.f64();
+                        c.t1 = r.f64();
+                        c.lo = r.u8();
+                        c.hi = r.u8();
+                    }
+                }
                 return make(std::move(d));
             }
             case EntityKind::MLeader: {
