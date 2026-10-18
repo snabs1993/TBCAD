@@ -252,6 +252,43 @@ Result<void> deleteLayout(Transaction& tx, const std::string& name) {
     return store(tx, all);
 }
 
+Result<void> copyLayout(Transaction& tx, const std::string& name, const std::string& newName) {
+    const Document& doc = tx.document();
+    if (auto ok = validateLayoutName(doc, newName); !ok)
+        return ok;
+    std::vector<Layout> all = current(tx, doc);
+    const Layout* src = pick(all, name);
+    if (!src)
+        return err(ErrorCode::NotFound, "No layout named \"" + name + "\"");
+    Layout l = *src;
+    l.name = newName;
+    l.uid = 0;
+    for (const Layout& o : all)
+        l.uid = std::max(l.uid, o.uid);
+    ++l.uid;
+    BlockDef def;
+    def.name = "*LAYOUT-" + std::to_string(l.uid);
+    def.anonymous = true;
+    auto block = tx.addBlock(def);
+    if (!block)
+        return block.error();
+    std::vector<EntityId> sheetObjects;
+    if (const BlockDef* from = doc.block(src->content))
+        sheetObjects = from->entities;
+    for (EntityId id : sheetObjects) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        Entity copy = *e;
+        copy.common.id = {};
+        if (auto r = tx.add(std::move(copy), block.value()); !r)
+            return r.error();
+    }
+    l.content = block.value();
+    all.push_back(std::move(l));
+    return store(tx, all);
+}
+
 Result<void> renameLayout(Transaction& tx, const std::string& name, const std::string& newName) {
     if (auto ok = validateLayoutName(tx.document(), newName, name); !ok)
         return ok;

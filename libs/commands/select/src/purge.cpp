@@ -5,9 +5,11 @@ namespace tbcad::select {
 PurgeCounts purgeUnused(const Document& doc, Transaction& tx, unsigned kinds) {
     PurgeCounts n;
     auto want = [&](PurgeKind k) { return (kinds & static_cast<unsigned>(k)) != 0; };
-    // Removing one row can free another, so go round until a pass removes nothing.
+    // Removing one row can free another, so go round until a pass removes nothing. "In use" is
+    // answered from one scan of the objects per pass, not one scan per row.
     for (bool progress = true; progress;) {
         progress = false;
+        tx.cacheObjectReferences(true);
         if (want(PurgeKind::DimStyles)) {
             std::vector<DimStyleId> ids;
             for (const auto& [id, row] : doc.dimStyles())
@@ -62,6 +64,7 @@ PurgeCounts purgeUnused(const Document& doc, Transaction& tx, unsigned kinds) {
                 }
         }
     }
+    tx.cacheObjectReferences(false);
     return n;
 }
 

@@ -241,6 +241,10 @@ void Writer::prepareSheets() {
                 for (const std::string& id : splitOn(f[10], ','))
                     v.frozen.push_back(
                         LayerId{static_cast<std::uint32_t>(std::strtoul(id.c_str(), nullptr, 10))});
+            v.locked = f.size() > 12 && f[12] == "1";
+            if (f.size() > 11)
+                v.level = static_cast<std::uint32_t>(std::strtoul(f[11].c_str(), nullptr, 10));
+            v.border = !(f.size() > 14 && f[14] == "0");
             if (f.size() > 13 && !f[13].empty()) {
                 for (const std::string& pt : splitOn(f[13], ';')) {
                     const std::size_t c = pt.find(':');
@@ -300,8 +304,15 @@ void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& bloc
         o.pt(16, {0, 0}, 1);
         o.pt(17, {0, 0}, 0);
         o.d(45, h * v.scaleN);
-        if (!v.frozen.empty() || !v.clip.empty()) {
+        if (!v.frozen.empty() || !v.clip.empty() || v.locked || !v.border || v.level != 0) {
             o.raw(1001, "TBCAD");
+            if (v.locked)
+                o.str(1000, "locked=1");
+            if (!v.border)
+                o.str(1000, "border=0");
+            if (v.level != 0)
+                if (const Level* lv = doc_.level(LevelId{v.level}))
+                    o.str(1000, "vlevel=" + lv->name);
             for (LayerId id : v.frozen)
                 o.str(1000, "frozen=" + layerNameOf(id));
             if (!v.clip.empty()) {

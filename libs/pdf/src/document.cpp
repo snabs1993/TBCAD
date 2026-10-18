@@ -3,9 +3,12 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <map>
 #include <ostream>
 #include <sstream>
+#include <thread>
+#include <vector>
 
 #include "miniz.h"
 #include "tbcad/pdf/pdf.h"
@@ -93,6 +96,55 @@ std::string xrefEntry(size_t offset) {
 }
 
 // zlib stream of `raw`; empty on failure.
+// zlib stream of `raw` made by deflating pieces on several threads. Each piece ends on a byte
+// boundary (full flush), so the pieces simply follow one another inside one ordinary zlib stream
+// that any reader inflates; the cost is a slightly larger result than one pass would give.
+std::string deflateParallel(const std::string& raw) {
+    constexpr std::size_t kPiece = std::size_t{1} << 20;
+    const std::size_t pieces = (raw.size() + kPiece - 1) / kPiece;
+    const int flags = static_cast<int>(
+        tdefl_create_comp_flags_from_zip_params(6, -MZ_DEFAULT_WINDOW_BITS, MZ_DEFAULT_STRATEGY));
+    auto one = [&](std::size_t i) {
+        struct Sink {
+            std::string out;
+        } sink;
+        tdefl_compressor* d = new tdefl_compressor;
+        tdefl_init(
+            d,
+            [](const void* b, int n, void* user) {
+                static_cast<Sink*>(user)->out.append(static_cast<const char*>(b),
+                                                     static_cast<std::size_t>(n));
+                return 1;
+            },
+            &sink, static_cast<mz_uint>(flags));
+        const std::size_t at = i * kPiece;
+        tdefl_compress_buffer(d, raw.data() + at, std::min(kPiece, raw.size() - at),
+                              TDEFL_FULL_FLUSH);
+        delete d;
+        return std::move(sink.out);
+    };
+    std::vector<std::future<std::string>> jobs;
+    jobs.reserve(pieces);
+    const std::size_t lanes = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+    std::string out = "\x78\x9c";  // zlib header: deflate, 32K window, default level
+    for (std::size_t i = 0; i < pieces; ++i) {
+        jobs.push_back(std::async(std::launch::async, one, i));
+        // At most `lanes` pieces are in flight; the oldest is collected first.
+        if (jobs.size() >= lanes) {
+            out += jobs.front().get();
+            jobs.erase(jobs.begin());
+        }
+    }
+    for (auto& j : jobs)
+        out += j.get();
+    out += std::string("\x03\x00", 2);  // final empty block
+    const mz_ulong ad =
+        mz_adler32(MZ_ADLER32_INIT, reinterpret_cast<const unsigned char*>(raw.data()), raw.size());
+    for (int sh = 24; sh >= 0; sh -= 8)
+        out += static_cast<char>((ad >> sh) & 0xFF);
+    return out;
+}
+
 std::string deflate(const std::string& raw) {
     mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(raw.size()));
     std::string z(bound, '\0');
@@ -225,7 +277,10 @@ Result<void> PdfDocument::write(std::ostream& out) const {
                           " 0 0 cm\n" + p.content() + "Q\n";
         std::string payload = raw;
         bool deflated = false;
-        if (compress_) {
+        if (compress_ && raw.size() > (std::size_t{2} << 20)) {
+            payload = deflateParallel(raw);
+            deflated = true;
+        } else if (compress_) {
             mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(raw.size()));
             std::string z(bound, '\0');
             mz_ulong zlen = bound;

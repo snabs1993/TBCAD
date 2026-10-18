@@ -33,6 +33,8 @@ bool isOn(const cmd::IHost& host, const char* key) {
         return s.dynUcs;
     if (k == dynInput)
         return s.dynInput;
+    if (k == drafting::keys::otrack)
+        return s.otrack;
     return s.polar;
 }
 
@@ -281,6 +283,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLESNAP", "Snap", snap));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEORTHO", "Ortho", ortho));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEPOLAR", "Polar tracking", polar));
+    (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEOTRACK", "Object snap tracking",
+                                                       drafting::keys::otrack));
     (void)registry.add(
         std::make_unique<ToggleCommand>("DYNUCS", "Dynamic UCS", drafting::keys::dynUcs));
     (void)registry.add(

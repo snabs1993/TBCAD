@@ -2473,8 +2473,12 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    toggle("otrack", "OTRACK", "drafting.otrack");
     toggle("dyn", "DYN", "drafting.dynInput", true);
     toggle("lwt", "LWT", "view.lineweights", true);
+    // Selection cycling: clicking the same spot again picks the next object under it (Alt-click
+    // does this whenever the switch is off).
+    toggle("selcyc", "SELCYC", "ui.selectionCycling");
     // Transparency is baked into the scene's colours, so the switch rebuilds the scene.
     ui.addStatusToggle(
         "tpy", "TPY", [this] { return settings_.getBool("view.transparency", true); },

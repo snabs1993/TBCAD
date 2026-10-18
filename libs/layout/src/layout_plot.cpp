@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "tbcad/geom/geom.h"
 #include "tbcad/layout/layout.h"
 
 namespace tbcad::layout {
@@ -36,6 +37,43 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         exportlib::appendEntities(sheet, doc, block->entities, sheet.layout, s);
 
     const std::vector<EntityId> model = doc.modelSpace();
+    // Every viewport only needs the objects that reach its window. The bounds are worked out once
+    // here (for the kinds whose size does not depend on the viewport scale) instead of once per
+    // viewport inside appendEntities, which matters with a few hundred thousand objects.
+    struct Boxed {
+        EntityId id;
+        BBox2 box;
+        bool always;
+    };
+    std::vector<Boxed> boxed;
+    if (!l.viewports.empty()) {
+        boxed.reserve(model.size());
+        for (EntityId id : model) {
+            const Entity* e = doc.find(id);
+            if (!e)
+                continue;
+            bool fixed = false;
+            switch (kind(*e)) {
+                case EntityKind::Line:
+                case EntityKind::Circle:
+                case EntityKind::Arc:
+                case EntityKind::Polyline:
+                case EntityKind::Ellipse:
+                case EntityKind::Spline:
+                case EntityKind::Point:
+                case EntityKind::Text:
+                case EntityKind::MText:
+                    fixed = !e->common.annotative;
+                    break;
+                default:
+                    break;
+            }
+            Boxed b{id, fixed ? geom::bounds(*e, doc) : BBox2{}, !fixed};
+            if (!b.always && b.box.empty())
+                b.always = true;
+            boxed.push_back(std::move(b));
+        }
+    }
     for (const Viewport& vp : l.viewports) {
         if (!vp.on || vp.paper.empty() || !(vp.scaleN > 0))
             continue;
@@ -51,7 +89,12 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         vl.layerHidden = [&doc, &vp](LayerId l) { return frozenInViewport(doc, vp, l); };
 
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true, vp.clip});
-        exportlib::appendEntities(sheet, doc, model, vl, s, [&](const Entity& e) {
+        const BBox2 reach = vl.area.inflated(2.0 / vl.paperPerUnit);
+        std::vector<EntityId> near;
+        for (const Boxed& b : boxed)
+            if (b.always || b.box.intersects(reach))
+                near.push_back(b.id);
+        exportlib::appendEntities(sheet, doc, near, vl, s, [&](const Entity& e) {
             if (e.common.annotative && !e.common.annoScales.empty() &&
                 std::find(e.common.annoScales.begin(), e.common.annoScales.end(), vp.scaleN) ==
                     e.common.annoScales.end())

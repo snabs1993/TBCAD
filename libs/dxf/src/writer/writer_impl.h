@@ -258,6 +258,9 @@ private:
         bool on = true;
         std::vector<LayerId> frozen{};
         std::vector<Vec2> clip{};  // outline of a clipped viewport (sheet mm)
+        bool locked = false;
+        bool border = true;
+        std::uint32_t level = 0;
     };
     struct Sheet {
         std::string name{};

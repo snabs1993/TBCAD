@@ -7,6 +7,7 @@ void forgetUi() {
     ModuleState& st = moduleState();
     st.dyn = nullptr;
     st.osnap = nullptr;
+    st.otrack = nullptr;
 }
 
 void registerUi(ui::UiRegistry& ui) {
@@ -29,6 +30,11 @@ void registerUi(ui::UiRegistry& ui) {
     auto osnap = std::make_unique<drafting::OsnapFilter>(&st.env);
     st.osnap = osnap.get();
     ui.addPointFilter(drafting::kOsnapOrder, std::move(osnap));
+    auto otrack = std::make_unique<drafting::OtrackFilter>(&st.env, st.osnap);
+    st.otrack = otrack.get();
+    ui.addPointFilter(drafting::kOtrackAcquireOrder,
+                      std::make_unique<drafting::OtrackAcquirer>(&st.env, st.osnap, st.otrack));
+    ui.addPointFilter(drafting::kOtrackOrder, std::move(otrack));
     ui.addPointFilter(drafting::kDynamicUcsOrder,
                       std::make_unique<drafting::DynamicUcsFilter>(&st.env));
     ui.addPointFilter(drafting::kPolarOrder, std::make_unique<drafting::PolarOrthoFilter>(&st.env));
@@ -63,7 +69,20 @@ void registerUi(ui::UiRegistry& ui) {
         if (pc.feedback && pc.feedback->active && !pc.feedback->marker.empty())
             drafting::drawSnapMarker(overlay, *pc.camera, pc.feedback->markerPos,
                                      pc.feedback->marker, dark);
-        (void)st;
+        // Object snap tracking: a small cross on every acquired point, and the ray the cursor
+        // is snapped to.
+        if (st.otrack && pc.commandActive && drafting::DraftingSettings::read(*pc.host).otrack) {
+            render::OverlayStyle ts;
+            ts.color = dark ? Rgba{0xF2, 0xA9, 0x3B, 255} : Rgba{0xC7, 0x77, 0x00, 255};
+            ts.widthPx = 1.5;
+            for (const Vec2& a : st.otrack->acquired()) {
+                const Vec2 c = pc.camera->worldToScreen(a);
+                overlay.line(render::Space::Screen, {c.x - 4, c.y}, {c.x + 4, c.y}, ts);
+                overlay.line(render::Space::Screen, {c.x, c.y - 4}, {c.x, c.y + 4}, ts);
+            }
+            for (const auto& r : st.otrack->rays())
+                overlay.line(render::Space::World, r.first, r.second, ts);
+        }
     });
 
     // F-keys (rebindable in keybindings.json). The apostrophe makes them work while a command
@@ -73,6 +92,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Tools/Drafting Aids/Ortho", "'TOGGLEORTHO", "drafting.ortho", "F8");
     ui.addMenuItem("Tools/Drafting Aids/Snap", "'TOGGLESNAP", "drafting.snap", "F9");
     ui.addMenuItem("Tools/Drafting Aids/Polar Tracking", "'TOGGLEPOLAR", "drafting.polar", "F10");
+    ui.addMenuItem("Tools/Drafting Aids/Object Snap Tracking", "'TOGGLEOTRACK", "drafting.otrack");
     ui.addMenuItem("Tools/Drafting Aids/UCS...", "UCS");
     ui.addMenuItem("Tools/Drafting Aids/Dynamic UCS", "'DYNUCS", "drafting.dynucs");
     ui.addMenuItem("Tools/Drafting Aids/Dynamic Input", "'TOGGLEDYNINPUT", "drafting.dynInput",

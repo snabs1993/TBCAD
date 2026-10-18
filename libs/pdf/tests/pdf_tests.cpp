@@ -331,6 +331,26 @@ TEST_CASE("qpdf --check: 10,000 random paths") {
     checkWithQpdf(doc, "random10000");
 }
 
+TEST_CASE("a big page deflated in pieces inflates to the same content and is smaller") {
+    auto build = [](bool compress) {
+        PdfDocument doc;
+        doc.setCompression(compress);
+        Page& p = doc.addPage(420, 297);
+        std::mt19937 rng(99);
+        std::uniform_real_distribution<double> ux(0, 420), uy(0, 297);
+        for (int i = 0; i < 150000; ++i) {
+            p.moveTo(ux(rng), uy(rng));
+            p.lineTo(ux(rng), uy(rng));
+            p.stroke();
+        }
+        return bytes(doc);
+    };
+    const std::string plain = build(false), packed = build(true);
+    REQUIRE(plain.size() > (std::size_t{2} << 20));
+    CHECK(packed.size() < plain.size() / 2);
+    CHECK(contentStream(packed, 0) == contentStream(plain, 0));
+}
+
 TEST_CASE("qpdf --check: dashed lines, caps, joins, clip, transform") {
     PdfDocument doc;
     Page& p = doc.addPage(297, 210);

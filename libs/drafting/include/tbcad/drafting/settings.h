@@ -52,6 +52,7 @@ namespace keys {
 inline constexpr const char* osnap = "drafting.osnap";                   // bool
 inline constexpr const char* ortho = "drafting.ortho";                   // bool
 inline constexpr const char* polar = "drafting.polar";                   // bool
+inline constexpr const char* otrack = "drafting.otrack";                 // bool
 inline constexpr const char* snap = "drafting.snap";                     // bool
 inline constexpr const char* dynUcs = "drafting.dynucs";                 // bool
 inline constexpr const char* grid = "view.grid";                         // bool
@@ -70,6 +71,7 @@ struct DraftingSettings {
     bool osnap = true;
     bool ortho = false;
     bool polar = false;
+    bool otrack = false;  // object snap tracking
     bool snap = false;
     bool dynUcs = false;  // dynamic UCS: ortho, polar and snap follow the edge under the cursor
     bool grid = false;
