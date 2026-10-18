@@ -257,6 +257,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<FlattenCommand>());
     (void)registry.add(std::make_unique<RefreshCommand>("REGEN", "RE"));
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
+    (void)registry.add(std::make_unique<RefreshCommand>("REGENALL", ""));
+    (void)registry.add(std::make_unique<RefreshCommand>("REDRAWALL", "RA"));
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeHyperlinkCommand());
     (void)registry.add(makeSpaceTransCommand());
