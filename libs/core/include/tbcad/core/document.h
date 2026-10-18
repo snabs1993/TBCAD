@@ -426,7 +426,7 @@ private:
     template <class Row, class IdT>
     void touchRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>& p, IdT id);
 
-    void touchEntity(EntityId id);
+    void touchEntity(EntityId id, bool consume = false);  // consume: the entity is about to go
     void followAssociations();  // associative dimensions, at the start of commit()
     void touchBlock(BlockId id);
     void touchOrder(EntityId id);
