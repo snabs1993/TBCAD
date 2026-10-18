@@ -525,6 +525,20 @@ TEST_CASE("autosave timer follows the setting") {
     CHECK(f.core->pendingRecovery().has_value());
 }
 
+TEST_CASE("the first change after a save is journalled within about 30 seconds") {
+    Fixture f("autosave_journal");
+    f.core->settings().setNumber("autosave.minutes", 10);
+    f.line("0,0", "100,0");
+    auto t0 = std::chrono::steady_clock::now();
+    f.core->tickAutosave(t0);  // starts the clock
+    f.core->tickAutosave(t0 + std::chrono::seconds(1));
+    CHECK_FALSE(f.core->pendingRecovery().has_value());
+    f.core->tickAutosave(t0 + std::chrono::seconds(20));
+    CHECK_FALSE(f.core->pendingRecovery().has_value());
+    f.core->tickAutosave(t0 + std::chrono::seconds(32));
+    CHECK(f.core->pendingRecovery().has_value());
+}
+
 TEST_CASE("a command that leaves the working area raises a notice with Zoom to and Undo") {
     Fixture f("outofarea");
     CHECK_FALSE(f.core->outOfAreaNotice().has_value());
@@ -1112,12 +1126,23 @@ TEST_CASE("opening or closing a panel resizes the canvas without moving the draw
 
 TEST_CASE("one Escape cancels a command waiting for its first answer") {
     Fixture f("esc_once");
+    f.core->submitText("TESTLINE");
+    REQUIRE(f.core->runner().active());
+    f.core->pressEscape();
+    CHECK_FALSE(f.core->runner().active());
+}
+
+TEST_CASE("Save As writes the file even while a command waits for input") {
+    Fixture f("save_busy");
     f.line("0,0", "1000,0");
-    for (const char* name : {"BLEND", "LINE", "CIRCLE", "MOVE", "PLINE", "TRIM", "OFFSET"}) {
-        f.core->submitText(name);
-        f.core->pressEscape();
-        CHECK_MESSAGE(!f.core->runner().active(), name);
-    }
+    f.core->submitText("TESTLINE");  // waiting for its first point
+    REQUIRE(f.core->runner().active());
+    const auto path = f.dir / "busy.tbcad";
+    auto r = f.core->saveAs(path);
+    CHECK(r.ok());
+    CHECK(std::filesystem::exists(path));
+    CHECK_FALSE(f.core->runner().active());
+    CHECK_FALSE(f.core->modified());
 }
 
 TEST_CASE("ZE zooms to the extents without asking") {

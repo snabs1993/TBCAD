@@ -638,7 +638,7 @@ void Gui::doSave() {
     if (!r)
         lastError_ = r.error().message;
     else
-        toast("Saved " + core_.file().filename().string());
+        toast("Saved " + platform::pathToUtf8(core_.file()));
 }
 
 void Gui::doSaveAs() {
@@ -678,7 +678,7 @@ void Gui::doSaveAs() {
             if (!r)
                 lastError_ = r.error().message;
             else {
-                toast("Saved " + core_.file().filename().string());
+                toast("Saved " + platform::pathToUtf8(core_.file()));
                 if (saveThenPending_)
                     performPending(false);
             }
