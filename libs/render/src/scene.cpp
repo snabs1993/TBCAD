@@ -437,21 +437,22 @@ void Scene::setLayerVisible(LayerId layer, bool visible) {
 void Scene::setHighlighted(std::span<const EntityId> ids) {
     highlighted_.clear();
     highlighted_.insert(ids.begin(), ids.end());
-    ++changeCounter_;
+    ++hl_.stamp;  // not changeCounter_: hovering must not rebuild the selection's geometry
 }
 
 void Scene::setSelected(std::span<const EntityId> ids) {
     selected_.clear();
     selected_.insert(ids.begin(), ids.end());
-    ++changeCounter_;
+    ++sel_.stamp;
 }
 
 const SelectionGeometry& Scene::geometryFor(const std::unordered_set<EntityId>& set,
                                             SelCache& cache) const {
-    if (cache.builtFor == changeCounter_)
+    if (cache.builtFor == changeCounter_ && cache.builtStamp == cache.stamp)
         return cache.geometry;
     cache.builtFor = changeCounter_;
-    cache.geometry.version = changeCounter_;
+    cache.builtStamp = cache.stamp;
+    cache.geometry.version = ++cache.serial;
     cache.geometry.tiles.clear();
     std::map<std::pair<TileKey, std::int32_t>, std::size_t> index;
     auto tileFor = [&](const TileKey& tk, const Tile& tile, const BatchKey& bk) -> SelectionTile& {

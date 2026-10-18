@@ -420,6 +420,22 @@ TEST_CASE("selection geometry copies the strokes of selected entities only") {
     CHECK(s.selectedGeometry().tiles.empty());
 }
 
+TEST_CASE("changing the hover highlight leaves the selection geometry alone") {
+    Scene s({.tileSizeMm = 100});
+    s.upsert({1}, lineList({0, 0}, {10, 0}), 0);
+    s.upsert({2}, lineList({0, 1}, {10, 1}), 0);
+    EntityId sel[] = {{1}};
+    s.setSelected(sel);
+    auto v = s.selectedGeometry().version;
+    EntityId hov[] = {{2}};
+    s.setHighlighted(hov);
+    CHECK(s.highlightGeometry().tiles.size() == 1);
+    s.setHighlighted({});
+    CHECK(s.selectedGeometry().version == v);  // not rebuilt or re-uploaded
+    s.setSelected(sel);
+    CHECK(s.selectedGeometry().version != v);
+}
+
 TEST_CASE("suggestTileSize gives a power of two for roughly 8 tiles across") {
     BBox2 b;
     b.expand({0, 0});
