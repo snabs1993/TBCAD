@@ -8,6 +8,7 @@ namespace {
 constexpr const char* kDistanceKey = "offset.distance";
 constexpr const char* kRoundKey = "offset.roundcorners";
 constexpr const char* kLayerKey = "offset.currentlayer";
+constexpr const char* kEraseKey = "offset.erasesource";
 
 modify::OffsetOptions optionsFrom(const cmd::IHost& host) {
     modify::OffsetOptions o;
@@ -29,11 +30,11 @@ public:
         bool through = false;
         for (;;) {
             cmd::DistanceOptions d;
-            d.keywords = {"Through", "Corners", "Layer"};
+            d.keywords = {"Through", "Erase", "Corners", "Layer"};
             d.allowZero = false;
             if (dist > 0)
                 d.defaultValue = dist;
-            std::string prompt = "Specify offset distance or [Through/Corners/Layer]";
+            std::string prompt = "Specify offset distance or [Through/Erase/Corners/Layer]";
             auto r = co_await ctx.getDistance(prompt, d);
             if (r.status == cmd::Status::Keyword && r.keyword == "Corners") {
                 cmd::KeywordOptions k;
@@ -42,6 +43,16 @@ public:
                 auto c = co_await ctx.getKeyword("Corner type at polyline bends [Round/Sharp]", k);
                 if (c.ok())
                     putFlag(ctx.host(), kRoundKey, c.keyword == "Round");
+                continue;
+            }
+            if (r.status == cmd::Status::Keyword && r.keyword == "Erase") {
+                cmd::KeywordOptions k;
+                k.keywords = {"Yes", "No"};
+                k.defaultKeyword = getFlag(ctx.host(), kEraseKey, false) ? "Yes" : "No";
+                auto c =
+                    co_await ctx.getKeyword("Erase source object after offsetting [Yes/No]", k);
+                if (c.ok())
+                    putFlag(ctx.host(), kEraseKey, c.keyword == "Yes");
                 continue;
             }
             if (r.status == cmd::Status::Keyword && r.keyword == "Layer") {
@@ -106,6 +117,8 @@ public:
                 if (!id)
                     ctx.message(id.error().message);
             }
+            if (getFlag(ctx.host(), kEraseKey, false))
+                (void)ctx.tx().erase(pick.id);
         }
     }
 };

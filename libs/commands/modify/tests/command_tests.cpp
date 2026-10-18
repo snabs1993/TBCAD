@@ -687,3 +687,18 @@ TEST_CASE("OFFSET Layer option puts the copies on the current layer") {
     f.doc.forEachEntity([&](const Entity& e) { onOther += e.common.layer == other ? 1 : 0; });
     CHECK(onOther == 1);
 }
+
+TEST_CASE("OFFSET Erase removes the source object") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    f.host.run("OFFSET",
+               {"Erase", "Yes", "2", ScriptItem::pick(l, {5, 0}), "5,9", ScriptItem::enter()});
+    REQUIRE(f.count(EntityKind::Line) == 1);
+    CHECK_FALSE(f.doc.contains(l));
+    // The setting stays for the next run, and No turns it off again.
+    EntityId m = f.add(LineData{{0, 0}, {10, 0}});
+    f.host.run("OFFSET",
+               {"Erase", "No", "2", ScriptItem::pick(m, {5, 0}), "5,9", ScriptItem::enter()});
+    CHECK(f.doc.contains(m));
+    CHECK(f.count(EntityKind::Line) == 3);
+}

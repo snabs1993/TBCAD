@@ -87,3 +87,40 @@ TEST_CASE("RECTANGLE: Esc draws nothing - the preview is the rectangle to the cu
     CHECK(f.entities().empty());
     CHECK_FALSE(f.host.undoStack().canUndo());
 }
+
+TEST_CASE("RECTANGLE Fillet rounds the corners and Chamfer cuts them") {
+    Fixture f;
+    f.host.run("REC", {"0,0", "Fillet", "2", "10,6"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& r = as<PolylineData>(es[0]);
+    REQUIRE(r.v.size() == 8);
+    CHECK(r.closed);
+    CHECK(r.v[0].p.x == doctest::Approx(0));
+    CHECK(r.v[0].p.y == doctest::Approx(2));
+    CHECK(r.v[0].bulge == doctest::Approx(std::tan(M_PI / 8)).epsilon(1e-6));
+    CHECK(r.v[1].p.x == doctest::Approx(2));
+    CHECK(r.v[1].bulge == 0);
+
+    // The chamfer distances replace the radius, and both are remembered for the next rectangle.
+    f.host.run("REC", {"0,0", "Chamfer", "1", "2", "10,6"});
+    f.host.run("REC", {"20,0", "30,6"});
+    es = f.entities();
+    REQUIRE(es.size() == 3);
+    const auto& c = as<PolylineData>(es[1]);
+    REQUIRE(c.v.size() == 8);
+    for (const auto& v : c.v)
+        CHECK(v.bulge == 0);
+    CHECK(as<PolylineData>(es[2]).v.size() == 8);
+}
+
+TEST_CASE("RECTANGLE Width gives the polyline a width") {
+    Fixture f;
+    f.host.run("REC", {"0,0", "Width", "0.5", "4,3"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    for (const auto& v : as<PolylineData>(es[0]).v) {
+        CHECK(v.startWidth == doctest::Approx(0.5));
+        CHECK(v.endWidth == doctest::Approx(0.5));
+    }
+}
