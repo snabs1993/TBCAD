@@ -189,10 +189,10 @@ std::vector<std::uint8_t> arc(std::uint64_t h) {
     return o.finish();
 }
 
-std::vector<std::uint8_t> lwpolyline(std::uint64_t h, bool closed) {
+std::vector<std::uint8_t> lwpolyline(std::uint64_t h, bool closed, bool plinegen = false) {
     ObjectWriter o(0x4D, h);
     o.entityCommon(2, 256, 0);
-    o.main.bs(16 | (closed ? 512 : 0));
+    o.main.bs(16 | (closed ? 512 : 0) | (plinegen ? 128 : 0));
     o.main.bl(3);
     o.main.bl(3);  // bulges
     o.main.rd(0);
@@ -363,10 +363,11 @@ std::vector<std::uint8_t> solidObj(std::uint64_t h) {
     return o.finish();
 }
 
-std::vector<std::uint8_t> polylineObj(std::uint64_t h, std::uint64_t first, std::uint64_t last) {
+std::vector<std::uint8_t> polylineObj(std::uint64_t h, std::uint64_t first, std::uint64_t last,
+                                      bool plinegen = false) {
     ObjectWriter o(0x0F, h);
     o.entityCommon(2, 256, 0);
-    o.main.bs(1);  // closed
+    o.main.bs(1 | (plinegen ? 128 : 0));  // closed, linetype generation
     o.main.bs(0);
     o.main.bd(0.0);
     o.main.bd(0.0);
@@ -915,6 +916,34 @@ TEST_CASE("an XCLIP boundary on an insert comes through as the insert's clip") {
         CHECK_FALSE(d->clipInvert);
     }
     CHECK(inserts == 1);
+}
+
+TEST_CASE("the linetype generation flag (128) of a lightweight and a heavy polyline is kept") {
+    for (bool plinegen : {false, true}) {
+        DwgFile f;
+        f.add(kLtype, linetype(kLtype, "Continuous"));
+        f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+        f.add(kStyle, style(kStyle, "Standard"));
+        f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+        f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+        f.add(0x23, lwpolyline(0x23, true, plinegen));
+        f.add(0x50, polylineObj(0x50, 0x51, 0x53, plinegen));
+        f.add(0x51, vertexObj(0x51, 0, 0, 0));
+        f.add(0x52, vertexObj(0x52, 10, 0, 0));
+        f.add(0x53, vertexObj(0x53, 10, 10, 0));
+        dxf::Report report;
+        auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        int polys = 0;
+        for (EntityId id : r.value().document->modelSpace()) {
+            const Entity& e = *r.value().document->find(id);
+            if (kind(e) != EntityKind::Polyline)
+                continue;
+            ++polys;
+            CHECK(entityAs<PolylineData>(e)->restartLinetype == !plinegen);
+        }
+        CHECK(polys == 2);
+    }
 }
 
 TEST_CASE("a hatch stored under its fixed type number 78 imports") {
