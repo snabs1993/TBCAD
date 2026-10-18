@@ -29,9 +29,10 @@ struct Group {
 struct LayerRec {
     std::uint64_t handle = 0;
     std::string name{};
-    int flags = 0;       // DXF 70
-    int color = 7;       // ACI; negative = off
-    int trueColor = -1;  // 0xRRGGBB when the colour is not an index
+    int flags = 0;               // DXF 70
+    int color = 7;               // ACI; negative = off
+    int trueColor = -1;          // 0xRRGGBB when the colour is not an index
+    long long transparency = 0;  // DXF 440 value (0 = by layer)
     bool frozen = false;
     bool locked = false;
     bool plot = true;
@@ -101,6 +102,7 @@ struct EntityRec {
     std::vector<std::uint64_t> childHandles{};  // R2004+: the owned records, in order
     int color = 256;                            // ACI, 256 = by layer
     int trueColor = -1;                         // 0xRRGGBB when set
+    long long transparency = 0;                 // DXF 440 value (0 = by layer)
     double ltScale = 1;
     bool invisible = false;
     int lineweight = 29;  // DWG lineweight code (29 = by layer)

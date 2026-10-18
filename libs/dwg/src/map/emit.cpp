@@ -85,6 +85,8 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
         o.group(62, e.color);
     if (e.trueColor >= 0)
         o.group(420, e.trueColor);
+    if (e.transparency != 0)
+        o.group(440, e.transparency);
     const int lw = lineweightToDxf(e.lineweight);
     if (lw != -3)
         o.group(370, lw);
@@ -214,6 +216,8 @@ std::string emitDxf(const Drawing& d) {
         o.group(62, l.color == 0 ? 7 : l.color);
         if (l.trueColor >= 0)
             o.group(420, l.trueColor);
+        if (l.transparency != 0)
+            o.group(440, l.transparency);
         const std::string lt = n.linetype(l.linetype);
         o.group(6, lt.empty() ? "CONTINUOUS" : lt);
         if (!l.plot)

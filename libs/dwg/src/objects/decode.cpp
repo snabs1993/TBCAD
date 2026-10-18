@@ -523,6 +523,8 @@ private:
         int index = 256;
         int rgb = -1;
         bool book = false;
+        long long transparency =
+            0;  // DXF 440 value: 0 by layer, 0x01000000 by block, 0x02000000 + alpha
     };
 
     // CMC: a plain index up to R2000; from R2004 on an index (always 0), an RGB word whose top
@@ -566,7 +568,7 @@ private:
         if (v & 0x4000)
             c.book = true;
         if (v & 0x2000)
-            r.bl();  // transparency
+            c.transparency = r.bl();
         return c;
     }
 
@@ -772,6 +774,13 @@ private:
                 leadingHandles(h, self, reactors, true);
                 l.xdic = lastXdic_;
                 for (const std::vector<std::uint8_t>& d : eed_) {
+                    // The layer's transparency is a block of one 32-bit integer (code 0x47).
+                    if (d.size() == 5 && d[0] == 0x47)
+                        l.transparency =
+                            static_cast<long long>(static_cast<std::uint32_t>(d[1]) |
+                                                   (static_cast<std::uint32_t>(d[2]) << 8) |
+                                                   (static_cast<std::uint32_t>(d[3]) << 16) |
+                                                   (static_cast<std::uint32_t>(d[4]) << 24));
                     char hx[4];
                     for (std::size_t i = 0; i < d.size() && i < 400; ++i) {
                         std::snprintf(hx, sizeof hx, "%02X", d[i]);
@@ -973,6 +982,7 @@ private:
         bool nolinks = true;
         int color = 256;
         int trueColor = -1;
+        long long transparency = 0;
         bool colorBook = false;
         double ltScale = 1;
         int ltFlags = 0;
@@ -1004,6 +1014,7 @@ private:
             const ColorValue cv = readEnc(r);
             c.color = cv.index;
             c.trueColor = cv.rgb;
+            c.transparency = cv.transparency;
             c.colorBook = cv.book;
         } else {
             c.color = r.bs();
@@ -1070,6 +1081,7 @@ private:
         e.entmode = c.entmode;
         e.color = c.color;
         e.trueColor = c.trueColor;
+        e.transparency = c.transparency;
         e.ltScale = c.ltScale;
         e.invisible = (c.invisible & 1) != 0;
         e.lineweight = c.lineweight;
@@ -2652,7 +2664,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r86: gradient hatches keep colours, angle, shift and name (DXF 450 to 470), failed "
+    return "r87: entity and layer transparency passed on (DXF 440), counted per layer in the "
+           "report; r86: gradient hatches keep colours, angle, shift and name (DXF 450 to 470), "
+           "failed "
            "entities counted per type; r84: the stream walk resumes at the next object the map "
            "places correctly, lost places "
            "listed; r83: object map blocks with offsets outside the data are listed; r83: samples "
