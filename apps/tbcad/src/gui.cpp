@@ -3316,7 +3316,7 @@ ViewportRect Gui::frame() {
         else if (what.rfind("pickfile:", 0) == 0) {
             const std::string kind = what.substr(9);
             static const std::vector<platform::FileFilter> drawing = {
-                {"Drawings and PDF", "*.tbcad;*.dxf;*.pdf"}};
+                {"Drawings and PDF", "*.tbcad;*.dxf;*.dwg;*.pdf"}};
             static const std::vector<platform::FileFilter> pdf = {{"PDF files", "*.pdf"}};
             static const std::vector<platform::FileFilter> image = {
                 {"Pictures", "*.png;*.jpg;*.jpeg;*.bmp"}};

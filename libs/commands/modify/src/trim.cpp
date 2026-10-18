@@ -140,18 +140,31 @@ void batch(cmd::CommandContext& ctx, std::vector<std::pair<EntityId, Vec2>> pick
 cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
     ctx.commitOnCancel();
     EdgeSet set;
-    if (!getFlag(ctx.host(), kQuickKey, false)) {
+    while (!getFlag(ctx.host(), kQuickKey, false)) {
         cmd::SelectionOptions so;
+        so.keywords = {"Mode"};
         so.filter = [&doc = ctx.doc()](const Entity& e) { return isUsableBoundary(doc, e); };
-        auto sel = co_await ctx.getSelection(
-            trimMode ? "Select cutting edges <select all>" : "Select boundary edges <select all>",
-            so);
+        auto sel =
+            co_await ctx.getSelection(trimMode ? "Select cutting edges or [Mode] <select all>"
+                                               : "Select boundary edges or [Mode] <select all>",
+                                      so);
+        if (sel.status == cmd::Status::Keyword) {
+            cmd::KeywordOptions k;
+            k.keywords = {"Quick", "Standard"};
+            k.defaultKeyword = "Standard";
+            auto r = co_await ctx.getKeyword("Mode [Quick/Standard]", k);
+            if (!r.ok())
+                co_return;
+            putFlag(ctx.host(), kQuickKey, r.keyword == "Quick");
+            continue;  // Quick: every object cuts; Standard: ask for the edges again
+        }
         if (sel.status == cmd::Status::Ok) {
             set.ids = sel.ids;
             set.all = false;
         } else if (sel.status != cmd::Status::None) {
             co_return;
         }
+        break;
     }
     for (;;) {
         cmd::EntityOptions eo;

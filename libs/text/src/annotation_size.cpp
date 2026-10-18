@@ -17,7 +17,7 @@ double suggestedAnnotationScale(const Document& doc, double pixelMm, bool onShee
     const double base = std::max(paperHeightMm, 1e-6);
     double wanted = 0;
     if (pixelMm > 0 && std::isfinite(pixelMm))
-        wanted = 12.0 * pixelMm / base;
+        wanted = 16.0 * pixelMm / base;
     BBox2 box;
     doc.forEachEntity([&](const Entity& e) {
         if (!doc.ownerBlock(e.common.id))
