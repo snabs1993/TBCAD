@@ -123,3 +123,59 @@ TEST_CASE("REFEDIT and REFCLOSE work like BEDIT and BCLOSE; closing undoes in on
     CHECK(f.host->undo());
     CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
 }
+
+TEST_CASE("REFSET Add moves a drawing object into the block on BCLOSE; Remove keeps it out") {
+    BEditFixture f;
+    EntityId extra = f.addLine(200, 0, 210, 0);
+    EntityId drawn = f.addLine(300, 0, 310, 0);
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    f.host->setSelection({});
+    f.host->run("REFSET", {"Add", cmd::ScriptItem::select({extra}), cmd::ScriptItem::enter()});
+    f.host->setSelection({});
+    f.host->run("REFSET", {"Remove", cmd::ScriptItem::select({drawn}), cmd::ScriptItem::enter()});
+    f.host->run("BCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(f.def().entities.size() == 2);  // original line + the added one
+    CHECK(f.doc.find(extra) == nullptr);  // moved into the block
+    CHECK(f.doc.find(drawn) != nullptr);  // untouched
+    CHECK(f.host->undo());
+    CHECK(f.def().entities.size() == 1);
+    CHECK(f.doc.find(extra) != nullptr);
+}
+
+TEST_CASE("REFSET without BEDIT explains itself") {
+    BEditFixture f;
+    f.host->run("REFSET", {});
+    CHECK(f.host->logContains("No block is being edited"));
+}
+
+TEST_CASE("Editing a block that contains another block updates both levels, and undo restores") {
+    BEditFixture f;
+    // Outer block "Outer" holds an insert of Sym.
+    Entity in;
+    in.data = Indirect<InsertData>(InsertData{f.def().id, {5, 5}, {1, 1}, 0});
+    EntityId nested = f.add(std::move(in));
+    f.host->setSelection({nested});
+    f.host->run("BLOCK", {"Outer", "0,0", "C"});
+    const BlockDef* outer = f.doc.blockByName("Outer");
+    REQUIRE(outer);
+    Entity oi;
+    oi.data = Indirect<InsertData>(InsertData{outer->id, {1000, 0}, {1, 1}, 0});
+    EntityId outerIns = f.add(std::move(oi));
+
+    // Edit the inner block through the old insert; the outer block's insert follows.
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    EntityId copy;
+    for (EntityId id : f.modelSpace())
+        if (f.doc.find(id) && kind(*f.doc.find(id)) == EntityKind::Line)
+            copy = id;
+    {
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(copy, [](Entity& e) { entityAs<LineData>(e)->b = {180, 50}; }).ok());
+        tx.commit();
+    }
+    f.host->run("BCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {80, 0}));
+    CHECK(f.doc.find(outerIns) != nullptr);
+    CHECK(f.host->undo());
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
+}

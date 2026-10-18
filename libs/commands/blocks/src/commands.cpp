@@ -24,6 +24,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBEditCommand());
     (void)registry.add(makeBSaveCommand(false));
     (void)registry.add(makeBSaveCommand(true));
+    (void)registry.add(makeRefSetCommand());
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeXplodeCommand());
