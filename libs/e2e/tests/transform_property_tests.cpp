@@ -9,14 +9,19 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "../../dxf/tests/writer/semantic_dump.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/cmd/script_host.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/transform/grips.h"
 
@@ -215,6 +220,52 @@ struct Rig {
         addTop(Indirect<InsertData>(insert(nest, {80, 40}, {1.5, 0.75}, 0.3)));
         addTop(Indirect<InsertData>(insert(nest, {120, 40}, {-1, 2}, 1.2)));
         addTop(Indirect<InsertData>(insert(nest, {160, 40}, {-0.5, -0.5}, 0)));
+
+        // A dynamic block (stretchable) and associative arrays, rectangular and polar.
+        const BlockId dyn = block("DYNB");
+        const EntityId dl = add(LineData{{0, 0}, {20, 0}}, dyn);
+        add(CircleData{{20, 0}, 3}, dyn);
+        {
+            auto tx = doc.begin("dyn");
+            REQUIRE(tx.modifyBlock(dyn, [&](BlockDef& d) {
+                DynParam p;
+                p.kind = DynParam::Kind::Linear;
+                p.name = "Length";
+                p.base = {0, 0};
+                p.end = {20, 0};
+                p.min = 5;
+                p.max = 60;
+                DynAction a;
+                a.kind = DynAction::Kind::Stretch;
+                a.param = 0;
+                a.objects = {dl};
+                a.frameMin = {10, -5};
+                a.frameMax = {30, 5};
+                d.dynamic = DynamicDef{{p}, {a}};
+            }));
+            tx.commit();
+        }
+        for (const auto& [pos, sc, rot, len] : std::vector<std::tuple<Vec2, Vec2, double, double>>{
+                 {{200, 0}, {1, 1}, 0, 35}, {{200, 20}, {-1, 2}, 0.9, 12}}) {
+            InsertData i = insert(dyn, pos, sc, rot);
+            i.dynValues = {len};
+            addTop(Indirect<InsertData>(i));
+        }
+        InsertData rect = insert(leaf, {200, 60}, {1, 1}, 0.2);
+        rect.array = ArrayInfo{};
+        rect.array->rows = 2;
+        rect.array->columns = 3;
+        rect.array->rowSpacing = 15;
+        rect.array->columnSpacing = -25;
+        rect.array->angle = 0.1;
+        addTop(Indirect<InsertData>(rect));
+        InsertData polar = insert(leaf, {260, 100}, {1.5, 1.5}, 0);
+        polar.array = ArrayInfo{};
+        polar.array->kind = ArrayInfo::Kind::Polar;
+        polar.array->count = 5;
+        polar.array->center = {-30, 0};
+        polar.array->fillAngle = kTwoPi;
+        addTop(Indirect<InsertData>(polar));
 
         SplineData sp;
         sp.degree = 3;
@@ -464,4 +515,53 @@ TEST_CASE("dragging every grip of every hard object type is finite, undoes exact
         }
     }
     CHECK(total > 40);
+}
+
+TEST_CASE("after each edit the drawing goes through DXF twice without changing") {
+    auto bytesOf = [](const std::string& b) {
+        return std::span<const std::byte>(reinterpret_cast<const std::byte*>(b.data()), b.size());
+    };
+    auto trip = [&](const Document& doc) {
+        dxf::Report r1, r2;
+        auto out = dxf::exportDxf(doc, dxf::ExportOptions{}, r1);
+        REQUIRE(out.ok());
+        auto in = dxf::importDxf(bytesOf(out.value().bytes), dxf::ImportOptions{}, r2);
+        REQUIRE_MESSAGE(in.ok(), (in.ok() ? "" : in.error().message));
+        return std::move(in.value().document);
+    };
+    const char* ops[][3] = {{"MOVE", "0,0", "13.5,-7.25"},
+                            {"ROTATE", "3,4", "37"},
+                            {"SCALE", "10,10", "2.5"},
+                            {"MIRROR", "0,0", "10,3"},
+                            {"MIRROR", "5,5", "5,50"}};
+    for (const auto& op : ops) {
+        CAPTURE(op[0]);
+        Rig r;
+        r.select();
+        std::vector<cmd::ScriptItem> in{op[1], op[2]};
+        if (std::string(op[0]) == "MIRROR")
+            in.emplace_back("Yes");
+        REQUIRE(r.host.run(op[0], in).finished);
+        auto once = trip(r.doc);
+        auto twice = trip(*once);
+        std::map<std::size_t, int> kinds;
+        for (EntityId id : once->modelSpace())
+            ++kinds[once->find(id)->data.index()];
+        for (EntityId id : r.doc.modelSpace())
+            --kinds[r.doc.find(id)->data.index()];
+        // A multileader is written as leaders, a line, text or an insert (docs/dxf-export.md), so
+        // those kinds differ by design; everything else keeps its count.
+        for (auto& [k, n] : kinds) {
+            // Line, Circle, Ellipse, MText, Insert, Leader and MLeader, in EntityData order. A
+            // dynamic block is written as its current geometry (a circle stretched unevenly
+            // becomes an ellipse).
+            const bool viaMultileader =
+                k == 0 || k == 1 || k == 5 || k == 8 || k == 10 || k == 12 || k == 17;
+            if (!viaMultileader)
+                CHECK_MESSAGE(n == 0, "kind ", k, " differs by ", n);
+        }
+        const std::string diff = dxf::testing::SemanticDump::diff(
+            dxf::testing::SemanticDump(*once), dxf::testing::SemanticDump(*twice), 1e-7, 1e-7);
+        CHECK_MESSAGE(diff.empty(), diff);
+    }
 }
