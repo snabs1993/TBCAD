@@ -40,7 +40,9 @@ std::vector<Sample> samples() {
     s.push_back({"line", LineData{{0, 0}, {20, 0}}, {4, 0}, {14, 0}});
     s.push_back({"circle", CircleData{{10, 6}, 8}, {18, 6}, {10, 14}});
     ArcData arc{{10, 0}, 10, 0.2, 2.9};
-    s.push_back({"arc", arc, {10 + 10 * std::cos(0.8), 10 * std::sin(0.8)},
+    s.push_back({"arc",
+                 arc,
+                 {10 + 10 * std::cos(0.8), 10 * std::sin(0.8)},
                  {10 + 10 * std::cos(2.4), 10 * std::sin(2.4)}});
     PolylineData pl;
     pl.v = {{{0, 0}, 0.5, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, -0.3, 0, 0}, {{0, 10}, 0, 0, 0}};
@@ -60,7 +62,8 @@ std::vector<Sample> samples() {
 
 bool finiteDump(const std::string& d) {
     std::string low = d;
-    for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (auto& c : low)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return low.find("nan") == std::string::npos && low.find("inf") == std::string::npos;
 }
 
@@ -72,7 +75,8 @@ TEST_CASE("BREAK and LENGTHEN on every curve kind keep numbers finite and undo e
         CAPTURE(ss[i].name);
         Rig r;
         std::vector<EntityId> ids;
-        for (const auto& s : ss) ids.push_back(r.add(s.data));
+        for (const auto& s : ss)
+            ids.push_back(r.add(s.data));
         const std::string before = canonicalDump(r.doc);
         r.host.run("BREAK", {ScriptItem::pick(ids[i], ss[i].p1),
                              std::to_string(ss[i].p2.x) + "," + std::to_string(ss[i].p2.y)});
@@ -98,13 +102,15 @@ TEST_CASE("FILLET and CHAMFER between every pair of curve kinds are finite and u
     int changed = 0;
     for (std::size_t i = 0; i < ss.size(); ++i) {
         for (std::size_t j = 0; j < ss.size(); ++j) {
-            if (i == j) continue;
+            if (i == j)
+                continue;
             CAPTURE(ss[i].name);
             CAPTURE(ss[j].name);
             for (int mode = 0; mode < 2; ++mode) {
                 Rig r;
                 std::vector<EntityId> ids;
-                for (const auto& s : ss) ids.push_back(r.add(s.data));
+                for (const auto& s : ss)
+                    ids.push_back(r.add(s.data));
                 const std::string before = canonicalDump(r.doc);
                 if (mode == 0)
                     r.host.run("FILLET", {"R", "2", ScriptItem::pick(ids[i], ss[i].p1),
