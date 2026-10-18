@@ -433,6 +433,28 @@ TEST_CASE("a named style table is found next to the drawing - a missing one is r
     CHECK_FALSE(plot::styleTableMissing(h));
 }
 
+TEST_CASE("plot style folders added by the user are searched") {
+    Fixture f;
+    DocHost h(f.doc, f.reg);
+    const auto extra = f.dir / "styles_from_office";
+    std::filesystem::create_directories(extra);
+    plotstyle::PlotStyleTable t = *plotstyle::builtinTable("monochrome.ctb");
+    t.name = "_OFFICE";
+    REQUIRE(plotstyle::saveFile(t, extra / "_OFFICE.tbstyle").ok());
+    CHECK_FALSE(plot::resolveStyleTable(h, "_OFFICE").ok());
+
+    h.setSetting("plot.stylepaths", "nowhere;" + extra.string());
+    CHECK(plot::resolveStyleTable(h, "_OFFICE").ok());
+    CHECK(plot::userStyleFolders(h).size() == 2);
+
+    // The PLOTSTYLE Paths command edits the same list.
+    h.setSetting("plot.stylepaths", "");
+    h.run("PLOTSTYLE", {"Paths", "Add", extra.string()});
+    CHECK(plot::userStyleFolders(h).size() == 1);
+    h.run("PLOTSTYLE", {"Paths", "Reset"});
+    CHECK(plot::userStyleFolders(h).empty());
+}
+
 TEST_CASE("PLOT asks before replacing a file that already exists") {
     Fixture f;
     const auto out = f.path("again.pdf");

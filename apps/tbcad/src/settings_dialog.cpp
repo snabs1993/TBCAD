@@ -289,6 +289,29 @@ void SettingsDialog::files(ui::AppCore& core) {
                             core.templateFolder().string().c_str());
     }
     ImGui::Spacing();
+    {
+        // One folder per line; stored with ";" between them. The drawing's own folder, TBCAD's
+        // "plot styles" folder, these, AutoCAD's and Downloads / Documents are searched in order.
+        static std::string folders;
+        static std::string shown;
+        const std::string stored = s.getString("plot.stylepaths", "");
+        if (stored != shown) {
+            shown = stored;
+            folders = stored;
+            std::replace(folders.begin(), folders.end(), ';', '\n');
+        }
+        ImGui::TextUnformatted("Plot style (.ctb / .stb) search folders");
+        if (ImGui::InputTextMultiline("##stylepaths", &folders, ImVec2(480, 70))) {
+            std::string joined = folders;
+            std::replace(joined.begin(), joined.end(), '\n', ';');
+            shown = joined;
+            s.setString("plot.stylepaths", joined);
+        }
+        ImGui::TextDisabled(
+            "One folder per line. Looked up after the drawing's folder and TBCAD's, before "
+            "AutoCAD's, Downloads and Documents.");
+    }
+    ImGui::Spacing();
     ImGui::TextDisabled("Settings folder: %s", core.settingsFolder().string().c_str());
 }
 

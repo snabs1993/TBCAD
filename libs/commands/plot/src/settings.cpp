@@ -79,6 +79,48 @@ void addAutoCadStyleFolders(std::vector<std::filesystem::path>& out) {
 
 }  // namespace
 
+std::vector<std::filesystem::path> userStyleFolders(const cmd::IHost& host) {
+    std::vector<std::filesystem::path> out;
+    const std::string list = host.setting("plot.stylepaths").value_or("");
+    std::size_t at = 0;
+    while (at <= list.size()) {
+        std::size_t end = list.find_first_of(";\n", at);
+        if (end == std::string::npos)
+            end = list.size();
+        std::string item = list.substr(at, end - at);
+        while (!item.empty() && std::isspace(static_cast<unsigned char>(item.back())))
+            item.pop_back();
+        while (!item.empty() && std::isspace(static_cast<unsigned char>(item.front())))
+            item.erase(item.begin());
+        if (!item.empty())
+            out.push_back(platform::pathFromUtf8(item));
+        at = end + 1;
+    }
+    return out;
+}
+
+namespace {
+
+// Where people usually leave a .ctb they were sent: Downloads and Documents (also the OneDrive
+// copies Windows moves them to).
+void addCommonStyleFolders(std::vector<std::filesystem::path>& out) {
+    std::error_code ec;
+    for (const char* var : {"USERPROFILE", "HOME"}) {
+        const auto home = platform::processEnvironment(var);
+        if (!home || home->empty())
+            continue;
+        const std::filesystem::path base = platform::pathFromUtf8(*home);
+        for (const auto& root : {base, base / "OneDrive"})
+            for (const char* sub : {"Downloads", "Documents"}) {
+                const auto folder = root / sub;
+                if (std::filesystem::is_directory(folder, ec))
+                    out.push_back(folder);
+            }
+    }
+}
+
+}  // namespace
+
 std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host) {
     std::vector<std::filesystem::path> out;
     const std::string doc = host.documentFile();
@@ -91,7 +133,10 @@ std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host) {
     }
     if (auto own = plotStyleFolder(host); !own.empty())
         out.push_back(own);
+    for (auto& f : userStyleFolders(host))
+        out.push_back(std::move(f));
     addAutoCadStyleFolders(out);
+    addCommonStyleFolders(out);
     return out;
 }
 
@@ -124,7 +169,9 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
         if (!found)
             return Error{ErrorCode::NotFound, "Plot style table \"" + name +
                                                   "\" was not found next to the drawing, in the "
-                                                  "TBCAD plot styles folder or in AutoCAD's."};
+                                                  "TBCAD plot styles folder, the folders in "
+                                                  "OPTIONS > Files, AutoCAD's, Downloads or "
+                                                  "Documents."};
     }
     auto t = plotstyle::loadFile(path);
     if (!t)

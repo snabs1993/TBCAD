@@ -399,13 +399,45 @@ public:
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         KeywordOptions menu;
-        menu.keywords = {"Select", "List", "Import", "Edit", "Save"};
+        menu.keywords = {"Select", "List", "Import", "Edit", "Save", "Paths"};
         menu.defaultKeyword = "List";
         auto choice =
             co_await ctx.getKeyword("Plot style table: " + plotStyleName(ctx.host()), menu);
         if (!choice.ok())
             co_return;
         const std::string& kw = choice.keyword;
+        if (kw == "Paths") {
+            cmd::KeywordOptions po;
+            po.keywords = {"Add", "Remove", "Reset", "Show"};
+            po.defaultKeyword = "Show";
+            auto act = co_await ctx.getKeyword("Plot style folders", po);
+            if (!act.ok())
+                co_return;
+            auto joined = [](const std::vector<std::filesystem::path>& v) {
+                std::string out;
+                for (const auto& f : v)
+                    out += (out.empty() ? "" : ";") + platform::pathToUtf8(f);
+                return out;
+            };
+            auto mine = userStyleFolders(ctx.host());
+            if (act.keyword == "Add" || act.keyword == "Remove") {
+                cmd::StringOptions so;
+                auto dir = co_await ctx.getString(
+                    act.keyword == "Add" ? "Folder to search" : "Folder to stop searching", so);
+                if (!dir.ok() || dir.text.empty())
+                    co_return;
+                const auto path = platform::pathFromUtf8(dir.text);
+                mine.erase(std::remove(mine.begin(), mine.end(), path), mine.end());
+                if (act.keyword == "Add")
+                    mine.push_back(path);
+                ctx.host().setSetting("plot.stylepaths", joined(mine));
+            } else if (act.keyword == "Reset") {
+                ctx.host().setSetting("plot.stylepaths", "");
+            }
+            for (const auto& f : styleSearchFolders(ctx.host()))
+                ctx.message("  " + platform::pathToUtf8(f));
+            co_return;
+        }
         if (kw == "List") {
             const std::string cur = plotStyleName(ctx.host());
             for (const auto& n : listStyleTables(ctx.host()))
