@@ -7,93 +7,25 @@
 
 namespace tbcad::dxf::detail {
 
-// Defined by the reader (aci.cpp).
-Color mapAci(int aci);
-
 namespace {
 
-struct Rgb3 {
-    double r, g, b;
-};
-
-Rgb3 hsv(double hueDeg, double s, double v) {
-    double c = v * s;
-    double hp = hueDeg / 60.0;
-    double x = c * (1 - std::abs(std::fmod(hp, 2.0) - 1));
-    double r = 0, g = 0, b = 0;
-    if (hp < 1)
-        r = c, g = x;
-    else if (hp < 2)
-        r = x, g = c;
-    else if (hp < 3)
-        g = c, b = x;
-    else if (hp < 4)
-        g = x, b = c;
-    else if (hp < 5)
-        r = x, b = c;
-    else
-        r = c, b = x;
-    double m = v - c;
-    return {(r + m) * 255, (g + m) * 255, (b + m) * 255};
-}
-
-// The public ACI layout (the same rule the reader uses to rebuild the table).
-Rgb3 aciRgb(int i) {
-    static constexpr double kValue[10] = {1.0, 1.0, 0.8, 0.8, 0.6, 0.6, 0.5, 0.5, 0.3, 0.3};
-    static constexpr double kGray[6] = {0x33, 0x50, 0x69, 0x82, 0xBE, 0xFF};
-    static constexpr Rgb3 kBasic[8] = {{0, 0, 0},     {255, 0, 0}, {255, 255, 0}, {0, 255, 0},
-                                       {0, 255, 255}, {0, 0, 255}, {255, 0, 255}, {255, 255, 255}};
-    if (i >= 1 && i <= 7)
-        return kBasic[i];
-    if (i == 8)
-        return {128, 128, 128};
-    if (i == 9)
-        return {192, 192, 192};
-    if (i >= 250)
-        return {kGray[i - 250], kGray[i - 250], kGray[i - 250]};
-    int n = i - 10;
-    return hsv((n / 10) * 15.0, (n % 2 == 0) ? 1.0 : 0.5, kValue[n % 10]);
-}
-
-double dist2(Rgb3 a, Rgba b) {
+double dist2(Rgba a, Rgba b) {
     double dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
     return dr * dr + dg * dg + db * db;
 }
 
+// Lowest ACI whose colour is nearest to `c`.
 int nearestAci(Rgba c) {
     double best = 1e300;
     int bestAci = 7;
     for (int i = 1; i <= 255; ++i) {
-        double d = dist2(aciRgb(i), c);
+        double d = dist2(paletteColor(static_cast<std::uint8_t>(i)), c);
         if (d < best) {
             best = d;
             bestAci = i;
         }
     }
     return bestAci;
-}
-
-struct Tables {
-    std::array<int, 256> preimage{};  // palette index -> ACI, 0 when no ACI maps to it
-    Tables() {
-        std::array<double, 256> best{};
-        best.fill(1e300);
-        for (int a = 1; a <= 255; ++a) {
-            int idx = mapAci(a).indexValue();
-            double d = dist2(aciRgb(a), paletteColor(static_cast<std::uint8_t>(idx)));
-            if (a <= 7)
-                d = -1;  // the basic colours always win
-            if (d < best[static_cast<std::size_t>(idx)]) {
-                best[static_cast<std::size_t>(idx)] = d;
-                preimage[static_cast<std::size_t>(idx)] = a;
-            }
-        }
-    }
-};
-
-const Tables& tables() {
-    static const Tables t;
-    return t;
 }
 
 std::uint32_t pack(Rgba c) {
@@ -105,11 +37,7 @@ std::uint32_t pack(Rgba c) {
 AciChoice aciForIndex(int index) {
     if (index < 1 || index > 255)
         return {7, std::nullopt};
-    int a = tables().preimage[static_cast<std::size_t>(index)];
-    if (a != 0)
-        return {a, std::nullopt};
-    Rgba p = paletteColor(static_cast<std::uint8_t>(index));
-    return {nearestAci(p), pack(p)};
+    return {index, std::nullopt};  // the palette is the ACI table
 }
 
 AciChoice aciForRgba(Rgba c) {

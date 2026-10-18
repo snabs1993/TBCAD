@@ -17,7 +17,7 @@ struct AciChoice {
     std::optional<std::uint32_t> rgb{};
 };
 
-// Palette index -> the ACI the reader maps back to the same index (exact round trip).
+// Palette index -> its ACI number (the palette is the ACI table, so the round trip is exact).
 AciChoice aciForIndex(int index);
 // Any RGB colour -> nearest ACI plus the exact colour.
 AciChoice aciForRgba(Rgba c);

@@ -13,9 +13,6 @@
 #include "tbcad/underlay/image.h"
 
 namespace tbcad::dxf {
-namespace detail {
-Color mapAci(int aci);  // reader/aci.cpp
-}
 namespace {
 
 template <class T>
@@ -371,16 +368,12 @@ TEST_CASE("every palette index and RGB colour keeps its look") {
     auto look = [](const Color& c) {
         return c.kind == ColorKind::Rgb ? Rgba{c.r, c.g, c.b, 255} : paletteColor(c.indexValue());
     };
-    // Colours that come from an ACI number keep their index; the few palette entries that no
-    // ACI maps to are written as exact RGB, so what the user sees is unchanged.
-    std::set<int> reachable;
-    for (int aci = 1; aci <= 255; ++aci)
-        reachable.insert(detail::mapAci(aci).indexValue());
+    // The palette is the ACI table: every index keeps its number (plot styles map pens by it).
     for (std::size_t i = 0; i < before.size(); ++i) {
         const Color a = doc.find(before[i])->common.color;
         const Color b = rt.back->find(after[i])->common.color;
         CHECK_MESSAGE(look(a) == look(b), "colour " << int(a.r) << " changed its look");
-        if (a.kind == ColorKind::Index && reachable.count(a.indexValue()))
+        if (a.kind == ColorKind::Index)
             CHECK_MESSAGE(a == b, "palette index " << int(a.r) << " was not kept");
     }
 }
