@@ -9,12 +9,20 @@ namespace tbcad::block_cmds {
 
 namespace {
 
-// BLOCK [B]: turns the selected objects into a named block definition.
+// BLOCK [B]: turns the selected objects into a named block definition. ATTREDEF is the same
+// for a block that exists: it is redefined from the objects (attribute definitions included),
+// the inserts keep their attribute values by tag, and the objects are used up.
 class BlockCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "BLOCK"; }
-    std::vector<std::string> defaultAliases() const override { return {"B"}; }
-    std::string_view description() const override { return "Make a block from objects"; }
+    explicit BlockCommand(bool redefine = false) : redefine_(redefine) {}
+    std::string_view name() const override { return redefine_ ? "ATTREDEF" : "BLOCK"; }
+    std::vector<std::string> defaultAliases() const override {
+        return redefine_ ? std::vector<std::string>{} : std::vector<std::string>{"B"};
+    }
+    std::string_view description() const override {
+        return redefine_ ? "Redefine a block and update its attributes"
+                         : "Make a block from objects";
+    }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
@@ -23,10 +31,21 @@ public:
         std::string blockName;
         BlockId existing{};
         for (;;) {
-            auto n = co_await ctx.getString("Enter block name");
+            auto n = co_await ctx.getString(redefine_ ? "Enter name of the block to redefine"
+                                                      : "Enter block name");
             if (!n.ok())
                 co_return;
             blockName = cmd::trim(n.text);
+            if (redefine_) {
+                const BlockDef* def = doc.blockByName(blockName);
+                if (!def) {
+                    ctx.message("No block named \"" + blockName + "\".");
+                    continue;
+                }
+                existing = def->id;
+                blockName = def->name;
+                break;
+            }
             if (const BlockDef* def = doc.blockByName(blockName)) {
                 auto yn = co_await ctx.getKeyword(
                     "Block \"" + def->name + "\" already exists. Redefine it? [Yes/No] <No>",
@@ -116,12 +135,15 @@ public:
         }
 
         // 5. What happens to the originals.
-        auto what =
-            co_await ctx.getKeyword("Original objects [Retain/Convert/Delete] <Convert>",
-                                    cmd::KeywordOptions{.keywords = {"Retain", "Convert", "Delete"},
-                                                        .defaultKeyword = "Convert"});
-        if (!what.ok())
-            co_return;
+        cmd::KeywordResult what{cmd::Status::Keyword, "Delete"};
+        if (!redefine_) {
+            what = co_await ctx.getKeyword(
+                "Original objects [Retain/Convert/Delete] <Convert>",
+                cmd::KeywordOptions{.keywords = {"Retain", "Convert", "Delete"},
+                                    .defaultKeyword = "Convert"});
+            if (!what.ok())
+                co_return;
+        }
 
         // Copy first: erasing the originals changes the document.
         std::vector<Entity> content;
@@ -177,6 +199,9 @@ public:
                               : "Block \"" + blockName + "\" defined with ") +
                     detail::objects(ids.size()));
     }
+
+private:
+    bool redefine_;
 };
 
 // BASE: the point of this drawing that lands on the insertion point when it is inserted into
@@ -214,6 +239,10 @@ public:
 
 std::unique_ptr<cmd::Command> makeBaseCommand() {
     return std::make_unique<BaseCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeAttredefCommand() {
+    return std::make_unique<BlockCommand>(true);
 }
 
 std::unique_ptr<cmd::Command> makeBlockCommand() {

@@ -176,7 +176,7 @@ private:
 class AttEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ATTEDIT"; }
-    std::vector<std::string> defaultAliases() const override { return {"ATE"}; }
+    std::vector<std::string> defaultAliases() const override { return {"ATE", "EATTEDIT"}; }
     std::string_view description() const override { return "Edit the attribute values of a block"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {

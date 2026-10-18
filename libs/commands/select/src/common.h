@@ -11,6 +11,7 @@ std::unique_ptr<cmd::Command> makeQSelect();
 std::unique_ptr<cmd::Command> makeSelectSimilar();
 std::unique_ptr<cmd::Command> makeIsolate();
 std::unique_ptr<cmd::Command> makeSelectAll();
+std::unique_ptr<cmd::Command> makeSelectCommand();
 std::unique_ptr<cmd::Command> makeQuickProperties();
 std::unique_ptr<cmd::Command> makeChProp();
 std::unique_ptr<cmd::Command> makeChange();

@@ -98,3 +98,16 @@ TEST_CASE("SELECTALL selects shown objects and skips those on off or locked laye
     CHECK(std::find(sel.begin(), sel.end(), b) != sel.end());
     CHECK(std::find(sel.begin(), sel.end(), d) != sel.end());
 }
+
+TEST_CASE("SELECT leaves the picked objects selected for the next command") {
+    Fixture f;
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(CircleData{{0, 0}, 5});
+    f.host.setSelection({});
+    auto r = f.host.run("SELECT", {cmd::ScriptItem::pick(a), cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    const auto sel = f.host.selection();
+    REQUIRE(sel.size() == 1);
+    CHECK(sel[0] == a);
+    (void)b;
+}
