@@ -346,4 +346,112 @@ Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps)
 
 }  // namespace
 
+// ---- arc recovery -------------------------------------------------------------------------------
+
+namespace {
+
+struct Circle3 {
+    Vec2 c{};
+    double r = 0;
+    bool ok = false;
+};
+
+Circle3 circleThrough(Vec2 a, Vec2 b, Vec2 c) {
+    const Vec2 ab = b - a, ac = c - a;
+    const double d = 2 * cross(ab, ac);
+    if (std::fabs(d) < 1e-18)
+        return {};
+    const double ab2 = dot(ab, ab), ac2 = dot(ac, ac);
+    const Vec2 u{(ac.y * ab2 - ab.y * ac2) / d, (ab.x * ac2 - ac.x * ab2) / d};
+    return {a + u, length(u), true};
+}
+
+}  // namespace
+
+ArcFit fitArcs(const Ring& ring, double tol) {
+    ArcFit out;
+    const std::size_t n = ring.size();
+    auto plain = [&]() {
+        out.vertices.clear();
+        for (Vec2 p : ring)
+            out.vertices.push_back({p, 0});
+        return out;
+    };
+    if (n < 5)
+        return plain();
+    auto at = [&](std::size_t i) { return ring[i % n]; };
+    constexpr double kMaxTurn = 25.0 * 3.14159265358979323846 / 180.0;
+    const double tolR = tol * 4 + 1e-12;
+    std::vector<double> turn(n);
+    std::vector<bool> smooth(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const Vec2 a = at(i + n - 1), b = at(i), c = at(i + 1);
+        turn[i] = std::atan2(cross(b - a, c - b), dot(b - a, c - b));
+        smooth[i] = std::fabs(turn[i]) <= kMaxTurn && std::fabs(turn[i]) > 1e-9;
+    }
+    std::size_t start = n;
+    for (std::size_t i = 0; i < n; ++i)
+        if (!smooth[i]) {
+            start = i;
+            break;
+        }
+    if (start == n) {
+        // Smooth all the way round: one circle, or just a polygon with many sides.
+        const Circle3 c = circleThrough(at(0), at(n / 3), at(2 * n / 3));
+        bool all = c.ok;
+        for (std::size_t i = 0; all && i < n; ++i)
+            all = std::fabs(distance(at(i), c.c) - c.r) <= tolR && (turn[i] > 0) == (turn[0] > 0);
+        if (all) {
+            out.circle = true;
+            out.center = c.c;
+            out.radius = c.r;
+            return out;
+        }
+        return plain();
+    }
+    std::size_t p = 0;  // offset from `start`
+    while (p < n) {
+        const std::size_t vp = start + p;
+        out.vertices.push_back({at(vp), 0});
+        // The longest arc from here: interior vertices smooth, turning one way, on one circle.
+        std::size_t best = 0;
+        double bestSweep = 0;
+        if (p + 4 < n + 1 && smooth[(vp + 1) % n] && smooth[(vp + 2) % n] && smooth[(vp + 3) % n]) {
+            const Circle3 c = circleThrough(at(vp + 1), at(vp + 2), at(vp + 3));
+            const bool left = turn[(vp + 1) % n] > 0;
+            if (c.ok && std::fabs(distance(at(vp), c.c) - c.r) <= tolR) {
+                double sweep = 0;
+                std::size_t q = vp;
+                while (q + 1 < start + n + 1 && q - vp < n - 1) {
+                    // Try to extend the arc so that it ends at vertex q + 1.
+                    const std::size_t nq = q + 1;
+                    if (std::fabs(distance(at(nq), c.c) - c.r) > tolR)
+                        break;
+                    const Vec2 u = at(q) - c.c, w = at(nq) - c.c;
+                    const double step = std::atan2(cross(u, w), dot(u, w));
+                    if ((step > 0) != left || std::fabs(step) > 2 * kMaxTurn)
+                        break;
+                    if (nq > vp + 1 && (!smooth[q % n] || (turn[q % n] > 0) != left))
+                        break;  // the vertex we pass through must be smooth
+                    sweep += step;
+                    if (std::fabs(sweep) > 6.2)
+                        break;
+                    q = nq;
+                    if (q - vp >= 4) {
+                        best = q - vp;
+                        bestSweep = sweep;
+                    }
+                }
+            }
+        }
+        if (best >= 4) {
+            out.vertices.back().bulge = std::tan(bestSweep / 4);
+            p += best;
+        } else {
+            ++p;
+        }
+    }
+    return out;
+}
+
 }  // namespace tbcad::geom

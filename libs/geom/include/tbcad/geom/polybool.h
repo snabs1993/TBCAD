@@ -32,4 +32,19 @@ bool contains(const Region& region, Vec2 p, double eps = 1e-9);
 // a OP b. `eps` is the distance below which points are the same point.
 Region boolean(const Region& a, const Region& b, BoolOp op, double eps = 1e-7);
 
+// A ring read back as lines and arcs: runs of vertices that lie on one circle (within `tol`, with a
+// turn of at most 25 degrees at every vertex, at least four vertices) become one arc. Used to give
+// the results of boolean operations back the arcs that were flattened going in.
+struct ArcVertex {
+    Vec2 p{};
+    double bulge = 0;  // of the segment from this vertex to the next
+};
+struct ArcFit {
+    std::vector<ArcVertex> vertices{};  // empty when the whole ring is one circle
+    bool circle = false;
+    Vec2 center{};
+    double radius = 0;
+};
+ArcFit fitArcs(const Ring& ring, double tol);
+
 }  // namespace tbcad::geom

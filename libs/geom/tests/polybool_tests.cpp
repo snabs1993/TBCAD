@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "tbcad/geom/geom.h"
 #include "tbcad/geom/polybool.h"
 
 using namespace tbcad;
@@ -194,4 +195,37 @@ TEST_CASE("random polygons: the boolean operations agree with area and point tes
         ++checked;
     }
     CHECK(checked > 200);
+}
+
+TEST_CASE("fitArcs turns flattened arcs back into arcs and leaves polygons alone") {
+    // A half disc: the diameter and an arc flattened at 1e-4.
+    Ring half;
+    std::vector<Vec2> arc;
+    flatten(CurveRef::arc({0, 0}, 50, 0, kPi), 1e-4, arc);
+    half.insert(half.end(), arc.begin(), arc.end());  // ends at (-50, 0); the diameter closes it
+    auto fit = fitArcs(half, 1e-4);
+    REQUIRE_FALSE(fit.circle);
+    REQUIRE(fit.vertices.size() == 2);
+    CHECK(std::fabs(std::abs(fit.vertices[0].bulge) - 1.0) < 1e-3);  // a half circle: bulge 1
+    CHECK(fit.vertices[1].bulge == 0);
+
+    // A whole flattened circle comes back as a circle.
+    Ring full;
+    std::vector<Vec2> pts;
+    flatten(CurveRef::circle({7, -3}, 12), 1e-4, pts);
+    full.assign(pts.begin(), pts.end() - 1);
+    auto cf = fitArcs(full, 1e-4);
+    REQUIRE(cf.circle);
+    CHECK(cf.center.x == doctest::Approx(7).epsilon(1e-6));
+    CHECK(cf.radius == doctest::Approx(12).epsilon(1e-6));
+
+    // Squares and octagons are not circles.
+    Ring square{{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    CHECK(fitArcs(square, 1e-4).vertices.size() == 4);
+    Ring oct;
+    for (int i = 0; i < 8; ++i)
+        oct.push_back({10 * std::cos(kTwoPi * i / 8), 10 * std::sin(kTwoPi * i / 8)});
+    auto of = fitArcs(oct, 1e-4);
+    CHECK_FALSE(of.circle);
+    CHECK(of.vertices.size() == 8);
 }
