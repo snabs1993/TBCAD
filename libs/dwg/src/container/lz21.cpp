@@ -2,19 +2,10 @@
 
 namespace tbcad::dwg::detail {
 
-namespace {
-
-// A literal run is not stored in the order it is written. Groups of 32 bytes are stored as four
-// blocks of eight in the opposite order (block 3, 2, 1, 0 of the group make the output); what is
-// left after the groups (fewer than 32 bytes) is cut into blocks that appear in the stream in the
-// opposite order to the output, each block itself in the output order, so single bytes come out
-// reversed. The cuts are known for the lengths found in real R2007 files (checked against the
-// section map names and hash codes, the page map, the section sentinels and the sizes in the file
-// header); other lengths are read back to front.
-void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
+std::array<std::vector<std::uint8_t>, 32>& lz21Cuts() {
     // Block sizes in stream order, indexed by the length of the remainder. An empty entry is a
     // length that does not occur.
-    static const std::vector<std::uint8_t> kCuts[32] = {
+    static std::array<std::vector<std::uint8_t>, 32> cuts = {{
         {},
         {1},
         {1, 1},
@@ -47,8 +38,21 @@ void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out
         {8, 8, 8, 4, 1},
         {8, 8, 8, 4, 1, 1},
         {8, 8, 8, 4, 1, 1, 1},
-    };
-    const std::vector<std::uint8_t>& cut = length < 32 ? kCuts[length] : kCuts[0];
+    }};
+    return cuts;
+}
+
+namespace {
+
+// A literal run is not stored in the order it is written. Groups of 32 bytes are stored as four
+// blocks of eight in the opposite order (block 3, 2, 1, 0 of the group make the output); what is
+// left after the groups (fewer than 32 bytes) is cut into blocks that appear in the stream in the
+// opposite order to the output, each block itself in the output order, so single bytes come out
+// reversed. The cuts are known for the lengths found in real R2007 files (checked against the
+// section map names and hash codes, the page map, the section sentinels and the sizes in the file
+// header); other lengths are read back to front.
+void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
+    const std::vector<std::uint8_t>& cut = length < 32 ? lz21Cuts()[length] : lz21Cuts()[0];
     const std::size_t blocks = cut.size();
     if (!blocks) {
         for (std::size_t k = 0; k < length; ++k)
