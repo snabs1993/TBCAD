@@ -135,6 +135,49 @@ TEST_CASE("QDIM dimensions every key point in one chain") {
     CHECK(f.dims().empty());
 }
 
+TEST_CASE("QDIM Baseline measures from the first point and steps each line outwards") {
+    Chain f;
+    Transaction tx = f.doc.begin("setup");
+    Entity e;
+    e.data = PolylineData{{{{0, 0}}, {{40, 0}}, {{100, 0}}, {{150, 0}}}, false};
+    EntityId id = tx.add(std::move(e)).value();
+    tx.commit();
+    auto r =
+        f.host->run("QDIM", {ScriptItem::select({id}), ScriptItem::enter(), "Baseline", "50,-20"});
+    CHECK(r.finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 3);
+    std::vector<double> m, y;
+    for (const DimensionData* d : dims) {
+        m.push_back(d->measurement);
+        y.push_back(d->defPts[2].y);
+    }
+    std::sort(m.begin(), m.end());
+    CHECK(m[0] == doctest::Approx(40));
+    CHECK(m[1] == doctest::Approx(100));
+    CHECK(m[2] == doctest::Approx(150));
+    std::sort(y.begin(), y.end());
+    CHECK(y[0] < y[1]);  // stepped outwards (downwards here)
+    CHECK(y[2] == doctest::Approx(-20));
+}
+
+TEST_CASE("QDIM Radius dimensions every circle of the selection") {
+    Chain f;
+    Transaction tx = f.doc.begin("setup");
+    Entity a;
+    a.data = CircleData{{0, 0}, 5};
+    Entity b;
+    b.data = CircleData{{30, 0}, 8};
+    EntityId ia = tx.add(std::move(a)).value();
+    EntityId ib = tx.add(std::move(b)).value();
+    tx.commit();
+    f.host->run("QDIM", {ScriptItem::select({ia, ib}), ScriptItem::enter(), "Radius"});
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[0]->kind == DimKind::Radius);
+    CHECK(dims[0]->measurement + dims[1]->measurement == doctest::Approx(13));
+}
+
 TEST_CASE("DIMEDIT New replaces the text and Home restores it") {
     Chain f;
     REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
