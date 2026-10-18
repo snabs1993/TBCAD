@@ -491,6 +491,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
+        scaleFirstAnnotationToView(ctx);
         auto first = co_await ctx.getPoint("Specify leader start point");
         if (!first.ok())
             co_return;

@@ -183,6 +183,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
+        scaleFirstAnnotationToView(ctx);  // text readable at this view, as dimensions get
         const MLeaderStyle mls = currentMLeaderStyle(ctx.doc());
         const DimStyleId sid = mls.dim;
         // Text typed instead of a point is the note itself (AutoCAD's content-first habit).

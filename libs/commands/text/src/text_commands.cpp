@@ -5,6 +5,7 @@
 
 #include "commands.h"
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/text/annotation_size.h"
 #include "tbcad/text/text.h"
 #include "tbcad/textcmd/textcmd.h"
 
@@ -21,33 +22,13 @@ constexpr const char* kJustifyKey = "text.justify";
 constexpr const char* kAttachKey = "mtext.attach";
 
 // Text that suits the drawing: 2.5 mm on a sheet-sized drawing, larger when the annotation scale
-// is set or when the drawing is big (a 20 m plan printed on a sheet needs about extent/160 text).
+// is set, when the view is zoomed far out or when the drawing is big (a 20 m plan printed on a
+// sheet needs about extent/160 text).
 double autoTextHeight(CommandContext& ctx) {
     constexpr double kBase = 2.5;
-    const Document& doc = ctx.doc();
-    if (ctx.host().drawingOwner())
-        return kBase;  // on a layout sheet, 2.5 mm is 2.5 mm of paper
-    double n = currentAnnotationScale(doc.header());
-    if (!(n > 1)) {
-        BBox2 box;
-        doc.forEachEntity([&](const Entity& e) {
-            if (!doc.ownerBlock(e.common.id))
-                box.merge(geom::bounds(e, doc));
-        });
-        n = 1;
-        const double extent = std::max(box.width(), box.height());
-        if (std::isfinite(extent) && extent > 0) {
-            const double wanted = extent / 160.0 / kBase;
-            if (wanted >= 8) {
-                for (double decade = 1; decade <= 1e7; decade *= 10)
-                    for (double step : {1.0, 2.0, 5.0})
-                        if (std::fabs(std::log(decade * step / wanted)) <
-                            std::fabs(std::log(n / wanted)))
-                            n = decade * step;
-            }
-        }
-    }
-    return kBase * n;
+    return kBase * text::suggestedAnnotationScale(ctx.doc(), ctx.host().view().scale,
+                                                  static_cast<bool>(ctx.host().drawingOwner()),
+                                                  kBase);
 }
 
 double settingNumber(CommandContext& ctx, const char* key, double fallback) {

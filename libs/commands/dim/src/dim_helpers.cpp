@@ -6,6 +6,7 @@
 #include "dim_internal.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
+#include "tbcad/text/annotation_size.h"
 #include "tbcad/text/text.h"
 
 namespace tbcad::dimcmd {
@@ -38,45 +39,27 @@ void previewDim(cmd::CommandContext& ctx, const DimensionData& d, DisplayList& o
 
 namespace {
 
-// The first dimension in a drawing drawn at a large scale (a plan in millimetres, seen from far
-// away) would carry 2.5 mm text, too small to see at that zoom. Give it a style scaled to the
-// current view so its text is readable (about 12 screen pixels), as 1-2-5 steps like 1:50, 1:100.
-// Later dimensions use the same style, and the style can still be changed in Properties.
+// The first dimension or leader in a drawing drawn at a large scale (a plan in millimetres, seen
+// from far away) would carry 2.5 mm text, too small to see at that zoom. Give it a style scaled
+// like new text is (the annotation scale, else the view and the size of the drawing), as 1-2-5
+// steps like 1:50, 1:100. Later ones use the same style, and the style can still be changed in
+// Properties.
 void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
     const Document& doc = ctx.doc();
     const DimStyle& cur = dim::styleOf(doc, doc.header().currentDimStyle);
     if (cur.id != kDimStyleStandard || cur.overallScale != 1)
         return;
-    if (ctx.host().drawingOwner())
-        return;  // on a sheet, millimetres are paper millimetres: the style fits as it is
-    // How big the drawing is decides too (a script has no view; a plan printed on a sheet needs
-    // text about extent/160 tall): the larger of the two wishes wins.
     bool any = false;
-    BBox2 box;
     doc.forEachEntity([&](const Entity& e) {
-        if (kind(e) == EntityKind::Dimension)
-            any = true;
-        else if (!doc.ownerBlock(e.common.id))
-            box.merge(geom::bounds(e, doc));
+        const EntityKind k = kind(e);
+        any = any || k == EntityKind::Dimension || k == EntityKind::Leader;
     });
     if (any)
         return;
-    double wanted = 0;
-    const double pixelMm = ctx.host().view().scale;
-    if (pixelMm > 0 && std::isfinite(pixelMm))
-        wanted = 12.0 * pixelMm / std::max(cur.textHeight, 1e-6);
-    if (!box.empty()) {
-        const double extent = std::max(box.max.x - box.min.x, box.max.y - box.min.y);
-        if (std::isfinite(extent))
-            wanted = std::max(wanted, extent / 160.0 / std::max(cur.textHeight, 1e-6));
-    }
-    if (wanted < 8)
+    const double n = text::suggestedAnnotationScale(
+        doc, ctx.host().view().scale, static_cast<bool>(ctx.host().drawingOwner()), cur.textHeight);
+    if (n <= 1)
         return;  // the normal case: the text is readable as it is
-    double n = 1;
-    for (double decade = 1; decade <= 1e7; decade *= 10)
-        for (double step : {1.0, 2.0, 5.0})
-            if (std::fabs(std::log(decade * step / wanted)) < std::fabs(std::log(n / wanted)))
-                n = decade * step;
     char tag[40];
     std::snprintf(tag, sizeof tag, "-1to%g", n);
     DimStyle copy = cur;
@@ -92,6 +75,10 @@ void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
 }
 
 }  // namespace
+
+void scaleFirstAnnotationToView(cmd::CommandContext& ctx) {
+    scaleFirstDimensionToView(ctx);
+}
 
 bool addDim(cmd::CommandContext& ctx, DimensionData d) {
     ctx.setUndoLabel(std::string(ctx.commandName()));
