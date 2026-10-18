@@ -144,6 +144,9 @@ struct Drawing {
     std::map<std::int64_t, std::size_t> relocated{};
     std::vector<LayoutRec> layoutObjects{};
     std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
+    // SORTENTSTABLE (draw order): block handle -> entity handle -> sort key. Entities that are not
+    // listed sort by their own handle.
+    std::map<std::uint64_t, std::map<std::uint64_t, std::uint64_t>> sortKeys{};
     std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
     std::map<std::uint64_t, std::uint32_t> rawType{};  // object handle -> file type number
