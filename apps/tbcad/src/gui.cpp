@@ -733,7 +733,7 @@ void Gui::shortcuts() {
         const char* text = ImGui::GetClipboardText();
         const bool ownText =
             !text || !*text || std::string_view(text).rfind("[TBCAD objects", 0) == 0;
-        if (ownText && core_.registry().find("PASTECLIP")) {
+        if (ownText && !core_.runner().active() && core_.registry().find("PASTECLIP")) {
             ImGui::SetKeyOwner(ImGuiKey_V, ImGuiKeyOwner_NoOwner, ImGuiInputFlags_LockThisFrame);
             runAction("edit.paste");
             return;
@@ -770,6 +770,15 @@ void Gui::shortcuts() {
             chord->key[0] != 'F' && !deleteOnEmptyLine)
             continue;
         if (ImGui::IsKeyChordPressed(*ic)) {
+            // In the focused command line Ctrl+V pastes text. The field does that itself; running
+            // the drawing paste as well started PASTECLIP over a path typed at a prompt.
+            if (action == "edit.paste" && io.WantTextInput) {
+                const char* text = ImGui::GetClipboardText();
+                const bool objects =
+                    !text || !*text || std::string_view(text).rfind("[TBCAD objects", 0) == 0;
+                if (!objects || core_.runner().active())
+                    continue;
+            }
             if (chord->key == "ESCAPE" && suggestVisible_) {
                 suggestDismissed_ = true;  // Esc closes the suggestion list first
                 paletteOpen_ = false;
@@ -1641,6 +1650,67 @@ void Gui::dockLayout(ImGuiID ds) {
             ImGui::DockBuilderDockWindow(p.title.c_str(), right);
     ImGui::DockBuilderDockWindow("Layers", right);
     ImGui::DockBuilderFinish(ds);
+}
+
+// A floating palette keeps at least its title bar inside the main window.
+void Gui::keepOnScreen() {
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImGuiWindow* w = g.CurrentWindow;
+    if (!w || w->DockId != 0 || g.MovingWindow == w || (w->Flags & ImGuiWindowFlags_ChildWindow))
+        return;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float keep = 60.0f * dpiScale_;
+    ImVec2 pos = w->Pos;
+    pos.x =
+        std::clamp(pos.x, vp->WorkPos.x + keep - w->Size.x, vp->WorkPos.x + vp->WorkSize.x - keep);
+    pos.y = std::clamp(pos.y, vp->WorkPos.y, vp->WorkPos.y + vp->WorkSize.y - keep);
+    if (pos.x != w->Pos.x || pos.y != w->Pos.y)
+        ImGui::SetWindowPos(pos);
+}
+
+// A palette dragged to the left or right edge of the window docks there (the stock docking
+// overlay offers no target outside the existing panels). A strip shows where it will land.
+void Gui::dockEdgeDrop() {
+    // ImGui forgets the moving window on the frame the button is released, so the drop is done
+    // on that frame from what the last frame armed.
+    static std::string armedWindow;
+    static bool armedLeft = false;
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImGuiWindow* moving = g.MovingWindow;
+    if (!moving && !armedWindow.empty()) {
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        const float ratio = std::clamp(
+            std::min(vp->WorkSize.x * 0.25f, 360.0f * dpiScale_) / std::max(vp->WorkSize.x, 1.0f),
+            0.1f, 0.4f);
+        ImGuiID side = ImGui::DockBuilderSplitNode(
+            kDockId, armedLeft ? ImGuiDir_Left : ImGuiDir_Right, ratio, nullptr, nullptr);
+        ImGui::DockBuilderDockWindow(armedWindow.c_str(), side);
+        ImGui::DockBuilderFinish(kDockId);
+        armedWindow.clear();
+        return;
+    }
+    armedWindow.clear();
+    if (!moving || moving->DockId != 0)
+        return;
+    bool isPanel = false;
+    for (const auto& p : registry_.panels())
+        isPanel = isPanel || p.title == moving->Name;
+    if (!isPanel)
+        return;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float edge = 36.0f * dpiScale_;
+    const ImVec2 m = ImGui::GetIO().MousePos;
+    const bool left = m.x < vp->WorkPos.x + edge;
+    const bool right = m.x > vp->WorkPos.x + vp->WorkSize.x - edge;
+    if (!left && !right)
+        return;
+    const float w = std::min(vp->WorkSize.x * 0.25f, 360.0f * dpiScale_);
+    const float x0 = left ? vp->WorkPos.x : vp->WorkPos.x + vp->WorkSize.x - w;
+    const ImVec2 a(x0, vp->WorkPos.y), b(x0 + w, vp->WorkPos.y + vp->WorkSize.y);
+    ImGui::GetForegroundDrawList()->AddRectFilled(a, b, IM_COL32(61, 139, 253, 70));
+    ImGui::GetForegroundDrawList()->AddRect(a, b, IM_COL32(61, 139, 253, 220), 0.0f, 0, 2.0f);
+    armedWindow = moving->Name;
+    armedLeft = left;
 }
 
 void Gui::applyWorkspace(const ui::Workspace& ws) {
@@ -2673,6 +2743,7 @@ void Gui::panels() {
         dockFallbackTried_ = true;
         rebuildDock_ = true;
     }
+    dockEdgeDrop();
     for (const auto& p : registry_.panels()) {
         bool& open = panelOpen_[p.id];
         if (!open)
@@ -2681,7 +2752,9 @@ void Gui::panels() {
             ImGui::SetNextWindowDockID(sideDock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(320, 420), ImGuiCond_FirstUseEver);
         }
-        if (ImGui::Begin(p.title.c_str(), &open))
+        const bool shown = ImGui::Begin(p.title.c_str(), &open);
+        keepOnScreen();
+        if (shown)
             p.draw(pc);
         ImGui::End();
         // Layer Walk puts the layers back when its window is closed (unless told to keep them).
