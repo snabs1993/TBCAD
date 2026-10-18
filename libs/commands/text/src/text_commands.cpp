@@ -124,7 +124,7 @@ bool isTextEntity(const Entity& e) {
 class TextCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "TEXT"; }
-    std::vector<std::string> defaultAliases() const override { return {"DT"}; }
+    std::vector<std::string> defaultAliases() const override { return {"DT", "DTEXT"}; }
     std::string_view description() const override { return "Single-line text"; }
 
     Task run(CommandContext& ctx) override {

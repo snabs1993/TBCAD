@@ -13,6 +13,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makePolygon());
     (void)registry.add(detail::makeEllipse());
     (void)registry.add(detail::makeSpline());
+    (void)registry.add(detail::makeTrace());
 }
 
 }  // namespace tbcad::draw

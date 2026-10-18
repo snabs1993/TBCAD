@@ -181,6 +181,8 @@ void Importer::parseHeader(const Record& rec) {
     std::string clayer, ucsName;
     double ucsOx = 0, ucsOy = 0, ucsXx = 1, ucsXy = 0;
     bool haveUcs = false;
+    double limMin[2] = {0, 0}, limMax[2] = {0, 0};
+    bool haveLimits = false;
     for (const Group& g : rec.g) {
         if (g.code == 9) {
             var = std::string(g.str());
@@ -201,6 +203,9 @@ void Importer::parseHeader(const Record& rec) {
             msltscale = g.integer();
         } else if (var == "$PLINEGEN" && g.code == 70) {
             plinegen = g.integer();
+        } else if ((var == "$LIMMIN" || var == "$LIMMAX") && (g.code == 10 || g.code == 20)) {
+            (var == "$LIMMIN" ? limMin : limMax)[g.code == 10 ? 0 : 1] = g.number();
+            haveLimits = true;
         } else if (var == "$UCSNAME" && g.code == 2) {
             ucsName = dec(std::string(g.str()));
         } else if (var == "$UCSORG" && (g.code == 10 || g.code == 20)) {
@@ -224,6 +229,11 @@ void Importer::parseHeader(const Record& rec) {
             h.custom[kMsLtScaleKey] = msltscale ? "1" : "0";
         if (plinegen >= 0)
             h.custom[kPlineGenKey] = plinegen ? "1" : "0";
+        if (haveLimits && std::isfinite(limMin[0] + limMin[1] + limMax[0] + limMax[1]) &&
+            limMin[0] < limMax[0] && limMin[1] < limMax[1] &&
+            !(limMin[0] == 0 && limMin[1] == 0 &&  // the defaults of other writers: not a choice
+              ((limMax[0] == 420 && limMax[1] == 297) || (limMax[0] == 12 && limMax[1] == 9))))
+            setDrawingLimits(h, {limMin[0], limMin[1]}, {limMax[0], limMax[1]});
         h.createdBy = "tbcad-convert";
         h.custom["dxf.acadver"] = acadVer_;
         if (!clayer.empty())

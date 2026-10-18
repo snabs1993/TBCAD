@@ -87,7 +87,7 @@ Entity rectEntity(std::vector<PolyVertex> v) {
 class RectangleCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "RECTANGLE"; }
-    std::vector<std::string> defaultAliases() const override { return {"REC"}; }
+    std::vector<std::string> defaultAliases() const override { return {"REC", "RECTANG"}; }
     std::string_view description() const override { return "Draw a rectangle"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {

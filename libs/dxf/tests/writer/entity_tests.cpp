@@ -1237,4 +1237,19 @@ TEST_CASE("a shape font name and the annotative flag of a text style survive DXF
     CHECK(got->widthFactor == doctest::Approx(0.9 / 0.92));
 }
 
+TEST_CASE("drawing limits survive a DXF round trip") {
+    Document doc;
+    {
+        auto tx = doc.begin("limits");
+        REQUIRE(
+            tx.modifyHeader([](Header& h) { setDrawingLimits(h, {-5, -6}, {1000, 700}); }).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const BBox2 b = drawingLimits(rt.back->header());
+    REQUIRE_FALSE(b.empty());
+    CHECK(b.min.x == doctest::Approx(-5));
+    CHECK(b.max.y == doctest::Approx(700));
+}
+
 }  // namespace tbcad::dxf

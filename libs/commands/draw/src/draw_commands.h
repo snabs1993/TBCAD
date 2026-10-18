@@ -14,5 +14,6 @@ std::unique_ptr<cmd::Command> makeRectangle();
 std::unique_ptr<cmd::Command> makePolygon();
 std::unique_ptr<cmd::Command> makeEllipse();
 std::unique_ptr<cmd::Command> makeSpline();
+std::unique_ptr<cmd::Command> makeTrace();
 
 }  // namespace tbcad::draw::detail
