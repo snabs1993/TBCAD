@@ -25,7 +25,7 @@ std::vector<std::pair<std::string, DimensionData>> samples() {
     std::vector<std::pair<std::string, DimensionData>> v;
     v.push_back({"linear", linear({3.1, 4.7}, {123.456, 9.2}, {60, 30})});
     v.push_back({"linear rotated", linear({3.1, 4.7}, {123.456, 9.2}, {60, 30}, 1.1)});
-    v.push_back({"linear vertical", linear({3.1, 4.7}, {123.456, 90.2}, {-20, 30}, M_PI / 2)});
+    v.push_back({"linear vertical", linear({3.1, 4.7}, {123.456, 90.2}, {-20, 30}, kPi / 2)});
     v.push_back({"aligned", aligned({3.1, 4.7}, {123.456, 9.2}, {60, 30})});
     v.push_back({"aligned short", aligned({0, 0}, {1.3, 0.2}, {0.6, 5})});
     v.push_back({"radius", radial(DimKind::Radius, {10, 10}, {40.5, 30})});

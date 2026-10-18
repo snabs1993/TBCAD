@@ -7,8 +7,10 @@
 #include "tbcad/platform/paths.h"
 
 #if defined(_WIN32)
-#include <shellapi.h>
 #include <windows.h>
+// clang-format off: shellapi.h needs windows.h first
+#include <shellapi.h>
+// clang-format on
 #else
 #include <cstdlib>
 #endif

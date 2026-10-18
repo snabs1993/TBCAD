@@ -88,7 +88,7 @@ struct ComScope {
 }  // namespace
 
 bool nativeDialogsAvailable() {
-    return true;
+    return !nativeDialogsOff();
 }
 
 std::optional<std::filesystem::path> showOpenDialog(void* ownerWindow,
