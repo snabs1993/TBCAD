@@ -12,78 +12,45 @@ namespace {
 // section map names and hash codes, the page map, the section sentinels and the sizes in the file
 // header); other lengths are read back to front.
 void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
-    // Block sizes in stream order.
-    static const std::uint8_t kCut1[] = {1};
-    static const std::uint8_t kCut2[] = {1, 1};
-    static const std::uint8_t kCut3[] = {1, 1, 1};
-    static const std::uint8_t kCut4[] = {4};
-    static const std::uint8_t kCut5[] = {4, 1};
-    static const std::uint8_t kCut6[] = {1, 4, 1};
-    static const std::uint8_t kCut7[] = {1, 4, 1, 1};
-    static const std::uint8_t kCut8[] = {8};
-    static const std::uint8_t kCut9[] = {8, 1};
-    static const std::uint8_t kCut10[] = {1, 8, 1};
-    static const std::uint8_t kCut11[] = {1, 1, 1, 8};
-    static const std::uint8_t kCut13[] = {8, 4, 1};
-    static const std::uint8_t kCut15[] = {1, 8, 4, 1, 1};
-    static const std::uint8_t kCut17[] = {8, 1, 8};
-    static const std::uint8_t kCut23[] = {8, 8, 4, 1, 1, 1};
-    const std::uint8_t* cut = nullptr;
-    std::size_t blocks = 0;
-    auto pick = [&](const std::uint8_t* c, std::size_t n) {
-        cut = c;
-        blocks = n;
+    // Block sizes in stream order, indexed by the length of the remainder. An empty entry is a
+    // length whose cut is not known yet (19, 21, 26, 28, 29, 31).
+    static const std::vector<std::uint8_t> kCuts[32] = {
+        {},
+        {1},
+        {1, 1},
+        {1, 1, 1},
+        {4},
+        {4, 1},
+        {1, 4, 1},
+        {1, 4, 1, 1},
+        {8},
+        {8, 1},
+        {1, 8, 1},
+        {1, 1, 1, 8},
+        {8, 4},
+        {8, 4, 1},
+        {1, 8, 4, 1},
+        {1, 8, 4, 1, 1},
+        {8, 8},
+        {8, 1, 8},
+        {1, 8, 8, 1},
+        {},
+        {8, 8, 4},
+        {},
+        {8, 8, 4, 1, 1},
+        {8, 8, 4, 1, 1, 1},
+        {8, 8, 8},
+        {8, 8, 1, 8},
+        {},
+        {8, 8, 1, 8, 1, 1},
+        {},
+        {},
+        {8, 8, 8, 4, 1, 1},
+        {},
     };
-    switch (length) {
-        case 1:
-            pick(kCut1, 1);
-            break;
-        case 2:
-            pick(kCut2, 2);
-            break;
-        case 3:
-            pick(kCut3, 3);
-            break;
-        case 4:
-            pick(kCut4, 1);
-            break;
-        case 5:
-            pick(kCut5, 2);
-            break;
-        case 6:
-            pick(kCut6, 3);
-            break;
-        case 7:
-            pick(kCut7, 4);
-            break;
-        case 8:
-            pick(kCut8, 1);
-            break;
-        case 9:
-            pick(kCut9, 2);
-            break;
-        case 10:
-            pick(kCut10, 3);
-            break;
-        case 11:
-            pick(kCut11, 4);
-            break;
-        case 13:
-            pick(kCut13, 3);
-            break;
-        case 15:
-            pick(kCut15, 5);
-            break;
-        case 17:
-            pick(kCut17, 3);
-            break;
-        case 23:
-            pick(kCut23, 6);
-            break;
-        default:
-            break;
-    }
-    if (!cut) {
+    const std::vector<std::uint8_t>& cut = length < 32 ? kCuts[length] : kCuts[0];
+    const std::size_t blocks = cut.size();
+    if (!blocks) {
         for (std::size_t k = 0; k < length; ++k)
             out[k] = in[length - 1 - k];
         return;
