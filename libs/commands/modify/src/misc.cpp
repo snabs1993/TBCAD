@@ -410,8 +410,20 @@ public:
             if (dst.id == src.id)
                 continue;
             Entity copy = *s;
-            if (ctx.tx().modify(dst.id, [&](Entity& d) { matchProps(copy, d); }))
+            // An associative array draws the items of its own anonymous block; their own
+            // properties win over the Insert's, so they take the new properties too.
+            std::vector<EntityId> inner;
+            if (const Entity* d = ctx.doc().find(dst.id))
+                if (const auto* ins = entityAs<InsertData>(*d))
+                    if (ins->array)
+                        if (const BlockDef* def = ctx.doc().block(ins->block))
+                            if (def->anonymous)
+                                inner = def->entities;
+            if (ctx.tx().modify(dst.id, [&](Entity& d) { matchProps(copy, d); })) {
+                for (EntityId id : inner)
+                    (void)ctx.tx().modify(id, [&](Entity& d) { matchProps(copy, d); });
                 ++done;
+            }
         }
         if (done)
             ctx.message(plural(done, "object", "objects") + " updated.");
