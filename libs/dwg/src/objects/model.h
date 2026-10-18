@@ -37,6 +37,7 @@ struct LayerRec {
     bool plot = true;
     int lineweight = -3;
     std::uint64_t linetype = 0;
+    std::uint64_t xdic = 0;  // extension dictionary handle, 0 when none
 };
 
 struct LinetypeRec {

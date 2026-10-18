@@ -738,7 +738,9 @@ private:
                 readTriple(r, flag64, xdep);
                 const int values = r.bs();
                 const ColorValue color = readCmc(r, 7);
+                l.xdic = 0;
                 leadingHandles(h, self, reactors, true);
+                l.xdic = lastXdic_;
                 h.handle();  // external reference block
                 h.handle();  // plot style
                 if (fmt_.r2007)
@@ -2550,7 +2552,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r73: viewport extension dictionary trace; R2007 literal runs of 12, 14, 16, 18, 20, "
+    return "r74: layer extension dictionaries and xrecords traced; r73: viewport extension "
+           "dictionary trace; R2007 literal runs of 12, 14, 16, 18, 20, "
            "22, 24, 25, 27 and 30 bytes cut right; "
            "r72: R2018 header read right (plain 3-bit BLL, string stream end found, LTSCALE 800 on "
            "the reference sheet), layers that are off are off, viewport and style sheet trace; "
@@ -2646,10 +2649,13 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
         // All data bits and the handle stream bits of a few table records and entities, so a
         // layout can be checked field by field against the format description.
         if (objBits >= 8 && objBits <= size * 8 &&
-            (tails[type]++ < (type == 7 ? 4 : 2) || e.handle == 3105) &&
+            (tails[type]++ < (type == 7    ? 4
+                              : type == 79 ? 40
+                                           : 2) ||
+             e.handle == 3105) &&
             (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
              type == 1 || type == 34 || type == 18 || type == 17 || type == 7 || type == 44 ||
-             type == 45 || type == 21 || e.handle == 3105)) {
+             type == 45 || type == 21 || type == 79 || e.handle == 3105)) {
             Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
             auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
                 std::string bits;
