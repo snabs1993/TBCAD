@@ -76,14 +76,20 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
 
     std::istringstream in(text);
     std::string raw;
+    bool policyZero = false;
     while (std::getline(in, raw)) {
         std::string line = trim(raw);
         if (line.empty())
             continue;
         if (line == "}") {
             if (section == Section::Styles && depth == 2 && styleIndex >= 0) {
+                // color_policy 0 keeps the object's own colour: the stored colour (white in
+                // AutoCAD's tables) is then only a placeholder.
+                if (policyZero)
+                    cur.color.reset();
                 styles.push_back(cur);
                 styleIndex = -1;
+                policyZero = false;
             }
             --depth;
             if (depth == 0)
@@ -128,6 +134,8 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
                         Rgba{static_cast<std::uint8_t>(u >> 16), static_cast<std::uint8_t>(u >> 8),
                              static_cast<std::uint8_t>(u), 255};
                 }
+            } else if (key == "color_policy") {
+                policyZero = std::atoi(val.c_str()) == 0;
             } else if (key == "screen") {
                 cur.screen = std::clamp(std::atoi(val.c_str()), 0, 100);
             } else if (key == "lineweight") {
