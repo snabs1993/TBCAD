@@ -157,7 +157,6 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
              !std::filesystem::is_directory(platform::pathFromUtf8(*current), ec)))
             core_.setSetting("block.library", shipped);
     }
-    lineweights_ = core_.settings().getBool("view.lineweights", true);
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
@@ -601,6 +600,10 @@ void Gui::toast(const std::string& text) {
     anyActivity_ = true;
 }
 
+bool Gui::lineweights() const {
+    return core_.settings().getBool("view.lineweights", true);
+}
+
 void Gui::drawToasts(const ViewportRect& rect) {
     constexpr double kLife = 3.0, kFade = 0.5;
     const double now = ImGui::GetTime();
@@ -913,8 +916,8 @@ void Gui::menuBar() {
                 setThemeMode(ui::ThemeMode::System);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Show Line Weights", nullptr, &lineweights_))
-            core_.settings().setBool("view.lineweights", lineweights_);
+        if (bool lw = lineweights(); ImGui::MenuItem("Show Line Weights", nullptr, lw))
+            core_.settings().setBool("view.lineweights", !lw);
         registeredMenu("View");
         ImGui::EndMenu();
     }
