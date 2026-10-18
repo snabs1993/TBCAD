@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -102,11 +103,18 @@ TEST_CASE("DXF export writes the shown value of a field") {
     Fixture f;
     f.host.run("FIELD", {"SetSheet", "C-3"});
     f.host.run("FIELD", {"Sheet", "0,0"});
+    // A name of its own per run: a leftover file would stop EXPORTDXF at its overwrite question.
     const std::string file =
-        (std::filesystem::temp_directory_path() / "tbcad_field_export.dxf").string();
+        (std::filesystem::temp_directory_path() /
+         ("tbcad_field_export_" +
+          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".dxf"))
+            .string();
     REQUIRE(f.host.run("EXPORTDXF", {file, "R2000"}).finished);
-    std::ifstream in(file, std::ios::binary);
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string text;
+    {
+        std::ifstream in(file, std::ios::binary);
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }  // closed before the file is removed (Windows cannot delete an open file)
     CHECK(text.find("C-3") != std::string::npos);
     CHECK(text.find("%<sheet>%") == std::string::npos);
     std::error_code ec;
