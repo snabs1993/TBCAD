@@ -292,17 +292,14 @@ struct Renderer::Impl {
         }
         if (bufs.size() != geo.tiles.size())
             bufs.resize(geo.tiles.size());
-        // The glow is a wide soft quad per segment, so a drawing selected as a whole overdraws the
-        // same pixels hundreds of times. A dense selection gets a slimmer glow: it is still
-        // visible against the thin lines it sits on, and fills several times fewer pixels.
         std::size_t segments = 0;
         for (const SelectionTile& st : geo.tiles)
             segments += st.verts.size() / 2;
-        double extraPx = style.extraWidthPx;
-        if (segments > 200000)
-            extraPx = std::min(extraPx, 0.5);
-        else if (segments > 20000)
-            extraPx = std::min(extraPx, 2.0);
+        // Past this many segments the glow is drawn as the same one-pixel lines the drawing itself
+        // uses (a second pass costs about what the drawing costs); a wide quad per segment is too
+        // much fill for a drawing selected as a whole.
+        const bool dense = segments > 20000;
+        const double extraPx = style.extraWidthPx;
         const BBox2 view = camera.visibleWorld();
         for (std::size_t i = 0; i < geo.tiles.size(); ++i) {
             const SelectionTile& st = geo.tiles[i];
@@ -313,6 +310,18 @@ struct Renderer::Impl {
                 continue;  // off screen (still uploaded later if it scrolls into view)
             Buffer& buf = bufs[i];
             upload(buf, st.verts.data(), st.verts.size(), geo.version);
+            if (dense) {
+                glUseProgram(stroke.id);
+                setCommon(stroke, st.origin);
+                glUniform1i(stroke.soft, 0);
+                glUniform1i(stroke.patN, 0);
+                setColor(stroke, Rgba{style.color.r, style.color.g, style.color.b, 255}, false);
+                glBindVertexArray(buf.vaoThin);
+                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(st.verts.size()));
+                ++stats.drawCalls;
+                stats.vertices += st.verts.size();
+                continue;
+            }
             ensureThickVao(buf);
             glUseProgram(strokeThick.id);
             setCommon(strokeThick, st.origin);
