@@ -114,11 +114,23 @@ const Scene::InstanceTemplate* Scene::templateFor(const std::shared_ptr<const Di
 
 bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
                            const Transform2& t, std::uint32_t drawOrder, double builtPixelsPerMm) {
+    return upsertInstance(id, blockSpace, std::span<const Transform2>(&t, 1), nullptr, drawOrder,
+                          builtPixelsPerMm);
+}
+
+bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
+                           std::span<const Transform2> placements, const DisplayList* extra,
+                           std::uint32_t drawOrder, double builtPixelsPerMm) {
     if (!blockSpace)
         return false;
     const InstanceTemplate* tpl = templateFor(blockSpace);
     if (!tpl->usable)
         return false;
+    if (extra)
+        for (const DisplayItem& item : extra->items)
+            if (const auto* f = std::get_if<DisplayFill>(&item);
+                f && isBackgroundColor(f->style.color))
+                return false;
     remove(id);
     EntityRec& rec = entities_[id];
     rec.drawOrder = drawOrder;
@@ -131,82 +143,96 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
     c.builtZoom = builtPixelsPerMm;
 
     thread_local std::vector<GpuVertex> chunk;
-    // The usual case: the whole reference lies in one tile. Then the tile is looked up once and
-    // the geometry is only moved and packed.
-    if (!tpl->box.empty()) {
-        const BBox2 where = t.applyToBox(tpl->box);
-        if (drawable(where.min) && drawable(where.max)) {
-            const TileKey tk = tileOf(where.min);
-            if (tk == tileOf(where.max)) {
-                const Vec2 origin = {static_cast<double>(tk.x) * tileSize_,
-                                     static_cast<double>(tk.y) * tileSize_};
-                for (const InstanceTemplate::Group& g : tpl->groups) {
-                    if (g.pts.empty())
-                        continue;
-                    const BatchKey key = styleKey(g.kind, g.style, c.level);
-                    chunk.resize(g.pts.size());
-                    for (std::size_t i = 0; i < g.pts.size(); ++i)
-                        chunk[i] = packVertex(t.apply(g.pts[i]), origin);
-                    c.batch = nullptr;
-                    c.tile = nullptr;
-                    c.append(*this, tk, key, g.halfWidthMm, chunk);
-                    c.expand(where.min);
-                    c.expand(where.max);
+    auto place = [&](const Transform2& t) {
+        // The usual case: the whole reference lies in one tile. Then the tile is looked up once and
+        // the geometry is only moved and packed.
+        if (!tpl->box.empty()) {
+            const BBox2 where = t.applyToBox(tpl->box);
+            if (drawable(where.min) && drawable(where.max)) {
+                const TileKey tk = tileOf(where.min);
+                if (tk == tileOf(where.max)) {
+                    const Vec2 origin = {static_cast<double>(tk.x) * tileSize_,
+                                         static_cast<double>(tk.y) * tileSize_};
+                    for (const InstanceTemplate::Group& g : tpl->groups) {
+                        if (g.pts.empty())
+                            continue;
+                        const BatchKey key = styleKey(g.kind, g.style, c.level);
+                        chunk.resize(g.pts.size());
+                        for (std::size_t i = 0; i < g.pts.size(); ++i)
+                            chunk[i] = packVertex(t.apply(g.pts[i]), origin);
+                        c.batch = nullptr;
+                        c.tile = nullptr;
+                        c.append(*this, tk, key, g.halfWidthMm, chunk);
+                        c.expand(where.min);
+                        c.expand(where.max);
+                    }
+                    return;
                 }
-                std::sort(rec.refs.begin(), rec.refs.end());
-                rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());
-                ++changeCounter_;
-                return true;
             }
         }
-    }
-    for (const InstanceTemplate::Group& g : tpl->groups) {
-        if (g.pts.empty())
-            continue;
-        BatchKey key = styleKey(g.kind, g.style, c.level);
-        const std::size_t step = g.kind == BatchKind::Stroke ? 2
-                                 : g.kind == BatchKind::Fill ? 3
-                                                             : 1;
-        c.batch = nullptr;
-        c.tile = nullptr;
-        chunk.clear();
-        TileKey tk{};
-        Vec2 origin{};
-        BBox2 box;
-        auto flush = [&] {
-            if (chunk.empty())
-                return;
-            c.append(*this, tk, key, g.halfWidthMm, chunk);
-            c.expand(box.min);
-            c.expand(box.max);
-            chunk.clear();
-            box = BBox2{};
-        };
-        for (std::size_t i = 0; i + step <= g.pts.size(); i += step) {
-            Vec2 q[3];
-            for (std::size_t k = 0; k < step; ++k)
-                q[k] = t.apply(g.pts[i + k]);
-            bool ok = true;
-            for (std::size_t k = 0; k < step; ++k)
-                ok = ok && drawable(q[k]);
-            if (!ok)
+        for (const InstanceTemplate::Group& g : tpl->groups) {
+            if (g.pts.empty())
                 continue;
-            // The tile is that of the first end point (strokes, points) or the centroid (fills),
-            // as when the transformed list is added.
-            const Vec2 at = step == 3 ? (q[0] + q[1] + q[2]) / 3.0 : q[0];
-            const TileKey here = tileOf(at);
-            if (chunk.empty() || !(here == tk)) {
-                flush();
-                tk = here;
-                origin = {static_cast<double>(tk.x) * tileSize_,
-                          static_cast<double>(tk.y) * tileSize_};
+            BatchKey key = styleKey(g.kind, g.style, c.level);
+            const std::size_t step = g.kind == BatchKind::Stroke ? 2
+                                     : g.kind == BatchKind::Fill ? 3
+                                                                 : 1;
+            c.batch = nullptr;
+            c.tile = nullptr;
+            chunk.clear();
+            TileKey tk{};
+            Vec2 origin{};
+            BBox2 box;
+            auto flush = [&] {
+                if (chunk.empty())
+                    return;
+                c.append(*this, tk, key, g.halfWidthMm, chunk);
+                c.expand(box.min);
+                c.expand(box.max);
+                chunk.clear();
+                box = BBox2{};
+            };
+            for (std::size_t i = 0; i + step <= g.pts.size(); i += step) {
+                Vec2 q[3];
+                for (std::size_t k = 0; k < step; ++k)
+                    q[k] = t.apply(g.pts[i + k]);
+                bool ok = true;
+                for (std::size_t k = 0; k < step; ++k)
+                    ok = ok && drawable(q[k]);
+                if (!ok)
+                    continue;
+                // The tile is that of the first end point (strokes, points) or the centroid
+                // (fills), as when the transformed list is added.
+                const Vec2 at = step == 3 ? (q[0] + q[1] + q[2]) / 3.0 : q[0];
+                const TileKey here = tileOf(at);
+                if (chunk.empty() || !(here == tk)) {
+                    flush();
+                    tk = here;
+                    origin = {static_cast<double>(tk.x) * tileSize_,
+                              static_cast<double>(tk.y) * tileSize_};
+                }
+                for (std::size_t k = 0; k < step; ++k) {
+                    chunk.push_back(packVertex(q[k], origin));
+                    box.expand(q[k]);
+                }
             }
-            for (std::size_t k = 0; k < step; ++k) {
-                chunk.push_back(packVertex(q[k], origin));
-                box.expand(q[k]);
-            }
+            flush();
         }
-        flush();
+    };
+    for (const Transform2& t : placements)
+        place(t);
+    // What differs from reference to reference (attribute values) comes as an ordinary list.
+    if (extra) {
+        for (const DisplayItem& item : extra->items) {
+            c.batch = nullptr;
+            c.tile = nullptr;
+            if (const auto* pl = std::get_if<DisplayPolyline>(&item))
+                addPolyline(c, *pl);
+            else if (const auto* f = std::get_if<DisplayFill>(&item))
+                addFill(c, *f);
+            else if (const auto* p = std::get_if<DisplayPoints>(&item))
+                addPoints(c, *p);
+        }
     }
     std::sort(rec.refs.begin(), rec.refs.end());
     rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());

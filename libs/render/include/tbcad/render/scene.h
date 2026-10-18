@@ -149,6 +149,11 @@ public:
     // wipeouts): the caller then builds the transformed list and calls upsert.
     bool upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
                         const Transform2& t, std::uint32_t drawOrder, double builtPixelsPerMm = 0);
+    // The same for a reference drawn at several places (an array) and with `extra` geometry that
+    // is not shared (attribute values), already in drawing space.
+    bool upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
+                        std::span<const Transform2> placements, const DisplayList* extra,
+                        std::uint32_t drawOrder, double builtPixelsPerMm = 0);
     void remove(EntityId id);
     // Same for many objects at once; much faster than calling remove for each.
     // Drops everything when `ids` (distinct) are exactly the entities of the scene; false and

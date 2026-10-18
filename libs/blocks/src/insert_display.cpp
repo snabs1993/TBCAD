@@ -222,18 +222,11 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
     const BlockDef* def = doc.block(ins->block);
     if (!def || def->entities.empty() || def->dynamic || def->assembly)
         return false;
-    if ((ins->clipOn && ins->clip.size() >= 3) || ins->array ||
-        instanceTransforms(*ins, def->base).size() != 1)
+    if (ins->clipOn && ins->clip.size() >= 3)
         return false;
-    // Attribute values are drawn per insert, so such blocks keep the full path.
-    for (EntityId id : def->entities) {
-        const Entity* e = doc.find(id);
-        if (!e)
-            continue;
-        const auto* t = entityAs<TextData>(*e);
-        if (t && t->attdef && e->common.visible)
-            return false;
-    }
+    std::vector<Transform2> items = instanceTransforms(*ins, def->base);
+    if (items.empty())
+        return false;
     DepthGuard guard;
     geom::DisplayContext opaque = ctx;
     opaque.showTransparency = false;
@@ -260,9 +253,24 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
         cache->countBuild();
         cache->put(key, blockSpace);
     }
-    // (an array insert has been refused above, so there is exactly one transform)
+    // Attribute values differ per insert: drawn here, once per array item.
+    out.extra.items.clear();
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        if (!e || !e->common.visible)
+            continue;
+        auto text = attributeText(*e, *ins);
+        if (!text)
+            continue;
+        if (text->common.layer == kLayerZero)
+            text->common.layer = insert.common.layer;
+        DisplayList own;
+        geom::buildDisplay(doc, *text, child, own);
+        for (const Transform2& it : items)
+            transformList(own, it, out.extra);
+    }
     out.blockSpace = std::move(blockSpace);
-    out.transform = t;
+    out.placements = std::move(items);
     return true;
 }
 
