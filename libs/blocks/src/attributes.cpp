@@ -94,7 +94,8 @@ std::vector<AttribValue> syncedAttribs(const Document& doc, const InsertData& in
     return out;
 }
 
-std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block) {
+std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
+                        const std::vector<std::pair<std::string, std::string>>& renames) {
     std::vector<EntityId> ids;
     doc.forEachEntity([&](const Entity& e) {
         if (const auto* ins = entityAs<InsertData>(e); ins && ins->block == block)
@@ -103,7 +104,17 @@ std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block) {
     std::size_t changed = 0;
     for (EntityId id : ids) {
         const auto* ins = entityAs<InsertData>(*doc.find(id));
-        auto synced = syncedAttribs(doc, *ins);
+        InsertData renamed;
+        const InsertData* source = ins;
+        if (!renames.empty()) {
+            renamed = *ins;
+            for (const auto& [from, to] : renames)
+                for (AttribValue& v : renamed.attribs)
+                    if (v.tag == from)
+                        v.tag = to;
+            source = &renamed;
+        }
+        auto synced = syncedAttribs(doc, *source);
         bool same = synced.size() == ins->attribs.size();
         for (std::size_t i = 0; same && i < synced.size(); ++i)
             same = synced[i].tag == ins->attribs[i].tag && synced[i].value == ins->attribs[i].value;

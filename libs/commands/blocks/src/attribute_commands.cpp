@@ -327,6 +327,7 @@ public:
         const BlockId block = def->id;
         list(ctx, *def);
         bool edited = false;
+        std::vector<std::pair<std::string, std::string>> renames;
         for (;;) {
             cmd::KeywordOptions ko;
             ko.keywords = {"Edit", "Done"};
@@ -342,12 +343,12 @@ public:
                 ctx.message("That block has no attribute with the tag " + tag.text + ".");
                 continue;
             }
-            co_await editOne(ctx, id, edited);
+            co_await editOne(ctx, id, edited, renames);
         }
         if (edited) {
             const BlockDef* d = ctx.doc().block(block);
             if (d)
-                blocks::syncInserts(ctx.tx(), ctx.doc(), block);
+                blocks::syncInserts(ctx.tx(), ctx.doc(), block, renames);
             ctx.setUndoLabel("BATTMAN");
         }
     }
@@ -364,6 +365,8 @@ private:
         return {};
     }
 
+    static BlockId blockOf(const Document& doc, EntityId id) { return doc.ownerBlock(id); }
+
     static void list(cmd::CommandContext& ctx, const BlockDef& d) {
         std::size_t n = 0;
         for (EntityId id : d.entities)
@@ -378,7 +381,8 @@ private:
             ctx.message("The block \"" + d.name + "\" has no attributes.");
     }
 
-    static cmd::Task editOne(cmd::CommandContext& ctx, EntityId id, bool& edited) {
+    static cmd::Task editOne(cmd::CommandContext& ctx, EntityId id, bool& edited,
+                             std::vector<std::pair<std::string, std::string>>& renames) {
         cmd::KeywordOptions ko;
         ko.keywords = {"Tag", "Prompt", "Default", "Invisible"};
         auto k = co_await ctx.getKeyword("Change [Tag/Prompt/Default/Invisible]", ko);
@@ -408,14 +412,22 @@ private:
                 ctx.message("A tag is one word.");
                 co_return;
             }
+            // (two attributes of a block cannot share a tag)
+            const EntityId other = find(ctx.doc(), blockOf(ctx.doc(), id), text);
+            if (other && other != id) {
+                ctx.message("The block already has an attribute with the tag " + text + ".");
+                co_return;
+            }
         }
         auto r = ctx.tx().modify(id, [&](Entity& e) {
             auto* t = entityAs<TextData>(e);
             if (!t || !t->attdef)
                 return;
-            if (which == "Tag")
+            if (which == "Tag") {
+                if (t->attdef->tag != text)
+                    renames.emplace_back(t->attdef->tag, text);
                 t->attdef->tag = text;
-            else if (which == "Prompt")
+            } else if (which == "Prompt")
                 t->attdef->prompt = text;
             else if (which == "Default")
                 t->attdef->defaultValue = text;
