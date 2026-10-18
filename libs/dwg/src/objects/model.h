@@ -151,6 +151,7 @@ struct Drawing {
     std::map<std::uint64_t, std::map<std::uint64_t, std::uint64_t>> sortKeys{};
     std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
+    std::vector<std::string> walkNotes{};
     std::map<std::uint64_t, std::uint32_t> rawType{};  // object handle -> file type number
     std::size_t layoutSeen = 0;                        // LAYOUT objects met
     std::vector<std::string> layoutDiag{};  // LAYOUT objects that did not read (not note-capped)

@@ -120,6 +120,10 @@ public:
         // are written in a shape that is easy to misread). Use the map only as a fallback. A real
         // R2004 file had 2192 of 17669 map entries unusable while the walk found all 17669.
         if (fmt_.r2004) {
+            for (const MapEntry& e : map)
+                if (e.offset > 0 && frameHandle(e.offset) == e.handle)
+                    anchors_.push_back(e.offset);
+            std::sort(anchors_.begin(), anchors_.end());
             walkStream();
             if (walkedList_.size() * 10 >= map.size() * 9) {
                 calibrate();
@@ -281,6 +285,7 @@ private:
     std::unordered_map<std::uint64_t, std::int64_t> walked_;
     std::vector<std::pair<std::uint64_t, std::int64_t>> walkedList_;
     bool walkedDone_ = false;
+    std::vector<std::int64_t> anchors_;  // map offsets whose frame carries the mapped handle
     void walkStream() {
         walkedDone_ = true;
         std::int64_t off = 4;
@@ -308,17 +313,31 @@ private:
                 misses = 0;
                 continue;
             }
-            // Lost the frame: move on byte by byte until two frames in a row look right.
+            // Lost the frame: move on byte by byte until two frames in a row look right, or to the
+            // next object the map places correctly, whichever comes first.
             bool again = false;
+            std::int64_t scan = 0;
             for (std::int64_t d = 1; d <= 4096 && off + d + 8 < end; ++d) {
                 const std::size_t l1 = frameLength(off + d);
                 if (frameHandle(off + d) != 0 && l1 != 0 &&
                     frameHandle(off + d + static_cast<std::int64_t>(l1) + 2) != 0) {
-                    off += d;
-                    ++resyncs;
-                    again = true;
+                    scan = d;
                     break;
                 }
+            }
+            const auto anchor = std::upper_bound(anchors_.begin(), anchors_.end(), off);
+            const std::int64_t viaMap = anchor == anchors_.end() ? 0 : *anchor - off;
+            const std::int64_t step = scan != 0 && (viaMap == 0 || scan <= viaMap) ? scan : viaMap;
+            if (step > 0) {
+                if (resyncs < 24)
+                    out_.walkNotes.push_back(
+                        "stream walk lost its place at " + std::to_string(off) + " (page offset " +
+                        std::to_string(off % 0x7400) + "), skipped " + std::to_string(step) +
+                        " bytes by " + (step == scan ? "scanning" : "the object map") + ", scan " +
+                        std::to_string(scan) + ", map " + std::to_string(viaMap));
+                off += step;
+                ++resyncs;
+                again = true;
             }
             if (!again || ++misses > 100000)
                 break;
@@ -2615,7 +2634,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r83: object map blocks with offsets outside the data are listed; r83: samples of "
+    return "r84: the stream walk resumes at the next object the map places correctly, lost places "
+           "listed; r83: object map blocks with offsets outside the data are listed; r83: samples "
+           "of "
            "objects found away from the object map place are listed; r82: draw order tables "
            "(SORTENTSTABLE) read and applied; r81: dimension style arrow "
            "blocks decoded; r80: --lz21-search tries every cut into "
