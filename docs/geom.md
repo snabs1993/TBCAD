@@ -95,3 +95,10 @@ first), and of inserts whose instance transform would skew. Under a mirror, text
 `interpolateSpline(fitPoints, options)` does global interpolation with chord-length
 parameterisation and either natural (zero curvature) or tangent end conditions; `closed = true`
 gives a C1 closed curve. `splineSubcurve(data, ta, tb)` extracts a clamped piece by knot insertion.
+
+## REVCLOUD
+
+**REVCLOUD** (REVC) draws a revision cloud of 120 degree arcs. Pick points and press Enter to close, or use
+**Rectangular** (two corners) or **Object** (a closed polyline, circle, ellipse or spline; **Reverse**
+turns the arcs inwards). **Arclength** sets the longest arc chord (remembered); **Style** chooses Normal or
+Calligraphy (each arc swells and thins like a pen stroke, stored as polyline widths).

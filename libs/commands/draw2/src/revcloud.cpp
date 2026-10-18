@@ -9,6 +9,7 @@ namespace tbcad::draw2::detail {
 namespace {
 
 constexpr const char* kArcLength = "revcloud.arclength";
+constexpr const char* kCalligraphy = "revcloud.calligraphy";
 constexpr double kDefaultArcLength = 10;
 // Each cloud arc sweeps 120 degrees: bulge = tan(sweep / 4).
 const double kCloudBulge = std::tan(kPi / 6);
@@ -16,7 +17,8 @@ const double kCloudBulge = std::tan(kPi / 6);
 // A closed polyline of arcs along `ring`. With `corners` the ring's own vertices stay cloud
 // vertices and every edge is divided into pieces no longer than `arcLength`; otherwise the ring is
 // divided into equal pieces by length. The arcs bulge outwards (inwards with `reverse`).
-PolylineData cloud(const std::vector<Vec2>& ring, bool corners, double arcLength, bool reverse) {
+PolylineData cloud(const std::vector<Vec2>& ring, bool corners, double arcLength, bool reverse,
+                   bool calligraphy = false) {
     std::vector<Vec2> pts;
     const std::size_t n = ring.size();
     if (corners) {
@@ -58,6 +60,10 @@ PolylineData cloud(const std::vector<Vec2>& ring, bool corners, double arcLength
         PolyVertex v;
         v.p = p;
         v.bulge = sign * kCloudBulge;
+        if (calligraphy) {  // each arc swells and thins like a pen stroke
+            v.startWidth = 0.12 * arcLength;
+            v.endWidth = 0.03 * arcLength;
+        }
         d.v.push_back(v);
     }
     return d;
@@ -127,7 +133,7 @@ public:
         for (;;) {
             const double len = settingNumber(ctx, kArcLength, kDefaultArcLength);
             cmd::PointOptions o;
-            o.keywords = {"Arclength", "Object"};
+            o.keywords = {"Arclength", "Object", "Rectangular", "Style"};
             o.allowNone = false;
             auto first = co_await ctx.getPoint(
                 promptWith("Specify start point (arc length " + std::to_string(len) + ")",
@@ -144,6 +150,22 @@ public:
                         co_return;
                     saveSetting(ctx, kArcLength, l.value);
                     continue;
+                }
+                if (first.keyword == "Style") {
+                    cmd::KeywordOptions so;
+                    so.keywords = {"Normal", "Calligraphy"};
+                    so.defaultKeyword =
+                        settingNumber(ctx, kCalligraphy, 0) > 0 ? "Calligraphy" : "Normal";
+                    auto st =
+                        co_await ctx.getKeyword("Arc style [Normal/Calligraphy]", std::move(so));
+                    if (!st.ok())
+                        co_return;
+                    saveSetting(ctx, kCalligraphy, st.keyword == "Calligraphy" ? 1 : 0);
+                    continue;
+                }
+                if (first.keyword == "Rectangular") {
+                    co_await fromRectangle(ctx, len);
+                    co_return;
                 }
                 co_await fromObject(ctx, len);
                 co_return;
@@ -187,7 +209,26 @@ private:
             ctx.message("A revision cloud needs at least three points that enclose an area.");
             co_return;
         }
-        addEntity(ctx, cloud(pts, true, len, false));
+        addEntity(ctx, cloud(pts, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
+    }
+
+    static cmd::Task fromRectangle(cmd::CommandContext& ctx, double len) {
+        auto a = co_await ctx.getPoint("Specify first corner point");
+        if (!a.ok())
+            co_return;
+        cmd::PointOptions po;
+        po.base = a.point;
+        auto b = co_await ctx.getPoint("Specify opposite corner point", std::move(po));
+        if (!b.ok())
+            co_return;
+        if (std::abs(a.point.x - b.point.x) < tol::kLinear ||
+            std::abs(a.point.y - b.point.y) < tol::kLinear) {
+            ctx.message("The two corners must differ in both directions.");
+            co_return;
+        }
+        const std::vector<Vec2> ring{
+            a.point, {b.point.x, a.point.y}, b.point, {a.point.x, b.point.y}};
+        addEntity(ctx, cloud(ring, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
     }
 
     static cmd::Task fromObject(cmd::CommandContext& ctx, double len) {
@@ -208,7 +249,8 @@ private:
         auto rev = co_await ctx.getKeyword("Reverse direction [Yes/No] <No>", std::move(ko));
         if (!rev.ok())
             co_return;
-        addEntity(ctx, cloud(ring->pts, ring->corners, len, rev.keyword == "Yes"));
+        addEntity(ctx, cloud(ring->pts, ring->corners, len, rev.keyword == "Yes",
+                             settingNumber(ctx, kCalligraphy, 0) > 0));
     }
 };
 
