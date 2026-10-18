@@ -11,7 +11,7 @@ tbcad_add_library(modify_commands
     src/trim.cpp
     src/util.cpp
     src/ui.cpp
-  DEPENDS tbcad::ui tbcad::cmd tbcad::modify tbcad::geom tbcad::core tbcad::text)
+  DEPENDS tbcad::ui tbcad::cmd tbcad::modify tbcad::geom tbcad::core tbcad::text tbcad::blocks)
 tbcad_add_tests(modify_commands
   SOURCES
     tests/main.cpp

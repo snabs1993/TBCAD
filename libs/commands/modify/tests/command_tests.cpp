@@ -808,3 +808,39 @@ TEST_CASE("TRIM Remove deletes the objects picked") {
     CHECK(f.doc.contains(edge));
     CHECK_FALSE(f.doc.contains(stray));
 }
+
+TEST_CASE("DIVIDE and MEASURE with the Block option insert a block along the object") {
+    Fixture f;
+    BlockId chair;
+    {
+        auto tx = f.doc.begin("block");
+        chair = tx.addBlock(BlockDef{.name = "Chair"}).value();
+        tx.commit();
+    }
+    EntityId l = f.add(LineData{{0, 0}, {0, 12}});  // runs along +Y
+    f.host.run("DIVIDE", {ScriptItem::pick(l, {0, 6}), "Block", "Chair", "Yes", "4"});
+    std::vector<const InsertData*> inserts;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            inserts.push_back(i);
+    });
+    REQUIRE(inserts.size() == 3);
+    for (const InsertData* i : inserts) {
+        CHECK(i->block == chair);
+        CHECK(i->rotation == doctest::Approx(kPi / 2));  // turned along the line
+        CHECK(i->position.x == doctest::Approx(0));
+    }
+    CHECK(f.count(EntityKind::Point) == 0);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Insert) == 0);
+
+    f.host.run("MEASURE", {ScriptItem::pick(l, {0, 1}), "Block", "Chair", "No", "5"});
+    inserts.clear();
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            inserts.push_back(i);
+    });
+    REQUIRE(inserts.size() == 2);
+    for (const InsertData* i : inserts)
+        CHECK(i->rotation == doctest::Approx(0));
+}

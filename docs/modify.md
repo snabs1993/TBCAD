@@ -106,6 +106,8 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
 | `OVERKILL` | | Deletes duplicates (lines, circles, arcs, points, ellipses, polylines, also reversed) and merges overlapping or touching collinear lines and arcs of one circle. Settings: `overkill.tolerance`, `overkill.ignoreproperties`, `overkill.overlapping`, `overkill.endtoend`. |
 | `PEDIT` | `PE` | Turn a line or arc into a polyline, Close/Open, Join, Width, Reverse, Spline (polyline to spline entity) and Decurve (spline to polyline). Per-vertex editing is not included yet. |
 
+DIVIDE and MEASURE also take the option **Block**: they insert a named block at each division instead of a point, turned along the object when you answer Yes to "Align block with object?".
+
 The algorithms live in `libs/modify/extra.h`. POINT objects made by DIVIDE and MEASURE take the layer of the source object.
 
 ### Batch 2 (Q71m)
