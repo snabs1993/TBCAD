@@ -139,8 +139,17 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 ++perLayer[l == drawing.layers.end() ? std::string("?") : l->second.name];
             }
         if (layersWith != 0 || !perLayer.empty()) {
-            std::string t = "transparency: " + std::to_string(layersWith) +
-                            " layers carry it; entities with their own transparency per layer:";
+            std::string t = "transparency: " + std::to_string(layersWith) + " layers carry it";
+            std::size_t listed = 0;
+            for (const auto& [h, l] : drawing.layers)
+                if (l.transparency != 0 && listed++ < 40) {
+                    char hx[16];
+                    std::snprintf(hx, sizeof hx, "%llX",
+                                  static_cast<unsigned long long>(l.transparency));
+                    t += std::string(listed == 1 ? " [" : ", ") + l.name + "=" + hx;
+                }
+            t += (listed ? "]" : "") +
+                 std::string("; entities with their own transparency per layer:");
             std::size_t shown = 0;
             for (const auto& [name, c] : perLayer)
                 if (shown++ < 12)
