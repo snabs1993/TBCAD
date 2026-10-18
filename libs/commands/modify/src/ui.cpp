@@ -31,6 +31,8 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Group", "GROUP", "modify.group", "Ctrl+G");
     ui.addMenuItem("Modify/Ungroup", "UNGROUP", "modify.ungroup", "Ctrl+Shift+G");
     ui.addMenuItem("Modify/Draw Order", "DRAWORDER", "modify.draworder", "");
+    ui.addMenuItem("Modify/Text to Front", "TEXTTOFRONT", "modify.texttofront", "");
+    ui.addMenuItem("Modify/Hatch to Back", "HATCHTOBACK", "modify.hatchtoback", "");
     ui.addMenuItem("Draw/Divide", "DIVIDE", "draw.divide", "");
     ui.addMenuItem("Draw/Measure", "MEASURE", "draw.measure", "");
 }
