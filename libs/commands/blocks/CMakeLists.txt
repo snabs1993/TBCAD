@@ -41,6 +41,7 @@ tbcad_add_tests(block_cmds
     tests/bedit_command_tests.cpp
     tests/insert_command_tests.cpp
     tests/snap_tests.cpp
+    tests/snap_property_tests.cpp
     tests/array_command_tests.cpp
     tests/dynamic_command_tests.cpp
     tests/assembly_command_tests.cpp
