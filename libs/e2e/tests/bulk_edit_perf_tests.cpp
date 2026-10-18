@@ -69,8 +69,10 @@ struct Big {
         auto t = std::chrono::steady_clock::now();
         for (const char* l : lines)
             core->submitText(l);
+        const double cmdMs = ms(t);
         core->updateFrame();
         const double run = ms(t);
+        std::printf("  (%s: command %.0f ms, first frame %.0f ms)\n", label, cmdMs, run - cmdMs);
         // What the first frame left unbuilt is built in the frames after it.
         auto ts = std::chrono::steady_clock::now();
         int frames = 0;

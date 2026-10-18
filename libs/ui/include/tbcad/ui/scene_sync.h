@@ -72,6 +72,7 @@ private:
     bool lazyOk(std::size_t count) const;
     void queueLazy(const std::vector<const Entity*>& list);
     std::optional<std::uint32_t> takePending(EntityId id);
+    void dropPending(const std::vector<EntityId>& ids);
     std::uint32_t orderFor(EntityId id);
     void buildPending(PendingRec& rec);
     void compactPending();

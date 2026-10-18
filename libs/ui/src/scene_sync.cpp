@@ -131,6 +131,26 @@ std::optional<std::uint32_t> SceneSync::takePending(EntityId id) {
     return it->order;
 }
 
+// Many objects went away at once: when both lists are in id order, one pass marks them.
+void SceneSync::dropPending(const std::vector<EntityId>& ids) {
+    if (ids.size() < 64 || !std::is_sorted(ids.begin(), ids.end())) {
+        for (EntityId id : ids)
+            (void)takePending(id);
+        return;
+    }
+    auto p = pending_.begin();
+    for (EntityId id : ids) {
+        while (p != pending_.end() && p->id < id)
+            ++p;
+        if (p == pending_.end())
+            break;
+        if (p->id == id && !p->dead) {
+            p->dead = true;
+            ++pendingDead_;
+        }
+    }
+}
+
 void SceneSync::compactPending() {
     if (pendingDead_ == 0)
         return;
@@ -366,8 +386,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     if (!scene_.removeAllOf(removed))
         scene_.removeMany(removed);
     if (!pending_.empty())
-        for (EntityId id : removed)
-            (void)takePending(id);
+        dropPending(removed);
     std::vector<const Entity*> redraw;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
