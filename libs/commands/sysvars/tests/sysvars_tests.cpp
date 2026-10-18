@@ -119,3 +119,41 @@ TEST_CASE("ADDSELECTED copies the layer and properties of an object to the curre
     CHECK(f.host.undo());
     CHECK(f.doc.header().currentLayer != walls);
 }
+
+namespace {
+struct ViewHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    cmd::ViewState state{{10, 20}, 0.5, {800, 600}};
+    cmd::ViewState view() const override { return state; }
+    void setView(const cmd::ViewState& v) override { state = v; }
+};
+}  // namespace
+
+TEST_CASE("VIEW saves, restores, lists and deletes named views") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    ViewHost host(doc, reg);
+    host.run("VIEW", {"Save", "Plan"});
+    CHECK(doc.header().custom.count("tbcad.view.Plan") == 1);
+    host.state.center = {999, 999};
+    host.state.scale = 7;
+    host.run("VIEW", {"Restore", "Plan"});
+    CHECK(host.state.center.x == doctest::Approx(10));
+    CHECK(host.state.center.y == doctest::Approx(20));
+    CHECK(host.state.scale == doctest::Approx(0.5));
+    host.run("NAMEDVIEW", {"List"});
+    CHECK(host.logContains("Plan"));
+    host.run("VIEW", {"Restore", "Nope"});
+    CHECK(host.logContains("no view named"));
+    host.run("VIEW", {"Delete", "Plan"});
+    CHECK(doc.header().custom.count("tbcad.view.Plan") == 0);
+    CHECK(host.undo());
+    CHECK(doc.header().custom.count("tbcad.view.Plan") == 1);
+}
+
+TEST_CASE("TIME shows the current date and time") {
+    Fixture f;
+    f.host.run("TIME", {});
+    CHECK(f.host.logContains("Current time: 20"));
+}

@@ -330,3 +330,14 @@ TEST_CASE("CAL calculates expressions and remembers the last result as ans") {
     CHECK(f.reg.find("QC") == f.reg.find("CAL"));
     CHECK_FALSE(host.undoStack().canUndo());
 }
+
+TEST_CASE("RECOVER removes broken objects without asking") {
+    Fixture f;
+    f.add(line({0, 0}, {10, 0}));
+    EntityId zero = f.add(line({5, 5}, {5, 5}));
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("RECOVER", {});
+    CHECK(host.logContains("Removed 1"));
+    CHECK_FALSE(f.doc.contains(zero));
+    CHECK(f.doc.modelSpaceCount() == 1);
+}

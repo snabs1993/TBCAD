@@ -1,5 +1,6 @@
 // COLOR, LWEIGHT, LTSCALE, UNITS, STATUS, REGEN and REDRAW. The first three set what new objects
 // get (the "current" properties); every change is one undo step.
+#include <ctime>
 #include <string>
 
 #include "commands.h"
@@ -190,6 +191,25 @@ public:
     }
 };
 
+class TimeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TIME"; }
+    std::string_view description() const override { return "Show the current date and time"; }
+    Task run(CommandContext& ctx) override {
+        const std::time_t now = std::time(nullptr);
+        std::tm tmv{};
+#ifdef _WIN32
+        localtime_s(&tmv, &now);
+#else
+        localtime_r(&now, &tmv);
+#endif
+        char buf[64];
+        std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M:%S", &tmv);
+        ctx.message(std::string("Current time: ") + buf);
+        co_return;
+    }
+};
+
 // The display always shows the current drawing; these exist so the usual habit still works.
 class RefreshCommand final : public cmd::Command {
 public:
@@ -220,10 +240,12 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LtscaleCommand>());
     (void)registry.add(std::make_unique<UnitsCommand>());
     (void)registry.add(std::make_unique<StatusCommand>());
+    (void)registry.add(std::make_unique<TimeCommand>());
     (void)registry.add(std::make_unique<RefreshCommand>("REGEN", "RE"));
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeSetvarCommand());
+    (void)registry.add(makeViewCommand());
     (void)registry.add(makeAddSelectedCommand());
 }
 
