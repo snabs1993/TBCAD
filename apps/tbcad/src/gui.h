@@ -73,7 +73,7 @@ public:
     // Drawing-area background: the theme's, or the `ui.viewportBackground` setting (#RRGGBB).
     Rgba viewportBackground() const;
     // Rendering preferences owned by the Gui (View menu).
-    bool lineweights() const { return lineweights_; }
+    bool lineweights() const;
 
     // Files dropped on the window; opened at the start of the next frame.
     void queueDroppedFile(std::string path);
@@ -161,7 +161,6 @@ private:
 
     ui::ThemeMode themeMode_ = ui::ThemeMode::Dark;
     ui::Theme theme_ = ui::darkTheme();
-    bool lineweights_ = true;
     bool exitRequested_ = false;
     bool showAbout_ = false;
     bool showNotices_ = false;

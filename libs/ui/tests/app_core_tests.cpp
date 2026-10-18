@@ -557,11 +557,25 @@ TEST_CASE("host settings are typed by what is stored - toggles live in the UI re
 
     UiRegistry ui;
     f.core->registerBuiltinUi(ui);
-    REQUIRE(ui.statusToggles().size() == 6);
+    REQUIRE(ui.statusToggles().size() == 8);
     CHECK(ui.statusToggles()[0].label == "SNAP");
     CHECK(ui.statusToggles()[0].get());
     ui.statusToggles()[0].set(false);
     CHECK(f.core->setting("drafting.snap") == "0");
+    // DYN and LWT are on until switched off, and flip their settings.
+    const auto find = [&](const char* id) -> const StatusToggle& {
+        for (const auto& t : ui.statusToggles())
+            if (t.id == id)
+                return t;
+        FAIL("no such toggle");
+        return ui.statusToggles()[0];
+    };
+    CHECK(find("dyn").get());
+    CHECK(find("lwt").get());
+    find("dyn").set(false);
+    find("lwt").set(false);
+    CHECK(f.core->setting("drafting.dynInput") == "0");
+    CHECK(f.core->setting("view.lineweights") == "0");
 }
 
 TEST_CASE("user aliases are loaded from the settings folder") {

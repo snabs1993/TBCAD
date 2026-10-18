@@ -2050,10 +2050,10 @@ void AppCore::notifySessionHooks() {
 }
 
 void AppCore::registerBuiltinUi(UiRegistry& ui) {
-    auto toggle = [&](const char* id, const char* label, const char* key) {
+    auto toggle = [&](const char* id, const char* label, const char* key, bool fallback = false) {
         std::string k = key;
         ui.addStatusToggle(
-            id, label, [this, k] { return settings_.getBool(k, false); },
+            id, label, [this, k, fallback] { return settings_.getBool(k, fallback); },
             [this, k](bool on) {
                 settings_.setBool(k, on);
                 // Ortho and polar tracking exclude each other.
@@ -2068,6 +2068,8 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     toggle("ortho", "ORTHO", "drafting.ortho");
     toggle("polar", "POLAR", "drafting.polar");
     toggle("osnap", "OSNAP", "drafting.osnap");
+    toggle("dyn", "DYN", "drafting.dynInput", true);
+    toggle("lwt", "LWT", "view.lineweights", true);
     // Active-only mode lives in the drawing (Header::activeOnly); the command that owns it is
     // registered by the layers module, so this is a no-op in builds without it.
     ui.addStatusToggle(
