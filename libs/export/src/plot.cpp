@@ -6,6 +6,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "tbcad/geom/entity.h"
@@ -179,19 +180,23 @@ struct Builder {
     }
     Vec2 pt(Vec2 p) const { return layout.toPaper(p); }
 
-    void item(const DisplayItem& it, std::vector<PlotPrimitive>& out) const {
+    // `layer` stamps the primitives made from this item (see PlotStyle::layer).
+    void item(const DisplayItem& it, std::vector<PlotPrimitive>& out,
+              std::uint32_t layer = 0) const {
         if (const auto* pl = std::get_if<DisplayPolyline>(&it)) {
             if (pl->pts.size() < 2)
                 return;
             PlotPath path;
             path.closed = pl->closed;
             path.style = style(pl->style);
+            path.style.layer = layer;
             path.pts.reserve(pl->pts.size());
             for (const Vec2& p : pl->pts)
                 path.pts.push_back(pt(p));
             out.emplace_back(std::move(path));
         } else if (const auto* f = std::get_if<DisplayFill>(&it)) {
             PlotFill fill;
+            fill.layer = layer;
             fill.color = color(f->style.color);
             for (const auto& ring : f->rings) {
                 if (ring.size() < 3)
@@ -207,6 +212,7 @@ struct Builder {
         } else if (const auto* d = std::get_if<DisplayPoints>(&it)) {
             PlotDots dots;
             dots.style = style(d->style);
+            dots.style.layer = layer;
             dots.style.dashMm.clear();
             for (const Vec2& p : d->pts)
                 dots.pts.push_back(pt(p));
@@ -407,6 +413,27 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         }
     }
 
+    // Layer numbers for the PDF layer list; bound external reference layers ("name$0$layer") are
+    // written "name|layer".
+    std::unordered_map<LayerId, std::uint32_t> layerNumbers;
+    auto layerOf = [&](LayerId li) -> std::uint32_t {
+        if (auto it = layerNumbers.find(li); it != layerNumbers.end())
+            return it->second;
+        std::uint32_t n = 0;
+        if (const Layer* layer = doc.layer(li)) {
+            std::string name = layer->name;
+            for (std::size_t at; (at = name.find("$0$")) != std::string::npos;)
+                name.replace(at, 3, "|");
+            auto found = std::find(sheet.layerNames.begin(), sheet.layerNames.end(), name);
+            if (found == sheet.layerNames.end()) {
+                sheet.layerNames.push_back(std::move(name));
+                found = sheet.layerNames.end() - 1;
+            }
+            n = static_cast<std::uint32_t>(found - sheet.layerNames.begin()) + 1;
+        }
+        layerNumbers[li] = n;
+        return n;
+    };
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
         if (!e || !plottable(doc, *e) || (skip && skip(*e)))
@@ -422,6 +449,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             // Keep the arc hint: PDF and SVG draw these as Béziers / arcs, not chords.
             PlotArc arc;
             arc.style = b.style(ds);
+            arc.style.layer = layerOf(e->common.layer);
             if (const auto* c = std::get_if<CircleData>(&e->data)) {
                 arc.center = b.pt(c->center);
                 arc.radius = c->radius * lay.paperPerUnit;
@@ -450,7 +478,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             if (li != LayerId{} && li != e->common.layer &&
                 (!doc.effective(li).visible() || (lay.layerHidden && lay.layerHidden(li))))
                 continue;
-            b.item(it, sheet.prims);
+            b.item(it, sheet.prims, layerOf(li != LayerId{} ? li : e->common.layer));
         }
     }
     if (s.traceColors)

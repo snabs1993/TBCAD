@@ -78,6 +78,11 @@ public:
     void drawImage(std::shared_ptr<const ImageData> image, double blx, double bly, double brx,
                    double bry, double tlx, double tly, double opacity = 1.0);
 
+    // Everything drawn between beginLayer and endLayer belongs to an optional-content group made
+    // with PdfDocument::addLayer (a layer the viewer can switch off). Not nested.
+    void beginLayer(int layer);
+    void endLayer();
+
     // Raw (uncompressed) content stream, mainly for tests.
     const std::string& content() const { return content_; }
 
@@ -95,7 +100,8 @@ private:
         std::shared_ptr<const ImageData> data{};
         double opacity = 1;
     };
-    std::vector<Pic> pics_{};  // /Im<i> and /Gs<i> of the page resources
+    std::vector<Pic> pics_{};        // /Im<i> and /Gs<i> of the page resources
+    std::vector<int> layersUsed_{};  // /L<i> of the page resources
 };
 
 class PdfDocument {
@@ -105,6 +111,10 @@ public:
     // output is deterministic.
     void setCreationDate(std::string_view pdfDate) { creationDate_ = pdfDate; }
     void setCompression(bool enabled) { compress_ = enabled; }
+
+    // A layer (optional-content group) shown in the viewer's layer list, in the order added.
+    // Returns its number for Page::beginLayer.
+    int addLayer(std::string_view name);
 
     Page& addPage(double widthMm, double heightMm);
     size_t pageCount() const { return pages_.size(); }
@@ -117,6 +127,7 @@ private:
     std::string creator_ = "TBCAD";
     std::string creationDate_;
     bool compress_ = true;
+    std::vector<std::string> layerNames_;
     std::deque<Page> pages_;  // deque: addPage never invalidates earlier references
 };
 

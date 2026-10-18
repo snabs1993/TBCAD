@@ -20,6 +20,15 @@ void Page::nums(std::initializer_list<double> values, std::string_view opName) {
     content_ += '\n';
 }
 
+void Page::beginLayer(int layer) {
+    if (std::find(layersUsed_.begin(), layersUsed_.end(), layer) == layersUsed_.end())
+        layersUsed_.push_back(layer);
+    op("/OC /L" + std::to_string(layer) + " BDC");
+}
+void Page::endLayer() {
+    op("EMC");
+}
+
 void Page::save() {
     op("q");
 }
