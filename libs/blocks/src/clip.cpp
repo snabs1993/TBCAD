@@ -97,7 +97,7 @@ std::vector<Vec2> clipHalfPlane(const std::vector<Vec2>& ring, Vec2 a, Vec2 b) {
 double signedArea(const std::vector<Vec2>& p) {
     double s = 0;
     for (std::size_t i = 0; i < p.size(); ++i)
-        s += cross(p[i], p[(i + 1) % p.size()]);
+        s += cross(p[i] - p[0], p[(i + 1) % p.size()] - p[0]);
     return s / 2;
 }
 

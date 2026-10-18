@@ -31,8 +31,8 @@ struct Edge {
 double signedArea(const Ring& r) {
     double a = 0;
     for (std::size_t i = 0; i < r.size(); ++i) {
-        const Vec2& p = r[i];
-        const Vec2& q = r[(i + 1) % r.size()];
+        const Vec2 p = r[i] - r[0];
+        const Vec2 q = r[(i + 1) % r.size()] - r[0];
         a += p.x * q.y - q.x * p.y;
     }
     return a / 2;

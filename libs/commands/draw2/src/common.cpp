@@ -60,7 +60,7 @@ void saveSetting(cmd::CommandContext& ctx, const char* key, double value) {
 double ringArea(const std::vector<Vec2>& ring) {
     double a = 0;
     for (std::size_t i = 0; i < ring.size(); ++i)
-        a += cross(ring[i], ring[(i + 1) % ring.size()]);
+        a += cross(ring[i] - ring[0], ring[(i + 1) % ring.size()] - ring[0]);
     return a / 2;
 }
 

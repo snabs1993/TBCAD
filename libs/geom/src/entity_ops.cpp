@@ -644,13 +644,14 @@ double signedArea(const PolylineData& pl) {
     if (n < 3 && !(n == 2 && pl.v[0].bulge != 0))
         return 0;
     double a = 0;
+    const Vec2 o = pl.v[0].p;  // measured from the first vertex: survey-sized coordinates
     for (int i = 0; i < n; ++i) {
         const PolyVertex& p = pl.v[static_cast<std::size_t>(i)];
         const PolyVertex& q = pl.v[static_cast<std::size_t>((i + 1) % n)];
         // Segment i exists for open polylines only up to n-2, but the area closes the shape;
         // the closing chord has no bulge for an open polyline.
         double bulge = (i == n - 1 && !pl.closed) ? 0.0 : p.bulge;
-        a += 0.5 * cross(p.p, q.p);
+        a += 0.5 * cross(p.p - o, q.p - o);
         if (bulge != 0) {
             if (auto arc = bulgeArc(p.p, q.p, bulge)) {
                 double seg = 0.5 * arc->radius * arc->radius * (arc->sweep - std::sin(arc->sweep));
