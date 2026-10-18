@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -140,6 +141,8 @@ public:
                 if (e.offset > 0 && frameHandle(e.offset) == e.handle)
                     anchors_.push_back(e.offset);
             std::sort(anchors_.begin(), anchors_.end());
+            walked_.reserve(map.size() + map.size() / 8);
+            walkedList_.reserve(map.size() + map.size() / 8);
             const auto tWalk = std::chrono::steady_clock::now();
             walkStream();
             out_.walkNotes.push_back(
@@ -190,14 +193,14 @@ public:
                 ok = true;
             }
             // The search probes up to 16000 places per object. Neighbouring objects probe the
-            // same places, so on a file of moderate size every place is looked at once
-            // (cached); on a very large file the search backs off to every 64th object after 60
-            // misses in a row.
-            const bool cached = file_.size() <= kProbeCacheMax;
+            // same places, so every place is looked at once (cached in blocks, only where a search
+            // went). Only when the cache would pass its memory budget does the search back off to
+            // every 64th object after 60 misses in a row.
+            const bool cached = !cacheFull_;
             const bool search = cached || searchMisses_ < 60 || ++searchSkipped_ % 64 == 0;
             for (std::int64_t d = 1; !ok && search && d <= 8192; ++d) {
                 for (std::int64_t sd : {d, -d}) {
-                    if (frameHandleCached(e.offset + sd, cached) == e.handle) {
+                    if (frameHandleIs(e.offset + sd, e.handle, cached)) {
                         found = sd;
                         ok = true;
                         break;
@@ -238,17 +241,38 @@ private:
 
     bool quiet_ = false;
     bool framed_ = true;
-    static constexpr std::size_t kProbeCacheMax = 12u * 1024 * 1024;
-    std::vector<std::uint64_t> probeCache_;  // frameHandle per offset, ~0 = not looked at yet
-    std::uint64_t frameHandleCached(std::int64_t offset, bool cached) {
+    // frameHandle per place, as the low 32 bits, in blocks allocated where the search goes.
+    static constexpr std::size_t kProbeBlock = 4096;
+    static constexpr std::size_t kProbeBudgetBlocks = 12288;  // 192 MB
+    std::vector<std::unique_ptr<std::uint32_t[]>> probeBlocks_;
+    std::size_t probeBlocksUsed_ = 0;
+    bool cacheFull_ = false;
+    bool frameHandleIs(std::int64_t offset, std::uint64_t handle, bool cached) {
         if (!cached || offset < 0 || static_cast<std::size_t>(offset) >= file_.size())
-            return frameHandle(offset);
-        if (probeCache_.empty())
-            probeCache_.assign(file_.size(), ~std::uint64_t{0});
-        std::uint64_t& slot = probeCache_[static_cast<std::size_t>(offset)];
-        if (slot == ~std::uint64_t{0})
-            slot = frameHandle(offset);
-        return slot;
+            return frameHandle(offset) == handle;
+        if (probeBlocks_.empty())
+            probeBlocks_.resize(file_.size() / kProbeBlock + 1);
+        const auto at = static_cast<std::size_t>(offset);
+        auto& block = probeBlocks_[at / kProbeBlock];
+        if (!block) {
+            if (probeBlocksUsed_ >= kProbeBudgetBlocks) {
+                cacheFull_ = true;
+                return frameHandle(offset) == handle;
+            }
+            block = std::make_unique<std::uint32_t[]>(kProbeBlock);
+            std::fill_n(block.get(), kProbeBlock, 0xFFFFFFFFu);
+            ++probeBlocksUsed_;
+        }
+        std::uint32_t& slot = block[at % kProbeBlock];
+        if (slot == 0xFFFFFFFFu) {
+            const std::uint64_t h = frameHandle(offset);
+            slot = static_cast<std::uint32_t>(h);
+            if (slot == 0xFFFFFFFFu)
+                slot = 0;  // a handle that collides with the marker is treated as no frame
+            return h == handle;
+        }
+        return slot != 0 && slot == static_cast<std::uint32_t>(handle) &&
+               frameHandle(offset) == handle;
     }
     int searchSkipped_ = 0;
     int searchMisses_ = 0;  // objects in a row whose frame was not found near the map's place
