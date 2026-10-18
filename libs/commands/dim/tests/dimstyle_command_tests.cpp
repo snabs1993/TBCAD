@@ -201,6 +201,29 @@ TEST_CASE("MLEADERALIGN lines landing ends up in a column or a row") {
     CHECK(entityAs<MLeaderData>(*f.doc.find(ids[1]))->landing.x == doctest::Approx(30));
 }
 
+TEST_CASE("MLEADERCOLLECT merges notes into the first multileader") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", ScriptItem::enter(), "Text", "a"});
+    f.host->run("MLEADER", {"0,20", "30,25", ScriptItem::enter(), "Text", "b"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    REQUIRE(ids.size() == 2);
+    f.host->run("MLEADERCOLLECT", {ScriptItem::select(ids), ScriptItem::enter()});
+    std::size_t n = 0;
+    f.doc.forEachEntity([&](const Entity&) { ++n; });
+    CHECK(n == 1);
+    const auto* m = entityAs<MLeaderData>(*f.doc.find(ids[0]));
+    REQUIRE(m);
+    CHECK(m->lines.size() == 2);
+    CHECK(m->utf8 == "a\\Pb");
+    CHECK(m->lines[1].back().x == doctest::Approx(m->landing.x));
+    CHECK(m->lines[1].front().y == doctest::Approx(20));  // the arrow stays put
+    CHECK(f.host->undo());
+    n = 0;
+    f.doc.forEachEntity([&](const Entity&) { ++n; });
+    CHECK(n == 2);
+}
+
 TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first dimension") {
     Fixture f;
     f.host->setView({{0, 0}, 10.0, {900, 600}});

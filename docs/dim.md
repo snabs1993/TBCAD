@@ -116,7 +116,7 @@ point) or **None**. It uses the current dimension style for arrow and text. The 
 multileader object (`MLeader`): all leader lines, the landing point where they meet, a dogleg of one arrow
 length to the note, and the note or block at its end. It moves, copies, scales, grips and erases as one
 object, and its lines, landing point and note each have a grip. **MLEADERALIGN** (MLA) lines up the landing
-ends of several multileaders (or plain leaders) in a column or a row with a reference one. Everything from
+ends of several multileaders (or plain leaders) in a column or a row with a reference one. **MLEADERCOLLECT** (MLC) merges several multileaders with a text note into the first one: every arrow stays, all lines end at its landing and the notes are joined one per line (block notes are left alone). Everything from
 one MLEADER run is one undo step. To DXF a multileader is written as one LEADER per line, a line for the
 dogleg and the note as MTEXT (or a block as INSERT): other programs show it, but it is no longer one object
 there.
