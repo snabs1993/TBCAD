@@ -418,3 +418,9 @@ TEST_CASE("XCLIP Invert toggles, shows the outside, survives the file and DXF, D
     f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Delete"});
     CHECK_FALSE(entityAs<InsertData>(*f.doc.find(ins))->clipInvert);
 }
+
+TEST_CASE("EXTERNALREFERENCES opens the External References panel") {
+    Fixture f;
+    CHECK(f.reg.find("EXTERNALREFERENCES"));
+    CHECK(f.reg.find("ER") == f.reg.find("EXTERNALREFERENCES"));
+}

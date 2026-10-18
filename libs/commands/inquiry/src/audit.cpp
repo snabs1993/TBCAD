@@ -68,6 +68,21 @@ public:
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
+        if (recover_) {
+            // RECOVER <file> opens that drawing first and repairs it; Enter repairs this one.
+            cmd::StringOptions so;
+            so.allowEmpty = true;
+            auto f = co_await ctx.getString("File to recover (Enter for the current drawing)", so);
+            if (!f.ok())
+                co_return;
+            std::string path = cmd::trim(f.text);
+            if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
+                path = path.substr(1, path.size() - 2);
+            if (!path.empty()) {
+                ctx.host().requestUi("recoverpath:" + path);
+                co_return;
+            }
+        }
         Document& doc = ctx.doc();
         std::vector<EntityId> bad;
         std::vector<std::string> why;

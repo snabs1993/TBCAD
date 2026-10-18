@@ -60,6 +60,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXUnloadCommand());
     (void)registry.add(makeXClipCommand());
     (void)registry.add(makeXListCommand());
+    (void)registry.add(makeXrefPaletteCommand());
     (void)registry.add(makeXPathCommand());
     (void)registry.add(makeXRelinkCommand());
     (void)registry.add(makeBlockCountCommand());
@@ -67,6 +68,8 @@ void registerCommands(cmd::Registry& registry) {
 
 void registerUi(ui::UiRegistry& ui) {
     registerBlockPanel(ui);
+    registerXrefPanel(ui);
+    ui.addMenuItem("Insert/External References Palette", "EXTERNALREFERENCES", "block.xrefpanel");
     ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make", "B");
     ui.addMenuItem("Draw/Block/Insert Block...", "INSERT", "block.insert", "I");
     ui.addMenuItem("Draw/Block/Define Attribute...", "ATTDEF", "block.attdef");

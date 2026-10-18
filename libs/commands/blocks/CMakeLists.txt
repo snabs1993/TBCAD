@@ -18,7 +18,8 @@ set(_block_cmd_sources
   src/palette.cpp
   src/snap_provider.cpp
   src/xclip_command.cpp
-  src/xref_commands.cpp)
+  src/xref_commands.cpp
+  src/xref_panel.cpp)
 
 tbcad_add_library(block_cmds
   SOURCES ${_block_cmd_sources}

@@ -121,6 +121,8 @@ private:
     bool optionChips();
     void cursorHud(const ViewportRect& rect);
     void gripMenu(const ViewportRect& rect);
+    void repairAfterOpen();
+    bool recoverAfterOpen_ = false;  // RECOVER <file>: repair the drawing once it is open
     void logWindow();
     std::string actionLabel(const std::string& action) const;
     void quickProperties(const ViewportRect& rect);
