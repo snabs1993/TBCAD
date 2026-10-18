@@ -132,3 +132,21 @@ TEST_CASE("QDIM dimensions every key point in one chain") {
     CHECK(f.host->undo());
     CHECK(f.dims().empty());
 }
+
+TEST_CASE("DIMEDIT New replaces the text and Home restores it") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    REQUIRE(f.host->run("DIMEDIT", {"New", "TYP", ScriptItem::select({id}), ScriptItem::enter()})
+                .finished);
+    CHECK(f.dims()[0]->textOverride == "TYP");
+    REQUIRE(
+        f.host->run("DIMEDIT", {"Home", ScriptItem::select({id}), ScriptItem::enter()}).finished);
+    CHECK(f.dims()[0]->textOverride.empty());
+    CHECK(f.host->undo());
+    CHECK(f.dims()[0]->textOverride == "TYP");
+}

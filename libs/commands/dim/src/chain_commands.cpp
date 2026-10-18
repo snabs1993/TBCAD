@@ -359,7 +359,63 @@ public:
     }
 };
 
+class EditCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMEDIT"; }
+    std::vector<std::string> defaultAliases() const override { return {"DED"}; }
+    std::string_view description() const override {
+        return "Replace the text of dimensions, or return them to the measured text and place";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Home", "New"};
+        ko.defaultKeyword = "Home";
+        auto k = co_await ctx.getKeyword("Enter type of dimension editing [Home/New] <Home>", ko);
+        if (!k.ok())
+            co_return;
+        const bool home = k.keyword == "Home";
+        std::string text;
+        if (!home) {
+            cmd::StringOptions so;
+            so.defaultValue = "<>";
+            auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
+            if (!s.ok())
+                co_return;
+            text = s.text == "<>" ? std::string() : s.text;
+        }
+        cmd::SelectionOptions so;
+        so.allowPreselection = false;
+        so.filter = isAnyDim;
+        auto sel = co_await ctx.getSelection("Select dimensions", so);
+        if (!sel.ok())
+            co_return;
+        ctx.setUndoLabel("DIMEDIT");
+        for (EntityId id : sel.ids) {
+            auto r = ctx.tx().modify(id, [&](Entity& ent) {
+                auto* d = entityAs<DimensionData>(ent);
+                if (!d)
+                    return;
+                if (home) {
+                    d->textPosUser = false;
+                    d->textOverride.clear();
+                } else {
+                    d->textOverride = text;
+                }
+                dim::refresh(ctx.doc(), *d);
+            });
+            if (!r)
+                ctx.message(r.error().message);
+        }
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeEditCommand() {
+    return std::make_unique<EditCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeContinueCommand() {
     return std::make_unique<ChainCommand>("DIMCONTINUE", "DCO", false,

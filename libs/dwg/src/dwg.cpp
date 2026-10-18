@@ -282,6 +282,40 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 report.info(code::kSkippedObject, frz + " (" + std::to_string(nf) + ")");
                 report.info(code::kSkippedObject, hid + " (" + std::to_string(nh) + ")");
             }
+            {
+                // Layers that carry an extension dictionary, and the state of xref layers.
+                std::string xl = "layer extension dictionaries:";
+                std::size_t withDict = 0, shown = 0;
+                std::map<std::string, std::size_t> names;
+                for (const auto& [lh, l] : drawing.layers) {
+                    const auto xd = drawing.dictionaries.find(l.xdic);
+                    if (xd == drawing.dictionaries.end())
+                        continue;
+                    ++withDict;
+                    for (const auto& [nm, th] : xd->second) {
+                        ++names[nm];
+                        if (shown++ < 40) {
+                            const auto ty = drawing.rawType.find(th);
+                            xl += " " + l.name + "[" + nm + "]" + std::to_string(th) + ":" +
+                                  (ty == drawing.rawType.end() ? std::string("absent")
+                                                               : std::to_string(ty->second));
+                        }
+                    }
+                }
+                report.info(code::kSkippedObject,
+                            xl + " (" + std::to_string(withDict) + " layers with one)");
+                std::string nl = "layer extension dictionary entry names:";
+                for (const auto& [nm, c] : names)
+                    nl += " " + nm + " x" + std::to_string(c);
+                report.info(code::kSkippedObject, nl);
+                std::string xr = "xref layers (name flags colour):";
+                std::size_t k = 0;
+                for (const auto& [lh, l] : drawing.layers)
+                    if (l.name.find('|') != std::string::npos && k++ < 60)
+                        xr += " " + l.name + " " + std::to_string(l.flags) + (l.frozen ? "F" : "") +
+                              (l.plot ? "" : "N") + " " + std::to_string(l.color);
+                report.info(code::kSkippedObject, xr + " (" + std::to_string(k) + ")");
+            }
             int n = 0;
             for (const detail::EntityRec& e : drawing.entities) {
                 if (e.dxfType != "VIEWPORT" || ++n > 40)
