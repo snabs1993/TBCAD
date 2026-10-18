@@ -211,6 +211,9 @@ public:
     void panPixels(double dx, double dy);
     void zoomExtents();
     BBox2 drawingExtents() const;
+    BBox2 computeDrawingExtents() const;
+    // Where the time of the last file open went: step name and milliseconds (gate-file prints it).
+    const std::vector<std::pair<std::string, double>>& openTimings() const { return openTimings_; }
     void zoomToBox(const BBox2& box);
     void zoomToEntities(const std::vector<EntityId>& ids);
     // Tessellate for the current zoom when it changed enough; call once per frame.
@@ -408,6 +411,13 @@ private:
     std::uint64_t nextDocId_ = 1;
     Session* session_ = nullptr;  // slots_[active_]
     std::uint64_t generation_ = 0;
+    // drawingExtents() walks every object; open asks for it twice for the same document state.
+    mutable struct {
+        const void* session = nullptr;
+        std::uint64_t revision = 0;
+        BBox2 box{};
+    } extentsCache_{};
+    std::vector<std::pair<std::string, double>> openTimings_;
 
     render::Camera2D camera_{};
     std::string activeLayout_{};

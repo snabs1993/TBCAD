@@ -214,6 +214,8 @@ int App::runGateFile() {
     std::printf("file: %s\n", options_.gateFile.c_str());
     std::printf("open: %.0f ms (%zu entities in model space)\n", openMs,
                 core.document().modelSpaceCount());
+    for (const auto& [name, ms] : core.openTimings())
+        std::printf("  %-32s %8.0f ms\n", name.c_str(), ms);
 
     profileStart();
     double gpuWait = 0;
