@@ -144,6 +144,19 @@ public:
                     line << " (drawn on " << drawn->name << ")";
                 line << ": " << best << " away, segment length " << bestLen << "\n";
                 emit(line.str());
+                {
+                    std::ostringstream t;
+                    t << "    transparency: object ";
+                    if (e.common.transparency == kTransparencyByLayer)
+                        t << "ByLayer";
+                    else if (e.common.transparency == kTransparencyByBlock)
+                        t << "ByBlock";
+                    else
+                        t << int(e.common.transparency) << "%";
+                    t << ", layer " << (own ? int(own->transparency) : 0) << "%, resolved "
+                      << geom::resolveTransparency(ctx.doc(), e, dc) << "%\n";
+                    emit(t.str());
+                }
                 if (!fillNote.empty())
                     emit(fillNote);
                 // Text: the style, font and width factors decide how wide the letters come out.
@@ -173,7 +186,10 @@ public:
                             t << "; style \"" << ts->name << "\" font \"" << ts->fontFamily
                               << "\" file \"" << ts->fontFile << "\" width factor "
                               << ts->widthFactor << " oblique " << ts->oblique;
-                        t << "\n";
+                        const bool under = str.find("%%u") != std::string::npos ||
+                                           str.find("%%U") != std::string::npos ||
+                                           str.find("\\L") != std::string::npos;
+                        t << "; underline code " << (under ? "yes" : "no") << "\n";
                         emit(t.str());
                     }
                 }

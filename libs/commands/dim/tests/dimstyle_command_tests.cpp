@@ -184,8 +184,8 @@ TEST_CASE("DIMSETUP gives only the selected dimensions a style or an overall sca
 
 TEST_CASE("MLEADERALIGN lines landing ends up in a column or a row") {
     Fixture f;
-    f.host->run("MLEADER", {"0,0", "10,10", ScriptItem::enter(), "Text", "a"});
-    f.host->run("MLEADER", {"0,20", "30,25", ScriptItem::enter(), "Text", "b"});
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});
+    f.host->run("MLEADER", {"0,20", "30,25", "b"});
     std::vector<EntityId> ids;
     f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
     REQUIRE(ids.size() == 2);
@@ -203,8 +203,8 @@ TEST_CASE("MLEADERALIGN lines landing ends up in a column or a row") {
 
 TEST_CASE("MLEADERCOLLECT merges notes into the first multileader") {
     Fixture f;
-    f.host->run("MLEADER", {"0,0", "10,10", ScriptItem::enter(), "Text", "a"});
-    f.host->run("MLEADER", {"0,20", "30,25", ScriptItem::enter(), "Text", "b"});
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});
+    f.host->run("MLEADER", {"0,20", "30,25", "b"});
     std::vector<EntityId> ids;
     f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
     REQUIRE(ids.size() == 2);
@@ -227,7 +227,7 @@ TEST_CASE("MLEADERCOLLECT merges notes into the first multileader") {
 TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first dimension") {
     Fixture f;
     f.host->setView({{0, 0}, 10.0, {900, 600}});
-    f.host->run("MLEADER", {"0,0", "3000,2000", "4000,2000", ScriptItem::enter(), "Text", "beam"});
+    f.host->run("MLEADER", {"0,0", "Add", "4000,2000", "3000,2000", "beam"});
     const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
     REQUIRE(scaled);
     CHECK(scaled->overallScale == doctest::Approx(50));

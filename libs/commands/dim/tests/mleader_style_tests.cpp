@@ -40,7 +40,7 @@ TEST_CASE("MLEADERSTYLE New/Edit sets arrow, gap, text style and content - MLEAD
     CHECK(f.doc.header().custom.at("tbcad.mleaderstyle.Note") == "None");
 
     // Content defaults to None, so no note text is asked for.
-    auto r = f.host->run("MLEADER", {"0,0", "10,10", "", ""});
+    auto r = f.host->run("MLEADER", {"0,0", "10,10", ""});
     CHECK(r.finished);
     REQUIRE(f.leaders() == 1);
     f.doc.forEachEntity([&](const Entity& e) {

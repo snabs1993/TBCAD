@@ -100,3 +100,5 @@ MTEXT too unless the Height option is used. Set it with STYLE, `-STYLE` Edit Hei
 style panel. It is read from and written to DXF (group 40 of the STYLE record; DWG goes through the
 same reader). In `.tbcad` it is a separate `TSTH` chunk (format minor 11) that programs which do not
 know it keep unchanged; collaboration change records are version 3 (version 2 is still read).
+
+**TEXTALIGN** lines several texts (single-line or multiline) up with the first one selected: by Left, Center, Right, Top, Middle or Bottom edge of their bounding boxes. One undo step.
