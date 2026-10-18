@@ -249,6 +249,68 @@ std::vector<std::uint8_t> insert(std::uint64_t h, double x, double y, double sx,
     return o.finish();
 }
 
+// An insert of the door block whose extension dictionary is `xdic`.
+std::vector<std::uint8_t> insertWithXdic(std::uint64_t h, std::uint64_t xdic) {
+    ObjectWriter o(0x07, h);
+    o.entityCommon(2, 256, 0);
+    o.main.bd(30.0);
+    o.main.bd(40.0);
+    o.main.bd(0.0);
+    o.main.bb(3);  // scale 1
+    o.main.bd(0.0);
+    o.main.bd(0.0);
+    o.main.bd(0.0);
+    o.main.bd(1.0);
+    o.main.b(false);  // no attributes
+    o.handles.handle(3, xdic);
+    o.handles.handle(5, kLayer0);
+    o.handles.handle(5, kDoor);
+    return o.finish();
+}
+
+// A DICTIONARY with the given (name, handle) items, owned by `owner`.
+std::vector<std::uint8_t> dictionaryObj(
+    std::uint64_t h, std::uint64_t owner,
+    const std::vector<std::pair<const char*, std::uint64_t>>& items) {
+    ObjectWriter o(0x2A, h);
+    o.objectCommon();
+    o.main.rl(static_cast<std::uint32_t>(items.size()));
+    o.main.bs(0);  // cloning flag
+    o.main.rc(1);  // hard owner
+    for (const auto& it : items)
+        o.main.text(it.first);
+    o.handles.handle(4, owner);
+    o.xdic();
+    for (const auto& it : items)
+        o.handles.handle(2, it.second);
+    return o.finish();
+}
+
+// The SPATIAL_FILTER of an XCLIP: a rectangle, no front/back clip, identity transforms.
+std::vector<std::uint8_t> spatialFilterObj(std::uint64_t h, int type, std::uint64_t owner,
+                                           const std::vector<std::pair<double, double>>& pts) {
+    ObjectWriter o(type, h);
+    o.objectCommon();
+    o.main.bs(static_cast<int>(pts.size()));
+    for (const auto& p : pts) {
+        o.main.rd(p.first);
+        o.main.rd(p.second);
+    }
+    for (double v : {0.0, 0.0, 1.0})  // extrusion
+        o.main.bd(v);
+    for (double v : {0.0, 0.0, 0.0})  // clip boundary origin
+        o.main.bd(v);
+    o.main.bs(1);  // display the boundary
+    o.main.bs(0);  // no front clip
+    o.main.bs(0);  // no back clip
+    for (int m = 0; m < 2; ++m)
+        for (double v : {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0})
+            o.main.bd(v);
+    o.handles.handle(4, owner);
+    o.xdic();
+    return o.finish();
+}
+
 std::vector<std::uint8_t> ellipseObj(std::uint64_t h) {
     ObjectWriter o(0x23, h);
     o.entityCommon(2, 256, 0);
@@ -819,6 +881,40 @@ TEST_CASE("a solid hatch with two kinds of boundary imports") {
         }
     }
     CHECK(hatches == 1);
+}
+
+TEST_CASE("an XCLIP boundary on an insert comes through as the insert's clip") {
+    DwgFile f;
+    const int filterType = f.addClass("SPATIAL_FILTER");
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(kDoor, blockHeader(kDoor, "DOOR", 0, 0));
+    f.add(0x30, line(0x30, 0, kDoor, 0, 0, 0, 10));
+    f.add(0x90, dictionaryObj(0x90, 0x60, {{"ACAD_FILTER", 0x91}}));
+    f.add(0x91, dictionaryObj(0x91, 0x90, {{"SPATIAL", 0x92}}));
+    f.add(0x92, spatialFilterObj(0x92, filterType, 0x91, {{-5, -5}, {5, -5}, {5, 15}, {-5, 15}}));
+    f.add(0x60, insertWithXdic(0x60, 0x90));
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    int inserts = 0;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity& e = *doc.find(id);
+        if (kind(e) != EntityKind::Insert)
+            continue;
+        ++inserts;
+        const auto* d = entityAs<InsertData>(e);
+        REQUIRE(d->clip.size() == 4);
+        CHECK(d->clip[0] == Vec2{-5, -5});
+        CHECK(d->clip[2] == Vec2{5, 15});
+        CHECK(d->clipOn);
+        CHECK_FALSE(d->clipInvert);
+    }
+    CHECK(inserts == 1);
 }
 
 TEST_CASE("a hatch stored under its fixed type number 78 imports") {

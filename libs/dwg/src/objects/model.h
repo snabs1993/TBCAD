@@ -127,6 +127,20 @@ struct LayoutRec {
     bool damaged = false;     // only the handles were read; name and tab come from the dictionary
 };
 
+// SPATIAL_FILTER: the clipping boundary of an XCLIP, kept on the INSERT's extension dictionary
+// (ACAD_FILTER -> SPATIAL). Points are as stored; the two 12-number matrices are the inverse
+// block transform and the clip boundary transform.
+struct SpatialFilterRec {
+    std::vector<std::array<double, 2>> pts{};
+    double extrusion[3] = {0, 0, 1};
+    double origin[3] = {0, 0, 0};
+    bool displayBoundary = true;
+    bool frontOn = false, backOn = false;
+    double frontDist = 0, backDist = 0;
+    double inverse[12] = {};
+    double clipTransform[12] = {};
+};
+
 struct Drawing {
     int codepage = 0;
     bool unicode = false;  // strings were UTF-16 (R2007 and later): write UTF-8 DXF
@@ -150,6 +164,7 @@ struct Drawing {
     std::vector<std::array<std::int64_t, 3>> relocatedSamples{};
     std::vector<LayoutRec> layoutObjects{};
     std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
+    std::map<std::uint64_t, SpatialFilterRec> spatialFilters{};  // by object handle
     // SORTENTSTABLE (draw order): block handle -> entity handle -> sort key. Entities that are not
     // listed sort by their own handle.
     std::map<std::uint64_t, std::map<std::uint64_t, std::uint64_t>> sortKeys{};

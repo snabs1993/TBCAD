@@ -69,6 +69,96 @@ struct Names {
     }
 };
 
+// The clipping boundary of an INSERT (XCLIP): its extension dictionary holds ACAD_FILTER, whose
+// SPATIAL entry is the SPATIAL_FILTER object.
+const SpatialFilterRec* spatialFilterOf(const Drawing& d, const EntityRec& e) {
+    if (e.xdic == 0 || d.spatialFilters.empty())
+        return nullptr;
+    auto entry = [&](std::uint64_t dict, const char* name) -> std::uint64_t {
+        auto it = d.dictionaries.find(dict);
+        if (it == d.dictionaries.end())
+            return 0;
+        for (const auto& [nm, h] : it->second)
+            if (iequals(nm, name))
+                return h;
+        return 0;
+    };
+    const std::uint64_t filters = entry(e.xdic, "ACAD_FILTER");
+    const std::uint64_t spatial = filters ? entry(filters, "SPATIAL") : 0;
+    auto f = d.spatialFilters.find(spatial);
+    return f == d.spatialFilters.end() ? nullptr : &f->second;
+}
+
+// Box over the points of the entities a block owns (group codes 10..13 with their 20..23).
+bool blockExtents(const Drawing& d, std::uint64_t blockHeader, double box[4]) {
+    auto b = d.blocks.find(blockHeader);
+    if (b == d.blocks.end())
+        return false;
+    bool any = false;
+    for (std::uint64_t h : b->second.members) {
+        auto it =
+            std::lower_bound(d.entities.begin(), d.entities.end(), h,
+                             [](const EntityRec& a, std::uint64_t v) { return a.handle < v; });
+        if (it == d.entities.end() || it->handle != h)
+            continue;
+        double xs[4] = {0, 0, 0, 0};
+        bool haveX[4] = {false, false, false, false};
+        for (const Group& g : it->groups) {
+            const int c = g.code;
+            auto num = [&] {
+                return std::holds_alternative<double>(g.value.v)
+                           ? std::get<double>(g.value.v)
+                           : static_cast<double>(std::holds_alternative<long long>(g.value.v)
+                                                     ? std::get<long long>(g.value.v)
+                                                     : 0);
+            };
+            if (c >= 10 && c <= 13) {
+                xs[c - 10] = num();
+                haveX[c - 10] = true;
+            } else if (c >= 20 && c <= 23 && haveX[c - 20]) {
+                const double x = xs[c - 20], y = num();
+                if (!any) {
+                    box[0] = box[2] = x;
+                    box[1] = box[3] = y;
+                    any = true;
+                } else {
+                    box[0] = std::min(box[0], x);
+                    box[1] = std::min(box[1], y);
+                    box[2] = std::max(box[2], x);
+                    box[3] = std::max(box[3], y);
+                }
+                haveX[c - 20] = false;
+            }
+        }
+    }
+    return any;
+}
+
+// The clip as the importer reads it back (TBCAD extended data: on/off, then the corners in block
+// coordinates). The corners are taken as stored; a boundary that does not touch the block at all
+// is dropped rather than hiding the whole block.
+void emitClip(DxfText& o, const EntityRec& e, const Names& n) {
+    const SpatialFilterRec* f = spatialFilterOf(n.d, e);
+    if (!f || f->pts.size() < 3)
+        return;
+    double bx[4];
+    if (blockExtents(n.d, e.blockHeader, bx)) {
+        double px0 = f->pts[0][0], py0 = f->pts[0][1], px1 = px0, py1 = py0;
+        for (const auto& p : f->pts) {
+            px0 = std::min(px0, p[0]), px1 = std::max(px1, p[0]);
+            py0 = std::min(py0, p[1]), py1 = std::max(py1, p[1]);
+        }
+        if (px1 < bx[0] || px0 > bx[2] || py1 < bx[1] || py0 > bx[3])
+            return;
+    }
+    o.group(1001, "TBCAD");
+    o.group(1000, f->displayBoundary ? "clip=1" : "clip=0");
+    for (const auto& p : f->pts) {
+        o.group(1010, p[0]);
+        o.group(1020, p[1]);
+    }
+}
+
 void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
     o.begin(e.dxfType);
     o.group(8, n.layer(e.layer));
@@ -117,6 +207,8 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
     }
     for (const Group& g : e.groups)
         emitGroup(o, g);
+    if (e.dxfType == "INSERT")
+        emitClip(o, e, n);
     if (e.dxfType == "VIEWPORT" && !e.frozenLayers.empty()) {
         // The layers frozen in this viewport, by name (read back by the importer).
         o.group(1001, "TBCAD");

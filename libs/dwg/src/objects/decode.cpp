@@ -47,6 +47,7 @@ enum Type : std::uint32_t {
     kHatch = 100000,
     kLayoutObject = 0x52,
     kSortEnts = 200000,
+    kSpatialFilter = 400000,
     kMLeader = 300000,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
@@ -600,6 +601,8 @@ private:
                 type = kMLeader;
             else if (cls == "SORTENTSTABLE")
                 type = kSortEnts;
+            else if (cls == "SPATIAL_FILTER")
+                type = kSpatialFilter;
             else if (cls == "LAYOUT") {
                 type = kLayoutObject;
                 ++out_.layoutSeen;
@@ -683,6 +686,9 @@ private:
             case kSortEnts:
                 decodeSortEnts(r, objBits, body, self.value);
                 return;
+            case kSpatialFilter:
+                decodeSpatialFilter(r, self.value);
+                return;
             case kBlock:
             case kEndBlk:
             case kSeqEnd:
@@ -711,6 +717,7 @@ private:
                  std::to_string(mainEnd_) + ", bits " + dumpCurrent());
     }
     std::map<std::uint32_t, int> missDumps_;
+    int spatialNotes_ = 0;
 
     // Table records start with a 64-bit flag, an xref index and an xref-dependency flag. Files
     // written by recent versions leave the index out (checked on a real R2018 file).
@@ -1707,6 +1714,55 @@ private:
             items.emplace_back(names[i], resolveHandle(h.handle(), self));
         if (!r.failed() && !h.failed())
             out_.dictionaries[self] = std::move(items);
+    }
+
+    // SPATIAL_FILTER (the clip of an XCLIP): points, the plane, the display and front/back clip
+    // switches and the two transforms (ODA spec, class-based object).
+    void decodeSpatialFilter(BitReader& r, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        SpatialFilterRec f;
+        const std::int32_t n = r.bs();
+        if (n < 0 || n > 10000) {
+            note("spatial filter " + hex(self) + " has " + std::to_string(n) + " points");
+            return;
+        }
+        for (std::int32_t i = 0; i < n && !r.failed(); ++i) {
+            const double x = r.rd();
+            const double y = r.rd();
+            f.pts.push_back({x, y});
+        }
+        const Vec3 ex = bd3(r);
+        const Vec3 org = bd3(r);
+        f.extrusion[0] = ex.x, f.extrusion[1] = ex.y, f.extrusion[2] = ex.z;
+        f.origin[0] = org.x, f.origin[1] = org.y, f.origin[2] = org.z;
+        f.displayBoundary = r.bs() != 0;
+        f.frontOn = r.bs() != 0;
+        if (f.frontOn)
+            f.frontDist = r.bd();
+        f.backOn = r.bs() != 0;
+        if (f.backOn)
+            f.backDist = r.bd();
+        for (double& v : f.inverse)
+            v = r.bd();
+        for (double& v : f.clipTransform)
+            v = r.bd();
+        tally(kSpatialFilter, r);
+        if (r.failed()) {
+            note("spatial filter " + hex(self) + " has an unexpected layout");
+            return;
+        }
+        if (spatialNotes_++ < 3) {
+            std::string t = "spatial filter " + hex(self) + ": " + std::to_string(f.pts.size()) +
+                            " points, inverse";
+            for (double v : f.inverse)
+                t += " " + std::to_string(v);
+            t += ", transform";
+            for (double v : f.clipTransform)
+                t += " " + std::to_string(v);
+            note(t);
+        }
+        out_.spatialFilters[self] = std::move(f);
     }
 
     // SORTENTSTABLE: the draw order of a block. The main data is a count; the handle stream holds
