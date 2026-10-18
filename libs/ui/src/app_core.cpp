@@ -1240,16 +1240,24 @@ BBox2 AppCore::drawingExtents() const {
     BBox2 withoutPoints;
     std::vector<BBox2> boxes;
     const Document& doc = session_->doc;
-    doc.forEachEntity([&](const Entity& e) {
-        if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e)) {
-            const BBox2 b = session_->index.boxOf(e.common.id);
-            box.merge(b);
-            if (kind(e) != EntityKind::Point)
-                withoutPoints.merge(b);
-            if (!b.empty())
-                boxes.push_back(b);
-        }
-    });
+    // Like AutoCAD's ZOOM Extents, only what is shown counts: objects on layers that are off or
+    // frozen (an imported file's hidden backup layers) do not stretch the view. If nothing is
+    // shown, fall back to everything so the command still goes somewhere.
+    for (bool onlyShown : {true, false}) {
+        doc.forEachEntity([&](const Entity& e) {
+            if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e) &&
+                (!onlyShown || ui::isVisible(doc, e))) {
+                const BBox2 b = session_->index.boxOf(e.common.id);
+                box.merge(b);
+                if (kind(e) != EntityKind::Point)
+                    withoutPoints.merge(b);
+                if (!b.empty())
+                    boxes.push_back(b);
+            }
+        });
+        if (!box.empty())
+            break;
+    }
     // Survey points far off the drawing (a stray POINT at the origin of a file drawn in
     // coordinates millions of units away) must not shrink the drawing itself: when points more
     // than double the size of everything else, leave them out.
