@@ -128,6 +128,13 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
         "  screen=100\n"
         "  lineweight=1\n"
         " }\n"
+        " 3{\n"
+        "  name=\"Color_4\"\n"
+        "  color=-1006632961\n"  // placeholder white: colour policy 0 keeps the object colour
+        "  color_policy=0\n"
+        "  screen=100\n"
+        "  lineweight=0\n"
+        " }\n"
         "}\n";
     auto r = importCtb(makeCtb(text));
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
@@ -143,6 +150,7 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
     CHECK(*t.entries[3].color == Rgba{0, 0, 255, 255});
     CHECK(t.entries[3].lineweightMm.value() == doctest::Approx(0.05));
     CHECK(t.entries[1].name == "Color_1");
+    CHECK_FALSE(t.entries[4].color);
 }
 
 TEST_CASE("bad .ctb input is refused without crashing") {
