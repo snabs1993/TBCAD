@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <sstream>
 
@@ -399,13 +400,44 @@ public:
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         KeywordOptions menu;
-        menu.keywords = {"Select", "List", "Import", "Edit", "Save", "Paths", "Pen"};
+        menu.keywords = {"Select", "List", "Import", "Edit", "Save", "Paths", "Pen", "Raw"};
         menu.defaultKeyword = "List";
         auto choice =
             co_await ctx.getKeyword("Plot style table: " + plotStyleName(ctx.host()), menu);
         if (!choice.ok())
             co_return;
         const std::string& kw = choice.keyword;
+        if (kw == "Raw") {  // the stored text of one pen in a .ctb file (to check the importer)
+            cmd::StringOptions so;
+            auto file = co_await ctx.getString("Path of the .ctb file", so);
+            if (!file.ok())
+                co_return;
+            cmd::IntOptions io;
+            io.defaultValue = 8;
+            io.min = 1;
+            io.max = 255;
+            auto n = co_await ctx.getInteger("Colour index (1-255)", io);
+            if (!n.ok())
+                co_return;
+            std::ifstream in(platform::pathFromUtf8(file.text), std::ios::binary);
+            std::vector<char> raw((std::istreambuf_iterator<char>(in)), {});
+            auto text =
+                plotstyle::ctbText({reinterpret_cast<const std::uint8_t*>(raw.data()), raw.size()});
+            if (!text) {
+                ctx.message(text.error().message);
+                co_return;
+            }
+            // Style k (0-based) is colour k+1; print its block and the lines above the styles.
+            const std::string start = "\n " + std::to_string(n.value - 1) + "{";
+            const auto at = text.value().find(start);
+            if (at == std::string::npos) {
+                ctx.message("No such pen in the file.");
+                co_return;
+            }
+            const auto end = text.value().find("\n }", at);
+            ctx.message(text.value().substr(at + 1, (end == std::string::npos ? 400 : end - at)));
+            co_return;
+        }
         if (kw == "Pen") {  // what the table does to one colour (palette index 1..255)
             auto t = resolveStyleTable(ctx.host(), plotStyleName(ctx.host()));
             if (!t || !t.value()) {

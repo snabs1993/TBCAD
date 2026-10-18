@@ -78,6 +78,8 @@ Result<PlotStyleTable> fromText(const std::string& text);
 // Reads a Plot style table from AutoCAD-style `.ctb` bytes (compressed text format). Only the
 // colour-dependent tables are supported; `.stb` (named styles) are refused with a clear error.
 Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes);
+// The decompressed text of a `.ctb` file, for inspection (what a pen really stores).
+Result<std::string> ctbText(std::span<const std::uint8_t> bytes);
 
 // Loads `.tbstyle` text or a `.ctb` file by its extension.
 Result<PlotStyleTable> loadFile(const std::filesystem::path& path);

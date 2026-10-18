@@ -89,6 +89,12 @@ TEST_CASE("the text format round-trips and rejects nonsense") {
     CHECK_FALSE(fromText("TBCAD-PLOT-STYLE 1\n1 lineweight=-1\n").ok());
 }
 
+TEST_CASE("ctbText returns the decompressed text of a .ctb file") {
+    auto t = ctbText(makeCtb("plot_style{\n 0{\n }\n}\n"));
+    REQUIRE(t.ok());
+    CHECK(t.value() == "plot_style{\n 0{\n }\n}\n");
+}
+
 TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
     const std::string text =
         "description=\"Office standard\"\n"
