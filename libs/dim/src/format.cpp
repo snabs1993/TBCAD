@@ -32,6 +32,7 @@ void suppressZeros(std::string& s, const DimStyle& style) {
 const char* kindPrefix(DimKind k) {
     switch (k) {
         case DimKind::Radius:
+        case DimKind::Jogged:
             return "R";
         case DimKind::Diameter:
             return "\xC3\x98";  // U+00D8 (Ø); the bundled font has it, U+2300 it does not
@@ -92,6 +93,8 @@ double measurement(const DimensionData& d) {
             ArcSpan g = arcSpan(d);
             return g.ok ? g.arcRadius * g.sweep : 0;
         }
+        case DimKind::Jogged:
+            return distance(p[0], p[1]);
         case DimKind::Ordinate:
             return std::abs(d.rotation < kPi / 4 ? p[0].x - p[2].x : p[0].y - p[2].y);
     }

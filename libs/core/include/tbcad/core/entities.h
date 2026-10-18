@@ -343,6 +343,9 @@ enum class DimKind : std::uint8_t {
     // defPts = {feature point, leader end, origin}; rotation 0 measures X (leader runs along Y),
     // pi / 2 measures Y.
     Ordinate,
+    // defPts = {true centre, point on the arc, centre override, jog centre}; the text sits at
+    // textPos (or on the line when textPosUser is false).
+    Jogged,
 };
 
 struct DimensionData {

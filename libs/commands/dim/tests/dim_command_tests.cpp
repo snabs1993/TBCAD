@@ -267,3 +267,23 @@ TEST_CASE("DIMORDINATE measures the distance from the origin along one axis") {
     REQUIRE(f.host->run("DIMORDINATE", {"10,10", "Xdatum", "60,15"}).finished);
     CHECK(f.dims().size() == 3);
 }
+
+TEST_CASE("DIMJOGGED dimensions the radius with a jog in the line") {
+    Fixture f;
+    CircleData c;
+    c.center = {0, 0};
+    c.radius = 40;
+    EntityId id = f.addEntity(c);
+    REQUIRE(f.host
+                ->run("DIMJOGGED",
+                      {ScriptItem::pick(id, {40, 0}), "100,0", "70,20", ScriptItem::enter()})
+                .finished);
+    REQUIRE(f.dims().size() == 1);
+    const DimensionData* d = f.dims()[0];
+    CHECK(d->kind == DimKind::Jogged);
+    CHECK(d->measurement == doctest::Approx(40));
+    auto L = dim::layoutDimension(f.doc, *d);
+    REQUIRE(!L.lines.empty());
+    CHECK(L.lines[0].pts.size() == 6);  // line, four points of the jog, arc end
+    CHECK(L.text.utf8 == "R40.00");
+}

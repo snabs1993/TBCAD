@@ -456,6 +456,31 @@ void layoutOrdinate(const Ctx& c, const DimensionData& d, const std::string& txt
     L.text = {txt, center, rot, c.th, false, false, tw};
 }
 
+// ---- jogged radius -----------------------------------------------------------------------------
+
+void layoutJogged(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
+    const Vec2 A = d.defPts[1], C = d.defPts[2], J = d.defPts[3];
+    const Vec2 u = normalized(A - C);
+    if (tol::isZeroLength(u))
+        return;
+    const Vec2 n = perp(u);
+    const double w = 2 * c.arrow;  // length of the jog along the dimension line
+    const Vec2 s0 = J - u * (w / 2), s3 = J + u * (w / 2);
+    Layout::Line line;
+    line.pts = {C, s0, s0 + u * (w * 0.25) + n * (w / 2), s3 - u * (w * 0.25) - n * (w / 2), s3, A};
+    line.role = Role::DimLine;
+    L.lines.push_back(std::move(line));
+    addArrow(L, c, A, -u);
+    if (txt.empty())
+        return;
+    const double tw = textWidth(c, txt);
+    const double rot = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(angleOf(u));
+    Vec2 center = (C + s0) / 2 + perp(unit(rot)) * (c.gap + c.th / 2);
+    if (d.textPosUser)
+        center = d.textPos;
+    L.text = {txt, center, rot, c.th, false, false, tw};
+}
+
 }  // namespace
 
 ArcSpan arcSpan(const DimensionData& d) {
@@ -615,6 +640,9 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
             break;
         case DimKind::Ordinate:
             layoutOrdinate(c, d, txt, L);
+            break;
+        case DimKind::Jogged:
+            layoutJogged(c, d, txt, L);
             break;
     }
     return L;

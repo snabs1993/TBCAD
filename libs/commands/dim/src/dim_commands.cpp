@@ -327,6 +327,65 @@ public:
     }
 };
 
+// ---- DIMJOGGED ---------------------------------------------------------------------------------
+
+class JoggedDimCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMJOGGED"; }
+    std::vector<std::string> defaultAliases() const override { return {"DJO"}; }
+    std::string_view description() const override {
+        return "Radius dimension with a jog for arcs whose centre is off the sheet";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::EntityOptions eo;
+        eo.filter = isCircleOrArc;
+        auto o = co_await ctx.getEntity("Select arc or circle", eo);
+        if (!o.ok())
+            co_return;
+        Vec2 center{};
+        double radius = 0;
+        const Entity* e = ctx.doc().find(o.id);
+        if (!e || !circleOf(*e, center, radius)) {
+            ctx.message("Select an arc or a circle.");
+            co_return;
+        }
+        auto cc = co_await ctx.getPoint("Specify center location override");
+        if (!cc.ok())
+            co_return;
+        const Vec2 override = cc.point;
+        cmd::PointOptions po;
+        po.base = override;
+        auto where = co_await ctx.getPoint("Specify dimension line location", po);
+        if (!where.ok())
+            co_return;
+        const Vec2 spot = where.point;
+        const Vec2 dir = normalized(spot - center);
+        const Vec2 onArc = center + (tol::isZeroLength(dir) ? Vec2{1, 0} : dir) * radius;
+        cmd::PointOptions jo;
+        jo.base = spot;
+        auto* c = &ctx;
+        auto build = [=](Vec2 jog) {
+            DimensionData d;
+            d.kind = DimKind::Jogged;
+            d.defPts = {center, onArc, override, jog};
+            d.textPos = spot;
+            d.textPosUser = true;
+            dim::refresh(c->doc(), d);
+            return d;
+        };
+        jo.preview = [c, build](Vec2 cursor, DisplayList& out) {
+            previewDim(*c, build(cursor), out);
+        };
+        const Vec2 mid = (override + onArc) / 2;
+        auto jog = co_await ctx.getPoint("Specify jog location <midpoint>", jo);
+        if (jog.status == Status::Cancel)
+            co_return;
+        addDim(ctx, build(jog.ok() ? jog.point : mid));
+    }
+};
+
 // ---- DIMANGULAR --------------------------------------------------------------------------------
 
 class AngularDimCommand final : public cmd::Command {
@@ -499,6 +558,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<AngularDimCommand>());
     (void)registry.add(std::make_unique<ArcLengthDimCommand>());
     (void)registry.add(std::make_unique<OrdinateDimCommand>());
+    (void)registry.add(std::make_unique<JoggedDimCommand>());
     (void)registry.add(std::make_unique<LeaderCommand>());
     (void)registry.add(makeSmartDimCommand());
     (void)registry.add(makeMLeaderCommand());
