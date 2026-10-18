@@ -234,6 +234,75 @@ public:
     }
 };
 
+// QDIM: one chain of linear dimensions through the key points of the selected objects.
+class QuickDimCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "QDIM"; }
+    std::string_view description() const override {
+        return "Dimension the key points of the selected objects in one go";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.allowPreselection = true;
+        auto sel = co_await ctx.getSelection("Select geometry to dimension", so);
+        if (!sel.ok())
+            co_return;
+        std::vector<Vec2> pts;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e)
+                continue;
+            if (const auto* l = entityAs<LineData>(*e)) {
+                pts.push_back(l->a);
+                pts.push_back(l->b);
+            } else if (const auto* p = entityAs<PolylineData>(*e)) {
+                for (const auto& v : p->v)
+                    pts.push_back(v.p);
+            } else if (const auto* c = entityAs<CircleData>(*e)) {
+                pts.push_back(c->center);
+            } else if (const auto* a = entityAs<ArcData>(*e)) {
+                pts.push_back(a->center);
+            } else if (const auto* pt = entityAs<PointData>(*e)) {
+                pts.push_back(pt->p);
+            }
+        }
+        BBox2 box;
+        for (const Vec2& p : pts)
+            box.expand(p);
+        if (pts.size() < 2 || box.empty()) {
+            ctx.message("Nothing to dimension.");
+            co_return;
+        }
+        auto at = co_await ctx.getPoint("Specify dimension line position");
+        if (!at.ok())
+            co_return;
+        // Outside the box vertically: horizontal dimensions; otherwise vertical ones.
+        const bool horizontal = at.point.y > box.max.y || at.point.y < box.min.y;
+        const double rotation = horizontal ? 0.0 : kPi / 2;
+        auto key = [&](Vec2 p) { return horizontal ? p.x : p.y; };
+        std::sort(pts.begin(), pts.end(), [&](Vec2 a, Vec2 b) { return key(a) < key(b); });
+        std::vector<Vec2> uniq;
+        for (const Vec2& p : pts)
+            if (uniq.empty() || std::abs(key(p) - key(uniq.back())) > tol::kLinear)
+                uniq.push_back(p);
+        if (uniq.size() < 2) {
+            ctx.message("The key points are all at the same place along that direction.");
+            co_return;
+        }
+        for (std::size_t i = 0; i + 1 < uniq.size(); ++i) {
+            DimensionData d;
+            d.kind = DimKind::Linear;
+            d.rotation = rotation;
+            d.defPts = {uniq[i], uniq[i + 1], at.point, Vec2{}};
+            dim::refresh(ctx.doc(), d);
+            if (!addDim(ctx, std::move(d)))
+                co_return;
+        }
+        ctx.message(std::to_string(uniq.size() - 1) + " dimensions created.");
+    }
+};
+
 class TextEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMTEDIT"; }
@@ -304,6 +373,10 @@ std::unique_ptr<cmd::Command> makeBaselineCommand() {
 
 std::unique_ptr<cmd::Command> makeSpaceCommand() {
     return std::make_unique<SpaceCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeQuickDimCommand() {
+    return std::make_unique<QuickDimCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeTextEditCommand() {

@@ -126,6 +126,8 @@ and export to DXF like any other leaders. Everything from one MLEADER run is one
 - **DIMORDINATE** (DOR) dimensions the X or Y distance of a point from the origin (0,0). Pick the feature, then the
   leader end: moving mostly up or down measures X, mostly sideways measures Y; **Xdatum** / **Ydatum** force the axis.
   Ordinate dimensions round trip through DXF (type 6, bit 64 = X datum).
+- **QDIM** dimensions the key points (line ends, polyline vertices, centres) of the selected objects as one chain of linear
+  dimensions. Click above or below the objects for horizontal dimensions, beside them for vertical ones.
 
 ## Chains and text editing (Q67)
 
