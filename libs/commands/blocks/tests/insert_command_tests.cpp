@@ -186,3 +186,29 @@ TEST_CASE(
     CHECK(half.height() < shown.height() * 0.6);
     CHECK(half.height() > shown.height() * 0.4);
 }
+
+TEST_CASE("MINSERT places one insert shown as a rows x columns array") {
+    Fixture f;
+    BlockId door = makeDoorBlock(f);
+    auto r = f.host->run("MINSERT", {"Door", "R", "30", "10,20", "3", "4", "50", "-25"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == 1);
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.modelSpace()[0]));
+    REQUIRE(ins);
+    CHECK(ins->block == door);
+    REQUIRE(ins->array);
+    CHECK(ins->array->rows == 3);
+    CHECK(ins->array->columns == 4);
+    CHECK(ins->array->rowSpacing == doctest::Approx(50));
+    CHECK(ins->array->columnSpacing == doctest::Approx(-25));
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().empty());
+}
+
+TEST_CASE("MINSERT with one row and one column is a plain insert") {
+    Fixture f;
+    makeDoorBlock(f);
+    f.host->run("MINSERT", {"Door", "0,0", "1", "1"});
+    REQUIRE(f.modelSpace().size() == 1);
+    CHECK_FALSE(entityAs<InsertData>(*f.doc.find(f.modelSpace()[0]))->array);
+}

@@ -27,6 +27,10 @@ struct DisplayContext {
     int byBlockTransparency = 0;  // percent
     // Off: everything is drawn opaque (the TPY toggle).
     bool showTransparency = true;
+    // Off (FILL): solid fills are drawn as their outlines; wipeout masks stay.
+    bool fillMode = true;
+    // ATTDISP: 0 attributes as defined, 1 all shown, 2 all hidden.
+    int attDisplay = 0;
     // Scale for annotative objects (model units per paper unit). 0 = the drawing's current
     // annotation scale; a layout viewport sets its own.
     double annoScale = 0;

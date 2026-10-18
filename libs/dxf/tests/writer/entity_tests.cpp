@@ -1252,4 +1252,19 @@ TEST_CASE("drawing limits survive a DXF round trip") {
     CHECK(b.max.y == doctest::Approx(700));
 }
 
+TEST_CASE("FILL and ATTDISP survive a DXF round trip") {
+    Document doc;
+    {
+        auto tx = doc.begin("modes");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom[kFillModeKey] = "0";
+                      h.custom[kAttDispKey] = "1";
+                  }).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_FALSE(fillMode(rt.back->header()));
+    CHECK(attDisplay(rt.back->header()) == 1);
+}
+
 }  // namespace tbcad::dxf

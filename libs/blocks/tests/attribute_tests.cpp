@@ -90,6 +90,9 @@ TEST_CASE("attributeText substitutes the value and honours invisible") {
     CHECK(t->utf8 == "hello");
     CHECK_FALSE(t->attdef.has_value());
     CHECK_FALSE(attributeText(*defs[1], ins).has_value());
+    // ATTDISP: ON shows the invisible one too, OFF shows nothing.
+    CHECK(attributeText(*defs[1], ins, 1).has_value());
+    CHECK_FALSE(attributeText(*defs[0], ins, 2).has_value());
 }
 
 TEST_CASE("an insert displays its own attribute values, not the block's shared ones") {

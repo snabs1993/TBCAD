@@ -426,6 +426,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     ctx.defaultLineweightMm = 0.25;
     ctx.byBlockLineweightMm = 0.25;
     ctx.showTransparency = s.transparency;
+    ctx.fillMode = fillMode(doc.header());
+    ctx.attDisplay = attDisplay(doc.header());
     // Slight growth so lines on the border are not culled away.
     const BBox2 cull = lay.area.inflated(1.0 / lay.paperPerUnit);
 

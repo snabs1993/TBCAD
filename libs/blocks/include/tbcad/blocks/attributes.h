@@ -45,6 +45,8 @@ std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
 
 // The text entity an attribute definition turns into for one Insert: the value in place of the
 // tag, attdef cleared. Null when the attribute is invisible.
-std::optional<Entity> attributeText(const Entity& definition, const InsertData& insert);
+// `attDisplay` is ATTDISP: 0 as defined, 1 invisible attributes show too, 2 none shows.
+std::optional<Entity> attributeText(const Entity& definition, const InsertData& insert,
+                                    int attDisplay = 0);
 
 }  // namespace tbcad::blocks

@@ -64,6 +64,15 @@ SceneSync::SceneSync(Document& doc, render::Scene& scene) : doc_(doc), scene_(sc
     doc_.addObserver(this);
 }
 
+bool SceneSync::readDisplayModes() {
+    const bool fill = fillMode(doc_.header());
+    const int att = attDisplay(doc_.header());
+    const bool changed = fill != fillMode_ || att != attDisplay_;
+    fillMode_ = fill;
+    attDisplay_ = att;
+    return changed;
+}
+
 SceneSync::~SceneSync() {
     doc_.removeObserver(this);
 }
@@ -88,6 +97,8 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     geom::DisplayContext ctx;
     ctx.pixelSizeMm = pixelSizeMm_;
     ctx.showTransparency = showTransparency_;
+    ctx.fillMode = fillMode_;
+    ctx.attDisplay = attDisplay_;
     const bool locked = doc_.effective(e.common).locked;
     // An object already in the scene keeps its place in the draw order.
     const std::uint32_t order = drawOrder.value_or(orderFor(id));
@@ -343,6 +354,8 @@ void SceneSync::rebuildDrawOrder() {
         geom::DisplayContext ctx;
         ctx.pixelSizeMm = pixelSizeMm_;
         ctx.showTransparency = showTransparency_;
+        ctx.fillMode = fillMode_;
+        ctx.attDisplay = attDisplay_;
         DisplayList list;
         {
             blocks::BlockDisplayScope scope(blockCache_);
@@ -426,7 +439,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     }
     if (!cs.layers.empty() || cs.header)
         syncLayers();
-    if (!cs.levels.empty() ||
+    const bool modesChanged = cs.header && readDisplayModes();
+    if (!cs.levels.empty() || modesChanged ||
         (cs.header && (cs.header->before.currentLevel != cs.header->after.currentLevel ||
                        cs.header->before.levelView != cs.header->after.levelView))) {
         // Level visibility, the current level or the view of other levels changed.
@@ -484,6 +498,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
 }
 
 void SceneSync::rebuildAll(double tileSizeMm) {
+    readDisplayModes();
     pending_.clear();
     pendingDead_ = 0;
     scene_.clearAndRetile(tileSizeMm);

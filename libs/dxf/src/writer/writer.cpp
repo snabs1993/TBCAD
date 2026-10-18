@@ -1201,6 +1201,13 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.pt2(10, limits.empty() ? Vec2{0, 0} : limits.min);
     var("$LIMMAX");
     o.pt2(10, limits.empty() ? Vec2{420, 297} : limits.max);
+    var("$FILLMODE");
+    o.i(70, fillMode(doc_.header()) ? 1 : 0);
+    var("$ATTMODE");
+    {
+        const int m = attDisplay(doc_.header());
+        o.i(70, m == 0 ? 1 : m == 1 ? 2 : 0);
+    }
     var("$LTSCALE");
     o.d(40, doc_.header().ltScale);
     var("$CELTSCALE");

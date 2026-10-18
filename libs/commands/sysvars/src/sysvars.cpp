@@ -244,6 +244,52 @@ private:
     const char* alias_;
 };
 
+// FILL [ON/OFF]: solid fills (hatches, solids, wide polylines) show or only their outlines do.
+class FillCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "FILL"; }
+    std::string_view description() const override { return "Show or hide solid fills"; }
+    Task run(CommandContext& ctx) override {
+        const bool cur = fillMode(ctx.doc().header());
+        cmd::KeywordOptions ko;
+        ko.keywords = {"ON", "OFF"};
+        ko.defaultKeyword = cur ? "ON" : "OFF";
+        auto k = co_await ctx.getKeyword(
+            std::string("Enter mode [ON/OFF] <") + (cur ? "ON" : "OFF") + ">", std::move(ko));
+        if (!k.ok())
+            co_return;
+        const bool on = k.keyword == "ON";
+        ctx.setUndoLabel(on ? "Fill on" : "Fill off");
+        if (auto r =
+                ctx.tx().modifyHeader([on](Header& h) { h.custom[kFillModeKey] = on ? "1" : "0"; });
+            !r)
+            ctx.message(r.error().message);
+    }
+};
+
+// ATTDISP [Normal/ON/OFF]: attributes as defined, all shown, or all hidden.
+class AttDispCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ATTDISP"; }
+    std::string_view description() const override { return "Show or hide block attributes"; }
+    Task run(CommandContext& ctx) override {
+        static const char* const names[] = {"Normal", "ON", "OFF"};
+        const int cur = attDisplay(ctx.doc().header());
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Normal", "ON", "OFF"};
+        ko.defaultKeyword = names[cur];
+        auto k = co_await ctx.getKeyword(
+            std::string("Enter attribute visibility setting [Normal/ON/OFF] <") + names[cur] + ">",
+            std::move(ko));
+        if (!k.ok())
+            co_return;
+        const char* v = k.keyword == "ON" ? "1" : k.keyword == "OFF" ? "2" : "0";
+        ctx.setUndoLabel("Attribute display");
+        if (auto r = ctx.tx().modifyHeader([v](Header& h) { h.custom[kAttDispKey] = v; }); !r)
+            ctx.message(r.error().message);
+    }
+};
+
 // LIMITS: the drawing area. ZOOM All covers it; DXF keeps it in $LIMMIN / $LIMMAX.
 class LimitsCommand final : public cmd::Command {
 public:
@@ -307,6 +353,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAWALL", "RA"));
     (void)registry.add(std::make_unique<RefreshCommand>("REGENAUTO", ""));
     (void)registry.add(std::make_unique<LimitsCommand>());
+    (void)registry.add(std::make_unique<FillCommand>());
+    (void)registry.add(std::make_unique<AttDispCommand>());
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeHyperlinkCommand());
     (void)registry.add(makeSpaceTransCommand());

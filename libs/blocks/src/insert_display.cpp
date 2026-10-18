@@ -164,7 +164,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
                self.lineweight,
                self.pattern,
                child.chordTolMm,
-               ctx.showTransparency ? child.byBlockTransparency : -1};
+               ctx.showTransparency ? child.byBlockTransparency : -1,
+               ctx.fillMode};
         blockSpace = cache->find(key);
     }
     if (!blockSpace) {
@@ -195,7 +196,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         const Entity* e = doc.find(id);
         if (!e || !e->common.visible)
             continue;
-        auto text = attributeText(*e, *shown);
+        auto text = attributeText(*e, *shown, ctx.attDisplay);
         if (!text)
             continue;
         if (text->common.layer == kLayerZero)
@@ -246,7 +247,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
                                      self.lineweight,
                                      self.pattern,
                                      child.chordTolMm,
-                                     ctx.showTransparency ? child.byBlockTransparency : -1};
+                                     ctx.showTransparency ? child.byBlockTransparency : -1,
+                                     ctx.fillMode};
     std::shared_ptr<const DisplayList> blockSpace = cache->find(key);
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);
@@ -259,7 +261,7 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
         const Entity* e = doc.find(id);
         if (!e || !e->common.visible)
             continue;
-        auto text = attributeText(*e, *ins);
+        auto text = attributeText(*e, *ins, ctx.attDisplay);
         if (!text)
             continue;
         if (text->common.layer == kLayerZero)

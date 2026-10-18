@@ -485,3 +485,41 @@ TEST_CASE("a double hatch adds the same lines turned a quarter turn") {
         vertical = vertical || std::abs(s.first.x - s.second.x) < 1e-6;
     CHECK(vertical);
 }
+
+TEST_CASE("FILL off shows solid and gradient hatches as their boundary") {
+    registerHatchDisplay();
+    Document doc;
+    Scene s;
+    s.rectLines({0, 0}, {50, 50});
+    auto b = findBoundary(s.candidates(), {25, 25});
+    REQUIRE(b.ok());
+    EntityId solidId, gradId;
+    {
+        Transaction tx = doc.begin("hatch");
+        solidId =
+            tx.add(makeHatchEntity(b.value(), *findBuiltinPattern("SOLID"), 1, 0, {})).value();
+        Entity e = makeHatchEntity(b.value(), *findBuiltinPattern("SOLID"), 1, 0, {});
+        GradientData g;
+        g.color1 = Color::rgb(0, 0, 0);
+        g.color2 = Color::rgb(200, 100, 50);
+        entityAs<HatchData>(e)->gradient = g;
+        gradId = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    for (EntityId id : {solidId, gradId}) {
+        geom::DisplayContext ctx;
+        ctx.fillMode = false;
+        DisplayList out;
+        geom::buildDisplay(doc, *doc.find(id), ctx, out);
+        REQUIRE_FALSE(out.items.empty());
+        for (const DisplayItem& it : out.items) {
+            const auto* pl = std::get_if<DisplayPolyline>(&it);
+            REQUIRE(pl);
+            CHECK(pl->closed);
+        }
+        ctx.fillMode = true;
+        DisplayList filled;
+        geom::buildDisplay(doc, *doc.find(id), ctx, filled);
+        CHECK(std::holds_alternative<DisplayFill>(filled.items.front()));
+    }
+}

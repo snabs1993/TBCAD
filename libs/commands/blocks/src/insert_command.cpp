@@ -60,11 +60,17 @@ const BlockDef* blockFromFile(cmd::CommandContext& ctx, const std::string& typed
 }
 
 // INSERT [I]: places an instance of a block with a live preview.
+// INSERT and MINSERT. MINSERT places the block as a rows x columns array in one object.
 class InsertCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "INSERT"; }
-    std::vector<std::string> defaultAliases() const override { return {"I"}; }
-    std::string_view description() const override { return "Insert a block"; }
+    explicit InsertCommand(bool array = false) : array_(array) {}
+    std::string_view name() const override { return array_ ? "MINSERT" : "INSERT"; }
+    std::vector<std::string> defaultAliases() const override {
+        return array_ ? std::vector<std::string>{} : std::vector<std::string>{"I"};
+    }
+    std::string_view description() const override {
+        return array_ ? "Insert a block as a rectangular array" : "Insert a block";
+    }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
@@ -112,7 +118,11 @@ public:
             data.attribs = blocks::defaultAttribs(doc, block);
             for (;;) {
                 cmd::PointOptions po;
-                po.keywords = {"Scale", "X", "Y", "Rotate", "Multiple", "Explode"};
+                po.keywords = {"Scale", "X", "Y", "Rotate"};
+                if (!array_) {
+                    po.keywords.push_back("Multiple");
+                    po.keywords.push_back("Explode");
+                }
                 po.allowNone = placed > 0;  // Enter ends a Multiple series
                 po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
                     InsertData d = data;
@@ -172,6 +182,43 @@ public:
                         co_return;
                     data.rotation = normalizeAngle(a.value);
                 }
+            }
+
+            if (array_) {
+                cmd::IntOptions io;
+                io.defaultValue = 1;
+                io.min = 1;
+                auto rows = co_await ctx.getInteger("Enter number of rows <1>", io);
+                if (!rows.ok())
+                    co_return;
+                auto cols = co_await ctx.getInteger("Enter number of columns <1>", io);
+                if (!cols.ok())
+                    co_return;
+                if (static_cast<long long>(rows.value) * cols.value > 1000000) {
+                    ctx.message("That is more than a million copies.");
+                    co_return;
+                }
+                ArrayInfo info;
+                info.rows = static_cast<int>(rows.value);
+                info.columns = static_cast<int>(cols.value);
+                cmd::DistanceOptions dopt;
+                dopt.defaultValue = 0.0;
+                dopt.allowNegative = true;
+                if (rows.value > 1) {
+                    auto d = co_await ctx.getDistance("Enter distance between rows", dopt);
+                    if (!d.ok())
+                        co_return;
+                    info.rowSpacing = d.value;
+                }
+                if (cols.value > 1) {
+                    auto d = co_await ctx.getDistance("Enter distance between columns", dopt);
+                    if (!d.ok())
+                        co_return;
+                    info.columnSpacing = d.value;
+                }
+                info.angle = 0;
+                if (rows.value > 1 || cols.value > 1)
+                    data.array = info;
             }
 
             // Attribute values. Preset and constant attributes are not asked for.
@@ -293,9 +340,16 @@ public:
                 co_return;
         }
     }
+
+private:
+    bool array_;
 };
 
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeMinsertCommand() {
+    return std::make_unique<InsertCommand>(true);
+}
 
 std::unique_ptr<cmd::Command> makeInsertCommand() {
     return std::make_unique<InsertCommand>();
