@@ -115,7 +115,8 @@ bool parseMark(const std::string& tok, LinetypeMark& m, std::string& why) {
         why = "unterminated [element]";
         return false;
     }
-    const std::vector<std::string> parts = splitTop(std::string_view(tok).substr(1, tok.size() - 2));
+    const std::vector<std::string> parts =
+        splitTop(std::string_view(tok).substr(1, tok.size() - 2));
     if (parts.empty() || parts[0].empty()) {
         why = "empty [element]";
         return false;
@@ -196,9 +197,9 @@ LinetypeFile parseAcadLin(std::string_view text) {
             problem(at, "\"" + lt.name + "\" pattern has no length");
             return;
         }
-        const bool dup = std::any_of(out.linetypes.begin(), out.linetypes.end(), [&](const auto& o) {
-            return lowerAscii(o.name) == lowerAscii(lt.name);
-        });
+        const bool dup =
+            std::any_of(out.linetypes.begin(), out.linetypes.end(),
+                        [&](const auto& o) { return lowerAscii(o.name) == lowerAscii(lt.name); });
         if (dup) {
             problem(at, "\"" + lt.name + "\" is defined twice");
             return;
