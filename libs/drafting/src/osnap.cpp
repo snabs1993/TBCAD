@@ -19,6 +19,39 @@ void add(std::vector<SnapCandidate>& out, const SnapRequest& rq, SnapMode mode, 
     out.push_back({p, mode, d, id, id2});
 }
 
+// Points of an ellipse or spline where `f(t)` changes sign, found by sampling the parameter
+// range and bisecting each bracket.
+template <class F>
+void curveRoots(const geom::CurveRef& c, F f, std::vector<double>& out) {
+    constexpr int kSteps = 256;
+    const double t0 = c.t0(), t1 = c.t1();
+    double ta = t0, fa = f(ta);
+    for (int i = 1; i <= kSteps; ++i) {
+        const double tb = t0 + (t1 - t0) * i / kSteps;
+        const double fb = f(tb);
+        if (fa == 0) {
+            out.push_back(ta);
+        } else if ((fa < 0) != (fb < 0) && fb != 0) {
+            double lo = ta, hi = tb, flo = fa;
+            for (int k = 0; k < 60; ++k) {
+                const double mid = 0.5 * (lo + hi);
+                const double fm = f(mid);
+                if ((flo < 0) == (fm < 0)) {
+                    lo = mid;
+                    flo = fm;
+                } else {
+                    hi = mid;
+                }
+            }
+            out.push_back(0.5 * (lo + hi));
+        }
+        ta = tb;
+        fa = fb;
+    }
+    if (fa == 0)
+        out.push_back(ta);
+}
+
 // Feet of the perpendiculars from `from` to the curve.
 void perpendicularFeet(const geom::CurveRef& c, Vec2 from, std::vector<Vec2>& out) {
     switch (c.kind()) {
@@ -44,14 +77,32 @@ void perpendicularFeet(const geom::CurveRef& c, Vec2 from, std::vector<Vec2>& ou
             }
             return;
         }
-        default:
-            out.push_back(c.closestPoint(from));  // ellipse, spline: the nearest point is a foot
+        default: {
+            // Ellipse, spline: every parameter where the chord to `from` is normal to the curve.
+            std::vector<double> ts;
+            curveRoots(
+                c, [&](double t) { return dot(c.derivativeAt(t), from - c.pointAt(t)); }, ts);
+            if (ts.empty())
+                out.push_back(c.closestPoint(from));  // the nearest point is an end
+            for (double t : ts)
+                out.push_back(c.pointAt(t));
             return;
+        }
     }
 }
 
 // Points where the line from `from` touches the circle / arc.
 void tangentPoints(const geom::CurveRef& c, Vec2 from, std::vector<Vec2>& out) {
+    if (c.kind() == geom::CurveRef::Kind::Ellipse || c.kind() == geom::CurveRef::Kind::Spline) {
+        std::vector<double> ts;
+        curveRoots(c, [&](double t) { return cross(c.derivativeAt(t), from - c.pointAt(t)); }, ts);
+        for (double t : ts) {
+            const Vec2 p = c.pointAt(t);
+            if (distance(p, from) > tol::kLinear && lengthSquared(c.derivativeAt(t)) > 0)
+                out.push_back(p);
+        }
+        return;
+    }
     if (c.kind() != geom::CurveRef::Kind::Arc)
         return;
     const Vec2 v = from - c.center();
