@@ -19,13 +19,48 @@ EntityData randomGeometry(std::mt19937_64& rng) {
     auto u = [&](double lo, double hi) {
         return lo + (hi - lo) * static_cast<double>(rng() % 100000) / 100000.0;
     };
-    switch (rng() % 5) {
+    switch (rng() % 9) {
         case 0:
             return LineData{{u(-500, 500), u(-500, 500)}, {u(-500, 500), u(-500, 500)}};
         case 1:
             return CircleData{{u(-500, 500), u(-500, 500)}, u(0.5, 80)};
         case 2:
             return ArcData{{u(-500, 500), u(-500, 500)}, u(0.5, 80), u(0, 3), u(3.2, 6)};
+        case 5: {
+            EllipseData e;
+            e.center = {u(-500, 500), u(-500, 500)};
+            e.majorAxis = {u(5, 90), u(-30, 30)};
+            e.ratio = u(0.2, 1.0);
+            if (rng() % 2 == 0) {
+                e.startParam = u(0, 3);
+                e.endParam = u(3.2, 6);
+            }
+            return Indirect<EllipseData>(e);
+        }
+        case 6: {
+            SplineData sp;
+            sp.degree = 3;
+            sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+            for (int i = 0; i < 4; ++i)
+                sp.control.push_back({u(-500, 500), u(-500, 500)});
+            return Indirect<SplineData>(sp);
+        }
+        case 7: {
+            TextData t;
+            t.position = {u(-500, 500), u(-500, 500)};
+            t.alignPoint = t.position;
+            t.height = u(1, 20);
+            t.rotation = u(0, 6);
+            t.utf8 = (rng() % 2) ? "Hello 123" : "\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35";
+            return Indirect<TextData>(t);
+        }
+        case 8: {
+            RayData r;
+            r.origin = {u(-500, 500), u(-500, 500)};
+            r.dir = {1, u(-1, 1)};
+            r.infinite = rng() % 2 == 0;
+            return Indirect<RayData>(r);
+        }
         case 3:
             return PointData{{u(-500, 500), u(-500, 500)}};
         default: {
