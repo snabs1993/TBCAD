@@ -469,7 +469,8 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
     Cache& c = cache();
 
     // Header: type dropdown to narrow what the edits apply to.
-    ImGui::SetNextItemWidth(-1);
+    ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Delete").x -
+                            3 * ImGui::GetStyle().FramePadding.x - ImGui::GetStyle().ItemSpacing.x);
     if (ImGui::BeginCombo("##type", selectionLabel(c, c.filterIndex).c_str())) {
         for (int i = 0; i <= static_cast<int>(c.kinds.size()); ++i) {
             if (ImGui::Selectable(selectionLabel(c, i).c_str(), c.filterIndex == i)) {
@@ -479,6 +480,16 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
         }
         ImGui::EndCombo();
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete")) {
+        std::string first = "-PROP";
+        if (c.only)
+            first += " Only " + std::string(kindLabel(*c.only));
+        exec(ctx, {first + " Delete"});
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(c.only ? "Erase the selected objects of this type"
+                                 : "Erase every selected object");
     if (c.common.count == 0) {
         ImGui::TextDisabled("No objects of this type");
         return;

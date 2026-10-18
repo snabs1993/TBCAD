@@ -413,3 +413,23 @@ TEST_CASE("ACTIVEONLY locks every layer outside the current layer's branch") {
     f.run("ACTIVEONLY", {cmd::ScriptItem::enter()});
     CHECK_FALSE(f.doc.header().activeOnly);
 }
+
+TEST_CASE("-PROP Delete erases the selected objects of one type") {
+    Fixture f;
+    EntityId c1, c2, l1;
+    {
+        auto tx = f.doc.begin("make");
+        c1 = tx.add(Entity{{}, CircleData{{0, 0}, 1}}).value();
+        c2 = tx.add(Entity{{}, CircleData{{5, 0}, 1}}).value();
+        l1 = tx.add(Entity{{}, LineData{{0, 0}, {1, 0}}}).value();
+        tx.commit();
+    }
+    f.host.setSelection({c1, c2, l1});
+    panelExec(f.host, {"-PROP Only Circle Delete"});
+    CHECK_FALSE(f.doc.contains(c1));
+    CHECK_FALSE(f.doc.contains(c2));
+    CHECK(f.doc.contains(l1));
+    CHECK(f.host.selection().size() == 1);
+    CHECK(f.host.undo());
+    CHECK(f.doc.contains(c1));
+}
