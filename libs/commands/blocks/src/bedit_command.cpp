@@ -247,7 +247,8 @@ public:
         bool save = true;
         if (close_) {
             auto k = co_await ctx.getKeyword(
-                "Save the changes to the block [Save/Discard] <Save>",
+                "Closing block \"" + editedBlock(ctx.host()) +
+                    "\": save the changes to the block or throw them away [Save/Discard] <Save>",
                 cmd::KeywordOptions{.keywords = {"Save", "Discard"}, .defaultKeyword = "Save"});
             if (!k.ok())
                 co_return;

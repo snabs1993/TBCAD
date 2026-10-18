@@ -41,8 +41,8 @@ public:
         if (dialog && settingOf(ctx.host(), "tmp.attdef.go") != "1") {
             ctx.host().openPanel("attdef");
             ctx.message(
-                "Fill in the Define Attribute panel (tag, prompt, default), then press OK "
-                "and pick the start point.");
+                "Use the Define Attribute panel (tag, prompt, default), then press OK and pick the "
+                "start point. Type -ATTDEF to answer on the command line instead.");
             co_return;
         }
         if (dialog) {

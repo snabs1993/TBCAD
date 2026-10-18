@@ -916,6 +916,14 @@ TEST_CASE("FILEDIA 0 makes OPEN and SAVEAS ask for the path on the command line"
     CHECK(req[0] == "openpath:C:/x.dxf");
 }
 
+TEST_CASE("commands that ask for a panel through ui.showPanel open it") {
+    Fixture f("showpanel");
+    f.core->setSetting("ui.showPanel", "laywalk");  // what LAYWALK, LAYER, HATCH do
+    auto panels = f.core->takePanelRequests();
+    REQUIRE(panels.size() == 1);
+    CHECK(panels[0] == "laywalk");
+}
+
 TEST_CASE("SETTINGS asks the window to open the dialog") {
     Fixture f("settings_cmd");
     f.core->submitText("op");  // alias

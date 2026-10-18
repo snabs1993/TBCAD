@@ -31,6 +31,7 @@ public:
     }
     Task run(CommandContext& ctx) override {
         ctx.host().setSetting("ui.showPanel", "laywalk");
+        ctx.message("Pick the layers to show in the Layer Walk panel; Close restores them.");
         co_return;
     }
 };

@@ -55,6 +55,7 @@ struct PanelState {
     std::string pendingRenameName{};  // select + rename the layer with this top-level path next
     LayerId deleteAsk{};              // layer whose delete needs a Branch / MoveUp choice
     LayerId colorFor{};
+    LayerId reveal{};  // scroll to this row (and keep it selected) once, e.g. after a rename
 };
 
 PanelState& state() {
@@ -238,6 +239,10 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
     }
     ImGui::SameLine(0, 2);
     const bool current = doc.header().currentLayer == row.id;
+    if (st.reveal == row.id && st.renaming != row.id) {
+        ImGui::SetScrollHereY(0.5f);
+        st.reveal = {};
+    }
 
     if (st.renaming == row.id) {
         if (st.focusRename) {
@@ -252,6 +257,11 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
             if (!st.renameBuf.empty() && st.renameBuf != l->name)
                 exec(ctx, {"-LAYER Rename " + idRef(row.id), st.renameBuf});
             st.renaming = {};
+            // The list re-sorts under the new name: keep the layer selected and in view so the
+            // next click lands where the user expects.
+            st.selected = row.id;
+            st.multi = {row.id.value};
+            st.reveal = row.id;
         } else if (ImGui::IsItemDeactivated()) {
             st.renaming = {};  // Esc or click elsewhere cancels
         }
@@ -444,6 +454,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         if (auto id = resolveLayer(doc, st.pendingRenameName)) {
             st.selected = id.value();
             st.renaming = id.value();
+            st.reveal = id.value();
             st.renameBuf = doc.layer(id.value())->name;
             st.focusRename = true;
             st.pendingRenameName.clear();
@@ -579,6 +590,10 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
 
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(rows.size()));
+        if (state().reveal)
+            for (std::size_t ri = 0; ri < rows.size(); ++ri)
+                if (rows[ri].id == state().reveal)
+                    clipper.IncludeItemByIndex(static_cast<int>(ri));
         while (clipper.Step()) {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
                 const Row& row = rows[static_cast<std::size_t>(i)];
