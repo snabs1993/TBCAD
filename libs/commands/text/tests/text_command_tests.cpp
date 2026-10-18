@@ -193,6 +193,20 @@ TEST_CASE("MTEXT: Justify, Width, Rotation options and corner order") {
     CHECK(r->position.y == doctest::Approx(0).epsilon(1e-9));
 }
 
+TEST_CASE("MTEXT: Justify chosen in the text box moves the text to that point of the rectangle") {
+    Fixture f;
+    f.host.run("MTEXT", {"10,10", "50,0"});  // now waiting for the text
+    f.host.setSetting("tmp.mtext.attach", "MC");
+    f.host.setSetting("tmp.mtext.height", "5");
+    f.host.feed({"x"});
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->attach == Attachment::MiddleCenter);
+    CHECK(m->height == doctest::Approx(5));
+    CHECK(m->position.x == doctest::Approx(30));
+    CHECK(m->position.y == doctest::Approx(5));
+}
+
 TEST_CASE("MTEXT shows a rectangle preview while picking the second corner") {
     Fixture f;
     f.host.run("MTEXT", {"0,0"});
