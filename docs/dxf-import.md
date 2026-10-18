@@ -52,7 +52,8 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | LEADER | `LeaderData` (vertices, dimension style); the annotation is a separate MTEXT/TEXT entity in the file and is imported as such |
 | ACAD_PROXY_ENTITY | read-only `ProxyData` (`originalType = "ACAD_PROXY_ENTITY"`, `raw` = the 310 data bytes, without text records); the proxy graphics are decoded into its display list (see "Proxy graphics"); always a warning |
 | AEC_*, AECC_*, 3DSOLID, REGION, SURFACE ... (no reader) | read-only `ProxyData` named after the DXF type when the object carries proxy graphics (groups 160/92 + 310), else skipped as before; one `dxf.reader.proxy_graphics` info per type |
-| everything else (3DSOLID, REGION, IMAGE, MLINE, RAY, XLINE, MLEADER, WIPEOUT, 3DFACE, ...) | skipped; one warning per type with the number of entities |
+| MLINE | one polyline per style element (offset along the miter); closed if the closed flag is set |
+| everything else (3DSOLID, REGION, IMAGE, RAY, XLINE, ...) | skipped; one warning per type with the number of entities |
 
 `ImportSummary::entities` counts, per DXF type, the records read (model space and block
 definitions), the TBCAD entities produced and the records dropped.

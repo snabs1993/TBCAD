@@ -373,6 +373,8 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
             return false;
     } else if (t == "3DFACE") {
         conv3dFace(r, out);
+    } else if (t == "MLINE") {
+        convMLine(r, out);
     } else if (t == "WIPEOUT") {
         convWipeout(r, out);
     } else if (t == "ARC_DIMENSION") {
@@ -1078,6 +1080,55 @@ bool Importer::conv3dFace(const Record& r, std::vector<Entity>& out) {
             out.push_back(makeEntity(LineData{a, b}));
     }
     return !out.empty();
+}
+
+// MLINE: one polyline per element of the style. Each vertex carries its position, the miter
+// direction and, for every element, the distance along that direction at which the element
+// passes (the first number of the element's parameter list). The style table is not needed.
+bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
+    struct Vertex {
+        Vec2 pos{}, miter{};
+        std::vector<double> offset{};
+    };
+    std::vector<Vertex> vs;
+    bool first = false;  // the next 41 is the first number of an element's list
+    for (const Group& g : r.g) {
+        if (g.code == 11) {
+            vs.emplace_back();
+            vs.back().pos.x = g.number() * k_;
+        } else if (vs.empty()) {
+            continue;
+        } else if (g.code == 21) {
+            vs.back().pos.y = g.number() * k_;
+        } else if (g.code == 13) {
+            vs.back().miter.x = g.number();
+        } else if (g.code == 23) {
+            vs.back().miter.y = g.number();
+        } else if (g.code == 74) {
+            first = true;
+        } else if (g.code == 41 && first) {
+            vs.back().offset.push_back(g.number() * k_);
+            first = false;
+        }
+    }
+    std::size_t elements = vs.empty() ? 0 : vs.front().offset.size();
+    for (const Vertex& v : vs)
+        elements = std::min(elements, v.offset.size());
+    if (vs.size() < 2 || elements == 0) {
+        return convForeign(r, out);
+    }
+    const bool closed = (r.integer(71) & 2) != 0;
+    for (std::size_t e = 0; e < elements; ++e) {
+        PolylineData pl;
+        pl.closed = closed && vs.size() > 2;
+        for (const Vertex& v : vs) {
+            PolyVertex pv;
+            pv.p = v.pos + v.miter * v.offset[e];
+            pl.v.push_back(pv);
+        }
+        out.push_back(makeEntity(std::move(pl)));
+    }
+    return true;
 }
 
 // WIPEOUT: a closed polyline that hides what is behind it. The clip boundary is in pixel units of

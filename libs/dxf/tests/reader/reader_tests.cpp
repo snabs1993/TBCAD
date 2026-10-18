@@ -866,4 +866,27 @@ TEST_CASE("ARC_DIMENSION: centre, ends and arc point give an arc length dimensio
     CHECK(dims[0]->measurement == doctest::Approx(kPi / 2 * 10));
 }
 
+TEST_CASE("MLINE: one polyline per element, offset along the miter direction") {
+    Pairs p;
+    p.g(0, "MLINE").g(8, "0").g(100, "AcDbMline").g(2, "Standard").g(40, 1.0).g(70, 0).g(71, 1);
+    p.g(72, 3).g(73, 2).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    auto vertex = [&](double x, double y, double dx, double dy, double mx, double my, double o) {
+        p.g(11, x).g(21, y).g(31, 0.0).g(12, dx).g(22, dy).g(32, 0.0).g(13, mx).g(23, my).g(33,
+                                                                                            0.0);
+        p.g(74, 2).g(41, 0.0).g(41, 0.0).g(75, 0);
+        p.g(74, 2).g(41, o).g(41, 0.0).g(75, 0);
+    };
+    vertex(0, 0, 1, 0, 0, 1, -1);
+    vertex(50, 0, 0, 1, -0.70710678118654746, 0.70710678118654746, -1.4142135623730951);
+    vertex(50, 30, 0, 1, -1, 0, -1);
+    Loaded l = load(entitiesOnly(p.text));
+    auto lines = modelEntities<PolylineData>(l.doc());
+    REQUIRE(lines.size() == 2);
+    CHECK(near(lines[0]->v[0].p, Vec2{0, 0}));
+    CHECK(near(lines[0]->v[1].p, Vec2{50, 0}));
+    CHECK(near(lines[1]->v[0].p, Vec2{0, -1}));
+    CHECK(near(lines[1]->v[1].p, Vec2{51, -1}, 1e-9));
+    CHECK(near(lines[1]->v[2].p, Vec2{51, 30}, 1e-9));
+}
+
 }  // namespace tbcad::dxf
