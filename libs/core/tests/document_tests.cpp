@@ -970,3 +970,32 @@ TEST_CASE("reserveIds only raises the next free ids") {
     CHECK_FALSE(doc.reserveIds(want));  // refused while a transaction is open
     tx.commit();
 }
+
+TEST_CASE("bulk erase takes everything out in one commit and undo brings it back") {
+    Document doc;
+    std::vector<EntityId> ids;
+    {
+        auto tx = doc.begin("gen");
+        for (int i = 0; i < 1000; ++i)
+            ids.push_back(tx.add(Entity{{}, LineData{{double(i), 0}, {double(i), 5}}}).value());
+        tx.commit();
+    }
+    // every third object, plus an id that is not there
+    std::vector<EntityId> some;
+    for (std::size_t i = 0; i < ids.size(); i += 3)
+        some.push_back(ids[i]);
+    some.push_back(EntityId{999999});
+    auto tx = doc.begin("erase");
+    CHECK(tx.eraseMany(some) == 334);
+    ChangeSet cs = tx.commit();
+    CHECK(doc.entityCount() == 666);
+    CHECK(cs.entities.size() == 334);
+    CHECK(doc.find(ids[0]) == nullptr);
+    REQUIRE(doc.find(ids[1]) != nullptr);
+    CHECK(std::get<LineData>(doc.find(ids[1])->data).a.x == 1.0);
+    CHECK(doc.find(ids[999]) == nullptr);  // 999 is a multiple of 3
+    CHECK(doc.find(ids[998]) != nullptr);
+    doc.apply(cs, Direction::Undo);
+    CHECK(doc.entityCount() == 1000);
+    CHECK(std::get<LineData>(doc.find(ids[0])->data).b.y == 5.0);
+}

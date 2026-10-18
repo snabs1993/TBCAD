@@ -878,6 +878,39 @@ void Document::removeEntity(EntityId id) {
     posOf_[id.value] = 0xFFFFFFFFu;
 }
 
+void Document::removeEntities(std::span<const EntityId> ids, std::vector<Entity>& out) {
+    constexpr std::uint32_t kGone = 0xFFFFFFFFu;
+    std::vector<std::uint8_t> mark(posOf_.size(), 0);
+    std::size_t n = 0;
+    for (EntityId id : ids) {
+        if (id.value < posOf_.size() && posOf_[id.value] != kGone && !mark[id.value]) {
+            mark[id.value] = 1;
+            ++n;
+        }
+    }
+    if (n == 0)
+        return;
+    out.reserve(out.size() + n);
+    const std::size_t total = store_.size();
+    std::size_t w = 0;
+    for (std::size_t r = 0; r < total; ++r) {
+        Entity& e = store_.at(r);
+        const std::uint64_t v = e.common.id.value;
+        if (mark[v]) {
+            out.push_back(std::move(e));
+            posOf_[v] = kGone;
+        } else {
+            if (w != r) {
+                store_.at(w) = std::move(e);
+                posOf_[v] = static_cast<std::uint32_t>(w);
+            }
+            ++w;
+        }
+    }
+    while (store_.size() > w)
+        store_.popBack();
+}
+
 BlockId Document::ownerBlock(EntityId id) const {
     auto it = owner_.find(id);
     return it == owner_.end() ? BlockId{} : it->second;
@@ -1345,20 +1378,21 @@ Document& Transaction::doc() const {
 
 std::vector<EntityId> Transaction::touchedEntities() const {
     std::vector<EntityId> ids;
-    ids.reserve(touched_.size());
-    for (const auto& kv : touched_)
-        ids.push_back(kv.first);
+    ids.reserve(beforeSnaps_.size());
+    for (const Entity& snap : beforeSnaps_)
+        ids.push_back(snap.common.id);
     std::sort(ids.begin(), ids.end());
     return ids;
 }
 
 void Transaction::touchEntity(EntityId id, bool consume) {
-    if ((id.value >= startNextId_ && id.value < doc_->allocCursor()) || touched_.count(id))
+    if ((id.value >= startNextId_ && id.value < doc_->allocCursor()) ||
+        touched_.find(id) != TouchedIndex::kNone)
         return;
     Entity* e = doc_->findMutable(id);
     if (!e)
         return;
-    touched_.emplace(id, static_cast<std::uint32_t>(beforeSnaps_.size()));
+    touched_.insert(id, static_cast<std::uint32_t>(beforeSnaps_.size()));
     // An entity that is erased right after is moved into the snapshot instead of copied.
     if (consume)
         beforeSnaps_.push_back(std::move(*e));
@@ -1423,14 +1457,31 @@ Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>
     Entity* live = d.findMutable(id);
     if (!live)
         return makeError(ErrorCode::NotFound, "unknown entity");
-    Entity work = *live;
-    fn(work);
-    work.common.id = id;
-    Result<double> ext = validateEntity(d, work, d.ownerBlock(id));
-    if (!ext)
-        return ext.error();
-    touchEntity(id);  // live still holds the original state
-    *live = std::move(work);
+    Result<double> ext = 0.0;
+    if (touched_.find(id) == TouchedIndex::kNone &&
+        !(id.value >= startNextId_ && id.value < d.allocCursor())) {
+        // First touch: the snapshot is the copy that keeps the original, so the entity is edited
+        // in place and put back from the snapshot if the edit is not valid.
+        touchEntity(id);
+        fn(*live);
+        live->common.id = id;
+        ext = validateEntity(d, *live, d.ownerBlock(id));
+        if (!ext) {
+            *live = std::move(beforeSnaps_.back());
+            beforeSnaps_.pop_back();
+            touched_.erase(id);
+            return ext.error();
+        }
+    } else {
+        Entity work = *live;
+        fn(work);
+        work.common.id = id;
+        ext = validateEntity(d, work, d.ownerBlock(id));
+        if (!ext)
+            return ext.error();
+        touchEntity(id);  // live still holds the original state
+        *live = std::move(work);
+    }
     if (ext.value() > d.header_.workArea)
         outOfArea_.push_back(id);
     return {};
@@ -1457,6 +1508,31 @@ Result<void> Transaction::eraseEntityInternal(EntityId id) {
     }
     d.removeEntity(id);
     return {};
+}
+
+std::size_t Transaction::eraseMany(std::span<const EntityId> ids) {
+    Document& d = doc();
+    // The one-pass erase covers a fresh transaction over objects that sit directly in model
+    // space; anything else goes object by object.
+    bool simple = touched_.empty() && d.allocCursor() == startNextId_ && order_.empty();
+    for (std::size_t i = 0; simple && i < ids.size(); ++i)
+        simple = !d.owner_.count(ids[i]) && !d.orderOverride_.count(ids[i]);
+    if (!simple) {
+        std::size_t n = 0;
+        for (EntityId id : ids)
+            if (eraseEntityInternal(id))
+                ++n;
+        return n;
+    }
+    std::vector<Entity> removed;
+    d.removeEntities(ids, removed);
+    beforeSnaps_.reserve(beforeSnaps_.size() + removed.size());
+    touched_.reserve(removed.size());
+    for (Entity& e : removed) {
+        touched_.insert(e.common.id, static_cast<std::uint32_t>(beforeSnaps_.size()));
+        beforeSnaps_.push_back(std::move(e));
+    }
+    return removed.size();
 }
 
 Result<void> Transaction::erase(EntityId id) {
@@ -1699,10 +1775,10 @@ void Transaction::followAssociations() {
             } else if (close(p.pts[i], *live)) {
                 continue;
             } else {
-                auto it = touched_.find(a.target);
+                const std::uint32_t at = touched_.find(a.target);
                 std::optional<Vec2> before;
-                if (it != touched_.end())
-                    before = dimAssocPoint(beforeSnaps_[it->second], a);
+                if (at != TouchedIndex::kNone)
+                    before = dimAssocPoint(beforeSnaps_[at], a);
                 if (before && close(p.pts[i], *before)) {
                     const Vec2 move = *live - p.pts[i];
                     if (p.followed == 0)
@@ -1771,10 +1847,10 @@ ChangeSet Transaction::commit() {
 
     // Touched ids in id order. The snapshots are kept in the order the entities were touched,
     // which for a bulk edit of the whole drawing is already ascending: sort only if it is not.
-    std::vector<EntityId> touchedIds;
+    std::vector<std::pair<EntityId, std::uint32_t>> touchedIds;  // id, index into beforeSnaps_
     touchedIds.reserve(beforeSnaps_.size());
-    for (const Entity& snap : beforeSnaps_)
-        touchedIds.push_back(snap.common.id);
+    for (std::uint32_t i = 0; i < beforeSnaps_.size(); ++i)
+        touchedIds.emplace_back(beforeSnaps_[i].common.id, i);
     if (!std::is_sorted(touchedIds.begin(), touchedIds.end()))
         std::sort(touchedIds.begin(), touchedIds.end());
 
@@ -1783,17 +1859,22 @@ ChangeSet Transaction::commit() {
         if (v < d.posOf_.size() && d.posOf_[v] != 0xFFFFFFFFu)
             ++added;
     }
-    auto snaps = std::make_shared<std::vector<Entity>>();
-    snaps->reserve(touchedIds.size() * 2 + added);
+    // The snapshots taken as the entities were touched are the "before" half as they lie; the
+    // "after" copies are appended behind them. (Nothing is moved for an erase of everything.)
+    std::size_t live = 0;
+    for (const auto& kv : touchedIds)
+        if (d.find(kv.first))
+            ++live;
+    auto snaps = std::make_shared<std::vector<Entity>>(std::move(beforeSnaps_));
+    snaps->reserve(snaps->size() + live + added);
     cs.entities.reserve(touchedIds.size() + added);
 
-    for (EntityId id : touchedIds) {
+    for (const auto& [id, at] : touchedIds) {
         EntityChange c;
-        c.before = static_cast<std::uint32_t>(snaps->size());
-        snaps->push_back(std::move(beforeSnaps_[touched_[id]]));
-        if (const Entity* live = d.find(id)) {
+        c.before = at;
+        if (const Entity* lv = d.find(id)) {
             c.after = static_cast<std::uint32_t>(snaps->size());
-            snaps->push_back(*live);
+            snaps->push_back(*lv);
         }
         cs.entities.push_back(c);
     }
@@ -1856,11 +1937,11 @@ void Transaction::rollback() {
         }
     }
     // Pre-existing entities that were modified or erased.
-    for (const auto& [id, idx] : touched_) {
-        if (Entity* live = d.findMutable(id))
-            *live = beforeSnaps_[idx];
+    for (const Entity& snap : beforeSnaps_) {
+        if (Entity* live = d.findMutable(snap.common.id))
+            *live = snap;
         else
-            d.insertEntity(Entity(beforeSnaps_[idx]));
+            d.insertEntity(Entity(snap));
     }
     auto restore = [](auto& table, auto& pending) {
         for (auto& [id, rc] : pending.rows)

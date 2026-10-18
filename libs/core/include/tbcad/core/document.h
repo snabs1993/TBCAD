@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -317,6 +318,8 @@ private:
     Entity* findMutable(EntityId id);
     void insertEntity(Entity&& e);  // e.common.id must be set
     void removeEntity(EntityId id);
+    // Takes many entities out in one pass over the store (stable order), moving them to `out`.
+    void removeEntities(std::span<const EntityId> ids, std::vector<Entity>& out);
     void setBlockRow(const BlockDef* oldRow, const BlockDef* newRow);
     std::int64_t orderKey(EntityId id) const;
 
@@ -367,6 +370,9 @@ public:
     BlockId defaultOwner() const { return defaultOwner_; }
     Result<void> modify(EntityId id, const std::function<void(Entity&)>& fn);
     Result<void> erase(EntityId id);
+    // Erases all of them (ids that are not there are skipped) and returns how many went. For a
+    // big erase this is one pass over the drawing instead of a lookup and a fix-up per object.
+    std::size_t eraseMany(std::span<const EntityId> ids);
     Result<void> bringToFront(EntityId id);
     Result<void> sendToBack(EntityId id);
 
@@ -408,7 +414,12 @@ public:
     std::vector<EntityId> touchedEntities() const;
     // The same without building the list: how many, and whether one id is among them.
     std::size_t touchedCount() const { return touched_.size(); }
-    bool wasTouched(EntityId id) const { return touched_.count(id) != 0; }
+    bool wasTouched(EntityId id) const { return touched_.find(id) != TouchedIndex::kNone; }
+    // A command that is about to touch n entities says so, so the bookkeeping is sized once.
+    void expectTouching(std::size_t n) {
+        beforeSnaps_.reserve(beforeSnaps_.size() + 2 * n);  // (the "after" copies join them)
+        touched_.reserve(touched_.size() + n);
+    }
 
     // The document this transaction edits; reads see the edits made so far.
     const Document& document() const { return *doc_; }
@@ -448,8 +459,89 @@ private:
     Document* doc_ = nullptr;
     std::string name_{};
     std::uint64_t startNextId_ = 0;
-    std::vector<Entity> beforeSnaps_{};                      // pre-existing entities touched
-    std::unordered_map<EntityId, std::uint32_t> touched_{};  // id -> index into beforeSnaps_
+    std::vector<Entity> beforeSnaps_{};  // pre-existing entities touched
+    // id -> index into beforeSnaps_, open addressing: a whole-drawing edit touches every entity,
+    // and a node per entity costs more than the edit itself.
+    class TouchedIndex {
+    public:
+        static constexpr std::uint32_t kNone = 0xFFFFFFFFu;
+        std::size_t size() const { return count_; }
+        bool empty() const { return count_ == 0; }
+        std::uint32_t find(EntityId id) const {
+            if (slots_.empty())
+                return kNone;
+            const std::size_t mask = slots_.size() - 1;
+            for (std::size_t i = hash(id.value) & mask;; i = (i + 1) & mask) {
+                if (slots_[i].key == 0)
+                    return kNone;
+                if (slots_[i].key == id.value + 1)
+                    return slots_[i].index;
+            }
+        }
+        void reserve(std::size_t n) {
+            std::size_t cap = 16;
+            while (cap < n * 2)
+                cap <<= 1;
+            if (cap > slots_.size())
+                rehash(cap);
+        }
+        // (the id must not be in the index yet)
+        void insert(EntityId id, std::uint32_t index) {
+            if ((count_ + 1) * 2 > slots_.size())
+                rehash(slots_.empty() ? 16 : slots_.size() * 2);
+            place(id.value + 1, index);
+            ++count_;
+        }
+
+        // Takes an id out again (backward-shift deletion keeps the probe runs unbroken).
+        void erase(EntityId id) {
+            if (slots_.empty())
+                return;
+            const std::size_t mask = slots_.size() - 1;
+            std::size_t i = hash(id.value) & mask;
+            while (slots_[i].key != id.value + 1) {
+                if (slots_[i].key == 0)
+                    return;
+                i = (i + 1) & mask;
+            }
+            for (std::size_t j = (i + 1) & mask; slots_[j].key != 0; j = (j + 1) & mask) {
+                const std::size_t home = hash(slots_[j].key - 1) & mask;
+                // (the slot at j may move into the hole at i if its home is not in (i, j])
+                if (((j - home) & mask) >= ((j - i) & mask)) {
+                    slots_[i] = slots_[j];
+                    i = j;
+                }
+            }
+            slots_[i] = Slot{};
+            --count_;
+        }
+
+    private:
+        struct Slot {
+            std::uint64_t key = 0;  // id + 1; 0 is an empty slot
+            std::uint32_t index = 0;
+        };
+        static std::size_t hash(std::uint64_t v) {
+            return static_cast<std::size_t>((v * 0x9E3779B97F4A7C15ull) >> 24);
+        }
+        void place(std::uint64_t key, std::uint32_t index) {
+            const std::size_t mask = slots_.size() - 1;
+            std::size_t i = hash(key - 1) & mask;
+            while (slots_[i].key != 0)
+                i = (i + 1) & mask;
+            slots_[i] = {key, index};
+        }
+        void rehash(std::size_t cap) {
+            std::vector<Slot> old(cap);
+            old.swap(slots_);
+            for (const Slot& sl : old)
+                if (sl.key != 0)
+                    place(sl.key, sl.index);
+        }
+        std::vector<Slot> slots_{};
+        std::size_t count_ = 0;
+    };
+    TouchedIndex touched_{};
     std::vector<EntityId> outOfArea_{};
     BlockId defaultOwner_{};
     std::optional<Header> headerBefore_{};

@@ -137,12 +137,16 @@ bool CommandContext::tryImmediate(detail::PromptRequest& req) {
                 ids.push_back(id);
         }
         if (!ids.empty()) {
-            std::vector<EntityId> grouped;
-            for (EntityId id : expandGroups(doc_, ids)) {
-                const Entity* e = doc_.find(id);
+            // (the group members come after the ids that were already filtered)
+            const std::size_t already = ids.size();
+            std::vector<EntityId> grouped = expandGroups(doc_, ids);
+            std::size_t keep = already;
+            for (std::size_t i = already; i < grouped.size(); ++i) {
+                const Entity* e = doc_.find(grouped[i]);
                 if (e && (!req.filter || req.filter(*e)))
-                    grouped.push_back(id);
+                    grouped[keep++] = grouped[i];
             }
+            grouped.resize(keep);
             ids = std::move(grouped);
             answer_ = {};
             answer_.status = Status::Ok;

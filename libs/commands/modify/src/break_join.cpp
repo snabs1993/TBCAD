@@ -159,15 +159,19 @@ public:
         // as much as the erase (UNDO still takes such an erase back).
         constexpr std::size_t kOopsMax = 20000;
         const bool keep = sel.ids.size() <= kOopsMax;
-        for (EntityId id : sel.ids) {
-            const Entity* e = ctx.doc().find(id);
-            Entity copy;
-            if (e && keep)
-                copy = *e;
-            if (ctx.tx().erase(id)) {
-                ++n;
-                if (e && keep)
-                    removed.push_back(std::move(copy));
+        if (!keep) {
+            n = ctx.tx().eraseMany(sel.ids);
+        } else {
+            for (EntityId id : sel.ids) {
+                const Entity* e = ctx.doc().find(id);
+                Entity copy;
+                if (e)
+                    copy = *e;
+                if (ctx.tx().erase(id)) {
+                    ++n;
+                    if (e)
+                        removed.push_back(std::move(copy));
+                }
             }
         }
         if (!keep)

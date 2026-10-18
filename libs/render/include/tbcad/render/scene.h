@@ -222,6 +222,7 @@ private:
     double tileSize_;
     // Frees a scene's worth of geometry on another thread (see discardAll).
     std::future<void> graveyard_{};
+    std::future<void> selGraveyard_{};
     void discardAll();
     std::unordered_map<TileKey, Tile> tiles_{};
     std::unordered_map<EntityId, EntityRec> entities_{};

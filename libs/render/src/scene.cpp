@@ -481,6 +481,13 @@ void Scene::setHighlighted(std::span<const EntityId> ids) {
 }
 
 void Scene::setSelected(std::span<const EntityId> ids) {
+    // A big selection that is dropped (after ERASE, say) is freed on another thread.
+    constexpr std::size_t kAsyncMin = 20000;
+    if (selGraveyard_.valid())
+        selGraveyard_.get();
+    if (selected_.size() >= kAsyncMin)
+        selGraveyard_ =
+            std::async(std::launch::async, [old = std::move(selected_)]() mutable { old.clear(); });
     selected_.clear();
     selected_.reserve(ids.size());
     selected_.insert(ids.begin(), ids.end());
