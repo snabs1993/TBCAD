@@ -1,0 +1,362 @@
+#include "tbcad/transform/grip_menu.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdio>
+
+#include "tbcad/geom/geom.h"
+
+namespace tbcad::transform {
+
+namespace {
+
+constexpr GripAction kAll[] = {GripAction::Stretch,       GripAction::AddVertex,
+                               GripAction::RemoveVertex,  GripAction::ConvertToArc,
+                               GripAction::ConvertToLine, GripAction::Lengthen,
+                               GripAction::Radius,        GripAction::ResetText,
+                               GripAction::Continue,      GripAction::Baseline};
+
+bool iequals(const std::string& a, const char* b) {
+    std::size_t n = 0;
+    while (b[n])
+        ++n;
+    if (a.size() != n)
+        return false;
+    for (std::size_t i = 0; i < n; ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    return true;
+}
+
+Error fail(const char* text) {
+    return makeError(ErrorCode::InvalidArgument, text);
+}
+
+// Splits the arc segment a -> b (bulge) at the point of the arc nearest to `p`; the two bulges.
+// Empty when the segment is straight or `p` lies outside the arc.
+struct Split {
+    Vec2 at{};
+    double first = 0, second = 0;
+};
+std::optional<Split> splitArcSegment(Vec2 a, Vec2 b, double bulge, Vec2 p) {
+    auto arc = geom::bulgeArc(a, b, bulge);
+    if (!arc)
+        return std::nullopt;
+    const Vec2 v = p - arc->center;
+    if (tol::isZeroLength(v))
+        return std::nullopt;
+    // Angle travelled from the start of the arc, in the direction the polyline runs.
+    const double total = arc->sweep;
+    const double aStart =
+        arc->reversed ? normalizeAngle(arc->startAngle + arc->sweep) : arc->startAngle;
+    double t = std::atan2(v.y, v.x) - aStart;
+    t = arc->reversed ? normalizeAngle(-t) : normalizeAngle(t);
+    if (t <= 1e-9 || t >= total - 1e-9)
+        return std::nullopt;
+    const double sign = bulge < 0 ? -1.0 : 1.0;
+    Split s;
+    const double ang = aStart + sign * t;
+    s.at = arc->center + Vec2{std::cos(ang), std::sin(ang)} * arc->radius;
+    s.first = sign * std::tan(t / 4);
+    s.second = sign * std::tan((total - t) / 4);
+    return s;
+}
+
+}  // namespace
+
+const char* gripActionLabel(GripAction a) {
+    switch (a) {
+        case GripAction::Stretch:
+            return "Stretch";
+        case GripAction::AddVertex:
+            return "Add vertex";
+        case GripAction::RemoveVertex:
+            return "Remove vertex";
+        case GripAction::ConvertToArc:
+            return "Convert to arc";
+        case GripAction::ConvertToLine:
+            return "Convert to line";
+        case GripAction::Lengthen:
+            return "Lengthen";
+        case GripAction::Radius:
+            return "Radius";
+        case GripAction::ResetText:
+            return "Reset text position";
+        case GripAction::Continue:
+            return "Continue dimension";
+        case GripAction::Baseline:
+            return "Baseline dimension";
+    }
+    return "";
+}
+
+const char* gripActionKeyword(GripAction a) {
+    switch (a) {
+        case GripAction::Stretch:
+            return "Stretch";
+        case GripAction::AddVertex:
+            return "AddVertex";
+        case GripAction::RemoveVertex:
+            return "RemoveVertex";
+        case GripAction::ConvertToArc:
+            return "ConvertToArc";
+        case GripAction::ConvertToLine:
+            return "ConvertToLine";
+        case GripAction::Lengthen:
+            return "Lengthen";
+        case GripAction::Radius:
+            return "Radius";
+        case GripAction::ResetText:
+            return "ResetText";
+        case GripAction::Continue:
+            return "Continue";
+        case GripAction::Baseline:
+            return "Baseline";
+    }
+    return "";
+}
+
+bool gripActionFromKeyword(const std::string& word, GripAction& out) {
+    for (GripAction a : kAll)
+        if (iequals(word, gripActionKeyword(a))) {
+            out = a;
+            return true;
+        }
+    return false;
+}
+
+bool gripActionNeedsPoint(GripAction a) {
+    switch (a) {
+        case GripAction::RemoveVertex:
+        case GripAction::ConvertToLine:
+        case GripAction::ResetText:
+        case GripAction::Continue:
+        case GripAction::Baseline:
+            return false;
+        default:
+            return true;
+    }
+}
+
+std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
+    std::vector<GripAction> out;
+    const Entity* e = doc.find(grip.entity);
+    if (!e || grip.index < 0 || grip.index >= kDynGripBase)
+        return out;
+    const int count = static_cast<int>(geom::gripPoints(*e).size());
+    if (grip.index >= count)
+        return out;
+    out.push_back(GripAction::Stretch);
+    switch (kind(*e)) {
+        case EntityKind::Line:
+            if (grip.index < 2)
+                out.push_back(GripAction::Lengthen);
+            break;
+        case EntityKind::Circle:
+            if (grip.index >= 1)
+                out.push_back(GripAction::Radius);
+            break;
+        case EntityKind::Arc:
+            if (grip.index < 2)
+                out.push_back(GripAction::Lengthen);
+            else if (grip.index == 2)
+                out.push_back(GripAction::Radius);
+            break;
+        case EntityKind::Polyline: {
+            const auto& pl = *entityAs<PolylineData>(*e);
+            const int n = static_cast<int>(pl.v.size());
+            out.push_back(GripAction::AddVertex);
+            if (grip.index < n) {
+                if (n > (pl.closed ? 3 : 2))
+                    out.push_back(GripAction::RemoveVertex);
+            } else {
+                const bool arc = pl.v[static_cast<std::size_t>(grip.index - n)].bulge != 0;
+                out.push_back(arc ? GripAction::ConvertToLine : GripAction::ConvertToArc);
+            }
+            break;
+        }
+        case EntityKind::Dimension: {
+            const auto& d = *entityAs<DimensionData>(*e);
+            if (grip.index == 4 && d.textPosUser)
+                out.push_back(GripAction::ResetText);
+            if ((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) && grip.index < 2) {
+                out.push_back(GripAction::Continue);
+                out.push_back(GripAction::Baseline);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return out;
+}
+
+Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Vec2 target) {
+    if (!isFinite(target))
+        return fail("the point is not finite");
+    if (action == GripAction::Stretch)
+        return geom::moveGrip(e, index, target);
+    Entity out = e;
+    switch (kind(e)) {
+        case EntityKind::Line: {
+            if (action != GripAction::Lengthen || index > 1)
+                break;
+            auto& d = *entityAs<LineData>(out);
+            const Vec2 fixed = index == 0 ? d.b : d.a;
+            const Vec2 moving = index == 0 ? d.a : d.b;
+            const Vec2 dir = normalized(moving - fixed);
+            const double len = dot(target - fixed, dir);
+            if (!(len > tol::kLinear))
+                return fail("the line would have no length");
+            (index == 0 ? d.a : d.b) = fixed + dir * len;
+            return out;
+        }
+        case EntityKind::Circle: {
+            if (action != GripAction::Radius || index < 1 || index > 4)
+                break;
+            auto& d = *entityAs<CircleData>(out);
+            const double r = distance(d.center, target);
+            if (tol::isZeroLength(r))
+                return fail("the radius would be zero");
+            d.radius = r;
+            return out;
+        }
+        case EntityKind::Arc: {
+            auto& d = *entityAs<ArcData>(out);
+            if (action == GripAction::Radius && index == 2) {
+                const double r = distance(d.center, target);
+                if (tol::isZeroLength(r))
+                    return fail("the radius would be zero");
+                d.radius = r;
+                return out;
+            }
+            if (action == GripAction::Lengthen && index < 2) {
+                const Vec2 v = target - d.center;
+                if (tol::isZeroLength(v))
+                    return fail("the point is at the centre");
+                const double a = normalizeAngle(std::atan2(v.y, v.x));
+                (index == 0 ? d.startAngle : d.endAngle) = a;
+                if (tol::nearlyEqualAngle(d.startAngle, d.endAngle))
+                    return fail("the arc would have no length");
+                return out;
+            }
+            break;
+        }
+        case EntityKind::Polyline: {
+            auto& pl = *entityAs<PolylineData>(out);
+            const int n = static_cast<int>(pl.v.size());
+            if (index < 0)
+                break;
+            const bool onVertex = index < n;
+            const int seg = onVertex ? index : index - n;
+            if (!onVertex && seg >= geom::segmentCount(pl))
+                break;
+            switch (action) {
+                case GripAction::AddVertex: {
+                    const int next = (seg + 1) % n;
+                    if (onVertex && !pl.closed && seg == n - 1) {
+                        PolyVertex v = pl.v.back();
+                        v.p = target;
+                        v.bulge = 0;
+                        pl.v.push_back(v);
+                        return out;
+                    }
+                    PolyVertex& a = pl.v[static_cast<std::size_t>(seg)];
+                    const PolyVertex& b = pl.v[static_cast<std::size_t>(next)];
+                    PolyVertex nv = a;
+                    nv.p = target;
+                    nv.bulge = 0;
+                    if (!onVertex && a.bulge != 0) {
+                        if (auto s = splitArcSegment(a.p, b.p, a.bulge, target)) {
+                            nv.p = s->at;
+                            nv.bulge = s->second;
+                            a.bulge = s->first;
+                        } else {
+                            // The point is off the arc: split at the middle of the arc instead.
+                            auto arc = geom::bulgeArc(a.p, b.p, a.bulge);
+                            if (!arc)
+                                return fail("the segment cannot be split");
+                            auto s2 = splitArcSegment(
+                                a.p, b.p, a.bulge,
+                                arc->center + normalized(target - arc->center) * arc->radius);
+                            if (!s2)
+                                return fail("the point is not on the arc");
+                            nv.p = s2->at;
+                            nv.bulge = s2->second;
+                            a.bulge = s2->first;
+                        }
+                    } else if (onVertex) {
+                        a.bulge = 0;  // the new vertex breaks the curve that left this one
+                    }
+                    pl.v.insert(pl.v.begin() + seg + 1, nv);
+                    return out;
+                }
+                case GripAction::RemoveVertex: {
+                    if (!onVertex || n <= (pl.closed ? 3 : 2))
+                        return fail("the polyline needs its remaining vertices");
+                    const int prev = (index + n - 1) % n;
+                    if (pl.closed || index > 0)
+                        pl.v[static_cast<std::size_t>(prev)].bulge = 0;
+                    pl.v.erase(pl.v.begin() + index);
+                    return out;
+                }
+                case GripAction::ConvertToArc: {
+                    if (onVertex)
+                        break;
+                    PolyVertex& a = pl.v[static_cast<std::size_t>(seg)];
+                    const PolyVertex& b = pl.v[static_cast<std::size_t>((seg + 1) % n)];
+                    auto bu = geom::bulgeThrough(a.p, target, b.p);
+                    if (!bu)
+                        return fail("the three points are on one line");
+                    a.bulge = *bu;
+                    return out;
+                }
+                case GripAction::ConvertToLine: {
+                    if (onVertex)
+                        break;
+                    pl.v[static_cast<std::size_t>(seg)].bulge = 0;
+                    return out;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
+        case EntityKind::Dimension: {
+            if (action == GripAction::ResetText && index == 4) {
+                auto& d = *entityAs<DimensionData>(out);
+                d.textPosUser = false;
+                return out;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    return fail("that action is not available for this grip");
+}
+
+std::string gripActionCommand(const Document& doc, const Grip& grip, GripAction action) {
+    const auto offered = gripActions(doc, grip);
+    if (std::find(offered.begin(), offered.end(), action) == offered.end())
+        return {};
+    char buf[160];
+    if (action == GripAction::Continue || action == GripAction::Baseline) {
+        const Entity* e = doc.find(grip.entity);
+        const auto* d = e ? entityAs<DimensionData>(*e) : nullptr;
+        if (!d)
+            return {};
+        // The command asks for the base dimension: pick it on its dimension line.
+        std::snprintf(buf, sizeof buf, "%s Select %.17g,%.17g",
+                      action == GripAction::Continue ? "DIMCONTINUE" : "DIMBASELINE",
+                      d->defPts[2].x, d->defPts[2].y);
+        return buf;
+    }
+    std::snprintf(buf, sizeof buf, "GRIPEDIT %.17g,%.17g %s", grip.pos.x, grip.pos.y,
+                  gripActionKeyword(action));
+    return buf;
+}
+
+}  // namespace tbcad::transform

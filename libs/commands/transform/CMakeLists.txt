@@ -2,6 +2,7 @@ tbcad_add_library(transform
   SOURCES
     src/apply.cpp
     src/commands.cpp
+    src/grip_menu.cpp
     src/grips.cpp
     src/grip_command.cpp
     src/stretch.cpp
@@ -15,4 +16,5 @@ tbcad_add_tests(transform
     tests/grip_tests.cpp
     tests/stretch_tests.cpp
     tests/robustness_tests.cpp
+    tests/grip_menu_tests.cpp
   DEPENDS tbcad_command_registry)
