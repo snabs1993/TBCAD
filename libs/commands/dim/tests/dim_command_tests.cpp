@@ -287,3 +287,38 @@ TEST_CASE("DIMJOGGED dimensions the radius with a jog in the line") {
     CHECK(L.lines[0].pts.size() == 6);  // line, four points of the jog, arc end
     CHECK(L.text.utf8 == "R40.00");
 }
+
+TEST_CASE(
+    "annotative dimensions do not also get an auto-scaled style, and an enlarged style is "
+    "flagged") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("anno");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom[kAnnoNewKey] = "1";
+                      h.custom[kAnnoScaleKey] = "100";
+                  }).ok());
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,0", "5000,0", "2500,800"});
+    // The standard style stays at overall scale 1: the annotation scale does the enlarging.
+    CHECK(f.doc.header().currentDimStyle == kDimStyleStandard);
+    CHECK_FALSE(f.host->logContains("sizes multiply"));
+
+    {  // An enlarged style plus an annotative dimension: warned about once.
+        Transaction tx = f.doc.begin("style");
+        DimStyle big = dim::styleOf(f.doc, kDimStyleStandard);
+        big.id = {};
+        big.name = "Big";
+        big.overallScale = 100;
+        auto id = tx.addDimStyle(big);
+        REQUIRE(id.ok());
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.currentDimStyle = id.value(); }).ok());
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,0", "5000,0", "2500,800"});
+    CHECK(f.host->logContains("sizes multiply"));
+    f.host->clearLog();
+    f.host->run("DIMLINEAR", {"0,0", "5000,0", "2500,800"});
+    CHECK_FALSE(f.host->logContains("sizes multiply"));
+}
