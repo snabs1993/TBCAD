@@ -850,6 +850,38 @@ std::string Writer::objectsSection() {
     std::uint64_t groupDict = newHandle(), layoutDict = newHandle(), mlineDict = newHandle(),
                   plotDict = newHandle(), mlineStyle = newHandle(), placeholder = newHandle();
 
+    // Objects kept from the source file: a new handle for each "@N" token.
+    const auto& keptCustom = doc_.header().custom;
+    std::unordered_map<std::string, std::uint64_t> tokenHandle;
+    auto handleOfToken = [&](const std::string& t) -> std::uint64_t {
+        if (t == "@root")
+            return rootDict_;
+        if (t.size() < 2 || t[0] != '@')
+            return 0;
+        auto [it, fresh] = tokenHandle.emplace(t, 0);
+        if (fresh)
+            it->second = newHandle();
+        return it->second;
+    };
+    KeptGroups keptObjects, keptRootEntries;
+    if (auto it = keptCustom.find(kKeptObjectsKey); it != keptCustom.end())
+        keptObjects = unpackGroups(it->second);
+    if (auto it = keptCustom.find(kKeptObjectRootKey); it != keptCustom.end()) {
+        // lines "name TAB @N" (the name is a group value, the token its handle)
+        std::string_view text = it->second;
+        while (!text.empty()) {
+            const std::size_t nl = text.find('\n');
+            const std::string_view line = text.substr(0, nl);
+            text = nl == std::string_view::npos ? std::string_view{} : text.substr(nl + 1);
+            const std::size_t tab = line.find('\t');
+            if (tab != std::string_view::npos)
+                keptRootEntries.emplace_back(
+                    0, std::string(line.substr(0, tab)) + '\t' + std::string(line.substr(tab + 1)));
+        }
+    }
+    if (keptObjects.empty())
+        keptRootEntries.clear();
+
     // Annotation scales: the current scale and the list, when the drawing has any (R2007 and later
     // get real SCALE objects; the XRECORD carries them for every version, for our own importer).
     const auto& custom = doc_.header().custom;
@@ -889,6 +921,11 @@ std::string Writer::objectsSection() {
     o.h(350, mlineDict);
     o.raw(3, "ACAD_PLOTSTYLENAME");
     o.h(350, plotDict);
+    for (const auto& [unused, entry] : keptRootEntries) {
+        const std::size_t tab = entry.find('\t');
+        o.str(3, entry.substr(0, tab));
+        o.h(350, handleOfToken(entry.substr(tab + 1)));
+    }
 
     auto ownedDict = [&](std::uint64_t handle) {
         o.zero("DICTIONARY");
@@ -1132,6 +1169,17 @@ std::string Writer::objectsSection() {
         for (std::size_t i = 0; i < sheets_.size(); ++i)
             layout(sheets_[i].layout, sheets_[i].name, static_cast<int>(i) + 1, sheets_[i].rec, 688,
                    sheets_[i].w, sheets_[i].h);
+    }
+
+    // The records kept from the source file.
+    for (const auto& [code, value] : keptObjects) {
+        if (code == 0) {
+            o.zero(value);
+        } else if (code == 5 || code == 330 || handleCode(code)) {
+            o.h(code, handleOfToken(value));
+        } else {
+            o.str(code, value);
+        }
     }
 
     o.zero("ENDSEC");

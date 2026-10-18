@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <set>
 
 #include "importer.h"
 #include "keep.h"
@@ -336,6 +337,7 @@ void Importer::processObjects(RecordReader& rr) {
             rr.pushBack(std::move(r));
             return;
         }
+        storeObject(r);
         if (r.type == "LAYOUT") {
             readLayoutObject(r);
             continue;
@@ -429,6 +431,137 @@ void Importer::processObjects(RecordReader& rr) {
                 h.custom[kAnnoScaleListKey] = list;
         });
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Objects that are kept as they are
+//
+// The OBJECTS section holds more than TBCAD models: materials, visual styles, multileader and
+// table styles, page setups, application dictionaries and data. Everything that hangs off the
+// root dictionary under a name the writer does not make itself is kept: the records, with their
+// handles replaced by "@N" tokens (numbered in order of appearance; "@root" is the root
+// dictionary) that the writer turns into new handles. A reference to something that is not kept
+// (an entity, a table record, a layout) becomes the null handle.
+
+namespace {
+
+std::string upperHandle(std::string_view h) {
+    std::string s(h);
+    for (char& c : s)
+        if (c >= 'a' && c <= 'f')
+            c = static_cast<char>(c - 'a' + 'A');
+    return s;
+}
+
+}  // namespace
+
+void Importer::storeObject(const Record& r) {
+    const std::string_view h = r.raw(5);
+    if (h.empty() || objStore_.size() >= 400000 || objStoreBytes_ > (96u << 20))
+        return;
+    ObjRec rec;
+    rec.type = std::string(r.type);
+    rec.g.reserve(r.g.size());
+    for (const Group& g : r.g) {
+        std::string text;
+        if (!keptValue(g, [&](std::string_view v) { return dec(v); }, text))
+            continue;
+        objStoreBytes_ += text.size() + 16;
+        rec.g.emplace_back(g.code, std::move(text));
+    }
+    if (rec.type == "DICTIONARY" && objRoot_.empty()) {
+        const std::string_view owner = r.raw(330);
+        if (owner.empty() || owner == "0")
+            objRoot_ = upperHandle(h);
+    }
+    objStore_[upperHandle(h)] = std::move(rec);
+}
+
+void Importer::keepObjects() {
+    if (objRoot_.empty() || !objStore_.count(objRoot_))
+        return;
+    // Names the writer writes itself, and objects that only make sense next to entities or
+    // layouts of the source file.
+    static const std::set<std::string> ownedNames = {
+        "ACAD_GROUP",     "ACAD_IMAGE_DICT", "ACAD_IMAGE_VARS",
+        "ACAD_LAYOUT",    "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME",
+        "ACAD_SCALELIST", "TBCAD_ANNOSCALE", "ACAD_SORTENTS"};
+    static const std::set<std::string> neverKept = {
+        "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "SORTENTSTABLE", "GROUP",
+        "DIMASSOC", "IMAGEDEFREACTOR", "ACDBPLACEHOLDER",  "MLINESTYLE"};
+
+    const ObjRec& root = objStore_.at(objRoot_);
+    std::vector<std::pair<std::string, std::string>> entries;  // (name, handle)
+    {
+        std::string name;
+        for (const auto& [c, v] : root.g) {
+            if (c == 3)
+                name = v;
+            else if ((c == 350 || c == 360) && !name.empty()) {
+                entries.emplace_back(name, upperHandle(v));
+                name.clear();
+            }
+        }
+    }
+
+    std::unordered_map<std::string, std::size_t> token;  // source handle -> index
+    std::vector<std::string> order;                      // in token order
+    auto admit = [&](const std::string& h) -> bool {
+        auto it = objStore_.find(h);
+        if (it == objStore_.end() || neverKept.count(it->second.type) || h == objRoot_)
+            return false;
+        if (token.emplace(h, order.size()).second)
+            order.push_back(h);
+        return true;
+    };
+
+    std::string rootEntries;
+    for (const auto& [name, h] : entries) {
+        if (ownedNames.count(name) || !admit(h))
+            continue;
+        rootEntries += name + "\t@" + std::to_string(token[h]) + "\n";
+    }
+    if (order.empty())
+        return;
+
+    std::string packed;
+    for (std::size_t i = 0; i < order.size(); ++i) {  // `order` grows as references are found
+        const ObjRec& rec = objStore_.at(order[i]);
+        packGroup(packed, 0, rec.type);
+        int skipDepth = 0;
+        for (const auto& [c, v] : rec.g) {
+            if (c == 102) {  // {ACAD_REACTORS ... } and {ACAD_XDICTIONARY ... }: not kept
+                if (!v.empty() && v[0] == '{')
+                    ++skipDepth;
+                else if (skipDepth > 0)
+                    --skipDepth;
+                continue;
+            }
+            if (skipDepth > 0)
+                continue;
+            if (c == 5) {
+                packGroup(packed, 5, "@" + std::to_string(i));
+            } else if (c == 330) {
+                const std::string h = upperHandle(v);
+                packGroup(packed, 330,
+                          h == objRoot_    ? "@root"
+                          : token.count(h) ? "@" + std::to_string(token[h])
+                                           : "@root");
+            } else if (handleCode(c)) {
+                const std::string h = upperHandle(v);
+                if (!h.empty() && h != "0" && admit(h))
+                    packGroup(packed, c, "@" + std::to_string(token[h]));
+                else
+                    packGroup(packed, c, "0");
+            } else {
+                packGroup(packed, c, v);
+            }
+        }
+    }
+    (void)tx_->modifyHeader([&](Header& h) {
+        h.custom[kKeptObjectsKey] = std::move(packed);
+        h.custom[kKeptObjectRootKey] = std::move(rootEntries);
+    });
 }
 
 void Importer::applyLayerAlphaXrecords() {
@@ -1765,6 +1898,7 @@ Result<ImportResult> Importer::run() {
     createLayers();
     applyLayerAlphaXrecords();
     resolveExtDictionaries();
+    keepObjects();
     finish();
 
     // Current layer from the header, when it exists.
