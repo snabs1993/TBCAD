@@ -48,14 +48,41 @@ public:
             co_return;
         std::optional<EntityKind> only;
         cmd::KeywordOptions opts;
-        opts.keywords = {"Only", "Layer", "Color", "Linetype", "LTScale", "Lineweight", "Set"};
+        opts.keywords = {"Only",    "Layer",      "Color", "Linetype",
+                         "LTScale", "Lineweight", "Set",   "Delete"};
         while (true) {
             auto k = co_await ctx.getKeyword(
                 "Property [Only/Layer/Color/Linetype/LTScale/"
-                "Lineweight/Set]",
+                "Lineweight/Set/Delete]",
                 opts);
             if (!k.ok())
                 co_return;
+            if (k.keyword == "Delete") {
+                // Erases the selected objects of the chosen type (all of them without "Only").
+                std::size_t gone = 0, locked = 0;
+                std::vector<EntityId> keep;
+                for (EntityId id : sel.ids) {
+                    const Entity* e = ctx.doc().find(id);
+                    if (!e)
+                        continue;
+                    if (only && kind(*e) != *only) {
+                        keep.push_back(id);
+                    } else if (ctx.doc().effective(e->common).locked) {
+                        ++locked;
+                        keep.push_back(id);
+                    } else if (ctx.tx().erase(id)) {
+                        ++gone;
+                    } else {
+                        keep.push_back(id);
+                    }
+                }
+                ctx.host().setSelection(keep);
+                ctx.message(std::to_string(gone) + " erased." +
+                            (locked ? " " + std::to_string(locked) +
+                                          " object(s) on locked layers were kept."
+                                    : ""));
+                co_return;
+            }
             auto v = co_await ctx.getString(k.keyword == "Only"  ? "Object type"
                                             : k.keyword == "Set" ? "Field name"
                                                                  : "New value");
