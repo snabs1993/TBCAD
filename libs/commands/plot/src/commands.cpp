@@ -6,6 +6,7 @@
 #include <optional>
 #include <sstream>
 
+#include "tbcad/io/tbcad.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/sheets/sheets.h"
@@ -596,7 +597,7 @@ public:
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         KeywordOptions menu;
-        menu.keywords = {"List", "Save", "Apply", "Assign", "Rename", "Delete"};
+        menu.keywords = {"List", "Save", "Apply", "Assign", "Rename", "Delete", "Import"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Page setup", menu);
         if (!choice.ok())
@@ -622,6 +623,29 @@ public:
                     line += "  [" + users + "]";
                 ctx.message(line);
             }
+            co_return;
+        }
+        if (kw == "Import") {
+            auto f = co_await ctx.getString("Drawing (.tbcad) to take page setups from");
+            if (!f.ok() || f.text.empty())
+                co_return;
+            io::IoReport report;
+            auto other = io::readTbcad(std::filesystem::path(f.text), report);
+            if (!other) {
+                ctx.message(other.error().message);
+                co_return;
+            }
+            std::size_t count = 0;
+            for (const auto& p : layout::pageSetups(*other.value())) {
+                auto r = layout::savePageSetup(ctx.tx(), p);
+                if (!r) {
+                    ctx.message(p.name + ": " + r.error().message);
+                    continue;
+                }
+                ++count;
+            }
+            ctx.message(count == 0 ? "That drawing has no page setups."
+                                   : std::to_string(count) + " page setups imported.");
             co_return;
         }
         cmd::StringOptions so;
