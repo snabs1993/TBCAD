@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "tbcad/blocks/display.h"
@@ -29,6 +30,9 @@ public:
     // anything by itself; see refreshStale().
     void setPixelSize(double mm) { pixelSizeMm_ = mm; }
     double pixelSize() const { return pixelSizeMm_; }
+    // Transparency on or off (the TPY switch); changing it needs a rebuildAll().
+    void setShowTransparency(bool on) { showTransparency_ = on; }
+    bool showTransparency() const { return showTransparency_; }
 
     // Rebuilds the whole scene from the document (after loading a file).
     void rebuildAll(double tileSizeMm = 0);
@@ -50,6 +54,8 @@ private:
     render::Scene& scene_;
     double pixelSizeMm_ = 0.1;
     std::unordered_set<LayerId> lockedLayers_{};
+    std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
+    bool showTransparency_ = true;
     // Texts holding fields (%<...>%): they show other objects' values, so they are redrawn after
     // every change.
     std::unordered_set<EntityId> fieldTexts_{};

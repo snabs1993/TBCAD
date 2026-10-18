@@ -78,10 +78,10 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Make",     "New",        "NewSub", "Parent", "Set",    "On",
-                         "Off",      "Freeze",     "Thaw",   "Lock",   "Unlock", "Color",
-                         "Linetype", "Lineweight", "Plot",   "NoPlot", "Rename", "Delete",
-                         "Isolate",  "ShowAll",    "List"};
+        opts.keywords = {"Make",     "New",        "NewSub", "Parent",      "Set",    "On",
+                         "Off",      "Freeze",     "Thaw",   "Lock",        "Unlock", "Color",
+                         "Linetype", "Lineweight", "Plot",   "NoPlot",      "Rename", "Delete",
+                         "Isolate",  "ShowAll",    "List",   "Transparency"};
         opts.aliases = {{"N", "New"}, {"S", "Set"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
@@ -211,12 +211,14 @@ private:
                     r = setPlot(doc, ctx.tx(), id, false);
                 report(ctx, r);
             }
-        } else if (option == "Color" || option == "Linetype" || option == "Lineweight") {
+        } else if (option == "Color" || option == "Linetype" || option == "Lineweight" ||
+                   option == "Transparency") {
             std::string value;
             co_await askText(ctx,
-                             option == "Color"      ? "Colour (name, 1-255, r,g,b or ByParent)"
-                             : option == "Linetype" ? "Linetype name (or ByParent)"
-                                                    : "Lineweight in mm (Default or ByParent)",
+                             option == "Color"          ? "Colour (name, 1-255, r,g,b or ByParent)"
+                             : option == "Linetype"     ? "Linetype name (or ByParent)"
+                             : option == "Transparency" ? "Transparency in percent (0 to 90)"
+                                                        : "Lineweight in mm (Default or ByParent)",
                              value, ok);
             if (!ok)
                 co_return;
@@ -240,6 +242,14 @@ private:
                 }
                 for (LayerId id : ids)
                     report(ctx, setLayerLinetype(doc, ctx.tx(), id, lt.value()));
+            } else if (option == "Transparency") {
+                auto tr = parseTransparency(value);
+                if (!tr || tr.value() < 0) {
+                    ctx.message("A layer transparency is 0 to 90.");
+                    co_return;
+                }
+                for (LayerId id : ids)
+                    report(ctx, setLayerTransparency(doc, ctx.tx(), id, tr.value()));
             } else {
                 auto lw = parseLineweight(value);
                 if (!lw) {

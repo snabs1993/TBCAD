@@ -292,6 +292,42 @@ TEST_CASE("a plot style table maps colour, lineweight and screening per palette 
     CHECK(black == 3);  // the true colour follows its nearest palette entry and goes black too
 }
 
+TEST_CASE("a transparent object prints as a lighter colour, also through a black pen") {
+    Document doc;
+    Entity half = line({0, 0}, {100, 0});
+    half.common.color = Color::index(1);
+    half.common.transparency = 50;
+    addEntity(doc, half);
+
+    PlotSettings s;
+    auto firstPath = [&](const PlotSettings& ps) {
+        auto sheet = buildSheet(doc, ps);
+        REQUIRE(sheet.ok());
+        for (const auto& p : sheet.value().prims)
+            if (const auto* pp = std::get_if<PlotPath>(&p))
+                return pp->style.color;
+        FAIL("no path");
+        return Rgba{};
+    };
+    const Rgba drawn = paletteColor(1);
+    const Rgba light = firstPath(s);
+    CHECK(light.g > drawn.g);  // mixed halfway with the white sheet
+    CHECK(light.b > drawn.b);
+    s.transparency = false;
+    CHECK(firstPath(s) == drawn);
+
+    // A black pen at 50 % transparency prints grey.
+    plotstyle::PlotStyleTable t;
+    t.entries[1].color = Rgba{0, 0, 0, 255};
+    s.transparency = true;
+    s.styleTable = std::make_shared<plotstyle::PlotStyleTable>(t);
+    const Rgba grey = firstPath(s);
+    CHECK(grey.r == grey.g);
+    CHECK(grey.r == grey.b);
+    CHECK(grey.r > 100);
+    CHECK(grey.r < 160);
+}
+
 TEST_CASE("lineweights are absolute on paper - dashes scale with the plot scale") {
     Document doc;
     {

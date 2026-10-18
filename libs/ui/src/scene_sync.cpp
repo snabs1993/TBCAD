@@ -87,6 +87,7 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
         fieldTexts_.erase(id);
     geom::DisplayContext ctx;
     ctx.pixelSizeMm = pixelSizeMm_;
+    ctx.showTransparency = showTransparency_;
     DisplayList list;
     {
         blocks::BlockDisplayScope scope(blockCache_);
@@ -108,9 +109,21 @@ void SceneSync::syncLayers() {
     for (const auto& [id, layer] : doc_.layers())
         if (doc_.effective(id).locked)
             locked.insert(id);
-    if (locked == lockedLayers_)
-        return;
+    // Entities on a layer whose transparency changed (ByLayer ones follow it).
+    std::unordered_map<LayerId, std::uint8_t> transparency;
+    for (const auto& [id, layer] : doc_.layers())
+        transparency[id] = layer.transparency;
     std::unordered_set<LayerId> changed;
+    if (transparency != layerTransparency_) {
+        for (const auto& [id, t] : transparency) {
+            auto it = layerTransparency_.find(id);
+            if (it != layerTransparency_.end() && it->second != t)
+                changed.insert(id);
+        }
+        layerTransparency_ = std::move(transparency);
+    }
+    if (locked == lockedLayers_ && changed.empty())
+        return;
     for (LayerId id : locked)
         if (!lockedLayers_.count(id))
             changed.insert(id);
@@ -134,6 +147,7 @@ void SceneSync::rebuildDrawOrder() {
             continue;
         geom::DisplayContext ctx;
         ctx.pixelSizeMm = pixelSizeMm_;
+        ctx.showTransparency = showTransparency_;
         DisplayList list;
         {
             blocks::BlockDisplayScope scope(blockCache_);
@@ -217,9 +231,12 @@ void SceneSync::onChanged(const ChangeSet& cs) {
 void SceneSync::rebuildAll(double tileSizeMm) {
     scene_.clearAndRetile(tileSizeMm);
     lockedLayers_.clear();
-    for (const auto& [id, layer] : doc_.layers())
+    layerTransparency_.clear();
+    for (const auto& [id, layer] : doc_.layers()) {
+        layerTransparency_[id] = layer.transparency;
         if (doc_.effective(id).locked)
             lockedLayers_.insert(id);
+    }
     render::syncLayerVisibility(scene_, doc_);
     doc_.forEachEntity([&](const Entity& e) { upsertEntity(e); });
     relevelMasks();

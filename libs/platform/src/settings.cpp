@@ -16,6 +16,7 @@ Settings Settings::withDefaults() {
     o["autosave.enabled"] = true;
     o["autosave.minutes"] = 10;
     o["view.lineweights"] = true;
+    o["view.transparency"] = true;
     o["view.grid"] = false;
     o["drafting.snap"] = false;
     o["drafting.ortho"] = false;

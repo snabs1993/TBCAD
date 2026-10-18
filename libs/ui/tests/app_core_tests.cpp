@@ -587,7 +587,7 @@ TEST_CASE("host settings are typed by what is stored - toggles live in the UI re
 
     UiRegistry ui;
     f.core->registerBuiltinUi(ui);
-    REQUIRE(ui.statusToggles().size() == 8);
+    REQUIRE(ui.statusToggles().size() == 9);
     CHECK(ui.statusToggles()[0].label == "SNAP");
     CHECK(ui.statusToggles()[0].get());
     ui.statusToggles()[0].set(false);
@@ -606,6 +606,12 @@ TEST_CASE("host settings are typed by what is stored - toggles live in the UI re
     find("lwt").set(false);
     CHECK(f.core->setting("drafting.dynInput") == "0");
     CHECK(f.core->setting("view.lineweights") == "0");
+    // TPY is on until switched off.
+    CHECK(find("tpy").get());
+    find("tpy").set(false);
+    CHECK(f.core->setting("view.transparency") == "0");
+    find("tpy").set(true);
+    CHECK(f.core->setting("view.transparency") == "1");
 }
 
 TEST_CASE("user aliases are loaded from the settings folder") {

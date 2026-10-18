@@ -277,6 +277,7 @@ PlotSettings loadSettings(const cmd::IHost& h) {
     s.offsetMm = {getD(h, "plot.offset.x", 0), getD(h, "plot.offset.y", 0)};
     s.marginMm = getD(h, "plot.margin", s.marginMm);
     s.lineweights = getB(h, "plot.lineweights", s.lineweights);
+    s.transparency = getB(h, "plot.transparency", s.transparency);
     if (auto v = h.setting("plot.color")) {
         if (*v == "mono")
             s.color = ColorMode::Monochrome;
@@ -306,6 +307,7 @@ void saveSettings(cmd::IHost& h, const PlotSettings& s) {
     h.setSetting("plot.offset.y", fmt(s.offsetMm.y));
     h.setSetting("plot.margin", fmt(s.marginMm));
     h.setSetting("plot.lineweights", s.lineweights ? "1" : "0");
+    h.setSetting("plot.transparency", s.transparency ? "1" : "0");
     h.setSetting("plot.color", s.color == ColorMode::Monochrome  ? "mono"
                                : s.color == ColorMode::Greyscale ? "grey"
                                                                  : "color");

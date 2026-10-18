@@ -48,6 +48,8 @@ struct PlotSettings {
     Vec2 offsetMm{};  // from the lower-left corner of the printable area, when not centred
     double marginMm = 10;
     bool lineweights = true;
+    // Objects and layers with a transparency print translucent (blended with the white sheet).
+    bool transparency = true;
     ColorMode color = ColorMode::AsDisplayed;
     // Plot style table: per palette colour, overrides colour, lineweight and screening. Applied
     // before `color` (Monochrome / Greyscale still win over it). Null plots as drawn.

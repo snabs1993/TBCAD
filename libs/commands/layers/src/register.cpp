@@ -11,6 +11,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeLayerCurrentCommand());
     (void)registry.add(makeActiveOnlyCommand());
     (void)registry.add(makePropCommand());
+    (void)registry.add(makeTransparencyCommand());
     (void)registry.add(makeLinetypeCommand());
     (void)registry.add(makeCurrentCommand());
     (void)registry.add(makeLayerStateCommand());

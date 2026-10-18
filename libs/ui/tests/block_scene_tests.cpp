@@ -162,7 +162,8 @@ TEST_CASE("redefining a block (erase and re-add in one step) redraws every inser
     CHECK(idx.boxOf(ins).height() > 900);
 }
 
-TEST_CASE("a window around a whole associative array selects it, a window around one item does not") {
+TEST_CASE(
+    "a window around a whole associative array selects it, a window around one item does not") {
     blocks::registerInsertDisplay();
     ui::test::Indexed d;
     BlockId blk;

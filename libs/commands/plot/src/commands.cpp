@@ -75,9 +75,10 @@ public:
         Format format = format_;
         for (;;) {
             KeywordOptions menu;
-            menu.keywords = {"Paper",  "Orientation", "Area",        "Scale", "Center",
-                             "Offset", "Margin",      "LineWeights", "Color", "Style",
-                             "Format", "Resolution",  "Layout",      "Stamp", "Export"};
+            menu.keywords = {"Paper",        "Orientation", "Area",   "Scale",
+                             "Center",       "Offset",      "Margin", "LineWeights",
+                             "Transparency", "Color",       "Style",  "Format",
+                             "Resolution",   "Layout",      "Stamp",  "Export"};
             menu.defaultKeyword = "Export";
             auto choice =
                 co_await ctx.getKeyword("Plot " + summary(ctx.doc(), ctx.host(), s, format), menu);
@@ -232,6 +233,13 @@ public:
                 auto r = co_await ctx.getKeyword("Plot lineweights", ko);
                 if (r.ok())
                     s.lineweights = r.keyword == "On";
+            } else if (kw == "Transparency") {
+                KeywordOptions ko;
+                ko.keywords = {"On", "Off"};
+                ko.defaultKeyword = s.transparency ? "On" : "Off";
+                auto r = co_await ctx.getKeyword("Plot transparency", ko);
+                if (r.ok())
+                    s.transparency = r.keyword == "On";
             } else if (kw == "Color") {
                 KeywordOptions ko;
                 ko.keywords = {"Color", "Monochrome", "Greyscale"};

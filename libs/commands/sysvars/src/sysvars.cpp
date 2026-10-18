@@ -73,6 +73,31 @@ public:
     }
 };
 
+class TransparencyDefaultCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "CETRANSPARENCY"; }
+    std::string_view description() const override { return "Set the transparency of new objects"; }
+    Task run(CommandContext& ctx) override {
+        cmd::StringOptions so;
+        so.defaultValue = layers::transparencyName(ctx.doc().header().currentTransparency);
+        auto in = co_await ctx.getString(
+            "New object transparency (ByLayer, ByBlock or 0 to 90) <" + *so.defaultValue + ">", so);
+        if (!in.ok())
+            co_return;
+        auto t = layers::parseTransparency(cmd::trim(in.text));
+        if (!t) {
+            ctx.message(t.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Transparency");
+        const auto v = static_cast<std::int8_t>(t.value());
+        if (auto r = ctx.tx().modifyHeader([v](Header& h) { h.currentTransparency = v; }); !r)
+            ctx.message(r.error().message);
+        else
+            ctx.message("New objects use the transparency " + layers::transparencyName(v) + ".");
+    }
+};
+
 class LtscaleCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LTSCALE"; }
@@ -191,6 +216,7 @@ private:
 void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ColorCommand>());
     (void)registry.add(std::make_unique<LineweightCommand>());
+    (void)registry.add(std::make_unique<TransparencyDefaultCommand>());
     (void)registry.add(std::make_unique<LtscaleCommand>());
     (void)registry.add(std::make_unique<UnitsCommand>());
     (void)registry.add(std::make_unique<StatusCommand>());
