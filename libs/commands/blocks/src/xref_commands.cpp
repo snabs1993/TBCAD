@@ -394,19 +394,138 @@ public:
             ctx.setUndoLabel("Unload " + blockName);
             ctx.message("Unloaded \"" + blockName + "\"; XRELOAD brings it back");
         } else {
-            auto r = xref::bind(ctx.tx(), doc, id);
+            auto how = co_await ctx.getKeyword(
+                "Bind type [Bind/Insert] <Bind>",
+                cmd::KeywordOptions{.keywords = {"Bind", "Insert"}, .defaultKeyword = "Bind"});
+            if (!how.ok())
+                co_return;
+            const bool insert = how.keyword == "Insert";
+            auto r = xref::bind(ctx.tx(), doc, id,
+                                insert ? xref::BindMode::Insert : xref::BindMode::Bind);
             if (!r) {
                 ctx.message(r.error().message);
                 co_return;
             }
-            ctx.setUndoLabel("Bind " + blockName);
-            ctx.message("\"" + blockName + "\" is now an ordinary block; its layers stay under " +
-                        blockName);
+            ctx.setUndoLabel((insert ? "Insert " : "Bind ") + blockName);
+            ctx.message(insert ? "\"" + blockName +
+                                     "\" is now an ordinary block; its layers were merged into "
+                                     "the drawing's own"
+                               : "\"" + blockName +
+                                     "\" is now an ordinary block; its layers stay under " +
+                                     blockName);
         }
     }
 
 private:
     Mode mode_;
+};
+
+// Asks for the name of an xref (listing them on "?"). Leaves `id` null on Esc.
+cmd::Task askXrefName(cmd::CommandContext& ctx, const char* prompt, BlockId& id) {
+    Document& doc = ctx.doc();
+    for (;;) {
+        auto n = co_await ctx.getString(prompt);
+        if (!n.ok())
+            co_return;
+        const std::string text = cmd::trim(n.text);
+        if (text == "?") {
+            ctx.message("Xrefs: " + xrefNames(doc));
+            continue;
+        }
+        const BlockDef* def = doc.blockByName(text);
+        if (def && !def->xrefPath.empty()) {
+            id = def->id;
+            co_return;
+        }
+        ctx.message("No external reference named \"" + text + "\". Xrefs: " + xrefNames(doc));
+    }
+}
+
+// XPATH: changes how the path of an xref is stored (Relative / Absolute / None) without moving
+// the file it points to.
+class XPathCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "XPATH"; }
+    std::string_view description() const override {
+        return "Store the path of an external reference as relative, absolute or file name only";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        if (xref::xrefs(doc).empty()) {
+            ctx.message("There are no external references in this drawing.");
+            co_return;
+        }
+        BlockId id{};
+        co_await askXrefName(ctx, "Enter xref name or [?]", id);
+        if (!id)
+            co_return;
+        auto t = co_await ctx.getKeyword(
+            "Path type [Relative/Absolute/None] <Relative>",
+            cmd::KeywordOptions{.keywords = {"Relative", "Absolute", "None"},
+                                .defaultKeyword = "Relative"});
+        if (!t.ok())
+            co_return;
+        const xref::PathType type = t.keyword == "Absolute" ? xref::PathType::Absolute
+                                    : t.keyword == "None"   ? xref::PathType::None
+                                                            : xref::PathType::Relative;
+        const std::filesystem::path hostFile = hostFileOf(ctx);
+        const BlockDef* def = doc.block(id);
+        const std::string name = def->name;
+        const std::filesystem::path file = xref::resolvePath(def->xrefPath, hostFile);
+        const std::string stored = xref::storedPath(file, hostFile, type);
+        auto r = xref::changePath(ctx.tx(), doc, id, stored);
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Path of " + name);
+        ctx.message("\"" + name + "\" now points to " + stored);
+    }
+};
+
+// XRELINK: points an xref (usually one whose file was not found) at another file and reloads it.
+class XRelinkCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "XRELINK"; }
+    std::string_view description() const override {
+        return "Point an external reference at another file and reload it";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        if (xref::xrefs(doc).empty()) {
+            ctx.message("There are no external references in this drawing.");
+            co_return;
+        }
+        BlockId id{};
+        co_await askXrefName(ctx, "Enter xref name or [?]", id);
+        if (!id)
+            co_return;
+        auto f = co_await ctx.getString("New file for the reference");
+        if (!f.ok() || cmd::trim(f.text).empty())
+            co_return;
+        const std::filesystem::path hostFile = hostFileOf(ctx);
+        const std::string typed = cmd::trim(f.text);
+        const std::string name = doc.block(id)->name;
+        const std::filesystem::path file = xref::resolvePath(typed, hostFile);
+        auto loaded = xref::loadSource(file);
+        if (!loaded) {
+            ctx.message("Cannot read \"" + typed + "\": " + loaded.error().message);
+            co_return;
+        }
+        const std::string stored = xref::storedPath(file, hostFile, xref::PathType::Relative);
+        if (auto r = xref::changePath(ctx.tx(), doc, id, stored); !r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        xref::Summary sum;
+        if (auto r = xref::reload(ctx.tx(), doc, id, loaded.value(), &sum); !r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Relink " + name);
+        ctx.message("\"" + name + "\" now reads " + stored + ": " + std::to_string(sum.entities) +
+                    " objects");
+    }
 };
 
 class XListCommand final : public cmd::Command {
@@ -664,6 +783,12 @@ std::unique_ptr<cmd::Command> makeXUnloadCommand() {
 }
 std::unique_ptr<cmd::Command> makeXBindCommand() {
     return std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Bind);
+}
+std::unique_ptr<cmd::Command> makeXPathCommand() {
+    return std::make_unique<XPathCommand>();
+}
+std::unique_ptr<cmd::Command> makeXRelinkCommand() {
+    return std::make_unique<XRelinkCommand>();
 }
 std::unique_ptr<cmd::Command> makeXListCommand() {
     return std::make_unique<XListCommand>();

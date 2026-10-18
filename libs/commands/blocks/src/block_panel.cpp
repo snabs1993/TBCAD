@@ -149,6 +149,21 @@ void drawDrawingTab(ui::PanelContext& ctx) {
                 if (ImGui::MenuItem("Bind xref")) {
                     ctx.runCommand("XBIND");
                     ctx.runCommand(r.name);
+                    ctx.runCommand("Bind");
+                }
+                if (ImGui::MenuItem("Bind xref (merge layers)")) {
+                    ctx.runCommand("XBIND");
+                    ctx.runCommand(r.name);
+                    ctx.runCommand("Insert");
+                }
+                if (ImGui::BeginMenu("Path type")) {
+                    for (const char* t : {"Relative", "Absolute", "None"})
+                        if (ImGui::MenuItem(t)) {
+                            ctx.runCommand("XPATH");
+                            ctx.runCommand(r.name);
+                            ctx.runCommand(t);
+                        }
+                    ImGui::EndMenu();
                 }
                 if (ImGui::MenuItem("Detach xref")) {
                     ctx.runCommand("XDETACH");

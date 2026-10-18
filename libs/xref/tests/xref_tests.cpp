@@ -550,3 +550,101 @@ TEST_CASE("the insertion base of the source drawing becomes the block base") {
     tx.commit();
     CHECK(host.block(r.value())->base == Vec2{12.5, -3});
 }
+
+TEST_CASE("bind with Insert merges the xref layers into the drawing's own and drops the prefixes") {
+    Document host;
+    LayerId hostWalls;
+    {
+        Transaction tx = host.begin("walls");
+        Layer l;
+        l.name = "walls";
+        l.color = Color::index(1);
+        hostWalls = tx.addLayer(l).value();
+        tx.commit();
+    }
+    Source src = sourceOf(makeSource());
+    BlockId b;
+    {
+        Transaction tx = host.begin("attach");
+        b = attach(tx, host, "site", "site.tbcad", src).value();
+        Entity ins;
+        ins.data = Indirect<InsertData>(InsertData{b, {0, 0}, {1, 1}, 0});
+        REQUIRE(tx.add(ins).ok());
+        tx.commit();
+    }
+    REQUIRE(host.layerByName("site") != nullptr);
+    {
+        Transaction tx = host.begin("bind");
+        REQUIRE(bind(tx, host, b, BindMode::Insert).ok());
+        tx.commit();
+    }
+    CHECK(host.block(b)->xrefPath.empty());
+    // The layers of the xref are gone; "walls" kept the host's colour, "inner" moved below it.
+    CHECK(host.layerByName("site") == nullptr);
+    const Layer* walls = host.layerByName("walls");
+    REQUIRE(walls != nullptr);
+    CHECK(walls->id == hostWalls);
+    CHECK(walls->color == Color::index(1));
+    const Layer* inner = host.layerByName(hostWalls, "inner");
+    REQUIRE(inner != nullptr);
+    // Nested block lost its prefix.
+    CHECK(host.blockByName("site$door") == nullptr);
+    const BlockDef* door = host.blockByName("door");
+    REQUIRE(door != nullptr);
+    // Everything that was on the xref's walls layers is on the host's now.
+    std::size_t onWalls = 0, onInner = 0, onZero = 0;
+    for (const auto& [id, blk] : host.blocks())
+        for (EntityId eid : blk.entities) {
+            const Entity* e = host.find(eid);
+            onWalls += e->common.layer == hostWalls ? 1 : 0;
+            onInner += e->common.layer == inner->id ? 1 : 0;
+            onZero += e->common.layer == kLayerZero ? 1 : 0;
+        }
+    CHECK(onWalls >= 2);
+    CHECK(onInner == 1);
+    CHECK(onZero >= 1);
+}
+
+TEST_CASE("bind with Insert creates top-level layers when the drawing has none of that name") {
+    Document host;
+    Source src = sourceOf(makeSource());
+    BlockId b;
+    {
+        Transaction tx = host.begin("attach");
+        b = attach(tx, host, "site", "site.tbcad", src).value();
+        tx.commit();
+    }
+    {
+        Transaction tx = host.begin("bind");
+        REQUIRE(bind(tx, host, b, BindMode::Insert).ok());
+        tx.commit();
+    }
+    const Layer* walls = host.layerByName("walls");
+    REQUIRE(walls != nullptr);
+    CHECK(walls->color == Color::index(3));  // the look it had
+    CHECK(host.layerByName("site") == nullptr);
+    const Layer* inner = host.layerByName(walls->id, "inner");
+    REQUIRE(inner != nullptr);
+    CHECK(inner->color.kind != ColorKind::ByParent);
+}
+
+TEST_CASE("changePath points the xref at another file and keeps the snapshot") {
+    Document host;
+    Source src = sourceOf(makeSource());
+    BlockId b;
+    {
+        Transaction tx = host.begin("attach");
+        b = attach(tx, host, "site", "site.tbcad", src).value();
+        tx.commit();
+    }
+    const std::size_t count = host.block(b)->entities.size();
+    {
+        Transaction tx = host.begin("path");
+        REQUIRE(changePath(tx, host, b, "new/site2.tbcad").ok());
+        CHECK_FALSE(changePath(tx, host, b, "").ok());
+        tx.commit();
+    }
+    CHECK(host.block(b)->xrefPath == "new/site2.tbcad");
+    CHECK(host.block(b)->entities.size() == count);
+    CHECK(state(host, b, {}) == State::Missing);
+}
