@@ -13,5 +13,6 @@ std::unique_ptr<cmd::Command> makeMassProp();
 std::unique_ptr<cmd::Command> makeDwgProps();
 std::unique_ptr<cmd::Command> makeFindStray();
 std::unique_ptr<cmd::Command> makePickTrace();
+std::unique_ptr<cmd::Command> makeCal();
 
 }  // namespace tbcad::inquiry
