@@ -62,3 +62,44 @@ TEST_CASE("random MTEXT markup lays out to finite numbers") {
         (void)plainText(m.utf8);
     }
 }
+
+#include "tbcad/text/field.h"
+
+TEST_CASE("random field text expands without crashing and never loses plain text") {
+    Document doc;
+    std::mt19937_64 rng(20261021);
+    static const char* const kBits[] = {"%<",
+                                        ">%",
+                                        "%",
+                                        "<",
+                                        ">",
+                                        ":",
+                                        "date",
+                                        "date:dd/MM/yyyy",
+                                        "date:BBBB",
+                                        "filename",
+                                        "filepath",
+                                        "sheet",
+                                        "var:X",
+                                        "length:#1",
+                                        "length:#999999999999999999999",
+                                        "area:#0",
+                                        "text:#1:",
+                                        "length:#",
+                                        "#",
+                                        "::",
+                                        "abc ",
+                                        "สวัสดี",
+                                        "\\P",
+                                        "{",
+                                        "}"};
+    for (int round = 0; round < 2000; ++round) {
+        std::string s;
+        for (int i = 0, n = static_cast<int>(rng() % 10); i < n; ++i)
+            s += kBits[rng() % (sizeof kBits / sizeof kBits[0])];
+        CAPTURE(s);
+        const std::string out = expandFields(doc, s, "2026-10-18");
+        if (!hasFields(s))
+            CHECK(out == s);
+    }
+}
