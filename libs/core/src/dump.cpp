@@ -165,6 +165,8 @@ struct DataDumper {
     void operator()(const MTextData& d) {
         o << "MTEXT " << d.position << " h" << d.height << " w" << d.width << " rot" << d.rotation
           << " att" << static_cast<int>(d.attach) << " style" << d.style << " ";
+        if (d.columns > 1)
+            o << "cols" << static_cast<int>(d.columns) << " gap" << d.columnGap << " ";
         o.quoted(d.utf8);
     }
     void operator()(const HatchData& d) {

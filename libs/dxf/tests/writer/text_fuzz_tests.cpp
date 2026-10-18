@@ -84,6 +84,10 @@ TEST_CASE("random TEXT and MTEXT survive DXF export and import") {
                     m.rotation = static_cast<double>(rng() % 600) / 100;
                     m.attach = static_cast<Attachment>(rng() % 9);
                     m.utf8 = randomMarkup(rng);
+                    if (m.width > 0 && rng() % 3 == 0) {
+                        m.columns = static_cast<std::uint8_t>(2 + rng() % 3);
+                        m.columnGap = (rng() % 2) ? 0 : 3 + static_cast<double>(rng() % 20);
+                    }
                     e.data = Indirect<MTextData>(m);
                 }
                 REQUIRE(tx.add(std::move(e)).ok());
@@ -116,6 +120,11 @@ TEST_CASE("random TEXT and MTEXT survive DXF export and import") {
                 CHECK((*a2)->attach == (*b2)->attach);
                 CHECK((*a2)->height == doctest::Approx((*b2)->height));
                 CHECK((*a2)->width == doctest::Approx((*b2)->width));
+                CHECK((*a2)->columns == (*b2)->columns);
+                if ((*a2)->columns > 1)
+                    CHECK((*b2)->columnGap == doctest::Approx((*a2)->columnGap > 0
+                                                                  ? (*a2)->columnGap
+                                                                  : 2 * (*a2)->height));
                 // Same pieces; the importer writes a paragraph mark as a raw newline.
                 const auto pa = text::parseMarkup((*a2)->utf8, (*a2)->height);
                 const auto pb = text::parseMarkup((*b2)->utf8, (*b2)->height);

@@ -310,6 +310,11 @@ struct MTextData {
     Attachment attach = Attachment::TopLeft;
     TextStyleId style{};
     std::string utf8{};  // TBCAD markup
+    // Columns: with `columns` > 1 and a `width` the text flows through that many columns of
+    // `width` each, `columnGap` apart (0 = twice the text height), balanced so they end at about
+    // the same height.
+    std::uint8_t columns = 1;
+    double columnGap = 0;
 };
 
 struct HatchLineEdge {

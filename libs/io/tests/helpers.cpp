@@ -274,6 +274,10 @@ std::unique_ptr<Document> makeRichDocument() {
         Entity hiddenLine = make(LineData{{0, 0}, {1, 1}}, edge);
         hiddenLine.common.visible = false;
         add(std::move(hiddenLine));
+        MTextData columns{{9, 9}, 3, 40, 0, Attachment::TopLeft, thai, "a\\Pb\\Pc\\Pd"};
+        columns.columns = 2;
+        columns.columnGap = 6;
+        add(make(columns, l0));
 
         // Erase two entities (id gaps in the middle) and reorder the drawing.
         // (ids 1-4 belong to the block definitions, so these are entities 5 and 16.)

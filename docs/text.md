@@ -33,6 +33,15 @@ rotation is ignored for those two.
   capital height below the top of the frame. Lines are left aligned; `attach` chooses which point
   of the frame sits at `position`. `width = 0` means no wrapping.
 
+### Columns
+
+`MTextData::columns` (2 to 8) with a `width` flows the text through that many columns, each
+`width` wide and `columnGap` apart (0 means twice the text height). The lines are split so the
+columns end at about the same height; every column starts at the top of the frame. In the MTEXT
+command the Columns option turns the rectangle you draw into the whole block: it is cut into
+columns with a gap of two text heights. The setting is saved in .tbcad files (an extra tail on the
+record, ignored by older readers) and written to and read from DXF (groups 75, 76, 79, 48, 49).
+
 ### Wrapping and Thai
 
 Break opportunities are spaces, the zero-width space U+200B (not drawn), and, inside Thai text,

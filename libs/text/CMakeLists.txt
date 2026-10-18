@@ -22,4 +22,5 @@ tbcad_add_tests(text
     tests/thai_break_tests.cpp
     tests/layout_tests.cpp
     tests/layout_fuzz_tests.cpp
-    tests/display_tests.cpp)
+    tests/display_tests.cpp
+    tests/engine_tests.cpp)

@@ -635,10 +635,9 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
         return a;
     }());
     const double descDepth = -fi.descender * (lastH / fi.capHeight);
-    const double frameW = d.width > 0 ? d.width / (wf > 0 ? wf : 1.0) : maxW;
-    const double bottom = y - descDepth;
-    out.frame.min = {0, bottom};
-    out.frame.max = {frameW, 0};
+    const double colW = d.width > 0 ? d.width / (wf > 0 ? wf : 1.0) : maxW;
+    double frameW = colW;
+    double bottom = y - descDepth;
 
     // Centre and right attachments also set each line centred or right-aligned in the frame.
     const bool centred = d.attach == Attachment::TopCenter ||
@@ -648,7 +647,7 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
                          d.attach == Attachment::BottomRight;
     if (centred || righted)
         for (LayoutLine& ln : out.lines) {
-            const double slack = std::max(0.0, frameW - ln.width);
+            const double slack = std::max(0.0, colW - ln.width);
             const double move = centred ? slack / 2 : slack;
             for (std::size_t g = ln.firstGlyph; g < ln.endGlyph; ++g)
                 out.glyphs[g].origin.x += move;
@@ -658,6 +657,48 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
                 r.x1 += move;
             }
         }
+
+    // Columns: split the lines into balanced runs and set the runs side by side.
+    if (d.columns > 1 && d.width > 0 && out.lines.size() > 1) {
+        const std::size_t cols = std::min<std::size_t>(d.columns, out.lines.size());
+        const double gap = (d.columnGap > 0 ? d.columnGap : 2 * height) / (wf > 0 ? wf : 1.0);
+        std::vector<double> reach;  // distance of each line's bottom below the first baseline
+        const double top = out.lines.front().baseline;
+        for (const LayoutLine& ln : out.lines)
+            reach.push_back(top - ln.baseline);
+        const double total = reach.back() + out.lines.back().height;
+        const double target = total / static_cast<double>(cols);
+        std::size_t col = 0, firstOfCol = 0;
+        double shiftY = 0;
+        double lowest = top;
+        for (std::size_t i = 0; i < out.lines.size(); ++i) {
+            const double mid = reach[i] + out.lines[i].height / 2;
+            const std::size_t want = std::min(cols - 1, static_cast<std::size_t>(mid / target));
+            if (want > col) {
+                col = want;
+                firstOfCol = i;
+                shiftY = reach[firstOfCol];  // lift this column to the top of the frame
+            }
+            LayoutLine& ln = out.lines[i];
+            const double mx = static_cast<double>(col) * (colW + gap), my = shiftY;
+            for (std::size_t g = ln.firstGlyph; g < ln.endGlyph; ++g) {
+                out.glyphs[g].origin.x += mx;
+                out.glyphs[g].origin.y += my;
+            }
+            ln.baseline += my;
+            ln.x0 += mx;
+            for (LayoutRule& r : ln.rules) {
+                r.x0 += mx;
+                r.x1 += mx;
+                r.y += my;
+            }
+            lowest = std::min(lowest, ln.baseline);
+        }
+        frameW = static_cast<double>(cols) * colW + static_cast<double>(cols - 1) * gap;
+        bottom = lowest - descDepth;
+    }
+    out.frame.min = {0, bottom};
+    out.frame.max = {frameW, 0};
 
     double dx = 0, dy = 0;
     switch (d.attach) {

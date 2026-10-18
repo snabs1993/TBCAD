@@ -819,6 +819,13 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
     o.str(7, textStyleNameOf(d.style));
     if (d.rotation != 0)
         o.pt(11, {std::cos(d.rotation), std::sin(d.rotation)});
+    if (d.columns > 1 && d.width > 0) {
+        o.i(75, 2);  // dynamic columns, automatic height
+        o.i(76, d.columns);
+        o.i(79, 1);
+        o.d(48, d.width);
+        o.d(49, d.columnGap > 0 ? d.columnGap : 2 * d.height);
+    }
     count("MTEXT");
 }
 
