@@ -401,6 +401,7 @@ private:
 class XListCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "XLIST"; }
+    std::vector<std::string> defaultAliases() const override { return {"XREF"}; }
     std::string_view description() const override { return "List external references"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
