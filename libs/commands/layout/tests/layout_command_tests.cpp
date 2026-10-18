@@ -107,6 +107,46 @@ TEST_CASE("a viewport selected on the sheet is used without asking") {
     CHECK(layoutcmd::selectedViewport(host, doc) == 0);
 }
 
+TEST_CASE("CHSPACE moves objects to the sheet at viewport size and back into model space") {
+    Document doc;
+    cmd::Registry reg;
+    layoutcmd::registerCommands(reg);
+    cmd::ScriptHost model(doc, reg);
+    model.run("LAYOUT", {"New", "Plan", "A3", ""});
+    model.run("MVIEW",
+              {"10,10", "210,110", "1:50", "1000,500"});  // centre of the sheet rect: 110,60
+    EntityId id;
+    {
+        auto tx = doc.begin("line");
+        id = tx.add(Entity{{}, LineData{{1000, 500}, {1500, 500}}}).value();
+        tx.commit();
+    }
+    auto r = model.run("CHSPACE", {cmd::ScriptItem::select({id}), cmd::ScriptItem::enter(), "1"});
+    CHECK(r.finished);
+    CHECK(model.logContains("1 objects moved to the sheet"));
+    auto lay = layout::findLayout(doc, "Plan");
+    REQUIRE(lay.has_value());
+    const BlockDef* sheet = doc.block(lay->content);
+    REQUIRE(sheet != nullptr);
+    REQUIRE(sheet->entities.size() == 1);
+    const Entity* moved = doc.find(sheet->entities[0]);
+    const auto* ln = entityAs<LineData>(*moved);
+    REQUIRE(ln != nullptr);
+    CHECK(ln->a.x == doctest::Approx(110));
+    CHECK(ln->a.y == doctest::Approx(60));
+    CHECK(ln->b.x == doctest::Approx(120));  // 500 model units at 1:50 = 10 mm
+    CHECK(doc.modelSpace().empty());
+
+    SheetHost onSheet(doc, reg);
+    onSheet.run("CHSPACE",
+                {cmd::ScriptItem::select({sheet->entities[0]}), cmd::ScriptItem::enter(), "1"});
+    CHECK(onSheet.logContains("moved into model space"));
+    REQUIRE(doc.modelSpace().size() == 1);
+    const auto* back = entityAs<LineData>(*doc.find(doc.modelSpace()[0]));
+    CHECK(back->a.x == doctest::Approx(1000));
+    CHECK(back->b.x == doctest::Approx(1500));
+}
+
 TEST_CASE("VPLEVEL shows one level in a viewport") {
     Fixture f;
     LevelId upper;

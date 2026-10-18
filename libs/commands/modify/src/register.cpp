@@ -23,6 +23,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBlend());
     (void)registry.add(makeGroup());
     (void)registry.add(makeUngroup());
+    (void)registry.add(makeGroupEdit());
     (void)registry.add(makeDrawOrder());
     (void)registry.add(makeJustifyText());
     (void)registry.add(makeSplineEdit());

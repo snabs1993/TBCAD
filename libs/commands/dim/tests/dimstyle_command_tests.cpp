@@ -182,6 +182,23 @@ TEST_CASE("DIMSETUP gives only the selected dimensions a style or an overall sca
     CHECK(f.host->undo());
 }
 
+TEST_CASE("MLEADERALIGN lines landing ends up in a column or a row") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", ScriptItem::enter(), "Text", "a"});
+    f.host->run("MLEADER", {"0,20", "30,25", ScriptItem::enter(), "Text", "b"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    REQUIRE(ids.size() == 2);
+    f.host->run("MLEADERALIGN", {ScriptItem::select(ids), ScriptItem::enter(),
+                                 ScriptItem::pick(ids[0], {5, 5}), "Vertical"});
+    const auto* a = entityAs<LeaderData>(*f.doc.find(ids[0]));
+    const auto* b = entityAs<LeaderData>(*f.doc.find(ids[1]));
+    CHECK(b->vertices.back().x == doctest::Approx(a->vertices.back().x));
+    CHECK(b->vertices.front().x == doctest::Approx(0));  // the arrow stays put
+    CHECK(f.host->undo());
+    CHECK(entityAs<LeaderData>(*f.doc.find(ids[1]))->vertices.back().x == doctest::Approx(30));
+}
+
 TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first dimension") {
     Fixture f;
     f.host->setView({{0, 0}, 10.0, {900, 600}});
