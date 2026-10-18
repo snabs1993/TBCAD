@@ -2547,7 +2547,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r72: R2018 header read right (plain 3-bit BLL, string stream end found, LTSCALE 800 on "
+    return "r73: R2007 literal runs of 12, 14, 16, 18, 20, 22, 24, 25, 27 and 30 bytes cut right; "
+           "r72: R2018 header read right (plain 3-bit BLL, string stream end found, LTSCALE 800 on "
            "the reference sheet), layers that are off are off, viewport and style sheet trace; "
            "r71: layout plot style table reaches the page setup, AC1032 header tried at several "
            "offsets; r70: compressed streams of the small sections in the trace, converter fails "
