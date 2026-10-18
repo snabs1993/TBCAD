@@ -251,3 +251,52 @@ TEST_CASE("created text displays: Thai TEXT produces filled rings through the re
     CHECK(out.items.size() >= 3);
     CHECK(std::holds_alternative<DisplayFill>(out.items.front()));
 }
+
+TEST_CASE("TXT2MTXT merges lines top to bottom into one multiline text") {
+    Fixture f;
+    auto addText = [&](Vec2 at, const std::string& s) {
+        TextData t;
+        t.position = at;
+        t.height = 2.5;
+        t.utf8 = s;
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId low = addText({0, 0}, "second {x}");
+    EntityId high = addText({0, 10}, "first");
+    REQUIRE(f.host.run("TXT2MTXT", {cmd::ScriptItem::select({low, high}), cmd::ScriptItem::enter()})
+                .finished);
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->utf8 == "first\\Psecond \\{x\\}");
+    CHECK(m->position.y == doctest::Approx(12.5));
+    CHECK(f.firstText() == nullptr);
+    CHECK(f.host.undo());
+    CHECK(f.firstMText() == nullptr);
+}
+
+TEST_CASE("TCOUNT numbers text objects in selection order") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    for (int i = 0; i < 3; ++i) {
+        TextData t;
+        t.position = {10.0 * i, 0};
+        t.utf8 = "x";
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        ids.push_back(tx.add(std::move(e)).value());
+        tx.commit();
+    }
+    REQUIRE(f.host
+                .run("TCOUNT", {cmd::ScriptItem::select({ids[2], ids[0], ids[1]}),
+                                cmd::ScriptItem::enter(), "10", "5", "P-", ""})
+                .finished);
+    CHECK(entityAs<TextData>(*f.doc.find(ids[2]))->utf8 == "P-10");
+    CHECK(entityAs<TextData>(*f.doc.find(ids[0]))->utf8 == "P-15");
+    CHECK(entityAs<TextData>(*f.doc.find(ids[1]))->utf8 == "P-20");
+}

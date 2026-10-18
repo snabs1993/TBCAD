@@ -595,7 +595,7 @@ struct PayloadReader {
             }
             case EntityKind::Dimension: {
                 DimensionData d;
-                d.kind = enumeration<DimKind>(static_cast<std::uint8_t>(DimKind::ArcLength));
+                d.kind = enumeration<DimKind>(static_cast<std::uint8_t>(DimKind::Jogged));
                 d.rotation = r.f64();
                 for (auto& p : d.defPts)
                     p = r.vec2();

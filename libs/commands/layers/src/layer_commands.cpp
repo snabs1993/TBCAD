@@ -322,7 +322,7 @@ private:
 class LayerCurrentCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYERCURRENT"; }
-    std::vector<std::string> defaultAliases() const override { return {"LAYCUR"}; }
+    std::vector<std::string> defaultAliases() const override { return {"LAYCUR", "LAYMCUR"}; }
     std::string_view description() const override {
         return "Make the layer of the picked object current";
     }

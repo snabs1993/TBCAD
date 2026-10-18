@@ -38,3 +38,5 @@ up to the front.
 
 `MASSPROP` (in the inquiry commands) reports area, perimeter, bounding box, centroid, second moments of
 inertia and radii of gyration of a closed polyline, circle, ellipse or closed spline.
+
+`DWGPROPS` shows and sets the title, subject, author, keywords and comments of the drawing (saved in the file header).

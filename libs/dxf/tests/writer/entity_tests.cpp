@@ -850,4 +850,58 @@ TEST_CASE("an xref block and an insert clipping boundary survive the DXF round t
     CHECK(ins->clip[2] == Vec2{4, 4});
 }
 
+TEST_CASE("ordinate dimensions keep their kind and datum through the DXF round trip") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("dimensions");
+        for (double rot : {0.0, kPi / 2}) {
+            DimensionData d;
+            d.kind = DimKind::Ordinate;
+            d.rotation = rot;
+            d.defPts = {Vec2{40, 25}, Vec2{40, 60}, Vec2{0, 0}, Vec2{}};
+            if (rot > 0)
+                d.defPts[1] = Vec2{80, 25};
+            d.style = kDimStyleStandard;
+            d.measurement = dim::measurement(d);
+            Entity e;
+            e.data = Indirect<DimensionData>(d);
+            REQUIRE(tx.add(std::move(e)));
+        }
+        DimensionData arc;
+        arc.kind = DimKind::ArcLength;
+        arc.defPts = {Vec2{0, 0}, Vec2{50, 0}, Vec2{0, 50}, Vec2{70, 70}};
+        arc.style = kDimStyleStandard;
+        Entity e;
+        e.data = Indirect<DimensionData>(arc);
+        REQUIRE(tx.add(std::move(e)));
+        tx.commit();
+    }
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
+    REQUIRE(out.ok());
+    Report report;
+    Result<ImportResult> in =
+        importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    int x = 0, y = 0, others = 0;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            if (d->kind != DimKind::Ordinate)
+                return;
+            if (d->rotation < kPi / 4) {
+                ++x;
+                CHECK(d->measurement == doctest::Approx(40));
+            } else {
+                ++y;
+                CHECK(d->measurement == doctest::Approx(25));
+            }
+        } else {
+            ++others;  // the arc length dimension comes back as plain geometry
+        }
+    });
+    CHECK(x == 1);
+    CHECK(y == 1);
+    CHECK(others >= 3);
+}
+
 }  // namespace tbcad::dxf

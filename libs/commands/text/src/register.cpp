@@ -18,6 +18,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeAnnoNewCommand());
     (void)registry.add(makeFieldCommand());
     (void)registry.add(makeScaleListCommand());
+    (void)registry.add(makeTxt2MTxtCommand());
+    (void)registry.add(makeTCountCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {

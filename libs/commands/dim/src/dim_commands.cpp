@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "dim_internal.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -207,6 +208,185 @@ private:
     std::string description_;
 };
 
+// ---- DIMARC ------------------------------------------------------------------------------------
+
+class ArcLengthDimCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMARC"; }
+    std::vector<std::string> defaultAliases() const override { return {"DAR"}; }
+    std::string_view description() const override { return "Dimension the length of an arc"; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) { return entityAs<ArcData>(e) != nullptr; };
+        auto o = co_await ctx.getEntity("Select arc", eo);
+        if (!o.ok())
+            co_return;
+        const Entity* e = ctx.doc().find(o.id);
+        const auto* arc = e ? entityAs<ArcData>(*e) : nullptr;
+        if (!arc) {
+            ctx.message("Select an arc.");
+            co_return;
+        }
+        const ArcData a = *arc;
+        std::string override;
+        for (;;) {
+            cmd::PointOptions lo;
+            lo.keywords = {"Text"};
+            auto* c = &ctx;
+            auto build = [=](Vec2 cursor) {
+                DimensionData d;
+                d.kind = DimKind::ArcLength;
+                d.defPts = {
+                    a.center,
+                    a.center + Vec2{std::cos(a.startAngle), std::sin(a.startAngle)} * a.radius,
+                    a.center + Vec2{std::cos(a.endAngle), std::sin(a.endAngle)} * a.radius, cursor};
+                d.textOverride = override;
+                dim::refresh(c->doc(), d);
+                return d;
+            };
+            lo.preview = [c, build](Vec2 cursor, DisplayList& out) {
+                previewDim(*c, build(cursor), out);
+            };
+            auto where = co_await ctx.getPoint("Specify arc length dimension location", lo);
+            if (where.status == Status::Keyword) {
+                cmd::StringOptions so;
+                so.defaultValue = "<>";
+                auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
+                if (s.ok())
+                    override = s.text == "<>" ? std::string() : s.text;
+                continue;
+            }
+            if (!where.ok())
+                co_return;
+            addDim(ctx, build(where.point));
+            co_return;
+        }
+    }
+};
+
+// ---- DIMORDINATE -------------------------------------------------------------------------------
+
+class OrdinateDimCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMORDINATE"; }
+    std::vector<std::string> defaultAliases() const override { return {"DOR"}; }
+    std::string_view description() const override {
+        return "Dimension the X or Y coordinate of a point from the origin";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        auto feature = co_await ctx.getPoint("Specify feature location");
+        if (!feature.ok())
+            co_return;
+        const Vec2 P = feature.point;
+        std::optional<bool> forceX;  // set by the Xdatum / Ydatum keywords
+        std::string override;
+        for (;;) {
+            cmd::PointOptions lo;
+            lo.base = P;
+            lo.keywords = {"Xdatum", "Ydatum", "Text"};
+            auto* c = &ctx;
+            auto build = [=](Vec2 cursor) {
+                DimensionData d;
+                d.kind = DimKind::Ordinate;
+                const Vec2 off = cursor - P;
+                // Without a keyword the leader runs along the direction the cursor moved most.
+                const bool xDatum = forceX ? *forceX : std::abs(off.y) >= std::abs(off.x);
+                d.rotation = xDatum ? 0 : kPi / 2;
+                d.defPts = {P, cursor, Vec2{0, 0}, Vec2{}};
+                d.textOverride = override;
+                dim::refresh(c->doc(), d);
+                return d;
+            };
+            lo.preview = [c, build](Vec2 cursor, DisplayList& out) {
+                previewDim(*c, build(cursor), out);
+            };
+            auto where =
+                co_await ctx.getPoint("Specify leader endpoint or [Xdatum/Ydatum/Text]", lo);
+            if (where.status == Status::Keyword) {
+                if (where.keyword == "Xdatum")
+                    forceX = true;
+                else if (where.keyword == "Ydatum")
+                    forceX = false;
+                else {
+                    cmd::StringOptions so;
+                    so.defaultValue = "<>";
+                    auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
+                    if (s.ok())
+                        override = s.text == "<>" ? std::string() : s.text;
+                }
+                continue;
+            }
+            if (!where.ok())
+                co_return;
+            addDim(ctx, build(where.point));
+            co_return;
+        }
+    }
+};
+
+// ---- DIMJOGGED ---------------------------------------------------------------------------------
+
+class JoggedDimCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMJOGGED"; }
+    std::vector<std::string> defaultAliases() const override { return {"DJO"}; }
+    std::string_view description() const override {
+        return "Radius dimension with a jog for arcs whose centre is off the sheet";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::EntityOptions eo;
+        eo.filter = isCircleOrArc;
+        auto o = co_await ctx.getEntity("Select arc or circle", eo);
+        if (!o.ok())
+            co_return;
+        Vec2 center{};
+        double radius = 0;
+        const Entity* e = ctx.doc().find(o.id);
+        if (!e || !circleOf(*e, center, radius)) {
+            ctx.message("Select an arc or a circle.");
+            co_return;
+        }
+        auto cc = co_await ctx.getPoint("Specify center location override");
+        if (!cc.ok())
+            co_return;
+        const Vec2 override = cc.point;
+        cmd::PointOptions po;
+        po.base = override;
+        auto where = co_await ctx.getPoint("Specify dimension line location", po);
+        if (!where.ok())
+            co_return;
+        const Vec2 spot = where.point;
+        const Vec2 dir = normalized(spot - center);
+        const Vec2 onArc = center + (tol::isZeroLength(dir) ? Vec2{1, 0} : dir) * radius;
+        cmd::PointOptions jo;
+        jo.base = spot;
+        auto* c = &ctx;
+        auto build = [=](Vec2 jog) {
+            DimensionData d;
+            d.kind = DimKind::Jogged;
+            d.defPts = {center, onArc, override, jog};
+            d.textPos = spot;
+            d.textPosUser = true;
+            dim::refresh(c->doc(), d);
+            return d;
+        };
+        jo.preview = [c, build](Vec2 cursor, DisplayList& out) {
+            previewDim(*c, build(cursor), out);
+        };
+        const Vec2 mid = (override + onArc) / 2;
+        auto jog = co_await ctx.getPoint("Specify jog location <midpoint>", jo);
+        if (jog.status == Status::Cancel)
+            co_return;
+        addDim(ctx, build(jog.ok() ? jog.point : mid));
+    }
+};
+
 // ---- DIMANGULAR --------------------------------------------------------------------------------
 
 class AngularDimCommand final : public cmd::Command {
@@ -377,6 +557,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RadialDimCommand>(
         "DIMDIAMETER", "DDI", true, "Diameter dimension of an arc or circle"));
     (void)registry.add(std::make_unique<AngularDimCommand>());
+    (void)registry.add(std::make_unique<ArcLengthDimCommand>());
+    (void)registry.add(std::make_unique<OrdinateDimCommand>());
+    (void)registry.add(std::make_unique<JoggedDimCommand>());
     (void)registry.add(std::make_unique<LeaderCommand>());
     (void)registry.add(makeSmartDimCommand());
     (void)registry.add(makeMLeaderCommand());
@@ -385,6 +568,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBaselineCommand());
     (void)registry.add(makeTextEditCommand());
     (void)registry.add(makeSpaceCommand());
+    (void)registry.add(makeQuickDimCommand());
     (void)registry.add(makeDimStyleCommand());
     (void)registry.add(makeDimSetupCommand());
     (void)registry.add(makeDimStylesPanelCommand());

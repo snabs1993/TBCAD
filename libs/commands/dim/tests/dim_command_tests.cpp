@@ -221,3 +221,69 @@ TEST_CASE("EXPLODE turns a dimension into plain objects") {
     REQUIRE(r.ok());
     CHECK(r.value().entities.size() >= 6);
 }
+
+TEST_CASE("DIMARC measures the length of an arc") {
+    Fixture f;
+    ArcData a;
+    a.center = {0, 0};
+    a.radius = 50;
+    a.startAngle = 0;
+    a.endAngle = kPi / 2;
+    EntityId id = f.addEntity(a);
+    REQUIRE(f.host->run("DIMARC", {ScriptItem::pick(id, {35, 35}), "70,70"}).finished);
+    const DimensionData* d = nullptr;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<DimensionData>(e))
+            d = x;
+    });
+    REQUIRE(d);
+    CHECK(d->kind == DimKind::ArcLength);
+    CHECK(d->measurement == doctest::Approx(kPi / 2 * 50));
+    auto L = dim::layoutDimension(f.doc, *d);
+    CHECK(L.arcs.size() >= 1);
+    CHECK(L.text.valid());
+    CHECK(L.text.utf8.find("78.54") != std::string::npos);
+}
+
+TEST_CASE("DIMORDINATE measures the distance from the origin along one axis") {
+    Fixture f;
+    REQUIRE(f.host->run("DIMORDINATE", {"120,45", "120,80"}).finished);
+    REQUIRE(f.dims().size() == 1);
+    const DimensionData* d = f.dims()[0];
+    CHECK(d->kind == DimKind::Ordinate);
+    CHECK(d->measurement == doctest::Approx(120));  // leader runs up: X is measured
+    auto L = dim::layoutDimension(f.doc, *d);
+    CHECK(!L.lines.empty());
+    CHECK(L.text.utf8 == "120.00");
+
+    REQUIRE(f.host->run("DIMORDINATE", {"120,45", "170,45"}).finished);
+    REQUIRE(f.dims().size() == 2);
+    const DimensionData* e = nullptr;
+    for (const DimensionData* x : f.dims())
+        if (x != d)
+            e = x;
+    REQUIRE(e);
+    CHECK(e->measurement == doctest::Approx(45));  // leader runs across: Y is measured
+    REQUIRE(f.host->run("DIMORDINATE", {"10,10", "Xdatum", "60,15"}).finished);
+    CHECK(f.dims().size() == 3);
+}
+
+TEST_CASE("DIMJOGGED dimensions the radius with a jog in the line") {
+    Fixture f;
+    CircleData c;
+    c.center = {0, 0};
+    c.radius = 40;
+    EntityId id = f.addEntity(c);
+    REQUIRE(f.host
+                ->run("DIMJOGGED",
+                      {ScriptItem::pick(id, {40, 0}), "100,0", "70,20", ScriptItem::enter()})
+                .finished);
+    REQUIRE(f.dims().size() == 1);
+    const DimensionData* d = f.dims()[0];
+    CHECK(d->kind == DimKind::Jogged);
+    CHECK(d->measurement == doctest::Approx(40));
+    auto L = dim::layoutDimension(f.doc, *d);
+    REQUIRE(!L.lines.empty());
+    CHECK(L.lines[0].pts.size() == 6);  // line, four points of the jog, arc end
+    CHECK(L.text.utf8 == "R40.00");
+}

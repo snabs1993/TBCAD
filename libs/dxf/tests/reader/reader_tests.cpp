@@ -797,4 +797,96 @@ TEST_CASE("attributes: flags, prompt, an unknown tag stays visible as text") {
     CHECK_FALSE(texts[0]->attdef.has_value());
 }
 
+TEST_CASE("MLEADER: leader lines and text come in as leaders") {
+    Pairs p;
+    p.g(0, "MULTILEADER").g(8, "0").g(100, "AcDbMLeader").g(270, 2);
+    p.g(300, "CONTEXT_DATA{").g(40, 1.0).g(10, 50.0).g(20, 20.0).g(30, 0.0);
+    p.g(41, 2.5).g(290, 1).g(304, "Room {\\C1;A}");
+    p.g(12, 50.0).g(22, 20.0).g(32, 0.0);
+    p.g(302, "LEADER{").g(290, 1).g(291, 1).g(10, 40.0).g(20, 20.0).g(30, 0.0);
+    p.g(11, 1.0).g(21, 0.0).g(31, 0.0).g(90, 0).g(40, 5.0);
+    p.g(304, "LEADER_LINE{").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(10, 20.0).g(20, 10.0).g(30, 0.0);
+    p.g(10, 40.0).g(20, 20.0).g(30, 0.0).g(91, 0).g(305, "}").g(303, "}");
+    p.g(301, "}");
+    Loaded l = load(entitiesOnly(p.text));
+    auto leaders = modelEntities<LeaderData>(l.doc());
+    REQUIRE(leaders.size() == 1);
+    const LeaderData& d = *leaders[0];
+    // From the arrowhead at the far end to the end of the dogleg.
+    CHECK(near(d.vertices.front(), Vec2{0, 0}));
+    CHECK(near(d.vertices.back(), Vec2{45, 20}));
+    CHECK(near(d.textPos, Vec2{50, 20}));
+    CHECK(d.utf8.find("Room") != std::string::npos);
+}
+
+TEST_CASE("3DFACE: the visible edges in plan") {
+    Pairs p;
+    p.g(0, "3DFACE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 10.0).g(21, 0.0).g(31, 5.0);
+    p.g(12, 10.0).g(22, 10.0).g(32, 5.0).g(13, 0.0).g(23, 10.0).g(33, 0.0).g(70, 2);
+    Loaded l = load(entitiesOnly(p.text));
+    CHECK(modelEntities<LineData>(l.doc()).size() == 3);  // edge 2 is invisible
+}
+
+TEST_CASE("WIPEOUT: the clip boundary becomes a closed polyline that hides what is behind it") {
+    Pairs p;
+    p.g(0, "WIPEOUT").g(8, "0").g(100, "AcDbWipeout").g(90, 0);
+    p.g(10, 100.0).g(20, 0.0).g(30, 0.0).g(11, 20.0).g(21, 0.0).g(31, 0.0);
+    p.g(12, 0.0).g(22, 20.0).g(32, 0.0).g(13, 1.0).g(23, 1.0).g(71, 2).g(91, 5);
+    p.g(14, -0.5).g(24, 0.5).g(14, 0.5).g(24, 0.5).g(14, 0.5).g(24, -0.5);
+    p.g(14, -0.5).g(24, -0.5).g(14, -0.5).g(24, 0.5);
+    Loaded l = load(entitiesOnly(p.text));
+    bool found = false;
+    l.doc().forEachEntity([&](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        if (!pl)
+            return;
+        found = true;
+        CHECK(e.common.wipeout);
+        CHECK(pl->closed);
+        REQUIRE(pl->v.size() == 4);
+        BBox2 b;
+        for (const auto& v : pl->v)
+            b.expand(v.p);
+        CHECK(near(b.min, Vec2{100, 0}));
+        CHECK(near(b.max, Vec2{120, 20}));
+    });
+    CHECK(found);
+}
+
+TEST_CASE("ARC_DIMENSION: centre, ends and arc point give an arc length dimension") {
+    Pairs p;
+    p.g(0, "ARC_DIMENSION").g(8, "0").g(100, "AcDbDimension").g(3, "Standard");
+    p.g(10, 60.0).g(20, -20.0).g(30, 0.0).g(70, 37).g(71, 5).g(1, "<>");
+    p.g(100, "AcDbArcDimension").g(13, 70.0).g(23, 0.0).g(33, 0.0).g(14, 60.0).g(24, 10.0);
+    p.g(34, 0.0).g(15, 60.0).g(25, 0.0).g(35, 0.0);
+    Loaded l = load(entitiesOnly(p.text));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    CHECK(dims[0]->kind == DimKind::ArcLength);
+    CHECK(dims[0]->measurement == doctest::Approx(kPi / 2 * 10));
+}
+
+TEST_CASE("MLINE: one polyline per element, offset along the miter direction") {
+    Pairs p;
+    p.g(0, "MLINE").g(8, "0").g(100, "AcDbMline").g(2, "Standard").g(40, 1.0).g(70, 0).g(71, 1);
+    p.g(72, 3).g(73, 2).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    auto vertex = [&](double x, double y, double dx, double dy, double mx, double my, double o) {
+        p.g(11, x).g(21, y).g(31, 0.0).g(12, dx).g(22, dy).g(32, 0.0).g(13, mx).g(23, my).g(33,
+                                                                                            0.0);
+        p.g(74, 2).g(41, 0.0).g(41, 0.0).g(75, 0);
+        p.g(74, 2).g(41, o).g(41, 0.0).g(75, 0);
+    };
+    vertex(0, 0, 1, 0, 0, 1, -1);
+    vertex(50, 0, 0, 1, -0.70710678118654746, 0.70710678118654746, -1.4142135623730951);
+    vertex(50, 30, 0, 1, -1, 0, -1);
+    Loaded l = load(entitiesOnly(p.text));
+    auto lines = modelEntities<PolylineData>(l.doc());
+    REQUIRE(lines.size() == 2);
+    CHECK(near(lines[0]->v[0].p, Vec2{0, 0}));
+    CHECK(near(lines[0]->v[1].p, Vec2{50, 0}));
+    CHECK(near(lines[1]->v[0].p, Vec2{0, -1}));
+    CHECK(near(lines[1]->v[1].p, Vec2{51, -1}, 1e-9));
+    CHECK(near(lines[1]->v[2].p, Vec2{51, 30}, 1e-9));
+}
+
 }  // namespace tbcad::dxf

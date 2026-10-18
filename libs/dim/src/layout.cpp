@@ -365,7 +365,143 @@ void layoutAngular(const Ctx& c, const DimensionData& d, const std::string& txt,
         L.text = {txt, center, rotText, c.th, false, false, tw};
 }
 
+// ---- arc length --------------------------------------------------------------------------------
+
+void layoutArcLength(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
+    ArcSpan g = arcSpan(d);
+    if (!g.ok)
+        return;
+    const Vec2 V = g.center;
+    const double r = g.dimRadius;
+    const double a1 = g.startAngle, a2 = g.startAngle + g.sweep;
+
+    // Extension lines run along the radii from just off the measured arc to just past the
+    // dimension arc.
+    const double pr = g.arcRadius;
+    for (double a : {a1, a2})
+        if (r > pr + c.off)
+            addSeg(L, V + unit(a) * (pr + c.off), V + unit(a) * (r + c.ext), Role::ExtLine, c.tol);
+
+    const double tw = textWidth(c, txt);
+    const double arcLen = r * g.sweep;
+    const bool arrowsIn = arcLen >= 2 * c.arrow;
+    const double stub = 2 * c.arrow;
+    const double am = a1 + g.sweep / 2;
+    const Vec2 radial = unit(am);
+    const double rotText = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(am + kPi / 2);
+
+    Vec2 center = V + radial * r;
+    bool onArc = true;
+    if (d.textPosUser) {
+        center = d.textPos;
+        onArc = false;
+    }
+    const bool centered = c.st.textPlacement == DimTextPlacement::Centered;
+    if (!d.textPosUser && !centered && tw > 0)
+        center = center + radial * (c.gap + halfExtent(radial, rotText, tw, c.th));
+
+    const double ea = arrowsIn ? 0 : stub / std::max(r, tol::kLinear);
+    double s0 = a1 - ea, s1 = a2 + ea;
+    auto arc = [&](double from, double to) {
+        if ((to - from) * r > c.tol)
+            L.arcs.push_back({V, r, normalizeAngle(from), normalizeAngle(to), Role::DimLine});
+    };
+    if (onArc && centered && tw > 0) {
+        double hb = (halfExtent(perp(radial), rotText, tw, c.th) + c.gap) / std::max(r, 1e-9);
+        arc(s0, std::min(s1, am - hb));
+        arc(std::max(s0, am + hb), s1);
+    } else {
+        arc(s0, s1);
+    }
+
+    Vec2 t1 = V + unit(a1) * r, t2 = V + unit(a2) * r;
+    Vec2 tan1 = perp(unit(a1)), tan2 = -perp(unit(a2));  // pointing into the sector
+    addArrow(L, c, t1, arrowsIn ? tan1 : -tan1);
+    addArrow(L, c, t2, arrowsIn ? tan2 : -tan2);
+    if (!txt.empty())
+        L.text = {txt, center, rotText, c.th, false, false, tw};
+}
+
+// ---- ordinate ----------------------------------------------------------------------------------
+
+void layoutOrdinate(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
+    const Vec2 P = d.defPts[0], E = d.defPts[1];
+    const bool xDatum = d.rotation < kPi / 4;  // measures X: the leader runs along Y
+    const Vec2 along = xDatum ? Vec2{0, 1} : Vec2{1, 0};
+    const Vec2 across = perp(along);
+    const double len = dot(E - P, along);
+    const double dir = len >= 0 ? 1.0 : -1.0;
+    const double start = c.off;
+    if (std::abs(len) <= start)
+        return;
+    // Short run from the feature, a jog across to the leader's line, then on to the end.
+    const double jog = start + (std::abs(len) - start) / 2;
+    Layout::Line line;
+    line.pts.push_back(P + along * (dir * start));
+    const double sideways = dot(E - P, across);
+    if (std::abs(sideways) > c.tol) {
+        line.pts.push_back(P + along * (dir * jog));
+        line.pts.push_back(P + along * (dir * jog) + across * sideways);
+    }
+    line.pts.push_back(E);
+    line.role = Role::DimLine;
+    L.lines.push_back(std::move(line));
+    if (txt.empty())
+        return;
+    const double tw = textWidth(c, txt);
+    const double rot = xDatum && c.st.textAlign != DimTextAlign::Horizontal ? kPi / 2 : 0;
+    Vec2 center = E + along * (dir * (c.gap + halfExtent(along, rot, tw, c.th)));
+    if (d.textPosUser)
+        center = d.textPos;
+    L.text = {txt, center, rot, c.th, false, false, tw};
+}
+
+// ---- jogged radius -----------------------------------------------------------------------------
+
+void layoutJogged(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
+    const Vec2 A = d.defPts[1], C = d.defPts[2], J = d.defPts[3];
+    const Vec2 u = normalized(A - C);
+    if (tol::isZeroLength(u))
+        return;
+    const Vec2 n = perp(u);
+    const double w = 2 * c.arrow;  // length of the jog along the dimension line
+    const Vec2 s0 = J - u * (w / 2), s3 = J + u * (w / 2);
+    Layout::Line line;
+    line.pts = {C, s0, s0 + u * (w * 0.25) + n * (w / 2), s3 - u * (w * 0.25) - n * (w / 2), s3, A};
+    line.role = Role::DimLine;
+    L.lines.push_back(std::move(line));
+    addArrow(L, c, A, -u);
+    if (txt.empty())
+        return;
+    const double tw = textWidth(c, txt);
+    const double rot = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(angleOf(u));
+    Vec2 center = (C + s0) / 2 + perp(unit(rot)) * (c.gap + c.th / 2);
+    if (d.textPosUser)
+        center = d.textPos;
+    L.text = {txt, center, rot, c.th, false, false, tw};
+}
+
 }  // namespace
+
+ArcSpan arcSpan(const DimensionData& d) {
+    ArcSpan g;
+    const auto& p = d.defPts;
+    const Vec2 v1 = p[1] - p[0], v2 = p[2] - p[0];
+    g.arcRadius = length(v1);
+    g.dimRadius = distance(p[3], p[0]);
+    if (g.arcRadius < tol::kLinear)
+        return g;
+    if (g.dimRadius < g.arcRadius)
+        g.dimRadius = g.arcRadius;
+    g.center = p[0];
+    g.startAngle = std::atan2(v1.y, v1.x);
+    const double end = std::atan2(v2.y, v2.x);
+    g.sweep = normalizeAngle(end - g.startAngle);
+    if (g.sweep < 1e-9)
+        g.sweep = kTwoPi;
+    g.ok = true;
+    return g;
+}
 
 AngularGeometry angularGeometry(const DimensionData& d) {
     AngularGeometry g;
@@ -500,6 +636,13 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
             layoutAngular(c, d, txt, L);
             break;
         case DimKind::ArcLength:
+            layoutArcLength(c, d, txt, L);
+            break;
+        case DimKind::Ordinate:
+            layoutOrdinate(c, d, txt, L);
+            break;
+        case DimKind::Jogged:
+            layoutJogged(c, d, txt, L);
             break;
     }
     return L;

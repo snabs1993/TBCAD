@@ -32,7 +32,7 @@ cmd::Task askExtension(cmd::CommandContext& ctx) {
 class CenterMarkCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "CENTERMARK"; }
-    std::vector<std::string> defaultAliases() const override { return {"CM"}; }
+    std::vector<std::string> defaultAliases() const override { return {"CM", "DIMCENTER"}; }
     std::string_view description() const override { return "Mark the centre of a circle or arc"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {

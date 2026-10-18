@@ -109,3 +109,26 @@ TEST_CASE("DIMSPACE evens out the gaps between parallel dimensions") {
     CHECK(f.host->undo());
     CHECK(entityAs<DimensionData>(*f.doc.find(ids[1]))->defPts[2].y == doctest::Approx(-47));
 }
+
+TEST_CASE("QDIM dimensions every key point in one chain") {
+    Chain f;
+    auto addLine = [&](Vec2 a, Vec2 b) {
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = LineData{a, b};
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId l1 = addLine({0, 0}, {40, 0});
+    EntityId l2 = addLine({40, 0}, {100, 0});
+    auto r = f.host->run("QDIM", {ScriptItem::select({l1, l2}), ScriptItem::enter(), "50,-20"});
+    CHECK(r.finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[0]->measurement == doctest::Approx(40));
+    CHECK(dims[1]->measurement == doctest::Approx(60));
+    CHECK(dims[1]->defPts[2].y == doctest::Approx(-20));
+    CHECK(f.host->undo());
+    CHECK(f.dims().empty());
+}
