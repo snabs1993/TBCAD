@@ -458,3 +458,173 @@ TEST_CASE("UCS icon: on, off, origin, noorigin, rotated and the world marker") {
     run(h, "UCSICON ON");
     CHECK(redSpot(h.screenshot()).count > 20);
 }
+
+namespace {
+
+// Where a world point is in the harness window (the viewport starts below the menu and tabs).
+ImVec2 screenOf(Harness& h, Vec2 world) {
+    const Vec2 s = h.core().camera().worldToScreen(world);
+    return ImVec2(static_cast<float>(s.x), static_cast<float>(s.y) + 92.0f);
+}
+
+std::size_t entityCount(Harness& h) {
+    std::size_t n = 0;
+    h.core().document().forEachEntity([&](const Entity&) { ++n; });
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("viewport menu: idle and with a selection") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("100,100");
+    h.core().submitText("400,100");
+    h.core().pressEscape();
+    h.frame(3);
+    const ImVec2 mid = screenOf(h, {600, 300});
+
+    // Nothing selected: Repeat, Select All, Paste, Zoom Extents; no edit commands.
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    CHECK(h.has("Repeat LINE", "Popup"));
+    CHECK(h.has("Select All", "Popup"));
+    CHECK_FALSE(h.has("ERASE", "Popup"));
+    CHECK(matchesGolden(h.windowShot("Popup"), "viewport_menu_idle"));
+    REQUIRE(h.click("Select All", "Popup"));
+    h.frame(3);
+    CHECK(h.core().selection().size() == 1);
+
+    // With a selection the edit commands appear; ERASE removes the line.
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    CHECK(h.has("MOVE", "Popup"));
+    CHECK(h.has("Deselect All", "Popup"));
+    REQUIRE(h.click("ERASE", "Popup"));
+    h.frame(3);
+    CHECK(entityCount(h) == 0);
+    CHECK(h.has("Repeat ERASE", "Popup") == false);  // the menu is closed again
+}
+
+TEST_CASE("viewport menu: during a command, options and snap overrides") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("100,100");
+    h.core().submitText("400,100");
+    h.core().pressEscape();
+    h.core().setSetting("drafting.osnap.modes", "midpoint");  // endpoint only through the override
+    h.core().submitText("LINE");  // a new line, waiting for its first point
+    h.frame(3);
+    const ImVec2 mid = screenOf(h, {600, 300});
+
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    CHECK(h.has("Enter", "Popup"));
+    CHECK(h.has("Cancel", "Popup"));
+    CHECK(h.has("Snap Overrides", "Popup"));
+    REQUIRE(h.click("Snap Overrides", "Popup"));
+    h.frame(2);
+    REQUIRE(h.click("Endpoint", "Menu"));
+    h.frame(2);
+    CHECK(h.core().setting("drafting.osnap.once").value_or("") == "endpoint");
+
+    // The override serves one point: it snaps to the endpoint, then it is gone.
+    const ImVec2 near400 = screenOf(h, {403, 104});
+    h.click(near400.x, near400.y);
+    h.frame(3);
+    CHECK(h.core().setting("drafting.osnap.once").value_or("x").empty());
+    h.core().submitText("700,300");
+    h.core().pressEscape();
+    h.frame(2);
+    double startX = 0, startY = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* l = std::get_if<LineData>(&e.data))
+            if (l->b.x == doctest::Approx(700) && l->b.y == doctest::Approx(300)) {
+                startX = l->a.x;
+                startY = l->a.y;
+            }
+    });
+    CHECK(startX == doctest::Approx(400));
+    CHECK(startY == doctest::Approx(100));
+
+    // Cancel from the menu leaves the drawing as it is.
+    h.core().submitText("LINE");
+    h.frame(2);
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    REQUIRE(h.click("Cancel", "Popup"));
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+}
+
+TEST_CASE("viewport: Shift + right click opens the snap override menu at a point prompt") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.frame(2);
+    const ImVec2 mid = screenOf(h, {600, 300});
+    h.holdShift(true);
+    h.click(mid.x, mid.y, 1);
+    h.holdShift(false);
+    h.frame(2);
+    CHECK(h.has("Midpoint", "Popup"));
+    CHECK(h.has("None", "Popup"));
+    REQUIRE(h.click("Midpoint", "Popup"));
+    h.frame(2);
+    CHECK(h.core().setting("drafting.osnap.once").value_or("") == "midpoint");
+    h.core().pressEscape();  // Esc drops the override with the command
+    CHECK(h.core().setting("drafting.osnap.once").value_or("x").empty());
+}
+
+namespace {
+std::string runningName(Harness& h) {
+    const auto* p = h.core().runner().prompt();
+    return p ? p->command : std::string();
+}
+}  // namespace
+
+TEST_CASE("command bar: autocomplete picks, Tab completes, Up recalls history") {
+    Harness h(1920, 1080);
+    REQUIRE(h.click("##command", "Command"));
+
+    // Typing narrows the list; Tab takes the first row, Enter runs it.
+    h.type("cir");
+    CHECK(h.has("##row", "##suggest"));
+    CHECK(matchesGolden(crop(h.screenshot(), 60, 820, 700, 230), "command_suggest"));
+    h.key(ImGuiKey_Tab);
+    h.key(ImGuiKey_Enter);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) == "CIRCLE");
+    h.core().pressEscape();
+    h.frame(2);
+
+    // Down arrow moves the highlight, Enter then takes that row ("ci" -> CIRCLE, then the next).
+    REQUIRE(h.click("##command", "Command"));
+    h.type("li");
+    h.key(ImGuiKey_DownArrow);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) != "LIST");  // the second row, not the first
+    h.core().pressEscape();
+    h.frame(2);
+
+    // Up at an empty prompt brings back the latest line typed.
+    h.command("LINE");
+    h.core().pressEscape();
+    h.frame(2);
+    REQUIRE(h.click("##command", "Command"));
+    h.key(ImGuiKey_UpArrow);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) == "LINE");
+    h.core().pressEscape();
+
+    // Esc closes the list without running anything.
+    REQUIRE(h.click("##command", "Command"));
+    h.type("ar");
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK_FALSE(h.has("##row", "##suggest"));
+    CHECK_FALSE(h.core().runner().active());
+}
