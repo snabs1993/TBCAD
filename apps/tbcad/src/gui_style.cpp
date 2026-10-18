@@ -66,7 +66,8 @@ std::string findBesideExecutable(const std::string& name) {
 
 void buildFonts(float scale) {
     ImGuiIO& io = ImGui::GetIO();
-    ImGui_ImplOpenGL3_DestroyFontsTexture();
+    if (io.BackendRendererUserData)  // none in the window-less GUI tests
+        ImGui_ImplOpenGL3_DestroyFontsTexture();
     io.Fonts->Clear();
 
     ImFontGlyphRangesBuilder builder;
@@ -109,7 +110,8 @@ void buildFonts(float scale) {
     if (!base && sarabun.empty())
         io.Fonts->AddFontDefault();
     io.Fonts->Build();
-    ImGui_ImplOpenGL3_CreateFontsTexture();
+    if (io.BackendRendererUserData)
+        ImGui_ImplOpenGL3_CreateFontsTexture();
 }
 
 namespace {

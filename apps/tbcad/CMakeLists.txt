@@ -4,15 +4,17 @@ include(deps/imgui)
 set(_tbcad_app_sources
   src/main.cpp
   src/app.cpp
+  src/viewport_target.cpp
+  src/gate.cpp)
+# Everything drawn with Dear ImGui lives in a library so the window-less GUI tests can use it too.
+set(_tbcad_gui_sources
   src/gui.cpp
   src/gui_style.cpp
   src/wheel_menu.cpp
   src/icons.cpp
   src/key_map.cpp
   src/settings_dialog.cpp
-  src/file_browser.cpp
-  src/viewport_target.cpp
-  src/gate.cpp)
+  src/file_browser.cpp)
 if(WIN32)
   # Version info and icon (packaging/windows/tbcad.rc.in).
   enable_language(RC)
@@ -22,10 +24,10 @@ if(WIN32)
   set(TBCAD_ICON_PATH "${CMAKE_SOURCE_DIR}/packaging/windows/tbcad.ico")
   configure_file("${CMAKE_SOURCE_DIR}/packaging/windows/tbcad.rc.in"
                  "${CMAKE_CURRENT_BINARY_DIR}/tbcad.rc" @ONLY)
-  list(APPEND _tbcad_app_sources src/ime_win32.cpp tbcad.manifest
-       "${CMAKE_CURRENT_BINARY_DIR}/tbcad.rc")
+  list(APPEND _tbcad_app_sources tbcad.manifest "${CMAKE_CURRENT_BINARY_DIR}/tbcad.rc")
+  list(APPEND _tbcad_gui_sources src/ime_win32.cpp)
 else()
-  list(APPEND _tbcad_app_sources src/ime_stub.cpp)
+  list(APPEND _tbcad_gui_sources src/ime_stub.cpp)
 endif()
 
 # The commit the program was built from, shown in Help > About.
@@ -41,18 +43,32 @@ if(GIT_FOUND)
   endif()
 endif()
 
-add_executable(tbcad ${_tbcad_app_sources})
-target_compile_features(tbcad PRIVATE cxx_std_20)
-tbcad_set_warnings(tbcad)
-target_include_directories(tbcad PRIVATE src)
-target_compile_definitions(tbcad PRIVATE
+set(_tbcad_app_libs
+  tbcad_appcore tbcad_mcpapp tbcad_plugin tbcad_dwgopen tbcad_drafting tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
+  tbcad::glad tbcad::imgui)
+set(_tbcad_app_defs
   GLFW_INCLUDE_NONE
   TBCAD_VERSION="${PROJECT_VERSION}"
   TBCAD_GIT_HASH="${TBCAD_GIT_HASH}"
   TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
-target_link_libraries(tbcad PRIVATE
-  tbcad_appcore tbcad_mcpapp tbcad_plugin tbcad_dwgopen tbcad_drafting tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
-  tbcad::glad tbcad::imgui)
+
+add_library(tbcad_gui STATIC ${_tbcad_gui_sources})
+target_compile_features(tbcad_gui PUBLIC cxx_std_20)
+tbcad_set_warnings(tbcad_gui)
+target_include_directories(tbcad_gui PUBLIC src)
+target_compile_definitions(tbcad_gui PUBLIC ${_tbcad_app_defs})
+target_link_libraries(tbcad_gui PUBLIC ${_tbcad_app_libs})
+if(WIN32)
+  target_link_libraries(tbcad_gui PUBLIC imm32)
+  target_compile_definitions(tbcad_gui PUBLIC NOMINMAX)
+endif()
+
+add_executable(tbcad ${_tbcad_app_sources})
+target_compile_features(tbcad PRIVATE cxx_std_20)
+tbcad_set_warnings(tbcad)
+target_include_directories(tbcad PRIVATE src)
+target_compile_definitions(tbcad PRIVATE ${_tbcad_app_defs})
+target_link_libraries(tbcad PRIVATE tbcad_gui ${_tbcad_app_libs})
 if(WIN32)
   target_link_libraries(tbcad PRIVATE imm32)
   # A GUI program that keeps `main` as its entry point.
@@ -98,6 +114,17 @@ if(TBCAD_BUILD_TESTS)
   target_link_libraries(tbcad_panel_frame_tests PRIVATE
     tbcad_appcore tbcad_ui tbcad_platform tbcad_command_registry tbcad::imgui doctest::doctest)
   doctest_discover_tests(tbcad_panel_frame_tests PROPERTIES TIMEOUT 300)
+  # The real Gui driven with queued mouse / keyboard events and compared with golden pictures; no
+  # window, no GPU (GLFW's null platform and a software rasteriser).
+  add_executable(tbcad_gui_tests tests/gui_tests.cpp tests/gui_harness.cpp)
+  target_compile_features(tbcad_gui_tests PRIVATE cxx_std_20)
+  tbcad_set_warnings(tbcad_gui_tests)
+  target_include_directories(tbcad_gui_tests PRIVATE tests)
+  target_compile_definitions(tbcad_gui_tests PRIVATE
+    TBCAD_GUI_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden"
+    TBCAD_GUI_FAILURE_DIR="${CMAKE_CURRENT_BINARY_DIR}/gui-test-failures")
+  target_link_libraries(tbcad_gui_tests PRIVATE tbcad_gui tbcad_mcp tbcad_underlay doctest::doctest)
+  doctest_discover_tests(tbcad_gui_tests PROPERTIES TIMEOUT 600)
   add_test(NAME tbcad_gui_smoke
            COMMAND tbcad --self-test --frames 5 --script "DEVGEN LINES 20000")
   set_tests_properties(tbcad_gui_smoke PROPERTIES
