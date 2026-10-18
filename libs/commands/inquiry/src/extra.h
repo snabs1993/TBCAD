@@ -11,5 +11,6 @@ std::unique_ptr<cmd::Command> makeAreaTable();
 std::unique_ptr<cmd::Command> makeAudit();
 std::unique_ptr<cmd::Command> makeMassProp();
 std::unique_ptr<cmd::Command> makeDwgProps();
+std::unique_ptr<cmd::Command> makeFindStray();
 
 }  // namespace tbcad::inquiry

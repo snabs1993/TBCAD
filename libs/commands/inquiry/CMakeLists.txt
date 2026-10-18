@@ -6,10 +6,11 @@ tbcad_add_library(inquiry
     src/measure.cpp
     src/massprop.cpp
     src/dwgprops.cpp
+    src/findstray.cpp
     src/quick.cpp
     src/quickcmd.cpp
     src/ui.cpp
-  DEPENDS tbcad::cmd tbcad::geom tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::geom tbcad::layout tbcad::ui)
 
 tbcad_add_tests(inquiry
   SOURCES
