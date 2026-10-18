@@ -572,7 +572,7 @@ void Importer::keepObjects() {
 
     std::string rootEntries;
     for (const auto& [name, h] : entries) {
-        if (ownedNames.count(name) || !admit(h))
+        if (ownedNames.count(name) || name.find_first_of("\t\n") != std::string::npos || !admit(h))
             continue;
         rootEntries += name + "\t@" + std::to_string(token[h]) + "\n";
     }

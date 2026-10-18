@@ -1097,6 +1097,23 @@ TEST_CASE("a .dxf file opens and saves back as DXF in place") {
     CHECK(h.core->document().modelSpaceCount() == 3);
 }
 
+TEST_CASE("a DXF opened as AC1021 saves back as AC1021") {
+    Fixture f("dxfver");
+    const fs::path file = f.dir / "r2007.dxf";
+    {
+        std::ofstream o(file, std::ios::binary);
+        o << "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1021\n  0\nENDSEC\n"
+             "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n0\n 10\n0.0\n 20\n0.0\n 11\n9.0\n"
+             " 21\n0.0\n  0\nENDSEC\n  0\nEOF\n";
+    }
+    REQUIRE(f.core->openFile(file).ok());
+    f.line("0,5", "5,5");
+    REQUIRE(f.core->save().ok());
+    std::ifstream in(file, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(text.find("AC1021") != std::string::npos);
+}
+
 TEST_CASE("files.defaultFormat decides the extension of a name without one") {
     Fixture f("dxfdefault");
     f.line("0,0", "10,0");
