@@ -19,7 +19,7 @@ using cmd::Task;
 class FieldCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "FIELD"; }
-    std::vector<std::string> defaultAliases() const override { return {"FLD"}; }
+    std::vector<std::string> defaultAliases() const override { return {"FLD", "RTEXT"}; }
     std::string_view description() const override {
         return "Text that updates itself: date, file name, sheet, length, area, layer, block, ...";
     }
