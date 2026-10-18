@@ -56,6 +56,10 @@ std::filesystem::path plotStyleFolder(const cmd::IHost& host);
 /// Where a named style table is looked for after the built-ins: the drawing's folder (and a
 /// "Plot Styles" folder in it), TBCAD's own plot styles folder, then AutoCAD's Plotters\Plot Styles
 /// folders of the current user.
+// Folders the user added (setting "plot.stylepaths", ";"- or newline-separated).
+std::vector<std::filesystem::path> userStyleFolders(const cmd::IHost& host);
+// Order: the drawing's folder, TBCAD's plot styles, the user's folders, AutoCAD's, Downloads and
+// Documents.
 std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host);
 /// True when the chosen style table is named but cannot be found (plotting would silently use
 /// none).
