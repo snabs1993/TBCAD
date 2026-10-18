@@ -95,7 +95,7 @@ struct AppCore::Session {
     // Destroyed last (members below refer to it).
     std::unique_ptr<Document> docPtr;
     Document& doc;
-    cmd::UndoStack undo{};
+    cmd::UndoStack undo{cmd::UndoStack::machineLimitBytes()};
     index::SpatialIndex index{};
     std::unique_ptr<index::DocumentIndexer> indexer{};
     // Declared after the indexer so it is destroyed first.

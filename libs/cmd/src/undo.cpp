@@ -3,7 +3,36 @@
 #include <algorithm>
 #include <unordered_set>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace tbcad::cmd {
+
+std::size_t UndoStack::machineLimitBytes() {
+    std::size_t total = 0;
+#ifdef _WIN32
+    MEMORYSTATUSEX ms{};
+    ms.dwLength = sizeof ms;
+    if (GlobalMemoryStatusEx(&ms))
+        total = static_cast<std::size_t>(ms.ullTotalPhys);
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+    const long pages = sysconf(_SC_PHYS_PAGES);
+    const long size = sysconf(_SC_PAGESIZE);
+    if (pages > 0 && size > 0)
+        total = static_cast<std::size_t>(pages) * static_cast<std::size_t>(size);
+#endif
+    const std::size_t quarter = total / 4;
+    return std::clamp(quarter, kDefaultLimitBytes, std::size_t{2} * 1024 * 1024 * 1024);
+}
 
 namespace {
 
