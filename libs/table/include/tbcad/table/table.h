@@ -87,6 +87,18 @@ bool deleteTableStyle(Header& h, const std::string& name);
 std::string currentTableStyleName(const Header& h);
 void setCurrentTableStyle(Header& h, const std::string& name);
 
+// ---- cell alignment -------------------------------------------------------------------------
+
+// Text alignment inside a cell, written as the paragraph code `\pxql;` (left), `\pxqc;` (centre) or
+// `\pxqr;` (right) at the start of the cell text, which is what AutoCAD's MTEXT uses. A cell
+// without the code is left aligned, a title row centred.
+enum class CellAlign : std::uint8_t { Left, Center, Right };
+std::optional<CellAlign> cellAlign(const TableCell& cell);
+// The cell text without the alignment code.
+std::string cellBody(const std::string& utf8);
+// Puts `align` on the cell (nullopt: back to the default). False for a covered or missing cell.
+bool setCellAlign(TableData& t, std::size_t row, std::size_t col, std::optional<CellAlign> align);
+
 // ---- formulas -------------------------------------------------------------------------------
 
 // A cell whose text starts with "=" is a formula, worked out when the table is drawn, exported

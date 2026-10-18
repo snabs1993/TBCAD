@@ -159,11 +159,12 @@ public:
             cur.col = std::min(cur.col, table::colCount(*t) - 1);
 
             cmd::PointOptions po;
-            po.keywords = {"Text",      "RowBelow", "RowAbove", "ColRight", "ColLeft", "DeleteRow",
-                           "DeleteCol", "Merge",    "Unmerge",  "Width",    "Height"};
+            po.keywords = {"Text",      "RowBelow",  "RowAbove",   "ColRight", "ColLeft",
+                           "DeleteRow", "DeleteCol", "Merge",      "Unmerge",  "Width",
+                           "Height",    "Align",     "AlignColumn"};
             auto pick = co_await ctx.getPoint(
                 "Click a cell, or [Text/RowBelow/RowAbove/ColRight/ColLeft/DeleteRow/DeleteCol/"
-                "Merge/Unmerge/Width/Height] <done>",
+                "Merge/Unmerge/Width/Height/Align/AlignColumn] <done>",
                 po);
             if (pick.status == Status::None || pick.status == Status::Cancel)
                 co_return;
@@ -182,14 +183,19 @@ public:
             if (k == "Text") {
                 cmd::StringOptions so;
                 so.allowEmpty = true;
-                so.defaultValue = table::cellAt(*t, cur.row, cur.col).utf8;
+                so.defaultValue = table::cellBody(table::cellAt(*t, cur.row, cur.col).utf8);
+                const auto keepAlign = table::cellAlign(table::cellAt(*t, cur.row, cur.col));
                 auto s = co_await ctx.getString("Cell text (row " + std::to_string(cur.row + 1) +
                                                     ", column " + std::to_string(cur.col + 1) +
                                                     "), - clears",
                                                 so);
                 if (s.ok()) {
                     const std::string text = s.text == "-" ? std::string() : s.text;
-                    edit([&](TableData& d) { table::setText(d, cur.row, cur.col, text); });
+                    edit([&](TableData& d) {
+                        table::setText(d, cur.row, cur.col, text);
+                        if (keepAlign)
+                            table::setCellAlign(d, cur.row, cur.col, keepAlign);
+                    });
                 }
             } else if (k == "RowBelow" || k == "RowAbove") {
                 const std::size_t at = k == "RowBelow" ? cur.row + 1 : cur.row;
@@ -228,6 +234,30 @@ public:
                     if (!table::unmerge(d, cur.row, cur.col))
                         ctx.message("That cell is not merged.");
                 });
+            } else if (k == "Align" || k == "AlignColumn") {
+                cmd::KeywordOptions ko;
+                ko.keywords = {"Left", "Center", "Right", "Default"};
+                ko.defaultKeyword = "Left";
+                auto a =
+                    co_await ctx.getKeyword("Alignment [Left/Center/Right/Default] <Left>", ko);
+                if (a.ok()) {
+                    std::optional<table::CellAlign> al;
+                    if (a.keyword == "Left")
+                        al = table::CellAlign::Left;
+                    else if (a.keyword == "Center")
+                        al = table::CellAlign::Center;
+                    else if (a.keyword == "Right")
+                        al = table::CellAlign::Right;
+                    const bool column = k == "AlignColumn";
+                    edit([&](TableData& d) {
+                        if (!column) {
+                            table::setCellAlign(d, cur.row, cur.col, al);
+                            return;
+                        }
+                        for (std::size_t r = 0; r < table::rowCount(d); ++r)
+                            table::setCellAlign(d, r, cur.col, al);
+                    });
+                }
             } else if (k == "Width" || k == "Height") {
                 cmd::DistanceOptions dop;
                 dop.allowZero = false;

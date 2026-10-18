@@ -331,3 +331,30 @@ TEST_CASE("formulas survive the text form used in DXF") {
     CHECK(cellAt(*back, 2, 0).utf8 == "=SUM(A1:A2)*2");
     CHECK(displayText(*back, 2, 0) == "22");
 }
+
+TEST_CASE("cell alignment is a paragraph code that formulas and CSV look through") {
+    TableData t = grid(2, 2);
+    setText(t, 0, 0, "7");
+    setText(t, 0, 1, "=A1*2");
+    REQUIRE(setCellAlign(t, 0, 1, CellAlign::Right));
+    CHECK(cellAlign(cellAt(t, 0, 1)) == CellAlign::Right);
+    CHECK(cellBody(cellAt(t, 0, 1).utf8) == "=A1*2");
+    CHECK(displayText(t, 0, 1) == "14");
+    REQUIRE(setCellAlign(t, 0, 0, CellAlign::Center));
+    CHECK(displayText(t, 1, 1).empty());
+    setText(t, 1, 1, "=A1+B1");  // alignment code on A1 does not disturb numbers
+    CHECK(displayText(t, 1, 1) == "21");
+    CHECK(toCsv(t).find("pxq") == std::string::npos);
+    bool placed = false;
+    for (const TextItem& item : layout(t).texts)
+        placed = placed || (item.utf8 == "14" && item.attach == Attachment::MiddleRight);
+    CHECK(placed);
+    CHECK(setCellAlign(t, 0, 1, std::nullopt));
+    CHECK_FALSE(cellAlign(cellAt(t, 0, 1)).has_value());
+    CHECK_FALSE(setCellAlign(t, 9, 9, CellAlign::Left));
+    // The code survives the DXF text form.
+    setCellAlign(t, 0, 1, CellAlign::Right);
+    auto back = parse(serialize(t));
+    REQUIRE(back);
+    CHECK(cellAlign(cellAt(*back, 0, 1)) == CellAlign::Right);
+}

@@ -180,3 +180,27 @@ TEST_CASE("TABLESTYLE defines styles; TABLE starts from the current one") {
     CHECK(f.host->logContains("cannot be deleted"));
     CHECK(f.host->undo());
 }
+
+TEST_CASE("TABLEEDIT aligns a cell or a column; editing the text keeps the alignment") {
+    Fx f;
+    f.host->run("TABLE", {"2", "2", "40", "10", ScriptItem::enter(), "0,0"});
+    const EntityId id = f.tableId();
+    REQUIRE(id);
+    // Pick the cell at row 0, column 1 (x 40..80, y -0..-10 below the top edge).
+    f.host->run("TABLEEDIT", {ScriptItem::pick(id, {60, -5}), "Align", "Right", "Text", "42", ""});
+    const auto* t = entityAs<TableData>(*f.doc.find(id));
+    REQUIRE(t);
+    CHECK(table::cellAlign(table::cellAt(*t, 0, 1)) == table::CellAlign::Right);
+    CHECK(table::cellBody(table::cellAt(*t, 0, 1).utf8) == "42");
+    f.host->run("TABLEEDIT", {ScriptItem::pick(id, {20, -5}), "AlignColumn", "Center", ""});
+    t = entityAs<TableData>(*f.doc.find(id));
+    CHECK(table::cellAlign(table::cellAt(*t, 0, 0)) == table::CellAlign::Center);
+    CHECK(table::cellAlign(table::cellAt(*t, 1, 0)) == table::CellAlign::Center);
+    CHECK(table::cellAlign(table::cellAt(*t, 0, 1)) ==
+          table::CellAlign::Right);  // other column kept
+    // The aligned text lands at the right edge, with its right edge as the anchor.
+    bool right = false;
+    for (const auto& item : table::layout(*t).texts)
+        right = right || (item.utf8 == "42" && item.attach == Attachment::MiddleRight);
+    CHECK(right);
+}
