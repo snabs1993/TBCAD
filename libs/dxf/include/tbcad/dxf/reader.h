@@ -28,6 +28,10 @@ struct ImportOptions {
     // themselves from their definition points (W5-5). Turn it on to see exactly what the
     // other program drew.
     bool dimensionGraphics = false;
+    // DWG only: add the long structure trace to the report (what was found where). The report
+    // is for people diagnosing a file; opening a drawing leaves it off, as it takes seconds on a
+    // big file.
+    bool diagnostics = true;
 };
 
 struct EntityCount {
