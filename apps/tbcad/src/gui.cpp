@@ -2543,12 +2543,29 @@ void Gui::panels() {
         }
     };
     pc.drawMultiSections = [this, &pc]() {
-        // One call per kind in the selection, each with the first object of that kind.
-        std::set<EntityKind> seen;
+        // One call per kind in the selection, each with the first object of that kind. Finding
+        // them walks the whole selection, so the result is kept until the selection or the
+        // drawing changes (select-all on a big drawing would otherwise walk it every frame).
+        static std::uint64_t cachedKey = ~0ull;
+        static std::vector<EntityId> firsts;
+        const std::vector<EntityId>& sel = *pc.selection;
+        std::uint64_t key = core_.document().revision() * 1000003ull + sel.size();
+        for (EntityId id : sel)
+            key = (key ^ id.value) * 1099511628211ull;
+        if (key != cachedKey) {
+            cachedKey = key;
+            firsts.clear();
+            std::set<EntityKind> seen;
+            for (EntityId id : sel) {
+                const Entity* e = core_.document().find(id);
+                if (e && seen.insert(kind(*e)).second)
+                    firsts.push_back(id);
+            }
+        }
         pc.multiSelection = true;
-        for (EntityId id : *pc.selection) {
+        for (EntityId id : firsts) {
             const Entity* e = core_.document().find(id);
-            if (!e || !seen.insert(kind(*e)).second)
+            if (!e)
                 continue;
             for (const auto* section : registry_.sectionsFor(kind(*e)))
                 section->draw(pc, id);
