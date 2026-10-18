@@ -234,6 +234,8 @@ public:
     // completely inside (window), right to left what it touches (crossing). Shift removes.
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);
     // Live selection rectangle shown in the overlay while dragging; nullopt = none.
+    // How many objects the selection box being dragged would pick right now (none: no drag).
+    std::optional<std::size_t> dragSelectCount();
     void setSelectionDrag(std::optional<std::pair<Vec2, Vec2>> corners) { drag_ = corners; }
     // Freeform selection: the screen-space path shown while dragging (empty = none) and the
     // selection made when it is released.
@@ -437,6 +439,11 @@ private:
     DisplayList preview_{};
     bool hasPreview_ = false;
     std::optional<std::pair<Vec2, Vec2>> drag_{};
+    struct DragCount {
+        Vec2 a{}, b{};
+        std::uint64_t revision = ~0ull;
+        std::size_t count = 0;
+    } dragCount_{};
     std::optional<OutOfAreaNotice> outOfArea_{};
     bool inUndo_ = false;
     std::optional<std::string> clipboardOut_{};

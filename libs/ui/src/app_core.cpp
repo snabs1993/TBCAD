@@ -1714,6 +1714,23 @@ void AppCore::doubleClick(const PointerState& p) {
         openPanel("properties");  // like AutoCAD: double click an object to see its properties
 }
 
+std::optional<std::size_t> AppCore::dragSelectCount() {
+    if (!drag_ || !session_)
+        return std::nullopt;
+    const auto [a, b] = *drag_;
+    const std::uint64_t rev = session_->doc.revision();
+    if (a.x != dragCount_.a.x || a.y != dragCount_.a.y || b.x != dragCount_.b.x ||
+        b.y != dragCount_.b.y || rev != dragCount_.revision) {
+        BBox2 box;
+        box.expand(camera_.screenToWorld(a));
+        box.expand(camera_.screenToWorld(b));
+        dragCount_ = {
+            a, b, rev,
+            selectInBox(session_->doc, spatialIndex(), box, dragIsCrossing(a.x, b.x)).size()};
+    }
+    return dragCount_.count;
+}
+
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
     const bool crossing = dragIsCrossing(a.x, b.x);
     Vec2 wa = camera_.screenToWorld(a);
