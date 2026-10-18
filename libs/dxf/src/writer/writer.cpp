@@ -1196,14 +1196,11 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.pt(10, extents_.empty() ? Vec2{1e20, 1e20} : extents_.min, extents_.empty() ? 1e20 : 0);
     var("$EXTMAX");
     o.pt(10, extents_.empty() ? Vec2{-1e20, -1e20} : extents_.max, extents_.empty() ? -1e20 : 0);
-    if (!kept("$LIMMIN")) {
-        var("$LIMMIN");
-        o.pt2(10, {0, 0});
-    }
-    if (!kept("$LIMMAX")) {
-        var("$LIMMAX");
-        o.pt2(10, {420, 297});
-    }
+    const BBox2 limits = drawingLimits(doc_.header());
+    var("$LIMMIN");
+    o.pt2(10, limits.empty() ? Vec2{0, 0} : limits.min);
+    var("$LIMMAX");
+    o.pt2(10, limits.empty() ? Vec2{420, 297} : limits.max);
     var("$LTSCALE");
     o.d(40, doc_.header().ltScale);
     var("$CELTSCALE");

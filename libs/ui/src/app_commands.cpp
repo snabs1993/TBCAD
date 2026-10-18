@@ -187,6 +187,8 @@ public:
                 BBox2 box = ctx.host().viewExtents();
                 if (box.empty())
                     box = boxOfEntities(ctx.doc());
+                if (first.keyword == "All")  // All covers the drawing limits as well
+                    box.merge(drawingLimits(ctx.doc().header()));
                 if (box.empty()) {
                     ctx.message("Nothing to zoom to.");
                     co_return;

@@ -244,6 +244,52 @@ private:
     const char* alias_;
 };
 
+// LIMITS: the drawing area. ZOOM All covers it; DXF keeps it in $LIMMIN / $LIMMAX.
+class LimitsCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LIMITS"; }
+    std::string_view description() const override { return "Set the drawing limits"; }
+    Task run(CommandContext& ctx) override {
+        const BBox2 cur = drawingLimits(ctx.doc().header());
+        const Vec2 curMin = cur.empty() ? Vec2{0, 0} : cur.min;
+        const Vec2 curMax = cur.empty() ? Vec2{420, 297} : cur.max;
+        cmd::PointOptions po;
+        po.keywords = {"ON", "OFF"};
+        po.allowNone = true;
+        char buf[200];
+        std::snprintf(buf, sizeof buf, "Specify lower left corner or [ON/OFF] <%g,%g>", curMin.x,
+                      curMin.y);
+        auto first = co_await ctx.getPoint(buf, po);
+        if (first.status == cmd::Status::Keyword) {
+            const bool on = first.keyword == "ON";
+            ctx.setUndoLabel("Limits check");
+            if (auto r = ctx.tx().modifyHeader(
+                    [on](Header& h) { h.custom[kLimCheckKey] = on ? "1" : "0"; });
+                !r)
+                ctx.message(r.error().message);
+            co_return;
+        }
+        if (!first.ok() && first.status != cmd::Status::None)
+            co_return;
+        const Vec2 ll = first.ok() ? first.point : curMin;
+        cmd::PointOptions p2;
+        p2.base = ll;
+        p2.allowNone = true;
+        std::snprintf(buf, sizeof buf, "Specify upper right corner <%g,%g>", curMax.x, curMax.y);
+        auto second = co_await ctx.getPoint(buf, p2);
+        if (!second.ok() && second.status != cmd::Status::None)
+            co_return;
+        const Vec2 ur = second.ok() ? second.point : curMax;
+        if (!(ll.x < ur.x) || !(ll.y < ur.y)) {
+            ctx.message("The upper right corner must be above and to the right of the lower left.");
+            co_return;
+        }
+        ctx.setUndoLabel("Limits");
+        if (auto r = ctx.tx().modifyHeader([&](Header& h) { setDrawingLimits(h, ll, ur); }); !r)
+            ctx.message(r.error().message);
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -259,6 +305,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
     (void)registry.add(std::make_unique<RefreshCommand>("REGENALL", ""));
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAWALL", "RA"));
+    (void)registry.add(std::make_unique<RefreshCommand>("REGENAUTO", ""));
+    (void)registry.add(std::make_unique<LimitsCommand>());
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeHyperlinkCommand());
     (void)registry.add(makeSpaceTransCommand());

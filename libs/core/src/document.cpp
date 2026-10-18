@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <new>
@@ -1982,6 +1983,38 @@ bool customFlag(const Header& h, const char* key, bool fallback) {
     return it->second != "0";
 }
 }  // namespace
+
+BBox2 drawingLimits(const Header& h) {
+    BBox2 box;
+    auto it = h.custom.find(kLimitsKey);
+    if (it == h.custom.end())
+        return box;
+    double v[4];
+    const char* p = it->second.c_str();
+    for (double& x : v) {
+        char* end = nullptr;
+        x = std::strtod(p, &end);
+        if (end == p || !std::isfinite(x))
+            return BBox2{};
+        p = end;
+    }
+    if (!(v[0] < v[2]) || !(v[1] < v[3]))
+        return BBox2{};
+    box.min = {v[0], v[1]};
+    box.max = {v[2], v[3]};
+    return box;
+}
+
+void setDrawingLimits(Header& h, Vec2 lowerLeft, Vec2 upperRight) {
+    char buf[160];
+    std::snprintf(buf, sizeof buf, "%.17g %.17g %.17g %.17g", lowerLeft.x, lowerLeft.y,
+                  upperRight.x, upperRight.y);
+    h.custom[kLimitsKey] = buf;
+}
+
+bool limitsCheck(const Header& h) {
+    return customFlag(h, kLimCheckKey, false);
+}
 
 double ceLtScale(const Header& h) {
     auto it = h.custom.find(kCeLtScaleKey);
