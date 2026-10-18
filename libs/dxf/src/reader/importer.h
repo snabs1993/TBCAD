@@ -130,6 +130,9 @@ private:
     // group 41 is the object's full factor, TBCAD stores it relative to its style's.
     std::map<std::uint32_t, double> styleRawWidth_{};
     std::map<std::string, double> styleHeights_{};  // STYLE handle -> fixed text height (DXF units)
+    // Linetype text marks name their style by handle, and the LTYPE table comes before STYLE.
+    std::map<std::string, std::string> styleNameByHandle_{};
+    std::vector<LinetypeId> marksAwaitingStyles_{};
     Vec2 P(const Record& r, int cx, int cy) const { return {r.num(cx) * k_, r.num(cy) * k_}; }
     void note3d(const Record& r);
     void bad(const Record& r, std::string_view type, const std::string& message);

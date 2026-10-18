@@ -464,4 +464,50 @@ TEST_CASE("PLINEGEN is the default of new polylines; a dashed polyline restarts 
     h.custom[kPlineGenKey] = "0";
     applyCurrentProperties(h, fresh);
     CHECK(entityAs<PolylineData>(fresh)->restartLinetype);
+
+TEST_CASE("text and shapes of a complex linetype are drawn along the line") {
+    Document doc;
+    LinetypeId gas;
+    {
+        Transaction tx = doc.begin("lt");
+        Linetype lt;
+        lt.name = "GAS_LINE";
+        lt.pattern = {10, -10};
+        LinetypeMark t;
+        t.text = "GAS";
+        t.scale = 2;
+        t.offset = 10;
+        t.shift = {-1, -1};
+        LinetypeMark s;
+        s.kind = LinetypeMark::Kind::Shape;
+        s.text = "CIRC1";
+        s.scale = 2;
+        s.offset = 20;
+        lt.marks = {t, s};
+        auto lid = tx.addLinetype(lt);
+        REQUIRE(lid.ok());
+        gas = lid.value();
+        tx.commit();
+    }
+    Entity e = make(LineData{{0, 0}, {100, 0}});
+    e.common.linetype = gas;
+    DisplayContext ctx;
+    ctx.pixelSizeMm = 0.1;
+    DisplayList list;
+    buildDisplay(doc, e, ctx, list);
+    // The dashed line itself, then the marks of 5 cycles.
+    CHECK(list.items.size() > 1 + 5);
+
+    // Zoomed far out the marks are smaller than a few pixels and are left out.
+    ctx.pixelSizeMm = 5;
+    DisplayList far;
+    buildDisplay(doc, e, ctx, far);
+    CHECK(far.items.size() <= 1);
+
+    Entity plain = make(LineData{{0, 0}, {100, 0}});
+    DisplayContext ctx2;
+    ctx2.pixelSizeMm = 0.1;
+    DisplayList cont;
+    buildDisplay(doc, plain, ctx2, cont);
+    CHECK(cont.items.size() == 1);
 }

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <shared_mutex>
 
+#include "linetype_marks.h"
 #include "tbcad/geom/entity.h"
 
 namespace tbcad::geom {
@@ -345,13 +346,17 @@ DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayCon
     else
         s.lineweight = weightMm(c.lineweight);
     const std::vector<double>* pattern = nullptr;
+    const std::vector<LinetypeMark>* marks = nullptr;
     if (c.linetype == kLinetypeByBlock) {
         pattern = ctx.byBlockPattern;
     } else {
         LinetypeId id = c.linetype == kLinetypeByLayer ? layer.linetype : c.linetype;
         if (const Linetype* lt = doc.linetype(id))
-            if (!lt->pattern.empty())
+            if (!lt->pattern.empty()) {
                 pattern = &lt->pattern;
+                if (!lt->marks.empty())
+                    marks = &lt->marks;
+            }
     }
     s.pattern = pattern;
     // Linetypes in a viewport follow the viewport scale unless PSLTSCALE is off; in model space
@@ -362,12 +367,33 @@ DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayCon
     else if (!ctx.paperSpace && msLtScale(doc.header()))
         view = currentAnnotationScale(doc.header());
     s.patternScale = c.linetypeScale * doc.header().ltScale * view;
+    s.marks = marks;
     s.layer = c.layer;
     return s;
 }
 
+namespace {
+void buildDisplayItems(const Document& doc, const Entity& e, const DisplayContext& ctx,
+                       DisplayList& out);
+}
+
 void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ctx,
                   DisplayList& out) {
+    const std::size_t from = out.items.size();
+    buildDisplayItems(doc, e, ctx, out);
+    // Linetypes with text or shapes: those are drawn along each new dashed path.
+    DisplayList marks;
+    for (std::size_t i = from; i < out.items.size(); ++i)
+        if (const auto* p = std::get_if<DisplayPolyline>(&out.items[i]))
+            if (p->style.marks)
+                appendLinetypeMarks(doc, ctx, *p, marks);
+    for (DisplayItem& item : marks.items)
+        out.items.push_back(std::move(item));
+}
+
+namespace {
+void buildDisplayItems(const Document& doc, const Entity& e, const DisplayContext& ctx,
+                       DisplayList& out) {
     double tol = ctx.tolerance();
     switch (kind(e)) {
         case EntityKind::Line: {
@@ -448,6 +474,7 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
     if (fn)
         fn(doc, e, ctx, out);
 }
+}  // namespace
 
 BBox2 bounds(const Entity& e) {
     switch (kind(e)) {

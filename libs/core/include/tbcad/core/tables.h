@@ -39,11 +39,31 @@ struct Level {
     bool locked = false;   // shown but cannot be selected, snapped to or edited
 };
 
+// A text string or shape drawn along a line at a fixed place in the linetype's cycle (the
+// bracketed elements of a .lin file). It takes no length of its own: `pattern` holds the dashes
+// and gaps around it.
+struct LinetypeMark {
+    enum class Kind : std::uint8_t { Text, Shape };
+    // How `rotation` is read: from the line's direction, from the X axis, or from the line's
+    // direction but never upside down.
+    enum class Rotation : std::uint8_t { Relative, Absolute, Upright };
+    Kind kind = Kind::Text;
+    double offset = 0;    // along the cycle where the mark sits, in pattern units
+    std::string text{};   // the text, or the name of the shape
+    std::string style{};  // text style name (text) or shape file (shape)
+    double scale = 1;     // text height or shape size; 0 = the text style's own height
+    double rotation = 0;  // radians
+    Rotation rotationKind = Rotation::Relative;
+    Vec2 shift{};  // from the pen position, along and across the line
+    friend bool operator==(const LinetypeMark&, const LinetypeMark&) = default;
+};
+
 struct Linetype {
     LinetypeId id{};
     std::string name{};
     std::string description{};
-    std::vector<double> pattern{};  // + dash, - gap, 0 dot; in mm. Empty = continuous
+    std::vector<double> pattern{};      // + dash, - gap, 0 dot; in mm. Empty = continuous
+    std::vector<LinetypeMark> marks{};  // text and shapes along the line, in cycle order
 };
 
 struct TextStyle {

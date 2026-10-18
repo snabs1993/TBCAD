@@ -410,6 +410,34 @@ void Writer::tableRecord(Out& o, std::string_view type, std::uint64_t handle, st
         o.i(70, flags);
 }
 
+// A text or shape in a linetype is an element of its own, of length 0 (the reader folds it into
+// the pattern at the offset where it sits). Shapes have no AutoCAD counterpart here: the name goes
+// in group 9 and flag 4 tells the reader it is a shape.
+void Writer::writeMark(Out& o, const LinetypeMark& m) {
+    const bool shape = m.kind == LinetypeMark::Kind::Shape;
+    using R = LinetypeMark::Rotation;
+    o.d(49, 0);
+    o.i(74, (shape ? 4 : 2) | (m.rotationKind == R::Absolute ? 1 : 0) |
+                (m.rotationKind == R::Upright ? 8 : 0));
+    o.i(75, 0);
+    if (!shape && !m.style.empty()) {
+        for (const auto& [id, ts] : doc_.textStyles()) {
+            if (ts.name != m.style)
+                continue;
+            auto& h = tsHandle_[id.value];
+            if (h == 0)
+                h = newHandle();
+            o.h(340, h);
+            break;
+        }
+    }
+    o.d(46, m.scale);
+    o.d(50, m.rotation * kDeg);
+    o.d(44, m.shift.x);
+    o.d(45, m.shift.y);
+    o.str(9, m.text);
+}
+
 void Writer::writeLinetypes(Out& o, std::uint64_t table) {
     std::vector<const Linetype*> rows;
     for (const auto& [id, lt] : doc_.linetypes()) {
@@ -436,13 +464,24 @@ void Writer::writeLinetypes(Out& o, std::uint64_t table) {
         double total = 0;
         for (double d : lt->pattern)
             total += std::abs(d);
-        o.i(73, static_cast<long long>(lt->pattern.size()));
+        o.i(73, static_cast<long long>(lt->pattern.size() + (r12_ ? 0 : lt->marks.size())));
         o.d(40, total);
+        std::size_t nextMark = 0;
+        auto writeMarksUpTo = [&](double upTo) {
+            while (!r12_ && nextMark < lt->marks.size() &&
+                   lt->marks[nextMark].offset <= upTo + 1e-9)
+                writeMark(o, lt->marks[nextMark++]);
+        };
+        double at = 0;
+        writeMarksUpTo(0);
         for (double d : lt->pattern) {
             o.d(49, d);
             if (!r12_)
                 o.i(74, 0);
+            at += std::abs(d);
+            writeMarksUpTo(at);
         }
+        writeMarksUpTo(1e300);
     }
     tableEnd(o);
 }
@@ -521,8 +560,9 @@ double styleWidthWritten(const TextStyle& ts) {
 void Writer::writeStyles(Out& o, std::uint64_t table) {
     tableBegin(o, "STYLE", table, doc_.textStyles().size());
     for (const auto& [id, ts] : doc_.textStyles()) {
-        tableRecord(o, "STYLE", newHandle(), table, "AcDbTextStyleTableRecord", tsName_[id.value],
-                    0);
+        std::uint64_t& reserved = tsHandle_[id.value];
+        tableRecord(o, "STYLE", reserved ? reserved : newHandle(), table,
+                    "AcDbTextStyleTableRecord", tsName_[id.value], 0);
         o.d(40, ts.height);
         // The reader widens the stroke font that stands in for txt.shx by 1/0.92; undo that here.
         o.d(41, styleWidthWritten(ts));

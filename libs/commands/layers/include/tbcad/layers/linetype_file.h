@@ -9,7 +9,9 @@
 
 namespace tbcad::layers {
 
-// Parses TBCAD's linetype file format (see assets/linetypes/tbcad.lintypes):
+// Parses a linetype file: either the AutoCAD .lin format (*NAME,description then an A,... line;
+// acad.lin and acadiso.lin, with ["TEXT",STYLE,S=..,R=..,X=..,Y=..] and [SHAPE,file.shx,...]
+// elements), or TBCAD's own format (see assets/linetypes/tbcad.lintypes):
 //     name ; description ; pattern in mm
 // Positive = dash, negative = gap, zero = dot. Bad lines are skipped and reported in `problems`
 // ("line 7: ...").
