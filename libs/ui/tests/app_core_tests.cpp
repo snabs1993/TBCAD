@@ -1110,6 +1110,18 @@ TEST_CASE("opening or closing a panel resizes the canvas without moving the draw
     CHECK(again.y == doctest::Approx(before.y));
 }
 
+TEST_CASE("a panel docked at the left keeps the drawing where it is on the screen") {
+    Fixture f("panel_left");
+    f.core->setViewportOrigin(0, 0);
+    const Vec2 world{300, 200};
+    const Vec2 before = f.core->camera().worldToScreen(world);
+    f.core->setViewportOrigin(250, 0);  // the canvas now starts 250 px further right
+    f.core->setViewportSize(750, 800);
+    const Vec2 after = f.core->camera().worldToScreen(world);
+    CHECK(after.x + 250 == doctest::Approx(before.x));
+    CHECK(after.y == doctest::Approx(before.y));
+}
+
 TEST_CASE("zoom extents ignores stray points far from the drawing") {
     Fixture f("extentspoints");
     f.line("0,0", "10000,0");
