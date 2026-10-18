@@ -297,6 +297,14 @@ TEST_CASE("restoring a state brings back the current layer and can turn off new 
     CHECK(f.doc.header().currentLayer == extra);
     f.host.run("-LAYERSTATE", {"Restore", "base", "HideOthers", cmd::ScriptItem::enter()});
     CHECK(f.doc.header().currentLayer == f.id("Walls"));
+
+    // Custom: any mix of parts, as the Layer States dialog sends them.
+    f.edit([&](Transaction& tx) { REQUIRE(setCurrentLayer(f.doc, tx, extra).ok()); });
+    f.host.run("-LAYERSTATE",
+               {"Restore", "base", "Custom", "Lock, Plot", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().currentLayer == extra);
+    f.host.run("-LAYERSTATE", {"Restore", "base", "Custom", "current", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().currentLayer == f.id("Walls"));
 }
 
 TEST_CASE(

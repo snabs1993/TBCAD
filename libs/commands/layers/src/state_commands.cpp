@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cstdlib>
 #include <sstream>
 
@@ -72,12 +73,46 @@ private:
         } else if (option == "Restore") {
             StateParts parts;
             cmd::KeywordOptions po;
-            po.keywords = {"All", "Visibility", "Lock", "Plot", "Look", "HideOthers"};
+            po.keywords = {"All", "Visibility", "Lock", "Plot", "Look", "HideOthers", "Custom"};
             po.defaultKeyword = "All";
             auto p = co_await ctx.getKeyword("What to restore", po);
             if (!p.ok())
                 co_return;
-            if (p.keyword == "HideOthers")
+            if (p.keyword == "Custom") {
+                // Several parts at once (the Layer States dialog): words from Visibility, Lock,
+                // Plot, Look, Current and HideOthers, separated by spaces or commas.
+                auto t = co_await ctx.getString(
+                    "Parts [Visibility Lock Plot Look Current HideOthers], separated by spaces");
+                if (!t.ok())
+                    co_return;
+                parts = StateParts{false, false, false, false, false, false};
+                std::string word;
+                auto take = [&] {
+                    std::string w;
+                    for (char c : word)
+                        w += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (w == "visibility")
+                        parts.visibility = true;
+                    else if (w == "lock")
+                        parts.lock = true;
+                    else if (w == "plot")
+                        parts.plot = true;
+                    else if (w == "look")
+                        parts.look = true;
+                    else if (w == "current")
+                        parts.current = true;
+                    else if (w == "hideothers")
+                        parts.hideOthers = true;
+                    word.clear();
+                };
+                for (char c : t.text) {
+                    if (c == ' ' || c == ',')
+                        take();
+                    else
+                        word += c;
+                }
+                take();
+            } else if (p.keyword == "HideOthers")
                 parts.hideOthers = true;
             else if (p.keyword != "All") {
                 parts = StateParts{false, false, false, false};
