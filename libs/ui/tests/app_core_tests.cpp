@@ -1323,3 +1323,77 @@ TEST_CASE("ZOOM O is Object and ZOOM Double zooms in") {
     CHECK(f.core->runner().active());  // waiting for "Select objects"
     f.core->pressEscape();
 }
+
+TEST_CASE("a file that changed on disk is not overwritten by the first Save") {
+    Fixture f("savechanged");
+    const fs::path file = f.dir / "shared.tbcad";
+    f.core->submitText("TESTLINE");
+    f.core->submitText("0,0");
+    f.core->submitText("10,0");
+    REQUIRE(f.core->saveAs(file).ok());
+    CHECK(f.core->save().ok());  // nothing changed on disk: plain save
+
+    // Another program writes the file.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    {
+        Document other;
+        REQUIRE(io::writeTbcad(other, file).ok());
+    }
+    auto future = fs::last_write_time(file) + std::chrono::seconds(5);
+    fs::last_write_time(file, future);
+    auto first = f.core->save();
+    CHECK_FALSE(first.ok());
+    CHECK(first.error().code == ErrorCode::Conflict);
+    CHECK(f.core->save().ok());  // asked again: overwrite
+    CHECK(f.core->save().ok());  // and the stamp follows the file again
+}
+
+TEST_CASE("opening a drawing that another window holds warns about it") {
+    Fixture a("lockwarn_a");
+    const fs::path file = a.dir / "held.tbcad";
+    a.core->submitText("TESTLINE");
+    a.core->submitText("0,0");
+    a.core->submitText("10,0");
+    REQUIRE(a.core->saveAs(file).ok());
+    Fixture b("lockwarn_b");
+    REQUIRE(b.core->openFile(file).ok());
+    bool warned = false;
+    for (const auto& line : b.core->history())
+        if (line.find("also open in another TBCAD window") != std::string::npos)
+            warned = true;
+    CHECK(warned);
+    // The window that holds the lock saw no warning.
+    for (const auto& line : a.core->history())
+        CHECK(line.find("also open in another") == std::string::npos);
+}
+
+TEST_CASE("recovery survives leftovers of a process killed in the middle of an autosave") {
+    Fixture f("autosave_killed");
+    f.line("0,0", "100,0");
+    f.core->newDocument();
+    f.line("0,0", "0,50");
+    REQUIRE(f.core->autosaveNow());
+    const fs::path dir = f.dir / "data";
+    std::error_code ec;
+    fs::path autosaveDir;
+    for (fs::recursive_directory_iterator it(f.dir, ec), end; it != end; it.increment(ec))
+        if (it->path().filename().string().rfind("recovery-", 0) == 0) {
+            autosaveDir = it->path().parent_path();
+            break;
+        }
+    REQUIRE_FALSE(autosaveDir.empty());
+    // Half-written temp files, a damaged side file and a truncated drawing from the killed write.
+    std::ofstream(autosaveDir / "recovery-9.tbcad.tmp") << "half";
+    std::ofstream(autosaveDir / "recovery-9.json.tmp") << "{\"original";
+    std::ofstream(autosaveDir / "recovery-7.json") << "{\"original\": ";
+    {
+        std::ofstream bad(autosaveDir / "recovery-8.tbcad", std::ios::binary);
+        bad << "TBCAD-but-cut-off";
+    }
+
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    CHECK(second.pendingRecoveries().size() == 3);  // two good drawings and the truncated one
+    (void)second.recoverAll();                      // the damaged one is skipped ...
+    CHECK(second.documentCount() == 2);             // ... and the good ones are back
+}
