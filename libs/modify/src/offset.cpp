@@ -303,7 +303,11 @@ Result<std::vector<Entity>> offsetSampled(const Entity& src, const CurveRef& c, 
                                           double d, const OffsetOptions& opt) {
     std::vector<Vec2> pts;
     std::vector<double> params;
-    geom::flatten(c, std::max(opt.tolerance, 1e-4), pts, &params);
+    // A fixed 0.01 tolerance on a 20 m ellipse drawn in mm means thousands of samples and a very
+    // slow spline fit; keep the sample count independent of the size.
+    const BBox2 box = c.bounds();
+    const double extent = std::max(box.max.x - box.min.x, box.max.y - box.min.y);
+    geom::flatten(c, std::max({opt.tolerance, 1e-4, extent * 5e-6}), pts, &params);
     std::vector<Vec2> q;
     for (std::size_t i = 0; i < pts.size(); ++i)
         q.push_back(pts[i] + perp(c.tangentAt(params[i])) * d);
