@@ -16,5 +16,6 @@ tbcad_add_tests(transform
     tests/grip_tests.cpp
     tests/stretch_tests.cpp
     tests/robustness_tests.cpp
+    tests/edge_tests.cpp
     tests/grip_menu_tests.cpp
   DEPENDS tbcad_command_registry)
