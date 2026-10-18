@@ -382,6 +382,10 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
                 o.measurement *= s;
             if (o.kind == DimKind::Linear)
                 o.rotation = rotationOf(t, o.rotation);
+            if (o.textRotated)
+                o.textRotation = rotationOf(t, o.textRotation);
+            if (t.determinant() < 0)
+                o.oblique = -o.oblique;  // a mirror leans the extension lines the other way
             return out;
         }
         case EntityKind::Leader: {

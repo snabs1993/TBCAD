@@ -127,8 +127,12 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     if (tol::isZeroLength(u))
         u = {1, 0};
     const Vec2 n = perp(u);
-    const double s1 = dot(P - p1, n), s2 = dot(P - p2, n);
-    const Vec2 f1 = p1 + n * s1, f2 = p2 + n * s2;
+    // Extension lines lean by the oblique angle; they still end on the dimension line.
+    const Vec2 e =
+        d.oblique == 0 ? n : normalized(n * std::cos(d.oblique) - u * std::sin(d.oblique));
+    const double lean = dot(e, n);
+    const double s1 = dot(P - p1, n) / lean, s2 = dot(P - p2, n) / lean;
+    const Vec2 f1 = p1 + e * s1, f2 = p2 + e * s2;
 
     const Vec2 pts[2] = {p1, p2};
     const Vec2 feet[2] = {f1, f2};
@@ -138,7 +142,7 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         if (dist <= c.off)
             continue;
         double sg = ss[i] >= 0 ? 1 : -1;
-        L.lines.push_back({{pts[i] + n * (sg * c.off), feet[i] + n * (sg * c.ext)}, Role::ExtLine});
+        L.lines.push_back({{pts[i] + e * (sg * c.off), feet[i] + e * (sg * c.ext)}, Role::ExtLine});
     }
 
     const bool swap = dot(f1, u) > dot(f2, u);
@@ -147,7 +151,9 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     const Vec2 uu = len > c.tol ? normalized(B - A) : u;
 
     const double tw = textWidth(c, txt);
-    const double rotText = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(angleOf(uu));
+    const double rotText = d.textRotated                                ? d.textRotation
+                           : c.st.textAlign == DimTextAlign::Horizontal ? 0
+                                                                        : readable(angleOf(uu));
     const Lift lift = liftFor(c, uu, rotText);
     const double stub = 2 * c.arrow;
     const double textW = tw > 0 ? tw + 2 * c.gap : 0;

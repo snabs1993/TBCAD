@@ -259,6 +259,12 @@ struct PayloadWriter {
                 w.vec2(b.b);
             }
         }
+        if (d.oblique != 0 || d.textRotated) {  // tag 2: DIMEDIT Oblique and Rotate
+            w.u8(2);
+            w.f64(d.oblique);
+            w.u8(d.textRotated ? 1 : 0);
+            w.f64(d.textRotation);
+        }
     }
     void operator()(const LeaderData& d) {
         points(d.vertices);
@@ -613,7 +619,14 @@ struct PayloadReader {
                 d.style = id<DimStyleId>();
                 d.measurement = r.f64();
                 while (r.remaining() > 0) {
-                    if (r.u8() != 1)
+                    const std::uint8_t tag = r.u8();
+                    if (tag == 2) {
+                        d.oblique = r.f64();
+                        d.textRotated = r.u8() != 0;
+                        d.textRotation = r.f64();
+                        continue;
+                    }
+                    if (tag != 1)
                         break;  // a tail of a newer minor version: ignored
                     std::size_t n = r.count(32);
                     d.breaks.reserve(n);

@@ -364,26 +364,44 @@ public:
     std::string_view name() const override { return "DIMEDIT"; }
     std::vector<std::string> defaultAliases() const override { return {"DED"}; }
     std::string_view description() const override {
-        return "Replace the text of dimensions, or return them to the measured text and place";
+        return "Replace the text of dimensions, return them to the measured text and place, "
+               "rotate the text or lean the extension lines";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
         cmd::KeywordOptions ko;
-        ko.keywords = {"Home", "New"};
+        ko.keywords = {"Home", "New", "Rotate", "Oblique"};
         ko.defaultKeyword = "Home";
-        auto k = co_await ctx.getKeyword("Enter type of dimension editing [Home/New] <Home>", ko);
+        auto k = co_await ctx.getKeyword(
+            "Enter type of dimension editing [Home/New/Rotate/Oblique] <Home>", ko);
         if (!k.ok())
             co_return;
         const bool home = k.keyword == "Home";
+        const bool rotate = k.keyword == "Rotate";
+        const bool oblique = k.keyword == "Oblique";
         std::string text;
-        if (!home) {
+        double angle = 0;
+        if (k.keyword == "New") {
             cmd::StringOptions so;
             so.defaultValue = "<>";
             auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
             if (!s.ok())
                 co_return;
             text = s.text == "<>" ? std::string() : s.text;
+        } else if (rotate) {
+            auto a = co_await ctx.getAngle("Specify angle for dimension text, 0 = default",
+                                           cmd::AngleOptions{.defaultValue = 0.0});
+            if (!a.ok())
+                co_return;
+            angle = a.value;
+        } else if (oblique) {
+            auto a =
+                co_await ctx.getAngle("Enter obliquing angle of the extension lines, Enter = none",
+                                      cmd::AngleOptions{.defaultValue = std::nan("")});
+            if (a.status == cmd::Status::Cancel)
+                co_return;
+            angle = a.ok() ? a.value : std::nan("");
         }
         cmd::SelectionOptions so;
         so.allowPreselection = false;
@@ -392,7 +410,9 @@ public:
         if (!sel.ok())
             co_return;
         ctx.setUndoLabel("DIMEDIT");
+        std::size_t skipped = 0;
         for (EntityId id : sel.ids) {
+            bool done = true;
             auto r = ctx.tx().modify(id, [&](Entity& ent) {
                 auto* d = entityAs<DimensionData>(ent);
                 if (!d)
@@ -400,6 +420,31 @@ public:
                 if (home) {
                     d->textPosUser = false;
                     d->textOverride.clear();
+                    d->textRotated = false;
+                    d->textRotation = 0;
+                } else if (rotate) {
+                    d->textRotated = std::abs(angle) > 1e-9;
+                    d->textRotation = d->textRotated ? angle : 0;
+                } else if (oblique) {
+                    if (d->kind != DimKind::Linear && d->kind != DimKind::Aligned) {
+                        done = false;
+                        return;
+                    }
+                    // The angle is measured from the X axis; the lean is from the perpendicular
+                    // of the dimension line.
+                    double skew = 0;
+                    if (!std::isnan(angle)) {
+                        const Vec2 u = d->kind == DimKind::Linear
+                                           ? Vec2{std::cos(d->rotation), std::sin(d->rotation)}
+                                           : d->defPts[1] - d->defPts[0];
+                        const double perp = std::atan2(u.y, u.x) + kPi / 2;
+                        skew = std::remainder(angle - perp, kPi);
+                    }
+                    if (std::abs(skew) > 85.0 * kPi / 180) {
+                        done = false;
+                        return;
+                    }
+                    d->oblique = skew;
                 } else {
                     d->textOverride = text;
                 }
@@ -407,7 +452,13 @@ public:
             });
             if (!r)
                 ctx.message(r.error().message);
+            else if (!done)
+                ++skipped;
         }
+        if (skipped)
+            ctx.message(std::to_string(skipped) +
+                        " dimension(s) skipped: only linear and aligned dimensions lean, and the "
+                        "angle must stay within 85 degrees of the dimension's own perpendicular.");
     }
 };
 

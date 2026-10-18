@@ -204,6 +204,9 @@ std::unique_ptr<Document> makeRichDocument() {
         dim.style = arch;
         dim.measurement = 10;
         dim.breaks = {DimBreak{{1, 0}, {2, 0}}, DimBreak{{6, 0}, {7, 0}}};
+        dim.oblique = 0.4;
+        dim.textRotated = true;
+        dim.textRotation = 0.25;
         add(make(std::move(dim), l0));
         add(make(LeaderData{{{0, 0}, {5, 5}, {8, 5}}, arch, "หมายเหตุ", {8.5, 5}}, l0));
         ProxyData proxy;

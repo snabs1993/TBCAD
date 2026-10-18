@@ -366,6 +366,12 @@ struct DimensionData {
     DimStyleId style{};      // null = document's current dim style
     double measurement = 0;  // cache
     std::vector<DimBreak> breaks{};
+    // DIMEDIT Oblique: how far the extension lines of a linear or aligned dimension lean from the
+    // perpendicular of the dimension line (radians, counter-clockwise).
+    double oblique = 0;
+    // DIMEDIT Rotate: the text angle when it is fixed by hand, else it follows the style.
+    bool textRotated = false;
+    double textRotation = 0;
 };
 
 struct LeaderData {
