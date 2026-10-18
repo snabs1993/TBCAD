@@ -507,6 +507,34 @@ TEST_CASE("MATCHPROP copies layer, colour and text height") {
     CHECK(f.get(b).common.linetypeScale == doctest::Approx(3));
 }
 
+TEST_CASE("MATCHPROP copies hatch pattern and transparency; Settings can switch a group off") {
+    Fixture f;
+    HatchData ha;
+    ha.solid = false;
+    ha.pattern = "ANSI31";
+    ha.patternScale = 4;
+    ha.patternAngle = 0.5;
+    EntityId a = f.add(ha);
+    EntityId b = f.add(HatchData{});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(a, [](Entity& e) { e.common.transparency = 40; }));
+        tx.commit();
+    }
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {0, 0}), ScriptItem::pick(b, {0, 0}), ScriptItem::esc()});
+    const auto* hb = entityAs<HatchData>(f.get(b));
+    CHECK(hb->pattern == "ANSI31");
+    CHECK(hb->patternScale == doctest::Approx(4));
+    CHECK(f.get(b).common.transparency == 40);
+
+    EntityId c = f.add(HatchData{});
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {0, 0}), "Settings", "Hatch", ScriptItem::enter(),
+                             ScriptItem::pick(c, {0, 0}), ScriptItem::esc()});
+    CHECK(entityAs<HatchData>(f.get(c))->pattern.empty());
+    CHECK(f.get(c).common.transparency == 40);
+}
+
 TEST_CASE("OVERKILL deletes duplicates and merges overlaps") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {10, 0}});

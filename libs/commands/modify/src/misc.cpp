@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "commands.h"
@@ -446,32 +447,115 @@ public:
 
 // ---- MATCHPROP ----------------------------------------------------------------------------------
 
-void matchProps(const Entity& src, Entity& dst) {
-    dst.common.layer = src.common.layer;
-    dst.common.color = src.common.color;
-    dst.common.linetype = src.common.linetype;
-    dst.common.linetypeScale = src.common.linetypeScale;
-    dst.common.lineweight = src.common.lineweight;
-    if (const auto* a = entityAs<TextData>(src)) {
-        if (auto* b = entityAs<TextData>(dst)) {
-            b->height = a->height;
-            b->style = a->style;
-            b->widthFactor = a->widthFactor;
-            b->oblique = a->oblique;
+struct MatchCats {
+    bool basic = true;       // layer, colour, linetype, scale, weight, transparency, level
+    bool text = true;        // text and MText height, style, width, slant
+    bool dimension = true;   // dimension, leader and multileader style and text height
+    bool hatch = true;       // hatch pattern, scale, angle, fill
+    bool polyline = true;    // polyline width
+    bool annotative = true;  // annotative flag and scales
+};
+
+constexpr std::array<const char*, 6> kMatchCats = {"Basic", "Text",     "Dimension",
+                                                   "Hatch", "Polyline", "Annotative"};
+
+bool& matchFlag(MatchCats& c, std::size_t i) {
+    bool* all[] = {&c.basic, &c.text, &c.dimension, &c.hatch, &c.polyline, &c.annotative};
+    return *all[i];
+}
+
+MatchCats readMatchCats(const cmd::IHost& host) {
+    MatchCats c;
+    for (std::size_t i = 0; i < kMatchCats.size(); ++i)
+        matchFlag(c, i) = getFlag(host, std::string("matchprop.") + kMatchCats[i], true);
+    return c;
+}
+
+void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = {}) {
+    if (cats.basic) {
+        dst.common.layer = src.common.layer;
+        dst.common.level = src.common.level;
+        dst.common.color = src.common.color;
+        dst.common.linetype = src.common.linetype;
+        dst.common.linetypeScale = src.common.linetypeScale;
+        dst.common.lineweight = src.common.lineweight;
+        dst.common.transparency = src.common.transparency;
+    }
+    if (cats.annotative) {
+        dst.common.annotative = src.common.annotative;
+        dst.common.annoScales = src.common.annoScales;
+    }
+    if (cats.text) {
+        if (const auto* a = entityAs<TextData>(src)) {
+            if (auto* b = entityAs<TextData>(dst)) {
+                b->height = a->height;
+                b->style = a->style;
+                b->widthFactor = a->widthFactor;
+                b->oblique = a->oblique;
+            }
+        }
+        if (const auto* a = entityAs<MTextData>(src)) {
+            if (auto* b = entityAs<MTextData>(dst)) {
+                b->height = a->height;
+                b->style = a->style;
+            }
         }
     }
-    if (const auto* a = entityAs<MTextData>(src)) {
-        if (auto* b = entityAs<MTextData>(dst)) {
-            b->height = a->height;
-            b->style = a->style;
+    if (cats.polyline) {
+        if (const auto* a = entityAs<PolylineData>(src)) {
+            if (auto* b = entityAs<PolylineData>(dst)) {
+                b->constantWidth = a->constantWidth;
+                for (PolyVertex& v : b->v)
+                    v.startWidth = v.endWidth = a->constantWidth;
+            }
         }
     }
-    if (const auto* a = entityAs<PolylineData>(src)) {
-        if (auto* b = entityAs<PolylineData>(dst)) {
-            b->constantWidth = a->constantWidth;
-            for (PolyVertex& v : b->v)
-                v.startWidth = v.endWidth = a->constantWidth;
+    if (cats.hatch) {
+        if (const auto* a = entityAs<HatchData>(src)) {
+            if (auto* b = entityAs<HatchData>(dst)) {
+                b->solid = a->solid;
+                b->pattern = a->pattern;
+                b->patternScale = a->patternScale;
+                b->patternAngle = a->patternAngle;
+                b->doubled = a->doubled;
+                b->fill = a->fill;
+                b->gradient = a->gradient;
+            }
         }
+    }
+    if (cats.dimension) {
+        if (const auto* a = entityAs<DimensionData>(src))
+            if (auto* b = entityAs<DimensionData>(dst))
+                b->style = a->style;
+        if (const auto* a = entityAs<LeaderData>(src))
+            if (auto* b = entityAs<LeaderData>(dst))
+                b->style = a->style;
+        if (const auto* a = entityAs<MLeaderData>(src))
+            if (auto* b = entityAs<MLeaderData>(dst)) {
+                b->style = a->style;
+                b->textHeight = a->textHeight;
+            }
+    }
+}
+
+// MATCHPROP Settings: switch the property groups on and off; the choice is remembered.
+cmd::Task askMatchSettings(cmd::CommandContext& ctx) {
+    for (;;) {
+        MatchCats c = readMatchCats(ctx.host());
+        std::string line = "Properties to match:";
+        for (std::size_t i = 0; i < kMatchCats.size(); ++i)
+            line += std::string(" ") + kMatchCats[i] + (matchFlag(c, i) ? "=On" : "=Off");
+        ctx.message(line);
+        cmd::KeywordOptions ko;
+        for (const char* k : kMatchCats)
+            ko.keywords.push_back(k);
+        auto r = co_await ctx.getKeyword(
+            "Toggle [Basic/Text/Dimension/Hatch/Polyline/Annotative] <Done>", std::move(ko));
+        if (r.status != cmd::Status::Keyword)
+            co_return;
+        for (std::size_t i = 0; i < kMatchCats.size(); ++i)
+            if (r.keyword == kMatchCats[i])
+                putFlag(ctx.host(), std::string("matchprop.") + kMatchCats[i], !matchFlag(c, i));
     }
 }
 
@@ -495,7 +579,12 @@ public:
         for (;;) {
             cmd::EntityOptions to;
             to.filter = modifiableFilter(ctx.doc());
-            auto dst = co_await ctx.getEntity("Select destination object(s)", to);
+            to.keywords = {"Settings"};
+            auto dst = co_await ctx.getEntity("Select destination object(s) or [Settings]", to);
+            if (dst.status == cmd::Status::Keyword && dst.keyword == "Settings") {
+                co_await askMatchSettings(ctx);
+                continue;
+            }
             if (!dst.ok())
                 break;
             const Entity* s = ctx.doc().find(src.id);
@@ -504,6 +593,7 @@ public:
             if (dst.id == src.id)
                 continue;
             Entity copy = *s;
+            const MatchCats cats = readMatchCats(ctx.host());
             // An associative array draws the items of its own anonymous block; their own
             // properties win over the Insert's, so they take the new properties too.
             std::vector<EntityId> inner;
@@ -513,9 +603,9 @@ public:
                         if (const BlockDef* def = ctx.doc().block(ins->block))
                             if (def->anonymous)
                                 inner = def->entities;
-            if (ctx.tx().modify(dst.id, [&](Entity& d) { matchProps(copy, d); })) {
+            if (ctx.tx().modify(dst.id, [&](Entity& d) { matchProps(copy, d, cats); })) {
                 for (EntityId id : inner)
-                    (void)ctx.tx().modify(id, [&](Entity& d) { matchProps(copy, d); });
+                    (void)ctx.tx().modify(id, [&](Entity& d) { matchProps(copy, d, cats); });
                 ++done;
             }
         }

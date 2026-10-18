@@ -102,7 +102,7 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
 | `DIVIDE` | `DIV` | Points that split an object into N equal parts (N-1 points on an open curve, N on a closed one). |
 | `MEASURE` | `ME` | Points every L mm, starting at the end nearest the pick. |
 | `ALIGN` | `AL` | One or two source/destination point pairs, optional scaling for the second pair. |
-| `MATCHPROP` | `MA` | Copies layer, colour, linetype, linetype scale and lineweight, plus text height/style and polyline width, from one object to others. |
+| `MATCHPROP` | `MA` | Copies layer, level, colour, linetype, linetype scale, lineweight and transparency, plus text height/style, polyline width, hatch pattern/scale/angle/fill, dimension, leader and multileader style, and the annotative flag and scales, from one object to others. `Settings` at the destination prompt switches the groups Basic, Text, Dimension, Hatch, Polyline and Annotative on and off; the choice is remembered. |
 | `OVERKILL` | | Deletes duplicates (lines, circles, arcs, points, ellipses, polylines, also reversed) and merges overlapping or touching collinear lines and arcs of one circle. Settings: `overkill.tolerance`, `overkill.ignoreproperties`, `overkill.overlapping`, `overkill.endtoend`. |
 | `PEDIT` | `PE` | Turn a line or arc into a polyline, Close/Open, Join, Width, Reverse, Spline (polyline to spline entity) and Decurve (spline to polyline). Per-vertex editing is not included yet. |
 
