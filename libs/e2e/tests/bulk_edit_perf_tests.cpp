@@ -92,12 +92,16 @@ struct Big {
         }
         t = std::chrono::steady_clock::now();
         const bool undone = core->undo();
+        const double undoDocMs = ms(t);
         core->updateFrame();
         const double undoMs = ms(t);
         t = std::chrono::steady_clock::now();
         const bool redone = core->redo();
+        const double redoDocMs = ms(t);
         core->updateFrame();
         const double redoMs = ms(t);
+        std::printf("  (%s: undo %.0f ms before the frame, redo %.0f ms before the frame)\n", label,
+                    undoDocMs, redoDocMs);
         std::printf(
             "%-8s run %6.0f ms   undo %6.0f ms   redo %6.0f ms   (%zu objects before, %zu "
             "now)%s\n",

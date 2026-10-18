@@ -381,15 +381,18 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         if (live)
             redraw.push_back(live);
     }
-    // Only changes of what is already drawn wait; new objects (a paste, an undo of an erase) are
-    // built at once so the scene never lags behind what was just added.
+    // Changes of what is already drawn wait. New objects are built at once, so the scene does
+    // not lag behind a paste, unless there are so many (an undo of ERASE ALL) that building them
+    // all in one go is a long stall: those wait too, camera first.
+    constexpr std::size_t kNewWaitMin = 100000;
     const bool lazy = lazyOk(redraw.size()) &&
                       std::none_of(redraw.begin(), redraw.end(),
                                    [](const Entity* e) { return e->common.wipeout; }) &&
-                      2 * static_cast<std::size_t>(std::count_if(
-                              redraw.begin(), redraw.end(),
-                              [&](const Entity* e) { return scene_.contains(e->common.id); })) >=
-                          redraw.size();
+                      (redraw.size() >= kNewWaitMin ||
+                       2 * static_cast<std::size_t>(std::count_if(
+                               redraw.begin(), redraw.end(),
+                               [&](const Entity* e) { return scene_.contains(e->common.id); })) >=
+                           redraw.size());
     if (lazy)
         queueLazy(redraw);
     else

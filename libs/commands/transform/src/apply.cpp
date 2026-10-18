@@ -7,6 +7,8 @@ namespace tbcad::transform {
 ApplyReport applyTransform(cmd::CommandContext& ctx, std::span<const EntityId> ids,
                            const Transform2& t, bool copy) {
     ApplyReport rep;
+    if (!copy)
+        ctx.tx().expectTouching(ids.size());
     for (EntityId id : ids) {
         const Entity* src = ctx.doc().find(id);
         if (!src)
