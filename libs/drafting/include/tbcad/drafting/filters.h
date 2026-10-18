@@ -10,7 +10,10 @@ namespace tbcad::drafting {
 
 // Order values for PointFilterChain / UiRegistry::addPointFilter: osnap > polar/ortho > grid.
 inline constexpr int kDynamicInputOrder = 50;  // typed field values beat every snap
+inline constexpr int kOtrackAcquireOrder =
+    99;  // watches the osnap candidates, never moves the point
 inline constexpr int kOsnapOrder = 100;
+inline constexpr int kOtrackOrder = 120;  // after osnap, before polar
 inline constexpr int kDynamicUcsOrder = 150;
 inline constexpr int kPolarOrder = 200;
 inline constexpr int kGridSnapOrder = 300;
@@ -33,6 +36,48 @@ private:
     const SnapGeometryRegistry* providers_;
     std::vector<SnapCandidate> candidates_{};
     std::size_t cycle_ = 0;
+};
+
+// Object snap tracking (OTRACK). Hovering an osnap candidate acquires its point (at most three are
+// kept); while moving along a polar / ortho direction through an acquired point the cursor snaps
+// to that ray, and to the intersection of two rays (acquired point or the base point's polar
+// ray). FilterFeedback::guide is the tracking ray.
+class OtrackFilter final : public cmd::PointFilter {
+public:
+    OtrackFilter(DraftingEnv* env, const OsnapFilter* osnap) : env_(env), osnap_(osnap) {}
+    std::optional<Vec2> filter(const cmd::PointQuery& query, Vec2 raw,
+                               cmd::FilterFeedback& feedback) override;
+
+    // Adds `p` as an acquired point (no-op when already there); the oldest is dropped past three.
+    void acquire(Vec2 p, double tolerance);
+    void clear() {
+        acquired_.clear();
+        rays_.clear();
+    }
+    const std::vector<Vec2>& acquired() const { return acquired_; }
+    // Rays (origin, end) the last filter() call snapped to; empty when it did not.
+    const std::vector<std::pair<Vec2, Vec2>>& rays() const { return rays_; }
+
+private:
+    DraftingEnv* env_;
+    const OsnapFilter* osnap_;
+    std::vector<Vec2> acquired_{};
+    std::vector<std::pair<Vec2, Vec2>> rays_{};
+};
+
+// Order kOtrackAcquireOrder: feeds the osnap candidates under the cursor to an OtrackFilter and
+// forgets its points on a click. Never returns a point.
+class OtrackAcquirer final : public cmd::PointFilter {
+public:
+    OtrackAcquirer(DraftingEnv* env, const OsnapFilter* osnap, OtrackFilter* tracker)
+        : env_(env), osnap_(osnap), tracker_(tracker) {}
+    std::optional<Vec2> filter(const cmd::PointQuery& query, Vec2 raw,
+                               cmd::FilterFeedback& feedback) override;
+
+private:
+    DraftingEnv* env_;
+    const OsnapFilter* osnap_;
+    OtrackFilter* tracker_;
 };
 
 // Dynamic UCS: while DYNUCS is on and the cursor is within the pick aperture of a straight edge

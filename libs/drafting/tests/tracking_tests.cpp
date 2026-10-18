@@ -151,3 +151,31 @@ TEST_CASE("Shift turns ORTHO off while it is held") {
     CHECK(near(w.hover({53, 12}, Vec2{10, 10}), {53, 10}));
     CHECK(near(w.hover({53, 12}, Vec2{10, 10}, 1, nullptr, true), {53, 12}));
 }
+
+TEST_CASE("object snap tracking snaps to the ray through an acquired point and to two rays") {
+    World w;
+    w.line({0, 0}, {0, -100});
+    w.line({40, 30}, {140, 30});
+    w.set(keys::osnap, "1");
+    w.set(keys::osnapModes, "endpoint");
+    w.set(keys::otrack, "1");
+    // Hover both end points; the acquirer reads the candidates of the previous move.
+    for (Vec2 p : {Vec2{1, 1}, Vec2{1, 1}, Vec2{41, 31}, Vec2{41, 31}})
+        (void)w.hover(p);
+    REQUIRE(w.otrack.acquired().size() == 2);
+    CHECK(near(w.otrack.acquired()[0], {0, 0}));
+    CHECK(near(w.otrack.acquired()[1], {40, 30}));
+    // One ray: horizontally from (0,0).
+    cmd::FilterFeedback fb;
+    CHECK(near(w.hover({80, 3}, std::nullopt, 1, &fb), {80, 0}));
+    REQUIRE(fb.guide);
+    CHECK(fb.tooltip.find("Tracking: 80") == 0);
+    // Two rays: y = 0 from the first point and x = 40 from the second one.
+    CHECK(near(w.hover({42, 4}, std::nullopt, 1, &fb), {40, 0}));
+    // Too far from every ray: unchanged.
+    CHECK(near(w.hover({70, 60}), {70, 60}));
+    // A click forgets the acquired points; so does switching OTRACK off.
+    (void)w.hover({70, 60}, std::nullopt, 1, nullptr, false, true);
+    CHECK(w.otrack.acquired().empty());
+    CHECK(near(w.hover({80, 3}), {80, 3}));
+}

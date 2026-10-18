@@ -607,7 +607,7 @@ TEST_CASE("host settings are typed by what is stored - toggles live in the UI re
 
     UiRegistry ui;
     f.core->registerBuiltinUi(ui);
-    REQUIRE(ui.statusToggles().size() == 9);
+    REQUIRE(ui.statusToggles().size() == 11);
     CHECK(ui.statusToggles()[0].label == "SNAP");
     CHECK(ui.statusToggles()[0].get());
     ui.statusToggles()[0].set(false);
@@ -626,6 +626,10 @@ TEST_CASE("host settings are typed by what is stored - toggles live in the UI re
     find("lwt").set(false);
     CHECK(f.core->setting("drafting.dynInput") == "0");
     CHECK(f.core->setting("view.lineweights") == "0");
+    // Selection cycling is off until switched on.
+    CHECK_FALSE(find("selcyc").get());
+    find("selcyc").set(true);
+    CHECK(f.core->setting("ui.selectionCycling") == "1");
     // TPY is on until switched off.
     CHECK(find("tpy").get());
     find("tpy").set(false);

@@ -227,3 +227,159 @@ std::optional<Vec2> DynamicUcsFilter::filter(const cmd::PointQuery& query, Vec2 
 }
 
 }  // namespace tbcad::drafting
+
+namespace tbcad::drafting {
+
+void OtrackFilter::acquire(Vec2 p, double tolerance) {
+    for (const Vec2& a : acquired_)
+        if (length(a - p) <= tolerance)
+            return;
+    if (acquired_.size() >= 3)
+        acquired_.erase(acquired_.begin());
+    acquired_.push_back(p);
+}
+
+std::optional<Vec2> OtrackAcquirer::filter(const cmd::PointQuery& query, Vec2,
+                                           cmd::FilterFeedback&) {
+    if (!env_ || !env_->host || !tracker_ || !osnap_)
+        return std::nullopt;
+    if (query.click) {
+        tracker_->clear();
+        return std::nullopt;
+    }
+    const DraftingSettings s = DraftingSettings::read(*env_->host);
+    if (!s.otrack || !s.osnap) {
+        tracker_->clear();
+        return std::nullopt;
+    }
+    // The candidates are those of the previous pointer move: one move behind is invisible.
+    const auto& c = osnap_->candidates();
+    if (!c.empty()) {
+        const double tol = 2.0 * std::max(query.pixelSize, 1e-9);
+        if (!query.base || length(c.front().point - *query.base) > tol)
+            tracker_->acquire(c.front().point, tol);
+    }
+    return std::nullopt;
+}
+
+std::optional<Vec2> OtrackFilter::filter(const cmd::PointQuery& query, Vec2 raw,
+                                         cmd::FilterFeedback& feedback) {
+    rays_.clear();
+    if (!env_ || !env_->host)
+        return std::nullopt;
+    const DraftingSettings s = DraftingSettings::read(*env_->host);
+    if (!s.otrack || (acquired_.empty() && !query.base))
+        return std::nullopt;
+    const Ucs ucs = env_->effectiveUcs();
+    const double px = std::max(query.pixelSize, 1e-9);
+    const double tol = 8.0 * px;
+
+    // Directions in UCS terms: the polar increments when POLAR is on, else the four axes.
+    std::vector<Vec2> dirs;
+    std::vector<double> incs = s.polar ? s.polarIncrementsDeg : std::vector<double>{90.0};
+    for (double inc : incs) {
+        if (inc <= 0 || inc > 360)
+            continue;
+        for (double a = 0; a < 360.0 - 1e-9; a += inc) {
+            const double r = a * kPi / 180.0;
+            Vec2 d{std::cos(r), std::sin(r)};
+            if (std::abs(d.x) < 1e-12)
+                d.x = 0;
+            if (std::abs(d.y) < 1e-12)
+                d.y = 0;
+            d = ucs.dirToWorld(d);
+            bool dup = false;
+            for (const Vec2& e : dirs)
+                if (std::abs(e.x - d.x) < 1e-9 && std::abs(e.y - d.y) < 1e-9)
+                    dup = true;
+            if (!dup)
+                dirs.push_back(d);
+        }
+    }
+
+    struct Ray {
+        Vec2 origin;
+        Vec2 dir;
+        bool base;
+    };
+    std::vector<Ray> rays;
+    for (const Vec2& o : acquired_)
+        for (const Vec2& d : dirs)
+            rays.push_back({o, d, false});
+    if (query.base && (s.polar || s.ortho))
+        for (const Vec2& d : dirs)
+            rays.push_back({*query.base, d, true});
+
+    // Rays the cursor is close to.
+    std::vector<std::pair<double, std::size_t>> near;
+    for (std::size_t i = 0; i < rays.size(); ++i) {
+        const Vec2 v = raw - rays[i].origin;
+        const double perp = std::abs(rays[i].dir.x * v.y - rays[i].dir.y * v.x);
+        if (perp <= tol)
+            near.emplace_back(perp, i);
+    }
+    if (near.empty())
+        return std::nullopt;
+
+    std::optional<Vec2> best;
+    double bestDist = 1e300;
+    std::pair<std::size_t, std::size_t> bestPair{0, 0};
+    for (std::size_t a = 0; a < near.size(); ++a)
+        for (std::size_t b = a + 1; b < near.size(); ++b) {
+            const Ray& r1 = rays[near[a].second];
+            const Ray& r2 = rays[near[b].second];
+            if (length(r1.origin - r2.origin) < 1e-9)
+                continue;
+            const double den = r1.dir.x * r2.dir.y - r1.dir.y * r2.dir.x;
+            if (std::abs(den) < 1e-6)
+                continue;
+            const Vec2 w = r2.origin - r1.origin;
+            const double t = (w.x * r2.dir.y - w.y * r2.dir.x) / den;
+            const Vec2 x = r1.origin + r1.dir * t;
+            const double d = length(x - raw);
+            if (d <= tol * 1.5 && d < bestDist) {
+                bestDist = d;
+                best = x;
+                bestPair = {near[a].second, near[b].second};
+            }
+        }
+    if (best) {
+        for (std::size_t i : {bestPair.first, bestPair.second})
+            rays_.emplace_back(rays[i].origin, *best);
+        feedback.marker = "intersection";
+        feedback.markerPos = *best;
+        feedback.tooltip = "Tracking: intersection";
+        feedback.guide = rays_.front();
+        return best;
+    }
+    // A single ray: only acquired points (the base point's ray belongs to polar / ortho).
+    std::sort(near.begin(), near.end());
+    for (const auto& n : near) {
+        const Ray& r = rays[n.second];
+        if (r.base)
+            continue;
+        const Vec2 v = raw - r.origin;
+        const double t = r.dir.x * v.x + r.dir.y * v.y;
+        const Vec2 p = r.origin + r.dir * t;
+        rays_.emplace_back(r.origin, p);
+        const Vec2 local = ucs.dirFromWorld(r.dir);
+        double ang = std::atan2(local.y, local.x) * 180.0 / kPi;
+        if (t < 0)
+            ang += 180.0;
+        if (ang < 0)
+            ang += 360.0;
+        if (ang >= 360.0 - 1e-9)
+            ang -= 360.0;
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.4g", std::round(ang * 100) / 100);
+        feedback.tooltip =
+            "Tracking: " + formatDistance(*env_, std::abs(t)) + " < " + buf + "\xC2\xB0";
+        const double reach = std::abs(t) + 4000.0 * px;
+        const Vec2 d = t >= 0 ? r.dir : r.dir * -1.0;
+        feedback.guide = std::make_pair(r.origin - d * (4000.0 * px), r.origin + d * reach);
+        return p;
+    }
+    return std::nullopt;
+}
+
+}  // namespace tbcad::drafting
