@@ -371,6 +371,20 @@ TEST_CASE("PAGESETUP saves the plot options, applies them and assigns them to la
     CHECK(f.host->logContains("No page setup named \"Nope\""));
 }
 
+TEST_CASE("PAGESETUP Import takes the page setups of another drawing") {
+    Fixture f;
+    CHECK(f.host->run("EXPORTSVG", {"Paper", "A2", "Scale", "1:50", "", f.path("x.svg")}).finished);
+    CHECK(f.host->run("PAGESETUP", {"Save", "Big sheet"}).finished);
+    REQUIRE(io::writeTbcad(f.doc, f.dir / "other.tbcad").ok());
+    CHECK(f.host->run("PAGESETUP", {"Delete", "Big sheet"}).finished);
+    REQUIRE(layout::pageSetups(f.doc).empty());
+    CHECK(f.host->run("PAGESETUP", {"Import", f.path("other.tbcad")}).finished);
+    auto got = layout::findPageSetup(f.doc, "Big sheet");
+    REQUIRE(got);
+    CHECK(got->settings.paperName == "A2");
+    CHECK(f.host->run("PAGESETUP", {"Import", f.path("missing.tbcad")}).finished);
+}
+
 TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {
     Fixture f;
     REQUIRE(io::writeTbcad(f.doc, f.dir / "d.tbcad").ok());
