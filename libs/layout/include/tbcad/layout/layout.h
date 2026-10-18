@@ -30,6 +30,7 @@ struct Viewport {
     std::vector<LayerId> frozen{};  // frozen in this viewport (their sub-layers too)
     LevelId level{};                // shows only this level when set (0 = every visible level)
     bool locked = false;            // scale and view centre cannot be changed (VPLOCK)
+    bool border = true;  // the rectangle is drawn and plotted (false: its layer does not plot)
 };
 
 // True when the sheet point is inside the viewport's outline.

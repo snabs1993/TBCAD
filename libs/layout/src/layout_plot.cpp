@@ -61,7 +61,7 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         });
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, false, {}});
 
-        if (options.viewportBorders) {
+        if (options.viewportBorders && vp.border) {
             exportlib::PlotPath border;
             border.closed = true;
             border.style.color = exportlib::plotColor(Rgba{0, 0, 0, 255}, s.color);

@@ -8,6 +8,7 @@
 #include "extra.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/plotstyle/plotstyle.h"
 
 namespace tbcad::inquiry {
 
@@ -100,6 +101,38 @@ public:
                         }
                     }
                 }
+                // A filled area (hatch, solid) containing the point counts too; report how it
+                // would plot: its colour and palette index decide the plot style pen.
+                std::string fillNote;
+                for (const DisplayItem& item : list.items) {
+                    const auto* fl = std::get_if<DisplayFill>(&item);
+                    if (!fl)
+                        continue;
+                    int crossings = 0;
+                    for (const auto& ring : fl->rings)
+                        for (std::size_t i = 0, n = ring.size(); i < n; ++i) {
+                            const Vec2 a = ring[i], b = ring[(i + 1) % n];
+                            if ((a.y > p.y) != (b.y > p.y) &&
+                                p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x))
+                                ++crossings;
+                        }
+                    if (crossings % 2 == 0)
+                        continue;
+                    const Rgba c = fl->style.color;
+                    fillNote += "    fill colour " + std::to_string(c.r) + "," +
+                                std::to_string(c.g) + "," + std::to_string(c.b) + " alpha " +
+                                std::to_string(c.a) + " (palette " +
+                                std::to_string(plotstyle::nearestPaletteIndex(c)) + ")";
+                    if (const Layer* fo = ctx.doc().layer(fl->style.layer))
+                        fillNote += " layer " + fo->name;
+                    if (const auto* h = entityAs<HatchData>(e))
+                        fillNote += std::string(h->gradient ? ", gradient"
+                                                : h->solid  ? ", solid"
+                                                            : ", pattern " + h->pattern) +
+                                    ", " + std::to_string(h->loops.size()) + " loop(s)";
+                    fillNote += "\n";
+                    hit = true;
+                }
                 if (!hit)
                     continue;
                 const Layer* own = ctx.doc().layer(e.common.layer);
@@ -111,6 +144,8 @@ public:
                     line << " (drawn on " << drawn->name << ")";
                 line << ": " << best << " away, segment length " << bestLen << "\n";
                 emit(line.str());
+                if (!fillNote.empty())
+                    emit(fillNote);
                 pick.push_back(e.common.id);
                 // An insert: show what inside the block draws the longest single segment.
                 if (const auto* ins = entityAs<InsertData>(e)) {
