@@ -25,6 +25,15 @@ centred title. Text in a cell is TBCAD markup (plain text works) and wraps at th
   Keywords: RowBelow, RowAbove, ColRight, ColLeft, DeleteRow, DeleteCol, Merge (then click the opposite corner
   cell), Unmerge, Width, Height. Inserting or deleting first splits any merged range that crosses the change.
   The whole session is one undo step.
+- **Formulas**: a cell whose text starts with `=` is worked out when drawn, exported to CSV or exploded.
+  Operators `+ - * / ^` and brackets; numbers; cell names (`A1`: column letters, row from 1); ranges `A1:C3`;
+  functions SUM, AVERAGE (AVG), MIN, MAX, COUNT over cells, ranges and numbers, and ABS, SQRT, ROUND(x, digits).
+  Text that reads as a number counts as that number, an empty cell as 0. Mistakes show `#ERR`, `#REF` (outside the
+  table), `#NAME`, `#VALUE` (text where a number is needed), `#DIV/0` or `#LOOP` (a formula that needs itself).
+  The formula itself is kept in the cell and in the DXF extended data; TABLEEDIT shows it when editing.
+- **TABLESTYLE** (alias TS): named sets of column width, row height, text height, margin and text style, kept in the
+  drawing. Keywords: Set (make current), New, Modify, Delete, Apply (give a style's sizes to tables already drawn),
+  List. TABLE starts from the current style; `Standard` (30 x 8, text 2.8, margin 1) always exists.
 - Grips: the top-left corner moves the table, the bottom-right corner rescales the grid keeping proportions.
 - MOVE, COPY, ROTATE, SCALE (uniform) and EXPLODE (grid lines plus one MTEXT per filled cell) work. A table
   cannot be mirrored or scaled non-uniformly.

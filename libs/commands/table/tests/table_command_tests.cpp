@@ -143,3 +143,40 @@ TEST_CASE("TABLEEXPORT writes a CSV that TABLEIMPORT turns back into the same ta
     CHECK(tables == 1);
     fs::remove_all(dir);
 }
+
+TEST_CASE("TABLESTYLE defines styles; TABLE starts from the current one") {
+    Fx f;
+    f.host->run("TABLESTYLE", {"New", "Big", "50", "12", "4", "2", ""});
+    auto s = table::findTableStyle(f.doc.header(), "big");
+    REQUIRE(s);
+    CHECK(s->colWidth == doctest::Approx(50));
+    CHECK(s->margin == doctest::Approx(2));
+    f.host->run("TABLESTYLE", {"New", "Big"});  // exists: refused
+    CHECK(f.host->logContains("exists"));
+    f.host->run("TABLESTYLE", {"Set", "Big"});
+    CHECK(table::currentTableStyleName(f.doc.header()) == "Big");
+    // The prompts offer the style's sizes; Enter takes them.
+    f.host->run("TABLE", {"2", "3", "", "", "", "0,0"});
+    const Entity* e = f.doc.find(f.tableId());
+    REQUIRE(e);
+    const auto* t = entityAs<TableData>(*e);
+    REQUIRE(t);
+    CHECK(t->colWidths[0] == doctest::Approx(50));
+    CHECK(t->rowHeights[0] == doctest::Approx(12));
+    CHECK(t->textHeight == doctest::Approx(4));
+    CHECK(t->margin == doctest::Approx(2));
+    // Modify, then Apply to the table already drawn.
+    f.host->run("TABLESTYLE", {"Modify", "Big", "20", "6", "2", "0.5", ""});
+    f.host->setSelection({f.tableId()});
+    f.host->run("TABLESTYLE", {"Apply", "Big"});
+    t = entityAs<TableData>(*f.doc.find(f.tableId()));
+    CHECK(t->colWidths[1] == doctest::Approx(20));
+    CHECK(t->rowHeights[1] == doctest::Approx(6));
+    CHECK(t->margin == doctest::Approx(0.5));
+    // Deleting the current style falls back to Standard; Standard stays.
+    f.host->run("TABLESTYLE", {"Delete", "Big"});
+    CHECK(table::currentTableStyleName(f.doc.header()) == "Standard");
+    f.host->run("TABLESTYLE", {"Delete", "Standard"});
+    CHECK(f.host->logContains("cannot be deleted"));
+    CHECK(f.host->undo());
+}

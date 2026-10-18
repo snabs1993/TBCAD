@@ -266,3 +266,68 @@ TEST_CASE(
     const std::string csv = table::toCsv(t);
     CHECK(table::parseCsv(csv) == rows);
 }
+
+TEST_CASE("formulas: sums, averages, cell references and arithmetic") {
+    TableData t = grid(5, 3);
+    setText(t, 0, 0, "10");
+    setText(t, 1, 0, "20.5");
+    setText(t, 2, 0, "4");
+    setText(t, 3, 0, "=SUM(A1:A3)");
+    setText(t, 0, 1, "=A1*2+1");
+    setText(t, 1, 1, "=AVERAGE(A1:A3)");
+    setText(t, 2, 1, "=MAX(A1:A3, 100) - MIN(A1:A3)");
+    setText(t, 3, 1, "=ROUND(B2, 2)");
+    setText(t, 4, 0, "=COUNT(A1:A4)");
+    CHECK(displayText(t, 3, 0) == "34.5");
+    CHECK(displayText(t, 0, 1) == "21");
+    CHECK(displayText(t, 1, 1) == "11.5");
+    CHECK(displayText(t, 2, 1) == "96");
+    CHECK(displayText(t, 3, 1) == "11.5");
+    CHECK(displayText(t, 4, 0) == "4");   // A1..A3 and the formula in A4
+    CHECK(displayText(t, 0, 0) == "10");  // plain text is shown as typed
+    setText(t, 0, 2, "=(1+2)^2/3");
+    CHECK(displayText(t, 0, 2) == "3");
+}
+
+TEST_CASE("formulas: mistakes show their code, loops are caught") {
+    TableData t = grid(3, 3);
+    setText(t, 0, 0, "=1/0");
+    setText(t, 0, 1, "=Z99");
+    setText(t, 0, 2, "=FOO(1)");
+    setText(t, 1, 0, "=B2");
+    setText(t, 1, 1, "=A2");
+    setText(t, 1, 2, "=1+");
+    setText(t, 2, 0, "hello");
+    setText(t, 2, 1, "=A3+1");
+    CHECK(displayText(t, 0, 0) == "#DIV/0");
+    CHECK(displayText(t, 0, 1) == "#REF");
+    CHECK(displayText(t, 0, 2) == "#NAME");
+    CHECK(displayText(t, 1, 0) == "#LOOP");
+    CHECK(displayText(t, 1, 2) == "#ERR");
+    CHECK(displayText(t, 2, 1) == "#VALUE");
+}
+
+TEST_CASE("formulas are drawn, exported and merged cells refer to their anchor") {
+    TableData t = grid(2, 2);
+    setText(t, 0, 0, "3");
+    setText(t, 0, 1, "4");
+    setText(t, 1, 0, "=A1+B1");
+    bool found = false;
+    for (const TextItem& item : layout(t).texts)
+        found = found || item.utf8 == "7";
+    CHECK(found);
+    CHECK(toCsv(t).find("7") != std::string::npos);
+    CHECK(cellName(0, 0) == "A1");
+    CHECK(cellName(11, 27) == "AB12");
+}
+
+TEST_CASE("formulas survive the text form used in DXF") {
+    TableData t = grid(3, 2);
+    setText(t, 0, 0, "5");
+    setText(t, 1, 0, "6");
+    setText(t, 2, 0, "=SUM(A1:A2)*2");
+    auto back = parse(serialize(t));
+    REQUIRE(back);
+    CHECK(cellAt(*back, 2, 0).utf8 == "=SUM(A1:A2)*2");
+    CHECK(displayText(*back, 2, 0) == "22");
+}
