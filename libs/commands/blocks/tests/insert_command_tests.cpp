@@ -64,7 +64,7 @@ TEST_CASE("INSERT remembers the last block as the default") {
 
 TEST_CASE("INSERT without blocks says so - Esc inserts nothing") {
     Fixture f;
-    f.host->run("INSERT", {});
+    f.host->run("INSERT", {cmd::ScriptItem::esc()});
     CHECK(f.host->logContains("no blocks"));
     makeDoorBlock(f);
     f.host->run("INSERT", {"Door", cmd::ScriptItem::esc()});

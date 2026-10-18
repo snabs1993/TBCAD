@@ -1,4 +1,4 @@
-set(_platform_sources src/json.cpp src/paths.cpp src/settings.cpp src/keybindings.cpp src/crash.cpp src/file_lock.cpp)
+set(_platform_sources src/json.cpp src/paths.cpp src/settings.cpp src/keybindings.cpp src/crash.cpp src/file_lock.cpp src/external_link.cpp)
 if(WIN32)
   list(APPEND _platform_sources src/file_dialog_win32.cpp)
 else()
@@ -19,4 +19,5 @@ tbcad_add_tests(platform
     tests/settings_tests.cpp
     tests/keybindings_tests.cpp
     tests/crash_tests.cpp
-    tests/file_lock_tests.cpp)
+    tests/file_lock_tests.cpp
+    tests/external_link_tests.cpp)

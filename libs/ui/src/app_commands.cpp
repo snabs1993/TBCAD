@@ -1,8 +1,10 @@
 #include "app_commands.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -81,6 +83,44 @@ std::optional<cmd::ViewState> popView(cmd::IHost& host, const cmd::ViewState& li
     return v;
 }
 
+// "2X", "0.5x" (times the current view) and "0.01XP", "1/100XP" (times paper space).
+struct ZoomFactor {
+    double value = 1;
+    bool paper = false;
+};
+std::optional<ZoomFactor> parseZoomFactor(const std::string& text) {
+    std::string t;
+    for (char c : text)
+        if (c != ' ')
+            t += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    ZoomFactor f;
+    if (t.size() > 2 && t.compare(t.size() - 2, 2, "xp") == 0) {
+        f.paper = true;
+        t.erase(t.size() - 2);
+    } else if (t.size() > 1 && t.back() == 'x') {
+        t.pop_back();
+    } else {
+        return std::nullopt;
+    }
+    const auto slash = t.find('/');
+    char* end = nullptr;
+    const std::string num = slash == std::string::npos ? t : t.substr(0, slash);
+    double v = std::strtod(num.c_str(), &end);
+    if (num.empty() || *end)
+        return std::nullopt;
+    if (slash != std::string::npos) {
+        const std::string den = t.substr(slash + 1);
+        const double d = std::strtod(den.c_str(), &end);
+        if (den.empty() || *end || d == 0)
+            return std::nullopt;
+        v /= d;
+    }
+    if (!(v > 0))
+        return std::nullopt;
+    f.value = v;
+    return f;
+}
+
 class ZoomCommand final : public cmd::Command {
 public:
     // `preset`: a ZOOM option applied without asking (ZE = ZOOM Extents).
@@ -104,6 +144,7 @@ public:
         cmd::PointOptions opts;
         opts.keywords = {"Extents", "All",    "Window", "Previous", "Center",
                          "Scale",   "Object", "Double", "Half"};
+        opts.freeText = true;  // 0.5X, 1/100XP
         cmd::PointResult first;
         if (*preset_) {
             first.status = cmd::Status::Keyword;
@@ -117,6 +158,23 @@ public:
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
             render::Camera2D cam = cameraOf(v);
+            if (const auto f = parseZoomFactor(first.keyword)) {
+                if (f->paper) {
+                    ctx.host().requestUi("zoomxp:" + std::to_string(f->value));
+                } else {
+                    pushView(ctx.host(), v);
+                    cam.zoomAt({cam.viewportW / 2.0, cam.viewportH / 2.0}, f->value);
+                    ctx.host().setView(viewOf(cam, v));
+                }
+                co_return;
+            }
+            if (std::find(opts.keywords.begin(), opts.keywords.end(), first.keyword) ==
+                opts.keywords.end()) {
+                ctx.message("Invalid option \"" + first.keyword +
+                            "\". Use a keyword, a factor like 0.5X, or a "
+                            "paper scale like 0.01XP.");
+                co_return;
+            }
             if (first.keyword == "Previous") {
                 if (auto prev = popView(ctx.host(), v))
                     ctx.host().setView(*prev);

@@ -68,10 +68,11 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        if (doc.blocks().empty() && pathSetting(ctx, kLibrarySetting).empty()) {
-            ctx.message("There are no blocks in this drawing. Use BLOCK to make one.");
-            co_return;
-        }
+        // (With no blocks yet a drawing file can still be typed: it becomes the first block.)
+        if (doc.blocks().empty())
+            ctx.message(
+                "There are no blocks in this drawing yet. Type a drawing file name to "
+                "insert it, or cancel and use BLOCK to make one.");
 
         // Block name.
         const BlockDef* def = nullptr;

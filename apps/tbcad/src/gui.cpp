@@ -18,6 +18,7 @@
 #include "icons.h"
 #include "key_map.h"
 #include "tbcad/platform/crash.h"
+#include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
@@ -3348,6 +3349,15 @@ ViewportRect Gui::frame() {
             } else {
                 core_.print("No file dialog here: type the path.");
             }
+        } else if (what.rfind("open:", 0) == 0) {
+            // A hyperlink: only after the drafter agrees, and never a program or a script.
+            platform::LinkCheck link = platform::checkLink(what.substr(5));
+            if (link.kind == platform::LinkKind::Refused) {
+                core_.print("Not opened: " + link.reason);
+            } else {
+                pendingLink_ = std::move(link);
+                openLinkPrompt_ = true;
+            }
         } else if (what.rfind("openpath:", 0) == 0)
             doOpenPath(what.substr(9));
         else if (what.rfind("recoverpath:", 0) == 0) {
@@ -3515,6 +3525,35 @@ void Gui::dialogs() {
     if (openRecoveryPrompt_) {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;
+    }
+    if (openLinkPrompt_) {
+        ImGui::OpenPopup("Open link?");
+        openLinkPrompt_ = false;
+    }
+    if (ImGui::BeginPopupModal("Open link?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        using platform::LinkKind;
+        ImGui::TextUnformatted(pendingLink_.kind == LinkKind::Web
+                                   ? "This drawing links to a web address:"
+                               : pendingLink_.kind == LinkKind::Mail
+                                   ? "This drawing links to a mail address:"
+                                   : "This drawing links to a file on this computer:");
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+        ImGui::TextUnformatted(pendingLink_.target.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        ImGui::TextDisabled("Only open links you trust.");
+        const bool enterKey =
+            ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+        if (ImGui::Button("Open", ImVec2(110, 0)) || enterKey) {
+            if (!platform::openExternal(pendingLink_))
+                core_.print("Could not open " + pendingLink_.target);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
     if (ImGui::BeginPopupModal("Recover drawing?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("TBCAD did not close normally last time.");
