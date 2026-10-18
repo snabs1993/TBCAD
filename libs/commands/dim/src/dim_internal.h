@@ -53,10 +53,13 @@ bool addDim(cmd::CommandContext& ctx, DimensionData d);
 void scaleFirstAnnotationToView(cmd::CommandContext& ctx);
 void previewLine(cmd::CommandContext& ctx, Vec2 a, Vec2 b, DisplayList& out);
 bool isLine(const Entity& e);
+// The straight segment of a line, or of a polyline nearest to `pick`; false for anything else.
+bool straightPieceAt(const Entity& e, Vec2 pick, Vec2& a, Vec2& b);
 bool isCircleOrArc(const Entity& e);
 bool isMeasurable(const Entity& e);
 bool measurableEnds(const Entity& e, Vec2 pick, Vec2& a, Vec2& b);
-bool circleOf(const Entity& e, Vec2& c, double& r);
+// Centre and radius of a circle, an arc, or the bulged polyline segment nearest to `pick`.
+bool circleOf(const Entity& e, Vec2& c, double& r, const Vec2* pick = nullptr);
 double autoRotation(Vec2 p1, Vec2 p2, Vec2 c);
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain);
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain,

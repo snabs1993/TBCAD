@@ -7,6 +7,7 @@
 #include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/dimcmd/dimcmd.h"
+#include "tbcad/drafting/ucs.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/text/text.h"
 
@@ -160,7 +161,7 @@ public:
         Vec2 center{};
         double radius = 0;
         const Entity* e = ctx.doc().find(o.id);
-        if (!e || !circleOf(*e, center, radius)) {
+        if (!e || !circleOf(*e, center, radius, &o.pickPoint)) {
             ctx.message("Select an arc or a circle.");
             co_return;
         }
@@ -283,6 +284,8 @@ public:
         if (!feature.ok())
             co_return;
         const Vec2 P = feature.point;
+        // The datum is the origin of the current UCS (the world origin without one).
+        const Vec2 datum = drafting::currentUcs(&ctx.doc(), &ctx.host()).origin;
         std::optional<bool> forceX;  // set by the Xdatum / Ydatum keywords
         std::string override;
         for (;;) {
@@ -297,7 +300,7 @@ public:
                 // Without a keyword the leader runs along the direction the cursor moved most.
                 const bool xDatum = forceX ? *forceX : std::abs(off.y) >= std::abs(off.x);
                 d.rotation = xDatum ? 0 : kPi / 2;
-                d.defPts = {P, cursor, Vec2{0, 0}, Vec2{}};
+                d.defPts = {P, cursor, datum, Vec2{}};
                 d.textOverride = override;
                 dim::refresh(c->doc(), d);
                 return d;
@@ -349,7 +352,7 @@ public:
         Vec2 center{};
         double radius = 0;
         const Entity* e = ctx.doc().find(o.id);
-        if (!e || !circleOf(*e, center, radius)) {
+        if (!e || !circleOf(*e, center, radius, &o.pickPoint)) {
             ctx.message("Select an arc or a circle.");
             co_return;
         }
@@ -401,8 +404,11 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
         cmd::EntityOptions eo;
-        eo.filter = isLine;
-        auto l1 = co_await ctx.getEntity("Select first line or <specify vertex>", eo);
+        eo.filter = [](const Entity& e) {
+            return kind(e) == EntityKind::Line || kind(e) == EntityKind::Arc ||
+                   kind(e) == EntityKind::Polyline;
+        };
+        auto l1 = co_await ctx.getEntity("Select arc, line or <specify vertex>", eo);
         DimensionData base;
         if (l1.status == Status::None) {
             auto v = co_await ctx.getPoint("Specify angle vertex");
@@ -420,27 +426,44 @@ public:
             base.kind = DimKind::Angular3Point;
             base.defPts = {a.point, b.point, v.point, {}};
         } else if (l1.ok()) {
-            auto l2 = co_await ctx.getEntity("Select second line", eo);
-            if (!l2.ok())
+            const Entity* first = ctx.doc().find(l1.id);
+            if (!first)
                 co_return;
-            const auto* a =
-                ctx.doc().find(l1.id) ? entityAs<LineData>(*ctx.doc().find(l1.id)) : nullptr;
-            const auto* b =
-                ctx.doc().find(l2.id) ? entityAs<LineData>(*ctx.doc().find(l2.id)) : nullptr;
-            if (!a || !b) {
-                ctx.message("Select two lines.");
-                co_return;
-            }
-            base.kind = DimKind::Angular2Line;
-            base.defPts = {a->a, a->b, b->a, b->b};
-            if (!dim::angularGeometry([&] {
-                     DimensionData t = base;
-                     t.textPos = (a->a + a->b + b->a + b->b) / 4;
-                     return t;
-                 }())
-                     .ok) {
-                ctx.message("The lines are parallel.");
-                co_return;
+            if (const auto* arc = entityAs<ArcData>(*first)) {
+                // The angle the arc spans, seen from its centre.
+                const Vec2 s =
+                    arc->center +
+                    Vec2{std::cos(arc->startAngle), std::sin(arc->startAngle)} * arc->radius;
+                const Vec2 t = arc->center +
+                               Vec2{std::cos(arc->endAngle), std::sin(arc->endAngle)} * arc->radius;
+                base.kind = DimKind::Angular3Point;
+                base.defPts = {s, t, arc->center, {}};
+            } else {
+                Vec2 a0{}, a1{};
+                if (!straightPieceAt(*first, l1.pickPoint, a0, a1)) {
+                    ctx.message("Select a line, a polyline segment or an arc.");
+                    co_return;
+                }
+                auto l2 = co_await ctx.getEntity("Select second line", eo);
+                if (!l2.ok())
+                    co_return;
+                const Entity* second = ctx.doc().find(l2.id);
+                Vec2 b0{}, b1{};
+                if (!second || !straightPieceAt(*second, l2.pickPoint, b0, b1)) {
+                    ctx.message("Select two lines.");
+                    co_return;
+                }
+                base.kind = DimKind::Angular2Line;
+                base.defPts = {a0, a1, b0, b1};
+                if (!dim::angularGeometry([&] {
+                         DimensionData t = base;
+                         t.textPos = (a0 + a1 + b0 + b1) / 4;
+                         return t;
+                     }())
+                         .ok) {
+                    ctx.message("The lines are parallel.");
+                    co_return;
+                }
             }
         } else {
             co_return;

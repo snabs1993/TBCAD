@@ -14,6 +14,8 @@ tbcad_add_tests(e2e
     tests/table_ops_tests.cpp
     tests/dimstyle_tests.cpp
     tests/dim_assoc_tests.cpp
+    tests/dim_hard_geometry_tests.cpp
+    tests/dim_perf_tests.cpp
     tests/transform_property_tests.cpp
     tests/bulk_edit_perf_tests.cpp
     tests/plot_perf_tests.cpp
