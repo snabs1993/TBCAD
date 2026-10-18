@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 
 #include "tbcad/cmd/command.h"
 #include "tbcad/geom/entity.h"
@@ -48,6 +50,37 @@ BBox2 boxOfEntities(const Document& doc) {
     return box;
 }
 
+// Views before each ZOOM change, newest last, for ZOOM Previous ("x y pixelSize" per line).
+constexpr const char* kViewHistoryKey = "tmp.view.history";
+constexpr std::size_t kViewHistoryMax = 10;
+
+void pushView(cmd::IHost& host, const cmd::ViewState& v) {
+    std::string h = host.setting(kViewHistoryKey).value_or("");
+    char line[128];
+    std::snprintf(line, sizeof line, "%.12g %.12g %.12g\n", v.center.x, v.center.y, v.scale);
+    h += line;
+    // Keep the newest entries only.
+    std::size_t lines = static_cast<std::size_t>(std::count(h.begin(), h.end(), '\n'));
+    while (lines-- > kViewHistoryMax)
+        h.erase(0, h.find('\n') + 1);
+    host.setSetting(kViewHistoryKey, h);
+}
+
+std::optional<cmd::ViewState> popView(cmd::IHost& host, const cmd::ViewState& like) {
+    std::string h = host.setting(kViewHistoryKey).value_or("");
+    if (h.empty())
+        return std::nullopt;
+    const std::size_t end = h.size() - 1;  // the final '\n'
+    const std::size_t start = h.rfind('\n', end - 1);
+    const std::string last = h.substr(start == std::string::npos ? 0 : start + 1);
+    h.erase(start == std::string::npos ? 0 : start + 1);
+    host.setSetting(kViewHistoryKey, h);
+    cmd::ViewState v = like;
+    if (std::sscanf(last.c_str(), "%lf %lf %lf", &v.center.x, &v.center.y, &v.scale) != 3)
+        return std::nullopt;
+    return v;
+}
+
 class ZoomCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ZOOM"; }
@@ -57,16 +90,69 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
-        opts.keywords = {"Extents", "All", "Window", "In", "Out"};
+        opts.keywords = {"Extents", "All",    "Window", "Previous", "Center",
+                         "Scale",   "Object", "In",     "Out"};
         auto first = co_await ctx.getPoint(
-            "Specify first corner of the window or [Extents/All/Window/In/Out]", opts);
+            "Specify first corner of the window or "
+            "[Extents/All/Window/Previous/Center/Scale/Object/In/Out]",
+            opts);
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
             render::Camera2D cam = cameraOf(v);
+            if (first.keyword == "Previous") {
+                if (auto prev = popView(ctx.host(), v))
+                    ctx.host().setView(*prev);
+                else
+                    ctx.message("No previous view.");
+                co_return;
+            }
+            pushView(ctx.host(), v);
             if (first.keyword == "Extents" || first.keyword == "All") {
                 BBox2 box = ctx.host().viewExtents();
                 if (box.empty())
                     box = boxOfEntities(ctx.doc());
+                if (box.empty()) {
+                    ctx.message("Nothing to zoom to.");
+                    co_return;
+                }
+                cam.fit(box);
+            } else if (first.keyword == "Center") {
+                auto c = co_await ctx.getPoint("Specify center point");
+                if (!c.ok())
+                    co_return;
+                cmd::RealOptions ro;
+                ro.defaultValue = cam.viewportH * cam.pixelSizeMm();
+                ro.min = 1e-9;
+                auto h = co_await ctx.getReal("Enter magnification or height", ro);
+                if (!h.ok())
+                    co_return;
+                cmd::ViewState nv = v;
+                nv.center = c.point;
+                nv.scale = h.value / std::max<double>(cam.viewportH, 1.0);
+                ctx.host().setView(nv);
+                co_return;
+            } else if (first.keyword == "Scale") {
+                cmd::RealOptions ro;
+                ro.defaultValue = 1;
+                ro.min = 1e-6;
+                auto f =
+                    co_await ctx.getReal("Enter a scale factor (n = times the current view)", ro);
+                if (!f.ok())
+                    co_return;
+                cam.zoomAt({cam.viewportW / 2.0, cam.viewportH / 2.0}, f.value);
+            } else if (first.keyword == "Object") {
+                cmd::SelectionOptions so;
+                so.allowPreselection = true;
+                auto sel = co_await ctx.getSelection("Select objects", so);
+                if (!sel.ok())
+                    co_return;
+                BBox2 box;
+                for (EntityId id : sel.ids)
+                    if (const Entity* e = ctx.doc().find(id)) {
+                        const BBox2 b = geom::bounds(*e, ctx.doc());
+                        if (!b.empty())
+                            box.merge(b);
+                    }
                 if (box.empty()) {
                     ctx.message("Nothing to zoom to.");
                     co_return;
@@ -102,6 +188,7 @@ public:
         if (!b.ok())
             co_return;
         const cmd::ViewState v = ctx.host().view();
+        pushView(ctx.host(), v);
         render::Camera2D cam = cameraOf(v);
         BBox2 box;
         box.expand(first.point);
