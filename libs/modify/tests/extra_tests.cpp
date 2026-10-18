@@ -405,3 +405,124 @@ TEST_CASE("replaceText in MTEXT leaves the formatting codes alone") {
     REQUIRE(thai.has_value());
     CHECK(entityAs<MTextData>(thai->entity)->utf8 == "{\\i1;ส-สดี}");
 }
+
+namespace {
+Entity cvSpline(double ox, double oy) {
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+    sp.control = {
+        {ox, oy}, {ox + 10, oy + 20}, {ox + 30, oy - 20}, {ox + 50, oy + 10}, {ox + 60, oy}};
+    return make(Indirect<SplineData>(sp));
+}
+
+geom::CurveRef curveOf(const Entity& e) {
+    std::vector<geom::CurveRef> cs;
+    REQUIRE(geom::curvesOf(e, cs));
+    REQUIRE(cs.size() == 1);
+    return cs[0];
+}
+}  // namespace
+
+TEST_CASE("SPLINEDIT control vertices: Add keeps the curve exactly, at survey coordinates too") {
+    for (double ox : {0.0, 500123.456}) {
+        const double oy = ox * 9;
+        Entity e = cvSpline(ox, oy);
+        auto r = editSplineCv(e, SplineCvOp::Add, {ox + 20, oy});
+        REQUIRE(r.ok());
+        REQUIRE(r.value().modified.has_value());
+        const auto& after = as<SplineData>(*r.value().modified);
+        CHECK(after.control.size() == 6);
+        CHECK(after.knots.size() == 10);
+        auto c0 = curveOf(e), c1 = curveOf(*r.value().modified);
+        for (int i = 0; i <= 40; ++i) {
+            double u = i / 40.0;
+            Vec2 p0 = c0.pointAt(c0.t0() + u * c0.sweep());
+            Vec2 p1 = c1.pointAt(c1.t0() + u * c1.sweep());
+            CHECK(distance(p0, p1) < 1e-6);
+        }
+    }
+}
+
+TEST_CASE("SPLINEDIT control vertices: Add on a rational spline keeps the curve") {
+    Entity e = cvSpline(0, 0);
+    SplineData sp = as<SplineData>(e);
+    sp.weights = {1, 2, 0.5, 1.5, 1};
+    e = make(Indirect<SplineData>(sp));
+    auto r = editSplineCv(e, SplineCvOp::Add, {40, 0});
+    REQUIRE(r.ok());
+    auto c0 = curveOf(e), c1 = curveOf(*r.value().modified);
+    for (int i = 0; i <= 40; ++i) {
+        double u = i / 40.0;
+        CHECK(distance(c0.pointAt(c0.t0() + u * c0.sweep()), c1.pointAt(c1.t0() + u * c1.sweep())) <
+              1e-6);
+    }
+}
+
+TEST_CASE("SPLINEDIT control vertices: Delete, Move, Weight, Purge") {
+    Entity e = cvSpline(100, 100);
+    auto del = editSplineCv(e, SplineCvOp::Delete, {130, 80});
+    REQUIRE(del.ok());
+    const auto& d = as<SplineData>(*del.value().modified);
+    CHECK(d.control.size() == 4);
+    CHECK(d.knots.size() == 8);
+    auto c = curveOf(*del.value().modified);
+    CHECK(near(c.startPoint(), {100, 100}));
+    CHECK(near(c.endPoint(), {160, 100}));
+
+    auto mv = editSplineCv(e, SplineCvOp::Move, {110, 120}, {110, 140});
+    REQUIRE(mv.ok());
+    CHECK(near(as<SplineData>(*mv.value().modified).control[1], {110, 140}));
+
+    auto w = editSplineCv(e, SplineCvOp::Weight, {110, 120}, {}, 5);
+    REQUIRE(w.ok());
+    const auto& wd = as<SplineData>(*w.value().modified);
+    REQUIRE(wd.weights.size() == 5);
+    CHECK(wd.weights[1] == doctest::Approx(5));
+    // A heavier vertex pulls the curve towards it.
+    CHECK(curveOf(*w.value().modified).distanceTo({110, 120}) < curveOf(e).distanceTo({110, 120}));
+    CHECK_FALSE(editSplineCv(e, SplineCvOp::Weight, {110, 120}, {}, -1).ok());
+
+    // Purge needs fit points.
+    CHECK_FALSE(editSplineCv(e, SplineCvOp::Purge).ok());
+    auto fitted = geom::interpolateSpline(std::vector<Vec2>{{0, 0}, {5, 4}, {10, 0}, {15, 4}});
+    REQUIRE(fitted.ok());
+    auto pg = editSplineCv(make(Indirect<SplineData>(fitted.value())), SplineCvOp::Purge);
+    REQUIRE(pg.ok());
+    CHECK(as<SplineData>(*pg.value().modified).fit.empty());
+}
+
+TEST_CASE("SPLINEDIT control vertices: Close and Open, and a closed spline keeps its wrap") {
+    Entity e = cvSpline(0, 0);
+    auto closed = editSplineCv(e, SplineCvOp::Close);
+    REQUIRE(closed.ok());
+    const auto& cd = as<SplineData>(*closed.value().modified);
+    CHECK(cd.closed);
+    CHECK(cd.periodic);
+    CHECK(cd.control.size() == 5 + 3);
+    CHECK(near(curveOf(*closed.value().modified).startPoint(),
+               curveOf(*closed.value().modified).endPoint(), 1e-6));
+    // Moving a vertex that is repeated at the end moves both copies.
+    auto mv = editSplineCv(*closed.value().modified, SplineCvOp::Move, {0, 0}, {-5, -5});
+    REQUIRE(mv.ok());
+    const auto& md = as<SplineData>(*mv.value().modified);
+    CHECK(near(md.control.front(), {-5, -5}));
+    CHECK(near(md.control[5], {-5, -5}));
+    auto reopened = editSplineCv(*closed.value().modified, SplineCvOp::Open);
+    REQUIRE(reopened.ok());
+    CHECK_FALSE(as<SplineData>(*reopened.value().modified).closed);
+    CHECK_FALSE(editSplineCv(e, SplineCvOp::Open).ok());
+}
+
+TEST_CASE("SPLINEDIT converts a spline to a polyline within the tolerance") {
+    for (double ox : {0.0, 500123.456}) {
+        Entity e = cvSpline(ox, ox * 9);
+        auto r = editSplineCv(e, SplineCvOp::ToPolyline, {}, {}, 0.05);
+        REQUIRE(r.ok());
+        const auto& pl = as<PolylineData>(*r.value().modified);
+        CHECK(pl.v.size() > 10);
+        auto c = curveOf(e);
+        for (const auto& v : pl.v)
+            CHECK(c.distanceTo(v.p) < 0.06);
+    }
+}

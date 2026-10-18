@@ -352,3 +352,27 @@ TEST_CASE("outlinePoints follows the travel direction and is finer than flatten'
     CHECK(distance(pts.back(), {10, 0}) < 1e-9);
     CHECK(pts[pts.size() / 2].y > 0);  // a negative bulge from left to right bows upward
 }
+
+TEST_CASE("a closed CV spline has one grip per vertex and moving one keeps it closed") {
+    SplineData sp;
+    sp.degree = 3;
+    sp.closed = true;
+    sp.periodic = true;
+    const std::vector<Vec2> pts{{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    sp.control = pts;
+    for (int i = 0; i < 3; ++i)
+        sp.control.push_back(pts[static_cast<std::size_t>(i)]);
+    for (int i = 0; i < 11; ++i)
+        sp.knots.push_back(i);
+    Entity e = make(Indirect<SplineData>(sp));
+    CHECK(gripPoints(e).size() == 4);
+    auto m = moveGrip(e, 0, {-3, -3});
+    REQUIRE(m.ok());
+    const auto& d = *entityAs<SplineData>(m.value());
+    CHECK(d.control.front() == Vec2{-3, -3});
+    CHECK(d.control[4] == Vec2{-3, -3});
+    CHECK_FALSE(moveGrip(e, 4, {0, 0}).ok());
+    std::vector<CurveRef> cs;
+    REQUIRE(curvesOf(m.value(), cs));
+    CHECK(distance(cs[0].startPoint(), cs[0].endPoint()) < 1e-9);
+}

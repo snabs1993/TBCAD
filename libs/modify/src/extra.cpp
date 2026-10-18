@@ -1,6 +1,7 @@
 #include "tbcad/modify/extra.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -1155,6 +1156,259 @@ Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b
     EntityEdit r;
     r.modified = withData(e, Indirect<SplineData>(std::move(fitted.value())));
     return r;
+}
+
+// ---- SPLINEDIT: control vertices ----------------------------------------------------------------
+
+namespace {
+
+// Clamped (or, when closed, periodic) uniform B-spline over the control vertices, as SPLINE CV.
+std::optional<SplineData> controlPolygonSpline(const std::vector<Vec2>& pts,
+                                               const std::vector<double>& weights, bool closed,
+                                               int wantDegree) {
+    const int n = static_cast<int>(pts.size());
+    if (n < 2)
+        return std::nullopt;
+    SplineData d;
+    d.degree = std::min(wantDegree, n - 1);
+    d.control = pts;
+    if (!weights.empty())
+        d.weights = weights;
+    if (closed) {
+        if (n < 3)
+            return std::nullopt;
+        for (int i = 0; i < d.degree; ++i) {
+            d.control.push_back(pts[static_cast<std::size_t>(i)]);
+            if (!weights.empty())
+                d.weights.push_back(weights[static_cast<std::size_t>(i)]);
+        }
+        const int count = static_cast<int>(d.control.size()) + d.degree + 1;
+        for (int i = 0; i < count; ++i)
+            d.knots.push_back(i);
+        d.closed = true;
+        d.periodic = true;
+        return d;
+    }
+    for (int i = 0; i <= d.degree; ++i)
+        d.knots.push_back(0);
+    for (int i = 1; i <= n - d.degree - 1; ++i)
+        d.knots.push_back(i);
+    for (int i = 0; i <= d.degree; ++i)
+        d.knots.push_back(n - d.degree);
+    return d;
+}
+
+bool validKnots(const SplineData& d) {
+    return d.degree >= 1 && d.control.size() >= static_cast<std::size_t>(d.degree) + 1 &&
+           d.knots.size() == d.control.size() + static_cast<std::size_t>(d.degree) + 1 &&
+           (d.weights.empty() || d.weights.size() == d.control.size());
+}
+
+}  // namespace
+
+Result<EntityEdit> editSplineCv(const Entity& e, SplineCvOp op, Vec2 a, Vec2 b, double value) {
+    const auto* sp = entityAs<SplineData>(e);
+    if (!sp)
+        return err("Select a spline.");
+    SplineData d = *sp;
+    if (d.control.empty() && d.fit.size() >= 2) {
+        // A fit-only spline: its control vertices come from the fit.
+        auto fitted = geom::interpolateSpline(d.fit, geom::InterpolateOptions{.degree = d.degree});
+        if (!fitted)
+            return err("The spline could not be fitted.");
+        d = fitted.value();
+    }
+    if (!validKnots(d))
+        return err("This spline has no control vertices to edit.");
+    const std::size_t p = static_cast<std::size_t>(d.degree);
+    // Vertices the user sees: a periodic spline repeats its first `degree` vertices at the end.
+    const std::size_t shown = d.periodic ? d.control.size() - p : d.control.size();
+    auto nearest = [&](Vec2 q) {
+        std::size_t best = 0;
+        for (std::size_t i = 1; i < shown; ++i) {
+            if (distance(d.control[i], q) < distance(d.control[best], q))
+                best = i;
+        }
+        return best;
+    };
+    EntityEdit r;
+    auto done = [&](SplineData out) {
+        r.modified = withData(e, Indirect<SplineData>(std::move(out)));
+        return r;
+    };
+    switch (op) {
+        case SplineCvOp::Purge:
+            if (d.fit.empty())
+                return err("This spline has no fit points.");
+            d.fit.clear();
+            return done(std::move(d));
+        case SplineCvOp::Move: {
+            const std::size_t i = nearest(a);
+            d.control[i] = b;
+            if (d.periodic && i < p)
+                d.control[shown + i] = b;
+            d.fit.clear();
+            return done(std::move(d));
+        }
+        case SplineCvOp::Weight: {
+            if (!(value > 0) || !std::isfinite(value))
+                return err("The weight must be a positive number.");
+            if (d.weights.empty())
+                d.weights.assign(d.control.size(), 1.0);
+            const std::size_t i = nearest(a);
+            d.weights[i] = value;
+            if (d.periodic && i < p)
+                d.weights[shown + i] = value;
+            d.fit.clear();
+            return done(std::move(d));
+        }
+        case SplineCvOp::Close:
+        case SplineCvOp::Open: {
+            const bool wantClosed = op == SplineCvOp::Close;
+            if (d.closed == wantClosed)
+                return err(wantClosed ? "The spline is already closed."
+                                      : "The spline is already open.");
+            std::vector<Vec2> pts(d.control.begin(),
+                                  d.control.begin() + static_cast<std::ptrdiff_t>(shown));
+            std::vector<double> w;
+            if (!d.weights.empty())
+                w.assign(d.weights.begin(), d.weights.begin() + static_cast<std::ptrdiff_t>(shown));
+            auto out = controlPolygonSpline(pts, w, wantClosed, d.degree);
+            if (!out)
+                return err("A closed spline needs at least three control vertices.");
+            return done(std::move(*out));
+        }
+        case SplineCvOp::ToPolyline: {
+            std::vector<CurveRef> cs;
+            if (!geom::curvesOf(e, cs) || cs.empty())
+                return err("The spline has no geometry.");
+            std::vector<Vec2> pts;
+            geom::flatten(cs[0], value > 0 ? value : 0.1, pts);
+            if (d.closed && pts.size() > 1 && distance(pts.front(), pts.back()) < 1e-9)
+                pts.pop_back();
+            if (pts.size() < 2)
+                return err("The spline is too short to convert.");
+            PolylineData pl;
+            pl.closed = d.closed;
+            for (Vec2 q : pts) {
+                PolyVertex v;
+                v.p = q;
+                pl.v.push_back(v);
+            }
+            r.modified = withData(e, std::move(pl));
+            return r;
+        }
+        case SplineCvOp::Add: {
+            if (d.periodic) {
+                // Wrapped vertices make an in-place insertion ambiguous: put the new vertex
+                // halfway along the polygon edge nearest the point.
+                std::size_t at = 0;
+                double bd = 1e300;
+                for (std::size_t i = 0; i < shown; ++i) {
+                    Vec2 p0 = d.control[i], p1 = d.control[(i + 1) % shown];
+                    Vec2 dir = p1 - p0;
+                    double l2 = dot(dir, dir);
+                    double u = l2 > 0 ? std::clamp(dot(a - p0, dir) / l2, 0.0, 1.0) : 0.0;
+                    double dist = distance(p0 + dir * u, a);
+                    if (dist < bd) {
+                        bd = dist;
+                        at = i;
+                    }
+                }
+                std::vector<Vec2> pts(d.control.begin(),
+                                      d.control.begin() + static_cast<std::ptrdiff_t>(shown));
+                std::vector<double> w;
+                if (!d.weights.empty())
+                    w.assign(d.weights.begin(),
+                             d.weights.begin() + static_cast<std::ptrdiff_t>(shown));
+                const Vec2 mid = (pts[at] + pts[(at + 1) % shown]) * 0.5;
+                pts.insert(pts.begin() + static_cast<std::ptrdiff_t>(at) + 1, mid);
+                if (!w.empty())
+                    w.insert(w.begin() + static_cast<std::ptrdiff_t>(at) + 1,
+                             0.5 * (w[at] + w[(at + 1) % shown]));
+                auto out = controlPolygonSpline(pts, w, true, d.degree);
+                if (!out)
+                    return err("The vertex could not be added.");
+                return done(std::move(*out));
+            }
+            auto curve = geom::CurveRef::spline(d);
+            if (!curve)
+                return err("The spline has no geometry.");
+            double u = curve.value().paramAt(a);
+            const std::size_t n = d.control.size();
+            // Span k with knots[k] <= u < knots[k+1], k in [p, n-1].
+            std::size_t k = p;
+            while (k + 1 < n && d.knots[k + 1] <= u)
+                ++k;
+            if (u <= d.knots[p] + 1e-9 || u >= d.knots[n] - 1e-9)
+                return err("The point is at an end of the spline.");
+            if (std::abs(u - d.knots[k]) < 1e-9)
+                return err("There is already a vertex at that position.");
+            const bool rational = !d.weights.empty();
+            auto hom = [&](std::size_t i) {
+                const double w = rational ? d.weights[i] : 1.0;
+                return std::array<double, 3>{d.control[i].x * w, d.control[i].y * w, w};
+            };
+            std::vector<Vec2> Q;
+            std::vector<double> W;
+            Q.reserve(n + 1);
+            for (std::size_t i = 0; i <= n; ++i) {
+                std::array<double, 3> h;
+                if (i + p <= k) {  // i <= k - p
+                    h = hom(i);
+                } else if (i > k) {
+                    h = hom(i - 1);
+                } else {
+                    const double alpha = (u - d.knots[i]) / (d.knots[i + p] - d.knots[i]);
+                    auto h0 = hom(i - 1), h1 = hom(i);
+                    for (int c = 0; c < 3; ++c)
+                        h[static_cast<std::size_t>(c)] =
+                            (1 - alpha) * h0[static_cast<std::size_t>(c)] +
+                            alpha * h1[static_cast<std::size_t>(c)];
+                }
+                Q.push_back({h[0] / h[2], h[1] / h[2]});
+                W.push_back(h[2]);
+            }
+            d.control = std::move(Q);
+            if (rational)
+                d.weights = std::move(W);
+            d.knots.insert(d.knots.begin() + static_cast<std::ptrdiff_t>(k) + 1, u);
+            return done(std::move(d));
+        }
+        case SplineCvOp::Delete: {
+            if (d.periodic) {
+                std::vector<Vec2> pts(d.control.begin(),
+                                      d.control.begin() + static_cast<std::ptrdiff_t>(shown));
+                std::vector<double> w;
+                if (!d.weights.empty())
+                    w.assign(d.weights.begin(),
+                             d.weights.begin() + static_cast<std::ptrdiff_t>(shown));
+                if (pts.size() <= 3)
+                    return err("A closed spline needs at least three control vertices.");
+                const std::size_t i = nearest(a);
+                pts.erase(pts.begin() + static_cast<std::ptrdiff_t>(i));
+                if (!w.empty())
+                    w.erase(w.begin() + static_cast<std::ptrdiff_t>(i));
+                auto out = controlPolygonSpline(pts, w, true, d.degree);
+                if (!out)
+                    return err("The vertex could not be deleted.");
+                return done(std::move(*out));
+            }
+            const std::size_t n = d.control.size();
+            if (n < p + 2)
+                return err("The spline would have too few control vertices.");
+            const std::size_t i = nearest(a);
+            d.control.erase(d.control.begin() + static_cast<std::ptrdiff_t>(i));
+            if (!d.weights.empty())
+                d.weights.erase(d.weights.begin() + static_cast<std::ptrdiff_t>(i));
+            // Drop an interior knot next to the vertex so the ends stay clamped.
+            const std::size_t kn = std::clamp<std::size_t>(i + 1, p + 1, n - 1);
+            d.knots.erase(d.knots.begin() + static_cast<std::ptrdiff_t>(kn));
+            d.fit.clear();
+            return done(std::move(d));
+        }
+    }
+    return err("Unsupported spline edit.");
 }
 
 // ---- FIND / replace ----------------------------------------------------------------------------

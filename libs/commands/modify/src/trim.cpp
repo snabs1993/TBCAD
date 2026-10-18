@@ -171,7 +171,7 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
         eo.keywords = {"Fence", "Crossing", "Edge", "Mode", "Undo"};
         if (trimMode)
             eo.keywords.insert(eo.keywords.begin() + 4, "Remove");
-        eo.filter = [&doc = ctx.doc()](const Entity& e) { return isEditable(doc, e); };
+        eo.filter = [&doc = ctx.doc()](const Entity& e) { return isTrimTarget(doc, e); };
         auto pick =
             co_await ctx.getEntity(trimMode ? "Select object to trim or Shift-select to extend or "
                                               "[Fence/Crossing/Edge/Mode/Remove/Undo]"
@@ -184,7 +184,7 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
                                                        : "Nothing to undo.");
             } else if (pick.keyword == "Remove") {
                 cmd::SelectionOptions so;
-                so.filter = [&doc = ctx.doc()](const Entity& e) { return isEditable(doc, e); };
+                so.filter = [&doc = ctx.doc()](const Entity& e) { return isTrimTarget(doc, e); };
                 so.allowPreselection = false;
                 auto sel = co_await ctx.getSelection("Select objects to erase <exit>", so);
                 if (sel.ok()) {

@@ -36,6 +36,8 @@ void sortUnique(std::vector<double>& v, double eps = 1e-9) {
 double curveFraction(const CurveRef& c, double t) {
     if (c.isLine())
         return std::clamp(t, 0.0, 1.0);
+    if (c.kind() == CurveRef::Kind::Spline)
+        return std::clamp((t - c.t0()) / c.sweep(), 0.0, 1.0);
     double off = normalizeAngle(t - c.t0());
     if (off > c.sweep())
         return (off - c.sweep() < kTwoPi - off) ? 1.0 : 0.0;
@@ -57,18 +59,26 @@ Result<EntityEdit> finishPieces(const Entity& target, std::vector<EntityData> pi
     return r;
 }
 
-std::optional<EntityData> pieceOf(const CurveRef& c, double u0, double u1) {
+std::optional<EntityData> pieceOf(const Entity& target, const CurveRef& c, double u0, double u1) {
     if (u1 - u0 <= 1e-12)
         return std::nullopt;
-    auto sub = c.subcurve(curveParamAt(c, u0), curveParamAt(c, u1));
+    const double ta = curveParamAt(c, u0), tb = curveParamAt(c, u1);
+    auto sub = c.subcurve(ta, tb);
     if (!sub || sub.value().length() <= tol::kLinear)
         return std::nullopt;
+    if (c.kind() == CurveRef::Kind::Spline) {
+        auto sp = geom::splineSubcurve(*entityAs<SplineData>(target), ta, tb);
+        if (!sp)
+            return std::nullopt;
+        return EntityData{Indirect<SplineData>(std::move(sp.value()))};
+    }
     return dataFromCurve(sub.value());
 }
 
 Result<EntityEdit> trimSingle(const Entity& target, const CurveRef& c, Vec2 pick,
                               const std::vector<CurveRef>& edges, const TrimOptions& opt) {
-    const bool periodic = !c.isLine() && c.sweep() >= kTwoPi - 1e-9;
+    const bool isSpline = c.kind() == CurveRef::Kind::Spline;
+    const bool periodic = !c.isLine() && !isSpline && c.sweep() >= kTwoPi - 1e-9;
     std::vector<double> cuts;
     for (const CurveRef& e : edges) {
         std::vector<geom::Intersection> xs;
@@ -81,6 +91,41 @@ Result<EntityEdit> trimSingle(const Entity& target, const CurveRef& c, Vec2 pick
     sortUnique(cuts);
     double up = curveFraction(c, c.paramAt(pick));
     std::vector<EntityData> pieces;
+
+    if (isSpline && c.isClosed()) {
+        // The seam is not a cut: what is left runs from the cut after the pick round to the one
+        // before it, possibly across the seam.
+        cuts.erase(
+            std::remove_if(cuts.begin(), cuts.end(), [](double u) { return u > 1.0 - 1e-9; }),
+            cuts.end());
+        sortUnique(cuts);
+        if (cuts.size() < 2)
+            return err("A closed curve needs two cutting points to be trimmed.");
+        double lo = cuts.back();
+        for (double x : cuts) {
+            if (x <= up)
+                lo = x;
+        }
+        auto it = std::upper_bound(cuts.begin(), cuts.end(), up);
+        const double hi = it == cuts.end() ? cuts.front() : *it;
+        if (lo > hi) {
+            if (auto d = pieceOf(target, c, hi, lo))
+                pieces.push_back(*d);
+        } else {
+            auto tail = pieceOf(target, c, hi, 1.0);
+            auto head = pieceOf(target, c, 0.0, lo);
+            if (tail && head) {
+                pieces.push_back(EntityData{
+                    Indirect<SplineData>(chainSplines(*std::get<Indirect<SplineData>>(*tail),
+                                                      *std::get<Indirect<SplineData>>(*head)))});
+            } else if (tail) {
+                pieces.push_back(*tail);
+            } else if (head) {
+                pieces.push_back(*head);
+            }
+        }
+        return finishPieces(target, std::move(pieces));
+    }
 
     if (periodic) {
         if (cuts.size() > 1 && 1.0 - cuts.back() + cuts.front() <= 1e-9)
@@ -121,11 +166,11 @@ Result<EntityEdit> trimSingle(const Entity& target, const CurveRef& c, Vec2 pick
     if (!lo && !hi)
         return err("No cutting edge crosses this object next to the pick point.");
     if (lo) {
-        if (auto d = pieceOf(c, 0.0, *lo))
+        if (auto d = pieceOf(target, c, 0.0, *lo))
             pieces.push_back(*d);
     }
     if (hi) {
-        if (auto d = pieceOf(c, *hi, 1.0))
+        if (auto d = pieceOf(target, c, *hi, 1.0))
             pieces.push_back(*d);
     }
     return finishPieces(target, std::move(pieces));
@@ -197,6 +242,50 @@ Result<EntityEdit> trimPolyline(const Entity& target, const PolylineData& raw, V
     return finishPieces(target, std::move(pieces));
 }
 
+// A ray or construction line is cut at the edges: the part under the pick goes, a ray keeps a
+// finite line towards its start and a new ray beyond the far cut.
+Result<EntityEdit> trimRay(const Entity& target, const RayData& r, Vec2 pick,
+                           const std::vector<CurveRef>& edges, const TrimOptions& opt) {
+    if (tol::isZeroLength(r.dir))
+        return err("The line has no direction.");
+    const CurveRef c = CurveRef::line(rayStart(r), rayEnd(r));
+    const double len = distance(c.lineA(), c.lineB());
+    const double first = r.infinite ? -kRayReach : 0.0;
+    std::vector<double> ts;
+    for (const CurveRef& e : edges) {
+        std::vector<geom::Intersection> xs;
+        geom::intersect(c, e, xs, false, opt.extendEdges);
+        for (const auto& x : xs)
+            ts.push_back(first + x.tA * len);
+    }
+    sortUnique(ts, 1e-7);
+    const double tp = dot(pick - r.origin, r.dir);
+    std::optional<double> lo, hi;
+    for (double t : ts) {
+        if (t < tp - 1e-7)
+            lo = t;
+    }
+    for (double t : ts) {
+        if (t >= tp - 1e-7) {
+            hi = t;
+            break;
+        }
+    }
+    if (!lo && !hi)
+        return err("No cutting edge crosses this object next to the pick point.");
+    auto at = [&](double t) { return r.origin + r.dir * t; };
+    std::vector<EntityData> pieces;
+    if (lo) {
+        if (r.infinite)
+            pieces.push_back(RayData{at(*lo), -r.dir, false});
+        else if (*lo > tol::kLinear)
+            pieces.push_back(LineData{r.origin, at(*lo)});
+    }
+    if (hi)
+        pieces.push_back(RayData{at(*hi), r.dir, false});
+    return finishPieces(target, std::move(pieces));
+}
+
 }  // namespace
 
 Result<EntityEdit> trimEntity(const Entity& target, Vec2 pick,
@@ -208,12 +297,15 @@ Result<EntityEdit> trimEntity(const Entity& target, Vec2 pick,
         case EntityKind::Line:
         case EntityKind::Circle:
         case EntityKind::Arc:
-        case EntityKind::Ellipse: {
+        case EntityKind::Ellipse:
+        case EntityKind::Spline: {
             std::vector<CurveRef> cs;
             if (!geom::curvesOf(target, cs) || cs.size() != 1)
                 return err("This object cannot be trimmed.");
             return trimSingle(target, cs[0], pick, ec, opt);
         }
+        case EntityKind::Ray:
+            return trimRay(target, *entityAs<RayData>(target), pick, ec, opt);
         case EntityKind::Polyline:
             return trimPolyline(target, *entityAs<PolylineData>(target), pick, ec, opt);
         default:

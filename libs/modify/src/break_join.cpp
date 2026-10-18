@@ -265,6 +265,8 @@ bool chainable(const SplineData& d) {
     return d.knots[0] < d.knots[n + p];
 }
 
+}  // namespace
+
 SplineData reversedSpline(SplineData d) {
     std::reverse(d.control.begin(), d.control.end());
     std::reverse(d.weights.begin(), d.weights.end());
@@ -301,6 +303,8 @@ SplineData chainSplines(const SplineData& a, const SplineData& b) {
         out.knots.push_back(b.knots[i] + shift);
     return out;
 }
+
+namespace {
 
 Item reversedItem(const Item& it) {
     Item r = it;

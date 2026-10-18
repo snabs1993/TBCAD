@@ -78,7 +78,7 @@ public:
 
         for (;;) {
             cmd::EntityOptions eo;
-            eo.filter = [&doc = ctx.doc()](const Entity& e) { return isEditable(doc, e); };
+            eo.filter = [&doc = ctx.doc()](const Entity& e) { return isTrimTarget(doc, e); };
             auto pick = co_await ctx.getEntity("Select object to offset or <exit>", eo);
             if (!pick.ok())
                 co_return;

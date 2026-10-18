@@ -279,3 +279,23 @@ TEST_CASE("an arc or circle offset inward past its radius is refused, not degene
     auto sq = offsetEntity(poly(pts({{0, 0}, {4, 0}, {4, 4}, {0, 4}}), true), 2.0);
     CHECK((!sq.ok() || sq.value().empty()));
 }
+
+TEST_CASE("offset a ray and a construction line sideways, at survey coordinates too") {
+    for (double ox : {0.0, 500123.456}) {
+        const double oy = ox * 9;
+        RayData r;
+        r.origin = {ox, oy};
+        r.dir = normalized(Vec2{3, 4});
+        for (bool infinite : {false, true}) {
+            r.infinite = infinite;
+            Entity e = make(r);
+            auto res = offsetToward(e, {ox - 10, oy + 10}, 5);  // the left of the direction
+            REQUIRE(res.ok());
+            REQUIRE(res.value().size() == 1);
+            const auto& o = as<RayData>(res.value()[0]);
+            CHECK(o.infinite == infinite);
+            CHECK(near(o.dir, r.dir));
+            CHECK(near(o.origin, Vec2{ox, oy} + perp(r.dir) * 5, 1e-6));
+        }
+    }
+}

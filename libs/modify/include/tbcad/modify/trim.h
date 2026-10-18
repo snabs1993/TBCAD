@@ -13,7 +13,8 @@ struct TrimOptions {
 };
 
 // Trims the part of `target` under `pick` away, back to the nearest cutting edges on both sides.
-// Works on lines, arcs, circles, ellipses and polylines. A circle becomes an arc, a closed
+// Works on lines, arcs, circles, ellipses, splines, rays, construction lines and polylines. A
+// circle becomes an arc, a ray keeps a line towards its start, a closed
 // polyline is opened at the cut. The edges are the entities that cut (the target itself must not
 // be among them); entities without curve geometry are ignored. With only one cutting edge on one
 // side of the pick, everything from the pick to that end is removed. Errors: no edge crosses the

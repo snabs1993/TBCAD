@@ -171,3 +171,92 @@ TEST_CASE("property: trimming never produces a zero-length entity") {
     }
     CHECK(trimmed > 50);
 }
+
+namespace {
+Entity splineThrough(std::vector<Vec2> fit) {
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = std::move(fit);
+    return make(Indirect<SplineData>(sp));
+}
+}  // namespace
+
+TEST_CASE("trim a spline at a line across it keeps the two ends as splines") {
+    for (double ox : {0.0, 500123.456}) {
+        const double oy = ox * 9;
+        Entity target =
+            splineThrough({{ox, oy}, {ox + 10, oy + 20}, {ox + 30, oy - 20}, {ox + 40, oy}});
+        Entity edge = line({ox + 19, oy - 50}, {ox + 19, oy + 50});
+        std::vector<Entity> edges{edge};
+        // Pick near the middle of the curve: both sides cut by the one edge, the pick side goes.
+        auto r = trimEntity(target, {ox + 25, oy - 5}, ptrs(edges));
+        REQUIRE(r.ok());
+        REQUIRE(r.value().modified.has_value());
+        const auto& rest = as<SplineData>(*r.value().modified);
+        CHECK(rest.control.size() >= 4);
+        std::vector<geom::CurveRef> cs;
+        REQUIRE(geom::curvesOf(*r.value().modified, cs));
+        REQUIRE(cs.size() == 1);
+        // What is left starts where the spline started and ends on the edge.
+        CHECK(near(cs[0].startPoint(), {ox, oy}, 1e-6));
+        CHECK(near(cs[0].endPoint().x, ox + 19, 1e-6));
+    }
+}
+
+TEST_CASE("trim a ray: the stretch under the pick goes, a finite line stays towards the start") {
+    for (double ox : {0.0, 500123.456}) {
+        RayData ray;
+        ray.origin = {ox, ox * 9};
+        ray.dir = {1, 0};
+        Entity target = make(ray);
+        std::vector<Entity> edges{line({ox + 10, ox * 9 - 5}, {ox + 10, ox * 9 + 5}),
+                                  line({ox + 30, ox * 9 - 5}, {ox + 30, ox * 9 + 5})};
+        auto r = trimEntity(target, {ox + 20, ox * 9}, ptrs(edges));
+        REQUIRE(r.ok());
+        REQUIRE(r.value().modified.has_value());
+        REQUIRE(r.value().added.size() == 1);
+        CHECK(near(as<LineData>(*r.value().modified).a, {ox, ox * 9}));
+        CHECK(near(as<LineData>(*r.value().modified).b, {ox + 10, ox * 9}));
+        CHECK(near(as<RayData>(r.value().added[0]).origin, {ox + 30, ox * 9}));
+        CHECK(near(as<RayData>(r.value().added[0]).dir, {1, 0}));
+    }
+}
+
+TEST_CASE("trim a construction line: it becomes rays away from the cut") {
+    RayData x;
+    x.origin = {4, 4};
+    x.dir = {0, 1};
+    x.infinite = true;
+    Entity target = make(x);
+    std::vector<Entity> edges{line({-5, 10}, {5, 10})};
+    auto r = trimEntity(target, {4, 15}, ptrs(edges));
+    REQUIRE(r.ok());
+    REQUIRE(r.value().modified.has_value());
+    CHECK(r.value().added.empty());
+    const auto& ray = as<RayData>(*r.value().modified);
+    CHECK_FALSE(ray.infinite);
+    CHECK(near(ray.origin, {4, 10}));
+    CHECK(near(ray.dir, {0, -1}));  // the part below the cut stays, running down
+}
+
+TEST_CASE("trim a closed spline between two cuts leaves one open spline across the seam") {
+    std::vector<Vec2> fit;
+    for (int i = 0; i < 12; ++i)
+        fit.push_back({50 * std::cos(2 * kPi * i / 12), 50 * std::sin(2 * kPi * i / 12)});
+    geom::InterpolateOptions io;
+    io.closed = true;
+    auto done = geom::interpolateSpline(fit, io);
+    REQUIRE(done.ok());
+    Entity target = make(Indirect<SplineData>(done.value()));
+    std::vector<Entity> edges{line({-60, 20}, {60, 20}), line({-60, -20}, {60, -20})};
+    auto r = trimEntity(target, {50, 0}, ptrs(edges));  // the right-hand side between the lines
+    REQUIRE(r.ok());
+    REQUIRE(r.value().modified.has_value());
+    std::vector<geom::CurveRef> cs;
+    REQUIRE(geom::curvesOf(*r.value().modified, cs));
+    REQUIRE(cs.size() == 1);
+    CHECK(near(cs[0].startPoint().y, 20, 0.5));
+    CHECK(near(cs[0].endPoint().y, -20, 0.5));
+    CHECK(cs[0].pointAt(0.5 * (cs[0].t0() + cs[0].t1())).x < 0);  // the long way round, to the left
+}

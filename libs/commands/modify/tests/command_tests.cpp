@@ -1170,3 +1170,23 @@ TEST_CASE("MEASURE with the Block option rotates blocks along an arc at survey c
     });
     CHECK(n == 1);
 }
+
+TEST_CASE("SPLINEDIT edits the control vertices of a CV spline and converts it to a polyline") {
+    Fixture f;
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = {{0, 0}, {10, 20}, {30, -20}, {40, 0}};
+    EntityId id = f.add(Indirect<SplineData>(sp));
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "Add", "20,0", "Exit"});
+    CHECK(entityAs<SplineData>(f.get(id))->control.size() == 5);
+    f.host.undo();
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "Move", "10,20", "10,30", "Exit"});
+    CHECK(near(entityAs<SplineData>(f.get(id))->control[1], {10, 30}));
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 30}), "Weight", "10,30", "4", "Exit"});
+    REQUIRE(entityAs<SplineData>(f.get(id))->weights.size() == 4);
+    CHECK(entityAs<SplineData>(f.get(id))->weights[1] == doctest::Approx(4));
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 30}), "Polyline", "0.1"});
+    CHECK(f.count(EntityKind::Polyline) == 1);
+    CHECK(f.count(EntityKind::Spline) == 0);
+}
