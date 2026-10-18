@@ -96,6 +96,7 @@ private:
     void readDimStyle(const Record& r);
     void readLayerRow(const Record& r);
     void readAppId(const Record& r);
+    void readUcs(const Record& r);
     void createLevels();
     LevelId levelFor(const Record& r);
     void createLayers();

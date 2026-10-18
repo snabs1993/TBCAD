@@ -67,6 +67,7 @@ public:
     // Not owned; may be null.
     void setFilterChain(PointFilterChain* chain) { chain_ = chain; }
     void setLineParser(CommandLineParser* parser) { parser_ = parser; }
+    double ucsAngle() const { return parser_ ? parser_->ucsAngle() : 0; }
 
 private:
     struct Active {
@@ -83,6 +84,8 @@ private:
     SubmitResult answerTop(const Input& input);
     Vec2 filtered(const RawInput& raw, bool click, const std::optional<Vec2>& base);
     PointParseContext parseContext(const detail::PromptRequest& req) const;
+    // What a typed angle at an in-UCS prompt is turned by: the rotation of the current UCS.
+    double ucsTurn(const detail::PromptRequest& req) const;
 
     Document& doc_;
     UndoStack& undo_;

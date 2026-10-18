@@ -86,6 +86,7 @@ public:
     const std::vector<EntityId>& selection() const override { return selection_; }
     void setSelection(std::vector<EntityId> ids) override { selection_ = std::move(ids); }
     std::optional<std::string> setting(std::string_view key) const override;
+    double ucsAngle() const override { return runner_.ucsAngle(); }
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return settingsFolder_; }
     void setSettingsFolder(std::filesystem::path p) { settingsFolder_ = std::move(p); }

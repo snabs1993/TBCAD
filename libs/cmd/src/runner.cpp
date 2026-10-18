@@ -225,6 +225,10 @@ Vec2 CommandRunner::filtered(const RawInput& raw, bool click, const std::optiona
     return p;
 }
 
+double CommandRunner::ucsTurn(const detail::PromptRequest& req) const {
+    return req.angleInUcs && parser_ ? parser_->ucsAngle() : 0;
+}
+
 PointParseContext CommandRunner::parseContext(const detail::PromptRequest& req) const {
     PointParseContext c;
     c.base = req.base;
@@ -478,7 +482,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 case K::Real:
                     if (req.defaultReal) {
                         ans.status = Status::Ok;
-                        ans.real = *req.defaultReal;
+                        ans.real = *req.defaultReal + ucsTurn(req);
                     } else {
                         ans.status = Status::None;
                     }
@@ -688,7 +692,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     double a = 0;
                     auto ang = parseAngle(text);
                     if (ang) {
-                        a = ang.value();
+                        a = ang.value() + ucsTurn(req);
                     } else if (req.base) {
                         auto p = parsePointText(text, parseContext(req));
                         if (!p)

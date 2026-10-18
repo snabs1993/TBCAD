@@ -29,6 +29,7 @@ std::optional<Vec2> parseTypedPoint(std::string_view text, const cmd::PointParse
 class TypedPointParser final : public cmd::CommandLineParser {
 public:
     explicit TypedPointParser(const DraftingEnv* env = nullptr) : env_(env) {}
+    double ucsAngle() const override;
     std::optional<Vec2> parsePoint(std::string_view text,
                                    const cmd::PointParseContext& ctx) override;
 

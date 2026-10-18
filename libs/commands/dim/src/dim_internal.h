@@ -60,7 +60,7 @@ bool isMeasurable(const Entity& e);
 bool measurableEnds(const Entity& e, Vec2 pick, Vec2& a, Vec2& b);
 // Centre and radius of a circle, an arc, or the bulged polyline segment nearest to `pick`.
 bool circleOf(const Entity& e, Vec2& c, double& r, const Vec2* pick = nullptr);
-double autoRotation(Vec2 p1, Vec2 p2, Vec2 c);
+double autoRotation(Vec2 p1, Vec2 p2, Vec2 c, double ucs = 0);
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain);
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain,
                     DimStyleId style);

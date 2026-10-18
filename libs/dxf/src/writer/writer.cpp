@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 #include <set>
+#include <sstream>
 
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
@@ -752,7 +753,38 @@ std::string Writer::tablesSection() {
         tableBegin(o, "VIEW", table, 0);
         tableEnd(o);
         table = newHandle();
-        tableBegin(o, "UCS", table, 0);
+        // Named coordinate systems (Header::custom["tbcad.ucs"], name TAB x TAB y TAB angle): the
+        // origin and the X and Y axis directions, as in a UCS table record.
+        struct Row {
+            std::string name;
+            double x, y, a;
+        };
+        std::vector<Row> ucs;
+        if (auto it = doc_.header().custom.find("tbcad.ucs"); it != doc_.header().custom.end()) {
+            std::istringstream in(it->second);
+            std::string line;
+            while (std::getline(in, line)) {
+                std::vector<std::string> f;
+                std::size_t from = 0;
+                for (std::size_t t; (t = line.find('\t', from)) != std::string::npos; from = t + 1)
+                    f.push_back(line.substr(from, t - from));
+                f.push_back(line.substr(from));
+                if (f.size() == 4 && !f[0].empty())
+                    ucs.push_back({f[0], std::strtod(f[1].c_str(), nullptr),
+                                   std::strtod(f[2].c_str(), nullptr),
+                                   std::strtod(f[3].c_str(), nullptr)});
+            }
+        }
+        tableBegin(o, "UCS", table, ucs.size());
+        for (const Row& u : ucs) {
+            tableRecord(o, "UCS", newHandle(), table, "AcDbUCSTableRecord", u.name, 0);
+            o.pt(10, {u.x, u.y});
+            o.d(30, 0);
+            o.pt(11, {std::cos(u.a), std::sin(u.a)});
+            o.d(31, 0);
+            o.pt(12, {-std::sin(u.a), std::cos(u.a)});
+            o.d(32, 0);
+        }
         tableEnd(o);
     }
     {

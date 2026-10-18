@@ -220,6 +220,7 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
         case 6:
             d.kind = DimKind::Ordinate;
             d.rotation = (flags & 64) ? 0 : kPi / 2;
+            d.oblique = r.num(51) * kDeg;
             d.defPts = {P(r, 13, 23), P(r, 14, 24), P(r, 10, 20), Vec2{}};
             break;
         default:

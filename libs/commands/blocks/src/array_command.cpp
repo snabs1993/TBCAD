@@ -360,6 +360,7 @@ private:
         (void)source;
         (void)doc;
         blocks::RectArray spec;
+        spec.angle = ctx.host().ucsAngle();  // rows run along the UCS X axis
         spec.rows = 3;
         spec.columns = 4;
         spec.columnSpacing = box.empty() || box.width() <= 0 ? 10.0 : niceSpacing(box.width());
@@ -430,7 +431,8 @@ private:
             } else if (opt.keyword == "Angle") {
                 auto ang = co_await ctx.getAngle(
                     "Specify the angle of the array <" + niceNumber(spec.angle * 180 / kPi) + ">",
-                    cmd::AngleOptions{.defaultValue = spec.angle});
+                    cmd::AngleOptions{.defaultValue = spec.angle - ctx.host().ucsAngle(),
+                                      .inUcs = true});
                 if (!ang.ok())
                     co_return;
                 spec.angle = ang.value;

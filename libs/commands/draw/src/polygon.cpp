@@ -113,8 +113,9 @@ public:
                 return regular(center, r, phi, sides);
             return regular(center, r / std::cos(kPi / sides), phi - kPi / sides, sides);
         };
-        auto angleOf = [center](Vec2 p) {
-            return tol::isZeroLength(p - center) ? 0.0 : std::atan2(p.y - center.y, p.x - center.x);
+        const double ucs = ctx.host().ucsAngle();
+        auto angleOf = [center, ucs](Vec2 p) {
+            return tol::isZeroLength(p - center) ? ucs : std::atan2(p.y - center.y, p.x - center.x);
         };
         cmd::DistanceOptions ro;
         ro.base = center;

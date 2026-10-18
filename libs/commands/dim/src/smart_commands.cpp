@@ -16,8 +16,9 @@ bool isDimensionable(const Entity& e) {
     return isMeasurable(e) || isCircleOrArc(e);
 }
 
-bool axisAligned(Vec2 a, Vec2 b) {
+bool axisAligned(Vec2 a, Vec2 b, double ucs) {
     Vec2 d = b - a;
+    d = {d.x * std::cos(-ucs) - d.y * std::sin(-ucs), d.x * std::sin(-ucs) + d.y * std::cos(-ucs)};
     const double len = length(d);
     return len > 0 && (std::abs(d.x) < 1e-6 * len || std::abs(d.y) < 1e-6 * len);
 }
@@ -62,7 +63,7 @@ public:
                     ctx.message("That object cannot be dimensioned.");
                     continue;
                 }
-                mode = axisAligned(p1, p2) ? Mode::Linear : Mode::Aligned;
+                mode = axisAligned(p1, p2, ctx.host().ucsAngle()) ? Mode::Linear : Mode::Aligned;
                 if (const auto* l = entityAs<LineData>(*e))
                     first = *l;
             }
@@ -82,12 +83,13 @@ public:
                 else
                     lo.keywords = {"Text", "Aligned", "Linear"};
                 auto* c = &ctx;
+                const double ucs = ctx.host().ucsAngle();
                 auto build = [=](Vec2 cursor) {
                     DimensionData d;
                     switch (mode) {
                         case Mode::Linear:
                             d.kind = DimKind::Linear;
-                            d.rotation = autoRotation(p1, p2, cursor);
+                            d.rotation = autoRotation(p1, p2, cursor, ucs);
                             d.defPts = {p1, p2, cursor, {}};
                             break;
                         case Mode::Aligned:

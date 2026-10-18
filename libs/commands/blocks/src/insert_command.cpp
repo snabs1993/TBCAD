@@ -103,7 +103,7 @@ public:
         ctx.host().setSetting(kLastBlockSetting, def->name);
 
         // Placement. Scale and rotation can be changed before the point is picked.
-        InsertData data{block, {}, {1, 1}, 0};
+        InsertData data{block, {}, {1, 1}, ctx.host().ucsAngle()};  // squared to the UCS
         // Keeps placing copies (same scale and rotation) until Enter or Esc, like a drafter
         // dropping furniture symbols one after another.
         bool multiple = false;
@@ -165,8 +165,9 @@ public:
                                            // placed
                     ctx.message("Placing several copies: Enter or Esc to finish.");
                 } else if (p.keyword == "Rotate") {
-                    auto a = co_await ctx.getAngle("Specify rotation angle <0>",
-                                                   cmd::AngleOptions{.defaultValue = 0.0});
+                    auto a = co_await ctx.getAngle(
+                        "Specify rotation angle <0>",
+                        cmd::AngleOptions{.defaultValue = 0.0, .inUcs = true});
                     if (!a.ok())
                         co_return;
                     data.rotation = normalizeAngle(a.value);

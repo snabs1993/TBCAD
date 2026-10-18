@@ -2648,6 +2648,10 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 
+double AppCore::ucsAngle() const {
+    return session_ && session_->runner ? session_->runner->ucsAngle() : 0;
+}
+
 std::optional<std::string> AppCore::setting(std::string_view key) const {
     if (key == "document.file")
         return documentFile();

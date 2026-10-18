@@ -386,7 +386,9 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
                 o.rotation = rotationOf(t, o.rotation);
             if (o.textRotated)
                 o.textRotation = rotationOf(t, o.textRotation);
-            if (t.determinant() < 0)
+            if (o.kind == DimKind::Ordinate)
+                o.oblique = rotationOf(t, o.oblique);  // the angle of the UCS X axis
+            else if (t.determinant() < 0)
                 o.oblique = -o.oblique;  // a mirror leans the extension lines the other way
             return out;
         }

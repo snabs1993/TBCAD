@@ -405,14 +405,16 @@ private:
         if (!pattern)
             return 0;
         ctx.checkpoint();
-        Entity hatch = makeHatchEntity(b, *pattern, p.scale, p.angle, p.base);
+        // The angle typed is from the UCS X axis.
+        const double angle = p.angle + ctx.host().ucsAngle();
+        Entity hatch = makeHatchEntity(b, *pattern, p.scale, angle, p.base);
         if (p.scaleAuto)
             entityAs<HatchData>(hatch)->patternScale = autoScale(*entityAs<HatchData>(hatch));
         if (!p.associative)
             entityAs<HatchData>(hatch)->sourceBoundary.clear();
         if (gradient_) {
             GradientData g = p.gradient;
-            g.angle = p.angle;
+            g.angle = angle;
             entityAs<HatchData>(hatch)->gradient = g;
         }
         applyCurrentProperties(ctx.doc().header(), hatch);

@@ -48,6 +48,11 @@ public:
     virtual std::optional<std::string> setting(std::string_view /*key*/) const { return {}; }
     virtual void setSetting(std::string_view /*key*/, std::string /*value*/) {}
 
+    // Rotation of the current user coordinate system (radians, counter-clockwise from world +X);
+    // 0 in hosts without drafting aids. Commands that make axis-aligned things (RECTANGLE, the
+    // horizontal of a dimension, text) align them to it.
+    virtual double ucsAngle() const { return 0; }
+
     // Path of the open drawing (UTF-8), empty when it was never saved. Setting "document.file" says
     // the same for hosts that only expose settings.
     virtual std::string documentFile() const { return {}; }
