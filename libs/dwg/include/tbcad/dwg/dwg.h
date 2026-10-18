@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "tbcad/dxf/reader.h"
 
@@ -48,6 +49,11 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
 // steps, section sizes and the import messages. It contains no drawing content (only counts and a
 // few raw bytes of each section).
 std::string describe(std::span<const std::byte> bytes);
+
+// Diagnostic for R2007 files: tries other arrangements of the literal-run cuts whose order is not
+// certain, keeps the one that imports the most entities from all the given files (fewest warnings
+// on a tie) and returns a text with the scores. Contains counts only, no drawing content.
+std::string searchCuts(const std::vector<std::span<const std::byte>>& files);
 
 // Which revision of the reader this program contains (to check that a test build is current).
 std::string readerRevision();

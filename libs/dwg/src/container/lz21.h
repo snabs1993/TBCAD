@@ -2,6 +2,7 @@
 // (ODA spec section 5.10).
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -9,6 +10,10 @@
 #include <vector>
 
 namespace tbcad::dwg::detail {
+
+// Block sizes of the remainder of a literal run, in stream order, by the run's length modulo 32
+// (see lz21.cpp). Mutable only so the diagnostic cut search can try other arrangements.
+std::array<std::vector<std::uint8_t>, 32>& lz21Cuts();
 
 // Expands `in` into exactly `expected` bytes. Returns false when the stream is damaged or ends
 // early; `why` (optional) then says where. `consumed` (optional) receives the number of input
