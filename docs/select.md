@@ -3,7 +3,7 @@
 | Command | Alias | What it does |
 |---|---|---|
 | `QSELECT` | `QSEL` | Select objects whose type, layer, level, colour, linetype, lineweight, transparency, hatch pattern, text height, radius or length equals (or differs from) a value; the numeric ones also take Greater and Less |
-| `SELECTSIMILAR` | `SELSIM` | Select everything that matches a picked object (type and layer unless Settings says otherwise) |
+| `SELECTSIMILAR` | `SELSIM` | Select everything that matches a picked object (type and layer unless Settings says otherwise; Settings can also match colour, linetype, lineweight, level, transparency, style and size) |
 | `FILTER` | `FI` | Build a list of conditions (all must hold), select the matches; `Save` / `Use` keep named filters in the file |
 | `MATCHPROP` | `MA` | Copy properties between objects (in the Modify module) |
 | `CHPROP` | `CH` | Change one property of the selection (also what Quick Properties runs) |

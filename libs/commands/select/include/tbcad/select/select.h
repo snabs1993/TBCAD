@@ -75,7 +75,17 @@ std::string encodeFilter(const std::vector<Query>& queries);
 std::vector<Query> decodeFilter(const std::string& text);
 std::vector<std::string> savedFilters(const Document& doc);
 
-enum class Match : unsigned { Type = 1, Layer = 2, Color = 4, Linetype = 8, Lineweight = 16 };
+enum class Match : unsigned {
+    Type = 1,
+    Layer = 2,
+    Color = 4,
+    Linetype = 8,
+    Lineweight = 16,
+    Level = 32,
+    Transparency = 64,
+    Style = 128,  // text style, dimension style or hatch pattern
+    Size = 256    // text height or circle and arc radius
+};
 
 // Visible model-space objects that agree with `reference` on every property in `match` (the
 // reference itself is included).
