@@ -5,6 +5,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -336,7 +337,12 @@ struct Rig {
     std::string dump() const { return canonicalDump(doc); }
     void select() { host.setSelection(ids); }
     bool fileRoundTrips(std::string* why) {
-        const auto file = std::filesystem::temp_directory_path() / "tbcad_transform_prop.tbcad";
+        // A name of its own: ctest runs the test cases as parallel processes.
+        static std::atomic<unsigned> counter{0};
+        static const std::string tag = std::to_string(std::random_device{}());
+        const auto file =
+            std::filesystem::temp_directory_path() /
+            ("tbcad_transform_prop_" + tag + "_" + std::to_string(counter++) + ".tbcad");
         REQUIRE(io::writeTbcad(doc, file).ok());
         io::IoReport rep;
         auto back = io::readTbcad(file, rep);
