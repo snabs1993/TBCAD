@@ -1060,3 +1060,65 @@ TEST_CASE("file dialogs: Save As and Open round trip a drawing from the keyboard
     CHECK_FALSE(h.windowOpen("File"));
     CHECK(entityCount(h) == 1);
 }
+
+TEST_CASE("dynamic input: Tab fields lock distance and angle for the next point") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.core().setSetting("drafting.ortho", "0");
+    h.core().setSetting("drafting.polar", "0");
+    h.frame(3);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().zoomExtents();
+    h.frame(5);
+    const ImVec2 c = screenOf(h, {0, 0});
+    h.moveMouse(c.x + 200, c.y - 100);
+    h.frame(5);
+    // The HUD shows both fields.
+    h.key(ImGuiKey_Tab);
+    h.frame(3);
+    h.type("50");
+    h.key(ImGuiKey_Enter);
+    h.frame(3);
+    h.type("90");
+    h.key(ImGuiKey_Enter);
+    h.frame(5);
+    h.core().pressEscape();
+    h.frame(3);
+    REQUIRE(entityCount(h) == 1);
+    h.core().document().forEachEntity([&](const Entity& e) {
+        const auto* ln = std::get_if<LineData>(&e.data);
+        REQUIRE(ln);
+        CHECK(ln->b.x == doctest::Approx(0).epsilon(1e-6).scale(1));
+        CHECK(ln->b.y == doctest::Approx(50).epsilon(1e-6));
+    });
+}
+
+TEST_CASE("viewport menu: Recent Input answers the prompt with a value typed before") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.command("CIRCLE");
+    h.command("0,0");
+    h.command("25");
+    h.frame(3);
+    REQUIRE(entityCount(h) == 1);
+    h.command("CIRCLE");
+    h.command("100,0");  // now at the radius prompt
+    const ImVec2 spot = screenOf(h, {600, 300});
+    h.click(spot.x, spot.y, 1);
+    h.frame(2);
+    REQUIRE(h.click("Recent Input", "Popup"));
+    h.frame(2);
+    CHECK(h.has("25", "Menu"));
+    CHECK(h.has("100,0", "Menu"));
+    REQUIRE(h.click("25", "Menu"));
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    CHECK(entityCount(h) == 2);
+    int radius25 = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* c = std::get_if<CircleData>(&e.data))
+            radius25 += c->radius == doctest::Approx(25);
+    });
+    CHECK(radius25 == 2);
+}
