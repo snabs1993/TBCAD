@@ -240,3 +240,49 @@ TEST_CASE("number expressions and units") {
     CHECK_FALSE(parseNumberExpr("(1+2").ok());
     CHECK_FALSE(parseNumberExpr("5 furlongs").ok());
 }
+
+TEST_CASE("geometry fields of point, ellipse, text, insert and ray are readable and editable") {
+    Document doc;
+    EntityId pt = addEntity(doc, PointData{{3, 4}});
+    EllipseData el;
+    el.center = {5, 5};
+    el.majorAxis = {6, 0};
+    el.ratio = 0.5;
+    EntityId e = addEntity(doc, Indirect<EllipseData>(el));
+    TextData td;
+    td.position = {1, 2};
+    td.alignPoint = {1, 2};
+    td.utf8 = "Hi";
+    td.height = 2.5;
+    EntityId t = addEntity(doc, Indirect<TextData>(td));
+    RayData rd;
+    rd.origin = {0, 0};
+    rd.dir = {1, 0};
+    EntityId r = addEntity(doc, Indirect<RayData>(rd));
+    auto val = [&](EntityId id, const char* f) {
+        for (auto& g : geometryFields(*doc.find(id)))
+            if (g.id == f)
+                return g.value;
+        FAIL("missing field");
+        return 0.0;
+    };
+    CHECK(val(pt, "x") == doctest::Approx(3));
+    CHECK(val(e, "majorradius") == doctest::Approx(6));
+    CHECK(val(e, "minorradius") == doctest::Approx(3));
+    CHECK(val(t, "height") == doctest::Approx(2.5));
+    CHECK(val(r, "angle") == doctest::Approx(0));
+
+    auto tx = doc.begin("edit");
+    REQUIRE(setGeometryField(tx, pt, "y", 9).ok());
+    REQUIRE(setGeometryField(tx, e, "minorradius", 2).ok());
+    CHECK_FALSE(setGeometryField(tx, e, "minorradius", 7).ok());
+    REQUIRE(setGeometryField(tx, t, "x", 10).ok());
+    CHECK_FALSE(setGeometryField(tx, t, "height", 0).ok());
+    REQUIRE(setGeometryField(tx, r, "angle", 90).ok());
+    tx.commit();
+    CHECK(entityAs<PointData>(*doc.find(pt))->p.y == doctest::Approx(9));
+    CHECK(entityAs<EllipseData>(*doc.find(e))->ratio == doctest::Approx(1.0 / 3));
+    CHECK(entityAs<TextData>(*doc.find(t))->position.x == doctest::Approx(10));
+    CHECK(entityAs<TextData>(*doc.find(t))->alignPoint.x == doctest::Approx(10));
+    CHECK(entityAs<RayData>(*doc.find(r))->dir.y == doctest::Approx(1));
+}

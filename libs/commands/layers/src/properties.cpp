@@ -178,6 +178,61 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         num("length", "Length", geom::length(*p), false);
         num("area", "Area", geom::area(*p), false);
         num("width", "Global width", p->constantWidth);
+    } else if (const auto* pt = entityAs<PointData>(e)) {
+        num("x", "X", pt->p.x);
+        num("y", "Y", pt->p.y);
+    } else if (const auto* el = entityAs<EllipseData>(e)) {
+        const double major = std::hypot(el->majorAxis.x, el->majorAxis.y);
+        num("centerx", "Center X", el->center.x);
+        num("centery", "Center Y", el->center.y);
+        num("majorradius", "Major radius", major);
+        num("minorradius", "Minor radius", major * el->ratio);
+        num("ratio", "Radius ratio", el->ratio);
+        out.push_back({"rotation", "Rotation", FieldType::Angle, true,
+                       deg(normalizeAngle(std::atan2(el->majorAxis.y, el->majorAxis.x)))});
+        out.push_back(
+            {"startparam", "Start parameter", FieldType::Angle, true, deg(el->startParam)});
+        out.push_back({"endparam", "End parameter", FieldType::Angle, true, deg(el->endParam)});
+    } else if (const auto* sp = entityAs<SplineData>(e)) {
+        out.push_back(
+            {"degree", "Degree", FieldType::Count, false, static_cast<double>(sp->degree)});
+        out.push_back({"controlpoints", "Control points", FieldType::Count, false,
+                       static_cast<double>(sp->control.size())});
+        out.push_back({"fitpoints", "Fit points", FieldType::Count, false,
+                       static_cast<double>(sp->fit.size())});
+        out.push_back({"closed", "Closed", FieldType::Flag, false, sp->closed ? 1.0 : 0.0});
+    } else if (const auto* t = entityAs<TextData>(e)) {
+        num("x", "Position X", t->position.x);
+        num("y", "Position Y", t->position.y);
+        num("height", "Height", t->height);
+        out.push_back({"rotation", "Rotation", FieldType::Angle, true, deg(t->rotation)});
+        num("widthfactor", "Width factor", t->widthFactor);
+        out.push_back({"oblique", "Oblique angle", FieldType::Angle, true, deg(t->oblique)});
+    } else if (const auto* mt = entityAs<MTextData>(e)) {
+        num("x", "Position X", mt->position.x);
+        num("y", "Position Y", mt->position.y);
+        num("height", "Text height", mt->height);
+        num("width", "Defined width", mt->width);
+        out.push_back({"rotation", "Rotation", FieldType::Angle, true, deg(mt->rotation)});
+    } else if (const auto* in = entityAs<InsertData>(e)) {
+        num("x", "Position X", in->position.x);
+        num("y", "Position Y", in->position.y);
+        num("scalex", "Scale X", in->scale.x);
+        num("scaley", "Scale Y", in->scale.y);
+        out.push_back({"rotation", "Rotation", FieldType::Angle, true, deg(in->rotation)});
+    } else if (const auto* ray = entityAs<RayData>(e)) {
+        num("x", "Base X", ray->origin.x);
+        num("y", "Base Y", ray->origin.y);
+        out.push_back({"angle", "Angle", FieldType::Angle, true,
+                       deg(normalizeAngle(std::atan2(ray->dir.y, ray->dir.x)))});
+    } else if (const auto* ld = entityAs<LeaderData>(e)) {
+        out.push_back({"vertices", "Vertices", FieldType::Count, false,
+                       static_cast<double>(ld->vertices.size())});
+    } else if (const auto* ml = entityAs<MlineData>(e)) {
+        out.push_back(
+            {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(ml->v.size())});
+        out.push_back({"closed", "Closed", FieldType::Flag, true, ml->closed ? 1.0 : 0.0});
+        num("scale", "Scale", ml->scale);
     }
     return out;
 }
@@ -250,6 +305,109 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                 p->constantWidth = v;
             } else
                 return fail(bad("A polyline has no editable field \"" + f + "\"."));
+        } else if (auto* pt = entityAs<PointData>(e)) {
+            if (f == "x")
+                pt->p.x = v;
+            else if (f == "y")
+                pt->p.y = v;
+            else
+                return fail(bad("A point has no editable field \"" + f + "\"."));
+        } else if (auto* el = entityAs<EllipseData>(e)) {
+            const double major = std::hypot(el->majorAxis.x, el->majorAxis.y);
+            const double ang = std::atan2(el->majorAxis.y, el->majorAxis.x);
+            if (f == "centerx")
+                el->center.x = v;
+            else if (f == "centery")
+                el->center.y = v;
+            else if (f == "majorradius" || f == "minorradius" || f == "ratio") {
+                if (v <= 0)
+                    return fail(bad("A radius or ratio must be greater than zero."));
+                double newMajor = major, newRatio = el->ratio;
+                if (f == "majorradius")
+                    newMajor = v;
+                else if (f == "minorradius")
+                    newRatio = v / major;
+                else
+                    newRatio = v;
+                // The minor axis may not become longer than the major one.
+                if (newRatio > 1)
+                    return fail(bad("The minor radius cannot exceed the major radius."));
+                el->majorAxis = Vec2{std::cos(ang), std::sin(ang)} * newMajor;
+                el->ratio = newRatio;
+            } else if (f == "rotation") {
+                el->majorAxis = Vec2{std::cos(rad(v)), std::sin(rad(v))} * major;
+            } else if (f == "startparam") {
+                el->startParam = rad(v);
+            } else if (f == "endparam") {
+                el->endParam = rad(v);
+            } else
+                return fail(bad("An ellipse has no editable field \"" + f + "\"."));
+        } else if (auto* t = entityAs<TextData>(e)) {
+            if (f == "x" || f == "y") {
+                // The alignment point travels with the position.
+                const Vec2 before = t->position;
+                (f == "x" ? t->position.x : t->position.y) = v;
+                t->alignPoint = t->alignPoint + (t->position - before);
+            } else if (f == "height") {
+                if (v <= 0)
+                    return fail(bad("Height must be greater than zero."));
+                t->height = v;
+            } else if (f == "rotation")
+                t->rotation = rad(v);
+            else if (f == "widthfactor") {
+                if (v <= 0)
+                    return fail(bad("Width factor must be greater than zero."));
+                t->widthFactor = v;
+            } else if (f == "oblique")
+                t->oblique = rad(v);
+            else
+                return fail(bad("Text has no editable field \"" + f + "\"."));
+        } else if (auto* mt = entityAs<MTextData>(e)) {
+            if (f == "x")
+                mt->position.x = v;
+            else if (f == "y")
+                mt->position.y = v;
+            else if (f == "height") {
+                if (v <= 0)
+                    return fail(bad("Height must be greater than zero."));
+                mt->height = v;
+            } else if (f == "width") {
+                if (v < 0)
+                    return fail(bad("Width cannot be negative."));
+                mt->width = v;
+            } else if (f == "rotation")
+                mt->rotation = rad(v);
+            else
+                return fail(bad("Multiline text has no editable field \"" + f + "\"."));
+        } else if (auto* in = entityAs<InsertData>(e)) {
+            if (f == "x")
+                in->position.x = v;
+            else if (f == "y")
+                in->position.y = v;
+            else if (f == "scalex" || f == "scaley") {
+                if (v == 0)
+                    return fail(bad("A scale cannot be zero."));
+                (f == "scalex" ? in->scale.x : in->scale.y) = v;
+            } else if (f == "rotation")
+                in->rotation = rad(v);
+            else
+                return fail(bad("A block reference has no editable field \"" + f + "\"."));
+        } else if (auto* ray = entityAs<RayData>(e)) {
+            if (f == "x")
+                ray->origin.x = v;
+            else if (f == "y")
+                ray->origin.y = v;
+            else if (f == "angle")
+                ray->dir = Vec2{std::cos(rad(v)), std::sin(rad(v))};
+            else
+                return fail(bad("A ray has no editable field \"" + f + "\"."));
+        } else if (auto* ml = entityAs<MlineData>(e)) {
+            if (f == "closed")
+                ml->closed = v != 0;
+            else if (f == "scale")
+                ml->scale = v;
+            else
+                return fail(bad("A multiline has no editable field \"" + f + "\"."));
         } else {
             fail(bad("This kind of object has no geometry fields."));
         }
