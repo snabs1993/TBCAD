@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "dim_internal.h"
 #include "tbcad/blocks/tbcad_blocks.h"

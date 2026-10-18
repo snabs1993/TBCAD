@@ -1,5 +1,6 @@
 // TCOUNT: numbers the selected single-line text objects in the order they were selected.
 #include <cmath>
+#include <cstdio>
 
 #include "commands.h"
 

@@ -1,4 +1,6 @@
 // DWGPROPS: title, subject, author, keywords and comments of the drawing, kept in the file header.
+#include <cctype>
+
 #include "extra.h"
 
 namespace tbcad::inquiry {

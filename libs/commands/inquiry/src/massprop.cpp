@@ -1,6 +1,7 @@
 // MASSPROP: area, perimeter, bounding box, centroid and second moments of a closed 2D shape.
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "extra.h"
 #include "tbcad/geom/geom.h"
