@@ -1294,14 +1294,18 @@ std::vector<EntityId> Transaction::touchedEntities() const {
     return ids;
 }
 
-void Transaction::touchEntity(EntityId id) {
+void Transaction::touchEntity(EntityId id, bool consume) {
     if ((id.value >= startNextId_ && id.value < doc_->allocCursor()) || touched_.count(id))
         return;
-    const Entity* e = doc_->find(id);
+    Entity* e = doc_->findMutable(id);
     if (!e)
         return;
     touched_.emplace(id, static_cast<std::uint32_t>(beforeSnaps_.size()));
-    beforeSnaps_.push_back(*e);
+    // An entity that is erased right after is moved into the snapshot instead of copied.
+    if (consume)
+        beforeSnaps_.push_back(std::move(*e));
+    else
+        beforeSnaps_.push_back(*e);
 }
 
 template <class Row, class IdT>
@@ -1376,7 +1380,7 @@ Result<void> Transaction::eraseEntityInternal(EntityId id) {
     Document& d = doc();
     if (!d.find(id))
         return makeError(ErrorCode::NotFound, "unknown entity");
-    touchEntity(id);
+    touchEntity(id, true);
     auto ow = d.owner_.find(id);
     if (ow != d.owner_.end()) {
         BlockId b = ow->second;
@@ -1705,11 +1709,14 @@ ChangeSet Transaction::commit() {
     ChangeSet cs;
     cs.name = name_;
 
+    // Touched ids in id order. The snapshots are kept in the order the entities were touched,
+    // which for a bulk edit of the whole drawing is already ascending: sort only if it is not.
     std::vector<EntityId> touchedIds;
-    touchedIds.reserve(touched_.size());
-    for (const auto& kv : touched_)
-        touchedIds.push_back(kv.first);
-    std::sort(touchedIds.begin(), touchedIds.end());
+    touchedIds.reserve(beforeSnaps_.size());
+    for (const Entity& snap : beforeSnaps_)
+        touchedIds.push_back(snap.common.id);
+    if (!std::is_sorted(touchedIds.begin(), touchedIds.end()))
+        std::sort(touchedIds.begin(), touchedIds.end());
 
     std::size_t added = 0;
     for (std::uint64_t v = startNextId_; v < d.allocCursor(); ++v) {

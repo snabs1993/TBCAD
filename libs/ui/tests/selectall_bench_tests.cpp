@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/layout/layout.h"
@@ -69,9 +70,62 @@ TEST_CASE("perf: select all on a drawing of many block inserts") {
     t = std::chrono::steady_clock::now();
     {
         auto tx = core.document().begin("erase all");
-        for (EntityId id : core.document().modelSpace())
+        const auto ids = core.document().modelSpace();
+        std::printf("  modelSpace: %.0f ms\n", ms(t));
+        auto t1 = std::chrono::steady_clock::now();
+        for (EntityId id : ids)
             (void)tx.erase(id);
+        std::printf("  erase loop: %.0f ms\n", ms(t1));
+        t1 = std::chrono::steady_clock::now();
         tx.commit();
+        std::printf("  commit (observers): %.0f ms\n", ms(t1));
     }
     std::printf("erase all (commit + scene sync): %.0f ms\n", ms(t));
+    t = std::chrono::steady_clock::now();
+    core.updateFrame();
+    std::printf("updateFrame after erase: %.0f ms\n", ms(t));
+}
+
+TEST_CASE("perf: erase all of polylines and texts") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("eraseheavy") / "cfg", tempDir("eraseheavy") / "data"});
+    core.setViewportSize(1400, 900);
+    const char* env = std::getenv("TBCAD_BENCH_N");
+    const int n = env ? std::atoi(env) : 100000;
+    {
+        auto tx = core.document().begin("gen");
+        for (int i = 0; i < n; ++i) {
+            PolylineData p;
+            for (int k = 0; k < 30; ++k)
+                p.v.push_back({{(i % 500) * 30.0 + k, (i / 500) * 30.0 + k % 3}, 0, 0, 0});
+            Entity e;
+            e.data = std::move(p);
+            (void)tx.add(std::move(e));
+            TextData t;
+            t.position = {(i % 500) * 30.0, (i / 500) * 30.0};
+            t.utf8 = "label number " + std::to_string(i) + " with a longer text body";
+            Entity te;
+            te.data = std::move(t);
+            (void)tx.add(std::move(te));
+        }
+        tx.commit();
+    }
+    core.updateFrame();
+    auto t = std::chrono::steady_clock::now();
+    {
+        auto tx = core.document().begin("erase all");
+        const auto ids = core.document().modelSpace();
+        auto t1 = std::chrono::steady_clock::now();
+        for (EntityId id : ids)
+            (void)tx.erase(id);
+        std::printf("  heavy erase loop: %.0f ms\n", ms(t1));
+        t1 = std::chrono::steady_clock::now();
+        tx.commit();
+        std::printf("  heavy commit: %.0f ms\n", ms(t1));
+    }
+    std::printf("heavy erase all (%d entities): %.0f ms\n", 2 * n, ms(t));
+    t = std::chrono::steady_clock::now();
+    core.updateFrame();
+    std::printf("heavy updateFrame after erase: %.0f ms\n", ms(t));
 }
