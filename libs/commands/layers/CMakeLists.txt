@@ -15,6 +15,7 @@ set(_layers_sources
   src/properties.cpp
   src/layer_commands.cpp
   src/layer_tools.cpp
+  src/laytrans.cpp
   src/laywalk.cpp
   src/property_commands.cpp
   src/register.cpp

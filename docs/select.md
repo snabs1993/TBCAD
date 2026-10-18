@@ -9,7 +9,8 @@
 | `CHPROP` | `CH` | Change one property of the selection (also what Quick Properties runs) |
 | `QUICKPROPERTIES` | `QP` | Show or hide the Quick Properties box (also View > Quick Properties) |
 | `ISOLATE` / `HIDE` / `UNISOLATE` | | Hide or show objects without touching their layers |
-| `PURGE` | `PU` | Remove unused layers, blocks, styles and linetypes |
+| `PURGE` | `PU` | Remove unused layers, blocks, styles and linetypes; names the layers and blocks it removed |
+| `LAYTRANS` | | Bring layers to an office standard: `Export` writes all layers to a CSV (`Old,New,Color,Linetype,Lineweight`), `Load` applies a CSV, renaming each layer or merging it into the existing layer of the new name and restyling it; one undo step |
 
 ## Mouse
 

@@ -318,6 +318,7 @@ void registerLayerTools(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LayMchCommand>());
     (void)registry.add(std::make_unique<LayMrgCommand>());
     (void)registry.add(std::make_unique<LayDelCommand>());
+    (void)registry.add(makeLayTransCommand());
     (void)registry.add(
         std::make_unique<CommandLayerCommand>("DIMLAYER", "dimensions and leaders", kDimLayerKey));
     (void)registry.add(std::make_unique<CommandLayerCommand>("HPLAYER", "hatches", kHatchLayerKey));

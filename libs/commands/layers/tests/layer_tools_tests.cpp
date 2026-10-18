@@ -1,5 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/layers/layer_ops.h"
@@ -149,4 +153,40 @@ TEST_CASE("DIMLAYER and TEXTLAYER send new dimensions and text to their layer, '
             ++onCurrent;
     });
     CHECK(onCurrent == 1);
+}
+
+TEST_CASE("LAYTRANS renames, merges and restyles layers from a CSV standard; Export writes one") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_laytrans";
+    fs::create_directories(dir);
+    Fixture f;
+    f.setup();  // layers A (with ea) and B (with eb)
+    const std::string std_ = (dir / "std.csv").string();
+    {
+        std::ofstream o(std_, std::ios::binary);
+        o << "\xEF\xBB\xBF" << "Old,New,Color,Linetype,Lineweight\r\n"
+          << "A,A-WALL,red,,\r\n"
+          << "B,A-WALL,,,\r\n"
+          << "Missing,Whatever,,,\r\n";
+    }
+    CHECK(f.run("LAYTRANS", {"Load", std_}).finished);
+    const Layer* wall = f.doc.layerByName("A-WALL");
+    REQUIRE(wall);
+    CHECK(f.doc.layerByName("A") == nullptr);
+    CHECK(f.doc.layerByName("B") == nullptr);
+    CHECK(f.doc.find(f.ea)->common.layer == wall->id);
+    CHECK(f.doc.find(f.eb)->common.layer == wall->id);
+    CHECK(wall->color == Color::index(1));
+    CHECK(f.host.logContains("1 renamed, 1 merged"));
+    CHECK(f.host.undo());
+    CHECK(f.doc.layerByName("A") != nullptr);
+    CHECK(f.doc.layerByName("B") != nullptr);
+
+    const std::string out = (dir / "out.csv").string();
+    CHECK(f.run("LAYTRANS", {"Export", out}).finished);
+    std::ifstream in(out, std::ios::binary);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    CHECK(buf.str().find("A,A,") != std::string::npos);
+    fs::remove_all(dir);
 }

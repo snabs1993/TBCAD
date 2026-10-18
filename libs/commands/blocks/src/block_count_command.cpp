@@ -30,7 +30,7 @@ Entity lineEntity(Vec2 a, Vec2 b) {
 class BlockCountCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BLOCKCOUNT"; }
-    std::vector<std::string> defaultAliases() const override { return {"BCOUNT"}; }
+    std::vector<std::string> defaultAliases() const override { return {"BCOUNT", "COUNT"}; }
     std::string_view description() const override { return "Count the inserts of each block"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
