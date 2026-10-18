@@ -20,6 +20,8 @@ public:
         std::function<void()> scaleChanged{};
         // Label for a key binding action ("file.save" -> "File > Save"); falls back to the id.
         std::function<std::string(const std::string&)> actionLabel{};
+        // The options were all put back to their defaults: refresh what the window cached.
+        std::function<void()> settingsReset{};
     };
 
     explicit SettingsDialog(Hooks hooks) : hooks_(std::move(hooks)) {}

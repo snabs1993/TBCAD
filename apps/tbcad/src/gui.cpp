@@ -127,7 +127,8 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
           [this] { return static_cast<int>(themeMode_); },
           [this](int mode) { setThemeMode(static_cast<ui::ThemeMode>(mode)); },
           [this] { setDpiScale(dpiScale_); },
-          [this](const std::string& action) { return actionLabel(action); }}),
+          [this](const std::string& action) { return actionLabel(action); },
+          [this] { cursorHud_ = core_.settings().getBool("hud.enabled", true); }}),
       workspaces_(core.settingsFolder() / "workspaces") {
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
@@ -2167,7 +2168,8 @@ void Gui::cursorHud(const ViewportRect& rect) {
     const bool options = !info->keywords.empty();
     // Stay inside the drawing: flip to the other side of the cursor near the right and bottom
     // edges (the size is the previous frame's).
-    const float gap = 16 * dpiScale_;
+    // Far enough from the crosshair that the box does not cover the object being pointed at.
+    const float gap = 28 * dpiScale_;
     ImVec2 hudPos(hudAnchor_.x + gap, hudAnchor_.y + gap);
     if (hudPos.x + hudSize_.x > rect.x + rect.w)
         hudPos.x = hudAnchor_.x - gap - hudSize_.x;

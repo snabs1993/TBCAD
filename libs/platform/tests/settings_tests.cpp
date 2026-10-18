@@ -77,3 +77,21 @@ TEST_CASE("recent files: most recent first, no duplicates, capped") {
     s.removeRecentFile("f10.tbcad");
     CHECK(s.recentFiles()[0] == "f14.tbcad");
 }
+
+TEST_CASE("resetToDefaults restores the dialog's options and keeps recent files") {
+    Settings s = Settings::withDefaults();
+    s.setString("ui.theme", "light");
+    s.setNumber("ui.scale", 1.5);
+    s.setString("view.crosshair", "off");
+    s.setBool("hud.enabled", false);
+    s.addRecentFile("a.tbcad");
+    s.setString("custom.thing", "keep");
+    s.resetToDefaults();
+    CHECK(s.getString("ui.theme") == "dark");
+    CHECK(s.getNumber("ui.scale") == 1.0);
+    CHECK_FALSE(s.has("view.crosshair"));
+    CHECK_FALSE(s.has("hud.enabled"));
+    CHECK(s.recentFiles().size() == 1);
+    CHECK(s.getString("custom.thing") == "keep");
+    CHECK(s.dirty());
+}

@@ -90,6 +90,30 @@ void SettingsDialog::draw(ui::AppCore& core) {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
+    if (ImGui::Button("Reset all settings...", ImVec2(170, 0)))
+        ImGui::OpenPopup("Reset settings?");
+    if (ImGui::BeginPopupModal(
+            "Reset settings?", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextUnformatted(
+            "Put every option on these pages back to its default?\n"
+            "Key bindings, aliases, recent files and workspaces are kept.");
+        if (ImGui::Button("Reset", ImVec2(100, 0))) {
+            core.settings().resetToDefaults();
+            if (hooks_.setThemeMode)
+                hooks_.setThemeMode(0);  // dark, the default
+            if (hooks_.scaleChanged)
+                hooks_.scaleChanged();
+            if (hooks_.settingsReset)
+                hooks_.settingsReset();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
     ImGui::TextDisabled("Changes are saved as you make them.");
     ImGui::EndPopup();
 }
