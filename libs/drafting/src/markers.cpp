@@ -76,6 +76,34 @@ void drawSnapMarker(Overlay& o, const render::Camera2D& camera, Vec2 p, SnapMode
             o.line(Space::Screen, {c.x - h, c.y - h}, {c.x + h, c.y + h}, st);
             o.line(Space::Screen, {c.x - h, c.y + h}, {c.x + h, c.y - h}, st);
             break;
+        case SnapMode::Insertion:
+            // Two small squares, one corner shared.
+            poly(o,
+                 {{c.x - h, c.y - h},
+                  {c.x + h * 0.3, c.y - h},
+                  {c.x + h * 0.3, c.y + h * 0.3},
+                  {c.x - h, c.y + h * 0.3}},
+                 true, st);
+            poly(o,
+                 {{c.x - h * 0.3, c.y - h * 0.3},
+                  {c.x + h, c.y - h * 0.3},
+                  {c.x + h, c.y + h},
+                  {c.x - h * 0.3, c.y + h}},
+                 true, st);
+            break;
+        case SnapMode::ApparentIntersection:
+            // The intersection cross inside a square.
+            poly(o,
+                 {{c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}},
+                 true, st);
+            o.line(Space::Screen, {c.x - h, c.y - h}, {c.x + h, c.y + h}, st);
+            o.line(Space::Screen, {c.x - h, c.y + h}, {c.x + h, c.y - h}, st);
+            break;
+        case SnapMode::Extension:
+            // Three dots in a row.
+            for (double dx : {-h, 0.0, h})
+                o.line(Space::Screen, {c.x + dx - h * 0.12, c.y}, {c.x + dx + h * 0.12, c.y}, st);
+            break;
     }
 }
 

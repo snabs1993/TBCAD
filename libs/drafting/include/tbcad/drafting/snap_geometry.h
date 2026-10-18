@@ -17,6 +17,7 @@ struct SnapGeometry {
     std::vector<Vec2> centers{};
     std::vector<Vec2> quadrants{};
     std::vector<Vec2> nodes{};
+    std::vector<Vec2> insertions{};  // insertion points of text, mtext and blocks
     std::vector<geom::CurveRef> curves{};
 };
 
@@ -26,7 +27,9 @@ struct SnapGeometry {
 using SnapGeometryProvider = std::function<void(const Document&, const Entity&, SnapGeometry&)>;
 
 // Providers keyed by entity kind. A fresh registry holds the built-in providers for Line,
-// Circle, Arc, Polyline, Ellipse, Spline (curves plus the geom snap helpers) and Point (node).
+// Circle, Arc, Polyline, Ellipse, Spline (curves plus the geom snap helpers), Point (node), Text,
+// MText (insertion point), Dimension (definition points as nodes, text as insertion), Leader,
+// MLeader (vertices, lines), Ray (origin, line) and Mline (vertices).
 class SnapGeometryRegistry {
 public:
     SnapGeometryRegistry();

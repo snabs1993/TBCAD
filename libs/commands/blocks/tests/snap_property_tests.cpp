@@ -115,8 +115,11 @@ TEST_CASE(
             rq.apertureMm = 12;
             rq.modes = drafting::kAllSnapModes;
             for (const auto& c : drafting::findSnapCandidates(w.doc, w.idx, rq)) {
-                if (c.mode == drafting::SnapMode::Center)
-                    continue;  // a centre is not on the curve
+                // A centre, an insertion point and an apparent intersection are not on the curve.
+                if (c.mode == drafting::SnapMode::Center ||
+                    c.mode == drafting::SnapMode::Insertion ||
+                    c.mode == drafting::SnapMode::ApparentIntersection)
+                    continue;
                 for (EntityId id : {c.entity, c.entity2}) {
                     if (!id)
                         continue;
