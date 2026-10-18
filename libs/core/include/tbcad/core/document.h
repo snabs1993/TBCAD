@@ -203,6 +203,9 @@ struct NextIds {
 };
 
 class Transaction;
+namespace detail {
+struct ObjectRefs;
+}
 
 class Document {
 public:
@@ -394,6 +397,11 @@ public:
 
     Result<void> modifyHeader(const std::function<void(Header&)>& fn);
 
+    // For erasing many table rows in a row (PURGE): while on, "is the row in use by an object?"
+    // is answered from one scan of the drawing instead of one scan per row. Erasing objects keeps
+    // the answer valid (it can only err towards "in use"); adding or changing an object drops it.
+    void cacheObjectReferences(bool on);
+
     // Ids of the entities that existed when the transaction began and have been modified or erased
     // by it so far (entities added in this transaction are not listed). Sorted by id. Lets
     // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
@@ -431,6 +439,7 @@ private:
     void touchBlock(BlockId id);
     void touchOrder(EntityId id);
     Document& doc() const;
+    const detail::ObjectRefs* objectRefs();
     Result<void> eraseEntityInternal(EntityId id);
 
     Document* doc_ = nullptr;
@@ -441,6 +450,8 @@ private:
     std::vector<EntityId> outOfArea_{};
     BlockId defaultOwner_{};
     std::optional<Header> headerBefore_{};
+    bool cacheRefs_ = false;
+    std::unique_ptr<detail::ObjectRefs> refs_{};  // built on first use while cacheRefs_
     std::map<EntityId, OrderChange> order_{};
     Pending<Layer, LayerId> pLayers_{};
     Pending<Level, LevelId> pLevels_{};

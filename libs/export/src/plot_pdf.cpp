@@ -30,25 +30,32 @@ public:
         }
     }
     void closeLayer() {
+        flush();
         if (layer_ != 0)
             page_.endLayer();
         layer_ = 0;
     }
 
+    // Strokes the pending sub-paths in one operation.
+    void flush() {
+        if (pending_ == 0)
+            return;
+        page_.stroke();
+        pending_ = 0;
+    }
+
     void path(const PlotPath& p) {
-        layer(p.style.layer);
-        apply(p.style, p.style.dashMm.empty() ? pdf::LineCap::Round : pdf::LineCap::Butt);
+        begin(p.style);
         page_.moveTo(p.pts[0].x, p.pts[0].y);
         for (std::size_t i = 1; i < p.pts.size(); ++i)
             page_.lineTo(p.pts[i].x, p.pts[i].y);
         if (p.closed)
             page_.closePath();
-        page_.stroke();
+        ++pending_;
     }
 
     void arc(const PlotArc& a) {
-        layer(a.style.layer);
-        apply(a.style, a.style.dashMm.empty() ? pdf::LineCap::Round : pdf::LineCap::Butt);
+        begin(a.style);
         if (a.full) {
             page_.moveTo(a.center.x + a.radius, a.center.y);
             page_.arcTo(a.center.x, a.center.y, a.radius, 0, kTwoPi, true);
@@ -56,10 +63,11 @@ public:
         } else {
             page_.arcTo(a.center.x, a.center.y, a.radius, a.start, a.end, true);
         }
-        page_.stroke();
+        ++pending_;
     }
 
     void fill(const PlotFill& f) {
+        flush();
         layer(f.layer);
         page_.setFillRGB(f.color.r / 255.0, f.color.g / 255.0, f.color.b / 255.0);
         for (const auto& ring : f.rings) {
@@ -72,6 +80,7 @@ public:
     }
 
     void dots(const PlotDots& d) {
+        flush();
         layer(d.style.layer);
         PlotStyle st = d.style;
         apply(st, pdf::LineCap::Round);
@@ -84,11 +93,27 @@ public:
 
     // Graphics state was saved or restored behind our back: forget what is set.
     void reset() {
+        flush();
         have_ = false;
         cap_ = pdf::LineCap::Butt;
     }
 
 private:
+    // Lines and arcs of one style and layer, one after another, become one painted path: much
+    // smaller and faster to read than a stroke each. (Capped, as some readers limit path size.)
+    void begin(const PlotStyle& st) {
+        if (pending_ > 0 &&
+            (pending_ >= kMaxPending || st.layer != layer_ || !sameStyle(st, last_)))
+            flush();
+        if (pending_ == 0) {
+            layer(st.layer);
+            apply(st, st.dashMm.empty() ? pdf::LineCap::Round : pdf::LineCap::Butt);
+        }
+    }
+
+    static constexpr int kMaxPending = 400;
+    int pending_ = 0;
+
     void apply(const PlotStyle& st, pdf::LineCap cap) {
         if (!have_ || !sameStyle(st, last_)) {
             page_.setStrokeRGB(st.color.r / 255.0, st.color.g / 255.0, st.color.b / 255.0);

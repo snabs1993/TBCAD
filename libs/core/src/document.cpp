@@ -650,42 +650,83 @@ bool isBuiltin(DimStyleId id) {
     return id == kDimStyleStandard;
 }
 
-bool inUse(const Document& d, LayerId id) {
+}  // namespace
+
+namespace detail {
+// Which table rows the objects (blocks' included) refer to; see Transaction::cacheObjectReferences.
+struct ObjectRefs {
+    std::unordered_set<std::uint32_t> layers, levels, linetypes, textStyles, dimStyles, blocks;
+};
+}  // namespace detail
+
+namespace {
+
+std::unique_ptr<detail::ObjectRefs> scanObjectRefs(const Document& d) {
+    auto r = std::make_unique<detail::ObjectRefs>();
+    d.forEachEntity([&](const Entity& e) {
+        r->layers.insert(e.common.layer.value);
+        r->levels.insert(e.common.level.value);
+        r->linetypes.insert(e.common.linetype.value);
+        if (const auto* t = entityAs<TextData>(e))
+            r->textStyles.insert(t->style.value);
+        else if (const auto* t = entityAs<MTextData>(e))
+            r->textStyles.insert(t->style.value);
+        else if (const auto* t = entityAs<DimensionData>(e))
+            r->dimStyles.insert(t->style.value);
+        else if (const auto* t = entityAs<LeaderData>(e))
+            r->dimStyles.insert(t->style.value);
+        else if (const auto* t = entityAs<MLeaderData>(e))
+            r->dimStyles.insert(t->style.value);
+        else if (const auto* t = entityAs<InsertData>(e))
+            r->blocks.insert(t->block.value);
+    });
+    return r;
+}
+
+bool inUse(const Document& d, LayerId id, const detail::ObjectRefs* refs = nullptr) {
     if (d.header().currentLayer == id)
         return true;
     for (const auto& [lid, l] : d.layers()) {
         if (l.parent == id)
             return true;  // has sub-layers
     }
+    if (refs)
+        return refs->layers.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) { used = used || e.common.layer == id; });
     return used;
 }
-bool inUse(const Document& d, LevelId id) {
+bool inUse(const Document& d, LevelId id, const detail::ObjectRefs* refs = nullptr) {
     if (d.header().currentLevel == id)
         return true;
+    if (refs)
+        return refs->levels.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) { used = used || e.common.level == id; });
     return used;
 }
-bool inUse(const Document& d, LinetypeId id) {
+bool inUse(const Document& d, LinetypeId id, const detail::ObjectRefs* refs = nullptr) {
     if (d.header().currentLinetype == id)
         return true;
     for (const auto& [lid, l] : d.layers()) {
         if (l.linetype == id)
             return true;
     }
+    if (refs)
+        return refs->linetypes.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) { used = used || e.common.linetype == id; });
     return used;
 }
-bool inUse(const Document& d, TextStyleId id) {
+bool inUse(const Document& d, TextStyleId id, const detail::ObjectRefs* refs = nullptr) {
     if (d.header().currentTextStyle == id)
         return true;
     for (const auto& [sid, s] : d.dimStyles()) {
         if (s.textStyle == id)
             return true;
     }
+    if (refs)
+        return refs->textStyles.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) {
         if (const auto* t = entityAs<TextData>(e))
@@ -695,9 +736,11 @@ bool inUse(const Document& d, TextStyleId id) {
     });
     return used;
 }
-bool inUse(const Document& d, DimStyleId id) {
+bool inUse(const Document& d, DimStyleId id, const detail::ObjectRefs* refs = nullptr) {
     if (d.header().currentDimStyle == id)
         return true;
+    if (refs)
+        return refs->dimStyles.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) {
         if (const auto* t = entityAs<DimensionData>(e))
@@ -709,7 +752,9 @@ bool inUse(const Document& d, DimStyleId id) {
     });
     return used;
 }
-bool inUse(const Document& d, BlockId id) {
+bool inUse(const Document& d, BlockId id, const detail::ObjectRefs* refs = nullptr) {
+    if (refs)
+        return refs->blocks.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) {
         if (const auto* t = entityAs<InsertData>(e))
@@ -1274,6 +1319,19 @@ Transaction::Transaction(Transaction&& o) noexcept
         doc_->active_ = this;
 }
 
+void Transaction::cacheObjectReferences(bool on) {
+    cacheRefs_ = on;
+    refs_.reset();
+}
+
+const detail::ObjectRefs* Transaction::objectRefs() {
+    if (!cacheRefs_)
+        return nullptr;
+    if (!refs_)
+        refs_ = scanObjectRefs(*doc_);
+    return refs_.get();
+}
+
 Transaction::~Transaction() {
     if (doc_)
         rollback();
@@ -1335,6 +1393,7 @@ void Transaction::touchOrder(EntityId id) {
 
 Result<EntityId> Transaction::add(Entity entity, BlockId owner) {
     Document& d = doc();
+    refs_.reset();
     if (!owner)
         owner = defaultOwner_;
     if (owner && !d.block(owner))
@@ -1359,6 +1418,7 @@ Result<EntityId> Transaction::add(Entity entity, BlockId owner) {
 }
 
 Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>& fn) {
+    refs_.reset();
     Document& d = doc();
     Entity* live = d.findMutable(id);
     if (!live)
@@ -1481,7 +1541,7 @@ Result<void> Transaction::eraseRow(detail::Table<Row, IdT>& t, Pending<Row, IdT>
         return makeError(ErrorCode::NotFound, "unknown table row");
     if (isBuiltin(id))
         return makeError(ErrorCode::Conflict, "built-in row cannot be deleted");
-    if (inUse(*doc_, id))
+    if (inUse(*doc_, id, objectRefs()))
         return makeError(ErrorCode::Conflict, "row is in use");
     touchRow(t, p, id);
     replaceRow<Row, IdT>(t, id, std::nullopt);
@@ -1561,7 +1621,7 @@ Result<void> Transaction::eraseBlock(BlockId id) {
     const BlockDef* def = d.block(id);
     if (!def)
         return makeError(ErrorCode::NotFound, "unknown block");
-    if (inUse(d, id))
+    if (inUse(d, id, objectRefs()))
         return makeError(ErrorCode::Conflict, "block is referenced by an insert");
     std::vector<EntityId> members = def->entities;
     for (EntityId e : members) {
