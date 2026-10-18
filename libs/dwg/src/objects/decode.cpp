@@ -879,7 +879,9 @@ private:
                 l.xdic = lastXdic_;
                 for (const std::vector<std::uint8_t>& d : eed_) {
                     // The layer's transparency is a block of one 32-bit integer (code 0x47).
-                    if (d.size() == 5 && d[0] == 0x47)
+                    // Other applications store plain integers the same way; a transparency
+                    // is 0x01000000 (by block) or 0x02000000 plus the alpha byte.
+                    if (d.size() == 5 && d[0] == 0x47 && (d[4] == 0x01 || d[4] == 0x02))
                         l.transparency =
                             static_cast<long long>(static_cast<std::uint32_t>(d[1]) |
                                                    (static_cast<std::uint32_t>(d[2]) << 8) |
