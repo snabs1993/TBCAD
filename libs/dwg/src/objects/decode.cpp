@@ -1582,6 +1582,9 @@ private:
                 break;
             }
         }
+        r.seekBit(end);
+        r.bs();  // cloning flag
+        tally(kXRecord, r);
         if (!r.failed() && !ints.empty())
             out_.xrecordInts[self] = std::move(ints);
     }

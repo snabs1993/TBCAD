@@ -361,6 +361,47 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         }
                     }
                 }
+                {
+                    // Per layer: the extension dictionary handle, whether it was read, and the
+                    // entries with the integers of their XRECORDs (group code=value).
+                    std::string xt = "layer xdict trace:";
+                    std::size_t listed = 0, noHandle = 0, notRead = 0;
+                    for (const auto& [lh, l] : drawing.layers) {
+                        if (l.xdic == 0) {
+                            ++noHandle;
+                            continue;
+                        }
+                        const auto xd = drawing.dictionaries.find(l.xdic);
+                        if (xd == drawing.dictionaries.end())
+                            ++notRead;
+                        const bool wanted = l.name.find("COLNHATC") != std::string::npos;
+                        if (!wanted && listed >= 25)
+                            continue;
+                        ++listed;
+                        const auto dt = drawing.rawType.find(l.xdic);
+                        xt += " | " + l.name + " xdic=" + std::to_string(l.xdic) + " type=" +
+                              (dt == drawing.rawType.end() ? std::string("absent")
+                                                           : std::to_string(dt->second));
+                        if (xd == drawing.dictionaries.end())
+                            continue;
+                        for (const auto& [nm, th] : xd->second) {
+                            xt += " [" + nm + "->" + std::to_string(th);
+                            const auto ty = drawing.rawType.find(th);
+                            xt += ty == drawing.rawType.end() ? ":absent"
+                                                              : ":" + std::to_string(ty->second);
+                            const auto xr = drawing.xrecordInts.find(th);
+                            if (xr != drawing.xrecordInts.end())
+                                for (const auto& [gc, gv] : xr->second)
+                                    xt += " " + std::to_string(gc) + "=" + std::to_string(gv);
+                            xt += "]";
+                        }
+                    }
+                    report.summary(code::kSkippedObject,
+                                   xt + " (layers without an xdic handle " +
+                                       std::to_string(noHandle) + ", xdic not read " +
+                                       std::to_string(notRead) + ", xrecords with integers " +
+                                       std::to_string(drawing.xrecordInts.size()) + ")");
+                }
                 report.summary(code::kSkippedObject,
                                xl + " (" + std::to_string(withDict) + " layers with one)");
                 {
