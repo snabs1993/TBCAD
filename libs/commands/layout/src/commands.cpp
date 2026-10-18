@@ -68,7 +68,7 @@ cmd::Task askViewport(cmd::CommandContext& ctx, const std::string& layoutName, i
         ok = true;
     } else if (r.ok()) {
         for (const layout::Viewport& v : lay->viewports)  // the last one is drawn on top
-            if (v.paper.contains(r.point)) {
+            if (layout::viewportContains(v, r.point)) {
                 id = v.id;
                 ok = true;
             }
@@ -466,6 +466,90 @@ public:
     }
 };
 
+// VPCLIP [VC]: gives a viewport an outline of any shape, from a closed polyline on the sheet or
+// from points picked one after another, or turns it back into a rectangle.
+class VpClipCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPCLIP"; }
+    std::vector<std::string> defaultAliases() const override { return {"VC"}; }
+    std::string_view description() const override {
+        return "Clip a viewport to a polygon or a closed polyline, or make it a rectangle again";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Object", "Polygonal", "Delete"};
+        ko.defaultKeyword = "Polygonal";
+        auto mode = co_await ctx.getKeyword(
+            "Select clipping object or [Object/Polygonal/Delete] <Polygonal>", ko);
+        if (!mode.ok())
+            co_return;
+        std::vector<Vec2> outline;
+        if (mode.keyword == "Delete") {
+            report(ctx, layout::setViewportClip(ctx.tx(), target, vpId, {}),
+                   "Viewport " + std::to_string(vpId) + " is a rectangle again.");
+            co_return;
+        }
+        if (mode.keyword == "Object") {
+            cmd::EntityOptions eo;
+            eo.filter = [](const Entity& e) {
+                const auto* pl = entityAs<PolylineData>(e);
+                return pl && pl->closed && pl->v.size() >= 3;
+            };
+            auto o = co_await ctx.getEntity("Select a closed polyline on the sheet", eo);
+            if (!o.ok())
+                co_return;
+            const Entity* e = ctx.doc().find(o.id);
+            const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr;
+            if (!pl)
+                co_return;
+            for (const PolyVertex& v : pl->v)
+                outline.push_back(v.p);
+        } else {
+            for (;;) {
+                cmd::PointOptions po;
+                if (!outline.empty())
+                    po.base = outline.back();
+                if (outline.size() >= 3)
+                    po.keywords = {"Close"};
+                po.preview = [&outline](Vec2 cursor, DisplayList& out) {
+                    DisplayPolyline pl;
+                    pl.pts = outline;
+                    pl.pts.push_back(cursor);
+                    if (pl.pts.size() >= 3)
+                        pl.closed = true;
+                    if (pl.pts.size() >= 2)
+                        out.items.emplace_back(std::move(pl));
+                };
+                po.allowNone = outline.size() >= 3;
+                auto p = co_await ctx.getPoint(outline.size() < 3
+                                                   ? "Specify point on the sheet (mm)"
+                                                   : "Specify next point or [Close] <accept>",
+                                               po);
+                if (p.status == Status::Keyword || p.status == Status::None)
+                    break;
+                if (!p.ok())
+                    co_return;
+                outline.push_back(p.point);
+            }
+        }
+        if (outline.size() < 3) {
+            ctx.message("A clip needs at least three points.");
+            co_return;
+        }
+        ctx.setUndoLabel("VPCLIP");
+        report(ctx, layout::setViewportClip(ctx.tx(), target, vpId, outline),
+               "Viewport " + std::to_string(vpId) + " is clipped to the outline.");
+    }
+};
+
 class VpResizeCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "VPRESIZE"; }
@@ -584,6 +668,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<VpDeleteCommand>());
     (void)registry.add(std::make_unique<VpMoveCommand>());
     (void)registry.add(std::make_unique<VpResizeCommand>());
+    (void)registry.add(std::make_unique<VpClipCommand>());
     (void)registry.add(std::make_unique<VpCenterCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
 }

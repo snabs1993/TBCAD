@@ -232,6 +232,39 @@ struct Mapper {
     Vec2 px(Vec2 mm) const { return {mm.x * k, height - mm.y * k}; }
 };
 
+// Pixels of `cv` inside the clip rectangle but outside the polygon (pixel coordinates, even-odd)
+// take their colour back from `before`: how a non-rectangular clip is applied after drawing.
+void restoreOutside(Canvas& cv, const std::vector<std::uint8_t>& before, const Ring& poly) {
+    if (poly.size() < 3)
+        return;
+    std::vector<double> xs;
+    for (int y = cv.cy0; y < cv.cy1; ++y) {
+        const double yc = y + 0.5;
+        xs.clear();
+        for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+            const Vec2 a = poly[j], b = poly[i];
+            if ((a.y > yc) != (b.y > yc))
+                xs.push_back(a.x + (yc - a.y) * (b.x - a.x) / (b.y - a.y));
+        }
+        std::sort(xs.begin(), xs.end());
+        std::size_t row = static_cast<std::size_t>(y) * cv.w * 3;
+        int x = cv.cx0;
+        auto restore = [&](int from, int to) {
+            from = std::max(from, cv.cx0);
+            to = std::min(to, cv.cx1);
+            if (to > from)
+                std::copy(before.begin() + row + static_cast<std::size_t>(from) * 3,
+                          before.begin() + row + static_cast<std::size_t>(to) * 3,
+                          cv.rgb.begin() + row + static_cast<std::ptrdiff_t>(from) * 3);
+        };
+        for (std::size_t k = 0; k + 1 < xs.size(); k += 2) {
+            restore(x, static_cast<int>(std::ceil(xs[k] - 0.5)));
+            x = std::max(x, static_cast<int>(std::ceil(xs[k + 1] - 0.5)));
+        }
+        restore(x, cv.cx1);
+    }
+}
+
 // A picture: every device pixel inside its (possibly turned) rectangle takes the average of 2x2
 // samples of the picture, blended over the sheet by the picture's opacity and alpha.
 void drawPicture(Canvas& cv, const PlotImage& im, const std::array<Vec2, 4>& dev) {
@@ -321,6 +354,11 @@ Result<RasterImage> rasterize(const PlotSheet& sheet, double dpi, std::int64_t m
         cv.cy1 = std::clamp(static_cast<int>(std::ceil(std::max(a.y, b.y))), 0, cv.h);
     };
     std::vector<std::array<int, 4>> stack;
+    struct PolyClip {
+        std::vector<std::uint8_t> before{};
+        Ring ring{};
+    };
+    std::vector<PolyClip> polys;
     setClip(lay.printable);
     auto saveClip = [&] { return std::array<int, 4>{cv.cx0, cv.cy0, cv.cx1, cv.cy1}; };
 
@@ -390,7 +428,18 @@ Result<RasterImage> rasterize(const PlotSheet& sheet, double dpi, std::int64_t m
                 cv.cy0 = std::max(cv.cy0, old[1]);
                 cv.cx1 = std::min(cv.cx1, old[2]);
                 cv.cy1 = std::min(cv.cy1, old[3]);
+                polys.emplace_back();
+                if (c->poly.size() >= 3) {  // draw inside the box, then undo what is outside
+                    polys.back().before = cv.rgb;
+                    for (const Vec2& v : c->poly)
+                        polys.back().ring.push_back(m.px(v));
+                }
             } else if (!stack.empty()) {
+                if (!polys.empty()) {
+                    if (!polys.back().ring.empty())
+                        restoreOutside(cv, polys.back().before, polys.back().ring);
+                    polys.pop_back();
+                }
                 const auto o = stack.back();
                 stack.pop_back();
                 cv.cx0 = o[0];

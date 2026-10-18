@@ -128,6 +128,13 @@ private:
             return;
         }
         const std::string id = "vp" + std::to_string(++clips_);
+        if (c.poly.size() >= 3) {
+            out_ << "<clipPath id=\"" << id << "\"><polygon clip-rule=\"evenodd\" points=\"";
+            for (std::size_t i = 0; i < c.poly.size(); ++i)
+                out_ << (i ? " " : "") << xy(c.poly[i]);
+            out_ << "\"/></clipPath>\n<g clip-path=\"url(#" << id << ")\">\n";
+            return;
+        }
         out_ << "<clipPath id=\"" << id << "\"><rect x=\"" << num(c.rect.min.x) << "\" y=\""
              << num(h_ - c.rect.max.y) << "\" width=\"" << num(c.rect.width()) << "\" height=\""
              << num(c.rect.height()) << "\"/></clipPath>\n<g clip-path=\"url(#" << id << ")\">\n";

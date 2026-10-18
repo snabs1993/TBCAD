@@ -88,7 +88,10 @@ void drawSheet(const exportlib::PlotSheet& sheet, const DeviceMetrics& m, Canvas
                 BBox2 r;
                 r.expand(toDevice(c->rect.min, m));
                 r.expand(toDevice(c->rect.max, m));
-                canvas.pushClip(r);
+                if (c->poly.size() >= 3)
+                    canvas.pushClipPolygon(conv(c->poly), r);
+                else
+                    canvas.pushClip(r);
                 ++clips;
             } else if (clips > 0) {
                 canvas.popClip();

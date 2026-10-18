@@ -465,6 +465,8 @@ TEST_CASE("layouts survive a DXF export and import") {
         if (!r.ok())
             return Result<void>(r.error());
         vp = r.value();
+        if (auto c = setViewportClip(tx, "Plan", vp, {{10, 10}, {300, 10}, {150, 200}}); !c)
+            return c;
         return setViewportLayerFrozen(tx, "Plan", vp, walls, true);
     });
     run(doc, "vp2", [&](Transaction& tx) {
@@ -497,8 +499,91 @@ TEST_CASE("layouts survive a DXF export and import") {
         CHECK(all[0].viewports[0].center.x == doctest::Approx(5000));
         CHECK(all[0].viewports[0].paper.max.x == doctest::Approx(300));
         CHECK(all[0].viewports[0].frozen.size() == 1);
+        REQUIRE(all[0].viewports[0].clip.size() == 3);
+        CHECK(all[0].viewports[0].clip[2].x == doctest::Approx(150));
         REQUIRE(all[1].viewports.size() == 1);
         CHECK(all[1].viewports[0].scaleN == doctest::Approx(20));
         CHECK(back.block(all[0].content)->entities.size() == planObjects);
     }
+}
+
+TEST_CASE("a clipped viewport plots only inside its outline and keeps the outline in the file") {
+    Document doc;
+    {
+        auto tx = doc.begin("model");
+        Entity e = line({0, 50}, {200, 50});
+        e.common.lineweight = LineWeight::mm(40);  // a band that fills the viewport's height
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    run(doc, "layout", [](Transaction& tx) {
+        if (auto r = createLayout(tx, "L", "A4", true); !r)
+            return r;
+        BBox2 a;
+        a.expand({20, 20});
+        a.expand({120, 120});
+        auto id = addViewport(tx, "L", a, {50, 50}, 1);
+        if (!id)
+            return Result<void>(id.error());
+        // A triangle in the lower left half of the rectangle.
+        return setViewportClip(tx, "L", id.value(), {{20, 20}, {120, 20}, {20, 120}});
+    });
+    const Viewport vp = *findLayout(doc, "L")->findViewport(1);
+    REQUIRE(vp.clip.size() == 3);
+    CHECK_FALSE(viewportContains(vp, {100, 100}));
+    CHECK(viewportContains(vp, {40, 40}));
+
+    auto sheet = buildLayoutSheet(doc, "L", {}, {true}).value();
+    const exportlib::PlotClip* begin = nullptr;
+    for (const auto& p : sheet.prims)
+        if (const auto* c = std::get_if<exportlib::PlotClip>(&p); c && c->begin)
+            begin = c;
+    REQUIRE(begin);
+    CHECK(begin->poly.size() == 3);
+    CHECK(exportlib::svgString(sheet).find("<polygon") != std::string::npos);
+    auto pdfText = exportlib::pdfBytes(sheet, false);
+    REQUIRE(pdfText.ok());
+    CHECK(pdfText.value().find("W* n") != std::string::npos);
+
+    // The band is 40 mm wide at y = 50: its upper right end is outside the triangle.
+    auto ras = exportlib::rasterize(sheet, 25.4, 100'000'000);  // 1 pixel per mm
+    REQUIRE(ras.ok());
+    const exportlib::RasterImage& im = ras.value();
+    auto dark = [&](double xmm, double ymm) {
+        const int x = static_cast<int>(xmm), y = im.height - 1 - static_cast<int>(ymm);
+        const std::uint8_t* c = im.rgb.data() + (static_cast<std::size_t>(y) * im.width + x) * 3;
+        return c[0] < 128 && c[1] < 128 && c[2] < 128;
+    };
+    CHECK(dark(40, 50));
+    CHECK_FALSE(dark(100, 60));
+
+    // Saved and loaded: the outline survives the .tbcad round trip through the header table.
+    const Viewport again = *findLayout(doc, "L")->findViewport(1);
+    CHECK(again.clip == vp.clip);
+    run(doc, "unclip", [](Transaction& tx) { return setViewportClip(tx, "L", 1, {}); });
+    CHECK(findLayout(doc, "L")->findViewport(1)->clip.empty());
+}
+
+TEST_CASE("a viewport clipped by a polyline of a DXF file from another program") {
+    const std::string dxfText =
+        "  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\n*Paper_Space\n 70\n0\n 10\n0\n 20\n0\n 30\n0\n"
+        "  0\nLWPOLYLINE\n  5\nB1\n  8\nDefpoints\n 67\n1\n 90\n3\n 70\n1\n"
+        " 10\n20\n 20\n20\n 10\n300\n 20\n20\n 10\n160\n 20\n250\n"
+        "  0\nVIEWPORT\n  8\n0\n 67\n1\n 10\n160\n 20\n135\n 40\n280\n 41\n230\n 69\n2\n"
+        " 68\n1\n 12\n1000\n 22\n2000\n 45\n23000\n 90\n16384\n340\nB1\n  0\nENDBLK\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n  0\nLAYOUT\n  1\nSheet A3\n 71\n1\n 44\n420\n 45\n297\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    dxf::Report report;
+    auto r = dxf::importDxf(std::span<const std::byte>(
+                                reinterpret_cast<const std::byte*>(dxfText.data()), dxfText.size()),
+                            {}, report);
+    REQUIRE(r.ok());
+    const std::vector<Layout> all = layouts(*r.value().document);
+    REQUIRE(all.size() == 1);
+    REQUIRE(all[0].viewports.size() == 1);
+    const Viewport& vp = all[0].viewports[0];
+    REQUIRE(vp.clip.size() == 3);
+    CHECK(vp.clip[1].x == doctest::Approx(300));
+    CHECK(viewportContains(vp, {160, 100}));
+    CHECK_FALSE(viewportContains(vp, {30, 200}));
 }

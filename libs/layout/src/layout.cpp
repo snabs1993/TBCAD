@@ -55,7 +55,11 @@ std::string serialize(const std::vector<Layout>& all) {
               << num(v.center.y) << '\t' << num(v.scaleN) << '\t' << (v.on ? 1 : 0) << '\t';
             for (std::size_t i = 0; i < v.frozen.size(); ++i)
                 o << (i ? "," : "") << v.frozen[i].value;
-            o << '\t' << v.level.value << '\t' << (v.locked ? 1 : 0) << '\n';
+            o << '\t' << v.level.value << '\t' << (v.locked ? 1 : 0) << '\t';
+            // The outline of a clipped viewport: x:y pairs joined by ';'.
+            for (std::size_t i = 0; i < v.clip.size(); ++i)
+                o << (i ? ";" : "") << num(v.clip[i].x) << ':' << num(v.clip[i].y);
+            o << '\n';
         }
     }
     return o.str();
@@ -109,6 +113,27 @@ Result<void> resolvePaper(const std::string& paperName, bool landscape, double c
 
 }  // namespace
 
+std::vector<Vec2> viewportOutline(const Viewport& vp) {
+    if (vp.clip.size() >= 3)
+        return vp.clip;
+    return {vp.paper.min,
+            {vp.paper.max.x, vp.paper.min.y},
+            vp.paper.max,
+            {vp.paper.min.x, vp.paper.max.y}};
+}
+
+bool viewportContains(const Viewport& vp, Vec2 p) {
+    if (vp.clip.size() < 3)
+        return vp.paper.contains(p);
+    bool in = false;  // even-odd ray casting
+    const auto& c = vp.clip;
+    for (std::size_t i = 0, j = c.size() - 1; i < c.size(); j = i++)
+        if ((c[i].y > p.y) != (c[j].y > p.y) &&
+            p.x < (c[j].x - c[i].x) * (p.y - c[i].y) / (c[j].y - c[i].y) + c[i].x)
+            in = !in;
+    return in;
+}
+
 const Viewport* Layout::findViewport(int vid) const {
     for (const Viewport& v : viewports)
         if (v.id == vid)
@@ -152,6 +177,15 @@ std::vector<Layout> layouts(const Document& doc) {
                 v.level =
                     LevelId{static_cast<std::uint32_t>(std::strtoul(f[11].c_str(), nullptr, 10))};
             v.locked = f.size() > 12 && f[12] == "1";
+            if (f.size() > 13 && !f[13].empty()) {
+                for (const std::string& pt : split(f[13], ';')) {
+                    const std::size_t c = pt.find(':');
+                    if (c != std::string::npos)
+                        v.clip.push_back({toD(pt.substr(0, c)), toD(pt.substr(c + 1))});
+                }
+                if (v.clip.size() < 3)
+                    v.clip.clear();
+            }
             out.back().viewports.push_back(std::move(v));
         }
     }
@@ -361,7 +395,40 @@ Result<void> setViewportRect(Transaction& tx, const std::string& layoutName, int
     if (!e)
         return e.error();
     Edit ed = std::move(e.value());
+    // A clipped viewport keeps its outline: it moves and stretches with the rectangle.
+    if (!ed.vp->clip.empty()) {
+        const BBox2 old = ed.vp->paper;
+        const double sx = old.width() > 0 ? rect.width() / old.width() : 1;
+        const double sy = old.height() > 0 ? rect.height() / old.height() : 1;
+        for (Vec2& p : ed.vp->clip)
+            p = {rect.min.x + (p.x - old.min.x) * sx, rect.min.y + (p.y - old.min.y) * sy};
+    }
     ed.vp->paper = rect;
+    return store(tx, ed.all);
+}
+
+Result<void> setViewportClip(Transaction& tx, const std::string& layoutName, int id,
+                             const std::vector<Vec2>& outline) {
+    auto e = openEdit(tx, layoutName, id);
+    if (!e)
+        return e.error();
+    Edit ed = std::move(e.value());
+    if (ed.vp->locked)
+        return err(ErrorCode::Conflict, "Viewport is locked. Use VPLOCK Off first.");
+    std::vector<Vec2> ring = outline;
+    if (ring.size() > 1 && ring.front() == ring.back())
+        ring.pop_back();
+    if (ring.size() < 3) {
+        ed.vp->clip.clear();
+        return store(tx, ed.all);
+    }
+    BBox2 box;
+    for (const Vec2& p : ring)
+        box.expand(p);
+    if (!(box.width() > 0) || !(box.height() > 0))
+        return err(ErrorCode::InvalidArgument, "The outline has no area");
+    ed.vp->paper = box;
+    ed.vp->clip = std::move(ring);
     return store(tx, ed.all);
 }
 

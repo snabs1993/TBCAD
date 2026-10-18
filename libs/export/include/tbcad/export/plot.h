@@ -112,8 +112,9 @@ struct PlotDots {
 };
 // Clips everything between a begin and its end to a rectangle on the sheet (layout viewports).
 struct PlotClip {
-    BBox2 rect{};
+    BBox2 rect{};  // always the bounding box of the clip
     bool begin = true;
+    std::vector<Vec2> poly{};  // three or more points: a non-rectangular clip (a clipped viewport)
 };
 // A picture (already cut to its clip rectangle): `corners` are the bottom-left, bottom-right,
 // top-right and top-left of the pixels on the sheet, in paper mm. `opacity` 0..1.

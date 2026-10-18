@@ -49,7 +49,7 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         vl.overflows = false;
         vl.annoScale = vp.scaleN;
 
-        sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true});
+        sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true, vp.clip});
         exportlib::appendEntities(sheet, doc, model, vl, s, [&](const Entity& e) {
             if (e.common.annotative && !e.common.annoScales.empty() &&
                 std::find(e.common.annoScales.begin(), e.common.annoScales.end(), vp.scaleN) ==
@@ -58,17 +58,14 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
             return frozenInViewport(doc, vp, e.common.layer) ||
                    (vp.level.value != 0 && e.common.level != vp.level);
         });
-        sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, false});
+        sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, false, {}});
 
         if (options.viewportBorders) {
             exportlib::PlotPath border;
             border.closed = true;
             border.style.color = exportlib::plotColor(Rgba{0, 0, 0, 255}, s.color);
             border.style.widthMm = s.lineweights ? 0.25 : s.hairlineMm;
-            border.pts = {vp.paper.min,
-                          {vp.paper.max.x, vp.paper.min.y},
-                          vp.paper.max,
-                          {vp.paper.min.x, vp.paper.max.y}};
+            border.pts = viewportOutline(vp);
             sheet.prims.emplace_back(std::move(border));
         }
     }

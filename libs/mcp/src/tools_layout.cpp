@@ -20,8 +20,12 @@ Json layoutJson(const Document& doc, const layout::Layout& l) {
         Json::Array frozen;
         for (LayerId id : v.frozen)
             frozen.emplace_back(layerPath(doc, id));
+        Json::Array clip;
+        for (const Vec2& p : v.clip)
+            clip.push_back(pointToJson(p));
         vps.push_back(Json(Json::Object{
             {"id", v.id},
+            {"clip", Json(std::move(clip))},
             {"rect", Json(Json::Array{pointToJson(v.paper.min), pointToJson(v.paper.max)})},
             {"center", pointToJson(v.center)},
             {"scale", "1:" + formatDouble(v.scaleN)},

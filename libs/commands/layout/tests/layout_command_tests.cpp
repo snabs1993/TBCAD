@@ -193,3 +193,48 @@ TEST_CASE("TITLEBLOCK adds objects to the sheet") {
     CHECK(f.doc.blockByName("TITLEBLOCK") != nullptr);
     CHECK(f.doc.modelSpaceCount() == 0);  // nothing leaked into model space
 }
+
+TEST_CASE("VPCLIP gives a viewport a polygonal outline, from points or a closed polyline") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "110,110", "1:50", "2500,1000"});
+    auto vp = [&] { return *layout::findLayout(f.doc, "Plan")->findViewport(1); };
+
+    auto r = f.host->run("VPCLIP",
+                         {"1", "Polygonal", "20,20", "100,20", "60,100", cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    REQUIRE(vp().clip.size() == 3);
+    CHECK(vp().paper.min.x == doctest::Approx(20));
+    CHECK(vp().paper.max.y == doctest::Approx(100));
+    CHECK(layout::viewportContains(vp(), {60, 50}));
+    CHECK_FALSE(layout::viewportContains(vp(), {25, 90}));  // inside the old rectangle only
+
+    f.host->run("VPMOVE", {"1", "0,0", "10,0"});  // the outline moves with the rectangle
+    CHECK(vp().clip[0].x == doctest::Approx(30));
+    CHECK(vp().paper.min.x == doctest::Approx(30));
+
+    CHECK(f.host->undo());
+    CHECK(vp().clip[0].x == doctest::Approx(20));
+
+    f.host->run("VPCLIP", {"1", "Delete"});
+    CHECK(vp().clip.empty());
+
+    // A closed polyline on the sheet.
+    EntityId poly{};
+    {
+        auto tx = f.doc.begin("outline");
+        PolylineData pl;
+        pl.closed = true;
+        for (Vec2 v : {Vec2{15, 15}, Vec2{105, 15}, Vec2{105, 60}, Vec2{15, 60}})
+            pl.v.push_back({v, 0, 0, 0});
+        Entity e;
+        e.data = std::move(pl);
+        const BlockDef* sheet = f.doc.block(layout::findLayout(f.doc, "Plan")->content);
+        REQUIRE(sheet);
+        poly = tx.add(std::move(e), sheet->id).value();
+        tx.commit();
+    }
+    f.host->run("VPCLIP", {"1", "Object", cmd::ScriptItem::pick(poly, {15, 15})});
+    CHECK(vp().clip.size() == 4);
+    CHECK(vp().paper.max.y == doctest::Approx(60));
+}

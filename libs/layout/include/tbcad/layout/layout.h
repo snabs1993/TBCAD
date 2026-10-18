@@ -19,8 +19,11 @@ namespace tbcad::layout {
 inline constexpr const char* kHeaderKey = "tbcad.layouts";
 
 struct Viewport {
-    int id = 0;         // unique within the layout, starts at 1
-    BBox2 paper{};      // rectangle on the sheet (mm)
+    int id = 0;     // unique within the layout, starts at 1
+    BBox2 paper{};  // rectangle on the sheet (mm); the bounding box when the viewport is clipped
+    // VPCLIP: the outline of a non-rectangular viewport on the sheet (mm), three or more points;
+    // empty = the rectangle. `paper` is its bounding box, so scale and view centre keep meaning.
+    std::vector<Vec2> clip{};
     Vec2 center{};      // model point shown at the middle of the viewport
     double scaleN = 1;  // 1:N, 1 mm on the sheet = N model units
     bool on = true;
@@ -28,6 +31,11 @@ struct Viewport {
     LevelId level{};                // shows only this level when set (0 = every visible level)
     bool locked = false;            // scale and view centre cannot be changed (VPLOCK)
 };
+
+// True when the sheet point is inside the viewport's outline.
+bool viewportContains(const Viewport& vp, Vec2 sheetPoint);
+// The outline: the clip polygon, or the four corners of the rectangle (counter-clockwise).
+std::vector<Vec2> viewportOutline(const Viewport& vp);
 
 struct Layout {
     int uid = 0;
@@ -73,6 +81,10 @@ Result<void> setViewportCenter(Transaction& tx, const std::string& layout, int i
 // Moves or resizes the rectangle on the sheet; what it shows keeps its scale and centre.
 Result<void> setViewportRect(Transaction& tx, const std::string& layout, int id,
                              const BBox2& paperRect);
+// Gives the viewport a polygonal outline (VPCLIP); fewer than three points restore the rectangle.
+// The rectangle becomes the bounding box of the polygon. A locked viewport refuses it.
+Result<void> setViewportClip(Transaction& tx, const std::string& layout, int id,
+                             const std::vector<Vec2>& outline);
 Result<void> setViewportOn(Transaction& tx, const std::string& layout, int id, bool on);
 // Freezes or thaws one layer in one viewport only; the layer table is not touched.
 Result<void> setViewportLayerFrozen(Transaction& tx, const std::string& layout, int id,
