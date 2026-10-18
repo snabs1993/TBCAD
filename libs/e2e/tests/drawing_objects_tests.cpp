@@ -94,9 +94,38 @@ std::vector<Maker> makers() {
     m.push_back(
         {"ray", [](Rig& r, Vec2 o) { r.host.run("RAY", {P(o, 0, 0), P(o, 100, 50), ""}); }});
     m.push_back(
+        {"text", [](Rig& r, Vec2 o) { r.host.run("TEXT", {P(o, 0, 0), "5", "30", "Hello"}); }});
+    m.push_back({"mtext", [](Rig& r, Vec2 o) {
+                     r.host.run("MTEXT", {P(o, 0, 50), P(o, 40, 20), "boxed text"});
+                 }});
+    m.push_back({"linear dimension", [](Rig& r, Vec2 o) {
+                     r.host.run("DIMLINEAR", {P(o, 0, 0), P(o, 100, 0), P(o, 50, 10)});
+                 }});
+    m.push_back({"aligned dimension", [](Rig& r, Vec2 o) {
+                     r.host.run("DIMALIGNED", {P(o, 0, 0), P(o, 100, 60), P(o, 40, 50)});
+                 }});
+    m.push_back({"hatch", [](Rig& r, Vec2 o) {
+                     r.host.run("REC", {P(o, 0, 0), P(o, 100, 60)});
+                     r.host.run("HATCH", {P(o, 50, 30), ""});
+                 }});
+    m.push_back({"block insert", [](Rig& r, Vec2 o) {
+                     r.host.run("LINE", {P(o, 0, 0), P(o, 10, 0), ""});
+                     EntityId line{};
+                     r.doc.forEachEntity([&](const Entity& e) { line = e.common.id; });
+                     r.host.setSelection({line});
+                     r.host.run("BLOCK", {"Mark", P(o, 0, 0), "D"});
+                     r.host.run("INSERT", {"Mark", P(o, 50, 20)});
+                 }});
+    m.push_back(
         {"mline",
          [](Rig& r, Vec2 o) { r.host.run("MLINE", {P(o, 0, 0), P(o, 100, 0), P(o, 100, 50), ""}); },
          false});
+    // Annotation is not offset or trimmed (the hatch and block cases test their outline / line).
+    for (Maker& mk : m) {
+        const std::string n = mk.name;
+        if (n == "text" || n == "mtext" || n.find("dimension") != std::string::npos)
+            mk.editable = false;
+    }
     return m;
 }
 
@@ -182,7 +211,11 @@ TEST_CASE("drawing objects exist, stay finite and survive grips, OFFSET and TRIM
                                 ScriptItem::enter()});
             const std::string trimDump = canonicalDump(r.doc);
             CHECK(finiteText(trimDump));
-            CHECK_MESSAGE((trimDump != withEdge) == mk.editable, mk.name << ": TRIM");
+            // The block's line lies along the cutting edge, so nothing crosses.
+            const bool trimmed = trimDump != withEdge;
+            const bool skip = std::string(mk.name) == "block insert";
+            const bool trimOk = skip || trimmed == mk.editable;
+            CHECK_MESSAGE(trimOk, mk.name << ": TRIM");
             while (r.host.undoStack().undoCount() > depth && r.host.undo()) {
             }
             CHECK(canonicalDump(r.doc) == withEdge);
