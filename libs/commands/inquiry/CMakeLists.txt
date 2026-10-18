@@ -2,6 +2,7 @@ tbcad_add_library(inquiry
   SOURCES
     src/inquiry.cpp
     src/areatable.cpp
+    src/audit.cpp
     src/measure.cpp
     src/quick.cpp
     src/quickcmd.cpp

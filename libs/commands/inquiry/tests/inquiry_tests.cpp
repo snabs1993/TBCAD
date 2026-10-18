@@ -208,3 +208,20 @@ TEST_CASE("COPYRESULT copies the last result") {
     REQUIRE(clip);
     CHECK(clip->find("Distance = 5.00") != std::string::npos);
 }
+
+TEST_CASE("AUDIT reports broken objects and removes them on request") {
+    Fixture f;
+    f.add(line({0, 0}, {10, 0}));
+    EntityId zero = f.add(line({5, 5}, {5, 5}));
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("AUDIT", {"No"});
+    CHECK(host.logContains("1 broken object"));
+    CHECK(f.doc.contains(zero));
+    host.run("AUDIT", {"Yes"});
+    CHECK(host.logContains("Removed 1"));
+    CHECK_FALSE(f.doc.contains(zero));
+    CHECK(f.doc.modelSpaceCount() == 1);
+    host.clearLog();
+    host.run("AUDIT", {});
+    CHECK(host.logContains("No problems found"));
+}

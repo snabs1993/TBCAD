@@ -351,6 +351,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<CopyResult>());
     (void)registry.add(makeQuickMeasure());
     (void)registry.add(makeAreaTable());
+    (void)registry.add(makeAudit());
 }
 
 }  // namespace tbcad::inquiry
