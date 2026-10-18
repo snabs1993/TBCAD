@@ -1532,15 +1532,13 @@ std::size_t Transaction::eraseMany(std::span<const EntityId> ids) {
                 ++n;
         return n;
     }
-    std::vector<Entity> removed;
-    d.removeEntities(ids, removed);
-    beforeSnaps_.reserve(beforeSnaps_.size() + removed.size());
-    touched_.reserve(removed.size());
-    for (Entity& e : removed) {
-        touched_.insert(e.common.id, static_cast<std::uint32_t>(beforeSnaps_.size()));
-        beforeSnaps_.push_back(std::move(e));
-    }
-    return removed.size();
+    // (they go straight into the snapshots, in store order)
+    const std::size_t first = beforeSnaps_.size();
+    d.removeEntities(ids, beforeSnaps_);
+    touched_.reserve(beforeSnaps_.size());
+    for (std::size_t i = first; i < beforeSnaps_.size(); ++i)
+        touched_.insert(beforeSnaps_[i].common.id, static_cast<std::uint32_t>(i));
+    return beforeSnaps_.size() - first;
 }
 
 Result<void> Transaction::erase(EntityId id) {

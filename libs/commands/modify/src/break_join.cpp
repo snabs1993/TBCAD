@@ -150,7 +150,17 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
-        so.filter = [&doc = ctx.doc()](const Entity& e) { return unlocked(doc, e); };
+        // Neighbours mostly share layer and level, so the last answer is reused.
+        so.filter = [&doc = ctx.doc(), layer = LayerId{}, level = LevelId{}, ok = false,
+                     have = false](const Entity& e) mutable {
+            if (!have || e.common.layer != layer || e.common.level != level) {
+                ok = unlocked(doc, e);
+                layer = e.common.layer;
+                level = e.common.level;
+                have = true;
+            }
+            return ok;
+        };
         auto sel = co_await ctx.getSelection("Select objects to erase", so);
         if (!sel.ok())
             co_return;
