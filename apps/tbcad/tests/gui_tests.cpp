@@ -775,3 +775,176 @@ TEST_CASE("every panel survives a click on each of its widgets") {
         }
     }
 }
+
+TEST_CASE("keyboard map: shortcuts, function keys and typing anywhere") {
+    Harness h(1920, 1080);
+    auto on = [&](const char* key, const char* fallback = "0") {
+        return h.core().setting(key).value_or(fallback) == "1";
+    };
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    h.frame(3);
+    CHECK(entityCount(h) == 1);
+
+    // Ctrl+A selects, Delete erases, Ctrl+Z brings it back, Ctrl+Y erases again.
+    h.key(ImGuiKey_A, true);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    h.key(ImGuiKey_Delete);
+    h.frame(2);
+    CHECK(entityCount(h) == 0);
+    h.key(ImGuiKey_Z, true);
+    h.frame(2);
+    CHECK(entityCount(h) == 1);
+    h.key(ImGuiKey_Y, true);
+    h.frame(2);
+    CHECK(entityCount(h) == 0);
+    h.key(ImGuiKey_Z, true);
+    h.frame(2);
+
+    // F7 / F8 / F9 / F10 / F3 toggle the drafting aids; F8 and F10 exclude each other.
+    h.key(ImGuiKey_F7);
+    CHECK(on("view.grid"));
+    h.key(ImGuiKey_F7);
+    CHECK_FALSE(on("view.grid"));
+    h.key(ImGuiKey_F9);
+    CHECK(on("drafting.snap"));
+    h.key(ImGuiKey_F8);
+    CHECK(on("drafting.ortho"));
+    h.key(ImGuiKey_F10);
+    CHECK(on("drafting.polar"));
+    CHECK_FALSE(on("drafting.ortho"));
+    CHECK(on("drafting.osnap", "1"));
+    h.key(ImGuiKey_F3);
+    CHECK_FALSE(on("drafting.osnap", "1"));
+
+    // Typing over the viewport goes to the command bar; Enter runs it.
+    h.moveMouse(600, 400);
+    h.type("circle");
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(runningName(h) == "CIRCLE");
+    // Esc cancels the command; a second Esc clears the selection.
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK_FALSE(h.core().runner().active());
+    h.key(ImGuiKey_A, true);
+    h.frame(2);
+    REQUIRE(h.core().selection().size() == 1);
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK(h.core().selection().empty());
+
+    // Enter at an empty prompt repeats the last command, Space too.
+    h.moveMouse(600, 400);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    h.key(ImGuiKey_Space);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    h.key(ImGuiKey_Escape);
+}
+
+TEST_CASE("clean screen, command log and document tabs from the keyboard") {
+    Harness h(1920, 1080);
+    CHECK(h.has("Layers", "Layers"));
+    h.key(ImGuiKey_F11);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Layers"));
+    h.key(ImGuiKey_F11);
+    h.frame(3);
+    CHECK(h.windowOpen("Layers"));
+
+    // Ctrl+N opens a second drawing tab (an untouched drawing is reused, so touch it), Ctrl+Tab
+    // switches, Ctrl+W closes.
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    h.frame(2);
+    const std::size_t docs = h.core().documentCount();
+    h.key(ImGuiKey_N, true);
+    h.frame(3);
+    CHECK(h.core().documentCount() == docs + 1);
+    const std::size_t active = h.core().activeDocument();
+    h.key(ImGuiKey_Tab, true);
+    h.frame(3);
+    CHECK(h.core().activeDocument() != active);
+    h.key(ImGuiKey_Tab, true);  // back to the new, empty drawing
+    h.frame(3);
+    CHECK(h.core().activeDocument() == active);
+    h.key(ImGuiKey_W, true);
+    h.frame(3);
+    CHECK(h.core().documentCount() == docs);  // the new empty one closed without asking
+}
+
+TEST_CASE("mouse in the viewport: draw with clicks, select by window and crossing, pan, zoom") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    // Draw two lines with the Line command and mouse clicks.
+    h.core().submitText("LINE");
+    const ImVec2 a = screenOf(h, {100, 100}), b = screenOf(h, {400, 100}),
+                 c = screenOf(h, {400, 300});
+    h.click(a.x, a.y);
+    h.click(b.x, b.y);
+    h.click(c.x, c.y);
+    h.core().pressEscape();
+    h.frame(2);
+    REQUIRE(entityCount(h) == 2);
+    // Zoom in on the drawing so the lines are long on screen (the grips are 8 pixels wide).
+    h.core().zoomExtents();
+    h.frame(20);
+    h.scroll(700, 500, -3.0f);  // and back out a little, so the margins are on screen
+    h.frame(30);
+
+    // Window selection (drag right) takes only what lies fully inside.
+    ImVec2 w0 = screenOf(h, {50, 50}), w1 = screenOf(h, {450, 150});  // second line sticks out
+    h.drag(w0.x, w0.y, w1.x, w1.y);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    // Crossing selection (drag left) takes anything the box touches.
+    h.core().clearSelection();
+    h.frame(2);
+    h.drag(w1.x, w1.y, w0.x, w0.y);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 2);
+    h.core().clearSelection();
+
+    // Click on an object selects it, Shift + click removes it again.
+    const ImVec2 onLine = screenOf(h, {180, 100});  // away from the midpoint grip
+    h.click(onLine.x, onLine.y);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    h.frame(40);  // not a double click
+    h.holdShift(true);
+    h.frame(2);
+    h.click(onLine.x, onLine.y);
+    h.holdShift(false);
+    h.frame(2);
+    CHECK(h.core().selection().empty());
+
+    // The wheel zooms about the cursor: the world point under it stays put.
+    const ImVec2 cur = screenOf(h, {250, 100});
+    const double before = h.core().camera().pixelSizeMm();
+    h.moveMouse(cur.x, cur.y);
+    h.scroll(cur.x, cur.y, 1.0f);
+    h.frame(15);
+    const double after = h.core().camera().pixelSizeMm();
+    CHECK(after < before);  // zoomed in
+    const ImVec2 now = screenOf(h, {250, 100});
+    CHECK(now.x == doctest::Approx(cur.x).epsilon(0.01));
+    CHECK(now.y == doctest::Approx(cur.y).epsilon(0.01));
+
+    // Middle-drag pans: the drawing follows the pointer.
+    h.drag(800, 500, 900, 560, 2);
+    h.frame(3);
+    const ImVec2 panned = screenOf(h, {250, 100});
+    CHECK(panned.x == doctest::Approx(cur.x + 100).epsilon(0.03));
+    CHECK(panned.y == doctest::Approx(cur.y + 60).epsilon(0.03));
+}
