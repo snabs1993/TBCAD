@@ -223,3 +223,78 @@ TEST_CASE("stress: offsets of simple star-shaped polylines keep their distance")
     CHECK(checked > 100);
     CHECK(bad == 0);
 }
+
+TEST_CASE("stress: fillet, chamfer and break on awkward input stay finite") {
+    std::mt19937 rng(7);
+    std::uniform_real_distribution<double> coord(-25, 25), radius(0, 8);
+    int worked = 0;
+    const auto randomCurve = [&](int k) -> Entity {
+        switch (k % 4) {
+            case 0:
+                return line({coord(rng), coord(rng)}, {coord(rng), coord(rng)});
+            case 1:
+                return arc({coord(rng), coord(rng)}, 2 + std::abs(coord(rng)), 0.2, 5.5);
+            case 2:
+                return circle({coord(rng), coord(rng)}, 2 + std::abs(coord(rng)));
+            default:
+                return line({coord(rng), coord(rng)}, {coord(rng), coord(rng)});
+        }
+    };
+    const auto pointOn = [&](const Entity& e) {
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(e, cs);
+        if (cs.empty())
+            return Vec2{};
+        return cs[0].pointAt(cs[0].t0() + 0.5 * (cs[0].isLine() ? 1.0 : cs[0].sweep()));
+    };
+    for (int iter = 0; iter < 600; ++iter) {
+        const Entity a = randomCurve(iter), b = randomCurve(iter / 3 + 1);
+        FilletOptions fo;
+        fo.radius = iter % 5 == 0 ? 0 : radius(rng);
+        fo.trim = iter % 2 == 0;
+        auto f = filletEntities(a, pointOn(a), b, pointOn(b), fo);
+        if (f.ok()) {
+            ++worked;
+            if (f.value().modifiedA)
+                CHECK(sane(*f.value().modifiedA));
+            if (f.value().modifiedB)
+                CHECK(sane(*f.value().modifiedB));
+            for (const auto& e : f.value().added)
+                CHECK(sane(e));
+        }
+        if (kind(a) == EntityKind::Line && kind(b) == EntityKind::Line) {
+            ChamferOptions co;
+            co.distance1 = radius(rng);
+            co.distance2 = radius(rng);
+            co.byAngle = iter % 3 == 0;
+            co.angle = 0.1 + radius(rng) / 8 * 1.3;
+            auto c = chamferEntities(a, pointOn(a), b, pointOn(b), co);
+            if (c.ok()) {
+                ++worked;
+                for (const auto& e : c.value().added)
+                    CHECK(sane(e));
+            }
+        }
+        const Entity poly = nastyPolyline(rng, iter % 3 == 0, iter % 2 == 1);
+        for (double rad : {0.0, 0.5, radius(rng)}) {
+            auto p = filletPolyline(poly, rad);
+            if (p.ok()) {
+                ++worked;
+                CHECK(sane(p.value()));
+            }
+            ChamferOptions co;
+            co.distance1 = co.distance2 = rad;
+            auto q = chamferPolyline(poly, co);
+            if (q.ok())
+                CHECK(sane(q.value()));
+        }
+        auto br = breakEntity(poly, pointOn(poly), pointOn(poly) + Vec2{coord(rng), coord(rng)});
+        if (br.ok()) {
+            if (br.value().modified)
+                CHECK(sane(*br.value().modified));
+            for (const auto& e : br.value().added)
+                CHECK(sane(e));
+        }
+    }
+    CHECK(worked > 200);
+}
