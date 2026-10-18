@@ -239,6 +239,33 @@ void Importer::processObjects(RecordReader& rr) {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
             continue;
         }
+        if (r.type == "DICTIONARY") {
+            auto& entries = dicts_[std::string(r.raw(5))];
+            std::string key;
+            for (const Group& dg : r.g) {
+                if (dg.code == 3)
+                    key = dec(dg.str());
+                else if ((dg.code == 350 || dg.code == 360) && !key.empty()) {
+                    entries.emplace_back(key, std::string(dg.str()));
+                    key.clear();
+                }
+            }
+            continue;
+        }
+        if (r.type == "XRECORD") {
+            bool afterMarker = false;
+            for (const Group& xg : r.g) {
+                if (xg.code == 100 && xg.str() == "AcDbXrecord") {
+                    afterMarker = true;
+                    continue;
+                }
+                if (afterMarker && (xg.code == 90 || xg.code == 91 || xg.code == 70 ||
+                                    xg.code == 1070 || xg.code == 1071)) {
+                    xrecNumbers_[std::string(r.raw(5))] = xg.integer();
+                    break;
+                }
+            }
+        }
         if (r.type != "XRECORD")
             continue;
         const Group* g = r.find(1);
@@ -260,6 +287,33 @@ void Importer::processObjects(RecordReader& rr) {
             if (!list.empty() && list.size() < 2000)
                 h.custom[kAnnoScaleListKey] = list;
         });
+    }
+}
+
+void Importer::applyLayerAlphaXrecords() {
+    for (const auto& [layerName, dictHandle] : layerXdicts_) {
+        auto d = dicts_.find(dictHandle);
+        if (d == dicts_.end())
+            continue;
+        for (const auto& [key, handle] : d->second) {
+            if (key != "ADSK_XREC_LAYER_ALPHA")
+                continue;
+            auto x = xrecNumbers_.find(handle);
+            auto l = layerByFold_.find(fold(layerName));
+            if (x == xrecNumbers_.end() || l == layerByFold_.end())
+                continue;
+            // Same encoding as group 440; a bare 0..255 is taken as the alpha byte itself.
+            std::int64_t v = x->second;
+            if (v == 0)
+                continue;
+            if ((v & 0xFF000000) == 0)
+                v = 0x02000000 | (v & 0xFF);
+            const int t = transparencyFromGroup(v);
+            if (t < 0)
+                continue;
+            (void)tx_->modifyLayer(l->second,
+                                   [&](Layer& layer) { layer.transparency = std::uint8_t(t); });
+        }
     }
 }
 
@@ -591,6 +645,9 @@ void Importer::readLayerRow(const Record& r) {
         const int t = transparencyFromGroup(g->integer());
         row.transparency = t > 0 ? t : 0;  // a layer is never ByLayer / ByBlock
     }
+    for (std::size_t i = 0; i + 1 < r.g.size(); ++i)
+        if (r.g[i].code == 102 && r.g[i].str() == "{ACAD_XDICTIONARY" && r.g[i + 1].code == 360)
+            layerXdicts_.emplace_back(row.name, std::string(r.g[i + 1].str()));
     // TBCAD APPID XDATA: "parent=<DXF name of the parent layer>", "name=<own name>", flags.
     bool inOurs = false;
     for (const Group& g : r.g) {
@@ -1325,6 +1382,7 @@ Result<ImportResult> Importer::run() {
         return makeError(ErrorCode::Parse, "no SECTION found: this does not look like a DXF file");
     }
     createLayers();
+    applyLayerAlphaXrecords();
     finish();
 
     // Current layer from the header, when it exists.

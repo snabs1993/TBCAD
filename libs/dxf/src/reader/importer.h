@@ -189,6 +189,13 @@ private:
 
     // tables
     std::vector<LayerRow> layerRows_{};
+    // AutoCAD keeps layer transparency in the layer's extension dictionary (an XRECORD named
+    // ADSK_XREC_LAYER_ALPHA): layer name -> dictionary handle, dictionary handle -> entries,
+    // XRECORD handle -> its first number.
+    std::vector<std::pair<std::string, std::string>> layerXdicts_{};
+    std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> dicts_{};
+    std::unordered_map<std::string, std::int64_t> xrecNumbers_{};
+    void applyLayerAlphaXrecords();
     std::vector<std::string> layerRawNames_{};  // raw bytes of each row's name
     bool layersCreated_ = false;
     std::vector<LevelRow> levelRows_{};
