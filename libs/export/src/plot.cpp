@@ -382,8 +382,18 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         }
         DisplayList list;
         geom::buildDisplay(doc, *e, ctx, list);
-        for (const DisplayItem& it : list.items)
+        for (const DisplayItem& it : list.items) {
+            // The parts of a block carry their own layer: off, frozen or frozen in this viewport.
+            LayerId li{};
+            if (const auto* pl = std::get_if<DisplayPolyline>(&it))
+                li = pl->style.layer;
+            else if (const auto* fl = std::get_if<DisplayFill>(&it))
+                li = fl->style.layer;
+            if (li != LayerId{} && li != e->common.layer &&
+                (!doc.effective(li).visible() || (lay.layerHidden && lay.layerHidden(li))))
+                continue;
             b.item(it, sheet.prims);
+        }
     }
 }
 

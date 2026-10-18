@@ -48,6 +48,7 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         vl.origin = vp.paper.min;
         vl.overflows = false;
         vl.annoScale = vp.scaleN;
+        vl.layerHidden = [&doc, &vp](LayerId l) { return frozenInViewport(doc, vp, l); };
 
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true, vp.clip});
         exportlib::appendEntities(sheet, doc, model, vl, s, [&](const Entity& e) {
