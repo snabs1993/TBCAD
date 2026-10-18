@@ -92,6 +92,7 @@ struct EntityRec {
     std::uint64_t firstChild = 0, lastChild = 0;
     bool hasChildren = false;                   // INSERT: the attribute bit was set
     std::vector<std::uint64_t> frozenLayers{};  // VIEWPORT: layers frozen in it
+    std::uint32_t frozenCount = 0;              // VIEWPORT: the count stored in the file
     std::vector<std::uint64_t> childHandles{};  // R2004+: the owned records, in order
     int color = 256;                            // ACI, 256 = by layer
     int trueColor = -1;                         // 0xRRGGBB when set

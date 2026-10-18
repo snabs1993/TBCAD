@@ -1142,6 +1142,7 @@ private:
         if (wantBlock)
             e.blockHeader = resolveHandle(h.handle(), self);
         if (wantViewport) {
+            e.frozenCount = viewportFrozen_;
             for (std::uint32_t i = 0; i < viewportFrozen_ && i < 100000 && !h.failed(); ++i)
                 e.frozenLayers.push_back(resolveHandle(h.handle(), self));
         }
