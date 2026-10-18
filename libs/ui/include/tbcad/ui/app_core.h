@@ -421,6 +421,11 @@ private:
     std::vector<EntityId> cycleStack_{};
     std::optional<EntityId> cycleCurrent_{};
     Vec2 cycleAt_{};
+    // Outlines of the selected hatches, kept between frames (see buildOverlay).
+    struct HatchOutlines {
+        std::uint64_t key = ~0ull;
+        std::vector<std::vector<Vec2>> loops{};
+    } hatchOutlines_{};
     std::vector<std::string> history_{};
     std::optional<cmd::PromptInfo> prompt_{};
     cmd::FilterFeedback feedback_{};
