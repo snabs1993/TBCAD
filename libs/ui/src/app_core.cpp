@@ -259,6 +259,8 @@ std::vector<std::string> AppCore::layoutNames() const {
 }
 
 void AppCore::leavePaper() {
+    editingLayout_.clear();
+    editingViewport_ = 0;
     if (activeLayout_.empty())
         return;
     lastLayout_ = activeLayout_;
@@ -1686,7 +1688,10 @@ std::vector<render::ImageDraw> AppCore::underlayImages() {
     return out;
 }
 
-void AppCore::enterViewport(const BBox2& paper, Vec2 center, double scaleN) {
+void AppCore::enterViewport(const std::string& layoutName, const layout::Viewport& vp) {
+    const BBox2 paper = vp.paper;
+    const Vec2 center = vp.center;
+    const double scaleN = vp.scaleN;
     const double halfW = paper.width() * scaleN / 2;
     const double halfH = paper.height() * scaleN / 2;
     leavePaper();
@@ -1699,11 +1704,62 @@ void AppCore::enterViewport(const BBox2& paper, Vec2 center, double scaleN) {
         submitText(buf);
     }
     zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
+    editingLayout_ = layoutName;
+    editingViewport_ = vp.id;
+}
+
+// ZOOM nXP: sets the scale of the viewport on the sheet (the selected one, else the only one) or
+// of the one being edited from model space to n times paper space, i.e. 1:(1/n).
+void AppCore::applyZoomXp() {
+    if (pendingZoomXp_ <= 0 || runner().active() || !session_)
+        return;
+    const double n = pendingZoomXp_;
+    pendingZoomXp_ = 0;
+    std::string name;
+    int id = 0;
+    const bool editing = !inPaperSpace();
+    if (editing) {
+        name = editingLayout_;
+        id = editingViewport_;
+    } else if (const auto lay = layout::findLayout(session_->doc, activeLayout_)) {
+        name = activeLayout_;
+        const std::string sel = setting("tmp.layout.viewport").value_or("");
+        if (const auto colon = sel.find(':');
+            colon != std::string::npos && sel.substr(0, colon) == name)
+            id = lay->findViewport(std::atoi(sel.c_str() + colon + 1))
+                     ? std::atoi(sel.c_str() + colon + 1)
+                     : 0;
+        if (!id && lay->viewports.size() == 1)
+            id = lay->viewports.front().id;
+    }
+    if (name.empty() || !id) {
+        print(
+            "ZOOM nXP needs a viewport: click a viewport border on the sheet, or enter one with "
+            "MSPACE.");
+        return;
+    }
+    auto tx = session_->doc.begin("ZOOM XP");
+    if (auto r = layout::setViewportScale(tx, name, id, 1.0 / n); !r) {
+        print(r.error().message);
+        return;
+    }
+    (void)tx.commit();
+    char buf[48];
+    std::snprintf(buf, sizeof buf, "%.6g", 1.0 / n);
+    print("Viewport " + std::to_string(id) + " is now 1:" + buf + " (" + std::to_string(n) +
+          "XP).");
+    if (editing)
+        if (const auto lay = layout::findLayout(session_->doc, name))
+            if (const layout::Viewport* vp = lay->findViewport(id)) {
+                const layout::Viewport copy = *vp;
+                enterViewport(name, copy);
+            }
 }
 
 // MSPACE: edit the model through a viewport (the selected one, else the only or first one).
 // PSPACE: back to the sheet that was left.
 void AppCore::applyPendingSpace() {
+    applyZoomXp();
     if (pendingSpace_.empty() || runner().active() || !session_)
         return;
     const std::string what = std::move(pendingSpace_);
@@ -1742,7 +1798,7 @@ void AppCore::applyPendingSpace() {
         if (!pick && v.on)
             pick = &v;
     if (pick)
-        enterViewport(pick->paper, pick->center, pick->scaleN);
+        enterViewport(std::string(activeLayout_), *pick);
 }
 
 void AppCore::applyPendingLayout() {
@@ -2049,7 +2105,7 @@ void AppCore::doubleClick(const PointerState& p) {
             for (const layout::Viewport& vp : lay->viewports) {
                 if (!vp.on || !layout::viewportContains(vp, at))
                     continue;
-                enterViewport(vp.paper, vp.center, vp.scaleN);
+                enterViewport(std::string(activeLayout_), vp);
                 return;
             }
         }

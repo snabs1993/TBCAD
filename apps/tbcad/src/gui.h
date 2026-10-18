@@ -11,6 +11,7 @@
 #include "file_browser.h"
 #include "settings_dialog.h"
 #include "tbcad/core/color.h"
+#include "tbcad/platform/external_link.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/theme.h"
@@ -122,6 +123,8 @@ private:
     void cursorHud(const ViewportRect& rect);
     void gripMenu(const ViewportRect& rect);
     void repairAfterOpen();
+    bool openLinkPrompt_ = false;  // HYPERLINK Open: ask before handing the target to the system
+    platform::LinkCheck pendingLink_{};
     bool recoverAfterOpen_ = false;  // RECOVER <file>: repair the drawing once it is open
     void logWindow();
     std::string actionLabel(const std::string& action) const;
