@@ -111,6 +111,15 @@ TEST_CASE("OFFSET by distance, repeated, one undo step - Through - corner settin
     CHECK(withArcs == 4);
 }
 
+TEST_CASE("OFFSET Multiple offsets the same object to several sides until Enter") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    auto r = f.host.run("OFFSET", {"2", ScriptItem::pick(l, {5, 0}), "M", "5,9", "5,-9",
+                                   ScriptItem::enter(), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 3);
+}
+
 TEST_CASE("OFFSET reports a collapse and keeps going") {
     Fixture f;
     EntityId c = f.add(CircleData{{0, 0}, 5});

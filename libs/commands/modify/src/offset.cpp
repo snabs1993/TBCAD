@@ -87,38 +87,61 @@ public:
                 continue;
             Entity source = *found;
 
-            cmd::PointOptions po;
-            po.preview = [source, through, dist, opt, &doc = ctx.doc(), &host = ctx.host()](
-                             Vec2 cursor, DisplayList& out) {
-                auto res = through ? modify::offsetThrough(source, cursor, opt)
-                                   : modify::offsetToward(source, cursor, dist, opt);
-                if (!res)
-                    return;
-                for (const Entity& e : res.value())
-                    previewEntity(doc, host, e, out);
-            };
-            auto side = co_await ctx.getPoint(
-                through ? "Specify through point" : "Specify point on side to offset", po);
-            if (side.status == cmd::Status::Cancel)
-                co_return;
-            if (!side.ok())
-                continue;
-            auto res = through ? modify::offsetThrough(source, side.point, opt)
-                               : modify::offsetToward(source, side.point, dist, opt);
-            if (!res) {
-                ctx.message(res.error().message);
-                continue;
+            // "Multiple" keeps offsetting the same object, one side point after the other, until
+            // Enter.
+            bool multiple = false;
+            for (int placed = 0;; ++placed) {
+                cmd::PointOptions po;
+                po.keywords = {"Multiple"};
+                po.allowNone = multiple;
+                po.preview = [source, through, dist, opt, &doc = ctx.doc(), &host = ctx.host()](
+                                 Vec2 cursor, DisplayList& out) {
+                    auto res = through ? modify::offsetThrough(source, cursor, opt)
+                                       : modify::offsetToward(source, cursor, dist, opt);
+                    if (!res)
+                        return;
+                    for (const Entity& e : res.value())
+                        previewEntity(doc, host, e, out);
+                };
+                auto side = co_await ctx.getPoint(
+                    through ? (multiple ? "Specify through point or <next object>"
+                                        : "Specify through point or [Multiple]")
+                            : (multiple ? "Specify point on side to offset or <next object>"
+                                        : "Specify point on side to offset or [Multiple]"),
+                    po);
+                if (side.status == cmd::Status::Cancel)
+                    co_return;
+                if (side.status == cmd::Status::Keyword && side.keyword == "Multiple") {
+                    multiple = true;
+                    continue;
+                }
+                if (side.status == cmd::Status::None && multiple)
+                    break;
+                if (!side.ok())
+                    break;
+                auto res = through ? modify::offsetThrough(source, side.point, opt)
+                                   : modify::offsetToward(source, side.point, dist, opt);
+                if (!res) {
+                    ctx.message(res.error().message);
+                    if (!multiple)
+                        break;
+                    continue;
+                }
+                const bool onCurrent = getFlag(ctx.host(), kLayerKey, false);
+                for (Entity& e : res.value()) {
+                    if (onCurrent)
+                        e.common.layer = ctx.doc().header().currentLayer;
+                    auto id = ctx.tx().add(std::move(e));
+                    if (!id)
+                        ctx.message(id.error().message);
+                }
+                if (getFlag(ctx.host(), kEraseKey, false)) {
+                    (void)ctx.tx().erase(pick.id);
+                    break;
+                }
+                if (!multiple)
+                    break;
             }
-            const bool onCurrent = getFlag(ctx.host(), kLayerKey, false);
-            for (Entity& e : res.value()) {
-                if (onCurrent)
-                    e.common.layer = ctx.doc().header().currentLayer;
-                auto id = ctx.tx().add(std::move(e));
-                if (!id)
-                    ctx.message(id.error().message);
-            }
-            if (getFlag(ctx.host(), kEraseKey, false))
-                (void)ctx.tx().erase(pick.id);
         }
     }
 };
