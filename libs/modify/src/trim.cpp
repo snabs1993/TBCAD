@@ -343,6 +343,104 @@ Result<EntityEdit> extendSeg(const Entity& target, Seg seg, bool atEnd,
     return EntityEdit{};
 }
 
+// An elliptical arc grows along its ellipse to the nearest boundary crossing in the undrawn part.
+Result<EntityEdit> extendEllipse(const Entity& target, const EllipseData& el,
+                                 const std::vector<CurveRef>& edges, Vec2 pick,
+                                 const TrimOptions& opt) {
+    double sweep = normalizeAngle(el.endParam - el.startParam);
+    if (sweep < 1e-12)
+        return err("A full ellipse has no ends to extend.");
+    const CurveRef full =
+        CurveRef::ellipse(el.center, el.majorAxis, el.ratio, el.startParam, kTwoPi);
+    const CurveRef drawn =
+        CurveRef::ellipse(el.center, el.majorAxis, el.ratio, el.startParam, sweep);
+    const bool atEnd = distance(pick, drawn.endPoint()) <= distance(pick, drawn.startPoint());
+    const double gap = kTwoPi - sweep;
+    double bestDelta = std::numeric_limits<double>::infinity(), bestT = 0;
+    for (const CurveRef& e : edges) {
+        std::vector<geom::Intersection> xs;
+        geom::intersect(full, e, xs, true, opt.extendEdges);
+        for (const auto& x : xs) {
+            const double t = full.paramAt(x.p);
+            // How far past the chosen end, going away from the drawn part, the crossing lies.
+            double delta =
+                atEnd ? normalizeAngle(t - el.endParam) : normalizeAngle(el.startParam - t);
+            if (delta > 1e-9 && delta < gap - 1e-9 && delta < bestDelta) {
+                bestDelta = delta;
+                bestT = t;
+            }
+        }
+    }
+    if (!std::isfinite(bestDelta))
+        return err("No boundary edge lies ahead of this end of the object.");
+    EllipseData out = el;
+    if (atEnd)
+        out.endParam = normalizeAngle(bestT);
+    else
+        out.startParam = normalizeAngle(bestT);
+    EntityEdit edit;
+    edit.modified = withData(target, out);
+    return edit;
+}
+
+// A spline is continued along its end tangent as a straight run, joined with the same degree so
+// the result stays one spline (the original span is untouched).
+Result<EntityEdit> extendSpline(const Entity& target, const SplineData& sd,
+                                const std::vector<CurveRef>& edges, Vec2 pick,
+                                const TrimOptions& opt) {
+    if (sd.closed || sd.periodic)
+        return err("A closed spline cannot be extended.");
+    auto made = CurveRef::spline(sd);
+    if (!made)
+        return err("The spline is not valid.");
+    const CurveRef& c = made.value();
+    const bool atEnd = distance(pick, c.endPoint()) <= distance(pick, c.startPoint());
+    const Vec2 from = atEnd ? c.endPoint() : c.startPoint();
+    Vec2 dir = c.tangentAt(atEnd ? c.t1() : c.t0());
+    if (!atEnd)
+        dir = dir * -1.0;
+    if (tol::isZeroLength(dir))
+        return err("The spline has no direction at this end.");
+    BBox2 box = c.bounds();
+    for (const CurveRef& e : edges)
+        box.merge(e.bounds());
+    const double reach =
+        2.0 * (distance(box.min, box.max) + distance(from, box.min) + distance(from, box.max)) +
+        1.0;
+    const CurveRef ray = CurveRef::line(from, from + dir * reach);
+    double best = std::numeric_limits<double>::infinity();
+    Vec2 hit{};
+    for (const CurveRef& e : edges) {
+        std::vector<geom::Intersection> xs;
+        geom::intersect(ray, e, xs, false, opt.extendEdges);
+        for (const auto& x : xs) {
+            const double dd = dot(x.p - from, dir);
+            if (dd > 1e-9 && dd < best) {
+                best = dd;
+                hit = x.p;
+            }
+        }
+    }
+    if (!std::isfinite(best))
+        return err("No boundary edge lies ahead of this end of the object.");
+    SplineData run;
+    run.degree = sd.degree;
+    const int p = std::max(1, sd.degree);
+    for (int i = 0; i <= p; ++i)
+        run.control.push_back(from + (hit - from) * (static_cast<double>(i) / p));
+    run.knots.assign(static_cast<std::size_t>(p) + 1, 0.0);
+    run.knots.insert(run.knots.end(), static_cast<std::size_t>(p) + 1, 1.0);
+    // At the start the run goes hit -> start, then the original continues.
+    if (!atEnd)
+        std::reverse(run.control.begin(), run.control.end());
+    SplineData out = atEnd ? chainSplines(sd, run) : chainSplines(run, sd);
+    out.fit.clear();
+    out.closed = false;
+    EntityEdit edit;
+    edit.modified = withData(target, Indirect<SplineData>(std::move(out)));
+    return edit;
+}
+
 }  // namespace
 
 Result<EntityEdit> extendEntity(const Entity& target, Vec2 pick,
@@ -406,6 +504,10 @@ Result<EntityEdit> extendEntity(const Entity& target, Vec2 pick,
             edit.modified = withData(target, polylineFromSegs(segs, false, &pl));
             return edit;
         }
+        case EntityKind::Ellipse:
+            return extendEllipse(target, *entityAs<EllipseData>(target), ec, pick, opt);
+        case EntityKind::Spline:
+            return extendSpline(target, *entityAs<SplineData>(target), ec, pick, opt);
         default:
             return err("This kind of object cannot be extended.");
     }

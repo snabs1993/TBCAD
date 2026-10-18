@@ -255,6 +255,34 @@ TEST_CASE("EXTEND to a boundary, Shift trims") {
     CHECK(f.host.logContains("No boundary"));
 }
 
+TEST_CASE("EXTEND an elliptical arc and a spline, and undo") {
+    Fixture f;
+    EllipseData el;
+    el.majorAxis = {10, 0};
+    el.ratio = 0.5;
+    el.startParam = 0.3;
+    el.endParam = 1.0;
+    EntityId ea = f.add(el);
+    SplineData sp;
+    sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+    sp.control = {{0, 30}, {10, 50}, {30, 10}, {50, 40}, {60, 30}};
+    EntityId sid = f.add(Indirect<SplineData>(sp));
+    f.add(LineData{{-20, 4}, {20, 4}});
+    f.add(LineData{{80, -100}, {80, 100}});
+    const std::size_t base = f.host.undoStack().undoCount();
+    f.host.run("EXTEND",
+               {ScriptItem::enter(), ScriptItem::pick(ea, {10 * std::cos(1.0), 5 * std::sin(1.0)}),
+                ScriptItem::pick(sid, {59, 30.5}), ScriptItem::enter()});
+    CHECK(std::abs(entityAs<EllipseData>(f.get(ea))->endParam - 2.2143) < 1e-3);
+    std::vector<geom::CurveRef> cs;
+    geom::curvesOf(f.get(sid), cs);
+    REQUIRE(cs.size() == 1);
+    CHECK(near(cs[0].endPoint(), {80, 10}, 1e-6));
+    while (f.host.undoStack().undoCount() > base)
+        f.host.undo();
+    CHECK(std::abs(entityAs<EllipseData>(f.get(ea))->endParam - 1.0) < 1e-9);
+}
+
 TEST_CASE("FILLET with a radius, trim modes, Shift for a sharp corner, polylines") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {10, 0}});

@@ -260,3 +260,88 @@ TEST_CASE("trim a closed spline between two cuts leaves one open spline across t
     CHECK(near(cs[0].endPoint().y, -20, 0.5));
     CHECK(cs[0].pointAt(0.5 * (cs[0].t0() + cs[0].t1())).x < 0);  // the long way round, to the left
 }
+
+TEST_CASE("extend an elliptical arc along its ellipse, at both ends") {
+    EllipseData el;
+    el.center = {0, 0};
+    el.majorAxis = {10, 0};
+    el.ratio = 0.5;
+    el.startParam = 0.3;
+    el.endParam = 1.0;
+    Entity e = make(el);
+    // A wall at y = 4 meets the ellipse (minor radius 5) at asin(0.8) = 0.9273 and 2.2143.
+    std::vector<Entity> wall{line({-20, 4}, {20, 4})};
+    const Vec2 endPick{10 * std::cos(1.0), 5 * std::sin(1.0)};
+    // The end already passed the first crossing, so it runs on to the second one.
+    auto r = extendEntity(e, endPick, ptrs(wall));
+    REQUIRE(r.ok());
+    CHECK(near(as<EllipseData>(*r.value().modified).endParam, 2.2143, 1e-3));
+    CHECK(near(as<EllipseData>(*r.value().modified).startParam, 0.3));
+    // The start runs backwards round the ellipse to the crossing at 2.2143 - going away from the
+    // arc.
+    std::vector<Entity> low{line({-20, -4}, {20, -4})};
+    auto s = extendEntity(e, {10 * std::cos(0.3), 5 * std::sin(0.3)}, ptrs(low));
+    REQUIRE(s.ok());
+    CHECK(near(as<EllipseData>(*s.value().modified).startParam, kTwoPi - 0.9273, 1e-3));
+    CHECK(near(as<EllipseData>(*s.value().modified).endParam, 1.0));
+    // A full ellipse has no ends.
+    el.startParam = 0;
+    el.endParam = kTwoPi;
+    CHECK_FALSE(extendEntity(make(el), endPick, ptrs(wall)).ok());
+    // Nothing ahead.
+    std::vector<Entity> far{line({-20, 40}, {20, 40})};
+    CHECK_FALSE(extendEntity(e, endPick, ptrs(far)).ok());
+}
+
+TEST_CASE("extend a spline along its end tangent, keeping the drawn part exactly") {
+    for (double ox : {0.0, 500123.456}) {
+        SplineData sp;
+        sp.degree = 3;
+        sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+        sp.control = {{ox, 0}, {ox + 10, 20}, {ox + 30, -20}, {ox + 50, 10}, {ox + 60, 0}};
+        Entity e = make(Indirect<SplineData>(sp));
+        std::vector<geom::CurveRef> before;
+        geom::curvesOf(e, before);
+        std::vector<Entity> wall{line({ox + 80, -200}, {ox + 80, 200}),
+                                 line({ox - 10, -200}, {ox - 10, 200})};
+        auto r = extendEntity(e, {ox + 59, 0.5}, ptrs(wall));
+        REQUIRE(r.ok());
+        std::vector<geom::CurveRef> after;
+        REQUIRE(geom::curvesOf(*r.value().modified, after));
+        REQUIRE(after.size() == 1);
+        // The end tangent leaves (60, 0) towards (+10, -10): it meets x = 80 at (80, -20).
+        CHECK(near(after[0].endPoint(), {ox + 80, -20}, 1e-6));
+        CHECK(near(after[0].startPoint(), {ox, 0}, 1e-6));
+        for (double t : {0.2, 0.7, 1.0, 1.6}) {
+            const Vec2 p = before[0].pointAt(t);
+            CHECK(after[0].distanceTo(p) < 1e-6);
+        }
+        auto s = extendEntity(e, {ox + 1, 2}, ptrs(wall));
+        REQUIRE(s.ok());
+        after.clear();
+        REQUIRE(geom::curvesOf(*s.value().modified, after));
+        CHECK(near(after[0].startPoint(), {ox - 10, -20}, 1e-6));
+        CHECK(near(after[0].endPoint(), {ox + 60, 0}, 1e-6));
+        for (double t : {0.2, 0.7, 1.0, 1.6})
+            CHECK(after[0].distanceTo(before[0].pointAt(t)) < 1e-6);
+        // Closed splines cannot be extended.
+        SplineData cl = sp;
+        cl.closed = true;
+        CHECK_FALSE(extendEntity(make(Indirect<SplineData>(cl)), {ox, 0}, ptrs(wall)).ok());
+    }
+}
+
+TEST_CASE("extend a polyline whose last segment is an arc") {
+    // Quarter circle of radius 5 from (5,0) to (0,5) (counter-clockwise), then stop.
+    std::vector<PolyVertex> v{
+        {{10, 0}, 0, 0, 0}, {{5, 0}, std::tan(kPi / 8), 0, 0}, {{0, 5}, 0, 0, 0}};
+    Entity pl = poly(v, false);
+    std::vector<Entity> wall{line({-10, -3}, {10, -3})};  // reached by running on past (-5, 0)
+    auto r = extendEntity(pl, {0.5, 4.9}, ptrs(wall));
+    REQUIRE(r.ok());
+    const auto& out = as<PolylineData>(*r.value().modified);
+    REQUIRE(out.v.size() == 3);
+    // The arc keeps its circle (centre origin, radius 5) and ends where it crosses y = -3.
+    CHECK(near(out.v.back().p, {-4, -3}, 1e-6));
+    CHECK(near(distance(out.v.back().p, {0, 0}), 5, 1e-6));
+}
