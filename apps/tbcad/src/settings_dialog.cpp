@@ -126,6 +126,14 @@ void SettingsDialog::wheel(ui::AppCore& core) {
         "ERASE", "EXTEND",   "DIM",    "UNDO",   "REDO",      "ZOOM",  "LAYER",  "ORTHO"};
     std::vector<std::string> tools = ui::parseWheelTools(s.getString("ui.wheel.tools", ""));
     bool changed = false;
+    // The eight slots are folded away: most people keep the defaults, and they filled the page.
+    if (!ImGui::CollapsingHeader("Choose the tools on the wheel")) {
+        std::string line;
+        for (const std::string& t : tools)
+            line += (line.empty() ? "" : ", ") + (t.empty() ? std::string("-") : t);
+        ImGui::TextDisabled("%s", line.c_str());
+        return;
+    }
     ImGui::TextDisabled(
         "Slots run clockwise from the top. Pick a tool, or type any command or alias.");
     for (int i = 0; i < ui::kWheelSlots; ++i) {
