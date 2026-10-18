@@ -255,3 +255,99 @@ TEST_CASE("perf: layer and block commands on a big drawing") {
     big.bench("LAYER-LOCK", {"-LAYER", "Lock", "0", ""});
     big.bench("BLOCK", {"BLOCK", "Everything", "0,0"});
 }
+
+TEST_CASE("perf: selection on a big drawing") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Big big;
+    std::printf("selection on %d objects\n", 2 * big.n);
+    auto time = [&](const char* label, auto&& f) {
+        auto t = std::chrono::steady_clock::now();
+        const std::size_t n = f();
+        std::printf("  %-22s %6.0f ms  (%zu picked)\n", label, ms(t), n);
+    };
+    const double w = 500 * 30.0, h = (big.n / 500) * 30.0;
+    using S = cmd::IHost::SelectShape;
+    time("window, everything", [&] {
+        return big.core->selectShape(S::Window, {{-10, -10}, {w + 100, h + 100}}).value().size();
+    });
+    time("crossing, everything", [&] {
+        return big.core->selectShape(S::Crossing, {{-10, -10}, {w + 100, h + 100}}).value().size();
+    });
+    time("crossing, a tenth", [&] {
+        return big.core->selectShape(S::Crossing, {{0, 0}, {w / 3, h / 3}}).value().size();
+    });
+    time("fence across", [&] {
+        return big.core->selectShape(S::Fence, {{-10, h / 2}, {w + 100, h / 2 + 7}}).value().size();
+    });
+    time("window polygon, all", [&] {
+        return big.core
+            ->selectShape(S::WPolygon,
+                          {{-10, -10}, {w + 100, -10}, {w + 100, h + 100}, {-10, h + 100}})
+            .value()
+            .size();
+    });
+    time("crossing polygon, all", [&] {
+        return big.core
+            ->selectShape(S::CPolygon,
+                          {{-10, -10}, {w + 100, -10}, {w + 100, h + 100}, {-10, h + 100}})
+            .value()
+            .size();
+    });
+    big.core->selectAll();
+    for (const char* cmdName : {"SELECTSIMILAR", "QSELECT"}) {
+        auto t = std::chrono::steady_clock::now();
+        big.core->submitText(cmdName);
+        std::printf("  %-22s %6.0f ms  (prompt: %s)\n", cmdName, ms(t),
+                    big.core->promptText().c_str());
+        big.core->submitText("");
+        big.core->pressEscape();
+    }
+}
+
+TEST_CASE("perf: QSELECT on a big drawing") {
+    Big big;
+    big.core->selectAll();
+    for (const char* l : {"QSELECT", "Type", "Line", "", "", ""}) {
+        auto t = std::chrono::steady_clock::now();
+        big.core->submitText(l);
+        std::printf("  %-8s %6.0f ms  -> %s\n", l, ms(t), big.core->promptText().c_str());
+    }
+    std::printf("  selected: %zu\n", big.core->selection().size());
+}
+
+TEST_CASE("perf: pointer movement with snaps on a big drawing") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Big big;
+    std::printf("pointer on %d objects\n", 2 * big.n);
+    auto run = [&](const char* label) {
+        double worst = 0, total = 0;
+        const int steps = 200;
+        for (int i = 0; i < steps; ++i) {
+            ui::PointerState p;
+            p.screen = {100.0 + (i * 37) % 1100, 100.0 + (i * 53) % 700};
+            auto t = std::chrono::steady_clock::now();
+            big.core->pointerMoved(p);
+            big.core->updateFrame();
+            const double d = ms(t);
+            worst = std::max(worst, d);
+            total += d;
+        }
+        std::printf("  %-26s mean %.2f ms, worst %.2f ms per move+frame\n", label, total / steps,
+                    worst);
+    };
+    run("idle (hover)");
+    big.core->submitText("LINE");
+    run("LINE, first point");
+    big.core->submitText("0,0");
+    run("LINE, second point");
+    big.core->pressEscape();
+    // zoomed in on a few objects
+    big.core->submitText("ZOOM");
+    big.core->submitText("W");
+    big.core->submitText("0,0");
+    big.core->submitText("300,200");
+    big.core->updateFrame();
+    big.core->submitText("LINE");
+    run("zoomed in, LINE");
+    big.core->pressEscape();
+}
