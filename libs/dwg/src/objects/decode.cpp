@@ -189,7 +189,10 @@ public:
                 found = w->second - e.offset;
                 ok = true;
             }
-            for (std::int64_t d = 1; !ok && d <= 8192; ++d) {
+            // The search costs 16000 frame probes; once many objects in a row had nothing nearby
+            // the rest are damaged for good and the search is dropped (it took seconds on a file
+            // with thousands of such objects).
+            for (std::int64_t d = 1; !ok && searchMisses_ < 60 && d <= 8192; ++d) {
                 for (std::int64_t sd : {d, -d}) {
                     if (frameHandle(e.offset + sd) == e.handle) {
                         found = sd;
@@ -198,6 +201,8 @@ public:
                     }
                 }
             }
+            if (searchMisses_ < 60)
+                searchMisses_ = ok ? 0 : searchMisses_ + 1;
             if (ok) {
                 ++out_.relocated[found];
                 if (out_.relocatedSamples.size() < 24 &&
@@ -214,6 +219,7 @@ public:
         }
         std::sort(out_.entities.begin(), out_.entities.end(),
                   [](const EntityRec& a, const EntityRec& b) { return a.handle < b.handle; });
+        noteTypeTimes();
     }
 
 private:
@@ -229,6 +235,7 @@ private:
 
     bool quiet_ = false;
     bool framed_ = true;
+    int searchMisses_ = 0;  // objects in a row whose frame was not found near the map's place
     // A problem with the frame of an object: silent while the caller may still look elsewhere.
     void frameNote(const std::string& s) {
         framed_ = false;
@@ -363,7 +370,7 @@ private:
             const std::uint64_t h = frameHandle(off);
             const std::size_t len = frameLength(off);
             if (h != 0 && len != 0 && off + static_cast<std::int64_t>(len) + 2 <= end) {
-                {
+                if (crcOk + crcBad < 4000) {  // a sample: six passes over every object are slow
                     const auto whole = file_.subspan(static_cast<std::size_t>(off), len);
                     BitReader head(whole);
                     head.ms();
