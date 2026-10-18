@@ -124,3 +124,5 @@ and export to DXF like any other leaders. Everything from one MLEADER run is one
 - **DIMBASELINE** (DBA) starts every new dimension at the base dimension's first extension line and stacks each one
   further out, by 2.5 text heights (scaled by the style's overall scale).
 - **DIMTEDIT** (DTE) moves the text of a picked dimension to a new point; **Home** puts it back at its automatic place.
+- **DIMSPACE** (DSP) evens out the gaps between parallel linear or aligned dimensions: pick the base dimension, select the
+  others, then type the spacing or **Auto** (two text heights). A spacing of 0 lines them up with the base.

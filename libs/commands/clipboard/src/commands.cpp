@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <filesystem>
 
 #include "tbcad/clipboard/clipboard.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::clipboard {
@@ -135,6 +137,60 @@ private:
     Mode mode_;
 };
 
+// WBLOCK [W]: writes the selected objects, with the layers, styles and blocks they use, to a
+// drawing file whose origin is the chosen base point.
+class WBlockCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "WBLOCK"; }
+    std::vector<std::string> defaultAliases() const override { return {"W"}; }
+    std::string_view description() const override {
+        return "Write the selected objects to a drawing file";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.filter = [&doc = ctx.doc()](const Entity& e) { return visibleEntity(doc, e); };
+        auto sel = co_await ctx.getSelection("Select objects to write", so);
+        if (!sel.ok())
+            co_return;
+        auto b = co_await ctx.getPoint("Specify base point");
+        if (!b.ok())
+            co_return;
+        auto f = co_await ctx.getString("Enter the file name <block.tbcad>",
+                                        cmd::StringOptions{.defaultValue = "block.tbcad"});
+        if (!f.ok())
+            co_return;
+        std::string file = cmd::trim(f.text);
+        if (std::filesystem::path(file).extension().empty())
+            file += ".tbcad";
+
+        Clip clip = capture(ctx.doc(), sel.ids, b.point);
+        if (clip.empty()) {
+            ctx.message("Nothing to write.");
+            co_return;
+        }
+        Document out;
+        {
+            Transaction tx = out.begin("WBLOCK");
+            PasteOptions opts;
+            opts.target = {0, 0};
+            auto ids = paste(tx, clip, opts);
+            if (!ids) {
+                ctx.message(ids.error().message);
+                co_return;
+            }
+            tx.commit();
+        }
+        auto r = io::writeTbcad(out, std::filesystem::path(std::u8string(file.begin(), file.end())),
+                                io::WriteOptions{.keepBackup = false});
+        if (!r) {
+            ctx.message("Cannot write " + file + ": " + r.error().message);
+            co_return;
+        }
+        ctx.message(plural(clip.entities.size()) + " written to " + file + ".");
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -144,6 +200,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PasteCommand>("PASTECLIP", PasteCommand::Mode::Normal));
     (void)registry.add(std::make_unique<PasteCommand>("PASTEBLOCK", PasteCommand::Mode::Block));
     (void)registry.add(std::make_unique<PasteCommand>("PASTEORIG", PasteCommand::Mode::Original));
+    (void)registry.add(std::make_unique<WBlockCommand>());
 }
 
 void registerUi(ui::UiRegistry& ui) {

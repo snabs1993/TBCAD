@@ -4,7 +4,7 @@ tbcad_add_library(clipboard
   SOURCES
     src/clipboard.cpp
     src/commands.cpp
-  DEPENDS tbcad::cmd tbcad::ui tbcad::geom tbcad::core)
+  DEPENDS tbcad::cmd tbcad::ui tbcad::geom tbcad::core tbcad::io)
 tbcad_add_tests(clipboard
   SOURCES
     tests/main.cpp

@@ -384,6 +384,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeContinueCommand());
     (void)registry.add(makeBaselineCommand());
     (void)registry.add(makeTextEditCommand());
+    (void)registry.add(makeSpaceCommand());
     (void)registry.add(makeDimStyleCommand());
     (void)registry.add(makeDimSetupCommand());
     (void)registry.add(makeDimStylesPanelCommand());

@@ -88,3 +88,24 @@ TEST_CASE("DIMTEDIT moves the text and Home puts it back") {
     CHECK_FALSE(f.dims()[0]->textPosUser);
     CHECK(f.dims()[0]->textPos.x == doctest::Approx(50));
 }
+
+TEST_CASE("DIMSPACE evens out the gaps between parallel dimensions") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "200,0", "50,-47"}).finished);
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "300,0", "50,-61"}).finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 3);
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    std::sort(ids.begin(), ids.end(), [](EntityId a, EntityId b) { return a.value < b.value; });
+    auto r =
+        f.host->run("DIMSPACE", {ScriptItem::pick(ids[0], {50, -30}),
+                                 ScriptItem::select({ids[1], ids[2]}), ScriptItem::enter(), "20"});
+    CHECK(r.finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[1]))->defPts[2].y == doctest::Approx(-50));
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[2]))->defPts[2].y == doctest::Approx(-70));
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[0]))->defPts[2].y == doctest::Approx(-30));
+    CHECK(f.host->undo());
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[1]))->defPts[2].y == doctest::Approx(-47));
+}
