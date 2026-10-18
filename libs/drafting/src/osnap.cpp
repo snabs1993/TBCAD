@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "tbcad/geom/entity.h"
+
 namespace tbcad::drafting {
 
 namespace {
@@ -119,6 +121,114 @@ void tangentPoints(const geom::CurveRef& c, Vec2 from, std::vector<Vec2>& out) {
     }
 }
 
+// How close the geometry of `e` comes to `p`, without building its snap geometry: a lower bound of
+// the distance to anything it can snap to. Straight and round shapes are measured exactly (their
+// bounding boxes are poor stand-ins for a long diagonal line); other kinds fall back on the box.
+double segmentDistance(Vec2 p, Vec2 a, Vec2 b) {
+    const Vec2 ab = b - a;
+    const double len2 = lengthSquared(ab);
+    const double u = len2 > 0 ? std::clamp(dot(p - a, ab) / len2, 0.0, 1.0) : 0.0;
+    return distance(p, a + ab * u);
+}
+
+// Distance to the counter-clockwise arc from `start` through `sweep` radians.
+double arcDistance(Vec2 p, Vec2 c, double r, double start, double sweep) {
+    const Vec2 v = p - c;
+    const double d = length(v);
+    if (sweep >= kTwoPi - 1e-12 || d == 0)
+        return std::abs(d - r);
+    double a = std::atan2(v.y, v.x) - start;
+    a -= kTwoPi * std::floor(a / kTwoPi);  // [0, 2pi)
+    if (a <= sweep)
+        return std::abs(d - r);
+    const double s0 = start, s1 = start + sweep;
+    return std::min(distance(p, c + Vec2{std::cos(s0), std::sin(s0)} * r),
+                    distance(p, c + Vec2{std::cos(s1), std::sin(s1)} * r));
+}
+
+double reach(const Entity& e, Vec2 p, double boxDistance) {
+    switch (kind(e)) {
+        case EntityKind::Line: {
+            const auto* l = entityAs<LineData>(e);
+            return segmentDistance(p, l->a, l->b);
+        }
+        case EntityKind::Circle: {
+            const auto* c = entityAs<CircleData>(e);
+            const double d = distance(p, c->center);
+            return std::min(d, std::abs(d - c->radius));  // the centre snaps too
+        }
+        case EntityKind::Arc: {
+            const auto* a = entityAs<ArcData>(e);
+            double sweep = a->endAngle - a->startAngle;
+            sweep -= kTwoPi * std::floor(sweep / kTwoPi);
+            if (sweep <= 0)
+                sweep = kTwoPi;
+            return std::min(distance(p, a->center),
+                            arcDistance(p, a->center, a->radius, a->startAngle, sweep));
+        }
+        case EntityKind::Polyline: {
+            const auto* pl = entityAs<PolylineData>(e);
+            const std::size_t n = pl->v.size();
+            if (n == 0)
+                return boxDistance;
+            if (n == 1)
+                return distance(p, pl->v[0].p);
+            double best = 1e300;
+            const std::size_t segs = pl->closed ? n : n - 1;
+            for (std::size_t i = 0; i < segs; ++i) {
+                const PolyVertex& v0 = pl->v[i];
+                const Vec2 q = pl->v[(i + 1) % n].p;
+                if (const auto arc = geom::bulgeArc(v0.p, q, v0.bulge))
+                    best = std::min(best, arcDistance(p, arc->center, arc->radius, arc->startAngle,
+                                                      arc->sweep));
+                else
+                    best = std::min(best, segmentDistance(p, v0.p, q));
+            }
+            return best;
+        }
+        default:
+            return boxDistance;
+    }
+}
+
+// The part of a curve's box that matters for intersections inside the aperture square `ap`: for
+// a straight curve the box of the piece inside the square, else the box clipped to it.
+BBox2 relevantBox(const geom::CurveRef& c, const BBox2& ap) {
+    BBox2 box = c.bounds();
+    if (c.kind() == geom::CurveRef::Kind::Line) {
+        // Liang-Barsky against the square.
+        const Vec2 a = c.lineA(), d = c.lineB() - a;
+        double t0 = 0, t1 = 1;
+        auto clip = [&](double p, double q) {
+            if (p == 0)
+                return q >= 0;
+            const double r = q / p;
+            if (p < 0) {
+                if (r > t1)
+                    return false;
+                t0 = std::max(t0, r);
+            } else {
+                if (r < t0)
+                    return false;
+                t1 = std::min(t1, r);
+            }
+            return true;
+        };
+        if (!(clip(-d.x, a.x - ap.min.x) && clip(d.x, ap.max.x - a.x) &&
+              clip(-d.y, a.y - ap.min.y) && clip(d.y, ap.max.y - a.y)))
+            return BBox2{};
+        box = BBox2{};
+        box.expand(a + d * t0);
+        box.expand(a + d * t1);
+        return box;
+    }
+    box.min.x = std::max(box.min.x, ap.min.x);
+    box.min.y = std::max(box.min.y, ap.min.y);
+    box.max.x = std::min(box.max.x, ap.max.x);
+    box.max.y = std::min(box.max.y, ap.max.y);
+    return box;
+}
+
 }  // namespace
 
 void curveSnapPoints(const geom::CurveRef& curve, const SnapRequest& rq,
@@ -148,18 +258,35 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
     if (rq.modes == 0 || !(rq.apertureMm > 0))
         return out;
 
-    // Entities whose box reaches the aperture, nearest first, capped.
-    std::vector<index::Neighbor> near;
-    index.queryPoint(rq.cursor, rq.apertureMm, [&](EntityId id, const BBox2& box) {
-        double dx = std::max({box.min.x - rq.cursor.x, 0.0, rq.cursor.x - box.max.x});
-        double dy = std::max({box.min.y - rq.cursor.y, 0.0, rq.cursor.y - box.max.y});
-        near.push_back({id, std::hypot(dx, dy)});
-    });
-    std::stable_sort(
-        near.begin(), near.end(),
-        [](const index::Neighbor& a, const index::Neighbor& b) { return a.distance < b.distance; });
-    if (near.size() > rq.maxEntities)
+    // Entities whose geometry reaches the aperture, nearest first, capped. The index finds the
+    // ones whose box does; a long diagonal line has a huge box, so each is measured for real
+    // before any snap geometry is built.
+    // Zoomed far out the aperture can hold thousands of boxes; only the nearest few by box are
+    // measured.
+    std::vector<index::Neighbor> near =
+        index.nearest(rq.cursor, std::max<std::size_t>(4 * rq.maxEntities, 256), rq.apertureMm);
+    {
+        std::size_t kept = 0;
+        for (std::size_t i = 0; i < near.size(); ++i) {
+            const Entity* e = doc.find(near[i].id);
+            if (!e || !e->common.visible)
+                continue;
+            const double d = reach(*e, rq.cursor, near[i].distance);
+            if (d > rq.apertureMm)
+                continue;
+            near[kept++] = {near[i].id, d};
+        }
+        near.resize(kept);
+    }
+    const auto byDistance = [](const index::Neighbor& a, const index::Neighbor& b) {
+        return a.distance != b.distance ? a.distance < b.distance : a.id < b.id;
+    };
+    if (near.size() > rq.maxEntities) {
+        std::nth_element(near.begin(), near.begin() + static_cast<std::ptrdiff_t>(rq.maxEntities),
+                         near.end(), byDistance);
         near.resize(rq.maxEntities);
+    }
+    std::sort(near.begin(), near.end(), byDistance);
 
     struct Item {
         EntityId id;
@@ -190,20 +317,35 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
     }
 
     if (rq.modes & maskOf(SnapMode::Intersection)) {
-        // Only curves that pass near the cursor can produce an intersection inside the aperture.
+        // Only curves that pass through the aperture can produce an intersection inside it. Of
+        // those, only pairs whose boxes overlap are intersected (a sweep along x).
         struct Cand {
             std::size_t item;
             const geom::CurveRef* curve;
+            BBox2 box;
         };
         std::vector<Cand> curves;
-        for (std::size_t i = 0; i < items.size(); ++i)
-            for (const geom::CurveRef& c : items[i].geometry.curves)
-                if (c.bounds().inflated(rq.apertureMm).contains(rq.cursor))
-                    curves.push_back({i, &c});
+        // Intersections are worked out among the nearest few objects only: that is where the
+        // wanted one is, and every pair costs.
+        constexpr std::size_t kIntersectItems = 40;
+        const BBox2 ap{{rq.cursor.x - rq.apertureMm, rq.cursor.y - rq.apertureMm},
+                       {rq.cursor.x + rq.apertureMm, rq.cursor.y + rq.apertureMm}};
+        for (std::size_t i = 0; i < std::min(items.size(), kIntersectItems); ++i)
+            for (const geom::CurveRef& c : items[i].geometry.curves) {
+                const BBox2 box = relevantBox(c, ap);
+                if (!box.empty() && box.min.x <= box.max.x && box.min.y <= box.max.y)
+                    curves.push_back({i, &c, box});
+            }
+        std::sort(curves.begin(), curves.end(),
+                  [](const Cand& a, const Cand& b) { return a.box.min.x < b.box.min.x; });
         std::vector<geom::Intersection> hits;
         for (std::size_t a = 0; a < curves.size(); ++a)
-            for (std::size_t b = a + 1; b < curves.size(); ++b) {
+            for (std::size_t b = a + 1;
+                 b < curves.size() && curves[b].box.min.x <= curves[a].box.max.x; ++b) {
                 if (curves[a].item == curves[b].item)
+                    continue;
+                if (curves[b].box.min.y > curves[a].box.max.y ||
+                    curves[a].box.min.y > curves[b].box.max.y)
                     continue;
                 hits.clear();
                 geom::intersect(*curves[a].curve, *curves[b].curve, hits);
@@ -213,9 +355,31 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
             }
     }
 
-    std::stable_sort(out.begin(), out.end(), [](const SnapCandidate& a, const SnapCandidate& b) {
-        return a.distance < b.distance;
-    });
+    {
+        // Total order, so the cut below does not depend on the sort implementation.
+        const auto closer = [](const SnapCandidate& a, const SnapCandidate& b) {
+            if (a.distance != b.distance)
+                return a.distance < b.distance;
+            if (a.mode != b.mode)
+                return a.mode < b.mode;
+            if (a.entity != b.entity)
+                return a.entity < b.entity;
+            return a.point.x != b.point.x ? a.point.x < b.point.x : a.point.y < b.point.y;
+        };
+        if (out.size() > rq.maxCandidates) {
+            // Keep the best few, plus whatever ties with the last one so the mode order below
+            // still decides between equals.
+            const auto cut = out.begin() + static_cast<std::ptrdiff_t>(rq.maxCandidates);
+            std::nth_element(out.begin(), cut, out.end(), closer);
+            const double limit = cut->distance + kTieMm;
+            std::size_t kept = 0;
+            for (std::size_t k = 0; k < out.size(); ++k)
+                if (out[k].distance <= limit)
+                    out[kept++] = out[k];
+            out.resize(kept);
+        }
+        std::sort(out.begin(), out.end(), closer);
+    }
     // Candidates within a hair of each other in distance: the mode order decides.
     for (std::size_t i = 0; i < out.size();) {
         std::size_t j = i + 1;
@@ -229,11 +393,18 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
         i = j;
     }
     // The same point reached through two entities (a shared endpoint) is listed once per mode.
+    // Equal points are equally far from the cursor, so only the tail of the sorted list needs to
+    // be looked at.
     std::vector<SnapCandidate> unique;
+    unique.reserve(out.size());
     for (const SnapCandidate& c : out) {
-        bool dup = std::any_of(unique.begin(), unique.end(), [&](const SnapCandidate& u) {
-            return u.mode == c.mode && distance(u.point, c.point) <= kTieMm;
-        });
+        bool dup = false;
+        for (std::size_t k = unique.size();
+             k-- > 0 && c.distance - unique[k].distance <= 2 * kTieMm;)
+            if (unique[k].mode == c.mode && distance(unique[k].point, c.point) <= kTieMm) {
+                dup = true;
+                break;
+            }
         if (!dup)
             unique.push_back(c);
     }
