@@ -1197,6 +1197,16 @@ std::vector<std::string> AppCore::complete(std::string_view prefix) const {
 
 // ---- viewport ----------------------------------------------------------------------------------
 
+void AppCore::setViewportOrigin(double x, double y) {
+    if (haveOrigin_ && camera_.viewportW > 1 && fitPending_ == 0 &&
+        (x != viewportOrigin_.x || y != viewportOrigin_.y)) {
+        camera_.center.x += (x - viewportOrigin_.x) / camera_.pixelsPerMm;
+        camera_.center.y -= (y - viewportOrigin_.y) / camera_.pixelsPerMm;
+    }
+    viewportOrigin_ = {x, y};
+    haveOrigin_ = true;
+}
+
 void AppCore::setViewportSize(int w, int h) {
     const int nw = std::max(w, 1), nh = std::max(h, 1);
     const bool changed = nw != camera_.viewportW || nh != camera_.viewportH;

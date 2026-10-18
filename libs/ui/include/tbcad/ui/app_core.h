@@ -199,6 +199,9 @@ public:
     // ---- viewport ----------------------------------------------------------------------------
     const render::Camera2D& camera() const { return camera_; }
     void setViewportSize(int w, int h);
+    // Where the canvas starts on the window (pixels). A panel docked at the left or top moves it;
+    // the drawing then stays where it is on the screen instead of sliding with the canvas.
+    void setViewportOrigin(double x, double y);
     void setCamera(const render::Camera2D& cam);
     // `notches` mouse-wheel notches (fractions allowed); factor 1.2 per notch.
     void zoomAtScreen(Vec2 screen, double notches);
@@ -352,6 +355,8 @@ private:
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     EntityId hoverId_{};
+    Vec2 viewportOrigin_{};
+    bool haveOrigin_ = false;
     int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
     std::chrono::steady_clock::time_point fitUntil_{};  // re-fits only count until this time
     void applyPick(const std::vector<EntityId>& ids, bool remove);

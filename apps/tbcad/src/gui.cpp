@@ -3100,6 +3100,7 @@ ViewportRect Gui::frame() {
         rect.h -= layoutTabsHeight();
         layoutTabs(rect);
     }
+    core_.setViewportOrigin(std::lround(rect.x * s), std::lround(rect.y * s));
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);
