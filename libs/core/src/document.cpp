@@ -591,6 +591,14 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
             return invalid("dimension distance must not be negative");
     }
     r.precision = std::clamp(r.precision, 0, 16);
+    if (!std::isfinite(r.altScale) || !(r.altScale > 0))
+        return invalid("alternate unit scale must be positive");
+    for (double d : {r.tolUpper, r.tolLower}) {
+        if (!std::isfinite(d) || d < 0)
+            return invalid("tolerance must not be negative");
+    }
+    r.altPrecision = std::clamp(r.altPrecision, 0, 16);
+    r.tolPrecision = std::clamp(r.tolPrecision, 0, 16);
     return {};
 }
 Result<void> checkRow(const Document&, BlockDef& r, const BlockDef*) {

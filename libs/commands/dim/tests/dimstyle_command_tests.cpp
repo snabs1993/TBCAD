@@ -99,8 +99,26 @@ TEST_CASE("every DIMSTYLE property accepts a valid value") {
     CHECK(!ok("Bogus", "1").empty());
     CHECK(!ok("TextHeight", "0").empty());
     CHECK(!ok("LineColor", "300").empty());
+    CHECK(ok("AltUnits", "On").empty());
+    CHECK(s.altUnits);
+    CHECK(ok("AltUnit", "ft").empty());
+    CHECK(s.altUnit == LengthUnit::Foot);
+    CHECK(ok("AltScale", "2").empty());
+    CHECK(ok("AltPrecision", "4").empty());
+    CHECK(s.altPrecision == 4);
+    CHECK(ok("AltSuffix", "ft").empty());
+    CHECK(s.altSuffix == "ft");
+    CHECK(ok("Tolerance", "Limits").empty());
+    CHECK(s.tolerance == DimTolerance::Limits);
+    CHECK(ok("TolUpper", "0.1").empty());
+    CHECK(ok("TolLower", "0.2").empty());
+    CHECK(ok("TolPrecision", "3").empty());
+    CHECK(!ok("AltScale", "0").empty());
+    CHECK(!ok("TolUpper", "-1").empty());
+    CHECK(!ok("Tolerance", "Wide").empty());
+    CHECK(!ok("AltUnit", "yd").empty());
     for (const std::string& k : dimcmd::propertyKeywords())
-        if (k != "Prefix" && k != "Suffix")  // free text
+        if (k != "Prefix" && k != "Suffix" && k != "AltPrefix" && k != "AltSuffix")  // free text
             CHECK(!ok(k.c_str(), "@@@").empty());
 }
 

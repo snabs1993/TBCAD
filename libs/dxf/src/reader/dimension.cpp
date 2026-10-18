@@ -48,7 +48,8 @@ void bulgeArc(Vec2 a, Vec2 b, double bulge, std::vector<Vec2>& out) {
 // extended data), and its text can start with a relative height ("{\\H560x;<>}"). Both make a
 // copy of the style named by the dimension; copies with the same values are shared.
 DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
-    std::optional<double> txt, asz, scale, gap, exo, exe, dle;
+    std::optional<double> txt, asz, scale, gap, exo, exe, dle, tp, tm;
+    std::optional<std::int64_t> tolOn, limOn, altOn;
     bool inDstyle = false, inAcad = false;
     int var = -1;
     for (const Group& g : r.g) {
@@ -95,6 +96,21 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                     case 46:
                         dle = v * k_;
                         break;
+                    case 47:
+                        tp = v * k_;
+                        break;
+                    case 48:
+                        tm = v * k_;
+                        break;
+                    case 71:
+                        tolOn = static_cast<std::int64_t>(v);
+                        break;
+                    case 72:
+                        limOn = static_cast<std::int64_t>(v);
+                        break;
+                    case 170:
+                        altOn = static_cast<std::int64_t>(v);
+                        break;
                     default:
                         break;
                 }
@@ -116,7 +132,8 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             }
         }
     }
-    if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && factor == 1)
+    if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && !tp && !tm && !tolOn && !limOn &&
+        !altOn && factor == 1)
         return base;
     const DimStyle* b = base ? doc_->dimStyle(base) : nullptr;
     DimStyle ds = b ? *b : DimStyle{};
@@ -135,10 +152,26 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     if (dle && *dle >= 0)
         ds.dimLineExtension = *dle;
     ds.textHeight *= factor;
-    char key[256];
-    std::snprintf(key, sizeof key, "%u|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g", base.value,
-                  ds.textHeight, ds.arrowSize, ds.overallScale, ds.textGap, ds.extLineOffset,
-                  ds.extLineExtension, ds.dimLineExtension, factor);
+    // Tolerance on/off, limits and the plus and minus values; DIMTOL with equal values is
+    // symmetrical, with different ones a deviation, DIMLIM shows the two limits.
+    if (tp && *tp >= 0)
+        ds.tolUpper = *tp;
+    if (tm && *tm >= 0)
+        ds.tolLower = *tm;
+    if (limOn && *limOn != 0)
+        ds.tolerance = DimTolerance::Limits;
+    else if (tolOn && *tolOn != 0)
+        ds.tolerance =
+            ds.tolUpper == ds.tolLower ? DimTolerance::Symmetrical : DimTolerance::Deviation;
+    else if ((tolOn && *tolOn == 0) || (limOn && *limOn == 0))
+        ds.tolerance = DimTolerance::None;
+    if (altOn)
+        ds.altUnits = *altOn != 0;
+    char key[320];
+    std::snprintf(key, sizeof key, "%u|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%d|%.9g|%.9g|%d",
+                  base.value, ds.textHeight, ds.arrowSize, ds.overallScale, ds.textGap,
+                  ds.extLineOffset, ds.extLineExtension, ds.dimLineExtension, factor,
+                  static_cast<int>(ds.tolerance), ds.tolUpper, ds.tolLower, ds.altUnits ? 1 : 0);
     auto it = dimOverrideStyles_.find(key);
     if (it != dimOverrideStyles_.end())
         return it->second;

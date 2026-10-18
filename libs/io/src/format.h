@@ -33,6 +33,8 @@ inline constexpr std::uint32_t kTsty = fourcc("TSTY");
 inline constexpr std::uint32_t kDsty = fourcc("DSTY");
 // Fixed heights of text styles (format minor 11); older programs keep the chunk untouched.
 inline constexpr std::uint32_t kTsth = fourcc("TSTH");
+inline constexpr std::uint32_t kDstx =
+    fourcc("DSTX");  // alternate units and tolerances of dim styles
 inline constexpr std::uint32_t kBlks = fourcc("BLKS");
 inline constexpr std::uint32_t kXrfs = fourcc("XRFS");
 inline constexpr std::uint32_t kDynb = fourcc("DYNB");

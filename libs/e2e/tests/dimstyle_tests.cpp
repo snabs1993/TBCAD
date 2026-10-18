@@ -49,6 +49,16 @@ std::pair<std::string, std::string> randomProperty(std::mt19937& rng) {
         {"LineColor", {"ByBlock", "ByLayer", "1", "255", "10,20,30", "256", "1,2"}},
         {"ExtColor", {"3", "ByLayer"}},
         {"TextColor", {"7", "0,255,0"}},
+        {"AltUnits", {"On", "Off", "maybe"}},
+        {"AltScale", {"1", "25.4", "0", "-1", "x"}},
+        {"AltUnit", {"in", "ft", "m", "yd"}},
+        {"AltPrecision", {"0", "3", "9", "-1"}},
+        {"AltPrefix", {"~_", "none"}},
+        {"AltSuffix", {"in", "none"}},
+        {"Tolerance", {"None", "Symmetrical", "Deviation", "Limits", "Wide"}},
+        {"TolUpper", {"0", "0.05", "-1", "x"}},
+        {"TolLower", {"0", "0.02", "-1"}},
+        {"TolPrecision", {"0", "3", "9"}},
     };
     const auto& p = kProps[rng() % kProps.size()];
     return {p.first, p.second[rng() % p.second.size()]};

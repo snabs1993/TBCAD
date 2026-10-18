@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 3;
+constexpr std::uint8_t kDeltaVersion = 4;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -99,6 +99,16 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     putColor(w, r.dimLineColor);
     putColor(w, r.extLineColor);
     putColor(w, r.textColor);
+    w.u8(r.altUnits ? 1 : 0);
+    w.f64(r.altScale);
+    w.u8(static_cast<std::uint8_t>(r.altUnit));
+    w.i32(r.altPrecision);
+    putString(w, st, r.altPrefix);
+    putString(w, st, r.altSuffix);
+    w.u8(static_cast<std::uint8_t>(r.tolerance));
+    w.f64(r.tolUpper);
+    w.f64(r.tolLower);
+    w.i32(r.tolPrecision);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -261,6 +271,18 @@ struct Reader {
         d.dimLineColor = color();
         d.extLineColor = color();
         d.textColor = color();
+        if (version >= 4) {
+            d.altUnits = r.u8() != 0;
+            d.altScale = r.f64();
+            d.altUnit = enumeration(LengthUnit::Foot);
+            d.altPrecision = r.i32();
+            d.altPrefix = str();
+            d.altSuffix = str();
+            d.tolerance = enumeration(DimTolerance::Limits);
+            d.tolUpper = r.f64();
+            d.tolLower = r.f64();
+            d.tolPrecision = r.i32();
+        }
     }
     void row(BlockDef& b) {
         b.name = str();
