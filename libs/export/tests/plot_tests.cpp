@@ -772,3 +772,37 @@ TEST_CASE("Defpoints never plots and xref sub-layers keep their xref prefix in t
     REQUIRE(sheet.layerNames.size() == 1);
     CHECK(sheet.layerNames[0] == "TB|Stamp");
 }
+
+TEST_CASE("block parts outside the window add no layer, parts of an xref get the xref name") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    {
+        auto tx = doc.begin("blocks");
+        Layer near;
+        near.name = "NEAR";
+        Layer far;
+        far.name = "FAR";
+        const LayerId ln = tx.addLayer(near).value();
+        const LayerId lf = tx.addLayer(far).value();
+        BlockId b = tx.addBlock(BlockDef{.name = "TB", .base = {0, 0}}).value();
+        Entity inside = line({0, 0}, {50, 0});
+        inside.common.layer = ln;
+        Entity outside = line({6000, 0}, {6050, 0});
+        outside.common.layer = lf;
+        REQUIRE(tx.add(inside, b));
+        REQUIRE(tx.add(outside, b));
+        Entity ins;
+        ins.data = Indirect<InsertData>(InsertData{b, {0, 0}, {1, 1}, 0});
+        REQUIRE(tx.add(ins).ok());
+        tx.commit();
+        Transaction t2 = doc.begin("xref");
+        REQUIRE(t2.modifyBlock(b, [](BlockDef& d) { d.xrefPath = "tb.dwg"; }).ok());
+        t2.commit();
+    }
+    PlotSettings s;
+    s.area = PlotArea::Window;
+    s.window = BBox2{{-10, -10}, {100, 100}};
+    auto sheet = buildSheet(doc, s).value();
+    REQUIRE(sheet.layerNames.size() == 1);
+    CHECK(sheet.layerNames[0] == "TB|NEAR");
+}

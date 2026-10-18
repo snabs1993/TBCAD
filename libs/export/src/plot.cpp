@@ -363,6 +363,40 @@ std::optional<PlotImage> makePlotImage(const underlay::ImageInstance& im, const 
     return out;
 }
 
+// Removes the primitives from `from` on whose box lies wholly outside `window` (paper mm).
+void dropOutside(std::vector<PlotPrimitive>& prims, std::size_t from, const BBox2& window) {
+    auto boxOf = [](const PlotPrimitive& p) {
+        BBox2 b;
+        if (const auto* path = std::get_if<PlotPath>(&p)) {
+            for (const Vec2& v : path->pts)
+                b.expand(v);
+            return b.inflated(path->style.widthMm);
+        }
+        if (const auto* fill = std::get_if<PlotFill>(&p)) {
+            for (const auto& ring : fill->rings)
+                for (const Vec2& v : ring)
+                    b.expand(v);
+            return b;
+        }
+        if (const auto* dots = std::get_if<PlotDots>(&p)) {
+            for (const Vec2& v : dots->pts)
+                b.expand(v);
+            return b.inflated(dots->style.widthMm);
+        }
+        return b;  // empty: kept
+    };
+    std::size_t out = from;
+    for (std::size_t i = from; i < prims.size(); ++i) {
+        const BBox2 b = boxOf(prims[i]);
+        if (!b.empty() && !b.intersects(window))
+            continue;
+        if (out != i)
+            prims[out] = std::move(prims[i]);
+        ++out;
+    }
+    prims.resize(out);
+}
+
 }  // namespace
 
 void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<EntityId>& ids,
@@ -431,16 +465,20 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
 
     // Layer numbers for the PDF layer list; bound external reference layers ("name$0$layer") are
     // written "name|layer".
-    std::unordered_map<LayerId, std::uint32_t> layerNumbers;
-    auto layerOf = [&](LayerId li) -> std::uint32_t {
-        if (auto it = layerNumbers.find(li); it != layerNumbers.end())
+    // The layers inside an external reference are listed as "xrefname|layer", as AutoCAD names
+    // them while the file is attached.
+    std::map<std::pair<std::uint64_t, const BlockDef*>, std::uint32_t> layerNumbers;
+    auto layerOf = [&](LayerId li, const BlockDef* xref = nullptr) -> std::uint32_t {
+        if (auto it = layerNumbers.find({li.value, xref}); it != layerNumbers.end())
             return it->second;
         std::uint32_t n = 0;
         if (const Layer* layer = doc.layer(li)) {
             // An external reference is a layer with the file's layers below it: "xref|layer",
             // nested ones keep the inner "$0$". A bound one is a plain "xref$0$layer".
             std::string name = layer->name;
-            if (layer->parent) {
+            if (xref && !layer->parent && name.find('|') == std::string::npos) {
+                name = xref->name + "|" + name;
+            } else if (layer->parent) {
                 for (LayerId up = layer->parent; up;) {
                     const Layer* parent = doc.layer(up);
                     if (!parent)
@@ -459,9 +497,13 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             }
             n = static_cast<std::uint32_t>(found - sheet.layerNames.begin()) + 1;
         }
-        layerNumbers[li] = n;
+        layerNumbers[{li.value, xref}] = n;
         return n;
     };
+    BBox2 paperWindow;
+    paperWindow.expand(lay.toPaper(lay.area.min));
+    paperWindow.expand(lay.toPaper(lay.area.max));
+    paperWindow = paperWindow.inflated(1.0);
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
         if (!e || !plottable(doc, *e) || (skip && skip(*e)))
@@ -496,6 +538,9 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         }
         DisplayList list;
         geom::buildDisplay(doc, *e, ctx, list);
+        const InsertData* ins = entityAs<InsertData>(*e);
+        const BlockDef* insBlock = ins ? doc.block(ins->block) : nullptr;
+        const BlockDef* xrefBlock = insBlock && !insBlock->xrefPath.empty() ? insBlock : nullptr;
         for (const DisplayItem& it : list.items) {
             // The parts of a block carry their own layer: off, frozen or frozen in this viewport.
             LayerId li{};
@@ -507,7 +552,23 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
                 (isDefpoints(doc, li) || !doc.effective(li).visible() ||
                  (lay.layerHidden && lay.layerHidden(li))))
                 continue;
-            b.item(it, sheet.prims, layerOf(li != LayerId{} ? li : e->common.layer));
+            const std::size_t before = sheet.prims.size();
+            b.item(it, sheet.prims, 0);
+            // What lies wholly outside the window is not drawn at all, so it adds no layer.
+            dropOutside(sheet.prims, before, paperWindow);
+            if (sheet.prims.size() == before)
+                continue;
+            const std::uint32_t layer = li != LayerId{} && li != e->common.layer
+                                            ? layerOf(li, xrefBlock)
+                                            : layerOf(e->common.layer);
+            for (std::size_t k = before; k < sheet.prims.size(); ++k) {
+                if (auto* path = std::get_if<PlotPath>(&sheet.prims[k]))
+                    path->style.layer = layer;
+                else if (auto* fill = std::get_if<PlotFill>(&sheet.prims[k]))
+                    fill->layer = layer;
+                else if (auto* dots = std::get_if<PlotDots>(&sheet.prims[k]))
+                    dots->style.layer = layer;
+            }
         }
     }
     if (s.traceColors)
