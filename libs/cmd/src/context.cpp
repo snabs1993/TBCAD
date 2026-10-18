@@ -129,7 +129,8 @@ bool CommandContext::tryImmediate(detail::PromptRequest& req) {
         answer_.status = Status::Cancel;
         return true;
     }
-    if (req.kind == detail::PromptKind::Selection && req.allowPreselection) {
+    if (req.kind == detail::PromptKind::Selection && req.allowPreselection &&
+        host_.setting("selection.pickfirst").value_or("1") != "0") {
         std::vector<EntityId> ids;
         for (EntityId id : host_.selection()) {
             const Entity* e = doc_.find(id);

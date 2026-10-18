@@ -340,6 +340,8 @@ public:
     std::vector<std::string> takePanelRequests() { return std::exchange(panelRequests_, {}); }
     cmd::ViewState view() const override;
     std::optional<std::vector<EntityId>> entitiesInWindow(const BBox2& window) const override;
+    std::optional<std::vector<EntityId>> selectShape(SelectShape shape,
+                                                     const std::vector<Vec2>& pts) override;
     BlockId drawingOwner() const override;
     void setView(const cmd::ViewState& v) override;
     BBox2 viewExtents() const override;
@@ -391,6 +393,8 @@ private:
     int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
     std::chrono::steady_clock::time_point fitUntil_{};  // re-fits only count until this time
     void applyPick(const std::vector<EntityId>& ids, bool remove);
+    // A click or window on the idle drawing, honouring PICKADD (0: replaces; Shift toggles).
+    void applyUserPick(const std::vector<EntityId>& ids, bool shift);
     void pruneSelection();
     void notifySessionHooks();
 

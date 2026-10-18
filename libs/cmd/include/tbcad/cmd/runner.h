@@ -34,6 +34,9 @@ public:
     void textEdited(const std::string& text);
     // Objects picked so far at the active Select objects prompt (shown as selected).
     const std::vector<EntityId>& collected() const { return collected_; }
+    // True while "Select objects:" waits for the points of a typed Window / Crossing / WPolygon /
+    // CPolygon / Fence option; the window then sends clicks as points instead of picking.
+    bool selectShapePending() const { return shape_ != SelShape::None; }
 
     // Starts a command by name or alias. Fails when one is already running (use submit with an
     // apostrophe prefix, or startTransparent) or the name is unknown.
@@ -94,6 +97,13 @@ private:
     std::vector<EntityId> previousSelection_{};    // what the last Select objects finished with
     std::vector<EntityId> collected_{};            // selection being built at a getSelection prompt
     std::unordered_set<EntityId> collectedSet_{};  // the same ids, for the duplicate check
+    // Typed selection options at "Select objects:" (Window, Crossing, WPolygon, CPolygon, Fence,
+    // Remove / Add, Undo).
+    enum class SelShape { None, Window, Crossing, WPolygon, CPolygon, Fence };
+    SelShape shape_ = SelShape::None;
+    std::vector<Vec2> shapePts_{};
+    bool removeMode_ = false;
+    std::vector<std::vector<EntityId>> selUndo_{};  // collected_ before each batch, newest last
     PointFilterChain* chain_ = nullptr;
     CommandLineParser* parser_ = nullptr;
     DisplayList previewList_{};

@@ -460,6 +460,38 @@ public:
     }
 };
 
+// PICKADD / PICKFIRST: a 0 / 1 / 2 system variable kept in the host settings.
+class PickVarCommand final : public cmd::Command {
+public:
+    PickVarCommand(const char* name, const char* key, int maxValue, int fallback, const char* help)
+        : name_(name), key_(key), max_(maxValue), fallback_(fallback), help_(help) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return help_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string cur = ctx.host().setting(key_).value_or(std::to_string(fallback_));
+        cmd::StringOptions so;
+        so.defaultValue = cur;
+        auto r =
+            co_await ctx.getString("New value for " + std::string(name_) + " <" + cur + ">", so);
+        if (!r.ok())
+            co_return;
+        const std::string t = cmd::trim(r.text);
+        if (t.size() != 1 || t[0] < '0' || t[0] - '0' > max_) {
+            ctx.message("Type a value from 0 to " + std::to_string(max_) + ".");
+            co_return;
+        }
+        ctx.host().setSetting(key_, t);
+        ctx.message(std::string(name_) + " = " + t + ". " + help_);
+    }
+
+private:
+    const char* name_;
+    const char* key_;
+    int max_;
+    int fallback_;
+    const char* help_;
+};
+
 // MSPACE / PSPACE: switch between editing the model through a viewport and the sheet.
 class SpaceCommand final : public cmd::Command {
 public:
@@ -685,6 +717,12 @@ private:
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
     (void)registry.add(std::make_unique<FilediaCommand>());
+    (void)registry.add(std::make_unique<PickVarCommand>(
+        "PICKADD", "selection.pickadd", 2, 2,
+        "0 = a pick replaces the selection (Shift adds), 1 or 2 = picks add (Shift removes)"));
+    (void)registry.add(std::make_unique<PickVarCommand>(
+        "PICKFIRST", "selection.pickfirst", 1, 1,
+        "1 = commands use the objects selected before them, 0 = they always ask"));
     (void)registry.add(std::make_unique<SpaceCommand>(
         "MSPACE", "MS", "model", "Edit the model through the selected viewport of a layout"));
     (void)registry.add(std::make_unique<SpaceCommand>(

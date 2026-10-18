@@ -43,4 +43,5 @@ tbcad_add_tests(appcore
     tests/headless_file_tests.cpp
     tests/paper_view_tests.cpp
     tests/pick_pan_perf_tests.cpp
-    tests/selectall_bench_tests.cpp)
+    tests/selectall_bench_tests.cpp
+    tests/select_options_tests.cpp)

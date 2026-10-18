@@ -91,6 +91,15 @@ public:
         return std::nullopt;
     }
 
+    // Objects picked by a typed selection option at "Select objects:" (Window, Crossing, WPolygon,
+    // CPolygon, Fence). nullopt means the host cannot answer; the runner then says so. Hidden,
+    // frozen and locked objects are left out.
+    enum class SelectShape { Window, Crossing, WPolygon, CPolygon, Fence };
+    virtual std::optional<std::vector<EntityId>> selectShape(SelectShape /*shape*/,
+                                                             const std::vector<Vec2>& /*pts*/) {
+        return std::nullopt;
+    }
+
     // Block that new objects go into when a command draws: null = model space. A host showing a
     // layout sheet returns the sheet's block so drawing commands annotate the sheet.
     virtual BlockId drawingOwner() const { return {}; }

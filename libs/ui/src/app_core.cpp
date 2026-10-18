@@ -1912,6 +1912,28 @@ std::optional<std::vector<EntityId>> AppCore::entitiesInWindow(const BBox2& wind
     return spatialIndex().queryIds(window);
 }
 
+std::optional<std::vector<EntityId>> AppCore::selectShape(SelectShape shape,
+                                                          const std::vector<Vec2>& pts) {
+    switch (shape) {
+        case SelectShape::Window:
+        case SelectShape::Crossing: {
+            if (pts.size() < 2)
+                return std::vector<EntityId>{};
+            BBox2 box;
+            box.expand(pts[0]);
+            box.expand(pts[1]);
+            return selectInBox(session_->doc, spatialIndex(), box, shape == SelectShape::Crossing);
+        }
+        case SelectShape::WPolygon:
+        case SelectShape::CPolygon:
+            return selectInPolygon(session_->doc, spatialIndex(), pts,
+                                   shape == SelectShape::CPolygon);
+        case SelectShape::Fence:
+            return selectAlongFence(session_->doc, spatialIndex(), pts);
+    }
+    return std::nullopt;
+}
+
 cmd::ViewState AppCore::view() const {
     cmd::ViewState v;
     v.center = camera_.center;
@@ -2053,6 +2075,26 @@ void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
     }
 }
 
+void AppCore::applyUserPick(const std::vector<EntityId>& ids, bool shift) {
+    if (setting("selection.pickadd").value_or("2") != "0") {
+        applyPick(ids, shift);
+        return;
+    }
+    if (!shift) {  // PICKADD 0: the new pick replaces the selection
+        if (!ids.empty())
+            setSelection(ids);
+        return;
+    }
+    std::unordered_set<EntityId> have(selection_.begin(), selection_.end());
+    std::vector<EntityId> drop, add;
+    for (EntityId id : ids)
+        (have.count(id) ? drop : add).push_back(id);
+    if (!drop.empty())
+        applyPick(drop, true);
+    if (!add.empty())
+        applyPick(add, false);
+}
+
 PanelContext AppCore::makePanelContext() {
     PanelContext pc;
     pc.doc = &session_->doc;
@@ -2109,6 +2151,10 @@ void AppCore::click(const PointerState& p) {
                 break;
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:
+                if (prompt_->kind == cmd::PromptInfo::Kind::Selection && run.selectShapePending()) {
+                    run.submit(cmd::Input::click(raw));
+                    break;
+                }
                 if (auto id = pickEntity(session_->doc, spatialIndex(), world, apertureMm()))
                     run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
@@ -2130,7 +2176,7 @@ void AppCore::click(const PointerState& p) {
             clearSelection();
         return;
     }
-    applyPick({*id}, p.shift);
+    applyUserPick({*id}, p.shift);
 }
 
 void AppCore::doubleClick(const PointerState& p) {
@@ -2196,14 +2242,14 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
     std::vector<EntityId> ids = selectInBox(session_->doc, spatialIndex(), box, crossing);
     cmd::CommandRunner& run = runner();
     if (run.active()) {
-        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
-            run.submit(cmd::Input::select(std::move(ids)));
+        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty()) {
+            cmd::Input in = cmd::Input::select(std::move(ids));
+            in.raw.shift = p.shift;
+            run.submit(in);
+        }
         return;
     }
-    if (p.shift)
-        applyPick(ids, true);
-    else
-        applyPick(ids, false);
+    applyUserPick(ids, p.shift);
 }
 
 void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
@@ -2217,11 +2263,14 @@ void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerStat
     std::vector<EntityId> ids = selectInPolygon(session_->doc, spatialIndex(), poly, crossing);
     cmd::CommandRunner& run = runner();
     if (run.active()) {
-        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty())
-            run.submit(cmd::Input::select(std::move(ids)));
+        if (prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection && !ids.empty()) {
+            cmd::Input in = cmd::Input::select(std::move(ids));
+            in.raw.shift = p.shift;
+            run.submit(in);
+        }
         return;
     }
-    applyPick(ids, p.shift);
+    applyUserPick(ids, p.shift);
 }
 
 void AppCore::cycleClick(const PointerState& p) {

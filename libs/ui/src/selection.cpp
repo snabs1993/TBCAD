@@ -214,4 +214,46 @@ std::vector<EntityId> selectInBox(const Document& doc, const index::SpatialIndex
     return out;
 }
 
+std::vector<EntityId> selectAlongFence(const Document& doc, const index::SpatialIndex& index,
+                                       const std::vector<Vec2>& fence) {
+    std::vector<EntityId> out;
+    if (fence.size() < 2)
+        return out;
+    auto side = [](Vec2 p, Vec2 q, Vec2 r) {
+        return (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    };
+    auto onSeg = [](Vec2 p, Vec2 q, Vec2 r) {  // r collinear with pq: inside its box?
+        return std::min(p.x, q.x) <= r.x && r.x <= std::max(p.x, q.x) &&
+               std::min(p.y, q.y) <= r.y && r.y <= std::max(p.y, q.y);
+    };
+    auto touch = [&](Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+        const double d1 = side(a, b, c), d2 = side(a, b, d), d3 = side(c, d, a), d4 = side(c, d, b);
+        if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+            ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
+            return true;
+        return (d1 == 0 && onSeg(a, b, c)) || (d2 == 0 && onSeg(a, b, d)) ||
+               (d3 == 0 && onSeg(c, d, a)) || (d4 == 0 && onSeg(c, d, b));
+    };
+    std::vector<EntityId> seen;
+    for (std::size_t k = 0; k + 1 < fence.size(); ++k) {
+        BBox2 segBox;
+        segBox.expand(fence[k]);
+        segBox.expand(fence[k + 1]);
+        index.query(segBox, [&](EntityId id, const BBox2& entityBox) {
+            const Entity* e = doc.find(id);
+            if (!e || !isSelectable(doc, *e))
+                return;
+            for (const auto& chain : outlineOf(*e, entityBox))
+                for (std::size_t i = 0; i + 1 < chain.size(); ++i)
+                    if (touch(chain[i], chain[i + 1], fence[k], fence[k + 1])) {
+                        seen.push_back(id);
+                        return;
+                    }
+        });
+    }
+    std::sort(seen.begin(), seen.end());
+    seen.erase(std::unique(seen.begin(), seen.end()), seen.end());
+    return seen;
+}
+
 }  // namespace tbcad::ui
