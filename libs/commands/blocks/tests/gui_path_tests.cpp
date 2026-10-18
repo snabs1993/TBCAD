@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -81,4 +82,76 @@ TEST_CASE("VPCLIP takes its outline points from mouse clicks on the sheet") {
     REQUIRE(lay);
     REQUIRE(lay->findViewport(1));
     CHECK(lay->findViewport(1)->clip.size() == 3);
+}
+
+TEST_CASE(
+    "a window around a whole associative array selects it and MATCHPROP recolours its items") {
+    fs::path dir = fs::temp_directory_path() / "tbcad_gui_path_array";
+    fs::remove_all(dir);
+    cmd::Registry registry;
+    registerAllCommands(registry);
+    ui::AppCore core(registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    core.setViewportSize(1000, 800);
+    render::Camera2D cam = core.camera();
+    cam.center = {200, 100};
+    cam.pixelsPerMm = 1.0;
+    core.setCamera(cam);
+
+    for (const char* s : {"CIRCLE", "20,20", "10"})
+        core.submitText(s);
+    for (const char* s : {"CIRCLE", "400,300", "10"})
+        core.submitText(s);
+    REQUIRE(core.document().modelSpaceCount() == 2);
+    core.updateFrame();
+    // Array the first circle with every default: 3 x 4, associative.
+    core.setSelection({core.document().modelSpace()[0]});
+    core.submitText("ARRAY");
+    core.submitText("");
+    core.submitText("");
+    REQUIRE_FALSE(core.runner().active());
+    EntityId array;
+    for (EntityId id : core.document().modelSpace())
+        if (const auto* ins = entityAs<InsertData>(*core.document().find(id)))
+            if (ins->array)
+                array = id;
+    REQUIRE(array);
+    core.clearSelection();
+    core.updateFrame();
+
+    const BBox2 b = blocks::insertBounds(core.document(), *core.document().find(array));
+    Vec2 a = core.camera().worldToScreen({b.min.x - 5, b.min.y - 5});
+    Vec2 c = core.camera().worldToScreen({b.max.x + 5, b.max.y + 5});
+    core.dragSelect(a, c, ui::PointerState{c, false, false});  // left to right: window
+    const auto sel = core.selection();
+    CHECK(std::find(sel.begin(), sel.end(), array) != sel.end());
+    CHECK(sel.size() == 1);
+
+    // Match the properties of the far circle (colour 1) onto the array.
+    core.clearSelection();
+    {
+        auto tx = core.document().begin("colour");
+        for (EntityId id : core.document().modelSpace())
+            if (entityAs<CircleData>(*core.document().find(id)))
+                (void)tx.modify(id, [](Entity& e) { e.common.color = Color::index(1); });
+        tx.commit();
+    }
+    EntityId far;
+    for (EntityId id : core.document().modelSpace())
+        if (entityAs<CircleData>(*core.document().find(id)))
+            far = id;
+    auto clickAt = [&](Vec2 w) {
+        core.updateFrame();
+        core.click({core.camera().worldToScreen(w), false, false});
+    };
+    core.submitText("MATCHPROP");
+    clickAt({410, 300});
+    clickAt({30, 20});  // the edge of the first item
+    core.submitText("");
+    const auto* ins = entityAs<InsertData>(*core.document().find(array));
+    REQUIRE(ins);
+    const BlockDef* def = core.document().block(ins->block);
+    REQUIRE(def);
+    REQUIRE_FALSE(def->entities.empty());
+    for (EntityId id : def->entities)
+        CHECK(core.document().find(id)->common.color == Color::index(1));
 }
