@@ -229,3 +229,13 @@ TEST_CASE("CELTSCALE, PSLTSCALE, MSLTSCALE and PLINEGEN are commands and SETVAR 
     });
     CHECK(found);
 }
+
+TEST_CASE("LWDISPLAY shows or hides lineweights on screen") {
+    Fixture f;
+    f.host.run("LWDISPLAY", {"0"});
+    CHECK(f.host.setting("view.lineweights") == "0");
+    f.host.run("LWDISPLAY", {"1"});
+    CHECK(f.host.setting("view.lineweights") == "1");
+    f.host.run("LWDISPLAY", {"maybe"});
+    CHECK(f.host.logContains("LWDISPLAY is 0 or 1"));
+}

@@ -197,7 +197,7 @@ struct Builder {
         PlotStyle p;
         p.color = color(ds.color);
         const double mm = weight(ds.color, ds.lineweight);
-        p.widthMm = (!s.lineweights || !(mm > 0)) ? s.hairlineMm : mm;
+        p.widthMm = (!s.lineweights || !(mm > 0)) ? s.hairlineMm : mm * s.lineweightScale;
         if (ds.pattern && !ds.pattern->empty())
             p.dashMm = dashArray(*ds.pattern, ds.patternScale * layout.paperPerUnit, p.widthMm);
         return p;

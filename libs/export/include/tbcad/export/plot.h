@@ -48,6 +48,9 @@ struct PlotSettings {
     Vec2 offsetMm{};  // from the lower-left corner of the printable area, when not centred
     double marginMm = 10;
     bool lineweights = true;
+    // Every lineweight is multiplied by this (a heavier or lighter print of the same drawing).
+    // Hairlines (weight 0, or lineweights off) are not scaled.
+    double lineweightScale = 1;
     // Objects and layers with a transparency print translucent (blended with the white sheet).
     bool transparency = true;
     // Fills PlotSheet::trace with how each drawn colour was mapped to a pen (for diagnosing).

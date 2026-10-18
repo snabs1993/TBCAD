@@ -70,6 +70,8 @@ std::string encodeSetup(const PageSetup& p) {
     kv("offset", num(s.offsetMm.x) + "," + num(s.offsetMm.y));
     kv("margin", num(s.marginMm));
     kv("lineweights", s.lineweights ? "1" : "0");
+    if (s.lineweightScale != 1)
+        kv("lwscale", num(s.lineweightScale));
     kv("color", s.color == exportlib::ColorMode::Monochrome  ? "mono"
                 : s.color == exportlib::ColorMode::Greyscale ? "grey"
                                                              : "color");
@@ -129,6 +131,8 @@ PageSetup decodeSetup(const std::vector<std::string>& f) {
             s.marginMm = d();
         else if (k == "lineweights")
             s.lineweights = v == "1";
+        else if (k == "lwscale")
+            s.lineweightScale = d() > 0 ? d() : 1;
         else if (k == "color")
             s.color = v == "mono"   ? exportlib::ColorMode::Monochrome
                       : v == "grey" ? exportlib::ColorMode::Greyscale
