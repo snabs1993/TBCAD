@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <unordered_set>
 
 #include "commands.h"
@@ -44,13 +45,7 @@ public:
             ctx.message(ok.error().message);
         }
 
-        // 2. Base point.
-        auto base = co_await ctx.getPoint("Specify base point <0,0>");
-        if (base.status == cmd::Status::Cancel)
-            co_return;
-        const Vec2 basePoint = base.ok() ? base.point : Vec2{};
-
-        // 3. Objects.
+        // 2. Objects.
         auto sel = co_await ctx.getSelection(
             "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
         if (sel.status == cmd::Status::Cancel)
@@ -63,6 +58,35 @@ public:
         if (ids.empty()) {
             ctx.message("Nothing selectable to put in a block");
             co_return;
+        }
+
+        // 3. Base point: Enter takes the lower-left corner of the objects, so the insert lands
+        // where it is clicked instead of at the drawing's origin.
+        Vec2 basePoint{};
+        {
+            std::vector<Entity> picked;
+            for (EntityId id : ids)
+                picked.push_back(*doc.find(id));
+            const BBox2 box = detail::boundsOf(doc, picked);
+            const Vec2 lowerLeft = box.empty() ? Vec2{} : box.min;
+            auto fmt = [](double v) {
+                char buf[48];
+                std::snprintf(buf, sizeof buf, "%.2f", v);
+                std::string t = buf;
+                while (t.find('.') != std::string::npos && (t.back() == '0' || t.back() == '.')) {
+                    const bool dot = t.back() == '.';
+                    t.pop_back();
+                    if (dot)
+                        break;
+                }
+                return t == "-0" ? std::string("0") : t;
+            };
+            auto base =
+                co_await ctx.getPoint("Specify base point <" + fmt(lowerLeft.x) + "," +
+                                      fmt(lowerLeft.y) + ", the lower-left of the objects>");
+            if (base.status == cmd::Status::Cancel)
+                co_return;
+            basePoint = base.ok() ? base.point : lowerLeft;
         }
 
         // 4. Cycle check: a block cannot end up containing itself.

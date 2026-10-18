@@ -70,12 +70,12 @@ ToolResult createBlock(ToolContext& ctx, const Json& a) {
                                     "\" already exists; pass redefine: true to replace it");
         inputs.emplace_back("Yes");
     }
-    inputs.emplace_back(pointInput(base));
     Json::Array sel;
     for (EntityId id : ids.value())
         sel.push_back(idJson(id));
     inputs.push_back(Json(Json::Object{{"select", Json(std::move(sel))}}));
     inputs.emplace_back("");  // finish the selection
+    inputs.emplace_back(pointInput(base));
     inputs.emplace_back(keyword);
     ToolResult r = runChecked(s, "BLOCK", inputs, {{"name", name}});
     if (!r.isError && !doc.blockByName(name))

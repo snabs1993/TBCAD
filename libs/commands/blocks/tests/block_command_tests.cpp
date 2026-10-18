@@ -124,8 +124,21 @@ TEST_CASE("BLOCK with nothing selected says so and makes no block") {
     Fixture f;
     f.addLine(10, 10, 20, 10);
     f.host->setSelection({});
-    auto r = f.host->run("BLOCK", {"Empty", "0,0", cmd::ScriptItem::enter()});
+    auto r = f.host->run("BLOCK", {"Empty", cmd::ScriptItem::enter()});
     CHECK(r.finished);
     CHECK(f.doc.blocks().empty());
     CHECK(f.host->logContains("No objects selected"));
+}
+
+TEST_CASE("BLOCK base point: Enter takes the lower-left corner of the objects") {
+    Fixture f;
+    EntityId a = f.addLine(100, 200, 150, 200);
+    EntityId b = f.addCircle(125, 230, 5);
+    f.host->setSelection({a, b});
+    auto r = f.host->run("BLOCK", {"Chair", cmd::ScriptItem::enter(), "R"});
+    CHECK(r.finished);
+    const BlockDef* def = f.doc.blockByName("Chair");
+    REQUIRE(def);
+    CHECK(def->base.x == doctest::Approx(100));
+    CHECK(def->base.y == doctest::Approx(200));
 }
