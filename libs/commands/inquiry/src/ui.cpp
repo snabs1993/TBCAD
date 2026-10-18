@@ -11,8 +11,7 @@ void registerUi(ui::UiRegistry& registry) {
     registry.addMenuItem("Tools/Inquiry/Quick Measure", "QUICKMEASURE", "inquiry.quickmeasure");
     registry.addMenuItem("Tools/Inquiry/Calculator", "CAL", "inquiry.cal");
     registry.addMenuItem("Tools/Inquiry/Area Table", "AREATABLE", "inquiry.areatable");
-    registry.addMenuItem("Tools/Inquiry/Copy Last Result", "COPYRESULT", "inquiry.copyresult",
-                         "Ctrl+Shift+C");
+    registry.addMenuItem("Tools/Inquiry/Copy Last Result", "COPYRESULT", "inquiry.copyresult");
 }
 
 }  // namespace tbcad::inquiry

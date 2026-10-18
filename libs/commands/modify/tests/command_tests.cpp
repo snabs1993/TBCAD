@@ -906,3 +906,27 @@ TEST_CASE("DIVIDE and MEASURE with the Block option insert a block along the obj
     for (const InsertData* i : inserts)
         CHECK(i->rotation == doctest::Approx(0));
 }
+
+TEST_CASE("TRIM and EXTEND Mode: Quick uses every object as an edge, Standard asks again") {
+    Fixture f;
+    EntityId h = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId far = f.add(LineData{{8, -5}, {8, 5}});
+    EntityId near3 = f.add(LineData{{3, -5}, {3, 5}});
+    // Standard: only `far` cuts, so the segment from the pick runs to x = 8.
+    f.host.run("TRIM", {ScriptItem::select({far}), ScriptItem::enter(), ScriptItem::pick(h, {5, 0}),
+                        ScriptItem::esc()});
+    CHECK((near(entityAs<LineData>(f.get(h))->b, {8, 0}) ||
+           near(entityAs<LineData>(f.get(h))->a, {8, 0})));
+    f.host.undo();
+    CHECK(near(entityAs<LineData>(f.get(h))->b, {10, 0}));
+    // Quick: no edge prompt; the nearest cuts on both sides (x = 3 and x = 8) apply.
+    f.host.run("TRIM", {ScriptItem::enter(), "Mode", "Quick", ScriptItem::pick(h, {5, 0}),
+                        ScriptItem::esc()});
+    CHECK(f.count(EntityKind::Line) == 4);
+    f.host.undo();
+    // Back to Standard: the edge prompt returns.
+    f.host.run("TRIM", {"Mode", "Standard", ScriptItem::select({near3}), ScriptItem::enter(),
+                        ScriptItem::pick(h, {5, 0}), ScriptItem::esc()});
+    CHECK((near(entityAs<LineData>(f.get(h))->a, {3, 0}) ||
+           near(entityAs<LineData>(f.get(h))->b, {3, 0})));
+}
