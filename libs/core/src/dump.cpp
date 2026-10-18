@@ -311,6 +311,8 @@ void common(Out& o, const EntityCommon& c) {
     o << "e" << c.id << " L" << c.layer << " V" << c.level << " lt" << c.linetype << " c" << c.color
       << " lw" << static_cast<int>(c.lineweight.v) << " ls" << c.linetypeScale << " vis"
       << c.visible << (c.annotative ? " anno" : "") << (c.wipeout ? " wipeout" : "");
+    if (c.transparency != kTransparencyByLayer)
+        o << " tr" << static_cast<int>(c.transparency);
     bool firstScale = true;
     for (double v : c.annoScales) {
         o << (firstScale ? "[" : ",") << v;
@@ -354,7 +356,10 @@ std::string canonicalDump(const Document& doc) {
         o.quoted(r.name);
         o << " parent" << r.parent << " color" << r.color << " lt" << r.linetype << " lw"
           << static_cast<int>(r.lineweight.v) << " on" << r.on << " frozen" << r.frozen << " locked"
-          << r.locked << " plot" << r.plot << "\n";
+          << r.locked << " plot" << r.plot;
+        if (r.transparency)
+            o << " tr" << static_cast<int>(r.transparency);
+        o << "\n";
     }
     for (const auto& [id, r] : doc.levels()) {
         o << "level " << id << " ";

@@ -259,6 +259,20 @@ bool DisplayRegistry::has(EntityKind kind) {
     return static_cast<bool>(r.entries[static_cast<std::size_t>(kind)].display);
 }
 
+int resolveTransparency(const Document& doc, const Entity& e, const DisplayContext& ctx) {
+    if (!ctx.showTransparency)
+        return 0;
+    const std::int8_t t = e.common.transparency;
+    int v = 0;
+    if (t == kTransparencyByBlock)
+        v = ctx.byBlockTransparency;
+    else if (t == kTransparencyByLayer)
+        v = doc.effective(e.common.layer).transparency;
+    else
+        v = t;
+    return std::clamp(v, 0, static_cast<int>(kTransparencyMax));
+}
+
 DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayContext& ctx) {
     const EntityCommon& c = e.common;
     EffectiveLayer layer = doc.effective(c.layer);
@@ -275,6 +289,8 @@ DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayCon
             s.color = toRgba(layer.color);
             break;
     }
+    if (const int tr = resolveTransparency(doc, e, ctx); tr > 0 && !isBackgroundColor(s.color))
+        s.color.a = static_cast<std::uint8_t>(std::lround(s.color.a * (100 - tr) / 100.0));
     auto weightMm = [&](const LineWeight& w) {
         if (w.isValue())
             return w.toMm();

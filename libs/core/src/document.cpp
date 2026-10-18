@@ -462,6 +462,8 @@ Result<double> validateEntity(const Document& doc, Entity& e, BlockId owner) {
     }
     if (c.lineweight.v < -3)
         return invalid("invalid lineweight");
+    if (!validObjectTransparency(c.transparency))
+        return invalid("transparency must be ByLayer, ByBlock or 0 to 90");
     if (!std::isfinite(c.linetypeScale) || !(c.linetypeScale > 0)) {
         return invalid("linetype scale must be positive");
     }
@@ -527,6 +529,8 @@ Result<void> checkRow(const Document& doc, Layer& r, const Layer* old) {
         return invalid("unknown linetype");
     if (r.lineweight.isByLayer() || r.lineweight.isByBlock() || r.lineweight.v < -4)
         return invalid("a layer lineweight must be Default, a value or ByParent");
+    if (r.transparency > kTransparencyMax)
+        return invalid("a layer transparency is 0 to 90");
     return {};
 }
 Result<void> checkRow(const Document&, Level& r, const Level*) {
@@ -616,6 +620,8 @@ Result<void> checkHeader(const Document& d, const Header& work) {
         return invalid("unknown current linetype");
     if (work.currentLineweight.v < -3)
         return invalid("invalid current lineweight");
+    if (!validObjectTransparency(work.currentTransparency))
+        return invalid("invalid current transparency");
     if (!d.textStyle(work.currentTextStyle))
         return invalid("unknown current text style");
     if (!d.dimStyle(work.currentDimStyle))
@@ -881,6 +887,7 @@ EffectiveLayer Document::effective(LayerId id) const {
         return e;
     e.id = id;
     bool haveColor = false, haveLt = false, haveLw = false;
+    e.transparency = own->transparency;
     for (const Layer* l = own; l; l = l->parent ? layer(l->parent) : nullptr) {
         e.on = e.on && l->on;
         e.plot = e.plot && l->plot;

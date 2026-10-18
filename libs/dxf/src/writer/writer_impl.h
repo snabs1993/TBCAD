@@ -87,6 +87,17 @@ private:
     std::unordered_set<std::string> used_{};
 };
 
+// The width factor a STYLE record is written with (the stroke stand-in's widening is undone).
+double styleWidthWritten(const TextStyle& ts);
+
+// Group 440 for a transparency in percent (0x02000000 | alpha) or ByBlock (0x01000000).
+inline std::int64_t transparencyGroup(int percent) {
+    if (percent == kTransparencyByBlock)
+        return 0x01000000;
+    const long alpha = std::lround(255.0 * (100 - percent) / 100.0);
+    return 0x02000000 | alpha;
+}
+
 // What every entity record starts with.
 struct Props {
     std::string layer = "0";
@@ -94,6 +105,7 @@ struct Props {
     Color color = Color::byLayer();
     std::optional<Rgba> trueColor{};  // exact colour of a resolved display style
     LineWeight lineweight = LineWeight::byLayer();
+    std::int8_t transparency = kTransparencyByLayer;
     double ltScale = 1;
     bool visible = true;
 };

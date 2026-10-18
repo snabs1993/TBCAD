@@ -115,7 +115,9 @@ exactly as saved, including gaps left by deleted rows, so ids are never reused a
 then three colours (dim line, extension line, text).
 
 **LAYR** row: `id`, `name`, `varint parent`, colour, `u32 linetype`, `i16 lineweight`,
-`u8 flags` (bit 0 on, 1 frozen, 2 locked, 3 plot).
+`u8 flags` (bit 0 on, 1 frozen, 2 locked, 3 plot, 4 transparent: a `u8` percent, 1 to 90, follows).
+An entity states its transparency in the extension byte (bit 2: one byte after it, the percent or
+255 for ByBlock); `HEAD` carries `currentTransparency` when it is not ByLayer.
 
 **LVLS** row (since 1.7): `id`, `name`, `f64 elevation` (mm), `u8 flags` (bit 0 visible, bit 1
 locked). Level 1 always exists (it is the level of every entity not listed in `ELVL`) and can be

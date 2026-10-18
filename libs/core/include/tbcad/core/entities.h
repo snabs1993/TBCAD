@@ -76,6 +76,16 @@ private:
     std::unique_ptr<std::vector<double>> p_{};
 };
 
+// Transparency of an object or layer, in percent: 0 (opaque) to 90. Objects may also follow their
+// layer or, inside a block, the insert.
+inline constexpr std::int8_t kTransparencyByLayer = -1;
+inline constexpr std::int8_t kTransparencyByBlock = -2;
+inline constexpr std::int8_t kTransparencyMax = 90;
+inline constexpr bool validObjectTransparency(int v) {
+    return v == kTransparencyByLayer || v == kTransparencyByBlock ||
+           (v >= 0 && v <= kTransparencyMax);
+}
+
 struct EntityCommon {
     EntityId id{};  // assigned by the document; ignored by Transaction::add
     float linetypeScale = 1;
@@ -84,6 +94,7 @@ struct EntityCommon {
     LinetypeId linetype = kLinetypeByLayer;
     Color color = Color::byLayer();
     LineWeight lineweight = LineWeight::byLayer();
+    std::int8_t transparency = kTransparencyByLayer;
     bool visible : 1 = true;
     // Annotative: text height, dimension sizes and table text follow the annotation scale
     // (Header custom "tbcad.annoscale", or the viewport's scale when plotting a layout).

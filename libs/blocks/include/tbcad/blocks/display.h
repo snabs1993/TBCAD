@@ -21,10 +21,12 @@ public:
         double lineweight = 0;
         const std::vector<double>* pattern = nullptr;
         double tolerance = 0;
+        int transparency = 0;  // what ByBlock transparency means inside; -1 = shown opaque
         bool operator<(const Key& o) const {
             return std::tie(block, layer, color.r, color.g, color.b, color.a, lineweight, pattern,
-                            tolerance) < std::tie(o.block, o.layer, o.color.r, o.color.g, o.color.b,
-                                                  o.color.a, o.lineweight, o.pattern, o.tolerance);
+                            tolerance, transparency) <
+                   std::tie(o.block, o.layer, o.color.r, o.color.g, o.color.b, o.color.a,
+                            o.lineweight, o.pattern, o.tolerance, o.transparency);
         }
     };
 

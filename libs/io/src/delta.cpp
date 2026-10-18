@@ -45,7 +45,9 @@ void putRow(ByteWriter& w, StringTable& st, const Layer& r) {
     w.u32(r.linetype.value);
     w.i16(r.lineweight.v);
     w.u8(static_cast<std::uint8_t>((r.on ? 1 : 0) | (r.frozen ? 2 : 0) | (r.locked ? 4 : 0) |
-                                   (r.plot ? 8 : 0)));
+                                   (r.plot ? 8 : 0) | (r.transparency ? 16 : 0)));
+    if (r.transparency)
+        w.u8(r.transparency);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const Level& r) {
@@ -128,6 +130,7 @@ void putHeader(ByteWriter& w, StringTable& st, const Header& h) {
     putColor(w, h.currentColor);
     w.u32(h.currentLinetype.value);
     w.i16(h.currentLineweight.v);
+    w.u8(static_cast<std::uint8_t>(h.currentTransparency));
     w.varint(h.currentTextStyle.value);
     w.varint(h.currentDimStyle.value);
     putString(w, st, h.createdBy);
@@ -189,12 +192,17 @@ struct Reader {
         l.linetype = LinetypeId{r.u32()};
         l.lineweight = LineWeight{r.i16()};
         std::uint8_t f = r.u8();
-        if (f > 15)
+        if (f > 31)
             bad("invalid layer flags");
         l.on = (f & 1) != 0;
         l.frozen = (f & 2) != 0;
         l.locked = (f & 4) != 0;
         l.plot = (f & 8) != 0;
+        if (f & 16) {
+            l.transparency = r.u8();
+            if (l.transparency > kTransparencyMax)
+                bad("invalid layer transparency");
+        }
     }
     void row(Level& l) {
         l.name = str();
@@ -302,6 +310,9 @@ struct Reader {
         h.currentColor = color();
         h.currentLinetype = LinetypeId{r.u32()};
         h.currentLineweight = LineWeight{r.i16()};
+        h.currentTransparency = static_cast<std::int8_t>(r.u8());
+        if (!validObjectTransparency(h.currentTransparency))
+            bad("invalid current transparency");
         h.currentTextStyle = TextStyleId{id32()};
         h.currentDimStyle = DimStyleId{id32()};
         h.createdBy = str();
