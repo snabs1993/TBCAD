@@ -28,6 +28,8 @@ inline constexpr const char* kKeptObjectRootKey = "dxf.objroot";
 // The handle each entity had in the source file: "idDelta,handleDelta;" pairs in entity id order
 // (decimal, the handle delta signed), so a saved DXF gives the entities their old handles back.
 inline constexpr const char* kKeptHandlesKey = "dxf.handles";
+// The page setup of a layout (its AcDbPlotSettings groups), by layout name.
+inline constexpr std::string_view kKeptPlotSetPrefix = "dxf.plotset.";
 
 inline void packGroup(std::string& out, int code, std::string_view value) {
     out += std::to_string(code);

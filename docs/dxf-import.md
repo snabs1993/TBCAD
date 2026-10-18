@@ -38,6 +38,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | ENTITIES | see below; paper space entities (group 67 = 1) are skipped and counted |
 | CLASSES | kept in `Header::custom` (`dxf.classes`) and written back |
 | OBJECTS | LAYOUT, IMAGEDEF, DICTIONARY (for the lookups below) and the annotation-scale note are read. Every other object that hangs off the root dictionary under a name the writer does not make itself (materials, visual styles, multileader and table styles, page setups, application dictionaries and data) is kept in `Header::custom` (`dxf.objects`, `dxf.objroot`) with its handles replaced by tokens, and written back with new handles; a pointer to something that is not kept (an entity, a table record, a layout) becomes the null handle. Reactors and extension dictionaries of these objects are not kept |
+| LAYOUT page setup | the plot settings of a layout (device, paper, plot style table, scale, origin: its `AcDbPlotSettings` part) are kept in `Header::custom` (`dxf.plotset.<layout name>`) and written back with the layout while the sheet's paper size is the same; a different paper size writes a fresh setup. Page setup changes made in TBCAD are not yet merged into the kept groups |
 | THUMBNAILIMAGE | skipped |
 
 | Entity | Result |
