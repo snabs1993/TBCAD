@@ -122,3 +122,31 @@ TEST_CASE("LAYDEL erases the layer with its objects only after confirmation") {
     CHECK(f.doc.find(f.ea) == nullptr);
     CHECK(f.doc.find(f.eb) != nullptr);
 }
+
+TEST_CASE("DIMLAYER and TEXTLAYER send new dimensions and text to their layer, '.' undoes it") {
+    Fixture f;
+    f.setup();
+    f.host.run("DIMLAYER", {"A"});
+    f.host.run("TEXTLAYER", {"B"});
+    f.host.run("DIMLINEAR", {"0,0", "100,0", "50,10"});
+    f.host.run("TEXT", {"0,20", "5", "0", "hi"});
+    LayerId dimLayer, textLayer;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimLayer = e.common.layer;
+        if (entityAs<TextData>(e))
+            textLayer = e.common.layer;
+    });
+    CHECK(dimLayer == f.a);
+    CHECK(textLayer == f.b);
+    f.host.run("DIMLAYER", {"nope"});
+    CHECK(f.host.logContains("There is no layer named"));
+    f.host.run("DIMLAYER", {"."});
+    f.host.run("DIMLINEAR", {"0,0", "50,0", "25,10"});
+    int onCurrent = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e) && e.common.layer == f.doc.header().currentLayer)
+            ++onCurrent;
+    });
+    CHECK(onCurrent == 1);
+}

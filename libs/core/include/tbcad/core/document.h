@@ -60,6 +60,11 @@ inline constexpr const char* kAnnoScaleKey = "tbcad.annoscale";
 inline constexpr const char* kAnnoScaleListKey = "tbcad.scalelist";
 // "1": new text, dimensions, leaders and tables are made annotative at the current scale.
 inline constexpr const char* kAnnoNewKey = "tbcad.annonew";
+// Layers new dimensions and leaders (DIMLAYER), hatches (HPLAYER) and text (TEXTLAYER) go on,
+// stored as layer ids in Header::custom. Missing = the current layer.
+inline constexpr const char* kDimLayerKey = "tbcad.dimlayer";
+inline constexpr const char* kHatchLayerKey = "tbcad.hatchlayer";
+inline constexpr const char* kTextLayerKey = "tbcad.textlayer";
 double currentAnnotationScale(const Header& h);
 // The scales offered for annotation, as N of 1:N. Default list when none is stored.
 std::vector<double> annotationScaleList(const Header& h);
@@ -458,8 +463,13 @@ inline void applyAnnotativeDefault(const Header& h, Entity& e) {
     }
 }
 
+// The layer the per-command setting names for this kind of object; null when there is none.
+LayerId commandLayerFor(const Header& h, const Entity& e);
+
 inline void applyCurrentProperties(const Header& h, Entity& e) {
     e.common.layer = h.currentLayer;
+    if (const LayerId special = commandLayerFor(h, e))
+        e.common.layer = special;
     e.common.color = h.currentColor;
     e.common.linetype = h.currentLinetype;
     e.common.lineweight = h.currentLineweight;

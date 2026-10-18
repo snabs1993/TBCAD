@@ -254,6 +254,58 @@ public:
 
 }  // namespace
 
+// DIMLAYER, HPLAYER and TEXTLAYER: the layer new dimensions (with leaders), hatches or text go on.
+// "." goes back to drawing on the current layer.
+class CommandLayerCommand final : public cmd::Command {
+public:
+    CommandLayerCommand(const char* name, const char* what, const char* key)
+        : name_(name), what_(what), key_(key) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+
+    Task run(CommandContext& ctx) override {
+        std::string now = ".";
+        std::string shown = "current layer";
+        auto it = ctx.doc().header().custom.find(key_);
+        if (it != ctx.doc().header().custom.end()) {
+            const LayerId id{
+                static_cast<std::uint32_t>(std::strtoul(it->second.c_str(), nullptr, 10))};
+            if (ctx.doc().layer(id)) {
+                now = layerPath(ctx.doc(), id);
+                shown = now;
+            }
+        }
+        cmd::StringOptions so;
+        so.defaultValue = now;
+        auto r = co_await ctx.getString(
+            std::string("Layer for new ") + what_ + " (. = current layer) <" + now + ">", so);
+        if (!r.ok())
+            co_return;
+        std::string name = cmd::trim(r.text.empty() ? now : r.text);
+        if (name == ".") {
+            (void)ctx.tx().modifyHeader([k = key_](Header& h) { h.custom.erase(k); });
+            ctx.setUndoLabel(name_);
+            ctx.message(std::string("New ") + what_ + " go on the current layer.");
+            co_return;
+        }
+        const Layer* layer = ctx.doc().layerByName(name);
+        if (!layer) {
+            ctx.message("There is no layer named \"" + name + "\".");
+            co_return;
+        }
+        (void)ctx.tx().modifyHeader(
+            [k = key_, id = layer->id](Header& h) { h.custom[k] = std::to_string(id.value); });
+        ctx.setUndoLabel(name_);
+        ctx.message(std::string("New ") + what_ + " go on layer \"" + layer->name + "\".");
+    }
+
+private:
+    const char* name_;
+    const char* what_;
+    const char* key_;
+    std::string description_ = std::string("Choose the layer for new ") + what_;
+};
+
 void registerLayerTools(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PickedLayerCommand>("LAYOFF", "Turned off", Act::Off));
     (void)registry.add(std::make_unique<PickedLayerCommand>("LAYFRZ", "Froze", Act::Freeze));
@@ -266,6 +318,10 @@ void registerLayerTools(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LayMchCommand>());
     (void)registry.add(std::make_unique<LayMrgCommand>());
     (void)registry.add(std::make_unique<LayDelCommand>());
+    (void)registry.add(
+        std::make_unique<CommandLayerCommand>("DIMLAYER", "dimensions and leaders", kDimLayerKey));
+    (void)registry.add(std::make_unique<CommandLayerCommand>("HPLAYER", "hatches", kHatchLayerKey));
+    (void)registry.add(std::make_unique<CommandLayerCommand>("TEXTLAYER", "text", kTextLayerKey));
 }
 
 }  // namespace tbcad::layers
