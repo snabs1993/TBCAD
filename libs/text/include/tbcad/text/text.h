@@ -83,7 +83,8 @@ struct Piece {
     bool newline = false;  // paragraph break (text is empty)
 };
 
-// Parses TBCAD markup: `\L` / `\l` underline on / off, `\O` / `\o` overline, `\P` paragraph, `\\ \{ \}` literals, `{\b1;..}` `{\i1;..}` bold/italic,
+// Parses TBCAD markup: `\L` / `\l` underline on / off, `\O` / `\o` overline, `\P` paragraph, `\\ \{
+// \}` literals, `{\b1;..}` `{\i1;..}` bold/italic,
 // `{\H<h>;..}` height in mm (`{\H2x;..}` = relative to the surrounding height), `{\C<i>;..}`
 // palette colour. Anything else after a backslash is kept literally; unmatched braces are
 // ignored. `baseHeight` is the entity's text height.
