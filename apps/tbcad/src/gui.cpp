@@ -314,9 +314,14 @@ void Gui::runAction(const std::string& action) {
         logExpanded_ = !logExpanded_;
     else if (action == "view.cleanScreen")
         cleanScreen_ = !cleanScreen_;
-    else if (action == "help.quickStart")
-        showQuickStart_ = true;
-    else if (action == "tools.settings")
+    else if (action == "help.quickStart") {
+        // F1 during a command explains that command; otherwise the quick start opens.
+        const auto* prompt = core_.runner().prompt();
+        if (prompt && !prompt->command.empty())
+            helpCommand_ = prompt->command;
+        else
+            showQuickStart_ = true;
+    } else if (action == "tools.settings")
         settings_.open();
     else {
         for (const auto& item : registry_.menuItems())
@@ -3659,6 +3664,52 @@ void Gui::dialogs() {
         ImGui::EndChild();
         if (ImGui::Button("Close", ImVec2(110, 0)))
             ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (!helpCommand_.empty()) {
+        ImGui::OpenPopup("Command Help");
+        helpShown_ = helpCommand_;
+        helpCommand_.clear();
+    }
+    ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Command Help", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const cmd::Command* c = core_.registry().find(helpShown_);
+        ImGui::TextUnformatted(helpShown_.c_str());
+        if (c) {
+            std::string aliases;
+            for (const std::string& a : core_.registry().aliasesOf(c->name()))
+                aliases += (aliases.empty() ? "" : ", ") + a;
+            if (!aliases.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", aliases.c_str());
+            }
+            ImGui::Separator();
+            ImGui::PushTextWrapPos(500.0f);
+            ImGui::TextUnformatted(std::string(c->description()).c_str());
+            ImGui::PopTextWrapPos();
+        }
+        if (const auto* prompt = core_.runner().prompt()) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("Right now");
+            ImGui::PushTextWrapPos(500.0f);
+            ImGui::TextUnformatted(prompt->text.c_str());
+            ImGui::PopTextWrapPos();
+            if (!prompt->keywords.empty()) {
+                std::string opts;
+                for (const std::string& k : prompt->keywords)
+                    opts += (opts.empty() ? "" : "  ") + std::string("[") + k + "]";
+                ImGui::TextDisabled("Options: %s", opts.c_str());
+            }
+        }
+        ImGui::Spacing();
+        if (ImGui::Button("Close", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::SameLine();
+        if (ImGui::Button("All commands...")) {
+            showCommandList_ = true;
+            ImGui::CloseCurrentPopup();
+        }
         ImGui::EndPopup();
     }
 
