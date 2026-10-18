@@ -1156,6 +1156,77 @@ bool isViewStateCommand(const std::vector<std::string>& words) {
 
 }  // namespace
 
+void AppCore::submitPanelText(std::string_view text) {
+    echoMode_ = runner().active() ? EchoMode::None : EchoMode::Names;
+    submitText(text);
+    echoMode_ = EchoMode::Typed;
+}
+
+namespace {
+// Numbers with a long fraction ("3787.4686716791975,5741.31161") are shortened to a few decimals
+// for the command line; the command itself still gets the full value.
+std::string roundedNumbers(const std::string& token) {
+    std::string out;
+    for (std::size_t i = 0; i < token.size();) {
+        const char c = token[i];
+        const bool start = std::isdigit(static_cast<unsigned char>(c)) ||
+                           ((c == '-' || c == '.') && i + 1 < token.size() &&
+                            std::isdigit(static_cast<unsigned char>(token[i + 1])));
+        if (!start) {
+            out.push_back(c);
+            ++i;
+            continue;
+        }
+        std::size_t j = i + 1;
+        bool dot = c == '.';
+        while (j < token.size() &&
+               (std::isdigit(static_cast<unsigned char>(token[j])) || (!dot && token[j] == '.'))) {
+            dot = dot || token[j] == '.';
+            ++j;
+        }
+        const std::string num = token.substr(i, j - i);
+        const std::size_t point = num.find('.');
+        if (point != std::string::npos && num.size() - point - 1 > 4) {
+            char buf[48];
+            std::snprintf(buf, sizeof buf, "%.4f", std::strtod(num.c_str(), nullptr));
+            std::string r = buf;
+            while (r.back() == '0')
+                r.pop_back();
+            if (r.back() == '.')
+                r.pop_back();
+            out += r;
+        } else {
+            out += num;
+        }
+        i = j;
+    }
+    return out;
+}
+}  // namespace
+
+// "#12" in a line a panel sent stands for a layer (or, after "Linetype", a linetype).
+std::string AppCore::friendlyEcho(const std::string& line) const {
+    std::vector<std::string> words = splitWords(line);
+    std::string out;
+    for (std::size_t i = 0; i < words.size(); ++i) {
+        std::string w = words[i];
+        if (w.size() > 1 && w[0] == '#' &&
+            w.find_first_not_of("0123456789", 1) == std::string::npos) {
+            const auto id = static_cast<std::uint32_t>(std::strtoul(w.c_str() + 1, nullptr, 10));
+            const bool lt = i > 0 && cmd::toUpperAscii(words[i - 1]) == "LINETYPE";
+            if (lt) {
+                if (const Linetype* l = session_->doc.linetype(LinetypeId{id}))
+                    w = l->name;
+            } else if (const Layer* l = session_->doc.layer(LayerId{id})) {
+                w = l->name;
+            }
+        } else
+            w = roundedNumbers(w);
+        out += (out.empty() ? "" : " ") + w;
+    }
+    return out;
+}
+
 void AppCore::submitText(std::string_view text) {
     std::string trimmed = cmd::trim(text);
     cmd::CommandRunner& run = runner();
@@ -1175,7 +1246,10 @@ void AppCore::submitText(std::string_view text) {
         viewStatePending_ =
             readOnlyOrigin() && !modified() &&
             isViewStateCommand(splitWords(trimmed[0] == '\'' ? trimmed.substr(1) : trimmed));
-    print(promptText() + trimmed);
+    if (echoMode_ == EchoMode::Typed)
+        print(promptText() + trimmed);
+    else if (echoMode_ == EchoMode::Names)
+        print(promptText() + friendlyEcho(trimmed));
     if (run.active()) {
         run.submit(trimmed.empty() ? cmd::Input::enter() : cmd::Input::typed(trimmed));
         return;
@@ -1646,7 +1720,7 @@ PanelContext AppCore::makePanelContext() {
     pc.cursorWorld = cursorWorld_;
     pc.apertureMm = apertureMm();
     pc.commandActive = runner().active();
-    pc.runCommand = [this](const std::string& line) { submitText(line); };
+    pc.runCommand = [this](const std::string& line) { submitPanelText(line); };
     pc.cancelCommand = [this] {
         if (runner().active())
             pressEscape();
