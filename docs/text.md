@@ -102,3 +102,11 @@ same reader). In `.tbcad` it is a separate `TSTH` chunk (format minor 11) that p
 know it keep unchanged; collaboration change records are version 3 (version 2 is still read).
 
 **TEXTALIGN** lines several texts (single-line or multiline) up with the first one selected: by Left, Center, Right, Top, Middle or Bottom edge of their bounding boxes. One undo step.
+
+## ARCTEXT
+
+**ARCTEXT** puts text along an arc or circle. Pick the arc, type the text, give the height and choose
+the side: **Outside** (the default; reads left to right along the top, letters stand on the arc with their
+tops away from the centre) or **Inside** (letters' tops point to the centre; on a circle the text sits at the
+bottom). The text is centred on the middle of the arc. Each letter is its own text object, so the result is
+not linked to the arc and is edited letter by letter; one undo step removes it all.

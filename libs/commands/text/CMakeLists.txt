@@ -7,6 +7,7 @@ set(_textcmd_sources
   src/text_commands.cpp
   src/txt2mtxt.cpp
   src/txtexp.cpp
+  src/arctext.cpp
   src/textalign.cpp
   src/tcount.cpp
   src/register.cpp)
