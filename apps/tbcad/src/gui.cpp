@@ -740,6 +740,22 @@ void Gui::shortcuts() {
         }
     }
 
+    // Ctrl+V while a command waits for input and the command line is not focused (a text prompt
+    // such as "Output file"): paste the clipboard text into the prompt, not objects into the
+    // drawing.
+    if (!io.WantTextInput && core_.runner().active() && io.KeyCtrl && !io.KeyShift && !io.KeyAlt &&
+        ImGui::IsKeyPressed(ImGuiKey_V, ImGuiInputFlags_None)) {
+        const char* text = ImGui::GetClipboardText();
+        if (text && *text && std::string_view(text).rfind("[TBCAD objects", 0) != 0) {
+            std::string line(text);
+            line = line.substr(0, line.find_first_of("\r\n"));
+            input_ += line;
+            refocusInput_ = true;
+            ImGui::SetKeyOwner(ImGuiKey_V, ImGuiKeyOwner_NoOwner, ImGuiInputFlags_LockThisFrame);
+            return;
+        }
+    }
+
     for (const auto& action : core_.keybindings().actions()) {
         auto chord = core_.keybindings().chordOf(action);
         if (!chord)
