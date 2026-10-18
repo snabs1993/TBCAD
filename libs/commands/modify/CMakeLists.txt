@@ -16,4 +16,5 @@ tbcad_add_tests(modify_commands
   SOURCES
     tests/main.cpp
     tests/command_tests.cpp
+    tests/robustness_tests.cpp
   DEPENDS tbcad_command_registry)
