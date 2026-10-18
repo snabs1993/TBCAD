@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <fstream>
 
+#include "../src/bytes.h"
 #include "helpers.h"
 #include "tbcad/core/dump.h"
 
@@ -134,3 +135,79 @@ TEST_CASE("tbcad-dump prints the chunk list and the canonical dump") {
     CHECK(std::system(cmd.c_str()) != 0);
 }
 #endif
+
+TEST_CASE("CRC-32: the standard check value, and slices of every length agree with a plain loop") {
+    const std::string s = "123456789";
+    CHECK(io::detail::tbcadCrc32({reinterpret_cast<const std::uint8_t*>(s.data()), s.size()}) ==
+          0xCBF43926u);
+    std::vector<std::uint8_t> data(1000);
+    std::uint32_t x = 12345;
+    for (auto& b : data) {
+        x = x * 1664525u + 1013904223u;
+        b = static_cast<std::uint8_t>(x >> 24);
+    }
+    for (std::size_t n = 0; n <= 40; ++n) {
+        std::uint32_t c = 0xFFFFFFFFu;  // the one-byte-at-a-time definition
+        for (std::size_t i = 0; i < n; ++i) {
+            c ^= data[i];
+            for (int k = 0; k < 8; ++k)
+                c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+        }
+        CHECK(io::detail::tbcadCrc32({data.data(), n}) == (c ^ 0xFFFFFFFFu));
+    }
+}
+
+TEST_CASE("save: a drawing of several chunks is written the same way every time") {
+    auto doc = docWith(300'000);  // more than one 4 MiB entity chunk
+    auto a = io::writeTbcadToMemory(*doc);
+    auto b = io::writeTbcadToMemory(*doc);
+    TB_REQUIRE_OK(a);
+    TB_REQUIRE_OK(b);
+    CHECK(a.value() == b.value());
+    io::IoReport report;
+    auto back = io::readTbcad(a.value(), report);
+    TB_REQUIRE_OK(back);
+    CHECK(back.value()->entityCount() == 300'000);
+    auto chunks = io::listChunks(a.value());
+    TB_REQUIRE_OK(chunks);
+    std::size_t ents = 0;
+    for (const auto& c : chunks.value())
+        ents += c.type == "ENTS" ? 1 : 0;
+    CHECK(ents >= 2);
+}
+
+TEST_CASE(
+    "save: writeTbcadAsync writes the file as it was when called, even if the drawing changes") {
+    TempDir dir;
+    fs::path file = dir.path() / "async.tbcad";
+    auto doc = docWith(50'000);
+    const std::string before = canonicalDump(*doc);
+    auto pending = io::writeTbcadAsync(*doc, file);
+    {
+        // The drawing goes on changing while the file is being finished.
+        Transaction tx = doc->begin("more");
+        for (int i = 0; i < 100; ++i) {
+            Entity e;
+            e.common.layer = kLayerZero;
+            e.data = LineData{{0, double(i)}, {1, double(i)}};
+            (void)tx.add(std::move(e));
+        }
+        tx.commit();
+    }
+    auto result = pending.get();
+    TB_REQUIRE_OK(result);
+    CHECK(dumpOf(file) == before);
+    CHECK_FALSE(fs::exists(dir.path() / "async.tbcad.tmp"));
+}
+
+TEST_CASE("save: the backup keeps the old content when a new file replaces it") {
+    TempDir dir;
+    fs::path file = dir.path() / "a.tbcad";
+    auto one = docWith(1);
+    auto two = docWith(2);
+    REQUIRE(io::writeTbcad(*one, file).ok());
+    REQUIRE(io::writeTbcad(*two, file).ok());
+    REQUIRE(io::writeTbcad(*one, file).ok());
+    CHECK(dumpOf(dir.path() / "a.tbcad.bak") == canonicalDump(*two));
+    CHECK(dumpOf(file) == canonicalDump(*one));
+}

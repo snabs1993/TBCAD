@@ -10,7 +10,8 @@ tbcad_add_library(io
     src/save.cpp
     src/write.cpp
   DEPENDS tbcad::core tbcad::platform)
-target_link_libraries(tbcad_io PRIVATE miniz)
+find_package(Threads REQUIRED)
+target_link_libraries(tbcad_io PRIVATE miniz Threads::Threads)
 
 # Prints a .tbcad file as readable text (used by tests and for debugging).
 add_executable(tbcad-dump tools/tbcad-dump.cpp)

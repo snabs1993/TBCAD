@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <future>
+#include <thread>
 
 #include "chunks.h"
 #include "tbcad/io/tbcad.h"
@@ -80,9 +82,36 @@ std::uint32_t fourcc4(const std::string& s) {
 
 }  // namespace
 
-Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
-                                                     const WriteOptions& options) {
+namespace {
+
+// A chunk of the file in the order it will be written: still to be deflated (Raw), being
+// deflated on another thread (Prepared) or already in its stored form (Stored).
+struct FileItem {
+    enum class Kind { Raw, Prepared, Stored } kind = Kind::Raw;
+    std::uint32_t type = 0;
+    std::uint32_t flags = 0;  // Stored only
+    std::vector<std::uint8_t> bytes{};
+    std::future<PreparedChunk> prepared{};
+};
+
+// The whole document encoded, holding no reference to it any more: the file is finished from this
+// by assembleFile, possibly on another thread while the document goes on changing.
+struct EncodedFile {
+    std::vector<FileItem> items{};
+    bool compress = true;
+};
+
+Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& options) {
     try {
+        EncodedFile file;
+        file.compress = options.compress;
+        std::vector<FileItem>& items = file.items;
+        auto addRaw = [&](std::uint32_t type, std::vector<std::uint8_t> bytes) {
+            FileItem it;
+            it.type = type;
+            it.bytes = std::move(bytes);
+            items.push_back(std::move(it));
+        };
         StringTable st;
         // Every chunk body is built first because STRS, which comes first in the file, can only
         // be completed once all other chunks have interned their strings.
@@ -301,14 +330,22 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             asmb.varint(st.intern(r.assembly->joinClass));
         }
 
-        // Entities in id order, split over ENTS chunks of about 8 MiB.
+        // Entities in id order, split over ENTS chunks of about 4 MiB.
         std::vector<const Entity*> ents;
         ents.reserve(doc.entityCount());
         doc.forEachEntity([&](const Entity& e) { ents.push_back(&e); });
-        std::sort(ents.begin(), ents.end(),
-                  [](const Entity* a, const Entity* b) { return a->common.id < b->common.id; });
-        std::vector<std::vector<std::uint8_t>> entChunks;
+        const auto byId = [](const Entity* a, const Entity* b) {
+            return a->common.id < b->common.id;
+        };
+        if (!std::is_sorted(ents.begin(), ents.end(), byId))  // usually already in id order
+            std::sort(ents.begin(), ents.end(), byId);
+        // Each full chunk goes to a worker thread for deflating while the next one is being
+        // encoded; at most as many as there are cores run at once.
+        std::vector<FileItem> entItems;
         {
+            const std::size_t maxRunning = std::max(1u, std::thread::hardware_concurrency());
+            const bool compress = options.compress;
+            std::size_t waited = 0;  // entItems before this index have been waited for
             std::size_t inChunk = 0;
             ByteWriter body;
             auto flush = [&] {
@@ -317,9 +354,18 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
                 ByteWriter c;
                 c.varint(inChunk);
                 c.raw(body.bytes());
-                entChunks.push_back(std::move(c.bytes()));
                 body = ByteWriter{};
                 inChunk = 0;
+                // Too many running: wait for the oldest, so memory and threads stay bounded.
+                if (entItems.size() - waited >= maxRunning)
+                    entItems[waited++].prepared.wait();
+                FileItem it;
+                it.kind = FileItem::Kind::Prepared;
+                it.type = kEnts;
+                it.prepared = std::async(
+                    std::launch::async,
+                    [raw = std::move(c.bytes()), compress] { return prepareChunk(raw, compress); });
+                entItems.push_back(std::move(it));
             };
             for (const Entity* e : ents) {
                 encodeEntity(body, st, *e, doc.ownerBlock(e->common.id));
@@ -373,42 +419,40 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             strs.raw(s.data(), s.size());
         }
 
-        ByteWriter out;
-        appendFileHeader(out);
         {
             ByteWriter head;
             head.varint(headCount);
             head.raw(headBody);
-            appendChunk(out, kHead, head.bytes(), options.compress);
+            addRaw(kHead, std::move(head.bytes()));
         }
-        appendChunk(out, kStrs, strs.bytes(), options.compress);
-        appendChunk(out, kLtyp, ltyp.bytes(), options.compress);
-        appendChunk(out, kTsty, tsty.bytes(), options.compress);
+        addRaw(kStrs, std::move(strs.bytes()));
+        addRaw(kLtyp, std::move(ltyp.bytes()));
+        addRaw(kTsty, std::move(tsty.bytes()));
         if (tsthCount > 0) {
             ByteWriter body;
             body.varint(tsthCount);
             body.raw(tsth.bytes());
-            appendChunk(out, kTsth, body.bytes(), options.compress);
+            addRaw(kTsth, std::move(body.bytes()));
         }
-        appendChunk(out, kDsty, dsty.bytes(), options.compress);
-        appendChunk(out, kLayr, layr.bytes(), options.compress);
+        addRaw(kDsty, std::move(dsty.bytes()));
+        addRaw(kLayr, std::move(layr.bytes()));
         if (writeLvls)
-            appendChunk(out, kLvls, lvls.bytes(), options.compress);
-        appendChunk(out, kBlks, blks.bytes(), options.compress);
+            addRaw(kLvls, std::move(lvls.bytes()));
+        addRaw(kBlks, std::move(blks.bytes()));
         if (xrefCount > 0)
-            appendChunk(out, kXrfs, xrfs.bytes(), options.compress);
+            addRaw(kXrfs, std::move(xrfs.bytes()));
         if (overlayCount > 0)
-            appendChunk(out, kXrfo, xrfo.bytes(), options.compress);
+            addRaw(kXrfo, std::move(xrfo.bytes()));
         if (dynCount > 0)
-            appendChunk(out, kDynb, dynb.bytes(), options.compress);
+            addRaw(kDynb, std::move(dynb.bytes()));
         if (asmCount > 0)
-            appendChunk(out, kAsmb, asmb.bytes(), options.compress);
-        for (const auto& c : entChunks)
-            appendChunk(out, kEnts, c, options.compress);
+            addRaw(kAsmb, std::move(asmb.bytes()));
+        for (FileItem& it : entItems)
+            items.push_back(std::move(it));
         if (elvl.size() != 0)
-            appendChunk(out, kElvl, elvl.bytes(), options.compress);
+            addRaw(kElvl, std::move(elvl.bytes()));
         if (ordr.size() != 0)
-            appendChunk(out, kOrdr, ordr.bytes(), options.compress);
+            addRaw(kOrdr, std::move(ordr.bytes()));
         for (const auto& [key, value] : opaque) {
             ByteReader r(std::span<const std::uint8_t>(
                 reinterpret_cast<const std::uint8_t*>(value->data()), value->size()));
@@ -418,19 +462,79 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             for (const ExtraChunk& x : options.extraChunks) {
                 replaced = replaced || (x.type.size() == 4 && fourcc4(x.type) == type);
             }
-            if (!replaced)
-                appendStoredChunk(out, type, flags, r.rest());
+            if (!replaced) {
+                FileItem it;
+                it.kind = FileItem::Kind::Stored;
+                it.type = type;
+                it.flags = flags;
+                const auto rest = r.rest();
+                it.bytes.assign(rest.begin(), rest.end());
+                items.push_back(std::move(it));
+            }
         }
         for (const ExtraChunk& x : options.extraChunks) {
             if (x.type.size() != 4)
                 return makeError(ErrorCode::InvalidArgument, "chunk type must be four characters");
-            appendChunk(out, fourcc4(x.type), x.payload, options.compress);
+            addRaw(fourcc4(x.type), x.payload);
+        }
+        return file;
+    } catch (const std::exception& ex) {
+        return makeError(ErrorCode::Generic, std::string("cannot write .tbcad: ") + ex.what());
+    }
+}
+
+// Waits for the chunks being deflated and lays the file out in order.
+Result<std::vector<std::uint8_t>> assembleFile(EncodedFile&& file) {
+    try {
+        ByteWriter out;
+        appendFileHeader(out);
+        for (FileItem& it : file.items) {
+            switch (it.kind) {
+                case FileItem::Kind::Raw:
+                    appendChunk(out, it.type, it.bytes, file.compress);
+                    break;
+                case FileItem::Kind::Prepared:
+                    appendPrepared(out, it.type, it.prepared.get());
+                    break;
+                case FileItem::Kind::Stored:
+                    appendStoredChunk(out, it.type, it.flags, it.bytes);
+                    break;
+            }
         }
         appendStoredChunk(out, kEnd, 0, {});
         return std::move(out.bytes());
     } catch (const std::exception& ex) {
         return makeError(ErrorCode::Generic, std::string("cannot write .tbcad: ") + ex.what());
     }
+}
+
+}  // namespace
+
+Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
+                                                     const WriteOptions& options) {
+    Result<EncodedFile> file = encodeDocument(doc, options);
+    if (!file)
+        return file.error();
+    return assembleFile(std::move(file.value()));
+}
+
+std::future<Result<void>> writeTbcadAsync(const Document& doc, const std::filesystem::path& path,
+                                          const WriteOptions& options) {
+    Result<EncodedFile> file = encodeDocument(doc, options);
+    if (!file) {
+        std::promise<Result<void>> p;
+        p.set_value(file.error());
+        return p.get_future();
+    }
+    // From here the document is not touched again.
+    return std::async(std::launch::async,
+                      [f = std::make_shared<EncodedFile>(std::move(file.value())), path,
+                       options]() mutable -> Result<void> {
+                          Result<std::vector<std::uint8_t>> bytes = assembleFile(std::move(*f));
+                          if (!bytes)
+                              return bytes.error();
+                          return saveTbcadBytes(bytes.value(), path, options);
+                      });
 }
 
 }  // namespace tbcad::io
