@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdlib>
+#include <optional>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -10,10 +12,15 @@ namespace {
 // EXPLODE [X]: replaces inserts and polylines with their parts, one level at a time.
 class ExplodeCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "EXPLODE"; }
-    std::vector<std::string> defaultAliases() const override { return {"X"}; }
+    // XPLODE is EXPLODE that first asks what layer and colour the parts get.
+    explicit ExplodeCommand(bool xplode = false) : xplode_(xplode) {}
+    std::string_view name() const override { return xplode_ ? "XPLODE" : "EXPLODE"; }
+    std::vector<std::string> defaultAliases() const override {
+        return xplode_ ? std::vector<std::string>{} : std::vector<std::string>{"X"};
+    }
     std::string_view description() const override {
-        return "Break blocks and polylines into parts";
+        return xplode_ ? "Break blocks and polylines into parts and set their layer and colour"
+                       : "Break blocks and polylines into parts";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -28,6 +35,42 @@ public:
         if (sel.ids.empty()) {
             ctx.message("0 found. Nothing to explode was selected.");
             co_return;
+        }
+
+        LayerId layer{};
+        std::optional<Color> color;
+        while (xplode_) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Layer", "Color", "Explode"};
+            ko.defaultKeyword = "Explode";
+            auto k = co_await ctx.getKeyword("Enter an option [Layer/Color/Explode] <Explode>",
+                                             std::move(ko));
+            if (!k.ok())
+                co_return;
+            if (k.keyword == "Explode")
+                break;
+            if (k.keyword == "Layer") {
+                auto n = co_await ctx.getString("Layer name for the parts");
+                if (!n.ok())
+                    co_return;
+                const Layer* l = doc.layerByName(cmd::trim(n.text));
+                if (!l)
+                    ctx.message("There is no layer named " + n.text + ".");
+                else
+                    layer = l->id;
+            } else {
+                auto n = co_await ctx.getString("Colour for the parts (1-255 or ByLayer)");
+                if (!n.ok())
+                    co_return;
+                const std::string t(cmd::trim(n.text));
+                const int idx = std::atoi(t.c_str());
+                if (t == "ByLayer" || t == "bylayer")
+                    color = Color::byLayer();
+                else if (idx >= 1 && idx <= 255)
+                    color = Color::index(static_cast<std::uint8_t>(idx));
+                else
+                    ctx.message("The colour is a number from 1 to 255, or ByLayer.");
+            }
         }
 
         std::vector<EntityId> created;
@@ -49,6 +92,10 @@ public:
                     notes.push_back(std::move(m));
             (void)tx.erase(id);
             for (Entity& part : r.value().entities) {
+                if (layer)
+                    part.common.layer = layer;
+                if (color)
+                    part.common.color = *color;
                 auto added = tx.add(std::move(part));
                 if (added)
                     created.push_back(added.value());
@@ -68,12 +115,19 @@ public:
                     detail::objects(created.size()));
         ctx.setUndoLabel("Explode " + detail::objects(exploded));
     }
+
+private:
+    bool xplode_;
 };
 
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeExplodeCommand() {
     return std::make_unique<ExplodeCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeXplodeCommand() {
+    return std::make_unique<ExplodeCommand>(true);
 }
 
 }  // namespace tbcad::block_cmds
