@@ -85,14 +85,18 @@ private:
 
 }  // namespace
 
+void registerToleranceCommand(cmd::Registry& registry);
+
 void registerCommands(cmd::Registry& registry) {
     for (const SymbolInfo& info : symbolList())
         (void)registry.add(std::make_unique<SymbolCommand>(info));
+    registerToleranceCommand(registry);
 }
 
 void registerUi(ui::UiRegistry& ui) {
     for (const SymbolInfo& info : symbolList())
         ui.addMenuItem(std::string("Draw/Symbols/") + info.title, info.command);
+    ui.addMenuItem("Dimension/Tolerance", "TOLERANCE");
 }
 
 }  // namespace tbcad::symbolscmd

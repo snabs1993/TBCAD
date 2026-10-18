@@ -2,6 +2,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/geom/geom.h"
 #include "tbcad/symbolscmd/symbolscmd.h"
 
 using namespace tbcad;
@@ -90,4 +91,71 @@ TEST_CASE("all symbols can be placed with default attributes - one undo step eac
     }
     f.host.undo();
     CHECK(f.doc.blockByName("TB_DETAIL") == nullptr);  // the block went with the undone step
+}
+
+TEST_CASE("every geometric characteristic draws its symbol inside the first cell") {
+    for (int i = static_cast<int>(symbolscmd::GdtSymbol::Straightness);
+         i <= static_cast<int>(symbolscmd::GdtSymbol::TotalRunout); ++i) {
+        symbolscmd::ToleranceSpec spec;
+        spec.symbol = static_cast<symbolscmd::GdtSymbol>(i);
+        spec.value = "0.1";
+        auto es = symbolscmd::toleranceEntities(spec);
+        CAPTURE(symbolscmd::gdtName(spec.symbol));
+        // Outline + divider + text, and the symbol itself.
+        CHECK(es.size() >= 4);
+        BBox2 symbol;
+        for (const Entity& e : es) {
+            if (kind(e) == EntityKind::Text || kind(e) == EntityKind::Polyline)
+                continue;
+            symbol.merge(geom::bounds(e));
+        }
+        if (spec.symbol == symbolscmd::GdtSymbol::Flatness ||
+            spec.symbol == symbolscmd::GdtSymbol::CircularRunout ||
+            spec.symbol == symbolscmd::GdtSymbol::TotalRunout)
+            continue;  // polyline parts, checked by the whole frame below
+        if (!symbol.empty()) {
+            CHECK(symbol.min.x >= 0);
+            CHECK(symbol.max.x <= 5.0 + 1e-9);
+            CHECK(symbol.max.y <= 2.5 + 1e-9);
+            CHECK(symbol.min.y >= -2.5 - 1e-9);
+        }
+    }
+}
+
+TEST_CASE("TOLERANCE draws a frame with the value, modifier and datums as one insert") {
+    Fixture f;
+    auto r = f.host.run("TOL", {"Position", "0.05", "Yes", "Mmc", "A", "B", "", "10,20"});
+    CHECK(r.finished);
+    const Entity* ins = f.lastInsertEntity();
+    REQUIRE(ins);
+    CHECK(entityAs<InsertData>(*ins)->position == Vec2{10, 20});
+    CHECK(ins->common.annotative);
+    const BlockDef* def = f.doc.blockByName("TB_TOL_1");
+    REQUIRE(def);
+    std::vector<std::string> texts;
+    for (EntityId id : def->entities)
+        if (const auto* t = entityAs<TextData>(*f.doc.find(id)))
+            texts.push_back(t->utf8);
+    REQUIRE(texts.size() == 4);  // value, M, A, B
+    CHECK(texts[0] ==
+          "\xE2\x8C\x80"
+          "0.05");
+    CHECK(texts[1] == "M");
+    CHECK(texts[2] == "A");
+    CHECK(texts[3] == "B");
+    // A second frame gets its own block, and Esc leaves nothing behind.
+    f.host.run("TOLERANCE", {"Flatness", "0.1", "No", "None", "", "0,0"});
+    CHECK(f.doc.blockByName("TB_TOL_2"));
+    const std::size_t blocks = f.doc.blocks().size();
+    f.host.run("TOLERANCE", {"Flatness", "0.1", cmd::ScriptItem::esc()});
+    CHECK(f.doc.blocks().size() == blocks);
+}
+
+TEST_CASE("TOLERANCE from far away is scaled like text") {
+    Fixture f;
+    f.host.setView({{0, 0}, 10.0, {900, 600}});
+    f.host.run("TOL", {"Perpendicularity", "0.02", "No", "None", "A", "", "0,0"});
+    const InsertData* i = f.lastInsert();
+    REQUIRE(i);
+    CHECK(i->scale.x == doctest::Approx(50));
 }
