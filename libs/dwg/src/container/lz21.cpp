@@ -13,7 +13,7 @@ namespace {
 // header); other lengths are read back to front.
 void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out) {
     // Block sizes in stream order, indexed by the length of the remainder. An empty entry is a
-    // length whose cut is not known yet (19, 21, 26, 28, 29, 31).
+    // length that does not occur.
     static const std::vector<std::uint8_t> kCuts[32] = {
         {},
         {1},
@@ -34,19 +34,19 @@ void copyRemainder(const std::uint8_t* in, std::size_t length, std::uint8_t* out
         {8, 8},
         {8, 1, 8},
         {1, 8, 8, 1},
-        {},
+        {8, 1, 8, 1, 1},
         {8, 8, 4},
-        {},
+        {8, 8, 4, 1},
         {8, 8, 4, 1, 1},
         {8, 8, 4, 1, 1, 1},
         {8, 8, 8},
         {8, 8, 1, 8},
-        {},
+        {8, 8, 1, 8, 1},
         {8, 8, 1, 8, 1, 1},
-        {},
-        {},
+        {8, 8, 8, 4},
+        {8, 8, 8, 4, 1},
         {8, 8, 8, 4, 1, 1},
-        {},
+        {8, 8, 8, 4, 1, 1, 1},
     };
     const std::vector<std::uint8_t>& cut = length < 32 ? kCuts[length] : kCuts[0];
     const std::size_t blocks = cut.size();

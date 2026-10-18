@@ -66,6 +66,12 @@ TEST_CASE("R2007 compression: literal runs are cut into blocks stored in the opp
     CHECK(literalRun("abcdefghijkl") == "ijklabcdefgh");
     CHECK(literalRun("abcdefghijklmnop") == "ijklmnopabcdefgh");
     CHECK(literalRun("abcdefghijklmnopqrst") == "qrstijklmnopabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrs") == "srjklmnopqiabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrstu") == "uqrstijklmnopabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrstuvwxyz") == "zrstuvwxyqijklmnopabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrstuvwxyzAB") == "yzABqrstuvwxijklmnopabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrstuvwxyzABC") == "CyzABqrstuvwxijklmnopabcdefgh");
+    CHECK(literalRun("abcdefghijklmnopqrstuvwxyzABCDE") == "EDCyzABqrstuvwxijklmnopabcdefgh");
     CHECK(literalRun("abcdefghijk") == "defghijkcba");
     CHECK(literalRun("abcdefghijklm") == "mijklabcdefgh");
     CHECK(literalRun("abcdefghijklmno") == "onjklmbcdefghia");
