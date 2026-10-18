@@ -85,7 +85,20 @@ class ObjectReader {
 public:
     ObjectReader(Bytes file, const std::vector<ClassInfo>& classes, Drawing& out,
                  std::vector<std::string>& notes, const Format& fmt)
-        : file_(file), classes_(classes), out_(out), notes_(notes), fmt_(fmt) {}
+        : file_(file), classes_(classes), out_(out), notes_(notes), fmt_(fmt) {
+        if (!classes_.empty()) {
+            int lo = classes_.front().number, hi = lo;
+            for (const ClassInfo& c : classes_) {
+                lo = std::min(lo, c.number);
+                hi = std::max(hi, c.number);
+            }
+            std::string t = "classes: " + std::to_string(classes_.size()) + ", numbers " +
+                            std::to_string(lo) + " to " + std::to_string(hi) + ", first:";
+            for (std::size_t i = 0; i < classes_.size() && i < 6; ++i)
+                t += " " + std::to_string(classes_[i].number) + "=" + classes_[i].dxfName;
+            out_.walkNotes.push_back(t);
+        }
+    }
 
     // The layouts of layers, lines and inserts differ between files; each is decided by the first
     // object that fits one reading only. Objects that need a decision (block headers) can come
@@ -221,11 +234,13 @@ private:
     }
 
     std::string dxfNameOfClass(std::uint32_t type) const {
-        if (type < 500)
+        if (type < 0x1F0)
             return {};
         for (const ClassInfo& c : classes_)
             if (c.number == static_cast<int>(type))
                 return c.dxfName;
+        if (type < 500)
+            return {};
         const std::size_t idx = type - 500;
         return idx < classes_.size() ? classes_[idx].dxfName : std::string{};
     }
