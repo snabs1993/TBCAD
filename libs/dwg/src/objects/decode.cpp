@@ -137,10 +137,17 @@ public:
         // are written in a shape that is easy to misread). Use the map only as a fallback. A real
         // R2004 file had 2192 of 17669 map entries unusable while the walk found all 17669.
         if (fmt_.r2004) {
+            const auto tAnchor = std::chrono::steady_clock::now();
             for (const MapEntry& e : map)
                 if (e.offset > 0 && frameHandle(e.offset) == e.handle)
                     anchors_.push_back(e.offset);
             std::sort(anchors_.begin(), anchors_.end());
+            out_.walkNotes.push_back(
+                "stream anchors took " +
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now() - tAnchor)
+                                   .count()) +
+                " ms");
             walked_.reserve(map.size() + map.size() / 8);
             walkedList_.reserve(map.size() + map.size() / 8);
             const auto tWalk = std::chrono::steady_clock::now();
@@ -152,13 +159,22 @@ public:
                                    .count()) +
                 " ms");
             if (walkedList_.size() * 10 >= map.size() * 7) {
+                const auto tCal = std::chrono::steady_clock::now();
                 calibrate();
+                const auto tDec = std::chrono::steady_clock::now();
                 for (const auto& [h, off] : walkedList_) {
                     MapEntry e;
                     e.handle = h;
                     e.offset = off;
                     decodeOne(e);
                 }
+                const auto tEnd = std::chrono::steady_clock::now();
+                auto ms = [](auto a, auto b) {
+                    return std::to_string(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count());
+                };
+                out_.walkNotes.push_back("calibrate took " + ms(tCal, tDec) + " ms, walked decode " +
+                                         ms(tDec, tEnd) + " ms");
                 // Map entries the walk did not meet but whose frame carries their handle.
                 for (const MapEntry& e : map)
                     if (!walked_.count(e.handle) && e.offset > 0 &&
