@@ -555,6 +555,18 @@ public:
     }
 };
 
+// EXTERNALREFERENCES [ER]: opens the External References panel.
+class XrefPaletteCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "EXTERNALREFERENCES"; }
+    std::vector<std::string> defaultAliases() const override { return {"ER"}; }
+    std::string_view description() const override { return "Open the External References panel"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("xrefs");
+        co_return;
+    }
+};
+
 // Names of the underlay blocks (pictures and PDF pages), for the prompts.
 std::vector<const BlockDef*> underlayBlocks(const Document& doc, bool imagesOnly) {
     std::vector<const BlockDef*> out;
@@ -792,6 +804,9 @@ std::unique_ptr<cmd::Command> makeXPathCommand() {
 }
 std::unique_ptr<cmd::Command> makeXRelinkCommand() {
     return std::make_unique<XRelinkCommand>();
+}
+std::unique_ptr<cmd::Command> makeXrefPaletteCommand() {
+    return std::make_unique<XrefPaletteCommand>();
 }
 std::unique_ptr<cmd::Command> makeXListCommand() {
     return std::make_unique<XListCommand>();

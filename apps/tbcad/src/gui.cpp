@@ -532,7 +532,18 @@ void Gui::doOpenPath(const std::string& path) {
     else {
         toast("Opened " + platform::pathFromUtf8(path).filename().string());
         frontLayersIn_ = 3;  // the Levels tab must not stay in front of Layers after an open
+        repairAfterOpen();
     }
+    recoverAfterOpen_ = false;
+}
+
+// RECOVER <file>: once the file is open, the repair runs on it like RECOVER with no file.
+void Gui::repairAfterOpen() {
+    if (!recoverAfterOpen_)
+        return;
+    recoverAfterOpen_ = false;
+    core_.submitText("RECOVER");
+    core_.submitText("");
 }
 
 void Gui::openPending() {
@@ -572,7 +583,9 @@ void Gui::openPending() {
         else {
             toast("Opened " + openingName);
             frontLayersIn_ = 3;
+            repairAfterOpen();
         }
+        recoverAfterOpen_ = false;
     }
     core_.setEchoOpenFailures(true);
     if (pendingOpen_.empty())
@@ -3320,7 +3333,10 @@ ViewportRect Gui::frame() {
             }
         } else if (what.rfind("openpath:", 0) == 0)
             doOpenPath(what.substr(9));
-        else if (what.rfind("saveaspath:", 0) == 0) {
+        else if (what.rfind("recoverpath:", 0) == 0) {
+            recoverAfterOpen_ = true;
+            doOpenPath(what.substr(12));
+        } else if (what.rfind("saveaspath:", 0) == 0) {
             auto r = core_.saveAs(platform::pathFromUtf8(what.substr(11)));
             if (!r)
                 lastError_ = r.error().message;

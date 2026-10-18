@@ -69,6 +69,9 @@ public:
     // Everything printed so far.
     const std::vector<std::string>& log() const { return log_; }
     bool logContains(std::string_view needle) const;
+    // What commands asked the window to do (requestUi), in order.
+    const std::vector<std::string>& uiRequests() const { return uiRequests_; }
+    void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
     void clearLog() { log_.clear(); }
 
     // Last preview list set by the active prompt (empty when none).
@@ -100,6 +103,7 @@ public:
     void promptChanged(const PromptInfo* prompt) override;
 
 private:
+    std::vector<std::string> uiRequests_{};
     ScriptResult pump(const std::vector<ScriptItem>& items, ScriptResult r);
 
     Document& doc_;

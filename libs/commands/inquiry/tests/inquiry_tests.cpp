@@ -336,8 +336,16 @@ TEST_CASE("RECOVER removes broken objects without asking") {
     f.add(line({0, 0}, {10, 0}));
     EntityId zero = f.add(line({5, 5}, {5, 5}));
     cmd::ScriptHost host(f.doc, f.reg);
-    host.run("RECOVER", {});
+    host.run("RECOVER", {cmd::ScriptItem::enter()});
     CHECK(host.logContains("Removed 1"));
     CHECK_FALSE(f.doc.contains(zero));
     CHECK(f.doc.modelSpaceCount() == 1);
+}
+
+TEST_CASE("RECOVER with a file name asks the window to open and repair that file") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("RECOVER", {"\"C:/work/bad.dxf\""});
+    CHECK(host.uiRequests().size() == 1);
+    CHECK(host.uiRequests().front() == "recoverpath:C:/work/bad.dxf");
 }
