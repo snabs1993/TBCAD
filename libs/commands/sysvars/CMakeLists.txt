@@ -6,6 +6,7 @@ tbcad_add_library(sysvars
     src/view.cpp
     src/addselected.cpp
     src/hyperlink.cpp
+    src/script.cpp
   DEPENDS tbcad::cmd tbcad::core tbcad::layers)
 
 tbcad_add_tests(sysvars

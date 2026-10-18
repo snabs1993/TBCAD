@@ -263,6 +263,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeHyperlinkCommand());
     (void)registry.add(makeSpaceTransCommand());
     (void)registry.add(makeDelayCommand());
+    (void)registry.add(makeScriptCommand(false));
+    (void)registry.add(makeScriptCommand(true));
     (void)registry.add(makeSetvarCommand());
     for (const char* v : {"CELTSCALE", "PSLTSCALE", "MSLTSCALE", "PLINEGEN"})
         (void)registry.add(makeVarCommand(v));

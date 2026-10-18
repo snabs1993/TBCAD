@@ -72,6 +72,10 @@ public:
     // What commands asked the window to do (requestUi), in order.
     const std::vector<std::string>& uiRequests() const { return uiRequests_; }
     void requestUi(std::string_view what) override { uiRequests_.emplace_back(what); }
+    bool queueScript(std::vector<std::string> lines, int repeat) override {
+        runner_.queueScript(std::move(lines), repeat);
+        return true;
+    }
     void clearLog() { log_.clear(); }
 
     // Last preview list set by the active prompt (empty when none).

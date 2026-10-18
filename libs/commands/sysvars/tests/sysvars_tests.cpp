@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <filesystem>
+#include <fstream>
+
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/layers/layer_ops.h"
@@ -238,4 +241,51 @@ TEST_CASE("LWDISPLAY shows or hides lineweights on screen") {
     CHECK(f.host.setting("view.lineweights") == "1");
     f.host.run("LWDISPLAY", {"maybe"});
     CHECK(f.host.logContains("LWDISPLAY is 0 or 1"));
+}
+
+TEST_CASE("SCRIPT types each line of the file, RSCRIPT repeats it, Esc stops") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_script_test";
+    fs::create_directories(dir);
+    const fs::path file = dir / "draw.scr";
+    {
+        std::ofstream o(file);
+        o << "; two lines and a circle\r\nLINE 0,0 100,0 \r\nLINE\r\n0,10\r\n100,10\r\n\r\n"
+             "CIRCLE 50,50 20\r\n";
+    }
+    auto count = [](Document& d) {
+        std::size_t n = 0;
+        d.forEachEntity([&](const Entity&) { ++n; });
+        return n;
+    };
+    {
+        Fixture f;
+        f.host.run("SCRIPT", {file.string()});
+        CHECK(count(f.doc) == 3);
+        CHECK_FALSE(f.host.runner().active());
+        CHECK(f.host.undoStack().undoCount() == 3);
+    }
+    {
+        Fixture f;
+        f.host.run("RSCRIPT", {file.string(), "4"});
+        CHECK(count(f.doc) == 12);
+    }
+    {
+        // a script that runs another one
+        const fs::path outer = dir / "outer.scr";
+        {
+            std::ofstream o(outer);
+            o << "SCRIPT " << file.string() << "\nCIRCLE 0,0 5\n";
+        }
+        Fixture f;
+        f.host.run("SCRIPT", {outer.string()});
+        CHECK(count(f.doc) == 4);
+    }
+    {
+        Fixture f;
+        f.host.run("SCRIPT", {(dir / "missing").string()});
+        CHECK(f.host.logContains("Cannot open"));
+    }
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }

@@ -86,6 +86,10 @@ public:
     // objects ignored). An empty box means the host has no opinion; the command scans the document.
     virtual BBox2 viewExtents() const { return {}; }
 
+    // SCRIPT: types these lines as the user would, after the running command ends. False when the
+    // host cannot (no command line).
+    virtual bool queueScript(std::vector<std::string> /*lines*/, int /*repeat*/) { return false; }
+
     // Asks the application window to open something ("settings"). Hosts without a window ignore it.
     virtual void requestUi(std::string_view /*what*/) {}
 

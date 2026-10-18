@@ -2711,6 +2711,13 @@ void AppCore::registerBuiltinUi(UiRegistry& ui) {
     ui.addMenuItem("Tools/Settings...", "SETTINGS", "tools.settings", "");
 }
 
+bool AppCore::queueScript(std::vector<std::string> lines, int repeat) {
+    if (!session_ || !session_->runner)
+        return false;
+    session_->runner->queueScript(std::move(lines), repeat);
+    return true;
+}
+
 double AppCore::ucsAngle() const {
     return session_ && session_->runner ? session_->runner->ucsAngle() : 0;
 }
