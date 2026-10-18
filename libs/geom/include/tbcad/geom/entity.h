@@ -30,6 +30,9 @@ struct DisplayContext {
     // Scale for annotative objects (model units per paper unit). 0 = the drawing's current
     // annotation scale; a layout viewport sets its own.
     double annoScale = 0;
+    // True for the objects of a layout sheet itself (not the model shown in a viewport): their
+    // linetypes are not scaled by the model-space annotation scale (MSLTSCALE).
+    bool paperSpace = false;
 
     double tolerance() const { return chordTolMm > 0 ? chordTolMm : pixelSizeMm * 0.25; }
 };

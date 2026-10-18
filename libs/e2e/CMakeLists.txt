@@ -21,6 +21,7 @@ tbcad_add_tests(e2e
     tests/plot_perf_tests.cpp
     tests/audit_purge_large_tests.cpp
     tests/block_scale_tests.cpp
+    tests/linetype_scale_tests.cpp
     tests/hatch_scale_tests.cpp
     tests/cmdline_ux_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry tbcad::appcore)

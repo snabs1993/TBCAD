@@ -200,3 +200,32 @@ TEST_CASE("SPACETRANS converts between paper and model lengths; DELAY checks its
     f.host.run("DELAY", {"99999"});
     CHECK(f.host.logContains("0 to 10000"));
 }
+
+TEST_CASE("CELTSCALE, PSLTSCALE, MSLTSCALE and PLINEGEN are commands and SETVAR names") {
+    Fixture f;
+    CHECK(ceLtScale(f.doc.header()) == 1);
+    CHECK(psLtScale(f.doc.header()));
+    f.host.run("CELTSCALE", {"0.25"});
+    CHECK(ceLtScale(f.doc.header()) == doctest::Approx(0.25));
+    f.host.run("PSLTSCALE", {"0"});
+    CHECK_FALSE(psLtScale(f.doc.header()));
+    f.host.run("MSLTSCALE", {"Off"});
+    CHECK_FALSE(msLtScale(f.doc.header()));
+    f.host.run("PLINEGEN", {"0"});
+    CHECK_FALSE(plineGen(f.doc.header()));
+    f.host.run("PLINEGEN", {"maybe"});
+    CHECK(f.host.logContains("PLINEGEN is 0 or 1"));
+    CHECK_FALSE(plineGen(f.doc.header()));
+    f.host.run("SETVAR", {"CELTSCALE", "3"});
+    CHECK(ceLtScale(f.doc.header()) == doctest::Approx(3));
+    CHECK(f.host.undo());
+    CHECK(ceLtScale(f.doc.header()) == doctest::Approx(0.25));
+    // New objects take the current linetype scale.
+    f.host.run("LINE", {"0,0", "10,0", ""});
+    bool found = false;
+    f.doc.forEachEntity([&](const Entity& e) {
+        found = true;
+        CHECK(e.common.linetypeScale == doctest::Approx(0.25));
+    });
+    CHECK(found);
+}

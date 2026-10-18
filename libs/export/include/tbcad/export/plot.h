@@ -77,6 +77,8 @@ struct PlotLayout {
     // Scale N of 1:N for annotative objects; 0 = the drawing's current annotation scale. A layout
     // viewport sets its own, so the same text prints at one paper height in every viewport.
     double annoScale = 0;
+    // The sheet's own objects (a layout), not model space: see geom::DisplayContext::paperSpace.
+    bool paperSpace = false;
     // Layers hidden in this view only (frozen in a layout viewport). Checked for every drawn part,
     // so a block's contents on such a layer disappear too.
     std::function<bool(LayerId)> layerHidden{};

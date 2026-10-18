@@ -67,6 +67,17 @@ inline constexpr const char* kAnnoNewKey = "tbcad.annonew";
 inline constexpr const char* kDimLayerKey = "tbcad.dimlayer";
 inline constexpr const char* kHatchLayerKey = "tbcad.hatchlayer";
 inline constexpr const char* kTextLayerKey = "tbcad.textlayer";
+// Linetype scale of new objects (CELTSCALE), whether paper-space linetype scaling (PSLTSCALE) and
+// model-space annotation scaling (MSLTSCALE) apply, and how new polylines run their linetype
+// across vertices (PLINEGEN). Kept in Header::custom; the defaults are 1, on, on and on.
+inline constexpr const char* kCeLtScaleKey = "tbcad.celtscale";
+inline constexpr const char* kPsLtScaleKey = "tbcad.psltscale";
+inline constexpr const char* kMsLtScaleKey = "tbcad.msltscale";
+inline constexpr const char* kPlineGenKey = "tbcad.plinegen";
+double ceLtScale(const Header& h);
+bool psLtScale(const Header& h);
+bool msLtScale(const Header& h);
+bool plineGen(const Header& h);
 double currentAnnotationScale(const Header& h);
 // The scales offered for annotation, as N of 1:N. Default list when none is stored.
 std::vector<double> annotationScaleList(const Header& h);
@@ -581,6 +592,9 @@ inline void applyCurrentProperties(const Header& h, Entity& e) {
         e.common.layer = special;
     e.common.color = h.currentColor;
     e.common.linetype = h.currentLinetype;
+    e.common.linetypeScale = static_cast<float>(ceLtScale(h));
+    if (auto* pl = std::get_if<PolylineData>(&e.data))
+        pl->restartLinetype = !plineGen(h);
     e.common.lineweight = h.currentLineweight;
     e.common.transparency = h.currentTransparency;
     applyAnnotativeDefault(h, e);

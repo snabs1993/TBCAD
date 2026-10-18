@@ -83,19 +83,27 @@ Error invalid(std::string msg) {
     return Error{ErrorCode::InvalidArgument, std::move(msg)};
 }
 
-// Dash pattern (+ dash, - gap, 0 dot; drawing units) to alternating on/off paper lengths.
+// Dash pattern (+ dash, - gap, 0 dot; drawing units) to alternating on/off paper lengths. A dot
+// takes no length on screen; here it is a short dash of `dotMm` taken out of the gap after it, so
+// the pattern keeps the period (and the phase) it has on screen.
 std::vector<double> dashArray(const std::vector<double>& pattern, double scale, double dotMm) {
     std::vector<double> out;
     bool lastOn = false;  // true when the previous element was an "on" element
+    double owed = 0;      // dot length still to be taken from the gap(s) that follow
     for (double v : pattern) {
         if (v < 0) {
             if (!lastOn)
                 out.push_back(0);
-            out.push_back(-v * scale);
+            const double len = -v * scale;
+            const double take = std::min(owed, len);
+            owed -= take;
+            out.push_back(len - take);
             lastOn = false;
         } else {
             if (lastOn)
                 out.push_back(0);
+            if (v == 0)
+                owed += dotMm;
             out.push_back(v == 0 ? dotMm : v * scale);
             lastOn = true;
         }
@@ -412,6 +420,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     geom::DisplayContext ctx;
     ctx.chordTolMm = s.chordTolMm / lay.paperPerUnit;
     ctx.annoScale = lay.annoScale;
+    ctx.paperSpace = lay.paperSpace;
     // A "pixel" on paper is a hairline: hatches denser than that are drawn as a tone.
     ctx.pixelSizeMm = s.hairlineMm / lay.paperPerUnit;
     ctx.defaultLineweightMm = 0.25;

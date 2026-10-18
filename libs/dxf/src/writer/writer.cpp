@@ -1067,6 +1067,14 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.pt2(10, {420, 297});
     var("$LTSCALE");
     o.d(40, doc_.header().ltScale);
+    var("$CELTSCALE");
+    o.d(40, ceLtScale(doc_.header()));
+    var("$PSLTSCALE");
+    o.i(70, psLtScale(doc_.header()) ? 1 : 0);
+    var("$MSLTSCALE");
+    o.i(70, msLtScale(doc_.header()) ? 1 : 0);
+    var("$PLINEGEN");
+    o.i(70, plineGen(doc_.header()) ? 1 : 0);
     var("$CECOLOR");
     o.i(62, 256);
     var("$CELTYPE");

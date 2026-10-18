@@ -373,3 +373,95 @@ TEST_CASE("a polyline with Ltype gen off draws each segment on its own so the pa
     buildDisplay(doc, solid, ctx, cont);
     CHECK(cont.items.size() == 1);
 }
+
+namespace {
+void addDashed(Document& doc, LinetypeId& dashed) {
+    Transaction tx = doc.begin("lt");
+    Linetype lt;
+    lt.name = "DASHED";
+    lt.pattern = {6, -3};
+    dashed = tx.addLinetype(lt).value();
+    tx.commit();
+}
+}  // namespace
+
+TEST_CASE("linetype scale follows MSLTSCALE in model space and PSLTSCALE in a viewport") {
+    LinetypeId dashed;
+    Document doc;
+    addDashed(doc, dashed);
+    {
+        Transaction tx = doc.begin("scale");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.ltScale = 2;
+                      h.custom[kAnnoScaleKey] = "50";
+                  }).ok());
+        tx.commit();
+    }
+    Entity line = make(LineData{{0, 0}, {100, 0}});
+    line.common.linetype = dashed;
+    line.common.linetypeScale = 3;
+    auto scaleWith = [&](double annoScale, bool paper) {
+        DisplayContext ctx;
+        ctx.annoScale = annoScale;
+        ctx.paperSpace = paper;
+        DisplayList out;
+        buildDisplay(doc, line, ctx, out);
+        return polyline(out).style.patternScale;
+    };
+    // Model space: object scale 3 x LTSCALE 2 x annotation scale 50.
+    CHECK(scaleWith(0, false) == doctest::Approx(300));
+    // A viewport at 1:100: PSLTSCALE on gives the same dashes on paper at every viewport scale.
+    CHECK(scaleWith(100, false) == doctest::Approx(600));
+    // The sheet's own objects are not scaled by the annotation scale.
+    CHECK(scaleWith(0, true) == doctest::Approx(6));
+    {
+        Transaction tx = doc.begin("off");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom[kMsLtScaleKey] = "0";
+                      h.custom[kPsLtScaleKey] = "0";
+                  }).ok());
+        tx.commit();
+    }
+    CHECK(scaleWith(0, false) == doctest::Approx(6));
+    CHECK(scaleWith(100, false) == doctest::Approx(6));
+}
+
+TEST_CASE("CELTSCALE reaches new objects") {
+    Header h;
+    h.custom[kCeLtScaleKey] = "2.5";
+    Entity e = make(LineData{{0, 0}, {1, 0}});
+    applyCurrentProperties(h, e);
+    CHECK(e.common.linetypeScale == doctest::Approx(2.5));
+    CHECK(ceLtScale(Header{}) == 1);
+}
+
+TEST_CASE("PLINEGEN is the default of new polylines; a dashed polyline restarts at each vertex") {
+    LinetypeId dashed;
+    Document doc;
+    addDashed(doc, dashed);
+    PolylineData pl;
+    pl.v = {{{0, 0}, 0}, {{10, 0}, 0}, {{10, 10}, 0}, {{0, 10}, 0}};
+    auto count = [&](const Entity& e) {
+        DisplayList out;
+        buildDisplay(doc, e, DisplayContext{}, out);
+        return out.items.size();
+    };
+    Entity open = make(pl);
+    open.common.linetype = dashed;
+    CHECK(count(open) == 1);
+    open.data = [&] {
+        PolylineData r = pl;
+        r.restartLinetype = true;
+        return r;
+    }();
+    CHECK(count(open) == 3);
+
+    // New polylines take the drawing's PLINEGEN.
+    Header h;
+    Entity fresh = make(pl);
+    applyCurrentProperties(h, fresh);
+    CHECK_FALSE(entityAs<PolylineData>(fresh)->restartLinetype);
+    h.custom[kPlineGenKey] = "0";
+    applyCurrentProperties(h, fresh);
+    CHECK(entityAs<PolylineData>(fresh)->restartLinetype);
+}

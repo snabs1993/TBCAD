@@ -1087,4 +1087,37 @@ TEST_CASE("transparency (group 440) and the object's own text width factor survi
     (void)textId;
 }
 
+TEST_CASE("polyline linetype generation (flag 128) and the linetype scale variables survive") {
+    Document doc;
+    {
+        auto tx = doc.begin("gen");
+        PolylineData pl;
+        pl.v = {pv(0, 0), pv(10, 0), pv(10, 10)};
+        PolylineData restarts = pl;
+        restarts.restartLinetype = true;
+        REQUIRE(tx.add(make(pl)).ok());
+        REQUIRE(tx.add(make(restarts)).ok());
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom[kCeLtScaleKey] = "0.5";
+                      h.custom[kPsLtScaleKey] = "0";
+                      h.custom[kMsLtScaleKey] = "0";
+                      h.custom[kPlineGenKey] = "0";
+                  }).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    int runs = 0, restarts = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* pl = entityAs<PolylineData>(e))
+            (pl->restartLinetype ? restarts : runs)++;
+    });
+    CHECK(runs == 1);
+    CHECK(restarts == 1);
+    const Header& h = rt.back->header();
+    CHECK(ceLtScale(h) == doctest::Approx(0.5));
+    CHECK_FALSE(psLtScale(h));
+    CHECK_FALSE(msLtScale(h));
+    CHECK_FALSE(plineGen(h));
+}
+
 }  // namespace tbcad::dxf

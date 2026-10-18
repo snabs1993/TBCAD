@@ -37,6 +37,20 @@ std::string upper(std::string s) {
     return s;
 }
 
+// 0/1 and On/Off.
+bool parseSwitch(std::string_view v, bool& on) {
+    const std::string s = upper(std::string(v));
+    if (s == "0" || s == "OFF") {
+        on = false;
+        return true;
+    }
+    if (s == "1" || s == "ON") {
+        on = true;
+        return true;
+    }
+    return false;
+}
+
 struct Var {
     const char* name;
     const char* help;
@@ -56,6 +70,44 @@ const std::vector<Var>& variables() {
              if (s.empty() || *end != 0 || !(x >= 1e-6 && x <= 1e6))
                  return "LTSCALE needs a number between 1e-6 and 1e6.";
              h.ltScale = x;
+             return {};
+         }},
+        {"CELTSCALE", "linetype scale of new objects",
+         [](const Document& d) { return formatDouble(ceLtScale(d.header())); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             char* end = nullptr;
+             const std::string s(v);
+             const double x = std::strtod(s.c_str(), &end);
+             if (s.empty() || *end != 0 || !(x >= 1e-6 && x <= 1e6))
+                 return "CELTSCALE needs a number between 1e-6 and 1e6.";
+             h.custom[kCeLtScaleKey] = formatDouble(x);
+             return {};
+         }},
+        {"PSLTSCALE", "linetypes in layout viewports follow the viewport scale (1) or not (0)",
+         [](const Document& d) { return std::string(psLtScale(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "PSLTSCALE is 0 or 1.";
+             h.custom[kPsLtScaleKey] = on ? "1" : "0";
+             return {};
+         }},
+        {"MSLTSCALE", "linetypes in model space follow the annotation scale (1) or not (0)",
+         [](const Document& d) { return std::string(msLtScale(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "MSLTSCALE is 0 or 1.";
+             h.custom[kMsLtScaleKey] = on ? "1" : "0";
+             return {};
+         }},
+        {"PLINEGEN", "linetype runs on across polyline vertices (1) or restarts at each (0)",
+         [](const Document& d) { return std::string(plineGen(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "PLINEGEN is 0 or 1.";
+             h.custom[kPlineGenKey] = on ? "1" : "0";
              return {};
          }},
         {"CECOLOR", "colour of new objects",
@@ -169,6 +221,49 @@ public:
 };
 
 }  // namespace
+
+namespace {
+// A command named like one variable (CELTSCALE, PLINEGEN, ...): asks for the new value.
+class VarCommand final : public cmd::Command {
+public:
+    VarCommand(std::string name, std::string description)
+        : name_(std::move(name)), description_(std::move(description)) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+    Task run(CommandContext& ctx) override {
+        const auto it = std::find_if(variables().begin(), variables().end(),
+                                     [&](const Var& v) { return name_ == v.name; });
+        if (it == variables().end())
+            co_return;
+        cmd::StringOptions so;
+        so.defaultValue = it->get(ctx.doc());
+        auto val = co_await ctx.getString(
+            "Enter new value for " + name_ + " <" + *so.defaultValue + ">", so);
+        if (!val.ok())
+            co_return;
+        const std::string text(cmd::trim(val.text));
+        ctx.setUndoLabel(name_);
+        std::string err;
+        auto r = ctx.tx().modifyHeader([&](Header& h) { err = it->set(ctx.doc(), text, h); });
+        if (!r)
+            ctx.message(r.error().message);
+        else if (!err.empty())
+            ctx.message(err);
+        else
+            ctx.message(name_ + " = " + it->get(ctx.doc()));
+    }
+
+private:
+    std::string name_;
+    std::string description_;
+};
+}  // namespace
+
+std::unique_ptr<cmd::Command> makeVarCommand(const std::string& name) {
+    const auto it = std::find_if(variables().begin(), variables().end(),
+                                 [&](const Var& v) { return name == v.name; });
+    return std::make_unique<VarCommand>(name, it == variables().end() ? "" : it->help);
+}
 
 std::unique_ptr<cmd::Command> makeSetvarCommand() {
     return std::make_unique<SetvarCommand>();
