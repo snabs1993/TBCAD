@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include "support.h"
+#include "tbcad/table/table.h"
 
 using namespace tbcad;
 using namespace tbcad::block_cmds;
@@ -46,4 +47,30 @@ TEST_CASE("ATTEXT says so when nothing has attributes") {
     f.addLine(0, 0, 10, 0);
     f.host->run("ATTEXT", {cmd::ScriptItem::enter()});
     CHECK(f.host->logContains("No inserts with attributes"));
+}
+
+TEST_CASE("ATTTABLE makes a schedule table with the block name and a column per tag") {
+    Fixture f;
+    EntityId ln = f.addLine(0, 0, 10, 0);
+    REQUIRE(f.host->run("ATTDEF", {"", "name", "Name", "Anon", "0,3", "2", "0"}).finished);
+    std::vector<EntityId> ids{ln};
+    for (EntityId id : f.modelSpace())
+        if (id != ln)
+            ids.push_back(id);
+    f.host->setSelection(ids);
+    f.host->run("BLOCK", {"Tag", "0,0", "D"});
+    f.host->run("INSERT", {"Tag", "100,50", "Room A", cmd::ScriptItem::enter()});
+    f.host->run("INSERT", {"Tag", "200,50", "Hall", cmd::ScriptItem::enter()});
+    auto r = f.host->run("ATTTABLE", {cmd::ScriptItem::enter(), "0,-100"});
+    CHECK(r.finished);
+    const TableData* t = nullptr;
+    for (EntityId id : f.modelSpace())
+        if (const auto* td = entityAs<TableData>(*f.doc.find(id)))
+            t = td;
+    REQUIRE(t);
+    CHECK(table::rowCount(*t) == 3);  // header + two inserts
+    CHECK(table::colCount(*t) == 2);  // Block, NAME
+    CHECK(table::cellAt(*t, 0, 1).utf8 == "NAME");
+    CHECK(table::cellAt(*t, 1, 1).utf8 == "Room A");
+    CHECK(table::cellAt(*t, 2, 0).utf8 == "Tag");
 }

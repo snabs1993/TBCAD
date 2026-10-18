@@ -1,6 +1,7 @@
 tbcad_add_library(table_commands
   SOURCES
     src/table_commands.cpp
+    src/csv_commands.cpp
   DEPENDS tbcad::cmd tbcad::table tbcad::blocks tbcad::geom tbcad::text tbcad::ui)
 
 tbcad_add_tests(table_commands

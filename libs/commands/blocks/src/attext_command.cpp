@@ -5,6 +5,9 @@
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/table/table.h"
+#include "tbcad/text/annotation_size.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::block_cmds {
 
@@ -133,7 +136,68 @@ public:
     }
 };
 
+// ATTTABLE: the same extraction, but as a table in the drawing (a door or window schedule that
+// updates by running it again): the block name and one column per attribute tag.
+class AttTableCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ATTTABLE"; }
+    std::string_view description() const override {
+        return "Make a schedule table from the attribute values of block inserts";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        auto b = co_await ctx.getString("Block name or Enter for every block with attributes",
+                                        cmd::StringOptions{.allowEmpty = true});
+        if (!b.ok() && b.status != cmd::Status::None)
+            co_return;
+        const std::string only = cmd::trim(b.text);
+        if (!only.empty() && !doc.blockByName(only)) {
+            ctx.message("No block named \"" + only + "\".");
+            co_return;
+        }
+        std::size_t count = 0;
+        auto rows = table::parseCsv(attributeCsv(doc, only, count));
+        if (count == 0 || rows.empty()) {
+            ctx.message("No inserts with attributes were found.");
+            co_return;
+        }
+        // Keep the block name, drop layer, position, rotation and scale (columns 1 to 6).
+        for (auto& r : rows)
+            if (r.size() > 7)
+                r.erase(r.begin() + 1, r.begin() + 7);
+            else if (r.size() > 1)
+                r.erase(r.begin() + 1, r.end());
+        constexpr double kBase = 2.5;
+        const double textHeight = kBase * text::suggestedAnnotationScale(
+                                              doc, ctx.host().view().scale,
+                                              static_cast<bool>(ctx.host().drawingOwner()), kBase);
+        const TextStyle* style = doc.textStyle(doc.header().currentTextStyle);
+        auto where = co_await ctx.getPoint("Specify insertion point of the schedule (top-left)");
+        if (!where.ok())
+            co_return;
+        TableData t = table::fromRows(rows, where.point, textHeight, style);
+        t.style = doc.header().currentTextStyle;
+        t.titleRow = false;
+        Entity e;
+        e.data = Indirect<TableData>(std::move(t));
+        applyCurrentProperties(doc.header(), e);
+        auto id = ctx.tx().add(std::move(e));
+        if (!id) {
+            ctx.message(id.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("ATTTABLE");
+        ctx.host().setSelection({id.value()});
+        ctx.message("Schedule of " + std::to_string(count) + " inserts made.");
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeAttTableCommand() {
+    return std::make_unique<AttTableCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeAttExtCommand() {
     return std::make_unique<AttExtCommand>();

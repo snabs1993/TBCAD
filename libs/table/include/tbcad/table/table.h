@@ -72,6 +72,18 @@ bool setRowHeight(TableData& t, std::size_t row, double height);
 std::string serialize(const TableData& t);
 std::optional<TableData> parse(std::string_view s);
 
+// ---- CSV (TABLEEXPORT, TABLEIMPORT) ---------------------------------------------------------
+
+// The cells as plain text, one CSV row per table row, CRLF line ends; covered (merged-over) cells
+// are empty fields.
+std::string toCsv(const TableData& t);
+// Rows of fields; understands quotes, doubled quotes, CRLF or LF, a UTF-8 byte order mark and the
+// semicolon as well as the comma (Excel in some locales). Blank lines are skipped.
+std::vector<std::vector<std::string>> parseCsv(std::string_view csv);
+// A table holding the rows, each column as wide as its longest text.
+TableData fromRows(const std::vector<std::vector<std::string>>& rows, Vec2 origin,
+                   double textHeight, const TextStyle* style);
+
 // ---- geometry -------------------------------------------------------------------------------
 
 struct TextItem {

@@ -4,6 +4,7 @@ tbcad_add_library(table
   SOURCES
     src/table.cpp
     src/display.cpp
+    src/csv.cpp
   DEPENDS tbcad::core tbcad::geom tbcad::text)
 
 tbcad_add_tests(table

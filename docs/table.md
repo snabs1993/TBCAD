@@ -16,6 +16,12 @@ centred title. Text in a cell is TBCAD markup (plain text works) and wraps at th
 - **TABLE** (TB): columns, rows, column width, row height, optional title (a title adds a merged first row),
   then the top-left corner with a live preview.
 - **TABLEEDIT** (TE): pick a table, then click a cell to type its text (Enter keeps the text, `-` clears it).
+- **TABLEEXPORT**: writes a table's cells as plain text to a CSV file (UTF-8 with a byte order mark, so Excel
+  reads it). **TABLEIMPORT**: makes a table from a CSV file at a picked corner; each column is as wide as
+  its longest text and the text height follows the drawing size. The comma or the semicolon (Excel in some
+  locales) separates the fields.
+- **ATTTABLE**: makes a schedule table from the attributes of the block inserts (block name and one column
+  per tag), for example a door schedule; run it again for a fresh table. **ATTEXT** writes the same data to CSV.
   Keywords: RowBelow, RowAbove, ColRight, ColLeft, DeleteRow, DeleteCol, Merge (then click the opposite corner
   cell), Unmerge, Width, Height. Inserting or deleting first splits any merged range that crosses the change.
   The whole session is one undo step.
