@@ -1610,6 +1610,8 @@ void Transaction::followAssociations() {
         bool moved;
         Vec2 shift{};  // average move of the followed points, for a text placed by hand
         int followed = 0;
+        Vec2 first{};         // the move of the first followed point
+        bool uniform = true;  // every followed point moved by the same vector
     };
     std::vector<Plan> plans;
     auto close = [](Vec2 a, Vec2 b) {
@@ -1619,7 +1621,7 @@ void Transaction::followAssociations() {
         const auto* dm = entityAs<DimensionData>(e);
         if (!dm)
             return;
-        Plan p{e.common.id, dm->defPts, dm->assoc, false, {}, 0};
+        Plan p{e.common.id, dm->defPts, dm->assoc, false, {}, 0, {}, true};
         bool changed = false;
         for (std::size_t i = 0; i < 4; ++i) {
             DimAssoc& a = p.assoc[i];
@@ -1638,7 +1640,12 @@ void Transaction::followAssociations() {
                 if (it != touched_.end())
                     before = dimAssocPoint(beforeSnaps_[it->second], a);
                 if (before && close(p.pts[i], *before)) {
-                    p.shift += *live - p.pts[i];
+                    const Vec2 move = *live - p.pts[i];
+                    if (p.followed == 0)
+                        p.first = move;
+                    else if (!close(move, p.first))
+                        p.uniform = false;
+                    p.shift += move;
                     ++p.followed;
                     p.pts[i] = *live;
                     p.moved = true;
@@ -1659,6 +1666,31 @@ void Transaction::followAssociations() {
             if (p.moved) {
                 if (dm->textPosUser && p.followed > 0)
                     dm->textPos += p.shift * (1.0 / p.followed);
+                // The whole measured geometry moved the same way (the object was moved, not
+                // stretched): the dimension line goes along, so its distance from the object stays.
+                int measured = 0;
+                switch (dm->kind) {
+                    case DimKind::Linear:
+                    case DimKind::Aligned:
+                        measured = 2;
+                        break;
+                    case DimKind::Angular3Point:
+                        measured = 3;
+                        break;
+                    case DimKind::Angular2Line:
+                        measured = 4;
+                        break;
+                    default:
+                        break;
+                }
+                if (measured > 0 && p.followed == measured && p.uniform) {
+                    if (dm->kind == DimKind::Linear || dm->kind == DimKind::Aligned)
+                        dm->defPts[2] += p.first;
+                    else if (dm->kind == DimKind::Angular3Point)
+                        dm->defPts[3] += p.first;
+                    else if (!dm->textPosUser)
+                        dm->textPos += p.first;
+                }
                 if (DimRefreshFn f = dimRefresh())
                     f(*doc_, e);
             }
