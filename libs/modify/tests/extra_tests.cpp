@@ -366,3 +366,40 @@ TEST_CASE("replaceText replaces in text kinds, honours case and skips the rest")
     CHECK(entityAs<TextData>(del->entity)->utf8 == "DoordoorDOOR");
     CHECK_FALSE(replaceText(line({0, 0}, {1, 1}), "a", "b", false).has_value());
 }
+
+TEST_CASE("replaceText in MTEXT leaves the formatting codes alone") {
+    auto mtext = [](const char* markup) {
+        Entity e;
+        MTextData m;
+        m.utf8 = markup;
+        e.data = Indirect<MTextData>(m);
+        return e;
+    };
+    // Words that also occur in the codes are not matched there.
+    CHECK_FALSE(replaceText(mtext("{\\b1;Hello}"), "b1", "x", true).has_value());
+    CHECK_FALSE(replaceText(mtext("one\\Ptwo"), "P", "x", true).has_value());
+    CHECK_FALSE(replaceText(mtext("{\\C7;red}"), "C7", "x", true).has_value());
+    // A match inside formatted text keeps the formatting around it.
+    auto r = replaceText(mtext("{\\b1;Hello} world"), "Hello", "Bye", true);
+    REQUIRE(r.has_value());
+    CHECK(entityAs<MTextData>(r->entity)->utf8 == "{\\b1;Bye} world");
+    // A match across a formatting change is found; the replacement takes the first piece's format.
+    auto span = replaceText(mtext("Hel{\\b1;lo} world"), "Hello", "Bye", true);
+    REQUIRE(span.has_value());
+    CHECK(span->count == 1);
+    CHECK(entityAs<MTextData>(span->entity)->utf8 == "Bye{\\b1;} world");
+    // Special characters in the replacement are text, not markup.
+    auto esc = replaceText(mtext("a b"), "a", "{\\b1;", true);
+    REQUIRE(esc.has_value());
+    CHECK(entityAs<MTextData>(esc->entity)->utf8 ==
+          "\\{\\\\b1;"
+          " b");
+    // Escaped characters in the source match as the characters they stand for.
+    auto lit = replaceText(mtext("x\\{y\\}"), "{y}", "z", true);
+    REQUIRE(lit.has_value());
+    CHECK(entityAs<MTextData>(lit->entity)->utf8 == "xz");
+    // Thai text matches by bytes of whole characters.
+    auto thai = replaceText(mtext("{\\i1;สวัสดี}"), "วั", "-", true);
+    REQUIRE(thai.has_value());
+    CHECK(entityAs<MTextData>(thai->entity)->utf8 == "{\\i1;ส-สดี}");
+}

@@ -1104,16 +1104,115 @@ int replaceAllIn(std::string& text, std::string_view find, std::string_view repl
     return n;
 }
 
+// Find and replace in MTEXT markup. The search runs over the text as it is read (formatting codes
+// skipped, `\\ \{ \}` as the characters they stand for, `\P` as a newline), so a word is found
+// even where bold or a colour starts in the middle of it, and codes are never matched or damaged.
+// The replacement is inserted where the match starts (it takes that piece's formatting) and the
+// codes inside the match stay, so the pieces around it keep their look. Special characters in
+// the replacement are escaped.
+int replaceInMarkup(std::string& markup, std::string_view find, std::string_view repl,
+                    bool matchCase) {
+    if (find.empty())
+        return 0;
+    struct Atom {
+        std::size_t begin = 0, end = 0;  // the atom's bytes in `markup`
+        char ch = 0;                     // its character; 0 for a formatting code
+    };
+    std::vector<Atom> atoms;
+    for (std::size_t i = 0; i < markup.size();) {
+        const char c = markup[i];
+        if (c == '\\' && i + 1 < markup.size()) {
+            const char k = markup[i + 1];
+            if (k == '\\' || k == '{' || k == '}') {
+                atoms.push_back({i, i + 2, k});
+                i += 2;
+            } else if (k == 'P') {
+                atoms.push_back({i, i + 2, '\n'});
+                i += 2;
+            } else if (k == 'b' || k == 'i' || k == 'H' || k == 'C') {
+                const std::size_t semi = markup.find(';', i + 2);
+                if (semi == std::string::npos) {
+                    atoms.push_back({i, i + 1, c});  // no ';': a literal backslash
+                    ++i;
+                } else {
+                    atoms.push_back({i, semi + 1, 0});
+                    i = semi + 1;
+                }
+            } else if (k == 'L' || k == 'l' || k == 'O' || k == 'o') {
+                atoms.push_back({i, i + 2, 0});
+                i += 2;
+            } else {
+                atoms.push_back({i, i + 1, c});
+                ++i;
+            }
+        } else if (c == '{' || c == '}') {
+            atoms.push_back({i, i + 1, 0});
+            ++i;
+        } else {
+            atoms.push_back({i, i + 1, c});
+            ++i;
+        }
+    }
+    std::vector<std::size_t> text;  // indexes of the character atoms, in reading order
+    for (std::size_t a = 0; a < atoms.size(); ++a)
+        if (atoms[a].ch != 0)
+            text.push_back(a);
+    if (text.size() < find.size())
+        return 0;
+    std::string safe;
+    for (char c : repl) {
+        if (c == '\\' || c == '{' || c == '}')
+            safe += '\\';
+        if (c == '\n') {
+            safe += "\\P";
+            continue;
+        }
+        safe += c;
+    }
+    std::vector<bool> drop(atoms.size(), false);
+    std::vector<std::string> before(atoms.size());  // the replacement goes before this atom
+    int n = 0;
+    for (std::size_t t = 0; t + find.size() <= text.size();) {
+        bool same = true;
+        for (std::size_t k = 0; k < find.size() && same; ++k) {
+            const char a = atoms[text[t + k]].ch, b = find[k];
+            same = matchCase ? a == b : lowerAscii(a) == lowerAscii(b);
+        }
+        if (!same) {
+            ++t;
+            continue;
+        }
+        before[text[t]] = safe;
+        for (std::size_t k = 0; k < find.size(); ++k)
+            drop[text[t + k]] = true;
+        t += find.size();
+        ++n;
+    }
+    if (n == 0)
+        return 0;
+    std::string out;
+    for (std::size_t a = 0; a < atoms.size(); ++a) {
+        out += before[a];
+        if (!drop[a])
+            out.append(markup, atoms[a].begin, atoms[a].end - atoms[a].begin);
+    }
+    markup = std::move(out);
+    return n;
+}
+
 }  // namespace
 
 std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
                                        std::string_view replacement, bool matchCase) {
     TextReplace r{e, 0};
     auto edit = [&](std::string& s) { r.count += replaceAllIn(s, find, replacement, matchCase); };
+    auto editMarkup = [&](std::string& s) {
+        r.count += replaceInMarkup(s, find, replacement, matchCase);
+    };
     if (auto* t = entityAs<TextData>(r.entity))
         edit(t->utf8);
     else if (auto* m = entityAs<MTextData>(r.entity))
-        edit(m->utf8);
+        editMarkup(m->utf8);
     else if (auto* l = entityAs<LeaderData>(r.entity))
         edit(l->utf8);
     else if (auto* ml = entityAs<MLeaderData>(r.entity))
@@ -1125,7 +1224,7 @@ std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
             edit(a.value);
     else if (auto* tb = entityAs<TableData>(r.entity))
         for (TableCell& c : tb->cells)
-            edit(c.utf8);
+            editMarkup(c.utf8);
     if (r.count == 0)
         return std::nullopt;
     return r;
