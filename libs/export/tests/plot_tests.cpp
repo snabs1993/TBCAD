@@ -328,6 +328,30 @@ TEST_CASE("a transparent object prints as a lighter colour, also through a black
     CHECK(grey.r < 160);
 }
 
+TEST_CASE("a black pen at 73 percent transparency prints as the solid grey 186") {
+    Document doc;
+    Entity e = line({0, 0}, {100, 0});
+    e.common.color = Color::index(8);
+    e.common.transparency = 73;
+    addEntity(doc, e);
+
+    plotstyle::PlotStyleTable t;
+    t.entries[8].color = Rgba{0, 0, 0, 255};
+    PlotSettings s;
+    s.styleTable = std::make_shared<plotstyle::PlotStyleTable>(t);
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    for (const auto& p : sheet.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p)) {
+            CHECK(pp->style.color.a == 255);
+            CHECK(std::abs(int(pp->style.color.r) - 186) <= 1);
+            CHECK(pp->style.color.r == pp->style.color.g);
+            CHECK(pp->style.color.r == pp->style.color.b);
+            return;
+        }
+    FAIL("no path");
+}
+
 TEST_CASE("lineweights are absolute on paper - dashes scale with the plot scale") {
     Document doc;
     {
