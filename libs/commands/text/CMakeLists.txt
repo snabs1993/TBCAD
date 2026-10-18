@@ -6,6 +6,7 @@ set(_textcmd_sources
   src/style_manager.cpp
   src/text_commands.cpp
   src/txt2mtxt.cpp
+  src/txtexp.cpp
   src/tcount.cpp
   src/register.cpp)
 
