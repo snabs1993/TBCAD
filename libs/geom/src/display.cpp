@@ -377,6 +377,33 @@ void buildDisplayItems(const Document& doc, const Entity& e, const DisplayContex
                        DisplayList& out);
 }
 
+std::vector<AnnotationGhost> annotationGhosts(const Document& doc, std::span<const EntityId> ids,
+                                              const DisplayContext& ctx) {
+    std::vector<AnnotationGhost> out;
+    if (!selectionAnnoDisplay(doc.header()))
+        return out;
+    for (EntityId id : ids) {
+        const Entity* e = doc.find(id);
+        if (!e || !e->common.annotative || e->common.annoScales.size() < 2 ||
+            kind(*e) == EntityKind::Insert)
+            continue;
+        const double shown = annotationFactor(doc.header(), e->common, ctx.annoScale);
+        for (double n : e->common.annoScales) {
+            if (n == shown || !(n > 0))
+                continue;
+            DisplayContext at = ctx;
+            at.annoScale = n;
+            AnnotationGhost g;
+            g.id = id;
+            g.scale = n;
+            buildDisplay(doc, *e, at, g.display);
+            if (!g.display.items.empty())
+                out.push_back(std::move(g));
+        }
+    }
+    return out;
+}
+
 void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ctx,
                   DisplayList& out) {
     const std::size_t from = out.items.size();

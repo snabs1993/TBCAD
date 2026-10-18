@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "tbcad/core/display.h"
@@ -68,6 +69,17 @@ public:
 // does that so toggling a layer needs no rebuild); the style carries the layer id.
 void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ctx,
                   DisplayList& out);
+
+// SELECTIONANNODISPLAY: what a selected annotative object looks like at each of its scales other
+// than the one it is drawn at, so the user sees every representation. Symbols (inserts) are sized
+// for their first scale and have none. Empty when the variable is off.
+struct AnnotationGhost {
+    EntityId id{};
+    double scale = 1;  // N of 1:N
+    DisplayList display{};
+};
+std::vector<AnnotationGhost> annotationGhosts(const Document& doc, std::span<const EntityId> ids,
+                                              const DisplayContext& ctx);
 
 // ---- Bounds ----------------------------------------------------------------------------------
 

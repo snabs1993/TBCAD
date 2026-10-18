@@ -94,7 +94,8 @@ TEST_CASE("an object keeps its own scales - new objects follow ANNONEW") {
     REQUIRE(e);
     CHECK(e->common.annotative);
     REQUIRE(e->common.annoScales.size() == 2);
-    // Drawn at its first scale whatever the drawing's current scale is.
+    // With ANNOAUTOSCALE off a scale it does not list leaves it at its first scale.
+    f.host.run("ANNOAUTOSCALE", {"0"});
     f.host.run("CANNOSCALE", {"200"});
     CHECK(textHeightOnScreen(f.doc, *f.doc.find(id)) == doctest::Approx(h1 * 50).epsilon(0.01));
     f.host.undo();
@@ -186,4 +187,97 @@ TEST_CASE("OBJECTSCALE adds and removes scales but keeps at least one") {
     f.host.run("OBJECTSCALE", {"Delete", "1:100"});
     CHECK(f.doc.find(ins)->common.annoScales.get() == std::vector<double>{100});
     CHECK(f.host.undo());
+}
+
+TEST_CASE("an annotative object is drawn at the current scale when it lists it") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "Hi"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    const double h1 = textHeightOnScreen(f.doc, *f.doc.find(id));
+    f.host.run("ANNOTATIVE",
+               {cmd::ScriptItem::pick(id, {0, 0}), cmd::ScriptItem::enter(), "Scales", "50,100"});
+    f.host.run("CANNOSCALE", {"50"});
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(id)) == doctest::Approx(h1 * 50).epsilon(0.01));
+    f.host.run("CANNOSCALE", {"100"});
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(id)) == doctest::Approx(h1 * 100).epsilon(0.01));
+    CHECK(f.doc.find(id)->common.annoScales.size() == 2);  // it already had 100
+}
+
+TEST_CASE("ANNOAUTOSCALE adds the new scale to annotative objects that list scales") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "A"});
+    f.host.run("TEXT", {"0,10", "2.5", "0", "B"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    std::sort(ids.begin(), ids.end());
+    REQUIRE(ids.size() == 2);
+    // A lists 50; B lists nothing of its own (follows the current scale).
+    f.host.run("ANNOTATIVE",
+               {cmd::ScriptItem::pick(ids[0], {0, 0}), cmd::ScriptItem::enter(), "Scales", "50"});
+    f.host.run("ANNOTATIVE",
+               {cmd::ScriptItem::pick(ids[1], {0, 10}), cmd::ScriptItem::enter(), "On"});
+    CHECK(annoAutoScale(f.doc.header()));
+    f.host.run("CANNOSCALE", {"100"});
+    REQUIRE(f.doc.find(ids[0])->common.annoScales.size() == 2);
+    CHECK(f.doc.find(ids[0])->common.annoScales.get() == std::vector<double>{50, 100});
+    CHECK(f.doc.find(ids[1])->common.annoScales.empty());
+    f.host.undo();  // one step takes the scale and the additions back
+    CHECK(f.doc.find(ids[0])->common.annoScales.get() == std::vector<double>{50});
+
+    f.host.run("ANNOAUTOSCALE", {"0"});
+    CHECK_FALSE(annoAutoScale(f.doc.header()));
+    f.host.run("CANNOSCALE", {"100"});
+    CHECK(f.doc.find(ids[0])->common.annoScales.get() == std::vector<double>{50});
+}
+
+TEST_CASE("ANNOALLVISIBLE off hides annotative objects made for other scales") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "A"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    f.host.run("ANNOTATIVE",
+               {cmd::ScriptItem::pick(id, {0, 0}), cmd::ScriptItem::enter(), "Scales", "50"});
+    f.host.run("ANNOAUTOSCALE", {"0"});
+    f.host.run("CANNOSCALE", {"100"});
+    CHECK(f.doc.effective(f.doc.find(id)->common).visible());  // shown by default
+    f.host.run("ANNOALLVISIBLE", {"0"});
+    CHECK_FALSE(f.doc.effective(f.doc.find(id)->common).visible());
+    f.host.run("CANNOSCALE", {"50"});
+    CHECK(f.doc.effective(f.doc.find(id)->common).visible());
+    f.host.run("ANNOALLVISIBLE", {"1"});
+    f.host.run("CANNOSCALE", {"100"});
+    CHECK(f.doc.effective(f.doc.find(id)->common).visible());
+}
+
+TEST_CASE("a selected annotative object shows its other scales (SELECTIONANNODISPLAY)") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "A"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    const double h1 = textHeightOnScreen(f.doc, *f.doc.find(id));
+    f.host.run("ANNOTATIVE", {cmd::ScriptItem::pick(id, {0, 0}), cmd::ScriptItem::enter(), "Scales",
+                              "20,50,100"});
+    f.host.run("CANNOSCALE", {"50"});
+    geom::DisplayContext ctx;
+    const EntityId sel[] = {id};
+    auto ghosts = geom::annotationGhosts(f.doc, sel, ctx);
+    REQUIRE(ghosts.size() == 2);  // 20 and 100; 50 is the one drawn
+    std::vector<double> scales{ghosts[0].scale, ghosts[1].scale};
+    std::sort(scales.begin(), scales.end());
+    CHECK(scales == std::vector<double>{20, 100});
+    for (const auto& g : ghosts) {
+        DisplayList d = g.display;
+        double top = -1e30, bot = 1e30;
+        for (const auto& item : d.items)
+            if (const auto* fl = std::get_if<DisplayFill>(&item))
+                for (const auto& r : fl->rings)
+                    for (Vec2 v : r) {
+                        top = std::max(top, v.y);
+                        bot = std::min(bot, v.y);
+                    }
+        CHECK(top - bot == doctest::Approx(h1 * g.scale).epsilon(0.02));
+    }
+    f.host.run("SELECTIONANNODISPLAY", {"0"});
+    CHECK(geom::annotationGhosts(f.doc, sel, ctx).empty());
 }

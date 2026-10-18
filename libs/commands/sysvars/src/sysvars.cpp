@@ -435,7 +435,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeScriptCommand(false));
     (void)registry.add(makeScriptCommand(true));
     (void)registry.add(makeSetvarCommand());
-    for (const char* v : {"CELTSCALE", "PSLTSCALE", "MSLTSCALE", "PLINEGEN"})
+    for (const char* v : {"CELTSCALE", "PSLTSCALE", "MSLTSCALE", "PLINEGEN", "ANNOAUTOSCALE",
+                          "ANNOALLVISIBLE", "SELECTIONANNODISPLAY"})
         (void)registry.add(makeVarCommand(v));
     (void)registry.add(makeLwDisplayCommand());
     (void)registry.add(makeViewCommand());

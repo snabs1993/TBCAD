@@ -9,9 +9,11 @@ and sized for a plot scale afterwards.
   the scales the object is made for (*Change...* offers the scale list, or a custom N).
 - `ANNOTATIVE` (`ANNO`): select objects, then `On`, `Off` or `Scales` (for example `50,100`;
   empty means "follow the drawing's current scale").
-- An annotative object is drawn at its **first** scale in model space (text 2.5 mm high becomes
-  125 mm at 1:50). In a layout viewport it is drawn at the viewport's scale, so it prints at the
-  same paper size, and it is shown only in viewports whose scale is in its list.
+- In model space an annotative object is drawn at the **current annotation scale** when its list
+  has that scale (or is empty), so text 2.5 mm high is 125 mm at 1:50 and 250 mm at 1:100. If the
+  list does not have the current scale it is drawn at its **first** scale (see `ANNOALLVISIBLE`).
+  In a layout viewport it is drawn at the viewport's scale, so it prints at the same paper size,
+  and it is shown only in viewports whose scale is in its list.
 - A symbol (block insert) has no live scaling: turning it on or changing its scale rescales the
   insert, so a north arrow drawn at 1:1 becomes 50 times larger at 1:50 and back again when
   turned off.
@@ -20,6 +22,17 @@ and sized for a plot scale afterwards.
 
 - `CANNOSCALE` (`AS`), or the *Scale* box in the status bar: the current annotation scale, the
   default for new annotative objects and for annotative objects that list no scale of their own.
+- `ANNOAUTOSCALE` (default 1): changing the annotation scale, with `CANNOSCALE`, the status bar or
+  by making a layout viewport active, adds the new scale to every annotative object that lists
+  scales of its own (one undo step). Objects with an empty list follow the current scale anyway;
+  symbols keep their list and their first-scale size. With 0 nothing is added.
+- `ANNOALLVISIBLE` (default 1): 1 shows annotative objects that do not list the current scale (at
+  their first scale); 0 hides them and they cannot be picked or snapped to. Plots are not affected:
+  a viewport shows an object when the viewport's scale is in its list.
+- `SELECTIONANNODISPLAY` (default 1): a selected annotative object with several scales also shows
+  its other scales, dimmed. Engine: `geom::annotationGhosts` gives the display of each other scale
+  for the renderer; 0 turns it off. All three are set with `SETVAR` or by name and are saved with
+  the drawing.
 - `ANNONEW`, or the *ANNO* button in the status bar: new text, dimensions, leaders, tables and
   symbols start annotative at the current scale.
 - `SCALELISTEDIT`: Add, Delete, Reset, List the scales on offer.

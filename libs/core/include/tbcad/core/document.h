@@ -96,6 +96,21 @@ double ceLtScale(const Header& h);
 bool psLtScale(const Header& h);
 bool msLtScale(const Header& h);
 bool plineGen(const Header& h);
+// Annotation scale behaviour (the system variables of the same names). Kept in Header::custom.
+//  ANNOAUTOSCALE (default on): changing the annotation scale adds the new scale to every
+//    annotative object that lists scales of its own.
+//  ANNOALLVISIBLE (default on): annotative objects that do not support the current annotation
+//    scale are shown (at their first scale); off hides them (and they cannot be picked).
+//  SELECTIONANNODISPLAY (default on): a selected annotative object with several scales also shows
+//    its other scales, dimmed.
+inline constexpr const char* kAnnoAutoScaleKey = "tbcad.annoautoscale";
+inline constexpr const char* kAnnoAllVisibleKey = "tbcad.annoallvisible";
+inline constexpr const char* kSelAnnoDisplayKey = "tbcad.selannodisplay";
+bool annoAutoScale(const Header& h);
+bool annoAllVisible(const Header& h);
+bool selectionAnnoDisplay(const Header& h);
+// True when the annotative object is made for the current annotation scale (or follows it).
+bool supportsCurrentAnnotationScale(const Header& h, const EntityCommon& c);
 double currentAnnotationScale(const Header& h);
 // The scales offered for annotation, as N of 1:N. Default list when none is stored.
 std::vector<double> annotationScaleList(const Header& h);

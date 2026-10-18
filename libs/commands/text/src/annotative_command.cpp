@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <optional>
 #include <string>
+#include <unordered_set>
 
 #include "commands.h"
 #include "tbcad/cmd/cmd.h"
@@ -58,15 +59,34 @@ std::string scaleText(double n) {
     return buf;
 }
 
-// Annotative objects are drawn again at the new scale: a no-op edit marks them as changed.
-void retouchAnnotative(CommandContext& ctx) {
-    std::vector<EntityId> ids;
+// Annotative objects are drawn again at the new scale: a no-op edit marks them as changed. With
+// ANNOAUTOSCALE on, an object that lists scales of its own also gets the new scale (symbols are
+// sized for their first scale and keep their list). Returns how many objects got the scale.
+std::size_t retouchAnnotative(CommandContext& ctx, double scale) {
+    const bool autoScale = annoAutoScale(ctx.doc().header());
+    std::vector<EntityId> ids, add;
     ctx.doc().forEachEntity([&](const Entity& e) {
-        if (e.common.annotative)
-            ids.push_back(e.common.id);
+        if (!e.common.annotative)
+            return;
+        ids.push_back(e.common.id);
+        if (autoScale && kind(e) != EntityKind::Insert && !e.common.annoScales.empty() &&
+            std::find(e.common.annoScales.begin(), e.common.annoScales.end(), scale) ==
+                e.common.annoScales.end())
+            add.push_back(e.common.id);
     });
-    for (EntityId id : ids)
-        (void)ctx.tx().modify(id, [](Entity&) {});
+    const std::unordered_set<EntityId> adding(add.begin(), add.end());
+    for (EntityId id : ids) {
+        if (adding.count(id)) {
+            (void)ctx.tx().modify(id, [&](Entity& e) {
+                std::vector<double> next = e.common.annoScales.get();
+                next.push_back(scale);
+                e.common.annoScales = ScaleList(std::move(next));
+            });
+        } else {
+            (void)ctx.tx().modify(id, [](Entity&) {});
+        }
+    }
+    return add.size();
 }
 
 // ANNOTATIVE [ANNO]: turns annotative scaling on or off for the selected text, dimensions,
@@ -228,8 +248,10 @@ public:
             std::snprintf(buf, sizeof buf, "%.12g", v);
             h.custom[kAnnoScaleKey] = buf;
         });
-        retouchAnnotative(ctx);
-        ctx.message("Annotation scale: " + scaleText(v));
+        const std::size_t added = retouchAnnotative(ctx, v);
+        ctx.message("Annotation scale: " + scaleText(v) +
+                    (added ? " (added to " + std::to_string(added) + " annotative object(s))"
+                           : std::string()));
         ctx.setUndoLabel("Annotation scale");
     }
 };

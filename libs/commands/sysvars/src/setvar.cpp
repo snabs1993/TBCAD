@@ -110,6 +110,37 @@ const std::vector<Var>& variables() {
              h.custom[kPlineGenKey] = on ? "1" : "0";
              return {};
          }},
+        {"ANNOAUTOSCALE",
+         "changing the annotation scale adds it to annotative objects (1) or not (0)",
+         [](const Document& d) { return std::string(annoAutoScale(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "ANNOAUTOSCALE is 0 or 1.";
+             h.custom[kAnnoAutoScaleKey] = on ? "1" : "0";
+             return {};
+         }},
+        {"ANNOALLVISIBLE", "annotative objects made for other scales are shown (1) or hidden (0)",
+         [](const Document& d) { return std::string(annoAllVisible(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "ANNOALLVISIBLE is 0 or 1.";
+             h.custom[kAnnoAllVisibleKey] = on ? "1" : "0";
+             return {};
+         }},
+        {"SELECTIONANNODISPLAY",
+         "a selected annotative object also shows its other scales, dimmed (1) or not (0)",
+         [](const Document& d) {
+             return std::string(selectionAnnoDisplay(d.header()) ? "1" : "0");
+         },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "SELECTIONANNODISPLAY is 0 or 1.";
+             h.custom[kSelAnnoDisplayKey] = on ? "1" : "0";
+             return {};
+         }},
         {"QTEXTMODE", "text shows as boxes (1) or as text (0)",
          [](const Document& d) { return std::string(quickText(d.header()) ? "1" : "0"); },
          [](const Document&, std::string_view v, Header& h) -> std::string {
