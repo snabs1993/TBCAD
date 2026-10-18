@@ -1,6 +1,7 @@
 // Internal: the Document -> DXF exporter. Public entry point is exportDxf() in writer.h.
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -121,7 +122,18 @@ private:
 
     // ---- writer.cpp: names, tables, sections ---------------------------------------------
     bool r12() const { return r12_; }
-    std::uint64_t newHandle() { return nextHandle_++; }
+    // New handles skip the ones entities keep from the source file.
+    std::uint64_t newHandle() {
+        while (srcHandleReserved_.count(nextHandle_))
+            ++nextHandle_;
+        return nextHandle_++;
+    }
+    std::uint64_t peekHandle() {
+        while (srcHandleReserved_.count(nextHandle_))
+            ++nextHandle_;
+        return nextHandle_;
+    }
+    std::uint64_t handleSeed() const { return std::max(nextHandle_, srcHandleTop_ + 1); }
     std::string cleanName(const std::string& name, const char* what);
     std::string uniqueName(NameSet& set, const std::string& base, const char* what);
     void prepareNames();
@@ -222,6 +234,14 @@ private:
     std::string layerSep_;
 
     std::uint64_t nextHandle_ = 0x20;
+    // Handles entities had in the source file (entity id -> handle), each handle once.
+    std::unordered_map<std::uint64_t, std::uint64_t> srcHandle_{};
+    std::unordered_set<std::uint64_t> srcHandleReserved_{};
+    std::uint64_t srcHandleTop_ = 0;
+    std::unordered_set<std::uint64_t> entityHandlesWritten_{};
+    std::uint64_t entHandle_ = 0;  // the handle the next head() gives the entity, 0 = a new one
+    void loadSourceHandles();
+    void pickEntityHandle(EntityId id);
     struct ImageOut {
         std::string name{};  // key in ACAD_IMAGE_DICT
         std::string path{};

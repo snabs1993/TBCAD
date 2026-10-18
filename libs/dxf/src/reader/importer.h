@@ -113,6 +113,7 @@ private:
     void processClasses(RecordReader& rr);
     void storeObject(const Record& r);
     void keepObjects();
+    void keepHandles();
     BlockId blockFor(std::string_view dxfName);
     void finish();
     void finishLayouts();
@@ -124,7 +125,8 @@ private:
     // ---- entities.cpp: record -> entities ---------------------------------------------------
     void handleEntity(Record& r, RecordReader& rr, BlockId owner);
     bool convert(Record& r, RecordReader& rr, std::vector<Entity>& out, BlockId owner);
-    void add(Entity&& e, BlockId owner, std::string_view type, int line);
+    void add(Entity&& e, BlockId owner, std::string_view type, int line,
+             std::optional<std::uint64_t> handle = std::nullopt);
     EntityCommon commonOf(const Record& r);
     bool frameOf(const Record& r, Frame& f, std::string_view type);
     LayerId layerFor(std::string_view raw, int line);
@@ -217,6 +219,8 @@ private:
     std::unordered_map<std::string, ObjRec> objStore_{};
     std::size_t objStoreBytes_ = 0;
     std::string objRoot_{};  // handle of the root dictionary
+    // (entity id, handle in the source file) of the entities added so far
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> srcHandles_{};
     ExtData extOf(const Record& r);
     void resolveExtDictionaries();
     void applyLayerAlphaXrecords();

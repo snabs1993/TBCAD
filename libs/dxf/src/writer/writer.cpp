@@ -856,6 +856,10 @@ std::string Writer::objectsSection() {
     auto handleOfToken = [&](const std::string& t) -> std::uint64_t {
         if (t == "@root")
             return rootDict_;
+        if (!t.empty() && t[0] == '#') {  // an entity of the source file, if it was written
+            const std::uint64_t h = std::strtoull(t.c_str() + 1, nullptr, 16);
+            return entityHandlesWritten_.count(h) ? h : 0;
+        }
         if (t.size() < 2 || t[0] != '@')
             return 0;
         auto [it, fresh] = tokenHandle.emplace(t, 0);
@@ -1366,6 +1370,7 @@ Result<ExportResult> Writer::run() {
         }
     }
 
+    loadSourceHandles();
     prepareNames();
     prepareBlocks();
     modelRec_ = newHandle();
@@ -1448,7 +1453,7 @@ Result<ExportResult> Writer::run() {
     std::string tables = tablesSection();
     std::string objects = r12_ ? std::string() : objectsSection();
 
-    std::string out = headerSection(nextHandle_);
+    std::string out = headerSection(handleSeed());
     if (!r12_) {
         out += "  0\r\nSECTION\r\n  2\r\nCLASSES\r\n";
         if (!images_.empty()) {

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <functional>
 #include <set>
+#include <unordered_set>
 
 #include "importer.h"
 #include "keep.h"
@@ -511,6 +512,21 @@ void Importer::storeObject(const Record& r) {
     objStore_[upperHandle(h)] = std::move(rec);
 }
 
+// The handle of each entity in the source file, for the writer to give back.
+void Importer::keepHandles() {
+    if (srcHandles_.empty())
+        return;
+    std::sort(srcHandles_.begin(), srcHandles_.end());
+    std::unordered_set<std::uint64_t> seen;
+    HandlePairs kept;
+    kept.reserve(srcHandles_.size());
+    for (const auto& [id, handle] : srcHandles_)
+        if (seen.insert(handle).second)
+            kept.emplace_back(id, handle);
+    std::string packed = packHandles(kept);
+    (void)tx_->modifyHeader([&](Header& h) { h.custom[kKeptHandlesKey] = std::move(packed); });
+}
+
 void Importer::keepObjects() {
     if (objRoot_.empty() || !objStore_.count(objRoot_))
         return;
@@ -537,6 +553,11 @@ void Importer::keepObjects() {
             }
         }
     }
+
+    // Entities keep their handles in the saved file, so a pointer to one can stay a pointer.
+    std::unordered_set<std::uint64_t> entityHandles;
+    for (const auto& pr : srcHandles_)
+        entityHandles.insert(pr.second);
 
     std::unordered_map<std::string, std::size_t> token;  // source handle -> index
     std::vector<std::string> order;                      // in token order
@@ -585,6 +606,8 @@ void Importer::keepObjects() {
                 const std::string h = upperHandle(v);
                 if (!h.empty() && h != "0" && admit(h))
                     packGroup(packed, c, "@" + std::to_string(token[h]));
+                else if (!h.empty() && entityHandles.count(std::strtoull(h.c_str(), nullptr, 16)))
+                    packGroup(packed, c, "#" + h);
                 else
                     packGroup(packed, c, "0");
             } else {
@@ -1932,6 +1955,7 @@ Result<ImportResult> Importer::run() {
     createLayers();
     applyLayerAlphaXrecords();
     resolveExtDictionaries();
+    keepHandles();
     keepObjects();
     finish();
 

@@ -33,6 +33,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 |---|---|
 | HEADER | `$ACADVER`, `$DWGCODEPAGE` (encoding), `$INSUNITS` (units), `$LTSCALE`, `$CLAYER`; every other variable that holds no handle is kept in `Header::custom` (`dxf.hv.<name>`) and written back |
 | TABLES | LAYER, LTYPE (dashes only), STYLE (an `.shx` font file becomes the TBCAD Stroke font, with an info message in the report), DIMSTYLE (text height, arrow size, gaps, scale, decimals); VPORT, VIEW, UCS, APPID, BLOCK_RECORD are ignored |
+| Handles | the handle of each entity (group 5) is kept in `Header::custom` (`dxf.handles`, delta coded, about 6 bytes per entity) and given back by the DXF writer; entities made since get new handles above the highest old one, and tables, blocks and objects take the numbers that are left free. Two entities with one handle: the first keeps it. Records the reader merges or splits (attributes into their insert, a MINSERT array) keep the handle of the first entity |
 | BLOCKS | `BlockDef` (name, base point, entities); `*Model_Space` and `*Paper_Space*` are skipped; anonymous blocks (`*D1`, `*U2`) are kept with `anonymous = true`; a block used before it is defined works |
 | ENTITIES | see below; paper space entities (group 67 = 1) are skipped and counted |
 | CLASSES | kept in `Header::custom` (`dxf.classes`) and written back |

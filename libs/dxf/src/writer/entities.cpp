@@ -209,7 +209,10 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
     Out& o = *o_;
     o.zero(type);
     if (!r12_) {
-        const std::uint64_t self = newHandle();
+        const std::uint64_t self = entHandle_ ? entHandle_ : newHandle();
+        if (entHandle_)
+            entityHandlesWritten_.insert(entHandle_);
+        entHandle_ = 0;
         o.h(5, self);
         if (p.dict) {
             PendingDict pd;
@@ -260,6 +263,34 @@ void Writer::downgrade(std::string_view what, const std::string& why) {
 // ---------------------------------------------------------------------------------------------
 // Dispatch
 
+// The handles the entities had in the source file. New handles start above the highest of them.
+void Writer::loadSourceHandles() {
+    if (r12_)
+        return;
+    const auto& custom = doc_.header().custom;
+    auto it = custom.find(kKeptHandlesKey);
+    if (it == custom.end())
+        return;
+    constexpr std::uint64_t kLimit = std::uint64_t{1} << 48;
+    for (const auto& [id, handle] : unpackHandles(it->second)) {
+        if (handle == 0 || handle >= kLimit || !doc_.find(EntityId{id}))
+            continue;
+        if (!srcHandleReserved_.insert(handle).second)
+            continue;  // two entities with one handle: the first keeps it
+        srcHandle_[id] = handle;
+        srcHandleTop_ = std::max(srcHandleTop_, handle);
+    }
+}
+
+void Writer::pickEntityHandle(EntityId id) {
+    entHandle_ = 0;
+    if (srcHandle_.empty())
+        return;
+    auto it = srcHandle_.find(id.value);
+    if (it != srcHandle_.end())
+        entHandle_ = it->second;
+}
+
 void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t owner) {
     for (std::size_t i = 0; i < ids.size();) {
         const Entity* e = doc_.find(ids[i]);
@@ -269,10 +300,13 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
         }
         if (entityAs<DimensionData>(*e)) {
             i += writeDimension(ids, i, owner);
+            entHandle_ = 0;
             writeAnnotativeData(*e);
             continue;
         }
+        pickEntityHandle(ids[i]);
         writeEntity(*e, owner);
+        entHandle_ = 0;
         ++i;
     }
 }
@@ -863,7 +897,7 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     img.h = h;
     img.def = newHandle();
     img.reactor = newHandle();
-    img.image = nextHandle_;  // the handle head() gives the IMAGE
+    img.image = entHandle_ ? entHandle_ : peekHandle();  // the handle head() gives the IMAGE
     const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
     const Vec2 u{c * d.scale.x, sn * d.scale.x}, v{-sn * d.scale.y, c * d.scale.y};
     const Vec2 origin = d.position - u * bd->base.x - v * bd->base.y;
@@ -1209,6 +1243,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     }
     std::string blockName = block.name;
     dimBlocks_.push_back(std::move(block));
+    pickEntityHandle(ids[index]);
 
     int type = 0;
     switch (d.kind) {
