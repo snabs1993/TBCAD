@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <random>
 #include "test_support.h"
 
 using namespace tbcad;
@@ -592,4 +594,101 @@ TEST_CASE("BLEND from an elliptical arc end is tangent to it") {
     const Vec2 t = c.tangentAt(c.t0());
     CHECK(t.x < -0.99);
     CHECK(std::abs(t.y) < 0.15);
+}
+
+TEST_CASE("PEDIT vertex width, straighten and taper") {
+    Entity pl = poly(pts({{0, 0}, {10, 0}, {10, 10}, {20, 10}}), false);
+    auto w = setPolylineVertexWidth(pl, {10.2, 0.1}, 1, 3);
+    REQUIRE(w.ok());
+    const auto& pw = as<PolylineData>(*w.value().modified);
+    CHECK(pw.v[1].startWidth == 1);
+    CHECK(pw.v[1].endWidth == 3);
+    CHECK(pw.v[0].startWidth == 0);
+    CHECK_FALSE(setPolylineVertexWidth(pl, {20, 10}, 1, 1).ok());  // the last vertex starts nothing
+    CHECK_FALSE(setPolylineVertexWidth(pl, {0, 0}, -1, 1).ok());
+
+    // Straighten from the first to the last vertex: one straight segment.
+    std::vector<PolyVertex> v{
+        {{0, 0}, 0.5, 0, 0}, {{10, 0}, 0.3, 0, 0}, {{10, 10}, 0, 0, 0}, {{20, 10}, 0, 0, 0}};
+    Entity arcs = poly(v, false);
+    auto st = straightenPolyline(arcs, {0, 0}, {20, 10});
+    REQUIRE(st.ok());
+    const auto& ps = as<PolylineData>(*st.value().modified);
+    CHECK(ps.v.size() == 2);
+    CHECK(ps.v[0].bulge == 0);
+    CHECK(near(ps.v[1].p, {20, 10}));
+    // Two neighbours: just that segment loses its bulge.
+    auto one = straightenPolyline(arcs, {10, 0}, {10, 10});
+    REQUIRE(one.ok());
+    CHECK(as<PolylineData>(*one.value().modified).v.size() == 4);
+    CHECK(as<PolylineData>(*one.value().modified).v[1].bulge == 0);
+    CHECK(as<PolylineData>(*one.value().modified).v[0].bulge == 0.5);
+    CHECK_FALSE(straightenPolyline(arcs, {0, 0}, {0.1, 0}).ok());
+
+    // Taper over the whole length: 30 long, widths 0 -> 6.
+    auto tp = taperPolyline(pl, 0, 6);
+    REQUIRE(tp.ok());
+    const auto& pt = as<PolylineData>(*tp.value().modified);
+    CHECK(near(pt.v[0].startWidth, 0));
+    CHECK(near(pt.v[0].endWidth, 2));
+    CHECK(near(pt.v[1].startWidth, 2));
+    CHECK(near(pt.v[1].endWidth, 4));
+    CHECK(near(pt.v[2].endWidth, 6));
+    // Closed polylines taper round the loop too.
+    Entity sq = poly(pts({{0, 0}, {10, 0}, {10, 10}, {0, 10}}), true);
+    auto tq = taperPolyline(sq, 4, 0);
+    REQUIRE(tq.ok());
+    CHECK(near(as<PolylineData>(*tq.value().modified).v[3].endWidth, 0));
+}
+
+TEST_CASE("PEDIT Join with a fuzz distance gathers shuffled, reversed and gapped pieces") {
+    std::mt19937 rng(99);
+    std::uniform_real_distribution<double> step(5, 15), turn(-1.0, 1.0), noise(-1, 1),
+        bul(-0.6, 0.6);
+    for (int iter = 0; iter < 40; ++iter) {
+        const double fuzz = 0.5;
+        const int pieces = 3 + iter % 6;
+        // One long open chain of arcs/lines, cut into pieces of two segments each.
+        std::vector<Vec2> pts_;
+        std::vector<double> bulges;
+        Vec2 p{0, 0};
+        double h = 0;
+        const int segs = pieces * 2;
+        for (int i = 0; i <= segs; ++i) {
+            pts_.push_back(p);
+            bulges.push_back((rng() % 2) ? bul(rng) : 0.0);
+            h += turn(rng) * 0.5;
+            p = p + Vec2{std::cos(h), std::sin(h)} * step(rng);
+        }
+        std::vector<Entity> input;
+        for (int k = 0; k < pieces; ++k) {
+            std::vector<PolyVertex> v;
+            for (int j = 0; j <= 2; ++j) {
+                Vec2 q = pts_[k * 2 + j];
+                // Joint ends move by less than half the fuzz.
+                if (j == 0 && k > 0)
+                    q = q + Vec2{noise(rng), noise(rng)} * (0.1 * fuzz);
+                if (j == 2 && k < pieces - 1)
+                    q = q + Vec2{noise(rng), noise(rng)} * (0.1 * fuzz);
+                v.push_back({q, j < 2 ? bulges[k * 2 + j] : 0.0, 0, 0});
+            }
+            Entity e = poly(v, false);
+            if (rng() % 2)
+                e = *reverseEntity(e).value().modified;
+            input.push_back(e);
+        }
+        std::shuffle(input.begin(), input.end(), rng);
+        std::vector<const Entity*> ptrs_;
+        for (const auto& e : input)
+            ptrs_.push_back(&e);
+        auto res = joinEntities(ptrs_, fuzz);
+        CHECK(res.consumed.size() == input.size());
+        REQUIRE(res.created.size() == 1);
+        const auto& out = as<PolylineData>(res.created[0]);
+        CHECK(out.v.size() == static_cast<std::size_t>(segs + 1));
+        CHECK_FALSE(out.closed);
+        // Without the fuzz the gaps keep the pieces apart.
+        auto strict = joinEntities(ptrs_, 1e-9);
+        CHECK(strict.created.size() != 1);
+    }
 }

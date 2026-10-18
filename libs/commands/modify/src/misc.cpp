@@ -725,6 +725,7 @@ public:
                                "Join",
                                "Fuzz",
                                "Width",
+                               "Taper",
                                "Fit",
                                "Spline",
                                "Ltypegen",
@@ -736,7 +737,7 @@ public:
             auto k =
                 co_await ctx.getKeyword(isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
                                                  : "Enter an option "
-                                                   "[Close/Open/Join/Fuzz/Width/Fit/Spline/"
+                                                   "[Close/Open/Join/Fuzz/Width/Taper/Fit/Spline/"
                                                    "Ltypegen/Vertices/Reverse/Exit] <Exit>",
                                         ko);
             if (!k.ok() || k.keyword == "Exit")
@@ -756,13 +757,27 @@ public:
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
                 else
                     ctx.message(edit.error().message);
+            } else if (k.keyword == "Taper") {
+                cmd::DistanceOptions d;
+                d.defaultValue = 0;
+                auto w0 = co_await ctx.getDistance("Specify the starting width", d);
+                if (!w0.ok())
+                    continue;
+                d.defaultValue = w0.value;
+                auto w1 = co_await ctx.getDistance("Specify the ending width", d);
+                if (!w1.ok())
+                    continue;
+                if (auto edit = modify::taperPolyline(*ctx.doc().find(id), w0.value, w1.value))
+                    (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
+                else
+                    ctx.message(edit.error().message);
             } else if (k.keyword == "Vertices") {
                 for (;;) {
                     cmd::KeywordOptions vo;
-                    vo.keywords = {"Insert", "Remove", "Move", "Exit"};
+                    vo.keywords = {"Insert", "Remove", "Move", "Width", "Straighten", "Exit"};
                     vo.defaultKeyword = "Exit";
                     auto v = co_await ctx.getKeyword(
-                        "Vertex option [Insert/Remove/Move/Exit] <Exit>", vo);
+                        "Vertex option [Insert/Remove/Move/Width/Straighten/Exit] <Exit>", vo);
                     if (!v.ok() || v.keyword == "Exit")
                         break;
                     auto at = co_await ctx.getPoint(v.keyword == "Insert"
@@ -775,7 +790,29 @@ public:
                         co_return;
                     Result<modify::EntityEdit> edit =
                         Error{ErrorCode::InvalidArgument, "Unsupported"};
-                    if (v.keyword == "Insert") {
+                    if (v.keyword == "Width") {
+                        cmd::DistanceOptions d;
+                        d.defaultValue = 0;
+                        auto w0 = co_await ctx.getDistance("Specify starting width", d);
+                        if (!w0.ok())
+                            continue;
+                        d.defaultValue = w0.value;
+                        auto w1 = co_await ctx.getDistance("Specify ending width", d);
+                        if (!w1.ok())
+                            continue;
+                        cur = ctx.doc().find(id);
+                        if (!cur)
+                            co_return;
+                        edit = modify::setPolylineVertexWidth(*cur, at.point, w0.value, w1.value);
+                    } else if (v.keyword == "Straighten") {
+                        auto to = co_await ctx.getPoint("Specify the other end vertex");
+                        if (!to.ok())
+                            continue;
+                        cur = ctx.doc().find(id);
+                        if (!cur)
+                            co_return;
+                        edit = modify::straightenPolyline(*cur, at.point, to.point);
+                    } else if (v.keyword == "Insert") {
                         edit = modify::insertPolylineVertex(*cur, at.point);
                     } else if (v.keyword == "Remove") {
                         edit = modify::removePolylineVertex(*cur, at.point);

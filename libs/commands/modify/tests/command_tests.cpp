@@ -651,6 +651,28 @@ TEST_CASE("PEDIT converts a line, closes, widens and joins") {
     });
 }
 
+TEST_CASE("PEDIT Taper, vertex Width and Straighten") {
+    Fixture f;
+    EntityId p = f.add(PolylineData{
+        {{{0, 0}, 0.4, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0}, {{20, 10}, 0, 0, 0}},
+        false});
+    f.host.run("PEDIT", {ScriptItem::pick(p, {5, 0}), "Taper", "0", "6", "Exit"});
+    const auto* pl = entityAs<PolylineData>(f.get(p));
+    REQUIRE(pl != nullptr);
+    CHECK(pl->v[2].endWidth == doctest::Approx(6));
+    f.host.run("PEDIT", {ScriptItem::pick(p, {5, 0}), "Vertices", "Width",
+                         ScriptItem::click({10, 0}), "1", "2", "Exit", "Exit"});
+    pl = entityAs<PolylineData>(f.get(p));
+    CHECK(pl->v[1].startWidth == doctest::Approx(1));
+    CHECK(pl->v[1].endWidth == doctest::Approx(2));
+    f.host.run("PEDIT", {ScriptItem::pick(p, {5, 0}), "Vertices", "Straighten",
+                         ScriptItem::click({0, 0}), ScriptItem::click({10, 10}), "Exit", "Exit"});
+    pl = entityAs<PolylineData>(f.get(p));
+    CHECK(pl->v.size() == 3);
+    CHECK(pl->v[0].bulge == 0);
+    CHECK(pl->v[1].p.y == doctest::Approx(10));
+}
+
 TEST_CASE("PEDIT Multiple closes, widens and joins every selected object") {
     Fixture f;
     EntityId a =
@@ -1040,6 +1062,83 @@ TEST_CASE("DIVIDE and MEASURE with the Block option insert a block along the obj
     REQUIRE(inserts.size() == 2);
     for (const InsertData* i : inserts)
         CHECK(i->rotation == doctest::Approx(0));
+}
+
+TEST_CASE("DIVIDE and MEASURE with blocks follow ellipses, splines, circles and polyline arcs") {
+    EllipseData el;
+    el.center = {0, 0};
+    el.majorAxis = {20, 0};
+    el.ratio = 0.5;
+    el.startParam = 0.2;
+    el.endParam = 2.5;
+    SplineData sp;
+    sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+    sp.control = {{0, 50}, {10, 70}, {30, 30}, {50, 60}, {60, 50}};
+    const std::vector<EntityData> shapes{el, Indirect<SplineData>(sp), CircleData{{100, 100}, 15},
+                                         PolylineData{{{{0, 200}, 0.5, 0, 0},
+                                                       {{20, 200}, 0, 0, 0},
+                                                       {{20, 230}, -0.4, 0, 0},
+                                                       {{45, 230}, 0, 0, 0}},
+                                                      false}};
+    for (const EntityData& shape : shapes) {
+        Fixture f;
+        {
+            auto tx = f.doc.begin("block");
+            (void)tx.addBlock(BlockDef{.name = "Chair"}).value();
+            tx.commit();
+        }
+        EntityId id = f.add(shape);
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(f.get(id), cs);
+        double total = 0;
+        for (const auto& c : cs)
+            total += c.length();
+        const Vec2 pickAt = cs.front().pointAt(cs.front().t0());
+        f.host.run("DIVIDE", {ScriptItem::pick(id, pickAt), "Block", "Chair", "Yes", "5"});
+        std::vector<const Entity*> placed;
+        f.doc.forEachEntity([&](const Entity& e) {
+            if (kind(e) == EntityKind::Insert)
+                placed.push_back(&e);
+        });
+        const bool closed = kind(f.get(id)) == EntityKind::Circle;
+        REQUIRE(placed.size() == (closed ? 5u : 4u));
+        for (const Entity* e : placed) {
+            const auto* ins = entityAs<InsertData>(*e);
+            // On the object, turned along it.
+            double best = 1e300;
+            const geom::CurveRef* on = nullptr;
+            for (const auto& c : cs)
+                if (c.distanceTo(ins->position) < best) {
+                    best = c.distanceTo(ins->position);
+                    on = &c;
+                }
+            CHECK(best < 1e-6);
+            const Vec2 t = on->tangentAt(on->paramAt(ins->position));
+            CHECK(std::abs(std::sin(ins->rotation - std::atan2(t.y, t.x))) < 1e-6);
+            CHECK(std::cos(ins->rotation - std::atan2(t.y, t.x)) > 0.9999);
+        }
+        (void)total;
+        f.host.undo();
+        CHECK(f.count(EntityKind::Insert) == 0);
+        // MEASURE from the other end places the first block that far from that end.
+        const Vec2 farEnd =
+            cs.back().pointAt(cs.back().t0() + (cs.back().isLine() ? 1.0 : cs.back().sweep()));
+        if (!closed) {
+            f.host.run("MEASURE", {ScriptItem::pick(id, farEnd), "Block", "Chair", "No", "4"});
+            Vec2 first{};
+            double nearest = 1e300;
+            f.doc.forEachEntity([&](const Entity& e) {
+                if (const auto* ins = entityAs<InsertData>(e);
+                    ins && distance(ins->position, farEnd) < nearest) {
+                    nearest = distance(ins->position, farEnd);
+                    first = ins->position;
+                }
+            });
+            (void)first;
+            CHECK(nearest <= 4.0 + 1e-6);
+            f.host.undo();
+        }
+    }
 }
 
 TEST_CASE("TRIM and EXTEND Mode: Quick uses every object as an edge, Standard asks again") {
