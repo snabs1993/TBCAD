@@ -344,6 +344,23 @@ TEST_CASE("ERASE removes the selection") {
     CHECK(f.doc.entityCount() == 3);
 }
 
+TEST_CASE("OOPS brings back what the last ERASE removed") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {4, 0}});
+    EntityId b = f.add(CircleData{{0, 0}, 2});
+    f.host.run("OOPS", {});
+    CHECK(f.host.logContains("Nothing has been erased"));
+    f.host.run("E", {ScriptItem::select({a, b}), ScriptItem::enter()});
+    CHECK(f.doc.entityCount() == 0);
+    f.host.run("OOPS", {});
+    CHECK(f.doc.entityCount() == 2);
+    CHECK(f.count(EntityKind::Circle) == 1);
+    CHECK(f.host.undo());
+    CHECK(f.doc.entityCount() == 0);
+    f.host.run("OOPS", {});  // nothing left to restore a second time
+    CHECK(f.doc.entityCount() == 0);
+}
+
 TEST_CASE("the extra modify commands are registered") {
     Fixture f;
     for (auto [alias, name] :

@@ -1,3 +1,5 @@
+#include <map>
+
 #include "commands.h"
 #include "util.h"
 
@@ -8,6 +10,12 @@ namespace {
 bool unlocked(const Document& doc, const Entity& e) {
     const EffectiveLayer l = doc.effective(e.common);
     return !l.locked && !l.otherLevel;
+}
+
+// What the last ERASE removed, per drawing, so OOPS can bring it back even after other commands.
+std::map<const Document*, std::vector<Entity>>& lastErased() {
+    static std::map<const Document*, std::vector<Entity>> store;
+    return store;
 }
 
 class BreakCommand final : public cmd::Command {
@@ -143,12 +151,55 @@ public:
         if (!sel.ok())
             co_return;
         std::size_t n = 0;
+        std::vector<Entity> removed;
         for (EntityId id : sel.ids) {
-            if (ctx.tx().erase(id))
+            const Entity* e = ctx.doc().find(id);
+            Entity copy;
+            if (e)
+                copy = *e;
+            if (ctx.tx().erase(id)) {
                 ++n;
+                if (e)
+                    removed.push_back(std::move(copy));
+            }
         }
+        if (!removed.empty())
+            lastErased()[&ctx.doc()] = std::move(removed);
         ctx.host().setSelection({});
         ctx.message(std::to_string(n) + " erased.");
+    }
+};
+
+// OOPS: puts back the objects the last ERASE removed.
+class OopsCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "OOPS"; }
+    std::vector<std::string> defaultAliases() const override { return {}; }
+    std::string_view description() const override { return "Restore the objects last erased"; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto it = lastErased().find(&ctx.doc());
+        if (it == lastErased().end() || it->second.empty()) {
+            ctx.message("Nothing has been erased.");
+            co_return;
+        }
+        std::vector<EntityId> back;
+        for (Entity e : it->second) {
+            e.common.id = {};
+            if (!ctx.doc().layer(e.common.layer))
+                e.common.layer = ctx.doc().header().currentLayer;
+            auto added = ctx.tx().add(std::move(e));
+            if (added)
+                back.push_back(added.value());
+            else
+                ctx.message(added.error().message);
+        }
+        lastErased().erase(it);
+        if (back.empty())
+            co_return;
+        ctx.host().setSelection(back);
+        ctx.setUndoLabel("OOPS");
+        ctx.message(std::to_string(back.size()) + " restored.");
     }
 };
 
@@ -165,6 +216,9 @@ std::unique_ptr<cmd::Command> makeJoin() {
 }
 std::unique_ptr<cmd::Command> makeErase() {
     return std::make_unique<EraseCommand>();
+}
+std::unique_ptr<cmd::Command> makeOops() {
+    return std::make_unique<OopsCommand>();
 }
 
 }  // namespace tbcad::modifycmd
