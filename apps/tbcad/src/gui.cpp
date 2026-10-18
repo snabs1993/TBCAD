@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -2922,10 +2923,67 @@ void Gui::viewportMenu() {
             ImGui::EndMenu();
         }
         if (!core_.selection().empty()) {
+            // Edits that suit the kinds of object picked come first.
+            bool onlyOne = true;
+            bool curves = false;
+            std::optional<EntityKind> first;
+            for (EntityId id : core_.selection()) {
+                const Entity* e = core_.document().find(id);
+                if (!e)
+                    continue;
+                const EntityKind k = kind(*e);
+                if (first && *first != k)
+                    onlyOne = false;
+                first = k;
+                curves = curves || k == EntityKind::Line || k == EntityKind::Arc ||
+                         k == EntityKind::Polyline || k == EntityKind::Circle ||
+                         k == EntityKind::Ellipse || k == EntityKind::Spline;
+            }
+            auto item = [&](const char* label, const char* command) {
+                if (core_.registry().find(command) && ImGui::MenuItem(label))
+                    run(command);
+            };
+            ImGui::Separator();
+            if (onlyOne && first) {
+                switch (*first) {
+                    case EntityKind::Text:
+                    case EntityKind::MText:
+                        item("Edit Text", "TEXTEDIT");
+                        break;
+                    case EntityKind::Hatch:
+                        item("Edit Hatch", "HATCHEDIT");
+                        break;
+                    case EntityKind::Polyline:
+                        item("Edit Polyline", "PEDIT");
+                        item("Explode", "EXPLODE");
+                        break;
+                    case EntityKind::Insert:
+                        item("Edit Block", "BEDIT");
+                        item("Explode", "EXPLODE");
+                        break;
+                    case EntityKind::Dimension:
+                        item("Edit Dimension", "DIMEDIT");
+                        item("Explode", "EXPLODE");
+                        break;
+                    default:
+                        break;
+                }
+            }
+            item("Cut", "CUTCLIP");
+            item("Copy", "COPYCLIP");
             ImGui::Separator();
             for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
                 if (core_.registry().find(c) && ImGui::MenuItem(c))
                     run(c);
+            if (curves) {
+                item("Offset", "OFFSET");
+                item("Trim", "TRIM");
+                item("Extend", "EXTEND");
+            }
+            ImGui::Separator();
+            item("Select Similar", "SELECTSIMILAR");
+            item("Match Properties", "MATCHPROP");
+            item("Properties", "PROPERTIES");
             if (core_.registry().find("LAYISO") && ImGui::MenuItem("Isolate Layer"))
                 run("LAYISO");
             if (ImGui::MenuItem("Deselect All"))
