@@ -428,3 +428,68 @@ TEST_CASE("indices survive the text form") {
     REQUIRE(old.all().size() == 1);
     CHECK(old.all()[0].a.index == 0);
 }
+
+TEST_CASE("analysis: degrees of freedom, redundant and conflicting constraints") {
+    Fixture f;
+    const EntityId ln = f.line({0, 0}, {10, 3});
+    {
+        ConstraintSet set;
+        set.add(make(Kind::Horizontal, whole(ln)));
+        auto an = analyze(f.doc, set);
+        REQUIRE(an.ok());
+        CHECK(an.value().converged);
+        CHECK(an.value().degreesOfFreedom == 3);
+        REQUIRE(an.value().entities.size() == 1);
+        CHECK(an.value().entities[0].degreesOfFreedom == 3);
+        CHECK_FALSE(an.value().fullyConstrained());
+        CHECK_FALSE(an.value().overConstrained());
+    }
+    {
+        ConstraintSet set;
+        set.add(make(Kind::Fix, whole(ln)));
+        auto an = analyze(f.doc, set);
+        REQUIRE(an.ok());
+        CHECK(an.value().fullyConstrained());
+        CHECK(an.value().entities[0].degreesOfFreedom == 0);
+        CHECK(an.value().summary() == "Fully constrained");
+    }
+    {  // the same constraint twice: both are implied by the other
+        ConstraintSet set;
+        set.add(make(Kind::Horizontal, whole(ln)));
+        set.add(make(Kind::Horizontal, whole(ln)));
+        auto an = analyze(f.doc, set);
+        REQUIRE(an.ok());
+        CHECK(an.value().converged);
+        CHECK(an.value().overConstrained());
+        CHECK(an.value().constraints[0].redundant);
+        CHECK(an.value().constraints[1].redundant);
+    }
+    {  // a horizontal, vertical line of length 10 cannot exist
+        ConstraintSet set;
+        set.add(make(Kind::Horizontal, whole(ln)));
+        set.add(make(Kind::Vertical, whole(ln)));
+        set.add(make(Kind::Distance, at(ln, Part::Start), at(ln, Part::End), 10));
+        auto an = analyze(f.doc, set);
+        REQUIRE(an.ok());
+        CHECK_FALSE(an.value().converged);
+        CHECK(an.value().overConstrained());
+        CHECK(an.value().worst != 0);
+    }
+}
+
+TEST_CASE("analysis: a fixed circle and a point-on-circle leave the point free along the circle") {
+    Fixture f;
+    const EntityId ci = f.circle({0, 0}, 5);
+    const EntityId pt = f.line({6, 0}, {9, 0});
+    ConstraintSet set;
+    set.add(make(Kind::Fix, whole(ci)));
+    set.add(make(Kind::PointOnObject, at(pt, Part::Start), whole(ci)));
+    auto an = analyze(f.doc, set);
+    REQUIRE(an.ok());
+    CHECK(an.value().converged);
+    int circleDof = -1, lineDof = -1;
+    for (const EntityStatus& e : an.value().entities)
+        (e.entity == ci ? circleDof : lineDof) = e.degreesOfFreedom;
+    CHECK(circleDof == 0);
+    CHECK(lineDof == 3);  // 4 variables, one constraint
+}

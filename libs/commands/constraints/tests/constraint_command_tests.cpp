@@ -7,6 +7,7 @@
 #include "tbcad/constraints/constraints.h"
 #include "tbcad/constraintscmd/constraintscmd.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/transform/transform.h"
 
 using namespace tbcad;
 using namespace tbcad::cmd;
@@ -50,6 +51,7 @@ struct Fixture {
     Fixture() {
         registerBuiltinCommands(reg);
         constraintscmd::registerCommands(reg);
+        transform::registerCommands(reg);
         l1 = addLine({0, 0}, {10, 0});
         l2 = addLine({0, 5}, {10, 6.5});
         (void)reg.add(std::make_unique<Tilt>(l1));
@@ -291,4 +293,48 @@ TEST_CASE("GEOMCON on a polyline uses the segment next to the click; DIMCON Leng
     CHECK(r2.finished);
     const auto* p2 = entityAs<PolylineData>(*f.doc.find(pl));
     CHECK(length(p2->v[1].p - p2->v[0].p) == doctest::Approx(12).epsilon(1e-6));
+}
+
+TEST_CASE("constraints survive MOVE, STRETCH and undo; erased objects drop theirs") {
+    Fixture f;
+    // l1's end and l2's start are joined (the two lines meet halfway)
+    REQUIRE(f.host->run("GEOMCON", {"Coincident", f.pick(f.l1, {10, 0}), f.pick(f.l2, {0, 5})})
+                .finished);
+    const Vec2 joint = f.line(f.l1).b;
+    CHECK(length(f.line(f.l2).a - joint) == doctest::Approx(0).epsilon(1e-6));
+    const LineData l1Before = f.line(f.l1), l2Before = f.line(f.l2);
+
+    REQUIRE(f.host->run("MOVE", {ScriptItem::select({f.l1}), ScriptItem::enter(), "0,0", "5,5"})
+                .finished);
+    CHECK(f.line(f.l1).b.x == doctest::Approx(joint.x + 5).epsilon(1e-6));
+    CHECK(length(f.line(f.l2).a - f.line(f.l1).b) == doctest::Approx(0).epsilon(1e-6));
+    CHECK(f.host->undo());
+    CHECK(f.line(f.l1).b.x == doctest::Approx(l1Before.b.x));
+    CHECK(f.line(f.l2).a.x == doctest::Approx(l2Before.a.x));
+
+    // STRETCH drags l1's end three units to the right; l2's start comes along
+    REQUIRE(f.host->run("STRETCH", {"3,0", "8,4", "0,0", "3,0"}).finished);
+    CHECK(f.line(f.l1).b.x == doctest::Approx(joint.x + 3).epsilon(1e-6));
+    CHECK(length(f.line(f.l2).a - f.line(f.l1).b) == doctest::Approx(0).epsilon(1e-6));
+
+    // erasing l2 drops the constraint without touching l1
+    const double keep = f.line(f.l1).b.x;
+    f.host->run("KILL", {});
+    CHECK(constraints::load(f.doc).empty());
+    CHECK(f.line(f.l1).b.x == doctest::Approx(keep));
+}
+
+TEST_CASE("SHOWCON and CONSTRAINTBAR report the state; DELCONSTRAINT removes by number") {
+    Fixture f;
+    REQUIRE(f.host->run("GEOMCON", {"Parallel", f.pick(f.l1, {5, 0}), f.pick(f.l2, {5, 5.7})})
+                .finished);
+    auto show = f.host->run("SHOWCON", {});
+    (void)show;
+    CHECK(f.host->logContains("Under-constrained"));
+    f.host->setSelection({f.l1});
+    auto bar = f.host->run("CONSTRAINTBAR", {ScriptItem::select({f.l1}), ScriptItem::enter()});
+    (void)bar;
+    CHECK(f.host->logContains("degrees of freedom"));
+    REQUIRE(f.host->run("DELCONSTRAINT", {"1", ScriptItem::enter()}).finished);
+    CHECK(constraints::load(f.doc).empty());
 }

@@ -361,6 +361,30 @@ ConstraintSet ConstraintSet::fromText(const std::string& text) {
     return set;
 }
 
+bool Analysis::overConstrained() const {
+    if (!converged)
+        return true;
+    for (const ConstraintStatus& c : constraints)
+        if (c.redundant)
+            return true;
+    return false;
+}
+
+std::string Analysis::summary() const {
+    if (!converged)
+        return "Conflicting constraints (check #" + std::to_string(worst) + ")";
+    int redundant = 0;
+    for (const ConstraintStatus& c : constraints)
+        redundant += c.redundant ? 1 : 0;
+    std::string s =
+        degreesOfFreedom == 0
+            ? "Fully constrained"
+            : "Under-constrained: " + std::to_string(degreesOfFreedom) + " degrees of freedom";
+    if (redundant > 0)
+        s += "; " + std::to_string(redundant) + " redundant constraint(s)";
+    return s;
+}
+
 ConstraintSet load(const Document& doc) {
     auto it = doc.header().custom.find(kHeaderKey);
     return it == doc.header().custom.end() ? ConstraintSet{} : ConstraintSet::fromText(it->second);
