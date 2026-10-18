@@ -216,6 +216,23 @@ HeaderVars parseHeader(Bytes section, const Format& fmt, int maintenance,
         }
         return parseHeaderWith(section, fmt, 0, notes);
     }
+    if (fmt.r2018) {
+        // A real R2018 file has two words between the size and the data of the classes section;
+        // the header is tried the same way, the first reading that gives plausible values wins.
+        std::vector<std::string> firstTry;
+        for (std::size_t x : {std::size_t{8}, std::size_t{4}, std::size_t{0}}) {
+            std::vector<std::string> n;
+            HeaderVars v = parseHeaderWith(section, fmt, x, n);
+            if (v.valid) {
+                notes.insert(notes.end(), n.begin(), n.end());
+                return v;
+            }
+            if (x == 8)
+                firstTry = n;
+        }
+        notes.insert(notes.end(), firstTry.begin(), firstTry.end());
+        return {};
+    }
     return parseHeaderWith(section, fmt, extra ? 4 : 0, notes);
 }
 

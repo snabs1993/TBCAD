@@ -92,6 +92,7 @@ struct EntityRec {
     std::uint64_t firstChild = 0, lastChild = 0;
     bool hasChildren = false;                   // INSERT: the attribute bit was set
     std::vector<std::uint64_t> frozenLayers{};  // VIEWPORT: layers frozen in it
+    std::uint32_t frozenCount = 0;              // VIEWPORT: the count stored in the file
     std::vector<std::uint64_t> childHandles{};  // R2004+: the owned records, in order
     int color = 256;                            // ACI, 256 = by layer
     int trueColor = -1;                         // 0xRRGGBB when set
@@ -107,6 +108,7 @@ struct LayoutRec {
     int tab = 0;
     double width = 0, height = 0;  // paper, mm
     int rotation = 0;
+    std::string styleSheet{};          // plot style table name (a .ctb or .stb file), may be empty
     double margins[4] = {0, 0, 0, 0};  // left, bottom, right, top (ODA order)
     double plotOrigin[2] = {0, 0};
     double limits[4] = {0, 0, 0, 0};  // min x, min y, max x, max y

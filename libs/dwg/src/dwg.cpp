@@ -265,6 +265,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 }
                 return 0.0;
             };
+            {
+                std::string off = "layers not to plot:", frz = "layers frozen:";
+                std::size_t no = 0, nf = 0;
+                for (const auto& kv : drawing.layers) {
+                    if (!kv.second.plot && no++ < 30)
+                        off += " " + kv.second.name;
+                    if (kv.second.frozen && nf++ < 30)
+                        frz += " " + kv.second.name;
+                }
+                report.info(code::kSkippedObject, off + " (" + std::to_string(no) + " of " +
+                                                      std::to_string(drawing.layers.size()) + ")");
+                report.info(code::kSkippedObject, frz + " (" + std::to_string(nf) + ")");
+            }
             int n = 0;
             for (const detail::EntityRec& e : drawing.entities) {
                 if (e.dxfType != "VIEWPORT" || ++n > 40)
@@ -275,14 +288,23 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     t, sizeof t,
                     "viewport %llX on %s: centre %.1f,%.1f size %.1f x %.1f; target "
                     "%.1f,%.1f view centre %.1f,%.1f height %.1f; direction %.3f,%.3f,%.3f twist "
-                    "%.3f; %zu frozen; %s",
+                    "%.3f; %u frozen stored, %zu handles read; %s",
                     static_cast<unsigned long long>(e.handle),
                     e.entmode == 0 && o != drawing.blocks.end() ? o->second.name.c_str()
                                                                 : "paper space",
                     val(e, 10), val(e, 20), val(e, 40), val(e, 41), val(e, 17), val(e, 27),
                     val(e, 12), val(e, 22), val(e, 45), val(e, 16), val(e, 26), val(e, 36),
-                    val(e, 51), e.frozenLayers.size(), val(e, 68) != 0 ? "on" : "off");
+                    val(e, 51), static_cast<unsigned>(e.frozenCount), e.frozenLayers.size(),
+                    val(e, 68) != 0 ? "on" : "off");
                 report.info(code::kSkippedObject, t);
+                if (!e.frozenLayers.empty()) {
+                    std::string f = "viewport " + std::to_string(e.handle) + " frozen layers:";
+                    for (std::size_t i = 0; i < e.frozenLayers.size() && i < 24; ++i) {
+                        const auto l = drawing.layers.find(e.frozenLayers[i]);
+                        f += " " + (l != drawing.layers.end() ? l->second.name : std::string("?"));
+                    }
+                    report.info(code::kSkippedObject, f);
+                }
                 if (val(e, 40) > 0 && val(e, 45) > 0 && val(e, 17) != 0) {
                     // How much model space data lies inside what this viewport shows.
                     const double h = val(e, 45), w = h * val(e, 40) / val(e, 41);
@@ -562,6 +584,16 @@ std::string describe(std::span<const std::byte> bytes) {
                 line("decoded section " + name + ": " + std::to_string(data.size()) +
                      " bytes, starts " + hex16(data));
             const auto& secs = sections.value().sections;
+            if (const auto hdr = secs.find("AcDb:Header"); hdr != secs.end()) {
+                // The whole header: its layout differs between releases and is worked out from it.
+                std::string all;
+                char b[4];
+                for (std::size_t i = 0; i < hdr->second.size() && i < 4000; ++i) {
+                    std::snprintf(b, sizeof b, "%02X", hdr->second[i]);
+                    all += b;
+                }
+                line("header bytes: " + all);
+            }
             const auto objs = secs.find("AcDb:AcDbObjects");
             const auto hnd = secs.find("AcDb:Handles");
             if (objs != secs.end() && hnd != secs.end()) {

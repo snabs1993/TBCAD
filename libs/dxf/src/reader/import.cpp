@@ -975,6 +975,7 @@ void Importer::readLayoutObject(const Record& r) {
     row.width = r.num(44);
     row.height = r.num(45);
     row.rotation = static_cast<int>(r.integer(73, 0));
+    row.styleSheet = dec(r.raw(7));
     if (r.has(14) && r.has(24) && r.has(15) && r.has(25)) {
         row.hasExtents = true;
         row.extMin = {r.num(14), r.num(24)};
@@ -1024,7 +1025,7 @@ void Importer::finishLayouts() {
         std::snprintf(buf, sizeof buf, "%.17g", v);
         return std::string(buf);
     };
-    std::string text;
+    std::string text, setups;
     std::unordered_set<std::string> used;
     int uid = 0;
     for (std::size_t n = 0; n < order.size(); ++n) {
@@ -1079,8 +1080,23 @@ void Importer::finishLayouts() {
             }
         }
         ++uid;
+        // The plot style table the layout names becomes a page setup of the same name, so PLOT
+        // finds the table (the tables themselves are files the user keeps beside the program).
+        std::string setupName;
+        if (n < rows.size()) {
+            std::string sheet = rows[n].styleSheet;
+            const std::size_t slash = sheet.find_last_of("/\\");
+            if (slash != std::string::npos)
+                sheet.erase(0, slash + 1);
+            if (!sheet.empty() && fold(sheet) != "none" &&
+                sheet.find_first_of("\t\n=") == std::string::npos) {
+                setupName = name;
+                setups += "S\t" + setupName + "\tstyle=" + sheet + "\n";
+            }
+        }
         text += "L\t" + std::to_string(uid) + "\t" + name + "\tCustom\t" + (w > h ? "1" : "0") +
-                "\t" + num(w) + "\t" + num(h) + "\t" + std::to_string(sh.content.value) + "\t\n";
+                "\t" + num(w) + "\t" + num(h) + "\t" + std::to_string(sh.content.value) + "\t" +
+                setupName + "\n";
         for (const SheetViewport& v : sh.viewports) {
             // The sheet's own overall viewport covers the whole paper: not a window on the model.
             if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)
@@ -1097,7 +1113,11 @@ void Importer::finishLayouts() {
                     frozenIds + "\t0\n";
         }
     }
-    (void)tx_->modifyHeader([&](Header& h) { h.custom["tbcad.layouts"] = text; });
+    (void)tx_->modifyHeader([&](Header& h) {
+        h.custom["tbcad.layouts"] = text;
+        if (!setups.empty())
+            h.custom["tbcad.pagesetups"] = setups;
+    });
     sum_.layouts = sheets_.size();
 }
 
