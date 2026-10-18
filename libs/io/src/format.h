@@ -37,6 +37,8 @@ inline constexpr std::uint32_t kDstx =
     fourcc("DSTX");  // alternate units and tolerances of dim styles
 // Text and shapes inside linetypes (format minor 13); older programs keep the chunk untouched.
 inline constexpr std::uint32_t kLtmk = fourcc("LTMK");
+// Shape font names and the annotative flag of text styles (format minor 13).
+inline constexpr std::uint32_t kTstx = fourcc("TSTX");
 inline constexpr std::uint32_t kBlks = fourcc("BLKS");
 inline constexpr std::uint32_t kXrfs = fourcc("XRFS");
 inline constexpr std::uint32_t kDynb = fourcc("DYNB");

@@ -583,6 +583,23 @@ inline void applyAnnotativeDefault(const Header& h, Entity& e) {
     }
 }
 
+// New text in an annotative text style is annotative at the current scale, whatever the drawing's
+// ANNONEW says.
+inline void applyStyleAnnotative(const Document& doc, Entity& e) {
+    TextStyleId sid{};
+    if (const auto* t = entityAs<TextData>(e))
+        sid = t->style;
+    else if (const auto* m = entityAs<MTextData>(e))
+        sid = m->style;
+    else
+        return;
+    const TextStyle* st = doc.textStyle(sid.value != 0 ? sid : doc.header().currentTextStyle);
+    if (st && st->annotative) {
+        e.common.annotative = true;
+        e.common.annoScales = ScaleList(std::vector<double>{currentAnnotationScale(doc.header())});
+    }
+}
+
 // The layer the per-command setting names for this kind of object; null when there is none.
 LayerId commandLayerFor(const Header& h, const Entity& e);
 

@@ -24,6 +24,9 @@ public:
 
     // Returns an empty message on success.
     std::string parse(std::string_view text);
+    // Reads a compiled AutoCAD shape font (.shx). `thai`: shape numbers above 0x7F are Windows-874
+    // codes (Thai) rather than Latin-1. Returns an empty message on success.
+    std::string loadShx(const std::uint8_t* data, std::size_t size, bool thai);
 
     bool has(char32_t cp) const { return glyphs_.count(cp) != 0; }
     const Glyph* glyph(char32_t cp) const {

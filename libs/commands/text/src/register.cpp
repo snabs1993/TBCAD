@@ -12,6 +12,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMTextCommand());
     (void)registry.add(makeTextEditCommand());
     (void)registry.add(makeStyleCommand());
+    (void)registry.add(makeFontCheckCommand());
     (void)registry.add(makeStyleManagerCommand());
     (void)registry.add(makeTextStylesPanelCommand());
     (void)registry.add(makeAnnotativeCommand());

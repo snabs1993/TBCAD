@@ -24,7 +24,7 @@ bool looksLikeFontFile(const std::string& s) {
                 return false;
         return true;
     };
-    return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf");
+    return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf") || ends(".shx");
 }
 
 // STYLE: create or change a text style and make it current.
@@ -68,13 +68,18 @@ public:
             co_return;
         row.fontFile.clear();
         row.fontFamily.clear();
+        row.shxFile.clear();
+        row.bigFontFile.clear();
         if (looksLikeFontFile(f.text))
             row.fontFile = f.text;
         else if (f.text != "Sarabun")
             row.fontFamily = f.text;
         if (!row.fontFile.empty() || !row.fontFamily.empty()) {
             if (!text::fontAvailable(row.fontFamily, row.fontFile))
-                ctx.message("Font not found; the bundled Sarabun is used instead: " + f.text);
+                ctx.message("Font not found; " +
+                            std::string(text::isShxName(f.text) ? "the stroke font"
+                                                                : "the bundled Sarabun") +
+                            " is used instead: " + f.text);
         }
 
         cmd::RealOptions wo;
@@ -107,6 +112,8 @@ public:
             auto r = ctx.tx().modifyTextStyle(id, [&](TextStyle& s) {
                 s.fontFile = row.fontFile;
                 s.fontFamily = row.fontFamily;
+                s.shxFile = row.shxFile;
+                s.bigFontFile = row.bigFontFile;
                 s.widthFactor = row.widthFactor;
                 s.oblique = row.oblique;
                 s.height = row.height;
@@ -132,6 +139,31 @@ public:
 };
 
 }  // namespace
+
+// FONTCHECK: which text styles have a font that is not on this computer and what stands in.
+class FontCheckCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "FONTCHECK"; }
+    std::string_view description() const override {
+        return "List text styles whose font is missing and what replaces it";
+    }
+    Task run(CommandContext& ctx) override {
+        const auto missing = text::missingFonts(ctx.doc());
+        if (missing.empty()) {
+            ctx.message("All fonts used by the text styles are available.");
+            co_return;
+        }
+        for (const auto& [style, r] : missing)
+            ctx.message("Style " + style + ": font " + r.wanted + " not found, " + r.used +
+                        " is used instead. Put the font file in a folder listed in "
+                        "TBCAD_FONT_PATH to draw the real font.");
+        ctx.message(std::to_string(missing.size()) + " text style(s) use a substitute font.");
+    }
+};
+
+std::unique_ptr<cmd::Command> makeFontCheckCommand() {
+    return std::make_unique<FontCheckCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeStyleCommand() {
     return std::make_unique<StyleCommand>();

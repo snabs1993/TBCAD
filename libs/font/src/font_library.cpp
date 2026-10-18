@@ -304,11 +304,14 @@ struct FontLibrary::Impl {
         return addFace(std::move(data), index, key);
     }
 
-    Result<FontId> addStroke(std::string_view text, const std::string& key) {
+    Result<FontId> addStroke(std::string_view text, const std::string& key, bool shx = false,
+                             bool thai = false) {
         auto font = std::make_unique<StrokeFont>();
-        std::string err = font->parse(text);
+        std::string err = shx ? font->loadShx(reinterpret_cast<const std::uint8_t*>(text.data()),
+                                              text.size(), thai)
+                              : font->parse(text);
         if (!err.empty())
-            return Error{"stroke font: " + err};
+            return Error{(shx ? "SHX font: " : "stroke font: ") + err};
         auto face = std::make_unique<Face>();
         face->upem = font->unitsPerEm();
         face->metrics = font->metrics();
@@ -335,6 +338,11 @@ struct FontLibrary::Impl {
         std::string text(static_cast<std::size_t>(size), '\0');
         if (!in || !in.read(text.data(), static_cast<std::streamsize>(text.size())))
             return Error{"cannot read stroke font: " + path.generic_string()};
+        if (text.compare(0, 10, "AutoCAD-86") == 0) {
+            std::string stem = lower(path.stem().string());
+            const bool thai = stem.find("thai") != std::string::npos || stem.rfind("th", 0) == 0;
+            return addStroke(text, key, true, thai);
+        }
         return addStroke(text, key);
     }
 

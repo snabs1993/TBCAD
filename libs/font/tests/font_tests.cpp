@@ -388,3 +388,123 @@ TEST_CASE("bundled stroke font covers the Thai block and places marks") {
     CHECK(g[2].xAdvance > 0);
     CHECK(runs.size() == 1);  // no fallback font was needed
 }
+
+namespace {
+// A tiny compiled shapes font: 'L' (vectors), 'O' (octant circle), 'B' (bulge arc, sub-shape).
+std::vector<unsigned char> tinyShx(bool unicode) {
+    std::vector<unsigned char> out;
+    auto put = [&](const std::string& s) { out.insert(out.end(), s.begin(), s.end()); };
+    auto u16 = [&](std::vector<unsigned char>& v, unsigned x) {
+        v.push_back(x & 255);
+        v.push_back(x >> 8);
+    };
+    struct Shape {
+        unsigned num;
+        std::string name;
+        std::vector<unsigned char> codes;
+    };
+    std::vector<Shape> shapes;
+    shapes.push_back({0, "TINY", {10, 3, 0, 0}});
+    shapes.push_back({'L', "L", {2, 8, 0, 10, 1, 8, 0, 0xF6 /*-10*/, 8, 6, 0, 2, 8, 2, 0, 0}});
+    shapes.push_back({'O', "O", {2, 8, 5, 0, 1, 0xA, 5, 0x08, 2, 8, 5, 0, 0}});
+    shapes.push_back({'B', "B", {7, 'L', 0}});
+    if (unicode) {
+        put("AutoCAD-86 unifont 1.0\r\n\x1a");
+        std::vector<unsigned char> head = {'T', 'I', 'N', 'Y', 0, 10, 3, 0, 0, 0, 0};
+        out.push_back(static_cast<unsigned char>(shapes.size() - 1));
+        out.insert(out.end(), {0, 0, 0});
+        u16(out, head.size());
+        out.insert(out.end(), head.begin(), head.end());
+        for (std::size_t i = 1; i < shapes.size(); ++i) {
+            std::vector<unsigned char> def(shapes[i].name.begin(), shapes[i].name.end());
+            def.push_back(0);
+            std::vector<unsigned char> codes = shapes[i].codes;
+            if (shapes[i].num == 'B')
+                codes = {7, 'L', 0, 0};
+            def.insert(def.end(), codes.begin(), codes.end());
+            u16(out, shapes[i].num);
+            u16(out, def.size());
+            out.insert(out.end(), def.begin(), def.end());
+        }
+        return out;
+    }
+    put("AutoCAD-86 shapes 1.0\r\n\x1a");
+    u16(out, 0);
+    u16(out, 255);
+    u16(out, shapes.size());
+    std::vector<std::vector<unsigned char>> defs;
+    for (const Shape& s : shapes) {
+        std::vector<unsigned char> d(s.name.begin(), s.name.end());
+        d.push_back(0);
+        d.insert(d.end(), s.codes.begin(), s.codes.end());
+        defs.push_back(d);
+        u16(out, s.num);
+        u16(out, d.size());
+    }
+    for (const auto& d : defs)
+        out.insert(out.end(), d.begin(), d.end());
+    return out;
+}
+
+FontId writeAndLoad(FontLibrary& lib, const std::vector<unsigned char>& bytes, const char* file) {
+    const auto path = std::filesystem::temp_directory_path() / file;
+    {
+        std::ofstream f(path, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(bytes.data()),
+                static_cast<std::streamsize>(bytes.size()));
+    }
+    auto r = lib.loadStroke(path);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    return r.value();
+}
+}  // namespace
+
+TEST_CASE("compiled SHX fonts (shapes and unifont) become stroke fonts") {
+    for (bool uni : {false, true}) {
+        CAPTURE(uni);
+        FontLibrary lib;
+        FontId f = writeAndLoad(lib, tinyShx(uni), uni ? "tbcad_tiny_uni.shx" : "tbcad_tiny.shx");
+        CHECK(lib.isStroke(f));
+        CHECK(lib.metrics(f).capHeight == doctest::Approx(1.0));
+        REQUIRE(lib.hasGlyph(f, 'L'));
+        const StrokeGlyph& l = lib.strokes(f, 'L');
+        REQUIRE(l.paths.size() == 1);
+        REQUIRE(l.paths[0].points.size() == 3);
+        CHECK(l.paths[0].points[0].y == doctest::Approx(1.0));  // 10 units = 1 em
+        CHECK(l.paths[0].points[1].y == doctest::Approx(0.0));
+        CHECK(l.paths[0].points[2].x == doctest::Approx(0.6));
+        auto runs = lib.shape(f, "L");
+        REQUIRE(!runs.empty());
+        CHECK(runs[0].glyphs[0].xAdvance ==
+              doctest::Approx(0.8 * runs[0].unitsPerEm).epsilon(0.01));
+        // The octant circle closes on itself and has radius 0.5 em.
+        const StrokeGlyph& o = lib.strokes(f, 'O');
+        REQUIRE(o.paths.size() == 1);
+        const auto& pts = o.paths[0].points;
+        CHECK(pts.front().x == doctest::Approx(pts.back().x).epsilon(1e-6));
+        CHECK(pts.front().y == doctest::Approx(pts.back().y).epsilon(1e-6));
+        CHECK(pts.size() > 16);
+        // A sub-shape is run in place.
+        CHECK(lib.strokes(f, 'B').paths.size() == 1);
+    }
+}
+
+TEST_CASE("broken SHX data is refused, never crashes") {
+    std::mt19937 rng(7);
+    std::vector<unsigned char> good = tinyShx(false);
+    for (int i = 0; i < 300; ++i) {
+        std::vector<unsigned char> bad = good;
+        for (int k = 0; k < 4; ++k)
+            bad[24 + rng() % (bad.size() - 24)] = static_cast<unsigned char>(rng());
+        if (i % 3 == 0)
+            bad.resize(24 + rng() % (bad.size() - 24));
+        FontLibrary lib;
+        const auto path = std::filesystem::temp_directory_path() / "tbcad_bad.shx";
+        {
+            std::ofstream f(path, std::ios::binary);
+            f.write(reinterpret_cast<const char*>(bad.data()),
+                    static_cast<std::streamsize>(bad.size()));
+        }
+        (void)lib.loadStroke(path);
+    }
+}

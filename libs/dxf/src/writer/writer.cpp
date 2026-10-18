@@ -576,9 +576,17 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
         // TBCAD's own stroke font has no AutoCAD counterpart; txt.shx is AutoCAD's stand-in and
         // reads back as the TBCAD Stroke font.
         if (isStrokeFont(ts))
-            font = "txt.shx";
+            font = ts.shxFile.empty() ? "txt.shx" : ts.shxFile;
         o.str(3, font);
-        o.str(4, "");
+        o.str(4, ts.bigFontFile);
+        if (ts.annotative && !r12_) {
+            o.str(1001, "AcadAnnotative");
+            o.str(1000, "AnnotativeData");
+            o.str(1002, "{");
+            o.i(1070, 1);
+            o.i(1070, 0);
+            o.str(1002, "}");
+        }
     }
     tableEnd(o);
 }

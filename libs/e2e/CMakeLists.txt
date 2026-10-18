@@ -24,6 +24,7 @@ tbcad_add_tests(e2e
     tests/block_scale_tests.cpp
     tests/linetype_scale_tests.cpp
     tests/hatch_scale_tests.cpp
+    tests/text_fonts_tests.cpp
     tests/cmdline_ux_tests.cpp
     tests/drawing_objects_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry tbcad::appcore)
@@ -31,5 +32,6 @@ tbcad_add_tests(e2e
 if(TARGET tbcad_e2e_tests)
   target_compile_definitions(tbcad_e2e_tests PRIVATE
     TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus"
+    TBCAD_FONTS_DIR="${CMAKE_SOURCE_DIR}/assets/fonts"
     TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples")
 endif()

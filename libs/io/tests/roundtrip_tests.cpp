@@ -67,6 +67,24 @@ TEST_CASE("round trip: text and shapes in linetypes") {
     CHECK(canonicalDump(*back) == before);
 }
 
+TEST_CASE("round trip: shape font names and annotative text styles") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("ts");
+        TextStyle a;
+        a.name = "Plan";
+        a.shxFile = "romans.shx";
+        a.bigFontFile = "big.shx";
+        a.annotative = true;
+        REQUIRE(tx.addTextStyle(a).ok());
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    CHECK(before.find("romans.shx") != std::string::npos);
+    auto back = readOrFail(writeOrFail(doc, {}), nullptr);
+    CHECK(canonicalDump(*back) == before);
+}
+
 TEST_CASE("round trip: Thai strings, far coordinates and header settings survive") {
     auto doc = makeRichDocument();
     auto back = readOrFail(writeOrFail(*doc));
