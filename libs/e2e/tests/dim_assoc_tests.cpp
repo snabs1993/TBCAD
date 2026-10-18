@@ -220,3 +220,43 @@ TEST_CASE(
     });
     CHECK(loose == 1);
 }
+
+TEST_CASE("grip edits of the line move the dimension with it, and undo walks both back") {
+    Rig r;
+    const std::size_t base = r.host.undoStack().undoCount();
+    r.host.setSelection({r.line});
+    // Stretch the end grip.
+    REQUIRE(r.host.run("GRIPEDIT", {"100,0", "140,30"}).finished);
+    CHECK(r.l().b.x == doctest::Approx(140));
+    r.checkFollows();
+    CHECK(r.host.undoStack().undoCount() == base + 1);
+    // Stretch the start grip.
+    REQUIRE(r.host.run("GRIPEDIT", {"0,0", "-20,-10"}).finished);
+    r.checkFollows();
+    // Same through the Move mode of the middle grip.
+    r.host.setSelection({r.line});
+    const Vec2 mid = (r.l().a + r.l().b) * 0.5;
+    (void)r.host.run("GRIPEDIT", {std::to_string(mid.x) + "," + std::to_string(mid.y), "Move",
+                                  std::to_string(mid.x + 15) + "," + std::to_string(mid.y + 9)});
+    r.checkFollows();
+    while (r.host.undoStack().undoCount() > base)
+        REQUIRE(r.host.undo());
+    CHECK(r.l().b.x == doctest::Approx(100));
+    CHECK(r.l().a.x == doctest::Approx(0));
+    r.checkFollows();
+    while (r.host.redo()) {
+    }
+    r.checkFollows();
+}
+
+TEST_CASE("grip edit of the dimension's own text moves only the text") {
+    Rig r;
+    const Vec2 a = r.l().a, b = r.l().b;
+    r.host.setSelection({r.dim});
+    const Vec2 text = r.d().defPts.size() > 4 ? r.d().defPts[4] : Vec2{50, -30};
+    (void)r.host.run("GRIPEDIT", {std::to_string(text.x) + "," + std::to_string(text.y),
+                                  std::to_string(text.x + 5) + "," + std::to_string(text.y - 7)});
+    CHECK(distance(r.l().a, a) < 1e-9);
+    CHECK(distance(r.l().b, b) < 1e-9);
+    r.checkFollows();
+}
