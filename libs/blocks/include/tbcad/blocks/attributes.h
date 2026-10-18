@@ -38,8 +38,10 @@ std::vector<AttribValue> defaultAttribs(const Document& doc, BlockId block);
 std::vector<AttribValue> syncedAttribs(const Document& doc, const InsertData& insert);
 
 // Sets the attribs of every Insert of `block` (model space and nested in other blocks) to
-// syncedAttribs. Returns how many Inserts changed.
-std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block);
+// syncedAttribs. `renames` (old tag, new tag, applied in order) first moves the values of tags that
+// were renamed in the definition, so they are not lost. Returns how many Inserts changed.
+std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
+                        const std::vector<std::pair<std::string, std::string>>& renames = {});
 
 // The text entity an attribute definition turns into for one Insert: the value in place of the
 // tag, attdef cleared. Null when the attribute is invisible.
