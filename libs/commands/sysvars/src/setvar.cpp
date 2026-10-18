@@ -265,6 +265,39 @@ std::unique_ptr<cmd::Command> makeVarCommand(const std::string& name) {
     return std::make_unique<VarCommand>(name, it == variables().end() ? "" : it->help);
 }
 
+namespace {
+// LWDISPLAY: show lineweights on screen (the LWT button of the status bar). A setting of this
+// installation, not of the drawing.
+class LwDisplayCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LWDISPLAY"; }
+    std::string_view description() const override {
+        return "Show lineweights on screen (On/Off, same as the LWT button)";
+    }
+    Task run(CommandContext& ctx) override {
+        const auto cur = ctx.host().setting("view.lineweights");
+        const bool on = !cur || *cur == "1" || *cur == "true";
+        cmd::StringOptions so;
+        so.defaultValue = on ? "1" : "0";
+        auto val = co_await ctx.getString(
+            std::string("Enter new value for LWDISPLAY <") + *so.defaultValue + ">", so);
+        if (!val.ok())
+            co_return;
+        bool want = false;
+        if (!parseSwitch(cmd::trim(val.text), want)) {
+            ctx.message("LWDISPLAY is 0 or 1.");
+            co_return;
+        }
+        ctx.host().setSetting("view.lineweights", want ? "1" : "0");
+        ctx.message(std::string("LWDISPLAY = ") + (want ? "1" : "0"));
+    }
+};
+}  // namespace
+
+std::unique_ptr<cmd::Command> makeLwDisplayCommand() {
+    return std::make_unique<LwDisplayCommand>();
+}
+
 std::unique_ptr<cmd::Command> makeSetvarCommand() {
     return std::make_unique<SetvarCommand>();
 }

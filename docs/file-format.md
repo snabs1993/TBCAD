@@ -48,6 +48,7 @@ error, an unknown chunk is kept whatever its flags.
 | `HEAD` | header variables | exactly 1 |
 | `STRS` | string table | exactly 1 |
 | `LTYP` | linetypes | 0..1 |
+| `LTMK` | text and shapes in linetypes (format 1.13; ancillary) | 0..1 |
 | `TSTY` | text styles | 0..1 |
 | `DSTY` | dimension styles | 0..1 |
 | `LAYR` | layers, including the sub-layer tree | 0..1 |
@@ -105,6 +106,8 @@ exactly as saved, including gaps left by deleted rows, so ids are never reused a
 
 **LTYP** row: `id`, `name`, `description` (string indexes), `varint n`, `n` × `f64` pattern
 (mm; + dash, − gap, 0 dot; empty = continuous).
+
+**LTMK**: `varint n`, then `n` × (`varint linetype id`, `varint m`, `m` × mark: `u8 kind` (0 text, 1 shape), `u8 rotation` (0 relative, 1 absolute, 2 upright), `f64 offset` (distance along the pattern cycle, mm), `string text` (the text, or the shape name), `string style` (text style name), `f64 scale`, `f64 rotation` (radians), `v2 shift`).
 
 **TSTY** row: `id`, `name`, `fontFamily`, `fontFile`, `f64 widthFactor`, `f64 oblique`.
 

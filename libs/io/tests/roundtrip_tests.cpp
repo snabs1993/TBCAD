@@ -37,6 +37,36 @@ TEST_CASE("round trip: every entity kind and table, canonical dump identical") {
     }
 }
 
+TEST_CASE("round trip: text and shapes in linetypes") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("lt");
+        Linetype lt;
+        lt.name = "GAS";
+        lt.pattern = {10, -5};
+        LinetypeMark t;
+        t.text = "GAS \xe0\xb8\x81";
+        t.style = "Standard";
+        t.scale = 1.5;
+        t.rotation = 0.25;
+        t.rotationKind = LinetypeMark::Rotation::Upright;
+        t.offset = 10;
+        t.shift = {-1, 0.5};
+        LinetypeMark s;
+        s.kind = LinetypeMark::Kind::Shape;
+        s.text = "CIRC1";
+        s.offset = 15;
+        lt.marks = {t, s};
+        REQUIRE(tx.addLinetype(lt).ok());
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    CHECK(before.find("mark") != std::string::npos);
+    auto bytes = writeOrFail(doc, {});
+    auto back = readOrFail(bytes, nullptr);
+    CHECK(canonicalDump(*back) == before);
+}
+
 TEST_CASE("round trip: Thai strings, far coordinates and header settings survive") {
     auto doc = makeRichDocument();
     auto back = readOrFail(writeOrFail(*doc));

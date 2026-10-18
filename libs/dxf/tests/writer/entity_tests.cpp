@@ -1120,4 +1120,57 @@ TEST_CASE("polyline linetype generation (flag 128) and the linetype scale variab
     CHECK_FALSE(plineGen(h));
 }
 
+TEST_CASE("text and shapes in a linetype survive DXF with the pattern unchanged") {
+    Document doc;
+    {
+        auto tx = doc.begin("marks");
+        TextStyle ts;
+        ts.name = "Notes";
+        REQUIRE(tx.addTextStyle(ts).ok());
+        Linetype lt;
+        lt.name = "GAS";
+        lt.pattern = {10, -4, 0, -6};
+        LinetypeMark t;
+        t.text = "GAS";
+        t.style = "Notes";
+        t.scale = 1.5;
+        t.rotation = 0.5;
+        t.rotationKind = LinetypeMark::Rotation::Absolute;
+        t.offset = 14;
+        t.shift = {-1, -0.5};
+        LinetypeMark s;
+        s.kind = LinetypeMark::Kind::Shape;
+        s.text = "BOX";
+        s.scale = 2;
+        s.offset = 20;
+        LinetypeMark first;
+        first.text = "A";
+        first.offset = 0;
+        first.scale = 1;
+        lt.marks = {first, t, s};
+        REQUIRE(tx.addLinetype(lt).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const Linetype* got = nullptr;
+    for (const auto& [id, lt] : rt.back->linetypes())
+        if (lt.name == "GAS")
+            got = &lt;
+    REQUIRE(got);
+    CHECK(got->pattern == std::vector<double>{10, -4, 0, -6});
+    REQUIRE(got->marks.size() == 3);
+    CHECK(got->marks[0].text == "A");
+    CHECK(got->marks[0].offset == doctest::Approx(0));
+    CHECK(got->marks[1].text == "GAS");
+    CHECK(got->marks[1].style == "Notes");
+    CHECK(got->marks[1].scale == doctest::Approx(1.5));
+    CHECK(got->marks[1].rotation == doctest::Approx(0.5));
+    CHECK(got->marks[1].rotationKind == LinetypeMark::Rotation::Absolute);
+    CHECK(got->marks[1].offset == doctest::Approx(14));
+    CHECK(got->marks[1].shift.y == doctest::Approx(-0.5));
+    CHECK(got->marks[2].kind == LinetypeMark::Kind::Shape);
+    CHECK(got->marks[2].text == "BOX");
+    CHECK(got->marks[2].offset == doctest::Approx(20));
+}
+
 }  // namespace tbcad::dxf

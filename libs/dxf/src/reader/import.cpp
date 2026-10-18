@@ -393,6 +393,18 @@ void Importer::processTables(RecordReader& rr) {
     }
     createLayers();
     createLevels();
+    // Text in a linetype names its style by handle; now the styles are known.
+    for (LinetypeId id : marksAwaitingStyles_) {
+        (void)tx_->modifyLinetype(id, [&](Linetype& lt) {
+            for (LinetypeMark& m : lt.marks) {
+                if (m.style.empty() || m.style[0] != '\x01')
+                    continue;
+                auto it = styleNameByHandle_.find(m.style.substr(1));
+                m.style = it == styleNameByHandle_.end() ? std::string() : it->second;
+            }
+        });
+    }
+    marksAwaitingStyles_.clear();
 }
 
 // TBCAD level table: XDATA on the TBCAD application record (written by the exporter).
@@ -494,31 +506,92 @@ void Importer::readLinetype(const Record& r) {
     Linetype lt;
     lt.name = name;
     lt.description = dec(r.raw(3));
-    bool complex = false;
     double total = 0;
+    // Text and shape elements ride on a dash element (group 74): they sit where that element ends.
+    LinetypeMark mark;
+    bool haveMark = false;
+    bool lastZero = false;
+    auto closeMark = [&] {
+        if (haveMark) {
+            mark.offset = total;
+            lt.marks.push_back(std::move(mark));
+        }
+        mark = LinetypeMark{};
+        haveMark = false;
+    };
     for (const Group& g : r.g) {
-        if (g.code == 49) {
-            double v = g.number() * k_;
-            if (std::isfinite(v)) {
-                lt.pattern.push_back(v);
-                total += std::abs(v);
+        switch (g.code) {
+            case 49: {
+                closeMark();
+                double v = g.number() * k_;
+                if (std::isfinite(v)) {
+                    lt.pattern.push_back(v);
+                    total += std::abs(v);
+                    lastZero = v == 0;
+                }
+                break;
             }
-        } else if (g.code == 74 && g.integer() != 0) {
-            complex = true;
+            case 74: {
+                const std::int64_t f = g.integer();
+                if (f & 6) {
+                    haveMark = true;
+                    // An element of its own has no length: its 49 was a zero that is no dot.
+                    if (lastZero && !lt.pattern.empty())
+                        lt.pattern.pop_back();
+                    lastZero = false;
+                    mark.kind = (f & 4) ? LinetypeMark::Kind::Shape : LinetypeMark::Kind::Text;
+                    mark.rotationKind = (f & 8)   ? LinetypeMark::Rotation::Upright
+                                        : (f & 1) ? LinetypeMark::Rotation::Absolute
+                                                  : LinetypeMark::Rotation::Relative;
+                }
+                break;
+            }
+            case 9:
+                if (haveMark)
+                    mark.text = dec(g.str());
+                break;
+            case 340:
+                if (haveMark)
+                    mark.style = "\x01" + std::string(g.str());
+                break;
+            case 46:
+                if (haveMark)
+                    mark.scale = g.number() * k_;
+                break;
+            case 50:
+                if (haveMark)
+                    mark.rotation = g.number() * kPi / 180.0;
+                break;
+            case 44:
+                if (haveMark)
+                    mark.shift.x = g.number() * k_;
+                break;
+            case 45:
+                if (haveMark)
+                    mark.shift.y = g.number() * k_;
+                break;
+            default:
+                break;
         }
     }
-    if (!(total > 0))
+    closeMark();
+    if (!(total > 0)) {
         lt.pattern.clear();
-    if (complex) {
-        report_.info(code::kComplexLinetype,
-                     "linetype \"" + name + "\" has text or shape elements; only dashes are kept",
-                     r.line);
+        lt.marks.clear();
     }
+    for (LinetypeMark& m : lt.marks)
+        if (!std::isfinite(m.scale) || !std::isfinite(m.rotation))
+            m = LinetypeMark{};
+    const bool styled = std::any_of(lt.marks.begin(), lt.marks.end(), [](const LinetypeMark& m) {
+        return !m.style.empty() && m.style[0] == '\x01';
+    });
     tbcad::Result<LinetypeId> id = tx_->addLinetype(std::move(lt));
     if (!id) {
         report_.warn(code::kRejected, "linetype \"" + name + "\": " + id.error().message, r.line);
         return;
     }
+    if (styled)
+        marksAwaitingStyles_.push_back(id.value());
     ltypeByRaw_[fold(r.raw(2))] = id.value();
 }
 
@@ -546,6 +619,8 @@ void Importer::readStyle(const Record& r) {
         return;
     if (r.has(5) && r.num(40) > 0)
         styleHeights_[std::string(r.raw(5))] = r.num(40) * k_;
+    if (r.has(5))
+        styleNameByHandle_[std::string(r.raw(5))] = name;
     TextStyle ts;
     ts.name = name;
     ts.fontFile = dec(r.raw(3));

@@ -418,6 +418,15 @@ std::string canonicalDump(const Document& doc) {
         for (double d : r.pattern)
             o << " " << d;
         o << "\n";
+        for (const LinetypeMark& m : r.marks) {
+            o << "  mark " << static_cast<int>(m.kind) << " " << static_cast<int>(m.rotationKind)
+              << " @" << m.offset << " ";
+            o.quoted(m.text);
+            o << " ";
+            o.quoted(m.style);
+            o << " s" << m.scale << " r" << m.rotation << " (" << m.shift.x << "," << m.shift.y
+              << ")\n";
+        }
     }
     for (const auto& [id, r] : doc.textStyles()) {
         o << "textstyle " << id << " ";

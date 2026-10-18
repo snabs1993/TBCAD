@@ -16,6 +16,8 @@ inline bool isBackgroundColor(Rgba c) {
     return c.a == 1 && c.r == 0 && c.g == 0 && c.b == 0;
 }
 
+struct LinetypeMark;
+
 // Fully resolved drawing style (ByLayer/ByBlock already applied by whoever builds the list).
 struct DisplayStyle {
     Rgba color{};
@@ -24,6 +26,9 @@ struct DisplayStyle {
     // document's linetype table and is valid while that linetype exists.
     const std::vector<double>* pattern = nullptr;
     double patternScale = 1;
+    // Text and shapes the linetype draws along the line (null = none). Drawn by buildDisplay, not
+    // by the renderer; points into the linetype table like `pattern`.
+    const std::vector<LinetypeMark>* marks = nullptr;
     LayerId layer{};
 };
 

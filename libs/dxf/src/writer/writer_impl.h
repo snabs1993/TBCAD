@@ -144,6 +144,7 @@ private:
     void writeLayers(Out& o, std::uint64_t table);
     void writeLinetypes(Out& o, std::uint64_t table);
     void writeStyles(Out& o, std::uint64_t table);
+    void writeMark(Out& o, const LinetypeMark& m);
     void writeDimStyles(Out& o, std::uint64_t table);
     void writeBlockRecords(Out& o, std::uint64_t table);
     void blockBegin(Out& o, const std::string& name, std::uint64_t rec, Vec2 base, int flags,
@@ -231,6 +232,8 @@ private:
     Out* o_ = nullptr;
     ExportSummary summary_{};
 
+    // Handles given to text styles before their table is written (linetype marks refer to them).
+    std::unordered_map<std::uint32_t, std::uint64_t> tsHandle_{};
     std::unordered_map<std::uint32_t, std::string> layerName_{}, ltName_{}, tsName_{}, dsName_{},
         blockName_{};
     NameSet layerSet_{}, ltSet_{}, tsSet_{}, dsSet_{}, blockSet_{};

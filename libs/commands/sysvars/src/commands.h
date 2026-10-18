@@ -11,6 +11,7 @@ std::unique_ptr<cmd::Command> makeRenameCommand();
 std::unique_ptr<cmd::Command> makeSetvarCommand();
 // A command named like a drawing variable that asks for its value (see SETVAR).
 std::unique_ptr<cmd::Command> makeVarCommand(const std::string& name);
+std::unique_ptr<cmd::Command> makeLwDisplayCommand();
 std::unique_ptr<cmd::Command> makeViewCommand();
 std::unique_ptr<cmd::Command> makeAddSelectedCommand();
 std::unique_ptr<cmd::Command> makeHyperlinkCommand();

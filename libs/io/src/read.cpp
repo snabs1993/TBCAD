@@ -83,6 +83,7 @@ public:
         doc_ = std::make_unique<Document>();
         Transaction tx = doc_->begin("load");
         loadLinetypes(tx);
+        loadLinetypeMarks(tx);
         loadTextStyles(tx);
         loadTextHeights(tx);
         loadDimStyles(tx);
@@ -113,6 +114,7 @@ private:
                 case kTsty:
                 case kTsth:
                 case kDstx:
+                case kLtmk:
                 case kDsty:
                 case kLayr:
                 case kLvls:
@@ -363,6 +365,45 @@ private:
                 bad("internal id mismatch");
             ++next;
         });
+    }
+
+    void loadLinetypeMarks(Transaction& tx) {
+        const RawChunk* c = find(kLtmk);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(2);
+        for (std::size_t i = 0; i < n; ++i) {
+            const LinetypeId id{id32(r)};
+            std::size_t nm = r.count(30);
+            std::vector<LinetypeMark> marks(nm);
+            for (LinetypeMark& m : marks) {
+                std::uint8_t kind = r.u8();
+                std::uint8_t rot = r.u8();
+                if (kind > 1 || rot > 2)
+                    bad("invalid linetype mark");
+                m.kind = static_cast<LinetypeMark::Kind>(kind);
+                m.rotationKind = static_cast<LinetypeMark::Rotation>(rot);
+                m.offset = r.f64();
+                m.text = str(r);
+                m.style = str(r);
+                m.scale = r.f64();
+                m.rotation = r.f64();
+                m.shift.x = r.f64();
+                m.shift.y = r.f64();
+                if (!std::isfinite(m.offset) || !std::isfinite(m.scale) ||
+                    !std::isfinite(m.rotation) || !std::isfinite(m.shift.x) ||
+                    !std::isfinite(m.shift.y))
+                    bad("invalid linetype mark");
+            }
+            if (!doc_->linetype(id))
+                continue;
+            check(tx.modifyLinetype(id, [&](Linetype& l) { l.marks = std::move(marks); }),
+                  "linetype");
+        }
+        if (!r.atEnd())
+            bad("trailing data in LTMK");
     }
 
     void loadTextStyles(Transaction& tx) {

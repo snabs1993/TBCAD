@@ -137,6 +137,29 @@ TEST_CASE("A3 landscape 1:100: a 10,000 mm line is 100.00 mm on the page") {
     checkWithQpdf(sheet.value(), "a3_1_100");
 }
 
+TEST_CASE("the lineweight scale multiplies pen widths but not hairlines") {
+    Document doc;
+    Entity heavy = line({0, 0}, {100, 0});
+    heavy.common.lineweight = LineWeight::hundredths(50);  // 0.50 mm
+    addEntity(doc, std::move(heavy));
+    auto widthOf = [&](const PlotSettings& s) {
+        auto sheet = buildSheet(doc, s);
+        REQUIRE(sheet.ok());
+        double w = 0;
+        for (const PlotPrimitive& p : sheet.value().prims)
+            if (const auto* path = std::get_if<PlotPath>(&p))
+                w = path->style.widthMm;
+        return w;
+    };
+    PlotSettings s;
+    const double base = widthOf(s);
+    CHECK(base == doctest::Approx(0.5));
+    s.lineweightScale = 2;
+    CHECK(widthOf(s) == doctest::Approx(1.0));
+    s.lineweights = false;  // everything a hairline: the scale leaves it alone
+    CHECK(widthOf(s) == doctest::Approx(s.hairlineMm));
+}
+
 TEST_CASE("fit to paper picks the scale from the extent") {
     Document doc;
     addEntity(doc, line({0, 0}, {2000, 1000}));

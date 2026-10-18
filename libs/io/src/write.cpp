@@ -129,6 +129,27 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 ltyp.f64(d);
         }
 
+        ByteWriter ltmk;
+        std::size_t ltmkCount = 0;
+        for (const auto& [id, r] : doc.linetypes()) {
+            if (r.marks.empty())
+                continue;
+            ltmk.varint(id.value);
+            ltmk.varint(r.marks.size());
+            for (const LinetypeMark& m : r.marks) {
+                ltmk.u8(static_cast<std::uint8_t>(m.kind));
+                ltmk.u8(static_cast<std::uint8_t>(m.rotationKind));
+                ltmk.f64(m.offset);
+                ltmk.varint(st.intern(m.text));
+                ltmk.varint(st.intern(m.style));
+                ltmk.f64(m.scale);
+                ltmk.f64(m.rotation);
+                ltmk.f64(m.shift.x);
+                ltmk.f64(m.shift.y);
+            }
+            ++ltmkCount;
+        }
+
         ByteWriter tsty;
         tsty.varint(doc.textStyles().size());
         for (const auto& [id, r] : doc.textStyles()) {
@@ -452,6 +473,12 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
         addRaw(kStrs, std::move(strs.bytes()));
         addRaw(kLtyp, std::move(ltyp.bytes()));
         addRaw(kTsty, std::move(tsty.bytes()));
+        if (ltmkCount > 0) {
+            ByteWriter body;
+            body.varint(ltmkCount);
+            body.raw(ltmk.bytes());
+            addRaw(kLtmk, std::move(body.bytes()));
+        }
         if (tsthCount > 0) {
             ByteWriter body;
             body.varint(tsthCount);

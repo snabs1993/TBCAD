@@ -146,3 +146,35 @@ TEST_CASE("-LINETYPE Load / File / List through the script host") {
     host.run("-LINETYPE", {"File", "/definitely/not/here.lintypes", cmd::ScriptItem::enter()});
     CHECK(host.logContains("Cannot open"));
 }
+
+TEST_CASE("acad.lin format: plain, text and shape linetypes") {
+    LinetypeFile f = parseLinetypes(
+        ";; comment\n"
+        "*DASHED,Dashed __ __ __\n"
+        "A,.5,-.25\n"
+        "*GAS_LINE,Gas line ----GAS----GAS----\n"
+        "A,.5,-.2,[\"GAS\",STANDARD,S=.1,R=0.0,X=-0.1,Y=-.05],-.25\n"
+        "*FENCELINE1,Fenceline ----0----0----\n"
+        "A,.25,-.1,[CIRC1,ltypeshp.shx,x=-.1,s=.1],-.1,1\n");
+    CHECK(f.problems.empty());
+    REQUIRE(f.linetypes.size() == 3);
+    CHECK(f.linetypes[0].pattern == std::vector<double>{0.5, -0.25});
+    CHECK(f.linetypes[0].marks.empty());
+
+    const Linetype& gas = f.linetypes[1];
+    CHECK(gas.pattern == std::vector<double>{0.5, -0.2, -0.25});
+    REQUIRE(gas.marks.size() == 1);
+    CHECK(gas.marks[0].kind == LinetypeMark::Kind::Text);
+    CHECK(gas.marks[0].text == "GAS");
+    CHECK(gas.marks[0].style == "STANDARD");
+    CHECK(gas.marks[0].scale == doctest::Approx(0.1));
+    CHECK(gas.marks[0].offset == doctest::Approx(0.7));
+    CHECK(gas.marks[0].shift.x == doctest::Approx(-0.1));
+    CHECK(gas.marks[0].shift.y == doctest::Approx(-0.05));
+
+    const Linetype& fence = f.linetypes[2];
+    REQUIRE(fence.marks.size() == 1);
+    CHECK(fence.marks[0].kind == LinetypeMark::Kind::Shape);
+    CHECK(fence.marks[0].text == "CIRC1");
+    CHECK(fence.marks[0].offset == doctest::Approx(0.35));
+}

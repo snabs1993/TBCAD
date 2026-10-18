@@ -5,6 +5,7 @@ tbcad_add_library(geom
     src/entity_ops.cpp
     src/grips.cpp
     src/intersect.cpp
+    src/linetype_marks.cpp
     src/polybool.cpp
     src/spline.cpp
     src/transform.cpp
