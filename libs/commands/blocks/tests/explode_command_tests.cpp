@@ -104,3 +104,22 @@ TEST_CASE("NCOPY copies the nested object nearest to the pick out of a block") {
     REQUIRE(l);
     CHECK(near(l->a, {100, 100}));
 }
+
+TEST_CASE("XPLODE explodes and gives the parts the chosen colour") {
+    Fixture f;
+    EntityId a = f.addLine(10, 10, 20, 10);
+    f.host->setSelection({a});
+    f.host->run("BLOCK", {"Door", "10,10", "C"});
+    f.host->run("INSERT", {"Door", "100,100"});
+    EntityId ins = f.modelSpace().back();
+    f.host->setSelection({ins});
+    CHECK(f.host->run("XPLODE", {"Color", "5", "Explode"}).finished);
+    CHECK_FALSE(f.doc.contains(ins));
+    bool found = false;
+    for (EntityId id : f.modelSpace())
+        if (entityAs<LineData>(*f.doc.find(id))) {
+            found = true;
+            CHECK(f.doc.find(id)->common.color == Color::index(5));
+        }
+    CHECK(found);
+}

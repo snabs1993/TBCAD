@@ -218,3 +218,8 @@ a point), `Csv` (a file with `Block,Count,Total`) or `None`.
 
 The ImGui part of the palette is compiled only with `TBCAD_BUILD_APP`; everything it shows comes
 from `palette.h`, which the tests cover.
+
+## XPLODE
+
+**XPLODE** explodes like EXPLODE but first lets you set the **Layer** (by name) and **Color** (1-255 or ByLayer)
+the parts get; **Explode** (the default) then does it. Without an option the parts keep what EXPLODE gives them.
