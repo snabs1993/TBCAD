@@ -228,3 +228,5 @@ the parts get; **Explode** (the default) then does it. Without an option the par
 
 **BATTMAN** lists the attribute definitions of a block (tag, prompt, default, invisible). **Edit** a tag to change its **Tag**,
 **Prompt**, **Default** or **Invisible** flag; when you finish, the inserts of the block are brought in line like ATTSYNC does.
+
+`BLOCKREPLACE` swaps the block of the selected inserts for another block you name. Each insert keeps its position, scale and rotation; attribute values, dynamic values and clipping are reset for the new block.

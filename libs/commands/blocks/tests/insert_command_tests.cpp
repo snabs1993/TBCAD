@@ -105,3 +105,30 @@ TEST_CASE("INSERT Explode places the parts and undoes in one step") {
     CHECK(f.host->undo());
     CHECK(f.modelSpace().empty());
 }
+
+TEST_CASE("BLOCKREPLACE swaps the block and keeps the placement") {
+    Fixture f;
+    EntityId a = f.addLine(0, 0, 10, 0);
+    EntityId c = f.addCircle(0, 0, 3);
+    f.host->setSelection({a});
+    f.host->run("BLOCK", {"Old", "0,0", "D"});
+    f.host->setSelection({c});
+    f.host->run("BLOCK", {"New", "0,0", "D"});
+    f.host->run("INSERT", {"Old", "50,60"});
+    REQUIRE(f.modelSpace().size() == 1);
+    EntityId ins = f.modelSpace().back();
+    const BlockDef* nb = f.doc.blockByName("New");
+    REQUIRE(nb != nullptr);
+    const BlockId newId = nb->id;
+    f.host->setSelection({ins});
+    f.host->run("BLOCKREPLACE", {"Nope"});
+    CHECK(f.host->logContains("no block named"));
+    f.host->setSelection({ins});
+    CHECK(f.host->run("BLOCKREPLACE", {"New"}).finished);
+    const auto* d = entityAs<InsertData>(*f.doc.find(ins));
+    REQUIRE(d != nullptr);
+    CHECK(d->block == newId);
+    CHECK(near(d->position, {50, 60}));
+    CHECK(f.host->undo());
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->block != newId);
+}

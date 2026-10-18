@@ -64,6 +64,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXPathCommand());
     (void)registry.add(makeXRelinkCommand());
     (void)registry.add(makeBlockCountCommand());
+    (void)registry.add(makeBlockReplaceCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
