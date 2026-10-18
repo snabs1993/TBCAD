@@ -9,6 +9,7 @@
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/hatch/pattern.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::dxf {
 namespace detail {
@@ -902,6 +903,48 @@ TEST_CASE("ordinate dimensions keep their kind and datum through the DXF round t
     CHECK(x == 1);
     CHECK(y == 1);
     CHECK(others >= 3);
+}
+
+TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with its settings") {
+    Document doc;
+    {
+        auto tx = doc.begin("picture");
+        BlockId b = tx.addBlock(BlockDef{.name = "logo", .base = {0, 0}}).value();
+        PolylineData frame;
+        frame.closed = true;
+        for (Vec2 v : {Vec2{0, 0}, Vec2{40, 0}, Vec2{40, 20}, Vec2{0, 20}})
+            frame.v.push_back({v, 0, 0, 0});
+        REQUIRE(tx.add(make(frame), b).ok());
+        REQUIRE(tx.modifyBlock(b, [](BlockDef& d) { d.xrefPath = "pics/logo.png"; }).ok());
+        underlay::ImageParams ip;
+        ip.fade = 40;
+        ip.u0 = 0.25;
+        ip.u1 = 0.75;
+        ip.v0 = 0.25;
+        ip.v1 = 0.75;
+        REQUIRE(underlay::setImageParams(tx, "logo", ip));
+        REQUIRE(tx.add(make(InsertData{b, {100, 200}, {2, 2}, 0.5})).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("IMAGEDEF") != std::string::npos);
+    CHECK(rt.bytes.find("AcDbRasterImage") != std::string::npos);
+    const InsertData* ins = nullptr;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    CHECK(ins->position == Vec2{100, 200});
+    CHECK(ins->scale.x == doctest::Approx(2));
+    CHECK(ins->rotation == doctest::Approx(0.5));
+    const BlockDef* b = rt.back->block(ins->block);
+    REQUIRE(b);
+    CHECK(b->xrefPath == "pics/logo.png");
+    const underlay::ImageParams p = underlay::imageParams(rt.back->header(), b->name);
+    CHECK(p.fade == doctest::Approx(40));
+    CHECK(p.u0 == doctest::Approx(0.25));
+    CHECK(p.v1 == doctest::Approx(0.75));
 }
 
 }  // namespace tbcad::dxf

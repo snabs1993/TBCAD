@@ -64,5 +64,11 @@ file, how much to fade it (0 to 95 percent, default 30), a name and the insertio
   time stamp; textures not used for a while are dropped.
 * Snapping skips the frame, like PDF underlays. The hide/freeze state of the insert's layer and of
   the layer named like the picture decides whether it is shown.
-* Limits: up to 16384 x 16384 pixels and 100 million pixels in all. Pictures are not printed or
-  exported by PLOT yet.
+* Limits: up to 16384 x 16384 pixels and 100 million pixels in all.
+* Pictures are plotted: PDF (the pixels are embedded once, with fade as transparency), SVG
+  (embedded PNG), PNG/JPEG export and the Windows printer. The clip is applied; the frame is not
+  plotted. In grey or monochrome plots the picture is grey. They count for plot extents. The file
+  is found from the drawing's folder, so save the drawing first; a missing file prints nothing.
+* DXF: a picture is written as `IMAGE` + `IMAGEDEF` (rectangle clip and fade kept; the file path
+  is stored as given) and read back the same way, so logos and site photos in a drawing from
+  another program come in. A polygon clip is not supported (the whole picture shows).

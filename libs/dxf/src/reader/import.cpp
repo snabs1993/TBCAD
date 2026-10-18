@@ -235,6 +235,10 @@ void Importer::processObjects(RecordReader& rr) {
             readLayoutObject(r);
             continue;
         }
+        if (r.type == "IMAGEDEF") {
+            imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
+            continue;
+        }
         if (r.type != "XRECORD")
             continue;
         const Group* g = r.find(1);
@@ -1139,6 +1143,7 @@ void Importer::finishLayouts() {
 
 void Importer::finish() {
     finishLayouts();
+    resolveImages();
     for (const auto& [f, id] : blockByFold_) {
         if (!blockDefined_.count(id)) {
             const BlockDef* b = doc_->block(id);

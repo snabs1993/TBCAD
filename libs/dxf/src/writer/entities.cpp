@@ -10,6 +10,7 @@
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 #include "tbcad/text/field.h"
+#include "tbcad/underlay/image.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -752,7 +753,67 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
 // ---------------------------------------------------------------------------------------------
 // Inserts, leaders, proxies, solids
 
+// The picture's size in pixels is the frame polyline of its block (pixel units, origin
+// bottom-left).
+bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner) {
+    const BlockDef* bd = doc_.block(d.block);
+    if (!bd || bd->xrefPath.empty() || !underlay::isImagePath(bd->xrefPath))
+        return false;
+    if (r12_) {
+        skipEntity("IMAGE", "this DXF version has no pictures");
+        return true;
+    }
+    double w = 0, h = 0;
+    for (EntityId id : bd->entities)
+        if (const Entity* e = doc_.find(id))
+            if (const auto* pl = entityAs<PolylineData>(*e))
+                for (const PolyVertex& v : pl->v) {
+                    w = std::max(w, v.p.x);
+                    h = std::max(h, v.p.y);
+                }
+    if (!(w >= 1) || !(h >= 1)) {
+        skipEntity("IMAGE", "the picture \"" + bd->name + "\" has no frame to take its size from");
+        return true;
+    }
+    const underlay::ImageParams ip = underlay::imageParams(doc_.header(), bd->name);
+    ImageOut img;
+    img.name = bd->name;
+    img.path = bd->xrefPath;
+    img.w = w;
+    img.h = h;
+    img.def = newHandle();
+    img.reactor = newHandle();
+    img.image = nextHandle_;  // the handle head() gives the IMAGE
+    const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+    const Vec2 u{c * d.scale.x, sn * d.scale.x}, v{-sn * d.scale.y, c * d.scale.y};
+    const Vec2 origin = d.position - u * bd->base.x - v * bd->base.y;
+    head("IMAGE", p, owner, "AcDbRasterImage");
+    Out& o = *o_;
+    o.i(90, 0);
+    o.pt(10, origin);
+    o.pt(11, u);
+    o.pt(12, v);
+    o.d(13, w);
+    o.d(23, h);
+    o.h(340, img.def);
+    o.i(70, 7);  // shown, shown when not aligned, clipped
+    o.i(280, 1);
+    o.i(281, 50);
+    o.i(282, 50);
+    o.i(283, static_cast<long long>(std::lround(ip.fade)));
+    o.h(360, img.reactor);
+    o.i(71, 1);  // rectangular clip: two corners, in pixels counted from the lower-left corner
+    o.i(91, 2);
+    o.pt2(14, {ip.u0 * w - 0.5, (1 - ip.v1) * h - 0.5});
+    o.pt2(14, {ip.u1 * w - 0.5, (1 - ip.v0) * h - 0.5});
+    images_.push_back(std::move(img));
+    count("IMAGE");
+    return true;
+}
+
 void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owner) {
+    if (writeImage(p, d, owner))
+        return;
     std::string name = blockNameOf(d.block);
     if (name.empty()) {
         skipEntity("INSERT", "its block definition does not exist");

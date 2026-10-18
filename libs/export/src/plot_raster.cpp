@@ -232,6 +232,66 @@ struct Mapper {
     Vec2 px(Vec2 mm) const { return {mm.x * k, height - mm.y * k}; }
 };
 
+// A picture: every device pixel inside its (possibly turned) rectangle takes the average of 2x2
+// samples of the picture, blended over the sheet by the picture's opacity and alpha.
+void drawPicture(Canvas& cv, const PlotImage& im, const std::array<Vec2, 4>& dev) {
+    const ImageData& src = *im.data;
+    if (src.width <= 0 || src.height <= 0)
+        return;
+    const Vec2 o = dev[0], ex = dev[1] - dev[0], ey = dev[3] - dev[0];
+    const double det = ex.x * ey.y - ex.y * ey.x;
+    if (std::abs(det) < 1e-9)
+        return;
+    double x0 = dev[0].x, x1 = x0, y0 = dev[0].y, y1 = y0;
+    for (const Vec2& d : dev) {
+        x0 = std::min(x0, d.x);
+        x1 = std::max(x1, d.x);
+        y0 = std::min(y0, d.y);
+        y1 = std::max(y1, d.y);
+    }
+    const int colMin = std::max(cv.cx0, static_cast<int>(std::floor(x0)));
+    const int colMax = std::min(cv.cx1, static_cast<int>(std::ceil(x1)));
+    const int rowMin = std::max(cv.cy0, static_cast<int>(std::floor(y0)));
+    const int rowMax = std::min(cv.cy1, static_cast<int>(std::ceil(y1)));
+    for (int y = rowMin; y < rowMax; ++y) {
+        std::uint8_t* row = cv.rgb.data() + static_cast<std::size_t>(y) * cv.w * 3;
+        for (int x = colMin; x < colMax; ++x) {
+            double sum[4] = {0, 0, 0, 0};
+            int hits = 0;
+            for (int j = 0; j < 2; ++j)
+                for (int i = 0; i < 2; ++i) {
+                    const double dx = x + 0.25 + 0.5 * i - o.x, dy = y + 0.25 + 0.5 * j - o.y;
+                    const double sf = (dx * ey.y - dy * ey.x) / det;
+                    const double tf = (ex.x * dy - ex.y * dx) / det;
+                    if (sf < 0 || sf >= 1 || tf < 0 || tf >= 1)
+                        continue;
+                    const int ix = std::min(static_cast<int>(sf * src.width), src.width - 1);
+                    const int iy =
+                        std::min(static_cast<int>((1 - tf) * src.height), src.height - 1);
+                    const std::uint8_t* px =
+                        src.rgba.data() + (static_cast<std::size_t>(iy) * src.width + ix) * 4;
+                    const double a = px[3] / 255.0;
+                    sum[0] += px[0] * a;
+                    sum[1] += px[1] * a;
+                    sum[2] += px[2] * a;
+                    sum[3] += a;
+                    ++hits;
+                }
+            if (!hits)
+                continue;
+            // sum[0..2] are premultiplied; the missing samples (edge) count as transparent.
+            const double cover = sum[3] / 4.0 * im.opacity;
+            if (cover <= 0)
+                continue;
+            const double scale = im.opacity / 4.0;
+            for (int c = 0; c < 3; ++c) {
+                const double v = row[x * 3 + c] * (1 - cover) + sum[c] * scale;
+                row[x * 3 + c] = static_cast<std::uint8_t>(std::clamp(v + 0.5, 0.0, 255.0));
+            }
+        }
+    }
+}
+
 }  // namespace
 
 Result<RasterImage> rasterize(const PlotSheet& sheet, double dpi, std::int64_t maxPixels) {
@@ -317,6 +377,10 @@ Result<RasterImage> rasterize(const PlotSheet& sheet, double dpi, std::int64_t m
                 std::vector<Ring> one{circle(m.px(v), r)};
                 fillRings(cv, one, false, d->style.color);
             }
+        } else if (const auto* im = std::get_if<PlotImage>(&prim)) {
+            drawPicture(cv, *im,
+                        {m.px(im->corners[0]), m.px(im->corners[1]), m.px(im->corners[2]),
+                         m.px(im->corners[3])});
         } else if (const auto* c = std::get_if<PlotClip>(&prim)) {
             if (c->begin) {
                 stack.push_back(saveClip());

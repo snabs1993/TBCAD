@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <ostream>
 #include <sstream>
 
@@ -90,6 +92,19 @@ std::string xrefEntry(size_t offset) {
     return buf;
 }
 
+// zlib stream of `raw`; empty on failure.
+std::string deflate(const std::string& raw) {
+    mz_ulong bound = mz_compressBound(static_cast<mz_ulong>(raw.size()));
+    std::string z(bound, '\0');
+    mz_ulong zlen = bound;
+    if (mz_compress2(reinterpret_cast<unsigned char*>(z.data()), &zlen,
+                     reinterpret_cast<const unsigned char*>(raw.data()),
+                     static_cast<mz_ulong>(raw.size()), 6) != MZ_OK)
+        return {};
+    z.resize(zlen);
+    return z;
+}
+
 }  // namespace
 
 void PdfDocument::setInfo(std::string_view title, std::string_view creator) {
@@ -114,6 +129,40 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         buf += std::to_string(num) + " 0 obj\n";
     };
     auto end = [&] { buf += "endobj\n"; };
+    // Pictures come after the pages: each distinct pixel buffer is an image object, followed by a
+    // soft mask object when it has transparent pixels.
+    struct PicObj {
+        size_t image = 0, mask = 0;
+    };
+    std::map<const ImageData*, PicObj> picObjs;
+    size_t nextObj = pageObj0 + 2 * pages_.size();
+    for (const Page& p : pages_)
+        for (const Page::Pic& pic : p.pics_) {
+            if (picObjs.count(pic.data.get()))
+                continue;
+            PicObj o;
+            o.image = nextObj++;
+            const auto& px = pic.data->rgba;
+            bool alpha = false;
+            for (size_t k = 3; k < px.size() && !alpha; k += 4)
+                alpha = px[k] != 255;
+            if (alpha)
+                o.mask = nextObj++;
+            picObjs[pic.data.get()] = o;
+        }
+
+    auto resources = [&](const Page& p) {
+        if (p.pics_.empty())
+            return std::string("<< >>");
+        std::string xo, gs;
+        for (size_t k = 0; k < p.pics_.size(); ++k) {
+            xo += "/Im" + std::to_string(k) + " " +
+                  std::to_string(picObjs.at(p.pics_[k].data.get()).image) + " 0 R ";
+            gs += "/Gs" + std::to_string(k) + " << /ca " + formatNumber(p.pics_[k].opacity) +
+                  " /CA " + formatNumber(p.pics_[k].opacity) + " >> ";
+        }
+        return "<< /XObject << " + xo + ">> /ExtGState << " + gs + ">> >>";
+    };
 
     begin(1);
     buf += "<< /Type /Catalog /Pages 2 0 R >>\n";
@@ -144,7 +193,8 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         begin(pageNum);
         buf += "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " +
                formatNumber(p.widthMm() * kPtPerMm) + " " + formatNumber(p.heightMm() * kPtPerMm) +
-               "] /Resources << >> /Contents " + std::to_string(pageNum + 1) + " 0 R >>\n";
+               "] /Resources " + resources(p) + " /Contents " + std::to_string(pageNum + 1) +
+               " 0 R >>\n";
         end();
 
         // Content: one page-level cm so all drawing is in mm.
@@ -171,6 +221,47 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         buf += payload;
         buf += "\nendstream\n";
         end();
+    }
+
+    // Object numbers are the order of the offsets table, so write them by number.
+    std::vector<std::pair<const ImageData*, PicObj>> ordered(picObjs.begin(), picObjs.end());
+    std::sort(ordered.begin(), ordered.end(),
+              [](const auto& l, const auto& r) { return l.second.image < r.second.image; });
+    for (const auto& [data, o] : ordered) {
+        const auto& px = data->rgba;
+        const size_t n = static_cast<size_t>(data->width) * static_cast<size_t>(data->height);
+        std::string rgb(n * 3, '\0'), a(n, '\0');
+        for (size_t k = 0; k < n; ++k) {
+            rgb[3 * k] = static_cast<char>(px[4 * k]);
+            rgb[3 * k + 1] = static_cast<char>(px[4 * k + 1]);
+            rgb[3 * k + 2] = static_cast<char>(px[4 * k + 2]);
+            a[k] = static_cast<char>(px[4 * k + 3]);
+        }
+        const std::string z = deflate(rgb);
+        if (z.empty())
+            return makeError(ErrorCode::Io, "deflate failed");
+        const std::string dims =
+            "/Width " + std::to_string(data->width) + " /Height " + std::to_string(data->height);
+        begin(o.image);
+        buf += "<< /Type /XObject /Subtype /Image " + dims +
+               " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Interpolate true" +
+               (o.mask ? " /SMask " + std::to_string(o.mask) + " 0 R" : std::string()) +
+               " /Filter /FlateDecode /Length " + std::to_string(z.size()) + " >>\nstream\n";
+        buf += z;
+        buf += "\nendstream\n";
+        end();
+        if (o.mask) {
+            const std::string za = deflate(a);
+            if (za.empty())
+                return makeError(ErrorCode::Io, "deflate failed");
+            begin(o.mask);
+            buf += "<< /Type /XObject /Subtype /Image " + dims +
+                   " /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length " +
+                   std::to_string(za.size()) + " >>\nstream\n";
+            buf += za;
+            buf += "\nendstream\n";
+            end();
+        }
     }
 
     const size_t xrefPos = buf.size();

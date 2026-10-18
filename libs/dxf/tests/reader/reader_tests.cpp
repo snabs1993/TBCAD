@@ -4,6 +4,7 @@
 
 #include "reader_helpers.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::dxf {
 namespace {
@@ -887,6 +888,37 @@ TEST_CASE("MLINE: one polyline per element, offset along the miter direction") {
     CHECK(near(lines[1]->v[0].p, Vec2{0, -1}));
     CHECK(near(lines[1]->v[1].p, Vec2{51, -1}, 1e-9));
     CHECK(near(lines[1]->v[2].p, Vec2{51, 30}, 1e-9));
+}
+
+TEST_CASE("IMAGE: a picture block with the file of its IMAGEDEF, fade and rectangle clip") {
+    Pairs ent;
+    ent.section("ENTITIES");
+    ent.g(0, "IMAGE").g(8, "0").g(100, "AcDbRasterImage").g(10, 100.0).g(20, 200.0).g(30, 0.0);
+    ent.g(11, 2.0).g(21, 0.0).g(31, 0.0).g(12, 0.0).g(22, 2.0).g(32, 0.0).g(13, 40.0).g(23, 20.0);
+    ent.g(340, "2A").g(70, 7).g(280, 1).g(283, 40).g(71, 1).g(91, 2);
+    ent.g(14, 9.5).g(24, 4.5).g(14, 29.5).g(24, 14.5);
+    ent.end();
+    ent.section("OBJECTS");
+    ent.g(0, "IMAGEDEF").g(5, "2A").g(1, "pics\\logo.png").g(10, 40.0).g(20, 20.0);
+    Loaded l = load(ent.text + Pairs().end().g(0, "EOF").text);
+    const Document& doc = l.doc();
+    const InsertData* ins = nullptr;
+    doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    CHECK(near(ins->position, Vec2{100, 200}));
+    CHECK(ins->scale.x == doctest::Approx(2));
+    const BlockDef* b = doc.block(ins->block);
+    REQUIRE(b);
+    CHECK(b->xrefPath == "pics/logo.png");
+    const underlay::ImageParams p = underlay::imageParams(doc.header(), b->name);
+    CHECK(p.fade == doctest::Approx(40));
+    CHECK(p.u0 == doctest::Approx(0.25));
+    CHECK(p.u1 == doctest::Approx(0.75));
+    CHECK(p.v0 == doctest::Approx(0.25));
+    CHECK(p.v1 == doctest::Approx(0.75));
 }
 
 }  // namespace tbcad::dxf

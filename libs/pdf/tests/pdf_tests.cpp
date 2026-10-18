@@ -385,3 +385,29 @@ TEST_CASE("qpdf --check: A0 page") {
                      (in.pts[1].y - in.pts[0].y) * kMmPerPt) ==
           doctest::Approx(std::hypot(841.0, 1189.0)).epsilon(1e-5));
 }
+
+TEST_CASE("qpdf --check: pictures, with and without transparency, shared between pages") {
+    auto opaque = std::make_shared<tbcad::ImageData>();
+    opaque->width = 3;
+    opaque->height = 2;
+    opaque->rgba.assign(3 * 2 * 4, 255);
+    auto clear = std::make_shared<tbcad::ImageData>(*opaque);
+    clear->rgba[3] = 40;  // one translucent pixel gives the picture a soft mask
+    PdfDocument doc;
+    Page& a = doc.addPage(210, 297);
+    a.drawImage(opaque, 10, 10, 60, 10, 10, 40, 1.0);
+    a.drawImage(clear, 80, 10, 130, 20, 70, 40, 0.5);
+    Page& b = doc.addPage(210, 297);
+    b.drawImage(opaque, 20, 20, 50, 20, 20, 50, 1.0);
+    checkWithQpdf(doc, "pictures");
+    doc.setCompression(false);
+    const std::string out = bytes(doc);
+    CHECK(out.find("/Subtype /Image") != std::string::npos);
+    CHECK(out.find("/SMask") != std::string::npos);
+    // The shared buffer is written once: two images and one mask in all.
+    std::size_t count = 0;
+    for (std::size_t p = out.find("/Subtype /Image"); p != std::string::npos;
+         p = out.find("/Subtype /Image", p + 1))
+        ++count;
+    CHECK(count == 3);
+}

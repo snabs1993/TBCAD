@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <unordered_set>
 
 #include "tbcad/geom/entity.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::exportlib {
 
@@ -44,7 +47,13 @@ BBox2 extentsOf(const Document& doc) {
     BBox2 box;
     for (EntityId id : doc.modelSpace()) {
         const Entity* e = doc.find(id);
-        if (e && plottable(doc, *e) && geom::countsForExtents(*e))
+        if (!e || !plottable(doc, *e))
+            continue;
+        // A picture counts too: it is plotted (its frame is the size of the picture).
+        const InsertData* ins = entityAs<InsertData>(*e);
+        const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+        const bool picture = def && !def->xrefPath.empty() && underlay::isImagePath(def->xrefPath);
+        if (picture || geom::countsForExtents(*e))
             box.merge(geom::bounds(*e, doc));
     }
     return box;
@@ -232,6 +241,51 @@ Result<PlotLayout> computeLayout(const Document& doc, const PlotSettings& s) {
     return lay;
 }
 
+namespace {
+
+// Cuts the picture to its clip rectangle (whole pixels) and maps its corners to the sheet.
+std::optional<PlotImage> makePlotImage(const underlay::ImageInstance& im, const PlotLayout& lay) {
+    const ImageData& src = *im.data;
+    const int w = src.width, h = src.height;
+    if (w <= 0 || h <= 0 || src.rgba.size() < static_cast<std::size_t>(w) * h * 4)
+        return std::nullopt;
+    const int px0 = std::clamp(static_cast<int>(std::lround(im.uMin * w)), 0, w - 1);
+    const int px1 = std::clamp(static_cast<int>(std::lround(im.uMax * w)), px0 + 1, w);
+    const int py0 =
+        std::clamp(static_cast<int>(std::lround(im.vMin * h)), 0, h - 1);  // from the top
+    const int py1 = std::clamp(static_cast<int>(std::lround(im.vMax * h)), py0 + 1, h);
+    PlotImage out;
+    out.opacity = im.opacity;
+    if (px0 == 0 && px1 == w && py0 == 0 && py1 == h) {
+        out.data = im.data;
+    } else {
+        auto cut = std::make_shared<ImageData>();
+        cut->width = px1 - px0;
+        cut->height = py1 - py0;
+        cut->rgba.resize(static_cast<std::size_t>(cut->width) * cut->height * 4);
+        for (int y = 0; y < cut->height; ++y)
+            std::copy_n(src.rgba.begin() + (static_cast<std::size_t>(py0 + y) * w + px0) * 4,
+                        static_cast<std::size_t>(cut->width) * 4,
+                        cut->rgba.begin() + static_cast<std::size_t>(y) * cut->width * 4);
+        out.data = std::move(cut);
+    }
+    // The corners of the instance are for the (unrounded) fractions; move them to the rounded cut.
+    const double du = im.uMax - im.uMin, dv = im.vMax - im.vMin;
+    if (!(du > 0) || !(dv > 0))
+        return std::nullopt;
+    auto at = [&](double u, double v) {  // u from the left, v from the top (picture fractions)
+        const double s = (u - im.uMin) / du, t = 1.0 - (v - im.vMin) / dv;
+        const Vec2 bl = im.corners[0], br = im.corners[1], tl = im.corners[3];
+        return lay.toPaper(bl + (br - bl) * s + (tl - bl) * t);
+    };
+    const double fu0 = static_cast<double>(px0) / w, fu1 = static_cast<double>(px1) / w;
+    const double fv0 = static_cast<double>(py0) / h, fv1 = static_cast<double>(py1) / h;
+    out.corners = {at(fu0, fv1), at(fu1, fv1), at(fu1, fv0), at(fu0, fv0)};
+    return out;
+}
+
+}  // namespace
+
 void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<EntityId>& ids,
                     const PlotLayout& lay, const PlotSettings& s, const EntityFilter& skip) {
     Builder b{s, lay};
@@ -246,9 +300,60 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     // Slight growth so lines on the border are not culled away.
     const BBox2 cull = lay.area.inflated(1.0 / lay.paperPerUnit);
 
+    // Pictures go first so they lie under the drawing; the frame polyline of a picture is never
+    // plotted.
+    std::unordered_set<std::uint32_t> pictures;
+    {
+        underlay::ImageCache cache;
+        underlay::ImageParamTable params;
+        bool haveParams = false;
+        auto resolve = [&](std::string_view stored) {
+            std::filesystem::path p(stored);
+            if (p.is_relative() && !s.hostFile.empty())
+                p = s.hostFile.parent_path() / p;
+            return p;
+        };
+        for (EntityId id : ids) {
+            const Entity* e = doc.find(id);
+            const InsertData* ins = e ? entityAs<InsertData>(*e) : nullptr;
+            const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+            if (!def || def->xrefPath.empty() || !underlay::isImagePath(def->xrefPath))
+                continue;
+            pictures.insert(id.value);
+            if (!plottable(doc, *e) || (skip && skip(*e)))
+                continue;
+            if (const Layer* xl = doc.layerByName(def->name);
+                xl && !doc.effective(xl->id).visible())
+                continue;
+            if (!haveParams) {
+                params = underlay::readImageParams(doc.header());
+                haveParams = true;
+            }
+            auto im = underlay::imageOfInsert(doc, *e, params, cache, resolve);
+            if (!im)
+                continue;
+            if (auto pi = makePlotImage(*im, lay)) {
+                if (s.color != ColorMode::AsDisplayed) {  // pictures print in grey, not in colour
+                    auto grey = std::make_shared<ImageData>(*pi->data);
+                    for (std::size_t i = 0; i + 3 < grey->rgba.size(); i += 4) {
+                        const double l = 0.2126 * grey->rgba[i] + 0.7152 * grey->rgba[i + 1] +
+                                         0.0722 * grey->rgba[i + 2];
+                        grey->rgba[i] = grey->rgba[i + 1] = grey->rgba[i + 2] =
+                            static_cast<std::uint8_t>(std::lround(l));
+                    }
+                    pi->data = std::move(grey);
+                }
+                ++sheet.entityCount;
+                sheet.prims.emplace_back(std::move(*pi));
+            }
+        }
+    }
+
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
         if (!e || !plottable(doc, *e) || (skip && skip(*e)))
+            continue;
+        if (pictures.count(id.value))
             continue;
         BBox2 box = geom::bounds(*e, doc);
         if (!box.empty() && !box.intersects(cull))

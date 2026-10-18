@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <sstream>
 
 #include "tbcad/platform/paths.h"
@@ -157,6 +158,8 @@ std::vector<std::string> listStyleTables(const cmd::IHost& host) {
 
 PlotSettings loadSettings(const cmd::IHost& h) {
     PlotSettings s;
+    if (auto f = h.setting("document.file"); f && !f->empty())
+        s.hostFile = std::filesystem::path(std::u8string(f->begin(), f->end()));
     if (auto v = h.setting("plot.paper"); v && !v->empty())
         s.paperName = *v;
     s.customWidthMm = getD(h, "plot.custom.width", s.customWidthMm);

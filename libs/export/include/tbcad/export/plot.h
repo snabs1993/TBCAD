@@ -6,7 +6,9 @@
 // scaled by ltScale x entity scale (already in DisplayStyle::patternScale) and the plot scale.
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -53,6 +55,9 @@ struct PlotSettings {
     // Used for lineweight 0 ("thinnest") and when lineweights are off.
     double hairlineMm = 0.1;
     double chordTolMm = 0.01;  // on paper
+    // The drawing's file: relative paths of pictures (IMAGEATTACH) are taken from its folder.
+    // Pictures whose file cannot be found are left out.
+    std::filesystem::path hostFile{};
 };
 
 struct PlotLayout {
@@ -110,7 +115,14 @@ struct PlotClip {
     BBox2 rect{};
     bool begin = true;
 };
-using PlotPrimitive = std::variant<PlotPath, PlotArc, PlotFill, PlotDots, PlotClip>;
+// A picture (already cut to its clip rectangle): `corners` are the bottom-left, bottom-right,
+// top-right and top-left of the pixels on the sheet, in paper mm. `opacity` 0..1.
+struct PlotImage {
+    std::shared_ptr<const ImageData> data{};
+    std::array<Vec2, 4> corners{};
+    double opacity = 1;
+};
+using PlotPrimitive = std::variant<PlotPath, PlotArc, PlotFill, PlotDots, PlotClip, PlotImage>;
 
 struct PlotSheet {
     PlotLayout layout{};

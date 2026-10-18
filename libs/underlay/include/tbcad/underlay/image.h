@@ -10,6 +10,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -87,6 +88,12 @@ private:
     std::unordered_map<std::string, Entry> entries_{};
     std::uint64_t nextKey_ = 1;
 };
+
+// The picture of one insert of a picture block (null when it is not one or the file cannot be
+// read). `params` is readImageParams(doc.header()).
+std::optional<ImageInstance> imageOfInsert(
+    const Document& doc, const Entity& insert, const ImageParamTable& params, ImageCache& cache,
+    const std::function<std::filesystem::path(std::string_view)>& resolve);
 
 // The visible images of the drawing (model-space inserts of image blocks, whose entity and layer
 // are shown). `resolve` turns a stored path into a file. Drawn in the order of the model space.

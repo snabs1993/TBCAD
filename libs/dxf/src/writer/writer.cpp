@@ -3,8 +3,10 @@
 #include <cctype>
 #include <cmath>
 #include <functional>
+#include <set>
 
 #include "tbcad/geom/entity.h"
+#include "tbcad/underlay/image.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -171,6 +173,9 @@ void Writer::prepareBlocks() {
                         (def.name[1] == 'D' || def.name[1] == 'd');
         // Dimension blocks are regenerated from the dimension's graphics (see writeDimension).
         if (dimBlock && !referenced.count(id.value))
+            continue;
+        // A picture is written as an IMAGE entity; its block has no DXF form.
+        if (!def.xrefPath.empty() && underlay::isImagePath(def.xrefPath))
             continue;
         std::string name = cleanName(def.name, "block");
         if (anon && name[0] != '*')
@@ -691,6 +696,7 @@ std::string Writer::objectsSection() {
     const bool hasScales =
         !r12_ && (custom.count(kAnnoScaleKey) || custom.count(kAnnoScaleListKey));
     const bool scaleObjects = hasScales && opt_.version == DxfVersion::R2007;
+    const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
     std::uint64_t scaleRec = hasScales ? newHandle() : 0;
     std::vector<double> scaleList = annotationScaleList(doc_.header());
@@ -713,6 +719,10 @@ std::string Writer::objectsSection() {
     }
     o.raw(3, "ACAD_GROUP");
     o.h(350, groupDict);
+    if (!images_.empty()) {
+        o.raw(3, "ACAD_IMAGE_DICT");
+        o.h(350, imageDict);
+    }
     o.raw(3, "ACAD_LAYOUT");
     o.h(350, layoutDict);
     o.raw(3, "ACAD_MLINESTYLE");
@@ -772,6 +782,44 @@ std::string Writer::objectsSection() {
         o.raw(100, "AcDbXrecord");
         o.i(280, 1);
         o.str(1, text);
+    }
+
+    if (!images_.empty()) {
+        ownedDict(imageDict);
+        std::set<std::string> used;
+        std::vector<std::string> keys;
+        for (const ImageOut& im : images_) {
+            std::string key = cleanName(im.name, "image");
+            for (int n = 2; !used.insert(key).second; ++n)
+                key = cleanName(im.name, "image") + "_" + std::to_string(n);
+            keys.push_back(key);
+            o.str(3, key);
+            o.h(350, im.def);
+        }
+        for (const ImageOut& im : images_) {
+            o.zero("IMAGEDEF");
+            o.h(5, im.def);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, imageDict);
+            o.h(330, im.reactor);
+            o.raw(102, "}");
+            o.h(330, imageDict);
+            o.raw(100, "AcDbRasterImageDef");
+            o.i(90, 0);
+            o.str(1, im.path);
+            o.d(10, im.w);
+            o.d(20, im.h);
+            o.d(11, 1);
+            o.d(21, 1);
+            o.i(280, 1);
+            o.i(281, 0);
+            o.zero("IMAGEDEF_REACTOR");
+            o.h(5, im.reactor);
+            o.h(330, im.image);
+            o.raw(100, "AcDbRasterImageDefReactor");
+            o.i(90, 2);
+            o.h(330, im.image);
+        }
     }
 
     ownedDict(layoutDict);
@@ -1037,7 +1085,19 @@ Result<ExportResult> Writer::run() {
 
     std::string out = headerSection(nextHandle_);
     if (!r12_) {
-        out += "  0\r\nSECTION\r\n  2\r\nCLASSES\r\n  0\r\nENDSEC\r\n";
+        out += "  0\r\nSECTION\r\n  2\r\nCLASSES\r\n";
+        if (!images_.empty()) {
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nIMAGE\r\n  2\r\nAcDbRasterImage\r\n  3\r\nISM\r\n"
+                " 90\r\n127\r\n280\r\n0\r\n281\r\n1\r\n";
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nIMAGEDEF\r\n  2\r\nAcDbRasterImageDef\r\n  3\r\nISM\r\n"
+                " 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nIMAGEDEF_REACTOR\r\n  2\r\nAcDbRasterImageDefReactor\r\n"
+                "  3\r\nISM\r\n 90\r\n1\r\n280\r\n0\r\n281\r\n0\r\n";
+        }
+        out += "  0\r\nENDSEC\r\n";
     }
     out += tables;
     out += blocks;

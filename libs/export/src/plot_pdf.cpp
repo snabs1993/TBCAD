@@ -102,7 +102,10 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
             painter.fill(*f);
         else if (const auto* d = std::get_if<PlotDots>(&prim))
             painter.dots(*d);
-        else if (const auto* c = std::get_if<PlotClip>(&prim)) {
+        else if (const auto* im = std::get_if<PlotImage>(&prim)) {
+            page.drawImage(im->data, im->corners[0].x, im->corners[0].y, im->corners[1].x,
+                           im->corners[1].y, im->corners[3].x, im->corners[3].y, im->opacity);
+        } else if (const auto* c = std::get_if<PlotClip>(&prim)) {
             if (c->begin) {
                 page.save();
                 page.clipRect(c->rect.min.x, c->rect.min.y, c->rect.width(), c->rect.height());

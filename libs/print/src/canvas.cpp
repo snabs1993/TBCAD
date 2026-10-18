@@ -78,6 +78,11 @@ void drawSheet(const exportlib::PlotSheet& sheet, const DeviceMetrics& m, Canvas
             const double dia = widthPx(d->style, m);
             for (const Vec2& pt : d->pts)
                 canvas.dot(toDevice(pt, m), d->style.color, dia);
+        } else if (const auto* im = std::get_if<PlotImage>(&prim)) {
+            canvas.image(*im->data,
+                         {toDevice(im->corners[0], m), toDevice(im->corners[1], m),
+                          toDevice(im->corners[2], m), toDevice(im->corners[3], m)},
+                         im->opacity);
         } else if (const auto* c = std::get_if<PlotClip>(&prim)) {
             if (c->begin) {
                 BBox2 r;
