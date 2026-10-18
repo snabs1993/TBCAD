@@ -123,6 +123,15 @@ TEST_CASE("handles: counter bytes and relative codes") {
     CHECK(resolveHandle({4, 0x22}, 0x100) == 0x22);
 }
 
+TEST_CASE("BLL counts its bytes with a plain 3-bit length") {
+    auto d = fromBits("000  010 00000001 00000010  001 00000111");
+    BitReader r(d);
+    CHECK(r.bll() == 0);
+    CHECK(r.bll() == 0x0201);
+    CHECK(r.bll() == 7);
+    CHECK_FALSE(r.failed());
+}
+
 TEST_CASE("3B, object type of R2010 and bit-level raw values") {
     auto d = fromBits("0  10  110  111");
     BitReader r(d);

@@ -752,6 +752,9 @@ private:
                 l.plot = (values & 16) != 0;
                 l.lineweight = lineweightToDxf((values & 0x03E0) >> 5);
                 l.color = color.index;
+                // Bit 1 of the layer flags is "off"; the DXF way to say it is a negative colour.
+                if ((values & 2) != 0)
+                    l.color = -(l.color > 0 && l.color < 256 ? l.color : 7);
                 l.trueColor = color.rgb;
                 l.flags = (l.frozen ? 1 : 0) | (l.locked ? 4 : 0) | (xdep ? 16 : 0);
                 l.linetype = resolveHandle(lt, self);
@@ -2544,7 +2547,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r71: layout plot style table reaches the page setup, AC1032 header tried at several "
+    return "r72: R2018 header read right (plain 3-bit BLL, string stream end found, LTSCALE 800 on "
+           "the reference sheet), layers that are off are off, viewport and style sheet trace; "
+           "r71: layout plot style table reaches the page setup, AC1032 header tried at several "
            "offsets; r70: compressed streams of the small sections in the trace, converter fails "
            "(and "
            "writes nothing) when an unreadable DWG gives an empty drawing; r69: R2007 literal runs "
@@ -2638,8 +2643,8 @@ void describeObjects(Bytes file, const std::vector<MapEntry>& map, const Format&
         if (objBits >= 8 && objBits <= size * 8 &&
             (tails[type]++ < (type == 7 ? 4 : 2) || e.handle == 3105) &&
             (type == 49 || type == 51 || type == 53 || type == 57 || type == 69 || type == 19 ||
-             type == 1 || type == 18 || type == 17 || type == 7 || type == 44 || type == 45 ||
-             type == 21 || e.handle == 3105)) {
+             type == 1 || type == 34 || type == 18 || type == 17 || type == 7 || type == 44 ||
+             type == 45 || type == 21 || e.handle == 3105)) {
             Bytes ob = file.subspan(static_cast<std::size_t>(e.offset) + lead, size);
             auto dump = [&](std::size_t from, std::size_t to, std::size_t cap) {
                 std::string bits;

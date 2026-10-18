@@ -102,7 +102,7 @@ std::int32_t BitReader::bl() {
 }
 
 std::int64_t BitReader::bll() {
-    const unsigned len = b3();
+    const unsigned len = static_cast<unsigned>(bits(3));  // a plain 3-bit count, not 3B
     std::uint64_t v = 0;
     for (unsigned i = 0; i < len; ++i)
         v |= static_cast<std::uint64_t>(rc()) << (8 * i);
