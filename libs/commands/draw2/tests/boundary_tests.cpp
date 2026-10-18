@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include "test_util.h"
 
 using namespace tbcad;
@@ -93,7 +95,7 @@ TEST_CASE("BOUNDARY ignores objects on layers that are off and uses the host ind
         return ids;
     });
     f.host.run("BO", {"50,25", ""});
-    CHECK(queries == 1);
+    CHECK(queries >= 1);  // the window around the pick grows until the region fits
     CHECK(f.entities().size() == 5);
 }
 
@@ -105,4 +107,53 @@ TEST_CASE("BOUNDARY: one undo step covers every polyline made") {
     CHECK(f.host.undoStack().undoCount() == 1);
     f.host.undo();
     CHECK(f.entities().size() == 4);
+}
+
+TEST_CASE("BOUNDARY works on ellipses and spline-bounded shapes") {
+    Fixture f;
+    EllipseData e;
+    e.center = {0, 0};
+    e.majorAxis = {30, 0};
+    e.ratio = 0.5;
+    f.addEntity(std::move(e));
+    CHECK(f.host.run("BO", {"0,0", ""}).finished);
+    bool found = false;
+    for (const Entity* x : f.entities())
+        if (const auto* pl = std::get_if<PolylineData>(&x->data)) {
+            found = true;
+            CHECK(pl->closed);
+            CHECK(std::abs(geom::area(*pl) - kPi * 30 * 15) < 5);
+        }
+    CHECK(found);
+}
+
+TEST_CASE("BOUNDARY answers quickly in a drawing of 50 000 objects") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("fill");
+        auto line = [&](Vec2 a, Vec2 b) {
+            Entity e;
+            e.data = LineData{a, b};
+            REQUIRE(tx.add(std::move(e)).ok());
+        };
+        for (int i = 0; i < 12500; ++i) {
+            const double x = (i % 125) * 30.0, y = (i / 125) * 30.0;
+            line({x, y}, {x + 20, y});
+            line({x + 20, y}, {x + 20, y + 20});
+            line({x + 20, y + 20}, {x, y + 20});
+            line({x, y + 20}, {x, y});
+        }
+        tx.commit();
+    }
+    auto t0 = std::chrono::steady_clock::now();
+    f.host.run("BO", {"3010,1510", ""});
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    MESSAGE("50k objects: BOUNDARY pick " << ms << " ms");
+    CHECK(f.entities().size() == 50001);
+#ifdef NDEBUG
+    CHECK(ms < 200);
+#else
+    CHECK(ms < 2000);
+#endif
 }

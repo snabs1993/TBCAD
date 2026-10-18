@@ -77,3 +77,44 @@ TEST_CASE("REGION turns a circle into a closed polyline and ignores open objects
     (void)line;
     CHECK(f.host.run("BPOLY", {"50,50"}).finished == false);  // not enclosed: asks again
 }
+
+TEST_CASE("REGION, UNION and SUBTRACT on awkward shapes never crash and keep sane areas") {
+    // A bow-tie (self-intersecting polyline), an ellipse, a closed spline and a bulged shape.
+    Fixture f;
+    PolylineData bow;
+    bow.closed = true;
+    for (Vec2 p : {Vec2{0, 0}, Vec2{10, 10}, Vec2{10, 0}, Vec2{0, 10}}) {
+        PolyVertex v;
+        v.p = p;
+        bow.v.push_back(v);
+    }
+    auto a = f.addEntity(bow);
+    EllipseData e;
+    e.center = {5, 5};
+    e.majorAxis = {8, 0};
+    e.ratio = 0.5;
+    auto b = f.addEntity(std::move(e));
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 2, 3, 3, 3, 3};
+    sp.control = {{0, 20}, {10, 30}, {20, 20}, {20, 30}, {5, 40}, {0, 25}};
+    sp.closed = true;
+    auto c = f.addEntity(std::move(sp));
+    PolylineData bulged = box(30, 0, 40, 10);
+    bulged.v[0].bulge = 0.5;
+    bulged.v[2].bulge = -0.4;
+    auto d = f.addEntity(std::move(bulged));
+    for (EntityId id : {a, b, c, d})
+        f.host.run("REGION", {ScriptItem::pick(id, {5, 5}), ""});
+    for (const Entity* x : f.entities())
+        if (const auto* pl = std::get_if<PolylineData>(&x->data))
+            CHECK(std::isfinite(geom::area(*pl)));
+    const std::size_t before = f.entities().size();
+    f.host.run("UNION", {ScriptItem::pick(a, {5, 5}), ScriptItem::pick(b, {5, 5}), ""});
+    f.host.run("SU", {ScriptItem::pick(d, {35, 5}), "", ScriptItem::pick(d, {35, 5}), ""});
+    for (const Entity* x : f.entities())
+        if (const auto* pl = std::get_if<PolylineData>(&x->data))
+            CHECK(std::isfinite(geom::area(*pl)));
+    CHECK(f.entities().size() > 0);
+    (void)before;
+}

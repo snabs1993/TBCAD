@@ -28,6 +28,8 @@ inline constexpr const char* kSettingGradientKind = "hatch.gradient.kind";      
 inline constexpr const char* kSettingGradientColor1 = "hatch.gradient.color1";  // "r,g,b"
 inline constexpr const char* kSettingGradientColor2 = "hatch.gradient.color2";  // "r,g,b"
 inline constexpr const char* kSettingGap = "hatch.gap";  // gap tolerance in mm, 0 = off
+inline constexpr const char* kSettingIsland =
+    "hatch.island";  // "normal" (default), "outer", "ignore"
 inline constexpr const char* kSettingAssociative = "hatch.associative";  // "1" / "0", default "1"
 
 }  // namespace tbcad::hatchcmd
