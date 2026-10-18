@@ -1122,3 +1122,41 @@ TEST_CASE("viewport menu: Recent Input answers the prompt with a value typed bef
     });
     CHECK(radius25 == 2);
 }
+
+TEST_CASE("viewport menu: selection items fit the picked object and run") {
+    Harness h(1920, 1080);
+    threeLayers(h);  // three lines on three layers, current layer A-Notes
+    run(h, "-LAYER Make 0");
+    h.core().submitText("CIRCLE");
+    h.core().submitText("50,50");
+    h.core().submitText("5");
+    h.frame(3);
+    REQUIRE(entityCount(h) == 4);
+    const ImVec2 spot = screenOf(h, {600, 300});
+    auto menu = [&] {
+        h.click(spot.x, spot.y, 1);
+        h.frame(2);
+    };
+
+    // A lone circle: the curve edits are offered; the polyline and text ones are not.
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (std::holds_alternative<CircleData>(e.data))
+            h.core().setSelection({e.common.id});
+    });
+    h.frame(2);
+    REQUIRE(h.core().selection().size() == 1);
+    menu();
+    CHECK(h.has("Offset", "Popup"));
+    CHECK(h.has("Trim", "Popup"));
+    CHECK_FALSE(h.has("Edit Text", "Popup"));
+    CHECK_FALSE(h.has("Edit Polyline", "Popup"));
+    CHECK(h.has("Select Similar", "Popup"));
+
+    // Isolate Layer from the menu hides the other layers.
+    REQUIRE(h.click("Isolate Layer", "Popup"));
+    h.frame(3);
+    h.core().pressEscape();
+    CHECK_FALSE(layer(h, "A-Walls")->on);
+    CHECK_FALSE(layer(h, "A-Doors")->on);
+    CHECK(layer(h, "0")->on);
+}
