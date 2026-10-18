@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+#include <limits>
+#include <random>
 #include <set>
 
 #include "helpers.h"
@@ -699,4 +702,210 @@ TEST_CASE("round trip: layer, object and current transparency survive") {
     CHECK(back->find(first)->common.transparency == 70);
     CHECK(back->find(second)->common.transparency == kTransparencyByBlock);
     CHECK(back->header().currentTransparency == 10);
+}
+
+namespace {
+// Numbers a file must carry exactly: ordinary ones, tiny, huge, negative zero and powers of two.
+double fuzzNumber(std::mt19937_64& rng) {
+    switch (rng() % 8) {
+        case 0:
+            return 0.0;
+        case 1:
+            return -0.0;
+        case 2:
+            return std::numeric_limits<double>::denorm_min();
+        case 3:
+            return 1e9 * (static_cast<double>(rng() % 1000) / 999.0);
+        case 4:
+            return -static_cast<double>(rng() % 1000000) / 8.0;
+        case 5:
+            return std::ldexp(1.0, static_cast<int>(rng() % 60) - 30);
+        default:
+            return (static_cast<double>(rng() % 2000001) - 1000000.0) / 1000.0 + 1e-13;
+    }
+}
+// A strictly positive number of any size the generator knows.
+double fuzzPositive(std::mt19937_64& rng) {
+    const double v = std::abs(fuzzNumber(rng));
+    return v > 0 ? v : 1.0;
+}
+Vec2 fuzzPoint(std::mt19937_64& rng) {
+    return {fuzzNumber(rng), fuzzNumber(rng)};
+}
+std::string fuzzString(std::mt19937_64& rng) {
+    static const char* const parts[] = {
+        "",
+        "a",
+        "Hello",
+        "\xE0\xB8\xAA\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\xAA\xE0\xB8\x94\xE0\xB8\xB5",
+        "line\nbreak",
+        "tab\there",
+        "quote\"s",
+        "\\P",
+        "x y z"};
+    std::string s;
+    for (unsigned i = 0, n = rng() % 4; i < n; ++i)
+        s += parts[rng() % (sizeof parts / sizeof *parts)];
+    return s;
+}
+Entity fuzzEntity(std::mt19937_64& rng) {
+    Entity e;
+    EntityCommon& c = e.common;
+    c.linetypeScale = static_cast<float>(fuzzPositive(rng));
+    if (!std::isfinite(c.linetypeScale) || c.linetypeScale <= 0)
+        c.linetypeScale = 1;
+    switch (rng() % 5) {
+        case 0:
+            c.color = Color::byLayer();
+            break;
+        case 1:
+            c.color = Color::byBlock();
+            break;
+        case 2:
+            c.color = Color::index(static_cast<std::uint8_t>(1 + rng() % 255));
+            break;
+        default:
+            c.color = Color::rgb(static_cast<std::uint8_t>(rng()), static_cast<std::uint8_t>(rng()),
+                                 static_cast<std::uint8_t>(rng()));
+            break;
+    }
+    c.lineweight = rng() % 3 == 0 ? LineWeight::byBlock()
+                                  : LineWeight::hundredths(static_cast<std::int16_t>(rng() % 212));
+    c.transparency = rng() % 3 == 0 ? kTransparencyByLayer
+                                    : static_cast<std::int8_t>(rng() % (kTransparencyMax + 1));
+    c.visible = rng() % 4 != 0;
+    c.annotative = rng() % 5 == 0;
+    c.wipeout = rng() % 7 == 0;
+    if (c.annotative && rng() % 2)
+        c.annoScales = ScaleList(std::vector<double>{static_cast<double>(1 + rng() % 200), 50.0});
+    switch (rng() % 11) {
+        case 0:
+            e.data = LineData{fuzzPoint(rng), fuzzPoint(rng)};
+            break;
+        case 1:
+            e.data = CircleData{fuzzPoint(rng), fuzzPositive(rng)};
+            break;
+        case 2:
+            e.data = ArcData{fuzzPoint(rng), fuzzPositive(rng), 1.0, 2.5};
+            break;
+        case 3: {
+            PolylineData p;
+            for (unsigned i = 0, n = 1 + rng() % 12; i < n; ++i)
+                p.v.push_back(
+                    PolyVertex{fuzzPoint(rng), fuzzNumber(rng), fuzzNumber(rng), fuzzNumber(rng)});
+            p.closed = rng() % 2;
+            e.data = std::move(p);
+            break;
+        }
+        case 4:
+            e.data = PointData{fuzzPoint(rng)};
+            break;
+        case 5: {
+            EllipseData d;
+            d.center = fuzzPoint(rng);
+            d.majorAxis = {fuzzPositive(rng), fuzzNumber(rng)};
+            d.ratio = 0.5;
+            d.startParam = fuzzNumber(rng);
+            d.endParam = fuzzNumber(rng);
+            e.data = Indirect<EllipseData>(std::move(d));
+            break;
+        }
+        case 6: {
+            SplineData d;
+            d.degree = 1 + static_cast<int>(rng() % 5);
+            for (unsigned i = 0, n = 2 + rng() % 8; i < n; ++i) {
+                d.control.push_back(fuzzPoint(rng));
+                if (rng() % 2)
+                    d.weights.push_back(1.0 + (rng() % 100) / 7.0);
+            }
+            if (d.weights.size() != d.control.size())
+                d.weights.clear();
+            for (std::size_t i = 0; i < d.control.size() + d.degree + 1; ++i)
+                d.knots.push_back(static_cast<double>(i) * 0.5);
+            for (unsigned i = 0, n = rng() % 4; i < n; ++i)
+                d.fit.push_back(fuzzPoint(rng));
+            d.closed = rng() % 2;
+            d.periodic = rng() % 2;
+            e.data = Indirect<SplineData>(std::move(d));
+            break;
+        }
+        case 7: {
+            TextData d;
+            d.position = fuzzPoint(rng);
+            d.alignPoint = fuzzPoint(rng);
+            d.height = fuzzPositive(rng);
+            d.rotation = fuzzNumber(rng);
+            d.widthFactor = fuzzNumber(rng);
+            d.oblique = fuzzNumber(rng);
+            d.h = static_cast<HAlign>(rng() % 6);
+            d.v = static_cast<VAlign>(rng() % 4);
+            d.utf8 = fuzzString(rng);
+            e.data = Indirect<TextData>(std::move(d));
+            break;
+        }
+        case 8: {
+            RayData d;
+            d.origin = fuzzPoint(rng);
+            d.dir = {0.6, 0.8};
+            d.infinite = rng() % 2;
+            e.data = Indirect<RayData>(std::move(d));
+            break;
+        }
+        case 9: {
+            MlineData d;
+            d.style = fuzzString(rng);
+            d.scale = fuzzPositive(rng);
+            d.justification = static_cast<int>(rng() % 3);
+            d.closed = rng() % 2;
+            for (unsigned i = 0, n = rng() % 6; i < n; ++i)
+                d.v.push_back(fuzzPoint(rng));
+            e.data = Indirect<MlineData>(std::move(d));
+            break;
+        }
+        default: {
+            TableData d;
+            d.origin = fuzzPoint(rng);
+            d.rotation = fuzzNumber(rng);
+            const unsigned cols = 1 + rng() % 4, rows = 1 + rng() % 4;
+            for (unsigned i = 0; i < cols; ++i)
+                d.colWidths.push_back(1 + (rng() % 100) / 3.0);
+            for (unsigned i = 0; i < rows; ++i)
+                d.rowHeights.push_back(1 + (rng() % 100) / 3.0);
+            d.cells.resize(cols * rows);
+            for (TableCell& cell : d.cells)
+                cell.utf8 = fuzzString(rng);
+            d.titleRow = rng() % 2;
+            e.data = Indirect<TableData>(std::move(d));
+            break;
+        }
+    }
+    return e;
+}
+}  // namespace
+
+TEST_CASE("round trip fuzz: random entities of every simple kind and property survive exactly") {
+    std::mt19937_64 rng(20261018);
+    for (int round = 0; round < 40; ++round) {
+        Document doc;
+        {
+            Transaction tx = doc.begin("fuzz");
+            for (int i = 0, n = 1 + static_cast<int>(rng() % 60); i < n; ++i)
+                if (auto r = tx.add(fuzzEntity(rng)); !r.ok())
+                    FAIL_CHECK("rejected: " << r.error().message);
+            tx.commit();
+        }
+        const std::string before = canonicalDump(doc);
+        for (bool compress : {true, false}) {
+            io::WriteOptions o;
+            o.compress = compress;
+            auto bytes = writeOrFail(doc, o);
+            io::IoReport report;
+            auto back = readOrFail(bytes, &report);
+            CAPTURE(round);
+            CAPTURE(compress);
+            CHECK(canonicalDump(*back) == before);
+            CHECK(report.warnings.empty());
+            CHECK(writeOrFail(*back, o) == bytes);
+        }
+    }
 }
