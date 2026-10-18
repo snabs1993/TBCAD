@@ -172,3 +172,15 @@ TEST_CASE("bad .ctb input is refused without crashing") {
     huge[sizeof("PIAFILEVERSION_2.0,CTBVER1,compress\r\npmzlibcodec") - 1 + 7] = 0x7f;
     CHECK_FALSE(importCtb(huge).ok());
 }
+
+TEST_CASE("a table saved from an old CTB import loses its white placeholder pens") {
+    auto r = fromText(
+        "TBCAD-PLOT-STYLE 1\nname EP100\n"
+        "251 color=#ffffff lineweight=object screen=100 gray=0 name=Color_252\n"
+        "7 color=#000000 lineweight=0.25 screen=100 gray=0 name=Color_7\n"
+        "9 color=#ffffff lineweight=object screen=100 gray=0\n");
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().entries[251].color);  // placeholder
+    REQUIRE(r.value().entries[7].color);        // a real black pen stays
+    REQUIRE(r.value().entries[9].color);        // a white pen in a table of our own stays
+}

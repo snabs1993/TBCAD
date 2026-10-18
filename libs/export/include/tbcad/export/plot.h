@@ -50,6 +50,8 @@ struct PlotSettings {
     bool lineweights = true;
     // Objects and layers with a transparency print translucent (blended with the white sheet).
     bool transparency = true;
+    // Fills PlotSheet::trace with how each drawn colour was mapped to a pen (for diagnosing).
+    bool traceColors = false;
     ColorMode color = ColorMode::AsDisplayed;
     // Plot style table: per palette colour, overrides colour, lineweight and screening. Applied
     // before `color` (Monochrome / Greyscale still win over it). Null plots as drawn.
@@ -134,6 +136,8 @@ struct PlotSheet {
     PlotLayout layout{};
     std::vector<PlotPrimitive> prims{};
     std::size_t entityCount = 0;  // entities plotted
+    // With PlotSettings::traceColors: one line per drawn colour (palette entry, pen, result).
+    std::vector<std::string> trace{};
 };
 
 // Plot-time colour: white / near-white becomes black (the sheet is always white), then the colour

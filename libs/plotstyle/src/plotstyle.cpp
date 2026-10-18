@@ -219,6 +219,12 @@ Result<PlotStyleTable> fromText(const std::string& text) {
                     e.name = val;
                 }
             }
+            // Tables imported from a .ctb by an earlier version carry the file's white
+            // placeholder colour (for "use object colour") as a real white pen, which prints the
+            // object white. A CTB-named entry (Color_N) with a white pen is that placeholder.
+            if (e.color && *e.color == Rgba{255, 255, 255, 255} &&
+                e.name.find("Color_") != std::string::npos)
+                e.color.reset();
             t.entries[static_cast<std::size_t>(idx)] = e;
         }
     }

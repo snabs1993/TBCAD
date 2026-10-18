@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -139,7 +140,14 @@ public:
                 if (e.offset > 0 && frameHandle(e.offset) == e.handle)
                     anchors_.push_back(e.offset);
             std::sort(anchors_.begin(), anchors_.end());
+            const auto tWalk = std::chrono::steady_clock::now();
             walkStream();
+            out_.walkNotes.push_back(
+                "stream walk took " +
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now() - tWalk)
+                                   .count()) +
+                " ms");
             if (walkedList_.size() * 10 >= map.size() * 7) {
                 calibrate();
                 for (const auto& [h, off] : walkedList_) {
@@ -397,7 +405,7 @@ private:
             std::int64_t scan = 0;
             for (std::int64_t d = 1; d <= 4096 && off + d + 8 < end; ++d) {
                 const std::size_t l1 = frameLength(off + d);
-                if (frameHandle(off + d) != 0 && l1 != 0 &&
+                if (l1 != 0 && frameHandle(off + d) != 0 &&
                     frameHandle(off + d + static_cast<std::int64_t>(l1) + 2) != 0) {
                     scan = d;
                     break;
@@ -628,7 +636,8 @@ private:
         int rgb = -1;
         bool book = false;
         long long transparency =
-            0;  // DXF 440 value: 0 by layer, 0x01000000 by block, 0x02000000 + alpha
+            0;              // DXF 440 value: 0 by layer, 0x01000000 by block, 0x02000000 + alpha
+        std::string raw{};  // index, RGB word and flag byte as read, for the trace
     };
 
     // CMC: a plain index up to R2000; from R2004 on an index (always 0), an RGB word whose top
@@ -641,6 +650,11 @@ private:
             return c;
         const std::uint32_t word = r.bl();
         const unsigned flags = r.rc();
+        {
+            char buf[48];
+            std::snprintf(buf, sizeof buf, "bs %d word %08X flags %u", idx, word, flags);
+            c.raw = buf;
+        }
         if (flags & 1)
             r.textBytes();
         if (flags & 2)
@@ -912,6 +926,7 @@ private:
                 if ((values & 2) != 0)
                     l.color = -(l.color > 0 && l.color < 256 ? l.color : 7);
                 l.trueColor = color.rgb;
+                l.colorRaw = color.raw;
                 l.flags = (l.frozen ? 1 : 0) | (l.locked ? 4 : 0) | (xdep ? 16 : 0);
                 l.linetype = resolveHandle(lt, self);
                 out_.layers[self] = std::move(l);

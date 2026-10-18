@@ -4,6 +4,7 @@ tbcad_add_library(draw2
     src/center.cpp
     src/common.cpp
     src/donut.cpp
+    src/breakline.cpp
     src/draw2.cpp
     src/point.cpp
     src/ray.cpp
@@ -21,6 +22,7 @@ tbcad_add_tests(draw2
     tests/boundary_tests.cpp
     tests/center_tests.cpp
     tests/donut_tests.cpp
+    tests/breakline_tests.cpp
     tests/point_tests.cpp
     tests/ray_tests.cpp
     tests/solid_tests.cpp

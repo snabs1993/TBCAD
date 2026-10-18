@@ -69,7 +69,9 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
     step("load file bytes");
 
     dxf::Report report;
-    Result<dxf::ImportResult> imported = dwg::importDwg(bytes, {}, report);
+    dxf::ImportOptions options;
+    options.diagnostics = false;  // nobody reads the structure trace when opening a drawing
+    Result<dxf::ImportResult> imported = dwg::importDwg(bytes, options, report);
     step("decode, convert and import (importDwg)");
     if (!imported) {
         // One plain sentence for the message box; the reader's reason follows it.

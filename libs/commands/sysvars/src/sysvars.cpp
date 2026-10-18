@@ -223,6 +223,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RefreshCommand>("REGEN", "RE"));
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
     (void)registry.add(makeRenameCommand());
+    (void)registry.add(makeSetvarCommand());
 }
 
 }  // namespace tbcad::sysvars

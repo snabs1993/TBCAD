@@ -1,5 +1,8 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <set>
 
 #include "tbcad/layout/layout.h"
 #include "tbcad/platform/paths.h"
@@ -23,6 +26,10 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
                                exportlib::PlotSettings settings, Format format,
                                const std::string& path) {
     const std::string layoutName = plotLayout(host);
+    // TBCAD_PLOT_TRACE=<text>: add to the result how each colour became a pen, and the colour and
+    // plot flags of every layer whose name contains <text> (for finding why a fill prints wrong).
+    const char* traceEnv = std::getenv("TBCAD_PLOT_TRACE");
+    settings.traceColors = traceEnv && *traceEnv;
     auto sheet = buildPlotSheet(doc, host, settings);
     if (!sheet)
         return sheet.error();
@@ -52,6 +59,25 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     }
     if (lay.overflows)
         text += ". Warning: the drawing is larger than the paper and was clipped.";
+    if (settings.traceColors) {
+        std::set<std::string> lines(sheet.value().trace.begin(), sheet.value().trace.end());
+        for (const std::string& l : lines)
+            text += "\n" + l;
+        for (const auto& [id, layer] : doc.layers()) {
+            if (layer.name.find(traceEnv) == std::string::npos)
+                continue;
+            const auto eff = doc.effective(id);
+            char b[200];
+            std::snprintf(b, sizeof b,
+                          "\nplot layer %s: colour kind %d index/r %d,%d,%d, plot %d, on %d, "
+                          "frozen %d, transparency %d; effective colour kind %d index/r %d",
+                          layer.name.c_str(), static_cast<int>(layer.color.kind), layer.color.r,
+                          layer.color.g, layer.color.b, layer.plot ? 1 : 0, layer.on ? 1 : 0,
+                          layer.frozen ? 1 : 0, static_cast<int>(layer.transparency),
+                          static_cast<int>(eff.color.kind), eff.color.r);
+            text += b;
+        }
+    }
     return text;
 }
 
