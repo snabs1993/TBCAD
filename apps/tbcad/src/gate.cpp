@@ -250,7 +250,14 @@ int App::runGateFile() {
     frame();
     glFinish();
     std::printf("zoom extents + first frame: %.0f ms\n", msSince(t0));
-    report("static view", frames(30, [](int) {}));
+    {
+        const std::vector<double> ms = frames(30, [](int) {});
+        std::printf("static frame times (ms):");
+        for (double v : ms)
+            std::printf(" %.0f", v);
+        std::printf("\n");
+        report("static view", ms);
+    }
 
     const render::Camera2D start = core.camera();
     const Vec2 anchor{core.camera().viewportW * 0.5, core.camera().viewportH * 0.5};
