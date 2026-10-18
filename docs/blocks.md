@@ -121,6 +121,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 | `BLOCK` | `B` | name, base point, objects, then `Retain/Convert/Delete`. An existing name offers `Redefine`. |
 | `INSERT` | `I` | block name (`?` lists, Enter takes the last one), then the point with `Scale/X/Y/Rotate` options and a live preview. |
 | `EXPLODE` | `X` | objects (selected inserts and polylines), one level. |
+| `NCOPY` | | pick an insert or xref at an object inside it; the closest nested object is copied into the drawing at its place, then moved by base point and second point (Enter keeps it in place). |
 | `ARRAY` | `AR` | objects, `Rectangular` (rows, columns, column distance, row distance, angle), `Polar` (centre, count, angle to fill, rotate items) or `Path` (path curve, base point, count or distance, align), with preview, then `Associative [Yes/No]` (default Yes; a path array is always associative). |
 | `ARRAYRECT` / `ARRAYPOLAR` / `ARRAYPATH` | | The same, for one type. |
 | `BPARAM` | | Block name, type (`Linear`, `Rotation`, `Flip`, `Visibility`), parameter name, then its points (and limits, or the states with the window of objects each shows). |

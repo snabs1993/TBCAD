@@ -14,6 +14,7 @@ set(_block_cmd_sources
   src/commands.cpp
   src/explode_command.cpp
   src/insert_command.cpp
+  src/ncopy_command.cpp
   src/palette.cpp
   src/snap_provider.cpp
   src/xclip_command.cpp

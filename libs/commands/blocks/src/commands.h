@@ -15,6 +15,7 @@ std::unique_ptr<cmd::Command> makeBEditCommand();
 std::unique_ptr<cmd::Command> makeBSaveCommand(bool close);
 std::unique_ptr<cmd::Command> makeInsertCommand();
 std::unique_ptr<cmd::Command> makeExplodeCommand();
+std::unique_ptr<cmd::Command> makeNCopyCommand();
 std::unique_ptr<cmd::Command> makeArrayCommand();
 std::unique_ptr<cmd::Command> makeArrayRectCommand();
 std::unique_ptr<cmd::Command> makeArrayPolarCommand();
