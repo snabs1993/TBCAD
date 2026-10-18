@@ -107,7 +107,9 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             break;
         }
         case EntityKind::Ray:
-            g = {entityAs<RayData>(e)->origin};
+            // The origin, and a handle on the line that turns it (kRayGripReach from the origin).
+            g = {entityAs<RayData>(e)->origin,
+                 entityAs<RayData>(e)->origin + entityAs<RayData>(e)->dir * kRayGripReach};
             break;
         case EntityKind::MLine:
             g = entityAs<MlineData>(e)->v;
@@ -350,9 +352,16 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             return out;
         }
         case EntityKind::Ray: {
-            if (index != 0)
+            auto& d = *entityAs<RayData>(out);
+            if (index == 0) {
+                d.origin = to;
+                return out;
+            }
+            if (index != 1)
                 return badGrip();
-            entityAs<RayData>(out)->origin = to;
+            if (tol::isZeroLength(to - d.origin))
+                return makeError(ErrorCode::InvalidArgument, "direction would be zero");
+            d.dir = normalized(to - d.origin);
             return out;
         }
         case EntityKind::MLine: {

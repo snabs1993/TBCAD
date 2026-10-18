@@ -536,6 +536,8 @@ struct RayData {
 };
 // How far a ray or xline is drawn and selected, in drawing units.
 inline constexpr double kRayReach = 1e5;
+// Distance from the origin of the grip that turns a ray or xline.
+inline constexpr double kRayGripReach = 100;
 
 // The drawn segment of a ray or xline: a ray starts at its origin, an xline reaches both ways.
 inline Vec2 rayStart(const RayData& d) {
