@@ -173,6 +173,8 @@ private:
                          std::string_view type, const std::string& shown);
     void writeMText(const Props& p, const MTextData& d, std::uint64_t owner);
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
+    // A picture block (IMAGEATTACH, or an IMAGE read from DXF) is written as IMAGE + IMAGEDEF.
+    bool writeImage(const Props& p, const InsertData& d, std::uint64_t owner);
     void writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner);
     void writeTable(const Props& p, const Entity& e, std::uint64_t owner);
     void writeRay(const Props& p, const RayData& d, const Entity& e, std::uint64_t owner);
@@ -203,6 +205,13 @@ private:
     std::string layerSep_;
 
     std::uint64_t nextHandle_ = 0x20;
+    struct ImageOut {
+        std::string name{};  // key in ACAD_IMAGE_DICT
+        std::string path{};
+        double w = 0, h = 0;
+        std::uint64_t def = 0, reactor = 0, image = 0;
+    };
+    std::vector<ImageOut> images_{};
     Out* o_ = nullptr;
     ExportSummary summary_{};
 

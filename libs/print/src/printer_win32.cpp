@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 
 #include "tbcad/print/print.h"
@@ -121,6 +122,45 @@ public:
     }
 
     void popClip() override { RestoreDC(dc_, -1); }
+
+    // The pixels are blended with white (the paper) here, so the device only copies colours; a
+    // turned picture goes through a world transform that maps pixel (x, y) from the top-left.
+    void image(const ImageData& d, const std::array<Vec2, 4>& c, double opacity) override {
+        if (d.width <= 0 || d.height <= 0 ||
+            d.rgba.size() < static_cast<std::size_t>(d.width) * d.height * 4)
+            return;
+        const double a = std::clamp(opacity, 0.0, 1.0);
+        std::vector<std::uint8_t> bgra(static_cast<std::size_t>(d.width) * d.height * 4);
+        for (std::size_t i = 0; i < static_cast<std::size_t>(d.width) * d.height; ++i) {
+            const double k = a * d.rgba[4 * i + 3] / 255.0;
+            auto mix = [&](std::uint8_t v) {
+                return static_cast<std::uint8_t>(std::lround(255.0 * (1 - k) + v * k));
+            };
+            bgra[4 * i] = mix(d.rgba[4 * i + 2]);
+            bgra[4 * i + 1] = mix(d.rgba[4 * i + 1]);
+            bgra[4 * i + 2] = mix(d.rgba[4 * i]);
+        }
+        BITMAPINFO bmi{};
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = d.width;
+        bmi.bmiHeader.biHeight = -d.height;  // top-down
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+        const Vec2 tl = c[3], tr = c[2], bl = c[0];
+        const Vec2 ex = (tr - tl) / static_cast<double>(d.width);
+        const Vec2 ey = (bl - tl) / static_cast<double>(d.height);
+        if (SetGraphicsMode(dc_, GM_ADVANCED) == 0)
+            return;  // the driver cannot turn pictures
+        SaveDC(dc_);
+        XFORM xf{static_cast<FLOAT>(ex.x), static_cast<FLOAT>(ex.y), static_cast<FLOAT>(ey.x),
+                 static_cast<FLOAT>(ey.y), static_cast<FLOAT>(tl.x), static_cast<FLOAT>(tl.y)};
+        SetWorldTransform(dc_, &xf);
+        SetStretchBltMode(dc_, HALFTONE);
+        StretchDIBits(dc_, 0, 0, d.width, d.height, 0, 0, d.width, d.height, bgra.data(), &bmi,
+                      DIB_RGB_COLORS, SRCCOPY);
+        RestoreDC(dc_, -1);
+    }
 
 private:
     HPEN makePen(Rgba color, double widthPx, const std::vector<double>& dashPx) {

@@ -205,6 +205,46 @@ void ImageCache::sweep() {
 
 // ---- collecting --------------------------------------------------------------------------------
 
+std::optional<ImageInstance> imageOfInsert(
+    const Document& doc, const Entity& e, const ImageParamTable& params, ImageCache& cache,
+    const std::function<std::filesystem::path(std::string_view)>& resolve) {
+    const InsertData* ins = entityAs<InsertData>(e);
+    if (!ins)
+        return std::nullopt;
+    const BlockDef* def = doc.block(ins->block);
+    if (!def || def->xrefPath.empty() || !isImagePath(def->xrefPath))
+        return std::nullopt;
+    std::uint64_t key = 0;
+    auto data = cache.get(resolve(def->xrefPath), def->xrefStamp, &key);
+    if (!data)
+        return std::nullopt;
+    ImageParams p;
+    if (auto it = params.find(def->name); it != params.end())
+        p = it->second;
+
+    ImageInstance im;
+    im.key = key;
+    im.data = data;
+    im.insert = e.common.id;
+    im.uMin = p.u0;
+    im.uMax = p.u1;
+    im.vMin = p.v0;
+    im.vMax = p.v1;
+    im.opacity = static_cast<float>(1.0 - p.fade / 100.0);
+    // Pixel units, origin bottom-left, y up; the visible part is the clip rectangle.
+    const double w = data->width, h = data->height;
+    const double x0 = p.u0 * w, x1 = p.u1 * w;
+    const double y0 = (1 - p.v1) * h, y1 = (1 - p.v0) * h;
+    const double c = std::cos(ins->rotation), s = std::sin(ins->rotation);
+    const Vec2 local[4] = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
+    for (int i = 0; i < 4; ++i) {
+        const double lx = (local[i].x - def->base.x) * ins->scale.x;
+        const double ly = (local[i].y - def->base.y) * ins->scale.y;
+        im.corners[i] = {ins->position.x + c * lx - s * ly, ins->position.y + s * lx + c * ly};
+    }
+    return im;
+}
+
 std::vector<ImageInstance> collectImages(
     const Document& doc, ImageCache& cache,
     const std::function<std::filesystem::path(std::string_view)>& resolve) {
@@ -224,35 +264,8 @@ std::vector<ImageInstance> collectImages(
             continue;
         if (const Layer* xl = doc.layerByName(def->name); xl && !doc.effective(xl->id).visible())
             continue;
-        std::uint64_t key = 0;
-        auto data = cache.get(resolve(def->xrefPath), def->xrefStamp, &key);
-        if (!data)
-            continue;
-        ImageParams p;
-        if (auto it = params.find(def->name); it != params.end())
-            p = it->second;
-
-        ImageInstance im;
-        im.key = key;
-        im.data = data;
-        im.insert = id;
-        im.uMin = p.u0;
-        im.uMax = p.u1;
-        im.vMin = p.v0;
-        im.vMax = p.v1;
-        im.opacity = static_cast<float>(1.0 - p.fade / 100.0);
-        // Pixel units, origin bottom-left, y up; the visible part is the clip rectangle.
-        const double w = data->width, h = data->height;
-        const double x0 = p.u0 * w, x1 = p.u1 * w;
-        const double y0 = (1 - p.v1) * h, y1 = (1 - p.v0) * h;
-        const double c = std::cos(ins->rotation), s = std::sin(ins->rotation);
-        const Vec2 local[4] = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
-        for (int i = 0; i < 4; ++i) {
-            const double lx = (local[i].x - def->base.x) * ins->scale.x;
-            const double ly = (local[i].y - def->base.y) * ins->scale.y;
-            im.corners[i] = {ins->position.x + c * lx - s * ly, ins->position.y + s * lx + c * ly};
-        }
-        out.push_back(std::move(im));
+        if (auto im = imageOfInsert(doc, *e, params, cache, resolve))
+            out.push_back(std::move(*im));
     }
     cache.sweep();
     return out;

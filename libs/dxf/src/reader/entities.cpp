@@ -6,6 +6,7 @@
 #include "tbcad/geom/spline.h"
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::dxf::detail {
 
@@ -377,6 +378,8 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convMLine(r, out);
     } else if (t == "WIPEOUT") {
         convWipeout(r, out);
+    } else if (t == "IMAGE") {
+        convImage(r, out);
     } else if (t == "ARC_DIMENSION") {
         convArcDimension(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
@@ -1163,6 +1166,121 @@ bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     e.common.wipeout = true;
     out.push_back(std::move(e));
     return true;
+}
+
+// IMAGE: a raster picture. It becomes the same thing IMAGEATTACH makes: a block that is an external
+// reference to the picture file (a frame in pixel units, origin bottom-left) inserted with the size
+// of one pixel as its scale. The file name is in the IMAGEDEF object, read later (resolveImages).
+// A rectangular clip and the fade are kept; a polygonal clip is not (the whole picture shows).
+bool Importer::convImage(const Record& r, std::vector<Entity>& out) {
+    const Vec2 origin = P(r, 10, 20), u = P(r, 11, 21);
+    const double w = r.num(13), h = r.num(23);
+    const double px = std::hypot(u.x, u.y);
+    if (!(w >= 1) || !(h >= 1) || !(px > 0) || !std::isfinite(px)) {
+        return convForeign(r, out);
+    }
+    std::string handle(r.raw(340));
+    std::string base = "IMAGE_" + (handle.empty() ? std::string("0") : handle);
+    const int n = imageNames_[base]++;
+    const std::string name = n == 0 ? base : base + "_" + std::to_string(n + 1);
+    const BlockId block = blockFor(name);
+    if (!block)
+        return false;
+    blockDefined_.insert(block);
+    ++sum_.blocks;
+
+    PolylineData frame;
+    frame.closed = true;
+    for (const Vec2 p : {Vec2{0, 0}, Vec2{w, 0}, Vec2{w, h}, Vec2{0, h}})
+        frame.v.push_back({p, 0, 0, 0});
+    Entity fe = makeEntity(std::move(frame));
+    fe.common = commonOf(r);
+    (void)tx_->add(std::move(fe), block);
+
+    PendingImage img;
+    img.block = block;
+    img.name = name;
+    img.defHandle = handle;
+    img.line = r.line;
+    img.fade = std::clamp(r.num(283), 0.0, underlay::kMaxImageFade);
+    std::vector<Vec2> clip;
+    for (const Group& g : r.g) {
+        if (g.code == 14)
+            clip.push_back({g.number(), 0});
+        else if (g.code == 24 && !clip.empty())
+            clip.back().y = g.number();
+    }
+    if (r.integer(71) == 2 && clip.size() >= 3) {
+        // A polygon: use its bounding rectangle when it is one, else leave the picture whole.
+        if (clip.size() > 1 && tol::nearlyEqual(clip.front(), clip.back()))
+            clip.pop_back();
+        const bool box = clip.size() == 4 && ((clip[0].x == clip[1].x) != (clip[0].y == clip[1].y));
+        if (!box) {
+            report_.warn(code::kRejected,
+                         "IMAGE \"" + name +
+                             "\": a polygon clip is not supported; the whole picture "
+                             "is shown",
+                         r.line);
+            clip.clear();
+        }
+    }
+    if (clip.size() >= 2) {
+        double x0 = clip[0].x, x1 = clip[0].x, y0 = clip[0].y, y1 = clip[0].y;
+        for (const Vec2& c : clip) {
+            x0 = std::min(x0, c.x);
+            x1 = std::max(x1, c.x);
+            y0 = std::min(y0, c.y);
+            y1 = std::max(y1, c.y);
+        }
+        img.u0 = std::clamp((x0 + 0.5) / w, 0.0, 1.0);
+        img.u1 = std::clamp((x1 + 0.5) / w, 0.0, 1.0);
+        img.v0 = std::clamp(1.0 - (y1 + 0.5) / h, 0.0, 1.0);
+        img.v1 = std::clamp(1.0 - (y0 + 0.5) / h, 0.0, 1.0);
+        if (!(img.u1 > img.u0) || !(img.v1 > img.v0)) {
+            img.u0 = img.v0 = 0;
+            img.u1 = img.v1 = 1;
+        }
+    }
+    images_.push_back(std::move(img));
+
+    InsertData d;
+    d.block = block;
+    d.position = origin;
+    d.scale = {px, px};
+    d.rotation = std::atan2(u.y, u.x);
+    out.push_back(makeEntity(std::move(d)));
+    return true;
+}
+
+// Gives the picture blocks their file (IMAGEDEF) and display settings (fade, clip).
+void Importer::resolveImages() {
+    underlay::ImageParamTable table = underlay::readImageParams(doc_->header());
+    for (const PendingImage& img : images_) {
+        auto it = imageDefs_.find(img.defHandle);
+        if (it == imageDefs_.end() || it->second.empty()) {
+            report_.warn(code::kXref, "IMAGE \"" + img.name + "\" has no image file (IMAGEDEF)",
+                         img.line);
+            continue;
+        }
+        std::string path = it->second;
+        std::replace(path.begin(), path.end(), '\\', '/');
+        (void)tx_->modifyBlock(img.block, [&](BlockDef& b) { b.xrefPath = path; });
+        underlay::ImageParams p;
+        p.fade = img.fade;
+        p.u0 = img.u0;
+        p.v0 = img.v0;
+        p.u1 = img.u1;
+        p.v1 = img.v1;
+        if (!(p == underlay::ImageParams{}))
+            table[img.name] = p;
+        if (!underlay::isImagePath(path))
+            report_.warn(code::kXref,
+                         "IMAGE \"" + img.name + "\": \"" + path +
+                             "\" is not a PNG, JPEG or BMP file; it shows only as a frame",
+                         img.line);
+    }
+    if (!images_.empty())
+        (void)tx_->modifyHeader([&](Header& h) { underlay::writeImageParams(h, table); });
 }
 
 bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {

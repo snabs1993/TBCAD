@@ -53,7 +53,8 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | ACAD_PROXY_ENTITY | read-only `ProxyData` (`originalType = "ACAD_PROXY_ENTITY"`, `raw` = the 310 data bytes, without text records); the proxy graphics are decoded into its display list (see "Proxy graphics"); always a warning |
 | AEC_*, AECC_*, 3DSOLID, REGION, SURFACE ... (no reader) | read-only `ProxyData` named after the DXF type when the object carries proxy graphics (groups 160/92 + 310), else skipped as before; one `dxf.reader.proxy_graphics` info per type |
 | MLINE | one polyline per style element (offset along the miter); closed if the closed flag is set |
-| everything else (3DSOLID, REGION, IMAGE, RAY, XLINE, ...) | skipped; one warning per type with the number of entities |
+| IMAGE (+ IMAGEDEF) | a picture block like IMAGEATTACH makes (docs/underlay.md); fade and a rectangle clip are kept, a polygon clip shows the whole picture |
+| everything else (3DSOLID, REGION, RAY, XLINE, ...) | skipped; one warning per type with the number of entities |
 
 `ImportSummary::entities` counts, per DXF type, the records read (model space and block
 definitions), the TBCAD entities produced and the records dropped.

@@ -147,6 +147,8 @@ private:
     bool conv3dFace(const Record& r, std::vector<Entity>& out);
     bool convMLine(const Record& r, std::vector<Entity>& out);
     bool convWipeout(const Record& r, std::vector<Entity>& out);
+    bool convImage(const Record& r, std::vector<Entity>& out);
+    void resolveImages();
     bool convArcDimension(const Record& r, std::vector<Entity>& out);
     bool convProxy(const Record& r, std::vector<Entity>& out);
     // An entity of another application (AEC, Civil, ACIS ...) that carries proxy graphics.
@@ -230,6 +232,19 @@ private:
 
     // diagnostics accumulated for one summary line each
     std::map<std::string, std::pair<std::size_t, int>> skippedTypes_{};  // type -> (count, line)
+    // IMAGE entities become picture blocks (see libs/underlay); the file name comes from the
+    // IMAGEDEF object, which the OBJECTS section holds after the entities, so it is filled in last.
+    struct PendingImage {
+        BlockId block{};
+        std::string name{};
+        std::string defHandle{};
+        double fade = 0;
+        double u0 = 0, v0 = 0, u1 = 1, v1 = 1;
+        int line = 0;
+    };
+    std::vector<PendingImage> images_{};
+    std::map<std::string, std::string> imageDefs_{};  // IMAGEDEF handle -> file path
+    std::map<std::string, int> imageNames_{};
     std::map<char, int> mtextDropped_{};
     std::size_t flattened_ = 0;
     std::size_t paperSpace_ = 0;

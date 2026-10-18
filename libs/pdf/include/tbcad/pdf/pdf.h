@@ -9,11 +9,13 @@
 #include <deque>
 #include <initializer_list>
 #include <iosfwd>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "tbcad/core/image.h"
 #include "tbcad/core/result.h"
 
 namespace tbcad::pdf {
@@ -68,6 +70,12 @@ public:
     void fillStroke(FillRule rule = FillRule::NonZero);
     void clipRect(double x, double y, double w, double h);
 
+    // A picture (RGBA) whose lower-left pixel corner is at `bl`, with `br` and `tl` the other two
+    // corners it is stretched to (mm). `opacity` 0..1. The pixels are written once per document
+    // even when several pages or places use the same data.
+    void drawImage(std::shared_ptr<const ImageData> image, double blx, double bly, double brx,
+                   double bry, double tlx, double tly, double opacity = 1.0);
+
     // Raw (uncompressed) content stream, mainly for tests.
     const std::string& content() const { return content_; }
 
@@ -81,6 +89,11 @@ private:
     double heightMm_;
     std::string content_;
     bool hasCurrentPoint_ = false;
+    struct Pic {
+        std::shared_ptr<const ImageData> data{};
+        double opacity = 1;
+    };
+    std::vector<Pic> pics_{};  // /Im<i> and /Gs<i> of the page resources
 };
 
 class PdfDocument {

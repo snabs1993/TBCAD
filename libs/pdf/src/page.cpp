@@ -36,6 +36,21 @@ void Page::transform(double a, double b, double c, double d, double e, double f)
     content_ += "cm\n";
 }
 
+void Page::drawImage(std::shared_ptr<const ImageData> image, double blx, double bly, double brx,
+                     double bry, double tlx, double tly, double opacity) {
+    if (!image || image->width <= 0 || image->height <= 0 ||
+        image->rgba.size() <
+            static_cast<std::size_t>(image->width) * static_cast<std::size_t>(image->height) * 4)
+        return;
+    const std::size_t i = pics_.size();
+    pics_.push_back({std::move(image), std::clamp(opacity, 0.0, 1.0)});
+    save();
+    content_ += "/Gs" + std::to_string(i) + " gs\n";
+    transform(brx - blx, bry - bly, tlx - blx, tly - bly, blx, bly);
+    content_ += "/Im" + std::to_string(i) + " Do\n";
+    restore();
+}
+
 void Page::setStrokeRGB(double r, double g, double b) {
     auto c = [](double v) { return std::clamp(v, 0.0, 1.0); };
     nums({c(r), c(g), c(b)}, "RG");

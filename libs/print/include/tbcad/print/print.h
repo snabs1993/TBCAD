@@ -3,6 +3,7 @@
 // with GDI and drives the system print dialog. Other systems get a stub that reports an error.
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,14 @@ public:
     virtual void dot(Vec2 px, Rgba color, double diameterPx) = 0;
     virtual void pushClip(const BBox2& rectPx) = 0;
     virtual void popClip() = 0;
+    // A picture whose pixel corners land on `corners` (bottom-left, bottom-right, top-right,
+    // top-left, device pixels); `opacity` 0..1 over white paper. Devices that cannot draw
+    // pictures leave it out.
+    virtual void image(const ImageData& data, const std::array<Vec2, 4>& corners, double opacity) {
+        (void)data;
+        (void)corners;
+        (void)opacity;
+    }
 };
 
 // Paper millimetres (lower-left origin) to device pixels.

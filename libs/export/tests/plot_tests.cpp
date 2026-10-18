@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include "miniz.h"
+#include "tbcad/blocks/display.h"
 #include "tbcad/export/plot.h"
 
 using namespace tbcad;
@@ -534,4 +535,84 @@ TEST_CASE("JPEG: markers, dimensions and density - files are written") {
     CHECK(std::filesystem::file_size(dir / "a.png") > 100);
     CHECK(std::filesystem::file_size(dir / "a.jpg") > 100);
     std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("a picture block is plotted as a picture in PDF, SVG and raster output") {
+    namespace fs = std::filesystem;
+    blocks::registerInsertDisplay();
+    const fs::path dir = fs::temp_directory_path() / "tbcad_plot_picture";
+    fs::create_directories(dir);
+    {
+        // 4 x 2 pixels, solid red.
+        std::vector<std::uint8_t> px;
+        for (int i = 0; i < 8; ++i)
+            px.insert(px.end(), {255, 0, 0, 255});
+        std::size_t n = 0;
+        void* png = tdefl_write_image_to_png_file_in_memory_ex(px.data(), 4, 2, 4, &n, 6, MZ_FALSE);
+        REQUIRE(png);
+        std::ofstream f(dir / "red.png", std::ios::binary);
+        f.write(static_cast<const char*>(png), static_cast<std::streamsize>(n));
+        mz_free(png);
+    }
+    Document doc;
+    {
+        auto tx = doc.begin("picture");
+        BlockId b = tx.addBlock(BlockDef{.name = "red", .base = {0, 0}}).value();
+        PolylineData frame;
+        frame.closed = true;
+        for (Vec2 v : {Vec2{0, 0}, Vec2{4, 0}, Vec2{4, 2}, Vec2{0, 2}})
+            frame.v.push_back({v, 0, 0, 0});
+        Entity fe;
+        fe.data = std::move(frame);
+        REQUIRE(tx.add(std::move(fe), b).ok());
+        REQUIRE(tx.modifyBlock(b, [](BlockDef& d) { d.xrefPath = "red.png"; }).ok());
+        Entity ie;
+        ie.data = Indirect<InsertData>(InsertData{b, {0, 0}, {25, 25}, 0});  // 100 x 50 mm
+        REQUIRE(tx.add(std::move(ie)).ok());
+        tx.commit();
+    }
+    PlotSettings s;
+    s.paperName = "A4";
+    s.hostFile = dir / "drawing.tbcad";
+    auto sheet = buildSheet(doc, s);
+    REQUIRE_MESSAGE(sheet.ok(), (sheet.ok() ? "" : sheet.error().message));
+    const PlotImage* pic = nullptr;
+    std::size_t paths = 0;
+    for (const PlotPrimitive& p : sheet.value().prims) {
+        if (const auto* i = std::get_if<PlotImage>(&p))
+            pic = i;
+        else if (std::get_if<PlotPath>(&p))
+            ++paths;
+    }
+    REQUIRE(pic);
+    CHECK(paths == 0);  // the frame is not plotted
+    CHECK(pic->data->width == 4);
+    const Vec2 bl = pic->corners[0], tr = pic->corners[2];
+    CHECK(tr.x - bl.x > 10);
+    CHECK(tr.y - bl.y > 5);
+
+    auto pdf = pdfBytes(sheet.value(), false);
+    REQUIRE(pdf.ok());
+    CHECK(pdf.value().find("/Subtype /Image") != std::string::npos);
+    CHECK(pdf.value().find("/Im0 Do") != std::string::npos);
+    CHECK(svgString(sheet.value()).find("<image ") != std::string::npos);
+
+    auto ras = rasterize(sheet.value(), 50, 100'000'000);
+    REQUIRE(ras.ok());
+    const RasterImage& r = ras.value();
+    const double k = 50 / 25.4;
+    const int cx = static_cast<int>(((bl.x + tr.x) / 2) * k);
+    const int cy = r.height - static_cast<int>(((bl.y + tr.y) / 2) * k);
+    const std::uint8_t* c = r.rgb.data() + (static_cast<std::size_t>(cy) * r.width + cx) * 3;
+    CHECK(c[0] == 255);
+    CHECK(c[1] < 10);
+    CHECK(c[2] < 10);
+
+    // A picture whose file cannot be found is left out.
+    s.hostFile = dir / "nowhere" / "drawing.tbcad";
+    auto missing = buildSheet(doc, s);
+    REQUIRE(missing.ok());
+    for (const PlotPrimitive& p : missing.value().prims)
+        CHECK_FALSE(std::get_if<PlotImage>(&p));
+    fs::remove_all(dir);
 }

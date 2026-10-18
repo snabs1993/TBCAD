@@ -1,3 +1,5 @@
+#include <miniz.h>
+
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -59,6 +61,8 @@ public:
                 fill(*f);
             else if (const auto* d = std::get_if<PlotDots>(&prim))
                 dots(*d);
+            else if (const auto* im = std::get_if<PlotImage>(&prim))
+                image(*im);
             else if (const auto* c = std::get_if<PlotClip>(&prim))
                 clip(*c);
         }
@@ -81,6 +85,41 @@ private:
             s += " stroke-linecap=\"round\"";
         }
         return s;
+    }
+
+    // The picture as an embedded PNG, turned and scaled to its place by one matrix.
+    void image(const PlotImage& im) {
+        const ImageData& d = *im.data;
+        if (d.width <= 0 || d.height <= 0)
+            return;
+        std::size_t size = 0;
+        void* png = tdefl_write_image_to_png_file_in_memory_ex(d.rgba.data(), d.width, d.height, 4,
+                                                               &size, 6, MZ_FALSE);
+        if (!png)
+            return;
+        static const char* kTable =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        const auto* b = static_cast<const unsigned char*>(png);
+        std::string enc;
+        enc.reserve((size + 2) / 3 * 4);
+        for (std::size_t i = 0; i < size; i += 3) {
+            const std::uint32_t v = (std::uint32_t{b[i]} << 16) |
+                                    (i + 1 < size ? std::uint32_t{b[i + 1]} << 8 : 0) |
+                                    (i + 2 < size ? b[i + 2] : 0);
+            enc += kTable[(v >> 18) & 63];
+            enc += kTable[(v >> 12) & 63];
+            enc += i + 1 < size ? kTable[(v >> 6) & 63] : '=';
+            enc += i + 2 < size ? kTable[v & 63] : '=';
+        }
+        mz_free(png);
+        const Vec2 tl = im.corners[3], tr = im.corners[2], bl = im.corners[0];
+        // Sheet y points up, the SVG y down.
+        const Vec2 ex = (tr - tl) / static_cast<double>(d.width);
+        const Vec2 ey = (bl - tl) / static_cast<double>(d.height);
+        out_ << "<image width=\"" << d.width << "\" height=\"" << d.height << "\" opacity=\""
+             << num(im.opacity) << "\" transform=\"matrix(" << num(ex.x) << ' ' << num(-ex.y) << ' '
+             << num(ey.x) << ' ' << num(-ey.y) << ' ' << num(tl.x) << ' ' << num(h_ - tl.y)
+             << ")\" preserveAspectRatio=\"none\" href=\"data:image/png;base64," << enc << "\"/>\n";
     }
 
     void clip(const PlotClip& c) {
