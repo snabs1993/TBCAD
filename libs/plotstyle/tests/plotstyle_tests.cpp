@@ -11,9 +11,13 @@ using namespace tbcad::plotstyle;
 namespace {
 
 // A .ctb image written the way the format describes it: header, three words, zlib stream.
-std::vector<std::uint8_t> makeCtb(const std::string& text) {
+std::vector<std::uint8_t> makeCtb(const std::string& text, bool stb = false) {
     static const char header[] = "PIAFILEVERSION_2.0,CTBVER1,compress\r\npmzlibcodec";
-    std::vector<std::uint8_t> out(header, header + sizeof header - 1);
+    static const char stbHeader[] = "PIAFILEVERSION_2.0,STBVER1,compress\r\npmzlibcodec";
+    if (stb)
+        REQUIRE(sizeof header == sizeof stbHeader);
+    const char* h = stb ? stbHeader : header;
+    std::vector<std::uint8_t> out(h, h + sizeof header - 1);
     mz_ulong cap = mz_compressBound(static_cast<mz_ulong>(text.size()));
     std::vector<std::uint8_t> z(cap);
     mz_ulong n = cap;
@@ -151,6 +155,31 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
     CHECK(t.entries[3].lineweightMm.value() == doctest::Approx(0.05));
     CHECK(t.entries[1].name == "Color_1");
     CHECK_FALSE(t.entries[4].color);
+}
+
+TEST_CASE("an .stb file imports as a named table that round-trips through text") {
+    const std::string text =
+        "description=\"Named\"\n"
+        "lineweight_table{\n 0=0.0000\n 1=0.2500\n}\n"
+        "plot_style{\n"
+        " 0{\n  name=\"Normal\"\n  color=-1\n  screen=100\n  lineweight=0\n }\n"
+        " 1{\n  name=\"Thin Red\"\n  color=-1023409921\n  screen=60\n  lineweight=1\n }\n"
+        "}\n";
+    auto r = importCtb(makeCtb(text, true));
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const PlotStyleTable& t = r.value();
+    CHECK(t.named);
+    REQUIRE(t.styles.size() == 2);
+    const PlotStyleEntry* red = t.findNamed("thin red");
+    REQUIRE(red);
+    CHECK(red->screen == 60);
+    CHECK(red->lineweightMm.value() == doctest::Approx(0.25));
+    CHECK(t.findNamed("NORMAL") != nullptr);
+    CHECK(t.findNamed("Nope") == nullptr);
+    auto again = fromText(toText(t));
+    REQUIRE(again.ok());
+    CHECK(again.value().named);
+    CHECK(again.value().styles == t.styles);
 }
 
 TEST_CASE("bad .ctb input is refused without crashing") {

@@ -488,6 +488,23 @@ void Writer::writeLinetypes(Out& o, std::uint64_t table) {
     tableEnd(o);
 }
 
+std::uint64_t Writer::pstyleHandle(const std::string& name) {
+    auto same = [](const std::string& x, const std::string& y) {
+        if (x.size() != y.size())
+            return false;
+        for (std::size_t i = 0; i < x.size(); ++i)
+            if (std::tolower(static_cast<unsigned char>(x[i])) !=
+                std::tolower(static_cast<unsigned char>(y[i])))
+                return false;
+        return true;
+    };
+    for (const auto& [known, handle] : pstyles_)
+        if (same(known, name))
+            return handle;
+    pstyles_.emplace_back(name, newHandle());
+    return pstyles_.back().second;
+}
+
 void Writer::writeLayers(Out& o, std::uint64_t table) {
     tableBegin(o, "LAYER", table, doc_.layers().size());
     std::size_t flattened = 0;
@@ -509,6 +526,10 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
             o.i(370, eff.lineweight.isValue() ? validLineweight(eff.lineweight.v) : -3);
             if (layer.transparency)
                 o.i(440, transparencyGroup(layer.transparency));
+            // A named plot style; "Normal" is the default and needs no pointer.
+            const std::string style = layerPlotStyle(doc_.header(), id);
+            if (!style.empty() && style != "Normal")
+                o.h(390, pstyleHandle(style));
         }
         if (!layer.description.empty() && !r12_) {
             o.raw(1001, "AcAecLayerStandard");
@@ -1087,6 +1108,10 @@ std::string Writer::objectsSection() {
     o.i(281, 1);
     o.raw(3, "Normal");
     o.h(350, placeholder);
+    for (const auto& [styleName, handle] : pstyles_) {
+        o.str(3, styleName);
+        o.h(350, handle);
+    }
     o.raw(100, "AcDbDictionaryWithDefault");
     o.h(340, placeholder);
 
@@ -1096,6 +1121,16 @@ std::string Writer::objectsSection() {
     o.h(330, plotDict);
     o.raw(102, "}");
     o.h(330, plotDict);
+
+    for (const auto& [styleName, handle] : pstyles_) {
+        (void)styleName;
+        o.zero("ACDBPLACEHOLDER");
+        o.h(5, handle);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, plotDict);
+        o.raw(102, "}");
+        o.h(330, plotDict);
+    }
 
     o.zero("MLINESTYLE");
     o.h(5, mlineStyle);
@@ -1312,6 +1347,10 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.pt2(10, limits.empty() ? Vec2{0, 0} : limits.min);
     var("$LIMMAX");
     o.pt2(10, limits.empty() ? Vec2{420, 297} : limits.max);
+    if (!colorDependentPlotStyles(doc_.header())) {
+        var("$PSTYLEMODE");
+        o.i(70, 0);
+    }
     var("$QTEXTMODE");
     o.i(70, quickText(doc_.header()) ? 1 : 0);
     var("$FILLMODE");

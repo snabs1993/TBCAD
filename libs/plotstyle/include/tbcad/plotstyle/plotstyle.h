@@ -21,6 +21,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "tbcad/core/color.h"
@@ -42,6 +43,13 @@ struct PlotStyleTable {
     std::string name{};
     std::string description{};
     std::array<PlotStyleEntry, 256> entries{};  // index 0 is unused
+    // A named table (.stb): objects and layers pick a style by name; `entries` is then unused
+    // and `styles` holds the named styles (PlotStyleEntry::name is the style name).
+    bool named = false;
+    std::vector<PlotStyleEntry> styles{};
+
+    // The named style, ignoring case; null when the table has no such style.
+    const PlotStyleEntry* findNamed(std::string_view styleName) const;
 
     const PlotStyleEntry& forIndex(int aci) const {
         return entries[static_cast<std::size_t>(aci & 255)];
@@ -79,8 +87,8 @@ inline constexpr const char* kDefaultTable = "monochrome.ctb";
 std::string toText(const PlotStyleTable& table);
 Result<PlotStyleTable> fromText(const std::string& text);
 
-// Reads a Plot style table from AutoCAD-style `.ctb` bytes (compressed text format). Only the
-// colour-dependent tables are supported; `.stb` (named styles) are refused with a clear error.
+// Reads a Plot style table from AutoCAD-style `.ctb` (colour-dependent) or `.stb` (named styles,
+// `PlotStyleTable::named`) bytes (compressed text format).
 Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes);
 // The decompressed text of a `.ctb` file, for inspection (what a pen really stores).
 Result<std::string> ctbText(std::span<const std::uint8_t> bytes);

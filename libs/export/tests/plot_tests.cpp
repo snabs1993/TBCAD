@@ -262,6 +262,69 @@ TEST_CASE("monochrome turns red black - white is always black - greyscale") {
     CHECK(pdf.find("1 0 0 RG") != std::string::npos);
 }
 
+TEST_CASE("a named plot style table plots each object with the style its layer or itself names") {
+    Document doc;
+    LayerId walls{};
+    {
+        auto tx = doc.begin("layer");
+        Layer l;
+        l.name = "Walls";
+        walls = tx.addLayer(l).value();
+        tx.commit();
+    }
+    Entity onLayer = line({0, 0}, {100, 0});
+    onLayer.common.layer = walls;
+    onLayer.common.color = Color::index(1);
+    addEntity(doc, onLayer);
+    Entity own = line({0, 10}, {100, 10});
+    own.common.color = Color::index(1);
+    own.common.lineweight = LineWeight::mm(0.25);
+    addEntity(doc, own);
+    Entity plain = line({0, 20}, {100, 20});
+    plain.common.color = Color::index(1);
+    addEntity(doc, plain);
+    const EntityId b = doc.modelSpace()[1];
+    {
+        auto tx = doc.begin("styles");
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      setColorDependentPlotStyles(h, false);
+                      setLayerPlotStyle(h, walls, "Heavy");
+                      setEntityPlotStyle(h, b, "Thin Blue");
+                  }).ok());
+        tx.commit();
+    }
+    plotstyle::PlotStyleTable t;
+    t.named = true;
+    plotstyle::PlotStyleEntry heavy;
+    heavy.name = "Heavy";
+    heavy.color = Rgba{0, 0, 0, 255};
+    heavy.lineweightMm = 0.7;
+    plotstyle::PlotStyleEntry thin;
+    thin.name = "Thin Blue";
+    thin.color = Rgba{0, 0, 255, 255};
+    thin.lineweightMm = 0.1;
+    plotstyle::PlotStyleEntry normal;
+    normal.name = "Normal";
+    t.styles = {normal, heavy, thin};
+    PlotSettings s;
+    s.styleTable = std::make_shared<plotstyle::PlotStyleTable>(t);
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    std::vector<const PlotPath*> paths;
+    for (const auto& p : sheet.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p))
+            paths.push_back(pp);
+    REQUIRE(paths.size() == 3);
+    // By layer: Heavy.
+    CHECK(paths[0]->style.color == Rgba{0, 0, 0, 255});
+    CHECK(paths[0]->style.widthMm == doctest::Approx(0.7));
+    // Own name wins over the layer's.
+    CHECK(paths[1]->style.color == Rgba{0, 0, 255, 255});
+    CHECK(paths[1]->style.widthMm == doctest::Approx(0.1));
+    // Layer 0 without a name: Normal keeps the object's colour (ACI 1 red).
+    CHECK(paths[2]->style.color == paletteColor(1));
+}
+
 TEST_CASE("a plot style table maps colour, lineweight and screening per palette colour") {
     Document doc;
     Entity red = line({0, 0}, {100, 0});

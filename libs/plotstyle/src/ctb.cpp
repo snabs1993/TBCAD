@@ -13,6 +13,11 @@ namespace tbcad::plotstyle {
 namespace {
 
 constexpr char kHeader[] = "PIAFILEVERSION_2.0,CTBVER1,compress\r\npmzlibcodec";
+constexpr char kStbHeader[] = "PIAFILEVERSION_2.0,STBVER1,compress\r\npmzlibcodec";
+
+bool startsWith(std::span<const std::uint8_t> bytes, const char* header, std::size_t len) {
+    return bytes.size() >= len + 12 && std::memcmp(bytes.data(), header, len) == 0;
+}
 
 std::uint32_t u32(const std::uint8_t* p) {
     return std::uint32_t(p[0]) | std::uint32_t(p[1]) << 8 | std::uint32_t(p[2]) << 16 |
@@ -45,8 +50,9 @@ std::string unquote(std::string v) {
 // 32-bit value with the flag byte on top and R, G, B below.
 Result<std::string> ctbText(std::span<const std::uint8_t> bytes) {
     const std::size_t hl = sizeof kHeader - 1;
-    if (bytes.size() < hl + 12 || std::memcmp(bytes.data(), kHeader, hl) != 0)
-        return Error{ErrorCode::Parse, "Not a compressed .ctb plot style table"};
+    static_assert(sizeof kHeader == sizeof kStbHeader);
+    if (!startsWith(bytes, kHeader, hl) && !startsWith(bytes, kStbHeader, hl))
+        return Error{ErrorCode::Parse, "Not a compressed .ctb or .stb plot style table"};
     const std::uint32_t rawSize = u32(bytes.data() + hl + 4);
     if (rawSize == 0 || rawSize > 64u * 1024 * 1024)
         return Error{ErrorCode::Parse, "The .ctb file has an implausible size"};
@@ -64,6 +70,7 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
     auto decoded = ctbText(bytes);
     if (!decoded)
         return decoded.error();
+    const bool stb = startsWith(bytes, kStbHeader, sizeof kStbHeader - 1);
     std::string text = std::move(decoded.value());
 
     PlotStyleTable t;
@@ -147,9 +154,12 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
         }
     }
     if (!sawStyles)
-        return Error{ErrorCode::Unsupported,
-                     "This plot style table has no colour-dependent styles (.stb named styles are "
-                     "not supported)"};
+        return Error{ErrorCode::Unsupported, "This plot style table has no styles"};
+    if (stb) {
+        t.named = true;
+        t.styles = std::move(styles);
+        return t;
+    }
     for (std::size_t i = 0; i < styles.size() && i < 255; ++i)
         t.entries[i + 1] = styles[i];
     return t;

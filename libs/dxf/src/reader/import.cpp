@@ -181,7 +181,7 @@ void Importer::parseHeader(const Record& rec) {
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
     std::int64_t psltscale = -1, msltscale = -1, plinegen = -1, fillmode = -1, attmode = -1,
-                 qtextmode = -1, mirrtext = -1;
+                 qtextmode = -1, mirrtext = -1, pstylemode = -1;
     std::string clayer, ucsName;
     double ucsOx = 0, ucsOy = 0, ucsXx = 1, ucsXy = 0;
     bool haveUcs = false;
@@ -207,6 +207,8 @@ void Importer::parseHeader(const Record& rec) {
             msltscale = g.integer();
         } else if (var == "$QTEXTMODE" && g.code == 70) {
             qtextmode = g.integer();
+        } else if (var == "$PSTYLEMODE" && g.code == 70) {
+            pstylemode = g.integer();
         } else if (var == "$FILLMODE" && g.code == 70) {
             fillmode = g.integer();
         } else if (var == "$ATTMODE" && g.code == 70) {
@@ -273,6 +275,8 @@ void Importer::parseHeader(const Record& rec) {
             h.custom[kMsLtScaleKey] = msltscale ? "1" : "0";
         if (qtextmode > 0)
             h.custom[kQTextKey] = "1";
+        if (pstylemode == 0)
+            setColorDependentPlotStyles(h, false);
         if (fillmode == 0)
             h.custom[kFillModeKey] = "0";
         if (attmode == 0)
@@ -348,6 +352,47 @@ void Importer::processClasses(RecordReader& rr) {
 
 // OBJECTS: only our annotation-scale note is read (the current scale and the scale list); the
 // SCALE objects other programs write are not needed because the note carries the same list.
+namespace {
+std::string upperHandle(std::string_view h) {
+    std::string s(h);
+    for (char& c : s)
+        if (c >= 'a' && c <= 'f')
+            c = static_cast<char>(c - 'a' + 'A');
+    return s;
+}
+
+}  // namespace
+
+// A named page setup (PLOTSETTINGS). Layouts carry the same data inside their own record; only the
+// named ones are collected here.
+void Importer::readPlotSettings(const Record& r) {
+    PlotSetupRecord p;
+    p.name = dec(r.raw(1));
+    if (p.name.empty() || p.name.front() == '*')
+        return;
+    p.paperSize = dec(r.raw(4));
+    p.styleSheet = dec(r.raw(7));
+    const int flags = static_cast<int>(r.integer(70, 0));
+    // Group 72 is the unit of the paper: inches, millimetres or pixels (taken as millimetres).
+    const double unit = r.integer(72, 1) == 0 ? 25.4 : 1.0;
+    p.paperWidthMm = r.num(44) * unit;
+    p.paperHeightMm = r.num(45) * unit;
+    p.rotation = static_cast<int>(r.integer(73, 0));
+    p.plotType = static_cast<int>(r.integer(74, 1));
+    p.scaleType = static_cast<int>(r.integer(75, 0));
+    p.scaleNum = r.num(142, 1);
+    p.scaleDen = r.num(143, 1);
+    p.centered = (flags & 4) != 0;
+    p.lineweights = (flags & 128) != 0;
+    p.originX = r.num(46) * unit;
+    p.originY = r.num(47) * unit;
+    p.windowMinX = r.num(48);
+    p.windowMinY = r.num(49);
+    p.windowMaxX = r.num(140);
+    p.windowMaxY = r.num(141);
+    sum_.plotSetups.push_back(std::move(p));
+}
+
 void Importer::processObjects(RecordReader& rr) {
     Record r;
     while (rr.next(r)) {
@@ -360,6 +405,10 @@ void Importer::processObjects(RecordReader& rr) {
         storeObject(r);
         if (r.type == "LAYOUT") {
             readLayoutObject(r);
+            continue;
+        }
+        if (r.type == "PLOTSETTINGS") {
+            readPlotSettings(r);
             continue;
         }
         if (r.type == "IMAGEDEF") {
@@ -383,7 +432,7 @@ void Importer::processObjects(RecordReader& rr) {
                 }
             }
         }
-        if (r.type == "DICTIONARY") {
+        if (r.type == "DICTIONARY" || r.type == "ACDBDICTIONARYWDFLT") {
             auto& entries = dicts_[std::string(r.raw(5))];
             std::string key;
             for (const Group& dg : r.g) {
@@ -391,6 +440,9 @@ void Importer::processObjects(RecordReader& rr) {
                     key = dec(dg.str());
                 else if ((dg.code == 350 || dg.code == 360) && !key.empty()) {
                     entries.emplace_back(key, std::string(dg.str()));
+                    // The plot style dictionary names its style objects.
+                    if (r.type == "ACDBDICTIONARYWDFLT" && dg.code == 350)
+                        plotStyleNames_[upperHandle(dg.str())] = key;
                     key.clear();
                 }
             }
@@ -499,17 +551,7 @@ void Importer::processObjects(RecordReader& rr) {
 // dictionary) that the writer turns into new handles. A reference to something that is not kept
 // (an entity, a table record, a layout) becomes the null handle.
 
-namespace {
-
-std::string upperHandle(std::string_view h) {
-    std::string s(h);
-    for (char& c : s)
-        if (c >= 'a' && c <= 'f')
-            c = static_cast<char>(c - 'a' + 'A');
-    return s;
-}
-
-}  // namespace
+namespace {}  // namespace
 
 void Importer::storeObject(const Record& r) {
     const std::string_view h = r.raw(5);
@@ -546,6 +588,36 @@ void Importer::keepHandles() {
             kept.emplace_back(id, handle);
     std::string packed = packHandles(kept);
     (void)tx_->modifyHeader([&](Header& h) { h.custom[kKeptHandlesKey] = std::move(packed); });
+}
+
+// Layers and objects that name a plot style (an .stb table): the name goes into the drawing
+// header, see layerPlotStyle(). "Normal" is the default and is not stored.
+void Importer::applyPlotStyles() {
+    if (plotStyleNames_.empty())
+        return;
+    auto nameOf = [&](const std::string& handle) {
+        auto it = plotStyleNames_.find(upperHandle(handle));
+        return it == plotStyleNames_.end() || it->second == "Normal" ? std::string() : it->second;
+    };
+    std::unordered_map<std::uint64_t, std::uint64_t> entityOfHandle;
+    for (const auto& [id, handle] : srcHandles_)
+        entityOfHandle.emplace(handle, id);
+    (void)tx_->modifyHeader([&](Header& h) {
+        for (const LayerRow& row : layerRows_) {
+            if (row.plotStyleHandle.empty())
+                continue;
+            auto lit = layerByFold_.find(fold(row.name));
+            const std::string name = nameOf(row.plotStyleHandle);
+            if (lit != layerByFold_.end() && !name.empty())
+                setLayerPlotStyle(h, lit->second, name);
+        }
+        for (const auto& [handle, style] : entityPlotStyles_) {
+            auto eit = entityOfHandle.find(handle);
+            const std::string name = nameOf(style);
+            if (eit != entityOfHandle.end() && !name.empty())
+                setEntityPlotStyle(h, EntityId{eit->second}, name);
+        }
+    });
 }
 
 void Importer::keepObjects() {
@@ -1193,6 +1265,7 @@ void Importer::readLayerRow(const Record& r) {
     }
     row.linetype = std::string(r.raw(6));
     row.plot = r.integer(290, 1) != 0;
+    row.plotStyleHandle = std::string(r.raw(390));
     row.lineweight = static_cast<int>(r.integer(370, -3));
     if (const Group* g = r.find(440)) {
         const int t = transparencyFromGroup(g->integer());
@@ -1593,6 +1666,10 @@ void Importer::processEntities(RecordReader& rr) {
             rr.pushBack(std::move(r));
             break;
         }
+        // An object with a named plot style (group 380 = 3) points at the style object.
+        if (r.integer(380, 0) == 3 && !r.raw(390).empty() && !r.raw(5).empty())
+            entityPlotStyles_.emplace_back(
+                std::strtoull(std::string(r.raw(5)).c_str(), nullptr, 16), std::string(r.raw(390)));
         handleEntity(r, rr, BlockId{});
     }
 }
@@ -2001,6 +2078,7 @@ Result<ImportResult> Importer::run() {
     createLayers();
     applyLayerAlphaXrecords();
     resolveExtDictionaries();
+    applyPlotStyles();
     keepHandles();
     keepObjects();
     finish();

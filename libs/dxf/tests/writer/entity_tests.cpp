@@ -1269,4 +1269,50 @@ TEST_CASE("FILL and ATTDISP survive a DXF round trip") {
     CHECK(quickText(rt.back->header()));
 }
 
+TEST_CASE("named plot styles of layers and objects survive a DXF round trip") {
+    Document doc;
+    EntityId plain{}, own{};
+    LayerId walls{};
+    {
+        auto tx = doc.begin("styles");
+        Layer l;
+        l.name = "Walls";
+        walls = tx.addLayer(l).value();
+        plain = tx.add(make(LineData{{0, 0}, {10, 0}}, walls)).value();
+        own = tx.add(make(LineData{{0, 5}, {10, 5}}, walls)).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      setColorDependentPlotStyles(h, false);
+                      setLayerPlotStyle(h, walls, "Heavy Black");
+                      setEntityPlotStyle(h, own, "Thin Red");
+                  }).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("$PSTYLEMODE") != std::string::npos);
+    CHECK(rt.bytes.find("ACDBPLACEHOLDER") != std::string::npos);
+    CHECK_FALSE(colorDependentPlotStyles(rt.back->header()));
+    const Layer* back = rt.back->layerByName("Walls");
+    REQUIRE(back);
+    CHECK(layerPlotStyle(rt.back->header(), back->id) == "Heavy Black");
+    std::vector<std::string> seen;
+    for (EntityId id : rt.back->modelSpace())
+        seen.push_back(resolvedPlotStyle(rt.back->header(), id, rt.back->find(id)->common.layer));
+    std::sort(seen.begin(), seen.end());
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[0] == "Heavy Black");
+    CHECK(seen[1] == "Thin Red");
+}
+
+TEST_CASE("a drawing without named plot styles writes none") {
+    Document doc;
+    {
+        auto tx = doc.begin("line");
+        REQUIRE(tx.add(make(LineData{{0, 0}, {1, 0}})).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("$PSTYLEMODE") == std::string::npos);
+    CHECK(colorDependentPlotStyles(rt.back->header()));
+}
+
 }  // namespace tbcad::dxf

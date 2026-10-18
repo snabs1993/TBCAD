@@ -123,6 +123,8 @@ std::vector<double> dashArray(const std::vector<double>& pattern, double scale, 
 struct Builder {
     const PlotSettings& s;
     const PlotLayout& layout;
+    // The named style of the object being drawn (a named table, .stb); null plots as drawn.
+    const plotstyle::PlotStyleEntry* named = nullptr;
     // Colour trace (PlotSettings::traceColors): drawn colour -> [plotted colour, uses].
     mutable std::map<std::uint32_t, std::pair<Rgba, std::size_t>> seen{};
 
@@ -145,7 +147,9 @@ struct Builder {
                          static_cast<std::uint8_t>(key >> 8), static_cast<std::uint8_t>(key)};
             const int aci = plotstyle::paletteIndexOf({c.r, c.g, c.b, 255});
             std::string entry = "no table";
-            if (s.styleTable && aci) {
+            if (s.styleTable && s.styleTable->named) {
+                entry = "named styles";
+            } else if (s.styleTable && aci) {
                 const auto& e = s.styleTable->forIndex(aci);
                 char eb[96];
                 std::snprintf(eb, sizeof eb, "pen %s screen %d%s",
@@ -166,6 +170,7 @@ struct Builder {
     Rgba colorImpl(Rgba c) const {
         // Translucent colours (transparency, dense hatch tones) are mixed with the white sheet
         // after the pen of the style table has been applied: a black pen at 50 % prints grey.
+        const bool byName = s.styleTable && s.styleTable->named;
         if (c.a < 255 && !isBackgroundColor(c) && s.styleTable) {
             const double k = c.a / 255.0;
             Rgba opaque = c;
@@ -175,6 +180,12 @@ struct Builder {
                 return static_cast<std::uint8_t>(std::lround(v * k + 255.0 * (1.0 - k)));
             };
             return {mix(pen.r), mix(pen.g), mix(pen.b), 255};
+        }
+        if (byName) {
+            if (!named)
+                return plotColor(c, s.color);
+            Rgba shaded = plotstyle::applyEntry(*named, plotColor(c, ColorMode::AsDisplayed));
+            return s.color == ColorMode::AsDisplayed ? shaded : plotColor(shaded, s.color);
         }
         if (s.styleTable) {
             // True colours use the entry of the nearest palette colour, so monochrome.ctb also
@@ -190,6 +201,8 @@ struct Builder {
         return plotColor(c, s.color);
     }
     double weight(Rgba c, double objectMm) const {
+        if (s.styleTable && s.styleTable->named)
+            return named ? named->lineweightMm.value_or(objectMm) : objectMm;
         return s.styleTable ? plotstyle::mapLineweight(*s.styleTable, c, objectMm) : objectMm;
     }
 
@@ -552,6 +565,9 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         if (!box.empty() && !box.intersects(cull))
             continue;
         ++sheet.entityCount;
+        if (s.styleTable && s.styleTable->named)
+            b.named = s.styleTable->findNamed(
+                resolvedPlotStyle(doc.header(), e->common.id, e->common.layer));
         DisplayStyle ds = geom::resolveStyle(doc, *e, ctx);
         if (kind(*e) == EntityKind::Circle || kind(*e) == EntityKind::Arc) {
             // Keep the arc hint: PDF and SVG draw these as Béziers / arcs, not chords.

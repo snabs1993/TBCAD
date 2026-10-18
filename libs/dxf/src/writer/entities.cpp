@@ -149,6 +149,7 @@ Props Writer::propsOf(const EntityCommon& c) {
         p.ltScale = std::strtod(buf, nullptr);
     }
     p.visible = c.visible;
+    p.plotStyle = entityPlotStyle(doc_.header(), c.id);
     if (!c.ext.get().dict.empty())
         p.dict = &c.ext.get().dict;
     return p;
@@ -240,6 +241,10 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
             o.i(370, -3);
         if (p.transparency != kTransparencyByLayer)
             o.i(440, transparencyGroup(p.transparency));
+        if (!p.plotStyle.empty()) {
+            o.i(380, 3);
+            o.h(390, pstyleHandle(p.plotStyle));
+        }
     }
     if (p.ltScale != 1 && p.ltScale > 0)
         o.d(48, p.ltScale);

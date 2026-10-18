@@ -118,6 +118,14 @@ Rgba mapColor(const PlotStyleTable& table, Rgba objectColor) {
     return applyEntry(table.forIndex(aci), objectColor);
 }
 
+const PlotStyleEntry* PlotStyleTable::findNamed(std::string_view styleName) const {
+    const std::string want = lower(std::string(styleName));
+    for (const PlotStyleEntry& e : styles)
+        if (lower(e.name) == want)
+            return &e;
+    return nullptr;
+}
+
 double mapLineweight(const PlotStyleTable& table, Rgba objectColor, double objectMm) {
     const int aci = paletteIndexOf(objectColor);
     if (aci == 0)
@@ -161,6 +169,26 @@ std::string toText(const PlotStyleTable& table) {
     o << "name " << table.name << '\n';
     o << "description " << table.description << '\n';
     const PlotStyleEntry plain;
+    auto fields = [&o](const PlotStyleEntry& e) {
+        o << " color=" << (e.color ? hex(*e.color) : "object") << " lineweight=";
+        if (e.lineweightMm) {
+            char buf[32];
+            std::snprintf(buf, sizeof buf, "%.4g", *e.lineweightMm);
+            o << buf;
+        } else {
+            o << "object";
+        }
+        o << " screen=" << e.screen << " gray=" << (e.grayscale ? 1 : 0);
+    };
+    if (table.named) {
+        o << "named 1\n";
+        for (const PlotStyleEntry& e : table.styles) {
+            o << 'S';
+            fields(e);
+            o << " name=" << e.name << '\n';  // the name comes last: it may hold spaces
+        }
+        return o.str();
+    }
     for (int i = 1; i < 256; ++i) {
         const PlotStyleEntry& e = table.entries[static_cast<std::size_t>(i)];
         if (e == plain)
@@ -198,6 +226,36 @@ Result<PlotStyleTable> fromText(const std::string& text) {
             t.name = line.substr(5);
         } else if (line.rfind("description ", 0) == 0) {
             t.description = line.substr(12);
+        } else if (line.rfind("named ", 0) == 0) {
+            t.named = line.substr(6) == "1";
+        } else if (line.rfind("S ", 0) == 0) {
+            PlotStyleEntry e;
+            const auto at = line.find(" name=");
+            const std::string head = at == std::string::npos ? line : line.substr(0, at);
+            if (at != std::string::npos)
+                e.name = line.substr(at + 6);
+            std::istringstream ls(head.substr(2));
+            std::string kv;
+            while (ls >> kv) {
+                auto eq = kv.find('=');
+                if (eq == std::string::npos)
+                    return Error{ErrorCode::Parse, "Line " + std::to_string(lineNo) + ": " + kv};
+                const std::string key = kv.substr(0, eq), val = kv.substr(eq + 1);
+                if (key == "color" && val != "object") {
+                    auto c = parseHex(val);
+                    if (!c)
+                        return Error{ErrorCode::Parse,
+                                     "Line " + std::to_string(lineNo) + ": bad colour " + val};
+                    e.color = *c;
+                } else if (key == "lineweight" && val != "object") {
+                    e.lineweightMm = std::clamp(std::atof(val.c_str()), 0.0, 20.0);
+                } else if (key == "screen") {
+                    e.screen = std::clamp(std::atoi(val.c_str()), 0, 100);
+                } else if (key == "gray") {
+                    e.grayscale = val == "1";
+                }
+            }
+            t.styles.push_back(std::move(e));
         } else if (std::isdigit(static_cast<unsigned char>(line[0]))) {
             std::istringstream ls(line);
             int idx = 0;

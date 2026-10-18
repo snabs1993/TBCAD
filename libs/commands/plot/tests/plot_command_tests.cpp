@@ -371,6 +371,26 @@ TEST_CASE("PAGESETUP saves the plot options, applies them and assigns them to la
     CHECK(f.host->logContains("No page setup named \"Nope\""));
 }
 
+TEST_CASE("PSTYLEMODE and ASSIGNPSTYLE keep plot style names in the drawing") {
+    Fixture f;
+    CHECK(colorDependentPlotStyles(f.doc.header()));
+    CHECK(f.host->run("PSTYLEMODE", {"Named"}).finished);
+    CHECK_FALSE(colorDependentPlotStyles(f.doc.header()));
+    CHECK(f.host->run("ASSIGNPSTYLE", {"Layer", "0", "Heavy"}).finished);
+    CHECK(layerPlotStyle(f.doc.header(), kLayerZero) == "Heavy");
+    const EntityId line = f.doc.modelSpace()[0];
+    CHECK(resolvedPlotStyle(f.doc.header(), line, kLayerZero) == "Heavy");
+    CHECK(f.host
+              ->run("ASSIGNPSTYLE",
+                    {"Objects", cmd::ScriptItem::pick(line), cmd::ScriptItem::enter(), "Thin"})
+              .finished);
+    CHECK(resolvedPlotStyle(f.doc.header(), line, kLayerZero) == "Thin");
+    CHECK(f.host->run("ASSIGNPSTYLE", {"Layer", "Nope"}).finished);
+    CHECK(f.host->logContains("No layer named \"Nope\""));
+    CHECK(f.host->run("PSTYLEMODE", {"Colour"}).finished);
+    CHECK(colorDependentPlotStyles(f.doc.header()));
+}
+
 TEST_CASE("PAGESETUP Import takes the page setups of another drawing") {
     Fixture f;
     CHECK(f.host->run("EXPORTSVG", {"Paper", "A2", "Scale", "1:50", "", f.path("x.svg")}).finished);
@@ -383,6 +403,38 @@ TEST_CASE("PAGESETUP Import takes the page setups of another drawing") {
     REQUIRE(got);
     CHECK(got->settings.paperName == "A2");
     CHECK(f.host->run("PAGESETUP", {"Import", f.path("missing.tbcad")}).finished);
+}
+
+TEST_CASE("PAGESETUP Import reads the named page setups of a DXF file") {
+    Fixture f;
+    {
+        std::ofstream dxf(f.dir / "setups.dxf");
+        dxf << "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  9\n$INSUNITS\n 70\n4\n"
+               "  0\nENDSEC\n"
+               "  0\nSECTION\n  2\nOBJECTS\n"
+               "  0\nPLOTSETTINGS\n  5\n2A\n100\nAcDbPlotSettings\n  1\nSite plan\n"
+               "  4\nISO_A1_(841.00_x_594.00_MM)\n  7\nmonochrome.ctb\n 44\n841.0\n 45\n594.0\n"
+               " 70\n4\n 72\n1\n 73\n0\n 74\n1\n 75\n16\n142\n1.0\n143\n100.0\n"
+               "  0\nPLOTSETTINGS\n  5\n2B\n100\nAcDbPlotSettings\n  1\nSmall\n"
+               " 44\n210.0\n 45\n297.0\n 73\n1\n 75\n0\n"
+               "  0\nPLOTSETTINGS\n  5\n2C\n100\nAcDbPlotSettings\n  1\n*None*\n"
+               "  0\nENDSEC\n  0\nEOF\n";
+    }
+    CHECK(f.host->run("PAGESETUP", {"Import", f.path("setups.dxf")}).finished);
+    CHECK(f.host->logContains("2 page setups imported"));
+    auto site = layout::findPageSetup(f.doc, "Site plan");
+    REQUIRE(site);
+    CHECK(site->settings.paperName == "A1");
+    CHECK(site->settings.landscape);
+    CHECK_FALSE(site->settings.fitToPaper);
+    CHECK(site->settings.scaleN == doctest::Approx(100));
+    CHECK(site->settings.centerOnPaper);
+    CHECK(site->styleName == "monochrome.ctb");
+    auto small = layout::findPageSetup(f.doc, "Small");
+    REQUIRE(small);
+    CHECK(small->settings.paperName == "A4");
+    CHECK(small->settings.landscape);  // portrait paper turned a quarter
+    CHECK(small->settings.fitToPaper);
 }
 
 TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {

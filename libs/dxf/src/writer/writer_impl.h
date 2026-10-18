@@ -109,6 +109,7 @@ struct Props {
     std::int8_t transparency = kTransparencyByLayer;
     double ltScale = 1;
     bool visible = true;
+    std::string plotStyle{};                        // named plot style of the object itself, if any
     const std::vector<DictRecord>* dict = nullptr;  // extension dictionary records, if any
 };
 
@@ -165,6 +166,10 @@ private:
 
     // ---- entities.cpp --------------------------------------------------------------------
     Props propsOf(const EntityCommon& c);
+    // The handle of the plot style name object for `name` (made on first use; written with the
+    // plot style dictionary in the OBJECTS section).
+    std::uint64_t pstyleHandle(const std::string& name);
+    std::vector<std::pair<std::string, std::uint64_t>> pstyles_{};
     void colorGroups(const Props& p);
     void head(std::string_view type, const Props& p, std::uint64_t owner,
               std::string_view subclass);

@@ -155,7 +155,7 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
     if (!path.is_absolute() || !std::filesystem::exists(path, ec)) {
         bool found = false;
         for (const auto& folder : styleSearchFolders(host)) {
-            for (const char* ext : {"", ".ctb", ".tbstyle"}) {
+            for (const char* ext : {"", ".ctb", ".stb", ".tbstyle"}) {
                 auto candidate = folder / (name + ext);
                 if (std::filesystem::is_regular_file(candidate, ec)) {
                     path = candidate;
@@ -190,7 +190,7 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
                     std::string x = e.path().extension().string();
                     for (char& c : x)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if ((x == ".ctb" || x == ".tbstyle") && !key.empty() &&
+                    if ((x == ".ctb" || x == ".stb" || x == ".tbstyle") && !key.empty() &&
                         plain(e.path()) == key) {
                         path = e.path();
                         found = true;
@@ -229,7 +229,7 @@ std::vector<std::string> listStyleTables(const cmd::IHost& host) {
         std::vector<std::string> files;
         for (const auto& e : std::filesystem::directory_iterator(folder, ec)) {
             auto ext = e.path().extension().string();
-            if (ext == ".tbstyle" || ext == ".ctb")
+            if (ext == ".tbstyle" || ext == ".ctb" || ext == ".stb")
                 files.push_back(e.path().filename().string());
         }
         std::sort(files.begin(), files.end());

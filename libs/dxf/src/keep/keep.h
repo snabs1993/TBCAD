@@ -71,7 +71,7 @@ inline bool ownedHeaderVar(std::string_view n) {
         "$LTSCALE",   "$CELTSCALE", "$PSLTSCALE",   "$MSLTSCALE", "$PLINEGEN", "$CECOLOR",
         "$CELTYPE",   "$CLAYER",    "$TEXTSTYLE",   "$DIMSTYLE",  "$LUNITS",   "$LUPREC",
         "$AUNITS",    "$AUPREC",    "$MEASUREMENT", "$INSUNITS",  "$FILLMODE", "$ATTMODE",
-        "$QTEXTMODE", "$MIRRTEXT"};
+        "$QTEXTMODE", "$MIRRTEXT",  "$PSTYLEMODE"};
     for (std::string_view o : owned)
         if (o == n)
             return true;
