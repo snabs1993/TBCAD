@@ -103,6 +103,18 @@ TEST_CASE("LAYMCH moves objects to the layer of the picked object") {
     CHECK(f.doc.layer(f.a) != nullptr);
 }
 
+TEST_CASE("LAYCHANGE moves objects to a named layer and asks again for an unknown name") {
+    Fixture f;
+    f.setup();
+    CHECK(
+        f.run("LAYCHANGE", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(), "Nope", "B"})
+            .finished);
+    CHECK(f.host.logContains("Nope"));
+    CHECK(f.doc.find(f.ea)->common.layer == f.b);
+    CHECK(f.host.undo());
+    CHECK(f.doc.find(f.ea)->common.layer == f.a);
+}
+
 TEST_CASE("LAYMRG moves everything over and removes the source layer, one undo step") {
     Fixture f;
     f.setup();
