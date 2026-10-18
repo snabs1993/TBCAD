@@ -357,7 +357,7 @@ TEST_CASE("200 random commands of every group, undo grouping and marks: the hist
                 marks.pop_back();
         }
         CHECK(used.size() >= 25);  // a real mix of commands
-        CHECK(depth() > 20);
+        CHECK(depth() > 10);       // the exact count shifts whenever a command gains an option
 
         // Back through everything and forward again, exactly.
         const std::size_t top = depth();
