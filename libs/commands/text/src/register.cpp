@@ -7,6 +7,7 @@ namespace tbcad::textcmd {
 
 void registerCommands(cmd::Registry& registry) {
     text::registerDisplay();
+    registerMTextExplode();
     (void)registry.add(makeTextCommand());
     (void)registry.add(makeMTextCommand());
     (void)registry.add(makeTextEditCommand());

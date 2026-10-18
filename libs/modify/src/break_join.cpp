@@ -238,6 +238,70 @@ bool mergeArcs(ArcItem& A, const ArcItem& B, double tolerance, bool bridgeGaps) 
     return true;
 }
 
+// ---- splines and elliptical arcs ----------------------------------------------------------------
+
+struct EllipseItem {
+    ArcItem arc{};  // centre, major radius and the parameter span
+    Vec2 major{};
+    double ratio = 1;
+};
+
+bool sameEllipseShape(const EllipseItem& a, const EllipseItem& b, double tolerance) {
+    return samePoint(a.major, b.major, tolerance) && std::abs(a.ratio - b.ratio) <= 1e-9;
+}
+
+// A clamped, open spline: the only kind whose control polygons can be chained exactly.
+bool chainable(const SplineData& d) {
+    const auto p = static_cast<std::size_t>(d.degree);
+    const std::size_t n = d.control.size();
+    if (d.closed || d.periodic || d.degree < 1 || n < p + 1 || d.knots.size() != n + p + 1)
+        return false;
+    if (!d.weights.empty() && d.weights.size() != n)
+        return false;
+    for (std::size_t i = 0; i < p; ++i) {
+        if (d.knots[i] != d.knots[0] || d.knots[n + p - i] != d.knots[n + p])
+            return false;
+    }
+    return d.knots[0] < d.knots[n + p];
+}
+
+SplineData reversedSpline(SplineData d) {
+    std::reverse(d.control.begin(), d.control.end());
+    std::reverse(d.weights.begin(), d.weights.end());
+    std::reverse(d.fit.begin(), d.fit.end());
+    const double lo = d.knots.front(), hi = d.knots.back();
+    for (double& k : d.knots)
+        k = lo + hi - k;
+    std::reverse(d.knots.begin(), d.knots.end());
+    return d;
+}
+
+// B's control polygon continues A's: the result is one spline with a C0 joint, the same curve.
+SplineData chainSplines(const SplineData& a, const SplineData& b) {
+    SplineData out;
+    out.degree = a.degree;
+    const auto p = static_cast<std::size_t>(a.degree);
+    const bool rational = !a.weights.empty() || !b.weights.empty();
+    out.control = a.control;
+    out.control.insert(out.control.end(), b.control.begin() + 1, b.control.end());
+    if (rational) {
+        std::vector<double> wa =
+            a.weights.empty() ? std::vector<double>(a.control.size(), 1.0) : a.weights;
+        std::vector<double> wb =
+            b.weights.empty() ? std::vector<double>(b.control.size(), 1.0) : b.weights;
+        const double scale = wa.back() / wb.front();  // a common factor leaves B unchanged
+        out.weights = wa;
+        for (std::size_t i = 1; i < wb.size(); ++i)
+            out.weights.push_back(wb[i] * scale);
+    }
+    out.knots.assign(a.knots.begin(), a.knots.end() - static_cast<std::ptrdiff_t>(p + 1));
+    const double joint = a.knots.back();
+    const double shift = joint - b.knots.front();
+    for (std::size_t i = 1; i < b.knots.size(); ++i)
+        out.knots.push_back(b.knots[i] + shift);
+    return out;
+}
+
 Item reversedItem(const Item& it) {
     Item r = it;
     std::reverse(r.segs.begin(), r.segs.end());
@@ -378,6 +442,108 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
         bool closed = count >= 2 && samePoint(chain.back().p1, chain.front().p0, tolerance);
         out.created.push_back(withData(firstProps(origins), polylineFromSegs(chain, closed)));
         consume(origins);
+    }
+
+    // Elliptical arcs of one ellipse fuse like circular arcs; a full turn becomes an ellipse.
+    {
+        std::vector<EllipseItem> els;
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            const Entity* e = entities[i];
+            const auto* d = e ? entityAs<EllipseData>(*e) : nullptr;
+            if (!d)
+                continue;
+            double sweep = normalizeAngle(d->endParam - d->startParam);
+            if (std::abs(d->endParam - d->startParam) >= kTwoPi - 1e-9)
+                continue;
+            els.push_back({{d->center,
+                            length(d->majorAxis),
+                            d->startParam,
+                            sweep < 1e-12 ? kTwoPi : sweep,
+                            {i}},
+                           d->majorAxis,
+                           d->ratio});
+        }
+        for (bool changed = true; changed;) {
+            changed = false;
+            for (std::size_t i = 0; i < els.size() && !changed; ++i) {
+                for (std::size_t j = i + 1; j < els.size() && !changed; ++j) {
+                    if (sameEllipseShape(els[i], els[j], tolerance) &&
+                        mergeArcs(els[i].arc, els[j].arc, tolerance, bridgeGaps)) {
+                        els.erase(els.begin() + static_cast<std::ptrdiff_t>(j));
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for (const EllipseItem& el : els) {
+            if (el.arc.origins.size() < 2)
+                continue;
+            EllipseData d;
+            d.center = el.arc.c;
+            d.majorAxis = el.major;
+            d.ratio = el.ratio;
+            if (el.arc.sweep >= kTwoPi - 1e-9) {
+                d.startParam = 0;
+                d.endParam = kTwoPi;
+            } else {
+                d.startParam = normalizeAngle(el.arc.start);
+                d.endParam = normalizeAngle(el.arc.start + el.arc.sweep);
+            }
+            out.created.push_back(withData(firstProps(el.arc.origins), d));
+            consume(el.arc.origins);
+        }
+    }
+
+    // Splines whose ends touch become one spline (exact, with a C0 joint).
+    {
+        struct SplineItem {
+            SplineData d{};
+            std::vector<std::size_t> origins{};
+            bool used = false;
+        };
+        std::vector<SplineItem> sps;
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            const Entity* e = entities[i];
+            const auto* d = e ? entityAs<SplineData>(*e) : nullptr;
+            if (d && chainable(*d))
+                sps.push_back({*d, {i}, false});
+        }
+        for (std::size_t i = 0; i < sps.size(); ++i) {
+            if (sps[i].used)
+                continue;
+            sps[i].used = true;
+            SplineData chain = sps[i].d;
+            chain.fit.clear();
+            std::vector<std::size_t> origins = sps[i].origins;
+            for (bool grew = true; grew;) {
+                grew = false;
+                for (SplineItem& it : sps) {
+                    if (it.used || it.d.degree != chain.degree)
+                        continue;
+                    const Vec2 tail = chain.control.back(), head = chain.control.front();
+                    if (samePoint(tail, it.d.control.front(), tolerance)) {
+                        chain = chainSplines(chain, it.d);
+                    } else if (samePoint(tail, it.d.control.back(), tolerance)) {
+                        chain = chainSplines(chain, reversedSpline(it.d));
+                    } else if (samePoint(head, it.d.control.back(), tolerance)) {
+                        chain = chainSplines(it.d, chain);
+                    } else if (samePoint(head, it.d.control.front(), tolerance)) {
+                        chain = chainSplines(reversedSpline(it.d), chain);
+                    } else {
+                        continue;
+                    }
+                    it.used = true;
+                    origins.insert(origins.end(), it.origins.begin(), it.origins.end());
+                    grew = true;
+                    break;
+                }
+            }
+            if (origins.size() < 2)
+                continue;
+            out.created.push_back(
+                withData(firstProps(origins), EntityData{Indirect<SplineData>(std::move(chain))}));
+            consume(origins);
+        }
     }
     std::sort(out.consumed.begin(), out.consumed.end());
     out.consumed.erase(std::unique(out.consumed.begin(), out.consumed.end()), out.consumed.end());

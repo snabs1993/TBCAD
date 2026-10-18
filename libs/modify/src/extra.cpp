@@ -94,7 +94,12 @@ Result<std::vector<Seg>> changeEnd(std::vector<Seg> segs, double delta) {
             if (!g || std::abs(g->theta) * u >= kTwoPi - 1e-6)
                 return err("The arc would become a full circle.");
         }
-        s = segWithEnd(s, segPoint(s, u));
+        // Built from the sweep, not from the new end point: an arc extended past half of the
+        // remaining circle would otherwise read as lying before its start.
+        Seg longer{s.p0, segPoint(s, u), 0};
+        if (s.isArc())
+            longer.bulge = std::tan(4.0 * std::atan(s.bulge) * u / 4.0);
+        s = longer;
         return segs;
     }
     double rem = -delta;

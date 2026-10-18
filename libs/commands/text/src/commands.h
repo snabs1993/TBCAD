@@ -27,6 +27,7 @@ std::unique_ptr<cmd::Command> makeTCountCommand();
 std::unique_ptr<cmd::Command> makeSpellCommand();
 std::unique_ptr<cmd::Command> makeTxtExpCommand();
 std::unique_ptr<cmd::Command> makeTextAlignCommand();
+void registerMTextExplode();
 std::unique_ptr<cmd::Command> makeArcTextCommand();
 
 void registerEditorPanel(ui::UiRegistry& ui);
