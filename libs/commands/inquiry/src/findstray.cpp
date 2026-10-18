@@ -140,17 +140,23 @@ public:
         std::stable_sort(hits.begin(), hits.end(),
                          [](const Hit& a, const Hit& b) { return a.score > b.score; });
         std::vector<EntityId> pick;
-        for (std::size_t i = 0; i < hits.size() && i < 20; ++i) {
+        std::string full;
+        for (std::size_t i = 0; i < hits.size(); ++i) {
             const Hit& h = hits[i];
-            ctx.message("#" + std::to_string(h.id.value) + " " + kindName(h.kind) + " layer " +
-                        h.layer + ": " + h.why + " (x" + std::to_string(h.score).substr(0, 5) +
-                        ")");
+            const std::string line = "#" + std::to_string(h.id.value) + " " + kindName(h.kind) +
+                                     " layer " + h.layer + ": " + h.why + " (x" +
+                                     std::to_string(h.score).substr(0, 5) + ")";
+            full += line + "\n";
+            if (i < 20)
+                ctx.message(line);
         }
+        ctx.host().setSetting("clipboard.text", full);
         for (const Hit& h : hits)
             if (ctx.doc().ownerBlock(h.id) == BlockId{})
                 pick.push_back(h.id);
         ctx.message(std::to_string(hits.size()) + " suspect(s), " + std::to_string(inBlocks) +
-                    " inside blocks; " + std::to_string(pick.size()) + " selected.");
+                    " inside blocks; " + std::to_string(pick.size()) +
+                    " selected. The full list is on the clipboard.");
         if (!pick.empty())
             ctx.host().setSelection(pick);
     }

@@ -355,6 +355,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMassProp());
     (void)registry.add(makeDwgProps());
     (void)registry.add(makeFindStray());
+    (void)registry.add(makePickTrace());
 }
 
 }  // namespace tbcad::inquiry
