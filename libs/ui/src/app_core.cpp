@@ -1708,6 +1708,29 @@ void AppCore::enterViewport(const std::string& layoutName, const layout::Viewpor
     zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
     editingLayout_ = layoutName;
     editingViewport_ = vp.id;
+    annoSyncRevision_ = 0;
+}
+
+// While a locked viewport is being edited its scale is fixed, so the annotation scale follows it:
+// a CANNOSCALE typed meanwhile is put back.
+void AppCore::followLockedViewport() {
+    if (editingLayout_.empty() || !session_ || runner().active())
+        return;
+    const std::uint64_t rev = session_->doc.revision();
+    if (rev == annoSyncRevision_)
+        return;
+    annoSyncRevision_ = rev;
+    const auto lay = layout::findLayout(session_->doc, editingLayout_);
+    const layout::Viewport* vp = lay ? lay->findViewport(editingViewport_) : nullptr;
+    if (!vp || !vp->locked || !(vp->scaleN > 0) ||
+        currentAnnotationScale(session_->doc.header()) == vp->scaleN)
+        return;
+    char buf[40];
+    std::snprintf(buf, sizeof buf, "%.12g", vp->scaleN);
+    print(std::string("The viewport is locked: the annotation scale stays 1:") + buf + ".");
+    submitText("CANNOSCALE");
+    submitText(buf);
+    annoSyncRevision_ = session_->doc.revision();
 }
 
 // ZOOM nXP: sets the scale of the viewport on the sheet (the selected one, else the only one) or
@@ -1828,6 +1851,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         if (inPaperSpace())
             return;
     }
+    followLockedViewport();
     retileIfFragmented();
     {
         // Objects picked so far at "Select objects:" show as selected, so the drafter sees them.
