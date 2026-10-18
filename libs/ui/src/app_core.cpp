@@ -277,19 +277,33 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
                                         [&](EntityId id) { return !session_->doc.find(id); }),
                          selection_.end());
     }
+    auto stepStart = std::chrono::steady_clock::now();
+    auto step = [&](const char* name) {
+        const auto t = std::chrono::steady_clock::now();
+        if (fitView)
+            openTimings_.emplace_back(
+                name, std::chrono::duration<double, std::milli>(t - stepStart).count());
+        stepStart = t;
+    };
+    // Fit the view first: the scene is then built for the zoom the drawing is first seen at, not
+    // built once and then built again when the zoom change makes curves and text stale.
+    if (fitView && (!session_->index.empty() || !slot.viewSaved)) {
+        zoomExtents();
+        step("  zoom to fit");
+        fitPending_ = 6;
+        fitUntil_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    }
     session_->sync->setPixelSize(camera_.pixelSizeMm());
     session_->sync->setShowTransparency(settings_.getBool("view.transparency", true));
-    session_->sync->rebuildAll(render::Scene::suggestTileSize(drawingExtents()));
+    const double tileSize = render::Scene::suggestTileSize(drawingExtents());
+    step("  drawing extents");
+    session_->sync->rebuildAll(tileSize);
+    step("  build scene");
     scene_.setSelected(selection_);
     ++generation_;
     lastTessellatedFor_ = camera_;
     notifySessionHooks();
     scanMissingXrefs();
-    if (fitView && (!session_->index.empty() || !slot.viewSaved)) {
-        zoomExtents();
-        fitPending_ = 6;
-        fitUntil_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    }
 }
 
 void AppCore::scanMissingXrefs() {
@@ -809,18 +823,30 @@ void AppCore::printOpenFailure(const std::string& text) {
 }
 
 Result<void> AppCore::openDxf(const fs::path& path) {
+    openTimings_.clear();
+    auto lastLap = std::chrono::steady_clock::now();
+    auto lap = [&](const char* name) {
+        const auto t = std::chrono::steady_clock::now();
+        openTimings_.emplace_back(name,
+                                  std::chrono::duration<double, std::milli>(t - lastLap).count());
+        lastLap = t;
+    };
     std::ifstream in(platform::longPath(path), std::ios::binary);
     if (!in) {
         printOpenFailure("Cannot open " + path.string());
         settings_.removeRecentFile(platform::pathToUtf8(path));
         return makeError(ErrorCode::Io, "Cannot read " + path.string());
     }
-    std::vector<char> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    std::vector<std::byte> bytes(raw.size());
-    std::transform(raw.begin(), raw.end(), bytes.begin(),
-                   [](char c) { return static_cast<std::byte>(c); });
+    in.seekg(0, std::ios::end);
+    const std::streamoff size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    std::vector<std::byte> bytes(size > 0 ? static_cast<std::size_t>(size) : 0);
+    if (!bytes.empty())
+        in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    lap("read file");
     dxf::Report report;
     auto result = dxf::importDxf(bytes, {}, report);
+    lap("convert to drawing");
     if (!result) {
         printOpenFailure("Cannot open " + path.string() + ": " + result.error().message);
         return makeError(ErrorCode::Parse, result.error().message);
@@ -830,6 +856,7 @@ Result<void> AppCore::openDxf(const fs::path& path) {
     for (const auto& [name, count] : imported.summary.entities)
         total += count.imported;
     addSession(std::move(imported.document), path);
+    lap("index, scene, zoom (total)");
     std::size_t shown = 0;
     for (const auto& d : report.diagnostics()) {
         if (d.severity == dxf::Severity::Info)
@@ -1351,6 +1378,16 @@ void AppCore::panPixels(double dx, double dy) {
 
 // Rays and xlines have no end, so they do not count; if they are all there is, use them.
 BBox2 AppCore::drawingExtents() const {
+    if (extentsCache_.session == session_ && extentsCache_.revision == session_->doc.revision())
+        return extentsCache_.box;
+    const BBox2 box = computeDrawingExtents();
+    extentsCache_.session = session_;
+    extentsCache_.revision = session_->doc.revision();
+    extentsCache_.box = box;
+    return box;
+}
+
+BBox2 AppCore::computeDrawingExtents() const {
     BBox2 box;
     BBox2 withoutPoints;
     std::vector<BBox2> boxes;
