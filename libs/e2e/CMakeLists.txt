@@ -7,6 +7,7 @@ tbcad_add_tests(e2e
   SOURCES
     tests/main.cpp
     tests/smoke_tests.cpp
+    tests/plot_colour_tests.cpp
     tests/command_fuzz_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry)
 # The target exists only when tests are built (the ezdxf and fuzz jobs configure without them).

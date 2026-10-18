@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <map>
 #include <optional>
+#include <string>
 #include <unordered_set>
 
 #include "tbcad/geom/entity.h"
@@ -95,16 +98,54 @@ std::vector<double> dashArray(const std::vector<double>& pattern, double scale, 
 struct Builder {
     const PlotSettings& s;
     const PlotLayout& layout;
+    // Colour trace (PlotSettings::traceColors): drawn colour -> [plotted colour, uses].
+    mutable std::map<std::uint32_t, std::pair<Rgba, std::size_t>> seen{};
+
+    Rgba color(Rgba c) const {
+        const Rgba out = colorImpl(c);
+        if (s.traceColors) {
+            auto& row = seen[(std::uint32_t{c.r} << 24) | (std::uint32_t{c.g} << 16) |
+                             (std::uint32_t{c.b} << 8) | c.a];
+            row.first = out;
+            ++row.second;
+        }
+        return out;
+    }
+
+    std::vector<std::string> traceLines() const {
+        std::vector<std::string> lines;
+        char buf[200];
+        for (const auto& [key, row] : seen) {
+            const Rgba c{static_cast<std::uint8_t>(key >> 24), static_cast<std::uint8_t>(key >> 16),
+                         static_cast<std::uint8_t>(key >> 8), static_cast<std::uint8_t>(key)};
+            const int aci = plotstyle::paletteIndexOf({c.r, c.g, c.b, 255});
+            std::string entry = "no table";
+            if (s.styleTable && aci) {
+                const auto& e = s.styleTable->forIndex(aci);
+                char eb[96];
+                std::snprintf(eb, sizeof eb, "pen %s screen %d%s",
+                              e.color ? "set" : "object colour", e.screen,
+                              e.grayscale ? " grey" : "");
+                entry = eb;
+            }
+            std::snprintf(buf, sizeof buf,
+                          "plot colour: drawn %d,%d,%d alpha %d (ACI %d, %s) -> %d,%d,%d, %zu uses",
+                          c.r, c.g, c.b, c.a, aci, entry.c_str(), row.first.r, row.first.g,
+                          row.first.b, row.second);
+            lines.emplace_back(buf);
+        }
+        return lines;
+    }
 
     // Plotted colour: the style table's entry for palette colours, then the global colour mode.
-    Rgba color(Rgba c) const {
+    Rgba colorImpl(Rgba c) const {
         // Translucent colours (transparency, dense hatch tones) are mixed with the white sheet
         // after the pen of the style table has been applied: a black pen at 50 % prints grey.
         if (c.a < 255 && !isBackgroundColor(c) && s.styleTable) {
             const double k = c.a / 255.0;
             Rgba opaque = c;
             opaque.a = 255;
-            const Rgba pen = color(opaque);
+            const Rgba pen = colorImpl(opaque);
             auto mix = [k](std::uint8_t v) {
                 return static_cast<std::uint8_t>(std::lround(v * k + 255.0 * (1.0 - k)));
             };
@@ -408,6 +449,9 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             b.item(it, sheet.prims);
         }
     }
+    if (s.traceColors)
+        for (std::string& line : b.traceLines())
+            sheet.trace.push_back(std::move(line));
 }
 
 Result<PlotSheet> buildSheet(const Document& doc, const PlotSettings& s) {

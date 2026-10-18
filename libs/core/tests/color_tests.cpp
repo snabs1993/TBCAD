@@ -47,6 +47,37 @@ TEST_CASE("palette basics and distinct hues") {
     CHECK(seen.size() > 200);  // the generated part is not degenerate
 }
 
+TEST_CASE("index colours 10 to 255 are AutoCAD's table") {
+    auto rgb = [](int i) {
+        const Rgba c = paletteColor(static_cast<std::uint8_t>(i));
+        return (std::uint32_t{c.r} << 16) | (std::uint32_t{c.g} << 8) | c.b;
+    };
+    CHECK(rgb(8) == 0x808080);
+    CHECK(rgb(9) == 0xC0C0C0);
+    CHECK(rgb(10) == 0xFF0000);
+    CHECK(rgb(11) == 0xFF7F7F);
+    CHECK(rgb(12) == 0xCC0000);
+    CHECK(rgb(13) == 0xCC6666);
+    CHECK(rgb(15) == 0x994C4C);
+    CHECK(rgb(17) == 0x7F3F3F);
+    CHECK(rgb(18) == 0x4C0000);
+    CHECK(rgb(20) == 0xFF3F00);
+    CHECK(rgb(21) == 0xFF9F7F);
+    CHECK(rgb(30) == 0xFF7F00);
+    CHECK(rgb(40) == 0xFFBF00);
+    CHECK(rgb(50) == 0xFFFF00);
+    CHECK(rgb(90) == 0x00FF00);
+    CHECK(rgb(130) == 0x00FFFF);
+    CHECK(rgb(170) == 0x0000FF);
+    CHECK(rgb(210) == 0xFF00FF);
+    CHECK(rgb(250) == 0x333333);
+    CHECK(rgb(251) == 0x505050);
+    CHECK(rgb(252) == 0x696969);
+    CHECK(rgb(253) == 0x828282);
+    CHECK(rgb(254) == 0xBEBEBE);
+    CHECK(rgb(255) == 0xFFFFFF);
+}
+
 TEST_CASE("Entity stays small and kinds match the variant order") {
     static_assert(sizeof(Entity) <= 96);
     Entity e;
