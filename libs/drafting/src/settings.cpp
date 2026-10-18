@@ -163,6 +163,12 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
     if (auto m = get(keys::osnapModes))
         if (auto mask = parseSnapModes(*m))
             s.modes = *mask;
+    // A snap override from the right-click menu replaces the running modes for one point.
+    if (auto once = get(keys::osnapOnce); once && !once->empty())
+        if (auto mask = parseSnapModes(*once)) {
+            s.osnap = true;
+            s.modes = *mask;
+        }
     s.aperturePx = numOf(keys::osnapAperture, 10, 0);
     s.snapSpacing = numOf(keys::snapSpacing, 10, 0);
     s.gridSpacing = numOf(keys::gridSpacing, 10, 0);

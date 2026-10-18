@@ -1443,6 +1443,7 @@ void AppCore::submitText(std::string_view text) {
 }
 
 void AppCore::pressEscape() {
+    setSetting("drafting.osnap.once", "");
     if (runner().active())
         runner().submit(cmd::Input::cancel());
     else
@@ -2148,6 +2149,7 @@ void AppCore::click(const PointerState& p) {
             case cmd::PromptInfo::Kind::Distance:
             case cmd::PromptInfo::Kind::Angle:
                 run.submit(cmd::Input::click(raw));
+                setSetting("drafting.osnap.once", "");  // a snap override serves one point
                 break;
             case cmd::PromptInfo::Kind::Entity:
             case cmd::PromptInfo::Kind::Selection:

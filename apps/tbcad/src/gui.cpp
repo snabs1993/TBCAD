@@ -2126,8 +2126,9 @@ void Gui::commandWindow() {
         if (ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this)) {
             std::string line = input_;
             bool refused = false;
+            // An arrow-key pick wins even over a typed word that is itself an alias ("li").
             if (suggestVisible_ && !suggestions_.empty() &&
-                !core_.registry().find(cmd::toUpperAscii(line))) {
+                (suggestNavigated_ || !core_.registry().find(cmd::toUpperAscii(line)))) {
                 const std::string& pick =
                     suggestions_[static_cast<std::size_t>(std::clamp(
                                      suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
@@ -2200,7 +2201,17 @@ void Gui::updateSuggestions() {
         suggestions_.clear();
         return;
     }
-    suggestions_ = ui::matchCommands(core_.registry(), input_, paletteOpen_ ? 16 : 8);
+    std::vector<std::string> recent;  // command names typed lately, latest first
+    for (auto it = inputHistory_.lines().rbegin();
+         it != inputHistory_.lines().rend() && recent.size() < 30; ++it) {
+        std::string word = it->substr(0, it->find(' '));
+        for (char& ch : word)
+            ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (const cmd::Command* c = core_.registry().find(word))
+            if (std::find(recent.begin(), recent.end(), std::string(c->name())) == recent.end())
+                recent.emplace_back(c->name());
+    }
+    suggestions_ = ui::matchCommands(core_.registry(), input_, paletteOpen_ ? 16 : 8, recent);
     if (suggestions_.empty()) {
         suggestVisible_ = false;
         return;
@@ -2971,7 +2982,11 @@ void Gui::viewportInput(const ViewportRect& rect) {
     const bool rightIsEnter = core_.settings().getString("ui.rightClick", "menu") == "enter";
     const bool wheelOn = !rightIsEnter && core_.settings().getBool("ui.wheel.enabled", true);
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        if (rightIsEnter)
+        const auto* pr = core_.runner().prompt();
+        if (io.KeyShift && core_.runner().active() && pr &&
+            pr->kind == cmd::PromptInfo::Kind::Point)
+            ImGui::OpenPopup("##snapMenu");  // Shift + right click: snap overrides
+        else if (rightIsEnter)
             core_.submitText("");
         else if (wheelOn)
             rightDown_ = true;
@@ -3056,7 +3071,31 @@ void Gui::hoverTooltip() {
 
 // What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
 // options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
+// The one-point object snap overrides (AutoCAD's Snap Overrides): the next point uses only the
+// chosen snap, whatever the running modes are. "None" turns snapping off for that point.
+void Gui::snapOverrideItems() {
+    const std::string current = core_.setting(drafting::keys::osnapOnce).value_or("");
+    for (int i = 0; i < drafting::kSnapModeCount; ++i) {
+        const auto mode = static_cast<drafting::SnapMode>(i);
+        const std::string name(drafting::snapModeName(mode));
+        const std::string label(drafting::snapModeLabel(mode));
+        if (ImGui::MenuItem(label.c_str(), nullptr, current == name))
+            core_.setSetting(drafting::keys::osnapOnce, name);
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("None", nullptr, current == "none"))
+        core_.setSetting(drafting::keys::osnapOnce, "none");
+    if (!current.empty() && ImGui::MenuItem("Cancel override"))
+        core_.setSetting(drafting::keys::osnapOnce, "");
+}
+
 void Gui::viewportMenu() {
+    if (ImGui::BeginPopup("##snapMenu")) {  // Shift + right click
+        anyActivity_ = true;
+        ImGui::TextDisabled("Snap overrides (next point)");
+        snapOverrideItems();
+        ImGui::EndPopup();
+    }
     if (!ImGui::BeginPopup("##viewportMenu"))
         return;
     anyActivity_ = true;
@@ -3072,7 +3111,17 @@ void Gui::viewportMenu() {
                 if (ImGui::MenuItem(k.c_str()))
                     run(k);
         }
+        if (const auto* pr = core_.runner().prompt();
+            pr && pr->kind == cmd::PromptInfo::Kind::Point) {
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Snap Overrides")) {
+                snapOverrideItems();
+                ImGui::EndMenu();
+            }
+        }
         ImGui::Separator();
+        if (core_.registry().find("PAN") && ImGui::MenuItem("Pan"))
+            run("'PAN");
         if (ImGui::MenuItem("Zoom Extents"))
             core_.zoomExtents();
     } else {

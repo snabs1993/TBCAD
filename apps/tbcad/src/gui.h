@@ -138,6 +138,7 @@ private:
     void dialogs();
     void viewportInput(const ViewportRect& rect);
     void viewportMenu();
+    void snapOverrideItems();
     void dropIntoViewport(const ViewportRect& rect);
     void registeredMenu(const std::string& top);
     void registeredSubmenu(const std::string& prefix, std::vector<const ui::MenuItemInfo*>& items);
