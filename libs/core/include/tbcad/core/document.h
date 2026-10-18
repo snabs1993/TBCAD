@@ -74,6 +74,14 @@ inline constexpr const char* kCeLtScaleKey = "tbcad.celtscale";
 inline constexpr const char* kPsLtScaleKey = "tbcad.psltscale";
 inline constexpr const char* kMsLtScaleKey = "tbcad.msltscale";
 inline constexpr const char* kPlineGenKey = "tbcad.plinegen";
+// Drawing limits (LIMITS): "x1 y1 x2 y2" in Header::custom, plus the limits-check switch.
+// ZOOM All covers them; $LIMMIN / $LIMMAX carry them in DXF.
+inline constexpr const char* kLimitsKey = "tbcad.limits";
+inline constexpr const char* kLimCheckKey = "tbcad.limcheck";
+// The stored limits; empty when none were set.
+BBox2 drawingLimits(const Header& h);
+void setDrawingLimits(Header& h, Vec2 lowerLeft, Vec2 upperRight);
+bool limitsCheck(const Header& h);
 double ceLtScale(const Header& h);
 bool psLtScale(const Header& h);
 bool msLtScale(const Header& h);

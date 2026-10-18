@@ -10,6 +10,7 @@ tbcad_add_library(draw
     src/polyline.cpp
     src/rectangle.cpp
     src/spline.cpp
+    src/trace.cpp
     src/ui.cpp
   DEPENDS tbcad::ui tbcad::cmd tbcad::core tbcad::geom)
 
@@ -24,5 +25,6 @@ tbcad_add_tests(draw
     tests/polyline_tests.cpp
     tests/rectangle_tests.cpp
     tests/spline_tests.cpp
+    tests/trace_tests.cpp
     tests/test_util.h
   DEPENDS tbcad::cmd)

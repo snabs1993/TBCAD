@@ -289,3 +289,30 @@ TEST_CASE("SCRIPT types each line of the file, RSCRIPT repeats it, Esc stops") {
     std::error_code ec;
     fs::remove_all(dir, ec);
 }
+
+TEST_CASE("LIMITS stores the drawing limits, keeps them on Enter and undoes") {
+    Fixture f;
+    CHECK(drawingLimits(f.doc.header()).empty());
+    f.host.run("LIMITS", {"0,0", "1000,500"});
+    BBox2 b = drawingLimits(f.doc.header());
+    REQUIRE_FALSE(b.empty());
+    CHECK(b.max.x == doctest::Approx(1000));
+    CHECK(b.max.y == doctest::Approx(500));
+    f.host.run("LIMITS", {"-10,-20", ""});  // Enter keeps the upper right corner
+    b = drawingLimits(f.doc.header());
+    CHECK(b.min.x == doctest::Approx(-10));
+    CHECK(b.max.x == doctest::Approx(1000));
+    f.host.run("LIMITS", {"50,50", "10,10"});  // inverted: refused
+    CHECK(drawingLimits(f.doc.header()).min.x == doctest::Approx(-10));
+    f.host.run("LIMITS", {"ON"});
+    CHECK(limitsCheck(f.doc.header()));
+    f.host.run("LIMITS", {"OFF"});
+    CHECK_FALSE(limitsCheck(f.doc.header()));
+    CHECK(f.host.undo());
+    CHECK(limitsCheck(f.doc.header()));
+}
+
+TEST_CASE("REGENAUTO is accepted") {
+    Fixture f;
+    CHECK(f.host.run("REGENAUTO", {}).finished);
+}
