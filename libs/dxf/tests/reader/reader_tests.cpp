@@ -632,6 +632,26 @@ TEST_CASE("a layout takes its name and paper size from the LAYOUT object and kee
     CHECK(t.find("V\t1\t10\t8.5\t410\t288.5\t1000\t2000\t100\t1\t") != std::string::npos);
 }
 
+TEST_CASE("a layout's plot style table becomes a page setup assigned to it") {
+    Pairs p;
+    p.section("BLOCKS")
+        .g(0, "BLOCK")
+        .g(2, "*Paper_Space")
+        .g(70, 0)
+        .g(10, 0.0)
+        .g(20, 0.0)
+        .g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(67, 1).g(10, 5.0).g(20, 5.0).g(11, 100.0).g(21, 5.0);
+    p.g(0, "ENDBLK").end();
+    p.section("OBJECTS");
+    p.g(0, "LAYOUT").g(1, "Sheet A1").g(7, "D:\\office\\Plot Styles\\mono.ctb").g(71, 1);
+    p.g(44, 841.0).g(45, 594.0).g(73, 0).end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const std::string& t = l.doc().header().custom.at("tbcad.layouts");
+    CHECK(t.find("\tSheet A1\n") != std::string::npos);
+    CHECK(l.doc().header().custom.at("tbcad.pagesetups") == "S\tSheet A1\tstyle=mono.ctb\n");
+}
+
 TEST_CASE("dimension: style overrides in its extended data and a relative text height") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

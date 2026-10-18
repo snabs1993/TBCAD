@@ -562,6 +562,16 @@ std::string describe(std::span<const std::byte> bytes) {
                 line("decoded section " + name + ": " + std::to_string(data.size()) +
                      " bytes, starts " + hex16(data));
             const auto& secs = sections.value().sections;
+            if (const auto hdr = secs.find("AcDb:Header"); hdr != secs.end()) {
+                // The whole header: its layout differs between releases and is worked out from it.
+                std::string all;
+                char b[4];
+                for (std::size_t i = 0; i < hdr->second.size() && i < 4000; ++i) {
+                    std::snprintf(b, sizeof b, "%02X", hdr->second[i]);
+                    all += b;
+                }
+                line("header bytes: " + all);
+            }
             const auto objs = secs.find("AcDb:AcDbObjects");
             const auto hnd = secs.find("AcDb:Handles");
             if (objs != secs.end() && hnd != secs.end()) {

@@ -107,6 +107,7 @@ struct LayoutRec {
     int tab = 0;
     double width = 0, height = 0;  // paper, mm
     int rotation = 0;
+    std::string styleSheet{};  // plot style table name (a .ctb or .stb file), may be empty
     double margins[4] = {0, 0, 0, 0};  // left, bottom, right, top (ODA order)
     double plotOrigin[2] = {0, 0};
     double limits[4] = {0, 0, 0, 0};  // min x, min y, max x, max y

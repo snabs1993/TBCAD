@@ -332,6 +332,8 @@ std::string emitDxf(const Drawing& d) {
                            ? it->second->name
                            : "Layout" + std::to_string(i + 1));
             o.group(71, static_cast<long long>(i + 1));
+            if (it != layoutOf.end() && !it->second->styleSheet.empty())
+                o.group(7, it->second->styleSheet);
             if (it != layoutOf.end() && it->second->width > 0 && it->second->height > 0) {
                 o.group(44, it->second->width);
                 o.group(45, it->second->height);

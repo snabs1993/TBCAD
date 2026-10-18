@@ -1374,10 +1374,10 @@ private:
         for (int i = 0; i < 4; ++i)
             r.bd();  // window
         r.bd();
-        r.bd();         // custom print scale
-        r.textBytes();  // style sheet
-        r.bs();         // scale type
-        r.bd();         // scale factor
+        r.bd();                        // custom print scale
+        l.styleSheet = r.textBytes();  // style sheet
+        r.bs();                        // scale type
+        r.bd();                        // scale factor
         r.bd();
         r.bd();  // paper image origin
         if (fmt_.r2004) {
@@ -2543,7 +2543,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r70: compressed streams of the small sections in the trace, converter fails (and "
+    return "r71: layout plot style table reaches the page setup, AC1032 header tried at several "
+           "offsets; r70: compressed streams of the small sections in the trace, converter fails "
+           "(and "
            "writes nothing) when an unreadable DWG gives an empty drawing; r69: R2007 literal runs "
            "of 7, 11, 13 and 15 bytes read in the right order (all section "
            "names of a real file read); r68: R2007 odd section names no longer stop the map scan, "
