@@ -177,13 +177,18 @@ TEST_CASE("the default file name follows the open drawing - PLOTPANEL opens the 
     // The plot goes to the plots folder, never next to the (maybe read-only) drawing.
     h.setSetting("plot.defaultFolder", "/home/u/Documents/TBCAD plots");
     h.file = "C:\\work\\plan.v2.tbcad";
-    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/home/u/Documents/TBCAD plots/plan.v2.pdf");
-    CHECK(plot::defaultFile(h, plot::Format::Svg) == "/home/u/Documents/TBCAD plots/plan.v2.svg");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) ==
+          "/home/u/Documents/TBCAD plots/plan.v2-plot.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Svg) ==
+          "/home/u/Documents/TBCAD plots/plan.v2-plot.svg");
     h.file = "/tmp/dir.x/plan";
-    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/home/u/Documents/TBCAD plots/plan.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/home/u/Documents/TBCAD plots/plan-plot.pdf");
     // After a plot, the folder of the last file is kept.
     plot::setLastFile(h, plot::Format::Pdf, "D:\\out\\old.pdf");
-    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "D:\\out\\plan.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "D:\\out\\plan-plot.pdf");
+    // A last plot that went into the drawing's own folder is not reused.
+    plot::setLastFile(h, plot::Format::Pdf, "/TMP/dir.x/old.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/home/u/Documents/TBCAD plots/plan-plot.pdf");
 
     auto r = h.run("PLOTPANEL", {});
     CHECK(r.finished);
@@ -426,6 +431,17 @@ TEST_CASE("a named style table is found next to the drawing - a missing one is r
     CHECK(plot::loadSettings(h).styleTable);
     plot::setPlotStyleName(h, "_EP-100.tbstyle");
     CHECK_FALSE(plot::styleTableMissing(h));
+}
+
+TEST_CASE("PLOT asks before replacing a file that already exists") {
+    Fixture f;
+    const auto out = f.path("again.pdf");
+    { std::ofstream(out) << "old"; }
+    auto r = f.host->run("PLOT", {"Export", out, "No", cmd::ScriptItem::esc()});
+    CHECK(r.finished);
+    CHECK(std::filesystem::file_size(out) == 3);  // untouched
+    f.host->run("PLOT", {"Export", out, "Yes"});
+    CHECK(std::filesystem::file_size(out) > 3);
 }
 
 TEST_CASE("PLOT offers monochrome.ctb when the layout's style table cannot be found") {

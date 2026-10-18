@@ -2,8 +2,9 @@
 
 // Plot style tables. A table has one entry for each of the 255 palette colours (1..255); at plot
 // time an object's resolved colour selects an entry, and the entry can override the plotted
-// colour, lineweight and screening. Colours that are not palette colours (true colours) use their
-// own colour and the object's lineweight, like "Use object color" in a CTB file.
+// colour, lineweight and screening. True colours take the colour and screening of the nearest
+// palette colour (their lineweight stays their own); "Use object color" entries keep them as they
+// are.
 //
 // Text format (`.tbstyle`, UTF-8, one line per fact):
 //
@@ -50,6 +51,11 @@ struct PlotStyleTable {
 
 // Palette index (1..255) of a resolved colour, or 0 when it is not a palette colour.
 int paletteIndexOf(Rgba color);
+
+// Palette index (1..255) closest to a colour, so true colours follow the table entry that
+// looks most like them (AutoCAD does the same). The exact index when the colour is a palette
+// colour.
+int nearestPaletteIndex(Rgba color);
 
 // The entry's colour override (or `base`), made grey and screened as the entry says.
 Rgba applyEntry(const PlotStyleEntry& entry, Rgba base);

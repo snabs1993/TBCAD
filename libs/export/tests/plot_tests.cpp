@@ -271,7 +271,7 @@ TEST_CASE("a plot style table maps colour, lineweight and screening per palette 
     const Rgba drawn = paletteColor(5);
     CHECK(paths[1]->style.color.r > drawn.r);
     CHECK(paths[1]->style.widthMm == doctest::Approx(0.25));
-    // A true colour is left alone.
+    // A true colour whose nearest palette entry has no override is left alone.
     CHECK(paths[2]->style.color == Rgba{10, 200, 30, 255});
     // Monochrome mode still wins over the table.
     s.color = ColorMode::Monochrome;
@@ -279,7 +279,7 @@ TEST_CASE("a plot style table maps colour, lineweight and screening per palette 
     for (const auto& p : mono.value().prims)
         if (const auto* pp = std::get_if<PlotPath>(&p))
             CHECK(pp->style.color == Rgba{0, 0, 0, 255});
-    // The built-in monochrome table makes every palette colour black.
+    // The built-in monochrome table makes every colour black, true colours included.
     s.color = ColorMode::AsDisplayed;
     s.styleTable =
         std::make_shared<plotstyle::PlotStyleTable>(*plotstyle::builtinTable("monochrome.ctb"));
@@ -288,7 +288,7 @@ TEST_CASE("a plot style table maps colour, lineweight and screening per palette 
     for (const auto& p : bw.value().prims)
         if (const auto* pp = std::get_if<PlotPath>(&p))
             black += pp->style.color == Rgba{0, 0, 0, 255};
-    CHECK(black == 2);  // the two palette-coloured lines; the true colour stays
+    CHECK(black == 3);  // the true colour follows its nearest palette entry and goes black too
 }
 
 TEST_CASE("lineweights are absolute on paper - dashes scale with the plot scale") {

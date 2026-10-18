@@ -90,7 +90,9 @@ struct Builder {
     // Plotted colour: the style table's entry for palette colours, then the global colour mode.
     Rgba color(Rgba c) const {
         if (s.styleTable) {
-            if (int aci = plotstyle::paletteIndexOf(c)) {
+            // True colours use the entry of the nearest palette colour, so monochrome.ctb also
+            // blackens them. An entry that keeps the object colour leaves them as they are.
+            if (int aci = plotstyle::nearestPaletteIndex(c)) {
                 const plotstyle::PlotStyleEntry& e = s.styleTable->forIndex(aci);
                 Rgba shaded = plotstyle::applyEntry(e, plotColor(c, ColorMode::AsDisplayed));
                 if (s.color == ColorMode::AsDisplayed)

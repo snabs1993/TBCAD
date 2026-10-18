@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <optional>
 #include <sstream>
 
+#include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/sheets/sheets.h"
 
@@ -103,6 +105,20 @@ public:
                 auto file = co_await ctx.getString("Output file", fo);
                 if (!file.ok())
                     co_return;
+                std::error_code existsEc;
+                if (std::filesystem::exists(
+                        platform::pathFromUtf8(withExtension(file.text, format)), existsEc)) {
+                    KeywordOptions ow;
+                    ow.keywords = {"Yes", "No"};
+                    ow.defaultKeyword = "No";
+                    auto over = co_await ctx.getKeyword(
+                        "\"" + withExtension(file.text, format) + "\" already exists. Overwrite",
+                        ow);
+                    if (over.status == Status::Cancel)
+                        co_return;
+                    if (!over.ok() || over.keyword != "Yes")
+                        continue;  // back to the plot options to pick another name
+                }
                 auto r = exportFile(ctx.doc(), ctx.host(), s, format, file.text);
                 if (!r) {
                     ctx.message(r.error().message);
