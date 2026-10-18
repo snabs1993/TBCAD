@@ -181,3 +181,29 @@ TEST_CASE("DIMSETUP gives only the selected dimensions a style or an overall sca
     CHECK(styleOf(ids[0]) == kDimStyleStandard);
     CHECK(f.host->undo());
 }
+
+TEST_CASE("MLEADER and LEADER from far away get a scaled style like the first dimension") {
+    Fixture f;
+    f.host->setView({{0, 0}, 10.0, {900, 600}});
+    f.host->run("MLEADER", {"0,0", "3000,2000", "4000,2000", ScriptItem::enter(), "Text", "beam"});
+    const DimStyle* scaled = f.doc.dimStyleByName("Standard-1to50");
+    REQUIRE(scaled);
+    CHECK(scaled->overallScale == doctest::Approx(50));
+    CHECK(f.doc.header().currentDimStyle == scaled->id);
+    bool leader = false;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LeaderData>(e)) {
+            leader = true;
+            CHECK(l->style == scaled->id);
+            // The note sits one scaled arrow + gap away from the landing point.
+            CHECK(std::abs(l->textPos.x - l->vertices.back().x) ==
+                  doctest::Approx((2.5 + 0.625) * 50));
+        }
+    });
+    CHECK(leader);
+    // Esc rolls the style back with the rest of the command.
+    Fixture g;
+    g.host->setView({{0, 0}, 10.0, {900, 600}});
+    g.host->run("MLEADER", {"0,0", ScriptItem::esc()});
+    CHECK(g.doc.dimStyles().size() == 1);
+}

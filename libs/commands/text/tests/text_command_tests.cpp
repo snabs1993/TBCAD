@@ -300,3 +300,17 @@ TEST_CASE("TCOUNT numbers text objects in selection order") {
     CHECK(entityAs<TextData>(*f.doc.find(ids[0]))->utf8 == "P-15");
     CHECK(entityAs<TextData>(*f.doc.find(ids[1]))->utf8 == "P-20");
 }
+
+TEST_CASE("MTEXT and TEXT from far away default to a height that can be read") {
+    Fixture f;
+    f.host.setView({{0, 0}, 10.0, {900, 600}});  // 10 mm per pixel: a plan in millimetres
+    f.host.run("MT", {"0,1000", "4000,500", "far"});
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->height == doctest::Approx(125));  // 2.5 mm paper text at 1:50
+    // A normal zoom keeps 2.5 mm.
+    Fixture g;
+    g.host.run("MT", {"0,100", "40,60", "near"});
+    REQUIRE(g.firstMText());
+    CHECK(g.firstMText()->height == doctest::Approx(2.5));
+}

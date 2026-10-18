@@ -37,6 +37,10 @@ void previewEntity(cmd::CommandContext& ctx, Entity e, DisplayList& out);
 Entity dimEntity(const Document& doc, DimensionData d);
 void previewDim(cmd::CommandContext& ctx, const DimensionData& d, DisplayList& out);
 bool addDim(cmd::CommandContext& ctx, DimensionData d);
+// A drawing viewed from far away or with an annotation scale gets a dimension style scaled to match
+// before its first dimension or leader (the same sizing new text gets). Part of the command's
+// transaction, so Esc takes it back.
+void scaleFirstAnnotationToView(cmd::CommandContext& ctx);
 void previewLine(cmd::CommandContext& ctx, Vec2 a, Vec2 b, DisplayList& out);
 bool isLine(const Entity& e);
 bool isCircleOrArc(const Entity& e);
