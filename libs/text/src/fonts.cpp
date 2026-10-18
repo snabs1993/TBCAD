@@ -1,4 +1,5 @@
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <map>
@@ -60,6 +61,22 @@ std::mutex& pathMutex() {
     static std::mutex m;
     return m;
 }
+// Looking an SHX font up scans the font directories, and every text layout asks (the width factor
+// depends on it), so the answer is kept: a drawing with 100,000 texts took 18 s to open with
+// the Windows font folder on the search path. A font that was not found is looked for again after a
+// few seconds, so installing it takes effect.
+struct ShxAnswer {
+    FontResolution resolution;
+    std::chrono::steady_clock::time_point at;
+};
+std::mutex& shxMutex() {
+    static std::mutex m;
+    return m;
+}
+std::map<std::string, ShxAnswer>& shxAnswers() {
+    static std::map<std::string, ShxAnswer> c;
+    return c;
+}
 std::vector<std::filesystem::path>& extraPaths() {
     static std::vector<std::filesystem::path> p;
     return p;
@@ -89,6 +106,10 @@ void setFontSearchPaths(std::vector<std::filesystem::path> dirs) {
     {
         std::lock_guard lock(pathMutex());
         extraPaths() = std::move(dirs);
+    }
+    {
+        std::lock_guard lock(shxMutex());
+        shxAnswers().clear();
     }
     std::lock_guard lock(cacheMutex());
     fontCache().clear();
@@ -154,21 +175,37 @@ std::filesystem::path locateFontFile(const std::string& name) {
     return {};
 }
 
+namespace {
+FontResolution resolveShx(const std::string& shx) {
+    const auto now = std::chrono::steady_clock::now();
+    {
+        std::lock_guard lock(shxMutex());
+        auto it = shxAnswers().find(shx);
+        if (it != shxAnswers().end() && (it->second.resolution.kind == FontResolution::Kind::Shx ||
+                                         now - it->second.at < std::chrono::seconds(3)))
+            return it->second.resolution;
+    }
+    FontResolution r;
+    r.wanted = shx;
+    const auto path = locateFontFile(shx);
+    if (!path.empty() && fonts().loadStroke(path).ok()) {
+        r.kind = FontResolution::Kind::Shx;
+        r.used = path.string();
+    } else {
+        r.kind = FontResolution::Kind::Substitute;
+        r.used = "TBCAD Stroke";
+    }
+    std::lock_guard lock(shxMutex());
+    shxAnswers()[shx] = ShxAnswer{r, now};
+    return r;
+}
+}  // namespace
+
 FontResolution resolveStyleFont(const TextStyle& st) {
     FontResolution r;
     const std::string shx = shxNameOf(st);
-    if (!shx.empty()) {
-        r.wanted = shx;
-        const auto path = locateFontFile(shx);
-        if (!path.empty() && fonts().loadStroke(path).ok()) {
-            r.kind = FontResolution::Kind::Shx;
-            r.used = path.string();
-            return r;
-        }
-        r.kind = FontResolution::Kind::Substitute;
-        r.used = "TBCAD Stroke";
-        return r;
-    }
+    if (!shx.empty())
+        return resolveShx(shx);
     r.wanted = !st.fontFile.empty() ? st.fontFile : st.fontFamily;
     if (!r.wanted.empty() && !fontAvailable(st.fontFamily, st.fontFile)) {
         r.kind = FontResolution::Kind::Substitute;
