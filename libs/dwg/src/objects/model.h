@@ -63,6 +63,8 @@ struct DimStyleRec {
     std::string name{};
     int flags = 0;
     std::uint64_t textStyle = 0;  // handle of the text style (DIMTXSTY), 0 when not read
+    // Arrow blocks (DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2), 0 for the default closed filled arrow.
+    std::uint64_t leaderArrow = 0, arrow = 0, arrow1 = 0, arrow2 = 0;
     std::vector<Group> groups{};
 };
 

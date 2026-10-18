@@ -840,6 +840,16 @@ private:
                 const HandleRef textStyle = h.handle();
                 if (!h.failed())
                     d.textStyle = resolveHandle(textStyle, self);
+                const HandleRef leaderArrow = h.handle();
+                const HandleRef arrow = h.handle();
+                const HandleRef arrow1 = h.handle();
+                const HandleRef arrow2 = h.handle();
+                if (!h.failed()) {
+                    d.leaderArrow = resolveHandle(leaderArrow, self);
+                    d.arrow = resolveHandle(arrow, self);
+                    d.arrow1 = resolveHandle(arrow1, self);
+                    d.arrow2 = resolveHandle(arrow2, self);
+                }
                 d.flags = (flag64 ? 64 : 0) | (xdep ? 16 : 0) | (unknown ? 1 : 0);
                 out_.dimStyles[self] = std::move(d);
                 break;
@@ -2560,7 +2570,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r80: --lz21-search tries every cut into blocks of 1, 4 and 8 bytes; r76: distinct "
+    return "r81: dimension style arrow blocks decoded; r80: --lz21-search tries every cut into "
+           "blocks of 1, 4 and 8 bytes; r76: distinct "
            "layer extended data listed; r75: all dictionary entry names and layer "
            "extended data listed; r74: layer extension "
            "dictionaries and xrecords "

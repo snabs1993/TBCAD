@@ -248,6 +248,20 @@ std::string emitDxf(const Drawing& d) {
         o.group(70, ds.flags);
         if (ds.textStyle != 0)
             o.group(340, hexHandle(ds.textStyle));
+        // The arrow blocks go out by name (the built-in ones are _ARCHTICK, _DOT, ...), so the
+        // importer can pick the arrow kind without a block record table.
+        auto arrowName = [&](std::uint64_t handle) {
+            const auto b = d.blocks.find(handle);
+            return b == d.blocks.end() ? std::string{} : b->second.name;
+        };
+        if (const std::string n = arrowName(ds.arrow); !n.empty())
+            o.group(342, n);
+        if (const std::string n = arrowName(ds.arrow1); !n.empty())
+            o.group(343, n);
+        if (const std::string n = arrowName(ds.arrow2); !n.empty())
+            o.group(344, n);
+        if (const std::string n = arrowName(ds.leaderArrow); !n.empty())
+            o.group(341, n);
         for (const Group& g : ds.groups)
             emitGroup(o, g);
     }
