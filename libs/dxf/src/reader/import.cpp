@@ -617,6 +617,49 @@ void Importer::readDimStyle(const Record& r) {
     positive(40, 1.0, ds.overallScale);  // DIMSCALE
     // A text style with a fixed height decides the dimension text height: DIMTXT and DIMSCALE
     // do not apply to it. The style keeps the product the dimension generator multiplies.
+    // DIMPOST: text around the measurement, "<>" marks where it goes; without "<>" the whole
+    // text follows it. Alternate-unit forms ("[...]") are not supported and leave both empty.
+    if (r.has(3)) {
+        const std::string post = dec(r.raw(3));
+        const std::size_t at = post.find("<>");
+        if (post.find('[') == std::string::npos) {
+            if (at == std::string::npos) {
+                ds.suffix = post;
+            } else if (post.find("<>", at + 2) == std::string::npos) {
+                ds.prefix = post.substr(0, at);
+                ds.suffix = post.substr(at + 2);
+            }
+        }
+    }
+    nonNegative(45, k_, ds.roundOff);  // DIMRND
+    // Text orientation: inside (73) or outside (74) text kept horizontal; above the line (77).
+    if (r.has(73) || r.has(74)) {
+        const bool horizontal =
+            (r.has(73) && r.find(73)->integer() != 0) || (r.has(74) && r.find(74)->integer() != 0);
+        ds.textAlign = horizontal ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+    }
+    if (r.has(77))
+        ds.textPlacement =
+            r.find(77)->integer() != 0 ? DimTextPlacement::AboveLine : DimTextPlacement::Centered;
+    if (const Group* g = r.find(78)) {  // DIMZIN
+        const std::int64_t z = g->integer();
+        ds.suppressLeadingZeros = (z & 4) != 0;
+        ds.suppressTrailingZeros = (z & 8) != 0;
+    }
+    auto dimColor = [&](int code, Color& out) {
+        if (const Group* g = r.find(code)) {
+            const std::int64_t c = g->integer();
+            if (c == 0)
+                out = Color::byBlock();
+            else if (c == 256)
+                out = Color::byLayer();
+            else if (c >= 1 && c <= 255)
+                out = Color::index(static_cast<std::uint8_t>(c));
+        }
+    };
+    dimColor(176, ds.dimLineColor);
+    dimColor(177, ds.extLineColor);
+    dimColor(178, ds.textColor);
     if (r.has(340)) {
         const auto fixed = styleHeights_.find(std::string(r.raw(340)));
         if (fixed != styleHeights_.end() && ds.overallScale > 0)
