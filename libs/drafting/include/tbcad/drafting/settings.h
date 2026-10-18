@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "tbcad/cmd/host.h"
@@ -50,6 +51,18 @@ std::string formatSnapModes(SnapModeMask mask);
 // Comma / space separated names, plus "all" and "none". nullopt when a word is unknown.
 std::optional<SnapModeMask> parseSnapModes(std::string_view text);
 
+// Isometric drafting (ISODRAFT / ISOPLANE): the plane whose two axes ortho and snap follow.
+// Left: 90 and 150 degrees; Top: 30 and 150; Right: 30 and 90.
+enum class IsoPlane : std::uint8_t { Off, Left, Top, Right };
+// Angles in degrees of the plane's two axes; {0, 0} for Off.
+std::pair<double, double> isoAxesDeg(IsoPlane plane);
+// Direction (degrees) of the axis that lies in no plane face of `plane`: the one a circle drawn
+// in the plane has its minor axis along.
+double isoNormalDeg(IsoPlane plane);
+std::string_view isoPlaneName(IsoPlane plane);
+std::optional<IsoPlane> parseIsoPlane(std::string_view text);  // "left", "t", "Right" ...
+IsoPlane nextIsoPlane(IsoPlane plane);                         // Left > Top > Right > Left
+
 // Setting keys (stored through cmd::IHost::setSetting; the application persists them).
 namespace keys {
 inline constexpr const char* osnap = "drafting.osnap";                   // bool
@@ -65,7 +78,12 @@ inline constexpr const char* osnapAperture = "drafting.osnap.aperture";  // pixe
 inline constexpr const char* snapSpacing = "drafting.snap.spacing";      // mm
 inline constexpr const char* gridSpacing = "drafting.grid.spacing";      // mm
 inline constexpr const char* gridStyle = "drafting.grid.style";          // "dots" | "lines"
+inline constexpr const char* osnapOnce = "drafting.osnap.once";  // "endpoint": next point only
+inline constexpr const char* ucsIcon = "drafting.ucsicon";       // bool, on by default
+inline constexpr const char* ucsIconOrigin = "drafting.ucsicon.origin";    // bool, on by default
 inline constexpr const char* polarIncrement = "drafting.polar.increment";  // degrees, list
+inline constexpr const char* isoDraft = "drafting.isodraft";               // bool
+inline constexpr const char* isoPlane = "drafting.isoplane";  // "left" | "top" | "right"
 }  // namespace keys
 
 // Everything the drafting aids read, taken from the host settings on every use so a change in
@@ -88,6 +106,7 @@ struct DraftingSettings {
     // Each entry is an increment: polar tracking snaps to every multiple of every entry.
     std::vector<double> polarIncrementsDeg{90};
     double polarToleranceDeg = 2;
+    IsoPlane isoPlane = IsoPlane::Off;  // Off unless ISODRAFT is on
 
     static DraftingSettings read(const cmd::IHost& host);
 };

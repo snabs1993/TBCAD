@@ -52,6 +52,7 @@ void registerUi(ui::UiRegistry& ui) {
         drafting::GridStyle gs;
         gs.spacingMm = s.gridSpacing;
         gs.lines = s.gridLines;
+        gs.isoPlane = static_cast<int>(s.isoPlane);
         gs.dark = pc.host->setting("ui.theme").value_or("dark") != "light";
         if (pc.doc) {  // the grid follows the current UCS
             const auto ucs = drafting::currentUcs(pc.doc, pc.host);

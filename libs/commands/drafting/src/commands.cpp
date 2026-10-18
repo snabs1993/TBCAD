@@ -234,6 +234,61 @@ protected:
     }
 };
 
+// ISODRAFT: isometric drafting on/off. Ortho, snap and the grid follow the axes of the current
+// isometric plane (ISOPLANE).
+class IsoDraftCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ISODRAFT"; }
+    std::string_view description() const override {
+        return "Isometric drafting on/off (ortho, snap and grid follow the isometric axes)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool on =
+            drafting::DraftingSettings::read(ctx.host()).isoPlane != drafting::IsoPlane::Off;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"ON", "OFF"};
+        ko.defaultKeyword = on ? "OFF" : "ON";
+        auto r = co_await ctx.getKeyword("Isometric drafting [ON/OFF]", std::move(ko));
+        if (!r.ok())
+            co_return;
+        const bool want = cmd::toUpperAscii(r.keyword) == "ON";
+        ctx.host().setSetting(drafting::keys::isoDraft, want ? "1" : "0");
+        ctx.message(want ? "Isometric drafting on, plane " +
+                               std::string(drafting::isoPlaneName(
+                                   drafting::DraftingSettings::read(ctx.host()).isoPlane))
+                         : std::string("Isometric drafting off"));
+    }
+};
+
+// ISOPLANE [Left/Top/Right]: the isometric plane. Enter goes to the next one (the F5 key).
+class IsoPlaneCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ISOPLANE"; }
+    bool isTransparent() const override { return true; }
+    std::string_view description() const override {
+        return "Set the isometric plane: Left, Top or Right (Enter = next)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto cur = drafting::DraftingSettings::read(ctx.host()).isoPlane;
+        if (cur == drafting::IsoPlane::Off)
+            cur = drafting::IsoPlane::Top;
+        const auto next = drafting::nextIsoPlane(cur);
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Left", "Top", "Right"};
+        ko.defaultKeyword = std::string(drafting::isoPlaneName(next));
+        auto r = co_await ctx.getKeyword("Current isometric plane is " +
+                                             std::string(drafting::isoPlaneName(cur)) +
+                                             ". Enter isometric plane setting [Left/Top/Right]",
+                                         std::move(ko));
+        if (!r.ok())
+            co_return;
+        const auto plane = drafting::parseIsoPlane(r.keyword).value_or(next);
+        ctx.host().setSetting(drafting::keys::isoPlane, std::string(drafting::isoPlaneName(plane)));
+        ctx.host().setSetting(drafting::keys::isoDraft, "1");
+        ctx.message("Current isometric plane is " + std::string(drafting::isoPlaneName(plane)));
+    }
+};
+
 // Hidden one-keystroke toggles used by the F-keys. No prompt, so they also work while another
 // command waits for a point (typed as 'TOGGLEORTHO by the menu items).
 class ToggleCommand final : public cmd::Command {
@@ -278,6 +333,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<SnapCommand>());
     (void)registry.add(std::make_unique<OrthoCommand>());
     (void)registry.add(std::make_unique<PolarCommand>());
+    (void)registry.add(std::make_unique<IsoDraftCommand>());
+    (void)registry.add(std::make_unique<IsoPlaneCommand>());
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEOSNAP", "Object snap", osnap));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLEGRID", "Grid", grid));
     (void)registry.add(std::make_unique<ToggleCommand>("TOGGLESNAP", "Snap", snap));

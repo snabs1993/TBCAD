@@ -84,6 +84,7 @@ public:
     void scroll(float x, float y, float dy);
     // Clicks the centre of the widget; false (and a note in the failure log) when it is not there.
     bool click(const std::string& label, const std::string& window = {}, int nth = 0);
+    bool doubleClickItem(const std::string& label, const std::string& window = {}, int nth = 0);
     bool rightClick(const std::string& label, const std::string& window = {}, int nth = 0);
     bool clickAt(const imgui_items::Item& item, int button = 0);
     // Hold Ctrl or Shift for the next clicks.

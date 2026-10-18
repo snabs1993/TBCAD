@@ -367,6 +367,7 @@ private:
 
     std::unique_ptr<Session> makeSession(std::unique_ptr<Document> doc, std::filesystem::path file);
     Result<void> openDxf(const std::filesystem::path& path);
+    void storeCurrentUcs();
     Result<void> saveDxf(const std::filesystem::path& path);
     void clearTransientState();
     // Background autosave: starts one (false if nothing to save or one is running), collects a

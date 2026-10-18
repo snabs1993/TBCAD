@@ -18,6 +18,7 @@
 #include "icons.h"
 #include "key_map.h"
 #include "tbcad/drafting/settings.h"
+#include "tbcad/drafting/ucs.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
@@ -55,48 +56,6 @@ const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
         {"TBCAD drawings", "*.tbcad"},
         {"All drawings", "*.tbcad;*.dxf"}};
     return dxfFirst ? dxfFirstList : tbcadFirst;
-}
-
-const char* kindName(EntityKind k) {
-    switch (k) {
-        case EntityKind::Line:
-            return "Line";
-        case EntityKind::Circle:
-            return "Circle";
-        case EntityKind::Arc:
-            return "Arc";
-        case EntityKind::Polyline:
-            return "Polyline";
-        case EntityKind::Point:
-            return "Point";
-        case EntityKind::Ellipse:
-            return "Ellipse";
-        case EntityKind::Spline:
-            return "Spline";
-        case EntityKind::Text:
-            return "Text";
-        case EntityKind::MText:
-            return "Multiline text";
-        case EntityKind::Hatch:
-            return "Hatch";
-        case EntityKind::Insert:
-            return "Block reference";
-        case EntityKind::Dimension:
-            return "Dimension";
-        case EntityKind::Leader:
-            return "Leader";
-        case EntityKind::Proxy:
-            return "Proxy object";
-        case EntityKind::Table:
-            return "Table";
-        case EntityKind::Ray:
-            return "Ray";
-        case EntityKind::MLine:
-            return "Multiline";
-        case EntityKind::MLeader:
-            return "Multileader";
-    }
-    return "Object";
 }
 
 // A tree of registered menu items ("Draw/Circle/Center, Radius").
@@ -2125,8 +2084,9 @@ void Gui::commandWindow() {
         if (ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this)) {
             std::string line = input_;
             bool refused = false;
+            // An arrow-key pick wins even over a typed word that is itself an alias ("li").
             if (suggestVisible_ && !suggestions_.empty() &&
-                !core_.registry().find(cmd::toUpperAscii(line))) {
+                (suggestNavigated_ || !core_.registry().find(cmd::toUpperAscii(line)))) {
                 const std::string& pick =
                     suggestions_[static_cast<std::size_t>(std::clamp(
                                      suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
@@ -2199,7 +2159,17 @@ void Gui::updateSuggestions() {
         suggestions_.clear();
         return;
     }
-    suggestions_ = ui::matchCommands(core_.registry(), input_, paletteOpen_ ? 16 : 8);
+    std::vector<std::string> recent;  // command names typed lately, latest first
+    for (auto it = inputHistory_.lines().rbegin();
+         it != inputHistory_.lines().rend() && recent.size() < 30; ++it) {
+        std::string word = it->substr(0, it->find(' '));
+        for (char& ch : word)
+            ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (const cmd::Command* c = core_.registry().find(word))
+            if (std::find(recent.begin(), recent.end(), std::string(c->name())) == recent.end())
+                recent.emplace_back(c->name());
+    }
+    suggestions_ = ui::matchCommands(core_.registry(), input_, paletteOpen_ ? 16 : 8, recent);
     if (suggestions_.empty()) {
         suggestVisible_ = false;
         return;
@@ -2970,7 +2940,11 @@ void Gui::viewportInput(const ViewportRect& rect) {
     const bool rightIsEnter = core_.settings().getString("ui.rightClick", "menu") == "enter";
     const bool wheelOn = !rightIsEnter && core_.settings().getBool("ui.wheel.enabled", true);
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        if (rightIsEnter)
+        const auto* pr = core_.runner().prompt();
+        if (io.KeyShift && core_.runner().active() && pr &&
+            pr->kind == cmd::PromptInfo::Kind::Point)
+            ImGui::OpenPopup("##snapMenu");  // Shift + right click: snap overrides
+        else if (rightIsEnter)
             core_.submitText("");
         else if (wheelOn)
             rightDown_ = true;
@@ -3055,7 +3029,31 @@ void Gui::hoverTooltip() {
 
 // What the right-click menu offers depends on the state: a running command (Enter, Cancel, its
 // options), a selection (the common edits), or nothing (repeat, select all, undo, zoom).
+// The one-point object snap overrides (AutoCAD's Snap Overrides): the next point uses only the
+// chosen snap, whatever the running modes are. "None" turns snapping off for that point.
+void Gui::snapOverrideItems() {
+    const std::string current = core_.setting(drafting::keys::osnapOnce).value_or("");
+    for (int i = 0; i < drafting::kSnapModeCount; ++i) {
+        const auto mode = static_cast<drafting::SnapMode>(i);
+        const std::string name(drafting::snapModeName(mode));
+        const std::string label(drafting::snapModeLabel(mode));
+        if (ImGui::MenuItem(label.c_str(), nullptr, current == name))
+            core_.setSetting(drafting::keys::osnapOnce, name);
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("None", nullptr, current == "none"))
+        core_.setSetting(drafting::keys::osnapOnce, "none");
+    if (!current.empty() && ImGui::MenuItem("Cancel override"))
+        core_.setSetting(drafting::keys::osnapOnce, "");
+}
+
 void Gui::viewportMenu() {
+    if (ImGui::BeginPopup("##snapMenu")) {  // Shift + right click
+        anyActivity_ = true;
+        ImGui::TextDisabled("Snap overrides (next point)");
+        snapOverrideItems();
+        ImGui::EndPopup();
+    }
     if (!ImGui::BeginPopup("##viewportMenu"))
         return;
     anyActivity_ = true;
@@ -3071,7 +3069,17 @@ void Gui::viewportMenu() {
                 if (ImGui::MenuItem(k.c_str()))
                     run(k);
         }
+        if (const auto* pr = core_.runner().prompt();
+            pr && pr->kind == cmd::PromptInfo::Kind::Point) {
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Snap Overrides")) {
+                snapOverrideItems();
+                ImGui::EndMenu();
+            }
+        }
         ImGui::Separator();
+        if (core_.registry().find("PAN") && ImGui::MenuItem("Pan"))
+            run("'PAN");
         if (ImGui::MenuItem("Zoom Extents"))
             core_.zoomExtents();
     } else {
@@ -3307,7 +3315,7 @@ ViewportRect Gui::frame() {
     gripMenu(rect);
     // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.
     if (!core_.inPaperSpace() && core_.settings().getBool("display.originIcon", true) &&
-        !startPage_) {
+        !ucsIconShown()) {
         const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
         const Vec2 o = core_.camera().worldToScreen({0, 0});
         const ImVec2 at(rect.x + static_cast<float>(o.x / sc),
@@ -3382,6 +3390,73 @@ void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
     ImDrawList* bg = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     bg->AddImage(static_cast<ImTextureID>(texture), ImVec2(rect.x, rect.y),
                  ImVec2(rect.x + rect.w, rect.y + rect.h), ImVec2(0, 1), ImVec2(1, 0));
+    ucsIcon(rect);  // after the picture, so it lies on top of the drawing
+}
+
+bool Gui::ucsIconShown() const {
+    // The start page covers an untouched drawing; the icon waits for the first change.
+    const bool startPageShown =
+        startPage_ && core_.isPristine() && core_.documentCount() == 1 && !core_.runner().active();
+    return !startPageShown && !core_.inPaperSpace() &&
+           drafting::parseBoolSetting(core_.setting(drafting::keys::ucsIcon).value_or("1"), true);
+}
+
+// The coordinate-system icon (UCSICON): an X and a Y arrow along the axes of the current UCS, at
+// the UCS origin or, with "Noorigin" or when the origin is off screen, in the lower-left corner.
+// A "W" next to it says the system is the world system; a small square marks the real origin.
+void Gui::ucsIcon(const ViewportRect& rect) {
+    if (!ucsIconShown())
+        return;
+    const drafting::Ucs ucs = drafting::currentUcs(&core_.document(), &core_);
+    const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
+    const float len = 36.0f * dpiScale_;
+    ImVec2 at(rect.x + 44.0f * dpiScale_, rect.y + rect.h - 44.0f * dpiScale_);
+    bool atOrigin = false;
+    if (drafting::parseBoolSetting(core_.setting(drafting::keys::ucsIconOrigin).value_or("1"),
+                                   true)) {
+        const Vec2 o = core_.camera().worldToScreen(ucs.origin);
+        const ImVec2 p(rect.x + static_cast<float>(o.x / sc),
+                       rect.y + static_cast<float>(o.y / sc));
+        const float margin = len + 20.0f * dpiScale_;  // the whole icon stays inside the viewport
+        if (p.x >= rect.x + margin * 0.3f && p.y >= rect.y + margin &&
+            p.x < rect.x + rect.w - margin && p.y < rect.y + rect.h - margin * 0.3f) {
+            at = p;
+            atOrigin = true;
+        }
+    }
+    const float c = static_cast<float>(std::cos(ucs.angle));
+    const float sn = static_cast<float>(std::sin(ucs.angle));
+    const ImVec2 dx(c, -sn), dy(-sn, -c);  // screen directions of the UCS axes (y grows downwards)
+    const ImU32 xCol = IM_COL32(230, 80, 80, 235), yCol = IM_COL32(80, 200, 100, 235);
+    ImDrawList* dl = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
+    dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h));
+    auto arrow = [&](ImVec2 d, ImU32 col, const char* name) {
+        const ImVec2 tip(at.x + d.x * len, at.y + d.y * len);
+        const ImVec2 n(-d.y, d.x);
+        const float h = 7.0f * dpiScale_;
+        dl->AddLine(at, tip, col, 1.6f);
+        dl->AddTriangleFilled(tip,
+                              ImVec2(tip.x - d.x * h * 1.6f + n.x * h * 0.5f,
+                                     tip.y - d.y * h * 1.6f + n.y * h * 0.5f),
+                              ImVec2(tip.x - d.x * h * 1.6f - n.x * h * 0.5f,
+                                     tip.y - d.y * h * 1.6f - n.y * h * 0.5f),
+                              col);
+        const ImVec2 ts = ImGui::CalcTextSize(name);
+        dl->AddText(ImVec2(tip.x + d.x * 8.0f * dpiScale_ - ts.x * 0.5f,
+                           tip.y + d.y * 8.0f * dpiScale_ - ts.y * 0.5f),
+                    col, name);
+    };
+    arrow(dx, xCol, "X");
+    arrow(dy, yCol, "Y");
+    if (atOrigin) {
+        const float q = 3.5f * dpiScale_;
+        dl->AddRect(ImVec2(at.x - q, at.y - q), ImVec2(at.x + q, at.y + q),
+                    IM_COL32(140, 145, 155, 240));
+    }
+    if (ucs.isWorld())
+        dl->AddText(ImVec2(at.x + 6.0f * dpiScale_, at.y + 3.0f * dpiScale_),
+                    IM_COL32(140, 145, 155, 240), "W");
+    dl->PopClipRect();
 }
 
 // ---- dialogs -----------------------------------------------------------------------------------

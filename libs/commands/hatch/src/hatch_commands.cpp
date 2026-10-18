@@ -234,7 +234,9 @@ class HatchCommand final : public cmd::Command {
 public:
     explicit HatchCommand(bool gradient = false) : gradient_(gradient) {}
     std::string_view name() const override { return gradient_ ? "GRADIENT" : "HATCH"; }
-    std::vector<std::string> defaultAliases() const override { return {gradient_ ? "GR" : "H"}; }
+    std::vector<std::string> defaultAliases() const override {
+        return gradient_ ? std::vector<std::string>{"GR"} : std::vector<std::string>{"H", "BHATCH"};
+    }
     std::string_view description() const override {
         return gradient_ ? "Fill an enclosed area with a colour gradient"
                          : "Fill an enclosed area with a pattern or a solid colour";

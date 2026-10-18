@@ -103,6 +103,8 @@ private:
     std::string dismissedReadOnly_{};  // read-only notice text the user closed
     void docTabs();
     void startPage(const ViewportRect& rect);
+    bool ucsIconShown() const;
+    void ucsIcon(const ViewportRect& rect);
     void statusBar();
     void snapModesPopup();
     float layoutTabsHeight() const;
@@ -136,6 +138,7 @@ private:
     void dialogs();
     void viewportInput(const ViewportRect& rect);
     void viewportMenu();
+    void snapOverrideItems();
     void dropIntoViewport(const ViewportRect& rect);
     void registeredMenu(const std::string& top);
     void registeredSubmenu(const std::string& prefix, std::vector<const ui::MenuItemInfo*>& items);

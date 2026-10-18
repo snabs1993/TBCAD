@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "tbcad/drafting/settings.h"
 #include "tbcad/drafting/ucs.h"
 
 namespace tbcad::drafting {
@@ -54,6 +55,42 @@ void buildGrid(render::Overlay& overlay, const render::Camera2D& camera, const G
     const Rgba minor = style.dark ? Rgba{70, 76, 86, 255} : Rgba{190, 196, 206, 255};
     const Rgba major = style.dark ? Rgba{96, 104, 116, 255} : Rgba{160, 168, 180, 255};
 
+    if (style.isoPlane != 0) {
+        // Isometric lattice: lines along both axes of the plane, spaced `s` along the other axis.
+        const auto [a1, a2] = isoAxesDeg(static_cast<IsoPlane>(style.isoPlane));
+        const Vec2 b1{std::cos(a1 * kPi / 180.0), std::sin(a1 * kPi / 180.0)};
+        const Vec2 b2{std::cos(a2 * kPi / 180.0), std::sin(a2 * kPi / 180.0)};
+        const double det = b1.x * b2.y - b1.y * b2.x;
+        auto coords = [&](Vec2 p) {  // p = i b1 + j b2
+            return Vec2{(p.x * b2.y - p.y * b2.x) / det, (b1.x * p.y - b1.y * p.x) / det};
+        };
+        BBox2 ij;
+        for (Vec2 c :
+             {area.min, Vec2{area.max.x, area.min.y}, area.max, Vec2{area.min.x, area.max.y}})
+            ij.expand(coords(c));
+        auto level = [&](double s, Rgba color, double alpha) {
+            if (alpha <= 0.01)
+                return;
+            const double ni = ij.width() / s, nj = ij.height() / s;
+            if (ni > 200 || nj > 200)
+                return;
+            render::OverlayStyle st;
+            color.a = static_cast<std::uint8_t>(std::lround(color.a * alpha));
+            st.color = color;
+            st.widthPx = 1.0;
+            const double i0 = std::floor(ij.min.x / s) * s, i1 = ij.max.x + s;
+            const double j0 = std::floor(ij.min.y / s) * s, j1 = ij.max.y + s;
+            for (double j = j0; j <= j1; j += s)
+                overlay.line(render::Space::World, frame.toWorld(b1 * i0 + b2 * j),
+                             frame.toWorld(b1 * i1 + b2 * j), st);
+            for (double i = i0; i <= i1; i += s)
+                overlay.line(render::Space::World, frame.toWorld(b1 * i + b2 * j0),
+                             frame.toWorld(b1 * i + b2 * j1), st);
+        };
+        level(lv.fineMm, minor, lv.fineAlpha);
+        level(lv.coarseMm, major, 1.0);
+        return;
+    }
     auto drawLevel = [&](double s, Rgba color, double alpha, bool skipCoarse) {
         if (alpha <= 0.01)
             return;

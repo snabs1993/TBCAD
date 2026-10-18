@@ -62,6 +62,68 @@ bool toDouble(const std::string& s, double& out) {
 
 }  // namespace
 
+std::pair<double, double> isoAxesDeg(IsoPlane plane) {
+    switch (plane) {
+        case IsoPlane::Left:
+            return {90.0, 150.0};
+        case IsoPlane::Top:
+            return {30.0, 150.0};
+        case IsoPlane::Right:
+            return {30.0, 90.0};
+        default:
+            return {0.0, 0.0};
+    }
+}
+
+double isoNormalDeg(IsoPlane plane) {
+    switch (plane) {
+        case IsoPlane::Left:
+            return 30.0;
+        case IsoPlane::Top:
+            return 90.0;
+        case IsoPlane::Right:
+            return 150.0;
+        default:
+            return 0.0;
+    }
+}
+
+std::string_view isoPlaneName(IsoPlane plane) {
+    switch (plane) {
+        case IsoPlane::Left:
+            return "Left";
+        case IsoPlane::Top:
+            return "Top";
+        case IsoPlane::Right:
+            return "Right";
+        default:
+            return "Off";
+    }
+}
+
+std::optional<IsoPlane> parseIsoPlane(std::string_view text) {
+    const std::string t = lower(text);
+    if (t.empty())
+        return std::nullopt;
+    for (IsoPlane p : {IsoPlane::Left, IsoPlane::Top, IsoPlane::Right}) {
+        const std::string n = lower(isoPlaneName(p));
+        if (n.compare(0, t.size(), t) == 0)
+            return p;
+    }
+    return std::nullopt;
+}
+
+IsoPlane nextIsoPlane(IsoPlane plane) {
+    switch (plane) {
+        case IsoPlane::Left:
+            return IsoPlane::Top;
+        case IsoPlane::Top:
+            return IsoPlane::Right;
+        default:
+            return IsoPlane::Left;
+    }
+}
+
 std::string_view snapModeName(SnapMode m) {
     return kNames[static_cast<std::size_t>(m)];
 }
@@ -159,10 +221,22 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
     s.snap = boolOf(keys::snap, false);
     s.dynUcs = boolOf(keys::dynUcs, false);
     s.grid = boolOf(keys::grid, false);
+    if (boolOf(keys::isoDraft, false)) {
+        s.isoPlane = IsoPlane::Top;
+        if (auto p = get(keys::isoPlane))
+            if (auto plane = parseIsoPlane(*p))
+                s.isoPlane = *plane;
+    }
     s.dynInput = boolOf(keys::dynInput, true);
     if (auto m = get(keys::osnapModes))
         if (auto mask = parseSnapModes(*m))
             s.modes = *mask;
+    // A snap override from the right-click menu replaces the running modes for one point.
+    if (auto once = get(keys::osnapOnce); once && !once->empty())
+        if (auto mask = parseSnapModes(*once)) {
+            s.osnap = true;
+            s.modes = *mask;
+        }
     s.aperturePx = numOf(keys::osnapAperture, 10, 0);
     s.snapSpacing = numOf(keys::snapSpacing, 10, 0);
     s.gridSpacing = numOf(keys::gridSpacing, 10, 0);

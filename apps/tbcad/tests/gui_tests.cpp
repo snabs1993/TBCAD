@@ -384,3 +384,567 @@ TEST_CASE("plot panel: options change the exported PDF") {
     CHECK(port.first < port.second);
     CHECK(port.first == doctest::Approx(land.second).epsilon(0.01));
 }
+
+namespace {
+
+// Pixels of the X arrow's red inside the viewport (x < 1420, between the toolbar and the tabs).
+struct RedSpot {
+    int count = 0;
+    double cx = 0, cy = 0;
+};
+RedSpot redSpot(const Image& img) {
+    RedSpot r;
+    for (int y = 95; y < 860 && y < img.height; ++y)
+        for (int x = 0; x < 1420 && x < img.width; ++x) {
+            const std::uint8_t* p = &img.rgba[(static_cast<std::size_t>(y) * img.width + x) * 4];
+            if (p[0] > 200 && p[1] < 110 && p[2] < 110) {
+                ++r.count;
+                r.cx += x;
+                r.cy += y;
+            }
+        }
+    if (r.count) {
+        r.cx /= r.count;
+        r.cy /= r.count;
+    }
+    return r;
+}
+
+}  // namespace
+
+TEST_CASE("UCS icon: on, off, origin, noorigin, rotated and the world marker") {
+    Harness h(1920, 1080);
+    h.core().setSetting("display.originIcon", "0");  // the plain axes landmark, not under test
+    h.core().submitText("LINE");  // the start page hides the icon while the drawing is untouched
+    h.core().submitText("500,500");
+    h.core().submitText("900,500");
+    h.core().pressEscape();
+    h.frame(3);
+    Vec2 o = h.core().camera().worldToScreen({0, 0});
+    o.y += 92;  // the viewport starts below the menu, toolbar and tabs
+
+    // On by default, at the world origin.
+    const RedSpot on = redSpot(h.screenshot());
+    CHECK(on.count > 20);
+    CHECK(on.cx == doctest::Approx(o.x + 18).epsilon(0.5));  // the arrow lies to the right
+    const Image atOrigin =
+        crop(h.screenshot(), static_cast<int>(o.x) - 30, static_cast<int>(o.y) - 70, 130, 110);
+    CHECK(matchesGolden(atOrigin, "ucsicon_world"));
+
+    // Noorigin: the icon moves to the lower-left corner of the viewport.
+    run(h, "UCSICON Noorigin");
+    const RedSpot corner = redSpot(h.screenshot());
+    CHECK(corner.count > 20);
+    CHECK(corner.cx < 120);
+    CHECK(corner.cy > 700);
+    run(h, "UCSICON ORigin");
+    CHECK(redSpot(h.screenshot()).cx == doctest::Approx(on.cx).epsilon(0.01));
+
+    // Rotated UCS: the X arrow turns, the world marker goes away.
+    h.core().submitText("UCS");
+    h.core().submitText("Rotate");
+    h.core().submitText("90");
+    h.frame(3);
+    const RedSpot turned = redSpot(h.screenshot());
+    CHECK(turned.count > 20);
+    CHECK(turned.cy < on.cy - 10);  // pointing up now (screen y grows downwards)
+    const Image rotated =
+        crop(h.screenshot(), static_cast<int>(o.x) - 30, static_cast<int>(o.y) - 70, 130, 110);
+    CHECK(matchesGolden(rotated, "ucsicon_rotated"));
+
+    // Off.
+    run(h, "UCSICON OFF");
+    CHECK(redSpot(h.screenshot()).count == 0);
+    run(h, "UCSICON ON");
+    CHECK(redSpot(h.screenshot()).count > 20);
+}
+
+namespace {
+
+// Where a world point is in the harness window (the viewport starts below the menu and tabs).
+ImVec2 screenOf(Harness& h, Vec2 world) {
+    const Vec2 s = h.core().camera().worldToScreen(world);
+    return ImVec2(static_cast<float>(s.x), static_cast<float>(s.y) + 92.0f);
+}
+
+std::size_t entityCount(Harness& h) {
+    std::size_t n = 0;
+    h.core().document().forEachEntity([&](const Entity&) { ++n; });
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("viewport menu: idle and with a selection") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("100,100");
+    h.core().submitText("400,100");
+    h.core().pressEscape();
+    h.frame(3);
+    const ImVec2 mid = screenOf(h, {600, 300});
+
+    // Nothing selected: Repeat, Select All, Paste, Zoom Extents; no edit commands.
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    CHECK(h.has("Repeat LINE", "Popup"));
+    CHECK(h.has("Select All", "Popup"));
+    CHECK_FALSE(h.has("ERASE", "Popup"));
+    CHECK(matchesGolden(h.windowShot("Popup"), "viewport_menu_idle"));
+    REQUIRE(h.click("Select All", "Popup"));
+    h.frame(3);
+    CHECK(h.core().selection().size() == 1);
+
+    // With a selection the edit commands appear; ERASE removes the line.
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    CHECK(h.has("MOVE", "Popup"));
+    CHECK(h.has("Deselect All", "Popup"));
+    REQUIRE(h.click("ERASE", "Popup"));
+    h.frame(3);
+    CHECK(entityCount(h) == 0);
+    CHECK(h.has("Repeat ERASE", "Popup") == false);  // the menu is closed again
+}
+
+TEST_CASE("viewport menu: during a command, options and snap overrides") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("100,100");
+    h.core().submitText("400,100");
+    h.core().pressEscape();
+    h.core().setSetting("drafting.osnap.modes", "midpoint");  // endpoint only through the override
+    h.core().submitText("LINE");  // a new line, waiting for its first point
+    h.frame(3);
+    const ImVec2 mid = screenOf(h, {600, 300});
+
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    CHECK(h.has("Enter", "Popup"));
+    CHECK(h.has("Cancel", "Popup"));
+    CHECK(h.has("Snap Overrides", "Popup"));
+    REQUIRE(h.click("Snap Overrides", "Popup"));
+    h.frame(2);
+    REQUIRE(h.click("Endpoint", "Menu"));
+    h.frame(2);
+    CHECK(h.core().setting("drafting.osnap.once").value_or("") == "endpoint");
+
+    // The override serves one point: it snaps to the endpoint, then it is gone.
+    const ImVec2 near400 = screenOf(h, {403, 104});
+    h.click(near400.x, near400.y);
+    h.frame(3);
+    CHECK(h.core().setting("drafting.osnap.once").value_or("x").empty());
+    h.core().submitText("700,300");
+    h.core().pressEscape();
+    h.frame(2);
+    double startX = 0, startY = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* l = std::get_if<LineData>(&e.data))
+            if (l->b.x == doctest::Approx(700) && l->b.y == doctest::Approx(300)) {
+                startX = l->a.x;
+                startY = l->a.y;
+            }
+    });
+    CHECK(startX == doctest::Approx(400));
+    CHECK(startY == doctest::Approx(100));
+
+    // Cancel from the menu leaves the drawing as it is.
+    h.core().submitText("LINE");
+    h.frame(2);
+    h.click(mid.x, mid.y, 1);
+    h.frame(2);
+    REQUIRE(h.click("Cancel", "Popup"));
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+}
+
+TEST_CASE("viewport: Shift + right click opens the snap override menu at a point prompt") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.frame(2);
+    const ImVec2 mid = screenOf(h, {600, 300});
+    h.holdShift(true);
+    h.click(mid.x, mid.y, 1);
+    h.holdShift(false);
+    h.frame(2);
+    CHECK(h.has("Midpoint", "Popup"));
+    CHECK(h.has("None", "Popup"));
+    REQUIRE(h.click("Midpoint", "Popup"));
+    h.frame(2);
+    CHECK(h.core().setting("drafting.osnap.once").value_or("") == "midpoint");
+    h.core().pressEscape();  // Esc drops the override with the command
+    CHECK(h.core().setting("drafting.osnap.once").value_or("x").empty());
+}
+
+namespace {
+std::string runningName(Harness& h) {
+    const auto* p = h.core().runner().prompt();
+    return p ? p->command : std::string();
+}
+}  // namespace
+
+TEST_CASE("command bar: autocomplete picks, Tab completes, Up recalls history") {
+    Harness h(1920, 1080);
+    REQUIRE(h.click("##command", "Command"));
+
+    // Typing narrows the list; Tab takes the first row, Enter runs it.
+    h.type("cir");
+    CHECK(h.has("##row", "##suggest"));
+    CHECK(matchesGolden(crop(h.screenshot(), 60, 820, 700, 230), "command_suggest"));
+    h.key(ImGuiKey_Tab);
+    h.key(ImGuiKey_Enter);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) == "CIRCLE");
+    h.core().pressEscape();
+    h.frame(2);
+
+    // Down arrow moves the highlight, Enter then takes that row ("ci" -> CIRCLE, then the next).
+    REQUIRE(h.click("##command", "Command"));
+    h.type("li");
+    h.key(ImGuiKey_DownArrow);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) != "LIST");  // the second row, not the first
+    h.core().pressEscape();
+    h.frame(2);
+
+    // Up at an empty prompt brings back the latest line typed.
+    h.command("LINE");
+    h.core().pressEscape();
+    h.frame(2);
+    REQUIRE(h.click("##command", "Command"));
+    h.key(ImGuiKey_UpArrow);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) == "LINE");
+    h.core().pressEscape();
+
+    // Esc closes the list without running anything.
+    REQUIRE(h.click("##command", "Command"));
+    h.type("ar");
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK_FALSE(h.has("##row", "##suggest"));
+    CHECK_FALSE(h.core().runner().active());
+}
+
+TEST_CASE("levels panel: new, rename, elevation, show, lock, current, view and delete") {
+    Harness h(1920, 1080);
+    REQUIRE(h.click("Levels", "DockSpace"));  // the panel's tab
+    h.frame(3);
+    REQUIRE(h.windowOpen("Levels"));
+    auto& doc = h.core().document();
+    const std::size_t before = doc.levels().size();
+
+    REQUIRE(h.click("New Level", "Levels"));
+    h.frame(3);
+    REQUIRE(doc.levels().size() == before + 1);
+    const Level* upper = doc.levelByName("Level " + std::to_string(before + 1));
+    REQUIRE(upper);
+    CHECK(upper->elevation == doctest::Approx(3000));
+
+    // Double-click the name to rename it.
+    REQUIRE(h.doubleClickItem(upper->name, "Levels"));
+    h.frame(2);
+    REQUIRE(h.enterText("##rename", "Roof", "Levels"));
+    h.frame(3);
+    REQUIRE(doc.levelByName("Roof"));
+
+    // Elevation field.
+    REQUIRE(h.enterText("##elev", "6500", "Levels", 0));  // the highest level is the first row
+    h.frame(3);
+    CHECK(doc.levelByName("Roof")->elevation == doctest::Approx(6500));
+
+    // A new level becomes current and cannot be hidden; make the ground level current first.
+    REQUIRE(h.click("##cur", "Levels", 1));
+    h.frame(3);
+    CHECK(doc.header().currentLevel != doc.levelByName("Roof")->id);
+    // Lock and hide the roof (the first row), then make it current.
+    REQUIRE(h.click("##lck", "Levels", 0));
+    h.frame(3);
+    CHECK(doc.levelByName("Roof")->locked);
+    REQUIRE(h.click("##vis", "Levels", 0));
+    h.frame(3);
+    CHECK_FALSE(doc.levelByName("Roof")->visible);
+    REQUIRE(h.click("##cur", "Levels", 0));
+    h.frame(3);
+    CHECK(doc.header().currentLevel == doc.levelByName("Roof")->id);
+
+    // The view of the other levels.
+    REQUIRE(h.click("##view", "Levels"));
+    REQUIRE(h.click("Hidden", "Combo"));
+    h.frame(3);
+    CHECK(doc.header().levelView == LevelView::HideOthers);
+
+    // Delete the selected level (the roof was selected by clicking its name earlier).
+    REQUIRE(h.click("Roof", "Levels"));
+    REQUIRE(h.click("Delete", "Levels"));
+    h.frame(3);
+    CHECK_FALSE(doc.levelByName("Roof"));
+    CHECK(doc.levels().size() == before);
+}
+TEST_CASE("object properties panel: layer, linetype, lineweight, transparency, scale") {
+    Harness h(1920, 1080);
+    run(h, "-LAYER New A-One");
+    h.core().submitText("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("10");
+    h.core().selectAll();
+    h.frame(2);
+    REQUIRE(h.click("Object Properties", "DockSpace"));  // the panel's tab
+    h.frame(3);
+    const Entity* circle = nullptr;
+    auto fetch = [&] {
+        h.core().document().forEachEntity([&](const Entity& e) { circle = &e; });
+        REQUIRE(circle);
+        return circle;
+    };
+    // Every drop-down opens, shows ByLayer first and applies the pick as one undo step.
+    REQUIRE(h.click("##layer", "Object Properties"));
+    REQUIRE(h.click("A-One", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.layer == layer(h, "A-One")->id);
+
+    REQUIRE(h.click("##lt", "Object Properties"));
+    CHECK(h.has("ByBlock", "Combo"));
+    REQUIRE(h.click("Dashed", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.linetype != kLinetypeByLayer);
+
+    REQUIRE(h.click("##lw", "Object Properties"));
+    REQUIRE(h.click("0.50", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.lineweight == LineWeight::mm(0.5));
+
+    REQUIRE(h.click("##tr", "Object Properties"));
+    REQUIRE(h.click("50", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.transparency == 50);
+
+    REQUIRE(h.enterText("##ltscale", "2.5", "Object Properties"));
+    h.frame(3);
+    CHECK(fetch()->common.linetypeScale == doctest::Approx(2.5f));
+
+    // One undo per edit: the transparency goes back first.
+    h.command("U");
+    h.frame(3);
+    CHECK(fetch()->common.linetypeScale == doctest::Approx(1.0f));
+    CHECK(fetch()->common.transparency == 50);
+    CHECK(matchesGolden(h.windowShot("Object Properties"), "object_properties_circle"));
+}
+
+// Clicks every labelled widget of each panel once, with a drawing and a selection present. This
+// finds crashes and ImGui misuse (the harness fails the test on those) in panels no scripted
+// test covers yet; it checks no results.
+TEST_CASE("every panel survives a click on each of its widgets") {
+    struct P {
+        const char* id;
+        const char* tab;
+    };
+    for (const P& p :
+         {P{"textstyles", "Text Styles"}, P{"dimstyles", "Dimension Styles"}, P{"blocks", "Blocks"},
+          P{"hatch", "Hatch"}, P{"palettes", "Tool Palettes"}, P{"plotstyle", "Plot Styles"},
+          P{"laywalk", "Layer Walk"}, P{"text_editor", "Text"}}) {
+        CAPTURE(p.id);
+        Harness h(1920, 1080);
+        h.core().submitText("CIRCLE");
+        h.core().submitText("0,0");
+        h.core().submitText("10");
+        h.core().selectAll();
+        h.core().openPanel(p.id);
+        h.frame(3);
+        REQUIRE(h.has(p.tab, "DockSpace"));
+        REQUIRE(h.click(p.tab, "DockSpace"));
+        h.frame(3);
+        // Collect the widgets first; the lists are rebuilt by every click.
+        std::vector<std::string> labels;
+        for (const auto& it : imgui_items::items())
+            if (it.window.find(p.tab) != std::string::npos && !it.label.empty() &&
+                it.label.rfind("##", 0) != 0 && it.label != p.tab)
+                labels.push_back(it.label);
+        for (const std::string& l : labels) {
+            if (!h.has(l, p.tab))
+                continue;
+            h.click(l, p.tab);
+            h.frame(2);
+            h.key(ImGuiKey_Escape);  // closes a popup or combo it opened
+            h.frame(1);
+            if (!h.windowOpen(p.tab) && h.has(p.tab, "DockSpace"))
+                h.click(p.tab, "DockSpace");
+        }
+    }
+}
+
+TEST_CASE("keyboard map: shortcuts, function keys and typing anywhere") {
+    Harness h(1920, 1080);
+    auto on = [&](const char* key, const char* fallback = "0") {
+        return h.core().setting(key).value_or(fallback) == "1";
+    };
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    h.frame(3);
+    CHECK(entityCount(h) == 1);
+
+    // Ctrl+A selects, Delete erases, Ctrl+Z brings it back, Ctrl+Y erases again.
+    h.key(ImGuiKey_A, true);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    h.key(ImGuiKey_Delete);
+    h.frame(2);
+    CHECK(entityCount(h) == 0);
+    h.key(ImGuiKey_Z, true);
+    h.frame(2);
+    CHECK(entityCount(h) == 1);
+    h.key(ImGuiKey_Y, true);
+    h.frame(2);
+    CHECK(entityCount(h) == 0);
+    h.key(ImGuiKey_Z, true);
+    h.frame(2);
+
+    // F7 / F8 / F9 / F10 / F3 toggle the drafting aids; F8 and F10 exclude each other.
+    h.key(ImGuiKey_F7);
+    CHECK(on("view.grid"));
+    h.key(ImGuiKey_F7);
+    CHECK_FALSE(on("view.grid"));
+    h.key(ImGuiKey_F9);
+    CHECK(on("drafting.snap"));
+    h.key(ImGuiKey_F8);
+    CHECK(on("drafting.ortho"));
+    h.key(ImGuiKey_F10);
+    CHECK(on("drafting.polar"));
+    CHECK_FALSE(on("drafting.ortho"));
+    CHECK(on("drafting.osnap", "1"));
+    h.key(ImGuiKey_F3);
+    CHECK_FALSE(on("drafting.osnap", "1"));
+
+    // Typing over the viewport goes to the command bar; Enter runs it.
+    h.moveMouse(600, 400);
+    h.type("circle");
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(runningName(h) == "CIRCLE");
+    // Esc cancels the command; a second Esc clears the selection.
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK_FALSE(h.core().runner().active());
+    h.key(ImGuiKey_A, true);
+    h.frame(2);
+    REQUIRE(h.core().selection().size() == 1);
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK(h.core().selection().empty());
+
+    // Enter at an empty prompt repeats the last command, Space too.
+    h.moveMouse(600, 400);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    h.key(ImGuiKey_Space);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    h.key(ImGuiKey_Escape);
+}
+
+TEST_CASE("clean screen, command log and document tabs from the keyboard") {
+    Harness h(1920, 1080);
+    CHECK(h.has("Layers", "Layers"));
+    h.key(ImGuiKey_F11);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Layers"));
+    h.key(ImGuiKey_F11);
+    h.frame(3);
+    CHECK(h.windowOpen("Layers"));
+
+    // Ctrl+N opens a second drawing tab (an untouched drawing is reused, so touch it), Ctrl+Tab
+    // switches, Ctrl+W closes.
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    h.frame(2);
+    const std::size_t docs = h.core().documentCount();
+    h.key(ImGuiKey_N, true);
+    h.frame(3);
+    CHECK(h.core().documentCount() == docs + 1);
+    const std::size_t active = h.core().activeDocument();
+    h.key(ImGuiKey_Tab, true);
+    h.frame(3);
+    CHECK(h.core().activeDocument() != active);
+    h.key(ImGuiKey_Tab, true);  // back to the new, empty drawing
+    h.frame(3);
+    CHECK(h.core().activeDocument() == active);
+    h.key(ImGuiKey_W, true);
+    h.frame(3);
+    CHECK(h.core().documentCount() == docs);  // the new empty one closed without asking
+}
+
+TEST_CASE("mouse in the viewport: draw with clicks, select by window and crossing, pan, zoom") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    // Draw two lines with the Line command and mouse clicks.
+    h.core().submitText("LINE");
+    const ImVec2 a = screenOf(h, {100, 100}), b = screenOf(h, {400, 100}),
+                 c = screenOf(h, {400, 300});
+    h.click(a.x, a.y);
+    h.click(b.x, b.y);
+    h.click(c.x, c.y);
+    h.core().pressEscape();
+    h.frame(2);
+    REQUIRE(entityCount(h) == 2);
+    // Zoom in on the drawing so the lines are long on screen (the grips are 8 pixels wide).
+    h.core().zoomExtents();
+    h.frame(20);
+    h.scroll(700, 500, -3.0f);  // and back out a little, so the margins are on screen
+    h.frame(30);
+
+    // Window selection (drag right) takes only what lies fully inside.
+    ImVec2 w0 = screenOf(h, {50, 50}), w1 = screenOf(h, {450, 150});  // second line sticks out
+    h.drag(w0.x, w0.y, w1.x, w1.y);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    // Crossing selection (drag left) takes anything the box touches.
+    h.core().clearSelection();
+    h.frame(2);
+    h.drag(w1.x, w1.y, w0.x, w0.y);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 2);
+    h.core().clearSelection();
+
+    // Click on an object selects it, Shift + click removes it again.
+    const ImVec2 onLine = screenOf(h, {180, 100});  // away from the midpoint grip
+    h.click(onLine.x, onLine.y);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    h.frame(40);  // not a double click
+    h.holdShift(true);
+    h.frame(2);
+    h.click(onLine.x, onLine.y);
+    h.holdShift(false);
+    h.frame(2);
+    CHECK(h.core().selection().empty());
+
+    // The wheel zooms about the cursor: the world point under it stays put.
+    const ImVec2 cur = screenOf(h, {250, 100});
+    const double before = h.core().camera().pixelSizeMm();
+    h.moveMouse(cur.x, cur.y);
+    h.scroll(cur.x, cur.y, 1.0f);
+    h.frame(15);
+    const double after = h.core().camera().pixelSizeMm();
+    CHECK(after < before);  // zoomed in
+    const ImVec2 now = screenOf(h, {250, 100});
+    CHECK(now.x == doctest::Approx(cur.x).epsilon(0.01));
+    CHECK(now.y == doctest::Approx(cur.y).epsilon(0.01));
+
+    // Middle-drag pans: the drawing follows the pointer.
+    h.drag(800, 500, 900, 560, 2);
+    h.frame(3);
+    const ImVec2 panned = screenOf(h, {250, 100});
+    CHECK(panned.x == doctest::Approx(cur.x + 100).epsilon(0.03));
+    CHECK(panned.y == doctest::Approx(cur.y + 60).epsilon(0.03));
+}

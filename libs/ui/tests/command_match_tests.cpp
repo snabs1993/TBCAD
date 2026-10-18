@@ -58,8 +58,8 @@ TEST_CASE("exact alias beats alias prefix beats name prefix beats fuzzy") {
 
     m = matchCommands(fx.reg, "li");
     REQUIRE(m.size() >= 2);
-    CHECK(names(m)[0] == "LIMITS");  // name prefix, alphabetical among ties
-    CHECK(names(m)[1] == "LINE");
+    CHECK(names(m)[0] == "LINE");  // name prefix, the shorter name first among ties
+    CHECK(names(m)[1] == "LIMITS");
 
     m = matchCommands(fx.reg, "cnn");
     CHECK(m.empty());
@@ -94,4 +94,27 @@ TEST_CASE("keyword key length is the shortest unique prefix") {
     CHECK(keywordKeyLength(k, 1) == 2);
     CHECK(keywordKeyLength(k, 2) == 1);
     CHECK(keywordKeyLength({"Only"}, 0) == 1);
+}
+
+TEST_CASE("commands used lately lead within their rank") {
+    Fx fx;
+    CHECK(names(matchCommands(fx.reg, "li", 12, {"LIMITS"}))[0] == "LIMITS");
+    CHECK(names(matchCommands(fx.reg, "li", 12, {"LIMITS", "LINE"}))[1] == "LINE");
+    // A recent command does not climb above a better rank.
+    CHECK(matchCommands(fx.reg, "c", 12, {"COPY"})[0].name == "CIRCLE");
+}
+
+TEST_CASE("dash commands come after plain ones unless the query starts with a dash") {
+    cmd::Registry reg;
+    REQUIRE(reg.add(std::make_unique<Named>("-LAYER", std::vector<std::string>{"-LA"}, "Layers")));
+    REQUIRE(reg.add(std::make_unique<Named>("LAYER", std::vector<std::string>{"LA"}, "Layers")));
+    REQUIRE(reg.add(std::make_unique<Named>("-LAYERP", std::vector<std::string>{}, "x")));
+    REQUIRE(reg.add(std::make_unique<Named>("LAYERS", std::vector<std::string>{}, "x")));
+    auto m = matchCommands(reg, "lay");
+    REQUIRE(m.size() >= 2);
+    CHECK(m[0].name == "LAYER");
+    CHECK(m[1].name == "LAYERS");
+    m = matchCommands(reg, "-lay");
+    REQUIRE(!m.empty());
+    CHECK(m[0].name[0] == '-');
 }

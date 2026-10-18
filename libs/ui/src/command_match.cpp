@@ -48,7 +48,7 @@ std::size_t keywordKeyLength(const std::vector<std::string>& keywords, std::size
 }
 
 std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::string_view queryText,
-                                        std::size_t limit) {
+                                        std::size_t limit, const std::vector<std::string>& recent) {
     const std::string query = upper(queryText);
     std::vector<CommandMatch> out;
     for (const cmd::Command* command : registry.list()) {
@@ -95,8 +95,25 @@ std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::stri
         if (matched)
             out.push_back(std::move(m));
     }
-    std::stable_sort(out.begin(), out.end(),
-                     [](const CommandMatch& a, const CommandMatch& b) { return a.rank < b.rank; });
+    const bool dashQuery = !query.empty() && query[0] == '-';
+    auto recency = [&](const std::string& name) {
+        const auto it = std::find(recent.begin(), recent.end(), name);
+        return static_cast<std::size_t>(it - recent.begin());  // recent.size() = not used lately
+    };
+    std::stable_sort(out.begin(), out.end(), [&](const CommandMatch& a, const CommandMatch& b) {
+        if (a.rank != b.rank)
+            return a.rank < b.rank;
+        if (!query.empty()) {  // the palette (empty query) keeps its alphabetical order
+            if (const auto ra = recency(a.name), rb = recency(b.name); ra != rb)
+                return ra < rb;
+            const bool da = a.name[0] == '-', db = b.name[0] == '-';
+            if (da != db && !dashQuery)
+                return !da;
+            if (a.rank >= CommandMatch::Rank::NamePrefix && a.name.size() != b.name.size())
+                return a.name.size() < b.name.size();
+        }
+        return false;
+    });
     if (out.size() > limit)
         out.resize(limit);
     return out;

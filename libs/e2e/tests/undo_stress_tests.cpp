@@ -134,6 +134,73 @@ std::string randomStep(cmd::ScriptHost& host, const Document& doc, std::mt19937&
     }
 }
 
+// Commands that talk to files, printers or the window rather than the drawing, and the undo
+// commands themselves (the session below drives those on purpose).
+bool skippedCommand(const std::string& name) {
+    static const char* const kParts[] = {
+        "EXPORT", "IMPORT", "SAVE", "PRINT", "PLOT",     "DEVGEN", "NEWFROM", "ATTACH", "RELOAD",
+        "OPEN",   "QUIT",   "EXIT", "NEW",   "TEMPLATE", "UNDO",   "REDO",    "ALIASES"};
+    for (const char* part : kParts)
+        if (name.find(part) != std::string::npos)
+            return true;
+    return name == "U";
+}
+
+std::vector<std::string> editingCommands(const cmd::Registry& reg) {
+    std::vector<std::string> names;
+    for (cmd::Command* c : reg.list())
+        if (!skippedCommand(std::string(c->name())))
+            names.emplace_back(c->name());
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+std::vector<ScriptItem> randomItems(std::mt19937& rng, const std::vector<EntityId>& ids,
+                                    std::size_t n) {
+    static const char* const kText[] = {"0,0",   "100,50", "@200,0", "1000,1000", "5",   "0",
+                                        "-3",    "2",      "Yes",    "No",        "All", "Last",
+                                        "Close", "A",      "x y",    "0.5",       "L1",  "B1"};
+    std::vector<ScriptItem> out;
+    for (std::size_t i = 0; i < n; ++i) {
+        switch (rng() % 8) {
+            case 0:
+                out.push_back(ScriptItem::enter());
+                break;
+            case 1:
+                out.push_back(ScriptItem::click({double(rng() % 20000), double(rng() % 20000)}));
+                break;
+            case 2:
+                if (!ids.empty())
+                    out.push_back(
+                        ScriptItem::pick(ids[rng() % ids.size()], {double(rng() % 5000), 0}));
+                break;
+            case 3:
+                if (!ids.empty())
+                    out.push_back(
+                        ScriptItem::select({ids[rng() % ids.size()], ids[rng() % ids.size()]}));
+                break;
+            default:
+                out.push_back(ScriptItem(kText[rng() % std::size(kText)]));
+        }
+    }
+    out.push_back(ScriptItem::esc());
+    out.push_back(ScriptItem::esc());
+    return out;
+}
+
+// One command of any group with random input: half the time one of the scripted ones above, half
+// the time a random registered command fed random answers.
+std::string anyStep(cmd::ScriptHost& host, const Document& doc, const std::vector<std::string>& all,
+                    std::mt19937& rng, int step) {
+    if (rng() % 2 == 0)
+        return randomStep(host, doc, rng, step);
+    std::vector<EntityId> ids = someIds(doc, rng, 6);
+    const std::string& name = all[rng() % all.size()];
+    host.setSelection(someIds(doc, rng, rng() % 4));
+    (void)host.run(name, randomItems(rng, ids, 3 + rng() % 10));
+    return name;
+}
+
 }  // namespace
 
 TEST_CASE("undo and redo walk through every state of a long random session") {
@@ -199,4 +266,182 @@ TEST_CASE("undo and redo walk through every state of a long random session") {
         }
         CHECK(canonicalDump(*doc) == endState);
     }
+}
+
+// The model of the history: states[d] is the drawing with d steps in the undo stack. A command that
+// changes the drawing pushes one step (and drops the redo history); undo, redo, UNDOMARK, UNDOBACK
+// and UNDOBEGIN / UNDOEND move along it.
+TEST_CASE("200 random commands of every group, undo grouping and marks: the history is exact") {
+    for (unsigned seed : {3u, 17u, 41u}) {
+        CAPTURE(seed);
+        std::mt19937 rng(seed);
+        std::unique_ptr<Document> doc = loadSample();
+        cmd::Registry reg;
+        registerAllCommands(reg);
+        cmd::ScriptHost host(*doc, reg);
+        const std::vector<std::string> all = editingCommands(reg);
+        REQUIRE(all.size() > 100);
+
+        const std::string original = canonicalDump(*doc);
+        std::vector<std::string> states{original};
+        std::vector<std::size_t> marks;  // depths
+        std::map<std::string, int> used;
+        auto depth = [&] { return host.undoStack().undoCount(); };
+        auto check = [&](const char* what, int step) {
+            INFO("step " << step << " " << what);
+            REQUIRE(depth() < states.size());
+            CHECK(canonicalDump(*doc) == states[depth()]);
+        };
+
+        for (int step = 0; step < 200; ++step) {
+            const std::size_t d0 = depth();
+            const unsigned pick = rng() % 20;
+            if (pick == 0 && d0 > 0) {
+                REQUIRE(host.undo());
+                REQUIRE(depth() == d0 - 1);
+                check("undo", step);
+            } else if (pick == 1 && host.undoStack().canRedo()) {
+                REQUIRE(host.redo());
+                REQUIRE(depth() == d0 + 1);
+                check("redo", step);
+            } else if (pick == 2 && d0 > 0) {
+                (void)host.run("UNDOMARK", {});
+                if (marks.empty() || marks.back() != d0)
+                    marks.push_back(d0);
+            } else if (pick == 3) {
+                (void)host.run("UNDOBACK", {});
+                if (marks.empty()) {
+                    REQUIRE(depth() == d0);  // no mark: nothing happens
+                } else {
+                    REQUIRE(depth() == marks.back());
+                    marks.pop_back();
+                    check("undo back", step);
+                }
+            } else if (pick == 4) {
+                // a group of several commands undoes as one step
+                (void)host.run("UNDOBEGIN", {});
+                const int n = 2 + static_cast<int>(rng() % 4);
+                for (int i = 0; i < n; ++i) {
+                    (void)anyStep(host, *doc, all, rng, step);
+                    (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+                }
+                (void)host.run("UNDOEND", {});
+                REQUIRE_FALSE(host.undoStack().inGroup());
+                if (depth() != d0) {
+                    CHECK(depth() == d0 + 1);
+                    states.resize(d0 + 1);
+                    states.push_back(canonicalDump(*doc));
+                    while (!marks.empty() && marks.back() > d0)
+                        marks.pop_back();
+                } else {
+                    check("empty group", step);
+                }
+                continue;
+            } else {
+                const std::string name = anyStep(host, *doc, all, rng, step);
+                (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+                ++used[name];
+                INFO("step " << step << " " << name);
+                if (depth() == d0) {
+                    CHECK(canonicalDump(*doc) == states[d0]);  // no step: nothing changed
+                } else {
+                    REQUIRE(depth() == d0 + 1);
+                    states.resize(d0 + 1);
+                    states.push_back(canonicalDump(*doc));
+                    while (!marks.empty() && marks.back() > d0)
+                        marks.pop_back();
+                }
+            }
+            // undo past a mark removes it
+            while (!marks.empty() && marks.back() > depth())
+                marks.pop_back();
+        }
+        CHECK(used.size() >= 25);  // a real mix of commands
+        CHECK(depth() > 20);
+
+        // Back through everything and forward again, exactly.
+        const std::size_t top = depth();
+        const std::string end = canonicalDump(*doc);
+        REQUIRE(end == states[top]);
+        while (host.undo()) {
+        }
+        CHECK(canonicalDump(*doc) == original);
+        std::size_t redone = 0;
+        while (host.redo())
+            ++redone;
+        CHECK(redone >= top);
+        CHECK(canonicalDump(*doc) == states[depth()]);
+    }
+}
+
+TEST_CASE("every command: undo gives the original drawing back, redo gives its result") {
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    const std::vector<std::string> all = editingCommands(reg);
+    std::mt19937 rng(20261018);
+    for (const std::string& name : all) {
+        INFO("command " << name);
+        for (int round = 0; round < 3; ++round) {
+            std::unique_ptr<Document> doc = loadSample();
+            cmd::ScriptHost host(*doc, reg);
+            std::vector<EntityId> ids = someIds(*doc, rng, 30);
+            const std::string before = canonicalDump(*doc);
+            std::vector<ScriptItem> items;
+            if (round == 0)
+                items = {"0,0",
+                         "1000,0",
+                         "1000,1000",
+                         "0,1000",
+                         ScriptItem::enter(),
+                         ScriptItem::enter(),
+                         ScriptItem::esc()};
+            else
+                items = randomItems(rng, ids, 6 + rng() % 14);
+            host.setSelection(someIds(*doc, rng, 1 + rng() % 3));
+            (void)host.run(name, items);
+            (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+            const std::string after = canonicalDump(*doc);
+            while (host.undo()) {
+            }
+            CHECK(canonicalDump(*doc) == before);
+            while (host.redo()) {
+            }
+            CHECK(canonicalDump(*doc) == after);
+        }
+    }
+}
+
+TEST_CASE("the undo history stays inside its memory limit and what is left still undoes exactly") {
+    std::mt19937 rng(77);
+    std::unique_ptr<Document> doc = loadSample();
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(*doc, reg);
+    const std::vector<std::string> all = editingCommands(reg);
+    const std::size_t limit = 16 * 1024;
+    host.undoStack().setLimitBytes(limit);
+
+    std::vector<std::string> states{canonicalDump(*doc)};  // by number of steps ever pushed
+    std::size_t peak = 0;
+    for (int step = 0; step < 200; ++step) {
+        (void)anyStep(host, *doc, all, rng, step);
+        (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+        const std::size_t pushed = host.undoStack().droppedSteps() + host.undoStack().undoCount();
+        REQUIRE(pushed >= states.size() - 1);
+        REQUIRE(pushed <= states.size());  // a command pushes at most one step
+        if (pushed == states.size())
+            states.push_back(canonicalDump(*doc));
+        else
+            CHECK(canonicalDump(*doc) == states.back());  // no step: nothing changed
+        peak = std::max(peak, host.undoStack().usedBytes());
+        CHECK(host.undoStack().usedBytes() <= limit);
+    }
+    CHECK(peak > 0);
+    // The oldest steps were dropped: what remains undoes back to the state just before them.
+    const std::size_t left = host.undoStack().undoCount();
+    REQUIRE(left < states.size());
+    CHECK(host.undoStack().droppedSteps() > 0);  // the limit really was reached
+    while (host.undo()) {
+    }
+    CHECK(canonicalDump(*doc) == states[states.size() - 1 - left]);
 }

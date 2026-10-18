@@ -46,9 +46,37 @@ public:
 
         cmd::PointOptions o;
         o.keywords = {"Arc", "Center"};
+        // With isometric drafting on, circles can be drawn in the current isometric plane.
+        const bool iso = ctx.host().setting("drafting.isodraft").value_or("0") == "1";
+        if (iso)
+            o.keywords.push_back("Isocircle");
         o.allowNone = false;
         auto p1 =
             co_await ctx.getPoint(promptWith("Specify axis endpoint of ellipse", o.keywords), o);
+        if (p1.status == cmd::Status::Keyword && p1.keyword == "Isocircle") {
+            auto cp = co_await ctx.getPoint("Specify center of isocircle");
+            if (!cp.ok())
+                co_return;
+            cmd::DistanceOptions ro;
+            ro.base = cp.point;
+            ro.allowZero = false;
+            auto r = co_await ctx.getDistance("Specify radius of isocircle", std::move(ro));
+            if (!r.ok())
+                co_return;
+            // Axes of the plane are drawn at true length, so the circle's ellipse has its major
+            // semi-axis sqrt(3/2) r along the direction at right angles to the plane's normal.
+            const std::string plane = ctx.host().setting("drafting.isoplane").value_or("top");
+            const double normalDeg = plane == "Left" || plane == "left"     ? 30.0
+                                     : plane == "Right" || plane == "right" ? 150.0
+                                                                            : 90.0;
+            const double a = (normalDeg + 90.0) * kPi / 180.0;
+            EllipseData e;
+            e.center = cp.point;
+            e.majorAxis = Vec2{std::cos(a), std::sin(a)} * (r.value * std::sqrt(1.5));
+            e.ratio = 1.0 / std::sqrt(3.0);
+            addEntity(ctx, e);
+            co_return;
+        }
         if (p1.status == cmd::Status::Keyword && p1.keyword == "Arc") {
             arc = true;
             cmd::PointOptions o2;

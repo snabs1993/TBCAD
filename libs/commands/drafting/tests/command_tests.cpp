@@ -166,3 +166,19 @@ TEST_CASE("UCS Object aligns to a line and DYNUCS toggles") {
     f.host.run("DYNUCS", {});
     CHECK(f.get("drafting.dynucs") == "0");
 }
+
+TEST_CASE("ISODRAFT and ISOPLANE set the isometric plane; Enter goes round Left, Top, Right") {
+    Fixture f;
+    CHECK(f.reg.find("ISOPLANE") != nullptr);
+    f.host.run("ISODRAFT", {"ON"});
+    CHECK(f.get("drafting.isodraft") == "1");
+    CHECK(drafting::DraftingSettings::read(f.host).isoPlane == drafting::IsoPlane::Top);
+    f.host.run("ISOPLANE", {""});  // next after Top
+    CHECK(f.get("drafting.isoplane") == "Right");
+    f.host.run("ISOPLANE", {""});
+    CHECK(f.get("drafting.isoplane") == "Left");
+    f.host.run("ISOPLANE", {"top"});
+    CHECK(drafting::DraftingSettings::read(f.host).isoPlane == drafting::IsoPlane::Top);
+    f.host.run("ISODRAFT", {"OFF"});
+    CHECK(drafting::DraftingSettings::read(f.host).isoPlane == drafting::IsoPlane::Off);
+}

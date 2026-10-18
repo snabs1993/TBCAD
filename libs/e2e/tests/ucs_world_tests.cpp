@@ -321,3 +321,19 @@ TEST_CASE("UCS command options: 3point, Previous, View, Save and restore, UCSICO
     CHECK(r.core->camera().center.x == doctest::Approx(0));
     CHECK(r.core->camera().center.y == doctest::Approx(0));
 }
+
+TEST_CASE("the current UCS is saved with the drawing, in .tbcad and DXF") {
+    const drafting::Ucs tilt{"", {120, -45}, 30 * kPi / 180};
+    for (const char* ext : {".tbcad", ".dxf"}) {
+        Rig a("save", tilt);
+        const auto file = a.dir / (std::string("f") + ext);
+        a.run("LINE", {"0,0", "10,0", ""});
+        REQUIRE(a.core->saveAs(file).ok());
+        Rig b("load");
+        REQUIRE(b.core->openFile(file).ok());
+        const drafting::Ucs got = drafting::currentUcs(&b.core->document(), b.core.get());
+        CHECK(got.origin.x == doctest::Approx(120));
+        CHECK(got.origin.y == doctest::Approx(-45));
+        CHECK(got.angle == doctest::Approx(30 * kPi / 180));
+    }
+}
