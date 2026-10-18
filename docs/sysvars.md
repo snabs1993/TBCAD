@@ -27,3 +27,15 @@ keyword **Size** at the first prompt sets its width (remembered, default 10). Th
 **ADDSELECTED** picks an object and makes its layer, level, colour, linetype, lineweight and transparency
 the ones new objects get. Start the drawing command afterwards (commands cannot start each other in this
 version). One undo step.
+
+# VIEW and TIME
+
+**VIEW** (alias NAMEDVIEW) saves the centre and scale of the display under a name (**Save**), puts it back
+(**Restore**), **Delete**s it or **List**s the views. The views are stored in the drawing and follow undo.
+**TIME** shows the current date and time.
+
+# RECOVER
+
+**RECOVER** repairs the current drawing without asking (open the damaged file first): objects on a layer that
+no longer exists go to layer 0, and broken objects (zero or non-numeric sizes, empty hatches, blocks that are
+missing) are removed. **AUDIT** does the same checks and asks first.
