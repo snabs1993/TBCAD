@@ -53,4 +53,7 @@ FillResult generateFill(const HatchData& hatch, const Pattern& pattern,
 // Flattened rings of the loops (each closed implicitly).
 std::vector<std::vector<Vec2>> loopRings(const HatchData& hatch, double tolerance);
 
+// The hatched area: loops count with even-odd nesting, so an island inside a loop is taken away.
+double hatchArea(const HatchData& hatch);
+
 }  // namespace tbcad::hatch

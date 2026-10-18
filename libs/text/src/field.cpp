@@ -1,5 +1,6 @@
 #include "tbcad/text/field.h"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include <vector>
 
 #include "tbcad/geom/entity.h"
+#include "tbcad/hatch/fill.h"
 
 namespace tbcad::text {
 
@@ -90,6 +92,40 @@ std::string number(double v, int decimals) {
     return b;
 }
 
+bool sameText(const std::string& a, const std::string& b) {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    return true;
+}
+
+// Centre or insertion point of an object, when it has a natural one.
+bool anchorOf(const Entity& e, Vec2& out) {
+    if (const auto* c = entityAs<CircleData>(e)) {
+        out = c->center;
+    } else if (const auto* a = entityAs<ArcData>(e)) {
+        out = a->center;
+    } else if (const auto* el = entityAs<EllipseData>(e)) {
+        out = el->center;
+    } else if (const auto* p = entityAs<PointData>(e)) {
+        out = p->p;
+    } else if (const auto* t = entityAs<TextData>(e)) {
+        out = t->position;
+    } else if (const auto* m = entityAs<MTextData>(e)) {
+        out = m->position;
+    } else if (const auto* i = entityAs<InsertData>(e)) {
+        out = i->position;
+    } else if (const auto* l = entityAs<LineData>(e)) {
+        out = l->a;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 std::string evaluate(const Document& doc, std::string_view body, std::string_view today) {
     const std::vector<std::string> a = split(body);
     const std::string& name = a[0];
@@ -119,7 +155,56 @@ std::string evaluate(const Document& doc, std::string_view body, std::string_vie
         auto it = custom.find(a[1]);
         return it == custom.end() ? "####" : it->second;
     }
-    if (a.size() > 1 && (name == "length" || name == "area" || name == "text")) {
+    if (name == "scale") {
+        const double n = currentAnnotationScale(doc.header());
+        char b[48];
+        std::snprintf(b, sizeof b, "1:%g", n);
+        return b;
+    }
+    if (a.size() > 1 && (name == "layer" || name == "block" || name == "attr" || name == "radius" ||
+                         name == "diameter" || name == "x" || name == "y")) {
+        const Entity* e = byRef(doc, a[1]);
+        if (!e)
+            return "####";
+        if (name == "layer") {
+            const Layer* l = doc.layer(e->common.layer);
+            return l ? l->name : "####";
+        }
+        if (name == "block" || name == "attr") {
+            const auto* ins = entityAs<InsertData>(*e);
+            if (!ins)
+                return "####";
+            if (name == "block") {
+                const BlockDef* def = doc.block(ins->block);
+                return def ? def->name : "####";
+            }
+            if (a.size() < 3)
+                return "####";
+            for (const AttribValue& v : ins->attribs)
+                if (sameText(v.tag, a[2]))
+                    return v.value;
+            return "####";
+        }
+        double div = 1;
+        if (name == "x" || name == "y") {
+            if (!unitDivisor(a, 3, 1, div))
+                return "####";
+            Vec2 at{};
+            if (!anchorOf(*e, at))
+                return "####";
+            return number((name == "x" ? at.x : at.y) / div, decimalsAt(2, 2));
+        }
+        double r = -1;
+        if (const auto* c = entityAs<CircleData>(*e))
+            r = c->radius;
+        else if (const auto* ar = entityAs<ArcData>(*e))
+            r = ar->radius;
+        if (r < 0 || !unitDivisor(a, 3, 1, div))
+            return "####";
+        return number((name == "diameter" ? 2 * r : r) / div, decimalsAt(2, 2));
+    }
+    if (a.size() > 1 &&
+        (name == "length" || name == "perimeter" || name == "area" || name == "text")) {
         const Entity* e = byRef(doc, a[1]);
         if (!e)
             return "####";
@@ -131,7 +216,7 @@ std::string evaluate(const Document& doc, std::string_view body, std::string_vie
             return "####";
         }
         double div = 1;
-        if (name == "length") {
+        if (name == "length" || name == "perimeter") {
             if (!unitDivisor(a, 3, 1, div))
                 return "####";
             const double len = geom::length(*e);
@@ -144,6 +229,11 @@ std::string evaluate(const Document& doc, std::string_view body, std::string_vie
             area = kPi * c->radius * c->radius;
         else if (const auto* p = entityAs<PolylineData>(*e); p && p->closed)
             area = geom::area(*p);
+        else if (const auto* el = entityAs<EllipseData>(*e);
+                 el && std::fabs(el->endParam - el->startParam - kTwoPi) < 1e-9)
+            area = kPi * length(el->majorAxis) * length(el->majorAxis) * el->ratio;
+        else if (const auto* h = entityAs<HatchData>(*e))
+            area = hatch::hatchArea(*h);
         return area >= 0 ? number(area / div, decimalsAt(2, 2)) : "####";
     }
     return "####";

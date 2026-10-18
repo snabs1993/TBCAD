@@ -21,15 +21,18 @@ public:
     std::string_view name() const override { return "FIELD"; }
     std::vector<std::string> defaultAliases() const override { return {"FLD"}; }
     std::string_view description() const override {
-        return "Text that updates itself: date, file name, sheet, length, area";
+        return "Text that updates itself: date, file name, sheet, length, area, layer, block, ...";
     }
 
     Task run(CommandContext& ctx) override {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Date", "Filename", "Sheet", "Length", "Area", "Text", "SetSheet"};
+        ko.keywords = {"Date",  "Filename", "Sheet",     "Length", "Area",  "Text",
+                       "Layer", "Block",    "Attribute", "Radius", "Scale", "SetSheet"};
         ko.defaultKeyword = "Date";
         auto k = co_await ctx.getKeyword(
-            "Field [Date/Filename/Sheet/Length/Area/Text/SetSheet] <Date>", ko);
+            "Field [Date/Filename/Sheet/Length/Area/Text/Layer/Block/Attribute/Radius/Scale/"
+            "SetSheet] <Date>",
+            ko);
         if (!k.ok())
             co_return;
         if (k.keyword == "SetSheet") {
@@ -49,6 +52,35 @@ public:
             token = "%<filename>%";
         } else if (k.keyword == "Sheet") {
             token = "%<sheet>%";
+        } else if (k.keyword == "Scale") {
+            token = "%<scale>%";
+        } else if (k.keyword == "Layer" || k.keyword == "Block" || k.keyword == "Attribute" ||
+                   k.keyword == "Radius") {
+            const std::string which = k.keyword;
+            cmd::EntityOptions eo;
+            eo.filter = [which](const Entity& e) {
+                if (which == "Layer")
+                    return true;
+                if (which == "Radius")
+                    return kind(e) == EntityKind::Circle || kind(e) == EntityKind::Arc;
+                return kind(e) == EntityKind::Insert;
+            };
+            auto o = co_await ctx.getEntity("Select the object", eo);
+            if (!o.ok())
+                co_return;
+            const std::string id = "#" + std::to_string(o.id.value);
+            if (which == "Layer") {
+                token = "%<layer:" + id + ">%";
+            } else if (which == "Block") {
+                token = "%<block:" + id + ">%";
+            } else if (which == "Radius") {
+                token = "%<radius:" + id + ":2>%";
+            } else {
+                auto tag = co_await ctx.getString("Attribute tag");
+                if (!tag.ok())
+                    co_return;
+                token = "%<attr:" + id + ":" + tag.text + ">%";
+            }
         } else {
             cmd::EntityOptions eo;
             const bool text = k.keyword == "Text";
@@ -62,9 +94,12 @@ public:
                         return !text;
                     case EntityKind::Polyline:
                         return !text;
+                    case EntityKind::Hatch:
+                        return area;
+                    case EntityKind::Ellipse:
+                        return !text;
                     case EntityKind::Line:
                     case EntityKind::Arc:
-                    case EntityKind::Ellipse:
                         return !text && !area;
                     default:
                         return false;

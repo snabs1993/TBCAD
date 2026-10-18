@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "tbcad/geom/geom.h"
+#include "tbcad/hatch/hatch.h"
 
 namespace tbcad::hatch {
 
@@ -114,6 +115,40 @@ std::vector<std::vector<Vec2>> loopRings(const HatchData& hatch, double toleranc
             rings.push_back(std::move(ring));
     }
     return rings;
+}
+
+double hatchArea(const HatchData& hatch) {
+    const BBox2 box = hatchBounds(hatch);
+    if (box.empty())
+        return 0;
+    const double tol = std::max(box.width(), box.height()) * 1e-5;
+    const auto rings = loopRings(hatch, tol > 0 ? tol : 1e-6);
+    auto signedArea = [](const std::vector<Vec2>& r) {
+        double a = 0;
+        for (std::size_t i = 0; i < r.size(); ++i) {
+            const Vec2& p = r[i];
+            const Vec2& q = r[(i + 1) % r.size()];
+            a += p.x * q.y - q.x * p.y;
+        }
+        return a / 2;
+    };
+    auto contains = [](const std::vector<Vec2>& r, Vec2 pt) {
+        bool in = false;
+        for (std::size_t i = 0, j = r.size() - 1; i < r.size(); j = i++)
+            if ((r[i].y > pt.y) != (r[j].y > pt.y) &&
+                pt.x < (r[j].x - r[i].x) * (pt.y - r[i].y) / (r[j].y - r[i].y) + r[i].x)
+                in = !in;
+        return in;
+    };
+    double total = 0;
+    for (std::size_t i = 0; i < rings.size(); ++i) {
+        int depth = 0;
+        for (std::size_t j = 0; j < rings.size(); ++j)
+            if (j != i && contains(rings[j], rings[i][0]))
+                ++depth;
+        total += (depth % 2 == 0 ? 1 : -1) * std::fabs(signedArea(rings[i]));
+    }
+    return std::max(total, 0.0);
 }
 
 namespace {

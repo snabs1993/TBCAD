@@ -11,8 +11,14 @@ table cell. A field is written `%<name>%` or `%<name:argument:argument>%`.
 | `%<sheet>%` | the sheet number (`FIELD` then `SetSheet`) |
 | `%<var:NAME>%` | any setting kept in the drawing |
 | `%<length:#ID:2:m>%` | length of a line, arc, circle, ellipse or polyline; 2 decimals; in metres (`m`, `cm`, `mm`, for drawings made in millimetres) |
-| `%<area:#ID:2:m>%` | area of a circle or closed polyline, in square metres |
+| `%<perimeter:#ID:2:m>%` | the same as `length` (perimeter of a closed polyline or circle) |
+| `%<area:#ID:2:m>%` | area of a circle, full ellipse, closed polyline or hatch (islands taken away), in square metres |
 | `%<text:#ID>%` | the text of another text object |
+| `%<radius:#ID:2>%`, `%<diameter:#ID:2>%` | of a circle or arc |
+| `%<x:#ID:2>%`, `%<y:#ID:2>%` | centre or insertion point of an object |
+| `%<layer:#ID>%` | the name of the object's layer |
+| `%<block:#ID>%`, `%<attr:#ID:TAG>%` | the block name of an insert, and one of its attribute values |
+| `%<scale>%` | the current annotation scale, `1:100` |
 
 A field that cannot be worked out (no such object, unsaved drawing) shows `####`. On screen the
 texts with fields are redrawn after every change, so a length or area follows its object live.
