@@ -273,6 +273,23 @@ std::string emitDxf(const Drawing& d) {
         if (d.entities[i].entmode == 0)
             byOwner[d.entities[i].owner].push_back(i);
 
+    // Draw order: entities of a block with a sort table sort by their sort handle (their own
+    // handle when not listed); the sort is stable, so the file order breaks ties.
+    auto sortByTable = [&](std::uint64_t block, std::vector<std::size_t>& idx) {
+        const auto table = d.sortKeys.find(block);
+        if (table == d.sortKeys.end())
+            return;
+        auto key = [&](std::size_t i) {
+            const std::uint64_t h = d.entities[i].handle;
+            const auto k = table->second.find(h);
+            return k == table->second.end() ? h : k->second;
+        };
+        std::stable_sort(idx.begin(), idx.end(),
+                         [&](std::size_t a, std::size_t b) { return key(a) < key(b); });
+    };
+    for (auto& [owner, idx] : byOwner)
+        sortByTable(owner, idx);
+
     // Layout sheets (paper space blocks) in tab order, then by handle.
     std::vector<std::uint64_t> sheets;
     std::unordered_map<std::uint64_t, const LayoutRec*> layoutOf;
@@ -331,11 +348,16 @@ std::string emitDxf(const Drawing& d) {
     o.endSection();
 
     o.beginSection("ENTITIES");
-    for (const EntityRec& e : d.entities) {
+    std::vector<std::size_t> modelOrder;
+    for (std::size_t i = 0; i < d.entities.size(); ++i) {
+        const EntityRec& e = d.entities[i];
         const bool model = e.entmode == 2 || (e.entmode == 0 && e.owner == modelSpace);
         if (model && !isChild(e))
-            emitWithChildren(o, d, e, n);
+            modelOrder.push_back(i);
     }
+    sortByTable(modelSpace, modelOrder);
+    for (std::size_t i : modelOrder)
+        emitWithChildren(o, d, d.entities[i], n);
     o.endSection();
     if (!sheets.empty()) {
         o.beginSection("OBJECTS");

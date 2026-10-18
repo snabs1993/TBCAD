@@ -43,6 +43,7 @@ enum Type : std::uint32_t {
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
     kHatch = 100000,
     kLayoutObject = 0x52,
+    kSortEnts = 200000,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
@@ -362,6 +363,8 @@ private:
                 type = kLwPolyline;
             else if (cls == "HATCH")
                 type = kHatch;
+            else if (cls == "SORTENTSTABLE")
+                type = kSortEnts;
             else if (cls == "LAYOUT") {
                 type = kLayoutObject;
                 ++out_.layoutSeen;
@@ -440,6 +443,9 @@ private:
                 return;
             case kDictionary:
                 decodeDictionary(r, objBits, body, self.value);
+                return;
+            case kSortEnts:
+                decodeSortEnts(r, objBits, body, self.value);
                 return;
             case kBlock:
             case kEndBlk:
@@ -1376,6 +1382,40 @@ private:
             items.emplace_back(names[i], resolveHandle(h.handle(), self));
         if (!r.failed() && !h.failed())
             out_.dictionaries[self] = std::move(items);
+    }
+
+    // SORTENTSTABLE: the draw order of a block. The main data is a count; the handle stream holds
+    // the block owner and then pairs of (sort handle, entity handle). Entities sort by the sort
+    // handle, those not listed by their own handle.
+    void decodeSortEnts(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        const std::uint32_t n = r.bl();
+        tally(kSortEnts, r);
+        BitReader h(body, objBits);
+        leadingHandles(h, self, reactors, true);
+        std::vector<std::uint64_t> rest;
+        while (!h.failed() && h.bitsLeft() >= 8 && rest.size() < 2000000)
+            rest.push_back(resolveHandle(h.handle(), self));
+        // Trailing padding can read as a few null handles.
+        while (!rest.empty() && rest.back() == 0)
+            rest.pop_back();
+        const bool okLayout = !r.failed() && n <= 2000000 &&
+                              (!fmt_.r2007 || r.bitPos() == mainEnd_) && rest.size() >= 2ull * n;
+        if (!okLayout) {
+            note("sort table " + hex(self) + " has an unexpected layout (" + std::to_string(n) +
+                 " entries, " + std::to_string(rest.size()) + " handles)" +
+                 (failDumps_[kSortEnts]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
+            return;
+        }
+        // The block owner comes first when one handle is left over after the pairs.
+        const std::size_t lead = rest.size() - 2ull * n;
+        const std::uint64_t block = lead >= 1 ? rest[lead - 1] : 0;
+        if (block == 0)
+            return;
+        auto& keys = out_.sortKeys[block];
+        for (std::uint32_t i = 0; i < n; ++i)
+            keys[rest[lead + 2ull * i + 1]] = rest[lead + 2ull * i];
     }
 
     // LAYOUT object (ODA spec 20.4.84): the name, paper size and paper space block of a layout.
@@ -2570,7 +2610,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r81: dimension style arrow blocks decoded; r80: --lz21-search tries every cut into "
+    return "r82: draw order tables (SORTENTSTABLE) read and applied; r81: dimension style arrow "
+           "blocks decoded; r80: --lz21-search tries every cut into "
            "blocks of 1, 4 and 8 bytes; r76: distinct "
            "layer extended data listed; r75: all dictionary entry names and layer "
            "extended data listed; r74: layer extension "
