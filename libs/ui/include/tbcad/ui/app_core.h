@@ -448,6 +448,8 @@ private:
     render::Camera2D modelCamera_{};
     std::uint64_t paperRevision_ = 0;
     render::Camera2D lastTessellatedFor_{};
+    // Stale objects out of view were left for later: rescan when the camera moves.
+    bool staleWaiting_ = false;
     std::size_t retileCheckedAt_ = 0;  // entity count of the last fragmentation check
     void retileIfFragmented();
     // New objects glow for a moment so a line drawn over same-coloured lines can be found.

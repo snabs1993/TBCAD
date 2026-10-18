@@ -39,6 +39,9 @@ public:
     // Rebuilds up to `limit` entities in view whose curves were tessellated for a zoom more than
     // 4x away from the camera's. Returns how many were rebuilt.
     std::size_t refreshStale(const render::Camera2D& camera, std::size_t limit = 20000);
+    // True when the last refreshStale() left stale objects alone because they are out of view:
+    // the camera must be checked again after it moves.
+    bool staleOffscreen() const { return skippedOffscreen_; }
 
     // A change of a very large number of objects (a MOVE of the whole drawing, its undo) takes
     // them out of the scene at once but builds their geometry later: first what the camera sees,
@@ -80,6 +83,7 @@ private:
     std::vector<PendingRec> pending_{};  // sorted by id
     std::size_t pendingDead_ = 0;
     double pixelSizeMm_ = 0.1;
+    bool skippedOffscreen_ = false;
     std::unordered_set<LayerId> lockedLayers_{};
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
     bool showTransparency_ = true;

@@ -194,6 +194,18 @@ std::vector<std::string> PatternRegistry::names() {
 
 const Pattern* findBuiltinPattern(std::string_view name) {
     std::string up = upper(name);
+    // Names drawings from other programs use for patterns TBCAD draws under its own names.
+    static constexpr std::pair<std::string_view, std::string_view> kAliases[] = {
+        {"AR-CONC", "CONCRETE"},
+        {"AR-SAND", "SAND"},
+        {"AR-B816", "BRICK"},
+        {"AR-B88", "BRICK"},
+        {"AR-BRSTD", "BRICK"}};
+    for (const auto& [from, to] : kAliases)
+        if (up == from) {
+            up = to;
+            break;
+        }
     for (const Pattern& p : builtinPatterns())
         if (p.name == up)
             return &p;

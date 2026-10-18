@@ -451,12 +451,21 @@ std::size_t SceneSync::refreshStale(const render::Camera2D& camera, std::size_t 
     if (stale.empty())
         return 0;
     pixelSizeMm_ = camera.pixelSizeMm();
+    // A tile holds objects far outside the view; those wait until the camera comes to them.
+    const BBox2 view = camera.visibleWorld().inflated(8.0 * pixelSizeMm_);
+    skippedOffscreen_ = false;
     std::vector<const Entity*> redraw;
     for (EntityId id : stale) {
         if (redraw.size() >= limit)
             break;
-        if (const Entity* e = doc_.find(id))
-            redraw.push_back(e);
+        const Entity* e = doc_.find(id);
+        if (!e)
+            continue;
+        if (!geom::bounds(*e, doc_).intersects(view)) {
+            skippedOffscreen_ = true;
+            continue;
+        }
+        redraw.push_back(e);
     }
     upsertMany(redraw);
     return redraw.size();

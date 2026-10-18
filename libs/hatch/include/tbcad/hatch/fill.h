@@ -23,7 +23,7 @@ struct FillOptions {
     double pixelSizeMm = 0;
     double minSpacingPx = 2.0;
     // More dash segments (dots count too) than this make the fill fall back to a solid tone.
-    std::size_t maxSegments = 200000;
+    std::size_t maxSegments = 50000;
     // More pattern lines than this (summed over the families) also fall back.
     std::size_t maxLines = 400000;
 };
