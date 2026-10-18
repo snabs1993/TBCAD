@@ -669,6 +669,53 @@ static void applyBreaks(Layout& L, const std::vector<DimBreak>& breaks) {
     L.lines = std::move(out);
 }
 
+// DIMJOGLINE: cuts the dimension line open where a jog sits and draws a Z in the gap.
+static void applyJogs(Layout& L, const std::vector<Vec2>& jogs, double width) {
+    constexpr double kOnLine = 0.02;  // mm
+    if (!(width > 0))
+        return;
+    std::vector<Layout::Line> zigzags;
+    std::vector<Layout::Line> out;
+    for (Layout::Line& line : L.lines) {
+        if (line.pts.size() != 2 || line.role != Role::DimLine) {
+            out.push_back(std::move(line));
+            continue;
+        }
+        const Vec2 a = line.pts[0], d = line.pts[1] - a;
+        const double len = std::hypot(d.x, d.y);
+        if (!(len > 2 * width)) {
+            out.push_back(std::move(line));
+            continue;
+        }
+        const Vec2 u = d * (1 / len), n = perp(u);
+        std::vector<double> at;  // distances along the line, ascending
+        for (const Vec2& j : jogs) {
+            const double s = (j.x - a.x) * u.x + (j.y - a.y) * u.y;
+            const Vec2 q = a + u * s;
+            if (std::hypot(j.x - q.x, j.y - q.y) <= kOnLine && s > width / 2 && s < len - width / 2)
+                at.push_back(s);
+        }
+        std::sort(at.begin(), at.end());
+        double from = 0;
+        for (double s : at) {
+            if (s - width / 2 < from)
+                continue;  // two jogs too close: the second is skipped
+            out.push_back({{a + u * from, a + u * (s - width / 2)}, line.role});
+            const Vec2 mid = a + u * s;
+            Layout::Line z;
+            z.role = Role::DimLine;
+            z.pts = {mid - u * (width / 2), mid - u * (width / 6) + n * (width / 2),
+                     mid + u * (width / 6) - n * (width / 2), mid + u * (width / 2)};
+            zigzags.push_back(std::move(z));
+            from = s + width / 2;
+        }
+        out.push_back({{a + u * from, a + d}, line.role});
+    }
+    for (Layout::Line& z : zigzags)
+        out.push_back(std::move(z));
+    L.lines = std::move(out);
+}
+
 Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance,
                        double annoScale) {
     Layout L;
@@ -703,6 +750,8 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     }
     if (!d.breaks.empty())
         applyBreaks(L, d.breaks);
+    if (!d.jogs.empty())
+        applyJogs(L, d.jogs, 2 * c.arrow);
     return L;
 }
 

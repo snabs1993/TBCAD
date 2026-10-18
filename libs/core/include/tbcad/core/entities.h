@@ -373,6 +373,9 @@ struct DimensionData {
     // DIMEDIT Rotate: the text angle when it is fixed by hand, else it follows the style.
     bool textRotated = false;
     double textRotation = 0;
+    // DIMJOGLINE: where the dimension line of a linear or aligned dimension has a jog (a Z-shaped
+    // kink that says the measured length is shortened on the drawing). Points on the line.
+    std::vector<Vec2> jogs{};
 };
 
 struct LeaderData {

@@ -234,3 +234,50 @@ TEST_CASE("DIMBREAK opens a gap in the dimension line where another object cross
     CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.empty());
     CHECK(count() == before);
 }
+
+TEST_CASE("DIMJOGLINE puts a Z-shaped jog in the dimension line and Remove takes it out") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    auto shape = [&] {
+        const dim::Layout L =
+            dim::layoutDimension(f.doc, *entityAs<DimensionData>(*f.doc.find(id)));
+        std::size_t zig = 0, straight = 0;
+        for (const auto& l : L.lines) {
+            if (l.role != dim::Role::DimLine)
+                continue;
+            (l.pts.size() == 4 ? zig : straight)++;
+        }
+        return std::pair{zig, straight};
+    };
+    const auto before = shape();
+    REQUIRE(f.host->run("DIMJOGLINE", {ScriptItem::pick(id, {10, -30}), "20,-30"}).finished);
+    const auto* d = entityAs<DimensionData>(*f.doc.find(id));
+    REQUIRE(d->jogs.size() == 1);
+    CHECK(d->jogs[0].x == doctest::Approx(20));
+    CHECK(d->jogs[0].y == doctest::Approx(-30));
+    const auto after = shape();
+    CHECK(after.first == 1);
+    CHECK(after.second == before.second + 1);  // the dimension line is cut in two around the Z
+    CHECK(f.host->undo());
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->jogs.empty());
+
+    // Enter = the middle of the dimension line; Remove clears every jog.
+    REQUIRE(
+        f.host->run("DIMJOGLINE", {ScriptItem::pick(id, {10, -30}), ScriptItem::enter()}).finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->jogs.size() == 1);
+    REQUIRE(f.host->run("DIMJOGLINE", {ScriptItem::pick(id, {10, -30}), "Remove"}).finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->jogs.empty());
+    CHECK(shape() == before);
+
+    // It survives the file format and a transform.
+    REQUIRE(f.host->run("DIMJOGLINE", {ScriptItem::pick(id, {10, -30}), "20,-30"}).finished);
+    Entity moved = *f.doc.find(id);
+    auto t = geom::transformed(moved, Transform2::translate({5, 5}));
+    REQUIRE(t.ok());
+    CHECK(entityAs<DimensionData>(t.value())->jogs[0].x == doctest::Approx(25));
+}

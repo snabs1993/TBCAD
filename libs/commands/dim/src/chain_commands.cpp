@@ -569,6 +569,81 @@ public:
     }
 };
 
+class JogLineCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMJOGLINE"; }
+    std::vector<std::string> defaultAliases() const override { return {"DJL"}; }
+    std::string_view description() const override {
+        return "Add or remove a jog in the dimension line of a linear dimension";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) {
+            const auto* d = entityAs<DimensionData>(e);
+            return d && (d->kind == DimKind::Linear || d->kind == DimKind::Aligned);
+        };
+        auto pick = co_await ctx.getEntity("Select a linear or aligned dimension", eo);
+        if (!pick.ok())
+            co_return;
+        const Entity* e = ctx.doc().find(pick.id);
+        const auto* d0 = e ? entityAs<DimensionData>(*e) : nullptr;
+        if (!d0)
+            co_return;
+        // The dimension line as drawn without jogs: the longest straight piece takes the jog.
+        DimensionData bare = *d0;
+        bare.jogs.clear();
+        bare.breaks.clear();
+        const dim::Layout L = dim::layoutDimension(ctx.doc(), bare);
+        Vec2 a{}, b{};
+        double best = 0;
+        for (const dim::Layout::Line& line : L.lines) {
+            if (line.role != dim::Role::DimLine || line.pts.size() != 2)
+                continue;
+            const double len = distance(line.pts[0], line.pts[1]);
+            if (len > best) {
+                best = len;
+                a = line.pts[0];
+                b = line.pts[1];
+            }
+        }
+        if (!(best > 0)) {
+            ctx.message("This dimension has no dimension line to put a jog in.");
+            co_return;
+        }
+        cmd::PointOptions po;
+        po.allowNone = true;
+        po.keywords = {"Remove"};
+        auto where = co_await ctx.getPoint(
+            "Specify jog location on the dimension line or [Remove] (Enter = middle)", po);
+        if (where.status == Status::Cancel)
+            co_return;
+        const bool remove = where.status == Status::Keyword;
+        Vec2 at = (a + b) * 0.5;
+        if (where.ok()) {
+            const Vec2 u = (b - a) * (1 / best);
+            const double s = std::clamp(dot(where.point - a, u), 0.0, best);
+            at = a + u * s;
+        }
+        ctx.setUndoLabel("DIMJOGLINE");
+        auto r = ctx.tx().modify(pick.id, [&](Entity& ent) {
+            auto* d = entityAs<DimensionData>(ent);
+            if (!d)
+                return;
+            if (remove)
+                d->jogs.clear();
+            else
+                d->jogs.push_back(at);
+        });
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message(remove ? "Jog lines removed." : "Jog line added.");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeEditCommand() {
@@ -591,6 +666,10 @@ std::unique_ptr<cmd::Command> makeSpaceCommand() {
 
 std::unique_ptr<cmd::Command> makeQuickDimCommand() {
     return std::make_unique<QuickDimCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeJogLineCommand() {
+    return std::make_unique<JogLineCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeBreakCommand() {
