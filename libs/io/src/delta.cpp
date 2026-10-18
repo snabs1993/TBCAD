@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 4;
+constexpr std::uint8_t kDeltaVersion = 5;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -74,6 +74,8 @@ void putRow(ByteWriter& w, StringTable& st, const TextStyle& r) {
     w.f64(r.widthFactor);
     w.f64(r.oblique);
     w.f64(r.height);
+    // (version 5) flags: annotative, backward, upside down
+    w.u8((r.annotative ? 1 : 0) | (r.backward ? 2 : 0) | (r.upsideDown ? 4 : 0));
 }
 
 void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
@@ -244,6 +246,12 @@ struct Reader {
         t.oblique = r.f64();
         if (version >= 3)
             t.height = r.f64();
+        if (version >= 5) {
+            const std::uint8_t f = r.u8();
+            t.annotative = (f & 1) != 0;
+            t.backward = (f & 2) != 0;
+            t.upsideDown = (f & 4) != 0;
+        }
     }
     void row(DimStyle& d) {
         d.name = str();

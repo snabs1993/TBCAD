@@ -2073,6 +2073,9 @@ bool msLtScale(const Header& h) {
 bool plineGen(const Header& h) {
     return customFlag(h, kPlineGenKey, true);
 }
+bool mirrText(const Header& h) {
+    return customFlag(h, kMirrTextKey, false);
+}
 
 double currentAnnotationScale(const Header& h) {
     auto it = h.custom.find(kAnnoScaleKey);

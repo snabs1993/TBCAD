@@ -386,6 +386,8 @@ private:
             check(tx.modifyTextStyle(id,
                                      [&](TextStyle& t) {
                                          t.annotative = (flags & 1) != 0;
+                                         t.backward = (flags & 2) != 0;
+                                         t.upsideDown = (flags & 4) != 0;
                                          t.shxFile = std::move(shx);
                                          t.bigFontFile = std::move(big);
                                      }),

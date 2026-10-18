@@ -1,12 +1,45 @@
 #include "tbcad/transform/apply.h"
 
+#include <cmath>
+
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::transform {
 
+namespace {
+
+// MIRRTEXT = 1: text is reflected with the rest, which AutoCAD shows as backward or upside-down
+// text. `e` already went through geom::transformed, which keeps text readable.
+void reflectText(const Entity& src, Entity& e, const Transform2& t) {
+    const auto* from = entityAs<TextData>(src);
+    auto* to = entityAs<TextData>(e);
+    if (!from || !to)
+        return;
+    const Vec2 u = t.applyVector({std::cos(from->rotation), std::sin(from->rotation)});
+    const double ang = std::atan2(u.y, u.x);
+    if (u.x < 0) {
+        to->rotation = ang + kPi;
+        to->backward = !from->backward;
+        to->upsideDown = from->upsideDown;
+    } else {
+        to->rotation = ang;
+        to->upsideDown = !from->upsideDown;
+        to->backward = from->backward;
+    }
+    to->oblique = -from->oblique;
+    if (to->backward && to->upsideDown) {  // both flips are a half turn
+        to->backward = to->upsideDown = false;
+        to->rotation += kPi;
+    }
+    to->rotation = std::remainder(to->rotation, kTwoPi);
+}
+
+}  // namespace
+
 ApplyReport applyTransform(cmd::CommandContext& ctx, std::span<const EntityId> ids,
                            const Transform2& t, bool copy) {
     ApplyReport rep;
+    const bool reflect = t.determinant() < 0 && mirrText(ctx.doc().header());
     if (!copy)
         ctx.tx().expectTouching(ids.size());
     for (EntityId id : ids) {
@@ -20,6 +53,8 @@ ApplyReport applyTransform(cmd::CommandContext& ctx, std::span<const EntityId> i
                 rep.firstError = moved.error().message;
             continue;
         }
+        if (reflect)
+            reflectText(*src, moved.value(), t);
         if (copy) {
             auto added = ctx.tx().add(std::move(moved).value());
             if (added) {
@@ -65,11 +100,14 @@ void buildPreview(const Document& doc, std::span<const EntityId> ids, const Tran
         out.items.emplace_back(std::move(pl));
         return;
     }
+    const bool reflect = t.determinant() < 0 && mirrText(doc.header());
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
         if (!e)
             continue;
         auto moved = geom::transformed(*e, t);
+        if (moved && reflect)
+            reflectText(*e, moved.value(), t);
         if (moved)
             geom::buildDisplay(doc, moved.value(), dc, out);
     }

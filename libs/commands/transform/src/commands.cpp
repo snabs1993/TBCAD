@@ -325,7 +325,7 @@ public:
     std::string_view name() const override { return "MIRROR"; }
     std::vector<std::string> defaultAliases() const override { return {"MI"}; }
     std::string_view description() const override {
-        return "Mirror objects about a line (text stays readable)";
+        return "Mirror objects about a line (text stays readable unless MIRRTEXT is 1)";
     }
 
     Task run(CommandContext& ctx) override {

@@ -832,6 +832,12 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
         d.widthFactor = 1;
     d.oblique = r.num(51) * kDeg;
     d.style = textStyleFor(r.raw(7));
+    {
+        // Group 71 is the object's effective flags; ours are relative to the style's.
+        const TextStyle* ts = doc_->textStyle(d.style);
+        d.backward = ((r.integer(71) & 2) != 0) != (ts && ts->backward);
+        d.upsideDown = ((r.integer(71) & 4) != 0) != (ts && ts->upsideDown);
+    }
     // In AutoCAD the style's width factor is only the default for new text: the object's own
     // factor is the one that applies, so it must not be multiplied by the style's again.
     if (auto it = styleRawWidth_.find(d.style.value); it != styleRawWidth_.end())

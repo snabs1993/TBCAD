@@ -151,6 +151,8 @@ struct DataDumper {
           << d.rotation << " wf" << d.widthFactor << " ob" << d.oblique << " style" << d.style
           << " " << static_cast<int>(d.h) << "/" << static_cast<int>(d.v) << " ";
         o.quoted(d.utf8);
+        if (d.backward || d.upsideDown)
+            o << " gen" << (d.backward ? "B" : "") << (d.upsideDown ? "U" : "");
         if (d.attdef) {
             o << " ATTDEF tag=";
             o.quoted(d.attdef->tag);
@@ -438,6 +440,8 @@ std::string canonicalDump(const Document& doc) {
         o << " wf" << r.widthFactor << " ob" << r.oblique;
         if (r.height > 0)
             o << " h" << r.height;
+        if (r.backward || r.upsideDown)
+            o << " gen" << (r.backward ? "B" : "") << (r.upsideDown ? "U" : "");
         if (!r.shxFile.empty() || !r.bigFontFile.empty() || r.annotative) {
             o << " shx=";
             o.quoted(r.shxFile);
