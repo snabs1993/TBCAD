@@ -197,6 +197,7 @@ public:
             cmd::AngleOptions ao;
             ao.base = start;
             ao.defaultValue = 0.0;
+            ao.inUcs = true;
             auto a = co_await ctx.getAngle("Specify rotation angle of text", ao);
             if (!a.ok())
                 co_return;
@@ -278,7 +279,8 @@ Task mtextOption(CommandContext& ctx, MTextState& st, const std::string& option,
     } else if (option == "Rotation") {
         cmd::AngleOptions o;
         o.base = base;
-        o.defaultValue = st.rotation;
+        o.inUcs = true;
+        o.defaultValue = st.rotation - ctx.host().ucsAngle();
         auto r = co_await ctx.getAngle("Specify rotation angle", o);
         if (r.ok())
             st.rotation = r.value;
@@ -314,6 +316,7 @@ public:
 
     Task run(CommandContext& ctx) override {
         MTextState st;
+        st.rotation = ctx.host().ucsAngle();  // the lines run along the UCS X axis
         st.height = settingNumber(ctx, kHeightKey, autoTextHeight(ctx));
         if (auto s = ctx.host().setting(kAttachKey))
             for (const Attach& a : kAttach)

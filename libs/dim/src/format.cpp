@@ -95,8 +95,13 @@ double measurement(const DimensionData& d) {
         }
         case DimKind::Jogged:
             return distance(p[0], p[1]);
-        case DimKind::Ordinate:
-            return std::abs(d.rotation < kPi / 4 ? p[0].x - p[2].x : p[0].y - p[2].y);
+        case DimKind::Ordinate: {
+            // along the X or Y axis of the UCS the dimension was made in (oblique is its angle)
+            const Vec2 axis = d.rotation < kPi / 4
+                                  ? Vec2{std::cos(d.oblique), std::sin(d.oblique)}
+                                  : Vec2{-std::sin(d.oblique), std::cos(d.oblique)};
+            return std::abs(dot(p[0] - p[2], axis));
+        }
     }
     return 0;
 }

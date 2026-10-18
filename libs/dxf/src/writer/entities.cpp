@@ -1281,6 +1281,8 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
         o.str(1, text::expandFields(doc_, d.textOverride));
     o.str(3, dimStyleNameOf(d.style));
     o.d(42, dim::measurement(d));
+    if (d.kind == DimKind::Ordinate && d.oblique != 0)
+        o.d(51, d.oblique * kDeg);  // the X axis the ordinate is measured along (the UCS)
     sub(subclass);
     switch (d.kind) {
         case DimKind::Linear:

@@ -12,6 +12,8 @@ namespace {
 
 using cmd::KeywordOptions;
 
+constexpr const char* kPreviousKey = "drafting.ucs.previous";
+
 std::string lower(std::string s) {
     for (char& c : s)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -79,8 +81,8 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         const drafting::Ucs cur = drafting::currentUcs(&ctx.doc(), &ctx.host());
         KeywordOptions menu;
-        menu.keywords = {"World", "Origin",  "Rotate", "Object", "Points",
-                         "Save",  "Restore", "Delete", "List"};
+        menu.keywords = {"World",  "Previous", "View", "Origin",  "Rotate", "Object",
+                         "3point", "Points",   "Save", "Restore", "Delete", "List"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("UCS: " +
                                                   (cur.isWorld()      ? std::string("World")
@@ -92,6 +94,9 @@ public:
             co_return;
         const std::string& kw = choice.keyword;
         auto apply = [&](drafting::Ucs u) {
+            // (remember the system we leave for UCS Previous)
+            ctx.host().setSetting(kPreviousKey,
+                                  ctx.host().setting(drafting::kUcsSettingKey).value_or("World"));
             if (u.isWorld())
                 ctx.host().setSetting(drafting::kUcsSettingKey, "World");
             else
@@ -102,6 +107,18 @@ public:
 
         if (kw == "World") {
             apply({});
+        } else if (kw == "Previous") {
+            const std::string prev = ctx.host().setting(kPreviousKey).value_or("World");
+            const std::string now = ctx.host().setting(drafting::kUcsSettingKey).value_or("World");
+            ctx.host().setSetting(drafting::kUcsSettingKey, prev.empty() ? "World" : prev);
+            ctx.host().setSetting(kPreviousKey, now);
+            ctx.message("UCS: " + describe(drafting::currentUcs(&ctx.doc(), &ctx.host())));
+        } else if (kw == "View") {
+            // The view of a 2D drawing is never turned: the axes line up with the screen.
+            drafting::Ucs u = cur;
+            u.name.clear();
+            u.angle = 0;
+            apply(u);
         } else if (kw == "Origin") {
             auto p = co_await ctx.getPoint("Specify the new origin");
             if (!p.ok())
@@ -119,7 +136,7 @@ public:
             u.name.clear();
             u.angle = std::remainder(cur.angle + a.value, kTwoPi);
             apply(u);
-        } else if (kw == "Points") {
+        } else if (kw == "Points" || kw == "3point") {
             auto o = co_await ctx.getPoint("Specify the origin");
             if (!o.ok())
                 co_return;
@@ -128,6 +145,17 @@ public:
             auto x = co_await ctx.getPoint("Specify a point on the X axis", po);
             if (!x.ok())
                 co_return;
+            if (kw == "3point") {
+                // the third point only says which side Y is on; a 2D system has it
+                // counter-clockwise
+                cmd::PointOptions yo;
+                yo.base = o.point;
+                yo.allowNone = true;
+                auto y =
+                    co_await ctx.getPoint("Specify a point on the positive Y side <Enter>", yo);
+                if (y.status == cmd::Status::Cancel)
+                    co_return;
+            }
             if (lengthSquared(x.point - o.point) < 1e-18) {
                 ctx.message("The X axis point is the same as the origin.");
                 co_return;
@@ -206,8 +234,84 @@ public:
 
 }  // namespace
 
+namespace {
+
+// UCSICON: whether the coordinate-system icon is shown, and whether it sits at the UCS origin.
+class UcsIconCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "UCSICON"; }
+    std::string_view description() const override {
+        return "Show or hide the UCS icon, and put it at the UCS origin";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool on = ctx.host().setting("drafting.ucsicon").value_or("1") != "0";
+        const bool atOrigin = ctx.host().setting("drafting.ucsicon.origin").value_or("1") != "0";
+        KeywordOptions menu;
+        menu.keywords = {"ON", "OFF", "ORigin", "Noorigin"};
+        menu.defaultKeyword = on ? "OFF" : "ON";
+        auto k = co_await ctx.getKeyword(std::string("UCSICON is ") + (on ? "on" : "off") +
+                                             (atOrigin ? ", at the UCS origin" : ", in the corner"),
+                                         menu);
+        if (!k.ok())
+            co_return;
+        if (k.keyword == "ON" || k.keyword == "OFF")
+            ctx.host().setSetting("drafting.ucsicon", k.keyword == "ON" ? "1" : "0");
+        else
+            ctx.host().setSetting("drafting.ucsicon.origin", k.keyword == "ORigin" ? "1" : "0");
+    }
+};
+
+// PLAN: look at the drawing straight on. The view of a 2D drawing is never turned, so this centres
+// the view on the origin of the chosen system and keeps the zoom.
+class PlanCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLAN"; }
+    std::string_view description() const override {
+        return "Plan view of the current UCS, a saved one or the world system";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        KeywordOptions menu;
+        menu.keywords = {"Current", "Ucs", "World"};
+        menu.defaultKeyword = "Current";
+        auto k = co_await ctx.getKeyword("Plan view [Current UCS/Ucs/World]", menu);
+        if (!k.ok())
+            co_return;
+        drafting::Ucs u = drafting::currentUcs(&ctx.doc(), &ctx.host());
+        if (k.keyword == "World") {
+            u = {};
+        } else if (k.keyword == "Ucs") {
+            cmd::StringOptions so;
+            auto n = co_await ctx.getString("Name of the UCS", so);
+            if (!n.ok())
+                co_return;
+            bool found = lower(n.text) == "world";
+            if (found)
+                u = {};
+            for (const auto& s : drafting::ucsList(ctx.doc())) {
+                if (lower(s.name) == lower(n.text)) {
+                    u = s;
+                    found = true;
+                }
+            }
+            if (!found) {
+                ctx.message("No UCS named \"" + n.text + "\".");
+                co_return;
+            }
+        }
+        cmd::ViewState v = ctx.host().view();
+        v.center = u.origin;
+        ctx.host().setView(v);
+    }
+};
+
+}  // namespace
+
 void registerUcsCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<UcsCommand>());
+    (void)registry.add(std::make_unique<UcsIconCommand>());
+    (void)registry.add(std::make_unique<PlanCommand>());
 }
 
 }  // namespace tbcad::draftingcmds

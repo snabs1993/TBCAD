@@ -276,13 +276,19 @@ bool circleOf(const Entity& e, Vec2& c, double& r, const Vec2* pick) {
 }
 
 // Horizontal or vertical dimension line, whichever side of the points the cursor is on.
-double autoRotation(Vec2 p1, Vec2 p2, Vec2 c) {
+// The axes are the UCS axes (`ucs` is the angle of its X axis).
+double autoRotation(Vec2 p1, Vec2 p2, Vec2 c, double ucs) {
+    const double co = std::cos(-ucs), si = std::sin(-ucs);
+    auto in = [&](Vec2 p) { return Vec2{p.x * co - p.y * si, p.x * si + p.y * co}; };
+    p1 = in(p1);
+    p2 = in(p2);
+    c = in(c);
     BBox2 b;
     b.expand(p1);
     b.expand(p2);
     double dx = std::max({c.x - b.max.x, b.min.x - c.x, 0.0});
     double dy = std::max({c.y - b.max.y, b.min.y - c.y, 0.0});
-    return dx > dy ? kPi / 2 : 0.0;
+    return ucs + (dx > dy ? kPi / 2 : 0.0);
 }
 
 LeaderData leaderOf(const Document& doc, std::vector<Vec2> pts, const std::string& plain) {

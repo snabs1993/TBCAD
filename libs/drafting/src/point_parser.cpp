@@ -86,6 +86,10 @@ std::optional<Vec2> parseTypedPoint(std::string_view text, const cmd::PointParse
     return *ctx.base + dir * *d;
 }
 
+double TypedPointParser::ucsAngle() const {
+    return env_ ? currentUcs(env_->doc, env_->host).angle : 0;
+}
+
 std::optional<Vec2> TypedPointParser::parsePoint(std::string_view text,
                                                  const cmd::PointParseContext& ctx) {
     std::optional<Vec2> dir;

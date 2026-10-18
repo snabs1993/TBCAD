@@ -390,6 +390,8 @@ void Importer::processTables(RecordReader& rr) {
             readDimStyle(r);
         else if (r.type == "APPID")
             readAppId(r);
+        else if (r.type == "UCS")
+            readUcs(r);
     }
     createLayers();
     createLevels();
@@ -405,6 +407,23 @@ void Importer::processTables(RecordReader& rr) {
         });
     }
     marksAwaitingStyles_.clear();
+}
+
+// A named coordinate system (2D: the origin and the angle of the X axis). Kept in the drawing's UCS
+// table, Header::custom["tbcad.ucs"].
+void Importer::readUcs(const Record& r) {
+    std::string name = dec(r.raw(2));
+    for (char& c : name)
+        if (c == '\t' || c == ',' || c == '\r' || c == '\n')
+            c = '_';
+    if (name.empty() || name.size() > 31)
+        return;
+    const double a = std::atan2(r.num(21), r.num(11));
+    char buf[160];
+    std::snprintf(buf, sizeof buf, "\t%.17g\t%.17g\t%.17g\n", r.num(10) * k_, r.num(20) * k_,
+                  r.has(11) ? a : 0.0);
+    const std::string row = name + buf;
+    (void)tx_->modifyHeader([&](Header& h) { h.custom["tbcad.ucs"] += row; });
 }
 
 // TBCAD level table: XDATA on the TBCAD application record (written by the exporter).

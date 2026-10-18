@@ -439,8 +439,9 @@ void layoutArcLength(const Ctx& c, const DimensionData& d, const std::string& tx
 
 void layoutOrdinate(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
     const Vec2 P = d.defPts[0], E = d.defPts[1];
-    const bool xDatum = d.rotation < kPi / 4;  // measures X: the leader runs along Y
-    const Vec2 along = xDatum ? Vec2{0, 1} : Vec2{1, 0};
+    const bool xDatum = d.rotation < kPi / 4;                 // measures X: the leader runs along Y
+    const Vec2 ux{std::cos(d.oblique), std::sin(d.oblique)};  // the UCS axes (oblique = X angle)
+    const Vec2 along = xDatum ? perp(ux) : ux;
     const Vec2 across = perp(along);
     const double len = dot(E - P, along);
     const double dir = len >= 0 ? 1.0 : -1.0;
@@ -462,7 +463,9 @@ void layoutOrdinate(const Ctx& c, const DimensionData& d, const std::string& txt
     if (txt.empty())
         return;
     const double tw = textWidth(c, txt);
-    const double rot = xDatum && c.st.textAlign != DimTextAlign::Horizontal ? kPi / 2 : 0;
+    const double rot = xDatum && c.st.textAlign != DimTextAlign::Horizontal
+                           ? readable(d.oblique + kPi / 2)
+                           : readable(d.oblique);
     Vec2 center = E + along * (dir * (c.gap + halfExtent(along, rot, tw, c.th)));
     if (d.textPosUser)
         center = d.textPos;

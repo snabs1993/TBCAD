@@ -76,19 +76,20 @@ public:
                          : std::vector<std::string>{"Text", "Horizontal", "Vertical", "Rotated"};
             auto* c = &ctx;
             const bool aligned = aligned_;
+            const double ucs = ctx.host().ucsAngle();
             auto build = [=](Vec2 cursor) {
                 DimensionData d;
                 d.kind = aligned ? DimKind::Aligned : DimKind::Linear;
                 d.rotation = rotation;
                 switch (mode) {
                     case Mode::Auto:
-                        d.rotation = autoRotation(p1, p2, cursor);
+                        d.rotation = autoRotation(p1, p2, cursor, ucs);
                         break;
                     case Mode::Horizontal:
-                        d.rotation = 0;
+                        d.rotation = ucs;
                         break;
                     case Mode::Vertical:
-                        d.rotation = kPi / 2;
+                        d.rotation = ucs + kPi / 2;
                         break;
                     case Mode::Rotated:
                         break;
@@ -115,6 +116,7 @@ public:
                 } else if (where.keyword == "Rotated") {
                     cmd::AngleOptions ao;
                     ao.defaultValue = 0;
+                    ao.inUcs = true;
                     auto a = co_await ctx.getAngle("Specify angle of dimension line", ao);
                     if (a.ok()) {
                         rotation = a.value;
@@ -293,10 +295,14 @@ public:
             lo.base = P;
             lo.keywords = {"Xdatum", "Ydatum", "Text"};
             auto* c = &ctx;
+            const double ucs = ctx.host().ucsAngle();
             auto build = [=](Vec2 cursor) {
                 DimensionData d;
                 d.kind = DimKind::Ordinate;
-                const Vec2 off = cursor - P;
+                d.oblique = ucs;
+                const Vec2 w = cursor - P;  // in the UCS axes
+                const Vec2 off{w.x * std::cos(-ucs) - w.y * std::sin(-ucs),
+                               w.x * std::sin(-ucs) + w.y * std::cos(-ucs)};
                 // Without a keyword the leader runs along the direction the cursor moved most.
                 const bool xDatum = forceX ? *forceX : std::abs(off.y) >= std::abs(off.x);
                 d.rotation = xDatum ? 0 : kPi / 2;

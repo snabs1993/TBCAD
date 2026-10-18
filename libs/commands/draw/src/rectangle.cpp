@@ -97,6 +97,7 @@ public:
             co_return;
         const Vec2 c1 = first.point;
         RectSpec spec;
+        spec.rotation = ctx.host().ucsAngle();  // the sides follow the UCS axes
         spec.fillet = readNumber(ctx.host(), kFilletKey);
         spec.width = readNumber(ctx.host(), kWidthKey);
         if (auto ch = ctx.host().setting(kChamferKey)) {
@@ -118,7 +119,8 @@ public:
                 if (r.keyword == "Rotation") {
                     cmd::AngleOptions ao;
                     ao.base = c1;
-                    ao.defaultValue = spec.rotation;
+                    ao.inUcs = true;
+                    ao.defaultValue = spec.rotation - ctx.host().ucsAngle();
                     auto a = co_await ctx.getAngle("Specify rotation angle", std::move(ao));
                     if (!a.ok())
                         co_return;

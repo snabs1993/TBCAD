@@ -91,6 +91,10 @@ struct AngleOptions {  // a typed angle (current angle unit, degrees by default)
     std::vector<std::string> keywords{};
     PreviewFn preview{};
     std::optional<double> defaultValue{};  // radians
+    // The typed number (and the default) is an angle in the current UCS, from its X axis; the
+    // answer is the same direction as a world angle. A point answer is a world angle already.
+    // For prompts that ask for a direction, not for an amount to turn by.
+    bool inUcs = false;
 };
 struct RealOptions {
     std::vector<std::string> keywords{};
@@ -281,6 +285,8 @@ class CommandLineParser {
 public:
     virtual ~CommandLineParser() = default;
     virtual std::optional<Vec2> parsePoint(std::string_view text, const PointParseContext& ctx) = 0;
+    // Rotation of the current UCS (radians), for angle prompts that are asked in the UCS.
+    virtual double ucsAngle() const { return 0; }
 };
 
 // Built-in grammar: `x,y` absolute, `@dx,dy` relative to lastPoint, `@d<a` and `d<a` polar

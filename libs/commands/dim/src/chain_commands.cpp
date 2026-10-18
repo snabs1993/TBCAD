@@ -269,9 +269,13 @@ public:
                 pts.push_back(pt->p);
             }
         }
+        // Horizontal and vertical are the UCS axes: work in the UCS frame for the box and the keys.
+        const double ucs = ctx.host().ucsAngle();
+        const double uc = std::cos(-ucs), us = std::sin(-ucs);
+        auto inUcs = [&](Vec2 p) { return Vec2{p.x * uc - p.y * us, p.x * us + p.y * uc}; };
         BBox2 box;
         for (const Vec2& p : pts)
-            box.expand(p);
+            box.expand(inUcs(p));
         if (pts.size() < 2 || box.empty()) {
             ctx.message("Nothing to dimension.");
             co_return;
@@ -330,9 +334,10 @@ public:
         if (!at.ok())
             co_return;
         // Outside the box vertically: horizontal dimensions; otherwise vertical ones.
-        const bool horizontal = at.point.y > box.max.y || at.point.y < box.min.y;
-        const double rotation = horizontal ? 0.0 : kPi / 2;
-        auto key = [&](Vec2 p) { return horizontal ? p.x : p.y; };
+        const Vec2 atU = inUcs(at.point);
+        const bool horizontal = atU.y > box.max.y || atU.y < box.min.y;
+        const double rotation = ucs + (horizontal ? 0.0 : kPi / 2);
+        auto key = [&](Vec2 p) { return horizontal ? inUcs(p).x : inUcs(p).y; };
         std::sort(pts.begin(), pts.end(), [&](Vec2 a, Vec2 b) { return key(a) < key(b); });
         std::vector<Vec2> uniq;
         for (const Vec2& p : pts)
@@ -346,7 +351,8 @@ public:
         const double k = st.overallScale > 0 ? st.overallScale : 1.0;
         const double spacing = st.textHeight * 2.5 * k;
         const Vec2 normal{-std::sin(rotation), std::cos(rotation)};
-        const double side = dot(at.point - box.center(), normal) >= 0 ? 1.0 : -1.0;
+        const Vec2 offU = atU - box.center();
+        const double side = (horizontal ? offU.y : offU.x) >= 0 ? 1.0 : -1.0;
         for (std::size_t i = 0; i + 1 < uniq.size(); ++i) {
             DimensionData d;
             d.kind = DimKind::Linear;

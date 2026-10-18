@@ -83,6 +83,34 @@ TEST_CASE("round trip: Thai strings, far coordinates and header settings survive
     CHECK(line->b.y == 1e8 + 0.001);  // doubles are stored bit for bit
 }
 
+TEST_CASE("round trip: the named UCS table and a rotated ordinate dimension survive") {
+    Document doc;
+    {
+        auto tx = doc.begin("ucs");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom["tbcad.ucs"] = "Tilt\t12.5\t-3\t0.5\n";
+                  }).ok());
+        DimensionData d;
+        d.kind = DimKind::Ordinate;
+        d.oblique = 0.5;
+        d.defPts = {Vec2{1, 2}, Vec2{3, 4}, Vec2{0, 0}, Vec2{}};
+        Entity e;
+        e.data = d;
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(back->header().custom.at("tbcad.ucs") == "Tilt\t12.5\t-3\t0.5\n");
+    bool seen = false;
+    back->forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            seen = true;
+            CHECK(d->oblique == 0.5);
+        }
+    });
+    CHECK(seen);
+}
+
 TEST_CASE("round trip: ids keep their gaps and nothing is reused") {
     auto doc = makeRichDocument();
     auto back = readOrFail(writeOrFail(*doc));

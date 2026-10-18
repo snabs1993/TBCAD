@@ -1173,4 +1173,45 @@ TEST_CASE("text and shapes in a linetype survive DXF with the pattern unchanged"
     CHECK(got->marks[2].offset == doctest::Approx(20));
 }
 
+TEST_CASE(
+    "named coordinate systems and the axes of an ordinate dimension survive a DXF round trip") {
+    Document doc;
+    {
+        auto tx = doc.begin("ucs");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom["tbcad.ucs"] =
+                          "Plan A\t120\t-45\t0.5235987755982988\nWorld2\t0\t7\t0\n";
+                  }).ok());
+        DimensionData d;
+        d.kind = DimKind::Ordinate;
+        d.rotation = 0;
+        d.oblique = 30 * kPi / 180;
+        d.defPts = {Vec2{50, 20}, Vec2{40, 60}, Vec2{10, 5}, Vec2{}};
+        d.textPos = {40, 62};
+        d.measurement = dim::measurement(d);
+        REQUIRE(tx.add(make(d)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const std::string& text = rt.back->header().custom.at("tbcad.ucs");
+    REQUIRE(text.find("Plan A") != std::string::npos);
+    CHECK(text.find("World2") != std::string::npos);
+    double x = 0, y = 0, a = 0;
+    char name[40];
+    REQUIRE(std::sscanf(text.c_str(), "%39[^\t]\t%lf\t%lf\t%lf", name, &x, &y, &a) == 4);
+    CHECK(x == doctest::Approx(120));
+    CHECK(y == doctest::Approx(-45));
+    CHECK(a == doctest::Approx(30 * kPi / 180).epsilon(1e-9));
+    bool found = false;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            found = true;
+            CHECK(d->kind == DimKind::Ordinate);
+            CHECK(d->oblique == doctest::Approx(30 * kPi / 180).epsilon(1e-9));
+            CHECK(d->measurement == doctest::Approx(dim::measurement(*d)));
+        }
+    });
+    CHECK(found);
+}
+
 }  // namespace tbcad::dxf

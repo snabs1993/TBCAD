@@ -67,6 +67,7 @@ struct PromptRequest {
     bool single = false;
     bool allowZero = true;
     bool allowNegative = true;
+    bool angleInUcs = false;  // Angle: typed numbers and the default are from the UCS X axis
 };
 
 // Superset of all result types; the awaiter picks the fields its result needs.

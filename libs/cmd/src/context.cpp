@@ -67,6 +67,7 @@ CommandContext::Awaiter<RealResult> CommandContext::getAngle(std::string prompt,
     r.base = opts.base;
     r.preview = std::move(opts.preview);
     r.defaultReal = opts.defaultValue;
+    r.angleInUcs = opts.inUcs;
     return {*this, std::move(r)};
 }
 

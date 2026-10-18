@@ -135,6 +135,7 @@ private:
 
     static cmd::Task angled(cmd::CommandContext& ctx) {
         cmd::AngleOptions ao;
+        ao.inUcs = true;
         auto a = co_await ctx.getAngle("Enter the angle of the xline", std::move(ao));
         if (!a.ok())
             co_return;
