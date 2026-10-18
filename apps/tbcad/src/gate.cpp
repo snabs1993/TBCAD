@@ -215,21 +215,30 @@ int App::runGateFile() {
     std::printf("open: %.0f ms (%zu entities in model space)\n", openMs,
                 core.document().modelSpaceCount());
 
+    profileStart();
+    double gpuWait = 0;
+    int counted = 0;
     auto frames = [&](int n, const std::function<void(int)>& step) {
         std::vector<double> ms;
+        gpuWait = 0;
+        counted = n;
+        profileReport(nullptr, 0, 1);  // drop what earlier frames added
         for (int i = 0; i < n; ++i) {
             auto f0 = Clock::now();
             step(i);
             frame();
+            auto g0 = Clock::now();
             glFinish();
+            gpuWait += msSince(g0);
             ms.push_back(msSince(f0));
         }
         return ms;
     };
-    auto report = [](const char* name, const std::vector<double>& ms) {
+    auto report = [&](const char* name, const std::vector<double>& ms) {
         const double med = percentile(ms, 0.5);
         std::printf("%-28s median %8.2f ms (%6.1f fps)  worst %8.2f ms\n", name, med,
                     med > 0 ? 1000.0 / med : 0.0, percentile(ms, 1.0));
+        profileReport("ms/frame by phase:", gpuWait, counted);
     };
 
     core.zoomExtents();

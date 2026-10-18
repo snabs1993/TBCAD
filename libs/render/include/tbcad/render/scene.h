@@ -110,6 +110,8 @@ struct VisibleBatch {
 struct SelectionTile {
     Vec2 origin{};
     double lineweightMm = 0;
+    BBox2 bounds{};  // of the scene tile this came from: a superset of the segments, for culling
+    double halfWidthMm = 0;
     std::vector<GpuVertex> verts{};  // two per segment
 };
 struct SelectionGeometry {

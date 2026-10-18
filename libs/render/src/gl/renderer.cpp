@@ -292,17 +292,32 @@ struct Renderer::Impl {
         }
         if (bufs.size() != geo.tiles.size())
             bufs.resize(geo.tiles.size());
+        // The glow is a wide soft quad per segment, so a drawing selected as a whole overdraws the
+        // same pixels hundreds of times. A dense selection gets a slimmer glow: it is still
+        // visible against the thin lines it sits on, and fills several times fewer pixels.
+        std::size_t segments = 0;
+        for (const SelectionTile& st : geo.tiles)
+            segments += st.verts.size() / 2;
+        double extraPx = style.extraWidthPx;
+        if (segments > 200000)
+            extraPx = std::min(extraPx, 0.5);
+        else if (segments > 20000)
+            extraPx = std::min(extraPx, 2.0);
+        const BBox2 view = camera.visibleWorld();
         for (std::size_t i = 0; i < geo.tiles.size(); ++i) {
             const SelectionTile& st = geo.tiles[i];
             if (st.verts.empty())
                 continue;
+            if (!st.bounds.empty() &&
+                !st.bounds.intersects(view.inflated(st.halfWidthMm + 12.0 * camera.pixelSizeMm())))
+                continue;  // off screen (still uploaded later if it scrolls into view)
             Buffer& buf = bufs[i];
             upload(buf, st.verts.data(), st.verts.size(), geo.version);
             ensureThickVao(buf);
             glUseProgram(strokeThick.id);
             setCommon(strokeThick, st.origin);
-            const double w = (lineweightDisplay ? st.lineweightMm * camera.pixelsPerMm : 0.0) +
-                             style.extraWidthPx;
+            const double w =
+                (lineweightDisplay ? st.lineweightMm * camera.pixelsPerMm : 0.0) + extraPx;
             glUniform1f(strokeThick.widthPx, static_cast<float>(std::max(w, kThickLinePx)));
             glUniform1i(strokeThick.soft, 1);
             glUniform1i(strokeThick.patN, 0);

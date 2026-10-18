@@ -187,9 +187,13 @@ void App::runScriptFile(const std::string& file) {
 namespace {
 // TBCAD_PROFILE=1 prints where each frame spends its time (milliseconds, averaged over 60 frames).
 struct PhaseTimer {
+    static bool& forced() {
+        static bool f = false;
+        return f;
+    }
     static bool enabled() {
         static const bool on = platform::processEnvironment("TBCAD_PROFILE").has_value();
-        return on;
+        return on || forced();
     }
     double t0 = glfwGetTime();
     double lap() {
@@ -202,6 +206,26 @@ struct PhaseTimer {
 double gPhase[8] = {};
 int gPhaseFrames = 0;
 }  // namespace
+
+void profileStart() {
+    PhaseTimer::forced() = true;
+    for (double& v : gPhase)
+        v = 0;
+    gPhaseFrames = 0;
+}
+
+void profileReport(const char* label, double gpuWaitMs, int frames) {
+    const double n = frames > 0 ? frames : 1;
+    if (label)
+        std::printf(
+            "  %-26s update %.2f  ui %.2f  composite %.2f  scene.draw %.2f  overlay.build %.2f  "
+            "overlay.draw %.2f  gpu wait %.2f\n",
+            label, gPhase[0] / n, gPhase[1] / n, gPhase[2] / n, gPhase[3] / n, gPhase[4] / n,
+            gPhase[5] / n, gpuWaitMs / n);
+    for (double& v : gPhase)
+        v = 0;
+    gPhaseFrames = 0;
+}
 
 void App::drawScene() {
     const render::Camera2D& cam = core_->camera();
@@ -279,7 +303,7 @@ void App::frame() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     if (PhaseTimer::enabled()) {
         gPhase[2] += pt.lap();
-        if (++gPhaseFrames == 60) {
+        if (!PhaseTimer::forced() && ++gPhaseFrames == 60) {
             const auto& st = renderer_.stats();
             std::fprintf(stderr,
                          "profile ms/frame: update %.2f  ui %.2f  composite %.2f  scene.draw %.2f  "
