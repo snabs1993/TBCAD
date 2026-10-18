@@ -652,3 +652,38 @@ TEST_CASE("COPYTOLAYER copies onto the layer of the picked object") {
     CHECK(f.count(EntityKind::Line) == 3);
     CHECK(f.get(a).common.layer != target);
 }
+
+TEST_CASE("OFFSET Layer option puts the copies on the current layer") {
+    Fixture f;
+    LayerId walls, other;
+    {
+        auto tx = f.doc.begin("layers");
+        Layer a;
+        a.name = "Walls";
+        walls = tx.addLayer(a).value();
+        Layer b;
+        b.name = "Other";
+        other = tx.addLayer(b).value();
+        tx.commit();
+    }
+    Entity src;
+    src.data = LineData{{0, 0}, {10, 0}};
+    src.common.layer = walls;
+    {
+        auto tx = f.doc.begin("src");
+        tx.add(std::move(src)).value();
+        tx.commit();
+    }
+    {
+        auto tx = f.doc.begin("current");
+        (void)tx.modifyHeader([&](Header& h) { h.currentLayer = other; });
+        tx.commit();
+    }
+    EntityId srcId = f.doc.modelSpace().front();
+    f.host.run("OFFSET", {"Layer", "Current", "2", ScriptItem::pick(srcId, {5, 0}), "5,9",
+                          ScriptItem::enter()});
+    REQUIRE(f.count(EntityKind::Line) == 2);
+    int onOther = 0;
+    f.doc.forEachEntity([&](const Entity& e) { onOther += e.common.layer == other ? 1 : 0; });
+    CHECK(onOther == 1);
+}
