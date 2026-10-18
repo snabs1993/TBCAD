@@ -288,6 +288,7 @@ TEST_CASE("SCRIPT types each line of the file, RSCRIPT repeats it, Esc stops") {
     }
     std::error_code ec;
     fs::remove_all(dir, ec);
+}
 
 TEST_CASE("LIMITS stores the drawing limits, keeps them on Enter and undoes") {
     Fixture f;
