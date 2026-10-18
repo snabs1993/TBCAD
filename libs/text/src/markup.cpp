@@ -54,6 +54,14 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
                 stack.pop_back();
             }
             ++i;
+        } else if (c == '\n' || c == '\r') {
+            // A raw line break is a paragraph mark too (the DXF importer produces them).
+            flush();
+            Piece p;
+            p.newline = true;
+            p.attr = cur;
+            out.push_back(std::move(p));
+            i += (c == '\r' && i + 1 < s.size() && s[i + 1] == '\n') ? 2 : 1;
         } else if (c == '\\' && i + 1 < s.size()) {
             char k = s[i + 1];
             if (k == '\\' || k == '{' || k == '}') {
