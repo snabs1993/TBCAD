@@ -10,6 +10,7 @@
 #include <fstream>
 
 #include "gui.h"
+#include "tbcad/platform/file_dialog.h"
 #include "tbcad/text/text.h"
 
 using tbcad::app::applyTheme;
@@ -257,6 +258,8 @@ struct Harness::Impl {
 };
 
 Harness::Harness(int width, int height) : impl_(std::make_unique<Impl>()) {
+    // Never a native file dialog: a test cannot answer one (it would wait for ever).
+    platform::setNativeDialogsEnabled(false);
     // Text is drawn with the bundled fonts, as in the application.
     tbcad::text::fonts().setBundledDirectory(TBCAD_GUI_FONT_DIR);
     impl_->width = width;

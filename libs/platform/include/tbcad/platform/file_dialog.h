@@ -15,6 +15,15 @@ struct FileFilter {
 // Native file dialogs. Only Windows has them (IFileDialog); elsewhere nativeDialogsAvailable() is
 // false and the application shows its own ImGui file browser instead.
 bool nativeDialogsAvailable();
+// Tests turn the native dialogs off so that nothing opens a window nobody can answer; the
+// application then falls back to its own file browser, on every platform.
+inline bool& nativeDialogsOff() {
+    static bool off = false;
+    return off;
+}
+inline void setNativeDialogsEnabled(bool on) {
+    nativeDialogsOff() = !on;
+}
 
 // `startFolder` is where the dialog opens; empty or missing means the user's Documents folder.
 // `ownerWindow` is the HWND on Windows (may be null). Returns nullopt when the user cancels.
