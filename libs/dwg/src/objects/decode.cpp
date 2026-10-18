@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "bits/bit_reader.h"
 
@@ -125,14 +126,50 @@ public:
                     anchors_.push_back(e.offset);
             std::sort(anchors_.begin(), anchors_.end());
             walkStream();
-            if (walkedList_.size() * 10 >= map.size() * 9) {
+            if (walkedList_.size() * 2 >= map.size()) {
                 calibrate();
+                // Only handles the map lists are real objects: the walk can also frame garbage
+                // (padding, leftovers of earlier saves) that happens to look like an object.
+                std::unordered_set<std::uint64_t> mapped;
+                for (const MapEntry& e : map)
+                    mapped.insert(e.handle);
+                std::size_t foreign = 0;
                 for (const auto& [h, off] : walkedList_) {
+                    if (!mapped.count(h)) {
+                        ++foreign;
+                        continue;
+                    }
                     MapEntry e;
                     e.handle = h;
                     e.offset = off;
                     decodeOne(e);
                 }
+                if (foreign)
+                    out_.walkNotes.push_back(std::to_string(foreign) +
+                                             " framed objects have a handle the map does not list "
+                                             "and were left out");
+                // Map entries the walk did not meet but whose frame carries their handle.
+                std::size_t extra = 0, neither = 0;
+                std::string sample;
+                for (const MapEntry& e : map) {
+                    if (walked_.count(e.handle))
+                        continue;
+                    if (e.offset > 0 && frameHandle(e.offset) == e.handle) {
+                        ++extra;
+                        decodeOne(e);
+                    } else if (++neither <= 6) {
+                        sample +=
+                            " " + hex(e.handle) + " at " + std::to_string(e.offset) +
+                            (e.offset > 0 && static_cast<std::size_t>(e.offset) + 8 <= file_.size()
+                                 ? where(e).substr(where(e).find(", bytes"))
+                                 : std::string(" (outside)"));
+                    }
+                }
+                out_.walkNotes.push_back("object map: " + std::to_string(map.size()) +
+                                         " entries, " + std::to_string(walked_.size()) +
+                                         " objects walked, " + std::to_string(extra) +
+                                         " more framed at the map place, " +
+                                         std::to_string(neither) + " not found:" + sample);
                 std::sort(
                     out_.entities.begin(), out_.entities.end(),
                     [](const EntityRec& a, const EntityRec& b) { return a.handle < b.handle; });
@@ -2634,7 +2671,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r84: the stream walk resumes at the next object the map places correctly, lost places "
+    return "r85: the stream walk is used when it finds half of the map entries, map entries it "
+           "missed are added; r84: the stream walk resumes at the next object the map places "
+           "correctly, lost places "
            "listed; r83: object map blocks with offsets outside the data are listed; r83: samples "
            "of "
            "objects found away from the object map place are listed; r82: draw order tables "
