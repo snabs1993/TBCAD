@@ -21,6 +21,7 @@ constexpr std::uint8_t kCfExt = 128;        // an extension byte follows the own
 constexpr std::uint8_t kExtAnnoScales = 1;  // ... a list of annotation scales follows it
 constexpr std::uint8_t kExtWipeout = 2;
 constexpr std::uint8_t kExtTransparency = 4;  // ... one byte: percent, or 255 ByBlock
+constexpr std::uint8_t kExtData = 8;          // ... XDATA and extension dictionary records
 constexpr std::uint8_t kCfKnownMask = 255;
 
 // ---------------------------------------------------------------- writing
@@ -38,6 +39,35 @@ struct PayloadWriter {
             w.f64(p.bulge);
             w.f64(p.startWidth);
             w.f64(p.endWidth);
+        }
+    }
+    void dataItems(const std::vector<DataItem>& items) {
+        w.varint(items.size());
+        for (const DataItem& it : items) {
+            w.varint(static_cast<std::uint64_t>(it.code));
+            switch (dataKindOf(it.code)) {
+                case DataKind::Text:
+                    str(it.text);
+                    break;
+                case DataKind::Integer:
+                    w.i64(it.integer);
+                    break;
+                case DataKind::Real:
+                    w.f64(it.real);
+                    break;
+            }
+        }
+    }
+    void extData(const ExtData& d) {
+        w.varint(d.xdata.size());
+        for (const XdataApp& a : d.xdata) {
+            str(a.app);
+            dataItems(a.items);
+        }
+        w.varint(d.dict.size());
+        for (const DictRecord& r : d.dict) {
+            str(r.name);
+            dataItems(r.items);
         }
     }
     void doubles(const std::vector<double>& d) {
@@ -397,6 +427,54 @@ struct PayloadReader {
         if (i >= strings.size())
             bad("string index out of range");
         return strings[static_cast<std::size_t>(i)];
+    }
+    std::vector<DataItem> dataItems() {
+        const std::uint64_t n = r.varint();
+        if (n > (1u << 20))
+            bad("too many data items");
+        std::vector<DataItem> items;
+        for (std::uint64_t i = 0; i < n; ++i) {
+            DataItem it;
+            const std::uint64_t code = r.varint();
+            if (code > 5000)
+                bad("invalid data group code");
+            it.code = static_cast<int>(code);
+            switch (dataKindOf(it.code)) {
+                case DataKind::Text:
+                    it.text = str();
+                    break;
+                case DataKind::Integer:
+                    it.integer = r.i64();
+                    break;
+                case DataKind::Real:
+                    it.real = r.f64();
+                    break;
+            }
+            items.push_back(std::move(it));
+        }
+        return items;
+    }
+    ExtData extData() {
+        ExtData d;
+        const std::uint64_t apps = r.varint();
+        if (apps > (1u << 16))
+            bad("too many XDATA applications");
+        for (std::uint64_t i = 0; i < apps; ++i) {
+            XdataApp a;
+            a.app = str();
+            a.items = dataItems();
+            d.xdata.push_back(std::move(a));
+        }
+        const std::uint64_t recs = r.varint();
+        if (recs > (1u << 16))
+            bad("too many dictionary records");
+        for (std::uint64_t i = 0; i < recs; ++i) {
+            DictRecord rec;
+            rec.name = str();
+            rec.items = dataItems();
+            d.dict.push_back(std::move(rec));
+        }
+        return d;
     }
     template <class IdT>
     IdT id() {
@@ -958,6 +1036,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         ext |= kExtWipeout;
     if (c.transparency != kTransparencyByLayer)
         ext |= kExtTransparency;
+    if (!c.ext.empty())
+        ext |= kExtData;
     if (ext)
         flags |= kCfExt;
     if (owner)
@@ -989,6 +1069,10 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
             w.varint(c.annoScales.size());
             for (double v : c.annoScales)
                 w.f64(v);
+        }
+        if (ext & kExtData) {
+            PayloadWriter pw{w, strings};
+            pw.extData(c.ext.get());
         }
     }
 
@@ -1029,7 +1113,7 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
         out.owner = pr.id<BlockId>();
     if (flags & kCfExt) {
         const std::uint8_t ext = r.u8();
-        if (ext & ~(kExtAnnoScales | kExtWipeout | kExtTransparency))
+        if (ext & ~(kExtAnnoScales | kExtWipeout | kExtTransparency | kExtData))
             bad("unknown entity extension flags");
         c.wipeout = (ext & kExtWipeout) != 0;
         if (ext & kExtTransparency) {
@@ -1053,6 +1137,8 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
             }
             c.annoScales = ScaleList(std::move(found));
         }
+        if (ext & kExtData)
+            c.ext = ExtDataPtr(pr.extData());
     }
     if (!c.id)
         bad("entity id 0");

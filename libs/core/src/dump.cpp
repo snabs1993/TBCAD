@@ -326,6 +326,35 @@ void common(Out& o, const EntityCommon& c) {
     }
     if (!firstScale)
         o << "]";
+    const ExtData& ext = c.ext.get();
+    const auto items = [&](const std::vector<DataItem>& v) {
+        for (const DataItem& it : v) {
+            o << " " << it.code << "=";
+            switch (dataKindOf(it.code)) {
+                case DataKind::Text:
+                    o.quoted(it.text);
+                    break;
+                case DataKind::Integer:
+                    o << it.integer;
+                    break;
+                case DataKind::Real:
+                    o << it.real;
+                    break;
+            }
+        }
+    };
+    for (const XdataApp& a : ext.xdata) {
+        o << " xdata{";
+        o.quoted(a.app);
+        items(a.items);
+        o << "}";
+    }
+    for (const DictRecord& d : ext.dict) {
+        o << " xdict{";
+        o.quoted(d.name);
+        items(d.items);
+        o << "}";
+    }
     o << " ";
 }
 

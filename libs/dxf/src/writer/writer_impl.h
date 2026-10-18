@@ -108,6 +108,7 @@ struct Props {
     std::int8_t transparency = kTransparencyByLayer;
     double ltScale = 1;
     bool visible = true;
+    const std::vector<DictRecord>* dict = nullptr;  // extension dictionary records, if any
 };
 
 class Writer {
@@ -193,6 +194,8 @@ private:
     void writeRay(const Props& p, const RayData& d, const Entity& e, std::uint64_t owner);
     void writeMline(const Props& p, const MlineData& d, const Entity& e, std::uint64_t owner);
     void writeAnnotativeData(const Entity& e);
+    void writeExtXdata(const EntityCommon& c);
+    void writeTbcadFlags(const Entity& e);
     void writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner);
     void writeSolid(const Props& p, const std::vector<Vec2>& ring, std::uint64_t owner);
     void writeCurveFallback(const Entity& e, const Props& p, std::uint64_t owner);
@@ -236,6 +239,13 @@ private:
 
     std::uint64_t modelRec_ = 0, paperRec_ = 0;
     std::uint64_t rootDict_ = 0;
+    // Extension dictionaries of entities, written to OBJECTS once all entities are out.
+    struct PendingDict {
+        std::uint64_t handle = 0, owner = 0;
+        std::vector<DictRecord> records{};
+    };
+    std::vector<PendingDict> pendingDicts_{};
+    const EntityCommon* curCommon_ = nullptr;  // the entity writeEntity is on
     std::uint64_t layoutModel_ = 0, layoutPaper_ = 0;
     std::vector<BlockId> userBlocks_{};  // blocks written to BLOCKS, in id order
 

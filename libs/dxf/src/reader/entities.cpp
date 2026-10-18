@@ -132,6 +132,92 @@ int transparencyFromGroup(std::int64_t v) {
     return std::clamp(percent, 0, static_cast<int>(kTransparencyMax));
 }
 
+// Marks an extension dictionary whose records are filled in once the OBJECTS section is read; the
+// handle is the first item.
+constexpr const char* kPendingDict = "\x01xdict";
+
+// XDATA of applications other than ours and the extension dictionary handle of an entity. TBCAD's
+// own XDATA is read by the entity readers, and ACAD's holds data those readers interpret.
+ExtData Importer::extOf(const Record& r) {
+    ExtData x;
+    XdataApp* cur = nullptr;
+    for (std::size_t i = 0; i < r.g.size(); ++i) {
+        const Group& g = r.g[i];
+        if (g.code == 102 && g.str() == "{ACAD_XDICTIONARY" && i + 1 < r.g.size() &&
+            r.g[i + 1].code == 360) {
+            DictRecord pending;
+            pending.name = kPendingDict;
+            pending.items.push_back(DataItem{360, std::string(r.g[i + 1].str()), 0, 0});
+            x.dict.push_back(std::move(pending));
+            continue;
+        }
+        if (g.code == 1001) {
+            const std::string app = dec(g.str());
+            if (app == "TBCAD" || app == "ACAD" || x.xdata.size() >= 256) {
+                cur = nullptr;
+            } else {
+                x.xdata.push_back(XdataApp{app, {}});
+                cur = &x.xdata.back();
+            }
+            continue;
+        }
+        if (!cur || g.code < 1000 || g.code > 1071 || cur->items.size() >= 4096)
+            continue;
+        DataItem it;
+        it.code = g.code;
+        switch (dataKindOf(g.code)) {
+            case DataKind::Text:
+                it.text = dec(g.str());
+                break;
+            case DataKind::Integer:
+                it.integer = g.integer();
+                break;
+            case DataKind::Real:
+                it.real = g.number();
+                if (!std::isfinite(it.real))
+                    it.real = 0;
+                break;
+        }
+        cur->items.push_back(std::move(it));
+    }
+    return x;
+}
+
+// Fills the pending extension dictionaries of all entities from the OBJECTS section.
+void Importer::resolveExtDictionaries() {
+    std::vector<EntityId> todo;
+    doc_->forEachEntity([&](const Entity& e) {
+        for (const DictRecord& d : e.common.ext.get().dict)
+            if (d.name == kPendingDict) {
+                todo.push_back(e.common.id);
+                break;
+            }
+    });
+    for (EntityId id : todo) {
+        (void)tx_->modify(id, [&](Entity& e) {
+            ExtData& x = e.common.ext.edit();
+            std::vector<DictRecord> resolved;
+            for (DictRecord& d : x.dict) {
+                if (d.name != kPendingDict) {
+                    resolved.push_back(std::move(d));
+                    continue;
+                }
+                const auto dict = dicts_.find(d.items.empty() ? std::string() : d.items[0].text);
+                if (dict == dicts_.end())
+                    continue;
+                for (const auto& [key, handle] : dict->second) {
+                    const auto rec = xrecItems_.find(handle);
+                    if (rec == xrecItems_.end() || resolved.size() >= 256)
+                        continue;
+                    resolved.push_back(DictRecord{key, rec->second});
+                }
+            }
+            x.dict = std::move(resolved);
+            e.common.ext.trim();
+        });
+    }
+}
+
 EntityCommon Importer::commonOf(const Record& r) {
     EntityCommon c;
     c.layer = layerFor(r.raw(8), r.line);
@@ -173,6 +259,7 @@ EntityCommon Importer::commonOf(const Record& r) {
             c.linetypeScale = static_cast<float>(s);
     }
     c.visible = r.integer(60, 0) == 0;
+    c.ext = ExtDataPtr(extOf(r));
     bool ours = false;
     for (const Group& g : r.g) {
         if (g.code == 1001)

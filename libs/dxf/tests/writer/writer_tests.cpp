@@ -502,4 +502,88 @@ TEST_CASE("R12 export has no handles, no subclass markers and no newer entities"
     CHECK(bulge);
 }
 
+TEST_CASE("XDATA and extension dictionary records of entities survive an export and import") {
+    ExtData ext;
+    {
+        XdataApp a;
+        a.app = "MYAPP";
+        a.items = {DataItem{1000, "name \xE0\xB8\xAA", 0, 0},
+                   DataItem{1002, "{", 0, 0},
+                   DataItem{1070, "", 7, 0},
+                   DataItem{1010, "", 0, 1.5},
+                   DataItem{1020, "", 0, -2.25},
+                   DataItem{1030, "", 0, 0},
+                   DataItem{1071, "", 123456, 0},
+                   DataItem{1040, "", 0, 0.125},
+                   DataItem{1002, "}", 0, 0}};
+        ext.xdata.push_back(a);
+        a.app = "OTHER";
+        a.items = {DataItem{1000, "x", 0, 0}};
+        ext.xdata.push_back(a);
+        DictRecord r;
+        r.name = "MY_KEY";
+        r.items = {DataItem{1, "text", 0, 0}, DataItem{90, "", 42, 0}, DataItem{40, "", 0, 3.5}};
+        ext.dict.push_back(r);
+        r.name = "SECOND";
+        r.items = {DataItem{70, "", 3, 0}};
+        ext.dict.push_back(r);
+    }
+    for (DxfVersion version : {DxfVersion::R2000, DxfVersion::R2007}) {
+        Document doc;
+        {
+            auto tx = doc.begin("ext");
+            Entity line = make(LineData{{0, 0}, {10, 0}});
+            line.common.ext = ExtDataPtr(ext);
+            REQUIRE(tx.add(std::move(line)).ok());
+            Entity circle = make(CircleData{{5, 5}, 2});
+            circle.common.ext = ExtDataPtr(ext);
+            REQUIRE(tx.add(std::move(circle)).ok());
+            REQUIRE(tx.add(make(LineData{{0, 1}, {1, 1}})).ok());  // none
+            tx.commit();
+        }
+        ExportOptions o;
+        o.version = version;
+        auto out = exportDoc(doc, o);
+        REQUIRE(out.ok());
+        // The application is registered and the dictionary reference sits in the entity.
+        CHECK(out.value().bytes.find("MYAPP") != std::string::npos);
+        CHECK(out.value().bytes.find("{ACAD_XDICTIONARY") != std::string::npos);
+        ImportResult r = importText(out.value().bytes);
+        int with = 0, without = 0;
+        r.document->forEachEntity([&](const Entity& e) {
+            if (e.common.ext.empty()) {
+                ++without;
+                return;
+            }
+            ++with;
+            CHECK(e.common.ext.get().xdata == ext.xdata);
+            CHECK(e.common.ext.get().dict == ext.dict);
+        });
+        CHECK(with == 2);
+        CHECK(without == 1);
+    }
+}
+
+TEST_CASE("XDATA of a foreign application is read from a hand-written file") {
+    const std::string dxf =
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nLINE\n5\n20\n8\n0\n10\n0.0\n20\n0.0\n30\n0.0\n11\n4.0\n21\n0.0\n31\n0.0\n"
+        "1001\nACAD\n1000\nignored\n"
+        "1001\nSURVEY\n1000\npoint-id\n1070\n12\n1010\n1.0\n1020\n2.0\n1030\n3.0\n"
+        "0\nENDSEC\n0\nEOF\n";
+    ImportResult r = importText(dxf);
+    bool found = false;
+    r.document->forEachEntity([&](const Entity& e) {
+        const auto& x = e.common.ext.get().xdata;
+        REQUIRE(x.size() == 1);
+        CHECK(x[0].app == "SURVEY");
+        REQUIRE(x[0].items.size() == 5);
+        CHECK(x[0].items[0].text == "point-id");
+        CHECK(x[0].items[1].integer == 12);
+        CHECK(x[0].items[4].real == doctest::Approx(3.0));
+        found = true;
+    });
+    CHECK(found);
+}
+
 }  // namespace tbcad::dxf

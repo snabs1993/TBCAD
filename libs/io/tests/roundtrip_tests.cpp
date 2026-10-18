@@ -778,6 +778,51 @@ Entity fuzzEntity(std::mt19937_64& rng) {
     c.wipeout = rng() % 7 == 0;
     if (c.annotative && rng() % 2)
         c.annoScales = ScaleList(std::vector<double>{static_cast<double>(1 + rng() % 200), 50.0});
+    if (rng() % 4 == 0) {
+        ExtData x;
+        static const int textCodes[] = {1000, 1002, 1003, 1005};
+        static const int intCodes[] = {1070, 1071};
+        static const int realCodes[] = {1010, 1020, 1030, 1040, 1041};
+        for (unsigned a = 0, apps = rng() % 3; a < apps; ++a) {
+            XdataApp app;
+            app.app = "APP" + std::to_string(a) + fuzzString(rng);
+            for (unsigned i = 0, n = rng() % 8; i < n; ++i) {
+                DataItem it;
+                switch (rng() % 3) {
+                    case 0:
+                        it.code = textCodes[rng() % 4];
+                        it.text = fuzzString(rng);
+                        break;
+                    case 1:
+                        it.code = intCodes[rng() % 2];
+                        it.integer = static_cast<std::int64_t>(rng() % 100000) - 50000;
+                        break;
+                    default:
+                        it.code = realCodes[rng() % 5];
+                        it.real = fuzzNumber(rng);
+                        break;
+                }
+                app.items.push_back(std::move(it));
+            }
+            x.xdata.push_back(std::move(app));
+        }
+        for (unsigned d = 0, recs = rng() % 3; d < recs; ++d) {
+            DictRecord rec;
+            rec.name = "KEY" + std::to_string(d);
+            DataItem a;
+            a.code = 1;
+            a.text = fuzzString(rng);
+            DataItem b;
+            b.code = 90;
+            b.integer = static_cast<std::int64_t>(rng() % 1000);
+            DataItem c;
+            c.code = 40;
+            c.real = fuzzNumber(rng);
+            rec.items = {a, b, c};
+            x.dict.push_back(std::move(rec));
+        }
+        e.common.ext = ExtDataPtr(std::move(x));
+    }
     switch (rng() % 11) {
         case 0:
             e.data = LineData{fuzzPoint(rng), fuzzPoint(rng)};
@@ -883,8 +928,9 @@ Entity fuzzEntity(std::mt19937_64& rng) {
 }
 }  // namespace
 
-TEST_CASE("round trip fuzz: random entities of every simple kind and property survive exactly") {
+TEST_CASE("round trip fuzz: random entities, properties and extended data survive exactly") {
     std::mt19937_64 rng(20261018);
+    int withXdata = 0, withDict = 0;
     for (int round = 0; round < 40; ++round) {
         Document doc;
         {
@@ -895,6 +941,8 @@ TEST_CASE("round trip fuzz: random entities of every simple kind and property su
             tx.commit();
         }
         const std::string before = canonicalDump(doc);
+        withXdata += before.find("xdata{") != std::string::npos;
+        withDict += before.find("xdict{") != std::string::npos;
         for (bool compress : {true, false}) {
             io::WriteOptions o;
             o.compress = compress;
@@ -908,4 +956,6 @@ TEST_CASE("round trip fuzz: random entities of every simple kind and property su
             CHECK(writeOrFail(*back, o) == bytes);
         }
     }
+    CHECK(withXdata > 5);
+    CHECK(withDict > 5);
 }

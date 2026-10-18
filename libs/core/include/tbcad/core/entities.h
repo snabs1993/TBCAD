@@ -76,6 +76,79 @@ private:
     std::unique_ptr<std::vector<double>> p_{};
 };
 
+// One value of extended entity data or of a dictionary record, tagged with its DXF group code. The
+// code decides which member is meaningful: see DataKind.
+struct DataItem {
+    int code = 0;
+    std::string text{};        // string, handle and binary (hex) groups
+    std::int64_t integer = 0;  // integer and boolean groups
+    double real = 0;           // floating point groups; a point is three items (x, y, z codes)
+    friend bool operator==(const DataItem&, const DataItem&) = default;
+};
+enum class DataKind : std::uint8_t { Text, Integer, Real };
+// Which member of DataItem a DXF group code uses.
+DataKind dataKindOf(int code);
+
+// XDATA of one application: the items between its 1001 group and the next (1002 braces included).
+struct XdataApp {
+    std::string app{};
+    std::vector<DataItem> items{};
+    friend bool operator==(const XdataApp&, const XdataApp&) = default;
+};
+// An entry of an entity's extension dictionary: a named XRECORD and its items.
+struct DictRecord {
+    std::string name{};
+    std::vector<DataItem> items{};
+    friend bool operator==(const DictRecord&, const DictRecord&) = default;
+};
+// Application data an entity carries from other programs, kept so that saving does not lose it.
+struct ExtData {
+    std::vector<XdataApp> xdata{};
+    std::vector<DictRecord> dict{};
+    bool empty() const { return xdata.empty() && dict.empty(); }
+    friend bool operator==(const ExtData&, const ExtData&) = default;
+};
+// Heap-held ExtData with deep-copy semantics; null for the usual entity that has none.
+class ExtDataPtr {
+public:
+    ExtDataPtr() = default;
+    ExtDataPtr(ExtData v) {  // NOLINT: implicit by design
+        if (!v.empty())
+            p_ = std::make_unique<ExtData>(std::move(v));
+    }
+    ExtDataPtr(const ExtDataPtr& o) {
+        if (o.p_)
+            p_ = std::make_unique<ExtData>(*o.p_);
+    }
+    ExtDataPtr(ExtDataPtr&&) noexcept = default;
+    ExtDataPtr& operator=(const ExtDataPtr& o) {
+        if (this != &o)
+            p_ = o.p_ ? std::make_unique<ExtData>(*o.p_) : nullptr;
+        return *this;
+    }
+    ExtDataPtr& operator=(ExtDataPtr&&) noexcept = default;
+
+    bool empty() const { return !p_ || p_->empty(); }
+    const ExtData& get() const {
+        static const ExtData none;
+        return p_ ? *p_ : none;
+    }
+    // Mutable access; creates the data on first use. Call trim() after emptying it.
+    ExtData& edit() {
+        if (!p_)
+            p_ = std::make_unique<ExtData>();
+        return *p_;
+    }
+    void trim() {
+        if (p_ && p_->empty())
+            p_.reset();
+    }
+    friend bool operator==(const ExtDataPtr& a, const ExtDataPtr& b) { return a.get() == b.get(); }
+
+private:
+    std::unique_ptr<ExtData> p_{};
+};
+
 // Transparency of an object or layer, in percent: 0 (opaque) to 90. Objects may also follow their
 // layer or, inside a block, the insert.
 inline constexpr std::int8_t kTransparencyByLayer = -1;
@@ -106,6 +179,8 @@ struct EntityCommon {
     // scale. Otherwise the first is the one it is drawn at in model space; a layout viewport shows
     // it only when its scale is listed, and draws it at the viewport scale.
     ScaleList annoScales{};
+    // Extended data (XDATA) and extension dictionary records from other programs.
+    ExtDataPtr ext{};
 };
 
 enum class EntityKind : std::uint8_t {

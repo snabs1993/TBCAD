@@ -252,6 +252,42 @@ void Importer::processObjects(RecordReader& rr) {
             }
             continue;
         }
+        if (r.type == "XRECORD" && !r.raw(5).empty()) {
+            // Everything after the AcDbXrecord marker and its cloning flag, for entity
+            // dictionaries.
+            std::vector<DataItem> items;
+            bool after = false, skippedFlag = false;
+            for (const Group& xg : r.g) {
+                if (xg.code == 100 && xg.str() == "AcDbXrecord") {
+                    after = true;
+                    continue;
+                }
+                if (!after || items.size() >= 4096)
+                    continue;
+                if (!skippedFlag && xg.code == 280) {
+                    skippedFlag = true;
+                    continue;
+                }
+                skippedFlag = true;
+                if (xg.code < 0 || xg.code > 369 + 1000)
+                    continue;
+                DataItem it;
+                it.code = xg.code;
+                switch (dataKindOf(xg.code)) {
+                    case DataKind::Text:
+                        it.text = dec(xg.str());
+                        break;
+                    case DataKind::Integer:
+                        it.integer = xg.integer();
+                        break;
+                    case DataKind::Real:
+                        it.real = std::isfinite(xg.number()) ? xg.number() : 0;
+                        break;
+                }
+                items.push_back(std::move(it));
+            }
+            xrecItems_[std::string(r.raw(5))] = std::move(items);
+        }
         if (r.type == "XRECORD") {
             bool afterMarker = false;
             for (const Group& xg : r.g) {
@@ -1383,6 +1419,7 @@ Result<ImportResult> Importer::run() {
     }
     createLayers();
     applyLayerAlphaXrecords();
+    resolveExtDictionaries();
     finish();
 
     // Current layer from the header, when it exists.

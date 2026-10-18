@@ -4,6 +4,7 @@ tbcad_add_library(core
     src/dim_assoc.cpp
     src/document.cpp
     src/dump.cpp
+    src/ext_data.cpp
     src/groups.cpp
     src/math.cpp
     src/units.cpp)
