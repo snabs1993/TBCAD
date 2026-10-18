@@ -72,17 +72,20 @@ private:
         } else if (option == "Restore") {
             StateParts parts;
             cmd::KeywordOptions po;
-            po.keywords = {"All", "Visibility", "Lock", "Plot", "Look"};
+            po.keywords = {"All", "Visibility", "Lock", "Plot", "Look", "HideOthers"};
             po.defaultKeyword = "All";
             auto p = co_await ctx.getKeyword("What to restore", po);
             if (!p.ok())
                 co_return;
-            if (p.keyword != "All") {
+            if (p.keyword == "HideOthers")
+                parts.hideOthers = true;
+            else if (p.keyword != "All") {
                 parts = StateParts{false, false, false, false};
                 parts.visibility = p.keyword == "Visibility";
                 parts.lock = p.keyword == "Lock";
                 parts.plot = p.keyword == "Plot";
                 parts.look = p.keyword == "Look";
+                parts.current = false;
             }
             std::size_t skipped = 0;
             auto r = restoreLayerState(doc, ctx.tx(), name, parts, &skipped);
@@ -103,6 +106,22 @@ private:
         }
     }
 };
+
+std::vector<std::string> splitList(const std::string& text) {
+    std::vector<std::string> out;
+    std::size_t pos = 0;
+    while (pos <= text.size()) {
+        std::size_t next = text.find(',', pos);
+        std::string part =
+            cmd::trim(text.substr(pos, next == std::string::npos ? std::string::npos : next - pos));
+        if (!part.empty())
+            out.push_back(part);
+        if (next == std::string::npos)
+            break;
+        pos = next + 1;
+    }
+    return out;
+}
 
 // Sets the active filter and bumps the serial so a panel notices even a repeated value.
 void setActiveFilter(CommandContext& ctx, const std::string& expression) {
@@ -125,7 +144,8 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYERFILTER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Apply", "Save", "Use", "Delete", "Clear", "List"};
+        opts.keywords = {"Apply", "Save",  "Use",   "Delete",     "Clear",
+                         "List",  "Group", "AddTo", "RemoveFrom", "DeleteGroup"};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer filter option", opts);
             if (!k.ok())
@@ -156,6 +176,40 @@ private:
             auto names = layerFilterNames(doc);
             ctx.message(names.empty() ? "No layer filters saved."
                                       : "Layer filters: " + join(names));
+            auto groups = layerGroupNames(doc);
+            ctx.message(groups.empty() ? "No layer groups saved."
+                                       : "Layer groups: " + join(groups));
+            co_return;
+        }
+        if (option == "Group" || option == "AddTo" || option == "RemoveFrom" ||
+            option == "DeleteGroup") {
+            std::string gname;
+            co_await askText(ctx, "Layer group name", gname, ok);
+            if (!ok)
+                co_return;
+            if (option == "DeleteGroup") {
+                report(ctx, deleteLayerGroup(doc, ctx.tx(), gname));
+                co_return;
+            }
+            std::string list;
+            co_await askText(ctx, "Layers, separated by commas", list, ok);
+            if (!ok)
+                co_return;
+            std::vector<LayerId> ids;
+            for (const std::string& part : splitList(list)) {
+                auto id = resolveLayer(doc, part);
+                if (!id) {
+                    ctx.message(id.error().message);
+                    co_return;
+                }
+                ids.push_back(id.value());
+            }
+            Result<void> r = option == "Group"   ? saveLayerGroup(doc, ctx.tx(), gname, ids)
+                             : option == "AddTo" ? addToLayerGroup(doc, ctx.tx(), gname, ids)
+                                                 : removeFromLayerGroup(doc, ctx.tx(), gname, ids);
+            report(ctx, r);
+            if (r)
+                ctx.message("Layer group \"" + gname + "\" updated.");
             co_return;
         }
         if (option == "Clear") {

@@ -21,7 +21,10 @@ struct StateParts {
     bool visibility = true;  // on / frozen
     bool lock = true;
     bool plot = true;
-    bool look = true;  // colour, linetype, lineweight
+    bool look = true;         // colour, linetype, lineweight
+    bool current = true;      // the current layer saved with the state
+    bool hideOthers = false;  // turn off layers that were not saved (AutoCAD's "turn off layers
+                              // not found in layer state")
 };
 
 // Names of the saved states, sorted.
@@ -47,6 +50,8 @@ Result<void> renameLayerState(const Document& doc, Transaction& tx, std::string_
 //   branch:LAYER       the layer or anything below it
 //   color:C linetype:L lineweight:W    effective values equal (C and W as in -LAYER, L a name)
 //   current            the current layer
+//   group:NAME         member of the saved group NAME (see "layer groups" below)
+//   filter:NAME        matches the saved filter NAME (filters may use other filters)
 //   not:WORD           the opposite of any word above
 // A word with no colon and no keyword is a name pattern. "" or "*" matches every layer.
 bool layerMatchesFilter(const Document& doc, LayerId id, std::string_view expression,
@@ -64,5 +69,22 @@ Result<std::string> savedFilterExpression(const Document& doc, std::string_view 
 Result<void> saveLayerFilter(const Document& doc, Transaction& tx, std::string_view name,
                              std::string_view expression);
 Result<void> deleteLayerFilter(const Document& doc, Transaction& tx, std::string_view name);
+
+// ---- layer groups -----------------------------------------------------------------------
+
+// A group filter is a named list of layers picked by hand (AutoCAD's "group filter"), kept as
+//   tbcad.layergroup.<NAME>   one layer path per line
+// Members are matched by path, so a renamed or deleted layer simply drops out.
+std::vector<std::string> layerGroupNames(const Document& doc);
+// The members that still exist, in tree order.
+Result<std::vector<LayerId>> layerGroupMembers(const Document& doc, std::string_view name);
+// Saves (or replaces) the group.
+Result<void> saveLayerGroup(const Document& doc, Transaction& tx, std::string_view name,
+                            const std::vector<LayerId>& members);
+Result<void> addToLayerGroup(const Document& doc, Transaction& tx, std::string_view name,
+                             const std::vector<LayerId>& more);
+Result<void> removeFromLayerGroup(const Document& doc, Transaction& tx, std::string_view name,
+                                  const std::vector<LayerId>& gone);
+Result<void> deleteLayerGroup(const Document& doc, Transaction& tx, std::string_view name);
 
 }  // namespace tbcad::layers

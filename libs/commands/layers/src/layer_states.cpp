@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <optional>
 #include <sstream>
 
 #include "tbcad/layers/layer_ops.h"
@@ -13,6 +14,7 @@ namespace {
 
 constexpr std::string_view kStatePrefix = "tbcad.layerstate.";
 constexpr std::string_view kFilterPrefix = "tbcad.layerfilter.";
+constexpr std::string_view kGroupPrefix = "tbcad.layergroup.";
 
 std::string lower(std::string_view s) {
     std::string out(s);
@@ -104,6 +106,8 @@ Result<void> saveLayerState(const Document& doc, Transaction& tx, std::string_vi
     if (!key)
         return key.error();
     std::string text;
+    if (const Layer* cur = doc.layer(doc.header().currentLayer))
+        text += "#current\t" + escape(layerPath(doc, cur->id)) + '\n';
     for (LayerId id : layerTreeOrder(doc)) {
         const Layer* l = doc.layer(id);
         text += escape(layerPath(doc, id)) + '\t';
@@ -131,8 +135,15 @@ Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string
     std::size_t bad = 0;
     std::istringstream in(it->second);
     std::string line;
+    std::vector<LayerId> saved;
+    std::optional<LayerId> savedCurrent;
     while (std::getline(in, line)) {
         auto f = splitTabs(line);
+        if (f.size() == 2 && f[0] == "#current") {
+            if (auto id = resolveLayer(doc, unescape(f[1])); id)
+                savedCurrent = id.value();
+            continue;
+        }
         if (f.size() != 5 || f[1].size() != 4) {
             ++bad;
             continue;
@@ -142,6 +153,7 @@ Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string
             ++bad;
             continue;
         }
+        saved.push_back(id.value());
         auto cur = [&]() { return doc.layer(id.value()); };
         bool ok = true;
         auto note = [&](const Result<void>& r) {
@@ -175,6 +187,16 @@ Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string
         if (!ok)
             ++bad;
     }
+    if (parts.hideOthers) {
+        for (LayerId id : layerTreeOrder(doc)) {
+            if (std::find(saved.begin(), saved.end(), id) == saved.end() && doc.layer(id)->on)
+                if (!setOn(doc, tx, id, false))
+                    ++bad;
+        }
+    }
+    if (parts.current && savedCurrent && *savedCurrent != doc.header().currentLayer)
+        if (!setCurrentLayer(doc, tx, *savedCurrent))
+            ++bad;
     if (skipped)
         *skipped = bad;
     return {};
@@ -254,6 +276,8 @@ std::vector<std::string> words(std::string_view expr) {
     return out;
 }
 
+int filterDepth = 0;  // nesting of filter:NAME, to stop circular filters
+
 // -1 = cannot understand the word, 0 = no match, 1 = match.
 int matchWord(const Document& doc, LayerId id, const std::string& rawWord, std::string& error) {
     std::string word = rawWord;
@@ -292,7 +316,34 @@ int matchWord(const Document& doc, LayerId id, const std::string& rawWord, std::
         const std::string key = lower(word.substr(0, colon));
         const std::string value = word.substr(colon + 1);
         EffectiveLayer e = doc.effective(id);
-        if (key == "name")
+        if (key == "group") {
+            auto members = layerGroupMembers(doc, value);
+            if (!members) {
+                error = members.error().message;
+                return -1;
+            }
+            set(std::find(members.value().begin(), members.value().end(), id) !=
+                members.value().end());
+        } else if (key == "filter") {
+            auto expr = savedFilterExpression(doc, value);
+            if (!expr) {
+                error = expr.error().message;
+                return -1;
+            }
+            if (filterDepth > 8) {
+                error = "Layer filters refer to each other in a circle.";
+                return -1;
+            }
+            ++filterDepth;
+            std::string inner;
+            const bool m = layerMatchesFilter(doc, id, expr.value(), &inner);
+            --filterDepth;
+            if (!inner.empty()) {
+                error = inner;
+                return -1;
+            }
+            set(m);
+        } else if (key == "name")
             set(wildcardMatch(value, l->name));
         else if (key == "path")
             set(wildcardMatch(value, layerPath(doc, id)));
@@ -402,6 +453,101 @@ Result<void> deleteLayerFilter(const Document& doc, Transaction& tx, std::string
     const std::string full = std::string(kFilterPrefix) + key.value();
     if (!doc.header().custom.count(full))
         return err(ErrorCode::NotFound, "No layer filter \"" + std::string(name) + "\".");
+    return tx.modifyHeader([&](Header& h) { h.custom.erase(full); });
+}
+
+// ---- layer groups -----------------------------------------------------------------------
+
+std::vector<std::string> layerGroupNames(const Document& doc) {
+    return namesWithPrefix(doc, kGroupPrefix);
+}
+
+namespace {
+
+std::vector<std::string> groupPaths(const Document& doc, const std::string& key) {
+    std::vector<std::string> out;
+    auto it = doc.header().custom.find(std::string(kGroupPrefix) + key);
+    if (it == doc.header().custom.end())
+        return out;
+    std::istringstream in(it->second);
+    std::string line;
+    while (std::getline(in, line))
+        if (!line.empty())
+            out.push_back(unescape(line));
+    return out;
+}
+
+std::string joinPaths(const std::vector<std::string>& paths) {
+    std::string text;
+    for (const std::string& p : paths)
+        text += escape(p) + '\n';
+    return text;
+}
+
+}  // namespace
+
+Result<std::vector<LayerId>> layerGroupMembers(const Document& doc, std::string_view name) {
+    auto key = cleanName(name);
+    if (!key)
+        return key.error();
+    if (!doc.header().custom.count(std::string(kGroupPrefix) + key.value()))
+        return err(ErrorCode::NotFound, "No layer group \"" + std::string(name) + "\".");
+    std::vector<LayerId> found;
+    for (const std::string& p : groupPaths(doc, key.value()))
+        if (auto id = resolveLayer(doc, p); id)
+            found.push_back(id.value());
+    std::vector<LayerId> out;
+    for (LayerId id : layerTreeOrder(doc))
+        if (std::find(found.begin(), found.end(), id) != found.end())
+            out.push_back(id);
+    return out;
+}
+
+Result<void> saveLayerGroup(const Document& doc, Transaction& tx, std::string_view name,
+                            const std::vector<LayerId>& members) {
+    auto key = cleanName(name);
+    if (!key)
+        return key.error();
+    std::vector<std::string> paths;
+    for (LayerId id : members)
+        if (doc.layer(id))
+            paths.push_back(layerPath(doc, id));
+    const std::string text = joinPaths(paths);
+    return tx.modifyHeader(
+        [&](Header& h) { h.custom[std::string(kGroupPrefix) + key.value()] = text; });
+}
+
+Result<void> addToLayerGroup(const Document& doc, Transaction& tx, std::string_view name,
+                             const std::vector<LayerId>& more) {
+    auto cur = layerGroupMembers(doc, name);
+    if (!cur)
+        return cur.error();
+    std::vector<LayerId> all = cur.value();
+    for (LayerId id : more)
+        if (std::find(all.begin(), all.end(), id) == all.end())
+            all.push_back(id);
+    return saveLayerGroup(doc, tx, name, all);
+}
+
+Result<void> removeFromLayerGroup(const Document& doc, Transaction& tx, std::string_view name,
+                                  const std::vector<LayerId>& gone) {
+    auto cur = layerGroupMembers(doc, name);
+    if (!cur)
+        return cur.error();
+    std::vector<LayerId> keep;
+    for (LayerId id : cur.value())
+        if (std::find(gone.begin(), gone.end(), id) == gone.end())
+            keep.push_back(id);
+    return saveLayerGroup(doc, tx, name, keep);
+}
+
+Result<void> deleteLayerGroup(const Document& doc, Transaction& tx, std::string_view name) {
+    auto key = cleanName(name);
+    if (!key)
+        return key.error();
+    const std::string full = std::string(kGroupPrefix) + key.value();
+    if (!doc.header().custom.count(full))
+        return err(ErrorCode::NotFound, "No layer group \"" + std::string(name) + "\".");
     return tx.modifyHeader([&](Header& h) { h.custom.erase(full); });
 }
 
