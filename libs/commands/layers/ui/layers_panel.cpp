@@ -13,6 +13,7 @@
 #include "panels.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/layer_states.h"
+#include "tbcad/layout/layout.h"
 
 namespace tbcad::layers {
 
@@ -172,6 +173,57 @@ void newLayer(tbcad::ui::PanelContext& ctx, LayerId parent) {
     st.pendingRenameName = parent ? layerPath(*ctx.doc, parent) + kPathSeparator + name : name;
 }
 
+// The layout viewport that VP Freeze acts on: the one selected on the sheet, else the only one.
+struct VpTarget {
+    std::string layout{};
+    int id = 0;
+    std::vector<LayerId> frozen{};
+    explicit operator bool() const { return id != 0; }
+};
+
+VpTarget viewportTarget(const tbcad::ui::PanelContext& ctx) {
+    VpTarget t;
+    if (!ctx.host || !ctx.doc || ctx.host->drawingOwner() == BlockId{})
+        return t;
+    std::string name = ctx.host->setting("layout.current").value_or("");
+    auto lay = name.empty() ? std::nullopt : layout::findLayout(*ctx.doc, name);
+    if (!lay) {
+        auto all = layout::layouts(*ctx.doc);
+        if (all.empty())
+            return t;
+        lay = all.front();
+    }
+    const layout::Viewport* vp = nullptr;
+    const std::string sel = ctx.host->setting("tmp.layout.viewport").value_or("");
+    if (const auto colon = sel.find(':');
+        colon != std::string::npos && sel.substr(0, colon) == lay->name)
+        vp = lay->findViewport(std::atoi(sel.c_str() + colon + 1));
+    if (!vp && lay->viewports.size() == 1)
+        vp = &lay->viewports.front();
+    if (!vp)
+        return t;
+    t.layout = lay->name;
+    t.id = vp->id;
+    t.frozen = vp->frozen;
+    return t;
+}
+
+// A name wider than its cell keeps its end ("...OUT$0$A-WALL"): the start is what repeats.
+std::string fitTail(const std::string& text, float width) {
+    if (ImGui::CalcTextSize(text.c_str()).x <= width)
+        return text;
+    std::size_t cut = 0;
+    while (cut < text.size()) {
+        ++cut;
+        while (cut < text.size() && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
+            ++cut;
+        const std::string t = "..." + text.substr(cut);
+        if (ImGui::CalcTextSize(t.c_str()).x <= width)
+            return t;
+    }
+    return "...";
+}
+
 void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, bool& openToggled) {
     PanelState& st = state();
     const Document& doc = *ctx.doc;
@@ -206,8 +258,10 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
     } else {
         // The UI font has no filled-dot glyph (it showed as "?"), so mark the current layer in
         // ASCII.
-        std::string label =
-            std::string(current ? "> " : "   ") + (row.shortName.empty() ? l->name : row.shortName);
+        const std::string full = row.shortName.empty() ? l->name : row.shortName;
+        const std::string mark = current ? "> " : "   ";
+        const std::string label = mark + fitTail(full, ImGui::GetContentRegionAvail().x -
+                                                           ImGui::CalcTextSize(mark.c_str()).x - 4);
         if (dimmed)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         bool sel = st.selected == row.id || st.multi.count(row.id.value) > 0;
@@ -464,19 +518,21 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Hideable;
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
     const float availWidth = ImGui::GetContentRegionAvail().x;
-    if (ImGui::BeginTable("##layers", 8, kFlags, ImVec2(0, -footer))) {
+    if (ImGui::BeginTable("##layers2", 9, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
         // Name takes whatever the other columns leave, so a wide panel shows whole layer names.
         // In a narrow panel Linetype and Weight start hidden (right-click the header to show them).
         const bool narrow = availWidth < 560;
-        const float others = 30 * 3 + 40 + 34 + (narrow ? 0 : 72 + 56) +
+        const VpTarget vp = viewportTarget(ctx);
+        const float others = 30 * 3 + 40 + 34 + (narrow ? 0 : 72 + 56) + (vp ? 40 : 0) +
                              (narrow ? 6 : 8) * ImGui::GetStyle().CellPadding.x * 2;
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed,
                                 std::max(150.0f, availWidth - others));
         ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableSetupColumn("VP Frz", ImGuiTableColumnFlags_WidthFixed, 44);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableSetupColumn(
@@ -488,6 +544,12 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
             56);
         ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 34);
+        // VP Frz only exists while a layout viewport is the target.
+        static bool vpShown = false;
+        if (vpShown != static_cast<bool>(vp) || ImGui::GetFrameCount() < 3) {
+            ImGui::TableSetColumnEnabled(3, static_cast<bool>(vp));
+            vpShown = static_cast<bool>(vp);
+        }
         ImGui::TableHeadersRow();
 
         ImGuiListClipper clipper;
@@ -547,9 +609,23 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                      l->on ? "Visible; click to turn off" : "Off; click to turn on");
                 flag(2, "##frz", l->frozen, "Freeze", "Thaw",
                      "Frozen layers are hidden and skipped when regenerating");
-                flag(3, "##lck", l->locked, "Lock", "Unlock",
+                if (vp) {
+                    ImGui::TableSetColumnIndex(3);
+                    const bool fz =
+                        std::find(vp.frozen.begin(), vp.frozen.end(), row.id) != vp.frozen.end();
+                    bool v = fz;
+                    if (ImGui::Checkbox("##vpfrz", &v)) {
+                        ctx.host->setSetting("tmp.layout.viewport",
+                                             vp.layout + ":" + std::to_string(vp.id));
+                        exec(ctx, {std::string("VPLAYER ") + (v ? "Freeze" : "Thaw"), l->name});
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Freeze in viewport %d only (%s)", vp.id,
+                                          fz ? "frozen" : "visible");
+                }
+                flag(4, "##lck", l->locked, "Lock", "Unlock",
                      "Locked layers show but cannot be edited");
-                ImGui::TableSetColumnIndex(4);
+                ImGui::TableSetColumnIndex(5);
                 {
                     ImVec4 col = swatch(eff.color);
                     if (ImGui::ColorButton(
@@ -573,11 +649,11 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                         }
                     }
                 }
-                ImGui::TableSetColumnIndex(5);
-                drawLinetypeCell(ctx, *l);
                 ImGui::TableSetColumnIndex(6);
+                drawLinetypeCell(ctx, *l);
+                ImGui::TableSetColumnIndex(7);
                 drawLineweightCell(ctx, *l);
-                flag(7, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
+                flag(8, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
                 if (dimmed)
                     ImGui::PopStyleColor();
                 ImGui::PopID();
