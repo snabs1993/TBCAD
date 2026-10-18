@@ -127,11 +127,12 @@ TEST_CASE("STRETCH, ALIGN and SCALE take an insert with attributes along") {
     r.host.run("INSERT", {"TAG", "20,20", ScriptItem::enter(), ScriptItem::enter()});
     const auto* in = r.first<InsertData>();
     REQUIRE(in);
+    const std::size_t attribCount = in->attribs.size();  // `in` dangles once the insert is edited
     const std::string before = canonicalDump(r.doc);
     CHECK_FALSE(r.host.runner().active());
     r.host.run("STRETCH", {"10,10", "30,30", "0,0", "5,5"});
     CHECK(r.first<InsertData>()->position.x == doctest::Approx(25));
-    CHECK(r.first<InsertData>()->attribs.size() == in->attribs.size());
+    CHECK(r.first<InsertData>()->attribs.size() == attribCount);
     CHECK(r.host.undo());
     CHECK(canonicalDump(r.doc) == before);
     r.host.setSelection(r.ids());

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -97,7 +98,9 @@ std::string attributeCsv(const Document& doc, const std::string& onlyBlock, std:
 class AttExtCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ATTEXT"; }
-    std::vector<std::string> defaultAliases() const override { return {"DX", "DATAEXTRACTION"}; }
+    std::vector<std::string> defaultAliases() const override {
+        return {"DX", "DATAEXTRACTION", "ATTOUT"};
+    }
     std::string_view description() const override {
         return "Write the attribute values of block inserts to a CSV file";
     }
@@ -133,6 +136,100 @@ public:
         }
         o << "\xEF\xBB\xBF" << csv;  // a BOM so Excel reads UTF-8 text correctly
         ctx.message("Wrote " + std::to_string(rows) + " rows to " + file);
+    }
+};
+
+// ATTIN: reads a CSV written by ATTEXT and puts its attribute values back on the inserts it
+// describes (matched by block name and position, in file order when several share a spot).
+// Columns whose tag the insert does not have, constant attributes and empty cells stay as they are.
+class AttInCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ATTIN"; }
+    std::vector<std::string> defaultAliases() const override { return {"ATTIMPORT"}; }
+    std::string_view description() const override {
+        return "Read attribute values back from a CSV file written by ATTEXT";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        auto f = co_await ctx.getString("Enter the CSV file name <attributes.csv>",
+                                        cmd::StringOptions{.defaultValue = "attributes.csv"});
+        if (!f.ok())
+            co_return;
+        const std::string file = cmd::trim(f.text);
+        std::ifstream in(std::filesystem::path(std::u8string(file.begin(), file.end())),
+                         std::ios::binary);
+        if (!in) {
+            ctx.message("Cannot read " + file);
+            co_return;
+        }
+        std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const auto rows = table::parseCsv(data);
+        if (rows.size() < 2 || rows[0].size() < 7 || rows[0][0] != "Block" || rows[0][2] != "X") {
+            ctx.message("This is not an ATTEXT file (the first line must start Block,Layer,X,Y).");
+            co_return;
+        }
+        std::vector<EntityId> pending;
+        for (EntityId id : doc.modelSpace())
+            pending.push_back(id);
+        std::size_t updated = 0, missing = 0;
+        std::vector<std::pair<EntityId, std::vector<AttribValue>>> changes;
+        for (std::size_t r = 1; r < rows.size(); ++r) {
+            const auto& row = rows[r];
+            if (row.size() < 7)
+                continue;
+            double x = 0, y = 0;
+            try {
+                x = std::stod(row[2]);
+                y = std::stod(row[3]);
+            } catch (...) {
+                ++missing;
+                continue;
+            }
+            EntityId hit{};
+            for (auto it = pending.begin(); it != pending.end(); ++it) {
+                const Entity* e = doc.find(*it);
+                const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+                const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+                if (!def || def->name != row[0] || std::abs(ins->position.x - x) > 1e-5 ||
+                    std::abs(ins->position.y - y) > 1e-5)
+                    continue;
+                hit = *it;
+                pending.erase(it);
+                break;
+            }
+            if (!hit.value) {
+                ++missing;
+                continue;
+            }
+            std::vector<AttribValue> vals = entityAs<InsertData>(*doc.find(hit))->attribs;
+            bool changed = false;
+            for (std::size_t c = 7; c < rows[0].size() && c < row.size(); ++c) {
+                if (row[c].empty())
+                    continue;
+                for (AttribValue& v : vals)
+                    if (v.tag == rows[0][c] && v.value != row[c]) {
+                        v.value = row[c];
+                        changed = true;
+                    }
+            }
+            if (changed)
+                changes.emplace_back(hit, std::move(vals));
+        }
+        for (auto& [id, vals] : changes) {
+            auto m = ctx.tx().modify(id, [&](Entity& e) {
+                if (auto* ins = entityAs<InsertData>(e))
+                    ins->attribs = std::move(vals);
+            });
+            if (m)
+                ++updated;
+        }
+        if (updated)
+            ctx.setUndoLabel("ATTIN");
+        std::string msg = std::to_string(updated) + " inserts updated";
+        if (missing)
+            msg += ", " + std::to_string(missing) + " rows matched no insert";
+        ctx.message(msg + ".");
     }
 };
 
@@ -197,6 +294,10 @@ public:
 
 std::unique_ptr<cmd::Command> makeAttTableCommand() {
     return std::make_unique<AttTableCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeAttInCommand() {
+    return std::make_unique<AttInCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeAttExtCommand() {
