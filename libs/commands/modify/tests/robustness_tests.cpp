@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -173,4 +174,43 @@ TEST_CASE("block references: BREAK, LENGTHEN, FILLET, CHAMFER and STRETCH never 
             CHECK(canonicalDump(r.doc) == before);
         }
     }
+}
+
+// Speed on a dense drawing: TRIM and OFFSET of one object must not scan or rebuild everything.
+TEST_CASE("TRIM and OFFSET stay quick in a drawing of 50 000 objects") {
+    Rig f;
+    {
+        Transaction tx = f.doc.begin("fill");
+        for (int i = 0; i < 50000; ++i) {
+            const double x = (i % 250) * 40.0, y = (i / 250) * 40.0;
+            Entity e;
+            if (i % 3 == 0)
+                e.data = LineData{{x, y}, {x + 30, y + 10}};
+            else if (i % 3 == 1)
+                e.data = CircleData{{x + 15, y + 15}, 8};
+            else
+                e.data = LineData{{x + 5, y - 5}, {x + 12, y + 25}};
+            REQUIRE(tx.add(std::move(e)).ok());
+        }
+        tx.commit();
+    }
+    // A long line crossing a few hundred objects.
+    EntityId target = f.add(LineData{{-100, 4020}, {10100, 4020}});
+    auto t0 = std::chrono::steady_clock::now();
+    f.host.run("TRIM",
+               {ScriptItem::enter(), ScriptItem::pick(target, {5000, 4020}), ScriptItem::esc()});
+    const double trimMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    t0 = std::chrono::steady_clock::now();
+    f.host.run("OFFSET",
+               {"5", ScriptItem::pick(target, {200, 4020}), "200,4100", ScriptItem::esc()});
+    const double offsetMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    MESSAGE("50k objects: TRIM " << trimMs << " ms, OFFSET " << offsetMs << " ms");
+    CHECK(trimMs < 2000);  // debug build; about 30 ms measured
+    CHECK(offsetMs < 2000);
+    const auto* l = entityAs<LineData>(*f.doc.find(target));
+    REQUIRE(l);
+    CHECK(std::abs(l->b.x - l->a.x) < 10200);  // the pick was trimmed away or cut short
+    CHECK(f.doc.modelSpace().size() >= 50001);
 }

@@ -199,3 +199,100 @@ TEST_CASE("modify algorithms survive random and degenerate input") {
     }
     CHECK(produced > 500);  // the sweep must actually exercise the algorithms
 }
+
+namespace {
+
+// Like randomEntity but with ellipses and fitted splines, for the scaled sweep below.
+Entity richEntity(Rng& r) {
+    switch (r.pick(7)) {
+        case 0: {
+            EllipseData d;
+            d.center = r.point();
+            const double a = r.uni(3, 30), t = r.uni(0, 6.28);
+            d.majorAxis = {a * std::cos(t), a * std::sin(t)};
+            d.ratio = r.uni(0.05, 1);
+            if (r.pick(2)) {
+                d.startParam = r.uni(0, 3);
+                d.endParam = d.startParam + r.uni(0.3, 5);
+            }
+            return make(std::move(d));
+        }
+        case 1: {
+            SplineData d;
+            d.degree = 3;
+            d.knots = {0, 0, 0, 0, 1, 2, 3, 3, 3, 3};
+            for (int i = 0; i < 6; ++i)
+                d.control.push_back(r.point());
+            return make(std::move(d));
+        }
+        default:
+            return randomEntity(r);
+    }
+}
+
+bool finiteScaled(const Entity& e, double limit) {
+    std::vector<geom::CurveRef> cs;
+    geom::curvesOf(e, cs);
+    for (const auto& c : cs) {
+        const Vec2 p = c.pointAt(c.t0());
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || std::abs(p.x) > limit ||
+            std::abs(p.y) > limit)
+            return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+// Survey drawings sit at 1e6..1e9 units from the origin; tiny details can be 1e-6 units. The
+// same sweep, moved and scaled by a similarity, must stay finite for offset, trim, extend, fillet.
+TEST_CASE("modify algorithms survive huge offsets and tiny and huge scales") {
+    struct Frame {
+        double scale;
+        Vec2 shift;
+    };
+    const Frame frames[] = {
+        {1, {1e6, 1e6}}, {1e-6, {0, 0}}, {1e-6, {500, 300}}, {1e3, {6e8, 1.5e9}}};
+    int produced = 0;
+    for (std::uint64_t seed = 1; seed <= 150; ++seed) {
+        for (const Frame& fr : frames) {
+            Rng r(seed);
+            const Transform2 xf =
+                Transform2::translate(fr.shift) * Transform2::scale(fr.scale, fr.scale);
+            auto place = [&](Entity e) {
+                auto t = geom::transformed(e, xf);
+                return t.ok() ? std::move(t.value()) : e;
+            };
+            Entity a = place(richEntity(r)), b = place(richEntity(r)), c = place(richEntity(r));
+            const Vec2 p = xf.apply(r.point()), q = xf.apply(r.point());
+            const double limit = 1e11;
+            std::vector<const Entity*> edges{&b, &c};
+            for (double d : {-3.0, 2.5})
+                if (auto o = offsetEntity(a, d * fr.scale); o.ok())
+                    for (const Entity& e : o.value()) {
+                        ++produced;
+                        CHECK(finiteScaled(e, limit));
+                    }
+            if (auto t = trimEntity(a, p, edges); t.ok()) {
+                ++produced;
+                if (t.value().modified)
+                    CHECK(finiteScaled(*t.value().modified, limit));
+                for (const Entity& e : t.value().added)
+                    CHECK(finiteScaled(e, limit));
+            }
+            if (auto t = extendEntity(a, p, edges); t.ok()) {
+                ++produced;
+                if (t.value().modified)
+                    CHECK(finiteScaled(*t.value().modified, limit));
+            }
+            FilletOptions fo;
+            fo.radius = 2 * fr.scale;
+            if (auto f = filletEntities(a, p, b, q, fo); f.ok()) {
+                ++produced;
+                for (const Entity& e : f.value().added)
+                    CHECK(finiteScaled(e, limit));
+            }
+        }
+    }
+    CHECK(produced > 500);
+}
