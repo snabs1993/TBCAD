@@ -88,5 +88,8 @@ inline bool samePoint(Vec2 a, Vec2 b, double tol = 1e-6) {
 SplineData reversedSpline(SplineData d);
 // B's control polygon continues A's (both clamped and open): one spline with a C0 joint.
 SplineData chainSplines(const SplineData& a, const SplineData& b);
+// An open clamped spline continued by a straight run from its start or end to `to`, with the same
+// degree and the drawn part unchanged. Fit points are dropped.
+SplineData splineWithStraightRun(const SplineData& sd, bool atEnd, Vec2 to);
 
 }  // namespace tbcad::modify

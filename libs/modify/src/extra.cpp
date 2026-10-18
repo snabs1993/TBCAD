@@ -132,10 +132,18 @@ bool nearerToEnd(const std::vector<Seg>& segs, Vec2 pick) {
     return at >= total / 2;
 }
 
+Result<EntityEdit> lengthenCurve(const Entity& e, const CurveRef& c, Vec2 pick, double delta,
+                                 std::optional<Vec2> toPoint);
+std::optional<CurveRef> curveForLengthen(const Entity& e);
+
 Result<EntityEdit> lengthenBy(const Entity& e, Vec2 pick, double delta) {
     auto segs = openSegs(e);
-    if (!segs)
-        return err("Only lines, arcs and open polylines can be lengthened.");
+    if (!segs) {
+        if (auto c = curveForLengthen(e))
+            return lengthenCurve(e, *c, pick, delta, std::nullopt);
+        return err(
+            "Only lines, arcs, elliptical arcs and open polylines or splines can be lengthened.");
+    }
     bool atEnd = nearerToEnd(*segs, pick);
     std::vector<Seg> work = atEnd ? *segs : reversedSegs(*segs);
     auto changed = changeEnd(std::move(work), delta);
@@ -319,21 +327,111 @@ double minX(const Entity& e) {
     return m;
 }
 
+// Elliptical arcs and open splines are lengthened along their own curve: an arc runs on round its
+// ellipse, a spline continues along its end tangent.
+std::optional<CurveRef> curveForLengthen(const Entity& e) {
+    std::vector<CurveRef> cs;
+    if (const auto* el = entityAs<EllipseData>(e)) {
+        if (normalizeAngle(el->endParam - el->startParam) < 1e-12)
+            return std::nullopt;
+    } else if (const auto* sp = entityAs<SplineData>(e)) {
+        if (sp->closed || sp->periodic)
+            return std::nullopt;
+    } else {
+        return std::nullopt;
+    }
+    if (!geom::curvesOf(e, cs) || cs.size() != 1)
+        return std::nullopt;
+    return cs[0];
+}
+
+Result<EntityEdit> lengthenCurve(const Entity& e, const CurveRef& c, Vec2 pick, double delta,
+                                 std::optional<Vec2> toPoint) {
+    const bool atEnd = distance(pick, c.endPoint()) <= distance(pick, c.startPoint());
+    const double len = c.length();
+    EntityEdit edit;
+    if (const auto* el = entityAs<EllipseData>(e)) {
+        EllipseData out = *el;
+        const double gap = kTwoPi - c.sweep();
+        if (toPoint) {
+            const CurveRef full =
+                CurveRef::ellipse(el->center, el->majorAxis, el->ratio, el->startParam, kTwoPi);
+            const double t = normalizeAngle(full.paramAt(*toPoint));
+            (atEnd ? out.endParam : out.startParam) = t;
+            if (normalizeAngle(out.endParam - out.startParam) < 1e-9)
+                return err("The result would have no length.");
+            edit.modified = withData(e, out);
+            return edit;
+        }
+        if (delta < 0) {
+            if (-delta >= len - tol::kLinear)
+                return err("The object would have no length left.");
+            if (atEnd)
+                out.endParam = normalizeAngle(c.paramAtLength(len + delta));
+            else
+                out.startParam = normalizeAngle(c.paramAtLength(-delta));
+        } else {
+            const CurveRef room =
+                atEnd ? CurveRef::ellipse(el->center, el->majorAxis, el->ratio, el->endParam, gap)
+                      : CurveRef::ellipse(el->center, el->majorAxis, el->ratio,
+                                          el->startParam - gap, gap);
+            const double roomLen = room.length();
+            if (delta >= roomLen - tol::kLinear)
+                return err("The ellipse would close on itself.");
+            if (atEnd)
+                out.endParam = normalizeAngle(room.paramAtLength(delta));
+            else
+                out.startParam = normalizeAngle(room.paramAtLength(roomLen - delta));
+        }
+        edit.modified = withData(e, out);
+        return edit;
+    }
+    const auto& sd = *entityAs<SplineData>(e);
+    const Vec2 from = atEnd ? c.endPoint() : c.startPoint();
+    Vec2 dir = c.tangentAt(atEnd ? c.t1() : c.t0());
+    if (!atEnd)
+        dir = dir * -1.0;
+    if (tol::isZeroLength(dir))
+        return err("The spline has no direction at this end.");
+    if (toPoint)
+        delta = dot(*toPoint - from, dir);
+    if (delta < 0) {
+        if (-delta >= len - tol::kLinear)
+            return err("The object would have no length left.");
+        const double ta = atEnd ? c.t0() : c.paramAtLength(-delta);
+        const double tb = atEnd ? c.paramAtLength(len + delta) : c.t1();
+        auto sub = geom::splineSubcurve(sd, ta, tb);
+        if (!sub)
+            return err("The spline could not be shortened.");
+        edit.modified = withData(e, Indirect<SplineData>(std::move(sub.value())));
+        return edit;
+    }
+    if (delta <= tol::kLinear)
+        return err("The result would have no change.");
+    edit.modified =
+        withData(e, Indirect<SplineData>(splineWithStraightRun(sd, atEnd, from + dir * delta)));
+    return edit;
+}
+
 }  // namespace
 
 // ---- LENGTHEN -----------------------------------------------------------------------------------
 
 std::optional<double> lengthenableLength(const Entity& e) {
     auto segs = openSegs(e);
-    if (!segs)
+    if (!segs) {
+        if (auto c = curveForLengthen(e))
+            return c->length();
         return std::nullopt;
+    }
     return totalLength(*segs);
 }
 
 Result<EntityEdit> lengthenEntity(const Entity& e, Vec2 pick, LengthenMode mode, double value) {
     auto len = lengthenableLength(e);
     if (!len)
-        return err("Only lines, arcs and open polylines can be lengthened.");
+        return err(
+            "Only lines, arcs, elliptical arcs and open polylines or splines can be lengthened.");
     switch (mode) {
         case LengthenMode::Delta:
             return lengthenBy(e, pick, value);
@@ -351,8 +449,12 @@ Result<EntityEdit> lengthenEntity(const Entity& e, Vec2 pick, LengthenMode mode,
 
 Result<EntityEdit> lengthenToPoint(const Entity& e, Vec2 pick, Vec2 target) {
     auto segs = openSegs(e);
-    if (!segs)
-        return err("Only lines, arcs and open polylines can be lengthened.");
+    if (!segs) {
+        if (auto c = curveForLengthen(e))
+            return lengthenCurve(e, *c, pick, 0, target);
+        return err(
+            "Only lines, arcs, elliptical arcs and open polylines or splines can be lengthened.");
+    }
     bool atEnd = nearerToEnd(*segs, pick);
     const Seg& s = atEnd ? segs->back() : segReversed(segs->front());
     double u = segParamUnbounded(s, target);

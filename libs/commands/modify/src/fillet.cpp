@@ -20,6 +20,8 @@ bool filletable(const Document& doc, const Entity& e) {
         case EntityKind::Line:
         case EntityKind::Arc:
         case EntityKind::Circle:
+        case EntityKind::Ellipse:
+        case EntityKind::Spline:
         case EntityKind::Polyline:
             return true;
         default:
@@ -91,7 +93,7 @@ void cornerOp(cmd::CommandContext& ctx, Corner what, const cmd::EntityResult& fi
             ctx.message(r.error().message);
         return;
     }
-    if (kind(*a) == EntityKind::Polyline || kind(*b) == EntityKind::Polyline) {
+    if (!fillet && (kind(*a) == EntityKind::Polyline || kind(*b) == EntityKind::Polyline)) {
         ctx.message(
             "A polyline can only be rounded or cut at its own corners: pick two of its "
             "segments.");

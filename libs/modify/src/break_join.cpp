@@ -305,6 +305,24 @@ SplineData chainSplines(const SplineData& a, const SplineData& b) {
     return out;
 }
 
+SplineData splineWithStraightRun(const SplineData& sd, bool atEnd, Vec2 to) {
+    const Vec2 from = atEnd ? sd.control.back() : sd.control.front();
+    SplineData run;
+    run.degree = sd.degree;
+    const int p = std::max(1, sd.degree);
+    for (int i = 0; i <= p; ++i)
+        run.control.push_back(from + (to - from) * (static_cast<double>(i) / p));
+    run.knots.assign(static_cast<std::size_t>(p) + 1, 0.0);
+    run.knots.insert(run.knots.end(), static_cast<std::size_t>(p) + 1, 1.0);
+    // At the start the run goes to -> start, then the original continues.
+    if (!atEnd)
+        std::reverse(run.control.begin(), run.control.end());
+    SplineData out = atEnd ? chainSplines(sd, run) : chainSplines(run, sd);
+    out.fit.clear();
+    out.closed = false;
+    return out;
+}
+
 namespace {
 
 // ---- candidate search for JOIN: without it every object is compared with every other
