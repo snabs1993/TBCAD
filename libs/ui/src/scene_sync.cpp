@@ -67,7 +67,9 @@ SceneSync::SceneSync(Document& doc, render::Scene& scene) : doc_(doc), scene_(sc
 bool SceneSync::readDisplayModes() {
     const bool fill = fillMode(doc_.header());
     const int att = attDisplay(doc_.header());
-    const bool changed = fill != fillMode_ || att != attDisplay_;
+    const bool qt = quickText(doc_.header());
+    const bool changed = fill != fillMode_ || att != attDisplay_ || qt != quickText_;
+    quickText_ = qt;
     fillMode_ = fill;
     attDisplay_ = att;
     return changed;
@@ -99,6 +101,7 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     ctx.showTransparency = showTransparency_;
     ctx.fillMode = fillMode_;
     ctx.attDisplay = attDisplay_;
+    ctx.quickText = quickText_;
     const bool locked = doc_.effective(e.common).locked;
     // An object already in the scene keeps its place in the draw order.
     const std::uint32_t order = drawOrder.value_or(orderFor(id));
@@ -356,6 +359,7 @@ void SceneSync::rebuildDrawOrder() {
         ctx.showTransparency = showTransparency_;
         ctx.fillMode = fillMode_;
         ctx.attDisplay = attDisplay_;
+        ctx.quickText = quickText_;
         DisplayList list;
         {
             blocks::BlockDisplayScope scope(blockCache_);

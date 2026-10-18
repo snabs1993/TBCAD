@@ -3086,6 +3086,20 @@ void Gui::viewportMenu() {
                 ImGui::EndMenu();
             }
         }
+        // The values typed lately (latest first), each once, to answer the prompt again.
+        std::vector<std::string> values;
+        for (auto it = inputHistory_.lines().rbegin();
+             it != inputHistory_.lines().rend() && values.size() < 8; ++it) {
+            if (!it->empty() && it->front() != '\'' && !core_.registry().find(*it) &&
+                std::find(values.begin(), values.end(), *it) == values.end())
+                values.push_back(*it);
+        }
+        if (!values.empty() && ImGui::BeginMenu("Recent Input")) {
+            for (const std::string& v : values)
+                if (ImGui::MenuItem(v.c_str()))
+                    run(v);
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         if (core_.registry().find("PAN") && ImGui::MenuItem("Pan"))
             run("'PAN");

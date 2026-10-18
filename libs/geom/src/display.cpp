@@ -417,6 +417,38 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
     for (DisplayItem& item : marks.items)
         out.items.push_back(std::move(item));
     const EntityKind k = kind(e);
+    if (ctx.quickText && (k == EntityKind::Text || k == EntityKind::MText)) {
+        BBox2 box;
+        std::vector<DisplayItem> kept;
+        DisplayStyle style{};
+        bool any = false;
+        for (std::size_t i = from; i < out.items.size(); ++i) {
+            if (const auto* f = std::get_if<DisplayFill>(&out.items[i])) {
+                if (isBackgroundColor(f->style.color)) {  // a text background mask stays
+                    kept.push_back(std::move(out.items[i]));
+                    continue;
+                }
+                for (const auto& ring : f->rings)
+                    for (const Vec2& p : ring)
+                        box.expand(p);
+                if (!any)
+                    style = f->style;
+                any = true;
+            } else {  // underline and overline strokes stay
+                kept.push_back(std::move(out.items[i]));
+            }
+        }
+        if (any && !box.empty()) {
+            DisplayPolyline p;
+            p.pts = {box.min, {box.max.x, box.min.y}, box.max, {box.min.x, box.max.y}};
+            p.closed = true;
+            p.style = style;
+            kept.push_back(std::move(p));
+        }
+        out.items.resize(from);
+        for (DisplayItem& item : kept)
+            out.items.push_back(std::move(item));
+    }
     // Text glyphs are fills too, so only wide polylines are touched here; hatches do it
     // themselves.
     const bool fillKind = k == EntityKind::Polyline;

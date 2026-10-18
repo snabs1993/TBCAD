@@ -174,3 +174,26 @@ TEST_CASE("stroke font text has a layout frame") {
     CHECK_FALSE(l.frame.empty());
     CHECK(l.worldBounds().width() > 10);
 }
+
+TEST_CASE("QTEXT shows text as one box around its glyphs") {
+    Document doc;
+    Entity e{{}, thai("TBCAD")};
+    geom::DisplayContext ctx;
+    ctx.pixelSizeMm = 0.01;
+    ctx.quickText = true;
+    DisplayList l;
+    geom::buildDisplay(doc, e, ctx, l);
+    REQUIRE(l.items.size() == 1);
+    const auto* box = std::get_if<DisplayPolyline>(&l.items[0]);
+    REQUIRE(box);
+    CHECK(box->closed);
+    CHECK(box->pts.size() == 4);
+    DisplayList full = build(doc, e);
+    BBox2 all;
+    for (const auto& it : full.items)
+        for (const auto& r : std::get<DisplayFill>(it).rings)
+            for (const Vec2& p : r)
+                all.expand(p);
+    CHECK(box->pts[0].x == doctest::Approx(all.min.x));
+    CHECK(box->pts[2].y == doctest::Approx(all.max.y));
+}

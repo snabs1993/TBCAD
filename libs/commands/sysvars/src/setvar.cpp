@@ -141,6 +141,15 @@ const std::vector<Var>& variables() {
              h.custom[kSelAnnoDisplayKey] = on ? "1" : "0";
              return {};
          }},
+        {"QTEXTMODE", "text shows as boxes (1) or as text (0)",
+         [](const Document& d) { return std::string(quickText(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "QTEXTMODE is 0 or 1.";
+             h.custom[kQTextKey] = on ? "1" : "0";
+             return {};
+         }},
         {"FILLMODE", "solid fills show (1) or only their outlines do (0)",
          [](const Document& d) { return std::string(fillMode(d.header()) ? "1" : "0"); },
          [](const Document&, std::string_view v, Header& h) -> std::string {

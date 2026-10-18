@@ -290,6 +290,47 @@ public:
     }
 };
 
+// Commands whose job TBCAD does by itself: they only say so.
+class NoteCommand final : public cmd::Command {
+public:
+    NoteCommand(const char* name, const char* description, const char* note)
+        : name_(name), description_(description), note_(note) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+    Task run(CommandContext& ctx) override {
+        ctx.message(note_);
+        co_return;
+    }
+
+private:
+    const char* name_;
+    const char* description_;
+    const char* note_;
+};
+
+// QTEXT [ON/OFF]: text shows as boxes, which redraws large drawings of text quickly.
+class QTextCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "QTEXT"; }
+    std::string_view description() const override { return "Show text as boxes"; }
+    Task run(CommandContext& ctx) override {
+        const bool cur = quickText(ctx.doc().header());
+        cmd::KeywordOptions ko;
+        ko.keywords = {"ON", "OFF"};
+        ko.defaultKeyword = cur ? "ON" : "OFF";
+        auto k = co_await ctx.getKeyword(
+            std::string("Enter mode [ON/OFF] <") + (cur ? "ON" : "OFF") + ">", std::move(ko));
+        if (!k.ok())
+            co_return;
+        const bool on = k.keyword == "ON";
+        ctx.setUndoLabel(on ? "Quick text on" : "Quick text off");
+        if (auto r =
+                ctx.tx().modifyHeader([on](Header& h) { h.custom[kQTextKey] = on ? "1" : "0"; });
+            !r)
+            ctx.message(r.error().message);
+    }
+};
+
 // LIMITS: the drawing area. ZOOM All covers it; DXF keeps it in $LIMMIN / $LIMMAX.
 class LimitsCommand final : public cmd::Command {
 public:
@@ -354,6 +395,10 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RefreshCommand>("REGENAUTO", ""));
     (void)registry.add(std::make_unique<LimitsCommand>());
     (void)registry.add(std::make_unique<FillCommand>());
+    (void)registry.add(std::make_unique<NoteCommand>(
+        "CONVERTPOLY", "Convert old-style polylines to the optimized form",
+        "Polylines are always kept in the optimized form; there is nothing to convert."));
+    (void)registry.add(std::make_unique<QTextCommand>());
     (void)registry.add(std::make_unique<AttDispCommand>());
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeHyperlinkCommand());

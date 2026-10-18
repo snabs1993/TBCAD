@@ -1060,3 +1060,258 @@ TEST_CASE("file dialogs: Save As and Open round trip a drawing from the keyboard
     CHECK_FALSE(h.windowOpen("File"));
     CHECK(entityCount(h) == 1);
 }
+
+TEST_CASE("dynamic input: Tab fields lock distance and angle for the next point") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.core().setSetting("drafting.ortho", "0");
+    h.core().setSetting("drafting.polar", "0");
+    h.frame(3);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().zoomExtents();
+    h.frame(5);
+    const ImVec2 c = screenOf(h, {0, 0});
+    h.moveMouse(c.x + 200, c.y - 100);
+    h.frame(5);
+    // The HUD shows both fields.
+    h.key(ImGuiKey_Tab);
+    h.frame(3);
+    h.type("50");
+    h.key(ImGuiKey_Enter);
+    h.frame(3);
+    h.type("90");
+    h.key(ImGuiKey_Enter);
+    h.frame(5);
+    h.core().pressEscape();
+    h.frame(3);
+    REQUIRE(entityCount(h) == 1);
+    h.core().document().forEachEntity([&](const Entity& e) {
+        const auto* ln = std::get_if<LineData>(&e.data);
+        REQUIRE(ln);
+        CHECK(ln->b.x == doctest::Approx(0).epsilon(1e-6).scale(1));
+        CHECK(ln->b.y == doctest::Approx(50).epsilon(1e-6));
+    });
+}
+
+TEST_CASE("viewport menu: Recent Input answers the prompt with a value typed before") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.command("CIRCLE");
+    h.command("0,0");
+    h.command("25");
+    h.frame(3);
+    REQUIRE(entityCount(h) == 1);
+    h.command("CIRCLE");
+    h.command("100,0");  // now at the radius prompt
+    const ImVec2 spot = screenOf(h, {600, 300});
+    h.click(spot.x, spot.y, 1);
+    h.frame(2);
+    REQUIRE(h.click("Recent Input", "Popup"));
+    h.frame(2);
+    CHECK(h.has("25", "Menu"));
+    CHECK(h.has("100,0", "Menu"));
+    REQUIRE(h.click("25", "Menu"));
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    CHECK(entityCount(h) == 2);
+    int radius25 = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* c = std::get_if<CircleData>(&e.data))
+            radius25 += c->radius == doctest::Approx(25);
+    });
+    CHECK(radius25 == 2);
+}
+
+TEST_CASE("viewport menu: selection items fit the picked object and run") {
+    Harness h(1920, 1080);
+    threeLayers(h);  // three lines on three layers, current layer A-Notes
+    run(h, "-LAYER Make 0");
+    h.core().submitText("CIRCLE");
+    h.core().submitText("50,50");
+    h.core().submitText("5");
+    h.frame(3);
+    REQUIRE(entityCount(h) == 4);
+    const ImVec2 spot = screenOf(h, {600, 300});
+    auto menu = [&] {
+        h.click(spot.x, spot.y, 1);
+        h.frame(2);
+    };
+
+    // A lone circle: the curve edits are offered; the polyline and text ones are not.
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (std::holds_alternative<CircleData>(e.data))
+            h.core().setSelection({e.common.id});
+    });
+    h.frame(2);
+    REQUIRE(h.core().selection().size() == 1);
+    menu();
+    CHECK(h.has("Offset", "Popup"));
+    CHECK(h.has("Trim", "Popup"));
+    CHECK_FALSE(h.has("Edit Text", "Popup"));
+    CHECK_FALSE(h.has("Edit Polyline", "Popup"));
+    CHECK(h.has("Select Similar", "Popup"));
+
+    // Isolate Layer from the menu hides the other layers.
+    REQUIRE(h.click("Isolate Layer", "Popup"));
+    h.frame(3);
+    h.core().pressEscape();
+    CHECK_FALSE(layer(h, "A-Walls")->on);
+    CHECK_FALSE(layer(h, "A-Doors")->on);
+    CHECK(layer(h, "0")->on);
+}
+
+TEST_CASE("layout tabs: add, switch, rename, delete and back to Model") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.has("Model", "##layouttabs"));
+    CHECK_FALSE(h.core().inPaperSpace());
+
+    // "+" asks for a name, OK makes a sheet and shows it.
+    REQUIRE(h.click("+", "##layouttabs"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Popup"));
+    CHECK(h.enterText("##n", "Plan A", "Popup"));
+    h.frame(5);
+    CHECK(h.has("Plan A", "##layouttabs"));
+    CHECK(h.core().inPaperSpace());
+    CHECK(h.core().activeLayout() == "Plan A");
+
+    // Model tab goes back to model space; the layout tab returns to the sheet.
+    REQUIRE(h.click("Model", "##layouttabs"));
+    h.frame(3);
+    CHECK_FALSE(h.core().inPaperSpace());
+    REQUIRE(h.click("Plan A", "##layouttabs"));
+    h.frame(3);
+    CHECK(h.core().inPaperSpace());
+
+    // Right click on the tab: Rename...
+    REQUIRE(h.rightClick("Plan A", "##layouttabs"));
+    h.frame(2);
+    REQUIRE(h.click("Rename...", "Popup"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Popup"));
+    CHECK(h.enterText("##n", "Plan B", "Popup"));
+    h.frame(5);
+    CHECK(h.has("Plan B", "##layouttabs"));
+    CHECK_FALSE(h.has("Plan A", "##layouttabs"));
+    CHECK(h.core().activeLayout() == "Plan B");
+
+    // ... and Delete drops the sheet and returns to Model.
+    REQUIRE(h.rightClick("Plan B", "##layouttabs"));
+    h.frame(2);
+    REQUIRE(h.click("Delete", "Popup"));
+    h.frame(5);
+    CHECK_FALSE(h.has("Plan B", "##layouttabs"));
+    CHECK_FALSE(h.core().inPaperSpace());
+}
+
+TEST_CASE("grips: click-move a vertex, and the hover menu adds a vertex") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    h.core().submitText("PLINE");
+    h.core().submitText("0,0");
+    h.core().submitText("200,0");
+    h.core().submitText("200,200");
+    h.core().submitText("");
+    h.core().zoomExtents();
+    h.frame(20);
+    h.scroll(700, 500, -3.0f);
+    h.frame(30);
+    auto verts = [&] {
+        std::size_t n = 0;
+        h.core().document().forEachEntity([&](const Entity& e) {
+            if (const auto* p = std::get_if<PolylineData>(&e.data))
+                n = p->v.size();
+        });
+        return n;
+    };
+    auto vertex = [&](std::size_t i) {
+        Vec2 out{};
+        h.core().document().forEachEntity([&](const Entity& e) {
+            if (const auto* p = std::get_if<PolylineData>(&e.data))
+                out = p->v[i].p;
+        });
+        return out;
+    };
+    REQUIRE(verts() == 3);
+    h.core().selectAll();
+    h.frame(3);
+
+    // A click on a vertex grip, then a click elsewhere, moves the vertex.
+    const ImVec2 grip = screenOf(h, {200, 0});
+    h.click(grip.x, grip.y);
+    h.frame(3);
+    REQUIRE(h.core().runner().active());
+    const ImVec2 to = screenOf(h, {300, 0});
+    h.click(to.x, to.y);
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    CHECK(vertex(1).x == doctest::Approx(300).epsilon(0.02));
+    CHECK(vertex(1).y == doctest::Approx(0).scale(100).epsilon(0.02));
+    h.core().selectAll();
+    h.frame(3);
+
+    // Hovering the middle vertex for a moment offers its actions.
+    const ImVec2 corner = screenOf(h, {300, 0});
+    h.moveMouse(corner.x, corner.y);
+    h.frame(40);
+    REQUIRE(h.windowOpen("##gripmenu"));
+    CHECK(h.has("Add vertex", "##gripmenu"));
+    CHECK(h.has("Remove vertex", "##gripmenu"));
+    REQUIRE(h.click("Remove vertex", "##gripmenu"));
+    h.frame(5);
+    h.core().pressEscape();
+    CHECK(verts() == 2);
+}
+
+TEST_CASE("every menu item can be clicked without trouble") {
+    std::vector<std::string> tops;
+    {
+        Harness h(1920, 1080);
+        h.frame(3);
+        for (const auto& it : imgui_items::items())
+            if (it.window.find("MainMenuBar") != std::string::npos && !it.label.empty())
+                tops.push_back(it.label);
+    }
+    REQUIRE(tops.size() >= 5);
+    for (const std::string& top : tops) {
+        CAPTURE(top);
+        // The items of this menu, found with it open.
+        std::vector<std::string> items;
+        {
+            Harness h(1920, 1080);
+            h.frame(3);
+            REQUIRE(h.click(top, "MainMenuBar"));
+            h.frame(3);
+            for (const auto& it : imgui_items::items())
+                if (it.window.find("##Menu") != std::string::npos && !it.label.empty() &&
+                    it.label.rfind("##", 0) != 0)
+                    items.push_back(it.label);
+        }
+        CHECK_FALSE(items.empty());
+        for (const std::string& item : items) {
+            CAPTURE(item);
+            if (item == "Exit")
+                continue;
+            Harness h(1920, 1080);
+            h.core().submitText("CIRCLE");
+            h.core().submitText("0,0");
+            h.core().submitText("10");
+            h.core().selectAll();
+            h.frame(3);
+            REQUIRE(h.click(top, "MainMenuBar"));
+            h.frame(3);
+            if (!h.has(item, "##Menu"))
+                continue;
+            h.click(item, "##Menu");
+            h.frame(3);
+            h.key(ImGuiKey_Escape);
+            h.frame(2);
+            h.core().pressEscape();
+            h.key(ImGuiKey_Escape);
+            h.frame(2);
+        }
+    }
+}
