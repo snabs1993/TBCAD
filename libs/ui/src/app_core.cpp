@@ -1968,13 +1968,32 @@ void AppCore::setSelection(std::vector<EntityId> ids) {
 }
 
 void AppCore::selectAll() {
+    // Model space lists each object once and isSelectable() implies visible, so the checks of
+    // setSelection() would only repeat this loop.
+    // Neighbours usually share layer and level, so the last answer is reused.
+    const Document& doc = session_->doc;
+    const std::vector<EntityId> ids = doc.modelSpace();
     std::vector<EntityId> all;
-    for (EntityId id : session_->doc.modelSpace()) {
-        const Entity* e = session_->doc.find(id);
-        if (e && isSelectable(session_->doc, *e))
+    all.reserve(ids.size());
+    LayerId lastLayer{};
+    LevelId lastLevel{};
+    bool lastOk = false, haveLast = false;
+    for (EntityId id : ids) {
+        const Entity* e = doc.find(id);
+        if (!e || !e->common.visible)
+            continue;
+        if (!haveLast || e->common.layer != lastLayer || e->common.level != lastLevel) {
+            const EffectiveLayer layer = doc.effective(e->common);
+            lastOk = layer.visible() && !layer.locked;
+            lastLayer = e->common.layer;
+            lastLevel = e->common.level;
+            haveLast = true;
+        }
+        if (lastOk)
             all.push_back(id);
     }
-    setSelection(std::move(all));
+    selection_ = std::move(all);
+    scene_.setSelected(selection_);
 }
 
 void AppCore::pruneSelection() {
