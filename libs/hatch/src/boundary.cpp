@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "tbcad/geom/geom.h"
+#include "tbcad/hatch/fill.h"
 
 namespace tbcad::hatch {
 
@@ -653,6 +654,127 @@ Result<Boundary> findBoundary(const std::vector<Candidate>& candidates, Vec2 pic
 Result<std::vector<Boundary>> boundaryFromObjects(const std::vector<Candidate>& objects,
                                                   const BoundaryOptions& options) {
     return BoundaryFinder(objects, options).outermost();
+}
+
+NearBoundary findBoundaryNear(const WindowCandidates& candidatesIn, const BBox2& full, Vec2 pick,
+                              const BoundaryOptions& options) {
+    const double span = std::max({full.width(), full.height(), 1.0});
+    double half = span / 64;
+    for (;;) {
+        BBox2 window{{pick.x - half, pick.y - half}, {pick.x + half, pick.y + half}};
+        const bool last =
+            full.empty() || (window.min.x <= full.min.x && window.min.y <= full.min.y &&
+                             window.max.x >= full.max.x && window.max.y >= full.max.y);
+        if (last)
+            window = full.empty() ? window : full;
+        else {
+            window.min = {std::max(window.min.x, full.min.x), std::max(window.min.y, full.min.y)};
+            window.max = {std::min(window.max.x, full.max.x), std::min(window.max.y, full.max.y)};
+        }
+        auto finder = std::make_shared<BoundaryFinder>(candidatesIn(window), options);
+        auto r = finder->find(pick);
+        if (last)
+            return {std::move(r), std::move(finder)};
+        if (r.ok()) {
+            BBox2 box;
+            for (const geom::CurveRef& c : loopCurves(r.value().loops[0]))
+                box.merge(c.bounds());
+            const BBox2 inner = window.inflated(-(options.gapTolerance + 1e-3));
+            if (inner.containsBox(box))
+                return {std::move(r), std::move(finder)};
+        } else if (finder->ok() == false && finder->error().code == ErrorCode::OutOfRange) {
+            // Too many edges even in a small window: a larger one cannot do better.
+            return {std::move(r), std::move(finder)};
+        }
+        half *= 2;
+    }
+}
+
+}  // namespace tbcad::hatch
+
+namespace tbcad::hatch {
+
+namespace {
+
+bool inRing(Vec2 p, const std::vector<Vec2>& ring) {
+    bool in = false;
+    for (std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+        const Vec2 a = ring[i], b = ring[j];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    }
+    return in;
+}
+
+double distToRing(Vec2 p, const std::vector<Vec2>& ring) {
+    double best = 1e300;
+    for (std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+        const Vec2 a = ring[j], d = ring[i] - a;
+        const double len2 = d.x * d.x + d.y * d.y;
+        double t = len2 > 0 ? ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / len2 : 0;
+        t = std::clamp(t, 0.0, 1.0);
+        const Vec2 q = a + d * t;
+        best = std::min(best, std::hypot(p.x - q.x, p.y - q.y));
+    }
+    return best;
+}
+
+}  // namespace
+
+void applyIslandStyle(Boundary& b, IslandStyle style,
+                      const std::function<const Entity*(EntityId)>& entityOf) {
+    if (style == IslandStyle::Normal || b.loops.size() < 2)
+        return;
+    const double tol = 1e-3;
+    std::vector<std::vector<Vec2>> rings;
+    for (const HatchLoop& l : b.loops) {
+        HatchData d;
+        d.loops.push_back(l);
+        auto r = loopRings(d, tol);
+        rings.push_back(r.empty() ? std::vector<Vec2>{} : std::move(r[0]));
+    }
+    std::vector<bool> keep(b.loops.size(), true);
+    for (std::size_t i = 1; i < b.loops.size(); ++i) {
+        if (rings[i].empty() || rings[i].size() < 3)
+            continue;
+        if (style == IslandStyle::Ignore) {
+            keep[i] = false;
+            continue;
+        }
+        // Outer: a loop inside another island (depth 2 or more) is dropped.
+        int depth = 0;
+        for (std::size_t j = 0; j < b.loops.size(); ++j)
+            if (j != i && rings[j].size() >= 3 && inRing(rings[i][0], rings[j]))
+                ++depth;
+        keep[i] = depth <= 1;
+    }
+    std::vector<EntityId> keptSources;
+    for (EntityId id : b.sources) {
+        const Entity* e = entityOf ? entityOf(id) : nullptr;
+        if (!e) {
+            keptSources.push_back(id);
+            continue;
+        }
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(*e, cs);
+        bool onKept = cs.empty(), onDropped = false;
+        for (const geom::CurveRef& c : cs) {
+            const Vec2 q = c.pointAt(c.t0() + 0.4 * (c.isLine() ? 1.0 : c.sweep()));
+            for (std::size_t i = 0; i < rings.size(); ++i) {
+                if (rings[i].size() < 3 || distToRing(q, rings[i]) > 10 * tol)
+                    continue;
+                (keep[i] ? onKept : onDropped) = true;
+            }
+        }
+        if (onKept || !onDropped)
+            keptSources.push_back(id);
+    }
+    std::vector<HatchLoop> loops;
+    for (std::size_t i = 0; i < b.loops.size(); ++i)
+        if (keep[i])
+            loops.push_back(std::move(b.loops[i]));
+    b.loops = std::move(loops);
+    b.sources = std::move(keptSources);
 }
 
 }  // namespace tbcad::hatch

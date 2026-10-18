@@ -35,15 +35,23 @@ bool hasCurves(const Entity& e) {
 // when the host has no viewport). Hidden objects and objects on layers that are off or frozen do
 // not count. The host's spatial index answers the window query when it has one; otherwise the
 // document is scanned.
-std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& host) {
+// The window the search may use: the view, or the extents of the drawing without a viewport.
+BBox2 searchWindow(const Document& doc, const cmd::IHost& host) {
     const cmd::ViewState view = host.view();
-    bool all = !(view.sizePx.x > 0 && view.sizePx.y > 0 && view.scale > 0);
     BBox2 window;
-    if (!all) {
+    if (view.sizePx.x > 0 && view.sizePx.y > 0 && view.scale > 0) {
         Vec2 half{view.sizePx.x * view.scale / 2, view.sizePx.y * view.scale / 2};
         window.expand(view.center - half);
         window.expand(view.center + half);
+    } else {
+        doc.forEachEntity([&](const Entity& e) { window.merge(geom::bounds(e)); });
     }
+    return window;
+}
+
+// Entities that can bound a hatch and meet `window`.
+std::vector<Candidate> windowCandidates(const Document& doc, const cmd::IHost& host,
+                                        const BBox2& window) {
     bool hasBlocks = !doc.blocks().empty();
     std::vector<Candidate> out;
     auto consider = [&](const Entity& e, bool checkWindow) {
@@ -57,16 +65,18 @@ std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& hos
             return;
         out.push_back({e.common.id, &e});
     };
-    if (!all) {
-        if (auto ids = host.entitiesInWindow(window)) {
-            for (EntityId id : *ids)
-                if (const Entity* e = doc.find(id))
-                    consider(*e, false);
-            return out;
-        }
+    if (auto ids = host.entitiesInWindow(window)) {
+        for (EntityId id : *ids)
+            if (const Entity* e = doc.find(id))
+                consider(*e, false);
+        return out;
     }
-    doc.forEachEntity([&](const Entity& e) { consider(e, !all); });
+    doc.forEachEntity([&](const Entity& e) { consider(e, true); });
     return out;
+}
+
+std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& host) {
+    return windowCandidates(doc, host, searchWindow(doc, host));
 }
 
 std::vector<Candidate> idCandidates(const Document& doc, const std::vector<EntityId>& ids) {
@@ -128,13 +138,34 @@ class HoverPreview {
 public:
     void draw(cmd::CommandContext& ctx, const Params& p, Vec2 cursor, DisplayList& out) {
         refresh(ctx, p);
-        if (!finder_ || !finder_->ok())
-            return;
-        auto b = finder_->find(cursor);
         const cmd::ViewState view = ctx.host().view();
-        if (!b.ok()) {
-            drawOpenEnds(*finder_, cursor, view.scale, out);
-            return;
+        std::shared_ptr<BoundaryFinder> local;
+        Result<Boundary> b = Error{};
+        if (big_) {
+            // Too much in view for one graph: search a window around the cursor instead.
+            const Document& doc = ctx.doc();
+            const cmd::IHost& host = ctx.host();
+            BoundaryOptions bo;
+            bo.gapTolerance = p.gap;
+            NearBoundary nb =
+                findBoundaryNear([&](const BBox2& w) { return windowCandidates(doc, host, w); },
+                                 searchWindow(doc, host), cursor, bo);
+            b = std::move(nb.result);
+            local = std::move(nb.finder);
+            if (!local || !local->ok())
+                return;
+            if (!b.ok()) {
+                drawOpenEnds(*local, cursor, view.scale, out);
+                return;
+            }
+        } else {
+            if (!finder_ || !finder_->ok())
+                return;
+            b = finder_->find(cursor);
+            if (!b.ok()) {
+                drawOpenEnds(*finder_, cursor, view.scale, out);
+                return;
+            }
         }
         const Rgba line{255, 200, 40, 255};
         HatchData d;
@@ -169,8 +200,8 @@ private:
     void refresh(cmd::CommandContext& ctx, const Params& p) {
         const Document& doc = ctx.doc();
         const cmd::ViewState view = ctx.host().view();
-        if (finder_ && revision_ == doc.revision() && gap_ == p.gap && center_ == view.center &&
-            scale_ == view.scale && size_ == view.sizePx)
+        if ((finder_ || big_) && revision_ == doc.revision() && gap_ == p.gap &&
+            center_ == view.center && scale_ == view.scale && size_ == view.sizePx)
             return;
         revision_ = doc.revision();
         gap_ = p.gap;
@@ -179,10 +210,13 @@ private:
         size_ = view.sizePx;
         BoundaryOptions bo;
         bo.gapTolerance = p.gap;
-        finder_ = std::make_unique<BoundaryFinder>(viewCandidates(doc, ctx.host()), bo);
+        std::vector<Candidate> cands = viewCandidates(doc, ctx.host());
+        big_ = cands.size() > 4000;
+        finder_ = big_ ? nullptr : std::make_unique<BoundaryFinder>(std::move(cands), bo);
     }
 
     std::unique_ptr<BoundaryFinder> finder_;
+    bool big_ = false;
     std::uint64_t revision_ = 0;
     double gap_ = 0;
     Vec2 center_{};
@@ -213,11 +247,12 @@ public:
         HoverPreview hover;
         for (;;) {
             cmd::PointOptions opt;
-            opt.keywords = gradient_
-                               ? std::vector<std::string>{"Objects", "Kind", "First", "Second",
-                                                          "Angle",   "Gap",  "Link",  "Undo"}
-                               : std::vector<std::string>{"Objects", "Pattern", "Scale", "Angle",
-                                                          "Base",    "Gap",     "Link",  "Undo"};
+            opt.keywords =
+                gradient_
+                    ? std::vector<std::string>{"Objects", "Kind",   "First", "Second", "Angle",
+                                               "Gap",     "Island", "Link",  "Undo"}
+                    : std::vector<std::string>{"Objects", "Pattern", "Scale", "Angle", "Base",
+                                               "Gap",     "Island",  "Link",  "Undo"};
             opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
             auto r = co_await ctx.getPoint("Pick internal point (" + what + ")", opt);
@@ -276,6 +311,20 @@ public:
                     auto g = co_await ctx.getReal("Gap tolerance (0 = off)", ro);
                     if (g.ok())
                         p.gap = g.value;
+                } else if (r.keyword == "Island") {
+                    cmd::KeywordOptions ko;
+                    ko.keywords = {"Normal", "Outer", "Ignore"};
+                    ko.defaultKeyword = p.island == hatch::IslandStyle::Outer    ? "Outer"
+                                        : p.island == hatch::IslandStyle::Ignore ? "Ignore"
+                                                                                 : "Normal";
+                    auto k = co_await ctx.getKeyword(
+                        "Island detection [Normal/Outer/Ignore] <" +
+                            std::string(ko.defaultKeyword.value_or("Normal")) + ">",
+                        std::move(ko));
+                    if (k.ok())
+                        p.island = k.keyword == "Outer"    ? hatch::IslandStyle::Outer
+                                   : k.keyword == "Ignore" ? hatch::IslandStyle::Ignore
+                                                           : hatch::IslandStyle::Normal;
                 } else if (r.keyword == "Link") {
                     p.associative = !p.associative;
                     ctx.message(p.associative ? "Hatches follow their boundary objects."
@@ -347,7 +396,9 @@ private:
         return decade * (m >= 5 ? 5 : m >= 2 ? 2 : 1);
     }
 
-    std::size_t add(cmd::CommandContext& ctx, const Params& p, const Boundary& b) const {
+    std::size_t add(cmd::CommandContext& ctx, const Params& p, Boundary b) const {
+        const Document& sdoc = ctx.doc();
+        applyIslandStyle(b, p.island, [&](EntityId id) { return sdoc.find(id); });
         const Pattern* pattern = PatternRegistry::find(gradient_ ? "SOLID" : p.pattern);
         if (!pattern)
             return 0;
@@ -374,9 +425,13 @@ private:
     }
 
     std::size_t hatchPoint(cmd::CommandContext& ctx, const Params& p, Vec2 at) {
-        std::vector<Candidate> cands = viewCandidates(ctx.doc(), ctx.host());
-        BoundaryFinder finder(cands, options(p));
-        auto b = finder.find(at);
+        const Document& doc = ctx.doc();
+        const cmd::IHost& host = ctx.host();
+        NearBoundary near =
+            findBoundaryNear([&](const BBox2& w) { return windowCandidates(doc, host, w); },
+                             searchWindow(doc, host), at, options(p));
+        auto& b = near.result;
+        const BoundaryFinder& finder = *near.finder;
         if (!b.ok()) {
             ctx.message(b.error().message);
             if (finder.ok()) {
