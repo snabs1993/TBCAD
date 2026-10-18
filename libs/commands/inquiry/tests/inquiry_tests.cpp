@@ -510,3 +510,34 @@ TEST_CASE("MEASUREGEOM Quick measures what is under the click and never edits th
     host.feed({cmd::ScriptItem::esc()});
     CHECK_FALSE(host.undoStack().canUndo());
 }
+
+TEST_CASE("LIST of an insert names its block, scale and xref source") {
+    Fixture f;
+    BlockId plain, xr;
+    {
+        Transaction tx = f.doc.begin("blocks");
+        plain = tx.addBlock(BlockDef{.name = "Chair"}).value();
+        BlockDef x;
+        x.name = "Site";
+        x.xrefPath = "site.dxf";
+        x.xrefOverlay = true;
+        xr = tx.addBlock(std::move(x)).value();
+        tx.commit();
+    }
+    InsertData a;
+    a.block = plain;
+    a.position = {500123.456, 4500987.654};
+    a.scale = {2, 2};
+    InsertData b;
+    b.block = xr;
+    EntityId ia = f.add(Entity{{}, a});
+    EntityId ib = f.add(Entity{{}, b});
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "3");
+    host.run("LIST", {cmd::ScriptItem::pick(ia), ""});
+    CHECK(host.logContains("Block: Chair"));
+    CHECK(host.logContains("500123.456"));
+    CHECK(host.logContains("Scale X = 2.0000"));
+    host.run("LIST", {cmd::ScriptItem::pick(ib), ""});
+    CHECK(host.logContains("external reference site.dxf, overlay"));
+}

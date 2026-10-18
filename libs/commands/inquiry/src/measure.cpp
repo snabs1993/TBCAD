@@ -214,7 +214,16 @@ std::vector<std::string> describeEntity(const Document& doc, const Entity& e, Pr
             out.push_back(std::string("  ") + (d.solid ? "Solid" : "Pattern " + d.pattern) + ", " +
                           std::to_string(d.loops.size()) + " loops");
         } else if constexpr (std::is_same_v<T, InsertData>) {
+            const BlockDef* def = doc.block(d.block);
+            out.push_back("  Block: " + (def ? def->name : std::string("?")) +
+                          (def && !def->xrefPath.empty()
+                               ? std::string("  (external reference ") + def->xrefPath +
+                                     (def->xrefOverlay ? ", overlay)" : ")")
+                               : std::string()));
             out.push_back("  At " + pt(doc, d.position, prec) + ", rotation = " + ang(d.rotation));
+            out.push_back("  Scale X = " + fixed(d.scale.x, 4) + ", Y = " + fixed(d.scale.y, 4));
+            if (def)
+                out.push_back("  Contains " + std::to_string(def->entities.size()) + " objects");
         } else if constexpr (std::is_same_v<T, DimensionData>) {
             out.push_back("  Measurement = " + fixed(d.measurement, prec));
         } else if constexpr (std::is_same_v<T, LeaderData>) {
