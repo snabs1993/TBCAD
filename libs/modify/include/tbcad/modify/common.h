@@ -84,4 +84,9 @@ inline bool samePoint(Vec2 a, Vec2 b, double tol = 1e-6) {
     return distance(a, b) <= tol;
 }
 
+// The spline run backwards (same curve, opposite direction).
+SplineData reversedSpline(SplineData d);
+// B's control polygon continues A's (both clamped and open): one spline with a C0 joint.
+SplineData chainSplines(const SplineData& a, const SplineData& b);
+
 }  // namespace tbcad::modify

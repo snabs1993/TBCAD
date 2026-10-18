@@ -56,8 +56,13 @@ bool isUsableEdge(const Document& doc, const Entity& e) {
 }
 
 bool isUsableBoundary(const Document& doc, const Entity& e) {
-    return (modify::isCurveEntity(e) || kind(e) == EntityKind::Insert) &&
+    return (modify::isCurveEntity(e) || kind(e) == EntityKind::Ray ||
+            kind(e) == EntityKind::Insert) &&
            layerAllows(doc, e, false);
+}
+
+bool isTrimTarget(const Document& doc, const Entity& e) {
+    return (modify::isCurveEntity(e) || kind(e) == EntityKind::Ray) && layerAllows(doc, e, true);
 }
 
 Result<void> replaceEntity(Transaction& tx, EntityId id, const Entity& value) {

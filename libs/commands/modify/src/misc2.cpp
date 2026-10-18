@@ -312,7 +312,9 @@ class SplineEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SPLINEDIT"; }
     std::vector<std::string> defaultAliases() const override { return {"SPE"}; }
-    std::string_view description() const override { return "Edit the fit points of a spline"; }
+    std::string_view description() const override {
+        return "Edit the fit points or control vertices of a spline";
+    }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using modify::SplineFitOp;
@@ -327,46 +329,97 @@ public:
             co_return;
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Add", "Delete", "Move", "Close", "Open", "Reverse", "Exit"};
+            ko.keywords = {"Add",  "Delete", "Move",     "Weight",  "Close",
+                           "Open", "Purge",  "Polyline", "Reverse", "Exit"};
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                "Enter an option [Add/Delete/Move/Close/Open/Reverse/Exit] <Exit>", ko);
+                "Enter an option [Add/Delete/Move/Weight/Close/Open/Purge/Polyline/Reverse/Exit] "
+                "<Exit>",
+                ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
+            const Entity* e0 = ctx.doc().find(pick.id);
+            if (!e0)
+                co_return;
+            const auto* sd = entityAs<SplineData>(*e0);
+            if (!sd) {
+                ctx.message("The object is no longer a spline.");
+                co_return;
+            }
+            // Splines with fit points are edited by those points; the others by their vertices.
+            const bool byFit = sd->fit.size() >= 2;
             Result<modify::EntityEdit> edit = Error{ErrorCode::InvalidArgument, "Unsupported"};
-            if (k.keyword == "Close" || k.keyword == "Open" || k.keyword == "Reverse") {
-                const Entity* e = ctx.doc().find(pick.id);
-                if (!e)
-                    co_return;
-                edit = k.keyword == "Reverse"
-                           ? modify::reverseEntity(*e)
-                           : modify::editSplineFit(
-                                 *e, k.keyword == "Close" ? SplineFitOp::Close : SplineFitOp::Open);
+            bool endAfter = false;
+            if (k.keyword == "Reverse") {
+                edit = modify::reverseEntity(*e0);
+            } else if (k.keyword == "Purge") {
+                edit = modify::editSplineCv(*e0, modify::SplineCvOp::Purge);
+            } else if (k.keyword == "Polyline") {
+                cmd::RealOptions ro;
+                ro.defaultValue = 0.1;
+                ro.min = 1e-6;
+                auto tolerance =
+                    co_await ctx.getReal("Specify the largest gap to the curve <0.1>", ro);
+                if (!tolerance.ok())
+                    continue;
+                edit = modify::editSplineCv(*e0, modify::SplineCvOp::ToPolyline, {}, {},
+                                            tolerance.value);
+                endAfter = true;
+            } else if (k.keyword == "Close" || k.keyword == "Open") {
+                edit = byFit ? modify::editSplineFit(*e0, k.keyword == "Close" ? SplineFitOp::Close
+                                                                               : SplineFitOp::Open)
+                             : modify::editSplineCv(*e0, k.keyword == "Close"
+                                                             ? modify::SplineCvOp::Close
+                                                             : modify::SplineCvOp::Open);
             } else {
                 auto a = co_await ctx.getPoint(k.keyword == "Add"
                                                    ? "Specify a point near the curve"
-                                                   : "Specify a point near the fit point");
+                                                   : (byFit && k.keyword != "Weight"
+                                                          ? "Specify a point near the fit point"
+                                                          : "Specify a point near the vertex"));
                 if (!a.ok())
                     continue;
                 Vec2 to{};
+                double weight = 1;
                 if (k.keyword == "Move") {
                     auto b = co_await ctx.getPoint("Specify the new location");
                     if (!b.ok())
                         continue;
                     to = b.point;
+                } else if (k.keyword == "Weight") {
+                    cmd::RealOptions ro;
+                    ro.defaultValue = 1.0;
+                    ro.min = 1e-6;
+                    auto w = co_await ctx.getReal("Enter the new weight <1>", ro);
+                    if (!w.ok())
+                        continue;
+                    weight = w.value;
                 }
-                const Entity* e = ctx.doc().find(pick.id);
-                if (!e)
+                e0 = ctx.doc().find(pick.id);
+                if (!e0)
                     co_return;
-                SplineFitOp op = k.keyword == "Add"      ? SplineFitOp::Add
-                                 : k.keyword == "Delete" ? SplineFitOp::Delete
-                                                         : SplineFitOp::Move;
-                edit = modify::editSplineFit(*e, op, a.point, to);
+                if (k.keyword == "Weight") {
+                    edit =
+                        modify::editSplineCv(*e0, modify::SplineCvOp::Weight, a.point, to, weight);
+                } else if (byFit) {
+                    SplineFitOp op = k.keyword == "Add"      ? SplineFitOp::Add
+                                     : k.keyword == "Delete" ? SplineFitOp::Delete
+                                                             : SplineFitOp::Move;
+                    edit = modify::editSplineFit(*e0, op, a.point, to);
+                } else {
+                    modify::SplineCvOp op = k.keyword == "Add"      ? modify::SplineCvOp::Add
+                                            : k.keyword == "Delete" ? modify::SplineCvOp::Delete
+                                                                    : modify::SplineCvOp::Move;
+                    edit = modify::editSplineCv(*e0, op, a.point, to);
+                }
             }
-            if (!edit)
+            if (!edit) {
                 ctx.message(edit.error().message);
-            else
+            } else {
                 (void)applyEdit(ctx.tx(), pick.id, std::move(edit.value()));
+                if (endAfter)
+                    co_return;
+            }
         }
     }
 };

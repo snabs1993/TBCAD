@@ -71,6 +71,10 @@ std::vector<Vec2> gripPoints(const Entity& e) {
         case EntityKind::Spline: {
             const auto& d = *entityAs<SplineData>(e);
             g = d.fit.empty() ? d.control : d.fit;
+            // A periodic spline repeats its first `degree` vertices at the end: one grip each.
+            if (d.fit.empty() && d.periodic &&
+                d.control.size() > static_cast<std::size_t>(d.degree))
+                g.resize(d.control.size() - static_cast<std::size_t>(d.degree));
             break;
         }
         case EntityKind::Text:
@@ -259,6 +263,14 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             auto& pts = d.fit.empty() ? d.control : d.fit;
             if (index >= static_cast<int>(pts.size()))
                 return badGrip();
+            if (d.fit.empty() && d.periodic &&
+                d.control.size() > static_cast<std::size_t>(d.degree)) {
+                const std::size_t shown = d.control.size() - static_cast<std::size_t>(d.degree);
+                if (static_cast<std::size_t>(index) >= shown)
+                    return badGrip();
+                if (static_cast<std::size_t>(index) < static_cast<std::size_t>(d.degree))
+                    pts[shown + static_cast<std::size_t>(index)] = to;
+            }
             pts[static_cast<std::size_t>(index)] = to;
             if (!d.fit.empty()) {
                 InterpolateOptions o;

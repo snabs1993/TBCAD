@@ -25,6 +25,8 @@ bool isEditable(const Document& doc, const Entity& e);
 bool isUsableEdge(const Document& doc, const Entity& e);
 // Like isUsableEdge, and block references too: their curves cut and bound for TRIM and EXTEND.
 bool isUsableBoundary(const Document& doc, const Entity& e);
+// Curves plus rays and construction lines: what OFFSET and TRIM can work on.
+bool isTrimTarget(const Document& doc, const Entity& e);
 // Any entity kind on a layer that is on, thawed and unlocked (for commands that do not need curve
 // geometry: ALIGN, MATCHPROP, SETBYLAYER, SCALETEXT).
 bool isModifiable(const Document& doc, const Entity& e);

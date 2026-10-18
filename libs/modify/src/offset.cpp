@@ -390,6 +390,14 @@ Result<std::vector<Entity>> offsetEntity(const Entity& e, double d, const Offset
         }
         case EntityKind::Polyline:
             return offsetPolyline(e, *entityAs<PolylineData>(e), d, opt);
+        case EntityKind::Ray: {
+            auto r = *entityAs<RayData>(e);
+            if (tol::isZeroLength(r.dir))
+                return err("The line has no direction.");
+            r.origin = r.origin + perp(normalized(r.dir)) * d;
+            out.push_back(withData(e, r));
+            return out;
+        }
         case EntityKind::Ellipse:
         case EntityKind::Spline: {
             std::vector<CurveRef> cs;
