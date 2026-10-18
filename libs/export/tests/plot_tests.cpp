@@ -809,3 +809,36 @@ TEST_CASE("block parts outside the window add no layer, parts of an xref get the
     REQUIRE(sheet.layerNames.size() == 1);
     CHECK(sheet.layerNames[0] == "TB|NEAR");
 }
+
+TEST_CASE(
+    "parts of an insert whose name is also a layer (a bound xref) get the block name prefix") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    {
+        auto tx = doc.begin("bound");
+        Layer own;
+        own.name = "TB";
+        Layer stamp;
+        stamp.name = "Stamp";
+        Layer nested;
+        nested.name = "in$0$Notes";
+        REQUIRE(tx.addLayer(own).ok());
+        const LayerId ls = tx.addLayer(stamp).value();
+        const LayerId ln = tx.addLayer(nested).value();
+        BlockId b = tx.addBlock(BlockDef{.name = "TB", .base = {0, 0}}).value();
+        Entity a = line({0, 0}, {50, 0});
+        a.common.layer = ls;
+        Entity c = line({0, 5}, {50, 5});
+        c.common.layer = ln;
+        REQUIRE(tx.add(a, b));
+        REQUIRE(tx.add(c, b));
+        Entity ins;
+        ins.data = Indirect<InsertData>(InsertData{b, {0, 0}, {1, 1}, 0});
+        REQUIRE(tx.add(ins).ok());
+        tx.commit();
+    }
+    auto sheet = buildSheet(doc, PlotSettings{}).value();
+    REQUIRE(sheet.layerNames.size() == 2);
+    CHECK(sheet.layerNames[0] == "TB|Stamp");
+    CHECK(sheet.layerNames[1] == "TB|in$0$Notes");
+}

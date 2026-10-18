@@ -390,6 +390,12 @@ void dropOutside(std::vector<PlotPrimitive>& prims, std::size_t from, const BBox
         const BBox2 b = boxOf(prims[i]);
         if (!b.empty() && !b.intersects(window))
             continue;
+        // A drawn primitive with nothing to draw is dropped, so it adds no layer either.
+        const bool drawn = std::holds_alternative<PlotPath>(prims[i]) ||
+                           std::holds_alternative<PlotFill>(prims[i]) ||
+                           std::holds_alternative<PlotDots>(prims[i]);
+        if (drawn && b.empty())
+            continue;
         if (out != i)
             prims[out] = std::move(prims[i]);
         ++out;
@@ -477,7 +483,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             // nested ones keep the inner "$0$". A bound one is a plain "xref$0$layer".
             std::string name = layer->name;
             if (xref && !layer->parent && name.find('|') == std::string::npos) {
-                name = xref->name + "|" + name;
+                if (name != xref->name)
+                    name = xref->name + "|" + name;
             } else if (layer->parent) {
                 for (LayerId up = layer->parent; up;) {
                     const Layer* parent = doc.layer(up);
@@ -499,6 +506,20 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         }
         layerNumbers[{li.value, xref}] = n;
         return n;
+    };
+    std::unordered_map<std::string, bool> namedLayers;
+    auto layerNamed = [&](const std::string& name) {
+        auto it = namedLayers.find(name);
+        if (it == namedLayers.end()) {
+            bool found = false;
+            for (const auto& [id, layer] : doc.layers())
+                if (layer.name == name) {
+                    found = true;
+                    break;
+                }
+            it = namedLayers.emplace(name, found).first;
+        }
+        return it->second;
     };
     struct LayerTrace {
         std::size_t uses = 0;
@@ -545,7 +566,11 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
         geom::buildDisplay(doc, *e, ctx, list);
         const InsertData* ins = entityAs<InsertData>(*e);
         const BlockDef* insBlock = ins ? doc.block(ins->block) : nullptr;
-        const BlockDef* xrefBlock = insBlock && !insBlock->xrefPath.empty() ? insBlock : nullptr;
+        // An attached external reference, or one bound into the drawing (its name stays behind as a
+        // layer), names the layers of its parts "block|layer".
+        const BlockDef* xrefBlock =
+            insBlock && (!insBlock->xrefPath.empty() || layerNamed(insBlock->name)) ? insBlock
+                                                                                    : nullptr;
         for (const DisplayItem& it : list.items) {
             // The parts of a block carry their own layer: off, frozen or frozen in this viewport.
             LayerId li{};
