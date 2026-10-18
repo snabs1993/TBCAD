@@ -432,7 +432,8 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
         if (!e.common.layer) {
             const bool wipeout = e.common.wipeout;
             e.common = c;
-            e.common.wipeout = e.common.wipeout || wipeout;
+            if (wipeout)
+                e.common.wipeout = true;
         }
         add(std::move(e), owner, type, r.line);
     }

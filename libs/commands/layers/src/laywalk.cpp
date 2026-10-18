@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -21,6 +22,51 @@ std::string encodeState(const Document& doc) {
         out += std::to_string(id.value) + ":" + (l.on ? "1" : "0") + ":" + (l.frozen ? "1" : "0") +
                ";";
     return out;
+}
+
+// The loops below use structured bindings, which MSVC miscompiles inside coroutines, so they live
+// in plain functions.
+void showOnly(CommandContext& ctx, const std::vector<LayerId>& ids) {
+    const Document& doc = ctx.doc();
+    const std::map<LayerId, Layer> rows = doc.layers();  // a copy: the edits below touch the rows
+    // Keep the picked layers, their parents and their sub-layers; hide the rest. The
+    // changes are made from the committed state, so each layer is set directly.
+    std::set<std::uint32_t> keep;
+    for (LayerId id : ids) {
+        for (LayerId a = id; a; a = doc.layer(a) ? doc.layer(a)->parent : LayerId{})
+            keep.insert(a.value);
+        for (const auto& [lid, l] : rows)
+            for (LayerId a = lid; a; a = doc.layer(a) ? doc.layer(a)->parent : LayerId{})
+                if (a == id)
+                    keep.insert(lid.value);
+    }
+    for (const auto& [id, l] : rows) {
+        const bool show = ids.empty() || keep.count(id.value) > 0;
+        if (l.on != show)
+            (void)setOn(doc, ctx.tx(), id, show);
+        if (show && l.frozen)
+            (void)setFrozen(doc, ctx.tx(), id, false);
+    }
+}
+
+void restoreState(CommandContext& ctx) {
+    const Document& doc = ctx.doc();
+    const std::string saved = ctx.host().setting(kStateKey).value_or("");
+    std::istringstream in(saved);
+    std::string item;
+    while (std::getline(in, item, ';')) {
+        unsigned id = 0, on = 1, frozen = 0;
+        if (std::sscanf(item.c_str(), "%u:%u:%u", &id, &on, &frozen) != 3)
+            continue;
+        const LayerId lid{id};
+        const Layer* l = doc.layer(lid);
+        if (!l)
+            continue;
+        if (l->on != (on != 0))
+            (void)setOn(doc, ctx.tx(), lid, on != 0);
+        if (l->frozen != (frozen != 0))
+            (void)setFrozen(doc, ctx.tx(), lid, frozen != 0);
+    }
 }
 
 class LayWalkCommand final : public cmd::Command {
@@ -59,41 +105,9 @@ public:
             }
             if (ctx.host().setting(kStateKey).value_or("").empty())
                 ctx.host().setSetting(kStateKey, encodeState(doc));
-            // Keep the picked layers, their parents and their sub-layers; hide the rest. The
-            // changes are made from the committed state, so each layer is set directly.
-            std::set<std::uint32_t> keep;
-            for (LayerId id : ids.value()) {
-                for (LayerId a = id; a; a = doc.layer(a) ? doc.layer(a)->parent : LayerId{})
-                    keep.insert(a.value);
-                for (const auto& [lid, l] : doc.layers())
-                    for (LayerId a = lid; a; a = doc.layer(a) ? doc.layer(a)->parent : LayerId{})
-                        if (a == id)
-                            keep.insert(lid.value);
-            }
-            for (const auto& [id, l] : doc.layers()) {
-                const bool show = ids.value().empty() || keep.count(id.value) > 0;
-                if (l.on != show)
-                    (void)setOn(doc, ctx.tx(), id, show);
-                if (show && l.frozen)
-                    (void)setFrozen(doc, ctx.tx(), id, false);
-            }
+            showOnly(ctx, ids.value());
         } else if (action.keyword == "Restore") {
-            const std::string saved = ctx.host().setting(kStateKey).value_or("");
-            std::istringstream in(saved);
-            std::string item;
-            while (std::getline(in, item, ';')) {
-                unsigned id = 0, on = 1, frozen = 0;
-                if (std::sscanf(item.c_str(), "%u:%u:%u", &id, &on, &frozen) != 3)
-                    continue;
-                const LayerId lid{id};
-                const Layer* l = doc.layer(lid);
-                if (!l)
-                    continue;
-                if (l->on != (on != 0))
-                    (void)setOn(doc, ctx.tx(), lid, on != 0);
-                if (l->frozen != (frozen != 0))
-                    (void)setFrozen(doc, ctx.tx(), lid, frozen != 0);
-            }
+            restoreState(ctx);
             ctx.host().setSetting(kStateKey, "");
         } else {
             ctx.host().setSetting(kStateKey, "");

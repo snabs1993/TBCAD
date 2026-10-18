@@ -3,6 +3,7 @@ tbcad_add_library(sysvars
     src/sysvars.cpp
     src/rename.cpp
     src/setvar.cpp
+    src/addselected.cpp
   DEPENDS tbcad::cmd tbcad::core tbcad::layers)
 
 tbcad_add_tests(sysvars

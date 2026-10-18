@@ -94,3 +94,28 @@ TEST_CASE("SETVAR reads and changes drawing variables by name") {
     f.host.run("SETVAR", {"?"});
     CHECK(f.host.logContains("CELWEIGHT"));
 }
+
+TEST_CASE("ADDSELECTED copies the layer and properties of an object to the current ones") {
+    Fixture f;
+    LayerId walls{};
+    EntityId line;
+    {
+        auto tx = f.doc.begin("setup");
+        Layer l;
+        l.name = "Walls";
+        walls = tx.addLayer(std::move(l)).value();
+        Entity e;
+        e.data = LineData{{0, 0}, {10, 0}};
+        e.common.layer = walls;
+        e.common.color = Color::index(3);
+        e.common.lineweight = LineWeight::mm(0.5);
+        line = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    f.host.run("ADDSELECTED", {cmd::ScriptItem::pick(line, {5, 0})});
+    CHECK(f.doc.header().currentLayer == walls);
+    CHECK(f.doc.header().currentColor == Color::index(3));
+    CHECK(f.doc.header().currentLineweight == LineWeight::mm(0.5));
+    CHECK(f.host.undo());
+    CHECK(f.doc.header().currentLayer != walls);
+}

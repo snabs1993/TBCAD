@@ -21,3 +21,9 @@ current values. Every change is one undo step, and the command line shows the va
 **BREAKLINE** (alias BRL, in the draw2 module) draws a line with a break symbol: pick the two ends, then
 where the symbol goes (Enter = the middle). The symbol is a Z shaped zigzag as high as it is wide; the
 keyword **Size** at the first prompt sets its width (remembered, default 10). The result is one polyline.
+
+# ADDSELECTED
+
+**ADDSELECTED** picks an object and makes its layer, level, colour, linetype, lineweight and transparency
+the ones new objects get. Start the drawing command afterwards (commands cannot start each other in this
+version). One undo step.
