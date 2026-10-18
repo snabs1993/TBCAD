@@ -243,9 +243,24 @@ bool segmentCross(Vec2 p, Vec2 p2, Vec2 q, Vec2 q2, double& fa, double& fb) {
     return fa >= -1e-9 && fa <= 1 + 1e-9 && fb >= -1e-9 && fb <= 1 + 1e-9;
 }
 
-std::vector<CurveRef> nearestPieces(const Entity& e, Vec2 pick, std::size_t keep) {
+double totalLength(const Entity& e) {
+    std::vector<CurveRef> cs;
+    geom::curvesOf(e, cs);
+    double sum = 0;
+    for (const CurveRef& c : cs)
+        sum += c.length();
+    return sum;
+}
+
+// `reach` > 0 lets a straight line run on in both directions, for corners that lie beyond its ends.
+std::vector<CurveRef> nearestPieces(const Entity& e, Vec2 pick, std::size_t keep,
+                                    double reach = 0) {
     std::vector<CurveRef> all;
     geom::curvesOf(e, all);
+    if (reach > 0 && all.size() == 1 && all[0].isLine()) {
+        const Vec2 d = normalized(all[0].lineB() - all[0].lineA());
+        all[0] = CurveRef::line(all[0].lineA() - d * reach, all[0].lineB() + d * reach);
+    }
     std::sort(all.begin(), all.end(), [&](const CurveRef& x, const CurveRef& y) {
         return x.distanceTo(pick) < y.distanceTo(pick);
     });
@@ -328,6 +343,15 @@ void filletHits(const CurveRef& A, const CurveRef& B, double R, Vec2 pickA, Vec2
 
 // The part of `e` that holds `pick`, cut at T. Closed objects and cuts at an end leave it as it is.
 std::optional<Entity> keepPartAt(const Entity& e, Vec2 T, Vec2 pick) {
+    if (const auto* l = entityAs<LineData>(e)) {
+        // A line that stops short of the tangent point grows to it.
+        const Vec2 d = l->b - l->a;
+        const double u = dot(T - l->a, d) / std::max(lengthSquared(d), 1e-300);
+        if (u > 1 + 1e-9)
+            return withData(e, LineData{l->a, T});
+        if (u < -1e-9)
+            return withData(e, LineData{T, l->b});
+    }
     auto r = breakAtPoint(e, T);
     if (!r || !r.value().modified || r.value().added.empty())
         return std::nullopt;
@@ -341,18 +365,24 @@ Result<PairEdit> filletCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2
     const double R = std::max(opt.radius, 0.0);
     std::vector<Hit> hits;
     std::vector<Hit> sharp;
-    for (const CurveRef& A : nearestPieces(a, pickA, 3)) {
-        for (const CurveRef& B : nearestPieces(b, pickB, 3)) {
-            if (R > tol::kLinear) {
-                filletHits(A, B, R, pickA, pickB, hits);
-            } else {
-                std::vector<geom::Intersection> xs;
-                geom::intersect(A, B, xs);
-                for (const auto& x : xs) {
-                    Hit h;
-                    h.pa = h.pb = h.center = x.p;
-                    h.score = distance(x.p, pickA) + distance(x.p, pickB);
-                    hits.push_back(h);
+    for (int pass = 0; pass < 2 && hits.empty(); ++pass) {
+        // Second pass: straight lines run on past their ends.
+        const double reach =
+            pass == 0 ? 0.0
+                      : 10.0 * (1.0 + distance(pickA, pickB) + R + totalLength(a) + totalLength(b));
+        for (const CurveRef& A : nearestPieces(a, pickA, 3, reach)) {
+            for (const CurveRef& B : nearestPieces(b, pickB, 3, reach)) {
+                if (R > tol::kLinear) {
+                    filletHits(A, B, R, pickA, pickB, hits);
+                } else {
+                    std::vector<geom::Intersection> xs;
+                    geom::intersect(A, B, xs);
+                    for (const auto& x : xs) {
+                        Hit h;
+                        h.pa = h.pb = h.center = x.p;
+                        h.score = distance(x.p, pickA) + distance(x.p, pickB);
+                        hits.push_back(h);
+                    }
                 }
             }
         }
