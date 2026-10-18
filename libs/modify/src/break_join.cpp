@@ -183,7 +183,7 @@ struct Item {
     Vec2 tail() const { return segs.back().p1; }
 };
 
-bool mergeLines(LineItem& A, const LineItem& B, double tolerance) {
+bool mergeLines(LineItem& A, const LineItem& B, double tolerance, bool bridgeGaps) {
     Vec2 d = A.b - A.a;
     double len = length(d);
     if (len <= 0)
@@ -194,7 +194,7 @@ bool mergeLines(LineItem& A, const LineItem& B, double tolerance) {
         return false;
     double tb0 = dot(B.a - A.a, dir), tb1 = dot(B.b - A.a, dir);
     double lo = std::min(tb0, tb1), hi = std::max(tb0, tb1);
-    if (lo > len + tolerance || hi < -tolerance)
+    if (!bridgeGaps && (lo > len + tolerance || hi < -tolerance))
         return false;
     double nlo = std::min(0.0, lo), nhi = std::max(len, hi);
     A.b = A.a + dir * nhi;
@@ -204,7 +204,7 @@ bool mergeLines(LineItem& A, const LineItem& B, double tolerance) {
 }
 
 // Merges B into A when they lie on one circle and overlap or touch.
-bool mergeArcs(ArcItem& A, const ArcItem& B, double tolerance) {
+bool mergeArcs(ArcItem& A, const ArcItem& B, double tolerance, bool bridgeGaps) {
     if (distance(A.c, B.c) > tolerance || std::abs(A.r - B.r) > tolerance)
         return false;
     const double slack = tolerance / std::max(A.r, 1e-12);
@@ -220,6 +220,17 @@ bool mergeArcs(ArcItem& A, const ArcItem& B, double tolerance) {
         double hi = std::max(B.sweep, oA + A.sweep);
         A.start = B.start;
         A.sweep = hi;
+    } else if (bridgeGaps) {
+        // A gap between them: the arc runs over it, the way round that keeps the arc shorter.
+        const double aFirst = oB + B.sweep, bFirst = oA + A.sweep;
+        if (std::min(aFirst, bFirst) >= kTwoPi - slack)
+            return false;
+        if (aFirst <= bFirst) {
+            A.sweep = aFirst;
+        } else {
+            A.start = B.start;
+            A.sweep = bFirst;
+        }
     } else {
         return false;
     }
@@ -237,7 +248,8 @@ Item reversedItem(const Item& it) {
 
 }  // namespace
 
-JoinResult joinEntities(const std::vector<const Entity*>& entities, double tolerance) {
+JoinResult joinEntities(const std::vector<const Entity*>& entities, double tolerance,
+                        bool bridgeGaps) {
     JoinResult out;
     std::vector<LineItem> lines;
     std::vector<ArcItem> arcs;
@@ -272,7 +284,7 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
         changed = false;
         for (std::size_t i = 0; i < lines.size() && !changed; ++i) {
             for (std::size_t j = i + 1; j < lines.size() && !changed; ++j) {
-                if (mergeLines(lines[i], lines[j], tolerance)) {
+                if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
                     lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(j));
                     changed = true;
                 }
@@ -283,7 +295,7 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
         changed = false;
         for (std::size_t i = 0; i < arcs.size() && !changed; ++i) {
             for (std::size_t j = i + 1; j < arcs.size() && !changed; ++j) {
-                if (mergeArcs(arcs[i], arcs[j], tolerance)) {
+                if (mergeArcs(arcs[i], arcs[j], tolerance, bridgeGaps)) {
                     arcs.erase(arcs.begin() + static_cast<std::ptrdiff_t>(j));
                     changed = true;
                 }

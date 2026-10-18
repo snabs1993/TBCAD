@@ -120,7 +120,9 @@ public:
                 entities.push_back(e);
             }
         }
-        auto res = modify::joinEntities(entities, getSetting(ctx.host(), "join.tolerance", 1e-3));
+        // Like AutoCAD, collinear lines and arcs of one circle join across a gap.
+        auto res = modify::joinEntities(entities, getSetting(ctx.host(), "join.tolerance", 1e-3),
+                                        /*bridgeGaps=*/true);
         if (res.consumed.empty()) {
             ctx.message("Nothing could be joined.");
             co_return;
