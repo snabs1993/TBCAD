@@ -7,7 +7,6 @@ namespace tbcad::select {
 
 namespace {
 constexpr const char* kPrefix = "filter.";
-const char* const kProps[] = {"Type", "Layer", "Color", "Linetype", "Lineweight", "Level"};
 }  // namespace
 
 std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
@@ -34,7 +33,14 @@ std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
 std::string encodeFilter(const std::vector<Query>& queries) {
     std::string s;
     for (const Query& q : queries)
-        s += std::to_string(static_cast<int>(q.property)) + (q.negate ? "!" : "=") + q.value + "\n";
+        s += std::string(1, static_cast<char>(static_cast<int>(q.property) < 10
+                                                  ? '0' + static_cast<int>(q.property)
+                                                  : 'a' + static_cast<int>(q.property) - 10)) +
+             (q.negate                        ? "!"
+              : q.compare == Compare::Greater ? ">"
+              : q.compare == Compare::Less    ? "<"
+                                              : "=") +
+             q.value + "\n";
     return s;
 }
 
@@ -43,11 +49,19 @@ std::vector<Query> decodeFilter(const std::string& text) {
     std::istringstream in(text);
     std::string line;
     while (std::getline(in, line)) {
-        if (line.size() < 2 || line[0] < '0' || line[0] > '5')
+        if (line.size() < 2)
+            continue;
+        const int idx = line[0] >= '0' && line[0] <= '9'   ? line[0] - '0'
+                        : line[0] >= 'a' && line[0] <= 'z' ? line[0] - 'a' + 10
+                                                           : -1;
+        if (idx < 0 || idx > static_cast<int>(Property::Length))
             continue;
         Query q;
-        q.property = static_cast<Property>(line[0] - '0');
+        q.property = static_cast<Property>(idx);
         q.negate = line[1] == '!';
+        q.compare = line[1] == '>'   ? Compare::Greater
+                    : line[1] == '<' ? Compare::Less
+                                     : Compare::Equals;
         q.value = line.substr(2);
         out.push_back(std::move(q));
     }
@@ -67,7 +81,11 @@ namespace detail {
 namespace {
 
 std::string describeQuery(const Query& q) {
-    return std::string(kProps[static_cast<int>(q.property)]) + (q.negate ? " <> " : " = ") +
+    return std::string(kPropNames[static_cast<int>(q.property)]) +
+           (q.negate                        ? " <> "
+            : q.compare == Compare::Greater ? " > "
+            : q.compare == Compare::Less    ? " < "
+                                            : " = ") +
            q.value;
 }
 
@@ -151,27 +169,27 @@ public:
 private:
     static cmd::Task add(cmd::CommandContext& ctx, std::vector<Query>& conds) {
         cmd::KeywordOptions po;
-        po.keywords = {"Type", "Layer", "Color", "Linetype", "Lineweight", "Level"};
+        po.keywords = {"Type",         "Layer",   "Color",  "Linetype", "Lineweight", "Level",
+                       "Transparency", "Pattern", "Height", "Radius",   "Length"};
         po.defaultKeyword = "Type";
         auto p = co_await ctx.getKeyword(
-            "Property [Type/Layer/Color/Linetype/Lineweight/Level] <Type>", std::move(po));
+            "Property [Type/Layer/Color/Linetype/Lineweight/Level/Transparency/Pattern/Height/"
+            "Radius/Length] <Type>",
+            std::move(po));
         if (!p.ok())
             co_return;
         Query q;
-        for (int i = 0; i < 6; ++i)
-            if (p.keyword == kProps[i])
+        for (int i = 0; i < 11; ++i)
+            if (p.keyword == kPropNames[i])
                 q.property = static_cast<Property>(i);
         auto v = co_await ctx.getString("Value");
         if (!v.ok())
             co_return;
         q.value = v.text;
-        cmd::KeywordOptions oo;
-        oo.keywords = {"Equals", "Not"};
-        oo.defaultKeyword = "Equals";
-        auto o = co_await ctx.getKeyword("Objects that are [Equals/Not] <Equals>", std::move(oo));
-        if (!o.ok())
+        bool opOk = false;
+        co_await askOperator(ctx, q, "Objects that are", opOk);
+        if (!opOk)
             co_return;
-        q.negate = o.keyword == "Not";
         if (!queryEntities(ctx.doc(), q)) {
             ctx.message("\"" + q.value + "\" is not a valid " + p.keyword + " value.");
             co_return;

@@ -27,6 +27,10 @@ LinetypeId resolvedLinetype(const Document& doc, const Entity& e);
 LineWeight resolvedLineweight(const Document& doc, const Entity& e);
 std::string kindName(const Entity& e);
 
+extern const char* const kPropNames[11];
+// Asks Equals/Not (and Greater/Less for numeric properties) and stores it in the query.
+cmd::Task askOperator(cmd::CommandContext& ctx, Query& q, std::string_view lead, bool& ok);
+
 // Model-space objects that are shown: visible, on a layer that is on and thawed.
 std::vector<const Entity*> shownEntities(const Document& doc);
 // The same on every level that is not hidden (other levels shown dimmed count).

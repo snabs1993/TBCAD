@@ -35,12 +35,28 @@ struct PurgeCounts {
 PurgeCounts purgeUnused(const Document& doc, Transaction& tx,
                         unsigned kinds = static_cast<unsigned>(PurgeKind::All));
 
-enum class Property { Type, Layer, Color, Linetype, Lineweight, Level };
+enum class Property {
+    Type,
+    Layer,
+    Color,
+    Linetype,
+    Lineweight,
+    Level,
+    Transparency,  // 0..90 percent, ByLayer counts as 0
+    Pattern,       // hatch pattern name ("SOLID" for a solid fill)
+    Height,        // text and MText height
+    Radius,        // circles and arcs
+    Length         // length of the curve (circumference for circles)
+};
+
+// How a numeric property (Transparency, Height, Radius, Length) is compared with the value.
+enum class Compare { Equals, Greater, Less };
 
 struct Query {
     Property property = Property::Type;
     std::string value{};
     bool negate = false;
+    Compare compare = Compare::Equals;  // Greater and Less only apply to numeric properties
 };
 
 // Visible model-space objects whose property equals (or, with `negate`, differs from) the value.
