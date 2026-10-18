@@ -296,8 +296,85 @@ public:
     }
 };
 
+// OBJECTSCALE: adds a scale to, or takes one from, the scales of annotative objects. The first
+// scale is the one the object is drawn at in model space; a block insert follows it.
+class ObjectScaleCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "OBJECTSCALE"; }
+    std::string_view description() const override {
+        return "Add or remove annotation scales of annotative objects";
+    }
+
+    Task run(CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select annotative objects",
+                                             cmd::SelectionOptions{.filter = [](const Entity& e) {
+                                                 return canBeAnnotative(e) && e.common.annotative;
+                                             }});
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Add", "Delete", "All"};
+        ko.defaultKeyword = "Add";
+        auto k = co_await ctx.getKeyword("Object scale [Add/Delete/All] <Add>", ko);
+        if (!k.ok())
+            co_return;
+        std::vector<double> chosen;
+        if (k.keyword == "All") {
+            chosen = annotationScaleList(ctx.doc().header());
+        } else {
+            auto r = co_await ctx.getString("Scale, N or 1:N");
+            if (!r.ok())
+                co_return;
+            const auto parsed = parseScaleN(r.text);
+            if (!parsed || !(*parsed > 0)) {
+                ctx.message("Enter the scale as N or 1:N, a number above zero.");
+                co_return;
+            }
+            chosen = {*parsed};
+        }
+        const Header header = ctx.doc().header();
+        std::size_t changed = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e || !canBeAnnotative(*e) || !e->common.annotative)
+                continue;
+            std::vector<double> list = e->common.annoScales.get();
+            if (list.empty())
+                list = {currentAnnotationScale(header)};
+            const double oldN = list.front();
+            if (k.keyword == "Delete") {
+                for (double v : chosen)
+                    list.erase(std::remove(list.begin(), list.end(), v), list.end());
+                if (list.empty()) {
+                    ctx.message("An object keeps at least one scale; " + std::to_string(id.value) +
+                                " was left alone.");
+                    continue;
+                }
+            } else {
+                for (double v : chosen)
+                    if (std::find(list.begin(), list.end(), v) == list.end())
+                        list.push_back(v);
+            }
+            if (ScaleList(list) == e->common.annoScales)
+                continue;
+            const double newN = list.front();
+            if (ctx.tx().modify(id, [&](Entity& x) {
+                    x.common.annoScales = ScaleList(list);
+                    if (auto* ins = entityAs<InsertData>(x))
+                        ins->scale = ins->scale * (newN / oldN);
+                }))
+                ++changed;
+        }
+        ctx.message(std::to_string(changed) + " object(s) changed");
+        ctx.setUndoLabel("Object scale");
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeObjectScaleCommand() {
+    return std::make_unique<ObjectScaleCommand>();
+}
 std::unique_ptr<cmd::Command> makeAnnotativeCommand() {
     return std::make_unique<AnnotativeCommand>();
 }
