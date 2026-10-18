@@ -137,7 +137,7 @@ class Unisolate final : public cmd::Command {
 public:
     std::string_view name() const override { return "UNISOLATE"; }
     std::vector<std::string> defaultAliases() const override {
-        return {"UNHIDE", "UNISOLATEOBJECTS"};
+        return {"UNHIDE", "UNISOLATEOBJECTS", "UNHIDEOBJECTS"};
     }
     std::string_view description() const override {
         return "Show the objects hidden by HIDE or ISOLATE";

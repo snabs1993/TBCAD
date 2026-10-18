@@ -286,6 +286,21 @@ TEST_CASE("PICKTRACE lists the objects drawn near a point") {
     CHECK(host.logContains("Nothing is drawn"));
 }
 
+TEST_CASE("MEASUREGEOM measures a distance or a radius and DBLIST lists everything") {
+    Fixture f;
+    EntityId c = f.add(Entity{{}, CircleData{{1, 2}, 5}});
+    f.add(line({0, 0}, {3, 4}));
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "2");
+    host.run("MEA", {"Distance", "0,0", "3,4"});
+    CHECK(host.logContains("Distance = 5.00"));
+    host.run("MEASUREGEOM", {"Radius", cmd::ScriptItem::pick(c, {6, 2})});
+    CHECK(host.logContains("Radius = 5.00 mm, Diameter = 10.00 mm"));
+    host.run("DBLIST", {});
+    CHECK(host.logContains("2 objects listed."));
+    CHECK(host.logContains("Length = 5.00"));
+}
+
 TEST_CASE("CAL calculates expressions and remembers the last result as ans") {
     Fixture f;
     cmd::ScriptHost host(f.doc, f.reg);
