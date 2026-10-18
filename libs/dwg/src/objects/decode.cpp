@@ -41,6 +41,7 @@ enum Type : std::uint32_t {
     kMtext = 0x2C,
     kLeader = 0x2D,
     kDictionary = 0x2A,
+    kXrecord = 0x4F,
     // Class-based objects (type numbers from 500 up) are mapped to private numbers by DXF name.
     kHatch = 100000,
     kLayoutObject = 0x52,
@@ -571,6 +572,9 @@ private:
                 return;
             case kDictionary:
                 decodeDictionary(r, objBits, body, self.value);
+                return;
+            case kXrecord:
+                decodeXrecord(r, objBits, body, self.value);
                 return;
             case kSortEnts:
                 decodeSortEnts(r, objBits, body, self.value);
@@ -1527,6 +1531,30 @@ private:
             items.emplace_back(names[i], resolveHandle(h.handle(), self));
         if (!r.failed() && !h.failed())
             out_.dictionaries[self] = std::move(items);
+    }
+
+    // XRECORD (ODA spec 20.4.80): a byte count and then (group code, value) pairs as in DXF. Only
+    // the first integer matters today (layer transparency, ADSK_XREC_LAYER_ALPHA); reading stops
+    // at the first group whose size is not known.
+    void decodeXrecord(BitReader& r, std::size_t, Bytes, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        const std::uint32_t n = r.bl();
+        if (r.failed() || n < 6 || n > 4096)
+            return;
+        std::vector<std::uint8_t> d;
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i)
+            d.push_back(static_cast<std::uint8_t>(r.rc()));
+        if (r.failed())
+            return;
+        const unsigned code = d[0] | (d[1] << 8);
+        const bool int32 =
+            (code >= 90 && code <= 99) || (code >= 420 && code <= 459) || code == 1071;
+        if (!int32)
+            return;
+        out_.xrecordInts[self] = static_cast<long long>(
+            static_cast<std::uint32_t>(d[2]) | (static_cast<std::uint32_t>(d[3]) << 8) |
+            (static_cast<std::uint32_t>(d[4]) << 16) | (static_cast<std::uint32_t>(d[5]) << 24));
     }
 
     // SORTENTSTABLE: the draw order of a block. The main data is a count; the handle stream holds
@@ -2833,6 +2861,21 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                    std::vector<std::string>& notes, const Format& fmt) {
     ObjectReader reader(file, classes, out, notes, fmt);
     reader.run(map);
+    // Layer transparency kept in the layer's extension dictionary (same value as DXF 440).
+    for (auto& [lh, layer] : out.layers) {
+        const auto xd = out.dictionaries.find(layer.xdic);
+        if (xd == out.dictionaries.end())
+            continue;
+        for (const auto& [name, target] : xd->second) {
+            const auto x = out.xrecordInts.find(target);
+            if (name != "ADSK_XREC_LAYER_ALPHA" || x == out.xrecordInts.end() || x->second == 0)
+                continue;
+            long long v = x->second;
+            if ((v & 0xFF000000) == 0)
+                v |= 0x02000000;
+            layer.transparency = v;
+        }
+    }
     {
         // Layouts whose own record could not be read are named by the layout dictionary; the
         // tab order follows the creation order (handles).

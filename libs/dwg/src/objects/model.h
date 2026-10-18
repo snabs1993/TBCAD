@@ -148,6 +148,8 @@ struct Drawing {
     std::vector<std::array<std::int64_t, 3>> relocatedSamples{};
     std::vector<LayoutRec> layoutObjects{};
     std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
+    // XRECORD handle -> first integer value (see decodeXrecord).
+    std::map<std::uint64_t, long long> xrecordInts{};
     // SORTENTSTABLE (draw order): block handle -> entity handle -> sort key. Entities that are not
     // listed sort by their own handle.
     std::map<std::uint64_t, std::map<std::uint64_t, std::uint64_t>> sortKeys{};
