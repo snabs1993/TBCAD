@@ -1362,8 +1362,8 @@ void Importer::finishLayouts() {
             text += "V\t" + std::to_string(v.id) + "\t" + num(v.min.x) + "\t" + num(v.min.y) +
                     "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
                     num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
-                    frozenIds + "\t" + levelId + "\t" + (v.locked ? "1" : "0") + "\t" + clipText + "\t" +
-                    (border ? "1" : "0") + "\n";
+                    frozenIds + "\t" + levelId + "\t" + (v.locked ? "1" : "0") + "\t" + clipText +
+                    "\t" + (border ? "1" : "0") + "\n";
         }
     }
     (void)tx_->modifyHeader([&](Header& h) {
