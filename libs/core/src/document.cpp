@@ -850,7 +850,7 @@ std::vector<EntityId> Document::modelSpace() const {
         if (posOf_[v] == 0xFFFFFFFFu)
             continue;
         EntityId id{v};
-        if (owner_.find(id) == owner_.end())
+        if (owner_.empty() || owner_.find(id) == owner_.end())
             out.push_back(id);
     }
     if (!orderOverride_.empty()) {

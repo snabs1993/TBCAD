@@ -239,6 +239,10 @@ int App::runGateFile() {
         std::printf("%-28s median %8.2f ms (%6.1f fps)  worst %8.2f ms\n", name, med,
                     med > 0 ? 1000.0 / med : 0.0, percentile(ms, 1.0));
         profileReport("ms/frame by phase:", gpuWait, counted);
+        const render::RenderStats& st = renderer_.stats();
+        std::printf("  last frame: %u draw calls, %zu vertices, %u tiles, cpu %.2f ms\n",
+                    static_cast<unsigned>(st.drawCalls), static_cast<std::size_t>(st.vertices),
+                    static_cast<unsigned>(st.tilesDrawn), st.cpuMs);
     };
 
     core.zoomExtents();

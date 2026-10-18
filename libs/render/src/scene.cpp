@@ -442,6 +442,7 @@ void Scene::setHighlighted(std::span<const EntityId> ids) {
 
 void Scene::setSelected(std::span<const EntityId> ids) {
     selected_.clear();
+    selected_.reserve(ids.size());
     selected_.insert(ids.begin(), ids.end());
     ++sel_.stamp;
 }
