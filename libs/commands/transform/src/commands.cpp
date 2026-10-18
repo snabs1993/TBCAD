@@ -403,6 +403,9 @@ public:
     }
 
     Task run(CommandContext& ctx) override {
+        ctx.message(
+            "Select with a crossing window (either direction): only the end points and vertices "
+            "inside it move.");
         auto c1 = co_await ctx.getPoint("Specify first corner of the crossing window");
         if (!c1.ok())
             co_return;
