@@ -53,6 +53,7 @@ std::unique_ptr<cmd::Command> makeXrefPaletteCommand();
 std::unique_ptr<cmd::Command> makeXPathCommand();
 std::unique_ptr<cmd::Command> makeXRelinkCommand();
 std::unique_ptr<cmd::Command> makeBlockCountCommand();
+std::unique_ptr<cmd::Command> makeBlockReplaceCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
 void registerXrefPanel(ui::UiRegistry& ui);
 
