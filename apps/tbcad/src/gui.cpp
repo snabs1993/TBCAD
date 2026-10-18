@@ -160,11 +160,11 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     cursorHud_ = core_.settings().getBool("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
-    // The default dock sizes changed (smaller command bar and side panels); a layout saved by
+    // The default dock sizes changed (a command bar of about four rows); a layout saved by
     // an older build is replaced once.
-    if (core_.settings().getString("ui.dockLayout", "") != "v2") {
+    if (core_.settings().getString("ui.dockLayout", "") != "v3") {
         rebuildDock_ = true;
-        core_.settings().setString("ui.dockLayout", "v2");
+        core_.settings().setString("ui.dockLayout", "v3");
     }
     // The workspace used last time. Only the panels are applied here: the docking layout comes
     // back from imgui.ini by itself.
@@ -1076,20 +1076,44 @@ void Gui::toolStrip() {
     ImGui::End();
 }
 
+// One quiet bar for the notices that sit above the drawing (read-only file, missing external
+// references), so they cost one row instead of one row each.
 void Gui::readOnlyBanner() {
     const std::string text = core_.readOnlyBanner();
-    if (text.empty())
+    const bool showReadOnly = !text.empty() && text != dismissedReadOnly_;
+    const bool showXref = core_.xrefNoticeVisible();
+    if (!showXref)
+        xrefListOpen_ = false;
+    if (!showReadOnly && !showXref)
         return;
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
     const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
-    if (ImGui::BeginViewportSideBar("##readonlybanner", vp, ImGuiDir_Up, h, flags)) {
+    if (ImGui::BeginViewportSideBar("##noticebar", vp, ImGuiDir_Up, h, flags)) {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(text.c_str());
+        if (showReadOnly) {
+            ImGui::TextUnformatted(text.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Save As..."))
+                runAction("file.saveAs");
+        }
+        if (showXref) {
+            const size_t n = core_.missingXrefs().size();
+            if (showReadOnly)
+                ImGui::SameLine(0, 24);
+            ImGui::Text("%zu external reference%s not found.", n, n == 1 ? "" : "s");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Show list"))
+                xrefListOpen_ = true;
+        }
         ImGui::SameLine();
-        if (ImGui::SmallButton("Save As..."))
-            runAction("file.saveAs");
+        if (ImGui::SmallButton("Dismiss")) {
+            if (showReadOnly)
+                dismissedReadOnly_ = text;
+            if (showXref)
+                core_.dismissXrefNotice();
+        }
     }
     ImGui::End();
 }
@@ -1286,22 +1310,6 @@ void Gui::xrefNotice() {
         return;
     }
     const auto& missing = core_.missingXrefs();
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
-    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
-    if (ImGui::BeginViewportSideBar("##xrefnotice", vp, ImGuiDir_Up, h, flags)) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%zu external reference%s not found. The drawing may look incomplete.",
-                    missing.size(), missing.size() == 1 ? "" : "s");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Show list"))
-            xrefListOpen_ = true;
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Dismiss"))
-            core_.dismissXrefNotice();
-    }
-    ImGui::End();
     if (!xrefListOpen_)
         return;
     ImGui::SetNextWindowSize(ImVec2(620, 320), ImGuiCond_Appearing);
@@ -1564,7 +1572,12 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGui::DockBuilderAddNode(ds, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(ds, vp->WorkSize);
     ImGuiID center = ds;
-    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.15f, nullptr, &center);
+    // The command area is about four rows tall (three of history and the input line), not a
+    // fixed share of the window, which left it mostly empty on a tall screen.
+    const float commandPx = 4.0f * ImGui::GetFrameHeightWithSpacing() + 24.0f;
+    const float commandRatio = std::clamp(commandPx / std::max(vp->WorkSize.y, 1.0f), 0.07f, 0.15f);
+    ImGuiID bottom =
+        ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, commandRatio, nullptr, &center);
     ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.26f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
     // The last window docked is the one shown in front: Layers first, as in the plan.
@@ -2948,7 +2961,7 @@ ViewportRect Gui::frame() {
         toolStrip();
         docTabs();
         readOnlyBanner();
-        xrefNotice();
+        xrefNotice();  // the list window the bar opens
         statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
