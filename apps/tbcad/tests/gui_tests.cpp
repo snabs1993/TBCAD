@@ -628,3 +628,150 @@ TEST_CASE("command bar: autocomplete picks, Tab completes, Up recalls history") 
     CHECK_FALSE(h.has("##row", "##suggest"));
     CHECK_FALSE(h.core().runner().active());
 }
+
+TEST_CASE("levels panel: new, rename, elevation, show, lock, current, view and delete") {
+    Harness h(1920, 1080);
+    REQUIRE(h.click("Levels", "DockSpace"));  // the panel's tab
+    h.frame(3);
+    REQUIRE(h.windowOpen("Levels"));
+    auto& doc = h.core().document();
+    const std::size_t before = doc.levels().size();
+
+    REQUIRE(h.click("New Level", "Levels"));
+    h.frame(3);
+    REQUIRE(doc.levels().size() == before + 1);
+    const Level* upper = doc.levelByName("Level " + std::to_string(before + 1));
+    REQUIRE(upper);
+    CHECK(upper->elevation == doctest::Approx(3000));
+
+    // Double-click the name to rename it.
+    REQUIRE(h.doubleClickItem(upper->name, "Levels"));
+    h.frame(2);
+    REQUIRE(h.enterText("##rename", "Roof", "Levels"));
+    h.frame(3);
+    REQUIRE(doc.levelByName("Roof"));
+
+    // Elevation field.
+    REQUIRE(h.enterText("##elev", "6500", "Levels", 0));  // the highest level is the first row
+    h.frame(3);
+    CHECK(doc.levelByName("Roof")->elevation == doctest::Approx(6500));
+
+    // A new level becomes current and cannot be hidden; make the ground level current first.
+    REQUIRE(h.click("##cur", "Levels", 1));
+    h.frame(3);
+    CHECK(doc.header().currentLevel != doc.levelByName("Roof")->id);
+    // Lock and hide the roof (the first row), then make it current.
+    REQUIRE(h.click("##lck", "Levels", 0));
+    h.frame(3);
+    CHECK(doc.levelByName("Roof")->locked);
+    REQUIRE(h.click("##vis", "Levels", 0));
+    h.frame(3);
+    CHECK_FALSE(doc.levelByName("Roof")->visible);
+    REQUIRE(h.click("##cur", "Levels", 0));
+    h.frame(3);
+    CHECK(doc.header().currentLevel == doc.levelByName("Roof")->id);
+
+    // The view of the other levels.
+    REQUIRE(h.click("##view", "Levels"));
+    REQUIRE(h.click("Hidden", "Combo"));
+    h.frame(3);
+    CHECK(doc.header().levelView == LevelView::HideOthers);
+
+    // Delete the selected level (the roof was selected by clicking its name earlier).
+    REQUIRE(h.click("Roof", "Levels"));
+    REQUIRE(h.click("Delete", "Levels"));
+    h.frame(3);
+    CHECK_FALSE(doc.levelByName("Roof"));
+    CHECK(doc.levels().size() == before);
+}
+TEST_CASE("object properties panel: layer, linetype, lineweight, transparency, scale") {
+    Harness h(1920, 1080);
+    run(h, "-LAYER New A-One");
+    h.core().submitText("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("10");
+    h.core().selectAll();
+    h.frame(2);
+    REQUIRE(h.click("Object Properties", "DockSpace"));  // the panel's tab
+    h.frame(3);
+    const Entity* circle = nullptr;
+    auto fetch = [&] {
+        h.core().document().forEachEntity([&](const Entity& e) { circle = &e; });
+        REQUIRE(circle);
+        return circle;
+    };
+    // Every drop-down opens, shows ByLayer first and applies the pick as one undo step.
+    REQUIRE(h.click("##layer", "Object Properties"));
+    REQUIRE(h.click("A-One", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.layer == layer(h, "A-One")->id);
+
+    REQUIRE(h.click("##lt", "Object Properties"));
+    CHECK(h.has("ByBlock", "Combo"));
+    REQUIRE(h.click("Dashed", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.linetype != kLinetypeByLayer);
+
+    REQUIRE(h.click("##lw", "Object Properties"));
+    REQUIRE(h.click("0.50", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.lineweight == LineWeight::mm(0.5));
+
+    REQUIRE(h.click("##tr", "Object Properties"));
+    REQUIRE(h.click("50", "Combo"));
+    h.frame(3);
+    CHECK(fetch()->common.transparency == 50);
+
+    REQUIRE(h.enterText("##ltscale", "2.5", "Object Properties"));
+    h.frame(3);
+    CHECK(fetch()->common.linetypeScale == doctest::Approx(2.5f));
+
+    // One undo per edit: the transparency goes back first.
+    h.command("U");
+    h.frame(3);
+    CHECK(fetch()->common.linetypeScale == doctest::Approx(1.0f));
+    CHECK(fetch()->common.transparency == 50);
+    CHECK(matchesGolden(h.windowShot("Object Properties"), "object_properties_circle"));
+}
+
+// Clicks every labelled widget of each panel once, with a drawing and a selection present. This
+// finds crashes and ImGui misuse (the harness fails the test on those) in panels no scripted
+// test covers yet; it checks no results.
+TEST_CASE("every panel survives a click on each of its widgets") {
+    struct P {
+        const char* id;
+        const char* tab;
+    };
+    for (const P& p :
+         {P{"textstyles", "Text Styles"}, P{"dimstyles", "Dimension Styles"}, P{"blocks", "Blocks"},
+          P{"hatch", "Hatch"}, P{"palettes", "Tool Palettes"}, P{"plotstyle", "Plot Styles"},
+          P{"laywalk", "Layer Walk"}, P{"text_editor", "Text"}}) {
+        CAPTURE(p.id);
+        Harness h(1920, 1080);
+        h.core().submitText("CIRCLE");
+        h.core().submitText("0,0");
+        h.core().submitText("10");
+        h.core().selectAll();
+        h.core().openPanel(p.id);
+        h.frame(3);
+        REQUIRE(h.has(p.tab, "DockSpace"));
+        REQUIRE(h.click(p.tab, "DockSpace"));
+        h.frame(3);
+        // Collect the widgets first; the lists are rebuilt by every click.
+        std::vector<std::string> labels;
+        for (const auto& it : imgui_items::items())
+            if (it.window.find(p.tab) != std::string::npos && !it.label.empty() &&
+                it.label.rfind("##", 0) != 0 && it.label != p.tab)
+                labels.push_back(it.label);
+        for (const std::string& l : labels) {
+            if (!h.has(l, p.tab))
+                continue;
+            h.click(l, p.tab);
+            h.frame(2);
+            h.key(ImGuiKey_Escape);  // closes a popup or combo it opened
+            h.frame(1);
+            if (!h.windowOpen(p.tab) && h.has(p.tab, "DockSpace"))
+                h.click(p.tab, "DockSpace");
+        }
+    }
+}

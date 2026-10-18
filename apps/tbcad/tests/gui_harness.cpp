@@ -436,6 +436,19 @@ void Harness::scroll(float x, float y, float dy) {
     frame(2);
 }
 
+bool Harness::doubleClickItem(const std::string& label, const std::string& window, int nth) {
+    const imgui_items::Item* it = find(label, window, nth);
+    if (!it) {
+        MESSAGE("no widget \"" << label << "\"" << (window.empty() ? "" : " in " + window));
+        return false;
+    }
+    const imgui_items::Item copy = *it;
+    const float width = copy.max.x - copy.min.x;
+    const float x = width > 220.0f ? copy.min.x + 24.0f : (copy.min.x + copy.max.x) * 0.5f;
+    doubleClick(x, (copy.min.y + copy.max.y) * 0.5f);
+    return true;
+}
+
 bool Harness::clickAt(const imgui_items::Item& item, int button) {
     // Wide items (a table row spanning every column) have column dividers in the middle that a
     // press would grab, so those are clicked near their left end; the rest in the centre.
