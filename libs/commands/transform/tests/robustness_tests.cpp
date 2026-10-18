@@ -152,3 +152,23 @@ TEST_CASE("dragging any grip of any entity kind stays finite and undoes exactly"
         }
     }
 }
+
+TEST_CASE("STRETCH over a window that catches parts of every entity kind undoes exactly") {
+    const char* windows[][2] = {{"-5,-5", "6,6"}, {"4,-5", "25,40"}, {"-100,-100", "100,100"}};
+    for (const auto& w : windows) {
+        CAPTURE(w[0]);
+        Fixture f;
+        std::vector<EntityId> ids;
+        addSamples(f.doc, ids);
+        const std::string before = canonicalDump(f.doc);
+        f.host.run("STRETCH", {w[0], w[1], "0,0", "7.5,-3"});
+        const std::string after = canonicalDump(f.doc);
+        CHECK_FALSE(hasNonFinite(after));
+        if (after != before) {
+            CHECK(f.host.undo());
+            CHECK(canonicalDump(f.doc) == before);
+            CHECK(f.host.redo());
+            CHECK(canonicalDump(f.doc) == after);
+        }
+    }
+}
