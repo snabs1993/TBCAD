@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "tbcad/core/core.h"
@@ -53,5 +54,26 @@ Result<Entity> asmApplyPreset(const Document& doc, const Entity& insert, std::st
 // Checks a definition: formulas parse, referenced names exist, targets exist. One message per
 // problem; empty when the definition is sound.
 std::vector<std::string> asmValidate(const Document& doc, const BlockDef& def);
+
+// ---- bill of materials -------------------------------------------------------------------------
+
+// One line of the bill of materials: an assembly block with one set of (effective) parameter values
+// and how many of them the drawing holds.
+struct BomRow {
+    std::string block{};
+    std::vector<std::pair<std::string, std::string>> values{};  // parameter name, shown value
+    std::size_t count = 0;
+    friend bool operator==(const BomRow&, const BomRow&) = default;
+};
+
+// The assemblies placed in model space plus the assemblies nested inside them, each nested one with
+// the values its parent's bindings give it (and array items multiplying the counts: a rectangular
+// array counts rows x columns, a polar or path array its `count`). Sorted by block name, then
+// values.
+std::vector<BomRow> assemblyBom(const Document& doc);
+// "Assembly,Parameters,Quantity" lines with RFC 4180 quoting.
+std::string assemblyBomCsv(const std::vector<BomRow>& rows);
+// "Len=10, Mat=Oak"
+std::string bomValuesText(const BomRow& row);
 
 }  // namespace tbcad::blocks

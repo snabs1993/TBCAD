@@ -135,7 +135,30 @@ ToolResult setParameters(ToolContext& ctx, const Json& a) {
 
 }  // namespace
 
+ToolResult assemblyBomTool(ToolContext& ctx, const Json&) {
+    const auto rows = blocks::assemblyBom(ctx.session.document());
+    Json::Array out;
+    std::size_t total = 0;
+    for (const blocks::BomRow& r : rows) {
+        Json::Object values;
+        for (const auto& [n, v] : r.values)
+            values[n] = Json(v);
+        out.push_back(Json(Json::Object{{"assembly", r.block},
+                                        {"parameters", Json(std::move(values))},
+                                        {"quantity", static_cast<double>(r.count)}}));
+        total += r.count;
+    }
+    return ToolResult::ok(
+        Json(Json::Object{{"lines", Json(std::move(out))}, {"total", static_cast<double>(total)}}));
+}
+
 void registerAssemblyTools(ToolSet& tools) {
+    tools.add(
+        {"assembly_bom", "Assembly bill of materials",
+         "Lists the assemblies in the drawing, grouped by block and parameter values, with the "
+         "quantity of each (nested assemblies and array items included).",
+         tObject({}), outSchema({"lines", "total"}), Edit::None, false, true, false,
+         assemblyBomTool});
     tools.add({"list_assembly_parameters", "List assembly parameters",
                "Lists the parameters of an inserted parametric assembly (name, type, current "
                "value, limits, choices), its presets and any formula problems. `id` is the "
