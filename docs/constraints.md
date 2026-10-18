@@ -54,6 +54,22 @@ A new constraint is solved at once; if the constraints cannot all hold, nothing 
 message names the constraint that conflicts. The message also says how many degrees of freedom
 are left.
 
+## Joints between block inserts
+
+An insert has **connection points**: index 0 is its insertion point and every POINT object drawn inside
+the block follows in drawing order (draw a POINT where the pin hole or the end of a track is). A
+reference to an insert may name one of them (`index`), as a point (Start) or as the x axis of the insert
+through that point (Whole). `JOINT` (`MATE`) picks two inserts, using the connection point nearest to each
+click:
+
+- **Revolute**: the two points coincide; the parts can turn about it.
+- **Slider**: the two x axes stay parallel and the second point lies on the first axis; the part slides.
+- **Rigid**: a pin plus the current angle between the two parts held.
+
+All three are ordinary constraints (Coincident, Parallel, PointOnObject, Angle), so they can be driven
+with `DIMCON` (an Angle between the parts) or a parameter formula, edited with `DELCONSTRAINT`, and
+are saved in the file.
+
 ## Checking the constraints
 
 `analyze` (library), `SHOWCON`, `CONSTRAINTBAR` and the MCP tool `analyze_constraints` report: whether

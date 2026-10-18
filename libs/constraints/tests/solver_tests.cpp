@@ -493,3 +493,90 @@ TEST_CASE("analysis: a fixed circle and a point-on-circle leave the point free a
     CHECK(circleDof == 0);
     CHECK(lineDof == 3);  // 4 variables, one constraint
 }
+
+namespace {
+
+// A block "Arm": a line from the origin to (10,0) and a POINT at (10,0) (the pin hole).
+BlockId armBlock(Document& doc) {
+    auto tx = doc.begin("arm");
+    auto blk = tx.addBlock(BlockDef{.name = "Arm"});
+    REQUIRE(blk.ok());
+    REQUIRE(tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}}, blk.value()).ok());
+    REQUIRE(tx.add(Entity{{}, PointData{{10, 0}}}, blk.value()).ok());
+    tx.commit();
+    return blk.value();
+}
+
+EntityId insertOf(Document& doc, BlockId b, Vec2 pos, double rot) {
+    auto tx = doc.begin("insert");
+    InsertData in;
+    in.block = b;
+    in.position = pos;
+    in.rotation = rot;
+    auto id = tx.add(Entity{{}, std::move(in)});
+    REQUIRE(id.ok());
+    tx.commit();
+    return id.value();
+}
+
+Vec2 anchorWorld(Document& doc, EntityId id, std::size_t k) {
+    const auto* in = entityAs<InsertData>(*doc.find(id));
+    const auto a = insertAnchors(doc, *in);
+    return in->position + Vec2{std::cos(in->rotation) * a[k].x - std::sin(in->rotation) * a[k].y,
+                               std::sin(in->rotation) * a[k].x + std::cos(in->rotation) * a[k].y};
+}
+
+}  // namespace
+
+TEST_CASE("insert connection points: a pin joint between two arms") {
+    Fixture f;
+    const BlockId arm = armBlock(f.doc);
+    const EntityId a = insertOf(f.doc, arm, {0, 0}, 0);
+    const EntityId b = insertOf(f.doc, arm, {20, 5}, 1.0);
+    const auto in = entityAs<InsertData>(*f.doc.find(a));
+    CHECK(insertAnchors(f.doc, *in).size() == 2);
+    // b's insertion point sits on a's pin hole (point 1); a is held in place
+    auto r = f.solveWith({make(Kind::Fix, whole(a)),
+                          make(Kind::Coincident, at(a, Part::Start), at(b, Part::Start))});
+    CHECK(r.converged);
+    CHECK(length(anchorWorld(f.doc, a, 0) - anchorWorld(f.doc, b, 0)) ==
+          doctest::Approx(0).epsilon(1e-6));
+    // pin hole of a (index 1) with the insertion point of b
+    Fixture g;
+    const BlockId arm2 = armBlock(g.doc);
+    const EntityId a2 = insertOf(g.doc, arm2, {0, 0}, 0.2);
+    const EntityId b2 = insertOf(g.doc, arm2, {30, 5}, 1.0);
+    Ref hole{a2, Part::Start, 1};
+    auto r2 =
+        g.solveWith({make(Kind::Fix, whole(a2)), make(Kind::Coincident, hole, at(b2, Part::Start)),
+                     make(Kind::Angle, Ref{a2, Part::Whole, 0}, Ref{b2, Part::Whole, 0}, 0.5)});
+    CHECK(r2.converged);
+    CHECK(length(anchorWorld(g.doc, a2, 1) - anchorWorld(g.doc, b2, 0)) ==
+          doctest::Approx(0).epsilon(1e-6));
+    CHECK(entityAs<InsertData>(*g.doc.find(b2))->rotation == doctest::Approx(0.7).epsilon(1e-6));
+}
+
+TEST_CASE("insert connection points: a slider keeps the direction and slides on the axis") {
+    Fixture f;
+    const BlockId arm = armBlock(f.doc);
+    const EntityId rail = insertOf(f.doc, arm, {0, 0}, 0.3);
+    const EntityId car = insertOf(f.doc, arm, {20, 9}, 0.9);
+    auto r =
+        f.solveWith({make(Kind::Fix, whole(rail)),
+                     make(Kind::Parallel, Ref{rail, Part::Whole, 0}, Ref{car, Part::Whole, 0}),
+                     make(Kind::PointOnObject, at(car, Part::Start), Ref{rail, Part::Whole, 0})});
+    CHECK(r.converged);
+    const auto* ic = entityAs<InsertData>(*f.doc.find(car));
+    CHECK(std::sin(ic->rotation - 0.3) == doctest::Approx(0).epsilon(1e-6));
+    // the car's insertion point is on the rail's axis: cross(dir, p) = 0
+    const Vec2 d{std::cos(0.3), std::sin(0.3)};
+    CHECK(cross(d, ic->position) == doctest::Approx(0).epsilon(1e-6));
+    // one degree of freedom left: the slide
+    ConstraintSet set;
+    set.add(make(Kind::Fix, whole(rail)));
+    set.add(make(Kind::Parallel, Ref{rail, Part::Whole, 0}, Ref{car, Part::Whole, 0}));
+    set.add(make(Kind::PointOnObject, at(car, Part::Start), Ref{rail, Part::Whole, 0}));
+    auto an = analyze(f.doc, set);
+    REQUIRE(an.ok());
+    CHECK(an.value().degreesOfFreedom == 1);
+}
