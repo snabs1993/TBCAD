@@ -59,9 +59,13 @@ TEST_CASE("R2007 compression: literal runs are cut into blocks stored in the opp
     CHECK(literalRun("abcd") == "abcd");
     CHECK(literalRun("abcde") == "eabcd");
     CHECK(literalRun("abcdef") == "fbcdea");
+    CHECK(literalRun("abcdefg") == "gfbcdea");
     CHECK(literalRun("abcdefgh") == "abcdefgh");
     CHECK(literalRun("abcdefghi") == "iabcdefgh");
     CHECK(literalRun("abcdefghij") == "jbcdefghia");
+    CHECK(literalRun("abcdefghijk") == "defghijkcba");
+    CHECK(literalRun("abcdefghijklm") == "mijklabcdefgh");
+    CHECK(literalRun("abcdefghijklmno") == "onjklmbcdefghia");
     CHECK(literalRun("abcdefghijklmnopq") == "jklmnopqiabcdefgh");
     CHECK(literalRun("abcdefghijklmnopqrstuvw") == "wvuqrstijklmnopabcdefgh");
     // Groups of 32 bytes: four blocks of eight in reverse order.
