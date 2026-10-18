@@ -45,9 +45,12 @@ void putRow(ByteWriter& w, StringTable& st, const Layer& r) {
     w.u32(r.linetype.value);
     w.i16(r.lineweight.v);
     w.u8(static_cast<std::uint8_t>((r.on ? 1 : 0) | (r.frozen ? 2 : 0) | (r.locked ? 4 : 0) |
-                                   (r.plot ? 8 : 0) | (r.transparency ? 16 : 0)));
+                                   (r.plot ? 8 : 0) | (r.transparency ? 16 : 0) |
+                                   (r.description.empty() ? 0 : 32)));
     if (r.transparency)
         w.u8(r.transparency);
+    if (!r.description.empty())
+        putString(w, st, r.description);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const Level& r) {
@@ -192,7 +195,7 @@ struct Reader {
         l.linetype = LinetypeId{r.u32()};
         l.lineweight = LineWeight{r.i16()};
         std::uint8_t f = r.u8();
-        if (f > 31)
+        if (f > 63)
             bad("invalid layer flags");
         l.on = (f & 1) != 0;
         l.frozen = (f & 2) != 0;
@@ -203,6 +206,8 @@ struct Reader {
             if (l.transparency > kTransparencyMax)
                 bad("invalid layer transparency");
         }
+        if (f & 32)
+            l.description = str();
     }
     void row(Level& l) {
         l.name = str();

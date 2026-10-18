@@ -704,6 +704,21 @@ TEST_CASE("round trip: layer, object and current transparency survive") {
     CHECK(back->header().currentTransparency == 10);
 }
 
+TEST_CASE("round trip: a layer description survives") {
+    auto doc = makeRichDocument();
+    const LayerId layer = doc->layerByName("A-WALL")->id;
+    {
+        Transaction tx = doc->begin("describe");
+        REQUIRE(
+            tx.modifyLayer(layer, [](Layer& l) { l.description = "Walls, \xE0\xB8\x81"; }).ok());
+        tx.commit();
+    }
+    const std::string before = canonicalDump(*doc);
+    auto back = readOrFail(writeOrFail(*doc));
+    CHECK(canonicalDump(*back) == before);
+    CHECK(back->layerByName("A-WALL")->description == "Walls, \xE0\xB8\x81");
+}
+
 namespace {
 // Numbers a file must carry exactly: ordinary ones, tiny, huge, negative zero and powers of two.
 double fuzzNumber(std::mt19937_64& rng) {

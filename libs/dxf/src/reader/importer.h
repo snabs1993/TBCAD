@@ -60,6 +60,7 @@ struct LayerRow {
     bool plot = true;
     int lineweight = -3;
     int transparency = 0;  // percent
+    std::string description{};  // AcAecLayerStandard XDATA
     int line = 0;
     // TBCAD XDATA
     std::optional<std::string> xParent{};

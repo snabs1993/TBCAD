@@ -25,6 +25,7 @@ struct Layer {
     bool locked = false;
     bool plot = true;
     std::uint8_t transparency = 0;  // percent, 0 to 90
+    std::string description{};
 };
 
 // A level groups objects the way a floor plan groups storeys: the user works on one level at a

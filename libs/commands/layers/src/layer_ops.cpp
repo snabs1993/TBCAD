@@ -410,6 +410,14 @@ Result<void> setLayerTransparency(const Document&, Transaction& tx, LayerId id, 
                      [&](Layer& l) { l.transparency = static_cast<std::uint8_t>(percent); });
 }
 
+Result<void> setLayerDescription(const Document&, Transaction& tx, LayerId id,
+                                 std::string_view text) {
+    for (char c : text)
+        if (static_cast<unsigned char>(c) < 0x20)
+            return err(ErrorCode::InvalidArgument, "A description is one line of text.");
+    return editLayer(tx, id, [&](Layer& l) { l.description = std::string(text); });
+}
+
 Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep) {
     if (keep.empty())
         return err(ErrorCode::InvalidArgument, "No layers to isolate.");

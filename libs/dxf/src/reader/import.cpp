@@ -729,11 +729,18 @@ void Importer::readLayerRow(const Record& r) {
             layerXdicts_.emplace_back(row.name, std::string(r.g[i + 1].str()));
     // TBCAD APPID XDATA: "parent=<DXF name of the parent layer>", "name=<own name>", flags.
     bool inOurs = false;
+    bool inStandard = false;
+    int standardStrings = 0;
     for (const Group& g : r.g) {
         if (g.code == 1001) {
             inOurs = g.str() == "TBCAD";
+            inStandard = g.str() == "AcAecLayerStandard";
+            standardStrings = 0;
             continue;
         }
+        // AutoCAD keeps the layer description as the second string of this application's XDATA.
+        if (inStandard && g.code == 1000 && ++standardStrings == 2)
+            row.description = dec(g.str());
         if (!inOurs)
             continue;
         if (g.code == 1000) {
@@ -768,6 +775,7 @@ void Importer::applyLayerRow(Layer& l, const LayerRow& row, bool hasParent) {
     l.locked = (row.flags & 4) != 0;
     l.plot = row.plot;
     l.transparency = static_cast<std::uint8_t>(row.transparency);
+    l.description = row.description;
 
     l.linetype = kLinetypeContinuous;
     if (!row.linetype.empty()) {
