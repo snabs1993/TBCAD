@@ -127,6 +127,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
         report.info(code::kSkippedObject, drawing.walkSummary);
+    for (const std::string& n : drawing.walkNotes)
+        report.info(code::kSkippedObject, n);
     if (!drawing.relocatedSamples.empty()) {
         std::string t = "moved objects (handle: map offset -> found offset):";
         for (const auto& smp : drawing.relocatedSamples) {
