@@ -8,6 +8,7 @@
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <sstream>
 
 #include "export/export.h"
@@ -33,6 +34,7 @@ const char* kUsage =
     "options:\n"
     "  -o, --output FILE       the file to write (required)\n"
     "  --reader-revision       print which revision of the .dwg reader this build has\n"
+    "  --lz21-search FILE...   try other literal-run cuts on R2007 files, print scores\n"
     "  --dwg-info FILE         describe a .dwg file's structure (for diagnosing files that fail)\n"
     "  --report FILE           write a JSON report (counts, units, encoding, warnings)\n"
     "  -q, --quiet             print nothing except errors\n"
@@ -145,6 +147,19 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             return kExitOk;
         } else if (a == "--reader-revision") {
             out << dwg::readerRevision() << "\n";
+            return kExitOk;
+        } else if (a == "--lz21-search") {
+            std::vector<std::vector<std::byte>> raws;
+            while (i + 1 < args.size() && args[i + 1].rfind("-", 0) != 0) {
+                std::vector<std::byte> raw;
+                if (!readFile(args[++i], raw)) {
+                    err << "tbcad-convert: cannot read " << args[i] << "\n";
+                    return kExitFailed;
+                }
+                raws.push_back(std::move(raw));
+            }
+            std::vector<std::span<const std::byte>> spans(raws.begin(), raws.end());
+            out << dwg::searchCuts(spans);
             return kExitOk;
         } else if (a == "--dwg-info") {
             auto v = value("a .dwg file");

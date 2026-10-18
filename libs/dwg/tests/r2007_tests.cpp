@@ -5,6 +5,7 @@
 
 #include "container/lz21.h"
 #include "container/r2007.h"
+#include "tbcad/dwg/dwg.h"
 
 using tbcad::dwg::detail::lz21Decompress;
 using tbcad::dwg::detail::rsDataBytes;
@@ -203,4 +204,11 @@ TEST_CASE("Reed-Solomon code words: interleaved and plain data bytes") {
     CHECK(got[7] == 8);
     const std::vector<std::uint8_t> plain = {1, 2, 3, 4, 5, 6, 7, 8, 0xEE, 0xEE, 0xEE, 0xEE};
     CHECK(rsDataBytes(plain, 2, 4, 6, false) == got);
+}
+
+TEST_CASE("the cut search runs on no files and leaves the table as it was") {
+    const auto before = tbcad::dwg::detail::lz21Cuts();
+    const std::string text = tbcad::dwg::searchCuts({});
+    CHECK(text.find("final table:") != std::string::npos);
+    CHECK(tbcad::dwg::detail::lz21Cuts() == before);
 }

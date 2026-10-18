@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <set>
 #include <unordered_map>
 
+#include "container/lz21.h"
 #include "container/r2000.h"
 #include "container/r2004.h"
 #include "container/sections.h"
@@ -644,6 +646,67 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
 
 std::string readerRevision() {
     return detail::readerRevision();
+}
+
+std::string searchCuts(const std::vector<std::span<const std::byte>>& files) {
+    std::string out;
+    auto& table = detail::lz21Cuts();
+    // (imported entities, -warnings) summed over the files.
+    auto score = [&]() {
+        long long imported = 0, warnings = 0;
+        for (const auto& f : files) {
+            dxf::Report report;
+            auto r = importDwg(f, dxf::ImportOptions{}, report);
+            warnings += static_cast<long long>(report.count(dxf::Severity::Warning));
+            if (r)
+                for (const auto& [name, c] : r.value().summary.entities)
+                    imported += static_cast<long long>(c.imported);
+        }
+        return std::make_pair(imported, -warnings);
+    };
+    auto arrangements = [](const std::vector<std::uint8_t>& base) {
+        std::vector<std::vector<std::uint8_t>> all;
+        std::vector<std::uint8_t> v = base;
+        std::sort(v.begin(), v.end());
+        do {
+            all.push_back(v);
+        } while (std::next_permutation(v.begin(), v.end()));
+        return all;
+    };
+    auto text = [](const std::vector<std::uint8_t>& v) {
+        std::string t = "[";
+        for (std::size_t i = 0; i < v.size(); ++i)
+            t += (i ? "," : "") + std::to_string(v[i]);
+        return t + "]";
+    };
+    auto best = score();
+    out += "start: imported " + std::to_string(best.first) + ", warnings " +
+           std::to_string(-best.second) + "\n";
+    for (int pass = 0; pass < 2; ++pass) {
+        for (std::size_t len : {26u, 19u, 21u, 28u, 29u, 31u, 11u}) {
+            const std::vector<std::uint8_t> keep = table[len];
+            std::vector<std::uint8_t> winner = keep;
+            std::string line = "length " + std::to_string(len) + ":";
+            for (const auto& cand : arrangements(keep)) {
+                table[len] = cand;
+                const auto s = score();
+                line += " " + text(cand) + "=" + std::to_string(s.first) + "/" +
+                        std::to_string(-s.second);
+                if (s > best) {
+                    best = s;
+                    winner = cand;
+                }
+            }
+            table[len] = winner;
+            out += line + " -> " + text(winner) + "\n";
+        }
+    }
+    out += "final table:";
+    for (std::size_t len = 1; len < table.size(); ++len)
+        out += " " + std::to_string(len) + ":" + text(table[len]);
+    out += "\nfinal: imported " + std::to_string(best.first) + ", warnings " +
+           std::to_string(-best.second) + "\n";
+    return out;
 }
 
 std::string describe(std::span<const std::byte> bytes) {
