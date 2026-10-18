@@ -208,6 +208,24 @@ TEST_CASE("MTEXT: paragraphs, line pitch and attachments") {
     CHECK(mc.frame.center().y == doctest::Approx(0));
 }
 
+TEST_CASE("MTEXT: a centre or right attachment sets the lines centred or right in the frame") {
+    Document doc;
+    MTextData m;
+    m.height = 3;
+    m.width = 100;
+    m.utf8 = "AB";
+    m.attach = Attachment::MiddleCenter;
+    TextLayout mc = layoutMText(doc, m);
+    REQUIRE(mc.lines.size() == 1);
+    CHECK(mc.lines[0].x0 + mc.lines[0].width / 2 == doctest::Approx(0).epsilon(1e-6));
+    m.attach = Attachment::TopRight;
+    TextLayout tr = layoutMText(doc, m);
+    CHECK(tr.lines[0].x0 + tr.lines[0].width == doctest::Approx(0).epsilon(1e-6));
+    m.attach = Attachment::TopLeft;
+    TextLayout tl = layoutMText(doc, m);
+    CHECK(tl.lines[0].x0 == doctest::Approx(0));
+}
+
 TEST_CASE("MTEXT wraps at spaces") {
     Document doc;
     MTextData m;
