@@ -193,7 +193,10 @@ private:
         std::vector<std::pair<TileKey, BatchKey>> refs{};
     };
     struct SelCache {
-        std::uint64_t builtFor = ~0ull;
+        std::uint64_t builtFor = ~0ull;    // scene changeCounter_ the geometry was built for
+        std::uint64_t builtStamp = ~0ull;  // this set's own stamp at that time
+        std::uint64_t stamp = 0;           // bumped when the set's members change
+        std::uint64_t serial = 0;          // unique version handed to the renderer
         SelectionGeometry geometry{};
     };
 
