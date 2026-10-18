@@ -137,14 +137,19 @@ struct PayloadWriter {
         w.u8(static_cast<std::uint8_t>(d.h));
         w.u8(static_cast<std::uint8_t>(d.v));
         str(d.utf8);
-        // Trailing field (format 1.1): attribute definition.
+        // Trailing field (format 1.1): attribute definition; the byte also carries the text
+        // generation flags (16 backward, 32 upside down).
+        const std::uint8_t gen =
+            static_cast<std::uint8_t>((d.backward ? 16 : 0) | (d.upsideDown ? 32 : 0));
         if (d.attdef) {
             const AttDefInfo& a = *d.attdef;
             w.u8(static_cast<std::uint8_t>((a.invisible ? 1 : 0) | (a.constant ? 2 : 0) |
-                                           (a.verify ? 4 : 0) | (a.preset ? 8 : 0) | 128));
+                                           (a.verify ? 4 : 0) | (a.preset ? 8 : 0) | 128 | gen));
             str(a.tag);
             str(a.prompt);
             str(a.defaultValue);
+        } else if (gen) {
+            w.u8(gen);
         }
     }
     void operator()(const MTextData& d) {
@@ -641,6 +646,8 @@ struct PayloadReader {
                 d.utf8 = str();
                 if (r.remaining() > 0) {
                     std::uint8_t f = r.u8();
+                    d.backward = (f & 16) != 0;
+                    d.upsideDown = (f & 32) != 0;
                     if (f & 128) {
                         AttDefInfo a;
                         a.invisible = f & 1;

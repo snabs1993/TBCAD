@@ -181,7 +181,7 @@ void Importer::parseHeader(const Record& rec) {
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
     std::int64_t psltscale = -1, msltscale = -1, plinegen = -1, fillmode = -1, attmode = -1,
-                 qtextmode = -1;
+                 qtextmode = -1, mirrtext = -1;
     std::string clayer, ucsName;
     double ucsOx = 0, ucsOy = 0, ucsXx = 1, ucsXy = 0;
     bool haveUcs = false;
@@ -213,6 +213,8 @@ void Importer::parseHeader(const Record& rec) {
             attmode = g.integer();
         } else if (var == "$PLINEGEN" && g.code == 70) {
             plinegen = g.integer();
+        } else if (var == "$MIRRTEXT" && g.code == 70) {
+            mirrtext = g.integer();
         } else if ((var == "$LIMMIN" || var == "$LIMMAX") && (g.code == 10 || g.code == 20)) {
             (var == "$LIMMIN" ? limMin : limMax)[g.code == 10 ? 0 : 1] = g.number();
             haveLimits = true;
@@ -277,6 +279,8 @@ void Importer::parseHeader(const Record& rec) {
             h.custom[kAttDispKey] = "2";
         else if (attmode == 2)
             h.custom[kAttDispKey] = "1";
+        if (mirrtext >= 0)
+            h.custom[kMirrTextKey] = mirrtext ? "1" : "0";
         if (plinegen >= 0)
             h.custom[kPlineGenKey] = plinegen ? "1" : "0";
         if (haveLimits && std::isfinite(limMin[0] + limMin[1] + limMax[0] + limMax[1]) &&
@@ -980,6 +984,8 @@ void Importer::readStyle(const Record& r) {
     ts.oblique = r.num(50, 0) * kPi / 180.0;
     if (!std::isfinite(ts.oblique))
         ts.oblique = 0;
+    ts.backward = (r.integer(71, 0) & 2) != 0;
+    ts.upsideDown = (r.integer(71, 0) & 4) != 0;
     if (const TextStyle* old = doc_->textStyleByName(name)) {
         TextStyleId id = old->id;
         (void)tx_->modifyTextStyle(id, [&](TextStyle& t) {
@@ -987,6 +993,8 @@ void Importer::readStyle(const Record& r) {
             t.fontFamily = ts.fontFamily;
             t.widthFactor = ts.widthFactor;
             t.oblique = ts.oblique;
+            t.backward = ts.backward;
+            t.upsideDown = ts.upsideDown;
             t.height = ts.height;
             t.shxFile = ts.shxFile;
             t.bigFontFile = ts.bigFontFile;

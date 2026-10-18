@@ -175,6 +175,15 @@ const std::vector<Var>& variables() {
                  return "ATTMODE is 0, 1 or 2.";
              return {};
          }},
+        {"MIRRTEXT", "MIRROR reflects text too (1) or keeps it readable (0)",
+         [](const Document& d) { return std::string(mirrText(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "MIRRTEXT is 0 or 1.";
+             h.custom[kMirrTextKey] = on ? "1" : "0";
+             return {};
+         }},
         {"CECOLOR", "colour of new objects",
          [](const Document& d) { return layers::colorName(d.header().currentColor); },
          [](const Document&, std::string_view v, Header& h) -> std::string {

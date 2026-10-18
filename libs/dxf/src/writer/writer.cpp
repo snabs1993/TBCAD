@@ -569,7 +569,7 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
         // The reader widens the stroke font that stands in for txt.shx by 1/0.92; undo that here.
         o.d(41, styleWidthWritten(ts));
         o.d(50, ts.oblique * kDeg);
-        o.i(71, 0);
+        o.i(71, (ts.backward ? 2 : 0) | (ts.upsideDown ? 4 : 0));
         o.d(42, 2.5);
         std::string font = ts.fontFile;
         if (font.empty())
@@ -1331,6 +1331,8 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.i(70, msLtScale(doc_.header()) ? 1 : 0);
     var("$PLINEGEN");
     o.i(70, plineGen(doc_.header()) ? 1 : 0);
+    var("$MIRRTEXT");
+    o.i(70, mirrText(doc_.header()) ? 1 : 0);
     if (!kept("$CECOLOR")) {
         var("$CECOLOR");
         o.i(62, 256);

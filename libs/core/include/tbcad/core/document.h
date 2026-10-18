@@ -74,6 +74,8 @@ inline constexpr const char* kCeLtScaleKey = "tbcad.celtscale";
 inline constexpr const char* kPsLtScaleKey = "tbcad.psltscale";
 inline constexpr const char* kMsLtScaleKey = "tbcad.msltscale";
 inline constexpr const char* kPlineGenKey = "tbcad.plinegen";
+// MIRRTEXT: 1 makes MIRROR reflect text too (backward / upside-down); default 0 keeps it readable.
+inline constexpr const char* kMirrTextKey = "tbcad.mirrtext";
 // Drawing limits (LIMITS): "x1 y1 x2 y2" in Header::custom, plus the limits-check switch.
 // ZOOM All covers them; $LIMMIN / $LIMMAX carry them in DXF.
 inline constexpr const char* kLimitsKey = "tbcad.limits";
@@ -111,6 +113,7 @@ bool annoAllVisible(const Header& h);
 bool selectionAnnoDisplay(const Header& h);
 // True when the annotative object is made for the current annotation scale (or follows it).
 bool supportsCurrentAnnotationScale(const Header& h, const EntityCommon& c);
+bool mirrText(const Header& h);
 double currentAnnotationScale(const Header& h);
 // The scales offered for annotation, as N of 1:N. Default list when none is stored.
 std::vector<double> annotationScaleList(const Header& h);

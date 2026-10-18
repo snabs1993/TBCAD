@@ -66,12 +66,12 @@ inline KeptGroups unpackGroups(std::string_view text) {
 // of the source file when it had one; the others are derived from the drawing.
 inline bool ownedHeaderVar(std::string_view n) {
     static constexpr std::string_view owned[] = {
-        "$ACADVER",  "$HANDSEED",  "$DWGCODEPAGE", "$INSBASE",   "$UCSNAME",  "$UCSORG",
-        "$UCSXDIR",  "$UCSYDIR",   "$EXTMIN",      "$EXTMAX",    "$LIMMIN",   "$LIMMAX",
-        "$LTSCALE",  "$CELTSCALE", "$PSLTSCALE",   "$MSLTSCALE", "$PLINEGEN", "$CECOLOR",
-        "$CELTYPE",  "$CLAYER",    "$TEXTSTYLE",   "$DIMSTYLE",  "$LUNITS",   "$LUPREC",
-        "$AUNITS",   "$AUPREC",    "$MEASUREMENT", "$INSUNITS",  "$FILLMODE", "$ATTMODE",
-        "$QTEXTMODE"};
+        "$ACADVER",   "$HANDSEED",  "$DWGCODEPAGE", "$INSBASE",   "$UCSNAME",  "$UCSORG",
+        "$UCSXDIR",   "$UCSYDIR",   "$EXTMIN",      "$EXTMAX",    "$LIMMIN",   "$LIMMAX",
+        "$LTSCALE",   "$CELTSCALE", "$PSLTSCALE",   "$MSLTSCALE", "$PLINEGEN", "$CECOLOR",
+        "$CELTYPE",   "$CLAYER",    "$TEXTSTYLE",   "$DIMSTYLE",  "$LUNITS",   "$LUPREC",
+        "$AUNITS",    "$AUPREC",    "$MEASUREMENT", "$INSUNITS",  "$FILLMODE", "$ATTMODE",
+        "$QTEXTMODE", "$MIRRTEXT"};
     for (std::string_view o : owned)
         if (o == n)
             return true;

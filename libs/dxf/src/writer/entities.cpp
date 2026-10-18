@@ -778,6 +778,13 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
     if (d.oblique != 0)
         o.d(51, d.oblique * kDeg);
     o.str(7, textStyleNameOf(d.style));
+    {
+        const TextStyle* gts = doc_.textStyle(d.style);
+        const bool back = d.backward != (gts && gts->backward);
+        const bool down = d.upsideDown != (gts && gts->upsideDown);
+        if (back || down)
+            o.i(71, (back ? 2 : 0) | (down ? 4 : 0));
+    }
     bool aligned = d.h != HAlign::Left || d.v != VAlign::Baseline;
     if (d.h != HAlign::Left)
         o.i(72, static_cast<int>(d.h));

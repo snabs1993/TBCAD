@@ -83,6 +83,9 @@ struct TextStyle {
     std::string bigFontFile{};
     // New text in this style is annotative (sized by the annotation scale).
     bool annotative = false;
+    // Text generation flags of the style (DXF 71): mirrored left to right / top to bottom.
+    bool backward = false;
+    bool upsideDown = false;
 };
 
 enum class ArrowType { ClosedFilled, Open30, ArchTick, Dot, None };

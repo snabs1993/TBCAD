@@ -572,6 +572,15 @@ static TextLayout layoutTextRaw(const Document& doc, const TextData& d) {
     shiftLayout(out, {dx, dy});
     finishBox(out);
     out.toWorld = makeTransform(anchor, rot, wf, obl, k);
+    // Backward / upside-down generation: mirror the layout about the text's own axes.
+    const bool back = d.backward != (style && style->backward);
+    const bool down = d.upsideDown != (style && style->upsideDown);
+    if (back || down) {
+        Transform2 flip;
+        flip.m00 = back ? -1 : 1;
+        flip.m11 = down ? -1 : 1;
+        out.toWorld = out.toWorld * flip;
+    }
     return out;
 }
 

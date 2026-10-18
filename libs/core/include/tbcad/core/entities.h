@@ -293,6 +293,10 @@ struct TextData {
     VAlign v = VAlign::Baseline;
     std::string utf8{};
     std::optional<AttDefInfo> attdef{};  // set: this text is an attribute definition
+    // Text generation (DXF 71): drawn mirrored left to right / top to bottom about its insertion
+    // point. Combined with the same flags of the text style (either one turns it on, both cancel).
+    bool backward = false;
+    bool upsideDown = false;
 };
 
 enum class Attachment : std::uint8_t {

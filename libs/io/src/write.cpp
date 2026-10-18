@@ -153,10 +153,11 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
         ByteWriter tstx;
         std::size_t tstxCount = 0;
         for (const auto& [id, r] : doc.textStyles()) {
-            if (r.shxFile.empty() && r.bigFontFile.empty() && !r.annotative)
+            if (r.shxFile.empty() && r.bigFontFile.empty() && !r.annotative && !r.backward &&
+                !r.upsideDown)
                 continue;
             tstx.varint(id.value);
-            tstx.u8(r.annotative ? 1 : 0);
+            tstx.u8((r.annotative ? 1 : 0) | (r.backward ? 2 : 0) | (r.upsideDown ? 4 : 0));
             tstx.varint(st.intern(r.shxFile));
             tstx.varint(st.intern(r.bigFontFile));
             ++tstxCount;
