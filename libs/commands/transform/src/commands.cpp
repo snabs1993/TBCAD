@@ -478,8 +478,8 @@ public:
             // preview shows the first few thousand.
             constexpr std::size_t kPreviewMax = 4000;
             const std::vector<EntityId> shown(
-                ids.begin(), ids.begin() + static_cast<std::ptrdiff_t>(
-                                               std::min(ids.size(), kPreviewMax)));
+                ids.begin(),
+                ids.begin() + static_cast<std::ptrdiff_t>(std::min(ids.size(), kPreviewMax)));
             for (auto& [id, e] : stretchWith(shown, c - b, nullptr))
                 geom::buildDisplay(ctx.doc(), e, dc, out);
         };
