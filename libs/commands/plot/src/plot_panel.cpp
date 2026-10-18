@@ -3,10 +3,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <string>
 
 #include "panel.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 
 namespace tbcad::plot {
@@ -30,8 +32,9 @@ struct PanelState {
     std::uint64_t builtRevision = ~0ull;
     std::string builtKey{};
     std::string styleLoaded{};
-    std::string setupName{};      // text field of "Save as"
-    bool reloadWhenIdle = false;  // a command changed the host settings; read them again
+    std::string setupName{};         // text field of "Save as"
+    std::string confirmOverwrite{};  // file the user was warned about; a second click replaces it
+    bool reloadWhenIdle = false;     // a command changed the host settings; read them again
 };
 
 PanelState& state() {
@@ -344,6 +347,18 @@ void draw(ui::PanelContext& pc) {
         st.format = f;
         std::string path =
             st.fileInput.empty() ? defaultFile(*pc.host, f) : forFormat(st.fileInput, f);
+        {
+            std::error_code ec;
+            const std::string target = withExtension(path, f);
+            if (std::filesystem::exists(platform::pathFromUtf8(target), ec) &&
+                st.confirmOverwrite != target) {
+                st.confirmOverwrite = target;
+                st.message = "\"" + target + "\" already exists. Click Export again to replace it.";
+                pc.host->print(st.message);
+                return;
+            }
+            st.confirmOverwrite.clear();
+        }
         PlotSettings run = s;
         auto r = exportFile(*pc.doc, *pc.host, run, f, path);
         st.message = r ? r.value() : r.error().message;

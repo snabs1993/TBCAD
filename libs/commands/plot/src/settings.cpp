@@ -302,6 +302,16 @@ std::string defaultPlotsFolder(const cmd::IHost& h) {
 }
 }  // namespace
 
+namespace {
+std::string folderKey(std::string dir) {
+    for (char& c : dir)
+        c = c == '\\' ? '/' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    while (!dir.empty() && dir.back() == '/')
+        dir.pop_back();
+    return dir;
+}
+}  // namespace
+
 std::string defaultFile(const cmd::IHost& h, Format f) {
     std::string doc = h.documentFile();
     if (doc.empty())
@@ -316,14 +326,18 @@ std::string defaultFile(const cmd::IHost& h, Format f) {
         if (auto sl = v->find_last_of("/\\"); sl != std::string::npos)
             folder = v->substr(0, sl);
     }
+    // Never the drawing's own folder, even if an earlier plot went there.
+    if (!folder.empty() && slash != std::string::npos &&
+        folderKey(folder) == folderKey(doc.substr(0, slash)))
+        folder.clear();
     if (folder.empty())
         folder = defaultPlotsFolder(h);
     if (folder.empty())
-        return stem + extension(f);
+        return stem + "-plot" + extension(f);
     const char sep = folder.find('\\') != std::string::npos ? '\\' : '/';
     if (folder.back() != '/' && folder.back() != '\\')
         folder += sep;
-    return folder + stem + extension(f);
+    return folder + stem + "-plot" + extension(f);
 }
 
 void setLastFile(cmd::IHost& h, Format f, const std::string& path) {
