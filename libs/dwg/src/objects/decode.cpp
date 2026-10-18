@@ -3018,9 +3018,8 @@ private:
             w.emplace_back(a, b);
         }
         add(e, 90, static_cast<long long>(pts.size()));
-        // 512 is the "closed" bit, 256 the linetype generation bit (inferred from the flag
-        // numbering).
-        add(e, 70, ((flag & 512) ? 1 : 0) | ((flag & 256) ? 128 : 0));
+        // 512 is the "closed" bit, 128 the linetype generation bit (PLINEGEN; DXF flag 128).
+        add(e, 70, ((flag & 512) ? 1 : 0) | ((flag & 128) ? 128 : 0));
         if (constWidth != 0)
             add(e, 43, constWidth);
         if (elevation != 0)
