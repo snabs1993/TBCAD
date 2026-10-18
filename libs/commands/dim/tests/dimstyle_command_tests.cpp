@@ -264,3 +264,73 @@ TEST_CASE("MLEADEREDIT adds and removes leader lines") {
     f.host->run("MLEADEREDIT", {ScriptItem::pick(id, {5, 5}), "Remove"});
     CHECK(f.host->logContains("at least one"));
 }
+
+TEST_CASE("DIMSTYLE Compare lists the differences between two styles") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Arch", "Edit", "Arch", "TextHeight", "3.5", "Prefix",
+                             "R=", "LineColor", "1", "Done", "Done"});
+    f.host->clearLog();
+    auto r = f.host->run("DIMSTYLE", {"Compare", "Standard", "Arch", "Done"});
+    CHECK(r.finished);
+    CHECK(f.host->logContains("TextHeight: 2.5 | 3.5"));
+    CHECK(f.host->logContains("Prefix: none | R="));
+    CHECK(f.host->logContains("LineColor: ByBlock | 1"));
+    CHECK(f.host->logContains("3 difference(s)."));
+    CHECK_FALSE(f.host->logContains("ArrowSize"));
+    f.host->clearLog();
+    f.host->run("DIMSTYLE", {"Compare", "Standard", "Standard", "Done"});
+    CHECK(f.host->logContains("The styles are the same."));
+    f.host->clearLog();
+    f.host->run("DIMSTYLE", {"Compare", "Standard", "Nope", "Done"});
+    CHECK(f.host->logContains("No dimension style named \"Nope\"."));
+}
+
+TEST_CASE("DIMOVERRIDE changes one property of the selected dimensions only") {
+    Fixture f;
+    f.host->run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    f.host->run("DIMLINEAR", {"0,20", "10,20", "5,25"});
+    f.host->run("DIMLINEAR", {"0,40", "10,40", "5,45"});
+    std::vector<EntityId> dims;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dims.push_back(e.common.id);
+    });
+    REQUIRE(dims.size() == 3);
+    const std::size_t styles = f.doc.dimStyles().size();
+
+    f.host->setSelection({dims[0], dims[1]});
+    auto r = f.host->run("DIMOVERRIDE", {"Prefix", "R="});
+    CHECK(r.finished);
+    // Both selected dimensions share one new style; the third keeps Standard.
+    CHECK(f.doc.dimStyles().size() == styles + 1);
+    const auto style = [&](EntityId id) { return entityAs<DimensionData>(*f.doc.find(id))->style; };
+    CHECK(style(dims[0]) == style(dims[1]));
+    CHECK(style(dims[0]) != style(dims[2]));
+    const DimStyle* over = f.doc.dimStyle(style(dims[0]));
+    REQUIRE(over);
+    CHECK(over->name == "Standard$1");
+    CHECK(over->prefix == "R=");
+    CHECK(over->textHeight == doctest::Approx(2.5));
+    CHECK(f.host->undoStack().undoLabel() == "Dimension override");
+
+    // A bad value changes nothing.
+    f.host->clearLog();
+    f.host->setSelection({dims[2]});
+    f.host->run("DIMOVERRIDE", {"TextHeight", "-4"});
+    CHECK(f.doc.dimStyles().size() == styles + 1);
+    CHECK(f.host->logContains("greater than zero"));
+
+    // Same override on the third dimension reuses the style; Clear goes back to Standard.
+    f.host->setSelection({dims[2]});
+    f.host->run("DIMOVERRIDE", {"Prefix", "R="});
+    CHECK(style(dims[2]) == style(dims[0]));
+    CHECK(f.doc.dimStyles().size() == styles + 1);
+    f.host->setSelection({dims[0], dims[1], dims[2]});
+    f.host->run("DIMOVERRIDE", {"Clear"});
+    for (EntityId d : dims)
+        CHECK(f.doc.dimStyle(style(d))->name == "Standard");
+
+    // Undo walks back one step at a time.
+    CHECK(f.host->undo());
+    CHECK(f.doc.dimStyle(style(dims[2]))->name == "Standard$1");
+}

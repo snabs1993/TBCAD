@@ -12,6 +12,7 @@ namespace tbcad::dimcmd {
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand();
 std::unique_ptr<cmd::Command> makeDimSetupCommand();
+std::unique_ptr<cmd::Command> makeDimOverrideCommand();
 std::unique_ptr<cmd::Command> makeDimStylesPanelCommand();
 std::unique_ptr<cmd::Command> makeSmartDimCommand();
 std::unique_ptr<cmd::Command> makeMLeaderCommand();
