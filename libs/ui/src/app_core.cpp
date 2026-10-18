@@ -1237,16 +1237,29 @@ void AppCore::panPixels(double dx, double dy) {
 // Rays and xlines have no end, so they do not count; if they are all there is, use them.
 BBox2 AppCore::drawingExtents() const {
     BBox2 box;
+    BBox2 withoutPoints;
     std::vector<BBox2> boxes;
     const Document& doc = session_->doc;
     doc.forEachEntity([&](const Entity& e) {
         if (!doc.ownerBlock(e.common.id) && geom::countsForExtents(e)) {
             const BBox2 b = session_->index.boxOf(e.common.id);
             box.merge(b);
+            if (kind(e) != EntityKind::Point)
+                withoutPoints.merge(b);
             if (!b.empty())
                 boxes.push_back(b);
         }
     });
+    // Survey points far off the drawing (a stray POINT at the origin of a file drawn in
+    // coordinates millions of units away) must not shrink the drawing itself: when points more
+    // than double the size of everything else, leave them out.
+    if (!withoutPoints.empty() &&
+        (box.width() > 2 * withoutPoints.width() || box.height() > 2 * withoutPoints.height())) {
+        box = withoutPoints;
+        boxes.erase(std::remove_if(boxes.begin(), boxes.end(),
+                                   [&](const BBox2& b) { return !withoutPoints.containsBox(b); }),
+                    boxes.end());
+    }
     // A few stray objects far from everything else (common in imported files) would shrink the
     // real drawing to a speck: when the outermost 5% of the objects stretch the view more than
     // fivefold, frame the rest.

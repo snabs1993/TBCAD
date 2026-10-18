@@ -1095,3 +1095,23 @@ TEST_CASE("opening or closing a panel resizes the canvas without moving the draw
     CHECK(again.x == doctest::Approx(before.x));
     CHECK(again.y == doctest::Approx(before.y));
 }
+
+TEST_CASE("zoom extents ignores stray points far from the drawing") {
+    Fixture f("extentspoints");
+    f.line("0,0", "10000,0");
+    f.line("0,0", "0,5000");
+    {
+        Transaction tx = f.core->document().begin("points");
+        for (Vec2 p : {Vec2{-900000, -900000}, Vec2{2000000, 40000}}) {
+            Entity e;
+            e.data = PointData{p};
+            tx.add(std::move(e)).value();
+        }
+        tx.commit();
+    }
+    f.core->zoomExtents();
+    const BBox2 vis = f.core->camera().visibleWorld();
+    CHECK(vis.width() < 100000);
+    CHECK(vis.min.x <= 0);
+    CHECK(vis.max.x >= 10000);
+}
