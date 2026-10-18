@@ -7,6 +7,7 @@
 #include <cstdlib>
 
 #include "importer.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/dxf/encoding.h"
 #include "tbcad/geom/entity.h"
 
@@ -183,10 +184,14 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
             d.defPts = {P(r, 13, 23), P(r, 14, 24), P(r, 15, 25), P(r, 10, 20)};
             isLength = false;
             break;
+        case 6:
+            d.kind = DimKind::Ordinate;
+            d.rotation = (flags & 64) ? 0 : kPi / 2;
+            d.defPts = {P(r, 13, 23), P(r, 14, 24), P(r, 10, 20), Vec2{}};
+            break;
         default:
-            // Ordinate dimensions have no DimensionData form: only the drawn graphics are kept.
             report_.info(code::kBadEntity,
-                         "DIMENSION: ordinate dimensions are kept as drawn graphics only", r.line);
+                         "DIMENSION: unknown dimension type, kept as drawn graphics only", r.line);
             Entity none;
             if (opts_.dimensionGraphics)
                 appendDimensionGraphics(r, none, out);
@@ -216,6 +221,9 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
             case DimKind::Radius:
             case DimKind::Diameter:
                 d.measurement = distance(d.defPts[0], d.defPts[1]);
+                break;
+            case DimKind::Ordinate:
+                d.measurement = dim::measurement(d);
                 break;
             default:
                 d.measurement = 0;

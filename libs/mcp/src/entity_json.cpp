@@ -189,6 +189,8 @@ const char* dimKindName(DimKind k) {
             return "angular3point";
         case DimKind::ArcLength:
             return "arclength";
+        case DimKind::Ordinate:
+            return "ordinate";
     }
     return "linear";
 }
@@ -769,7 +771,13 @@ DimKind dimKindFromName(const std::string& n) {
         return DimKind::Angular2Line;
     if (k == "angular3" || k == "angular3point")
         return DimKind::Angular3Point;
-    fail("dimKind must be linear, aligned, radius, diameter, angular or angular3");
+    if (k == "arclength")
+        return DimKind::ArcLength;
+    if (k == "ordinate")
+        return DimKind::Ordinate;
+    fail(
+        "dimKind must be linear, aligned, radius, diameter, angular, angular3, arclength or "
+        "ordinate");
 }
 
 DimStyleId dimStyleFromJson(const Document& doc, const Json& j) {
@@ -829,7 +837,8 @@ DimensionData dimensionFromJson(const Document& doc, const Json& j) {
                 d.defPts = {pt(j, "first"), pt(j, "second"), pt(j, "vertex"), pt(j, "arcPoint")};
                 break;
             case DimKind::ArcLength:
-                fail("arc length dimensions are not supported yet");
+            case DimKind::Ordinate:
+                fail("arclength and ordinate dimensions need definitionPoints");
         }
     }
     if (const Json* tp = j.find("textPosition")) {

@@ -992,7 +992,11 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     const Entity* e = doc_.find(ids[index]);
     const DimensionData& d = *entityAs<DimensionData>(*e);
     if (d.kind == DimKind::ArcLength) {
-        skipEntity("DIMENSION", "arc length dimensions are not supported yet");
+        // DXF's arc dimension is a separate entity we do not write; keep what it draws.
+        downgrade("DIMENSION", "arc length dimensions are written as plain lines, arcs and text");
+        if (auto parts = dim::explodeDimension(doc_, *e))
+            for (const Entity& part : parts.value())
+                writeEntity(part, owner);
         return 1;
     }
     Props p = propsOf(e->common);
@@ -1041,6 +1045,9 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
         case DimKind::Angular3Point:
             type = 5;
             break;
+        case DimKind::Ordinate:
+            type = 6 | (d.rotation < kPi / 4 ? 64 : 0);
+            break;
         case DimKind::ArcLength:
             break;
     }
@@ -1063,6 +1070,9 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
         case DimKind::Angular3Point:
             subclass = "AcDb3PointAngularDimension";
             break;
+        case DimKind::Ordinate:
+            subclass = "AcDbOrdinateDimension";
+            break;
         default:
             break;
     }
@@ -1079,6 +1089,9 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
         case DimKind::Radius:
         case DimKind::Diameter:
             o.pt(10, d.defPts[0]);
+            break;
+        case DimKind::Ordinate:
+            o.pt(10, d.defPts[2]);
             break;
         default:
             o.pt(10, d.defPts[3]);
@@ -1117,6 +1130,10 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             o.pt(13, d.defPts[0]);
             o.pt(14, d.defPts[1]);
             o.pt(15, d.defPts[2]);
+            break;
+        case DimKind::Ordinate:
+            o.pt(13, d.defPts[0]);
+            o.pt(14, d.defPts[1]);
             break;
         case DimKind::ArcLength:
             break;

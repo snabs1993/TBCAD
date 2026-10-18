@@ -75,6 +75,18 @@ struct AngularGeometry {
 };
 AngularGeometry angularGeometry(const DimensionData& d);
 
+// The measured arc and the dimension arc of an arc-length dimension: defPts = {centre, start
+// point, end point, a point on the dimension arc}. The sector runs counter-clockwise from the
+// start point to the end point; the dimension arc is never smaller than the measured arc.
+struct ArcSpan {
+    bool ok = false;
+    Vec2 center{};
+    double startAngle = 0, sweep = 0;
+    double arcRadius = 0;  // radius of the measured arc
+    double dimRadius = 0;  // radius of the dimension arc
+};
+ArcSpan arcSpan(const DimensionData& d);
+
 // `tolerance` is the chord tolerance used for dots (arcs stay arcs).
 // `annoScale` multiplies every size of the style (annotative objects); 1 = as styled.
 Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance = 0.01,

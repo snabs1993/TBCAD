@@ -88,8 +88,12 @@ double measurement(const DimensionData& d) {
             AngularGeometry g = angularGeometry(d);
             return g.ok ? g.sweep : 0;
         }
-        case DimKind::ArcLength:
-            break;
+        case DimKind::ArcLength: {
+            ArcSpan g = arcSpan(d);
+            return g.ok ? g.arcRadius * g.sweep : 0;
+        }
+        case DimKind::Ordinate:
+            return std::abs(d.rotation < kPi / 4 ? p[0].x - p[2].x : p[0].y - p[2].y);
     }
     return 0;
 }

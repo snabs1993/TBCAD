@@ -339,7 +339,10 @@ enum class DimKind : std::uint8_t {
     Diameter,
     Angular2Line,
     Angular3Point,
-    ArcLength,  // reserved
+    ArcLength,  // defPts = {centre, start point, end point, point on the dimension arc}
+    // defPts = {feature point, leader end, origin}; rotation 0 measures X (leader runs along Y),
+    // pi / 2 measures Y.
+    Ordinate,
 };
 
 struct DimensionData {

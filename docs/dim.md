@@ -116,6 +116,14 @@ point) or **None**. It uses the current dimension style for arrow and text. Each
 entity; the first one carries the note and the others end at the same landing point, so they move, erase
 and export to DXF like any other leaders. Everything from one MLEADER run is one undo step.
 
+## Arc length and ordinate dimensions (Q81)
+
+- **DIMARC** (DAR) dimensions the length of a picked arc. The dimension arc follows the cursor; **Text** overrides the
+  text. In DXF it is written as plain lines, arcs and text (a warning says so); `.tbcad` keeps it as a dimension.
+- **DIMORDINATE** (DOR) dimensions the X or Y distance of a point from the origin (0,0). Pick the feature, then the
+  leader end: moving mostly up or down measures X, mostly sideways measures Y; **Xdatum** / **Ydatum** force the axis.
+  Ordinate dimensions round trip through DXF (type 6, bit 64 = X datum).
+
 ## Chains and text editing (Q67)
 
 - **DIMCONTINUE** (DCO) continues from the last linear or aligned dimension: the new one starts at the previous
