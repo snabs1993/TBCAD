@@ -90,6 +90,14 @@ if(TBCAD_BUILD_TESTS)
     tbcad_appcore tbcad_ui tbcad_platform tbcad_command_registry doctest::doctest)
   include(doctest)
   doctest_discover_tests(tbcad_menu_smoke_tests PROPERTIES TIMEOUT 600)
+  # Every panel drawn for a few frames in a window-less Dear ImGui context; any recoverable ImGui
+  # error (wrong table column count, unbalanced Begin / End ...) fails the test.
+  add_executable(tbcad_panel_frame_tests tests/panel_frames.cpp)
+  target_compile_features(tbcad_panel_frame_tests PRIVATE cxx_std_20)
+  tbcad_set_warnings(tbcad_panel_frame_tests)
+  target_link_libraries(tbcad_panel_frame_tests PRIVATE
+    tbcad_appcore tbcad_ui tbcad_platform tbcad_command_registry tbcad::imgui doctest::doctest)
+  doctest_discover_tests(tbcad_panel_frame_tests PROPERTIES TIMEOUT 300)
   add_test(NAME tbcad_gui_smoke
            COMMAND tbcad --self-test --frames 5 --script "DEVGEN LINES 20000")
   set_tests_properties(tbcad_gui_smoke PROPERTIES

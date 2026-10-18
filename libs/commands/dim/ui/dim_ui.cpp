@@ -19,6 +19,8 @@ namespace {
 
 constexpr ImGuiInputTextFlags kEnter =
     ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll;
+// InputDouble / InputInt do not take EnterReturnsTrue: the edit counts when the field is left.
+constexpr ImGuiInputTextFlags kNumber = ImGuiInputTextFlags_AutoSelectAll;
 
 struct PanelState {
     DimStyleId selected{};
@@ -148,7 +150,8 @@ void realField(ui::PanelContext& pc, const DimStyle& s, const char* label, const
                double value) {
     double v = value;
     ImGui::SetNextItemWidth(fieldWidth());
-    if (ImGui::InputDouble(label, &v, 0, 0, "%.6g", kEnter) && v != value)
+    ImGui::InputDouble(label, &v, 0, 0, "%.6g", kNumber);
+    if (ImGui::IsItemDeactivatedAfterEdit() && v != value)
         pc.runCommand(editLine(s.name, key, number(v)));
 }
 
@@ -207,7 +210,8 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
               {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
     int prec = s.precision;
     ImGui::SetNextItemWidth(fieldWidth());
-    if (ImGui::InputInt("Decimals", &prec, 1, 1, kEnter) && prec != s.precision)
+    ImGui::InputInt("Decimals", &prec, 1, 1, kNumber);
+    if (ImGui::IsItemDeactivatedAfterEdit() && prec != s.precision)
         pc.runCommand(editLine(s.name, "Precision", std::to_string(std::clamp(prec, 0, 8))));
     realField(pc, s, "Round off", "RoundOff", s.roundOff);
     textField(pc, s, "Prefix", "Prefix", s.prefix);
