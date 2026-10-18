@@ -74,6 +74,16 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
                 else
                     cur.overline = k == 'O';
                 i += 2;
+            } else if (k == 'p') {
+                // Paragraph settings (\pxqc; alignment, indents): read and not shown.
+                std::size_t j = i + 2;
+                auto arg = readArg(s, j);
+                if (!arg) {
+                    text += c;
+                    ++i;
+                    continue;
+                }
+                i = j;
             } else if (k == 'P') {
                 flush();
                 Piece p;

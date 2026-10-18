@@ -348,9 +348,10 @@ double cellValue(Eval& ev, std::size_t row, std::size_t col, bool& numeric) {
     numeric = false;
     const CellRef a = anchorOf(ev.t, row, col);
     const TableCell& cell = cellAt(ev.t, a.row, a.col);
-    if (cell.utf8.empty())
+    const std::string body = cellBody(cell.utf8);
+    if (body.empty())
         return 0;
-    if (cell.utf8[0] == '=') {
+    if (body[0] == '=') {
         const std::size_t key = a.row * colCount(ev.t) + a.col;
         if (ev.active.count(key) || ev.depth >= kMaxDepth) {
             ev.error = "#LOOP";
@@ -358,7 +359,7 @@ double cellValue(Eval& ev, std::size_t row, std::size_t col, bool& numeric) {
         }
         ev.active.insert(key);
         ++ev.depth;
-        Parser p{ev, std::string_view(cell.utf8).substr(1)};
+        Parser p{ev, std::string_view(body).substr(1)};
         const double v = expression(p);
         if (!p.failed && !p.atEnd())
             p.fail("#ERR");
@@ -370,7 +371,7 @@ double cellValue(Eval& ev, std::size_t row, std::size_t col, bool& numeric) {
         return v;
     }
     double v = 0;
-    if (numberText(cell.utf8, v)) {
+    if (numberText(body, v)) {
         numeric = true;
         return v;
     }
@@ -398,6 +399,35 @@ bool isFormula(const std::string& text) {
     return !text.empty() && text[0] == '=';
 }
 
+namespace {
+constexpr std::string_view kAlignCodes[] = {"\\pxql;", "\\pxqc;", "\\pxqr;"};
+}
+
+std::optional<CellAlign> cellAlign(const TableCell& cell) {
+    for (std::size_t i = 0; i < 3; ++i)
+        if (cell.utf8.compare(0, kAlignCodes[i].size(), kAlignCodes[i]) == 0)
+            return static_cast<CellAlign>(i);
+    return std::nullopt;
+}
+
+std::string cellBody(const std::string& utf8) {
+    for (std::string_view code : kAlignCodes)
+        if (utf8.compare(0, code.size(), code) == 0)
+            return utf8.substr(code.size());
+    return utf8;
+}
+
+bool setCellAlign(TableData& t, std::size_t row, std::size_t col, std::optional<CellAlign> align) {
+    if (row >= rowCount(t) || col >= colCount(t))
+        return false;
+    TableCell& cell = cellAt(t, row, col);
+    if (cell.covered)
+        return false;
+    std::string body = cellBody(cell.utf8);
+    cell.utf8 = align ? std::string(kAlignCodes[static_cast<std::size_t>(*align)]) + body : body;
+    return true;
+}
+
 std::string cellName(std::size_t row, std::size_t col) {
     std::string letters;
     for (std::size_t c = col + 1; c > 0; c = (c - 1) / 26)
@@ -407,8 +437,9 @@ std::string cellName(std::size_t row, std::size_t col) {
 
 std::string displayText(const TableData& t, std::size_t row, std::size_t col) {
     const TableCell& cell = cellAt(t, row, col);
-    if (!isFormula(cell.utf8))
-        return cell.utf8;
+    const std::string body = cellBody(cell.utf8);
+    if (!isFormula(body))
+        return body;
     Eval ev{t};
     bool numeric = false;
     const double v = cellValue(ev, row, col, numeric);

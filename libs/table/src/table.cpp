@@ -349,7 +349,7 @@ Layout layout(const TableData& t) {
     for (std::size_t r = 0; r < rows; ++r) {
         for (std::size_t c = 0; c < cols; ++c) {
             const TableCell& cell = cellAt(t, r, c);
-            if (cell.covered || cell.utf8.empty())
+            if (cell.covered || cellBody(cell.utf8).empty())
                 continue;
             const Rect rc = cellRect(t, r, c);
             TextItem item;
@@ -357,9 +357,15 @@ Layout layout(const TableData& t) {
             item.utf8 = displayText(t, r, c);
             item.width = std::max(0.0, rc.x1 - rc.x0 - 2 * t.margin);
             const double cy = (rc.y0 + rc.y1) / 2;
-            if (t.titleRow && r == 0) {
+            const std::optional<CellAlign> align = cellAlign(cell);
+            const CellAlign eff =
+                align ? *align : (t.titleRow && r == 0 ? CellAlign::Center : CellAlign::Left);
+            if (eff == CellAlign::Center) {
                 item.attach = Attachment::MiddleCenter;
                 item.position = toWorld(t, {(rc.x0 + rc.x1) / 2, cy});
+            } else if (eff == CellAlign::Right) {
+                item.attach = Attachment::MiddleRight;
+                item.position = toWorld(t, {rc.x1 - t.margin, cy});
             } else {
                 item.attach = Attachment::MiddleLeft;
                 item.position = toWorld(t, {rc.x0 + t.margin, cy});

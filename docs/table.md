@@ -31,6 +31,10 @@ centred title. Text in a cell is TBCAD markup (plain text works) and wraps at th
   Text that reads as a number counts as that number, an empty cell as 0. Mistakes show `#ERR`, `#REF` (outside the
   table), `#NAME`, `#VALUE` (text where a number is needed), `#DIV/0` or `#LOOP` (a formula that needs itself).
   The formula itself is kept in the cell and in the DXF extended data; TABLEEDIT shows it when editing.
+- **Alignment**: TABLEEDIT `Align` (this cell) and `AlignColumn` (the whole column) set Left, Center, Right or
+  Default. It is stored as the MTEXT paragraph code `\pxql;`, `\pxqc;` or `\pxqr;` at the start of the cell text,
+  so it needs no file format change; formulas, CSV export and explode look through it, and editing the cell text
+  keeps it.
 - **TABLESTYLE** (alias TS): named sets of column width, row height, text height, margin and text style, kept in the
   drawing. Keywords: Set (make current), New, Modify, Delete, Apply (give a style's sizes to tables already drawn),
   List. TABLE starts from the current style; `Standard` (30 x 8, text 2.8, margin 1) always exists.
