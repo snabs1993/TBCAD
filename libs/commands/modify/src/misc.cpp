@@ -560,7 +560,7 @@ cmd::Task askMatchSettings(cmd::CommandContext& ctx) {
 class MatchPropCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "MATCHPROP"; }
-    std::vector<std::string> defaultAliases() const override { return {"MA"}; }
+    std::vector<std::string> defaultAliases() const override { return {"MA", "PAINTER", "MATCH"}; }
     std::string_view description() const override {
         return "Copy the properties of one object to other objects";
     }
