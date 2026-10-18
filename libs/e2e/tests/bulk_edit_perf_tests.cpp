@@ -128,12 +128,12 @@ TEST_CASE("perf: whole-drawing edits with undo and redo") {
     big.bench("MIRROR", {"MIRROR", "0,0", "10,0", "N"});
     big.bench("STRETCH", {"STRETCH", "-100000,-100000", "100000,100000", "0,0", "5,0"});
     big.bench("ERASE", {"ERASE"});
-    big.bench("CHPROP-C", {"CHPROP", "Color", "1", ""});
+    big.bench("CHPROP-C", {"CHPROP", "Color", "1"});
     big.core->submitText("-LAYER");
     big.core->submitText("Make");
     big.core->submitText("Other");
     big.core->submitText("");
-    big.bench("CHPROP-L", {"CHPROP", "Layer", "Other", ""});
+    big.bench("CHPROP-L", {"CHPROP", "Layer", "Other"});
 }
 
 namespace {
@@ -218,4 +218,14 @@ TEST_CASE("perf: ERASE of everything alone") {
 TEST_CASE("perf: MOVE of everything alone") {
     Big big;
     big.bench("MOVE", {"MOVE", "0,0", "5,5"});
+}
+
+TEST_CASE("perf: MIRROR of everything alone") {
+    Big big;
+    big.bench("MIRROR", {"MIRROR", "0,0", "10,0", "N"});
+}
+
+TEST_CASE("perf: COPY of everything alone") {
+    Big big;
+    big.bench("COPY", {"COPY", "0,0", "5,5", ""});
 }

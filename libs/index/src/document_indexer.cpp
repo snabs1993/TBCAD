@@ -57,6 +57,18 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
         rebuild();
         return;
     }
+    // Taking out many entries one by one condenses the tree again and again (several times the
+    // cost of putting them in), so a quarter of the index going away is also a rebuild.
+    if (n > 1000 && n * 4 > index_.size()) {
+        std::size_t gone = 0;
+        for (const EntityChange& c : changes.entities)
+            if (!changes.after(c))
+                ++gone;
+        if (gone * 4 > index_.size()) {
+            rebuild();
+            return;
+        }
+    }
     std::shared_ptr<void> run = (batch_ && n > 8) ? batch_() : nullptr;
     for (const EntityChange& c : changes.entities)
         reindex(changes.idOf(c));

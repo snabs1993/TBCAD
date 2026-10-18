@@ -181,3 +181,31 @@ TEST_CASE("a large transaction is handled and the indexer unregisters on destruc
     again.rebuild();
     CHECK(idx.size() == 5001);
 }
+
+TEST_CASE("erasing a third of a big drawing keeps the index right, and so does its undo") {
+    Document doc;
+    SpatialIndex idx;
+    DocumentIndexer indexer(doc, idx, boundsOf);
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("bulk");
+        for (int i = 0; i < 6000; ++i) {
+            auto r = tx.add(line(i, 0, i + 1, 1));
+            REQUIRE(r);
+            ids.push_back(r.value());
+        }
+        tx.commit();
+    }
+    ChangeSet erased;
+    {
+        Transaction tx = doc.begin("erase");
+        for (std::size_t i = 0; i < ids.size(); i += 3)
+            REQUIRE(tx.erase(ids[i]));
+        erased = tx.commit();
+    }
+    CHECK(idx.size() == 4000);
+    checkSame(doc, idx);
+    doc.apply(erased, Direction::Undo);
+    CHECK(idx.size() == 6000);
+    checkSame(doc, idx);
+}
