@@ -1183,3 +1183,24 @@ TEST_CASE("zoom extents leaves out objects on frozen layers") {
     f.core->zoomExtents();
     CHECK(f.core->camera().visibleWorld().width() < 100000);
 }
+
+TEST_CASE("ZOOM Previous returns to the view before the last zoom - Scale and Center") {
+    Fixture f("zoomprev");
+    f.line("0,0", "10000,0");
+    f.line("0,0", "0,5000");
+    f.core->zoomExtents();
+    const double before = f.core->camera().pixelsPerMm;
+    f.core->submitText("ZOOM 0,0 100,100");
+    CHECK(f.core->camera().pixelsPerMm > before * 5);
+    f.core->submitText("ZOOM P");
+    CHECK(f.core->camera().pixelsPerMm == doctest::Approx(before).epsilon(1e-6));
+    f.core->submitText("ZOOM P");  // nothing left
+    CHECK(f.core->camera().pixelsPerMm == doctest::Approx(before).epsilon(1e-6));
+
+    f.core->submitText("ZOOM S 2");
+    CHECK(f.core->camera().pixelsPerMm == doctest::Approx(before * 2).epsilon(1e-6));
+
+    f.core->submitText("ZOOM C 500,500 1000");
+    CHECK(f.core->camera().center.x == doctest::Approx(500));
+    CHECK(f.core->camera().visibleWorld().height() == doctest::Approx(1000).epsilon(0.01));
+}
