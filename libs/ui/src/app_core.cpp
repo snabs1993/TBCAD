@@ -1036,6 +1036,13 @@ Result<void> AppCore::openDxf(const fs::path& path) {
 Result<void> AppCore::saveDxf(const fs::path& path) {
     dxf::Report report;
     dxf::ExportOptions options;
+    // A drawing that came in as AC1021 or later goes back out in that version, so its text
+    // keeps UTF-8 instead of being narrowed to a code page.
+    const auto& custom = session_->doc.header().custom;
+    if (auto it = custom.find("dxf.acadver"); it != custom.end() && it->second.size() == 6 &&
+                                              it->second.compare(0, 2, "AC") == 0 &&
+                                              std::atoi(it->second.c_str() + 2) >= 1021)
+        options.version = dxf::DxfVersion::R2007;
     auto out = dxf::exportDxf(session_->doc, options, report);
     if (!out) {
         print("Cannot save " + path.string() + ": " + out.error().message);
