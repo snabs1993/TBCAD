@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <random>
+
 #include "test_support.h"
 
 using namespace tbcad;
@@ -140,4 +143,36 @@ TEST_CASE("join a loop closes the polyline - other entities are left alone") {
     std::vector<Entity> gap{line({0, 0}, {5, 0}), line({5.01, 0}, {5, 5})};
     CHECK(joinEntities(ptrs(gap)).created.empty());
     CHECK(joinEntities(ptrs(gap), 0.05).created.size() == 1);
+}
+
+TEST_CASE("join of thousands of pieces finds every partner, in any order") {
+    // A zig-zag of 3000 segments, and 400 collinear pieces on another line, shuffled together
+    // with 1500 lines at all angles that touch nothing.
+    std::vector<Entity> v;
+    for (int i = 0; i < 3000; ++i)
+        v.push_back(line({i * 2.0, (i % 2) * 1.5}, {(i + 1) * 2.0, ((i + 1) % 2) * 1.5}));
+    for (int i = 0; i < 400; ++i)
+        v.push_back(line({i * 3.0, -50}, {i * 3.0 + 1.0, -50}));  // gaps between: bridged
+    for (int i = 0; i < 1500; ++i) {
+        const double a = i * 0.0137;
+        v.push_back(line({10000.0 + i * 40.0, 100.0},
+                         {10000.0 + i * 40.0 + 9 * std::cos(a), 100.0 + 9 * std::sin(a)}));
+    }
+    std::mt19937 rng(5);
+    std::shuffle(v.begin(), v.end(), rng);
+    auto r = joinEntities(ptrs(v), 1e-3, true);
+    // one polyline for the zig-zag, one line for the collinear pieces
+    std::size_t polys = 0, lines = 0, pieces = 0;
+    for (const Entity& e : r.created) {
+        if (kind(e) == EntityKind::Polyline) {
+            ++polys;
+            pieces = as<PolylineData>(e).v.size();
+        } else if (kind(e) == EntityKind::Line) {
+            ++lines;
+        }
+    }
+    CHECK(polys == 1);
+    CHECK(pieces == 3001);
+    CHECK(lines == 1);
+    CHECK(r.consumed.size() == 3400);
 }

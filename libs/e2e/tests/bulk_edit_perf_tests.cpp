@@ -234,3 +234,15 @@ TEST_CASE("perf: STRETCH of everything alone") {
     Big big;
     big.bench("STRETCH", {"STRETCH", "-100000,-100000", "100000,100000", "0,0", "5,0"});
 }
+
+TEST_CASE("perf: other whole-drawing commands") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Big big;
+    std::printf("other commands on %d objects\n", 2 * big.n);
+    big.bench("EXPLODE", {"EXPLODE"});
+    big.bench("ARRAYRECT", {"ARRAYRECT", "2", "2", "100000", "100000"});
+    big.bench("ALIGN", {"ALIGN", "0,0", "5,5", "", ""});
+    big.bench("OFFSET", {"OFFSET", "5", "0,0", "10,10"});
+    big.bench("JOIN", {"JOIN"});
+    big.bench("PEDIT", {"PEDIT", "Multiple"});
+}
