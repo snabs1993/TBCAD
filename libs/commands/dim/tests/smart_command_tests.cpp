@@ -100,8 +100,7 @@ TEST_CASE("DIM: a line plus the Angular keyword and a second line gives an angle
 
 TEST_CASE("MLEADER: several arrowheads, one landing point and a note") {
     Fix f;
-    auto r =
-        f.host->run("MLEADER", {"0,0", "40,30", "0,60", ScriptItem::enter(), "Text", "Steel beam"});
+    auto r = f.host->run("MLEADER", {"0,0", "Add", "0,60", "40,30", "Steel beam"});
     CHECK(r.finished);
     auto ms = f.all<MLeaderData>();
     REQUIRE(ms.size() == 1);  // one object with both leader lines and the note
@@ -119,7 +118,7 @@ TEST_CASE("MLEADER: several arrowheads, one landing point and a note") {
 
 TEST_CASE("MLEADER: text typed at the first prompt is the note") {
     Fix f;
-    auto r = f.host->run("MLEADER", {"Door D1", "0,0", "40,30", ScriptItem::enter()});
+    auto r = f.host->run("MLEADER", {"Door D1", "0,0", "40,30"});
     CHECK(r.finished);
     auto ms = f.all<MLeaderData>();
     REQUIRE(ms.size() == 1);
@@ -135,14 +134,26 @@ TEST_CASE("MLEADER: block content inserts the block at the landing point") {
         REQUIRE(tx.addBlock(std::move(def)));
         tx.commit();
     }
-    auto r = f.host->run("MLEADER", {"0,0", "40,30", ScriptItem::enter(), "Block", "Tag"});
+    auto r = f.host->run("MLEADER", {"Content", "Block", "0,0", "40,30", "Tag"});
     CHECK(r.finished);
     auto ms = f.all<MLeaderData>();
     REQUIRE(ms.size() == 1);
     CHECK(ms[0]->content == MLeaderData::Content::Block);
     CHECK(f.doc.block(ms[0]->block)->name == "Tag");
 
-    auto bad = f.host->run("MLEADER", {"0,0", "40,30", ScriptItem::enter(), "Block", "Nope"});
+    auto bad = f.host->run("MLEADER", {"Content", "Block", "0,0", "40,30", "Nope"});
     CHECK(bad.finished);
     CHECK(f.all<MLeaderData>().size() == 1);
+}
+
+TEST_CASE("MLEADER: arrow, landing, then the note; text typed at the landing prompt is the note") {
+    Fix f;
+    auto r = f.host->run("MLEADER", {"0,0", "40,30", "Beam B1"});
+    CHECK(r.finished);
+    auto r2 = f.host->run("MLEADER", {"0,0", "Column C2", "40,30"});
+    CHECK(r2.finished);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 2);
+    CHECK(ms[0]->utf8 == "Beam B1");
+    CHECK(ms[1]->utf8 == "Column C2");
 }

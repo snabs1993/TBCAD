@@ -110,9 +110,10 @@ edits through the same command line; it is listed under the panels menu.
 
 The preview follows the cursor while the location is chosen. All dimensions of one DIM run are one undo step.
 
-**MLEADER** (alias MLD) takes an arrowhead point and a landing point, then any number of further arrowhead
-points (Enter to finish), then the content: **Text**, **Block** (an existing block, inserted at the landing
-point) or **None**. It uses the current dimension style for arrow and text. The result is one
+**MLEADER** (alias MLD) takes an arrowhead point and a landing point, then asks for the note straight away. Text
+typed at either point prompt is the note itself. The first prompt has the option **Content** (**Text**,
+**Block**, an existing block inserted at the landing point, or **None**; the multileader style's type is the
+default) and the landing prompt has **Add** for further arrowheads. It uses the current dimension style for arrow and text. The result is one
 multileader object (`MLeader`): all leader lines, the landing point where they meet, a dogleg of one arrow
 length to the note, and the note or block at its end. It moves, copies, scales, grips and erases as one
 object, and its lines, landing point and note each have a grip. **MLEADERALIGN** (MLA) lines up the landing
