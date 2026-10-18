@@ -71,7 +71,7 @@ TEST_CASE("DIMSTYLE sessions with dimensions undo, redo and round trip") {
         for (int step = 0; step < 50; ++step) {
             const std::size_t before = host.undoStack().undoCount();
             std::string name;
-            switch (rng() % 6) {
+            switch (rng() % 8) {
                 case 0: {
                     name = "S" + std::to_string(step);
                     (void)host.run("DIMSTYLE", {"New", name, "Done"});
@@ -103,6 +103,28 @@ TEST_CASE("DIMSTYLE sessions with dimensions undo, redo and round trip") {
                     (void)host.run("DIMSTYLE",
                                    {"Delete", styleNames[rng() % styleNames.size()], "Current",
                                     styleNames[rng() % styleNames.size()], "Done"});
+                    break;
+                case 5: {
+                    name = "DIMOVERRIDE";
+                    std::vector<EntityId> dims;
+                    doc.forEachEntity([&](const Entity& e) {
+                        if (entityAs<DimensionData>(e))
+                            dims.push_back(e.common.id);
+                    });
+                    if (dims.empty())
+                        break;
+                    host.setSelection({dims[rng() % dims.size()], dims[rng() % dims.size()]});
+                    auto [key, value] = randomProperty(rng);
+                    if (rng() % 5 == 0)
+                        (void)host.run("DIMOVERRIDE", {"Clear"});
+                    else
+                        (void)host.run("DIMOVERRIDE", {key, value});
+                    break;
+                }
+                case 6:
+                    name = "Compare";
+                    (void)host.run("DIMSTYLE", {"Compare", styleNames[rng() % styleNames.size()],
+                                                styleNames[rng() % styleNames.size()], "Done"});
                     break;
                 default:
                     name = "DIMLINEAR";

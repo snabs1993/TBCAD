@@ -585,6 +585,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeQuickDimCommand());
     (void)registry.add(makeDimStyleCommand());
     (void)registry.add(makeDimSetupCommand());
+    (void)registry.add(makeDimOverrideCommand());
     (void)registry.add(makeDimStylesPanelCommand());
 }
 

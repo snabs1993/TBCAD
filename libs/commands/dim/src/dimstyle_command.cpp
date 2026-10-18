@@ -85,6 +85,55 @@ const std::vector<std::string> kProps = {
     "Prefix",       "Suffix",        "RoundOff",  "Scale",     "LeadingZeros", "TrailingZeros",
     "LineColor",    "ExtColor",      "TextColor"};
 
+std::string num(double v) {
+    char buf[40];
+    std::snprintf(buf, sizeof buf, "%g", v);
+    return buf;
+}
+
+std::string colourText(Color c) {
+    switch (c.kind) {
+        case ColorKind::ByBlock:
+            return "ByBlock";
+        case ColorKind::ByLayer:
+            return "ByLayer";
+        case ColorKind::Rgb:
+            return std::to_string(c.r) + "," + std::to_string(c.g) + "," + std::to_string(c.b);
+        default:
+            return std::to_string(c.indexValue());
+    }
+}
+
+// Every property the DIMSTYLE command edits, as text, in the order of kProps.
+std::vector<std::pair<std::string, std::string>> describe(const Document& doc, const DimStyle& s) {
+    const TextStyle* ts = s.textStyle.value ? doc.textStyle(s.textStyle) : nullptr;
+    const char* arrow[] = {"Filled", "Open", "Tick", "Dot", "None"};
+    const char* unit[] = {"mm", "cm", "m", "in", "ft"};
+    return {
+        {"TextHeight", num(s.textHeight)},
+        {"TextGap", num(s.textGap)},
+        {"TextStyle", ts ? ts->name : "Current"},
+        {"ArrowType", arrow[static_cast<int>(s.arrowType)]},
+        {"ArrowSize", num(s.arrowSize)},
+        {"ExtOffset", num(s.extLineOffset)},
+        {"ExtExtension", num(s.extLineExtension)},
+        {"LineExtension", num(s.dimLineExtension)},
+        {"Placement", s.textPlacement == DimTextPlacement::AboveLine ? "Above" : "Centered"},
+        {"Alignment", s.textAlign == DimTextAlign::WithDimLine ? "WithLine" : "Horizontal"},
+        {"Units", unit[static_cast<int>(s.units)]},
+        {"Precision", std::to_string(s.precision)},
+        {"Prefix", s.prefix.empty() ? "none" : s.prefix},
+        {"Suffix", s.suffix.empty() ? "none" : s.suffix},
+        {"RoundOff", num(s.roundOff)},
+        {"Scale", num(s.overallScale)},
+        {"LeadingZeros", s.suppressLeadingZeros ? "Suppress" : "Show"},
+        {"TrailingZeros", s.suppressTrailingZeros ? "Suppress" : "Show"},
+        {"LineColor", colourText(s.dimLineColor)},
+        {"ExtColor", colourText(s.extLineColor)},
+        {"TextColor", colourText(s.textColor)},
+    };
+}
+
 }  // namespace
 
 const std::vector<std::string>& propertyKeywords() {
@@ -232,7 +281,7 @@ public:
         ctx.setUndoLabel("Dimension style");
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Current", "New", "Rename", "Delete", "Edit", "List", "Done"};
+            ko.keywords = {"Current", "New", "Rename", "Delete", "Edit", "Compare", "List", "Done"};
             ko.defaultKeyword = "Done";
             auto k = co_await ctx.getKeyword("Dimension style option", ko);
             if (!k.ok() || k.keyword == "Done")
@@ -305,6 +354,31 @@ public:
                                         ? "Dimensions or leaders still use \"" + name + "\"."
                                         : r.error().message);
                 }
+            } else if (k.keyword == "Compare") {
+                const DimStyle* a = ctx.doc().dimStyleByName(name);
+                if (!a) {
+                    ctx.message("No dimension style named \"" + name + "\".");
+                    continue;
+                }
+                cmd::StringOptions so2;
+                auto n2 = co_await ctx.getString("Style to compare with", so2);
+                if (!n2.ok())
+                    continue;
+                const std::string other = cmd::trim(n2.text);
+                const DimStyle* b = ctx.doc().dimStyleByName(other);
+                if (!b) {
+                    ctx.message("No dimension style named \"" + other + "\".");
+                    continue;
+                }
+                const auto da = describe(ctx.doc(), *a), db = describe(ctx.doc(), *b);
+                int differences = 0;
+                for (std::size_t i = 0; i < da.size(); ++i)
+                    if (da[i].second != db[i].second) {
+                        ++differences;
+                        ctx.message(da[i].first + ": " + da[i].second + " | " + db[i].second);
+                    }
+                ctx.message(differences == 0 ? "The styles are the same."
+                                             : std::to_string(differences) + " difference(s).");
             } else if (k.keyword == "Edit") {
                 const DimStyle* s = ctx.doc().dimStyleByName(name);
                 if (!s) {
@@ -455,6 +529,98 @@ private:
     }
 };
 
+// DIMOVERRIDE: changes one property of the selected dimensions only. Each gets a style of its
+// own, derived from the one it used ("<style>$N"); equal overrides share a style. "Clear" puts the
+// dimensions back on the style they were derived from.
+class DimOverrideCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMOVERRIDE"; }
+    std::string_view description() const override {
+        return "Override a dimension style property on the selected dimensions";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select dimensions",
+                                             cmd::SelectionOptions{.filter = [](const Entity& e) {
+                                                 return kind(e) == EntityKind::Dimension;
+                                             }});
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = propertyKeywords();
+        ko.keywords.push_back("Clear");
+        auto p = co_await ctx.getKeyword("Property to override or [Clear]", ko);
+        if (!p.ok())
+            co_return;
+        std::string value;
+        if (p.keyword != "Clear") {
+            cmd::StringOptions vo;
+            auto v = co_await ctx.getString(p.keyword + " value", vo);
+            if (!v.ok())
+                co_return;
+            value = cmd::trim(v.text);
+            // Check the value once on a scratch copy before touching anything.
+            DimStyle probe = dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
+            const std::string err = applyProperty(ctx.doc(), probe, p.keyword, value);
+            if (!err.empty()) {
+                ctx.message(err);
+                co_return;
+            }
+        }
+        std::size_t changed = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            const auto* d = e ? entityAs<DimensionData>(*e) : nullptr;
+            if (!d)
+                continue;
+            const DimStyle base = dim::styleOf(ctx.doc(), d->style);
+            DimStyleId target = base.id;
+            std::string root = base.name;
+            if (auto at = root.rfind('$'); at != std::string::npos && at > 0)
+                root.resize(at);
+            if (p.keyword == "Clear") {
+                if (const DimStyle* r = ctx.doc().dimStyleByName(root))
+                    target = r->id;
+            } else {
+                DimStyle derived = base;
+                if (!applyProperty(ctx.doc(), derived, p.keyword, value).empty())
+                    continue;
+                if (describe(ctx.doc(), derived) == describe(ctx.doc(), base))
+                    continue;
+                // Reuse an existing override with the same settings.
+                target = {};
+                for (const auto& [sid, st] : ctx.doc().dimStyles()) {
+                    if (st.name.rfind(root + "$", 0) == 0 &&
+                        describe(ctx.doc(), st) == describe(ctx.doc(), derived))
+                        target = sid;
+                }
+                if (!target.value) {
+                    int n = 1;
+                    while (ctx.doc().dimStyleByName(root + "$" + std::to_string(n)))
+                        ++n;
+                    derived.id = {};
+                    derived.name = root + "$" + std::to_string(n);
+                    auto added = ctx.tx().addDimStyle(std::move(derived));
+                    if (!added)
+                        continue;
+                    target = added.value();
+                }
+            }
+            if (target == base.id && d->style.value)
+                continue;
+            auto r = ctx.tx().modify(id, [&](Entity& x) {
+                if (auto* dd = entityAs<DimensionData>(x)) {
+                    dd->style = target;
+                    dim::refresh(ctx.doc(), *dd);
+                }
+            });
+            changed += r ? 1 : 0;
+        }
+        ctx.message(std::to_string(changed) + " changed");
+        ctx.setUndoLabel("Dimension override");
+    }
+};
+
 class DimStylesPanelCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMSTYLES"; }
@@ -469,6 +635,10 @@ public:
 
 std::unique_ptr<cmd::Command> makeDimStylesPanelCommand() {
     return std::make_unique<DimStylesPanelCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeDimOverrideCommand() {
+    return std::make_unique<DimOverrideCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeDimSetupCommand() {
