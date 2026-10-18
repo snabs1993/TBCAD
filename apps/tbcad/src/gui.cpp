@@ -92,7 +92,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
           [this](int mode) { setThemeMode(static_cast<ui::ThemeMode>(mode)); },
           [this] { setDpiScale(dpiScale_); },
           [this](const std::string& action) { return actionLabel(action); },
-          [this] { cursorHud_ = core_.settings().getBool("hud.enabled", true); }}),
+          [this] { cursorHud_ = flag("hud.enabled", true); }}),
       workspaces_(core.settingsFolder() / "workspaces") {
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
@@ -122,7 +122,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
              !std::filesystem::is_directory(platform::pathFromUtf8(*current), ec)))
             core_.setSetting("block.library", shipped);
     }
-    cursorHud_ = core_.settings().getBool("hud.enabled", true);
+    cursorHud_ = flag("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
     // The default dock sizes changed (a command bar of about four rows); a layout saved by
@@ -588,7 +588,7 @@ void Gui::toast(const std::string& text) {
 }
 
 bool Gui::lineweights() const {
-    return core_.settings().getBool("view.lineweights", true);
+    return flag("view.lineweights", true);
 }
 
 void Gui::drawToasts(const ViewportRect& rect) {
@@ -1032,7 +1032,7 @@ void Gui::toolStrip() {
         bool first = true;
         for (const Group& group : groups) {
             const std::string key = std::string("ui.toolgroup.") + group.name;
-            if (!core_.settings().getBool(key, true))
+            if (!flag(key, true))
                 continue;
             bool any = false;
             for (const Tool& t : group.tools)
@@ -1093,7 +1093,7 @@ void Gui::toolStrip() {
         if (ImGui::BeginPopupContextWindow("##toolstripMenu")) {
             for (const Group& group : groups) {
                 const std::string key = std::string("ui.toolgroup.") + group.name;
-                bool shown = core_.settings().getBool(key, true);
+                bool shown = flag(key, true);
                 if (ImGui::MenuItem(group.name, nullptr, &shown))
                     core_.settings().setBool(key, shown);
             }
@@ -2512,7 +2512,7 @@ void Gui::startPage(const ViewportRect& rect) {
                 ImGui::PopID();
             }
         }
-        if (core_.settings().getBool("ui.gettingAround", true)) {
+        if (flag("ui.gettingAround", true)) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextDisabled("Getting around");
@@ -2924,8 +2924,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 core_.lassoSelect(lassoPath_, ps);
             } else if (dragging_) {
                 core_.dragSelect(pressPos_, mouse, ps);
-            } else if (io.KeyAlt ||
-                       (core_.settings().getBool("ui.selectionCycling", false) && !doubleClick_)) {
+            } else if (io.KeyAlt || (flag("ui.selectionCycling", false) && !doubleClick_)) {
                 core_.cycleClick(ps);
             } else if (doubleClick_)
                 core_.doubleClick(ps);
@@ -2943,7 +2942,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
     // releasing over a slice runs it; a shorter press opens the menu on release. The wheel is
     // for starting commands, so it stays closed while one is running (hold then gives the menu).
     const bool rightIsEnter = core_.settings().getString("ui.rightClick", "menu") == "enter";
-    const bool wheelOn = !rightIsEnter && core_.settings().getBool("ui.wheel.enabled", true);
+    const bool wheelOn = !rightIsEnter && flag("ui.wheel.enabled", true);
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
         const auto* pr = core_.runner().prompt();
         if (io.KeyShift && core_.runner().active() && pr &&
@@ -3012,6 +3011,11 @@ void Gui::dropIntoViewport(const ViewportRect& rect) {
         core_.submitText(line);
 }
 
+bool Gui::flag(std::string_view key, bool fallback) const {
+    const auto v = core_.setting(key);
+    return v ? drafting::parseBoolSetting(*v, fallback) : fallback;
+}
+
 // Setting hover.tooltip: after the pointer rests 600 ms on an object, a tooltip names its type,
 // layer and length or radius.
 void Gui::hoverTooltip() {
@@ -3022,8 +3026,8 @@ void Gui::hoverTooltip() {
         hoverTipPos_ = io.MousePos;
         hoverTipSince_ = now;
     }
-    if (!core_.settings().getBool("hover.tooltip", false) || now - hoverTipSince_ < 0.6 ||
-        core_.runner().active() || io.WantCaptureMouse)
+    if (!flag("hover.tooltip", false) || now - hoverTipSince_ < 0.6 || core_.runner().active() ||
+        io.WantCaptureMouse)
         return;
     const EntityId id = core_.hoveredEntity();
     if (!id)
@@ -3319,8 +3323,7 @@ ViewportRect Gui::frame() {
     cursorHud(rect);
     gripMenu(rect);
     // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.
-    if (!core_.inPaperSpace() && core_.settings().getBool("display.originIcon", true) &&
-        !ucsIconShown()) {
+    if (!core_.inPaperSpace() && flag("display.originIcon", true) && !ucsIconShown()) {
         const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
         const Vec2 o = core_.camera().worldToScreen({0, 0});
         const ImVec2 at(rect.x + static_cast<float>(o.x / sc),

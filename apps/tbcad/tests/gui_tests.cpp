@@ -972,3 +972,47 @@ TEST_CASE("F1 explains the running command, else opens the quick start") {
     CHECK_FALSE(h.windowOpen("Command Help"));
     CHECK(h.core().runner().active());  // the command itself keeps waiting
 }
+
+TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    h.command("LINE");
+    const ImVec2 a = screenOf(h, {100, 100}), b = screenOf(h, {400, 100});
+    h.click(a.x, a.y);
+    h.click(b.x, b.y);
+    h.core().pressEscape();
+    h.core().zoomExtents();
+    h.frame(20);
+    h.scroll(700, 500, -3.0f);
+    h.frame(30);
+    REQUIRE(entityCount(h) == 1);
+    const ImVec2 onLine = screenOf(h, {180, 100});
+
+    // Off by default: resting on the line shows nothing. Set as text, like the SETTING command.
+    h.moveMouse(onLine.x, onLine.y);
+    h.frame(60);
+    CHECK(h.windowShot("##Tooltip").empty());
+    h.core().setSetting("hover.tooltip", "1");
+    h.moveMouse(onLine.x + 3, onLine.y);
+    h.frame(20);
+    CHECK(h.windowShot("##Tooltip").empty());  // not yet 600 ms
+    h.frame(40);
+    const Image tip = h.windowShot("##Tooltip");
+    REQUIRE_FALSE(tip.empty());
+    CHECK(matchesGolden(tip, "hover_tooltip_line"));
+    h.moveMouse(onLine.x + 300, onLine.y + 200);
+    h.frame(3);
+    CHECK(h.windowShot("##Tooltip").empty());
+
+    // ui.rightClick = enter: a right click at "Select objects" finishes it instead of a menu.
+    h.core().setSetting("ui.rightClick", "enter");
+    h.command("ERASE");
+    h.click(onLine.x, onLine.y);
+    h.frame(40);
+    h.click(onLine.x + 300, onLine.y + 200, 1);
+    h.frame(3);
+    CHECK(entityCount(h) == 0);
+    CHECK_FALSE(h.core().runner().active());
+    CHECK(h.windowShot("##Popup").empty());
+}
