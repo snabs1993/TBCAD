@@ -88,7 +88,7 @@ public:
                 std::string(pdf_ ? "Enter the .pdf file to attach"
                             : kind_ == Kind::Image
                                 ? "Enter the .png, .jpg or .bmp file to attach"
-                                : "Enter the .tbcad, .dxf or .pdf file to attach") +
+                                : "Enter the .tbcad, .dxf, .dwg or .pdf file to attach") +
                 (ctx.host().dialogsAvailable() ? " (? to browse)" : ""));
             if (!f.ok())
                 co_return;
