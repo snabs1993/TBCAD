@@ -64,6 +64,21 @@ using IdleClickFn =
     std::function<bool(PanelContext&, Vec2 world, double apertureMm, bool shift, bool ctrl)>;
 using OverlayDrawFn = std::function<void(PanelContext&, render::Overlay&)>;
 
+// A small menu the application shows next to a point of the drawing while the cursor rests on it
+// (the options of a multifunctional grip). `key` identifies what is hovered, so that the chosen
+// row resets when the cursor moves to something else.
+struct HoverMenu {
+    struct Item {
+        std::string label{};
+        std::string command{};  // command line run when the row is chosen
+    };
+    std::string key{};
+    Vec2 anchorWorld{};
+    std::vector<Item> items{};
+};
+// Fills `menu` and returns true when something at the cursor offers a menu.
+using HoverMenuFn = std::function<bool(PanelContext&, HoverMenu&)>;
+
 struct PanelInfo {
     std::string id{};  // unique, e.g. "layers"; also the key for the dock layout
     std::string title{};
@@ -106,6 +121,9 @@ public:
     // Like an overlay drawer, but drawn before the drawing so that it lies under the objects
     // (the grid).
     void addUnderlayDrawer(OverlayDrawFn fn);
+    // Shown by the application when the cursor rests on a point that offers choices; the first
+    // hook that returns true wins.
+    void addHoverMenu(HoverMenuFn fn) { hoverMenus_.push_back(std::move(fn)); }
     // Hooks run in registration order until one returns true.
     void addIdleClickHook(IdleClickFn fn) { idleClicks_.push_back(std::move(fn)); }
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
@@ -130,6 +148,7 @@ public:
     const std::vector<OverlayDrawFn>& overlayDrawers() const { return overlays_; }
     const std::vector<OverlayDrawFn>& underlayDrawers() const { return underlays_; }
     const std::vector<IdleClickFn>& idleClickHooks() const { return idleClicks_; }
+    const std::vector<HoverMenuFn>& hoverMenus() const { return hoverMenus_; }
     const std::vector<PropertySection>& propertySections() const { return sections_; }
     struct PointFilterEntry {
         int order = 0;
@@ -149,6 +168,7 @@ private:
     std::vector<OverlayDrawFn> overlays_{};
     std::vector<OverlayDrawFn> underlays_{};
     std::vector<IdleClickFn> idleClicks_{};
+    std::vector<HoverMenuFn> hoverMenus_{};
     std::vector<PropertySection> sections_{};
     std::vector<PointFilterEntry> filters_{};
     cmd::CommandLineParser* lineParser_ = nullptr;

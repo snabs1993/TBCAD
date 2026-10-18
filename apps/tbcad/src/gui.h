@@ -120,6 +120,7 @@ private:
     void drawSuggestions(ImVec2 inputPos, float width);
     bool optionChips();
     void cursorHud(const ViewportRect& rect);
+    void gripMenu(const ViewportRect& rect);
     void logWindow();
     std::string actionLabel(const std::string& action) const;
     void quickProperties(const ViewportRect& rect);
@@ -218,6 +219,14 @@ private:
     std::string suggestFor_{};
     bool cursorHud_ = true;
     bool hudHovered_ = false;
+    ui::HoverMenu gripMenu_{};  // the multifunctional grip menu being shown
+    bool gripMenuOpen_ = false;
+    bool gripMenuHovered_ = false;
+    bool ctrlWasDown_ = false;
+    int gripMenuSel_ = -1;  // row Ctrl moved to; -1 until it is used
+    double gripMenuSince_ = 0;
+    double gripMenuLast_ = 0;
+    std::string gripMenuSeen_{};
     std::size_t activityStamp_ = 0;
     ImVec2 hudSize_{0, 0};
     ImVec2 hoverTipPos_{-1, -1};  // where the pointer rested, for the hover tooltip

@@ -6,6 +6,8 @@
 #include "common.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/grip_menu.h"
+#include "tbcad/transform/transform.h"
+#include "tbcad/ui/ui_registry.h"
 
 using namespace tbtest;
 using cmd::ScriptItem;
@@ -239,4 +241,32 @@ TEST_CASE("every action on every grip of every sample kind keeps the drawing val
                         CHECK(std::isfinite(p.y));
                     }
                 }
+}
+
+TEST_CASE("resting the cursor on a polyline vertex grip offers a menu, empty space does not") {
+    Fixture f;
+    auto pl = add(f.doc, square());
+    f.host.setSelection({pl});
+    ui::UiRegistry reg;
+    tf::registerUi(reg);
+    REQUIRE_FALSE(reg.hoverMenus().empty());
+    std::vector<EntityId> sel{pl};
+    ui::PanelContext ctx;
+    ctx.doc = &f.doc;
+    ctx.host = &f.host;
+    ctx.selection = &sel;
+    ctx.apertureMm = 1;
+    ctx.cursorWorld = {10, 10};
+    ui::HoverMenu menu;
+    REQUIRE(reg.hoverMenus().front()(ctx, menu));
+    CHECK(menu.items.size() >= 2);
+    CHECK(menu.items.front().label == "Stretch");
+    CHECK(menu.items.front().command.rfind("GRIPEDIT ", 0) == 0);
+    CHECK(menu.anchorWorld.x == doctest::Approx(10));
+    ctx.cursorWorld = {5, 5};
+    ui::HoverMenu none;
+    CHECK_FALSE(reg.hoverMenus().front()(ctx, none));
+    ctx.cursorWorld = {10, 10};
+    ctx.commandActive = true;
+    CHECK_FALSE(reg.hoverMenus().front()(ctx, none));
 }

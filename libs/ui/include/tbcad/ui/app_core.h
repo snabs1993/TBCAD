@@ -232,6 +232,8 @@ public:
     // Pressing the button on a grip of the selection starts its edit at once (so a press-drag-
     // release moves it). True when the press was taken; call `click` for everything else.
     bool pressOnGrip(const PointerState& p);
+    // The menu a module offers for what lies under the cursor (a multifunctional grip), if any.
+    bool hoverMenu(HoverMenu& out);
     void click(const PointerState& p);
     // A double click while no command runs: a text object under the pointer is selected and
     // edited with TEXTEDIT; anything else behaves like a single click.

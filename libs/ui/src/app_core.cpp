@@ -1928,6 +1928,18 @@ bool AppCore::pressOnGrip(const PointerState& p) {
     return false;
 }
 
+bool AppCore::hoverMenu(HoverMenu& out) {
+    if (runner().active() || !ui_ || ui_->hoverMenus().empty())
+        return false;
+    PanelContext pc = makePanelContext();
+    for (const auto& hook : ui_->hoverMenus()) {
+        out = HoverMenu{};
+        if (hook(pc, out))
+            return true;
+    }
+    return false;
+}
+
 void AppCore::click(const PointerState& p) {
     cmd::RawInput raw = makeRaw(p);
     Vec2 world = raw.worldCursor;

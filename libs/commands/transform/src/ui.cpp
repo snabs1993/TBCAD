@@ -1,3 +1,6 @@
+#include <cstdio>
+
+#include "tbcad/transform/grip_menu.h"
 #include "tbcad/transform/grips.h"
 #include "tbcad/transform/transform.h"
 #include "tbcad/ui/ui_registry.h"
@@ -27,6 +30,33 @@ void registerUi(ui::UiRegistry& ui) {
         if (line.empty())
             return false;
         ctx.runCommand(line);
+        return true;
+    });
+
+    // Resting the cursor on a grip offers its other actions (add vertex, convert to arc ...).
+    ui.addHoverMenu([](ui::PanelContext& ctx, ui::HoverMenu& menu) {
+        if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty() ||
+            ctx.commandActive || ctx.apertureMm <= 0)
+            return false;
+        auto grips = collectGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
+        const Grip* g = hitGrip(grips, ctx.cursorWorld, ctx.apertureMm * kGripReach);
+        if (!g)
+            return false;
+        const auto actions = gripActions(*ctx.doc, *g);
+        if (actions.size() < 2)
+            return false;
+        for (GripAction a : actions) {
+            std::string line = gripActionCommand(*ctx.doc, *g, a);
+            if (!line.empty())
+                menu.items.push_back({gripActionLabel(a), std::move(line)});
+        }
+        if (menu.items.size() < 2)
+            return false;
+        char key[96];
+        std::snprintf(key, sizeof key, "grip %llu %.9g,%.9g",
+                      static_cast<unsigned long long>(g->entity.value), g->pos.x, g->pos.y);
+        menu.key = key;
+        menu.anchorWorld = g->pos;
         return true;
     });
 

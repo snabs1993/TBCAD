@@ -2370,6 +2370,79 @@ void Gui::cursorHud(const ViewportRect& rect) {
     anyActivity_ = true;
 }
 
+// The options of the grip under the cursor (AutoCAD's multifunctional grip menu): shown after the
+// cursor rests on the grip for a moment; Ctrl moves the highlight, Enter or a click runs a row.
+void Gui::gripMenu(const ViewportRect& rect) {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool ctrlEdge = io.KeyCtrl && !ctrlWasDown_;
+    ctrlWasDown_ = io.KeyCtrl;
+    const bool inside = io.MousePos.x >= rect.x && io.MousePos.y >= rect.y &&
+                        io.MousePos.x < rect.x + rect.w && io.MousePos.y < rect.y + rect.h;
+    ui::HoverMenu menu;
+    const bool overGrip = (inside || gripMenuHovered_) && !io.MouseDown[0] && !io.WantTextInput &&
+                          (core_.hoverMenu(menu) || gripMenuHovered_);
+    if (overGrip)
+        gripMenuLast_ = ImGui::GetTime();
+    // Moving from the grip to the menu crosses a gap: keep the menu for a moment.
+    const bool grace = gripMenuOpen_ && ImGui::GetTime() - gripMenuLast_ < 0.4;
+    if (!overGrip && !grace) {
+        gripMenuOpen_ = false;
+        gripMenuSeen_.clear();
+        return;
+    }
+    if (!menu.key.empty())
+        gripMenu_ = menu;
+    if (gripMenu_.key != gripMenuSeen_) {
+        gripMenuSeen_ = gripMenu_.key;
+        gripMenuSince_ = ImGui::GetTime();
+        gripMenuSel_ = -1;
+        gripMenuOpen_ = false;
+    }
+    if (!gripMenuOpen_) {
+        if (ImGui::GetTime() - gripMenuSince_ < 0.35) {
+            anyActivity_ = true;  // keep frames coming until the delay is over
+            return;
+        }
+        gripMenuOpen_ = true;
+    }
+    const int n = static_cast<int>(gripMenu_.items.size());
+    if (ctrlEdge && n > 0)
+        gripMenuSel_ = (gripMenuSel_ + 1) % n;
+    std::string run;
+    if (gripMenuSel_ >= 0 && gripMenuSel_ < n &&
+        (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)))
+        run = gripMenu_.items[static_cast<std::size_t>(gripMenuSel_)].command;
+    const float s = io.DisplayFramebufferScale.x;
+    const Vec2 at = core_.camera().worldToScreen(gripMenu_.anchorWorld);
+    ImVec2 pos(rect.x + static_cast<float>(at.x) / s + 12.0f * dpiScale_,
+               rect.y + static_cast<float>(at.y) / s + 12.0f * dpiScale_);
+    ImGui::SetNextWindowPos(pos);
+    ImGui::SetNextWindowBgAlpha(0.96f);
+    const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                ImGuiWindowFlags_NoMove;
+    gripMenuHovered_ = false;
+    if (ImGui::Begin("##gripmenu", nullptr, wf)) {
+        for (int i = 0; i < n; ++i) {
+            const auto& item = gripMenu_.items[static_cast<std::size_t>(i)];
+            if (ImGui::Selectable(item.label.c_str(), i == gripMenuSel_))
+                run = item.command;
+        }
+        gripMenuHovered_ = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+        if (n > 1)
+            ImGui::TextDisabled("Ctrl: next option");
+    }
+    ImGui::End();
+    anyActivity_ = true;
+    if (!run.empty()) {
+        gripMenuOpen_ = false;
+        gripMenuHovered_ = false;
+        gripMenuSeen_.clear();
+        core_.submitPanelText(run);
+    }
+}
+
 void Gui::docTabs() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -3320,6 +3393,7 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    gripMenu(rect);
     // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.
     if (!core_.inPaperSpace() && core_.settings().getBool("display.originIcon", true) &&
         !startPage_) {
