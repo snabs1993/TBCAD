@@ -109,6 +109,15 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             tsty.f64(r.oblique);
         }
 
+        ByteWriter tsth;
+        std::size_t tsthCount = 0;
+        for (const auto& [id, r] : doc.textStyles())
+            if (r.height > 0) {
+                tsth.varint(id.value);
+                tsth.f64(r.height);
+                ++tsthCount;
+            }
+
         ByteWriter dsty;
         dsty.varint(doc.dimStyles().size());
         for (const auto& [id, r] : doc.dimStyles()) {
@@ -368,6 +377,12 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
         appendChunk(out, kStrs, strs.bytes(), options.compress);
         appendChunk(out, kLtyp, ltyp.bytes(), options.compress);
         appendChunk(out, kTsty, tsty.bytes(), options.compress);
+        if (tsthCount > 0) {
+            ByteWriter body;
+            body.varint(tsthCount);
+            body.raw(tsth.bytes());
+            appendChunk(out, kTsth, body.bytes(), options.compress);
+        }
         appendChunk(out, kDsty, dsty.bytes(), options.compress);
         appendChunk(out, kLayr, layr.bytes(), options.compress);
         if (writeLvls)

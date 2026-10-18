@@ -40,7 +40,8 @@ void editSeries(Document& doc) {
         sub = must(tx.addLayer(
             {.name = "sub", .parent = walls, .color = Color::byParent(), .locked = true}));
         LinetypeId dashed = must(tx.addLinetype({.name = "DASHED", .pattern = {12, -6}}));
-        TextStyleId thai = must(tx.addTextStyle({.name = "Thai", .fontFamily = "Sarabun"}));
+        TextStyleId thai =
+            must(tx.addTextStyle({.name = "Thai", .fontFamily = "Sarabun", .height = 2}));
         DimStyle ds;
         ds.name = "Arch";
         ds.textStyle = thai;

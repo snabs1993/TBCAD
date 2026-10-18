@@ -14,7 +14,8 @@ using namespace detail;
 namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
-constexpr std::uint8_t kDeltaVersion = 2;
+// 3: text style rows carry the fixed height. Version 2 records are still read.
+constexpr std::uint8_t kDeltaVersion = 3;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -67,6 +68,7 @@ void putRow(ByteWriter& w, StringTable& st, const TextStyle& r) {
     putString(w, st, r.fontFile);
     w.f64(r.widthFactor);
     w.f64(r.oblique);
+    w.f64(r.height);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
@@ -147,6 +149,7 @@ struct Reader {
     ByteReader& r;
     const std::vector<std::string>& strings;
     const DeltaLimits& limits;
+    std::uint8_t version = kDeltaVersion;
 
     const std::string& str() {
         std::uint64_t i = r.varint();
@@ -216,6 +219,8 @@ struct Reader {
         t.fontFile = str();
         t.widthFactor = r.f64();
         t.oblique = r.f64();
+        if (version >= 3)
+            t.height = r.f64();
     }
     void row(DimStyle& d) {
         d.name = str();
@@ -419,7 +424,8 @@ Result<Delta> decodeDelta(std::span<const std::uint8_t> bytes, const DeltaLimits
         auto magic = r.bytes(sizeof kDeltaMagic);
         if (!std::equal(magic.begin(), magic.end(), kDeltaMagic))
             bad("not a change record");
-        if (r.u8() != kDeltaVersion)
+        const std::uint8_t version = r.u8();
+        if (version < 2 || version > kDeltaVersion)
             bad("unsupported change record version");
         std::size_t ns = r.count(1);
         std::vector<std::string> strings;
@@ -435,7 +441,7 @@ Result<Delta> decodeDelta(std::span<const std::uint8_t> bytes, const DeltaLimits
         if (strings.empty() || !strings[0].empty())
             bad("string table must start with the empty string");
 
-        Reader rd{r, strings, limits};
+        Reader rd{r, strings, limits, version};
         Delta d;
         d.name = rd.str();
         std::size_t ne = r.count(2);

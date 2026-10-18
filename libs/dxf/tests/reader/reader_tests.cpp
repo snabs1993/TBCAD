@@ -240,10 +240,10 @@ TEST_CASE("linetypes: dash patterns are converted to millimetres") {
     CHECK(near(lt->pattern[1], -6.35));
 }
 
-TEST_CASE("text styles: width factor, oblique and font file are kept") {
+TEST_CASE("text styles: width factor, oblique, fixed height and font file are kept") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 1);
-    p.g(0, "STYLE").g(2, "Narrow").g(70, 0).g(40, 0.0).g(41, 0.8).g(50, 15.0).g(3, "arial.ttf");
+    p.g(0, "STYLE").g(2, "Narrow").g(70, 0).g(40, 3.5).g(41, 0.8).g(50, 15.0).g(3, "arial.ttf");
     p.g(0, "ENDTAB").end();
     p.section("ENTITIES")
         .g(0, "TEXT")
@@ -258,6 +258,7 @@ TEST_CASE("text styles: width factor, oblique and font file are kept") {
     const TextStyle* s = l.doc().textStyleByName("Narrow");
     REQUIRE(s != nullptr);
     CHECK(near(s->widthFactor, 0.8));
+    CHECK(near(s->height, 3.5));  // a fixed height
     CHECK(near(s->oblique, 15 * kDeg));
     CHECK(s->fontFile == "arial.ttf");
     auto texts = modelEntities<TextData>(l.doc());

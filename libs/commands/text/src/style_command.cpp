@@ -49,7 +49,8 @@ public:
                                    (!s.fontFile.empty()     ? s.fontFile
                                     : !s.fontFamily.empty() ? s.fontFamily
                                                             : std::string("Sarabun (default)")) +
-                                   "  width " + std::to_string(s.widthFactor);
+                                   "  width " + std::to_string(s.widthFactor) +
+                                   (s.height > 0 ? "  height " + std::to_string(s.height) : "");
                 ctx.message(line);
             }
             co_return;
@@ -92,6 +93,14 @@ public:
             co_return;
         row.oblique = o.value;
 
+        cmd::DistanceOptions ho;
+        ho.defaultValue = row.height;
+        auto ht = co_await ctx.getDistance(
+            "Specify fixed height, 0 = variable <" + std::to_string(row.height) + ">", ho);
+        if (!ht.ok())
+            co_return;
+        row.height = ht.value;
+
         TextStyleId id{};
         if (existing) {
             id = existing->id;
@@ -100,6 +109,7 @@ public:
                 s.fontFamily = row.fontFamily;
                 s.widthFactor = row.widthFactor;
                 s.oblique = row.oblique;
+                s.height = row.height;
             });
             if (!r) {
                 ctx.message(r.error().message);

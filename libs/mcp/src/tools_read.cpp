@@ -469,7 +469,8 @@ ToolResult listTextStyles(ToolContext& ctx, const Json&) {
         rows.push_back(Json(Json::Object{{"name", s.name},
                                          {"font", s.fontFamily},
                                          {"widthFactor", s.widthFactor},
-                                         {"oblique", s.oblique}}));
+                                         {"oblique", s.oblique},
+                                         {"height", s.height}}));
     }
     return ToolResult::ok(Json(Json::Object{{"textStyles", Json(std::move(rows))}}));
 }

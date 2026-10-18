@@ -84,6 +84,7 @@ public:
         Transaction tx = doc_->begin("load");
         loadLinetypes(tx);
         loadTextStyles(tx);
+        loadTextHeights(tx);
         loadDimStyles(tx);
         loadLayers(tx);
         loadLevels(tx);
@@ -109,6 +110,7 @@ private:
                 case kStrs:
                 case kLtyp:
                 case kTsty:
+                case kTsth:
                 case kDsty:
                 case kLayr:
                 case kLvls:
@@ -379,6 +381,27 @@ private:
                 bad("internal id mismatch");
             ++next;
         });
+    }
+
+    // Fixed text heights: a separate chunk so that older programs can still read the file.
+    void loadTextHeights(Transaction& tx) {
+        const RawChunk* c = find(kTsth);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(9);
+        for (std::size_t i = 0; i < n; ++i) {
+            const TextStyleId id{id32(r)};
+            const double h = r.f64();
+            if (!std::isfinite(h) || h < 0)
+                bad("invalid text style height");
+            if (!doc_->textStyle(id))
+                continue;
+            check(tx.modifyTextStyle(id, [&](TextStyle& t) { t.height = h; }), "text style");
+        }
+        if (!r.atEnd())
+            bad("trailing data in TSTH");
     }
 
     void loadDimStyles(Transaction& tx) {
