@@ -42,6 +42,28 @@ TEST_CASE("the built-in template has the standard layers, linetypes and styles")
     CHECK(doc->header().currentLayer == kLayerZero);
 }
 
+TEST_CASE(
+    "the built-in template: whole-number dimensions, and dimensions, hatches and text on their "
+    "layers") {
+    auto doc = tmpl::builtinTemplate();
+    const DimStyle* std = doc->dimStyle(kDimStyleStandard);
+    REQUIRE(std);
+    CHECK(std->precision == 0);
+    CHECK(std->textPlacement == DimTextPlacement::AboveLine);
+    for (auto [key, name] : {std::pair{kDimLayerKey, "Dimensions"},
+                             {kHatchLayerKey, "Hatch"},
+                             {kTextLayerKey, "Text"}}) {
+        Entity e;
+        e.data = key == std::string(kDimLayerKey)     ? EntityData(LeaderData{})
+                 : key == std::string(kHatchLayerKey) ? EntityData(Indirect<HatchData>(HatchData{}))
+                                                      : EntityData(Indirect<TextData>(TextData{}));
+        applyCurrentProperties(doc->header(), e);
+        const Layer* l = doc->layer(e.common.layer);
+        REQUIRE(l);
+        CHECK(l->name == name);
+    }
+}
+
 TEST_CASE("saving and loading a template keeps rows and entities") {
     TempDir dir;
     auto doc = tmpl::builtinTemplate();

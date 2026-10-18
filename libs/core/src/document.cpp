@@ -1465,7 +1465,17 @@ Result<void> Transaction::modifyLayer(LayerId id, const std::function<void(Layer
     return modifyRow(doc().layers_, pLayers_, id, fn);
 }
 Result<void> Transaction::eraseLayer(LayerId id) {
-    return eraseRow(doc().layers_, pLayers_, id);
+    auto r = eraseRow(doc().layers_, pLayers_, id);
+    if (r) {
+        // A per-command layer setting must not point at a layer that is gone.
+        const std::string text = std::to_string(id.value);
+        for (const char* key : {kDimLayerKey, kHatchLayerKey, kTextLayerKey}) {
+            auto it = doc().header().custom.find(key);
+            if (it != doc().header().custom.end() && it->second == text)
+                (void)modifyHeader([key](Header& h) { h.custom.erase(key); });
+        }
+    }
+    return r;
 }
 
 Result<LevelId> Transaction::addLevel(Level r) {
@@ -1722,6 +1732,35 @@ double annotationFactor(const Header& h, const EntityCommon& c, double override)
     if (!c.annoScales.empty() && c.annoScales.front() > 0)
         return c.annoScales.front();
     return currentAnnotationScale(h);
+}
+
+LayerId commandLayerFor(const Header& h, const Entity& e) {
+    if (h.custom.empty())
+        return {};
+    const char* key = nullptr;
+    switch (kind(e)) {
+        case EntityKind::Dimension:
+        case EntityKind::Leader:
+            key = kDimLayerKey;
+            break;
+        case EntityKind::Hatch:
+            key = kHatchLayerKey;
+            break;
+        case EntityKind::Text:
+            if (const auto* t = entityAs<TextData>(e); t && t->attdef)
+                return {};
+            key = kTextLayerKey;
+            break;
+        case EntityKind::MText:
+            key = kTextLayerKey;
+            break;
+        default:
+            return {};
+    }
+    auto it = h.custom.find(key);
+    if (it == h.custom.end() || it->second.empty())
+        return {};
+    return LayerId{static_cast<std::uint32_t>(std::strtoul(it->second.c_str(), nullptr, 10))};
 }
 
 bool annotateNewObjects(const Header& h) {

@@ -27,15 +27,16 @@ LinetypeId addLinetype(Transaction& tx, const char* name, const char* descriptio
     return id ? id.value() : kLinetypeContinuous;
 }
 
-void addLayer(Transaction& tx, const char* name, int color, LinetypeId linetype, bool plot,
-              LineWeight weight = LineWeight::defaultWeight()) {
+LayerId addLayer(Transaction& tx, const char* name, int color, LinetypeId linetype, bool plot,
+                 LineWeight weight = LineWeight::defaultWeight()) {
     Layer l;
     l.name = name;
     l.color = Color::index(static_cast<std::uint8_t>(color));
     l.linetype = linetype;
     l.plot = plot;
     l.lineweight = weight;
-    (void)tx.addLayer(std::move(l));
+    auto id = tx.addLayer(std::move(l));
+    return id ? id.value() : LayerId{};
 }
 
 }  // namespace
@@ -57,9 +58,9 @@ std::unique_ptr<Document> builtinTemplate() {
     addLayer(tx, "Walls", 7, cont, true, LineWeight::mm(0.5));
     addLayer(tx, "Doors-Windows", 4, cont, true);
     addLayer(tx, "Furniture", 8, cont, true);
-    addLayer(tx, "Dimensions", 3, cont, true);
-    addLayer(tx, "Text", 2, cont, true);
-    addLayer(tx, "Hatch", 9, cont, true);
+    const LayerId dimLayer = addLayer(tx, "Dimensions", 3, cont, true);
+    const LayerId textLayer = addLayer(tx, "Text", 2, cont, true);
+    const LayerId hatchLayer = addLayer(tx, "Hatch", 9, cont, true);
     addLayer(tx, "Centerlines", 1, center, true);
     addLayer(tx, "Hidden", 6, hidden, true);
     addLayer(tx, "Grid", 5, dashed, true);
@@ -71,6 +72,12 @@ std::unique_ptr<Document> builtinTemplate() {
     notes.name = "Notes";
     (void)tx.addTextStyle(std::move(notes));
 
+    // Millimetre drawings: whole numbers ("8000"), text lifted above the dimension line.
+    (void)tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& d) {
+        d.precision = 0;
+        d.textPlacement = DimTextPlacement::AboveLine;
+    });
+
     // A second dimension style with architectural ticks; Standard keeps filled arrows.
     DimStyle arch = *doc->dimStyle(kDimStyleStandard);
     arch.id = {};
@@ -79,9 +86,14 @@ std::unique_ptr<Document> builtinTemplate() {
     arch.precision = 0;
     (void)tx.addDimStyle(std::move(arch));
 
-    (void)tx.modifyHeader([](Header& h) {
+    (void)tx.modifyHeader([&](Header& h) {
         h.units = LengthUnit::Millimeter;
         h.currentLayer = kLayerZero;
+        // Dimensions, hatches and text land on their own layers, as DIMLAYER, HPLAYER and
+        // TEXTLAYER set them.
+        h.custom[kDimLayerKey] = std::to_string(dimLayer.value);
+        h.custom[kHatchLayerKey] = std::to_string(hatchLayer.value);
+        h.custom[kTextLayerKey] = std::to_string(textLayer.value);
     });
     (void)tx.commit();
     return doc;
