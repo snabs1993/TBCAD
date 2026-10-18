@@ -8,6 +8,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makeSelectSimilar());
     (void)registry.add(detail::makeIsolate());
     (void)registry.add(detail::makeSelectAll());
+    (void)registry.add(detail::makeSelectCommand());
     (void)registry.add(detail::makeQuickProperties());
     (void)registry.add(detail::makeChProp());
     (void)registry.add(detail::makeChange());

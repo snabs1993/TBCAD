@@ -282,3 +282,37 @@ TEST_CASE("BATTMAN edits the default of a block attribute and updates the insert
     CHECK(f.host->logContains("NAME"));
     CHECK(f.host->undo());
 }
+
+TEST_CASE("ATTREDEF redefines a block from new objects and keeps attribute values by tag") {
+    Fixture f;
+    BlockId tag = makeTagBlock(f);
+    f.host->run("INSERT", {"Tag", "50,50", "Joe"});
+    REQUIRE(f.modelSpace().size() == 1);
+    const EntityId insId = f.modelSpace()[0];
+    // New content: a line and a NOTE attribute, but no NAME attribute any more.
+    EntityId ln = f.addLine(0, 0, 20, 0);
+    REQUIRE(f.host->run("ATTDEF", {"", "note", "Note", "none", "0,3", "2", "0"}).finished);
+    std::vector<EntityId> ids{ln};
+    for (EntityId id : f.modelSpace())
+        if (id != ln && id != insId)
+            ids.push_back(id);
+    f.host->setSelection(ids);
+    auto r = f.host->run("ATTREDEF", {"Tag", "0,0"});
+    CHECK(r.finished);
+    CHECK(f.doc.blockByName("Tag")->id == tag);
+    // The objects were used up; the insert stays and now has the new tag.
+    CHECK(f.modelSpace().size() == 1);
+    const auto* ins = entityAs<InsertData>(*f.doc.find(insId));
+    REQUIRE(ins);
+    bool hasNote = false;
+    for (const AttribValue& v : ins->attribs)
+        hasNote = hasNote || v.tag == "NOTE";
+    CHECK(hasNote);
+    f.host->run("ATTREDEF", {"NoSuchBlock"});
+    CHECK(f.host->logContains("No block named"));
+}
+
+TEST_CASE("EATTEDIT is an alias of ATTEDIT") {
+    Fixture f;
+    CHECK(f.reg.find("EATTEDIT") == f.reg.find("ATTEDIT"));
+}
