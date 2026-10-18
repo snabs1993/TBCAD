@@ -283,7 +283,8 @@ int App::runGateFile() {
            }));
 
     // Editing everything at once, and taking it back.
-    for (const char* edit : {"MOVE;ALL;;0,0;100,0", "ROTATE;ALL;;0,0;30", "SCALE;ALL;;0,0;1.5", "ERASE;ALL;"}) {
+    for (const char* edit :
+         {"MOVE;ALL;;0,0;100,0", "ROTATE;ALL;;0,0;30", "SCALE;ALL;;0,0;1.5", "ERASE;ALL;"}) {
         std::string cmds = edit;
         t0 = Clock::now();
         for (std::size_t at = 0; at <= cmds.size();) {

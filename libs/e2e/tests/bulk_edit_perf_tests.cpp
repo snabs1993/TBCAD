@@ -200,8 +200,11 @@ TEST_CASE("perf: ERASE of everything alone") {
     Big big;
     big.bench("ERASE", {"ERASE"});
 }
+<<<<<<< Updated upstream
 
 TEST_CASE("perf: MOVE of everything alone") {
     Big big;
     big.bench("MOVE", {"MOVE", "0,0", "5,5"});
 }
+=======
+>>>>>>> Stashed changes

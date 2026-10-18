@@ -72,7 +72,12 @@ BBox2 loopBox(const HatchLoop& l) {
 
 std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
                                      const BoundaryOptions& options) {
+<<<<<<< Updated upstream
     if (tx.touchedCount() == 0)
+=======
+    const std::vector<EntityId> touched = tx.touchedEntities();
+    if (touched.empty())
+>>>>>>> Stashed changes
         return 0;
     // Most drawings have no associative hatch; find those first so that a huge edit does not
     // build a set of every touched object for nothing.
@@ -88,9 +93,16 @@ std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
     });
     if (jobs.empty())
         return 0;
+<<<<<<< Updated upstream
     std::erase_if(jobs, [&](const Job& job) {
         for (EntityId s : job.sources)
             if (tx.wasTouched(s))
+=======
+    const std::unordered_set<EntityId> touchedSet(touched.begin(), touched.end());
+    std::erase_if(jobs, [&](const Job& job) {
+        for (EntityId s : job.sources)
+            if (touchedSet.count(s))
+>>>>>>> Stashed changes
                 return false;
         return true;
     });
