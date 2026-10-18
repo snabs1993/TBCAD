@@ -120,3 +120,22 @@ TEST_CASE("REVCLOUD: Esc draws nothing - Undo drops the last point - one undo st
     REQUIRE(f.entities().size() == 1);
     CHECK(f.host.undoStack().undoCount() == 1);
 }
+
+TEST_CASE(
+    "REVCLOUD Rectangular draws a cloud around two corners and Style Calligraphy tapers the arcs") {
+    Fixture f;
+    CHECK(f.host.run("REVCLOUD", {"Rectangular", "0,0", "40,20"}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
+    CHECK(pl.closed);
+    CHECK(pl.v.size() >= 12);
+    CHECK(close(pl.v[0].startWidth, 0));
+
+    CHECK(f.host.run("REVCLOUD", {"Style", "Calligraphy", "Rectangular", "0,0", "40,20"}).finished);
+    es = f.entities();
+    REQUIRE(es.size() == 2);
+    const auto& cal = as<PolylineData>(es[1]);
+    CHECK(cal.v[0].startWidth > cal.v[0].endWidth);
+    CHECK(cal.v[0].endWidth > 0);
+}
