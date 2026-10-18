@@ -74,6 +74,9 @@ struct PointOptions {
     std::vector<std::string> keywords{};
     PreviewFn preview{};
     bool allowNone = true;  // Enter returns Status::None
+    // Text that is neither a point nor a keyword comes back as Status::Keyword with the typed
+    // text in `keyword`, instead of being rejected.
+    bool freeText = false;
 };
 struct DistanceOptions {  // a number, or a point that is measured from `base`
     std::optional<Vec2> base{};

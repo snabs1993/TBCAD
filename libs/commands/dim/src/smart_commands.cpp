@@ -185,7 +185,16 @@ public:
         using cmd::Status;
         const MLeaderStyle mls = currentMLeaderStyle(ctx.doc());
         const DimStyleId sid = mls.dim;
-        auto tip = co_await ctx.getPoint("Specify arrowhead location");
+        // Text typed instead of a point is the note itself (AutoCAD's content-first habit).
+        cmd::PointOptions first;
+        first.freeText = true;
+        auto tip = co_await ctx.getPoint("Specify arrowhead location or type the note text", first);
+        std::optional<std::string> typedNote;
+        if (tip.status == Status::Keyword) {
+            typedNote = tip.keyword;
+            ctx.message("Note: \"" + tip.keyword + "\". Now pick where the arrow points.");
+            tip = co_await ctx.getPoint("Specify arrowhead location");
+        }
         if (!tip.ok())
             co_return;
         std::vector<Vec2> tips{tip.point};
@@ -228,17 +237,24 @@ public:
                 tips.push_back(next.point);
         }
 
-        cmd::KeywordOptions ko;
-        ko.keywords = {"Text", "Block", "None"};
-        ko.defaultKeyword = mls.content;
-        auto content =
-            co_await ctx.getKeyword("Content type [Text/Block/None] <" + mls.content + ">", ko);
-        if (!content.ok())
-            co_return;
-
         std::string text;
         const BlockDef* block = nullptr;
-        if (content.keyword == "Text") {
+        cmd::KeywordResult content;
+        content.status = Status::Keyword;
+        content.keyword = "Text";
+        if (typedNote) {
+            text = *typedNote;
+        } else {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Text", "Block", "None"};
+            ko.defaultKeyword = mls.content;
+            content =
+                co_await ctx.getKeyword("Content type [Text/Block/None] <" + mls.content + ">", ko);
+            if (!content.ok())
+                co_return;
+        }
+        if (typedNote) {
+        } else if (content.keyword == "Text") {
             cmd::StringOptions so;
             so.allowEmpty = true;
             auto note = co_await ctx.getString("Enter annotation text <none>", so);

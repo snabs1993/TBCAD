@@ -286,6 +286,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     if (fitView && (!session_->index.empty() || !slot.viewSaved)) {
         zoomExtents();
         fitPending_ = 6;
+        fitUntil_ = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     }
 }
 
@@ -1199,13 +1200,22 @@ std::vector<std::string> AppCore::complete(std::string_view prefix) const {
 void AppCore::setViewportSize(int w, int h) {
     const int nw = std::max(w, 1), nh = std::max(h, 1);
     const bool changed = nw != camera_.viewportW || nh != camera_.viewportH;
+    const int oldW = camera_.viewportW, oldH = camera_.viewportH;
     camera_.viewportW = nw;
     camera_.viewportH = nh;
     // A drawing just opened was fitted to the size the window had then; while the user has not
-    // touched the view, fit it again when the panels settle into their real size.
+    // touched the view, fit it again when the panels settle into their real size. That only
+    // lasts a moment: a panel the user opens later must not move the drawing.
+    if (fitPending_ > 0 && std::chrono::steady_clock::now() > fitUntil_)
+        fitPending_ = 0;
     if (changed && fitPending_ > 0 && session_) {
         --fitPending_;
         zoomExtents();
+    } else if (changed && oldW > 1 && oldH > 1) {
+        // Keep what is at the top left of the canvas where it is when a panel opens or closes
+        // (the panels sit at the right and bottom), so the drawing does not jump.
+        camera_.center.x += (nw - oldW) / 2.0 / camera_.pixelsPerMm;
+        camera_.center.y -= (nh - oldH) / 2.0 / camera_.pixelsPerMm;
     }
 }
 

@@ -1,5 +1,8 @@
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <optional>
+#include <sstream>
 
 #include "tbcad/plot/plot.h"
 #include "tbcad/sheets/sheets.h"
@@ -26,11 +29,22 @@ std::string styleLabel(const PlotSettings& s) {
     return s.styleTable ? (s.styleTable->name.empty() ? "styled" : s.styleTable->name) : "no style";
 }
 
-std::string summary(const cmd::IHost& host, const PlotSettings& s, Format format) {
+std::string summary(const Document& doc, const cmd::IHost& host, const PlotSettings& s,
+                    Format format) {
     std::string t = formatName(format);
     if (format == Format::Png || format == Format::Jpeg)
         t += " " + std::to_string(static_cast<int>(plotDpi(host) + 0.5)) + " dpi";
-    t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
+    // Plotting a layout uses the layout's own sheet, whatever the page setup says.
+    const std::string onSheet = plotLayout(host);
+    const auto sheet = onSheet.empty() ? std::nullopt : layout::findLayout(doc, onSheet);
+    if (sheet) {
+        std::ostringstream os;
+        os << ", sheet \"" << sheet->name << "\" " << std::lround(sheet->widthMm) << " x "
+           << std::lround(sheet->heightMm) << " mm";
+        t += os.str();
+    } else {
+        t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
+    }
     t += s.area == PlotArea::Extents   ? ", Extents"
          : s.area == PlotArea::Display ? ", Display"
                                        : ", Window";
@@ -62,7 +76,8 @@ public:
                              "Offset", "Margin",      "LineWeights", "Color", "Style",
                              "Format", "Resolution",  "Layout",      "Stamp", "Export"};
             menu.defaultKeyword = "Export";
-            auto choice = co_await ctx.getKeyword("Plot " + summary(ctx.host(), s, format), menu);
+            auto choice =
+                co_await ctx.getKeyword("Plot " + summary(ctx.doc(), ctx.host(), s, format), menu);
             if (choice.status == Status::Cancel)
                 co_return;
             const std::string& kw = choice.keyword;

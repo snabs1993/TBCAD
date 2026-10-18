@@ -46,6 +46,7 @@ CommandContext::Awaiter<PointResult> CommandContext::getPoint(std::string prompt
     r.base = opts.base;
     r.preview = std::move(opts.preview);
     r.allowNone = opts.allowNone;
+    r.freeText = opts.freeText;
     return {*this, std::move(r)};
 }
 

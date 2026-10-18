@@ -115,14 +115,15 @@ void drawPanel(ui::PanelContext& pc) {
         ImGui::TextWrapped("%s", pattern->description.c_str());
     double scale = p.scale;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g") && scale > 0) {
+    if (ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g", ImGuiInputTextFlags_AutoSelectAll) &&
+        scale > 0) {
         p.scale = scale;
         p.scaleAuto = false;
         changed = true;
     }
     double angle = p.angle * 180.0 / kPi;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble("Angle", &angle, 0, 0, "%.6g")) {
+    if (ImGui::InputDouble("Angle", &angle, 0, 0, "%.6g", ImGuiInputTextFlags_AutoSelectAll)) {
         p.angle = angle * kPi / 180.0;
         changed = true;
     }
@@ -163,7 +164,8 @@ void drawSection(ui::PanelContext& pc, EntityId id) {
         }
         ImGui::EndCombo();
     }
-    constexpr ImGuiInputTextFlags kEnter = ImGuiInputTextFlags_EnterReturnsTrue;
+    constexpr ImGuiInputTextFlags kEnter =
+        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll;
     double scale = h->patternScale;
     if (ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g", kEnter) && scale > 0 &&
         scale != h->patternScale)

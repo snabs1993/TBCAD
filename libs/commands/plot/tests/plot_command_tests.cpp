@@ -206,6 +206,20 @@ TEST_CASE("the Layout option plots a layout at 1:1 instead of model space") {
     CHECK_FALSE(std::filesystem::exists(bad));
 }
 
+TEST_CASE(
+    "the plot summary names the sheet of the layout being plotted, not the page setup paper") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Big", "A1").ok());
+        tx.commit();
+    }
+    plot::setPlotLayout(*f.host, "Big");
+    f.host->run("PLOT", {cmd::ScriptItem::esc()});
+    REQUIRE_FALSE(f.host->prompts().empty());
+    CHECK(f.host->prompts().front().find("sheet \"Big\" 841 x 594 mm") != std::string::npos);
+}
+
 TEST_CASE("PLOTSTYLE selects a table - the default is monochrome and None plots as drawn") {
     Fixture f;
     {

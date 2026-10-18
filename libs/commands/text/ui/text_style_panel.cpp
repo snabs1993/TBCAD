@@ -128,14 +128,16 @@ void drawEditor(ui::PanelContext& pc, const TextStyle& s) {
     ImGui::SeparatorText("Shape");
     double w = s.widthFactor;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble("Width factor", &w, 0, 0, "%.4g",
-                           ImGuiInputTextFlags_EnterReturnsTrue) &&
+    if (ImGui::InputDouble(
+            "Width factor", &w, 0, 0, "%.4g",
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) &&
         w != s.widthFactor)
         send(pc, {head, "Edit", s.name, "Width", number(w), "Done", "Done"});
     double ob = s.oblique * 180.0 / kPi;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble("Oblique angle", &ob, 0, 0, "%.4g",
-                           ImGuiInputTextFlags_EnterReturnsTrue) &&
+    if (ImGui::InputDouble(
+            "Oblique angle", &ob, 0, 0, "%.4g",
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) &&
         std::abs(ob - s.oblique * 180.0 / kPi) > 1e-9)
         send(pc, {head, "Edit", s.name, "Oblique", number(ob), "Done", "Done"});
 

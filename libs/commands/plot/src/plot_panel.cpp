@@ -220,8 +220,10 @@ void draw(ui::PanelContext& pc) {
         ImGui::EndCombo();
     }
     if (s.paperName == "Custom") {
-        changed |= ImGui::InputDouble("Width (mm)", &s.customWidthMm, 1, 10, "%.1f");
-        changed |= ImGui::InputDouble("Height (mm)", &s.customHeightMm, 1, 10, "%.1f");
+        changed |= ImGui::InputDouble("Width (mm)", &s.customWidthMm, 1, 10, "%.1f",
+                                      ImGuiInputTextFlags_AutoSelectAll);
+        changed |= ImGui::InputDouble("Height (mm)", &s.customHeightMm, 1, 10, "%.1f",
+                                      ImGuiInputTextFlags_AutoSelectAll);
         s.customWidthMm = std::max(1.0, s.customWidthMm);
         s.customHeightMm = std::max(1.0, s.customHeightMm);
     }
@@ -261,17 +263,21 @@ void draw(ui::PanelContext& pc) {
         ImGui::EndCombo();
     }
     if (!s.fitToPaper) {
-        changed |= ImGui::InputDouble("1 mm on paper =", &s.scaleN, 1, 10, "%.4g drawing units");
+        changed |= ImGui::InputDouble("1 mm on paper =", &s.scaleN, 1, 10, "%.4g drawing units",
+                                      ImGuiInputTextFlags_AutoSelectAll);
         s.scaleN = std::max(1e-6, s.scaleN);
     }
 
     // Placement
     changed |= ImGui::Checkbox("Centre on paper", &s.centerOnPaper);
     if (!s.centerOnPaper) {
-        changed |= ImGui::InputDouble("Offset X (mm)", &s.offsetMm.x, 1, 10, "%.2f");
-        changed |= ImGui::InputDouble("Offset Y (mm)", &s.offsetMm.y, 1, 10, "%.2f");
+        changed |= ImGui::InputDouble("Offset X (mm)", &s.offsetMm.x, 1, 10, "%.2f",
+                                      ImGuiInputTextFlags_AutoSelectAll);
+        changed |= ImGui::InputDouble("Offset Y (mm)", &s.offsetMm.y, 1, 10, "%.2f",
+                                      ImGuiInputTextFlags_AutoSelectAll);
     }
-    changed |= ImGui::InputDouble("Margin (mm)", &s.marginMm, 1, 10, "%.1f");
+    changed |= ImGui::InputDouble("Margin (mm)", &s.marginMm, 1, 10, "%.1f",
+                                  ImGuiInputTextFlags_AutoSelectAll);
     s.marginMm = std::max(0.0, s.marginMm);
 
     // Appearance

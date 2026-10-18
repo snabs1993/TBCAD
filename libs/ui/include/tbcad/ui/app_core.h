@@ -353,6 +353,7 @@ private:
     void updateHover(const PointerState& p);
     EntityId hoverId_{};
     int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
+    std::chrono::steady_clock::time_point fitUntil_{};  // re-fits only count until this time
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     void pruneSelection();
     void notifySessionHooks();

@@ -17,7 +17,8 @@ namespace tbcad::dimcmd {
 
 namespace {
 
-constexpr ImGuiInputTextFlags kEnter = ImGuiInputTextFlags_EnterReturnsTrue;
+constexpr ImGuiInputTextFlags kEnter =
+    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll;
 
 struct PanelState {
     DimStyleId selected{};

@@ -117,6 +117,15 @@ TEST_CASE("MLEADER: several arrowheads, one landing point and a note") {
     CHECK(f.all<LeaderData>().empty());
 }
 
+TEST_CASE("MLEADER: text typed at the first prompt is the note") {
+    Fix f;
+    auto r = f.host->run("MLEADER", {"Door D1", "0,0", "40,30", ScriptItem::enter()});
+    CHECK(r.finished);
+    auto ls = f.all<LeaderData>();
+    REQUIRE(ls.size() == 1);
+    CHECK(ls[0]->utf8 == "Door D1");
+}
+
 TEST_CASE("MLEADER: block content inserts the block at the landing point") {
     Fix f;
     {

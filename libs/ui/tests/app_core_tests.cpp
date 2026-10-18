@@ -1081,3 +1081,17 @@ TEST_CASE("hover names the object under the pointer for the tooltip") {
     f.core->pointerLeft();
     CHECK(!f.core->hoveredEntity());
 }
+
+TEST_CASE("opening or closing a panel resizes the canvas without moving the drawing") {
+    Fixture f("panel_resize");
+    const Vec2 world{300, 200};
+    const Vec2 before = f.core->camera().worldToScreen(world);
+    f.core->setViewportSize(700, 800);  // a panel opened on the right
+    const Vec2 after = f.core->camera().worldToScreen(world);
+    CHECK(after.x == doctest::Approx(before.x));
+    CHECK(after.y == doctest::Approx(before.y));
+    f.core->setViewportSize(1000, 600);  // and one at the bottom
+    const Vec2 again = f.core->camera().worldToScreen(world);
+    CHECK(again.x == doctest::Approx(before.x));
+    CHECK(again.y == doctest::Approx(before.y));
+}

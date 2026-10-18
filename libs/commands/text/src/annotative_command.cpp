@@ -132,6 +132,28 @@ public:
                 ++n;
         }
         ctx.message(std::to_string(n) + (on ? " set" : " no longer annotative"));
+        // Annotative text is drawn at its height times the scale: a height already sized for the
+        // drawing (say 250 mm at 1:100) would come out far too big.
+        if (on) {
+            const double scale = currentAnnotationScale(header);
+            std::size_t big = 0;
+            for (EntityId id : sel.ids) {
+                const Entity* e = ctx.doc().find(id);
+                if (!e)
+                    continue;
+                double h = 0;
+                if (const auto* t = entityAs<TextData>(*e))
+                    h = t->height;
+                else if (const auto* m = entityAs<MTextData>(*e))
+                    h = m->height;
+                if (h * scale > 500)
+                    ++big;
+            }
+            if (big > 0)
+                ctx.message("Warning: " + std::to_string(big) +
+                            " text object(s) will be drawn very large (height x the annotation "
+                            "scale). Annotative text should use its paper height, such as 2.5.");
+        }
         ctx.setUndoLabel("Annotative");
     }
 };
