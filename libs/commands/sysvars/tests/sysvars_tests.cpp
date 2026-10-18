@@ -334,3 +334,14 @@ TEST_CASE("FILL and ATTDISP set the display modes in the header, with undo") {
     f.host.run("FILL", {"ON"});
     CHECK(fillMode(f.doc.header()));
 }
+
+TEST_CASE("QTEXT sets quick text in the header; CONVERTPOLY only reports") {
+    Fixture f;
+    CHECK_FALSE(quickText(f.doc.header()));
+    f.host.run("QTEXT", {"ON"});
+    CHECK(quickText(f.doc.header()));
+    f.host.run("SETVAR", {"QTEXTMODE", "0"});
+    CHECK_FALSE(quickText(f.doc.header()));
+    CHECK(f.host.run("CONVERTPOLY", {}).finished);
+    CHECK(f.host.logContains("optimized"));
+}

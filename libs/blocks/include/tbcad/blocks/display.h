@@ -23,11 +23,12 @@ public:
         double tolerance = 0;
         int transparency = 0;  // what ByBlock transparency means inside; -1 = shown opaque
         bool fill = true;      // FILL: solid fills shown (false = outlines only)
+        bool qtext = false;    // QTEXT: text shown as boxes
         bool operator<(const Key& o) const {
             return std::tie(block, layer, color.r, color.g, color.b, color.a, lineweight, pattern,
-                            tolerance, transparency, fill) <
+                            tolerance, transparency, fill, qtext) <
                    std::tie(o.block, o.layer, o.color.r, o.color.g, o.color.b, o.color.a,
-                            o.lineweight, o.pattern, o.tolerance, o.transparency, o.fill);
+                            o.lineweight, o.pattern, o.tolerance, o.transparency, o.fill, o.qtext);
         }
     };
 

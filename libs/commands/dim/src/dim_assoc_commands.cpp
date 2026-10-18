@@ -16,6 +16,7 @@ bool isDim(const Entity& e) {
 class DimReassocCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMREASSOC"; }
+    std::vector<std::string> defaultAliases() const override { return {"DIMREASSOCIATE"}; }
     std::string_view description() const override {
         return "Link dimensions to the objects whose points they measure";
     }
@@ -49,6 +50,7 @@ public:
 class DimDisassocCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMDISASSOC"; }
+    std::vector<std::string> defaultAliases() const override { return {"DIMDISASSOCIATE"}; }
     std::string_view description() const override {
         return "Cut the links between dimensions and the objects they measure";
     }

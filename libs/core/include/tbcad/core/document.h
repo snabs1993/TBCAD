@@ -87,6 +87,9 @@ bool limitsCheck(const Header& h);
 // 2 all hidden. Both are kept in Header::custom.
 inline constexpr const char* kFillModeKey = "tbcad.fillmode";
 inline constexpr const char* kAttDispKey = "tbcad.attdisp";
+// QTEXT (QTEXTMODE): text shows as a box (default off).
+inline constexpr const char* kQTextKey = "tbcad.qtext";
+bool quickText(const Header& h);
 bool fillMode(const Header& h);
 int attDisplay(const Header& h);
 double ceLtScale(const Header& h);
