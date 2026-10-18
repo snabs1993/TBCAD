@@ -460,6 +460,8 @@ const SelectionGeometry& Scene::geometryFor(const std::unordered_set<EntityId>& 
             SelectionTile st;
             st.origin = tile.origin;
             st.lineweightMm = bk.lineweightUm / 1000.0;
+            st.bounds = tile.geometryBounds();
+            st.halfWidthMm = tile.maxHalfWidthMm;
             cache.geometry.tiles.push_back(std::move(st));
         }
         return cache.geometry.tiles[iit->second];

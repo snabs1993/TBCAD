@@ -99,4 +99,8 @@ private:
     double lastFrameStart_ = 0;
 };
 
+/// --gate-file profiling: phase times of the frames drawn since the last call, one line.
+void profileStart();
+void profileReport(const char* label, double gpuWaitMs, int frames);
+
 }  // namespace tbcad::app
