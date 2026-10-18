@@ -27,6 +27,7 @@ std::unique_ptr<cmd::Command> makePedit();
 std::unique_ptr<cmd::Command> makeBlend();
 std::unique_ptr<cmd::Command> makeGroup();
 std::unique_ptr<cmd::Command> makeUngroup();
+std::unique_ptr<cmd::Command> makeGroupEdit();
 std::unique_ptr<cmd::Command> makeDrawOrder();
 std::unique_ptr<cmd::Command> makeJustifyText();
 std::unique_ptr<cmd::Command> makeSplineEdit();

@@ -608,6 +608,27 @@ TEST_CASE("GROUP makes a pick select the whole group - UNGROUP dissolves it") {
     CHECK(f.doc.find(b) != nullptr);
 }
 
+TEST_CASE("GROUPEDIT adds and removes members, renames and toggles selectable") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 2}, {1, 2}});
+    EntityId c = f.add(LineData{{0, 4}, {1, 4}});
+    f.host.run("GROUP", {ScriptItem::select({a}), ScriptItem::enter(), "one"});
+    f.host.run("GROUPEDIT", {ScriptItem::pick(a, {0.5, 0}), "Add", ScriptItem::select({b, c}),
+                             ScriptItem::enter()});
+    REQUIRE(readGroups(f.doc).size() == 1);
+    CHECK(readGroups(f.doc)[0].members.size() == 3);
+    f.host.run("GROUPEDIT", {ScriptItem::pick(a, {0.5, 0}), "Remove", ScriptItem::pick(c, {0.5, 4}),
+                             ScriptItem::enter()});
+    CHECK(readGroups(f.doc)[0].members.size() == 2);
+    f.host.run("GROUPEDIT", {ScriptItem::pick(a, {0.5, 0}), "Rename", "pair"});
+    CHECK(readGroups(f.doc)[0].name == "pair");
+    f.host.run("GROUPEDIT", {ScriptItem::pick(a, {0.5, 0}), "Selectable", "No"});
+    CHECK_FALSE(readGroups(f.doc)[0].selectable);
+    f.host.undo();
+    CHECK(readGroups(f.doc)[0].selectable);
+}
+
 TEST_CASE("DRAWORDER front, back and above/below an object") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {1, 0}});
