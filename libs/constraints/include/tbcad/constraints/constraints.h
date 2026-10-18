@@ -16,8 +16,9 @@ namespace tbcad::constraints {
 
 // Which point of an entity a constraint refers to. Whole = the entity itself. On a polyline,
 // Start + `index` is vertex `index` and Whole + `index` is the straight segment from vertex `index`
-// to the next one. An insert is a point (its insertion point, Start) and a direction (Whole: the
-// x axis of the insert).
+// to the next one. An insert is a point (Start; index 0 is its insertion point, index k the k-th
+// connection point, see insertAnchors) and a direction (Whole: the x axis of the insert through
+// that point).
 enum class Part : std::uint8_t { Whole, Start, End, Center };
 
 struct Ref {
@@ -54,6 +55,11 @@ struct Constraint {
     // set, `value` follows it each time applyParameters runs.
     std::string expr{};
 };
+
+// Connection points of an insert: index 0 is its insertion point, then every POINT object inside
+// the block in drawing order (so a pin hole or a slide track end is drawn as a POINT in the block).
+// Offsets are from the insertion point, in the insert's own axes (scale applied, not rotated).
+std::vector<Vec2> insertAnchors(const Document& doc, const InsertData& in);
 
 std::string_view kindName(Kind k);  // "Coincident", "Horizontal", ...
 bool isDimensional(Kind k);

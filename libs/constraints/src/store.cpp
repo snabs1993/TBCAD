@@ -100,6 +100,11 @@ bool pointOk(const Document& doc, const Ref& r) {
         const PolylineData* pl = polylineOf(doc, r.entity);
         return pl && r.index < pl->v.size();
     }
+    if (t == Type::Insert) {
+        const Entity* e = doc.find(r.entity);
+        const auto* in = e ? entityAs<InsertData>(*e) : nullptr;
+        return in && r.index < insertAnchors(doc, *in).size();
+    }
     return r.index == 0;
 }
 
@@ -119,8 +124,13 @@ bool segOk(const Document& doc, const Ref& r) {
 
 // A direction: a straight segment, or the x axis of an insert.
 bool axisOk(const Document& doc, const Ref& r) {
-    return segOk(doc, r) ||
-           (typeOf(doc, r.entity) == Type::Insert && r.part == Part::Whole && r.index == 0);
+    if (segOk(doc, r))
+        return true;
+    if (typeOf(doc, r.entity) != Type::Insert || r.part != Part::Whole)
+        return false;
+    const Entity* e = doc.find(r.entity);
+    const auto* in = e ? entityAs<InsertData>(*e) : nullptr;
+    return in && r.index < insertAnchors(doc, *in).size();
 }
 
 Error bad(std::string message) {
@@ -130,6 +140,8 @@ Error bad(std::string message) {
 std::string refText(const Document& doc, const Ref& r) {
     std::string s = typeName(typeOf(doc, r.entity));
     s += " " + std::to_string(r.entity.value);
+    if (typeOf(doc, r.entity) == Type::Insert && r.index > 0)
+        return s + (r.part == Part::Whole ? " axis " : " point ") + std::to_string(r.index);
     if (typeOf(doc, r.entity) == Type::Polyline) {
         s += (r.part == Part::Whole ? " segment " : " vertex ") + std::to_string(r.index + 1);
         return s;
@@ -151,6 +163,24 @@ std::string refText(const Document& doc, const Ref& r) {
 }
 
 }  // namespace
+
+std::vector<Vec2> insertAnchors(const Document& doc, const InsertData& in) {
+    std::vector<Vec2> out{{0, 0}};
+    const BlockDef* def = doc.block(in.block);
+    if (!def)
+        return out;
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        const auto* pt = e ? entityAs<PointData>(*e) : nullptr;
+        if (!pt)
+            continue;
+        const Vec2 d = pt->p - def->base;
+        out.push_back({d.x * in.scale.x, d.y * in.scale.y});
+        if (out.size() > 64)
+            break;
+    }
+    return out;
+}
 
 std::string_view kindName(Kind k) {
     return kNames[static_cast<int>(k)];
@@ -255,10 +285,10 @@ Result<void> validate(const Document& doc, const Constraint& c) {
             break;
         }
         case Kind::PointOnObject:
-            if (!pointOk(doc, c.a) || c.a.entity == c.b.entity || !(segOk(doc, c.b) || circB))
+            if (!pointOk(doc, c.a) || c.a.entity == c.b.entity || !(axisOk(doc, c.b) || circB))
                 return bad(
-                    "Point on object takes a point and a line, polyline segment, circle "
-                    "or arc");
+                    "Point on object takes a point and a line, polyline segment, insert axis, "
+                    "circle or arc");
             break;
         case Kind::Midpoint:
             if (!pointOk(doc, c.a) || !segOk(doc, c.b) || c.a.entity == c.b.entity)

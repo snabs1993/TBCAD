@@ -653,6 +653,133 @@ public:
     }
 };
 
+// Adds several constraints at once: one solve, one stored set, one undo step.
+bool applyAll(cmd::CommandContext& ctx, std::vector<Constraint> cs) {
+    ConstraintSet set = load(ctx.doc());
+    std::vector<std::uint32_t> ids;
+    for (const Constraint& c : cs) {
+        if (auto ok = validate(ctx.doc(), c); !ok) {
+            ctx.message(ok.error().message);
+            return false;
+        }
+        ids.push_back(set.add(c));
+    }
+    Transaction& tx = ctx.tx();
+    auto res = solve(tx, set);
+    if (!res) {
+        ctx.message(res.error().message);
+        return false;
+    }
+    if (!res.value().converged) {
+        ctx.message(failText(res.value(), ctx.doc(), set));
+        return false;
+    }
+    if (auto ok = store(tx, set); !ok) {
+        ctx.message(ok.error().message);
+        return false;
+    }
+    for (std::uint32_t id : ids)
+        ctx.message(describe(ctx.doc(), *set.find(id)));
+    ctx.message(std::to_string(res.value().degreesOfFreedom) + " degrees of freedom left.");
+    return true;
+}
+
+// The connection point of the picked insert nearest to the click (index 0 = insertion point).
+std::uint32_t nearestAnchor(const Document& doc, const InsertData& in, Vec2 pick) {
+    const std::vector<Vec2> anchors = insertAnchors(doc, in);
+    const double c = std::cos(in.rotation), sn = std::sin(in.rotation);
+    std::uint32_t best = 0;
+    double bestD = 1e300;
+    for (std::size_t i = 0; i < anchors.size(); ++i) {
+        const Vec2 w = in.position + Vec2{c * anchors[i].x - sn * anchors[i].y,
+                                          sn * anchors[i].x + c * anchors[i].y};
+        const double d = length(w - pick);
+        if (d < bestD) {
+            bestD = d;
+            best = static_cast<std::uint32_t>(i);
+        }
+    }
+    return best;
+}
+
+// JOINT: mates two block inserts. Revolute (a pin: the connection points coincide, the parts turn),
+// Slider (the parts keep one direction and the second slides along the first's axis), Rigid (a pin
+// plus the angle between them held). Connection points are the insertion point and every POINT
+// object drawn inside the block; the one nearest to each click is used.
+class Joint final : public cmd::Command {
+public:
+    std::string_view name() const override { return "JOINT"; }
+    std::vector<std::string> defaultAliases() const override { return {"MATE"}; }
+    std::string_view description() const override {
+        return "Mate two block inserts with a revolute, slider or rigid joint";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Revolute", "Slider", "Rigid"};
+        auto k = co_await ctx.getKeyword("Joint type", std::move(ko));
+        if (k.status != cmd::Status::Keyword)
+            co_return;
+        const std::string type = k.keyword;
+
+        cmd::EntityOptions eo;
+        eo.filter = [](const Entity& e) { return kind(e) == EntityKind::Insert; };
+        auto first = co_await ctx.getEntity("Select first block", eo);
+        if (!first.ok())
+            co_return;
+        auto second = co_await ctx.getEntity("Select second block", eo);
+        if (!second.ok())
+            co_return;
+        const Entity* e1 = ctx.doc().find(first.id);
+        const Entity* e2 = ctx.doc().find(second.id);
+        const auto* in1 = e1 ? entityAs<InsertData>(*e1) : nullptr;
+        const auto* in2 = e2 ? entityAs<InsertData>(*e2) : nullptr;
+        if (!in1 || !in2 || first.id == second.id) {
+            ctx.message("Pick two different block inserts.");
+            co_return;
+        }
+        const std::uint32_t k1 = nearestAnchor(ctx.doc(), *in1, first.pickPoint);
+        const std::uint32_t k2 = nearestAnchor(ctx.doc(), *in2, second.pickPoint);
+        const Ref p1{first.id, Part::Start, k1}, p2{second.id, Part::Start, k2};
+        const Ref d1{first.id, Part::Whole, k1}, d2{second.id, Part::Whole, k2};
+
+        std::vector<Constraint> cs;
+        Constraint c;
+        if (type == "Revolute") {
+            c.kind = Kind::Coincident;
+            c.a = p1;
+            c.b = p2;
+            cs.push_back(c);
+        } else if (type == "Slider") {
+            c.kind = Kind::Parallel;
+            c.a = d1;
+            c.b = d2;
+            cs.push_back(c);
+            Constraint on;
+            on.kind = Kind::PointOnObject;
+            on.a = p2;
+            on.b = d1;
+            cs.push_back(on);
+        } else {
+            c.kind = Kind::Coincident;
+            c.a = p1;
+            c.b = p2;
+            cs.push_back(c);
+            Constraint ang;
+            ang.kind = Kind::Angle;
+            ang.a = d1;
+            ang.b = d2;
+            auto now = measure(ctx.doc(), ang);
+            if (!now) {
+                ctx.message(now.error().message);
+                co_return;
+            }
+            ang.value = now.value();
+            cs.push_back(ang);
+        }
+        (void)applyAll(ctx, std::move(cs));
+    }
+};
+
 class SolveCon final : public cmd::Command {
 public:
     std::string_view name() const override { return "SOLVECON"; }
@@ -715,6 +842,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<DelCon>());
     (void)registry.add(std::make_unique<ConstraintBar>());
     (void)registry.add(std::make_unique<DelConstraint>());
+    (void)registry.add(std::make_unique<Joint>());
     (void)registry.add(std::make_unique<SolveCon>());
     registry.addCommitHook(keepInStep);
 }

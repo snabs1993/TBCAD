@@ -247,7 +247,8 @@ void registerConstraintTools(ToolSet& tools) {
                "PointOnObject (a point, b line/circle), Midpoint "
                "(a point, b line), Collinear. A reference may carry index: the vertex (part "
                "start) or segment (part whole) of a polyline, from 0; inserts are points (start) "
-               "and directions (whole). Fails, "
+               "and directions (whole); their index 0 is the insertion point and k the k-th POINT "
+               "inside the block. Fails, "
                "leaving the drawing unchanged, when the constraints conflict.",
                tObject({{"kind",
                          tEnum({"Coincident", "Horizontal", "Vertical", "Parallel", "Perpendicular",

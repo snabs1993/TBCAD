@@ -19,7 +19,8 @@ struct Slot {
     Type type = Type::Point;
     std::size_t offset = 0;
     std::size_t count = 0;
-    bool closed = false;  // polylines
+    bool closed = false;          // polylines
+    std::vector<Vec2> anchors{};  // inserts: connection points, offsets in the insert's axes
 };
 
 struct Model {
@@ -35,6 +36,14 @@ struct Model {
 
     const Slot& slot(EntityId id) const { return slots[slotOf.at(id.value)]; }
 
+    static Vec2 insertPoint(const Slot& s, const double* p, std::uint32_t index) {
+        Vec2 o{0, 0};
+        if (index > 0 && index < s.anchors.size())
+            o = s.anchors[index];
+        const double c = std::cos(p[2]), sn = std::sin(p[2]);
+        return {p[0] + c * o.x - sn * o.y, p[1] + sn * o.x + c * o.y};
+    }
+
     Vec2 point(const std::vector<double>& v, const Ref& r) const {
         const Slot& s = slot(r.entity);
         const double* p = v.data() + s.offset;
@@ -45,8 +54,9 @@ struct Model {
                 return r.part == Part::End ? Vec2{p[2], p[3]} : Vec2{p[0], p[1]};
             case Type::Circle:
             case Type::Ellipse:
-            case Type::Insert:
                 return {p[0], p[1]};
+            case Type::Insert:
+                return insertPoint(s, p, r.index);
             case Type::Polyline: {
                 const std::size_t i = std::min<std::size_t>(r.index, s.count / 2 - 1);
                 return {p[2 * i], p[2 * i + 1]};
@@ -73,8 +83,10 @@ struct Model {
                 const std::size_t j = (i + 1) % n;
                 return {{p[2 * i], p[2 * i + 1]}, {p[2 * j], p[2 * j + 1]}};
             }
-            case Type::Insert:
-                return {{p[0], p[1]}, {p[0] + std::cos(p[2]), p[1] + std::sin(p[2])}};
+            case Type::Insert: {
+                const Vec2 o = insertPoint(s, p, r.index);
+                return {o, {o.x + std::cos(p[2]), o.y + std::sin(p[2])}};
+            }
             default:
                 return {{p[0], p[1]}, {p[2], p[3]}};
         }
@@ -88,6 +100,7 @@ struct Model {
     double radius(const std::vector<double>& v, EntityId id) const {
         return v[slot(id).offset + 2];
     }
+    bool isAxis(EntityId id) const { return isLine(id) || slot(id).type == Type::Insert; }
     bool isLine(EntityId id) const {
         return slot(id).type == Type::Line || slot(id).type == Type::Polyline;
     }
@@ -138,6 +151,7 @@ bool addSlot(Model& m, EntityId id) {
         m.x.insert(m.x.end(), {el->center.x, el->center.y, el->majorAxis.x, el->majorAxis.y});
     } else if (const auto* in = entityAs<InsertData>(*e)) {
         s.type = Type::Insert;
+        s.anchors = insertAnchors(*m.doc, *in);
         m.x.insert(m.x.end(), {in->position.x, in->position.y, in->rotation});
     } else {
         return false;
@@ -275,7 +289,7 @@ void residuals(const Model& m, std::size_t i, const std::vector<double>& v,
         }
         case Kind::PointOnObject: {
             const Vec2 p = m.point(v, c.a);
-            if (m.isLine(c.b.entity)) {
+            if (m.isAxis(c.b.entity)) {
                 const Vec2 a = m.lineA(v, c.b), b = m.lineB(v, c.b);
                 out.push_back(cross(b - a, p - a) / std::max(length(b - a), kTiny));
             } else {

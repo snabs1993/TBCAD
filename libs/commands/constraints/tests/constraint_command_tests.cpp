@@ -338,3 +338,36 @@ TEST_CASE("SHOWCON and CONSTRAINTBAR report the state; DELCONSTRAINT removes by 
     REQUIRE(f.host->run("DELCONSTRAINT", {"1", ScriptItem::enter()}).finished);
     CHECK(constraints::load(f.doc).empty());
 }
+
+TEST_CASE("JOINT Revolute pins two block inserts at the connection points; undo removes it") {
+    Fixture f;
+    BlockId arm;
+    {
+        auto tx = f.doc.begin("arm");
+        arm = tx.addBlock(BlockDef{.name = "Arm"}).value();
+        REQUIRE(tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}}, arm).ok());
+        REQUIRE(tx.add(Entity{{}, PointData{{10, 0}}}, arm).ok());
+        tx.commit();
+    }
+    auto addInsert = [&](Vec2 pos, double rot) {
+        auto tx = f.doc.begin("insert");
+        InsertData in;
+        in.block = arm;
+        in.position = pos;
+        in.rotation = rot;
+        auto id = tx.add(Entity{{}, std::move(in)}).value();
+        tx.commit();
+        return id;
+    };
+    const EntityId a = addInsert({0, 100}, 0);
+    const EntityId b = addInsert({30, 120}, 0.8);
+    // click near a's pin hole (10,100) and near b's insertion point
+    REQUIRE(f.host->run("JOINT", {"Revolute", f.pick(a, {9, 100}), f.pick(b, {31, 120})}).finished);
+    const auto set = constraints::load(f.doc);
+    REQUIRE(set.all().size() == 1);
+    CHECK(set.all()[0].kind == constraints::Kind::Coincident);
+    CHECK(set.all()[0].a.index == 1);
+    CHECK(set.all()[0].b.index == 0);
+    CHECK(f.host->undo());
+    CHECK(constraints::load(f.doc).empty());
+}
