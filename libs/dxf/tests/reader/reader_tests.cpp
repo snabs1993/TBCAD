@@ -799,7 +799,7 @@ TEST_CASE("attributes: flags, prompt, an unknown tag stays visible as text") {
 
 TEST_CASE("MLEADER: leader lines and text come in as leaders") {
     Pairs p;
-    p.g(0, "MLEADER").g(8, "0").g(100, "AcDbMLeader").g(270, 2);
+    p.g(0, "MULTILEADER").g(8, "0").g(100, "AcDbMLeader").g(270, 2);
     p.g(300, "CONTEXT_DATA{").g(40, 1.0).g(10, 50.0).g(20, 20.0).g(30, 0.0);
     p.g(41, 2.5).g(290, 1).g(304, "Room {\\C1;A}");
     p.g(12, 50.0).g(22, 20.0).g(32, 0.0);
@@ -825,6 +825,45 @@ TEST_CASE("3DFACE: the visible edges in plan") {
     p.g(12, 10.0).g(22, 10.0).g(32, 5.0).g(13, 0.0).g(23, 10.0).g(33, 0.0).g(70, 2);
     Loaded l = load(entitiesOnly(p.text));
     CHECK(modelEntities<LineData>(l.doc()).size() == 3);  // edge 2 is invisible
+}
+
+TEST_CASE("WIPEOUT: the clip boundary becomes a closed polyline that hides what is behind it") {
+    Pairs p;
+    p.g(0, "WIPEOUT").g(8, "0").g(100, "AcDbWipeout").g(90, 0);
+    p.g(10, 100.0).g(20, 0.0).g(30, 0.0).g(11, 20.0).g(21, 0.0).g(31, 0.0);
+    p.g(12, 0.0).g(22, 20.0).g(32, 0.0).g(13, 1.0).g(23, 1.0).g(71, 2).g(91, 5);
+    p.g(14, -0.5).g(24, 0.5).g(14, 0.5).g(24, 0.5).g(14, 0.5).g(24, -0.5);
+    p.g(14, -0.5).g(24, -0.5).g(14, -0.5).g(24, 0.5);
+    Loaded l = load(entitiesOnly(p.text));
+    bool found = false;
+    l.doc().forEachEntity([&](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        if (!pl)
+            return;
+        found = true;
+        CHECK(e.common.wipeout);
+        CHECK(pl->closed);
+        REQUIRE(pl->v.size() == 4);
+        BBox2 b;
+        for (const auto& v : pl->v)
+            b.expand(v.p);
+        CHECK(near(b.min, Vec2{100, 0}));
+        CHECK(near(b.max, Vec2{120, 20}));
+    });
+    CHECK(found);
+}
+
+TEST_CASE("ARC_DIMENSION: centre, ends and arc point give an arc length dimension") {
+    Pairs p;
+    p.g(0, "ARC_DIMENSION").g(8, "0").g(100, "AcDbDimension").g(3, "Standard");
+    p.g(10, 60.0).g(20, -20.0).g(30, 0.0).g(70, 37).g(71, 5).g(1, "<>");
+    p.g(100, "AcDbArcDimension").g(13, 70.0).g(23, 0.0).g(33, 0.0).g(14, 60.0).g(24, 10.0);
+    p.g(34, 0.0).g(15, 60.0).g(25, 0.0).g(35, 0.0);
+    Loaded l = load(entitiesOnly(p.text));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    CHECK(dims[0]->kind == DimKind::ArcLength);
+    CHECK(dims[0]->measurement == doctest::Approx(kPi / 2 * 10));
 }
 
 }  // namespace tbcad::dxf

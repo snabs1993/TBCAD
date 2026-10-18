@@ -315,8 +315,11 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
     }
     EntityCommon c = commonOf(r);
     for (Entity& e : out) {
-        if (!e.common.layer)
+        if (!e.common.layer) {
+            const bool wipeout = e.common.wipeout;
             e.common = c;
+            e.common.wipeout = e.common.wipeout || wipeout;
+        }
         add(std::move(e), owner, type, r.line);
     }
 }
@@ -365,11 +368,15 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convDimension(r, out, owner);
     } else if (t == "LEADER") {
         convLeader(r, out);
-    } else if (t == "MLEADER") {
+    } else if (t == "MULTILEADER" || t == "MLEADER") {
         if (!convMLeader(r, out) && !convForeign(r, out))
             return false;
     } else if (t == "3DFACE") {
         conv3dFace(r, out);
+    } else if (t == "WIPEOUT") {
+        convWipeout(r, out);
+    } else if (t == "ARC_DIMENSION") {
+        convArcDimension(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
         convProxy(r, out);
     } else if (!convForeign(r, out)) {
@@ -1071,6 +1078,40 @@ bool Importer::conv3dFace(const Record& r, std::vector<Entity>& out) {
             out.push_back(makeEntity(LineData{a, b}));
     }
     return !out.empty();
+}
+
+// WIPEOUT: a closed polyline that hides what is behind it. The clip boundary is in pixel units of
+// an image frame: world = insert + u * (x + 0.5) + v * (y + 0.5).
+bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
+    const Vec2 origin = P(r, 10, 20), u = P(r, 11, 21), v = P(r, 12, 22);
+    std::vector<Vec2> pix;
+    for (const Group& g : r.g) {
+        if (g.code == 14)
+            pix.push_back({g.number(), 0});
+        else if (g.code == 24 && !pix.empty())
+            pix.back().y = g.number();
+    }
+    if (r.integer(71) == 1 && pix.size() == 2) {  // rectangle: two opposite corners
+        const Vec2 a = pix[0], b = pix[1];
+        pix = {a, {b.x, a.y}, b, {a.x, b.y}};
+    }
+    if (pix.size() > 1 && tol::nearlyEqual(pix.front(), pix.back()))
+        pix.pop_back();
+    if (pix.size() < 3) {
+        bad(r, "WIPEOUT", "fewer than three boundary points; skipped");
+        return false;
+    }
+    PolylineData pl;
+    pl.closed = true;
+    for (const Vec2& p : pix) {
+        PolyVertex vtx;
+        vtx.p = origin + u * (p.x + 0.5) + v * (p.y + 0.5);
+        pl.v.push_back(vtx);
+    }
+    Entity e = makeEntity(std::move(pl));
+    e.common.wipeout = true;
+    out.push_back(std::move(e));
+    return true;
 }
 
 bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {

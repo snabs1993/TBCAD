@@ -238,6 +238,6 @@ machine can regenerate). Codepages: 874, 932, 936, 949, 950, 1250-1258 and 1361 
 (about 2100 sample escapes and the characters the platform codecs give for them), and the encoding
 tests check `decodeText` against it.
 
-## MLEADER and 3DFACE
+## MULTILEADER, 3DFACE, WIPEOUT and ARC_DIMENSION
 
-An MLEADER comes in as plain leaders: one per leader line, the first carrying the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane.
+An MULTILEADER comes in as plain leaders: one per leader line, the first carrying the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane. A WIPEOUT becomes a closed polyline that hides what is behind it, and an ARC_DIMENSION an arc length dimension.

@@ -238,6 +238,29 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
     return true;
 }
 
+// ARC_DIMENSION: the length of an arc, from its centre, the two ends and a point on the
+// dimension arc. The measured arc runs counter-clockwise from the first end to the second.
+bool Importer::convArcDimension(const Record& r, std::vector<Entity>& out) {
+    if (!r.has(13) || !r.has(14) || !r.has(15)) {
+        bad(r, "ARC_DIMENSION", "definition points missing; skipped");
+        return false;
+    }
+    DimensionData d;
+    d.kind = DimKind::ArcLength;
+    d.defPts = {P(r, 15, 25), P(r, 13, 23), P(r, 14, 24), P(r, 10, 20)};
+    d.textPos = P(r, 11, 21);
+    d.textPosUser = (r.integer(70) & 128) != 0;
+    const std::string text = stripMText(dec(r.raw(1)));
+    if (text != "<>")
+        d.textOverride = text;
+    d.style = dimStyleWithOverrides(r, dimStyleFor(r.raw(3)));
+    d.measurement = dim::measurement(d);
+    Entity e;
+    e.data = Indirect<DimensionData>(std::move(d));
+    out.push_back(std::move(e));
+    return true;
+}
+
 void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
                                        std::vector<Entity>& out) {
     auto it = blockByFold_.end();

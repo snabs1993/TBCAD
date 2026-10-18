@@ -145,6 +145,8 @@ private:
     bool convLeader(const Record& r, std::vector<Entity>& out);
     bool convMLeader(const Record& r, std::vector<Entity>& out);
     bool conv3dFace(const Record& r, std::vector<Entity>& out);
+    bool convWipeout(const Record& r, std::vector<Entity>& out);
+    bool convArcDimension(const Record& r, std::vector<Entity>& out);
     bool convProxy(const Record& r, std::vector<Entity>& out);
     // An entity of another application (AEC, Civil, ACIS ...) that carries proxy graphics.
     bool convForeign(const Record& r, std::vector<Entity>& out);
