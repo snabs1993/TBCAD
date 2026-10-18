@@ -61,8 +61,13 @@ if(NOT TARGET tbcad_imgui)
     "${_imgui_root}/imgui_widgets.cpp"
     "${_imgui_root}/backends/imgui_impl_glfw.cpp"
     "${_imgui_root}/backends/imgui_impl_opengl3.cpp"
-    "${_imgui_root}/misc/cpp/imgui_stdlib.cpp")
+    "${_imgui_root}/misc/cpp/imgui_stdlib.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/imgui_extra/tbcad_imgui_items.cpp")
   target_include_directories(tbcad_imgui SYSTEM PUBLIC "${_imgui_root}")
+  target_include_directories(tbcad_imgui PUBLIC "${CMAKE_CURRENT_LIST_DIR}/imgui_extra")
+  # The test hooks (tbcad_imgui_items.h): widgets report their label and rectangle while a GUI
+  # test has recording on; otherwise one untaken branch per widget.
+  target_compile_definitions(tbcad_imgui PUBLIC IMGUI_ENABLE_TEST_ENGINE=1)
   target_compile_features(tbcad_imgui PUBLIC cxx_std_20)
   target_compile_definitions(tbcad_imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
   target_link_libraries(tbcad_imgui PUBLIC tbcad::glfw ${CMAKE_DL_LIBS})
