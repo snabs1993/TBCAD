@@ -20,6 +20,7 @@ tbcad_add_tests(drafting
     tests/parser_tests.cpp
     tests/osnap_tests.cpp
     tests/osnap_kinds_tests.cpp
+    tests/osnap_modes_tests.cpp
     tests/tracking_tests.cpp
     tests/dyninput_tests.cpp
     tests/grid_tests.cpp

@@ -60,7 +60,7 @@ public:
 
 private:
     DraftingEnv* env_;
-    const OsnapFilter* osnap_;
+    [[maybe_unused]] const OsnapFilter* osnap_;
     std::vector<Vec2> acquired_{};
     std::vector<std::pair<Vec2, Vec2>> rays_{};
 };

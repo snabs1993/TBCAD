@@ -129,7 +129,7 @@ protected:
             so.defaultValue = drafting::formatSnapModes(cur.modes);
             auto m = co_await ctx.getString(
                 "Snap modes (endpoint, midpoint, center, intersection, perpendicular, tangent, "
-                "nearest, quadrant, node, all, none)",
+                "nearest, quadrant, node, insertion, apparent, extension, all, none)",
                 so);
             if (!m.ok())
                 co_return;
