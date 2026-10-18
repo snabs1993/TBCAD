@@ -265,3 +265,30 @@ TEST_CASE("PARAMETERS drive a DIMCON formula; editing a parameter moves the geom
         kept = kept || c.expr == "Half * 3";
     CHECK(kept);
 }
+
+TEST_CASE("GEOMCON on a polyline uses the segment next to the click; DIMCON Length takes it too") {
+    Fixture f;
+    EntityId pl;
+    {
+        Transaction tx = f.doc.begin("polyline");
+        PolylineData p;
+        for (Vec2 v : {Vec2{0, 20}, Vec2{10, 22}, Vec2{12, 30}})
+            p.v.push_back(PolyVertex{v});
+        pl = tx.add(Entity{{}, std::move(p)}).value();
+        tx.commit();
+    }
+    // the second segment (10,22)-(12,30) is picked near its middle and made vertical
+    auto r = f.host->run("GEOMCON", {"Vertical", f.pick(pl, {11, 26})});
+    CHECK(r.finished);
+    const auto* p = entityAs<PolylineData>(*f.doc.find(pl));
+    REQUIRE(p);
+    CHECK(p->v[1].p.x == doctest::Approx(p->v[2].p.x).epsilon(1e-6));
+    const auto set = constraints::load(f.doc);
+    REQUIRE(set.all().size() == 1);
+    CHECK(set.all()[0].a.index == 1);
+
+    auto r2 = f.host->run("DIMCON", {"Length", f.pick(pl, {5, 21}), "12"});
+    CHECK(r2.finished);
+    const auto* p2 = entityAs<PolylineData>(*f.doc.find(pl));
+    CHECK(length(p2->v[1].p - p2->v[0].p) == doctest::Approx(12).epsilon(1e-6));
+}

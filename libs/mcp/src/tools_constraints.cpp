@@ -30,7 +30,10 @@ const char* partName(Part p) {
 }
 
 Json refJson(const Ref& r) {
-    return Json(Json::Object{{"id", idJson(r.entity)}, {"part", partName(r.part)}});
+    Json::Object o{{"id", idJson(r.entity)}, {"part", partName(r.part)}};
+    if (r.index)
+        o.emplace("index", static_cast<double>(r.index));
+    return Json(std::move(o));
 }
 
 constexpr double kPiLocal = 3.14159265358979323846;
@@ -73,13 +76,18 @@ Result<Ref> refFromJson(const Json& j) {
     else
         return makeError(ErrorCode::InvalidArgument,
                          "part must be whole, start, end or center, not \"" + part + "\"");
+    // polylines: the vertex (part start) or segment (part whole), counted from 0
+    const double index = j.isObject() ? argNumber(j, "index", 0) : 0;
+    if (!(index >= 0) || index > 1e6)
+        return makeError(ErrorCode::InvalidArgument, "index must be zero or more");
+    r.index = static_cast<std::uint32_t>(index);
     return r;
 }
 
 std::optional<Kind> kindFromName(std::string name) {
     for (char& c : name)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    for (int i = 0; i <= static_cast<int>(Kind::Angle); ++i) {
+    for (int i = 0; i <= static_cast<int>(Kind::Collinear); ++i) {
         Kind k = static_cast<Kind>(i);
         std::string n(kindName(k));
         for (char& c : n)
@@ -203,11 +211,16 @@ void registerConstraintTools(ToolSet& tools) {
                "Adds a constraint and solves, moving the geometry as little as possible. Kinds: "
                "Coincident (a, b points), Horizontal/Vertical (a line, or a and b points), "
                "Parallel, Perpendicular, Equal, Tangent (a, b), Fix (a), Distance (a, b points; "
-               "value mm), Radius (a; value mm), Angle (a, b lines; value degrees). Fails, "
+               "value mm), Radius (a; value mm), Angle (a, b lines; value degrees), Concentric, "
+               "PointOnObject (a point, b line/circle), Midpoint "
+               "(a point, b line), Collinear. A reference may carry index: the vertex (part "
+               "start) or segment (part whole) of a polyline, from 0; inserts are points (start) "
+               "and directions (whole). Fails, "
                "leaving the drawing unchanged, when the constraints conflict.",
                tObject({{"kind",
                          tEnum({"Coincident", "Horizontal", "Vertical", "Parallel", "Perpendicular",
-                                "Equal", "Tangent", "Fix", "Distance", "Radius", "Angle"})},
+                                "Equal", "Tangent", "Fix", "Distance", "Radius", "Angle",
+                                "Concentric", "PointOnObject", "Midpoint", "Collinear"})},
                         {"a", ref},
                         {"b", ref},
                         {"value", tNumber("mm, or degrees for Angle")}},
