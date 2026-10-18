@@ -2538,12 +2538,13 @@ void Gui::textEditor(const ViewportRect& rect) {
                                                          : ImGuiInputTextFlags_EnterReturnsTrue;
         if (hint.multiline && prompt->command == "MTEXT") {
             // Text height, justification and style, applied to the whole MTEXT as you type.
-            auto& st = core_.settings();
+            // tmp.* keys live in the command host's transient store, not in the saved settings.
+            auto getS = [&](const char* k, const char* d) { return core_.setting(k).value_or(d); };
             bool changed = false;
-            double h = std::atof(st.getString("tmp.mtext.height", "2.5").c_str());
+            double h = std::atof(getS("tmp.mtext.height", "2.5").c_str());
             ImGui::SetNextItemWidth(72 * dpiScale_);
             if (ImGui::InputDouble("Height", &h, 0, 0, "%.4g") && h > 0) {
-                st.setString("tmp.mtext.height", std::to_string(h));
+                core_.setSetting("tmp.mtext.height", std::to_string(h));
                 changed = true;
             }
             ImGui::SameLine();
@@ -2552,7 +2553,7 @@ void Gui::textEditor(const ViewportRect& rect) {
             static const char* const kJustLong[] = {"Top left",    "Top center",    "Top right",
                                                     "Middle left", "Middle center", "Middle right",
                                                     "Bottom left", "Bottom center", "Bottom right"};
-            const std::string cur = st.getString("tmp.mtext.attach", "TL");
+            const std::string cur = getS("tmp.mtext.attach", "TL");
             const char* curLong = "Top left";
             for (int i = 0; i < 9; ++i)
                 if (cur == kJust[i])
@@ -2561,18 +2562,18 @@ void Gui::textEditor(const ViewportRect& rect) {
             if (ImGui::BeginCombo("Justify", curLong)) {
                 for (int i = 0; i < 9; ++i)
                     if (ImGui::Selectable(kJustLong[i], cur == kJust[i])) {
-                        st.setString("tmp.mtext.attach", kJust[i]);
+                        core_.setSetting("tmp.mtext.attach", kJust[i]);
                         changed = true;
                     }
                 ImGui::EndCombo();
             }
             ImGui::SameLine();
-            const std::string styleName = st.getString("tmp.mtext.style", "");
+            const std::string styleName = getS("tmp.mtext.style", "");
             ImGui::SetNextItemWidth(130 * dpiScale_);
             if (ImGui::BeginCombo("Style", styleName.c_str())) {
                 for (const auto& [id, ts] : core_.document().textStyles())
                     if (ImGui::Selectable(ts.name.c_str(), ts.name == styleName)) {
-                        st.setString("tmp.mtext.style", ts.name);
+                        core_.setSetting("tmp.mtext.style", ts.name);
                         changed = true;
                     }
                 ImGui::EndCombo();
