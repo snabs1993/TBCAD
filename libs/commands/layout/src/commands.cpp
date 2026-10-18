@@ -288,6 +288,34 @@ public:
     }
 };
 
+// VPLOCK: stop a viewport's scale and view from changing by accident.
+class VpLockCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VPLOCK"; }
+    std::string_view description() const override {
+        return "Lock or unlock the scale and view of a viewport";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"On", "Off"};
+        ko.defaultKeyword = "On";
+        auto mode = co_await ctx.getKeyword("Viewport lock [On/Off] <On>", ko);
+        if (!mode.ok())
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        const bool on = mode.keyword == "On";
+        report(ctx, layout::setViewportLocked(ctx.tx(), target, vpId, on),
+               "Viewport " + std::to_string(vpId) + (on ? " is locked." : " is unlocked."));
+    }
+};
+
 // VPLAYER: freeze or thaw a layer in one viewport only.
 class VpLayerCommand final : public cmd::Command {
 public:
@@ -550,6 +578,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LayoutCommand>());
     (void)registry.add(std::make_unique<MviewCommand>());
     (void)registry.add(std::make_unique<VpScaleCommand>());
+    (void)registry.add(std::make_unique<VpLockCommand>());
     (void)registry.add(std::make_unique<VpLayerCommand>());
     (void)registry.add(std::make_unique<VpLevelCommand>());
     (void)registry.add(std::make_unique<VpDeleteCommand>());
