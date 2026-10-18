@@ -117,7 +117,27 @@ public:
     }
 };
 
+class LayerPCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LAYERP"; }
+    std::string_view description() const override {
+        return "Undo the last change to the layer settings";
+    }
+    Task run(CommandContext& ctx) override {
+        ctx.setUndoLabel("LAYERP");
+        if (auto r = restorePreviousLayers(ctx.doc(), ctx.tx()); !r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message("Previous layer settings restored.");
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeLayerPCommand() {
+    return std::make_unique<LayerPCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeLayWalkCommand() {
     return std::make_unique<LayWalkCommand>();

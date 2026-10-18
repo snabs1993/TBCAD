@@ -502,3 +502,25 @@ TEST_CASE("-LAYER Description sets and clears the note, one undo step") {
     CHECK(f.host.undo());
     CHECK(f.layer("WALLS")->description == "Load bearing");
 }
+
+TEST_CASE("LAYERP goes back to the layer settings before the last change") {
+    Fixture f;
+    f.run("-LAYER", {"New", "Walls", cmd::ScriptItem::enter()});
+    f.run("-LAYER", {"New", "Doors", cmd::ScriptItem::enter()});
+    const auto find = [&](const char* n) -> const Layer* {
+        for (const auto& [id, l] : f.doc.layers())
+            if (l.name == n)
+                return &l;
+        return nullptr;
+    };
+    f.run("-LAYER", {"Off", "Walls", cmd::ScriptItem::enter()});
+    f.run("-LAYER", {"Lock", "Doors", cmd::ScriptItem::enter()});
+    REQUIRE_FALSE(find("Walls")->on);
+    REQUIRE(find("Doors")->locked);
+    f.run("-LAYER", {"Isolate", "Walls", cmd::ScriptItem::enter()});  // several layers in one go
+    f.run("LAYERP", {});
+    CHECK_FALSE(find("Walls")->on);  // the state before the isolate: Walls off, Doors locked
+    CHECK(find("Doors")->on);
+    CHECK(find("Doors")->locked);
+    CHECK(f.host.undo());  // LAYERP is one undo step
+}

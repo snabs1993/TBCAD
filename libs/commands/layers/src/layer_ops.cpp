@@ -358,7 +358,42 @@ Result<void> setCurrentLayer(const Document& doc, Transaction& tx, LayerId id) {
 
 namespace {
 
-Result<void> editLayer(Transaction& tx, LayerId id, const std::function<void(Layer&)>& fn) {
+constexpr const char* kPrevState = "tbcad.layerp.state";
+constexpr const char* kPrevRev = "tbcad.layerp.rev";
+
+std::string encodeLayers(const Document& doc) {
+    std::string out;
+    char buf[160];
+    for (const auto& [id, l] : doc.layers()) {
+        std::snprintf(buf, sizeof buf, "%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u;",
+                      static_cast<unsigned>(id.value), l.on, l.frozen, l.locked, l.plot,
+                      static_cast<int>(l.transparency), static_cast<int>(l.color.kind),
+                      static_cast<int>(l.color.r), static_cast<int>(l.color.g),
+                      static_cast<int>(l.color.b), static_cast<int>(l.lineweight.v),
+                      static_cast<unsigned>(l.linetype.value));
+        out += buf;
+    }
+    return out;
+}
+
+// The first layer edit of a transaction keeps the layer settings as they were, for LAYERP.
+// Transactions are told apart by the document revision, which only moves on commit's undo/redo.
+void rememberLayers(const Document& doc, Transaction& tx) {
+    const std::string rev = std::to_string(doc.revision());
+    const auto& custom = doc.header().custom;
+    const auto it = custom.find(kPrevRev);
+    if (it != custom.end() && it->second == rev)
+        return;
+    const std::string state = encodeLayers(doc);
+    (void)tx.modifyHeader([&](Header& h) {
+        h.custom[kPrevState] = state;
+        h.custom[kPrevRev] = rev;
+    });
+}
+
+Result<void> editLayer(const Document& doc, Transaction& tx, LayerId id,
+                       const std::function<void(Layer&)>& fn) {
+    rememberLayers(doc, tx);
     auto r = tx.modifyLayer(id, fn);
     if (!r)
         return err(r.error().code, r.error().message);
@@ -367,8 +402,49 @@ Result<void> editLayer(Transaction& tx, LayerId id, const std::function<void(Lay
 
 }  // namespace
 
-Result<void> setOn(const Document&, Transaction& tx, LayerId id, bool on) {
-    return editLayer(tx, id, [&](Layer& l) { l.on = on; });
+Result<void> restorePreviousLayers(const Document& doc, Transaction& tx) {
+    const auto it = doc.header().custom.find(kPrevState);
+    if (it == doc.header().custom.end() || it->second.empty())
+        return err(ErrorCode::NotFound, "There is no earlier layer state to go back to.");
+    const std::string saved = it->second;  // a copy: the edits below touch the header
+    std::size_t pos = 0, restored = 0;
+    while (pos < saved.size()) {
+        const std::size_t end = saved.find(';', pos);
+        if (end == std::string::npos)
+            break;
+        const std::string item = saved.substr(pos, end - pos);
+        pos = end + 1;
+        unsigned id = 0, lt = 0;
+        int on = 1, fr = 0, lk = 0, pl = 1, tr = 0, ck = 0, cr = 0, cg = 0, cb = 0, lw = -1;
+        if (std::sscanf(item.c_str(), "%u,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%u", &id, &on, &fr, &lk,
+                        &pl, &tr, &ck, &cr, &cg, &cb, &lw, &lt) != 12)
+            continue;
+        const LayerId lid{id};
+        if (!doc.layer(lid))
+            continue;
+        auto r = tx.modifyLayer(lid, [&](Layer& l) {
+            l.on = on != 0;
+            l.frozen = fr != 0;
+            l.locked = lk != 0;
+            l.plot = pl != 0;
+            l.transparency = static_cast<std::uint8_t>(tr);
+            l.color.kind = static_cast<ColorKind>(ck);
+            l.color.r = static_cast<std::uint8_t>(cr);
+            l.color.g = static_cast<std::uint8_t>(cg);
+            l.color.b = static_cast<std::uint8_t>(cb);
+            l.lineweight.v = static_cast<std::int16_t>(lw);
+            l.linetype = LinetypeId{lt};
+        });
+        if (r)
+            ++restored;
+    }
+    if (restored == 0)
+        return err(ErrorCode::NotFound, "There is no earlier layer state to go back to.");
+    return {};
+}
+
+Result<void> setOn(const Document& doc, Transaction& tx, LayerId id, bool on) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.on = on; });
 }
 
 Result<void> setFrozen(const Document& doc, Transaction& tx, LayerId id, bool frozen) {
@@ -380,42 +456,44 @@ Result<void> setFrozen(const Document& doc, Transaction& tx, LayerId id, bool fr
                                                     ": the current layer is " +
                                                     (b == id ? "this layer." : "inside it."));
     }
-    return editLayer(tx, id, [&](Layer& l) { l.frozen = frozen; });
+    return editLayer(doc, tx, id, [&](Layer& l) { l.frozen = frozen; });
 }
 
-Result<void> setLocked(const Document&, Transaction& tx, LayerId id, bool locked) {
-    return editLayer(tx, id, [&](Layer& l) { l.locked = locked; });
+Result<void> setLocked(const Document& doc, Transaction& tx, LayerId id, bool locked) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.locked = locked; });
 }
 
-Result<void> setPlot(const Document&, Transaction& tx, LayerId id, bool plot) {
-    return editLayer(tx, id, [&](Layer& l) { l.plot = plot; });
+Result<void> setPlot(const Document& doc, Transaction& tx, LayerId id, bool plot) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.plot = plot; });
 }
 
-Result<void> setLayerColor(const Document&, Transaction& tx, LayerId id, Color color) {
-    return editLayer(tx, id, [&](Layer& l) { l.color = color; });
+Result<void> setLayerColor(const Document& doc, Transaction& tx, LayerId id, Color color) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.color = color; });
 }
 
-Result<void> setLayerLinetype(const Document&, Transaction& tx, LayerId id, LinetypeId linetype) {
-    return editLayer(tx, id, [&](Layer& l) { l.linetype = linetype; });
+Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id,
+                              LinetypeId linetype) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.linetype = linetype; });
 }
 
-Result<void> setLayerLineweight(const Document&, Transaction& tx, LayerId id, LineWeight weight) {
-    return editLayer(tx, id, [&](Layer& l) { l.lineweight = weight; });
+Result<void> setLayerLineweight(const Document& doc, Transaction& tx, LayerId id,
+                                LineWeight weight) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.lineweight = weight; });
 }
 
-Result<void> setLayerTransparency(const Document&, Transaction& tx, LayerId id, int percent) {
+Result<void> setLayerTransparency(const Document& doc, Transaction& tx, LayerId id, int percent) {
     if (percent < 0 || percent > kTransparencyMax)
         return err(ErrorCode::InvalidArgument, "A layer transparency is 0 to 90.");
-    return editLayer(tx, id,
+    return editLayer(doc, tx, id,
                      [&](Layer& l) { l.transparency = static_cast<std::uint8_t>(percent); });
 }
 
-Result<void> setLayerDescription(const Document&, Transaction& tx, LayerId id,
+Result<void> setLayerDescription(const Document& doc, Transaction& tx, LayerId id,
                                  std::string_view text) {
     for (char c : text)
         if (static_cast<unsigned char>(c) < 0x20)
             return err(ErrorCode::InvalidArgument, "A description is one line of text.");
-    return editLayer(tx, id, [&](Layer& l) { l.description = std::string(text); });
+    return editLayer(doc, tx, id, [&](Layer& l) { l.description = std::string(text); });
 }
 
 Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep) {
@@ -442,10 +520,10 @@ Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vect
         if (!doc.layer(k)->on)
             turnOn.push_back(k);
     for (LayerId id : turnOff)
-        if (auto r = editLayer(tx, id, [](Layer& x) { x.on = false; }); !r)
+        if (auto r = editLayer(doc, tx, id, [](Layer& x) { x.on = false; }); !r)
             return r;
     for (LayerId id : turnOn)
-        if (auto r = editLayer(tx, id, [](Layer& x) { x.on = true; }); !r)
+        if (auto r = editLayer(doc, tx, id, [](Layer& x) { x.on = true; }); !r)
             return r;
     return {};
 }
@@ -486,7 +564,7 @@ Result<void> showAllLayers(const Document& doc, Transaction& tx) {
         if (!l.on)
             off.push_back(id);
     for (LayerId id : off) {
-        auto r = editLayer(tx, id, [](Layer& x) { x.on = true; });
+        auto r = editLayer(doc, tx, id, [](Layer& x) { x.on = true; });
         if (!r)
             return r;
     }

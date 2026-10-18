@@ -17,6 +17,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeLayerStateCommand());
     (void)registry.add(makeLayerFilterCommand());
     (void)registry.add(makeLayWalkCommand());
+    (void)registry.add(makeLayerPCommand());
     (void)registry.add(makeLayWalkStepCommand());
     registerLayerTools(registry);
 }
