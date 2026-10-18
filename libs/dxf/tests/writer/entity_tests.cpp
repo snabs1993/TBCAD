@@ -820,6 +820,39 @@ TEST_CASE("a dimension is exported with a drawn *D block that other programs can
     CHECK(texts >= 1);
 }
 
+TEST_CASE("a multileader is exported as leaders, a dogleg line and its note") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("mleader");
+        MLeaderData m;
+        m.lines = {{{0, 0}, {20, 10}}, {{0, 30}, {20, 10}}};
+        m.landing = {20, 10};
+        m.contentPos = {22.5, 10};
+        m.utf8 = "Steel beam";
+        m.style = kDimStyleStandard;
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(m))));
+        tx.commit();
+    }
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
+    REQUIRE(out.ok());
+    CHECK(exportReport.countCode(wcode::kDowngraded) >= 1);
+    Report report;
+    Result<ImportResult> in =
+        importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    int leaders = 0, lines = 0, texts = 0;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        leaders += kind(e) == EntityKind::Leader;
+        lines += kind(e) == EntityKind::Line;
+        if (const auto* t = entityAs<MTextData>(e))
+            texts += t->utf8.find("Steel beam") != std::string::npos;
+    });
+    CHECK(leaders == 2);
+    CHECK(lines == 1);
+    CHECK(texts == 1);
+}
+
 TEST_CASE("an xref block and an insert clipping boundary survive the DXF round trip") {
     Document doc;
     BlockId b;

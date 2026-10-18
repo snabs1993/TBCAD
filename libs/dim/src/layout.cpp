@@ -725,6 +725,31 @@ Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance, 
     return L;
 }
 
+Layout layoutMLeader(const Document& doc, const MLeaderData& d, double tolerance,
+                     double annoScale) {
+    Layout L;
+    DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
+    if (d.textHeight > 0)
+        st.textHeight = d.textHeight;
+    Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
+    for (const auto& pts : d.lines) {
+        if (pts.size() < 2)
+            continue;
+        Layout::Line line;
+        line.pts = pts;
+        L.lines.push_back(std::move(line));
+        addArrow(L, c, pts[0], normalized(pts[1] - pts[0]));
+    }
+    const bool right = d.contentPos.x >= d.landing.x;
+    if (d.dogleg)
+        addSeg(L, d.landing, d.contentPos, Role::DimLine, c.tol);
+    if (d.content == MLeaderData::Content::Text && !d.utf8.empty()) {
+        const Vec2 at = d.contentPos + Vec2{right ? c.gap : -c.gap, 0};
+        L.text = {d.utf8, at, 0, c.th, true, !right, 0};
+    }
+    return L;
+}
+
 void refresh(const Document& doc, DimensionData& d) {
     d.measurement = measurement(d);
     // The two-line angular kind keeps the arc position in textPos, so it is never recomputed.

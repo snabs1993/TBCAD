@@ -2,6 +2,7 @@
 // several leader lines that end at one landing point and carry text or a block.
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "dim_internal.h"
 #include "tbcad/dim/dim.h"
@@ -276,35 +277,29 @@ public:
         }
 
         ctx.setUndoLabel("MLEADER");
-        // The first branch carries the note; the others only reach the same landing point.
-        bool firstBranch = true;
-        Vec2 contentPos = landing;
-        for (Vec2 t : tips) {
-            LeaderData l =
-                leaderOf(ctx.doc(), {t, landing}, firstBranch ? text : std::string(), sid);
-            if (firstBranch)
-                contentPos = l.textPos;
-            firstBranch = false;
-            Entity e;
-            e.data = Indirect<LeaderData>(std::move(l));
-            applyCurrentProperties(ctx.doc().header(), e);
-            auto id = ctx.tx().add(std::move(e));
-            if (!id) {
-                ctx.message(id.error().message);
-                co_return;
-            }
-        }
+        MLeaderData m;
+        m.style = sid;
+        for (Vec2 t : tips)
+            m.lines.push_back({t, landing});
+        m.landing = landing;
+        const DimStyle& ds = dim::styleOf(ctx.doc(), sid);
+        const double k = ds.overallScale > 0 ? ds.overallScale : 1.0;
+        const double side = landing.x >= tips.front().x ? 1 : -1;
+        m.contentPos = landing + Vec2{side * ds.arrowSize * k, 0};
         if (block) {
-            InsertData ins;
-            ins.block = block->id;
-            ins.position = contentPos;
-            Entity e;
-            e.data = std::move(ins);
-            applyCurrentProperties(ctx.doc().header(), e);
-            auto id = ctx.tx().add(std::move(e));
-            if (!id)
-                ctx.message(id.error().message);
+            m.content = MLeaderData::Content::Block;
+            m.block = block->id;
+        } else if (!text.empty()) {
+            m.utf8 = text;
+        } else {
+            m.content = MLeaderData::Content::None;
         }
+        Entity e;
+        e.data = Indirect<MLeaderData>(std::move(m));
+        applyCurrentProperties(ctx.doc().header(), e);
+        auto id = ctx.tx().add(std::move(e));
+        if (!id)
+            ctx.message(id.error().message);
     }
 };
 
@@ -320,9 +315,18 @@ public:
         return "Line up the landing ends of leaders with a reference leader";
     }
 
+    // The point where a leader's lines end and its note begins.
+    static std::optional<Vec2> landingOf(const Entity& e) {
+        if (const auto* m = entityAs<MLeaderData>(e))
+            return m->landing;
+        if (const auto* l = entityAs<LeaderData>(e); l && !l->vertices.empty())
+            return l->vertices.back();
+        return std::nullopt;
+    }
+
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
-        so.filter = [](const Entity& e) { return entityAs<LeaderData>(e) != nullptr; };
+        so.filter = [](const Entity& e) { return landingOf(e).has_value(); };
         auto sel = co_await ctx.getSelection("Select leaders to align", so);
         if (!sel.ok())
             co_return;
@@ -339,10 +343,9 @@ public:
         if (!dir.ok())
             co_return;
         const Entity* r = ctx.doc().find(ref.id);
-        const auto* rl = r ? entityAs<LeaderData>(*r) : nullptr;
-        if (!rl || rl->vertices.empty())
+        const auto anchor = r ? landingOf(*r) : std::nullopt;
+        if (!anchor)
             co_return;
-        const Vec2 anchor = rl->vertices.back();
         const bool vertical = dir.keyword == "Vertical";
         ctx.setUndoLabel("MLEADERALIGN");
         std::size_t n = 0;
@@ -350,13 +353,19 @@ public:
             if (id == ref.id)
                 continue;
             const Entity* e = ctx.doc().find(id);
-            const auto* l = e ? entityAs<LeaderData>(*e) : nullptr;
-            if (!l || l->vertices.empty())
+            const auto end = e ? landingOf(*e) : std::nullopt;
+            if (!end)
                 continue;
-            const Vec2 end = l->vertices.back();
-            const Vec2 d = vertical ? Vec2{anchor.x - end.x, 0} : Vec2{0, anchor.y - end.y};
+            const Vec2 d = vertical ? Vec2{anchor->x - end->x, 0} : Vec2{0, anchor->y - end->y};
             if (!ctx.tx().modify(id, [d](Entity& x) {
-                    if (auto* ld = entityAs<LeaderData>(x)) {
+                    if (auto* m = entityAs<MLeaderData>(x)) {
+                        // The lines that ended at the landing follow it; arrowheads stay put.
+                        for (auto& line : m->lines)
+                            if (!line.empty() && distance(line.back(), m->landing) < 1e-9)
+                                line.back() += d;
+                        m->landing += d;
+                        m->contentPos += d;
+                    } else if (auto* ld = entityAs<LeaderData>(x)) {
                         ld->vertices.back() += d;
                         ld->textPos += d;
                     }

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <optional>
 
 #include "tbcad/dim/dim.h"
 #include "tbcad/text/text.h"
@@ -12,6 +13,8 @@ const DimStyle& styleForEntity(const Document& doc, const Entity& e) {
         return styleOf(doc, d->style);
     if (const auto* l = entityAs<LeaderData>(e))
         return styleOf(doc, l->style);
+    if (const auto* m = entityAs<MLeaderData>(e))
+        return styleOf(doc, m->style);
     return styleOf(doc, {});
 }
 
@@ -75,7 +78,28 @@ Layout layoutOf(const Document& doc, const Entity& e, double tol, double annoSca
         return layoutDimension(doc, *d, tol, f);
     if (const auto* l = entityAs<LeaderData>(e))
         return layoutLeader(doc, *l, tol, f);
+    if (const auto* m = entityAs<MLeaderData>(e))
+        return layoutMLeader(doc, *m, tol, f);
     return {};
+}
+
+// The block of a multileader as an insert at the end of the dogleg, scaled with the annotation.
+std::optional<Entity> blockContent(const Document& doc, const Entity& e, double annoScale) {
+    const auto* m = entityAs<MLeaderData>(e);
+    if (!m || m->content != MLeaderData::Content::Block || !doc.block(m->block))
+        return std::nullopt;
+    const double f = annotationFactor(doc.header(), e.common, annoScale);
+    InsertData ins;
+    ins.block = m->block;
+    ins.position = m->contentPos;
+    ins.scale = {m->blockScale * f, m->blockScale * f};
+    ins.rotation = m->blockRotation;
+    Entity out;
+    out.common = e.common;
+    out.common.id = {};
+    out.common.annotative = false;
+    out.data = Indirect<InsertData>(std::move(ins));
+    return out;
 }
 
 }  // namespace
@@ -115,17 +139,21 @@ void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::Dis
     }
     if (L.text.valid())
         text::buildTextDisplay(doc, textEntity(e, st, L.text, textStyleOf(st)), ctx, out);
+    if (auto block = blockContent(doc, e, ctx.annoScale))
+        geom::buildDisplay(doc, *block, ctx, out);
 }
 
 void registerDisplay() {
     geom::DisplayRegistry::set(EntityKind::Dimension, buildDimensionDisplay);
     geom::DisplayRegistry::set(EntityKind::Leader, buildDimensionDisplay);
+    geom::DisplayRegistry::set(EntityKind::MLeader, buildDimensionDisplay);
 }
 
 Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& e,
                                              double tolerance) {
-    if (kind(e) != EntityKind::Dimension && kind(e) != EntityKind::Leader)
-        return makeError(ErrorCode::InvalidArgument, "not a dimension or leader");
+    if (kind(e) != EntityKind::Dimension && kind(e) != EntityKind::Leader &&
+        kind(e) != EntityKind::MLeader)
+        return makeError(ErrorCode::InvalidArgument, "not a dimension, leader or multileader");
     const DimStyle& st = styleForEntity(doc, e);
     Layout L = layoutOf(doc, e, tolerance);
     std::vector<Entity> out;
@@ -163,6 +191,42 @@ Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& 
         Entity t = textEntity(e, st, L.text, textStyleOf(st));
         out.push_back(std::move(t));
     }
+    if (auto block = blockContent(doc, e, 0))
+        out.push_back(std::move(*block));
+    return out;
+}
+
+Result<std::vector<Entity>> mleaderAsLeaders(const Document& doc, const Entity& e) {
+    const auto* m = entityAs<MLeaderData>(e);
+    if (!m)
+        return makeError(ErrorCode::InvalidArgument, "not a multileader");
+    const DimStyle& st = styleForEntity(doc, e);
+    std::vector<Entity> out;
+    for (const auto& line : m->lines) {
+        if (line.size() < 2)
+            continue;
+        LeaderData l;
+        l.vertices = line;
+        l.style = m->style;
+        l.textPos = line.back();
+        Entity n;
+        n.common = e.common;
+        n.common.id = {};
+        n.data = Indirect<LeaderData>(std::move(l));
+        out.push_back(std::move(n));
+    }
+    // The dogleg is not a LEADER vertex: it joins the landing to the note.
+    const Layout L = layoutOf(doc, e, 0.01);
+    if (m->dogleg && distance(m->landing, m->contentPos) > 1e-9) {
+        Entity n;
+        n.common = commonFor(e, st, Role::DimLine);
+        n.data = LineData{m->landing, m->contentPos};  // no arrowhead, so a plain line
+        out.push_back(std::move(n));
+    }
+    if (L.text.valid())
+        out.push_back(textEntity(e, st, L.text, textStyleOf(st)));
+    if (auto block = blockContent(doc, e, 0))
+        out.push_back(std::move(*block));
     return out;
 }
 

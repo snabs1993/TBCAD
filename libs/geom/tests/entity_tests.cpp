@@ -293,3 +293,38 @@ TEST_CASE("grip points and moving grips") {
     CHECK(gripPoints(make(HatchData{})).empty());
     CHECK_FALSE(moveGrip(make(HatchData{}), 0, {0, 0}).ok());
 }
+
+TEST_CASE("multileader: transform keeps its shape, grips move lines, landing and note") {
+    MLeaderData m;
+    m.lines = {{{0, 0}, {10, 5}}, {{0, 10}, {10, 5}}};
+    m.landing = {10, 5};
+    m.contentPos = {12.5, 5};
+    m.content = MLeaderData::Content::Block;
+    m.blockScale = 2;
+    Entity e = make(Indirect<MLeaderData>(m));
+
+    auto moved = transformed(e, Transform2::translate({100, 0}));
+    REQUIRE(moved.ok());
+    const auto* a = entityAs<MLeaderData>(moved.value());
+    CHECK(a->lines[1].front() == Vec2{100, 10});
+    CHECK(a->landing == Vec2{110, 5});
+    CHECK(a->contentPos == Vec2{112.5, 5});
+
+    auto scaled = transformed(e, Transform2::scale(2, 2));
+    REQUIRE(scaled.ok());
+    CHECK(entityAs<MLeaderData>(scaled.value())->blockScale == doctest::Approx(4));
+    CHECK_FALSE(transformed(e, Transform2::scale(2, 1)).ok());
+
+    auto g = gripPoints(e);
+    REQUIRE(g.size() == 6);  // 4 line points, the landing and the note
+    auto landing = moveGrip(e, 4, {10, 8});
+    REQUIRE(landing.ok());
+    const auto* l = entityAs<MLeaderData>(landing.value());
+    CHECK(l->landing == Vec2{10, 8});
+    CHECK(l->lines[0].back() == Vec2{10, 8});  // lines that ended there follow
+    CHECK(l->lines[0].front() == Vec2{0, 0});
+    CHECK(entityAs<MLeaderData>(moveGrip(e, 5, {20, 5}).value())->contentPos == Vec2{20, 5});
+    CHECK(entityAs<MLeaderData>(moveGrip(e, 0, {-1, -1}).value())->lines[0].front() ==
+          Vec2{-1, -1});
+    CHECK_FALSE(moveGrip(e, 6, {0, 0}).ok());
+}

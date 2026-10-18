@@ -210,6 +210,16 @@ std::unique_ptr<Document> makeRichDocument() {
         dim.textRotation = 0.25;
         add(make(std::move(dim), l0));
         add(make(LeaderData{{{0, 0}, {5, 5}, {8, 5}}, arch, "หมายเหตุ", {8.5, 5}}, l0));
+        {
+            MLeaderData ml;
+            ml.lines = {{{0, 0}, {5, 5}}, {{0, 10}, {5, 5}}};
+            ml.landing = {5, 5};
+            ml.contentPos = {8, 5};
+            ml.style = arch;
+            ml.utf8 = "หมายเหตุ";
+            ml.textHeight = 3;
+            add(make(std::move(ml), l0));
+        }
         ProxyData proxy;
         proxy.originalType = "ACAD_PROXY_ENTITY";
         proxy.raw = {0, 1, 2, 3, 254, 255};

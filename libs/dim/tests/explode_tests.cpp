@@ -65,3 +65,76 @@ TEST_CASE("explode an angular dimension keeps its arc as an arc - a leader gives
     line.data = LineData{{0, 0}, {1, 1}};
     CHECK(!explodeDimension(doc, line).ok());
 }
+
+TEST_CASE("a multileader lays out its lines, arrowheads, dogleg and note; its block shows too") {
+    Document doc;
+    BlockId tag;
+    {
+        Transaction tx = doc.begin("block");
+        BlockDef def;
+        def.name = "Tag";
+        tag = tx.addBlock(std::move(def)).value();
+        REQUIRE(tx.add(entityOf(LineData{{0, 0}, {1, 0}}), tag));
+        tx.commit();
+    }
+    MLeaderData m;
+    m.lines = {{{0, 0}, {20, 10}}, {{0, 30}, {20, 10}}};
+    m.landing = {20, 10};
+    m.contentPos = {22.5, 10};
+    m.utf8 = "Steel beam";
+    Layout L = layoutMLeader(doc, m);
+    CHECK(L.lines.size() == 3);  // two lines and the dogleg
+    CHECK(L.arrows.size() == 2);
+    REQUIRE(L.text.valid());
+    CHECK(L.text.center.x == doctest::Approx(22.5 + 0.625));
+    CHECK_FALSE(L.text.attachRight);
+
+    m.contentPos = {17.5, 10};  // note on the left
+    CHECK(layoutMLeader(doc, m).text.attachRight);
+
+    m.contentPos = {22.5, 10};
+    m.dogleg = false;
+    CHECK(layoutMLeader(doc, m).lines.size() == 2);
+
+    m.textHeight = 5;
+    CHECK(layoutMLeader(doc, m).text.height == doctest::Approx(5));
+
+    // As an object: explodes into lines, arrowheads and text; a block adds an insert.
+    m.dogleg = true;
+    m.textHeight = 0;
+    EntityId id = add(doc, entityOf(Indirect<MLeaderData>(m)));
+    auto parts = explodeDimension(doc, *doc.find(id));
+    REQUIRE(parts.ok());
+    int hatches = 0, texts = 0;
+    for (const Entity& x : parts.value()) {
+        hatches += kind(x) == EntityKind::Hatch;
+        texts += kind(x) == EntityKind::MText;
+    }
+    CHECK(hatches == 2);
+    CHECK(texts == 1);
+
+    m.content = MLeaderData::Content::Block;
+    m.block = tag;
+    m.utf8.clear();
+    EntityId withBlock = add(doc, entityOf(Indirect<MLeaderData>(m)));
+    auto blockParts = explodeDimension(doc, *doc.find(withBlock));
+    REQUIRE(blockParts.ok());
+    int inserts = 0;
+    for (const Entity& x : blockParts.value())
+        inserts += kind(x) == EntityKind::Insert;
+    CHECK(inserts == 1);
+
+    // The older objects another program can read: leaders per line, a dogleg line, the note.
+    auto old = mleaderAsLeaders(doc, *doc.find(id));
+    REQUIRE(old.ok());
+    int leaders = 0, lines = 0, mtexts = 0;
+    for (const Entity& x : old.value()) {
+        leaders += kind(x) == EntityKind::Leader;
+        lines += kind(x) == EntityKind::Line;
+        mtexts += kind(x) == EntityKind::MText;
+    }
+    CHECK(leaders == 2);
+    CHECK(lines == 1);
+    CHECK(mtexts == 1);
+    CHECK_FALSE(mleaderAsLeaders(doc, entityOf(LineData{})).ok());
+}

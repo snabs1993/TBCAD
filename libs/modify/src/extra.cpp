@@ -1116,6 +1116,8 @@ std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
         edit(m->utf8);
     else if (auto* l = entityAs<LeaderData>(r.entity))
         edit(l->utf8);
+    else if (auto* ml = entityAs<MLeaderData>(r.entity))
+        edit(ml->utf8);
     else if (auto* d = entityAs<DimensionData>(r.entity))
         edit(d->textOverride);
     else if (auto* ins = entityAs<InsertData>(r.entity))

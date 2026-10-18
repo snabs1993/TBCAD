@@ -14,7 +14,7 @@ Every entity has:
 | field | meaning |
 |---|---|
 | `id` | decimal string (64-bit safe); ignored when writing |
-| `kind` | line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, insert, dimension, leader, table, ray, mline, proxy |
+| `kind` | line, circle, arc, polyline, point, ellipse, spline, text, mtext, hatch, insert, dimension, leader, table, ray, mline, mleader, proxy |
 | `layer` | full layer path, sub-layers joined with `~` (`S-FLOOR~edge`) |
 | `level` | level name; only written when the drawing has more than one level; when writing, the current level is used if omitted |
 | `color` | `"ByLayer"`, `"ByBlock"`, an ACI number 1..255, or `"#RRGGBB"` |
@@ -47,12 +47,13 @@ Kind fields:
   or the raw `definitionPoints` that reading returns. Optional `text` (override; `<>` stands for the measured value), `textPosition` (fixes the text there unless `textPositionFixed` is false; reading returns both), `dimStyle` (name). `measurement` and the text position are computed. Baseline and continued chains are made with `run_command` (DIMBASELINE, DIMCONTINUE) or by adding more linear dimensions that share a point.
 - **leader**: `vertices` (at least two, the arrow end first), optional `text`, `textPosition`, `dimStyle`.
 - **ray**, **xline**: `origin`, `direction` (normalised when written); a ray starts at the origin, an xline (`kind: "xline"` when writing, or `infinite: true`) runs both ways. Reads back as kind `ray` with `infinite`.
+- **mleader**: `lines` (each a list of points, the arrow end first), `landing` (where the lines meet), `contentPosition` (end of the dogleg), `dogleg`, `content` (`text`, `block` or `none`), `text`, `textHeight`, `block` with `blockScale` and `blockRotation`, `dimStyle`.
 - **mline**: `vertices`, `style` (MLSTYLE name), `scale`, `justification` (0 top, 1 zero, 2 bottom), `closed`.
 - **table**: `origin` (top-left), `columnWidths`, `rowHeights`, `cells` (row-major strings, MText markup allowed), `rotation`, `textHeight`, `margin`, `titleRow`.
 - **proxy**: an imported entity of an unknown type; read only.
 
 Writing: `add_entities` accepts line, circle, arc, polyline, point, ellipse, spline, text, mtext,
-hatch, insert, dimension, leader, ray, xline, mline and table. `modify_entities` `set` takes any of the fields above for the entity's kind.
+hatch, insert, dimension, leader, mleader, ray, xline, mline and table. `modify_entities` `set` takes any of the fields above for the entity's kind.
 )MD";
     return doc;
 }

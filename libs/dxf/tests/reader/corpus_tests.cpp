@@ -50,6 +50,8 @@ const char* kindName(EntityKind k) {
             return "Ray";
         case EntityKind::MLine:
             return "MLine";
+        case EntityKind::MLeader:
+            return "MLeader";
     }
     return "?";
 }

@@ -47,7 +47,7 @@ bool hasCurveOrPoint(EntityKind k) {
 
 bool needsUniformScale(EntityKind k) {
     return k == EntityKind::Text || k == EntityKind::MText || k == EntityKind::Dimension ||
-           k == EntityKind::Leader || k == EntityKind::Table;
+           k == EntityKind::Leader || k == EntityKind::MLeader || k == EntityKind::Table;
 }
 
 // Rotation-and-uniform-scale approximation of t (a mirror is kept), with the same translation as

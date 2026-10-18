@@ -103,27 +103,27 @@ TEST_CASE("MLEADER: several arrowheads, one landing point and a note") {
     auto r =
         f.host->run("MLEADER", {"0,0", "40,30", "0,60", ScriptItem::enter(), "Text", "Steel beam"});
     CHECK(r.finished);
-    auto ls = f.all<LeaderData>();
-    REQUIRE(ls.size() == 2);
-    int withText = 0;
-    for (const auto* l : ls) {
-        CHECK(l->vertices.back().x == doctest::Approx(40));
-        CHECK(l->vertices.back().y == doctest::Approx(30));
-        if (!l->utf8.empty())
-            ++withText;
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);  // one object with both leader lines and the note
+    REQUIRE(ms[0]->lines.size() == 2);
+    for (const auto& line : ms[0]->lines) {
+        CHECK(line.back().x == doctest::Approx(40));
+        CHECK(line.back().y == doctest::Approx(30));
     }
-    CHECK(withText == 1);
+    CHECK(ms[0]->landing.x == doctest::Approx(40));
+    CHECK(ms[0]->utf8 == "Steel beam");
+    CHECK(ms[0]->contentPos.x > ms[0]->landing.x);
     CHECK(f.host->undo());
-    CHECK(f.all<LeaderData>().empty());
+    CHECK(f.all<MLeaderData>().empty());
 }
 
 TEST_CASE("MLEADER: text typed at the first prompt is the note") {
     Fix f;
     auto r = f.host->run("MLEADER", {"Door D1", "0,0", "40,30", ScriptItem::enter()});
     CHECK(r.finished);
-    auto ls = f.all<LeaderData>();
-    REQUIRE(ls.size() == 1);
-    CHECK(ls[0]->utf8 == "Door D1");
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    CHECK(ms[0]->utf8 == "Door D1");
 }
 
 TEST_CASE("MLEADER: block content inserts the block at the landing point") {
@@ -137,10 +137,12 @@ TEST_CASE("MLEADER: block content inserts the block at the landing point") {
     }
     auto r = f.host->run("MLEADER", {"0,0", "40,30", ScriptItem::enter(), "Block", "Tag"});
     CHECK(r.finished);
-    CHECK(f.all<LeaderData>().size() == 1);
-    CHECK(f.all<InsertData>().size() == 1);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    CHECK(ms[0]->content == MLeaderData::Content::Block);
+    CHECK(f.doc.block(ms[0]->block)->name == "Tag");
 
     auto bad = f.host->run("MLEADER", {"0,0", "40,30", ScriptItem::enter(), "Block", "Nope"});
     CHECK(bad.finished);
-    CHECK(f.all<InsertData>().size() == 1);
+    CHECK(f.all<MLeaderData>().size() == 1);
 }

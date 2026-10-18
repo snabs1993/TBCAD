@@ -286,6 +286,21 @@ struct PayloadWriter {
         for (const Vec2& p : d.v)
             w.vec2(p);
     }
+    void operator()(const MLeaderData& d) {
+        w.varint(d.lines.size());
+        for (const auto& line : d.lines)
+            points(line);
+        w.vec2(d.landing);
+        w.vec2(d.contentPos);
+        w.u8(d.dogleg ? 1 : 0);
+        w.varint(d.style.value);
+        w.u8(static_cast<std::uint8_t>(d.content));
+        str(d.utf8);
+        w.f64(d.textHeight);
+        w.varint(d.block.value);
+        w.f64(d.blockScale);
+        w.f64(d.blockRotation);
+    }
     void operator()(const TableData& d) {
         w.vec2(d.origin);
         w.f64(d.rotation);
@@ -668,6 +683,24 @@ struct PayloadReader {
                     p = r.vec2();
                 return make(std::move(d));
             }
+            case EntityKind::MLeader: {
+                MLeaderData d;
+                std::size_t n = r.count(1);
+                d.lines.resize(n);
+                for (auto& line : d.lines)
+                    line = points();
+                d.landing = r.vec2();
+                d.contentPos = r.vec2();
+                d.dogleg = r.boolean();
+                d.style = id<DimStyleId>();
+                d.content = enumeration<MLeaderData::Content>(2);
+                d.utf8 = str();
+                d.textHeight = r.f64();
+                d.block = id<BlockId>();
+                d.blockScale = r.f64();
+                d.blockRotation = r.f64();
+                return make(std::move(d));
+            }
             case EntityKind::Table: {
                 TableData d;
                 d.origin = r.vec2();
@@ -826,7 +859,7 @@ struct PayloadReader {
     }
 };
 
-constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::MLine);
+constexpr std::uint16_t kMaxKnownKind = static_cast<std::uint16_t>(EntityKind::MLeader);
 
 }  // namespace
 

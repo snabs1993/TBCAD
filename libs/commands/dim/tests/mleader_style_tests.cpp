@@ -21,7 +21,7 @@ struct Fixture {
     std::size_t leaders() const {
         std::size_t n = 0;
         doc.forEachEntity([&](const Entity& e) {
-            if (entityAs<LeaderData>(e))
+            if (entityAs<MLeaderData>(e))
                 ++n;
         });
         return n;
@@ -44,7 +44,7 @@ TEST_CASE("MLEADERSTYLE New/Edit sets arrow, gap, text style and content - MLEAD
     CHECK(r.finished);
     REQUIRE(f.leaders() == 1);
     f.doc.forEachEntity([&](const Entity& e) {
-        if (auto* l = entityAs<LeaderData>(e))
+        if (auto* l = entityAs<MLeaderData>(e))
             CHECK(l->style == d->id);
     });
     CHECK(f.host->undo());

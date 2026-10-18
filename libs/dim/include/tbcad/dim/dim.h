@@ -93,6 +93,10 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
                        double annoScale = 1);
 Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance = 0.01,
                     double annoScale = 1);
+// A multileader: its lines with arrowheads, the dogleg and the note. A block as content is not
+// part of the Layout; the display and explode add it.
+Layout layoutMLeader(const Document& doc, const MLeaderData& d, double tolerance = 0.01,
+                     double annoScale = 1);
 
 // Recomputes what depends on the definition points: `measurement`, and `textPos` unless the user
 // placed the text (textPosUser). Used by the commands after creating or editing a dimension.
@@ -103,7 +107,8 @@ std::vector<Vec2> arcPoints(const Layout::Arc& a, double tolerance);
 
 // ---- display, bounds, explode ----------------------------------------------------------------
 
-// Registers the display generators for EntityKind::Dimension and ::Leader with geom. Idempotent.
+// Registers the display generators for EntityKind::Dimension, ::Leader and ::MLeader with geom.
+// Idempotent.
 void registerDisplay();
 
 void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::DisplayContext& ctx,
@@ -113,5 +118,10 @@ void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::Dis
 // text. The result carries the dimension's layer, linetype and lineweight.
 Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& e,
                                              double tolerance = 0.01);
+
+// A multileader as the older objects other programs know: one LEADER per line (arrowhead and
+// line, no text), the note as MText and a block as an Insert. Used when a file format has no
+// multileader.
+Result<std::vector<Entity>> mleaderAsLeaders(const Document& doc, const Entity& e);
 
 }  // namespace tbcad::dim

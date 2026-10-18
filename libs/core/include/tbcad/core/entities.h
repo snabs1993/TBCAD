@@ -115,10 +115,11 @@ enum class EntityKind : std::uint8_t {
     Table,  // after Proxy so the numbers of the older kinds stay as written in files
     Ray,    // RAY and XLINE
     MLine,
+    MLeader,  // MLEADER: one object with several leader lines and a note or block
 };
 
 // Number of entity kinds, for tables indexed by kind.
-inline constexpr std::size_t kEntityKindCount = static_cast<std::size_t>(EntityKind::MLine) + 1;
+inline constexpr std::size_t kEntityKindCount = static_cast<std::size_t>(EntityKind::MLeader) + 1;
 
 struct LineData {
     Vec2 a{}, b{};
@@ -440,13 +441,31 @@ struct MlineData {
     std::vector<Vec2> v{};
 };
 
+// A multileader: several leader lines that meet at one landing point, then a short dogleg to a
+// note or a block. Arrowheads and sizes come from the dimension style (MLEADERSTYLE).
+struct MLeaderData {
+    enum class Content : std::uint8_t { None, Text, Block };
+    std::vector<std::vector<Vec2>> lines{};  // each runs from its arrowhead towards the landing
+    Vec2 landing{};                          // where the lines meet
+    Vec2 contentPos{};   // end of the dogleg: the note starts here (or ends, on the left side)
+    bool dogleg = true;  // draw landing -> contentPos
+    DimStyleId style{};
+    Content content = Content::Text;
+    std::string utf8{};     // note, TBCAD markup
+    double textHeight = 0;  // 0 = the dimension style's text height
+    BlockId block{};        // Content::Block: inserted at contentPos
+    double blockScale = 1;
+    double blockRotation = 0;
+};
+
 // The alternatives are in EntityKind order. Larger kinds are boxed in Indirect<> to keep Entity
 // small; use entityAs<T>() / visitEntity() instead of std::get_if / std::visit.
 using EntityData =
     std::variant<LineData, CircleData, ArcData, PolylineData, PointData, Indirect<EllipseData>,
                  Indirect<SplineData>, Indirect<TextData>, Indirect<MTextData>, Indirect<HatchData>,
                  Indirect<InsertData>, Indirect<DimensionData>, Indirect<LeaderData>,
-                 Indirect<ProxyData>, Indirect<TableData>, Indirect<RayData>, Indirect<MlineData>>;
+                 Indirect<ProxyData>, Indirect<TableData>, Indirect<RayData>, Indirect<MlineData>,
+                 Indirect<MLeaderData>>;
 
 struct Entity {
     EntityCommon common{};
@@ -472,7 +491,8 @@ T* entityAs(Entity& e) {
                   std::is_same_v<T, HatchData> || std::is_same_v<T, InsertData> ||
                   std::is_same_v<T, DimensionData> || std::is_same_v<T, LeaderData> ||
                   std::is_same_v<T, ProxyData> || std::is_same_v<T, TableData> ||
-                  std::is_same_v<T, RayData> || std::is_same_v<T, MlineData>) {
+                  std::is_same_v<T, RayData> || std::is_same_v<T, MlineData> ||
+                  std::is_same_v<T, MLeaderData>) {
         auto* p = std::get_if<Indirect<T>>(&e.data);
         return p ? &**p : nullptr;
     } else {

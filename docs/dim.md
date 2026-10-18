@@ -112,9 +112,14 @@ The preview follows the cursor while the location is chosen. All dimensions of o
 
 **MLEADER** (alias MLD) takes an arrowhead point and a landing point, then any number of further arrowhead
 points (Enter to finish), then the content: **Text**, **Block** (an existing block, inserted at the landing
-point) or **None**. It uses the current dimension style for arrow and text. Each arrowhead is a `Leader`
-entity; the first one carries the note and the others end at the same landing point, so they move, erase
-and export to DXF like any other leaders. Everything from one MLEADER run is one undo step.
+point) or **None**. It uses the current dimension style for arrow and text. The result is one
+multileader object (`MLeader`): all leader lines, the landing point where they meet, a dogleg of one arrow
+length to the note, and the note or block at its end. It moves, copies, scales, grips and erases as one
+object, and its lines, landing point and note each have a grip. **MLEADERALIGN** (MLA) lines up the landing
+ends of several multileaders (or plain leaders) in a column or a row with a reference one. Everything from
+one MLEADER run is one undo step. To DXF a multileader is written as one LEADER per line, a line for the
+dogleg and the note as MTEXT (or a block as INSERT): other programs show it, but it is no longer one object
+there.
 
 ## Arc length and ordinate dimensions (Q81)
 

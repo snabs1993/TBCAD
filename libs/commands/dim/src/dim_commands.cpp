@@ -540,7 +540,7 @@ public:
 
 void registerCommands(cmd::Registry& registry) {
     dim::registerDisplay();
-    for (EntityKind k : {EntityKind::Dimension, EntityKind::Leader}) {
+    for (EntityKind k : {EntityKind::Dimension, EntityKind::Leader, EntityKind::MLeader}) {
         blocks::ExplodeRegistry::set(
             k, [](const Document& doc, const Entity& e) -> Result<blocks::ExplodeResult> {
                 auto r = dim::explodeDimension(doc, e);

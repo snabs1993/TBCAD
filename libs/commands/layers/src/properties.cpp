@@ -70,6 +70,8 @@ const char* kindLabel(EntityKind k) {
             return "Ray";
         case EntityKind::MLine:
             return "Multiline";
+        case EntityKind::MLeader:
+            return "Multileader";
     }
     return "Object";
 }

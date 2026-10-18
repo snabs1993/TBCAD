@@ -855,7 +855,7 @@ TEST_CASE("attributes: flags, prompt, an unknown tag stays visible as text") {
     CHECK_FALSE(texts[0]->attdef.has_value());
 }
 
-TEST_CASE("MLEADER: leader lines and text come in as leaders") {
+TEST_CASE("MLEADER: lines, dogleg and text come in as one multileader") {
     Pairs p;
     p.g(0, "MULTILEADER").g(8, "0").g(100, "AcDbMLeader").g(270, 2);
     p.g(300, "CONTEXT_DATA{").g(40, 1.0).g(10, 50.0).g(20, 20.0).g(30, 0.0);
@@ -867,13 +867,15 @@ TEST_CASE("MLEADER: leader lines and text come in as leaders") {
     p.g(10, 40.0).g(20, 20.0).g(30, 0.0).g(91, 0).g(305, "}").g(303, "}");
     p.g(301, "}");
     Loaded l = load(entitiesOnly(p.text));
-    auto leaders = modelEntities<LeaderData>(l.doc());
+    auto leaders = modelEntities<MLeaderData>(l.doc());
     REQUIRE(leaders.size() == 1);
-    const LeaderData& d = *leaders[0];
-    // From the arrowhead at the far end to the end of the dogleg.
-    CHECK(near(d.vertices.front(), Vec2{0, 0}));
-    CHECK(near(d.vertices.back(), Vec2{45, 20}));
-    CHECK(near(d.textPos, Vec2{50, 20}));
+    const MLeaderData& d = *leaders[0];
+    // From the arrowhead at the far end to the landing, then the dogleg to the note.
+    REQUIRE(d.lines.size() == 1);
+    CHECK(near(d.lines[0].front(), Vec2{0, 0}));
+    CHECK(near(d.landing, Vec2{40, 20}));
+    CHECK(near(d.contentPos, Vec2{45, 20}));
+    CHECK(d.dogleg);
     CHECK(d.utf8.find("Room") != std::string::npos);
 }
 

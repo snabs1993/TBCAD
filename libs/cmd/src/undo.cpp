@@ -25,6 +25,10 @@ std::size_t entityBytes(const Entity& e) {
                 n += sizeof(HatchLoop) + loop.edges.capacity() * sizeof(HatchEdge);
         } else if constexpr (std::is_same_v<T, LeaderData>) {
             n += sizeof(T) + d.vertices.capacity() * sizeof(Vec2) + d.utf8.capacity();
+        } else if constexpr (std::is_same_v<T, MLeaderData>) {
+            n += sizeof(T) + d.lines.capacity() * sizeof(std::vector<Vec2>) + d.utf8.capacity();
+            for (const auto& line : d.lines)
+                n += line.capacity() * sizeof(Vec2);
         } else if constexpr (std::is_same_v<T, TableData>) {
             n += sizeof(T) + d.colWidths.capacity() * sizeof(double) +
                  d.rowHeights.capacity() * sizeof(double) + d.cells.capacity() * sizeof(TableCell);

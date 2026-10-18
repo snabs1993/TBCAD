@@ -152,3 +152,24 @@ TEST_CASE("entity json: dimensions of every kind and leaders can be written and 
     CHECK(r.fails("add_entities", J(R"({"entities":[{"kind":"leader","vertices":[[0,0]]}]})"))
               .find("two vertices") != std::string::npos);
 }
+
+TEST_CASE("entity json: a multileader is written and read back") {
+    Rig r;
+    r.initialize();
+    std::string id =
+        addOne(r, R"({"kind":"mleader","lines":[[[0,0],[2000,1000]],[[0,3000],[2000,1000]]],
+              "contentPosition":[2250,1000],"text":"Steel beam","textHeight":250})");
+    Json m = get(r, id);
+    CHECK(m.find("kind")->asString() == "mleader");
+    CHECK(m.find("lines")->asArray().size() == 2);
+    CHECK(m.find("content")->asString() == "text");
+    CHECK(m.find("text")->asString() == "Steel beam");
+    CHECK(m.find("textHeight")->asNumber() == doctest::Approx(250));
+    CHECK(m.find("dogleg")->asBool());
+    CHECK(r.fails("add_entities", J(R"({"entities":[{"kind":"mleader","lines":[]}]})"))
+              .find("at least one line") != std::string::npos);
+    makeBlock(r, "Tag");
+    std::string withBlock = addOne(
+        r, R"({"kind":"mleader","lines":[[[0,0],[2000,1000]]],"content":"block","block":"Tag"})");
+    CHECK(get(r, withBlock).find("block")->asString() == "Tag");
+}
