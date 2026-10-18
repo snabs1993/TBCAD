@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "tbcad/layout/layout.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 
 namespace tbcad::plot {
@@ -26,6 +27,9 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     if (!sheet)
         return sheet.error();
     const std::string file = withExtension(path, format);
+    // The default folder (Documents/TBCAD plots) may not exist yet.
+    if (auto parent = platform::pathFromUtf8(file).parent_path(); !parent.empty())
+        platform::ensureDirectory(parent);
     const double dpi = plotDpi(host);
     auto written = format == Format::Pdf   ? exportlib::writePdf(sheet.value(), file)
                    : format == Format::Svg ? exportlib::writeSvg(sheet.value(), file)

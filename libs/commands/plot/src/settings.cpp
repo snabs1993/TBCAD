@@ -288,15 +288,42 @@ std::string lastFile(const cmd::IHost& h, Format f) {
     return std::string("drawing") + extension(f);
 }
 
+namespace {
+// Where plots go when the user has not picked a folder yet: Documents\\TBCAD plots. Never the
+// folder of the open drawing - that is often a read-only or shared project folder.
+std::string defaultPlotsFolder(const cmd::IHost& h) {
+    namespace pf = tbcad::platform;
+    if (auto v = h.setting("plot.defaultFolder"); v && !v->empty())
+        return *v;
+    auto home = pf::processEnvironment(pf::kHostIsWindows ? "USERPROFILE" : "HOME");
+    if (!home || home->empty())
+        return {};
+    return pf::pathToUtf8(pf::pathFromUtf8(*home) / "Documents" / "TBCAD plots");
+}
+}  // namespace
+
 std::string defaultFile(const cmd::IHost& h, Format f) {
     std::string doc = h.documentFile();
     if (doc.empty())
         return lastFile(h, f);
-    auto dot = doc.find_last_of('.');
     auto slash = doc.find_last_of("/\\");
-    if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
-        doc.resize(dot);
-    return doc + extension(f);
+    std::string stem = slash == std::string::npos ? doc : doc.substr(slash + 1);
+    if (auto dot = stem.find_last_of('.'); dot != std::string::npos && dot > 0)
+        stem.resize(dot);
+    // The folder used for the last plot, else Documents\TBCAD plots.
+    std::string folder;
+    if (auto v = h.setting(fileKey(f)); v && !v->empty()) {
+        if (auto sl = v->find_last_of("/\\"); sl != std::string::npos)
+            folder = v->substr(0, sl);
+    }
+    if (folder.empty())
+        folder = defaultPlotsFolder(h);
+    if (folder.empty())
+        return stem + extension(f);
+    const char sep = folder.find('\\') != std::string::npos ? '\\' : '/';
+    if (folder.back() != '/' && folder.back() != '\\')
+        folder += sep;
+    return folder + stem + extension(f);
 }
 
 void setLastFile(cmd::IHost& h, Format f, const std::string& path) {

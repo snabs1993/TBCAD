@@ -174,11 +174,16 @@ TEST_CASE("the default file name follows the open drawing - PLOTPANEL opens the 
     Fixture f;
     DocHost h(f.doc, f.reg);
     CHECK(plot::defaultFile(h, plot::Format::Pdf) == "drawing.pdf");
+    // The plot goes to the plots folder, never next to the (maybe read-only) drawing.
+    h.setSetting("plot.defaultFolder", "/home/u/Documents/TBCAD plots");
     h.file = "C:\\work\\plan.v2.tbcad";
-    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "C:\\work\\plan.v2.pdf");
-    CHECK(plot::defaultFile(h, plot::Format::Svg) == "C:\\work\\plan.v2.svg");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/home/u/Documents/TBCAD plots/plan.v2.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Svg) == "/home/u/Documents/TBCAD plots/plan.v2.svg");
     h.file = "/tmp/dir.x/plan";
-    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/tmp/dir.x/plan.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "/home/u/Documents/TBCAD plots/plan.pdf");
+    // After a plot, the folder of the last file is kept.
+    plot::setLastFile(h, plot::Format::Pdf, "D:\\out\\old.pdf");
+    CHECK(plot::defaultFile(h, plot::Format::Pdf) == "D:\\out\\plan.pdf");
 
     auto r = h.run("PLOTPANEL", {});
     CHECK(r.finished);
