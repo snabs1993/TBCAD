@@ -338,6 +338,8 @@ private:
 
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeMlEditCommand();
+
 void registerCommands(cmd::Registry& registry) {
     mline::registerDisplay();
     blocks::ExplodeRegistry::set(
@@ -350,10 +352,12 @@ void registerCommands(cmd::Registry& registry) {
         });
     (void)registry.add(std::make_unique<MlineCommand>());
     (void)registry.add(std::make_unique<MlstyleCommand>());
+    (void)registry.add(makeMlEditCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Multiline", "MLINE");
+    ui.addMenuItem("Modify/Edit Multiline", "MLEDIT");
     ui.addMenuItem("Format/Multiline Style", "MLSTYLE");
 }
 

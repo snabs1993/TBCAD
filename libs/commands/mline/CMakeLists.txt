@@ -1,6 +1,7 @@
 tbcad_add_library(mline_commands
   SOURCES
     src/mline_commands.cpp
+    src/mledit.cpp
   DEPENDS tbcad::cmd tbcad::mline tbcad::blocks tbcad::geom tbcad::ui)
 
 tbcad_add_tests(mline_commands

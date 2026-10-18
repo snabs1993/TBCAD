@@ -92,3 +92,35 @@ TEST_CASE("Exploding a multiline gives polylines") {
     });
     CHECK(n == 2);
 }
+
+TEST_CASE("MLEDIT joins two walls at their corner and adds and deletes vertices") {
+    Fx f;
+    // Two walls that stop short of each other: one along X to (90,0), one along Y from (100,10).
+    REQUIRE(f.host->run("MLINE", {"0,0", "90,0", ""}).finished);
+    REQUIRE(f.host->run("MLINE", {"100,10", "100,100", ""}).finished);
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::MLine)
+            ids.push_back(e.common.id);
+    });
+    REQUIRE(ids.size() == 2);
+    // The first drawn is ids[0] (storage order). Pick each near the ends that should meet.
+    EntityId wallX = ids[0], wallY = ids[1];
+    f.host->run("MLEDIT",
+                {"Corner", ScriptItem::pick(wallX, {85, 0}), ScriptItem::pick(wallY, {100, 15})});
+    const auto* x = entityAs<MlineData>(*f.doc.find(wallX));
+    const auto* y = entityAs<MlineData>(*f.doc.find(wallY));
+    CHECK(x->v.back().x == doctest::Approx(100));
+    CHECK(x->v.back().y == doctest::Approx(0));
+    CHECK(y->v.front().x == doctest::Approx(100));
+    CHECK(y->v.front().y == doctest::Approx(0));
+    CHECK(f.host->undo());
+    CHECK(entityAs<MlineData>(*f.doc.find(wallX))->v.back().x == doctest::Approx(90));
+
+    f.host->run("MLEDIT", {"Add", ScriptItem::pick(wallY, {100, 50}), "100,50"});
+    CHECK(entityAs<MlineData>(*f.doc.find(wallY))->v.size() == 3);
+    f.host->run("MLEDIT", {"Delete", ScriptItem::pick(wallY, {100, 52})});
+    CHECK(entityAs<MlineData>(*f.doc.find(wallY))->v.size() == 2);
+    f.host->run("MLEDIT", {"Delete", ScriptItem::pick(wallY, {100, 52})});
+    CHECK(entityAs<MlineData>(*f.doc.find(wallY))->v.size() == 2);  // at least two stay
+}

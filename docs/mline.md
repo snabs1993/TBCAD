@@ -22,3 +22,7 @@ a LINE).
 
 ## Regions and sketches
 See regions.md.
+
+## MLEDIT
+
+`MLEDIT` fixes joints: **Corner** (pick two multilines near the ends that should meet; both centre lines are extended or cut back to where they cross), **Add** a vertex (it goes into the nearest segment), **Delete** the vertex nearest the pick (a multiline keeps at least two) and **Close** or **Open** the path. T and cross joints that open the lines of the wall they meet are not done yet: the multiline stays one stroke per style line.
