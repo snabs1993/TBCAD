@@ -1,5 +1,6 @@
 #include "tbcad/block_cmds/block_list.h"
 
+#include <cstdint>
 #include <algorithm>
 #include <cctype>
 #include <unordered_map>
@@ -17,11 +18,20 @@ std::string lower(std::string s) {
 }  // namespace
 
 std::vector<BlockRow> blockRows(const Document& doc, const std::string& filter) {
-    std::unordered_map<BlockId, std::size_t> refs;
-    doc.forEachEntity([&](const Entity& e) {
-        if (const auto* ins = entityAs<InsertData>(e))
-            ++refs[ins->block];
-    });
+    // The insert counts walk every entity, which the panel would do on each frame: keep them
+    // until the drawing changes.
+    static const Document* cachedDoc = nullptr;
+    static std::uint64_t cachedRevision = 0;
+    static std::unordered_map<BlockId, std::size_t> refs;
+    if (cachedDoc != &doc || cachedRevision != doc.revision()) {
+        refs.clear();
+        doc.forEachEntity([&](const Entity& e) {
+            if (const auto* ins = entityAs<InsertData>(e))
+                ++refs[ins->block];
+        });
+        cachedDoc = &doc;
+        cachedRevision = doc.revision();
+    }
     const std::string needle = lower(filter);
     std::vector<BlockRow> rows;
     for (const auto& [id, def] : doc.blocks()) {

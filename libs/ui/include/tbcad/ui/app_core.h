@@ -508,6 +508,8 @@ private:
     std::string editingLayout_;  // the viewport being edited from model space, if any
     int editingViewport_ = 0;
     void applyZoomXp();
+    void followLockedViewport();
+    std::uint64_t annoSyncRevision_ = 0;
     underlay::ImageCache imageCache_{};
 };
 

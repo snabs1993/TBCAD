@@ -328,6 +328,8 @@ void SettingsDialog::drafting(ui::AppCore& core) {
             core.setSetting(drafting::keys::osnapModes, drafting::formatSnapModes(mask));
         ImGui::Separator();
         number("Aperture (pixels)", drafting::keys::osnapAperture, cur.aperturePx, "%.0f");
+        ImGui::Separator();
+        toggle("Object snap tracking (OTRACK)", drafting::keys::otrack);
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Dynamic Input")) {
@@ -335,6 +337,21 @@ void SettingsDialog::drafting(ui::AppCore& core) {
         ImGui::TextDisabled(
             "Distance and angle (or X and Y) next to the cursor; Tab moves "
             "between the fields.");
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Selection")) {
+        auto flag = [&](const char* label, const char* key, bool fallback, const char* hint) {
+            bool on = core.settings().getBool(key, fallback);
+            if (ImGui::Checkbox(label, &on))
+                core.setSetting(key, on ? "1" : "0");
+            ImGui::TextDisabled("%s", hint);
+            ImGui::Spacing();
+        };
+        flag("Selection cycling (SELCYC)", "ui.selectionCycling", false,
+             "Click the same spot again to pick the next object under it. Alt-click does this "
+             "whenever the switch is off.");
+        flag("Quick properties", "ui.quickProps", false,
+             "A small panel next to the cursor shows the common properties of the selection.");
         ImGui::EndTabItem();
     }
     ImGui::EndTabBar();

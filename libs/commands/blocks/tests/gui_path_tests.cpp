@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -154,4 +155,28 @@ TEST_CASE(
     REQUIRE_FALSE(def->entities.empty());
     for (EntityId id : def->entities)
         CHECK(core.document().find(id)->common.color == Color::index(1));
+}
+
+TEST_CASE("the annotation scale follows a locked viewport being edited") {
+    fs::path dir = fs::temp_directory_path() / "tbcad_gui_path_vplock";
+    fs::remove_all(dir);
+    cmd::Registry registry;
+    registerAllCommands(registry);
+    ui::AppCore core(registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        REQUIRE(layout::setViewportLocked(tx, "A", 1, true).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.submitText("MSPACE");
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(currentAnnotationScale(core.document().header()) == doctest::Approx(50));
+    core.submitText("CANNOSCALE");
+    core.submitText("100");
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(currentAnnotationScale(core.document().header()) == doctest::Approx(50));
 }
