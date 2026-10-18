@@ -239,3 +239,37 @@ TEST_CASE("a clockwise polyline with negative bulges is read along its travel di
             got += std::abs(geom::signedArea(*pl));
     CHECK(std::abs(got - want) < want * 5e-6);
 }
+
+TEST_CASE("REGION turns lines and arcs that meet end to end into a closed loop") {
+    Fixture f;
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(LineData{{10, 0}, {10, 10}});
+    auto c = f.addEntity(LineData{{10, 10}, {0, 10}});
+    auto d = f.addEntity(LineData{{0, 10}, {0, 0}});
+    f.host.run("REGION", {ScriptItem::select({a, b, c, d}), ""});
+    REQUIRE(f.entities().size() == 1);
+    const auto* pl = std::get_if<PolylineData>(&f.entities()[0]->data);
+    REQUIRE(pl != nullptr);
+    CHECK(pl->closed);
+    CHECK(std::abs(std::abs(geom::signedArea(*pl)) - 100) < 1e-9);
+    f.host.undo();
+    CHECK(f.entities().size() == 4);
+
+    // A half disc: a diameter and the arc over it.
+    Fixture g;
+    auto diam = g.addEntity(LineData{{-5, 0}, {5, 0}});
+    auto over = g.addEntity(ArcData{{0, 0}, 5, 0, kPi});
+    g.host.run("REGION", {ScriptItem::select({diam, over}), ""});
+    REQUIRE(g.entities().size() == 1);
+    const auto* half = std::get_if<PolylineData>(&g.entities()[0]->data);
+    REQUIRE(half != nullptr);
+    CHECK(std::abs(std::abs(geom::signedArea(*half)) - kPi * 25 / 2) < 1e-9);
+
+    // An open chain stays as it is.
+    Fixture h;
+    auto p = h.addEntity(LineData{{0, 0}, {10, 0}});
+    auto q = h.addEntity(LineData{{10, 0}, {10, 10}});
+    h.host.run("REGION", {ScriptItem::select({p, q}), ""});
+    CHECK(h.entities().size() == 2);
+    CHECK(h.host.logContains("closed loops"));
+}
