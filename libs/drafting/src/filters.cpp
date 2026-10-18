@@ -63,7 +63,7 @@ std::string formatDistance(const DraftingEnv& env, double mm) {
     UnitFormat uf;
     uf.unit = env.doc ? env.doc->header().units : LengthUnit::Millimeter;
     uf.trimTrailingZeros = true;
-    return formatLength(mm, 4, uf);
+    return formatLength(mm, 2, uf);
 }
 
 double roundTo(double v, double step) {
@@ -134,7 +134,8 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
 
     double shown = angleDeg < 0 ? angleDeg + 360.0 : angleDeg;
     char ang[32];
-    std::snprintf(ang, sizeof ang, "%.4g", std::fabs(shown) < 1e-9 ? 0.0 : shown);
+    std::snprintf(ang, sizeof ang, "%.4g",
+                  std::fabs(shown) < 1e-9 ? 0.0 : std::round(shown * 100) / 100);
     feedback.tooltip = std::string(ortho ? "Ortho: " : "Polar: ") + formatDistance(*env_, d) +
                        " < " + ang + "\xC2\xB0";
     const double reach = std::max(d, 1.0) + 4000.0 * std::max(query.pixelSize, 1e-9);

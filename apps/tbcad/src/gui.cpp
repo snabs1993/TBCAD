@@ -2195,14 +2195,8 @@ void Gui::cursorHud(const ViewportRect& rect) {
         if (!input_.empty())
             line += ": " + input_;
         ImGui::TextUnformatted(line.c_str());
+        // The snap / tracking label is drawn next to the cursor, not repeated here.
         const cmd::FilterFeedback& fb = core_.feedback();
-        if (fb.active && !fb.tooltip.empty()) {  // snap label, "distance < angle" tracking
-            const Rgba snap = theme_.snap;
-            ImGui::PushStyleColor(ImGuiCol_Text,
-                                  ImVec4(snap.r / 255.0f, snap.g / 255.0f, snap.b / 255.0f, 1.0f));
-            ImGui::TextUnformatted(fb.tooltip.c_str());
-            ImGui::PopStyleColor();
-        }
         dynamicFields(fb);
         if (options) {
             ImGui::PushID("hudchips");
