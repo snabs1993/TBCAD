@@ -251,6 +251,10 @@ struct DataDumper {
         o << " style" << d.style << " m" << d.measurement;
         for (const DimBreak& b : d.breaks)
             o << " break " << b.a << ">" << b.b;
+        if (d.oblique != 0)
+            o << " oblique" << d.oblique;
+        if (d.textRotated)
+            o << " textrot" << d.textRotation;
     }
     void operator()(const LeaderData& d) {
         o << "LEADER style" << d.style << " text" << d.textPos << " ";

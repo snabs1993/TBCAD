@@ -152,6 +152,45 @@ TEST_CASE("DIMEDIT New replaces the text and Home restores it") {
     CHECK(f.dims()[0]->textOverride == "TYP");
 }
 
+TEST_CASE("DIMEDIT Rotate turns the text and Oblique leans the extension lines") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    auto layout = [&] {
+        return dim::layoutDimension(f.doc, *entityAs<DimensionData>(*f.doc.find(id)));
+    };
+    REQUIRE(f.host->run("DIMEDIT", {"Rotate", "30", ScriptItem::select({id}), ScriptItem::enter()})
+                .finished);
+    CHECK(layout().text.rotation == doctest::Approx(30.0 * 3.14159265358979 / 180));
+    REQUIRE(f.host->run("DIMEDIT", {"Oblique", "60", ScriptItem::select({id}), ScriptItem::enter()})
+                .finished);
+    int ext = 0;
+    for (const auto& l : layout().lines) {
+        if (l.role != dim::Role::ExtLine)
+            continue;
+        ++ext;
+        const Vec2 d = normalized(l.pts[1] - l.pts[0]);
+        CHECK(std::abs(d.x * std::cos(1.0471975512) + d.y * std::sin(1.0471975512)) ==
+              doctest::Approx(1.0));
+        CHECK(l.pts[1].y < -30);  // runs past the dimension line, as extension lines do
+    }
+    CHECK(ext == 2);
+    // Saved with the dimension.
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->oblique != 0);
+    REQUIRE(
+        f.host->run("DIMEDIT", {"Home", ScriptItem::select({id}), ScriptItem::enter()}).finished);
+    CHECK_FALSE(entityAs<DimensionData>(*f.doc.find(id))->textRotated);
+    REQUIRE(f.host
+                ->run("DIMEDIT", {"Oblique", ScriptItem::enter(), ScriptItem::select({id}),
+                                  ScriptItem::enter()})
+                .finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->oblique == 0);
+}
+
 TEST_CASE("DIMBREAK opens a gap in the dimension line where another object crosses it") {
     Chain f;
     REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
