@@ -181,9 +181,8 @@ FontResolution resolveShx(const std::string& shx) {
     {
         std::lock_guard lock(shxMutex());
         auto it = shxAnswers().find(shx);
-        if (it != shxAnswers().end() &&
-            (it->second.resolution.kind == FontResolution::Kind::Shx ||
-             now - it->second.at < std::chrono::seconds(3)))
+        if (it != shxAnswers().end() && (it->second.resolution.kind == FontResolution::Kind::Shx ||
+                                         now - it->second.at < std::chrono::seconds(3)))
             return it->second.resolution;
     }
     FontResolution r;
