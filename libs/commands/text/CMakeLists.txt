@@ -5,6 +5,7 @@ set(_textcmd_sources
   src/style_command.cpp
   src/style_manager.cpp
   src/text_commands.cpp
+  src/txt2mtxt.cpp
   src/register.cpp)
 
 # The editor panel needs Dear ImGui, which is only fetched when the application is built.

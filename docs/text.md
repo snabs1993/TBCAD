@@ -81,6 +81,7 @@ is done by the renderer from the rings.
 |---|---|---|
 | `TEXT` | `T`, `DT` | start point `[Justify/Style]`, height, rotation, text. Height and justification are remembered |
 | `MTEXT` | `MT` | first corner `[Height/Justify/Rotation/Style/Width]`, opposite corner (rectangle preview), text (type `\P` for a new line) |
+| `TXT2MTXT` | | select single-line and multiline text; they are merged top to bottom into one multiline text and the originals are erased |
 | `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle; makes it current |
 | `TEXTEDIT` | `ED`, `DDEDIT` | selected text (pre-selection works), new text; the old text is the default |
 

@@ -251,3 +251,30 @@ TEST_CASE("created text displays: Thai TEXT produces filled rings through the re
     CHECK(out.items.size() >= 3);
     CHECK(std::holds_alternative<DisplayFill>(out.items.front()));
 }
+
+TEST_CASE("TXT2MTXT merges lines top to bottom into one multiline text") {
+    Fixture f;
+    auto addText = [&](Vec2 at, const std::string& s) {
+        TextData t;
+        t.position = at;
+        t.height = 2.5;
+        t.utf8 = s;
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId low = addText({0, 0}, "second {x}");
+    EntityId high = addText({0, 10}, "first");
+    REQUIRE(f.host.run("TXT2MTXT", {cmd::ScriptItem::select({low, high}), cmd::ScriptItem::enter()})
+                .finished);
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->utf8 == "first\\Psecond \\{x\\}");
+    CHECK(m->position.y == doctest::Approx(12.5));
+    CHECK(f.firstText() == nullptr);
+    CHECK(f.host.undo());
+    CHECK(f.firstMText() == nullptr);
+}
