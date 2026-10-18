@@ -3227,7 +3227,25 @@ ViewportRect Gui::frame() {
             settings_.open(what.substr(9));
         else if (what.rfind("action:", 0) == 0)
             runAction(what.substr(7));
-        else if (what.rfind("openpath:", 0) == 0)
+        else if (what.rfind("pickfile:", 0) == 0) {
+            const std::string kind = what.substr(9);
+            static const std::vector<platform::FileFilter> drawing = {
+                {"Drawings and PDF", "*.tbcad;*.dxf;*.pdf"}};
+            static const std::vector<platform::FileFilter> pdf = {{"PDF files", "*.pdf"}};
+            static const std::vector<platform::FileFilter> image = {
+                {"Pictures", "*.png;*.jpg;*.jpeg;*.bmp"}};
+            if (platform::nativeDialogsAvailable()) {
+                if (auto p = platform::showOpenDialog(nativeHandle(),
+                                                      kind == "pdf"     ? pdf
+                                                      : kind == "image" ? image
+                                                                        : drawing,
+                                                      "Choose the file to attach", dialogFolder()))
+                    core_.submitText("\"" + platform::pathToUtf8(*p) + "\"");
+                // A cancelled dialog leaves the command waiting for a typed path.
+            } else {
+                core_.print("No file dialog here: type the path.");
+            }
+        } else if (what.rfind("openpath:", 0) == 0)
             doOpenPath(what.substr(9));
         else if (what.rfind("saveaspath:", 0) == 0) {
             auto r = core_.saveAs(platform::pathFromUtf8(what.substr(11)));

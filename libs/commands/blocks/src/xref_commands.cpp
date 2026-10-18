@@ -84,12 +84,22 @@ public:
         std::filesystem::path resolved;
         underlay::PdfOptions pdfOptions;
         for (;;) {
-            auto f = co_await ctx.getString(pdf_ ? "Enter the .pdf file to attach"
-                                            : kind_ == Kind::Image
-                                                ? "Enter the .png, .jpg or .bmp file to attach"
-                                                : "Enter the .tbcad, .dxf or .pdf file to attach");
+            auto f = co_await ctx.getString(
+                std::string(pdf_ ? "Enter the .pdf file to attach"
+                            : kind_ == Kind::Image
+                                ? "Enter the .png, .jpg or .bmp file to attach"
+                                : "Enter the .tbcad, .dxf or .pdf file to attach") +
+                (ctx.host().dialogsAvailable() ? " (? to browse)" : ""));
             if (!f.ok())
                 co_return;
+            if (cmd::trim(f.text) == "?" && ctx.host().dialogsAvailable()) {
+                // The window shows a file dialog and types the chosen path as the next answer.
+                ctx.host().requestUi(std::string("pickfile:") + (pdf_ ? "pdf"
+                                                                 : kind_ == Kind::Image
+                                                                     ? "image"
+                                                                     : "drawing"));
+                continue;
+            }
             stored = cmd::trim(f.text);
             if (stored.size() >= 2 && stored.front() == '"' && stored.back() == '"')
                 stored = stored.substr(1, stored.size() - 2);
