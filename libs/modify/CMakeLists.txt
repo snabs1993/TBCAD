@@ -14,5 +14,6 @@ tbcad_add_tests(modify
     tests/extra_tests.cpp
     tests/fillet_tests.cpp
     tests/offset_tests.cpp
+    tests/stress_tests.cpp
     tests/test_support.h
     tests/trim_tests.cpp)
