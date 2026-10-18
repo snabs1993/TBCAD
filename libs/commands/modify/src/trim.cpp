@@ -1,6 +1,8 @@
+#include <deque>
 #include <map>
 
 #include "commands.h"
+#include "tbcad/blocks/blocks.h"
 #include "util.h"
 
 namespace tbcad::modifycmd {
@@ -16,8 +18,10 @@ struct EdgeSet {
 
 // Edges for one operation. Trimming only needs edges that can touch the target, extending also
 // looks at edges far from it.
+// Curves taken out of block references are kept alive in `owned`.
 std::vector<const Entity*> collectEdges(const Document& doc, const EdgeSet& set, EntityId target,
-                                        bool trimming, bool extendEdges) {
+                                        bool trimming, bool extendEdges,
+                                        std::deque<Entity>& owned) {
     std::vector<const Entity*> out;
     const Entity* t = doc.find(target);
     BBox2 box;
@@ -28,10 +32,16 @@ std::vector<const Entity*> collectEdges(const Document& doc, const EdgeSet& set,
         if (id == target)
             return;
         const Entity* e = doc.find(id);
-        if (!e || !isUsableEdge(doc, *e))
+        if (!e || !isUsableBoundary(doc, *e))
             return;
         if (prune && !geom::bounds(*e, doc).intersects(box))
             return;
+        if (kind(*e) == EntityKind::Insert) {
+            for (Entity& part : blocks::snapGeometry(doc, *e))
+                if (modify::isCurveEntity(part))
+                    out.push_back(&owned.emplace_back(std::move(part)));
+            return;
+        }
         out.push_back(e);
     };
     if (set.all) {
@@ -52,7 +62,8 @@ std::optional<std::vector<EntityId>> doOne(cmd::CommandContext& ctx, EntityId id
         return std::nullopt;
     modify::TrimOptions opt;
     opt.extendEdges = getFlag(ctx.host(), kEdgeExtendKey, false);
-    auto edges = collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges);
+    std::deque<Entity> owned;
+    auto edges = collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges, owned);
     auto edit = trimming ? modify::trimEntity(*target, pick, edges, opt)
                          : modify::extendEntity(*target, pick, edges, opt);
     if (!edit) {
@@ -130,7 +141,7 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
     EdgeSet set;
     {
         cmd::SelectionOptions so;
-        so.filter = [&doc = ctx.doc()](const Entity& e) { return isUsableEdge(doc, e); };
+        so.filter = [&doc = ctx.doc()](const Entity& e) { return isUsableBoundary(doc, e); };
         auto sel = co_await ctx.getSelection(
             trimMode ? "Select cutting edges <select all>" : "Select boundary edges <select all>",
             so);

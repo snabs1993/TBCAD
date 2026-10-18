@@ -261,3 +261,21 @@ TEST_CASE("property: offsets of random convex polygons") {
         }
     }
 }
+
+TEST_CASE("an arc or circle offset inward past its radius is refused, not degenerate") {
+    for (double d : {5.0, 5.0 + 1e-9, 7.5, 100.0}) {
+        CAPTURE(d);
+        auto c = offsetEntity(circle({0, 0}, 5), d);
+        auto a = offsetEntity(arc({0, 0}, 5, 0.2, 2.0), d);
+        CHECK_FALSE(c.ok());
+        CHECK_FALSE(a.ok());
+    }
+    // Just inside the radius still works and the result is a real circle.
+    auto c = offsetEntity(circle({0, 0}, 5), 4.9);
+    REQUIRE(c.ok());
+    REQUIRE(c.value().size() == 1);
+    CHECK(entityAs<CircleData>(c.value()[0])->radius == doctest::Approx(0.1));
+    // A closed polyline whose offset vanishes yields nothing, not a sliver.
+    auto sq = offsetEntity(poly(pts({{0, 0}, {4, 0}, {4, 4}, {0, 4}}), true), 2.0);
+    CHECK((!sq.ok() || sq.value().empty()));
+}
