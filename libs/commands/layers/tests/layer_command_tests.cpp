@@ -433,3 +433,31 @@ TEST_CASE("-PROP Delete erases the selected objects of one type") {
     CHECK(f.host.undo());
     CHECK(f.doc.contains(c1));
 }
+
+TEST_CASE("-LAYWALK shows only the picked layers and restores the earlier state") {
+    Fixture f;
+    f.run("-LAYER", {"New", "Walls", cmd::ScriptItem::enter()});
+    f.run("-LAYER", {"New", "Doors", cmd::ScriptItem::enter()});
+    f.run("-LAYER", {"New", "Hidden", cmd::ScriptItem::enter()});
+    f.run("-LAYER", {"Off", "Hidden", cmd::ScriptItem::enter()});
+    const auto on = [&](const char* n) {
+        for (const auto& [id, l] : f.doc.layers())
+            if (l.name == n)
+                return l.on;
+        return false;
+    };
+    CHECK_FALSE(on("Hidden"));
+
+    f.run("-LAYWALK", {"Show", "Walls"});
+    CHECK(on("Walls"));
+    CHECK_FALSE(on("Doors"));
+    CHECK_FALSE(on("Hidden"));
+    f.run("-LAYWALK", {"Show", "Doors"});  // a second pick keeps the very first snapshot
+    CHECK(on("Doors"));
+    CHECK_FALSE(on("Walls"));
+
+    f.run("-LAYWALK", {"Restore"});
+    CHECK(on("Walls"));
+    CHECK(on("Doors"));
+    CHECK_FALSE(on("Hidden"));  // it was off before the walk
+}

@@ -15,14 +15,18 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeCurrentCommand());
     (void)registry.add(makeLayerStateCommand());
     (void)registry.add(makeLayerFilterCommand());
+    (void)registry.add(makeLayWalkCommand());
+    (void)registry.add(makeLayWalkStepCommand());
     registerLayerTools(registry);
 }
 
 void registerUi(ui::UiRegistry& ui) {
     ui.addPanel("layers", "Layers", drawLayersPanel, /*visibleByDefault=*/true);
+    ui.addPanel("laywalk", "Layer Walk", drawLayWalkPanel, /*visibleByDefault=*/false);
     ui.addPanel("properties", "Object Properties", drawPropertiesPanel, /*visibleByDefault=*/true);
     ui.addMenuItem("Format/Active Layer Only", "ACTIVEONLY", "layers.activeOnly", "Ctrl+Shift+A");
     ui.addMenuItem("Format/Layers", "LAYER", "layers.panel", "Ctrl+Shift+L");
+    ui.addMenuItem("Format/Layer Walk", "LAYWALK", "layers.walk");
     ui.addMenuItem("Format/Load Linetypes", "-LINETYPE Load *", "linetype.loadall");
 }
 
