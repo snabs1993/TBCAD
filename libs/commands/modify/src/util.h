@@ -23,6 +23,8 @@ void putFlag(cmd::IHost& host, std::string_view key, bool value);
 // frozen and not locked (sources) and visible.
 bool isEditable(const Document& doc, const Entity& e);
 bool isUsableEdge(const Document& doc, const Entity& e);
+// Like isUsableEdge, and block references too: their curves cut and bound for TRIM and EXTEND.
+bool isUsableBoundary(const Document& doc, const Entity& e);
 // Any entity kind on a layer that is on, thawed and unlocked (for commands that do not need curve
 // geometry: ALIGN, MATCHPROP, SETBYLAYER, SCALETEXT).
 bool isModifiable(const Document& doc, const Entity& e);

@@ -55,6 +55,11 @@ bool isUsableEdge(const Document& doc, const Entity& e) {
     return modify::isCurveEntity(e) && layerAllows(doc, e, false);
 }
 
+bool isUsableBoundary(const Document& doc, const Entity& e) {
+    return (modify::isCurveEntity(e) || kind(e) == EntityKind::Insert) &&
+           layerAllows(doc, e, false);
+}
+
 Result<void> replaceEntity(Transaction& tx, EntityId id, const Entity& value) {
     return tx.modify(id, [&](Entity& e) {
         EntityId keep = e.common.id;

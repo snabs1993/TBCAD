@@ -201,6 +201,31 @@ TEST_CASE("TRIM Fence and Crossing") {
     CHECK(near(entityAs<LineData>(g.get(v))->b, {3, 0}));
 }
 
+TEST_CASE("TRIM and EXTEND use the curves of a block reference as edges") {
+    Fixture f;
+    BlockId post;
+    {
+        auto tx = f.doc.begin("block");
+        post = tx.addBlock(BlockDef{.name = "Post"}).value();
+        Entity e;
+        e.data = LineData{{0, -5}, {0, 5}};
+        REQUIRE(tx.add(std::move(e), post).ok());
+        tx.commit();
+    }
+    InsertData ins;
+    ins.block = post;
+    ins.position = {6, 0};
+    f.add(ins);  // a vertical line at x = 6
+    EntityId h = f.add(LineData{{0, 0}, {10, 0}});
+    // Everything is an edge: the block's line cuts the horizontal.
+    f.host.run("TRIM", {ScriptItem::enter(), ScriptItem::pick(h, {8, 0}), ScriptItem::esc()});
+    CHECK(near(entityAs<LineData>(f.get(h))->b, {6, 0}));
+    // And bounds an extension.
+    EntityId e = f.add(LineData{{0, 3}, {2, 3}});
+    f.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(e, {1.5, 3}), ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(e))->b, {6, 3}));
+}
+
 TEST_CASE("EXTEND to a boundary, Shift trims") {
     Fixture f;
     EntityId l = f.add(LineData{{0, 0}, {5, 0}});
