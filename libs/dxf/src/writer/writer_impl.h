@@ -175,6 +175,7 @@ private:
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
     // A picture block (IMAGEATTACH, or an IMAGE read from DXF) is written as IMAGE + IMAGEDEF.
     bool writeImage(const Props& p, const InsertData& d, std::uint64_t owner);
+    bool writeTolerance(const Props& p, const InsertData& d, std::uint64_t owner);
     void writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner);
     void writeTable(const Props& p, const Entity& e, std::uint64_t owner);
     void writeRay(const Props& p, const RayData& d, const Entity& e, std::uint64_t owner);

@@ -3,7 +3,7 @@ tbcad_add_library(symbols_commands
     src/symbols.cpp
     src/symbol_commands.cpp
     src/tolerance.cpp
-  DEPENDS tbcad::cmd tbcad::blocks tbcad::geom tbcad::text tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::blocks tbcad::gdt tbcad::geom tbcad::text tbcad::ui)
 
 tbcad_add_tests(symbols_commands
   SOURCES

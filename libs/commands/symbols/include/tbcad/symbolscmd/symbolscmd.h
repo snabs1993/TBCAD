@@ -40,39 +40,6 @@ std::vector<Entity> symbolEntities(Symbol s);
 // Makes sure the document has the symbol's block, adding it to `tx` when missing. Returns its id.
 Result<BlockId> ensureSymbolBlock(Transaction& tx, const Document& doc, Symbol s);
 
-// ---- feature control frames (TOLERANCE) ---------------------------------------------------------
-
-// The geometric characteristics of ISO 1101 / ASME Y14.5.
-enum class GdtSymbol {
-    Straightness,
-    Flatness,
-    Circularity,
-    Cylindricity,
-    ProfileLine,
-    ProfileSurface,
-    Angularity,
-    Perpendicularity,
-    Parallelism,
-    Position,
-    Concentricity,
-    Symmetry,
-    CircularRunout,
-    TotalRunout
-};
-const char* gdtName(GdtSymbol s);  // "Position", "Flatness" ...
-
-struct ToleranceSpec {
-    GdtSymbol symbol = GdtSymbol::Position;
-    std::string value{};  // "0.05"
-    bool diameterZone = false;
-    char material = 0;                  // 0 none, 'M' maximum, 'L' least material condition
-    std::vector<std::string> datums{};  // up to three datum letters
-};
-
-// The frame, drawn at paper size (text 2.5 mm, cells 5 mm high) with its left edge middle at the
-// origin: the outline and dividers, the symbol drawn as lines, and the texts. Pure data.
-std::vector<Entity> toleranceEntities(const ToleranceSpec& spec);
-
 void registerCommands(cmd::Registry& registry);
 void registerUi(ui::UiRegistry& ui);
 
