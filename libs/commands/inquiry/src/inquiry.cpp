@@ -353,6 +353,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeAreaTable());
     (void)registry.add(makeAudit());
     (void)registry.add(makeMassProp());
+    (void)registry.add(makeDwgProps());
 }
 
 }  // namespace tbcad::inquiry

@@ -253,3 +253,13 @@ TEST_CASE("MASSPROP: circle moment is pi r^4 / 4") {
     CHECK(m->ixx == doctest::Approx(kPi * 1e4 / 4).epsilon(1e-3));
     CHECK(m->centroid.x == doctest::Approx(5).epsilon(1e-4));
 }
+
+TEST_CASE("DWGPROPS stores the drawing properties in the header") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("DWGPROPS", {"Title", "Floor plan", "Author", "Tong", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().custom.at("tbcad.prop.title") == "Floor plan");
+    CHECK(f.doc.header().custom.at("tbcad.prop.author") == "Tong");
+    host.run("DWGPROPS", {"Title", "", cmd::ScriptItem::enter()});
+    CHECK(f.doc.header().custom.count("tbcad.prop.title") == 0);
+}

@@ -5,6 +5,7 @@ tbcad_add_library(inquiry
     src/audit.cpp
     src/measure.cpp
     src/massprop.cpp
+    src/dwgprops.cpp
     src/quick.cpp
     src/quickcmd.cpp
     src/ui.cpp
