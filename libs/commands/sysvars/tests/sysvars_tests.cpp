@@ -165,3 +165,38 @@ TEST_CASE("DWGUNITS is UNITS, and FLATTEN says the drawing is flat") {
     f.host.run("FLATTEN", {});
     CHECK(f.host.logContains("nothing to flatten"));
 }
+
+TEST_CASE("HYPERLINK sets, lists, opens and removes a link; the link is saved in the drawing") {
+    Fixture f;
+    EntityId line;
+    {
+        Transaction tx = f.doc.begin("line");
+        line = tx.add(Entity{{}, LineData{{0, 0}, {10, 0}}}).value();
+        tx.commit();
+    }
+    f.host.run("HYPERLINK", {"Set", cmd::ScriptItem::pick(line, {5, 0}), "https://example.org/spec",
+                             "Spec sheet"});
+    REQUIRE(f.doc.header().custom.count("tbcad.link." + std::to_string(line.value)) == 1);
+    f.host.run("HYPERLINK", {"List"});
+    CHECK(f.host.logContains("https://example.org/spec"));
+    CHECK(f.host.logContains("Spec sheet"));
+    f.host.run("HYPERLINK", {"Open", cmd::ScriptItem::pick(line, {5, 0})});
+    CHECK(f.host.logContains("Opening https://example.org/spec"));
+    f.host.run("HYPERLINK", {"Remove", cmd::ScriptItem::pick(line, {5, 0})});
+    CHECK(f.doc.header().custom.count("tbcad.link." + std::to_string(line.value)) == 0);
+    CHECK(f.host.undo());
+    CHECK(f.doc.header().custom.count("tbcad.link." + std::to_string(line.value)) == 1);
+}
+
+TEST_CASE("SPACETRANS converts between paper and model lengths; DELAY checks its range") {
+    Fixture f;
+    f.host.run("SPACETRANS", {"Paper", "2.5", "50"});
+    CHECK(f.host.logContains("125 in model units"));
+    f.host.run("SPACETRANS", {"Model", "5000", "100"});
+    CHECK(f.host.logContains("50 in paper units"));
+    f.host.run("SPACETRANS", {"Paper", "1", "0"});
+    CHECK(f.host.logContains("above zero"));
+    CHECK(f.host.run("DELAY", {"5"}).finished);
+    f.host.run("DELAY", {"99999"});
+    CHECK(f.host.logContains("0 to 10000"));
+}

@@ -41,3 +41,7 @@ no longer exists go to layer 0, and broken objects (zero or non-numeric sizes, e
 missing) are removed. **AUDIT** does the same checks and asks first.
 
 `DWGUNITS` is another name for `UNITS`. `FLATTEN` only reports that nothing needs flattening, because TBCAD drawings are 2D. `SYNCHRONIZE` is another name for `ATTSYNC` (it brings the inserts of a block in line with the block's attributes).
+
+## HYPERLINK, SPACETRANS and DELAY
+
+`HYPERLINK` keeps a web address or file name and a description on an object: Set, Remove, Open (asks the application to open it) or List. The links are saved in the drawing, tied to the object. `SPACETRANS` converts a length from paper to model units or back, using the scale you give (the annotation scale by default). `DELAY` waits the given number of milliseconds (0 to 10000), for scripts.
