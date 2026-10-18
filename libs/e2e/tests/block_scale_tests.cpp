@@ -16,6 +16,13 @@
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/ui/app_core.h"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 using namespace tbcad;
 
 namespace {
@@ -33,7 +40,8 @@ struct Big {
     std::vector<BlockId> level;  // level[0] = leaf ... level[4] = outermost
 
     Big() {
-        dir = std::filesystem::temp_directory_path() / "tbcad_block_scale";
+        dir = std::filesystem::temp_directory_path() /
+              ("tbcad_block_scale_" + std::to_string(::getpid()));
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
         registerAllCommands(registry);
@@ -95,7 +103,9 @@ TEST_CASE("perf: 50,000 references, five levels deep - draw, INSERT, block edit"
     big.buildBlocks();
     auto t = std::chrono::steady_clock::now();
     big.placeInserts();
-    std::printf("place %d references of a 5-level block: %.0f ms\n", big.n, ms(t));
+    const double placeMs = ms(t);
+    std::printf("place %d references of a 5-level block: %.0f ms\n", big.n, placeMs);
+    CHECK(placeMs < 5000);
     t = std::chrono::steady_clock::now();
     big.core->zoomExtents();
     big.core->updateFrame();

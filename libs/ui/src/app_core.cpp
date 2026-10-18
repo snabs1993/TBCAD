@@ -14,6 +14,7 @@
 #include <unordered_set>
 
 #include "app_commands.h"
+#include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/index_refresh.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
@@ -230,7 +231,8 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     auto s = std::make_unique<Session>(std::move(doc));
     Document& d = s->doc;
     s->indexer = std::make_unique<index::DocumentIndexer>(
-        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); });
+        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); },
+        [] { return std::make_shared<blocks::BoundsMemoScope>(); });
     s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
     s->sync = std::make_unique<SceneSync>(d, scene_);
     s->observer = std::make_unique<AppObserver>(d, *this);

@@ -506,3 +506,107 @@ TEST_CASE("removeMany and removeAllOf drop many objects at once and the scene st
         CHECK(totalVertices(s) == 2);
     }
 }
+
+namespace {
+
+DisplayList sampleBlock() {
+    DisplayList l;
+    l.items.push_back(DisplayPolyline{{{0, 0}, {10, 0}, {10, 6}}, false, style(kRed, 0.25)});
+    l.items.push_back(DisplayPolyline{{{0, 0}, {10, 0}, {10, 6}, {0, 6}}, true, style(kRed, 0.25)});
+    l.items.push_back(DisplayPolyline{{{1, 1}, {4, 2}}, false, style(kGreen, 0.5)});
+    l.items.push_back(DisplayPolyline{{{3, 3}, {3, 3}}, false, style(kGreen, 0.5)});  // no length
+    l.items.push_back(DisplayPoints{{{2, 2}, {5, 5}}, style(kGreen, 0)});
+    DisplayFill f;
+    f.rings = {{{0, 0}, {4, 0}, {4, 4}, {0, 4}}};
+    f.style = style(kGreen, 0);
+    l.items.push_back(f);
+    return l;
+}
+
+DisplayList moved(const DisplayList& in, const Transform2& t) {
+    DisplayList out;
+    for (const DisplayItem& item : in.items) {
+        std::visit(
+            [&](auto copy) {
+                if constexpr (std::is_same_v<decltype(copy), DisplayFill>) {
+                    for (auto& ring : copy.rings)
+                        for (Vec2& p : ring)
+                            p = t.apply(p);
+                } else {
+                    for (Vec2& p : copy.pts)
+                        p = t.apply(p);
+                }
+                out.items.emplace_back(std::move(copy));
+            },
+            item);
+    }
+    return out;
+}
+
+// Vertex count and coordinates of a kind of batch, summed over tiles, in a stable order.
+std::vector<Vec2> worldVertices(const Scene& s, BatchKind kind) {
+    std::vector<Vec2> out;
+    for (const auto& [tk, tile] : s.tiles())
+        for (const auto& [bk, batch] : tile.batches)
+            if (bk.kind == kind)
+                for (const GpuVertex& v : batch.verts)
+                    out.push_back({tile.origin.x + double(v.hx) + double(v.lx),
+                                   tile.origin.y + double(v.hy) + double(v.ly)});
+    std::sort(out.begin(), out.end(),
+              [](Vec2 a, Vec2 b) { return a.x != b.x ? a.x < b.x : a.y < b.y; });
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("an instance of a shared list draws the same as the transformed list") {
+    auto block = std::make_shared<const DisplayList>(sampleBlock());
+    // Moves, turns, scales and mirrors; the last two put the instance across a tile border.
+    const Transform2 transforms[] = {
+        Transform2::translate({100, 50}),
+        Transform2::rotate(0.7, {0, 0}) * Transform2::translate({2000, -30}),
+        Transform2::scale(2.5, 2.5, {0, 0}) * Transform2::translate({1020, 1020}),
+        Transform2::scale(-1, 1, {0, 0}) * Transform2::translate({300, 10}),
+    };
+    for (const Transform2& t : transforms) {
+        Scene plain, shared;
+        plain.upsert(EntityId{1}, moved(*block, t), 7, 2.0);
+        REQUIRE(shared.upsertInstance(EntityId{1}, block, t, 7, 2.0));
+        for (BatchKind kind : {BatchKind::Stroke, BatchKind::Point}) {
+            auto a = worldVertices(plain, kind), b = worldVertices(shared, kind);
+            REQUIRE(a.size() == b.size());
+            REQUIRE(a.size() > 0);
+            for (std::size_t i = 0; i < a.size(); ++i)
+                CHECK(distance(a[i], b[i]) < 1e-6);
+        }
+        // Fills: same number of triangles and same area (the corner order may differ).
+        CHECK(worldVertices(plain, BatchKind::Fill).size() ==
+              worldVertices(shared, BatchKind::Fill).size());
+        CHECK(plain.entityCount() == shared.entityCount());
+        CHECK(plain.bounds().min.x == doctest::Approx(shared.bounds().min.x).epsilon(1e-6));
+        CHECK(plain.bounds().max.y == doctest::Approx(shared.bounds().max.y).epsilon(1e-6));
+        // The entity can be replaced and removed like any other.
+        REQUIRE(shared.upsertInstance(EntityId{1}, block, t, 7, 2.0));
+        CHECK(worldVertices(plain, BatchKind::Stroke).size() ==
+              worldVertices(shared, BatchKind::Stroke).size());
+        shared.remove(EntityId{1});
+        CHECK(shared.tiles().empty());
+    }
+}
+
+TEST_CASE("an instance refuses what it cannot copy: dashes and wipeouts") {
+    DisplayStyle dashed = style();
+    static const std::vector<double> dash{4, -2};
+    dashed.pattern = &dash;
+    auto withDash = std::make_shared<DisplayList>();
+    withDash->items.push_back(DisplayPolyline{{{0, 0}, {10, 0}}, false, dashed});
+    Scene s;
+    CHECK_FALSE(s.upsertInstance(EntityId{1}, withDash, Transform2::identity(), 1));
+    CHECK(s.entityCount() == 0);
+    auto wipe = std::make_shared<DisplayList>();
+    DisplayFill f;
+    f.rings = {{{0, 0}, {4, 0}, {4, 4}}};
+    f.style = style(Rgba{0, 0, 0, 1});  // the background colour (a wipeout)
+    wipe->items.push_back(f);
+    CHECK_FALSE(s.upsertInstance(EntityId{2}, wipe, Transform2::identity(), 1));
+}
