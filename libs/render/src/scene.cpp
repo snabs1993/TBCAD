@@ -350,6 +350,17 @@ void Scene::remove(EntityId id) {
     ++changeCounter_;
 }
 
+bool Scene::removeAllOf(std::span<const EntityId> ids) {
+    if (ids.size() < 9 || ids.size() != entities_.size())
+        return false;
+    for (EntityId id : ids)
+        if (!entities_.count(id))
+            return false;
+    discardAll();
+    ++changeCounter_;
+    return true;
+}
+
 void Scene::removeMany(std::span<const EntityId> ids) {
     if (ids.size() <= 8) {
         for (EntityId id : ids)
@@ -359,6 +370,19 @@ void Scene::removeMany(std::span<const EntityId> ids) {
     // Erasing one object shifts every later range of its batches, so erasing many one by one is
     // quadratic. Here each touched batch is compacted once.
     const std::unordered_set<EntityId> drop(ids.begin(), ids.end());
+    if (drop.size() >= entities_.size()) {
+        bool all = true;
+        for (const auto& [id, rec] : entities_)
+            if (!drop.count(id)) {
+                all = false;
+                break;
+            }
+        if (all) {  // everything goes: no need to compact batch by batch
+            discardAll();
+            ++changeCounter_;
+            return;
+        }
+    }
     std::set<std::pair<TileKey, BatchKey>> touched;
     for (EntityId id : drop) {
         auto it = entities_.find(id);
@@ -411,14 +435,30 @@ void Scene::removeMany(std::span<const EntityId> ids) {
     ++changeCounter_;
 }
 
-void Scene::clear() {
+void Scene::discardAll() {
     for (auto& [tk, tile] : tiles_)
         for (auto& [bk, batch] : tile.batches)
             deleted_.push_back(batch.id);
+    // Freeing hundreds of thousands of small allocations takes as long as building them (most of
+    // a second on Windows), and nothing needs the memory back at once: another thread does it.
+    constexpr std::size_t kAsyncMin = 20000;
+    if (graveyard_.valid())
+        graveyard_.get();
+    if (entities_.size() >= kAsyncMin) {
+        graveyard_ = std::async(std::launch::async,
+                                [tiles = std::move(tiles_), entities = std::move(entities_)]() mutable {
+                                    tiles.clear();
+                                    entities.clear();
+                                });
+    }
     tiles_.clear();
     entities_.clear();
     masks_.clear();
     levelOrders_.clear();
+}
+
+void Scene::clear() {
+    discardAll();
     ++changeCounter_;
 }
 

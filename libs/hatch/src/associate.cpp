@@ -72,11 +72,11 @@ BBox2 loopBox(const HatchLoop& l) {
 
 std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
                                      const BoundaryOptions& options) {
-    std::vector<EntityId> touched = tx.touchedEntities();
+    const std::vector<EntityId> touched = tx.touchedEntities();
     if (touched.empty())
         return 0;
-    std::unordered_set<EntityId> touchedSet(touched.begin(), touched.end());
-
+    // Most drawings have no associative hatch; find those first so that a huge edit does not
+    // build a set of every touched object for nothing.
     struct Job {
         EntityId id;
         std::vector<EntityId> sources;
@@ -84,13 +84,17 @@ std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
     std::vector<Job> jobs;
     doc.forEachEntity([&](const Entity& e) {
         const HatchData* h = entityAs<HatchData>(e);
-        if (!h || h->sourceBoundary.empty())
-            return;
-        for (EntityId s : h->sourceBoundary)
-            if (touchedSet.count(s)) {
-                jobs.push_back({e.common.id, h->sourceBoundary});
-                return;
-            }
+        if (h && !h->sourceBoundary.empty())
+            jobs.push_back({e.common.id, h->sourceBoundary});
+    });
+    if (jobs.empty())
+        return 0;
+    const std::unordered_set<EntityId> touchedSet(touched.begin(), touched.end());
+    std::erase_if(jobs, [&](const Job& job) {
+        for (EntityId s : job.sources)
+            if (touchedSet.count(s))
+                return false;
+        return true;
     });
 
     std::size_t changed = 0;

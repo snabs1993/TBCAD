@@ -155,17 +155,23 @@ public:
             co_return;
         std::size_t n = 0;
         std::vector<Entity> removed;
+        // OOPS keeps a copy of what was erased; for a drawing-sized erase that copy would cost
+        // as much as the erase (UNDO still takes such an erase back).
+        constexpr std::size_t kOopsMax = 20000;
+        const bool keep = sel.ids.size() <= kOopsMax;
         for (EntityId id : sel.ids) {
             const Entity* e = ctx.doc().find(id);
             Entity copy;
-            if (e)
+            if (e && keep)
                 copy = *e;
             if (ctx.tx().erase(id)) {
                 ++n;
-                if (e)
+                if (e && keep)
                     removed.push_back(std::move(copy));
             }
         }
+        if (!keep)
+            lastErased().erase(ctx.doc().uid());
         if (!removed.empty())
             lastErased()[ctx.doc().uid()] = std::move(removed);
         ctx.host().setSelection({});

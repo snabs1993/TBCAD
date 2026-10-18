@@ -218,7 +218,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     for (const EntityChange& c : cs.entities)
         if (!cs.after(c))
             removed.push_back(cs.idOf(c));
-    scene_.removeMany(removed);
+    if (!scene_.removeAllOf(removed))
+        scene_.removeMany(removed);
     std::vector<const Entity*> redraw;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
