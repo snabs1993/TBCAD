@@ -96,6 +96,7 @@ private:
     void readOnlyBanner();
     void xrefNotice();
     bool xrefListOpen_ = false;
+    std::string dismissedReadOnly_{};  // read-only notice text the user closed
     void docTabs();
     void startPage(const ViewportRect& rect);
     void statusBar();

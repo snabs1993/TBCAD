@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
 
 #include "panel_util.h"
@@ -24,13 +25,25 @@ struct Row {
     int depth = 0;
     bool hasKids = false;
     bool open = true;
+    std::string group{};      // header row of an external reference's layers (no layer id)
+    std::string shortName{};  // layer name without the "xref|" prefix, for rows under a header
+    std::size_t members = 0;  // layers under a header row
 };
+
+// External-reference layers are named "<xref>|<layer>" at the top level.
+std::string xrefPrefix(const Layer& l) {
+    if (l.parent)
+        return {};
+    const auto bar = l.name.find('|');
+    return bar == std::string::npos || bar == 0 ? std::string() : l.name.substr(0, bar);
+}
 
 struct PanelState {
     std::string filter{};
     std::string lastCommandFilter{};  // last layers.filter.serial we applied
     std::string stateName{};
     std::set<std::uint32_t> collapsed{};
+    std::set<std::string> collapsedXrefs{};  // external references whose layers are folded away
     LayerId selected{};
     std::set<std::uint32_t> multi{};     // Ctrl / Shift click selection; always holds `selected`
     LayerId anchor{};                    // where a Shift range starts
@@ -86,8 +99,16 @@ std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
                 return true;
         return false;
     };
+    std::map<std::string, std::vector<LayerId>> xrefs;  // external reference -> its layers
     auto visit = [&](auto&& self, LayerId parent, int depth) -> void {
         for (LayerId id : childrenOf(doc, parent)) {
+            if (const Layer* l = doc.layer(id); l && depth == 0) {
+                if (std::string x = xrefPrefix(*l); !x.empty()) {
+                    if (f.empty() || subtreeMatches(subtreeMatches, id))
+                        xrefs[x].push_back(id);
+                    continue;
+                }
+            }
             if (!f.empty() && !subtreeMatches(subtreeMatches, id))
                 continue;
             Row r;
@@ -101,6 +122,24 @@ std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
         }
     };
     visit(visit, LayerId{}, 0);
+    // The layers of each external reference sit under one folded header, as in AutoCAD.
+    for (const auto& [name, ids] : xrefs) {
+        Row header;
+        header.group = name;
+        header.hasKids = true;
+        header.open = !f.empty() || !st.collapsedXrefs.count(name);
+        header.members = ids.size();
+        rows.push_back(header);
+        if (!header.open)
+            continue;
+        for (LayerId id : ids) {
+            Row r;
+            r.id = id;
+            r.depth = 1;
+            r.shortName = doc.layer(id)->name.substr(name.size() + 1);
+            rows.push_back(std::move(r));
+        }
+    }
     return rows;
 }
 
@@ -167,7 +206,8 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
     } else {
         // The UI font has no filled-dot glyph (it showed as "?"), so mark the current layer in
         // ASCII.
-        std::string label = std::string(current ? "> " : "   ") + l->name;
+        std::string label =
+            std::string(current ? "> " : "   ") + (row.shortName.empty() ? l->name : row.shortName);
         if (dimmed)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         bool sel = st.selected == row.id || st.multi.count(row.id.value) > 0;
@@ -356,16 +396,21 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         }
     }
 
-    // Toolbar.
+    // Toolbar. Buttons wrap onto the next row when the panel is narrow, so none is clipped.
+    const auto nextButton = [](const char* label) {
+        const float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        if (ImGui::GetContentRegionAvail().x > w + ImGui::GetStyle().ItemSpacing.x)
+            ImGui::SameLine();
+    };
     if (ImGui::Button("New"))
         newLayer(ctx, {});
-    ImGui::SameLine();
+    nextButton("New Sub-layer");
     const bool canSub = st.selected && st.selected != kLayerZero && doc.layer(st.selected);
     ImGui::BeginDisabled(!canSub);
     if (ImGui::Button("New Sub-layer"))
         newLayer(ctx, st.selected);
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    nextButton("Delete");
     const bool canDelete = st.selected && st.selected != kLayerZero && doc.layer(st.selected);
     ImGui::BeginDisabled(!canDelete);
     if (ImGui::Button("Delete")) {
@@ -375,7 +420,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             exec(ctx, {"-LAYER Delete " + idRef(st.selected)});
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    nextButton("Isolate");
     ImGui::BeginDisabled(!st.selected || !doc.layer(st.selected));
     if (ImGui::Button("Isolate"))
         exec(ctx, {"-LAYER Isolate " + selectedRefs(st)});
@@ -384,16 +429,15 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             "Turn off every layer except the selected ones\n"
             "(Ctrl+click / Shift+click to select several)");
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    nextButton("Show All");
     if (ImGui::Button("Show All"))
         exec(ctx, {"-LAYER ShowAll"});
-    ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "Filter layers (text, or name:S-* frozen ...)",
                              &st.filter);
 
     // Named layer states: pick one to restore it, or save the current state under a new name.
-    ImGui::SetNextItemWidth(160);
+    ImGui::SetNextItemWidth(std::min(220.0f, ImGui::GetContentRegionAvail().x));
     if (ImGui::BeginCombo("##states", "Layer states...")) {
         for (const std::string& n : layerStateNames(doc))
             if (ImGui::Selectable(n.c_str()))
@@ -424,13 +468,13 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 170);
-        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 28);
-        ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
-        ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 36);
+        ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 36);
+        ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 36);
         ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 46);
         ImGui::TableSetupColumn("Linetype", ImGuiTableColumnFlags_WidthFixed, 80);
         ImGui::TableSetupColumn("Weight", ImGuiTableColumnFlags_WidthFixed, 64);
-        ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableHeadersRow();
 
         ImGuiListClipper clipper;
@@ -438,6 +482,23 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         while (clipper.Step()) {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
                 const Row& row = rows[static_cast<std::size_t>(i)];
+                if (!row.group.empty()) {
+                    ImGui::PushID(row.group.c_str());
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    if (ImGui::ArrowButton("##open", row.open ? ImGuiDir_Down : ImGuiDir_Right)) {
+                        if (!st.collapsedXrefs.erase(row.group))
+                            st.collapsedXrefs.insert(row.group);
+                    }
+                    ImGui::SameLine(0, 2);
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::Text("%s  (xref, %zu)", row.group.c_str(), row.members);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("External reference %s: %zu layers", row.group.c_str(),
+                                          row.members);
+                    ImGui::PopID();
+                    continue;
+                }
                 const Layer* l = doc.layer(row.id);
                 if (!l)
                     continue;
