@@ -1045,3 +1045,27 @@ TEST_CASE("TOLERANCE: text that is not a frame stays a placeholder") {
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("layer transparency is read from the layer's ADSK_XREC_LAYER_ALPHA record") {
+    using namespace testing;
+    const std::string text =
+        "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n1\n"
+        "0\nLAYER\n5\n20\n102\n{ACAD_XDICTIONARY\n360\nA1\n102\n}\n100\nAcDbSymbolTableRecord\n"
+        "100\nAcDbLayerTableRecord\n2\nCOL\n70\n0\n62\n8\n6\nCONTINUOUS\n"
+        "0\nENDTAB\n0\nENDSEC\n"
+        "0\nSECTION\n2\nOBJECTS\n"
+        "0\nDICTIONARY\n5\nA1\n100\nAcDbDictionary\n3\nADSK_XREC_LAYER_ALPHA\n350\nB2\n"
+        "0\nXRECORD\n5\nB2\n100\nAcDbXrecord\n280\n1\n1071\n33554560\n"
+        "0\nENDSEC\n0\nEOF\n";
+    Loaded l = load(text);
+    const Layer* layer = nullptr;
+    for (const auto& [id, lay] : l.doc().layers())
+        if (lay.name == "COL")
+            layer = &lay;
+    REQUIRE(layer != nullptr);
+    CHECK(layer->transparency == 50);  // 0x02000080: alpha 128 of 255
+}
+
+}  // namespace tbcad::dxf
