@@ -472,3 +472,16 @@ TEST_CASE("a gradient hatch displays as bands that run from colour 1 to colour 2
     CHECK(last.style.color.r > 195);
     CHECK(last.style.color.b > 45);
 }
+
+TEST_CASE("a double hatch adds the same lines turned a quarter turn") {
+    HatchData h = squareHatch(100);
+    FillResult single = generateFill(h, oneFamily(0, 10));
+    h.doubled = true;
+    FillResult both = generateFill(h, oneFamily(0, 10));
+    REQUIRE(single.mode == FillResult::Mode::Lines);
+    CHECK(both.segments.size() > single.segments.size() + 5);
+    bool vertical = false;
+    for (const auto& s : both.segments)
+        vertical = vertical || std::abs(s.first.x - s.second.x) < 1e-6;
+    CHECK(vertical);
+}

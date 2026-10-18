@@ -285,6 +285,7 @@ struct HatchData {
     std::string pattern{};  // pattern name when !solid
     double patternScale = 1;
     double patternAngle = 0;
+    bool doubled = false;  // pattern drawn twice, the second set turned 90 degrees (DXF 77)
     Vec2 patternOrigin{};
     Color fill = Color::byLayer();
     std::vector<EntityId> sourceBoundary{};  // for later associativity

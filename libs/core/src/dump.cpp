@@ -170,8 +170,8 @@ struct DataDumper {
     void operator()(const HatchData& d) {
         o << "HATCH solid" << d.solid << " pat=";
         o.quoted(d.pattern);
-        o << " sc" << d.patternScale << " ang" << d.patternAngle << " org" << d.patternOrigin
-          << " fill" << d.fill << " src";
+        o << " sc" << d.patternScale << " ang" << d.patternAngle << (d.doubled ? " double" : "")
+          << " org" << d.patternOrigin << " fill" << d.fill << " src";
         for (EntityId e : d.sourceBoundary)
             o << " " << e;
         if (d.gradient)

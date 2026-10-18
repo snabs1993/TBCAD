@@ -225,8 +225,21 @@ std::vector<double> crossings(Vec2 q, Vec2 u, const std::vector<const CurveRef*>
 
 }  // namespace
 
-FillResult generateFill(const HatchData& hatch, const Pattern& pattern, const FillOptions& opt) {
+FillResult generateFill(const HatchData& hatch, const Pattern& patternIn, const FillOptions& opt) {
     FillResult res;
+    // A double hatch draws every family again, turned a quarter turn about the hatch origin.
+    Pattern doubledPattern;
+    if (hatch.doubled && !hatch.solid && !patternIn.solid) {
+        doubledPattern = patternIn;
+        for (const PatternFamily& f : patternIn.families) {
+            PatternFamily g = f;
+            g.angle += 1.5707963267948966;
+            g.origin = {-f.origin.y, f.origin.x};
+            g.delta = f.delta;  // (along, perpendicular) turn with the line
+            doubledPattern.families.push_back(std::move(g));
+        }
+    }
+    const Pattern& pattern = doubledPattern.families.empty() ? patternIn : doubledPattern;
     if (pattern.solid || hatch.solid || pattern.families.empty()) {
         res.mode = FillResult::Mode::Solid;
         res.rings = loopRings(hatch, opt.tolerance);

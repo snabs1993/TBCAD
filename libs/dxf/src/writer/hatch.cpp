@@ -291,7 +291,7 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
     if (!solid) {
         o.d(52, d.patternAngle * kDeg);
         o.d(41, d.patternScale);
-        o.i(77, 0);
+        o.i(77, d.doubled ? 1 : 0);
         std::optional<std::vector<HatchPatternLine>> lines = patternLines(d.pattern);
         if (!lines && warnedPatterns_.insert(lowerAscii(d.pattern)).second) {
             rep_.info(wcode::kUnknownPattern,
