@@ -404,32 +404,61 @@ public:
 
     Task run(CommandContext& ctx) override {
         ctx.message(
-            "Select with a crossing window (either direction): only the end points and vertices "
-            "inside it move.");
-        auto c1 = co_await ctx.getPoint("Specify first corner of the crossing window");
-        if (!c1.ok())
-            co_return;
-        PointOptions co;
-        co.base = c1.point;
-        co.preview = [first = c1.point](Vec2 c, DisplayList& out) {  // the crossing window
-            DisplayPolyline pl;
-            pl.closed = true;
-            pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
-            out.items.emplace_back(std::move(pl));
-        };
-        auto c2 = co_await ctx.getPoint("Specify opposite corner", std::move(co));
-        if (!c2.ok())
-            co_return;
+            "Select with a crossing window or polygon: only the end points and vertices inside "
+            "it move.");
+        std::vector<Vec2> polygon;  // empty = rectangular window
         BBox2 window;
-        window.expand(c1.point);
-        window.expand(c2.point);
+        {
+            PointOptions fo;
+            fo.keywords = {"CPolygon"};
+            auto c1 = co_await ctx.getPoint(
+                "Specify first corner of the crossing window or [CPolygon]", std::move(fo));
+            if (!c1.ok() && !(c1.status == Status::Keyword && c1.keyword == "CPolygon"))
+                co_return;
+            if (c1.status == Status::Keyword) {
+                for (;;) {
+                    PointOptions po;
+                    if (!polygon.empty())
+                        po.base = polygon.back();
+                    auto p = co_await ctx.getPoint(
+                        polygon.size() < 3 ? "Specify next polygon point"
+                                           : "Specify next polygon point <Enter to finish>",
+                        std::move(po));
+                    if (p.status == Status::None && polygon.size() >= 3)
+                        break;
+                    if (!p.ok())
+                        co_return;
+                    polygon.push_back(p.point);
+                }
+                for (Vec2 v : polygon)
+                    window.expand(v);
+            } else {
+                PointOptions co;
+                co.base = c1.point;
+                co.preview = [first = c1.point](Vec2 c, DisplayList& out) {  // the crossing window
+                    DisplayPolyline pl;
+                    pl.closed = true;
+                    pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
+                    out.items.emplace_back(std::move(pl));
+                };
+                auto c2 = co_await ctx.getPoint("Specify opposite corner", std::move(co));
+                if (!c2.ok())
+                    co_return;
+                window.expand(c1.point);
+                window.expand(c2.point);
+            }
+        }
+        auto stretchWith = [&](const std::vector<EntityId>& ids, Vec2 d, std::string* err) {
+            return polygon.empty() ? stretchByWindow(ctx.doc(), ids, window, d, err)
+                                   : stretchByPolygon(ctx.doc(), ids, polygon, d, err);
+        };
         const std::vector<EntityId> ids = stretchCandidates(ctx, window);
         if (ids.empty()) {
             ctx.message("Nothing to stretch in the window.");
             co_return;
         }
         // Only objects with an end point or vertex inside the window move; say how many do.
-        const std::size_t movable = stretchByWindow(ctx.doc(), ids, window, {1, 0}).size();
+        const std::size_t movable = stretchWith(ids, {1, 0}, nullptr).size();
         if (movable == 0) {
             ctx.message(
                 "No end point or vertex lies inside the crossing window; nothing to stretch.");
@@ -441,10 +470,10 @@ public:
             co_return;
         PointOptions o;
         o.base = base.point;
-        o.preview = [&ctx, &ids, window, b = base.point](Vec2 c, DisplayList& out) {
+        o.preview = [&ctx, &ids, &stretchWith, b = base.point](Vec2 c, DisplayList& out) {
             geom::DisplayContext dc;
             dc.pixelSizeMm = ctx.host().view().scale > 0 ? ctx.host().view().scale : 1;
-            for (auto& [id, e] : stretchByWindow(ctx.doc(), ids, window, c - b))
+            for (auto& [id, e] : stretchWith(ids, c - b, nullptr))
                 geom::buildDisplay(ctx.doc(), e, dc, out);
         };
         auto to = co_await ctx.getPoint("Specify second point or <use first point as displacement>",
@@ -458,7 +487,7 @@ public:
             co_return;
         std::string err;
         std::size_t n = 0;
-        for (auto& [id, e] : stretchByWindow(ctx.doc(), ids, window, delta, &err)) {
+        for (auto& [id, e] : stretchWith(ids, delta, &err)) {
             Entity moved = std::move(e);
             if (ctx.tx().modify(id, [&](Entity& tgt) { tgt.data = std::move(moved.data); }))
                 ++n;
