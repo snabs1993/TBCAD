@@ -138,6 +138,7 @@ PolylineData cleanPolyline(const PolylineData& pl) {
     PolylineData out;
     out.closed = pl.closed;
     out.constantWidth = pl.constantWidth;
+    out.restartLinetype = pl.restartLinetype;
     for (const PolyVertex& v : pl.v) {
         if (!out.v.empty() && samePoint(out.v.back().p, v.p)) {
             out.v.back().bulge = v.bulge;
@@ -179,8 +180,10 @@ std::vector<Seg> polylineSegs(const PolylineData& pl) {
 PolylineData polylineFromSegs(const std::vector<Seg>& chain, bool closed,
                               const PolylineData* like) {
     PolylineData pl;
-    if (like)
+    if (like) {
         pl.constantWidth = like->constantWidth;
+        pl.restartLinetype = like->restartLinetype;
+    }
     pl.closed = closed;
     for (const Seg& s : chain) {
         PolyVertex v;
