@@ -137,7 +137,10 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     }
 
     // Style of the insert itself: what ByBlock means for everything inside.
-    const DisplayStyle self = geom::resolveStyle(doc, insert, ctx);
+    // The insert's own transparency reaches the content through ByBlock, not through its colour.
+    geom::DisplayContext opaque = ctx;
+    opaque.showTransparency = false;
+    const DisplayStyle self = geom::resolveStyle(doc, insert, opaque);
     const Transform2 t = instanceTransform(*ins, def->base);
     const std::vector<Transform2> items = instanceTransforms(*ins, def->base);
 
@@ -145,6 +148,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     child.byBlockColor = self.color;
     child.byBlockLineweightMm = self.lineweight;
     child.byBlockPattern = self.pattern;
+    child.byBlockTransparency = geom::resolveTransparency(doc, insert, ctx);
     const double stretch = std::max(maxStretch(t), 1e-12);
     child.chordTolMm = quantizeTolerance(ctx.tolerance() / stretch);
 
@@ -154,8 +158,13 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     BlockDisplayCache::Key key;
     if (cache) {
         cache->sync(doc.revision());
-        key = {def->id,         insert.common.layer, self.color,
-               self.lineweight, self.pattern,        child.chordTolMm};
+        key = {def->id,
+               insert.common.layer,
+               self.color,
+               self.lineweight,
+               self.pattern,
+               child.chordTolMm,
+               ctx.showTransparency ? child.byBlockTransparency : -1};
         blockSpace = cache->find(key);
     }
     if (!blockSpace) {

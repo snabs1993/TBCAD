@@ -52,6 +52,8 @@ std::vector<std::uint8_t> buildHead(const Document& doc, StringTable& st, std::u
         bump();
     headInt(body, st, "currentLinetype", h.currentLinetype.value), bump();
     headInt(body, st, "currentLineweight", h.currentLineweight.v), bump();
+    if (h.currentTransparency != kTransparencyByLayer)
+        headInt(body, st, "currentTransparency", h.currentTransparency), bump();
     headInt(body, st, "currentTextStyle", h.currentTextStyle.value), bump();
     headInt(body, st, "currentDimStyle", h.currentDimStyle.value), bump();
     headString(body, st, "createdBy", h.createdBy), bump();
@@ -158,7 +160,10 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
             layr.u32(r.linetype.value);
             layr.i16(r.lineweight.v);
             layr.u8(static_cast<std::uint8_t>((r.on ? 1 : 0) | (r.frozen ? 2 : 0) |
-                                              (r.locked ? 4 : 0) | (r.plot ? 8 : 0)));
+                                              (r.locked ? 4 : 0) | (r.plot ? 8 : 0) |
+                                              (r.transparency ? 16 : 0)));
+            if (r.transparency)
+                layr.u8(r.transparency);
         }
 
         // Levels (LVLS) are written only when the document has more than the pristine default

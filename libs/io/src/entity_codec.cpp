@@ -20,6 +20,7 @@ constexpr std::uint8_t kCfAnnotative = 64;
 constexpr std::uint8_t kCfExt = 128;        // an extension byte follows the owner
 constexpr std::uint8_t kExtAnnoScales = 1;  // ... a list of annotation scales follows it
 constexpr std::uint8_t kExtWipeout = 2;
+constexpr std::uint8_t kExtTransparency = 4;  // ... one byte: percent, or 255 ByBlock
 constexpr std::uint8_t kCfKnownMask = 255;
 
 // ---------------------------------------------------------------- writing
@@ -872,6 +873,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         ext |= kExtAnnoScales;
     if (c.wipeout)
         ext |= kExtWipeout;
+    if (c.transparency != kTransparencyByLayer)
+        ext |= kExtTransparency;
     if (ext)
         flags |= kCfExt;
     if (owner)
@@ -895,6 +898,10 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         w.varint(owner.value);
     if (flags & kCfExt) {
         w.u8(ext);
+        if (ext & kExtTransparency)
+            w.u8(c.transparency == kTransparencyByBlock
+                     ? 255
+                     : static_cast<std::uint8_t>(c.transparency));
         if (ext & kExtAnnoScales) {
             w.varint(c.annoScales.size());
             for (double v : c.annoScales)
@@ -939,9 +946,18 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
         out.owner = pr.id<BlockId>();
     if (flags & kCfExt) {
         const std::uint8_t ext = r.u8();
-        if (ext & ~(kExtAnnoScales | kExtWipeout))
+        if (ext & ~(kExtAnnoScales | kExtWipeout | kExtTransparency))
             bad("unknown entity extension flags");
         c.wipeout = (ext & kExtWipeout) != 0;
+        if (ext & kExtTransparency) {
+            const std::uint8_t t = r.u8();
+            if (t == 255)
+                c.transparency = kTransparencyByBlock;
+            else if (t <= kTransparencyMax)
+                c.transparency = static_cast<std::int8_t>(t);
+            else
+                bad("invalid transparency");
+        }
         if (ext & kExtAnnoScales) {
             const std::uint64_t n = r.varint();
             if (n > 64)

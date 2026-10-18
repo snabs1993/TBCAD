@@ -24,6 +24,9 @@ struct DisplayContext {
     Rgba byBlockColor{255, 255, 255, 255};
     double byBlockLineweightMm = 0.25;
     const std::vector<double>* byBlockPattern = nullptr;
+    int byBlockTransparency = 0;  // percent
+    // Off: everything is drawn opaque (the TPY toggle).
+    bool showTransparency = true;
     // Scale for annotative objects (model units per paper unit). 0 = the drawing's current
     // annotation scale; a layout viewport sets its own.
     double annoScale = 0;
@@ -33,6 +36,9 @@ struct DisplayContext {
 
 // Resolves ByLayer / ByBlock colour, lineweight and linetype of an entity into a DisplayStyle.
 DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayContext& ctx);
+// The transparency (percent, 0 to 90) the entity draws with after ByLayer / ByBlock; 0 when the
+// context shows everything opaque.
+int resolveTransparency(const Document& doc, const Entity& e, const DisplayContext& ctx);
 
 using DisplayFn =
     std::function<void(const Document&, const Entity&, const DisplayContext&, DisplayList&)>;

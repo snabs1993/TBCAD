@@ -986,4 +986,61 @@ TEST_CASE("a tolerance frame is exported as TOLERANCE and comes back as the same
     CHECK(b->entities.size() == gdt::frameEntities(spec).size());
 }
 
+TEST_CASE("transparency (group 440) and the object's own text width factor survive a round trip") {
+    Document doc;
+    EntityId lineId, textId;
+    {
+        Transaction tx = doc.begin("t");
+        Layer glass;
+        glass.name = "GLASS";
+        glass.transparency = 40;
+        LayerId glassId = tx.addLayer(glass).value();
+        TextStyle narrow;
+        narrow.name = "Narrow";
+        narrow.fontFile = "arial.ttf";
+        narrow.widthFactor = 0.8;
+        TextStyleId narrowId = tx.addTextStyle(narrow).value();
+
+        Entity line = make(LineData{{0, 0}, {100, 0}}, glassId);
+        line.common.transparency = 70;
+        lineId = tx.add(std::move(line)).value();
+        Entity byBlock = make(LineData{{0, 5}, {100, 5}}, glassId);
+        byBlock.common.transparency = kTransparencyByBlock;
+        REQUIRE(tx.add(std::move(byBlock)).ok());
+        TextData t;
+        t.position = {0, 10};
+        t.alignPoint = t.position;
+        t.height = 5;
+        t.style = narrowId;
+        t.widthFactor = 1;  // relative to the style: 0.8 in the file
+        t.utf8 = "plain";
+        textId = tx.add(make(Indirect<TextData>(t), glassId)).value();
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    // The file states the full factor of the object (group 41 of the TEXT).
+    CHECK(rt.bytes.find(std::to_string(0x02000000 | 77)) != std::string::npos);
+    CHECK(rt.bytes.find("16777216") != std::string::npos);  // ByBlock
+    CHECK(rt.back->layerByName("GLASS")->transparency == 40);
+    int lines = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e); l && l->a.y == 0) {
+            ++lines;
+            CHECK(e.common.transparency == 70);
+        }
+        if (const auto* l = entityAs<LineData>(e); l && l->a.y == 5) {
+            ++lines;
+            CHECK(e.common.transparency == kTransparencyByBlock);
+        }
+        if (const auto* t = entityAs<TextData>(e)) {
+            const TextStyle* ts = rt.back->textStyle(t->style);
+            REQUIRE(ts);
+            CHECK(ts->widthFactor * t->widthFactor == doctest::Approx(0.8));
+        }
+    });
+    CHECK(lines == 2);
+    (void)lineId;
+    (void)textId;
+}
+
 }  // namespace tbcad::dxf

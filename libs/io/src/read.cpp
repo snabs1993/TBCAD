@@ -239,6 +239,11 @@ private:
                 if (ival < -4 || ival > 32767)
                     bad("invalid current lineweight");
                 h.currentLineweight.v = static_cast<std::int16_t>(ival);
+            } else if (key == "currentTransparency") {
+                wantInt();
+                if (!validObjectTransparency(static_cast<int>(ival)))
+                    bad("invalid current transparency");
+                h.currentTransparency = static_cast<std::int8_t>(ival);
             } else if (key == "currentTextStyle") {
                 id(h.currentTextStyle);
             } else if (key == "currentDimStyle") {
@@ -470,12 +475,17 @@ private:
             row.linetype = LinetypeId{r.u32()};
             row.lineweight = LineWeight{r.i16()};
             std::uint8_t f = r.u8();
-            if (f > 15)
+            if (f > 31)
                 bad("invalid layer flags");
             row.on = (f & 1) != 0;
             row.frozen = (f & 2) != 0;
             row.locked = (f & 4) != 0;
             row.plot = (f & 8) != 0;
+            if (f & 16) {  // transparency, written only when the layer has some
+                row.transparency = r.u8();
+                if (row.transparency > kTransparencyMax)
+                    bad("invalid layer transparency");
+            }
             rows.push_back(std::move(row));
             if (id == kLayerZero.value)
                 return;

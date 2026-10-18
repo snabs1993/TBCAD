@@ -24,6 +24,7 @@ struct Layer {
     bool frozen = false;
     bool locked = false;
     bool plot = true;
+    std::uint8_t transparency = 0;  // percent, 0 to 90
 };
 
 // A level groups objects the way a floor plan groups storeys: the user works on one level at a
@@ -209,6 +210,7 @@ struct EffectiveLayer {
     Color color = Color::index(7);                        // Index or Rgb
     LinetypeId linetype{1};                               // never null / ByParent
     LineWeight lineweight = LineWeight::defaultWeight();  // Default or a value
+    std::uint8_t transparency = 0;
     bool on = true;
     bool frozen = false;
     bool locked = false;  // includes `inactive`

@@ -455,6 +455,8 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
         if (!r12_) {
             o.i(290, eff.plot ? 1 : 0);
             o.i(370, eff.lineweight.isValue() ? validLineweight(eff.lineweight.v) : -3);
+            if (layer.transparency)
+                o.i(440, transparencyGroup(layer.transparency));
         }
         if (eff.on != layer.on || eff.frozen != layer.frozen || eff.locked != layer.locked ||
             eff.plot != layer.plot) {
@@ -496,6 +498,10 @@ bool isStrokeFont(const TextStyle& ts) {
 }
 }  // namespace
 
+double styleWidthWritten(const TextStyle& ts) {
+    return isStrokeFont(ts) ? std::round(ts.widthFactor * 0.92 * 1e9) / 1e9 : ts.widthFactor;
+}
+
 void Writer::writeStyles(Out& o, std::uint64_t table) {
     tableBegin(o, "STYLE", table, doc_.textStyles().size());
     for (const auto& [id, ts] : doc_.textStyles()) {
@@ -503,7 +509,7 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
                     0);
         o.d(40, ts.height);
         // The reader widens the stroke font that stands in for txt.shx by 1/0.92; undo that here.
-        o.d(41, isStrokeFont(ts) ? std::round(ts.widthFactor * 0.92 * 1e9) / 1e9 : ts.widthFactor);
+        o.d(41, styleWidthWritten(ts));
         o.d(50, ts.oblique * kDeg);
         o.i(71, 0);
         o.d(42, 2.5);

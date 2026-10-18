@@ -472,6 +472,7 @@ void Importer::readStyle(const Record& r) {
     }
     double wf = r.num(41, 1);
     ts.widthFactor = (std::isfinite(wf) && wf > 0) ? wf : 1;
+    const double rawWidth = ts.widthFactor;
     // The stroke font that stands in for an SHX font sets narrower than SHX does: a title block
     // in ROMANS measured 0.92 of the SHX width in the owner's plot.
     if (!ts.fontFamily.empty() && ts.fontFamily == "TBCAD Stroke")
@@ -491,11 +492,14 @@ void Importer::readStyle(const Record& r) {
             t.oblique = ts.oblique;
             t.height = ts.height;
         });
+        styleRawWidth_[id.value] = rawWidth;
         return;
     }
     tbcad::Result<TextStyleId> id = tx_->addTextStyle(std::move(ts));
     if (!id)
         report_.warn(code::kRejected, "text style \"" + name + "\": " + id.error().message, r.line);
+    else
+        styleRawWidth_[id.value().value] = rawWidth;
 }
 
 void Importer::readDimStyle(const Record& r) {
@@ -583,6 +587,10 @@ void Importer::readLayerRow(const Record& r) {
     row.linetype = std::string(r.raw(6));
     row.plot = r.integer(290, 1) != 0;
     row.lineweight = static_cast<int>(r.integer(370, -3));
+    if (const Group* g = r.find(440)) {
+        const int t = transparencyFromGroup(g->integer());
+        row.transparency = t > 0 ? t : 0;  // a layer is never ByLayer / ByBlock
+    }
     // TBCAD APPID XDATA: "parent=<DXF name of the parent layer>", "name=<own name>", flags.
     bool inOurs = false;
     for (const Group& g : r.g) {
@@ -623,6 +631,7 @@ void Importer::applyLayerRow(Layer& l, const LayerRow& row, bool hasParent) {
     l.frozen = (row.flags & 1) != 0;
     l.locked = (row.flags & 4) != 0;
     l.plot = row.plot;
+    l.transparency = static_cast<std::uint8_t>(row.transparency);
 
     l.linetype = kLinetypeContinuous;
     if (!row.linetype.empty()) {

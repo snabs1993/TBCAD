@@ -645,3 +645,33 @@ TEST_CASE("round trip: insert clipping boundary") {
     CHECK(canonicalDump(*back) == before);
     CHECK(before.find("CLIPoff") != std::string::npos);
 }
+
+TEST_CASE("round trip: layer, object and current transparency survive") {
+    auto doc = makeRichDocument();
+    const LayerId layer = doc->layerByName("A-WALL")->id;
+    EntityId first, second;
+    {
+        std::vector<EntityId> ids;
+        doc->forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+        REQUIRE(ids.size() >= 2);
+        first = ids[0];
+        second = ids[1];
+    }
+    {
+        Transaction tx = doc->begin("transparency");
+        REQUIRE(tx.modifyLayer(layer, [](Layer& l) { l.transparency = 35; }).ok());
+        REQUIRE(tx.modify(first, [](Entity& e) { e.common.transparency = 70; }).ok());
+        REQUIRE(tx.modify(second, [](Entity& e) {
+                      e.common.transparency = kTransparencyByBlock;
+                  }).ok());
+        REQUIRE(tx.modifyHeader([](Header& h) { h.currentTransparency = 10; }).ok());
+        tx.commit();
+    }
+    const std::string before = canonicalDump(*doc);
+    auto back = readOrFail(writeOrFail(*doc));
+    CHECK(canonicalDump(*back) == before);
+    CHECK(back->layerByName("A-WALL")->transparency == 35);
+    CHECK(back->find(first)->common.transparency == 70);
+    CHECK(back->find(second)->common.transparency == kTransparencyByBlock);
+    CHECK(back->header().currentTransparency == 10);
+}

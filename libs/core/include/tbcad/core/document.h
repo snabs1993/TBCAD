@@ -45,6 +45,7 @@ struct Header {
     Color currentColor = Color::byLayer();  // never ByParent
     LinetypeId currentLinetype = kLinetypeByLayer;
     LineWeight currentLineweight = LineWeight::byLayer();
+    std::int8_t currentTransparency = kTransparencyByLayer;
     TextStyleId currentTextStyle = kTextStyleStandard;
     DimStyleId currentDimStyle = kDimStyleStandard;
     // "Active only": every layer except the current layer and its sub-layers behaves as locked
@@ -473,6 +474,7 @@ inline void applyCurrentProperties(const Header& h, Entity& e) {
     e.common.color = h.currentColor;
     e.common.linetype = h.currentLinetype;
     e.common.lineweight = h.currentLineweight;
+    e.common.transparency = h.currentTransparency;
     applyAnnotativeDefault(h, e);
 }
 

@@ -130,6 +130,7 @@ Props Writer::propsOf(const EntityCommon& c) {
     p.linetype = linetypeNameOf(c.linetype);
     p.color = c.color;
     p.lineweight = c.lineweight;
+    p.transparency = c.transparency;
     {
         char buf[32];
         std::snprintf(buf, sizeof buf, "%.7g", static_cast<double>(c.linetypeScale));
@@ -145,6 +146,9 @@ Props Writer::propsOfStyle(const DisplayStyle& st, const std::string& fallbackLa
     p.trueColor = st.color;
     int hundredths = static_cast<int>(std::lround(st.lineweight * 100.0));
     p.lineweight = LineWeight::hundredths(static_cast<std::int16_t>(validLineweight(hundredths)));
+    if (st.color.a < 255 && !isBackgroundColor(st.color))
+        p.transparency = static_cast<std::int8_t>(
+            std::clamp<long>(std::lround(100.0 * (255 - st.color.a) / 255.0), 0, kTransparencyMax));
     if (st.pattern) {
         auto it = ltByPattern_.find(st.pattern);
         if (it != ltByPattern_.end()) {
@@ -206,6 +210,8 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
             o.i(370, -2);
         else if (p.lineweight.isDefault())
             o.i(370, -3);
+        if (p.transparency != kTransparencyByLayer)
+            o.i(440, transparencyGroup(p.transparency));
     }
     if (p.ltScale != 1 && p.ltScale > 0)
         o.d(48, p.ltScale);
@@ -667,8 +673,14 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
     o.str(1, type == "ATTDEF" ? d.attdef->defaultValue : shown);
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
-    if (d.widthFactor != 1)
-        o.d(41, d.widthFactor);
+    {
+        // Group 41 is the object's full factor; the style's own is only the default for new text.
+        const TextStyle* ts = doc_.textStyle(d.style);
+        const double styleWf = ts ? styleWidthWritten(*ts) : 1.0;
+        const double full = std::round(d.widthFactor * styleWf * 1e9) / 1e9;
+        if (full != 1 || styleWf != 1)
+            o.d(41, full);
+    }
     if (d.oblique != 0)
         o.d(51, d.oblique * kDeg);
     o.str(7, textStyleNameOf(d.style));

@@ -120,6 +120,18 @@ DimStyleId Importer::dimStyleFor(std::string_view raw) const {
     return s ? s->id : DimStyleId{};
 }
 
+// Group 440: 0 or absent = ByLayer, 0x01000000 = ByBlock, 0x02000000 | alpha (0 clear, 255 opaque).
+// Returns percent transparent (0 to 90), or the ByLayer / ByBlock markers.
+int transparencyFromGroup(std::int64_t v) {
+    if ((v & 0xFF000000) == 0x01000000)
+        return kTransparencyByBlock;
+    if ((v & 0xFF000000) != 0x02000000)
+        return kTransparencyByLayer;
+    const int alpha = static_cast<int>(v & 0xFF);
+    const int percent = static_cast<int>(std::lround(100.0 * (255 - alpha) / 255.0));
+    return std::clamp(percent, 0, static_cast<int>(kTransparencyMax));
+}
+
 EntityCommon Importer::commonOf(const Record& r) {
     EntityCommon c;
     c.layer = layerFor(r.raw(8), r.line);
@@ -153,6 +165,8 @@ EntityCommon Importer::commonOf(const Record& r) {
         else
             c.lineweight = LineWeight::byLayer();
     }
+    if (const Group* g = r.find(440))
+        c.transparency = static_cast<std::int8_t>(transparencyFromGroup(g->integer()));
     if (const Group* g = r.find(48)) {
         double s = g->number();
         if (std::isfinite(s) && s > 0)
@@ -727,6 +741,10 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
         d.widthFactor = 1;
     d.oblique = r.num(51) * kDeg;
     d.style = textStyleFor(r.raw(7));
+    // In AutoCAD the style's width factor is only the default for new text: the object's own
+    // factor is the one that applies, so it must not be multiplied by the style's again.
+    if (auto it = styleRawWidth_.find(d.style.value); it != styleRawWidth_.end())
+        d.widthFactor /= it->second;
     std::int64_t h = r.integer(72), v = r.integer(attrib ? 74 : 73);
     d.h = static_cast<HAlign>(std::clamp<std::int64_t>(h, 0, 5));
     d.v = static_cast<VAlign>(std::clamp<std::int64_t>(v, 0, 3));

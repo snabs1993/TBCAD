@@ -49,6 +49,8 @@ struct Frame {
     double bulge(double b) const { return mirror ? -b : b; }
 };
 
+int transparencyFromGroup(std::int64_t v);
+
 struct LayerRow {
     std::string name{};
     int flags = 0;
@@ -57,6 +59,7 @@ struct LayerRow {
     std::string linetype{};
     bool plot = true;
     int lineweight = -3;
+    int transparency = 0;  // percent
     int line = 0;
     // TBCAD XDATA
     std::optional<std::string> xParent{};
@@ -122,6 +125,9 @@ private:
     DimStyleId dimStyleFor(std::string_view raw) const;
     DimStyleId dimStyleWithOverrides(const Record& r, DimStyleId base);
     std::map<std::string, DimStyleId> dimOverrideStyles_{};
+    // Width factor a STYLE record states, by style id (before any stand-in widening): the TEXT
+    // group 41 is the object's full factor, TBCAD stores it relative to its style's.
+    std::map<std::uint32_t, double> styleRawWidth_{};
     std::map<std::string, double> styleHeights_{};  // STYLE handle -> fixed text height (DXF units)
     Vec2 P(const Record& r, int cx, int cy) const { return {r.num(cx) * k_, r.num(cy) * k_}; }
     void note3d(const Record& r);

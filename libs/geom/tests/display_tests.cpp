@@ -303,3 +303,37 @@ TEST_CASE("registry supplies display and bounds for other kinds") {
     CHECK(l2.items.size() == 1);
     DisplayRegistry::clear(EntityKind::Text);
 }
+
+TEST_CASE("buildDisplay applies layer and object transparency, and the TPY switch") {
+    Document doc;
+    LayerId lay;
+    {
+        Transaction tx = doc.begin("layer");
+        Layer l;
+        l.name = "GLASS";
+        l.color = Color::rgb(10, 20, 30);
+        l.transparency = 50;
+        auto id = tx.addLayer(l);
+        REQUIRE(id.ok());
+        lay = id.value();
+        tx.commit();
+    }
+    DisplayContext ctx;
+    auto alphaOf = [&](const Entity& e, const DisplayContext& c) {
+        DisplayList out;
+        buildDisplay(doc, e, c, out);
+        return polyline(out).style.color.a;
+    };
+    Entity line = make(LineData{{0, 0}, {10, 0}});
+    line.common.layer = lay;
+    CHECK(alphaOf(line, ctx) == 128);  // ByLayer: the layer's 50 %
+    line.common.transparency = 0;
+    CHECK(alphaOf(line, ctx) == 255);  // opaque overrides the layer
+    line.common.transparency = 90;
+    CHECK(alphaOf(line, ctx) == 26);
+    line.common.transparency = kTransparencyByBlock;
+    ctx.byBlockTransparency = 20;
+    CHECK(alphaOf(line, ctx) == 204);
+    ctx.showTransparency = false;
+    CHECK(alphaOf(line, ctx) == 255);
+}
