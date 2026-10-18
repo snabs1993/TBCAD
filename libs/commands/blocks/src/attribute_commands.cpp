@@ -1,8 +1,10 @@
+#include <cmath>
 #include <cstdlib>
 #include <sstream>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/text/annotation_size.h"
 
 namespace tbcad::block_cmds {
 
@@ -38,6 +40,9 @@ public:
         const bool dialog = !lineOnly_ && ctx.host().dialogsAvailable();
         if (dialog && settingOf(ctx.host(), "tmp.attdef.go") != "1") {
             ctx.host().openPanel("attdef");
+            ctx.message(
+                "Fill in the Define Attribute panel (tag, prompt, default), then press OK "
+                "and pick the start point.");
             co_return;
         }
         if (dialog) {
@@ -110,10 +115,17 @@ public:
         if (!pos.ok())
             co_return;
 
-        double height = 2.5;
+        // Sized like new TEXT: 2.5 mm on a sheet-sized drawing, larger in a big plan or a far-out
+        // view. Only a height the user typed is remembered.
+        constexpr double kBaseHeight = 2.5;
+        const double autoHeight =
+            kBaseHeight * text::suggestedAnnotationScale(
+                              ctx.doc(), ctx.host().view().scale,
+                              static_cast<bool>(ctx.host().drawingOwner()), kBaseHeight);
+        double height = autoHeight;
         if (auto last = ctx.host().setting(kHeightSetting))
-            height = std::strtod(last->c_str(), nullptr) > 0 ? std::strtod(last->c_str(), nullptr)
-                                                             : height;
+            if (const double v = std::strtod(last->c_str(), nullptr); v > 0)
+                height = v;
         double heightValue = height, rotation = 0.0;
         if (dialog) {  // the dialog already asked
             const std::string r = settingOf(ctx.host(), "tmp.attdef.rotation");
@@ -129,7 +141,9 @@ public:
                 co_return;
             heightValue = h.value;
             rotation = a.value;
-            ctx.host().setSetting(kHeightSetting, formatNumber(h.value));
+            ctx.host().setSetting(kHeightSetting, std::fabs(h.value - autoHeight) < 1e-9
+                                                      ? std::string()
+                                                      : formatNumber(h.value));
         }
 
         TextData text;

@@ -118,7 +118,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 
 | Command | Alias | Flow |
 | --- | --- | --- |
-| `BLOCK` | `B` | name, base point, objects, then `Retain/Convert/Delete`. An existing name offers `Redefine`. |
+| `BLOCK` | `B` | name, objects, base point (Enter = the lower-left corner of the objects, shown in the prompt), then `Retain/Convert/Delete`. An existing name offers `Redefine`. |
 | `INSERT` | `I` | block name (`?` lists, Enter takes the last one), then the point with `Scale/X/Y/Rotate` options and a live preview. |
 | `EXPLODE` | `X` | objects (selected inserts and polylines), one level. |
 | `NCOPY` | | pick an insert or xref at an object inside it; the closest nested object is copied into the drawing at its place, then moved by base point and second point (Enter keeps it in place). |
@@ -171,7 +171,10 @@ its own values in `InsertData::attribs` (tag + value). No new entity kind is inv
 readers see an ATTDEF as plain text showing its tag.
 
 * `ATTDEF` (`ATT`): mode keywords (`Invisible`, `Constant`, `Verify`, `Preset`, `Done`), tag
-  (upper-cased, no spaces), prompt, default value, point, height, rotation.
+  (upper-cased, no spaces), prompt, default value, point, height, rotation. The default height is
+  chosen like TEXT does (2.5 mm on a sheet-sized drawing, larger in a big plan or a far-out view);
+  only a height you type is remembered. In the window the command opens the Define Attribute panel
+  and says so on the command line.
 * `BLOCK` keeps the definitions, refuses two with the same tag, gives a converted insert the
   default values, and when it redefines a block it updates that block's inserts (`syncInserts`).
 * `INSERT` asks for each attribute that is not constant or preset (twice for Verify). Setting

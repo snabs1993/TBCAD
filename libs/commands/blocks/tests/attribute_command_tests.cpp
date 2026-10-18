@@ -249,3 +249,17 @@ TEST_CASE("the insert dialog asks for both far apart attributes") {
     CHECK(fields.find("NAME") != std::string::npos);
     CHECK(fields.find("AREA") != std::string::npos);
 }
+
+TEST_CASE("-ATTDEF text height follows the drawing size like TEXT does") {
+    Fixture f;
+    f.addLine(0, 0, 40000, 0);  // a 40 m plan in mm
+    // tag, prompt, default, start point, height (Enter = the suggested one), rotation
+    auto r = f.host->run("-ATTDEF", {"", "T1", "", "", "0,100", "", ""});
+    REQUIRE(r.finished);
+    const TextData* t = nullptr;
+    for (EntityId id : f.modelSpace())
+        if (const auto* td = entityAs<TextData>(*f.doc.find(id)))
+            t = td;
+    REQUIRE(t);
+    CHECK(t->height > 2.5);
+}

@@ -32,11 +32,11 @@ TEST_CASE("attributes made with -ATTDEF and caught by a crossing window both rea
 
     core.submitText("BLOCK");
     core.submitText("RT4");
-    core.submitText("0,0");
     Vec2 a = core.camera().worldToScreen({200, 600});
     Vec2 b = core.camera().worldToScreen({-200, -100});
     core.dragSelect(a, b, ui::PointerState{b, false, false});  // right to left: crossing
     core.submitText("");                                       // end of the selection
+    core.submitText("0,0");                                    // base point
     core.submitText("");                                       // Convert
     const BlockDef* def = core.document().blockByName("RT4");
     REQUIRE(def);
