@@ -61,8 +61,14 @@ public:
 
 private:
     void le(std::uint64_t v, int n) {
-        for (int i = 0; i < n; ++i)
-            b_.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
+        const std::size_t at = b_.size();
+        b_.resize(at + static_cast<std::size_t>(n));
+        if constexpr (std::endian::native == std::endian::little) {
+            std::memcpy(b_.data() + at, &v, static_cast<std::size_t>(n));
+        } else {
+            for (int i = 0; i < n; ++i)
+                b_[at + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(v >> (8 * i));
+        }
     }
     std::vector<std::uint8_t> b_{};
 };
