@@ -24,9 +24,13 @@ TEST_CASE("a second lock on the same drawing is refused until the first is relea
         FileLock other(dir / "other.tbcad");
         CHECK(other.held());
     }
-    FileLock again(drawing);
-    CHECK(again.held());
-    fs::remove_all(dir);
+    {
+        FileLock again(drawing);
+        CHECK(again.held());
+    }
+    // The locks are gone before the folder is: Windows will not delete a folder with an open file.
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }
 
 TEST_CASE("a lock in a folder that cannot be written is simply not held") {
