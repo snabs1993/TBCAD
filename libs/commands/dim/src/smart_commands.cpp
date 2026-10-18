@@ -308,10 +308,74 @@ public:
     }
 };
 
+// ---- MLEADERALIGN ------------------------------------------------------------------------------
+
+// Lines up the landing ends of several leaders in a column or a row with a reference leader. The
+// arrowheads stay where they point; each note moves with its landing end.
+class MLeaderAlignCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MLEADERALIGN"; }
+    std::vector<std::string> defaultAliases() const override { return {"MLA"}; }
+    std::string_view description() const override {
+        return "Line up the landing ends of leaders with a reference leader";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::SelectionOptions so;
+        so.filter = [](const Entity& e) { return entityAs<LeaderData>(e) != nullptr; };
+        auto sel = co_await ctx.getSelection("Select leaders to align", so);
+        if (!sel.ok())
+            co_return;
+        cmd::EntityOptions eo;
+        eo.filter = so.filter;
+        auto ref = co_await ctx.getEntity("Select the leader to align to", eo);
+        if (!ref.ok())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Vertical", "Horizontal"};
+        ko.defaultKeyword = "Vertical";
+        auto dir = co_await ctx.getKeyword(
+            "Align in a [Vertical/Horizontal] line <Vertical> (same X / same Y)", ko);
+        if (!dir.ok())
+            co_return;
+        const Entity* r = ctx.doc().find(ref.id);
+        const auto* rl = r ? entityAs<LeaderData>(*r) : nullptr;
+        if (!rl || rl->vertices.empty())
+            co_return;
+        const Vec2 anchor = rl->vertices.back();
+        const bool vertical = dir.keyword == "Vertical";
+        ctx.setUndoLabel("MLEADERALIGN");
+        std::size_t n = 0;
+        for (EntityId id : sel.ids) {
+            if (id == ref.id)
+                continue;
+            const Entity* e = ctx.doc().find(id);
+            const auto* l = e ? entityAs<LeaderData>(*e) : nullptr;
+            if (!l || l->vertices.empty())
+                continue;
+            const Vec2 end = l->vertices.back();
+            const Vec2 d = vertical ? Vec2{anchor.x - end.x, 0} : Vec2{0, anchor.y - end.y};
+            if (!ctx.tx().modify(id, [d](Entity& x) {
+                    if (auto* ld = entityAs<LeaderData>(x)) {
+                        ld->vertices.back() += d;
+                        ld->textPos += d;
+                    }
+                }))
+                continue;
+            ++n;
+        }
+        ctx.message(std::to_string(n) + " leaders aligned.");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeSmartDimCommand() {
     return std::make_unique<SmartDimCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeMLeaderAlignCommand() {
+    return std::make_unique<MLeaderAlignCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeMLeaderCommand() {
