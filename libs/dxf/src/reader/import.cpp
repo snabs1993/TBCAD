@@ -437,9 +437,11 @@ void Importer::readStyle(const Record& r) {
     // DWG files often name a shape font without its extension ("romans", "simplex").
     bool bareShx = false;
     if (!ts.fontFile.empty() && ts.fontFile.find('.') == std::string::npos) {
+        // "txt" is left out: TBCAD writes it for a style with no font file, and it must read back
+        // as none.
         static constexpr std::string_view kBare[] = {
-            "romans", "romanc",   "romand", "romant", "simplex", "complex", "txt",     "monotxt",
-            "isocp",  "isocpeur", "iso",    "italic", "italicc", "scripts", "gothice", "greeks"};
+            "romans",   "romanc", "romand", "romant",  "simplex", "complex", "monotxt", "isocp",
+            "isocpeur", "iso",    "italic", "italicc", "scripts", "gothice", "greeks"};
         std::string low = ts.fontFile;
         for (char& c : low)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
