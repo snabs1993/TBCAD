@@ -21,9 +21,43 @@ constexpr std::uint64_t kLayer0 = 0x10, kWalls = 0x11, kLtype = 0x12, kStyle = 0
                         kPaper = 0x15, kDoor = 0x16;
 
 std::vector<std::uint8_t> layer(std::uint64_t h, const char* name, int color, std::uint64_t lt,
-                                int flags = 16) {
+                                int flags = 16, bool described = false) {
     ObjectWriter o(0x33, h);
-    o.objectCommon();
+    if (described) {
+        // Extended data of the AcAecLayerStandard application: two strings, the second is the
+        // description ("Walls", plus a Thai letter from R2007 where strings are UTF-16).
+        std::vector<std::uint8_t> d;
+        for (int i = 0; i < 2; ++i) {
+            d.push_back(0);
+            const std::u16string text = i == 0 ? u"" : (gR2007 ? u"Walls\u0e1c" : u"Walls");
+            if (gR2007) {
+                d.push_back(static_cast<std::uint8_t>(text.size()));
+                d.push_back(0);
+                for (char16_t c : text) {
+                    d.push_back(static_cast<std::uint8_t>(c & 0xff));
+                    d.push_back(static_cast<std::uint8_t>(c >> 8));
+                }
+            } else {
+                d.push_back(static_cast<std::uint8_t>(text.size()));
+                d.push_back(0);
+                d.push_back(0);
+                for (char16_t c : text)
+                    d.push_back(static_cast<std::uint8_t>(c));
+            }
+        }
+        o.main.bs(static_cast<int>(d.size()));
+        o.main.handle(5, 0x99);
+        for (std::uint8_t b : d)
+            o.main.rc(b);
+        o.main.bs(0);
+        o.main.bl(0);  // reactors
+        if (gR2004)
+            o.main.b(true);
+        if (gR2013)
+            o.main.b(false);
+    } else {
+        o.objectCommon();
+    }
     o.main.text(name);
     o.main.b(false);
     o.main.bs(0);
@@ -436,7 +470,7 @@ DwgFile sampleFile() {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
     f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
-    f.add(kWalls, layer(kWalls, "WALLS", 3, kLtype));
+    f.add(kWalls, layer(kWalls, "WALLS", 3, kLtype, 16, true));
     f.add(0x17, layer(0x17, "HIDDENLAYER", 5, kLtype, 16 | 2 | 1));  // off and frozen
     f.add(0x18, layer(0x18, "NOPLOT", 6, kLtype, 0));
     f.add(kStyle, style(kStyle, "Standard"));
@@ -486,6 +520,8 @@ TEST_CASE("an R2000 file with tables, entities and a block imports") {
     CHECK(doc.layerByName("WALLS") != nullptr);
     CHECK(doc.layerByName("WALLS")->on);
     CHECK(doc.layerByName("WALLS")->plot);
+    CHECK(doc.layerByName("WALLS")->description == "Walls");
+    CHECK(doc.layerByName("NOPLOT")->description.empty());
     REQUIRE(doc.layerByName("HIDDENLAYER") != nullptr);
     CHECK_FALSE(doc.layerByName("HIDDENLAYER")->on);
     CHECK(doc.layerByName("HIDDENLAYER")->frozen);
@@ -568,7 +604,9 @@ TEST_CASE("an R2004 file with compressed sections imports like the R2000 one") {
             }
         }
         CHECK(texts == 1);
-        CHECK(doc.layerByName("WALLS") != nullptr);
+        REQUIRE(doc.layerByName("WALLS") != nullptr);
+        CHECK(doc.layerByName("WALLS")->description ==
+              (std::string(version) >= "AC1024" ? "Walls\xE0\xB8\x9C" : "Walls"));
         REQUIRE(doc.blockByName("DOOR") != nullptr);
         CHECK(doc.modelSpace().size() == 6);
     }

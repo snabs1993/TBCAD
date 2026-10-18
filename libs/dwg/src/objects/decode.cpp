@@ -812,6 +812,67 @@ private:
         }
     }
 
+    // The description of a layer is the second string of its AcAecLayerStandard extended data:
+    // a block of exactly two strings (code 0 each). The application handle is not kept, so the
+    // shape of the block is what recognises it.
+    bool layerDescription(const std::vector<std::uint8_t>& d, std::string& out) const {
+        std::size_t p = 0;
+        std::string found[2];
+        for (std::string& dest : found) {
+            if (p >= d.size() || d[p] != 0)
+                return false;
+            ++p;
+            if (fmt_.r2007) {
+                if (p + 2 > d.size())
+                    return false;
+                const std::size_t n = d[p] | (d[p + 1] << 8);
+                p += 2;
+                if (p + n * 2 > d.size())
+                    return false;
+                for (std::size_t i = 0; i < n; ++i) {
+                    unsigned ch = d[p + 2 * i] | (d[p + 2 * i + 1] << 8);
+                    if (ch >= 0xD800 && ch < 0xDC00 && i + 1 < n) {
+                        const unsigned lo = d[p + 2 * i + 2] | (d[p + 2 * i + 3] << 8);
+                        if (lo >= 0xDC00 && lo < 0xE000) {
+                            ch = 0x10000 + ((ch - 0xD800) << 10) + (lo - 0xDC00);
+                            ++i;
+                        }
+                    }
+                    if (ch < 0x80) {
+                        dest.push_back(static_cast<char>(ch));
+                    } else if (ch < 0x800) {
+                        dest.push_back(static_cast<char>(0xC0 | (ch >> 6)));
+                        dest.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+                    } else if (ch < 0x10000) {
+                        dest.push_back(static_cast<char>(0xE0 | (ch >> 12)));
+                        dest.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
+                        dest.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+                    } else {
+                        dest.push_back(static_cast<char>(0xF0 | (ch >> 18)));
+                        dest.push_back(static_cast<char>(0x80 | ((ch >> 12) & 0x3F)));
+                        dest.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
+                        dest.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+                    }
+                }
+                p += n * 2;
+            } else {
+                if (p + 3 > d.size())
+                    return false;
+                const std::size_t n = d[p];
+                p += 3;  // length and code page
+                if (p + n > d.size())
+                    return false;
+                for (std::size_t i = 0; i < n; ++i)
+                    dest.push_back(d[p + i] < 128 ? static_cast<char>(d[p + i]) : '?');
+                p += n;
+            }
+        }
+        if (p != d.size())
+            return false;
+        out = found[1];
+        return true;
+    }
+
     // Reads the style overrides of a dimension from its extended data (ODA spec section 28:
     // string "DSTYLE", then braces holding pairs of a variable number and its value) and adds
     // them to the entity as standard extended-data groups.
@@ -1001,6 +1062,8 @@ private:
                                                    (static_cast<std::uint32_t>(d[2]) << 8) |
                                                    (static_cast<std::uint32_t>(d[3]) << 16) |
                                                    (static_cast<std::uint32_t>(d[4]) << 24));
+                    if (std::string desc; l.description.empty() && layerDescription(d, desc))
+                        l.description = desc;
                     char hx[4];
                     for (std::size_t i = 0; i < d.size() && i < 400; ++i) {
                         std::snprintf(hx, sizeof hx, "%02X", d[i]);

@@ -224,6 +224,11 @@ std::string emitDxf(const Drawing& d) {
             o.group(290, 0);
         if (l.lineweight != -3)
             o.group(370, l.lineweight);
+        if (!l.description.empty()) {
+            o.group(1001, "AcAecLayerStandard");
+            o.group(1000, "");
+            o.group(1000, l.description);
+        }
     }
     o.begin("ENDTAB");
     o.begin("TABLE");
