@@ -526,3 +526,52 @@ TEST_CASE("SPLINEDIT converts a spline to a polyline within the tolerance") {
             CHECK(c.distanceTo(v.p) < 0.06);
     }
 }
+
+TEST_CASE("LENGTHEN an elliptical arc and an open spline") {
+    EllipseData el;
+    el.majorAxis = {10, 0};
+    el.ratio = 0.5;
+    el.startParam = 0.3;
+    el.endParam = 1.0;
+    Entity e = make(el);
+    const double len = lengthenableLength(e).value();
+    const Vec2 endPick = curveOf(e).endPoint(), startPick = curveOf(e).startPoint();
+    auto grown = lengthenEntity(e, endPick, LengthenMode::Delta, 3.0);
+    REQUIRE(grown.ok());
+    CHECK(near(lengthenableLength(*grown.value().modified).value(), len + 3.0, 1e-6));
+    CHECK(near(as<EllipseData>(*grown.value().modified).startParam, 0.3));
+    auto front = lengthenEntity(e, startPick, LengthenMode::Total, len + 2.0);
+    REQUIRE(front.ok());
+    CHECK(near(lengthenableLength(*front.value().modified).value(), len + 2.0, 1e-6));
+    CHECK(near(as<EllipseData>(*front.value().modified).endParam, 1.0));
+    auto cut = lengthenEntity(e, endPick, LengthenMode::Percent, 50);
+    REQUIRE(cut.ok());
+    CHECK(near(lengthenableLength(*cut.value().modified).value(), len / 2, 1e-6));
+    CHECK_FALSE(lengthenEntity(e, endPick, LengthenMode::Delta, -len).ok());
+    CHECK_FALSE(lengthenEntity(e, endPick, LengthenMode::Delta, 1000).ok());
+    auto toPt = lengthenToPoint(e, endPick, {10 * std::cos(2.0), 5 * std::sin(2.0)});
+    REQUIRE(toPt.ok());
+    CHECK(near(as<EllipseData>(*toPt.value().modified).endParam, 2.0, 1e-6));
+
+    for (double ox : {0.0, 500123.456}) {
+        Entity s = cvSpline(ox, 0);
+        const double sl = lengthenableLength(s).value();
+        const geom::CurveRef c0 = curveOf(s);
+        auto more = lengthenEntity(s, c0.endPoint(), LengthenMode::Delta, 12.0);
+        REQUIRE(more.ok());
+        const geom::CurveRef c1 = curveOf(*more.value().modified);
+        CHECK(near(c1.length(), sl + 12.0, 1e-5));
+        CHECK(near(c1.startPoint(), c0.startPoint(), 1e-6));
+        for (double t : {0.3, 1.2, 1.9})
+            CHECK(c1.distanceTo(c0.pointAt(t)) < 1e-6);
+        auto less = lengthenEntity(s, c0.startPoint(), LengthenMode::Delta, -10.0);
+        REQUIRE(less.ok());
+        const geom::CurveRef c2 = curveOf(*less.value().modified);
+        CHECK(near(c2.length(), sl - 10.0, 1e-5));
+        CHECK(near(c2.endPoint(), c0.endPoint(), 1e-6));
+        CHECK(c2.distanceTo(c0.pointAt(1.5)) < 1e-6);
+        SplineData closed = *entityAs<SplineData>(s);
+        closed.closed = true;
+        CHECK_FALSE(lengthenableLength(make(Indirect<SplineData>(closed))).has_value());
+    }
+}

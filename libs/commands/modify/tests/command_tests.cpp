@@ -283,6 +283,28 @@ TEST_CASE("EXTEND an elliptical arc and a spline, and undo") {
     CHECK(std::abs(entityAs<EllipseData>(f.get(ea))->endParam - 1.0) < 1e-9);
 }
 
+TEST_CASE("FILLET a spline with a line, a polyline with a line, and LENGTHEN a spline") {
+    Fixture f;
+    SplineData sp;
+    sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+    sp.control = {{0, 0}, {10, 20}, {30, -20}, {50, 10}, {60, 0}};
+    EntityId s = f.add(Indirect<SplineData>(sp));
+    EntityId l = f.add(LineData{{20, -30}, {20, 30}});
+    f.host.run("FILLET", {"R", "4", ScriptItem::pick(s, {8, 7}), ScriptItem::pick(l, {20, 25})});
+    CHECK(f.count(EntityKind::Arc) == 1);
+    CHECK(entityAs<LineData>(f.get(l))->a.y > -30 + 1e-6);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Arc) == 0);
+
+    EntityId pl = f.add(
+        PolylineData{{{{0, 100}, 0, 0, 0}, {{20, 100}, 0, 0, 0}, {{20, 110}, 0, 0, 0}}, false});
+    EntityId wall = f.add(LineData{{10, 95}, {10, 112}});
+    f.host.run("FILLET",
+               {"R", "2", ScriptItem::pick(pl, {5, 100}), ScriptItem::pick(wall, {10, 108})});
+    CHECK(f.count(EntityKind::Arc) == 1);
+    CHECK(entityAs<PolylineData>(f.get(pl))->v.back().p.x < 20);
+}
+
 TEST_CASE("FILLET with a radius, trim modes, Shift for a sharp corner, polylines") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {10, 0}});

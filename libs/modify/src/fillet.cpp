@@ -4,6 +4,8 @@
 #include <cmath>
 #include <functional>
 
+#include "tbcad/modify/break_join.h"
+
 namespace tbcad::modify {
 
 using geom::CurveRef;
@@ -215,13 +217,185 @@ bool parallelLines(const Prim& A, const Prim& B) {
            std::abs(cross(normalized(A.b - A.a), normalized(B.b - B.a))) <= 1e-9;
 }
 
+// ---- Fillet between any two curves ----------------------------------------------------------
+//
+// Ellipses, splines and the segments of polylines have no closed form. The centre of a fillet
+// circle lies on the offset curve of each object (by +-R); crossings of the sampled offsets give
+// starting values that Newton's method sharpens on the two curve parameters.
+
+struct Hit {
+    double tA = 0, tB = 0;
+    Vec2 center{}, pa{}, pb{};
+    double score = 0;
+};
+
+Vec2 offsetPoint(const CurveRef& c, double t, double side, double r) {
+    return c.pointAt(t) + perp(c.tangentAt(t)) * (side * r);
+}
+
+bool segmentCross(Vec2 p, Vec2 p2, Vec2 q, Vec2 q2, double& fa, double& fb) {
+    const Vec2 r = p2 - p, s = q2 - q;
+    const double den = cross(r, s);
+    if (std::abs(den) < 1e-300)
+        return false;
+    fa = cross(q - p, s) / den;
+    fb = cross(q - p, r) / den;
+    return fa >= -1e-9 && fa <= 1 + 1e-9 && fb >= -1e-9 && fb <= 1 + 1e-9;
+}
+
+std::vector<CurveRef> nearestPieces(const Entity& e, Vec2 pick, std::size_t keep) {
+    std::vector<CurveRef> all;
+    geom::curvesOf(e, all);
+    std::sort(all.begin(), all.end(), [&](const CurveRef& x, const CurveRef& y) {
+        return x.distanceTo(pick) < y.distanceTo(pick);
+    });
+    if (all.size() > keep)
+        all.resize(keep);
+    return all;
+}
+
+void filletHits(const CurveRef& A, const CurveRef& B, double R, Vec2 pickA, Vec2 pickB,
+                std::vector<Hit>& hits) {
+    constexpr int kN = 160;
+    const double a0 = A.t0(), aw = A.t1() - A.t0(), b0 = B.t0(), bw = B.t1() - B.t0();
+    for (double sA : {1.0, -1.0}) {
+        for (double sB : {1.0, -1.0}) {
+            std::vector<Vec2> oa, ob;
+            for (int i = 0; i <= kN; ++i) {
+                oa.push_back(offsetPoint(A, a0 + aw * i / kN, sA, R));
+                ob.push_back(offsetPoint(B, b0 + bw * i / kN, sB, R));
+            }
+            for (int i = 0; i < kN; ++i) {
+                BBox2 bi;
+                bi.merge(BBox2{oa[i], oa[i]});
+                bi.merge(BBox2{oa[i + 1], oa[i + 1]});
+                for (int j = 0; j < kN; ++j) {
+                    BBox2 bj;
+                    bj.merge(BBox2{ob[j], ob[j]});
+                    bj.merge(BBox2{ob[j + 1], ob[j + 1]});
+                    if (!bi.inflated(1e-9).intersects(bj))
+                        continue;
+                    double fa = 0, fb = 0;
+                    if (!segmentCross(oa[i], oa[i + 1], ob[j], ob[j + 1], fa, fb))
+                        continue;
+                    double ta = a0 + aw * (i + fa) / kN, tb = b0 + bw * (j + fb) / kN;
+                    const double ha = std::max(std::abs(aw), 1e-9) * 1e-6;
+                    const double hb = std::max(std::abs(bw), 1e-9) * 1e-6;
+                    bool ok = false;
+                    for (int it = 0; it < 12; ++it) {
+                        const Vec2 F = offsetPoint(A, ta, sA, R) - offsetPoint(B, tb, sB, R);
+                        const Vec2 dA =
+                            (offsetPoint(A, ta + ha, sA, R) - offsetPoint(A, ta - ha, sA, R)) /
+                            (2 * ha);
+                        const Vec2 dB =
+                            (offsetPoint(B, tb + hb, sB, R) - offsetPoint(B, tb - hb, sB, R)) /
+                            (2 * hb);
+                        // F + dA*dta - dB*dtb = 0
+                        const double det = cross(dA, dB * -1.0);
+                        if (std::abs(det) < 1e-300)
+                            break;
+                        const double dta = cross(F * -1.0, dB * -1.0) / det;
+                        const double dtb = cross(dA, F * -1.0) / det;
+                        ta += dta;
+                        tb += dtb;
+                        if (std::abs(dta) < 1e-13 * (1 + std::abs(ta)) &&
+                            std::abs(dtb) < 1e-13 * (1 + std::abs(tb))) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                    ta = std::clamp(ta, std::min(a0, a0 + aw), std::max(a0, a0 + aw));
+                    tb = std::clamp(tb, std::min(b0, b0 + bw), std::max(b0, b0 + bw));
+                    const Vec2 ca = offsetPoint(A, ta, sA, R), cb = offsetPoint(B, tb, sB, R);
+                    const double scale = 1.0 + R + std::abs(ca.x) + std::abs(ca.y);
+                    if (!ok && distance(ca, cb) > 1e-9 * scale)
+                        continue;
+                    if (distance(ca, cb) > 1e-7 * scale)
+                        continue;
+                    Hit h;
+                    h.tA = ta;
+                    h.tB = tb;
+                    h.center = (ca + cb) * 0.5;
+                    h.pa = A.pointAt(ta);
+                    h.pb = B.pointAt(tb);
+                    h.score = distance(h.pa, pickA) + distance(h.pb, pickB);
+                    hits.push_back(h);
+                }
+            }
+        }
+    }
+}
+
+// The part of `e` that holds `pick`, cut at T. Closed objects and cuts at an end leave it as it is.
+std::optional<Entity> keepPartAt(const Entity& e, Vec2 T, Vec2 pick) {
+    auto r = breakAtPoint(e, T);
+    if (!r || !r.value().modified || r.value().added.empty())
+        return std::nullopt;
+    const Entity& first = *r.value().modified;
+    const Entity& second = r.value().added.front();
+    return geom::distance(first, pick) <= geom::distance(second, pick) ? first : second;
+}
+
+Result<PairEdit> filletCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
+                              const FilletOptions& opt) {
+    const double R = std::max(opt.radius, 0.0);
+    std::vector<Hit> hits;
+    std::vector<Hit> sharp;
+    for (const CurveRef& A : nearestPieces(a, pickA, 3)) {
+        for (const CurveRef& B : nearestPieces(b, pickB, 3)) {
+            if (R > tol::kLinear) {
+                filletHits(A, B, R, pickA, pickB, hits);
+            } else {
+                std::vector<geom::Intersection> xs;
+                geom::intersect(A, B, xs);
+                for (const auto& x : xs) {
+                    Hit h;
+                    h.pa = h.pb = h.center = x.p;
+                    h.score = distance(x.p, pickA) + distance(x.p, pickB);
+                    hits.push_back(h);
+                }
+            }
+        }
+    }
+    if (hits.empty())
+        return err(R > tol::kLinear ? "There is no fillet of this radius between the two objects."
+                                    : "The two objects do not meet.");
+    const Hit& h = *std::min_element(hits.begin(), hits.end(),
+                                     [](const Hit& x, const Hit& y) { return x.score < y.score; });
+    PairEdit out;
+    if (opt.trim) {
+        out.modifiedA = keepPartAt(a, h.pa, pickA);
+        out.modifiedB = keepPartAt(b, h.pb, pickB);
+    }
+    if (R > tol::kLinear) {
+        const double aa = std::atan2(h.pa.y - h.center.y, h.pa.x - h.center.x);
+        const double ab = std::atan2(h.pb.y - h.center.y, h.pb.x - h.center.x);
+        ArcData arc;
+        arc.center = h.center;
+        arc.radius = R;
+        if (normalizeAngle(ab - aa) <= kPi) {
+            arc.startAngle = normalizeAngle(aa);
+            arc.endAngle = normalizeAngle(ab);
+        } else {
+            arc.startAngle = normalizeAngle(ab);
+            arc.endAngle = normalizeAngle(aa);
+        }
+        out.added.push_back(withData(a, arc));
+    }
+    return out;
+}
+
 }  // namespace
 
 Result<PairEdit> filletEntities(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
                                 const FilletOptions& opt) {
     auto pa = primOf(a), pb = primOf(b);
-    if (!pa || !pb)
-        return err("Fillet works on lines, arcs and circles (or the corner of a polyline).");
+    if (!pa || !pb) {
+        std::vector<CurveRef> ca, cb;
+        if (!geom::curvesOf(a, ca) || ca.empty() || !geom::curvesOf(b, cb) || cb.empty())
+            return err("Fillet works on lines, arcs, circles, ellipses, splines and polylines.");
+        return filletCurves(a, pickA, b, pickB, opt);
+    }
     const double R = std::max(opt.radius, 0.0);
     std::optional<Sol> sol;
     if (parallelLines(*pa, *pb)) {

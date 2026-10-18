@@ -215,3 +215,101 @@ TEST_CASE("chamfer a polyline corner and all corners") {
     o.distance1 = o.distance2 = 8;
     CHECK_FALSE(chamferPolylineVertex(rect, 2, o).ok());
 }
+
+namespace {
+Entity wave(double ox, double oy) {
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+    sp.control = {
+        {ox, oy}, {ox + 10, oy + 20}, {ox + 30, oy - 20}, {ox + 50, oy + 10}, {ox + 60, oy}};
+    return make(Indirect<SplineData>(sp));
+}
+
+// The fillet arc touches both objects at its ends and is tangent to them.
+void checkTangentArc(const Entity& arcEntity, const Entity& a, const Entity& b, double r) {
+    const auto& ad = as<ArcData>(arcEntity);
+    CHECK(near(ad.radius, r, 1e-9));
+    CHECK(geom::distance(a, ad.center) == doctest::Approx(r).epsilon(1e-6));
+    CHECK(geom::distance(b, ad.center) == doctest::Approx(r).epsilon(1e-6));
+    const Vec2 p0 = ad.center + Vec2{std::cos(ad.startAngle), std::sin(ad.startAngle)} * r;
+    const Vec2 p1 = ad.center + Vec2{std::cos(ad.endAngle), std::sin(ad.endAngle)} * r;
+    const double d0 = std::min(geom::distance(a, p0), geom::distance(b, p0));
+    const double d1 = std::min(geom::distance(a, p1), geom::distance(b, p1));
+    CHECK(d0 < 1e-6);
+    CHECK(d1 < 1e-6);
+}
+}  // namespace
+
+TEST_CASE("fillet a spline and a line, a sharp corner too, at survey coordinates as well") {
+    for (double ox : {0.0, 500123.456}) {
+        const double oy = ox * 3;
+        Entity sp = wave(ox, oy);
+        Entity ln = line({ox + 20, oy - 30}, {ox + 20, oy + 30});  // crosses the wave near x = 20
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(sp, cs);
+        const Vec2 pickS = cs[0].pointAt(0.5), pickL = {ox + 20, oy + 25};
+        auto r = filletEntities(sp, pickS, ln, pickL, fr(4));
+        REQUIRE(r.ok());
+        REQUIRE(r.value().added.size() == 1);
+        checkTangentArc(r.value().added[0], sp, ln, 4);
+        REQUIRE(r.value().modifiedA.has_value());
+        REQUIRE(r.value().modifiedB.has_value());
+        const auto& la = as<LineData>(*r.value().modifiedB);
+        const double len = distance(la.a, la.b);
+        CHECK(len < 60 - 1);  // the line was cut
+        // The cut spline still follows the original.
+        std::vector<geom::CurveRef> cut;
+        geom::curvesOf(*r.value().modifiedA, cut);
+        REQUIRE(cut.size() == 1);
+        CHECK(cut[0].length() < cs[0].length());
+        CHECK(geom::distance(sp, cut[0].pointAt(cut[0].t0() + 0.5 * cut[0].sweep())) < 1e-6);
+        // Without trimming only the arc appears.
+        auto keep = filletEntities(sp, pickS, ln, pickL, fr(4, false));
+        REQUIRE(keep.ok());
+        CHECK_FALSE(keep.value().modifiedA.has_value());
+        // Radius 0: a sharp corner, both parts end at the crossing.
+        auto sharp = filletEntities(sp, pickS, ln, pickL, fr(0));
+        REQUIRE(sharp.ok());
+        CHECK(sharp.value().added.empty());
+        std::vector<geom::CurveRef> sc;
+        geom::curvesOf(*sharp.value().modifiedA, sc);
+        const Vec2 corner =
+            (distance(sc[0].startPoint(), as<LineData>(*sharp.value().modifiedB).a) < 1e-6 ||
+             distance(sc[0].startPoint(), as<LineData>(*sharp.value().modifiedB).b) < 1e-6)
+                ? sc[0].startPoint()
+                : sc[0].endPoint();
+        CHECK(geom::distance(ln, corner) < 1e-6);
+        CHECK(geom::distance(sp, corner) < 1e-6);
+        // Too large a radius for the wave: no solution is invented.
+        CHECK_FALSE(filletEntities(sp, pickS, ln, pickL, fr(1e5)).ok());
+    }
+}
+
+TEST_CASE("fillet an ellipse with a line and a polyline with a line") {
+    EllipseData el;
+    el.center = {0, 0};
+    el.majorAxis = {10, 0};
+    el.ratio = 0.5;
+    el.startParam = 0;
+    el.endParam = kPi;  // the upper half
+    Entity e = make(el);
+    Entity ln = line({-12, 3}, {12, 3});  // cuts the half ellipse twice
+    const Vec2 pickE{10 * std::cos(0.4), 5 * std::sin(0.4)}, pickL{-9, 3};
+    auto r = filletEntities(e, pickE, ln, pickL, fr(1.5));
+    REQUIRE(r.ok());
+    REQUIRE(r.value().added.size() == 1);
+    checkTangentArc(r.value().added[0], e, ln, 1.5);
+
+    Entity pl = poly(pts({{0, 0}, {20, 0}, {20, 10}}), false);
+    Entity v = line({10, -5}, {10, 12});
+    auto pr = filletEntities(pl, {5, 0}, v, {10, 8}, fr(2));
+    REQUIRE(pr.ok());
+    REQUIRE(pr.value().added.size() == 1);
+    checkTangentArc(pr.value().added[0], pl, v, 2);
+    REQUIRE(pr.value().modifiedA.has_value());
+    // The polyline was cut at the vertical line: it keeps the piece the pick is on.
+    const auto& cutPl = as<PolylineData>(*pr.value().modifiedA);
+    CHECK(near(cutPl.v.front().p, {0, 0}));
+    CHECK(near(cutPl.v.back().p, {8, 0}));
+}
