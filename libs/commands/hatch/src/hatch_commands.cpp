@@ -167,6 +167,8 @@ public:
                 return;
             }
         }
+        const Document& pdoc = ctx.doc();
+        applyIslandStyle(b.value(), p.island, [&](EntityId id) { return pdoc.find(id); });
         const Rgba line{255, 200, 40, 255};
         HatchData d;
         d.loops = b.value().loops;
