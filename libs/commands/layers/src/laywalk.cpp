@@ -62,9 +62,11 @@ void restoreState(CommandContext& ctx) {
         const Layer* l = doc.layer(lid);
         if (!l)
             continue;
-        if (l->on != (on != 0))
+        // Read both flags first: setOn may replace the row `l` points to.
+        const bool wasOn = l->on, wasFrozen = l->frozen;
+        if (wasOn != (on != 0))
             (void)setOn(doc, ctx.tx(), lid, on != 0);
-        if (l->frozen != (frozen != 0))
+        if (wasFrozen != (frozen != 0))
             (void)setFrozen(doc, ctx.tx(), lid, frozen != 0);
     }
 }

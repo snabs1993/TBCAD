@@ -53,6 +53,7 @@ struct App {
     }
     ~App() {
         core.reset();
+        draftingcmds::forgetUi();
         std::error_code ec;
         fs::remove_all(dir, ec);
     }
