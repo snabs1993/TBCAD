@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 namespace tbcad::modify {
 
@@ -306,6 +307,148 @@ SplineData chainSplines(const SplineData& a, const SplineData& b) {
 
 namespace {
 
+// ---- candidate search for JOIN: without it every object is compared with every other
+// ---------------
+
+// Cells of one size over the plane; a query returns the objects in the 3 x 3 cells around a point,
+// which holds every point within one cell size of it.
+class PointGrid {
+public:
+    PointGrid(double cell, double maxAbs) : cell_(std::max({cell, maxAbs * 1e-15, 1e-12})) {}
+    void add(Vec2 p, std::uint32_t id) { cells_[key(cellOf(p.x), cellOf(p.y))].push_back(id); }
+    template <class F>
+    void around(Vec2 p, F&& f) const {
+        const std::int64_t cx = cellOf(p.x), cy = cellOf(p.y);
+        for (std::int64_t dx = -1; dx <= 1; ++dx)
+            for (std::int64_t dy = -1; dy <= 1; ++dy) {
+                auto it = cells_.find(key(cx + dx, cy + dy));
+                if (it != cells_.end())
+                    for (std::uint32_t id : it->second)
+                        f(id);
+            }
+    }
+
+private:
+    std::int64_t cellOf(double v) const { return static_cast<std::int64_t>(std::floor(v / cell_)); }
+    static std::uint64_t key(std::int64_t x, std::int64_t y) {
+        return static_cast<std::uint64_t>(x) * 0x9E3779B97F4A7C15ull ^
+               (static_cast<std::uint64_t>(y) + 0x7F4A7C15ull) * 0xC2B2AE3D27D4EB4Full;
+    }
+    double cell_;
+    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> cells_{};
+};
+
+// Collinear lines fuse. Lines that are at least 100 tolerances long have a direction that two
+// lines on one line must share to 0.02 rad, so only their neighbours in direction are compared;
+// shorter lines are compared with everything. Same results as comparing every pair in order.
+void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) {
+    const std::size_t n = lines.size();
+    if (n < 2)
+        return;
+    constexpr int kBuckets = 140;  // each wider than 0.02 rad (the angle two such lines can differ)
+    const double minLong = 100 * tolerance;
+    auto bucketOf = [&](const LineItem& l) {
+        double t = std::atan2(l.b.y - l.a.y, l.b.x - l.a.x);
+        if (t < 0)
+            t += kPi;
+        if (t >= kPi)
+            t -= kPi;
+        return std::min(kBuckets - 1, static_cast<int>(t / kPi * kBuckets));
+    };
+    std::vector<std::vector<std::uint32_t>> byDir(kBuckets);
+    std::vector<std::uint32_t> shorts;
+    std::vector<int> bucket(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        bucket[i] = bucketOf(lines[i]);
+        if (length(lines[i].b - lines[i].a) >= minLong)
+            byDir[static_cast<std::size_t>(bucket[i])].push_back(static_cast<std::uint32_t>(i));
+        else
+            shorts.push_back(static_cast<std::uint32_t>(i));
+    }
+    std::vector<char> gone(n, 0);
+    std::vector<std::uint32_t> cand;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (gone[i])
+            continue;
+        cand.clear();
+        for (int d = -1; d <= 1; ++d) {
+            const auto& v = byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
+            for (std::uint32_t j : v)
+                if (j > i)
+                    cand.push_back(j);
+        }
+        for (std::uint32_t j : shorts)
+            if (j > i)
+                cand.push_back(j);
+        std::sort(cand.begin(), cand.end());
+        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        for (bool changed = true; changed;) {
+            changed = false;
+            for (std::uint32_t j : cand) {
+                if (gone[j])
+                    continue;
+                if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
+                    gone[j] = 1;
+                    changed = true;
+                }
+            }
+            if (bridgeGaps)
+                break;  // the line stays the same, so one look at each candidate is enough
+        }
+    }
+    std::size_t w = 0;
+    for (std::size_t i = 0; i < n; ++i)
+        if (!gone[i]) {
+            if (w != i)
+                lines[w] = std::move(lines[i]);
+            ++w;
+        }
+    lines.resize(w);
+}
+
+// Arcs of one circle fuse; only arcs whose centres and radii are within the tolerance are compared.
+void fuseArcs(std::vector<ArcItem>& arcs, double tolerance, bool bridgeGaps) {
+    const std::size_t n = arcs.size();
+    if (n < 2)
+        return;
+    double maxAbs = 0;
+    for (const ArcItem& a : arcs)
+        maxAbs = std::max({maxAbs, std::abs(a.c.x), std::abs(a.c.y), std::abs(a.r)});
+    PointGrid grid(tolerance, maxAbs);
+    for (std::size_t i = 0; i < n; ++i)
+        grid.add(arcs[i].c, static_cast<std::uint32_t>(i));
+    std::vector<char> gone(n, 0);
+    std::vector<std::uint32_t> cand;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (gone[i])
+            continue;
+        cand.clear();
+        grid.around(arcs[i].c, [&](std::uint32_t j) {
+            if (j > i)
+                cand.push_back(j);
+        });
+        std::sort(cand.begin(), cand.end());
+        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        for (bool changed = true; changed;) {
+            changed = false;
+            for (std::uint32_t j : cand) {
+                if (!gone[j] && mergeArcs(arcs[i], arcs[j], tolerance, bridgeGaps)) {
+                    gone[j] = 1;
+                    changed = true;
+                }
+            }
+        }
+    }
+    std::size_t w = 0;
+    for (std::size_t i = 0; i < n; ++i)
+        if (!gone[i]) {
+            if (w != i)
+                arcs[w] = std::move(arcs[i]);
+            ++w;
+        }
+    arcs.resize(w);
+}
+
 Item reversedItem(const Item& it) {
     Item r = it;
     std::reverse(r.segs.begin(), r.segs.end());
@@ -348,28 +491,8 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
     };
 
     // Collinear lines and arcs of one circle fuse first.
-    for (bool changed = true; changed;) {
-        changed = false;
-        for (std::size_t i = 0; i < lines.size() && !changed; ++i) {
-            for (std::size_t j = i + 1; j < lines.size() && !changed; ++j) {
-                if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
-                    lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(j));
-                    changed = true;
-                }
-            }
-        }
-    }
-    for (bool changed = true; changed;) {
-        changed = false;
-        for (std::size_t i = 0; i < arcs.size() && !changed; ++i) {
-            for (std::size_t j = i + 1; j < arcs.size() && !changed; ++j) {
-                if (mergeArcs(arcs[i], arcs[j], tolerance, bridgeGaps)) {
-                    arcs.erase(arcs.begin() + static_cast<std::ptrdiff_t>(j));
-                    changed = true;
-                }
-            }
-        }
-    }
+    fuseLines(lines, tolerance, bridgeGaps);
+    fuseArcs(arcs, tolerance, bridgeGaps);
     auto consume = [&](const std::vector<std::size_t>& origins) {
         out.consumed.insert(out.consumed.end(), origins.begin(), origins.end());
     };
@@ -400,7 +523,19 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
         items.push_back(std::move(it));
     }
 
-    // Chains of touching items become polylines.
+    // Chains of touching items become polylines. The next item to add is always the first one in
+    // the list that touches an end of the chain; the end points are kept in a grid so that it is
+    // found without looking at every item.
+    double maxAbs = 0;
+    for (const Item& it : items)
+        maxAbs = std::max({maxAbs, std::abs(it.head().x), std::abs(it.head().y),
+                           std::abs(it.tail().x), std::abs(it.tail().y)});
+    PointGrid ends(tolerance, maxAbs);
+    for (std::size_t k = 0; k < items.size(); ++k) {
+        ends.add(items[k].head(), static_cast<std::uint32_t>(k));
+        ends.add(items[k].tail(), static_cast<std::uint32_t>(k));
+    }
+    std::vector<std::uint32_t> near;
     for (std::size_t i = 0; i < items.size(); ++i) {
         if (items[i].used)
             continue;
@@ -410,10 +545,15 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
         std::size_t count = 1;
         for (bool grew = true; grew;) {
             grew = false;
-            for (Item& it : items) {
+            Vec2 tail = chain.back().p1, head = chain.front().p0;
+            near.clear();
+            ends.around(tail, [&](std::uint32_t k) { near.push_back(k); });
+            ends.around(head, [&](std::uint32_t k) { near.push_back(k); });
+            std::sort(near.begin(), near.end());
+            for (std::uint32_t k : near) {
+                Item& it = items[k];
                 if (it.used)
                     continue;
-                Vec2 tail = chain.back().p1, head = chain.front().p0;
                 auto append = [&](const Item& x) {
                     chain.insert(chain.end(), x.segs.begin(), x.segs.end());
                 };
