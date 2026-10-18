@@ -15,3 +15,9 @@ current values. Every change is one undo step, and the command line shows the va
 | CETRANSPARENCY | transparency of new objects | CETRANSPARENCY |
 | CLAYER | current layer (by name) | |
 | INSUNITS | length unit (Millimeters, Centimeters, Meters, Inches, Feet); objects are not scaled | UNITS |
+
+# BREAKLINE
+
+**BREAKLINE** (alias BRL, in the draw2 module) draws a line with a break symbol: pick the two ends, then
+where the symbol goes (Enter = the middle). The symbol is a Z shaped zigzag as high as it is wide; the
+keyword **Size** at the first prompt sets its width (remembered, default 10). The result is one polyline.
