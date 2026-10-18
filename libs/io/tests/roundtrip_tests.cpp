@@ -14,7 +14,7 @@ TEST_CASE("round trip: every entity kind and table, canonical dump identical") {
     // The test document really covers every kind.
     std::set<EntityKind> kinds;
     doc->forEachEntity([&](const Entity& e) { kinds.insert(kind(e)); });
-    CHECK(kinds.size() == 15);
+    CHECK(kinds.size() == kEntityKindCount);
 
     for (bool compress : {true, false}) {
         CAPTURE(compress);

@@ -221,6 +221,41 @@ std::unique_ptr<Document> makeRichDocument() {
             ml.textHeight = 3;
             add(make(std::move(ml), l0));
         }
+        {
+            RayData ray;
+            ray.origin = {1, 2};
+            ray.dir = {0.6, 0.8};
+            add(make(ray, l0));
+            ray.infinite = true;
+            add(make(ray, floor));
+        }
+        {
+            MlineData ml;
+            ml.style = "WALLS";
+            ml.scale = 2.5;
+            ml.justification = 2;
+            ml.closed = true;
+            ml.v = {{0, 0}, {10, 0}, {10, 8}, {0, 8}};
+            add(make(std::move(ml), l0));
+        }
+        {
+            TableData t;
+            t.origin = {-20, 30};
+            t.rotation = 0.3;
+            t.colWidths = {10, 20, 15};
+            t.rowHeights = {5, 6};
+            t.cells.resize(6);
+            t.cells[0].utf8 = "หัวตาราง";
+            t.cells[0].colSpan = 2;
+            t.cells[1].covered = true;
+            t.cells[2].utf8 = "x";
+            t.cells[3].utf8 = "a\\Pb";
+            t.cells[3].rowSpan = 1;
+            t.textHeight = 3;
+            t.margin = 0.7;
+            t.titleRow = true;
+            add(make(std::move(t), l0));
+        }
         ProxyData proxy;
         proxy.originalType = "ACAD_PROXY_ENTITY";
         proxy.raw = {0, 1, 2, 3, 254, 255};
