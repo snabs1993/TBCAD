@@ -1542,6 +1542,31 @@ std::size_t Transaction::eraseMany(std::span<const EntityId> ids) {
     return beforeSnaps_.size() - first;
 }
 
+std::size_t Transaction::eraseAllIn(BlockId block) {
+    Document& d = doc();
+    auto row = d.blocks_.rows.find(block);
+    if (row == d.blocks_.rows.end() || row->second.entities.empty())
+        return 0;
+    touchBlock(block);
+    row = d.blocks_.rows.find(block);
+    std::vector<EntityId> ids = std::move(row->second.entities);
+    row->second.entities.clear();
+    std::size_t n = 0;
+    for (EntityId id : ids) {
+        if (!d.find(id))
+            continue;
+        touchEntity(id, true);
+        d.owner_.erase(id);
+        if (d.orderOverride_.count(id)) {
+            touchOrder(id);
+            d.orderOverride_.erase(id);
+        }
+        d.removeEntity(id);
+        ++n;
+    }
+    return n;
+}
+
 Result<void> Transaction::erase(EntityId id) {
     doc();
     return eraseEntityInternal(id);
@@ -1706,11 +1731,7 @@ Result<void> Transaction::eraseBlock(BlockId id) {
         return makeError(ErrorCode::NotFound, "unknown block");
     if (inUse(d, id, objectRefs()))
         return makeError(ErrorCode::Conflict, "block is referenced by an insert");
-    std::vector<EntityId> members = def->entities;
-    for (EntityId e : members) {
-        if (Result<void> r = eraseEntityInternal(e); !r)
-            return r.error();
-    }
+    (void)eraseAllIn(id);
     touchBlock(id);
     replaceRow<BlockDef, BlockId>(d.blocks_, id, std::nullopt);
     return {};

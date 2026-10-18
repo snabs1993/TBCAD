@@ -399,6 +399,9 @@ public:
     // Erases all of them (ids that are not there are skipped) and returns how many went. For a
     // big erase this is one pass over the drawing instead of a lookup and a fix-up per object.
     std::size_t eraseMany(std::span<const EntityId> ids);
+    // Erases every entity of a block (O(n) however many there are; one by one would shift the
+    // block's list each time). The block stays. Returns how many were erased.
+    std::size_t eraseAllIn(BlockId block);
     Result<void> bringToFront(EntityId id);
     Result<void> sendToBack(EntityId id);
 

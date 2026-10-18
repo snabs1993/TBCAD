@@ -132,9 +132,7 @@ public:
         Transaction& tx = ctx.tx();
         BlockId block = existing;
         if (existing) {
-            std::vector<EntityId> old = doc.block(existing)->entities;
-            for (EntityId id : old)
-                (void)tx.erase(id);
+            (void)tx.eraseAllIn(existing);
             (void)tx.modifyBlock(existing, [&](BlockDef& d) { d.base = basePoint; });
         } else {
             auto added = tx.addBlock(BlockDef{.name = blockName, .base = basePoint});
