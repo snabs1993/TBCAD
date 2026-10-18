@@ -1205,3 +1205,63 @@ TEST_CASE("layout tabs: add, switch, rename, delete and back to Model") {
     CHECK_FALSE(h.has("Plan B", "##layouttabs"));
     CHECK_FALSE(h.core().inPaperSpace());
 }
+
+TEST_CASE("grips: click-move a vertex, and the hover menu adds a vertex") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    h.core().submitText("PLINE");
+    h.core().submitText("0,0");
+    h.core().submitText("200,0");
+    h.core().submitText("200,200");
+    h.core().submitText("");
+    h.core().zoomExtents();
+    h.frame(20);
+    h.scroll(700, 500, -3.0f);
+    h.frame(30);
+    auto verts = [&] {
+        std::size_t n = 0;
+        h.core().document().forEachEntity([&](const Entity& e) {
+            if (const auto* p = std::get_if<PolylineData>(&e.data))
+                n = p->v.size();
+        });
+        return n;
+    };
+    auto vertex = [&](std::size_t i) {
+        Vec2 out{};
+        h.core().document().forEachEntity([&](const Entity& e) {
+            if (const auto* p = std::get_if<PolylineData>(&e.data))
+                out = p->v[i].p;
+        });
+        return out;
+    };
+    REQUIRE(verts() == 3);
+    h.core().selectAll();
+    h.frame(3);
+
+    // A click on a vertex grip, then a click elsewhere, moves the vertex.
+    const ImVec2 grip = screenOf(h, {200, 0});
+    h.click(grip.x, grip.y);
+    h.frame(3);
+    REQUIRE(h.core().runner().active());
+    const ImVec2 to = screenOf(h, {300, 0});
+    h.click(to.x, to.y);
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    CHECK(vertex(1).x == doctest::Approx(300).epsilon(0.02));
+    CHECK(vertex(1).y == doctest::Approx(0).scale(100).epsilon(0.02));
+    h.core().selectAll();
+    h.frame(3);
+
+    // Hovering the middle vertex for a moment offers its actions.
+    const ImVec2 corner = screenOf(h, {300, 0});
+    h.moveMouse(corner.x, corner.y);
+    h.frame(40);
+    REQUIRE(h.windowOpen("##gripmenu"));
+    CHECK(h.has("Add vertex", "##gripmenu"));
+    CHECK(h.has("Remove vertex", "##gripmenu"));
+    REQUIRE(h.click("Remove vertex", "##gripmenu"));
+    h.frame(5);
+    h.core().pressEscape();
+    CHECK(verts() == 2);
+}
