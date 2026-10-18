@@ -286,6 +286,24 @@ TEST_CASE("PICKTRACE lists the objects drawn near a point") {
     CHECK(host.logContains("Nothing is drawn"));
 }
 
+TEST_CASE("PICKTRACE reports the colour of a filled area under the point") {
+    Fixture f;
+    HatchData h;
+    HatchLoop loop;
+    HatchPolylineEdge pe;
+    for (Vec2 v : {Vec2{0, 0}, Vec2{10, 0}, Vec2{10, 10}, Vec2{0, 10}})
+        pe.v.push_back(PolyVertex{v});
+    loop.edges.push_back(pe);
+    h.loops.push_back(loop);
+    h.fill = Color::index(1);
+    EntityId id = f.add(Entity{{}, h});
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("PICKTRACE", {"1", "5,5"});
+    CHECK(host.logContains("#" + std::to_string(id.value) + " Hatch"));
+    CHECK(host.logContains("fill colour"));
+    CHECK(host.logContains("solid"));
+}
+
 TEST_CASE("CAL calculates expressions and remembers the last result as ans") {
     Fixture f;
     cmd::ScriptHost host(f.doc, f.reg);

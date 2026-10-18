@@ -982,6 +982,7 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
         const double viewHeight = r.num(45) * k_;
         v.scaleN = viewHeight > 0 ? viewHeight / h : 1;
         v.on = r.integer(68, 1) != 0;
+        v.layer = dec(r.raw(8));
         v.id = static_cast<int>(sh.viewports.size()) + 1;
         if (r.integer(90, 0) & 16384)  // non-rectangular clipping is on
             v.clipHandle = std::string(r.raw(340));
@@ -1170,6 +1171,12 @@ void Importer::finishLayouts() {
             // The sheet's own overall viewport covers the whole paper: not a window on the model.
             if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)
                 continue;
+            // The border is the viewport object itself: it prints with its layer, so a layer that
+            // is off, frozen or set not to plot (Defpoints) leaves the sheet without a frame.
+            bool border = true;
+            for (const LayerRow& row : layerRows_)
+                if (fold(row.name) == fold(v.layer))
+                    border = row.plot && !(row.flags & 1) && row.color >= 0;
             std::string clipText;
             for (std::size_t i = 0; i < v.clip.size(); ++i)
                 clipText += (i ? ";" : "") + num(v.clip[i].x) + ":" + num(v.clip[i].y);
@@ -1182,7 +1189,7 @@ void Importer::finishLayouts() {
             text += "V\t" + std::to_string(v.id) + "\t" + num(v.min.x) + "\t" + num(v.min.y) +
                     "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
                     num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
-                    frozenIds + "\t0\t0\t" + clipText + "\n";
+                    frozenIds + "\t0\t0\t" + clipText + "\t" + (border ? "1" : "0") + "\n";
         }
     }
     (void)tx_->modifyHeader([&](Header& h) {

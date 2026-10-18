@@ -1110,6 +1110,13 @@ TEST_CASE("opening or closing a panel resizes the canvas without moving the draw
     CHECK(again.y == doctest::Approx(before.y));
 }
 
+TEST_CASE("ZE zooms to the extents without asking") {
+    Fixture f("ze");
+    f.line("0,0", "1000,0");
+    f.core->submitText("ZE");
+    CHECK_FALSE(f.core->runner().active());
+}
+
 TEST_CASE("a panel docked at the left keeps the drawing where it is on the screen") {
     Fixture f("panel_left");
     f.core->setViewportOrigin(0, 0);

@@ -59,7 +59,7 @@ std::string serialize(const std::vector<Layout>& all) {
             // The outline of a clipped viewport: x:y pairs joined by ';'.
             for (std::size_t i = 0; i < v.clip.size(); ++i)
                 o << (i ? ";" : "") << num(v.clip[i].x) << ':' << num(v.clip[i].y);
-            o << '\n';
+            o << '\t' << (v.border ? 1 : 0) << '\n';
         }
     }
     return o.str();
@@ -186,6 +186,7 @@ std::vector<Layout> layouts(const Document& doc) {
                 if (v.clip.size() < 3)
                     v.clip.clear();
             }
+            v.border = !(f.size() > 14 && f[14] == "0");
             out.back().viewports.push_back(std::move(v));
         }
     }

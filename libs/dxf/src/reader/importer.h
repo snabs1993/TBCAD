@@ -213,6 +213,7 @@ private:
         int id = 0;
         std::vector<std::string> frozen{};  // layer names (DXF spelling)
         std::vector<Vec2> clip{};           // non-rectangular outline on the sheet (mm)
+        std::string layer{};                // group 8: the border plots with this layer
         std::string clipHandle{};           // group 340: the boundary polyline, found at the end
     };
     struct Sheet {

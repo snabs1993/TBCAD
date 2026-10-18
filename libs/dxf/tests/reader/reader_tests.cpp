@@ -646,6 +646,44 @@ TEST_CASE("a layout takes its name and paper size from the LAYOUT object and kee
     CHECK(t.find("V\t1\t10\t8.5\t410\t288.5\t1000\t2000\t100\t1\t") != std::string::npos);
 }
 
+TEST_CASE("a viewport on a layer that does not plot has no plotted border") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "LAYER").g(70, 2);
+    p.g(0, "LAYER").g(2, "0").g(70, 0).g(62, 7).g(6, "Continuous");
+    p.g(0, "LAYER").g(2, "Defpoints").g(70, 0).g(62, 7).g(6, "Continuous").g(290, 0);
+    p.g(0, "ENDTAB").g(0, "ENDSEC");
+    p.section("BLOCKS")
+        .g(0, "BLOCK")
+        .g(2, "*Paper_Space")
+        .g(70, 0)
+        .g(10, 0.0)
+        .g(20, 0.0)
+        .g(30, 0.0);
+    p.g(0, "VIEWPORT")
+        .g(8, "Defpoints")
+        .g(67, 1)
+        .g(10, 210.0)
+        .g(20, 148.5)
+        .g(40, 400.0)
+        .g(41, 280.0);
+    p.g(69, 2).g(68, 1).g(12, 1000.0).g(22, 2000.0).g(45, 28000.0);
+    p.g(0, "VIEWPORT").g(8, "0").g(67, 1).g(10, 600.0).g(20, 148.5).g(40, 100.0).g(41, 100.0);
+    p.g(69, 3).g(68, 1).g(12, 1000.0).g(22, 2000.0).g(45, 10000.0);
+    p.g(0, "ENDBLK").end();
+    p.section("OBJECTS").g(0, "LAYOUT").g(1, "Model").g(71, 0).g(44, 297.0).g(45, 210.0);
+    p.g(0, "LAYOUT").g(1, "Sheet A1").g(71, 1).g(44, 841.0).g(45, 594.0).g(73, 0).end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const std::string& t = l.doc().header().custom.at("tbcad.layouts");
+    const auto line = [&](const char* start) {
+        const auto at = t.find(start);
+        REQUIRE(at != std::string::npos);
+        return t.substr(at, t.find('\n', at) - at);
+    };
+    const std::string v1 = line("V\t1\t"), v2 = line("V\t2\t");
+    CHECK(v1.substr(v1.size() - 2) == "\t0");  // border off: Defpoints does not plot
+    CHECK(v2.substr(v2.size() - 2) == "\t1");
+}
+
 TEST_CASE("a layout's plot style table becomes a page setup assigned to it") {
     Pairs p;
     p.section("BLOCKS")

@@ -3185,7 +3185,7 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
-    if (const auto n = core_.dragSelectCount(); n && *n > 0) {
+    if (const auto n = core_.dragSelectCount(); n && (*n > 0 || core_.inPaperSpace())) {
         const ImVec2 at(ImGui::GetIO().MousePos.x + 16 * dpiScale_,
                         ImGui::GetIO().MousePos.y + 20 * dpiScale_);
         const std::string label = std::to_string(*n) + (*n == 1 ? " object" : " objects");

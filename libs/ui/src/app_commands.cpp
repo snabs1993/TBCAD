@@ -83,19 +83,37 @@ std::optional<cmd::ViewState> popView(cmd::IHost& host, const cmd::ViewState& li
 
 class ZoomCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "ZOOM"; }
-    std::vector<std::string> defaultAliases() const override { return {"Z"}; }
-    std::string_view description() const override { return "Change the magnification of the view"; }
+    // `preset`: a ZOOM option applied without asking (ZE = ZOOM Extents).
+    explicit ZoomCommand(const char* name = "ZOOM", const char* preset = "")
+        : name_(name), preset_(preset) {}
+    std::string_view name() const override { return name_; }
+    std::vector<std::string> defaultAliases() const override {
+        return *preset_ ? std::vector<std::string>{} : std::vector<std::string>{"Z"};
+    }
+    std::string_view description() const override {
+        return *preset_ ? "Zoom to the whole drawing" : "Change the magnification of the view";
+    }
     bool isTransparent() const override { return true; }
 
+private:
+    const char* name_;
+    const char* preset_;
+
+public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
         opts.keywords = {"Extents", "All",    "Window", "Previous", "Center",
                          "Scale",   "Object", "Double", "Half"};
-        auto first = co_await ctx.getPoint(
-            "Specify first corner of the window or "
-            "[Extents/All/Window/Previous/Center/Scale/Object/Double/Half]",
-            opts);
+        cmd::PointResult first;
+        if (*preset_) {
+            first.status = cmd::Status::Keyword;
+            first.keyword = preset_;
+        } else {
+            first = co_await ctx.getPoint(
+                "Specify first corner of the window or "
+                "[Extents/All/Window/Previous/Center/Scale/Object/Double/Half]",
+                opts);
+        }
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
             render::Camera2D cam = cameraOf(v);
@@ -527,6 +545,7 @@ private:
 
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
+    (void)registry.add(std::make_unique<ZoomCommand>("ZE", "Extents"));
     (void)registry.add(std::make_unique<PanCommand>());
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
