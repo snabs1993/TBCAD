@@ -7,6 +7,7 @@
 #include "tbcad/geom/geom.h"
 #include "tbcad/index/document_indexer.h"
 #include "tbcad/ui/scene_sync.h"
+#include "tbcad/ui/selection.h"
 #include "test_support.h"
 
 using namespace tbcad;
@@ -159,4 +160,37 @@ TEST_CASE("redefining a block (erase and re-add in one step) redraws every inser
     CHECK(scene.bounds().height() > 900);
     CHECK(idx.boxOf(ins).width() > 250);
     CHECK(idx.boxOf(ins).height() > 900);
+}
+
+TEST_CASE("a window around a whole associative array selects it, a window around one item does not") {
+    blocks::registerInsertDisplay();
+    ui::test::Indexed d;
+    BlockId blk;
+    {
+        Transaction tx = d.doc.begin("array");
+        blk = tx.addBlock(BlockDef{.name = "*A1", .anonymous = true}).value();
+        (void)tx.add(Entity{{}, CircleData{{0, 0}, 1}}, blk);
+        InsertData ins{blk, {}, {1, 1}, 0};
+        ArrayInfo info;
+        info.rows = 2;
+        info.columns = 2;
+        info.rowSpacing = 10;
+        info.columnSpacing = 10;
+        ins.array = info;
+        Entity e;
+        e.data = Indirect<InsertData>(std::move(ins));
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    const EntityId arr = d.doc.modelSpace()[0];
+    CHECK(geom::bounds(*d.doc.find(arr), d.doc).max.x == doctest::Approx(11));
+    BBox2 all;
+    all.expand({-5, -5});
+    all.expand({20, 20});
+    CHECK(ui::selectInBox(d.doc, d.idx, all, false) == std::vector<EntityId>{arr});
+    BBox2 one;
+    one.expand({-5, -5});
+    one.expand({5, 5});
+    CHECK(ui::selectInBox(d.doc, d.idx, one, false).empty());
+    CHECK(ui::selectInBox(d.doc, d.idx, one, true) == std::vector<EntityId>{arr});
 }
