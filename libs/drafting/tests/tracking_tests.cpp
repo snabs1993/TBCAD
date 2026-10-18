@@ -179,3 +179,41 @@ TEST_CASE("object snap tracking snaps to the ray through an acquired point and t
     CHECK(w.otrack.acquired().empty());
     CHECK(near(w.hover({80, 3}), {80, 3}));
 }
+
+TEST_CASE("isometric ortho follows the two axes of the plane, both ways") {
+    World w;
+    w.set(keys::ortho, "1");
+    w.set(keys::isoDraft, "1");
+    const Vec2 base{10, 10};
+    // Top plane: 30 and 150 degrees.
+    w.set(keys::isoPlane, "Top");
+    CHECK(near(w.hover(base + dirDeg(35, 100), base),
+               base + dirDeg(30, 100 * std::cos(5 * kPi / 180)), 1e-6));
+    CHECK(near(w.hover(base + dirDeg(140, 80), base),
+               base + dirDeg(150, 80 * std::cos(10 * kPi / 180)), 1e-6));
+    CHECK(near(w.hover(base + dirDeg(215, 50), base),
+               base + dirDeg(210, 50 * std::cos(5 * kPi / 180)), 1e-6));
+    // Left plane: 90 and 150 degrees.
+    w.set(keys::isoPlane, "Left");
+    CHECK(near(w.hover(base + dirDeg(85, 60), base),
+               base + dirDeg(90, 60 * std::cos(5 * kPi / 180)), 1e-6));
+    // Right plane: 30 and 90 degrees.
+    w.set(keys::isoPlane, "Right");
+    CHECK(near(w.hover(base + dirDeg(-20, 40), base),
+               base + dirDeg(30, 40 * std::cos(50 * kPi / 180)), 1e-6));
+    // Off again: plain ortho.
+    w.set(keys::isoDraft, "0");
+    CHECK(near(w.hover({53, 12}, base), {53, 10}));
+}
+
+TEST_CASE("isometric snap rounds to the lattice of the plane") {
+    World w;
+    w.set(keys::snap, "1");
+    w.set(keys::snapSpacing, "10");
+    w.set(keys::isoDraft, "1");
+    w.set(keys::isoPlane, "Top");
+    // Lattice points: i*10*(cos30, sin30) + j*10*(cos150, sin150).
+    const Vec2 p = dirDeg(30, 20) + dirDeg(150, 10);
+    CHECK(near(w.hover(p + Vec2{1.2, -0.8}), p, 1e-6));
+    CHECK(near(w.hover(Vec2{0.4, 0.3}), {0, 0}, 1e-6));
+}

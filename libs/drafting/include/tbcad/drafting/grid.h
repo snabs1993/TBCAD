@@ -27,6 +27,7 @@ struct GridStyle {
     double angle = 0;  // grid rotation in radians (the UCS rotation)
     double spacingMm = 10;
     bool lines = false;  // false = dots
+    int isoPlane = 0;    // IsoPlane value: 0 off; else the lattice of that isometric plane
     bool dark = true;    // picks the colours for the dark or the light theme
 };
 

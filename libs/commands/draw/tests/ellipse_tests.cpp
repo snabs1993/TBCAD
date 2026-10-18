@@ -116,3 +116,29 @@ TEST_CASE("ELLIPSE previews while the other axis moves and is one undo step") {
     f.host.feed({"20"});
     CHECK(f.host.undoStack().undoCount() == 1);
 }
+
+TEST_CASE("ELLIPSE Isocircle draws a circle in the current isometric plane") {
+    {
+        // Not offered while isometric drafting is off: the word is not a point.
+        Fixture off;
+        CHECK_FALSE(off.host.run("EL", {"Isocircle"}).finished);
+        CHECK(off.entities().empty());
+    }
+    Fixture f;
+    f.host.setSetting("drafting.isodraft", "1");
+    f.host.setSetting("drafting.isoplane", "Top");
+    CHECK(f.host.run("EL", {"Isocircle", "10,20", "5"}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& e = indirect<EllipseData>(es[0]);
+    CHECK(close(e.center, {10, 20}));
+    CHECK(e.ratio == doctest::Approx(1 / std::sqrt(3.0)));
+    CHECK(std::abs(length(e.majorAxis) - 5 * std::sqrt(1.5)) < 1e-9);
+    CHECK(std::abs(e.majorAxis.y) < 1e-9);  // top plane: horizontal major axis
+    f.host.setSetting("drafting.isoplane", "Left");
+    f.host.run("EL", {"Isocircle", "0,0", "5"});
+    es = f.entities();
+    REQUIRE(es.size() == 2);
+    const auto& l = indirect<EllipseData>(es[1]);
+    CHECK(std::abs(std::atan2(l.majorAxis.y, l.majorAxis.x) - 120 * kPi / 180) < 1e-9);
+}

@@ -94,7 +94,21 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
 
     Vec2 dir{};
     double angleDeg = 0;
-    if (ortho) {
+    if (ortho && s.isoPlane != IsoPlane::Off) {
+        // Isometric: the two axes of the plane, both ways.
+        const auto [a1, a2] = isoAxesDeg(s.isoPlane);
+        double best = -1;
+        for (double a : {a1, a2}) {
+            const Vec2 axis{std::cos(a * kPi / 180.0), std::sin(a * kPi / 180.0)};
+            const double proj = dot(v, axis);
+            if (std::abs(proj) > best) {
+                best = std::abs(proj);
+                dir = proj >= 0 ? axis : axis * -1.0;
+                angleDeg = proj >= 0 ? a : a - 180.0;
+            }
+        }
+        d = best;
+    } else if (ortho) {
         if (std::abs(v.x) >= std::abs(v.y))
             dir = {v.x >= 0 ? 1.0 : -1.0, 0.0};
         else
@@ -136,8 +150,9 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     char ang[32];
     std::snprintf(ang, sizeof ang, "%.4g",
                   std::fabs(shown) < 1e-9 ? 0.0 : std::round(shown * 100) / 100);
-    feedback.tooltip = std::string(ortho ? "Ortho: " : "Polar: ") + formatDistance(*env_, d) +
-                       " < " + ang + "\xC2\xB0";
+    feedback.tooltip =
+        std::string(ortho ? (s.isoPlane != IsoPlane::Off ? "Iso ortho: " : "Ortho: ") : "Polar: ") +
+        formatDistance(*env_, d) + " < " + ang + "\xC2\xB0";
     const double reach = std::max(d, 1.0) + 4000.0 * std::max(query.pixelSize, 1e-9);
     feedback.guide =
         std::make_pair(base - dir * (4000.0 * std::max(query.pixelSize, 1e-9)), base + dir * reach);
@@ -152,6 +167,17 @@ std::optional<Vec2> GridSnapFilter::filter(const cmd::PointQuery&, Vec2 raw, cmd
         return std::nullopt;
     const Ucs ucs = env_->effectiveUcs();
     const Vec2 u = ucs.fromWorld(raw);
+    if (s.isoPlane != IsoPlane::Off) {
+        // The lattice of the plane: steps of the spacing along both of its axes.
+        const auto [a1, a2] = isoAxesDeg(s.isoPlane);
+        const Vec2 b1{std::cos(a1 * kPi / 180.0), std::sin(a1 * kPi / 180.0)};
+        const Vec2 b2{std::cos(a2 * kPi / 180.0), std::sin(a2 * kPi / 180.0)};
+        const double det = b1.x * b2.y - b1.y * b2.x;
+        const double i = (u.x * b2.y - u.y * b2.x) / det / s.snapSpacing;
+        const double j = (b1.x * u.y - b1.y * u.x) / det / s.snapSpacing;
+        const double ri = std::round(i), rj = std::round(j);
+        return ucs.toWorld((b1 * ri + b2 * rj) * s.snapSpacing);
+    }
     return ucs.toWorld({roundTo(u.x, s.snapSpacing), roundTo(u.y, s.snapSpacing)});
 }
 
