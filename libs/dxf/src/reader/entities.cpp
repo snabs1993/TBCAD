@@ -705,7 +705,7 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
     if (kind == TextKind::Attrib && (r.integer(70) & 1))
         return true;  // invisible attribute: nothing to show
     TextData d;
-    std::string text = replacePercentCodes(dec(r.raw(1)));
+    std::string text = replacePercentCodes(dec(r.raw(1)), true);
     if (kind == TextKind::AttDef) {
         // The definition shows its tag in the block; the default value lives in group 1.
         AttDefInfo info;
@@ -889,7 +889,7 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
     std::vector<Entity> loose;
     for (const Record& a : attribs) {
         std::string tag = upperAscii(dec(a.raw(2)));
-        std::string value = replacePercentCodes(dec(a.raw(1)));
+        std::string value = replacePercentCodes(dec(a.raw(1)), true);
         if (blockHasAttDef(block, tag)) {
             bool seen = false;
             for (const AttribValue& v : values)

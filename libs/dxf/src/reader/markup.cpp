@@ -156,6 +156,10 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                 case 'l':
                 case 'O':
                 case 'o':
+                    out.push_back('\\');
+                    out.push_back(k);
+                    markCode();
+                    break;
                 case 'K':
                 case 'k':
                 case 'N':

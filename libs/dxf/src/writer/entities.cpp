@@ -33,6 +33,8 @@ std::string plainLines(std::string_view s) {
             } else if (k == 'P') {
                 out.push_back('\n');
                 ++i;
+            } else if (k == 'L' || k == 'l' || k == 'O' || k == 'o') {
+                ++i;  // underline / overline switches carry no argument
             } else {
                 // Formatting code: skip to its ';'.
                 std::size_t semi = s.find(';', i);

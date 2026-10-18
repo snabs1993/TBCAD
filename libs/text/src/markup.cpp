@@ -59,6 +59,13 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
             if (k == '\\' || k == '{' || k == '}') {
                 text += k;
                 i += 2;
+            } else if (k == 'L' || k == 'l' || k == 'O' || k == 'o') {
+                flush();
+                if (k == 'L' || k == 'l')
+                    cur.underline = k == 'L';
+                else
+                    cur.overline = k == 'O';
+                i += 2;
             } else if (k == 'P') {
                 flush();
                 Piece p;

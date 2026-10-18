@@ -48,6 +48,14 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
         return;
     }
 
+    for (const LayoutLine& l : layout.lines)
+        for (const LayoutRule& r : l.rules) {
+            DisplayPolyline rule;
+            rule.style = base;
+            rule.pts = {layout.toWorld.apply({r.x0, r.y}), layout.toWorld.apply({r.x1, r.y})};
+            out.items.emplace_back(std::move(rule));
+        }
+
     for (const PlacedGlyph& g : layout.glyphs) {
         if (fonts().isStroke(g.font)) {
             for (const font::StrokePath& sp : fonts().strokes(g.font, g.glyphId).paths) {

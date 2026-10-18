@@ -347,3 +347,30 @@ TEST_CASE("MTEXT: Thai wraps between words, not inside them") {
         CHECK(joined == s);
     }
 }
+
+TEST_CASE("underline and overline: %%u and %%o in TEXT, \\L and \\O in MTEXT") {
+    Document doc;
+    TextData t;
+    t.height = 4;
+    t.utf8 = "%%uAB%%u CD";
+    TextLayout l = layoutText(doc, t);
+    REQUIRE(l.lines.size() == 1);
+    REQUIRE(l.lines[0].rules.size() == 1);
+    const LayoutRule& r = l.lines[0].rules[0];
+    CHECK(r.x0 == doctest::Approx(0));
+    CHECK(r.x1 == doctest::Approx(fontWidth("AB", 4)));
+    CHECK(r.y < 0);  // below the baseline
+    t.utf8 = "%%oAB";
+    TextLayout o = layoutText(doc, t);
+    REQUIRE(o.lines[0].rules.size() == 1);
+    CHECK(o.lines[0].rules[0].y > 4);  // above the capitals
+
+    MTextData m;
+    m.height = 4;
+    m.utf8 = "\\LAB\\l CD";
+    TextLayout ml = layoutMText(doc, m);
+    REQUIRE(ml.lines[0].rules.size() == 1);
+    CHECK(ml.lines[0].rules[0].x1 - ml.lines[0].rules[0].x0 == doctest::Approx(fontWidth("AB", 4)));
+    m.utf8 = "plain";
+    CHECK(layoutMText(doc, m).lines[0].rules.empty());
+}
