@@ -173,37 +173,6 @@ void Importer::setUnits(int insunits, bool assumed) {
     }
 }
 
-// The value of a group as text, for content that is carried to the writer unread. `dec` decodes a
-// string value; false when the value has no text form (binary chunks).
-template <class Dec>
-bool keptValue(const Group& g, Dec&& dec, std::string& out) {
-    switch (g.type()) {
-        case ValueType::String:
-            out = dec(g.str());
-            return true;
-        case ValueType::Double: {
-            char buf[40];
-            std::snprintf(buf, sizeof buf, "%.17g", g.number());
-            out = buf;
-            return true;
-        }
-        case ValueType::Int16:
-        case ValueType::Int32:
-        case ValueType::Int64:
-        case ValueType::Bool:
-            out = std::to_string(g.integer());
-            return true;
-        case ValueType::Handle: {
-            const Handle& h = std::get<Handle>(g.value);
-            out = h.valid ? std::string(h.text) : std::string();
-            return h.valid;
-        }
-        case ValueType::Binary:
-            break;
-    }
-    return false;
-}
-
 void Importer::parseHeader(const Record& rec) {
     std::string var;
     int insunits = 0;

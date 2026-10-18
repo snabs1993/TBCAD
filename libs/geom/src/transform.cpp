@@ -459,6 +459,7 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
         }
         case EntityKind::Proxy: {
             auto& o = *entityAs<ProxyData>(out);
+            staleProxyDxf(o);
             for (DisplayItem& it : o.graphics.items) {
                 std::visit(
                     [&](auto& item) {

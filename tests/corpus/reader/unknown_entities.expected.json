@@ -1,5 +1,5 @@
 {
-  "description": "entity types TBCAD does not read are skipped and counted (RAY is read now)",
+  "description": "entity types TBCAD does not read are kept as they are (not shown) and written back; RAY is read",
   "dxf": {
     "3DSOLID": 2,
     "IMAGE": 1,
@@ -12,6 +12,7 @@
   "ezdxf": false,
   "kinds": {
     "Line": 1,
+    "Proxy": 1,
     "Ray": 1
   },
   "layers": [

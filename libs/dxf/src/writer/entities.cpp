@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "keep.h"
 #include "tbcad/blocks/array.h"
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/explode.h"
@@ -1084,6 +1085,15 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
         }
         o.i(93, 0);
         count("ACAD_PROXY_ENTITY");
+        return;
+    }
+    // An entity this program cannot read, written back as it was read.
+    if (const std::string_view groups = proxyDxfGroups(d);
+        !groups.empty() && !r12_ && d.originalType != "ACAD_PROXY_ENTITY") {
+        head(d.originalType, p, owner, "");
+        for (const auto& [code, value] : unpackGroups(groups))
+            o_->str(code, value);
+        count(d.originalType);
         return;
     }
     if (!d.graphics.items.empty()) {

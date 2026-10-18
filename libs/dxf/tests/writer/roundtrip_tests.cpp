@@ -90,10 +90,10 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
         REQUIRE(out.ok());
         CHECK(exportReport.count(Severity::Error) == 0);
 
-        // Objects this program has no reader for (AEC, Civil, ACIS ...) are exported as the plain
-        // geometry of their proxy graphics, which is not the same document when read back.
+        // Objects this program has no reader for (AEC, Civil, ACIS ...) are written back as they
+        // were read, so the re-imported document is a different, equally valid one.
         if (path.find("aec_objects") != std::string::npos) {
-            CHECK(out.value().bytes.find("AEC_WALL") == std::string::npos);
+            CHECK(out.value().bytes.find("AEC_WALL") != std::string::npos);
             ++roundTripped;
             continue;
         }

@@ -5,10 +5,13 @@
 // line break). Text values are held as UTF-8.
 #pragma once
 
+#include <cstdio>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "tbcad/dxf/lexer.h"
 
 namespace tbcad::dxf::detail {
 
@@ -77,6 +80,44 @@ inline bool overridableHeaderVar(std::string_view n) {
 // file numbers differently.
 inline bool handleCode(int c) {
     return c == 105 || (c >= 330 && c <= 369) || (c >= 390 && c <= 399) || c == 1005;
+}
+
+// The value of a group as text, for content that is carried to the writer unread. `dec` decodes a
+// string value; false when the value has no text form (binary chunks).
+template <class Dec>
+bool keptValue(const Group& g, Dec&& dec, std::string& out) {
+    switch (g.type()) {
+        case ValueType::String:
+            out = dec(g.str());
+            return true;
+        case ValueType::Double: {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.17g", g.number());
+            out = buf;
+            return true;
+        }
+        case ValueType::Int16:
+        case ValueType::Int32:
+        case ValueType::Int64:
+        case ValueType::Bool:
+            out = std::to_string(g.integer());
+            return true;
+        case ValueType::Handle: {
+            const Handle& h = std::get<Handle>(g.value);
+            out = h.valid ? std::string(h.text) : std::string();
+            return h.valid;
+        }
+        case ValueType::Binary: {
+            static const char* digits = "0123456789ABCDEF";
+            out.clear();
+            for (std::byte b : std::get<std::vector<std::byte>>(g.value)) {
+                out.push_back(digits[static_cast<unsigned>(b) >> 4]);
+                out.push_back(digits[static_cast<unsigned>(b) & 15]);
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace tbcad::dxf::detail

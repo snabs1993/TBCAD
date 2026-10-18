@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -497,11 +498,35 @@ struct LeaderData {
 };
 
 // Read-only placeholder for an unknown imported entity.
+//
+// For a DXF entity this program has no reader for (3DSOLID, REGION, SURFACE, TABLE ...) `raw`
+// holds the groups of the record, so that saving as DXF writes the entity back as it was:
+// kProxyDxfFresh, then lines "code TAB value" (see libs/dxf/src/keep). Anything that changes the
+// entity's place (transform) turns the prefix into kProxyDxfStale: the groups no longer fit and
+// only the display graphics are written.
 struct ProxyData {
     std::string originalType{};
     std::vector<std::uint8_t> raw{};
     DisplayList graphics{};
 };
+
+inline constexpr std::string_view kProxyDxfFresh = "TBDXF1\n";
+inline constexpr std::string_view kProxyDxfStale = "TBDXF0\n";
+
+// The preserved DXF groups of a proxy, or empty when it has none or they are stale.
+inline std::string_view proxyDxfGroups(const ProxyData& p) {
+    if (p.raw.size() <= kProxyDxfFresh.size())
+        return {};
+    const std::string_view all(reinterpret_cast<const char*>(p.raw.data()), p.raw.size());
+    return all.starts_with(kProxyDxfFresh) ? all.substr(kProxyDxfFresh.size()) : std::string_view{};
+}
+
+// The proxy moved or changed shape: its preserved DXF groups are out of date.
+inline void staleProxyDxf(ProxyData& p) {
+    if (proxyDxfGroups(p).empty())
+        return;
+    std::copy(kProxyDxfStale.begin(), kProxyDxfStale.end(), p.raw.begin());
+}
 
 // One cell of a table. A merged range is stored on its top-left cell (colSpan/rowSpan > 1); the
 // other cells of the range are `covered` and ignored.
