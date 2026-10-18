@@ -275,11 +275,11 @@ private:
     bool pdf_;
 };
 
-// XRELOAD [XR]: reloads external references from their files.
+// XRELOAD: reloads external references from their files.
 class XReloadCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "XRELOAD"; }
-    std::vector<std::string> defaultAliases() const override { return {"XR"}; }
+    std::vector<std::string> defaultAliases() const override { return {}; }
     std::string_view description() const override { return "Reload external references"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -531,7 +531,7 @@ public:
 class XListCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "XLIST"; }
-    std::vector<std::string> defaultAliases() const override { return {"XREF"}; }
+    std::vector<std::string> defaultAliases() const override { return {}; }
     std::string_view description() const override { return "List external references"; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -559,7 +559,7 @@ public:
 class XrefPaletteCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "EXTERNALREFERENCES"; }
-    std::vector<std::string> defaultAliases() const override { return {"ER"}; }
+    std::vector<std::string> defaultAliases() const override { return {"ER", "XREF", "XR"}; }
     std::string_view description() const override { return "Open the External References panel"; }
     cmd::Task run(cmd::CommandContext& ctx) override {
         ctx.host().openPanel("xrefs");

@@ -6,18 +6,14 @@
 #include <string_view>
 #include <vector>
 
+#include "tbcad/cmd/pgp.h"
 #include "tbcad/cmd/registry.h"
 #include "tbcad/platform/keybindings.h"
 
 namespace tbcad::ui {
 
-// An AutoCAD acad.pgp style alias file: `L, *LINE` lines, `;` comments, an [External Commands]
-// section that is ignored. `skipped` explains every line that was not an alias.
-struct PgpParse {
-    std::map<std::string, std::string> aliases{};  // upper-case alias -> upper-case command
-    std::vector<std::string> skipped{};
-};
-PgpParse parsePgp(std::string_view text);
+using cmd::parsePgp;
+using cmd::PgpParse;
 // The text of a .pgp file holding `aliases`, sorted by alias, with a short header comment.
 std::string writePgp(const std::map<std::string, std::string>& aliases);
 

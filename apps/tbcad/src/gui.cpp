@@ -822,9 +822,7 @@ void Gui::shortcuts() {
                 std::string line = input_ + typedWhileUnfocused_;
                 input_.clear();
                 typedWhileUnfocused_.clear();
-                if (inputHistory_.empty() || inputHistory_.back() != line)
-                    inputHistory_.push_back(line);
-                historyPos_ = -1;
+                inputHistory_.push(line);
                 core_.submitText(line);
                 refocusInput_ = true;
             }
@@ -1889,19 +1887,11 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
                                                               : std::min(n - 1, suggestSel_ + 1);
                 return 0;
             }
-            if (inputHistory_.empty())
+            const std::string now(d->Buf, static_cast<std::size_t>(d->BufTextLen));
+            const std::string text = d->EventKey == ImGuiKey_UpArrow ? inputHistory_.older(now)
+                                                                     : inputHistory_.newer(now);
+            if (text == now)
                 return 0;
-            if (d->EventKey == ImGuiKey_UpArrow) {
-                historyPos_ = historyPos_ < 0 ? static_cast<int>(inputHistory_.size()) - 1
-                                              : std::max(0, historyPos_ - 1);
-            } else if (historyPos_ >= 0) {
-                ++historyPos_;
-                if (historyPos_ >= static_cast<int>(inputHistory_.size()))
-                    historyPos_ = -1;
-            }
-            const std::string& text = historyPos_ < 0
-                                          ? std::string()
-                                          : inputHistory_[static_cast<std::size_t>(historyPos_)];
             d->DeleteChars(0, d->BufTextLen);
             d->InsertChars(0, text.c_str());
             return 0;
@@ -2159,9 +2149,7 @@ void Gui::commandWindow() {
             } else {
                 input_.clear();
                 paletteOpen_ = false;
-                if (!line.empty() && (inputHistory_.empty() || inputHistory_.back() != line))
-                    inputHistory_.push_back(line);
-                historyPos_ = -1;
+                inputHistory_.push(line);
                 core_.submitText(line);
                 refocusInput_ = true;
                 anyActivity_ = true;
@@ -3193,8 +3181,8 @@ void Gui::viewportMenu() {
             run("");
         // The commands typed lately (latest first), each once; a click runs it.
         std::vector<std::string> recent;
-        for (auto it = inputHistory_.rbegin(); it != inputHistory_.rend() && recent.size() < 8;
-             ++it) {
+        for (auto it = inputHistory_.lines().rbegin();
+             it != inputHistory_.lines().rend() && recent.size() < 8; ++it) {
             std::string word = it->substr(0, it->find(' '));
             std::transform(word.begin(), word.end(), word.begin(),
                            [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });

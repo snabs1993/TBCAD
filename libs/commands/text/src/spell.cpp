@@ -153,6 +153,7 @@ bool known(const std::string& word, const std::set<std::string>& user) {
 class SpellCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SPELL"; }
+    std::vector<std::string> defaultAliases() const override { return {"SP"}; }
     std::string_view description() const override {
         return "Check the spelling of text and mtext (skips Thai and other non-English text)";
     }

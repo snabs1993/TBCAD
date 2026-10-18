@@ -5,6 +5,7 @@ tbcad_add_library(cmd
     src/describe.cpp
     src/input.cpp
     src/registry.cpp
+    src/pgp.cpp
     src/runner.cpp
     src/script_host.cpp
     src/undo.cpp

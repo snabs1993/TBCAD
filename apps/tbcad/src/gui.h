@@ -14,6 +14,7 @@
 #include "tbcad/platform/external_link.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
+#include "tbcad/ui/input_history.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/ui/workspace.h"
@@ -202,8 +203,7 @@ private:
 
     // Command line.
     std::string input_{};
-    std::vector<std::string> inputHistory_{};
-    int historyPos_ = -1;
+    ui::InputHistory inputHistory_{};
     bool refocusInput_ = false;
     bool textEditorActive_ = false;  // a text prompt is edited in a box in the drawing
     int textEditorFocus_ = 0;
