@@ -95,6 +95,10 @@ struct Attach {
     const char* name;
     Attachment a;
 };
+// Settings the MTEXT text box edits while the text is typed (never saved).
+constexpr const char* kEditHeightKey = "tmp.mtext.height";
+constexpr const char* kEditAttachKey = "tmp.mtext.attach";
+constexpr const char* kEditStyleKey = "tmp.mtext.style";
 constexpr Attach kAttach[] = {
     {"TL", Attachment::TopLeft},      {"TC", Attachment::TopCenter},
     {"TR", Attachment::TopRight},     {"ML", Attachment::MiddleLeft},
@@ -349,38 +353,42 @@ public:
         Vec2 u{c * v.x + s * v.y, -s * v.x + c * v.y};
         const double xmin = std::min(0.0, u.x), xmax = std::max(0.0, u.x);
         const double ymin = std::min(0.0, u.y), ymax = std::max(0.0, u.y);
-        Vec2 local{};
-        switch (st.attach) {
-            case Attachment::TopLeft:
-            case Attachment::MiddleLeft:
-            case Attachment::BottomLeft:
-                local.x = xmin;
-                break;
-            case Attachment::TopCenter:
-            case Attachment::MiddleCenter:
-            case Attachment::BottomCenter:
-                local.x = (xmin + xmax) / 2;
-                break;
-            default:
-                local.x = xmax;
-        }
-        switch (st.attach) {
-            case Attachment::TopLeft:
-            case Attachment::TopCenter:
-            case Attachment::TopRight:
-                local.y = ymax;
-                break;
-            case Attachment::MiddleLeft:
-            case Attachment::MiddleCenter:
-            case Attachment::MiddleRight:
-                local.y = (ymin + ymax) / 2;
-                break;
-            default:
-                local.y = ymin;
-        }
+        // Where the text goes for a justification: the matching point of the rectangle.
+        const auto place = [first, c, s, xmin, xmax, ymin, ymax](Attachment a) {
+            Vec2 local{};
+            switch (a) {
+                case Attachment::TopLeft:
+                case Attachment::MiddleLeft:
+                case Attachment::BottomLeft:
+                    local.x = xmin;
+                    break;
+                case Attachment::TopCenter:
+                case Attachment::MiddleCenter:
+                case Attachment::BottomCenter:
+                    local.x = (xmin + xmax) / 2;
+                    break;
+                default:
+                    local.x = xmax;
+            }
+            switch (a) {
+                case Attachment::TopLeft:
+                case Attachment::TopCenter:
+                case Attachment::TopRight:
+                    local.y = ymax;
+                    break;
+                case Attachment::MiddleLeft:
+                case Attachment::MiddleCenter:
+                case Attachment::MiddleRight:
+                    local.y = (ymin + ymax) / 2;
+                    break;
+                default:
+                    local.y = ymin;
+            }
+            return first + Vec2{c * local.x - s * local.y, s * local.x + c * local.y};
+        };
 
         MTextData d;
-        d.position = first + Vec2{c * local.x - s * local.y, s * local.x + c * local.y};
+        d.position = place(st.attach);
         d.rotation = st.rotation;
         d.attach = st.attach;
         const double fixed = st.heightChosen ? 0 : fixedStyleHeight(ctx, st.style);
@@ -390,14 +398,44 @@ public:
         if (d.width < tol::kLinear)
             d.width = 0;
 
+        // The text box offers Height, Justify and Style while typing: it changes these settings
+        // and the drawing follows them, so the command line is not asked again.
+        auto attachName = [](Attachment a) {
+            for (const Attach& k : kAttach)
+                if (k.a == a)
+                    return std::string(k.name);
+            return std::string("TL");
+        };
+        ctx.host().setSetting(kEditHeightKey, std::to_string(d.height));
+        ctx.host().setSetting(kEditAttachKey, attachName(d.attach));
+        if (const TextStyle* ts = ctx.doc().textStyle(d.style))
+            ctx.host().setSetting(kEditStyleKey, ts->name);
+        const auto current = [&ctx, d, place]() {
+            MTextData m = d;
+            if (auto h = ctx.host().setting(kEditHeightKey)) {
+                const double v = std::atof(h->c_str());
+                if (v > 0)
+                    m.height = v;
+            }
+            if (auto a = ctx.host().setting(kEditAttachKey))
+                for (const Attach& k : kAttach)
+                    if (*a == k.name)
+                        m.attach = k.a;
+            if (auto n = ctx.host().setting(kEditStyleKey))
+                if (const TextStyle* ts = ctx.doc().textStyleByName(*n))
+                    m.style = ts->id;
+            m.position = place(m.attach);
+            return m;
+        };
+
         cmd::StringOptions textOpts;
         // The text is typed in a box at the rectangle just drawn (the command line works too).
         textOpts.editor =
             cmd::TextEditorHint{{std::min(first.x, second.x), std::max(first.y, second.y)},
                                 std::abs(second.x - first.x),
                                 std::abs(second.y - first.y)};
-        textOpts.textPreview = [&ctx, d](const std::string& typed, DisplayList& out) {
-            MTextData shown = d;
+        textOpts.textPreview = [&ctx, current](const std::string& typed, DisplayList& out) {
+            MTextData shown = current();
             shown.utf8 = typed;
             Entity e{{}, std::move(shown)};
             e.common.layer = ctx.doc().header().currentLayer;
@@ -408,12 +446,16 @@ public:
         auto t = co_await ctx.getString("Enter text (\\P starts a new line)", std::move(textOpts));
         if (!t.ok())
             co_return;
+        const MTextData chosen = current();
+        const bool heightEdited = chosen.height != d.height;
+        d.height = chosen.height;
+        d.attach = chosen.attach;
+        d.style = chosen.style;
+        d.position = chosen.position;
         d.utf8 = t.text;
-        if (fixed <= 0)
-            rememberHeight(ctx, st.height);
-        for (const Attach& a : kAttach)
-            if (a.a == st.attach)
-                ctx.host().setSetting(kAttachKey, a.name);
+        if (fixed <= 0 || heightEdited)
+            rememberHeight(ctx, d.height);
+        ctx.host().setSetting(kAttachKey, attachName(d.attach));
         Entity created{{}, std::move(d)};
         applyCurrentProperties(ctx.doc().header(), created);
         auto id = ctx.tx().add(std::move(created));
