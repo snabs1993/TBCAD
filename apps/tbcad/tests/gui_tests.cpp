@@ -1265,3 +1265,53 @@ TEST_CASE("grips: click-move a vertex, and the hover menu adds a vertex") {
     h.core().pressEscape();
     CHECK(verts() == 2);
 }
+
+TEST_CASE("every menu item can be clicked without trouble") {
+    std::vector<std::string> tops;
+    {
+        Harness h(1920, 1080);
+        h.frame(3);
+        for (const auto& it : imgui_items::items())
+            if (it.window.find("MainMenuBar") != std::string::npos && !it.label.empty())
+                tops.push_back(it.label);
+    }
+    REQUIRE(tops.size() >= 5);
+    for (const std::string& top : tops) {
+        CAPTURE(top);
+        // The items of this menu, found with it open.
+        std::vector<std::string> items;
+        {
+            Harness h(1920, 1080);
+            h.frame(3);
+            REQUIRE(h.click(top, "MainMenuBar"));
+            h.frame(3);
+            for (const auto& it : imgui_items::items())
+                if (it.window.find("##Menu") != std::string::npos && !it.label.empty() &&
+                    it.label.rfind("##", 0) != 0)
+                    items.push_back(it.label);
+        }
+        CHECK_FALSE(items.empty());
+        for (const std::string& item : items) {
+            CAPTURE(item);
+            if (item == "Exit")
+                continue;
+            Harness h(1920, 1080);
+            h.core().submitText("CIRCLE");
+            h.core().submitText("0,0");
+            h.core().submitText("10");
+            h.core().selectAll();
+            h.frame(3);
+            REQUIRE(h.click(top, "MainMenuBar"));
+            h.frame(3);
+            if (!h.has(item, "##Menu"))
+                continue;
+            h.click(item, "##Menu");
+            h.frame(3);
+            h.key(ImGuiKey_Escape);
+            h.frame(2);
+            h.core().pressEscape();
+            h.key(ImGuiKey_Escape);
+            h.frame(2);
+        }
+    }
+}
