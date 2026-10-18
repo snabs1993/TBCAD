@@ -164,6 +164,7 @@ public:
                 std::sort(
                     out_.entities.begin(), out_.entities.end(),
                     [](const EntityRec& a, const EntityRec& b) { return a.handle < b.handle; });
+                noteTypeTimes();
                 return;
             }
         }
@@ -469,7 +470,42 @@ private:
         return w + ")";
     }
 
+    // Time spent decoding, per object type (diagnostic: which kind is slow).
+    std::map<std::uint32_t, std::pair<std::size_t, double>> typeTime_;
+    std::uint32_t curType_ = 0xFFFF;
+    struct TypeTimer {
+        ObjectReader& self;
+        std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        explicit TypeTimer(ObjectReader& s) : self(s) { self.curType_ = 0xFFFF; }
+        ~TypeTimer() {
+            auto& row = self.typeTime_[self.curType_];
+            ++row.first;
+            row.second +=
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                    .count();
+        }
+    };
+
+public:
+    void noteTypeTimes() {
+        std::vector<std::pair<double, std::uint32_t>> order;
+        for (const auto& [type, row] : typeTime_)
+            order.emplace_back(row.second, type);
+        std::sort(order.rbegin(), order.rend());
+        std::string t = "decode time per object type (type: count, ms), slowest first:";
+        for (std::size_t i = 0; i < order.size() && i < 10; ++i) {
+            const auto& row = typeTime_[order[i].second];
+            char b[96];
+            std::snprintf(b, sizeof b, " %u: %zu, %.0f ms;", order[i].second, row.first,
+                          row.second);
+            t += b;
+        }
+        out_.walkNotes.push_back(t);
+    }
+
+private:
     void decodeOne(const MapEntry& e) {
+        TypeTimer timer(*this);
         framed_ = true;
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
@@ -488,6 +524,7 @@ private:
         BitReader r(body);
         std::uint32_t type = fmt_.r2010 ? r.objectTypeR2010() : static_cast<std::uint32_t>(r.bs());
         out_.rawType[e.handle] = type;
+        curType_ = type;
         if (type == 0x4E)
             type = kHatch;  // HATCH has a fixed number in files that list it among the fixed types
         if (type >= 500) {

@@ -184,3 +184,9 @@ TEST_CASE("a table saved from an old CTB import loses its white placeholder pens
     REQUIRE(r.value().entries[7].color);        // a real black pen stays
     REQUIRE(r.value().entries[9].color);        // a white pen in a table of our own stays
 }
+
+TEST_CASE("a dark grey true colour takes a pen of the colour range, not the grey ramp") {
+    CHECK(penIndexOfTrueColor(paletteColor(253)) == 253);  // palette colours keep their own
+    CHECK(penIndexOfTrueColor({97, 97, 97, 255}) < 250);   // a pen of the colour range
+    CHECK(penIndexOfTrueColor({0, 0, 66, 255}) > 0);
+}

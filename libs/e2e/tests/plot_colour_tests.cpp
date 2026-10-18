@@ -43,7 +43,7 @@ TEST_CASE(
     bool found = false;
     for (const auto& p : sheet.value().prims)
         if (const auto* f = std::get_if<PlotFill>(&p)) {
-            CHECK(f->color == Rgba{130, 130, 130, 255});
+            CHECK(f->color == Rgba{186, 186, 186, 255});
             found = true;
         }
     CHECK(found);

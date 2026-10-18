@@ -56,6 +56,10 @@ int paletteIndexOf(Rgba color);
 // looks most like them (AutoCAD does the same). The exact index when the colour is a palette
 // colour.
 int nearestPaletteIndex(Rgba color);
+// The table entry a true colour plots with: the nearest of the colours 1 to 249 (the grey ramp
+// 250 to 255 is left out, so a dark grey true colour takes the black pen of colour 8 as it does in
+// AutoCAD's plots of the office table). Palette colours give their own index.
+int penIndexOfTrueColor(Rgba color);
 
 // The entry's colour override (or `base`), made grey and screened as the entry says.
 Rgba applyEntry(const PlotStyleEntry& entry, Rgba base);
