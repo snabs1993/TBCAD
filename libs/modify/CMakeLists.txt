@@ -10,6 +10,7 @@ tbcad_add_library(modify
 tbcad_add_tests(modify
   SOURCES
     tests/main.cpp
+    tests/accuracy_tests.cpp
     tests/break_join_tests.cpp
     tests/extra_tests.cpp
     tests/far_coords_tests.cpp
