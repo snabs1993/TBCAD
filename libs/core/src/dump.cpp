@@ -253,6 +253,10 @@ struct DataDumper {
             o << " break " << b.a << ">" << b.b;
         for (const Vec2& j : d.jogs)
             o << " jog" << j;
+        for (std::size_t i = 0; i < d.assoc.size(); ++i)
+            if (d.assoc[i].kind != DimAssoc::Kind::None)
+                o << " assoc" << i << "=" << d.assoc[i].target.value << ":"
+                  << static_cast<int>(d.assoc[i].kind) << ":" << d.assoc[i].index;
         if (d.oblique != 0)
             o << " oblique" << d.oblique;
         if (d.textRotated)

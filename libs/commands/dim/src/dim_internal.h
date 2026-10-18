@@ -17,6 +17,8 @@ std::unique_ptr<cmd::Command> makeSmartDimCommand();
 std::unique_ptr<cmd::Command> makeMLeaderCommand();
 std::unique_ptr<cmd::Command> makeMLeaderAlignCommand();
 std::unique_ptr<cmd::Command> makeMLeaderCollectCommand();
+std::unique_ptr<cmd::Command> makeDimReassocCommand();
+std::unique_ptr<cmd::Command> makeDimDisassocCommand();
 std::unique_ptr<cmd::Command> makeMLeaderStyleCommand();
 
 // The multileader style in use: the dimension style that carries its arrow, landing gap and

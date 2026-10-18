@@ -4,6 +4,7 @@ tbcad_add_library(dim_commands
     src/dim_helpers.cpp
     src/smart_commands.cpp
     src/chain_commands.cpp
+    src/dim_assoc_commands.cpp
     src/dimstyle_command.cpp
     src/mleader_style.cpp
   DEPENDS tbcad::cmd tbcad::dim tbcad::blocks tbcad::geom tbcad::text)

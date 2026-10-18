@@ -219,3 +219,38 @@ TEST_CASE("listChunks describes the file layout") {
     for (const auto& c : chunks.value())
         CHECK(c.crcOk);
 }
+
+TEST_CASE("associative dimension links survive a .tbcad round trip") {
+    Document doc;
+    EntityId line;
+    {
+        Transaction tx = doc.begin("t");
+        Entity l;
+        l.data = LineData{{0, 0}, {10, 0}};
+        line = tx.add(std::move(l)).value();
+        DimensionData d;
+        d.kind = DimKind::Linear;
+        d.defPts = {Vec2{0, 0}, Vec2{10, 0}, Vec2{0, 5}, Vec2{}};
+        d.assoc[0] = {DimAssoc::Kind::Vertex, line, 0};
+        d.assoc[1] = {DimAssoc::Kind::Vertex, line, 1};
+        Entity e;
+        e.data = Indirect<DimensionData>(std::move(d));
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    auto bytes = writeOrFail(doc, {.compress = false});
+    io::IoReport report;
+    auto r = io::readTbcad(bytes, report);
+    REQUIRE(r.ok());
+    int seen = 0;
+    r.value()->forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            ++seen;
+            CHECK(d->assoc[0].kind == DimAssoc::Kind::Vertex);
+            CHECK(d->assoc[0].target == line);
+            CHECK(d->assoc[1].index == 1);
+            CHECK(d->assoc[2].kind == DimAssoc::Kind::None);
+        }
+    });
+    CHECK(seen == 1);
+}

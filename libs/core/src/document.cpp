@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <unordered_set>
 
+#include "tbcad/core/dim_assoc.h"
+
 namespace tbcad {
 
 namespace {
@@ -1596,8 +1598,78 @@ void collectRows(const detail::Table<Row, IdT>& t, const P& pending,
 }
 }  // namespace
 
+// Brings the definition points of associative dimensions along with the objects they follow. A
+// point follows only while it still sits where the object's point was before this transaction (or
+// already sits where it is now); a dimension moved or copied away from its objects loses the link.
+void Transaction::followAssociations() {
+    Document& d = doc();
+    struct Plan {
+        EntityId id;
+        std::array<Vec2, 4> pts;
+        std::array<DimAssoc, 4> assoc;
+        bool moved;
+        Vec2 shift{};  // average move of the followed points, for a text placed by hand
+        int followed = 0;
+    };
+    std::vector<Plan> plans;
+    auto close = [](Vec2 a, Vec2 b) {
+        return distance(a, b) <= 1e-7 * (1.0 + std::abs(a.x) + std::abs(a.y));
+    };
+    d.forEachEntity([&](const Entity& e) {
+        const auto* dm = entityAs<DimensionData>(e);
+        if (!dm)
+            return;
+        Plan p{e.common.id, dm->defPts, dm->assoc, false, {}, 0};
+        bool changed = false;
+        for (std::size_t i = 0; i < 4; ++i) {
+            DimAssoc& a = p.assoc[i];
+            if (a.kind == DimAssoc::Kind::None)
+                continue;
+            const Entity* t = d.find(a.target);
+            const auto live = t ? dimAssocPoint(*t, a) : std::nullopt;
+            if (!live) {
+                a = {};
+                changed = true;
+            } else if (close(p.pts[i], *live)) {
+                continue;
+            } else {
+                auto it = touched_.find(a.target);
+                std::optional<Vec2> before;
+                if (it != touched_.end())
+                    before = dimAssocPoint(beforeSnaps_[it->second], a);
+                if (before && close(p.pts[i], *before)) {
+                    p.shift += *live - p.pts[i];
+                    ++p.followed;
+                    p.pts[i] = *live;
+                    p.moved = true;
+                } else {
+                    a = {};
+                }
+                changed = true;
+            }
+        }
+        if (changed)
+            plans.push_back(p);
+    });
+    for (const Plan& p : plans) {
+        (void)modify(p.id, [&](Entity& e) {
+            auto* dm = entityAs<DimensionData>(e);
+            dm->defPts = p.pts;
+            dm->assoc = p.assoc;
+            if (p.moved) {
+                if (dm->textPosUser && p.followed > 0)
+                    dm->textPos += p.shift * (1.0 / p.followed);
+                if (DimRefreshFn f = dimRefresh())
+                    f(*doc_, e);
+            }
+        });
+    }
+}
+
 ChangeSet Transaction::commit() {
     Document& d = doc();
+    if (!touched_.empty() || d.allocCursor() > startNextId_)
+        followAssociations();
     ChangeSet cs;
     cs.name = name_;
 

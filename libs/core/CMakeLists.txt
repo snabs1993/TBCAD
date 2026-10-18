@@ -1,6 +1,7 @@
 tbcad_add_library(core
   SOURCES
     src/color.cpp
+    src/dim_assoc.cpp
     src/document.cpp
     src/dump.cpp
     src/groups.cpp

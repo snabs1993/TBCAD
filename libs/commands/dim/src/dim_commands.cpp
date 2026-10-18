@@ -4,6 +4,7 @@
 
 #include "dim_internal.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/dimcmd/dimcmd.h"
 #include "tbcad/geom/geom.h"
@@ -540,6 +541,10 @@ public:
 
 void registerCommands(cmd::Registry& registry) {
     dim::registerDisplay();
+    setDimRefresh([](const Document& doc, Entity& e) {
+        if (auto* d = entityAs<DimensionData>(e))
+            dim::refresh(doc, *d);
+    });
     for (EntityKind k : {EntityKind::Dimension, EntityKind::Leader, EntityKind::MLeader}) {
         blocks::ExplodeRegistry::set(
             k, [](const Document& doc, const Entity& e) -> Result<blocks::ExplodeResult> {
@@ -566,6 +571,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMLeaderCommand());
     (void)registry.add(makeMLeaderAlignCommand());
     (void)registry.add(makeMLeaderCollectCommand());
+    (void)registry.add(makeDimReassocCommand());
+    (void)registry.add(makeDimDisassocCommand());
     (void)registry.add(makeMLeaderStyleCommand());
     (void)registry.add(makeContinueCommand());
     (void)registry.add(makeBaselineCommand());
