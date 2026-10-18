@@ -399,3 +399,38 @@ TEST_CASE("the plot stamp adds text to the sheet and expands its tokens") {
     CHECK(plot::plotStampOn(*f.host));
     CHECK(plot::plotStampText(*f.host) == "%file% only");
 }
+
+TEST_CASE("a named style table is found next to the drawing - a missing one is reported") {
+    Fixture f;
+    DocHost h(f.doc, f.reg);
+    h.file = (f.dir / "plan.tbcad").string();
+
+    // Not there yet: the error says where it looked and plotting would use no style.
+    plot::setPlotStyleName(h, "_EP-100.ctb");
+    auto missing = plot::resolveStyleTable(h, "_EP-100.ctb");
+    CHECK_FALSE(missing.ok());
+    CHECK(plot::styleTableMissing(h));
+    CHECK_FALSE(plot::loadSettings(h).styleTable);
+
+    // A table saved beside the drawing is picked up by name, with or without the extension.
+    plotstyle::PlotStyleTable t = *plotstyle::builtinTable("monochrome.ctb");
+    t.name = "_EP-100";
+    REQUIRE(plotstyle::saveFile(t, f.dir / "_EP-100.tbstyle").ok());
+    plot::setPlotStyleName(h, "_EP-100");
+    CHECK_FALSE(plot::styleTableMissing(h));
+    CHECK(plot::loadSettings(h).styleTable);
+    plot::setPlotStyleName(h, "_EP-100.tbstyle");
+    CHECK_FALSE(plot::styleTableMissing(h));
+}
+
+TEST_CASE("PLOT offers monochrome.ctb when the layout's style table cannot be found") {
+    Fixture f;
+    plot::setPlotStyleName(*f.host, "nowhere.ctb");
+    auto out = f.path("m.pdf");
+    f.host->clearLog();
+    auto r = f.host->run("PLOT", {"Export", "Yes", out});
+    CHECK(r.finished);
+    CHECK(f.host->logContains("was not found"));
+    CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
+    CHECK(std::filesystem::exists(out));
+}

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <sstream>
 
+#include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 
 namespace tbcad::plot {
@@ -52,6 +53,47 @@ std::filesystem::path plotStyleFolder(const cmd::IHost& host) {
     return base.empty() ? base : base / "plot styles";
 }
 
+namespace {
+
+// AutoCAD keeps a user's plot style tables in
+// %APPDATA%\Autodesk\AutoCAD <year>\R<n>\<language>\Plotters\Plot Styles.
+void addAutoCadStyleFolders(std::vector<std::filesystem::path>& out) {
+    std::error_code ec;
+    for (const char* var : {"APPDATA", "LOCALAPPDATA"}) {
+        const auto base = platform::processEnvironment(var);
+        if (!base || base->empty())
+            continue;
+        const std::filesystem::path autodesk = std::filesystem::path(*base) / "Autodesk";
+        if (!std::filesystem::is_directory(autodesk, ec))
+            continue;
+        for (const auto& product : std::filesystem::directory_iterator(autodesk, ec))
+            for (const auto& release : std::filesystem::directory_iterator(product.path(), ec))
+                for (const auto& lang : std::filesystem::directory_iterator(release.path(), ec)) {
+                    const auto folder = lang.path() / "Plotters" / "Plot Styles";
+                    if (std::filesystem::is_directory(folder, ec))
+                        out.push_back(folder);
+                }
+    }
+}
+
+}  // namespace
+
+std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host) {
+    std::vector<std::filesystem::path> out;
+    const std::string doc = host.documentFile();
+    if (!doc.empty()) {
+        const auto dir = platform::pathFromUtf8(doc).parent_path();
+        if (!dir.empty()) {
+            out.push_back(dir);
+            out.push_back(dir / "Plot Styles");
+        }
+    }
+    if (auto own = plotStyleFolder(host); !own.empty())
+        out.push_back(own);
+    addAutoCadStyleFolders(out);
+    return out;
+}
+
 Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
     const cmd::IHost& host, const std::string& name) {
     using Table = std::shared_ptr<const plotstyle::PlotStyleTable>;
@@ -65,21 +107,35 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
     std::filesystem::path path(name);
     std::error_code ec;
     if (!path.is_absolute() || !std::filesystem::exists(path, ec)) {
-        auto folder = plotStyleFolder(host);
-        if (!folder.empty()) {
-            for (const char* ext : {"", ".tbstyle", ".ctb"}) {
+        bool found = false;
+        for (const auto& folder : styleSearchFolders(host)) {
+            for (const char* ext : {"", ".ctb", ".tbstyle"}) {
                 auto candidate = folder / (name + ext);
-                if (std::filesystem::exists(candidate, ec)) {
+                if (std::filesystem::is_regular_file(candidate, ec)) {
                     path = candidate;
+                    found = true;
                     break;
                 }
             }
+            if (found)
+                break;
         }
+        if (!found)
+            return Error{ErrorCode::NotFound, "Plot style table \"" + name +
+                                                  "\" was not found next to the drawing, in the "
+                                                  "TBCAD plot styles folder or in AutoCAD's."};
     }
     auto t = plotstyle::loadFile(path);
     if (!t)
         return Error{t.error().code, "Plot style table \"" + name + "\": " + t.error().message};
     return Table(std::make_shared<plotstyle::PlotStyleTable>(std::move(t.value())));
+}
+
+bool styleTableMissing(const cmd::IHost& host) {
+    const std::string name = plotStyleName(host);
+    if (name.empty())
+        return false;
+    return !resolveStyleTable(host, name).ok();
 }
 
 std::vector<std::string> listStyleTables(const cmd::IHost& host) {
@@ -339,8 +395,13 @@ std::string applyAssignedPageSetup(const Document& doc, cmd::IHost& host) {
     if (!setup)
         return {};
     applyPageSetup(host, *setup);
-    return "Page setup \"" + setup->name + "\" applied" +
-           (layoutName.empty() ? " (model space)." : " (layout " + layoutName + ").");
+    std::string msg = "Page setup \"" + setup->name + "\" applied" +
+                      (layoutName.empty() ? " (model space)." : " (layout " + layoutName + ").");
+    if (!setup->styleName.empty() && styleTableMissing(host))
+        msg +=
+            " Plot style table \"" + setup->styleName +
+            "\" was not found, so no style is applied; monochrome.ctb prints everything in black.";
+    return msg;
 }
 
 }  // namespace tbcad::plot

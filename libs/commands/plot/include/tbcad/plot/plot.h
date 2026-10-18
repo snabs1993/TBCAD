@@ -53,6 +53,13 @@ void setPlotStyleName(cmd::IHost& host, const std::string& name);
 // The user's folder for plot style tables (empty when the host has no settings folder).
 std::filesystem::path plotStyleFolder(const cmd::IHost& host);
 // Finds and loads a table by name. A null table with ok() means "none".
+/// Where a named style table is looked for after the built-ins: the drawing's folder (and a
+/// "Plot Styles" folder in it), TBCAD's own plot styles folder, then AutoCAD's Plotters\Plot Styles
+/// folders of the current user.
+std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host);
+/// True when the chosen style table is named but cannot be found (plotting would silently use
+/// none).
+bool styleTableMissing(const cmd::IHost& host);
 Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(const cmd::IHost& host,
                                                                            const std::string& name);
 // Built-in names, then the files of the user folder.

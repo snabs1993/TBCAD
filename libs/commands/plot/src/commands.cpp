@@ -83,6 +83,21 @@ public:
             const std::string& kw = choice.keyword;
 
             if (kw == "Export") {
+                if (!s.styleTable && styleTableMissing(ctx.host())) {
+                    KeywordOptions yn;
+                    yn.keywords = {"Yes", "No"};
+                    yn.defaultKeyword = "Yes";
+                    ctx.message("Plot style table \"" + plotStyleName(ctx.host()) +
+                                "\" was not found.");
+                    auto use =
+                        co_await ctx.getKeyword("Plot in black with monochrome.ctb instead", yn);
+                    if (use.status == Status::Cancel)
+                        co_return;
+                    if (use.ok() && use.keyword == "Yes") {
+                        setPlotStyleName(ctx.host(), plotstyle::kDefaultTable);
+                        s = loadSettings(ctx.host());
+                    }
+                }
                 cmd::StringOptions fo;
                 fo.defaultValue = defaultFile(ctx.host(), format);
                 auto file = co_await ctx.getString("Output file", fo);
