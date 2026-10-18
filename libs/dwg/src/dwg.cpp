@@ -304,6 +304,31 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 }
                 report.info(code::kSkippedObject,
                             xl + " (" + std::to_string(withDict) + " layers with one)");
+                {
+                    std::map<std::string, std::pair<std::size_t, std::uint64_t>> all;
+                    for (const auto& [dh, items] : drawing.dictionaries)
+                        for (const auto& [nm, th] : items) {
+                            auto& slot = all[nm];
+                            if (slot.first++ == 0)
+                                slot.second = dh;
+                        }
+                    std::string al = "all dictionary entry names (name x count, first dictionary):";
+                    for (const auto& [nm, cs] : all) {
+                        char hb[40];
+                        std::snprintf(hb, sizeof hb, " x%zu @%llX", cs.first,
+                                      static_cast<unsigned long long>(cs.second));
+                        al += " [" + nm + "]" + hb;
+                    }
+                    report.info(code::kSkippedObject, al);
+                }
+                {
+                    std::string el = "layers with extended data:";
+                    std::size_t cnt = 0;
+                    for (const auto& [lh, l] : drawing.layers)
+                        if (!l.eed.empty() && cnt++ < 12)
+                            el += " " + l.name + " {" + l.eed + "}";
+                    report.info(code::kSkippedObject, el + " (" + std::to_string(cnt) + ")");
+                }
                 std::string nl = "layer extension dictionary entry names:";
                 for (const auto& [nm, c] : names)
                     nl += " " + nm + " x" + std::to_string(c);
