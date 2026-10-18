@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <set>
 
 #include "dim_internal.h"
 #include "tbcad/dim/dim.h"
@@ -49,6 +50,10 @@ void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
     const DimStyle& cur = dim::styleOf(doc, doc.header().currentDimStyle);
     if (cur.id != kDimStyleStandard || cur.overallScale != 1)
         return;
+    // Annotative dimensions already follow the annotation scale; scaling the style too would
+    // multiply the two.
+    if (annotateNewObjects(doc.header()))
+        return;
     bool any = false;
     doc.forEachEntity([&](const Entity& e) {
         const EntityKind k = kind(e);
@@ -83,6 +88,22 @@ void scaleFirstAnnotationToView(cmd::CommandContext& ctx) {
 bool addDim(cmd::CommandContext& ctx, DimensionData d) {
     ctx.setUndoLabel(std::string(ctx.commandName()));
     scaleFirstDimensionToView(ctx);
+    {
+        // An annotative dimension on a style that is already enlarged comes out too big: say so
+        // once per drawing.
+        static std::set<std::uint64_t> warned;
+        const Document& doc = ctx.doc();
+        const DimStyle& cur = dim::styleOf(doc, doc.header().currentDimStyle);
+        const double annoScale = currentAnnotationScale(doc.header());
+        if (annotateNewObjects(doc.header()) && annoScale > 1 && cur.overallScale > 1 &&
+            warned.insert(doc.uid()).second)
+            ctx.message("Warning: dimension style \"" + cur.name +
+                        "\" already has an overall scale of " +
+                        std::to_string(static_cast<int>(cur.overallScale)) +
+                        " and new dimensions are annotative at 1:" +
+                        std::to_string(static_cast<int>(annoScale)) +
+                        ", so sizes multiply. Set the style's overall scale to 1.");
+    }
     auto id = ctx.tx().add(dimEntity(ctx.doc(), std::move(d)));
     if (!id) {
         ctx.message(id.error().message);
