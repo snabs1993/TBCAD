@@ -127,6 +127,10 @@ public:
     // Hooks run in registration order until one returns true.
     void addIdleClickHook(IdleClickFn fn) { idleClicks_.push_back(std::move(fn)); }
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
+    // The box over the viewport that edits the selection (QUICKPROPERTIES). Drawn inside a window
+    // the application opens; a later call replaces the earlier one.
+    void setQuickProperties(PanelDrawFn draw) { quickProps_ = std::move(draw); }
+    const PanelDrawFn& quickProperties() const { return quickProps_; }
     // Point filters (osnap, polar/ortho, grid snap ...). The registry owns them; the lowest
     // `order` that returns a point wins. AppCore installs them into every command runner.
     void addPointFilter(int order, std::unique_ptr<cmd::PointFilter> filter);
@@ -170,6 +174,7 @@ private:
     std::vector<IdleClickFn> idleClicks_{};
     std::vector<HoverMenuFn> hoverMenus_{};
     std::vector<PropertySection> sections_{};
+    PanelDrawFn quickProps_{};
     std::vector<PointFilterEntry> filters_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
     cmd::CursorFieldProvider* cursorFields_ = nullptr;

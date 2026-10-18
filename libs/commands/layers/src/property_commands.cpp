@@ -169,6 +169,38 @@ private:
     static void setField(CommandContext& ctx, const std::vector<EntityId>& ids,
                          std::optional<EntityKind> only, const std::string& field,
                          const std::string& text) {
+        // Word fields (contents, style, justify ...) are set as text on every object that has them.
+        {
+            bool isText = false;
+            for (EntityId id : ids) {
+                const Entity* e = ctx.doc().find(id);
+                if (!e || (only && kind(*e) != *only))
+                    continue;
+                for (const StringField& sf : stringFields(ctx.doc(), *e))
+                    isText = isText || sf.id == field;
+            }
+            if (isText) {
+                std::size_t changed = 0;
+                for (EntityId id : ids) {
+                    const Entity* e = ctx.doc().find(id);
+                    if (!e || (only && kind(*e) != *only) || ctx.doc().effective(e->common).locked)
+                        continue;
+                    auto fs = stringFields(ctx.doc(), *e);
+                    if (std::none_of(fs.begin(), fs.end(),
+                                     [&](const StringField& x) { return x.id == field; }))
+                        continue;
+                    auto r = setStringField(ctx.doc(), ctx.tx(), id, field, cmd::trim(text));
+                    if (!r) {
+                        ctx.message(r.error().message);
+                        return;
+                    }
+                    ++changed;
+                }
+                if (changed == 0)
+                    ctx.message("No selected object has an editable field \"" + field + "\".");
+                return;
+            }
+        }
         bool angleLike = field.find("angle") != std::string::npos;
         bool flag = field == "closed";
         double value = 0;

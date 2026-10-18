@@ -2714,130 +2714,24 @@ void Gui::textEditor(const ViewportRect& rect) {
 
 void Gui::quickProperties(const ViewportRect& rect) {
     if (core_.setting("ui.quickProps").value_or("0") != "1" || core_.selection().empty() ||
-        core_.runner().active())
+        core_.runner().active() || !registry_.quickProperties())
         return;
-    const Document& doc = core_.document();
-    std::vector<const Entity*> ents;
-    for (EntityId id : core_.selection())
-        if (const Entity* e = doc.find(id))
-            ents.push_back(e);
-    if (ents.empty())
-        return;
-    auto same = [&](auto get) {
-        for (const Entity* e : ents)
-            if (!(get(*e) == get(*ents.front())))
-                return false;
-        return true;
-    };
-    auto layerPath = [&](const Layer* l) {
-        std::string path;
-        for (; l; l = l->parent.value ? doc.layer(l->parent) : nullptr)
-            path = l->name + (path.empty() ? "" : "/" + path);
-        return path;
-    };
-    auto run = [&](const char* what, const std::string& value) {
-        core_.submitText("CHPROP");
-        core_.submitText(what);
-        core_.submitText(value);
-    };
-
     ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - 12, rect.y + 12), ImGuiCond_Always,
                             ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowBgAlpha(0.94f);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(260, 0), ImVec2(360, 520));
     const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
                                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
     if (ImGui::Begin("##quickprops", nullptr, wf)) {
-        if (ents.size() == 1)
-            ImGui::TextUnformatted(kindName(kind(*ents.front())));
-        else
-            ImGui::Text("%zu objects", ents.size());
-        ImGui::PushItemWidth(150.0f);
-
-        const bool layerSame = same([](const Entity& e) { return e.common.layer; });
-        const Layer* cur = layerSame ? doc.layer(ents.front()->common.layer) : nullptr;
-        if (ImGui::BeginCombo("Layer", cur ? layerPath(cur).c_str() : "*VARIES*")) {
-            for (const auto& [id, l] : doc.layers()) {
-                const std::string path = layerPath(&l);
-                if (ImGui::Selectable(path.c_str(), cur && cur->id == id))
-                    run("Layer", path);
-            }
-            ImGui::EndCombo();
-        }
-
-        struct Named {
-            const char* label;
-            const char* value;
-        };
-        static const Named kColors[] = {
-            {"ByLayer", "ByLayer"}, {"ByBlock", "ByBlock"}, {"1 Red", "1"},
-            {"2 Yellow", "2"},      {"3 Green", "3"},       {"4 Cyan", "4"},
-            {"5 Blue", "5"},        {"6 Magenta", "6"},     {"7 White", "7"}};
-        std::string colorLabel = "*VARIES*";
-        if (same([](const Entity& e) { return e.common.color; })) {
-            const Color c = ents.front()->common.color;
-            colorLabel = c.kind == ColorKind::ByLayer   ? "ByLayer"
-                         : c.kind == ColorKind::ByBlock ? "ByBlock"
-                         : c.kind == ColorKind::Index   ? std::to_string(int(c.r))
-                                                        : "RGB";
-            for (const Named& n : kColors)
-                if (colorLabel == n.value)
-                    colorLabel = n.label;
-        }
-        if (ImGui::BeginCombo("Color", colorLabel.c_str())) {
-            for (const Named& n : kColors)
-                if (ImGui::Selectable(n.label, colorLabel == n.label))
-                    run("Color", n.value);
-            ImGui::EndCombo();
-        }
-
-        std::string ltLabel = "*VARIES*";
-        if (same([](const Entity& e) { return e.common.linetype; })) {
-            const LinetypeId lt = ents.front()->common.linetype;
-            const Linetype* row = doc.linetype(lt);
-            ltLabel = lt == kLinetypeByLayer   ? "ByLayer"
-                      : lt == kLinetypeByBlock ? "ByBlock"
-                      : row                    ? row->name
-                                               : "?";
-        }
-        if (ImGui::BeginCombo("Linetype", ltLabel.c_str())) {
-            if (ImGui::Selectable("ByLayer", ltLabel == "ByLayer"))
-                run("Linetype", "ByLayer");
-            if (ImGui::Selectable("ByBlock", ltLabel == "ByBlock"))
-                run("Linetype", "ByBlock");
-            for (const auto& [id, l] : doc.linetypes())
-                if (ImGui::Selectable(l.name.c_str(), ltLabel == l.name))
-                    run("Linetype", l.name);
-            ImGui::EndCombo();
-        }
-
-        static const Named kWeights[] = {
-            {"ByLayer", "ByLayer"}, {"Default", "Default"}, {"0.13 mm", "0.13"},
-            {"0.25 mm", "0.25"},    {"0.35 mm", "0.35"},    {"0.50 mm", "0.5"},
-            {"0.70 mm", "0.7"},     {"1.00 mm", "1"},       {"2.00 mm", "2"}};
-        std::string lwLabel = "*VARIES*";
-        if (same([](const Entity& e) { return e.common.lineweight; })) {
-            const LineWeight w = ents.front()->common.lineweight;
-            char buf[32];
-            std::snprintf(buf, sizeof buf, "%.2f mm", w.v / 100.0);
-            lwLabel = w.isByLayer()   ? "ByLayer"
-                      : w.isByBlock() ? "ByBlock"
-                      : w.isValue()   ? buf
-                                      : "Default";
-        }
-        if (ImGui::BeginCombo("Lineweight", lwLabel.c_str())) {
-            for (const Named& n : kWeights)
-                if (ImGui::Selectable(n.label, lwLabel == n.label))
-                    run("Lineweight", n.value);
-            ImGui::EndCombo();
-        }
-        ImGui::PopItemWidth();
+        ui::PanelContext pc;
+        fillPanelContext(pc);
+        registry_.quickProperties()(pc);
     }
     ImGui::End();
 }
 
-void Gui::panels() {
-    ui::PanelContext pc;
+void Gui::fillPanelContext(ui::PanelContext& pc) {
     pc.doc = &core_.document();
     pc.host = &core_;
     pc.selection = &core_.selection();
@@ -2888,6 +2782,11 @@ void Gui::panels() {
         }
         pc.multiSelection = false;
     };
+}
+
+void Gui::panels() {
+    ui::PanelContext pc;
+    fillPanelContext(pc);
     for (const std::string& id : core_.takePanelCloses())
         panelOpen_[id] = false;
     for (const std::string& id : core_.takePanelRequests()) {

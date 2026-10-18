@@ -132,6 +132,7 @@ private:
     void quickProperties(const ViewportRect& rect);
     void textEditor(const ViewportRect& rect);
     void panels();
+    void fillPanelContext(ui::PanelContext& pc);
     void dialogs();
     void viewportInput(const ViewportRect& rect);
     void viewportMenu();
