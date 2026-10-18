@@ -1069,4 +1069,44 @@ TEST_CASE("layer transparency is read from the layer's ADSK_XREC_LAYER_ALPHA rec
     CHECK(layer->transparency == 50);  // 0x02000080: alpha 128 of 255
 }
 
+TEST_CASE("AutoCAD annotative objects keep their scales from the context data") {
+    const std::string dxf =
+        "0\nSECTION\n2\nENTITIES\n"
+        "0\nCIRCLE\n5\nA1\n8\n0\n10\n0\n20\n0\n40\n1\n"
+        "102\n{ACAD_XDICTIONARY\n360\nD1\n102\n}\n"
+        "1001\nAcadAnnotative\n1000\nAnnotativeData\n1002\n{\n1070\n1\n1070\n1\n1002\n}\n"
+        "0\nCIRCLE\n5\nA2\n8\n0\n10\n5\n20\n0\n40\n1\n"
+        "0\nENDSEC\n"
+        "0\nSECTION\n2\nOBJECTS\n"
+        "0\nDICTIONARY\n5\nD1\n100\nAcDbDictionary\n3\nAcDbContextDataManager\n360\nD2\n"
+        "0\nDICTIONARY\n5\nD2\n100\nAcDbDictionary\n3\nACDB_ANNOTATIONSCALES\n360\nD3\n"
+        "0\nDICTIONARY\n5\nD3\n100\nAcDbDictionary\n3\n*A1\n350\nC1\n3\n*A2\n350\nC2\n"
+        "0\nACDB_CIRCLEOBJECTCONTEXTDATA_CLASS\n5\nC1\n100\nAcDbObjectContextData\n70\n3\n"
+        "290\n1\n340\nS1\n"
+        "0\nACDB_CIRCLEOBJECTCONTEXTDATA_CLASS\n5\nC2\n100\nAcDbObjectContextData\n70\n3\n"
+        "290\n0\n340\nS2\n"
+        "0\nSCALE\n5\nS1\n100\nAcDbScale\n300\n1:50\n140\n1\n141\n50\n70\n0\n"
+        "0\nSCALE\n5\nS2\n100\nAcDbScale\n300\n1:100\n140\n1\n141\n100\n70\n0\n"
+        "0\nENDSEC\n0\nEOF\n";
+    Loaded l = load(dxf);
+    int annotative = 0, plain = 0;
+    for (EntityId id : l.doc().modelSpace()) {
+        const Entity& e = *l.doc().find(id);
+        const CircleData* c = entityAs<CircleData>(e);
+        REQUIRE(c);
+        if (c->center.x < 1) {
+            ++annotative;
+            CHECK(e.common.annotative);
+            REQUIRE(e.common.annoScales.size() == 2);
+            CHECK(e.common.annoScales.front() == 50);
+            CHECK(*(e.common.annoScales.begin() + 1) == 100);
+        } else {
+            ++plain;
+            CHECK_FALSE(e.common.annotative);
+        }
+    }
+    CHECK(annotative == 1);
+    CHECK(plain == 1);
+}
+
 }  // namespace tbcad::dxf
