@@ -190,9 +190,10 @@ public:
                 ok = true;
             }
             // The search costs 16000 frame probes; once many objects in a row had nothing nearby
-            // the rest are damaged for good and the search is dropped (it took seconds on a file
+            // the search is tried on every 64th object only (it took seconds on a file
             // with thousands of such objects).
-            for (std::int64_t d = 1; !ok && searchMisses_ < 60 && d <= 8192; ++d) {
+            const bool search = searchMisses_ < 60 || ++searchSkipped_ % 64 == 0;
+            for (std::int64_t d = 1; !ok && search && d <= 8192; ++d) {
                 for (std::int64_t sd : {d, -d}) {
                     if (frameHandle(e.offset + sd) == e.handle) {
                         found = sd;
@@ -201,7 +202,7 @@ public:
                     }
                 }
             }
-            if (searchMisses_ < 60)
+            if (search)
                 searchMisses_ = ok ? 0 : searchMisses_ + 1;
             if (ok) {
                 ++out_.relocated[found];
@@ -235,6 +236,7 @@ private:
 
     bool quiet_ = false;
     bool framed_ = true;
+    int searchSkipped_ = 0;
     int searchMisses_ = 0;  // objects in a row whose frame was not found near the map's place
     // A problem with the frame of an object: silent while the caller may still look elsewhere.
     void frameNote(const std::string& s) {
