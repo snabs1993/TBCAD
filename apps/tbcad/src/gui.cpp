@@ -436,6 +436,10 @@ bool Gui::requestClose() {
 std::filesystem::path Gui::dialogFolder() const {
     if (core_.hasFile())
         return core_.file().parent_path();
+    // The newest recent file wins over the remembered dialog folder: it also covers files saved
+    // with a typed SAVEAS path or opened from the command line, which never went through a dialog.
+    if (!core_.recentFiles().empty())
+        return platform::pathFromUtf8(core_.recentFiles().front()).parent_path();
     return platform::pathFromUtf8(core_.settings().getString("files.lastFolder", ""));
 }
 
