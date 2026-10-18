@@ -14,36 +14,45 @@ LineWeight LineWeight::mm(double millimetres) {
 
 namespace {
 
-Rgba fromHsv(double hueDeg, double s, double v) {
-    double c = v * s;
-    double hp = hueDeg / 60.0;
-    double x = c * (1 - std::abs(std::fmod(hp, 2.0) - 1));
-    double r = 0, g = 0, b = 0;
-    if (hp < 1)
-        r = c, g = x;
-    else if (hp < 2)
-        r = x, g = c;
-    else if (hp < 3)
-        g = c, b = x;
-    else if (hp < 4)
-        g = x, b = c;
-    else if (hp < 5)
-        r = x, b = c;
-    else
-        r = c, b = x;
-    double m = v - c;
-    auto q = [](double f) {
-        return static_cast<std::uint8_t>(std::lround(std::clamp(f, 0.0, 1.0) * 255));
-    };
-    return {q(r + m), q(g + m), q(b + m), 255};
-}
-
-// Shade k (0..9) within a hue: pure, then lighter tints and darker shades.
+// AutoCAD's index colours 10..249: 24 hues 15 degrees apart (ten indices each); within a hue
+// ten shades, pure and half-saturated at brightness 100, 80, 60, 50 and 30 %. Components are cut
+// off (not rounded) like AutoCAD's table, e.g. 11 = FF7F7F, 21 = FF9F7F, 17 = 7F3F3F.
 struct Shade {
-    double s, v;
+    double s, v;  // saturation, brightness of 255
 };
-constexpr Shade kShades[10] = {{1.0, 1.0}, {1.0, 0.75}, {1.0, 0.5},  {0.5, 1.0},   {0.5, 0.75},
-                               {0.5, 0.5}, {1.0, 0.38}, {0.25, 1.0}, {0.25, 0.75}, {0.25, 0.5}};
+constexpr Shade kShades[10] = {{1.0, 255.0}, {0.5, 255.0}, {1.0, 204.0}, {0.5, 204.0}, {1.0, 153.0},
+                               {0.5, 153.0}, {1.0, 127.5}, {0.5, 127.5}, {1.0, 76.5},  {0.5, 76.5}};
+
+Rgba fromHueShade(int hueStep, const Shade& sh) {
+    const int hue = hueStep * 15;
+    const int sector = hue / 60;
+    const double f = (hue % 60) / 60.0;
+    const double hi = sh.v, lo = sh.v * (1.0 - sh.s);
+    const double up = lo + (hi - lo) * f, down = lo + (hi - lo) * (1.0 - f);
+    double r = 0, g = 0, b = 0;
+    switch (sector) {
+        case 0:
+            r = hi, g = up, b = lo;
+            break;
+        case 1:
+            r = down, g = hi, b = lo;
+            break;
+        case 2:
+            r = lo, g = hi, b = up;
+            break;
+        case 3:
+            r = lo, g = down, b = hi;
+            break;
+        case 4:
+            r = up, g = lo, b = hi;
+            break;
+        default:
+            r = hi, g = lo, b = down;
+            break;
+    }
+    auto q = [](double c) { return static_cast<std::uint8_t>(std::floor(c + 1e-9)); };
+    return {q(r), q(g), q(b), 255};
+}
 
 std::array<Rgba, 256> buildPalette() {
     std::array<Rgba, 256> p{};
@@ -58,14 +67,13 @@ std::array<Rgba, 256> buildPalette() {
     p[8] = {128, 128, 128, 255};
     p[9] = {192, 192, 192, 255};
     for (int i = 10; i <= 249; ++i) {
-        int n = i - 10;
-        const Shade& sh = kShades[n % 10];
-        p[static_cast<std::size_t>(i)] = fromHsv((n / 10) * 15.0, sh.s, sh.v);
+        const int n = i - 10;
+        p[static_cast<std::size_t>(i)] = fromHueShade(n / 10, kShades[n % 10]);
     }
-    for (int i = 250; i <= 255; ++i) {
-        auto g = static_cast<std::uint8_t>(i == 255 ? 255 : 45 * (i - 249));
-        p[static_cast<std::size_t>(i)] = {g, g, g, 255};
-    }
+    // The six greys of AutoCAD's table.
+    constexpr std::uint8_t kGreys[6] = {51, 80, 105, 130, 190, 255};
+    for (int i = 250; i <= 255; ++i)
+        p[static_cast<std::size_t>(i)] = {kGreys[i - 250], kGreys[i - 250], kGreys[i - 250], 255};
     return p;
 }
 

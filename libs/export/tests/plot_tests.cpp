@@ -676,3 +676,29 @@ TEST_CASE("a picture block is plotted as a picture in PDF, SVG and raster output
         CHECK_FALSE(std::get_if<PlotImage>(&p));
     fs::remove_all(dir);
 }
+
+TEST_CASE("a table that keeps grey object colours leaves a layer of index colour 253 grey") {
+    Document doc;
+    Entity e = line({0, 0}, {100, 0});
+    e.common.color = Color::index(253);
+    addEntity(doc, e);
+    // Like the office table: every colour black except the greys, which keep the object colour.
+    plotstyle::PlotStyleTable t;
+    for (int i = 1; i <= 249; ++i)
+        t.entries[static_cast<std::size_t>(i)].color = Rgba{0, 0, 0, 255};
+    PlotSettings s;
+    s.styleTable = std::make_shared<plotstyle::PlotStyleTable>(t);
+    s.traceColors = true;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    bool found = false;
+    for (const auto& p : sheet.value().prims)
+        if (const auto* pp = std::get_if<PlotPath>(&p)) {
+            CHECK(pp->style.color == Rgba{130, 130, 130, 255});
+            found = true;
+        }
+    CHECK(found);
+    REQUIRE(sheet.value().trace.size() == 1);
+    CHECK(sheet.value().trace[0].find("ACI 253") != std::string::npos);
+    CHECK(sheet.value().trace[0].find("130,130,130, 1 uses") != std::string::npos);
+}
