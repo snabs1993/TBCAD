@@ -166,6 +166,41 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
             if (found)
                 break;
         }
+        if (!found) {
+            // A table imported under another spelling ("EP100.tbstyle" for "_EP-100.ctb"): same
+            // name once case, punctuation and the extension are ignored.
+            const auto plain = [](const std::filesystem::path& p) {
+                std::string out;
+                for (char c : p.stem().string())
+                    if (std::isalnum(static_cast<unsigned char>(c)))
+                        out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return out;
+            };
+            std::filesystem::path wanted(name);
+            std::string ext = wanted.extension().string();
+            for (char& c : ext)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            const std::string key = plain(ext == ".ctb" || ext == ".stb" || ext == ".tbstyle"
+                                              ? wanted
+                                              : std::filesystem::path(name + ".x"));
+            for (const auto& folder : styleSearchFolders(host)) {
+                if (!std::filesystem::is_directory(folder, ec))
+                    continue;
+                for (const auto& e : std::filesystem::directory_iterator(folder, ec)) {
+                    std::string x = e.path().extension().string();
+                    for (char& c : x)
+                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if ((x == ".ctb" || x == ".tbstyle") && !key.empty() &&
+                        plain(e.path()) == key) {
+                        path = e.path();
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                    break;
+            }
+        }
         if (!found)
             return Error{ErrorCode::NotFound, "Plot style table \"" + name +
                                                   "\" was not found next to the drawing, in the "

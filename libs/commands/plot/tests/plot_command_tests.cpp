@@ -455,6 +455,18 @@ TEST_CASE("plot style folders added by the user are searched") {
     CHECK(plot::userStyleFolders(h).empty());
 }
 
+TEST_CASE("a style imported under another spelling is still found by the layout's name") {
+    Fixture f;
+    DocHost h(f.doc, f.reg);
+    h.file = (f.dir / "plan.tbcad").string();
+    plotstyle::PlotStyleTable t = *plotstyle::builtinTable("monochrome.ctb");
+    t.name = "EP100";
+    REQUIRE(plotstyle::saveFile(t, f.dir / "EP100.tbstyle").ok());
+    CHECK(plot::resolveStyleTable(h, "_EP-100.ctb").ok());
+    CHECK(plot::resolveStyleTable(h, "_ep-100").ok());
+    CHECK_FALSE(plot::resolveStyleTable(h, "_EP-101.ctb").ok());
+}
+
 TEST_CASE("PLOT asks before replacing a file that already exists") {
     Fixture f;
     const auto out = f.path("again.pdf");
