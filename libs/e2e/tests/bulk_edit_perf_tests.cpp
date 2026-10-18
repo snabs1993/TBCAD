@@ -254,7 +254,7 @@ TEST_CASE("perf: layer and block commands on a big drawing") {
     big.bench("LAYER-OFF", {"-LAYER", "Off", "0", ""});
     big.bench("LAYER-FRZ", {"-LAYER", "Freeze", "0", ""});
     big.bench("LAYER-LOCK", {"-LAYER", "Lock", "0", ""});
-    big.bench("BLOCK", {"BLOCK", "Everything", "0,0"});
+    big.bench("BLOCK", {"BLOCK", "Everything", "0,0", ""});
 }
 
 TEST_CASE("perf: selection on a big drawing") {
@@ -383,4 +383,36 @@ TEST_CASE("perf: snap lookup with every mode on a big drawing") {
         std::printf("  aperture %7.1f mm: mean %.3f ms, worst %.3f ms, %.1f candidates\n", aperture,
                     total / steps, worst, static_cast<double>(found) / steps);
     }
+}
+
+TEST_CASE("perf: a big block made, exploded, redefined and edited") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Big big;
+    std::printf("block work on %d objects\n", 2 * big.n);
+    auto timed = [&](const char* label, auto&& fn) {
+        auto t = std::chrono::steady_clock::now();
+        fn();
+        const double a = ms(t);
+        big.core->updateFrame();
+        std::printf("  %-22s %6.0f ms (+ frame %5.0f ms)\n", label, a, ms(t) - a);
+    };
+    big.core->selectAll();
+    timed("BLOCK everything", [&] {
+        for (const char* l : {"BLOCK", "Everything", "0,0", ""})
+            big.core->submitText(l);
+    });
+    std::printf("  model space now %zu objects, prompt: %s\n",
+                big.core->document().modelSpaceCount(), big.core->promptText().c_str());
+    for (const auto& h : big.core->history())
+        std::printf("    | %s\n", h.c_str());
+    timed("EXPLODE the insert", [&] {
+        big.core->selectAll();
+        big.core->submitText("EXPLODE");
+    });
+    std::printf("  model space now %zu objects\n", big.core->document().modelSpaceCount());
+    timed("undo EXPLODE", [&] { big.core->undo(); });
+    timed("redo EXPLODE", [&] { big.core->redo(); });
+    timed("undo EXPLODE", [&] { big.core->undo(); });
+    timed("undo BLOCK", [&] { big.core->undo(); });
+    CHECK(big.core->document().modelSpaceCount() == static_cast<std::size_t>(2 * big.n));
 }
