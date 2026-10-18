@@ -763,10 +763,27 @@ void Gui::shortcuts() {
     }
 
     // Enter and Space finish a prompt when no text field is active (AutoCAD habit).
-    if (!io.WantTextInput && !ImGui::IsAnyItemActive() &&
-        (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter) ||
-         ImGui::IsKeyPressed(ImGuiKey_Space)))
-        core_.submitText("");
+    // Characters typed a moment ago (before the command line took focus) are still waiting in
+    // typedWhileUnfocused_: Enter must send them, not an empty answer, and Space is one of them.
+    if (!io.WantTextInput && !ImGui::IsAnyItemActive()) {
+        const bool enter =
+            ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+        const bool space = ImGui::IsKeyPressed(ImGuiKey_Space);
+        if (!typedWhileUnfocused_.empty()) {
+            if (enter) {
+                std::string line = input_ + typedWhileUnfocused_;
+                input_.clear();
+                typedWhileUnfocused_.clear();
+                if (inputHistory_.empty() || inputHistory_.back() != line)
+                    inputHistory_.push_back(line);
+                historyPos_ = -1;
+                core_.submitText(line);
+                refocusInput_ = true;
+            }
+        } else if (enter || space) {
+            core_.submitText("");
+        }
+    }
 }
 
 // ---- menus -------------------------------------------------------------------------------------
