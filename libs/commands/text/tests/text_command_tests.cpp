@@ -468,3 +468,26 @@ TEST_CASE("EXPLODE turns multiline text into one single-line text per line - und
     CHECK(mtexts == 1);
     CHECK(texts == 0);
 }
+
+TEST_CASE("EXPLODE of empty multiline text changes nothing and says so") {
+    Fixture f;
+    Transaction tx = f.doc.begin("add");
+    MTextData m;
+    m.position = {0, 0};
+    m.utf8 = "\\P\\P";
+    Entity e;
+    e.data = Indirect<MTextData>(m);
+    auto id = tx.add(std::move(e));
+    REQUIRE(id.ok());
+    tx.commit();
+    f.host.setSelection({});
+    f.host.run("EXPLODE", {cmd::ScriptItem::select({id.value()}), cmd::ScriptItem::enter()});
+    int mtexts = 0, texts = 0;
+    f.doc.forEachEntity([&](const Entity& x) {
+        mtexts += entityAs<MTextData>(x) != nullptr;
+        texts += entityAs<TextData>(x) != nullptr;
+    });
+    CHECK(mtexts == 1);
+    CHECK(texts == 0);
+    CHECK(f.host.logContains("empty"));
+}

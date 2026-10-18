@@ -128,6 +128,13 @@ double length(const Entity& e);
 // Point and local parameter helpers for polylines (t = segmentIndex + local in [0,1]).
 Vec2 polylinePointAt(const PolylineData& pl, double t);
 
+// The curve of the entity as points in the direction of travel (polyline arcs with a negative
+// bulge run clockwise; circles, arcs and ellipses run counter-clockwise). Circular arcs are sampled
+// until the chord deviates less than `tol` - without the 4096-segment limit of flatten() - other
+// curves are flattened. A closed curve does not repeat its first point. False for kinds without a
+// curve.
+bool outlinePoints(const Entity& e, double tol, std::vector<Vec2>& out);
+
 // ---- Transforms
 // ----------------------------------------------------------------------------------
 

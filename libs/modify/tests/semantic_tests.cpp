@@ -321,3 +321,79 @@ TEST_CASE("fit curve passes through every vertex, with a continuous tangent, as 
         }
     }
 }
+
+TEST_CASE("break on closed curves removes the stretch between the points and opens the rest") {
+    for (std::uint64_t seed = 1; seed <= 200; ++seed) {
+        Rng r(seed);
+        Entity e;
+        switch (seed % 3) {
+            case 0:
+                e = circle(r.point(), r.uni(3, 40));
+                break;
+            case 1: {
+                std::vector<PolyVertex> v;
+                const Vec2 c = r.point();
+                const int n = 4 + r.pick(5);
+                for (int i = 0; i < n; ++i) {
+                    const double a = kTwoPi * i / n;
+                    const double rad = r.uni(8, 20);
+                    v.push_back({c + Vec2{rad * std::cos(a), rad * std::sin(a)},
+                                 r.pick(3) == 0 ? r.uni(-0.3, 0.3) : 0.0, 0, 0});
+                }
+                e = poly(std::move(v), true);
+                break;
+            }
+            default: {
+                EllipseData d;
+                d.center = r.point();
+                d.majorAxis = {r.uni(10, 30), 0};
+                d.ratio = r.uni(0.3, 1);
+                e = make(std::move(d));
+            }
+        }
+        const double L = geom::length(e);
+        const double f1 = r.uni(0.05, 0.45), f2 = r.uni(0.55, 0.95);
+        double gap = L * (f2 - f1);
+        // Points along the travel direction of the curve; for a circle that is counter-clockwise.
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(e, cs);
+        Vec2 p1, p2;
+        if (const auto* pl = entityAs<PolylineData>(e)) {
+            p1 = pointAtFraction(e, f1);
+            p2 = pointAtFraction(e, f2);
+            (void)pl;
+        } else {
+            p1 = cs[0].pointAt(cs[0].t0() + f1 * cs[0].sweep());
+            p2 = cs[0].pointAt(cs[0].t0() + f2 * cs[0].sweep());
+            gap = cs[0].lengthBetween(cs[0].t0() + f1 * cs[0].sweep(),
+                                      cs[0].t0() + f2 * cs[0].sweep());
+        }
+        auto br = breakEntity(e, p1, p2);
+        REQUIRE_MESSAGE(br.ok(), "seed " << seed << " kind " << static_cast<int>(kind(e)));
+        // A circle loses the stretch from the first point counter-clockwise to the second; a
+        // closed polyline loses the stretch between them in either order.
+        const double kept = sumLength(br.value());
+        if (kind(e) == EntityKind::Polyline) {
+            const bool ok = near(kept, L - gap, 2e-3 * (1 + L)) || near(kept, gap, 2e-3 * (1 + L));
+            CHECK_MESSAGE(ok, "seed " << seed);
+        } else
+            CHECK_MESSAGE(near(kept, L - gap, 2e-3 * (1 + L)),
+                          "seed " << seed << " kind " << static_cast<int>(kind(e)));
+    }
+}
+
+TEST_CASE("break at both ends or twice at one point is refused or harmless, never a crash") {
+    Entity l = line({0, 0}, {10, 0});
+    CHECK_FALSE(breakEntity(l, {5, 0}, {5, 0}).ok());
+    CHECK_FALSE(breakAtPoint(l, {0, 0}).ok());
+    CHECK_FALSE(breakAtPoint(l, {10, 0}).ok());
+    auto beyond = breakEntity(l, {-5, 0}, {4, 0});  // the first point is past the start
+    REQUIRE(beyond.ok());
+    CHECK(near(sumLength(beyond.value()), 6));
+    auto all = breakEntity(l, {-5, 0}, {15, 0});  // both points outside: nothing is left
+    REQUIRE(all.ok());
+    CHECK(all.value().eraseSource);
+    Entity c = circle({0, 0}, 10);
+    CHECK_FALSE(breakAtPoint(c, {10, 0}).ok());
+    CHECK_FALSE(breakEntity(c, {10, 0}, {10, 0}).ok());
+}

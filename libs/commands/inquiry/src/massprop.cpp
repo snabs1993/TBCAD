@@ -5,29 +5,96 @@
 
 #include "extra.h"
 #include "tbcad/geom/geom.h"
+#include "tbcad/geom/polybool.h"
 
 namespace tbcad::inquiry {
 
 namespace {
 
+// The outline of a closed shape as a polygon. The deviation from the true curve is at most
+// `1e-9` of the shape's size (but never more than 1e-4 mm), so the sums below are good to a few
+// parts in a hundred million.
 std::vector<Vec2> outlineOfShape(const Entity& e) {
     std::vector<geom::CurveRef> curves;
     std::vector<Vec2> pts;
     if (!geom::curvesOf(e, curves))
         return pts;
+    BBox2 box = curves.front().bounds();
     for (const auto& c : curves) {
-        std::vector<Vec2> part;
-        geom::flatten(c, 1e-4, part);
-        for (const Vec2& p : part)
-            if (pts.empty() || distance(pts.back(), p) > 1e-9)
-                pts.push_back(p);
+        box.expand(c.bounds().min);
+        box.expand(c.bounds().max);
     }
-    while (pts.size() > 1 && distance(pts.front(), pts.back()) <= 1e-9)
-        pts.pop_back();
+    const double tol = std::clamp(distance(box.min, box.max) * 1e-9, 1e-10, 1e-4);
+    geom::outlinePoints(e, tol, pts);
     return pts;
 }
 
+bool closedShape(const Entity& e) {
+    if (const auto* pl = entityAs<PolylineData>(e))
+        return pl->closed;
+    return areaOfEntity(e).has_value();
+}
+
 }  // namespace
+
+std::optional<MassProps> massPropsOfEntities(const std::vector<const Entity*>& entities) {
+    geom::Region region;
+    double perimeter = 0;
+    for (const Entity* e : entities) {
+        if (!e || !closedShape(*e))
+            return std::nullopt;
+        std::vector<Vec2> pts = outlineOfShape(*e);
+        if (pts.size() < 3)
+            return std::nullopt;
+        for (std::size_t i = 0; i < pts.size(); ++i)
+            perimeter += distance(pts[i], pts[(i + 1) % pts.size()]);
+        region.rings.push_back(std::move(pts));
+    }
+    if (region.rings.empty())
+        return std::nullopt;
+    // A ring inside a ring is a hole: outer rings come out counter-clockwise, holes clockwise, so
+    // the signed sums below subtract the holes.
+    region = geom::normalized(std::move(region), 1e-12);
+    if (region.rings.empty())
+        return std::nullopt;
+
+    // Sums about the first vertex (survey coordinates would otherwise lose every digit).
+    const Vec2 ref = region.rings.front().front();
+    double a2 = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    BBox2 bounds;
+    for (const auto& ring : region.rings) {
+        for (std::size_t i = 0; i < ring.size(); ++i) {
+            const Vec2 p = ring[i] - ref, q = ring[(i + 1) % ring.size()] - ref;
+            const double w = cross(p, q);
+            a2 += w;
+            sx += (p.x + q.x) * w;
+            sy += (p.y + q.y) * w;
+            sxx += (p.x * p.x + p.x * q.x + q.x * q.x) * w;
+            syy += (p.y * p.y + p.y * q.y + q.y * q.y) * w;
+            sxy += (p.x * q.y + 2 * p.x * p.y + 2 * q.x * q.y + q.x * p.y) * w;
+            bounds.expand(ring[i]);
+        }
+    }
+    if (std::abs(a2) < 1e-18)
+        return std::nullopt;
+    const double area = a2 / 2;
+    const Vec2 c{sx / (3 * a2), sy / (3 * a2)};  // relative to ref
+    MassProps m;
+    m.area = area;
+    m.perimeter = perimeter;
+    m.centroid = ref + c;
+    // About the origin at ref: Ix = sum(y^2) etc.; shift to the centroid with the parallel axis
+    // rule.
+    const double ixx0 = sxx / 12, iyy0 = syy / 12, ixy0 = sxy / 24;
+    // Naming follows the old code: ixx is the moment about the x axis (integral of y^2).
+    m.ixx = iyy0 - area * c.y * c.y;
+    m.iyy = ixx0 - area * c.x * c.x;
+    m.ixy = ixy0 - area * c.x * c.y;
+    m.rx = std::sqrt(std::max(0.0, m.ixx / area));
+    m.ry = std::sqrt(std::max(0.0, m.iyy / area));
+    m.bounds = bounds;
+    return m;
+}
 
 std::optional<MassProps> massPropsOfEntity(const Entity& e) {
     const auto base = areaOfEntity(e);
@@ -36,39 +103,11 @@ std::optional<MassProps> massPropsOfEntity(const Entity& e) {
     if (const auto* pl = entityAs<PolylineData>(e))
         if (!pl->closed)
             return std::nullopt;
-    std::vector<Vec2> pts = outlineOfShape(e);
-    if (pts.size() < 3)
+    auto m = massPropsOfEntities({&e});
+    if (!m)
         return std::nullopt;
-
-    // Shoelace sums about the origin, then the parallel-axis shift to the centroid.
-    double a2 = 0, cx = 0, cy = 0, ixo = 0, iyo = 0, ixyo = 0;
-    for (std::size_t i = 0; i < pts.size(); ++i) {
-        const Vec2& p = pts[i];
-        const Vec2& q = pts[(i + 1) % pts.size()];
-        const double w = cross(p, q);
-        a2 += w;
-        cx += (p.x + q.x) * w;
-        cy += (p.y + q.y) * w;
-        ixo += (p.y * p.y + p.y * q.y + q.y * q.y) * w;
-        iyo += (p.x * p.x + p.x * q.x + q.x * q.x) * w;
-        ixyo += (p.x * q.y + 2 * p.x * p.y + 2 * q.x * q.y + q.x * p.y) * w;
-    }
-    if (std::abs(a2) < 1e-12)
-        return std::nullopt;
-    const double sign = a2 < 0 ? -1.0 : 1.0;  // normalise orientation
-    const double area = std::abs(a2) / 2;
-    MassProps m;
-    m.area = base->area;
-    m.perimeter = base->perimeter;
-    m.centroid = {cx / (3 * a2), cy / (3 * a2)};
-    const double ix = sign * ixo / 12, iy = sign * iyo / 12, ixy = sign * ixyo / 24;
-    m.ixx = ix - area * m.centroid.y * m.centroid.y;
-    m.iyy = iy - area * m.centroid.x * m.centroid.x;
-    m.ixy = ixy - area * m.centroid.x * m.centroid.y;
-    m.rx = std::sqrt(std::max(0.0, m.ixx / area));
-    m.ry = std::sqrt(std::max(0.0, m.iyy / area));
-    for (const Vec2& p : pts)
-        m.bounds.expand(p);
+    m->area = base->area;
+    m->perimeter = base->perimeter;
     return m;
 }
 
@@ -78,19 +117,24 @@ class MassPropCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "MASSPROP"; }
     std::string_view description() const override {
-        return "Area, centroid and moments of inertia of a closed shape";
+        return "Area, centroid and moments of inertia of closed shapes (rings inside rings are "
+               "holes)";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
-        cmd::EntityOptions eo;
-        eo.filter = [](const Entity& e) { return massPropsOfEntity(e).has_value(); };
-        auto picked = co_await ctx.getEntity("Select a closed object", eo);
-        if (!picked.ok())
+        cmd::SelectionOptions so;
+        so.filter = [](const Entity& e) { return closedShape(e) && massPropsOfEntity(e); };
+        auto picked = co_await ctx.getSelection("Select closed objects", so);
+        if (!picked.ok() || picked.ids.empty())
             co_return;
-        const Entity* e = ctx.doc().find(picked.id);
-        auto m = e ? massPropsOfEntity(*e) : std::nullopt;
+        std::vector<const Entity*> es;
+        for (EntityId id : picked.ids)
+            if (const Entity* e = ctx.doc().find(id))
+                es.push_back(e);
+        // One object: its exact area. Several: one region, a ring inside a ring is a hole.
+        auto m = es.size() == 1 ? massPropsOfEntity(*es[0]) : massPropsOfEntities(es);
         if (!m) {
-            ctx.message("That object is not a closed shape.");
+            ctx.message("Those objects are not closed shapes.");
             co_return;
         }
         const Precision p = 4;
