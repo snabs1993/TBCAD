@@ -263,3 +263,12 @@ TEST_CASE("DWGPROPS stores the drawing properties in the header") {
     host.run("DWGPROPS", {"Title", "", cmd::ScriptItem::enter()});
     CHECK(f.doc.header().custom.count("tbcad.prop.title") == 0);
 }
+
+TEST_CASE("FINDSTRAY leaves ordinary objects alone") {
+    Fixture f;
+    f.add(line({0, 0}, {10, 0}));
+    f.add(Entity{{}, rect(5, 5)});
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("FINDSTRAY", {});
+    CHECK(host.logContains("No stray lines found"));
+}
