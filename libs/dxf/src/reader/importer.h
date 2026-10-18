@@ -210,6 +210,8 @@ private:
         bool on = true;
         int id = 0;
         std::vector<std::string> frozen{};  // layer names (DXF spelling)
+        std::vector<Vec2> clip{};           // non-rectangular outline on the sheet (mm)
+        std::string clipHandle{};           // group 340: the boundary polyline, found at the end
     };
     struct Sheet {
         std::string foldedName{};
@@ -243,6 +245,8 @@ private:
         int line = 0;
     };
     std::vector<PendingImage> images_{};
+    std::map<std::string, std::vector<Vec2>>
+        sheetRings_{};                                // closed polylines on sheets, by handle
     std::map<std::string, std::string> imageDefs_{};  // IMAGEDEF handle -> file path
     std::map<std::string, int> imageNames_{};
     std::map<char, int> mtextDropped_{};

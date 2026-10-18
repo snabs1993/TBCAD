@@ -963,14 +963,33 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
         v.scaleN = viewHeight > 0 ? viewHeight / h : 1;
         v.on = r.integer(68, 1) != 0;
         v.id = static_cast<int>(sh.viewports.size()) + 1;
+        if (r.integer(90, 0) & 16384)  // non-rectangular clipping is on
+            v.clipHandle = std::string(r.raw(340));
         bool ours = false;
         for (const Group& g : r.g) {
             if (g.code == 1001) {
                 ours = g.str() == "TBCAD";
             } else if (ours && g.code == 1000) {
                 const std::string t = dec(g.str());
-                if (t.rfind("frozen=", 0) == 0)
+                if (t.rfind("frozen=", 0) == 0) {
                     v.frozen.push_back(t.substr(7));
+                } else if (t.rfind("clip=", 0) == 0) {
+                    // x:y pairs joined by ';' (our own files keep the outline here)
+                    std::size_t pos = 5;
+                    while (pos < t.size()) {
+                        std::size_t semi = t.find(';', pos);
+                        if (semi == std::string::npos)
+                            semi = t.size();
+                        const std::string pt = t.substr(pos, semi - pos);
+                        const std::size_t colon = pt.find(':');
+                        if (colon != std::string::npos)
+                            v.clip.push_back({std::strtod(pt.substr(0, colon).c_str(), nullptr),
+                                              std::strtod(pt.substr(colon + 1).c_str(), nullptr)});
+                        pos = semi + 1;
+                    }
+                    if (v.clip.size() < 3)
+                        v.clip.clear();
+                }
             }
         }
         sh.viewports.push_back(v);
@@ -1077,6 +1096,14 @@ void Importer::finishLayouts() {
                     h *= 1.5;
             }
         }
+        for (SheetViewport& v : sh.viewports) {
+            // AutoCAD keeps the outline as a separate closed polyline the viewport points to.
+            if (v.clip.empty() && !v.clipHandle.empty()) {
+                const auto ring = sheetRings_.find(v.clipHandle);
+                if (ring != sheetRings_.end() && ring->second.size() >= 3)
+                    v.clip = ring->second;
+            }
+        }
         // Paper space coordinates are absolute: the sheet's paper rectangle can sit anywhere. Move
         // the content so the paper's lower left corner is the origin of the sheet.
         if (n < rows.size() && rows[n].hasExtents &&
@@ -1097,6 +1124,8 @@ void Importer::finishLayouts() {
             for (SheetViewport& v : sh.viewports) {
                 v.min = v.min + shift;
                 v.max = v.max + shift;
+                for (Vec2& p : v.clip)
+                    p = p + shift;
             }
         }
         ++uid;
@@ -1121,6 +1150,9 @@ void Importer::finishLayouts() {
             // The sheet's own overall viewport covers the whole paper: not a window on the model.
             if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)
                 continue;
+            std::string clipText;
+            for (std::size_t i = 0; i < v.clip.size(); ++i)
+                clipText += (i ? ";" : "") + num(v.clip[i].x) + ":" + num(v.clip[i].y);
             std::string frozenIds;
             for (const std::string& ln : v.frozen) {
                 const auto it = layerByFold_.find(fold(ln));
@@ -1130,7 +1162,7 @@ void Importer::finishLayouts() {
             text += "V\t" + std::to_string(v.id) + "\t" + num(v.min.x) + "\t" + num(v.min.y) +
                     "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
                     num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
-                    frozenIds + "\t0\n";
+                    frozenIds + "\t0\t0\t" + clipText + "\n";
         }
     }
     (void)tx_->modifyHeader([&](Header& h) {

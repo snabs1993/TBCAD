@@ -1674,7 +1674,7 @@ void AppCore::doubleClick(const PointerState& p) {
         const Vec2 at = camera_.screenToWorld(p.screen);
         if (auto lay = layout::findLayout(session_->doc, activeLayout_)) {
             for (const layout::Viewport& vp : lay->viewports) {
-                if (!vp.on || !vp.paper.contains(at))
+                if (!vp.on || !layout::viewportContains(vp, at))
                     continue;
                 const double halfW = vp.paper.width() * vp.scaleN / 2;
                 const double halfH = vp.paper.height() * vp.scaleN / 2;

@@ -62,6 +62,12 @@ public:
     virtual void dot(Vec2 px, Rgba color, double diameterPx) = 0;
     virtual void pushClip(const BBox2& rectPx) = 0;
     virtual void popClip() = 0;
+    // A clip to a polygon (a non-rectangular viewport); popClip() ends it. Devices that cannot
+    // clip to a polygon clip to its bounding box.
+    virtual void pushClipPolygon(const std::vector<Vec2>& px, const BBox2& boxPx) {
+        (void)px;
+        pushClip(boxPx);
+    }
     // A picture whose pixel corners land on `corners` (bottom-left, bottom-right, top-right,
     // top-left, device pixels); `opacity` 0..1 over white paper. Devices that cannot draw
     // pictures leave it out.

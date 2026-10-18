@@ -69,6 +69,8 @@ public:
     void fill(FillRule rule = FillRule::NonZero);
     void fillStroke(FillRule rule = FillRule::NonZero);
     void clipRect(double x, double y, double w, double h);
+    // Clips to a closed polygon (even-odd); `pts` holds x, y pairs in mm.
+    void clipPolygon(const std::vector<std::pair<double, double>>& pts);
 
     // A picture (RGBA) whose lower-left pixel corner is at `bl`, with `br` and `tl` the other two
     // corners it is stretched to (mm). `opacity` 0..1. The pixels are written once per document

@@ -121,6 +121,20 @@ public:
                           toLong(r.max.y) + 1);
     }
 
+    void pushClipPolygon(const std::vector<Vec2>& px, const BBox2& box) override {
+        SaveDC(dc_);
+        IntersectClipRect(dc_, toLong(box.min.x), toLong(box.min.y), toLong(box.max.x) + 1,
+                          toLong(box.max.y) + 1);
+        std::vector<POINT> pts;
+        pts.reserve(px.size());
+        for (const Vec2& p : px)
+            pts.push_back({toLong(p.x), toLong(p.y)});
+        BeginPath(dc_);
+        Polygon(dc_, pts.data(), static_cast<int>(pts.size()));
+        EndPath(dc_);
+        SelectClipPath(dc_, RGN_AND);
+    }
+
     void popClip() override { RestoreDC(dc_, -1); }
 
     // The pixels are blended with white (the paper) here, so the device only copies colours; a

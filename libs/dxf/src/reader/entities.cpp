@@ -314,6 +314,17 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
         ++cnt.skipped;
         return;
     }
+    // A closed polyline on a sheet may be the outline of a clipped viewport (group 340 of the
+    // VIEWPORT names its handle).
+    if (onSheet && t == "LWPOLYLINE" && out.size() == 1) {
+        if (const auto* pl = entityAs<PolylineData>(out[0]);
+            pl && pl->closed && pl->v.size() >= 3) {
+            std::vector<Vec2> ring;
+            for (const PolyVertex& v : pl->v)
+                ring.push_back(v.p);
+            sheetRings_[std::string(r.raw(5))] = std::move(ring);
+        }
+    }
     EntityCommon c = commonOf(r);
     for (Entity& e : out) {
         if (!e.common.layer) {

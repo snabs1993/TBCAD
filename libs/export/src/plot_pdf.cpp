@@ -108,7 +108,14 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc) {
         } else if (const auto* c = std::get_if<PlotClip>(&prim)) {
             if (c->begin) {
                 page.save();
-                page.clipRect(c->rect.min.x, c->rect.min.y, c->rect.width(), c->rect.height());
+                if (c->poly.size() >= 3) {
+                    std::vector<std::pair<double, double>> pts;
+                    for (const Vec2& p : c->poly)
+                        pts.emplace_back(p.x, p.y);
+                    page.clipPolygon(pts);
+                } else {
+                    page.clipRect(c->rect.min.x, c->rect.min.y, c->rect.width(), c->rect.height());
+                }
                 page.setLineJoin(pdf::LineJoin::Round);
                 painter.reset();
             } else {

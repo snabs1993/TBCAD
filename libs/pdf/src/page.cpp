@@ -170,4 +170,15 @@ void Page::clipRect(double x, double y, double w, double h) {
     hasCurrentPoint_ = false;
 }
 
+void Page::clipPolygon(const std::vector<std::pair<double, double>>& pts) {
+    if (pts.size() < 3)
+        return;
+    moveTo(pts[0].first, pts[0].second);
+    for (std::size_t i = 1; i < pts.size(); ++i)
+        lineTo(pts[i].first, pts[i].second);
+    closePath();
+    op("W* n");
+    hasCurrentPoint_ = false;
+}
+
 }  // namespace tbcad::pdf

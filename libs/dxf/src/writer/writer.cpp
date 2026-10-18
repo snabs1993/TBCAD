@@ -236,6 +236,16 @@ void Writer::prepareSheets() {
                 for (const std::string& id : splitOn(f[10], ','))
                     v.frozen.push_back(
                         LayerId{static_cast<std::uint32_t>(std::strtoul(id.c_str(), nullptr, 10))});
+            if (f.size() > 13 && !f[13].empty()) {
+                for (const std::string& pt : splitOn(f[13], ';')) {
+                    const std::size_t c = pt.find(':');
+                    if (c != std::string::npos)
+                        v.clip.push_back({std::strtod(pt.substr(0, c).c_str(), nullptr),
+                                          std::strtod(pt.substr(c + 1).c_str(), nullptr)});
+                }
+                if (v.clip.size() < 3)
+                    v.clip.clear();
+            }
             sheets_.back().viewports.push_back(std::move(v));
         }
     }
@@ -285,10 +295,22 @@ void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& bloc
         o.pt(16, {0, 0}, 1);
         o.pt(17, {0, 0}, 0);
         o.d(45, h * v.scaleN);
-        if (!v.frozen.empty()) {
+        if (!v.frozen.empty() || !v.clip.empty()) {
             o.raw(1001, "TBCAD");
             for (LayerId id : v.frozen)
                 o.str(1000, "frozen=" + layerNameOf(id));
+            if (!v.clip.empty()) {
+                // No boundary object is written: the outline is kept here, other programs show
+                // the rectangle.
+                std::string text = "clip=";
+                for (std::size_t i = 0; i < v.clip.size(); ++i)
+                    text += (i ? ";" : "") + formatNumber(v.clip[i].x) + ":" +
+                            formatNumber(v.clip[i].y);
+                o.str(1000, text);
+                downgrade("VIEWPORT",
+                          "a polygonal outline is kept only in TBCAD XDATA; other programs "
+                          "show the rectangle");
+            }
         }
     }
     blockEnd(o, sheet.rec, true);

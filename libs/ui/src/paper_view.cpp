@@ -97,6 +97,7 @@ public:
     void add(const exportlib::PlotPrimitive& prim) {
         if (const auto* c = std::get_if<PlotClip>(&prim)) {
             clip_ = c->begin ? std::optional<BBox2>(c->rect) : std::nullopt;
+            poly_ = c->begin ? c->poly : std::vector<Vec2>{};
         } else if (const auto* p = std::get_if<PlotPath>(&prim)) {
             path(p->pts, p->closed, p->style);
         } else if (const auto* a = std::get_if<PlotArc>(&prim)) {
@@ -158,6 +159,10 @@ private:
             emit(pts, closed, st);
             return;
         }
+        if (poly_.size() >= 3) {
+            clipPathToPolygon(pts, closed, st);
+            return;
+        }
         std::vector<Vec2> run;
         const std::size_t n = pts.size() + (closed ? 1 : 0);
         for (std::size_t i = 0; i + 1 < n; ++i) {
@@ -179,6 +184,57 @@ private:
             if (t1 < 1) {
                 emit(std::move(run), false, st);
                 run.clear();
+            }
+        }
+        emit(std::move(run), false, st);
+    }
+
+    // The parts of the path inside the polygon: each segment is cut where it crosses the outline.
+    void clipPathToPolygon(const std::vector<Vec2>& pts, bool closed, const DisplayStyle& st) {
+        auto inside = [&](Vec2 p) {
+            bool in = false;
+            for (std::size_t i = 0, j = poly_.size() - 1; i < poly_.size(); j = i++)
+                if ((poly_[i].y > p.y) != (poly_[j].y > p.y) &&
+                    p.x <
+                        (poly_[j].x - poly_[i].x) * (p.y - poly_[i].y) / (poly_[j].y - poly_[i].y) +
+                            poly_[i].x)
+                    in = !in;
+            return in;
+        };
+        std::vector<Vec2> run;
+        const std::size_t n = pts.size() + (closed ? 1 : 0);
+        for (std::size_t i = 0; i + 1 < n; ++i) {
+            const Vec2 a = pts[i], b = pts[(i + 1) % pts.size()];
+            std::vector<double> ts{0.0, 1.0};
+            const Vec2 d = b - a;
+            for (std::size_t k = 0, j = poly_.size() - 1; k < poly_.size(); j = k++) {
+                const Vec2 e = poly_[k] - poly_[j];
+                const double den = d.x * e.y - d.y * e.x;
+                if (std::abs(den) < 1e-12)
+                    continue;
+                const Vec2 w = poly_[j] - a;
+                const double t = (w.x * e.y - w.y * e.x) / den;
+                const double u = (w.x * d.y - w.y * d.x) / den;
+                if (t > 0 && t < 1 && u >= 0 && u <= 1)
+                    ts.push_back(t);
+            }
+            std::sort(ts.begin(), ts.end());
+            for (std::size_t k = 0; k + 1 < ts.size(); ++k) {
+                if (ts[k + 1] - ts[k] < 1e-12)
+                    continue;
+                if (inside(lerp(a, b, (ts[k] + ts[k + 1]) / 2))) {
+                    const Vec2 s = lerp(a, b, ts[k]), e = lerp(a, b, ts[k + 1]);
+                    if (!run.empty() && distance(run.back(), s) > 1e-9) {
+                        emit(std::move(run), false, st);
+                        run.clear();
+                    }
+                    if (run.empty())
+                        run.push_back(s);
+                    run.push_back(e);
+                } else if (!run.empty()) {
+                    emit(std::move(run), false, st);
+                    run.clear();
+                }
             }
         }
         emit(std::move(run), false, st);
@@ -229,6 +285,7 @@ private:
     render::Scene& scene_;
     std::deque<std::vector<double>>& patterns_;
     std::optional<BBox2> clip_{};
+    std::vector<Vec2> poly_{};  // the clip when it is not a rectangle (lines only follow it)
     DisplayList list_{};
     std::uint32_t order_ = 1;  // 0 is the sheet itself
     std::uint64_t nextId_ = 1;
