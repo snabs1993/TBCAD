@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include "tbcad/geom/entity.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::layers {
 
@@ -155,6 +156,8 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         num("length", "Length", std::hypot(d.x, d.y));
         out.push_back(
             {"angle", "Angle", FieldType::Angle, true, deg(normalizeAngle(std::atan2(d.y, d.x)))});
+        num("deltax", "Delta X", d.x, false);
+        num("deltay", "Delta Y", d.y, false);
     } else if (const auto* c = entityAs<CircleData>(e)) {
         num("centerx", "Center X", c->center.x);
         num("centery", "Center Y", c->center.y);
@@ -171,6 +174,11 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         out.push_back({"endangle", "End angle", FieldType::Angle, true, deg(a->endAngle)});
         out.push_back({"totalangle", "Total angle", FieldType::Angle, false, deg(sweep)});
         num("length", "Length", a->radius * sweep, false);
+        num("area", "Area", 0.5 * a->radius * a->radius * sweep, false);
+        num("startx", "Start X", a->center.x + a->radius * std::cos(a->startAngle), false);
+        num("starty", "Start Y", a->center.y + a->radius * std::sin(a->startAngle), false);
+        num("endx", "End X", a->center.x + a->radius * std::cos(a->endAngle), false);
+        num("endy", "End Y", a->center.y + a->radius * std::sin(a->endAngle), false);
     } else if (const auto* p = entityAs<PolylineData>(e)) {
         out.push_back(
             {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(p->v.size())});
@@ -188,6 +196,7 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         num("majorradius", "Major radius", major);
         num("minorradius", "Minor radius", major * el->ratio);
         num("ratio", "Radius ratio", el->ratio);
+        num("area", "Area", kPi * major * major * el->ratio, false);
         out.push_back({"rotation", "Rotation", FieldType::Angle, true,
                        deg(normalizeAngle(std::atan2(el->majorAxis.y, el->majorAxis.x)))});
         out.push_back(
@@ -414,6 +423,182 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
     });
     if (failure)
         return *failure;
+    if (!r)
+        return r.error();
+    return {};
+}
+
+// ---- text fields ------------------------------------------------------------------------------
+
+namespace {
+
+struct JustRow {
+    const char* name;
+    HAlign h;
+    VAlign v;
+    Attachment a;
+};
+const JustRow kJustify[] = {
+    {"Left", HAlign::Left, VAlign::Baseline, Attachment::TopLeft},
+    {"Center", HAlign::Center, VAlign::Baseline, Attachment::TopCenter},
+    {"Right", HAlign::Right, VAlign::Baseline, Attachment::TopRight},
+    {"Aligned", HAlign::Aligned, VAlign::Baseline, Attachment::TopLeft},
+    {"Middle", HAlign::Middle, VAlign::Middle, Attachment::MiddleCenter},
+    {"Fit", HAlign::Fit, VAlign::Baseline, Attachment::TopLeft},
+    {"Top Left", HAlign::Left, VAlign::Top, Attachment::TopLeft},
+    {"Top Center", HAlign::Center, VAlign::Top, Attachment::TopCenter},
+    {"Top Right", HAlign::Right, VAlign::Top, Attachment::TopRight},
+    {"Middle Left", HAlign::Left, VAlign::Middle, Attachment::MiddleLeft},
+    {"Middle Center", HAlign::Center, VAlign::Middle, Attachment::MiddleCenter},
+    {"Middle Right", HAlign::Right, VAlign::Middle, Attachment::MiddleRight},
+    {"Bottom Left", HAlign::Left, VAlign::Bottom, Attachment::BottomLeft},
+    {"Bottom Center", HAlign::Center, VAlign::Bottom, Attachment::BottomCenter},
+    {"Bottom Right", HAlign::Right, VAlign::Bottom, Attachment::BottomRight},
+};
+
+std::string lowerWord(std::string s) {
+    for (char& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+std::vector<std::string> styleNames(const Document& doc) {
+    std::vector<std::string> out;
+    for (const auto& [id, st] : doc.textStyles())
+        out.push_back(st.name);
+    return out;
+}
+
+std::string styleNameOf(const Document& doc, TextStyleId id) {
+    if (const TextStyle* st = doc.textStyle(id.value ? id : doc.header().currentTextStyle))
+        return st->name;
+    return "Standard";
+}
+
+}  // namespace
+
+std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
+    std::vector<StringField> out;
+    if (const auto* t = entityAs<TextData>(e)) {
+        out.push_back({"contents", "Contents", t->utf8, true, {}});
+        out.push_back({"style", "Style", styleNameOf(doc, t->style), true, styleNames(doc)});
+        std::string j = "Left";
+        for (const JustRow& r : kJustify) {
+            const bool special = r.h == HAlign::Aligned || r.h == HAlign::Middle || r.h == HAlign::Fit;
+            if (special ? t->h == r.h : (t->h == r.h && t->v == r.v)) {
+                j = r.name;
+                break;
+            }
+        }
+        std::vector<std::string> names;
+        for (const JustRow& r : kJustify)
+            names.push_back(r.name);
+        out.push_back({"justify", "Justify", j, true, names});
+    } else if (const auto* m = entityAs<MTextData>(e)) {
+        out.push_back({"contents", "Contents", m->utf8, true, {}});
+        out.push_back({"style", "Style", styleNameOf(doc, m->style), true, styleNames(doc)});
+        std::string j = "Top Left";
+        std::vector<std::string> names;
+        for (const JustRow& r : kJustify) {
+            if (r.h == HAlign::Aligned || r.h == HAlign::Fit || r.h == HAlign::Middle ||
+                r.v == VAlign::Baseline)
+                continue;
+            names.push_back(r.name);
+            if (r.a == m->attach)
+                j = r.name;
+        }
+        out.push_back({"attachment", "Attachment", j, true, names});
+    } else if (const auto* in = entityAs<InsertData>(e)) {
+        const BlockDef* b = doc.block(in->block);
+        out.push_back({"name", "Block name", b ? b->name : "?", false, {}});
+    }
+    return out;
+}
+
+Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id,
+                            const std::string& f, const std::string& value) {
+    const Entity* cur = doc.find(id);
+    if (!cur)
+        return makeError(ErrorCode::NotFound, "No such object.");
+    auto fields = stringFields(doc, *cur);
+    auto it = std::find_if(fields.begin(), fields.end(),
+                           [&](const StringField& x) { return x.id == f; });
+    if (it == fields.end())
+        return makeError(ErrorCode::InvalidArgument,
+                         std::string(kindLabel(kind(*cur))) + " has no field \"" + f + "\".");
+    if (!it->editable)
+        return makeError(ErrorCode::InvalidArgument, "\"" + f + "\" is read-only.");
+    std::string chosen = value;
+    if (!it->choices.empty()) {
+        const std::string want = lowerWord(value);
+        const std::string* hit = nullptr;
+        for (const std::string& c : it->choices)
+            if (lowerWord(c) == want)
+                hit = &c;
+        if (!hit)
+            return makeError(ErrorCode::InvalidArgument, "\"" + value + "\" is not a choice for " +
+                                                             it->label + ".");
+        chosen = *hit;
+    }
+    if (f == "contents" && chosen.empty())
+        return makeError(ErrorCode::InvalidArgument, "The text cannot be empty.");
+    Entity next = *cur;
+    if (auto* t = entityAs<TextData>(next)) {
+        if (f == "contents") {
+            t->utf8 = chosen;
+        } else if (f == "style") {
+            const TextStyle* st = doc.textStyleByName(chosen);
+            if (!st)
+                return makeError(ErrorCode::NotFound, "No such text style.");
+            t->style = st->id;
+        } else if (f == "justify") {
+            for (const JustRow& r : kJustify) {
+                if (chosen != r.name)
+                    continue;
+                if (t->h == HAlign::Aligned || t->h == HAlign::Fit || r.h == HAlign::Aligned ||
+                    r.h == HAlign::Fit) {
+                    // Two-point justifications need a second point; only the plain ones convert.
+                    return makeError(ErrorCode::InvalidArgument,
+                                     "Aligned and Fit text is changed with the grips.");
+                }
+                text::TextLayout before = text::layoutEntity(doc, *cur);
+                t->h = r.h;
+                t->v = r.v;
+                t->position = t->alignPoint = {0, 0};
+                text::TextLayout after = text::layoutEntity(doc, next);
+                if (!before.empty() && !after.empty())
+                    t->position = t->alignPoint =
+                        before.frameCorners()[0] - after.frameCorners()[0];
+                else
+                    t->position = t->alignPoint = entityAs<TextData>(*cur)->position;
+                break;
+            }
+        }
+    } else if (auto* m = entityAs<MTextData>(next)) {
+        if (f == "contents") {
+            m->utf8 = chosen;
+        } else if (f == "style") {
+            const TextStyle* st = doc.textStyleByName(chosen);
+            if (!st)
+                return makeError(ErrorCode::NotFound, "No such text style.");
+            m->style = st->id;
+        } else if (f == "attachment") {
+            for (const JustRow& r : kJustify) {
+                if (chosen != r.name)
+                    continue;
+                text::TextLayout before = text::layoutEntity(doc, *cur);
+                m->attach = r.a;
+                m->position = {0, 0};
+                text::TextLayout after = text::layoutEntity(doc, next);
+                if (!before.empty() && !after.empty())
+                    m->position = before.frameCorners()[0] - after.frameCorners()[0];
+                else
+                    m->position = entityAs<MTextData>(*cur)->position;
+                break;
+            }
+        }
+    }
+    auto r = tx.modify(id, [&](Entity& x) { x = std::move(next); });
     if (!r)
         return r.error();
     return {};

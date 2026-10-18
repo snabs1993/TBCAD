@@ -79,6 +79,26 @@ std::vector<GeometryField> geometryFields(const Entity& e);
 Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& fieldId,
                               double value);
 
+// ---- Text fields (contents, style, justification ...) ------------------------------------------
+
+// A property that is a word or a sentence, not a number. `choices` (when not empty) lists the
+// only accepted values, in the order a drop-down shows them.
+struct StringField {
+    std::string id{};     // "contents"; also the name accepted by -PROP Set
+    std::string label{};  // "Contents"
+    std::string value{};
+    bool editable = true;
+    std::vector<std::string> choices{};
+};
+
+// Fields for Text (contents, style, justify), MText (contents, style, attachment) and Insert
+// (block name, read-only). Empty for other kinds.
+std::vector<StringField> stringFields(const Document& doc, const Entity& e);
+// Sets one editable text field. Justification and attachment keep the text where it is on the
+// sheet. Fails for read-only fields, unknown styles or values outside `choices`.
+Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id,
+                            const std::string& fieldId, const std::string& value);
+
 // Name of an entity kind for the type breakdown ("Line", "Polyline", ...).
 const char* kindLabel(EntityKind kind);
 // Parses a number that may be an expression ("100/3", "2*(3+4)") and carry a unit ("2.5m", "30cm",

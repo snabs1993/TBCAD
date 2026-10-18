@@ -4,6 +4,7 @@
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
+#include <cstdio>
 
 using namespace tbcad;
 using namespace tbcad::layers;
@@ -285,4 +286,177 @@ TEST_CASE("geometry fields of point, ellipse, text, insert and ray are readable 
     CHECK(entityAs<TextData>(*doc.find(t))->position.x == doctest::Approx(10));
     CHECK(entityAs<TextData>(*doc.find(t))->alignPoint.x == doctest::Approx(10));
     CHECK(entityAs<RayData>(*doc.find(r))->dir.y == doctest::Approx(1));
+}
+
+namespace {
+
+// One of every kind the palette has fields for.
+std::vector<EntityId> sampleKinds(Document& doc) {
+    std::vector<EntityId> ids;
+    ids.push_back(addEntity(doc, LineData{{0, 0}, {10, 5}}));
+    ids.push_back(addEntity(doc, CircleData{{3, 3}, 4}));
+    ids.push_back(addEntity(doc, ArcData{{0, 0}, 5, 0.2, 2.0}));
+    ids.push_back(addEntity(doc, PolylineData{{{{0, 0}, 0, 0, 0}, {{4, 1}, 0, 0, 0}}, false, 0}));
+    ids.push_back(addEntity(doc, PointData{{3, 4}}));
+    EllipseData el;
+    el.center = {5, 5};
+    el.majorAxis = {6, 0};
+    el.ratio = 0.5;
+    el.endParam = 6.0;
+    ids.push_back(addEntity(doc, Indirect<EllipseData>(el)));
+    TextData td;
+    td.position = td.alignPoint = {1, 2};
+    td.utf8 = "Hello";
+    ids.push_back(addEntity(doc, Indirect<TextData>(td)));
+    MTextData md;
+    md.position = {2, 2};
+    md.utf8 = "Multi";
+    md.width = 30;
+    ids.push_back(addEntity(doc, Indirect<MTextData>(md)));
+    RayData rd;
+    rd.dir = {1, 0};
+    ids.push_back(addEntity(doc, Indirect<RayData>(rd)));
+    return ids;
+}
+
+}  // namespace
+
+TEST_CASE("every editable geometry field of every kind changes with -PROP Set and undoes") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    const auto ids = sampleKinds(doc);
+    std::size_t edited = 0;
+    for (EntityId id : ids) {
+        host.setSelection({id});
+        for (const GeometryField& f : geometryFields(*doc.find(id))) {
+            if (!f.editable || f.type == FieldType::Count)
+                continue;
+            const char* nv = f.type == FieldType::Flag ? (f.value != 0 ? "No" : "Yes") : nullptr;
+            double target = f.type == FieldType::Angle ? f.value + 10 : f.value * 0.7 + 3.3;
+            if (f.id == "ratio")
+                target = 0.25;
+            if (f.id == "width" || f.id == "scale")
+                target = 2;
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.9g", target);
+            host.clearLog();
+            host.run("-PROP", {"Set", f.id, nv ? nv : buf, cmd::ScriptItem::enter()});
+            double now = -1e30;
+            for (const GeometryField& g : geometryFields(*doc.find(id)))
+                if (g.id == f.id)
+                    now = g.value;
+            INFO(kindLabel(kind(*doc.find(id))), " ", f.id);
+            CHECK(now != doctest::Approx(f.value));
+            CHECK(host.undo());
+            for (const GeometryField& g : geometryFields(*doc.find(id)))
+                if (g.id == f.id)
+                    CHECK(g.value == doctest::Approx(f.value));
+            ++edited;
+        }
+    }
+    CHECK(edited > 40);
+}
+
+TEST_CASE("text, multiline text: contents, style and justification edit and undo") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    const auto ids = sampleKinds(doc);
+    const EntityId text = ids[6], mtext = ids[7];
+
+    auto field = [&](EntityId id, const char* f) {
+        for (const StringField& s : stringFields(doc, *doc.find(id)))
+            if (s.id == f)
+                return s;
+        FAIL("missing field");
+        return StringField{};
+    };
+    CHECK(field(text, "contents").value == "Hello");
+    CHECK(field(text, "justify").value == "Left");
+    CHECK(field(mtext, "attachment").value == "Top Left");
+    CHECK(field(text, "style").choices.size() >= 1);
+
+    host.setSelection({text, mtext});
+    host.run("-PROP", {"Set", "contents", "Changed", cmd::ScriptItem::enter()});
+    CHECK(entityAs<TextData>(*doc.find(text))->utf8 == "Changed");
+    CHECK(entityAs<MTextData>(*doc.find(mtext))->utf8 == "Changed");
+    CHECK(host.undo());
+    CHECK(entityAs<TextData>(*doc.find(text))->utf8 == "Hello");
+    CHECK(entityAs<MTextData>(*doc.find(mtext))->utf8 == "Multi");
+
+    host.setSelection({text});
+    host.run("-PROP", {"Set", "justify", "middle center", cmd::ScriptItem::enter()});
+    CHECK(field(text, "justify").value == "Middle Center");
+    host.clearLog();
+    host.run("-PROP", {"Set", "justify", "Sideways", cmd::ScriptItem::enter()});
+    CHECK(host.logContains("not a choice"));
+    CHECK(field(text, "justify").value == "Middle Center");
+    CHECK(host.undo());
+    CHECK(field(text, "justify").value == "Left");
+
+    host.setSelection({mtext});
+    host.run("-PROP", {"Set", "attachment", "Bottom Right", cmd::ScriptItem::enter()});
+    CHECK(field(mtext, "attachment").value == "Bottom Right");
+    CHECK(host.undo());
+    CHECK(field(mtext, "attachment").value == "Top Left");
+
+    host.clearLog();
+    host.run("-PROP", {"Set", "style", "NoSuchStyle", cmd::ScriptItem::enter()});
+    CHECK(host.logContains("not a choice"));
+    host.clearLog();
+    host.run("-PROP", {"Set", "contents", " ", cmd::ScriptItem::enter()});
+}
+
+TEST_CASE("mixed selection: common values vary, Only narrows the edit to one type") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    const auto ids = sampleKinds(doc);
+    {
+        auto tx = doc.begin("colour");
+        REQUIRE(tx.modify(ids[0], [](Entity& e) { e.common.color = Color::index(1); }).ok());
+        tx.commit();
+    }
+    host.setSelection(ids);
+    CommonProps all = readCommon(doc, ids);
+    CHECK(all.count == ids.size());
+    CHECK(all.kinds.size() == ids.size());
+    CHECK(all.color.varies);
+    CHECK_FALSE(all.layer.varies);
+    CommonProps circles = readCommon(doc, ids, EntityKind::Circle);
+    CHECK(circles.count == 1);
+    CHECK_FALSE(circles.color.varies);
+
+    host.run("-PROP", {"Only", "Circle", "Color", "blue", cmd::ScriptItem::enter()});
+    CHECK(doc.find(ids[1])->common.color == Color::index(5));
+    CHECK(doc.find(ids[2])->common.color == Color::byLayer());
+    CHECK(doc.find(ids[0])->common.color == Color::index(1));
+    CHECK(host.undo());
+    CHECK(doc.find(ids[1])->common.color == Color::byLayer());
+    // Resetting the whole mixed selection removes the "varies" state.
+    host.run("-PROP", {"Color", "ByLayer", cmd::ScriptItem::enter()});
+    CHECK_FALSE(readCommon(doc, ids).color.varies);
+}
+
+TEST_CASE("read-only fields: deltas of a line, area of an arc and ellipse") {
+    Document doc;
+    const auto ids = sampleKinds(doc);
+    auto val = [&](EntityId id, const char* f) {
+        for (auto& g : geometryFields(*doc.find(id)))
+            if (g.id == f) {
+                CHECK_FALSE(g.editable);
+                return g.value;
+            }
+        FAIL("missing field");
+        return 0.0;
+    };
+    CHECK(val(ids[0], "deltax") == doctest::Approx(10));
+    CHECK(val(ids[0], "deltay") == doctest::Approx(5));
+    CHECK(val(ids[2], "area") == doctest::Approx(0.5 * 25 * 1.8));
+    CHECK(val(ids[5], "area") == doctest::Approx(kPi * 36 * 0.5));
+    CHECK(val(ids[2], "endx") == doctest::Approx(5 * std::cos(2.0)));
 }

@@ -32,6 +32,11 @@ struct Cache {
         bool varies = false;
     };
     std::vector<Field> fields{};
+    struct Words {
+        StringField field{};
+        bool varies = false;
+    };
+    std::vector<Words> words{};  // contents, style, justification ...
     std::size_t pickedIndex = 0;  // entities shown in the Geometry section
     std::vector<EntityId> shown{};
 };
@@ -103,6 +108,7 @@ void refresh(tbcad::ui::PanelContext& ctx) {
 
     // Geometry fields: shown when exactly one kind is in play.
     c.fields.clear();
+    c.words.clear();
     c.shown.clear();
     std::optional<EntityKind> kindInPlay = c.only;
     if (!kindInPlay && c.kinds.size() == 1)
@@ -113,6 +119,15 @@ void refresh(tbcad::ui::PanelContext& ctx) {
             if (!e || kind(*e) != *kindInPlay)
                 continue;
             c.shown.push_back(id);
+            auto ws = stringFields(doc, *e);
+            if (c.words.empty()) {
+                for (auto& w : ws)
+                    c.words.push_back({w, false});
+            } else {
+                for (std::size_t i = 0; i < ws.size() && i < c.words.size(); ++i)
+                    if (ws[i].value != c.words[i].field.value)
+                        c.words[i].varies = true;
+            }
             auto fs = geometryFields(*e);
             if (c.fields.empty()) {
                 for (auto& f : fs)
@@ -361,7 +376,7 @@ void currentSection(tbcad::ui::PanelContext& ctx) {
 }
 
 void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
-    if (c.fields.empty())
+    if (c.fields.empty() && c.words.empty())
         return;
     if (!ImGui::CollapsingHeader("Geometry", ImGuiTreeNodeFlags_DefaultOpen))
         return;
@@ -371,6 +386,35 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     if (ImGui::BeginTable("##geometry", 2, ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+        // Words first (contents, style, justify): they are what people edit most on text.
+        for (const auto& w : c.words) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(w.field.label.c_str());
+            ImGui::TableSetColumnIndex(1);
+            ImGui::PushID(w.field.id.c_str());
+            const std::string shownText = w.varies ? "*varies*" : w.field.value;
+            auto setWord = [&](const std::string& value) {
+                std::string first = "-PROP";
+                if (kindInPlay)
+                    first += " Only " + std::string(kindLabel(*kindInPlay));
+                exec(ctx, {first + " Set " + w.field.id, value});
+            };
+            if (!w.field.editable) {
+                ImGui::TextDisabled("%s", shownText.c_str());
+            } else if (!w.field.choices.empty()) {
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::BeginCombo("##w", shownText.c_str(), ImGuiComboFlags_HeightLarge)) {
+                    for (const std::string& ch : w.field.choices)
+                        if (ImGui::Selectable(ch.c_str(), !w.varies && ch == w.field.value))
+                            setWord(ch);
+                    ImGui::EndCombo();
+                }
+            } else if (auto t = editableText("##w", shownText)) {
+                setWord(*t);
+            }
+            ImGui::PopID();
+        }
         for (const auto& f : c.fields) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -488,9 +532,9 @@ void assemblySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     }
 }
 
-}  // namespace
-
-void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
+// Both the palette and the quick properties box draw this: the type drop-down, then General and
+// Geometry. The box leaves out Delete, assemblies and the per-type sections.
+void drawBody(tbcad::ui::PanelContext& ctx, bool compact) {
     if (!ctx.doc || !ctx.selection)
         return;
     if (ctx.selection->empty()) {
@@ -501,8 +545,10 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
     Cache& c = cache();
 
     // Header: type dropdown to narrow what the edits apply to.
-    ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Delete").x -
-                            3 * ImGui::GetStyle().FramePadding.x - ImGui::GetStyle().ItemSpacing.x);
+    ImGui::SetNextItemWidth(compact ? -1
+                                    : -ImGui::CalcTextSize("Delete").x -
+                                          3 * ImGui::GetStyle().FramePadding.x -
+                                          ImGui::GetStyle().ItemSpacing.x);
     if (ImGui::BeginCombo("##type", selectionLabel(c, c.filterIndex).c_str())) {
         for (int i = 0; i <= static_cast<int>(c.kinds.size()); ++i) {
             if (ImGui::Selectable(selectionLabel(c, i).c_str(), c.filterIndex == i)) {
@@ -512,23 +558,28 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
         }
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Delete")) {
-        std::string first = "-PROP";
-        if (c.only)
-            first += " Only " + std::string(kindLabel(*c.only));
-        exec(ctx, {first + " Delete"});
+    if (!compact) {
+        ImGui::SameLine();
+        if (ImGui::Button("Delete")) {
+            std::string first = "-PROP";
+            if (c.only)
+                first += " Only " + std::string(kindLabel(*c.only));
+            exec(ctx, {first + " Delete"});
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(c.only ? "Erase the selected objects of this type"
+                                     : "Erase every selected object");
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(c.only ? "Erase the selected objects of this type"
-                                 : "Erase every selected object");
     if (c.common.count == 0) {
         ImGui::TextDisabled("No objects of this type");
         return;
     }
     generalSection(ctx, c);
-    assemblySection(ctx, c);
+    if (!compact)
+        assemblySection(ctx, c);
     geometrySection(ctx, c);
+    if (compact)
+        return;
 
     // Sections other modules registered for the kind in play (text, dimensions, hatch ...),
     // for a single selected object.
@@ -536,6 +587,18 @@ void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
         ctx.drawPropertySections(ctx.selection->front());
     else if (ctx.selection->size() > 1 && ctx.drawMultiSections)
         ctx.drawMultiSections();  // sections that can edit several objects at once
+}
+
+}  // namespace
+
+void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
+    drawBody(ctx, false);
+}
+
+void drawQuickProperties(tbcad::ui::PanelContext& ctx) {
+    if (!ctx.doc || !ctx.selection || ctx.selection->empty())
+        return;
+    drawBody(ctx, true);
 }
 
 }  // namespace tbcad::layers
