@@ -741,6 +741,14 @@ private:
                 l.xdic = 0;
                 leadingHandles(h, self, reactors, true);
                 l.xdic = lastXdic_;
+                for (const std::vector<std::uint8_t>& d : eed_) {
+                    char hx[4];
+                    for (std::size_t i = 0; i < d.size() && i < 120; ++i) {
+                        std::snprintf(hx, sizeof hx, "%02X", d[i]);
+                        l.eed += hx;
+                    }
+                    l.eed += ' ';
+                }
                 h.handle();  // external reference block
                 h.handle();  // plot style
                 if (fmt_.r2007)
@@ -2552,7 +2560,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r74: layer extension dictionaries and xrecords traced; r73: viewport extension "
+    return "r75: all dictionary entry names and layer extended data listed; r74: layer extension "
+           "dictionaries and xrecords "
+           "traced; r73: viewport extension "
            "dictionary trace; R2007 literal runs of 12, 14, 16, 18, 20, "
            "22, 24, 25, 27 and 30 bytes cut right; "
            "r72: R2018 header read right (plain 3-bit BLL, string stream end found, LTSCALE 800 on "
