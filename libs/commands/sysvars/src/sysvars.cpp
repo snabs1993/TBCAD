@@ -258,6 +258,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<RefreshCommand>("REGEN", "RE"));
     (void)registry.add(std::make_unique<RefreshCommand>("REDRAW", "R"));
     (void)registry.add(makeRenameCommand());
+    (void)registry.add(makeHyperlinkCommand());
+    (void)registry.add(makeSpaceTransCommand());
+    (void)registry.add(makeDelayCommand());
     (void)registry.add(makeSetvarCommand());
     (void)registry.add(makeViewCommand());
     (void)registry.add(makeAddSelectedCommand());

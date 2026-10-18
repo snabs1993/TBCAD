@@ -10,6 +10,7 @@
 
 #include "tbcad/cmd/host.h"
 #include "tbcad/core/math.h"
+#include "tbcad/hatch/boundary.h"
 #include "tbcad/hatch/pattern.h"
 #include "tbcad/hatchcmd/hatchcmd.h"
 
@@ -21,7 +22,8 @@ struct Params {
     bool scaleAuto = true;  // never set by the user: sized to the area when a hatch is made
     double angle = 0;       // radians
     Vec2 base{};
-    double gap = 0;           // mm; 0 = boundaries must be closed
+    double gap = 0;  // mm; 0 = boundaries must be closed
+    hatch::IslandStyle island = hatch::IslandStyle::Normal;
     bool associative = true;  // the hatch follows its boundary objects
     GradientData gradient{};  // used by GRADIENT
 };
@@ -98,6 +100,10 @@ inline Params loadParams(const cmd::IHost& host) {
     }
     if (auto v = host.setting(kSettingGap); v && parseNumber(*v, d) && d >= 0)
         p.gap = d;
+    if (auto v = host.setting(kSettingIsland))
+        p.island = *v == "outer"    ? hatch::IslandStyle::Outer
+                   : *v == "ignore" ? hatch::IslandStyle::Ignore
+                                    : hatch::IslandStyle::Normal;
     if (auto v = host.setting(kSettingAssociative))
         p.associative = *v != "0";
     if (auto v = host.setting(kSettingGradientKind))
@@ -118,6 +124,9 @@ inline void saveParams(cmd::IHost& host, const Params& p) {
     host.setSetting(kSettingAngle, number(p.angle * 180.0 / kPi));
     host.setSetting(kSettingBase, number(p.base.x) + "," + number(p.base.y));
     host.setSetting(kSettingGap, number(p.gap));
+    host.setSetting(kSettingIsland, p.island == hatch::IslandStyle::Outer    ? "outer"
+                                    : p.island == hatch::IslandStyle::Ignore ? "ignore"
+                                                                             : "normal");
     host.setSetting(kSettingAssociative, p.associative ? "1" : "0");
     host.setSetting(kSettingGradientKind,
                     p.gradient.kind == GradientKind::Cylinder ? "cylinder" : "linear");
@@ -127,7 +136,11 @@ inline void saveParams(cmd::IHost& host, const Params& p) {
 
 inline std::string summary(const Params& p) {
     return p.pattern + ", scale " + number(p.scale) + ", angle " + number(p.angle * 180.0 / kPi) +
-           (p.gap > 0 ? ", gap " + number(p.gap) : "") + (p.associative ? "" : ", not linked");
+           (p.gap > 0 ? ", gap " + number(p.gap) : "") +
+           (p.island == hatch::IslandStyle::Outer    ? ", islands: outer"
+            : p.island == hatch::IslandStyle::Ignore ? ", islands: ignore"
+                                                     : "") +
+           (p.associative ? "" : ", not linked");
 }
 
 }  // namespace tbcad::hatchcmd

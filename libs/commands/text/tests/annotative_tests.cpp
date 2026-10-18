@@ -159,3 +159,31 @@ TEST_CASE("ANNOTATIVE warns when text already sized for the drawing would be mul
     f.host.run("ANNOTATIVE", {"On"});
     CHECK(f.host.logContains("drawn very large"));
 }
+
+TEST_CASE("OBJECTSCALE adds and removes scales but keeps at least one") {
+    Fixture f;
+    f.host.run("LINE", {"0,0", "1,0", ""});
+    EntityId line{};
+    f.doc.forEachEntity([&](const Entity& e) { line = e.common.id; });
+    f.host.setSelection({line});
+    f.host.run("BLOCK", {"Mark", "0,0", "D"});
+    f.host.run("INSERT", {"Mark", "10,0"});
+    EntityId ins{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Insert)
+            ins = e.common.id;
+    });
+    f.host.setSelection({ins});
+    f.host.run("ANNOTATIVE", {"Scales", "50"});
+    f.host.setSelection({ins});
+    f.host.run("OBJECTSCALE", {"Add", "100"});
+    CHECK(f.doc.find(ins)->common.annoScales.get() == std::vector<double>{50, 100});
+    f.host.setSelection({ins});
+    f.host.run("OBJECTSCALE", {"Delete", "50"});
+    CHECK(f.doc.find(ins)->common.annoScales.get() == std::vector<double>{100});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(100));
+    f.host.setSelection({ins});
+    f.host.run("OBJECTSCALE", {"Delete", "1:100"});
+    CHECK(f.doc.find(ins)->common.annoScales.get() == std::vector<double>{100});
+    CHECK(f.host.undo());
+}

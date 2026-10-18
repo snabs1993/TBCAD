@@ -931,6 +931,15 @@ TEST_CASE("TRIM and EXTEND Mode: Quick uses every object as an edge, Standard as
            near(entityAs<LineData>(f.get(h))->b, {3, 0})));
 }
 
+TEST_CASE("TRIM offers Mode at the first prompt for the cutting edges") {
+    Fixture f;
+    EntityId h = f.add(LineData{{0, 0}, {10, 0}});
+    f.add(LineData{{8, -5}, {8, 5}});
+    f.add(LineData{{3, -5}, {3, 5}});
+    f.host.run("TRIM", {"Mode", "Quick", ScriptItem::pick(h, {5, 0}), ScriptItem::esc()});
+    CHECK(f.count(EntityKind::Line) == 4);
+}
+
 TEST_CASE("FILLET Multiple keeps asking for pairs until Enter, one undo step") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {10, 0}});

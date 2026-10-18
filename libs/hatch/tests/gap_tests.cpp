@@ -1,8 +1,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <random>
 
 #include "helpers.h"
+#include "tbcad/geom/geom.h"
 #include "tbcad/hatch/boundary.h"
 
 using namespace tbcad;
@@ -86,4 +88,59 @@ TEST_CASE("sources of a boundary with islands include the island entities") {
     CHECK(r.value().sources.size() == 5);
     CHECK(std::find(r.value().sources.begin(), r.value().sources.end(), c) !=
           r.value().sources.end());
+}
+
+// The windowed search must agree with a search over everything.
+TEST_CASE("findBoundaryNear gives the same answer as findBoundary on random drawings") {
+    std::mt19937_64 rng(4242);
+    auto u = [&](double lo, double hi) {
+        return lo + (hi - lo) * static_cast<double>(rng() % 100000) / 100000.0;
+    };
+    int same = 0, found = 0;
+    for (int round = 0; round < 150; ++round) {
+        Scene scene;
+        for (int i = 0, n = 10 + static_cast<int>(rng() % 60); i < n; ++i) {
+            switch (rng() % 4) {
+                case 0:
+                    scene.add(line({u(0, 400), u(0, 400)}, {u(0, 400), u(0, 400)}));
+                    break;
+                case 1:
+                    scene.add(circle({u(0, 400), u(0, 400)}, u(5, 80)));
+                    break;
+                case 2: {
+                    const double x = u(0, 350), y = u(0, 350);
+                    scene.add(rectPolyline({x, y}, {x + u(5, 60), y + u(5, 60)}));
+                    break;
+                }
+                default:
+                    scene.add(arc({u(0, 400), u(0, 400)}, u(5, 80), u(0, 3), u(3.1, 6.2)));
+            }
+        }
+        const auto all = scene.candidates();
+        BBox2 full;
+        for (const Candidate& c : all)
+            full.merge(geom::bounds(*c.entity));
+        const Vec2 pick{u(0, 400), u(0, 400)};
+        auto ref = findBoundary(all, pick);
+        auto near = findBoundaryNear(
+            [&](const BBox2& w) {
+                std::vector<Candidate> out;
+                for (const Candidate& c : all)
+                    if (w.intersects(geom::bounds(*c.entity)))
+                        out.push_back(c);
+                return out;
+            },
+            full, pick);
+        if (ref.ok()) {
+            ++found;
+            REQUIRE(near.result.ok());
+            CHECK(near.result.value().loops.size() == ref.value().loops.size());
+            CHECK(near.result.value().sources.size() == ref.value().sources.size());
+            same += near.result.value().loops.size() == ref.value().loops.size();
+        } else {
+            CHECK_FALSE(near.result.ok());
+        }
+    }
+    CHECK(found > 20);
+    CHECK(same == found);
 }

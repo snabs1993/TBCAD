@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <cmath>
 
 #include "tbcad/cmd/cmd.h"
@@ -482,4 +483,75 @@ TEST_CASE("HATCHEDIT: choosing a pattern drops the gradient") {
     REQUIRE(f.hatches().size() == 1);
     CHECK_FALSE(f.hatches()[0]->gradient.has_value());
     CHECK_FALSE(f.hatches()[0]->solid);
+}
+
+TEST_CASE("HATCH island detection: Normal alternates, Outer cuts one level, Ignore fills it all") {
+    for (const char* style : {"Normal", "Outer", "Ignore"}) {
+        Fixture f;
+        f.rect({0, 0}, {100, 100});
+        f.addEntity(CircleData{{50, 50}, 40});
+        f.addEntity(CircleData{{50, 50}, 20});
+        f.host->run("HATCH", {"I", style, "50,95", ""});  // between the rectangle and the circle
+        auto hs = f.hatches();
+        REQUIRE(hs.size() == 1);
+        const std::string s = style;
+        const std::size_t expected = s == "Normal" ? 3 : s == "Outer" ? 2 : 1;
+        CHECK(hs[0]->loops.size() == expected);
+        CHECK(hs[0]->sourceBoundary.size() == (s == "Normal" ? 6 : s == "Outer" ? 5 : 4));
+    }
+}
+
+TEST_CASE("HATCH: an ellipse and a spline loop make closed boundaries") {
+    Fixture f;
+    EllipseData e;
+    e.center = {0, 0};
+    e.majorAxis = {30, 0};
+    e.ratio = 0.5;
+    f.addEntity(std::move(e));
+    f.host->run("HATCH", {"0,0", ""});
+    REQUIRE(f.hatches().size() == 1);
+    CHECK(f.hatches()[0]->loops.size() == 1);
+
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = {{100, 0}, {140, 60}, {170, 60}, {200, 0}};
+    f.addEntity(std::move(sp));
+    f.addEntity(LineData{{200, 0}, {100, 0}});  // closes the spline with a chord
+    f.host->run("HATCH", {"150,10", ""});
+    CHECK(f.hatches().size() == 2);
+}
+
+TEST_CASE("HATCH pick point answers quickly in a drawing of 50 000 objects") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("fill");
+        auto line = [&](Vec2 a, Vec2 b) {
+            Entity e;
+            e.data = LineData{a, b};
+            REQUIRE(tx.add(std::move(e)).ok());
+        };
+        for (int i = 0; i < 12500; ++i) {  // 12 500 squares of four lines
+            const double x = (i % 125) * 30.0, y = (i / 125) * 30.0;
+            line({x, y}, {x + 20, y});
+            line({x + 20, y}, {x + 20, y + 20});
+            line({x + 20, y + 20}, {x, y + 20});
+            line({x, y + 20}, {x, y});
+        }
+        tx.commit();
+    }
+    REQUIRE(f.doc.modelSpace().size() == 50000);
+    auto t0 = std::chrono::steady_clock::now();
+    f.host->run("HATCH", {"3010,1510", ""});  // inside one of the squares
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    MESSAGE("50k objects: HATCH pick " << ms << " ms");
+    REQUIRE(f.hatches().size() == 1);
+    CHECK(f.hatches()[0]->loops.size() == 1);
+    CHECK(f.hatches()[0]->loops[0].edges.size() == 4);
+#ifdef NDEBUG
+    CHECK(ms < 200);
+#else
+    CHECK(ms < 2000);
+#endif
 }

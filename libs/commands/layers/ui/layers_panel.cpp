@@ -561,7 +561,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Hideable;
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
     const float availWidth = ImGui::GetContentRegionAvail().x;
-    if (ImGui::BeginTable("##layers2", 10, kFlags, ImVec2(0, -footer))) {
+    if (ImGui::BeginTable("##layers2", 11, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.

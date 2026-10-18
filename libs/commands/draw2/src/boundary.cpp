@@ -23,18 +23,9 @@ bool hasCurves(const Entity& e) {
     }
 }
 
-// Visible model-space entities that can bound a region; when the host has a viewport and an
-// index only those inside the view are offered.
-std::vector<hatch::Candidate> candidates(cmd::CommandContext& ctx) {
+// Visible model-space entities that can bound a region and meet `window`.
+std::vector<hatch::Candidate> candidatesIn(cmd::CommandContext& ctx, const BBox2& window) {
     const Document& doc = ctx.doc();
-    const cmd::ViewState view = ctx.host().view();
-    const bool all = !(view.sizePx.x > 0 && view.sizePx.y > 0 && view.scale > 0);
-    BBox2 window;
-    if (!all) {
-        const Vec2 half{view.sizePx.x * view.scale / 2, view.sizePx.y * view.scale / 2};
-        window.expand(view.center - half);
-        window.expand(view.center + half);
-    }
     std::vector<hatch::Candidate> out;
     auto consider = [&](const Entity& e) {
         if (!e.common.visible || !hasCurves(e) || doc.ownerBlock(e.common.id))
@@ -43,19 +34,31 @@ std::vector<hatch::Candidate> candidates(cmd::CommandContext& ctx) {
             return;
         out.push_back({e.common.id, &e});
     };
-    if (!all) {
-        if (auto ids = ctx.host().entitiesInWindow(window)) {
-            for (EntityId id : *ids)
-                if (const Entity* e = doc.find(id))
-                    consider(*e);
-            return out;
-        }
+    if (auto ids = ctx.host().entitiesInWindow(window)) {
+        for (EntityId id : *ids)
+            if (const Entity* e = doc.find(id))
+                consider(*e);
+        return out;
     }
     doc.forEachEntity([&](const Entity& e) {
-        if (all || window.intersects(geom::bounds(e)))
+        if (window.intersects(geom::bounds(e)))
             consider(e);
     });
     return out;
+}
+
+// The view, or the drawing's extents when the host has no viewport.
+BBox2 searchWindow(cmd::CommandContext& ctx) {
+    const cmd::ViewState view = ctx.host().view();
+    BBox2 window;
+    if (view.sizePx.x > 0 && view.sizePx.y > 0 && view.scale > 0) {
+        const Vec2 half{view.sizePx.x * view.scale / 2, view.sizePx.y * view.scale / 2};
+        window.expand(view.center - half);
+        window.expand(view.center + half);
+    } else {
+        ctx.doc().forEachEntity([&](const Entity& e) { window.merge(geom::bounds(e)); });
+    }
+    return window;
 }
 
 void pushPoint(std::vector<PolyVertex>& v, Vec2 p, double bulge = 0) {
@@ -144,7 +147,10 @@ public:
             auto p = co_await ctx.getPoint("Specify internal point");
             if (!p.ok())
                 co_return;
-            auto found = hatch::findBoundary(candidates(ctx), p.point);
+            auto found =
+                hatch::findBoundaryNear([&](const BBox2& w) { return candidatesIn(ctx, w); },
+                                        searchWindow(ctx), p.point)
+                    .result;
             if (!found) {
                 ctx.message(found.error().message);
                 continue;

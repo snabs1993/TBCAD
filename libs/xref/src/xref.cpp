@@ -440,7 +440,7 @@ Result<Source> loadOne(const std::filesystem::path& file) {
         return res;
     }
     return makeError(ErrorCode::Unsupported,
-                     "Only .tbcad, .tbt, .dxf, .pdf and picture files can be attached");
+                     "Only .tbcad, .tbt, .dxf, .dwg, .pdf and picture files can be attached");
 }
 
 // Reads `file` and refreshes the xrefs inside it from their own files. `chain` holds the files

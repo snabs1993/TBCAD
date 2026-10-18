@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -90,6 +91,36 @@ private:
 // OutOfRange for TooManyEdges.
 Result<Boundary> findBoundary(const std::vector<Candidate>& candidates, Vec2 pick,
                               const BoundaryOptions& options = {});
+
+// Candidates whose bounds meet a window (the host's spatial index, or a scan).
+using WindowCandidates = std::function<std::vector<Candidate>(const BBox2&)>;
+
+struct NearBoundary {
+    Result<Boundary> result;
+    // The finder of the last window tried; its open ends explain a failed pick.
+    std::shared_ptr<BoundaryFinder> finder;
+};
+
+// Pick-point mode for big drawings. Asks for candidates in a small window around `pick` and
+// doubles it until the found region lies inside the window; that answer is exact, because
+// anything that touches the region also meets the window. A drawing with 50 000 objects then
+// costs about as much as the few hundred objects near the pick. `full` is the largest window
+// (the view, or the drawing's extents); the last attempt covers all of it and gives the same
+// answer (or error) as findBoundary on everything in it.
+NearBoundary findBoundaryNear(const WindowCandidates& candidatesIn, const BBox2& full, Vec2 pick,
+                              const BoundaryOptions& options = {});
+
+// How islands (closed shapes inside the outer boundary) are treated.
+//  Normal: nested regions alternate hole / filled (what findBoundary returns).
+//  Outer:  only the first level of islands is cut out; whatever lies inside an island is left
+//          alone (not hatched).
+//  Ignore: islands are ignored, the whole outer boundary is filled.
+enum class IslandStyle { Normal, Outer, Ignore };
+
+// Drops loops according to `style`, and from `sources` the entities that only formed dropped
+// loops, so an associative hatch re-derives the same shape. `entityOf` finds a source entity.
+void applyIslandStyle(Boundary& b, IslandStyle style,
+                      const std::function<const Entity*(EntityId)>& entityOf);
 
 // Select-objects mode. Works on the selected entities only: every region they enclose is found
 // the same way as in findBoundary. Each outermost region, together with whatever lies inside it,

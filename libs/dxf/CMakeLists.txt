@@ -23,9 +23,11 @@ endif()
 
 file(GLOB_RECURSE _dxf_tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 list(FILTER _dxf_tests EXCLUDE REGEX "/fuzz_[^/]*\\.cpp$")
-tbcad_add_tests(dxf SOURCES ${_dxf_tests})
+tbcad_add_tests(dxf SOURCES ${_dxf_tests} DEPENDS tbcad::io)
 if(TBCAD_BUILD_TESTS)
   # tests/corpus lives at the repository root so every module can share it.
   target_compile_definitions(tbcad_dxf_tests PRIVATE
-    TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus")
+    TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus"
+    TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples"
+    TBCAD_ASSET_BLOCKS_DIR="${CMAKE_SOURCE_DIR}/assets/blocks")
 endif()
