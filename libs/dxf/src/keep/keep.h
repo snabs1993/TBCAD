@@ -5,7 +5,9 @@
 // line break). Text values are held as UTF-8.
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,6 +25,9 @@ inline constexpr const char* kKeptClassesKey = "dxf.classes";
 // lead to them ("name TAB @N" lines).
 inline constexpr const char* kKeptObjectsKey = "dxf.objects";
 inline constexpr const char* kKeptObjectRootKey = "dxf.objroot";
+// The handle each entity had in the source file: "idDelta,handleDelta;" pairs in entity id order
+// (decimal, the handle delta signed), so a saved DXF gives the entities their old handles back.
+inline constexpr const char* kKeptHandlesKey = "dxf.handles";
 
 inline void packGroup(std::string& out, int code, std::string_view value) {
     out += std::to_string(code);
@@ -123,6 +128,42 @@ bool keptValue(const Group& g, Dec&& dec, std::string& out) {
         }
     }
     return false;
+}
+
+using HandlePairs = std::vector<std::pair<std::uint64_t, std::uint64_t>>;  // (entity id, handle)
+
+// `pairs` must be sorted by entity id.
+inline std::string packHandles(const HandlePairs& pairs) {
+    std::string out;
+    out.reserve(pairs.size() * 6);
+    std::uint64_t prevId = 0, prevHandle = 0;
+    for (const auto& [id, handle] : pairs) {
+        out += std::to_string(id - prevId);
+        out += ',';
+        out += std::to_string(static_cast<std::int64_t>(handle - prevHandle));
+        out += ';';
+        prevId = id;
+        prevHandle = handle;
+    }
+    return out;
+}
+
+inline HandlePairs unpackHandles(std::string_view text) {
+    HandlePairs out;
+    std::uint64_t id = 0, handle = 0;
+    while (!text.empty()) {
+        const std::size_t semi = text.find(';');
+        const std::string_view item = text.substr(0, semi);
+        text = semi == std::string_view::npos ? std::string_view{} : text.substr(semi + 1);
+        const std::size_t comma = item.find(',');
+        if (comma == std::string_view::npos)
+            continue;
+        const std::string a(item.substr(0, comma)), b(item.substr(comma + 1));
+        id += std::strtoull(a.c_str(), nullptr, 10);
+        handle += static_cast<std::uint64_t>(std::strtoll(b.c_str(), nullptr, 10));
+        out.emplace_back(id, handle);
+    }
+    return out;
 }
 
 }  // namespace tbcad::dxf::detail

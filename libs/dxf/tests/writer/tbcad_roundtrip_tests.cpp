@@ -301,7 +301,7 @@ TEST_CASE("objects of other programs hang on under their dictionary with fresh h
     REQUIRE(!xr.empty());
     CHECK(find(xr, 1) == "value \\U+0E01");
     CHECK(find(xr, 70) == "7");
-    CHECK(find(xr, 340) == "0");  // the line is not an object that is kept
+    CHECK(find(xr, 340) == "E1");  // the line is still there and keeps its handle
     const auto mat = record("MATERIAL");
     REQUIRE(!mat.empty());
     CHECK(find(mat, 43) == "0.25");
@@ -322,6 +322,88 @@ TEST_CASE("objects of other programs hang on under their dictionary with fresh h
             myapp = g[i + 1].second;
     CHECK(!myapp.empty());
     CHECK(find(xr, 330) != "<none>");
+}
+
+}  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("entities keep the handles they had; new ones get handles that clash with none") {
+    const std::string src =
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nLINE\n  5\n2B\n  8\n0\n 10\n0\n 20\n0\n 11\n5\n 21\n5\n"
+        "  0\nCIRCLE\n  5\n21\n  8\n0\n 10\n0\n 20\n0\n 40\n3\n"
+        "  0\nLINE\n  5\n2B\n  8\n0\n 10\n1\n 20\n1\n 11\n6\n 21\n6\n"  // a second 2B
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+    Report r1;
+    Result<ImportResult> first = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(first.ok());
+    Document& doc = *first.value().document;
+    {
+        auto tx = doc.begin("add");
+        Entity e;
+        e.data = LineData{{0, 0}, {1, 1}};
+        e.common.layer = kLayerZero;
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    auto saved = io::writeTbcadToMemory(doc);
+    REQUIRE(saved.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(saved.value(), ioReport);
+    REQUIRE(reopened.ok());
+    Report r2;
+    Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string& text = out.value().bytes;
+
+    std::vector<std::pair<int, std::string>> g;
+    {
+        std::istringstream in(text);
+        std::string a, b;
+        while (std::getline(in, a) && std::getline(in, b)) {
+            while (!a.empty() && (a.back() == '\r' || a.back() == ' '))
+                a.pop_back();
+            while (!b.empty() && b.back() == '\r')
+                b.pop_back();
+            g.emplace_back(std::atoi(a.c_str()), b);
+        }
+    }
+    // handles of the entities, in order, within the ENTITIES section
+    std::vector<std::pair<std::string, std::string>> ents;  // (type, handle)
+    bool inEntities = false;
+    for (std::size_t i = 0; i + 1 < g.size(); ++i) {
+        if (g[i].first == 2 && g[i].second == "ENTITIES")
+            inEntities = true;
+        else if (inEntities && g[i].first == 0 && g[i].second == "ENDSEC")
+            break;
+        else if (inEntities && g[i].first == 0 && g[i + 1].first == 5)
+            ents.emplace_back(g[i].second, g[i + 1].second);
+    }
+    REQUIRE(ents.size() == 4);
+    CHECK(ents[0] == std::make_pair(std::string("LINE"), std::string("2B")));
+    CHECK(ents[1] == std::make_pair(std::string("CIRCLE"), std::string("21")));
+    CHECK(ents[2].second != "2B");  // the second 2B is a new handle
+    CHECK(ents[3].second != "2B");
+
+    std::set<std::string> defined;
+    bool pastHeader = false;
+    for (const auto& [c, v] : g) {
+        if (c == 0 && v == "ENDSEC")
+            pastHeader = true;  // (the header's own group 5 is the handle seed)
+        if (c == 5 && pastHeader)
+            CHECK_MESSAGE(defined.insert(v).second, "handle " << v << " defined twice");
+    }
+    // $HANDSEED is above every handle
+    std::uint64_t seed = 0, top = 0;
+    for (std::size_t i = 0; i + 1 < g.size(); ++i)
+        if (g[i].first == 9 && g[i].second == "$HANDSEED")
+            seed = std::strtoull(g[i + 1].second.c_str(), nullptr, 16);
+    for (const auto& h : defined)
+        top = std::max<std::uint64_t>(top, std::strtoull(h.c_str(), nullptr, 16));
+    CHECK(seed > top);
 }
 
 }  // namespace tbcad::dxf

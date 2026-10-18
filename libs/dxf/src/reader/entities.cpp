@@ -340,11 +340,14 @@ void Importer::note3d(const Record& r) {
 // ---------------------------------------------------------------------------------------------
 // Dispatch
 
-void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line) {
+void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
+                   std::optional<std::uint64_t> handle) {
     EntityCount& cnt = sum_.entities[std::string(type)];
     tbcad::Result<EntityId> res = tx_->add(std::move(e), owner);
     if (res) {
         ++cnt.imported;
+        if (handle && *handle != 0)
+            srcHandles_.emplace_back(res.value().value, *handle);
         return;
     }
     ++cnt.skipped;
@@ -429,6 +432,7 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
         }
     }
     EntityCommon c = commonOf(r);
+    std::optional<std::uint64_t> handle = handleOf(r);  // (only the first entity of a record)
     for (Entity& e : out) {
         if (!e.common.layer) {
             const bool wipeout = e.common.wipeout;
@@ -436,7 +440,8 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
             if (wipeout)
                 e.common.wipeout = true;
         }
-        add(std::move(e), owner, type, r.line);
+        add(std::move(e), owner, type, r.line, handle);
+        handle.reset();
     }
 }
 
