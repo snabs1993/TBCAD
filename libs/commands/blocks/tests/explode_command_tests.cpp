@@ -74,3 +74,33 @@ TEST_CASE("EXPLODE breaks a pattern hatch into lines") {
     CHECK_FALSE(f.doc.contains(id));
     CHECK(f.modelSpace().size() > 1);
 }
+
+TEST_CASE("NCOPY copies the nested object nearest to the pick out of a block") {
+    Fixture f;
+    EntityId a = f.addLine(10, 10, 20, 10);
+    EntityId b = f.addCircle(15, 15, 2);
+    f.host->setSelection({a, b});
+    f.host->run("BLOCK", {"Door", "10,10", "C"});
+    f.host->run("INSERT", {"Door", "100,100"});
+    EntityId ins = f.modelSpace().back();
+    const std::size_t before = f.modelSpace().size();
+    // Pick the circle (now centred at 105,105) and move the copy by 0,50.
+    auto r = f.host->run("NCOPY", {cmd::ScriptItem::pick(ins, {107, 105}), "0,0", "0,50"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == before + 1);
+    const auto* c = entityAs<CircleData>(*f.doc.find(f.modelSpace().back()));
+    REQUIRE(c);
+    CHECK(near(c->center, {105, 155}));
+    CHECK(f.doc.contains(ins));  // the block itself is untouched
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().size() == before);
+
+    // Picking near the line takes the line; Enter at the base point copies in place.
+    auto r2 =
+        f.host->run("NCOPY", {cmd::ScriptItem::pick(ins, {105, 100}), cmd::ScriptItem::enter()});
+    CHECK(r2.finished);
+    REQUIRE(f.modelSpace().size() == before + 1);
+    const auto* l = entityAs<LineData>(*f.doc.find(f.modelSpace().back()));
+    REQUIRE(l);
+    CHECK(near(l->a, {100, 100}));
+}
