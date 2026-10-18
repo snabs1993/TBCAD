@@ -355,7 +355,15 @@ private:
                         "stream walk lost its place at " + std::to_string(off) + " (page offset " +
                         std::to_string(off % 0x7400) + "), skipped " + std::to_string(step) +
                         " bytes by " + (step == scan ? "scanning" : "the object map") + ", scan " +
-                        std::to_string(scan) + ", map " + std::to_string(viaMap));
+                        std::to_string(scan) + ", map " + std::to_string(viaMap) +
+                        ", previous frame " +
+                        (walkedList_.empty()
+                             ? std::string("none")
+                             : hex(walkedList_.back().first) + " at " +
+                                   std::to_string(walkedList_.back().second) + " ends at " +
+                                   std::to_string(off) + " " + dumpBytes(off - 6, 6)) +
+                        ", bytes from there " +
+                        dumpBytes(off, static_cast<std::size_t>(step) + 12));
                 off += step;
                 ++resyncs;
                 again = true;
@@ -363,6 +371,21 @@ private:
             if (!again || ++misses > 100000)
                 break;
         }
+    }
+
+    std::string dumpBytes(std::int64_t from, std::size_t n) const {
+        static const char* d = "0123456789ABCDEF";
+        std::string w;
+        for (std::size_t i = 0; i < n; ++i) {
+            const std::int64_t at = from + static_cast<std::int64_t>(i);
+            if (at < 0 || static_cast<std::size_t>(at) >= file_.size())
+                break;
+            const auto b = static_cast<unsigned char>(file_[static_cast<std::size_t>(at)]);
+            w += d[b >> 4];
+            w += d[b & 15];
+            w += ' ';
+        }
+        return "[" + w + "]";
     }
 
     // Where an object that could not be framed sits: offset, offset inside a 0x7400 page, and
