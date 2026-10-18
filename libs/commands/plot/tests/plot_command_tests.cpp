@@ -59,6 +59,8 @@ TEST_CASE("commands are registered with their aliases") {
     Fixture f;
     CHECK(f.reg.find("PLOT") != nullptr);
     CHECK(f.reg.find("PRINT") == f.reg.find("PLOT"));
+    CHECK(f.reg.find("-PLOT") == f.reg.find("PLOT"));
+    CHECK(f.reg.find("-PUBLISH") == f.reg.find("PUBLISH"));
     CHECK(f.reg.find("EXPORTPDF") != nullptr);
     CHECK(f.reg.find("EXPORTSVG") != nullptr);
 }

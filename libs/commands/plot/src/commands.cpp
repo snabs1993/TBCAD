@@ -343,7 +343,9 @@ public:
 class PlotSetCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "PLOTSET"; }
-    std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT", "PUBLISH"}; }
+    std::vector<std::string> defaultAliases() const override {
+        return {"BATCHPLOT", "PUBLISH", "-PUBLISH"};
+    }
     std::string_view description() const override {
         return "Plot a list of layouts from several drawings into one PDF or onto a printer";
     }
@@ -678,9 +680,9 @@ public:
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
-    (void)registry.add(std::make_unique<PlotCommand>("PLOT", std::vector<std::string>{"PRINT"},
-                                                     "Plot the drawing to PDF, SVG, PNG or JPEG",
-                                                     Format::Pdf));
+    (void)registry.add(
+        std::make_unique<PlotCommand>("PLOT", std::vector<std::string>{"PRINT", "-PLOT"},
+                                      "Plot the drawing to PDF, SVG, PNG or JPEG", Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTPDF", std::vector<std::string>{}, "Export the drawing to a PDF file", Format::Pdf));
     (void)registry.add(std::make_unique<PlotCommand>(
