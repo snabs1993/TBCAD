@@ -80,3 +80,64 @@ TEST_CASE("5,000 random short lines in a crowded view hit the edge guard instead
     std::printf("[hatch perf] crowded view rejected in %.1f ms\n", ms(t0, t1));
     CHECK(ms(t0, t1) < 10000.0);
 }
+
+// A city of 200,000 lines at survey coordinates: picking a block touches only the lines near the
+// pick, whatever the size of the drawing.
+TEST_CASE("pick-point boundary in a 200,000-line drawing at survey coordinates") {
+    const Vec2 o{500123.456, 4500987.654};
+    const int n = 224;  // 224 x 224 blocks of 4 lines
+    const double pitch = 120, size = 100;
+    std::vector<Entity> lines;
+    lines.reserve(static_cast<std::size_t>(n) * n * 4 + 100);
+    std::vector<std::vector<std::size_t>> bucket(static_cast<std::size_t>(n) * n);
+    for (int ix = 0; ix < n; ++ix) {
+        for (int iy = 0; iy < n; ++iy) {
+            const Vec2 lo = o + Vec2{ix * pitch, iy * pitch}, hi = lo + Vec2{size, size};
+            const Vec2 c[] = {lo, {hi.x, lo.y}, hi, {lo.x, hi.y}};
+            for (int k = 0; k < 4; ++k) {
+                bucket[static_cast<std::size_t>(ix * n + iy)].push_back(lines.size());
+                lines.push_back(line(c[k], c[(k + 1) % 4]));
+            }
+        }
+    }
+    auto window = [&](const BBox2& box) {
+        std::vector<Candidate> out;
+        const int x0 = std::max(0, static_cast<int>(std::floor((box.min.x - o.x) / pitch)) - 1);
+        const int x1 = std::min(n - 1, static_cast<int>(std::floor((box.max.x - o.x) / pitch)) + 1);
+        const int y0 = std::max(0, static_cast<int>(std::floor((box.min.y - o.y) / pitch)) - 1);
+        const int y1 = std::min(n - 1, static_cast<int>(std::floor((box.max.y - o.y) / pitch)) + 1);
+        for (int ix = x0; ix <= x1; ++ix)
+            for (int iy = y0; iy <= y1; ++iy)
+                for (std::size_t i : bucket[static_cast<std::size_t>(ix * n + iy)])
+                    out.push_back({EntityId{i + 1}, &lines[i]});
+        return out;
+    };
+    const BBox2 full{o - Vec2{10, 10}, o + Vec2{n * pitch + 10, n * pitch + 10}};
+    std::mt19937 rng(11);
+    double worst = 0;
+    for (int k = 0; k < 20; ++k) {
+        const int ix = static_cast<int>(rng() % n), iy = static_cast<int>(rng() % n);
+        const Vec2 pick = o + Vec2{ix * pitch + 33.3, iy * pitch + 71.7};
+        auto t0 = std::chrono::steady_clock::now();
+        auto r = findBoundaryNear(window, full, pick);
+        auto t1 = std::chrono::steady_clock::now();
+        REQUIRE(r.result.ok());
+        REQUIRE(r.result.value().loops.size() == 1);
+        CHECK(r.result.value().loops[0].edges.size() == 4);
+        worst = std::max(worst, ms(t0, t1));
+    }
+    // Between the blocks there is no closed region: the search must still end quickly.
+    auto t0 = std::chrono::steady_clock::now();
+    auto none = findBoundaryNear(window, full, o + Vec2{110, 110});
+    auto t1 = std::chrono::steady_clock::now();
+    CHECK_FALSE(none.result.ok());
+    std::printf("[hatch perf] 200k lines: worst pick %.1f ms, pick in the street %.1f ms\n", worst,
+                ms(t0, t1));
+#ifdef NDEBUG
+    CHECK(worst < 100.0);
+    CHECK(ms(t0, t1) < 2000.0);
+#else
+    CHECK(worst < 3000.0);
+    CHECK(ms(t0, t1) < 30000.0);
+#endif
+}
