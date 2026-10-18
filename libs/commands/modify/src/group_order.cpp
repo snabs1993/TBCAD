@@ -96,6 +96,139 @@ public:
     }
 };
 
+class GroupEditCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "GROUPEDIT"; }
+    std::vector<std::string> defaultAliases() const override { return {"GE"}; }
+    std::string_view description() const override {
+        return "Add or remove group members, rename a group, or make it unselectable";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.setUndoLabel("GROUPEDIT");
+        auto inGroup = [&doc = ctx.doc()](const Entity& e) {
+            for (const Group& g : readGroups(doc)) {
+                if (std::find(g.members.begin(), g.members.end(), e.common.id) != g.members.end())
+                    return true;
+            }
+            return false;
+        };
+        cmd::EntityOptions eo;
+        eo.filter = inGroup;
+        auto pick = co_await ctx.getEntity("Select a group", eo);
+        if (!pick.ok())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Add", "Remove", "Rename", "Selectable"};
+        ko.defaultKeyword = "Add";
+        auto k = co_await ctx.getKeyword("Group option [Add/Remove/Rename/Selectable] <Add>", ko);
+        if (!k.ok())
+            co_return;
+
+        auto find = [&](std::vector<Group>& groups) -> Group* {
+            for (Group& g : groups) {
+                if (std::find(g.members.begin(), g.members.end(), pick.id) != g.members.end())
+                    return &g;
+            }
+            return nullptr;
+        };
+
+        if (k.keyword == "Rename") {
+            cmd::StringOptions so;
+            auto n = co_await ctx.getString("New group name", so);
+            if (!n.ok())
+                co_return;
+            std::string chosen = cmd::trim(n.text);
+            std::vector<Group> groups = readGroups(ctx.doc());
+            Group* g = find(groups);
+            if (!g || chosen.empty())
+                co_return;
+            for (const Group& other : groups) {
+                if (&other != g && other.name == chosen) {
+                    ctx.message("There is already a group named \"" + chosen + "\".");
+                    co_return;
+                }
+            }
+            g->name = chosen;
+            if (auto r = writeGroups(ctx.tx(), groups); !r)
+                ctx.message(r.error().message);
+            co_return;
+        }
+        if (k.keyword == "Selectable") {
+            cmd::KeywordOptions yn;
+            yn.keywords = {"Yes", "No"};
+            yn.defaultKeyword = "Yes";
+            auto a = co_await ctx.getKeyword("Select the whole group on a pick [Yes/No] <Yes>", yn);
+            if (!a.ok())
+                co_return;
+            std::vector<Group> groups = readGroups(ctx.doc());
+            Group* g = find(groups);
+            if (!g)
+                co_return;
+            g->selectable = a.keyword == "Yes";
+            if (auto r = writeGroups(ctx.tx(), groups); !r)
+                ctx.message(r.error().message);
+            co_return;
+        }
+
+        if (k.keyword == "Remove") {
+            // One member at a time: a selection would bring the whole group along.
+            std::size_t removed = 0;
+            std::string target;
+            for (;;) {
+                std::vector<Group> groups = readGroups(ctx.doc());
+                Group* g = find(groups);
+                if (!g)
+                    break;
+                target = g->name;
+                cmd::EntityOptions mo;
+                mo.filter = [members = g->members](const Entity& e) {
+                    return std::find(members.begin(), members.end(), e.common.id) != members.end();
+                };
+                auto m = co_await ctx.getEntity("Select a member to remove (Enter to finish)", mo);
+                if (!m.ok())
+                    break;
+                g->members.erase(std::remove(g->members.begin(), g->members.end(), m.id),
+                                 g->members.end());
+                if (auto r = writeGroups(ctx.tx(), groups); !r) {
+                    ctx.message(r.error().message);
+                    co_return;
+                }
+                ++removed;
+            }
+            if (removed)
+                ctx.message(std::to_string(removed) + " removed from \"" + target + "\".");
+            co_return;
+        }
+
+        cmd::SelectionOptions so;
+        so.filter = [&doc = ctx.doc()](const Entity& e) { return isModifiable(doc, e); };
+        auto sel = co_await ctx.getSelection("Select objects to add to the group", so);
+        if (!sel.ok())
+            co_return;
+        std::vector<Group> groups = readGroups(ctx.doc());
+        Group* g = find(groups);
+        if (!g)
+            co_return;
+        for (Group& other : groups) {
+            if (&other == g)
+                continue;
+            for (EntityId id : sel.ids)
+                other.members.erase(std::remove(other.members.begin(), other.members.end(), id),
+                                    other.members.end());
+        }
+        for (EntityId id : sel.ids) {
+            if (std::find(g->members.begin(), g->members.end(), id) == g->members.end())
+                g->members.push_back(id);
+        }
+        if (auto r = writeGroups(ctx.tx(), groups); !r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message(std::to_string(sel.ids.size()) + " added to \"" + g->name + "\".");
+    }
+};
+
 // ---- DRAWORDER ----------------------------------------------------------------------------------
 
 class DrawOrderCommand final : public cmd::Command {
@@ -181,6 +314,9 @@ public:
 
 std::unique_ptr<cmd::Command> makeGroup() {
     return std::make_unique<GroupCommand>();
+}
+std::unique_ptr<cmd::Command> makeGroupEdit() {
+    return std::make_unique<GroupEditCommand>();
 }
 std::unique_ptr<cmd::Command> makeUngroup() {
     return std::make_unique<UngroupCommand>();
