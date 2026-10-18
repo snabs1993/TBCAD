@@ -251,6 +251,8 @@ struct DataDumper {
         o << " style" << d.style << " m" << d.measurement;
         for (const DimBreak& b : d.breaks)
             o << " break " << b.a << ">" << b.b;
+        for (const Vec2& j : d.jogs)
+            o << " jog" << j;
         if (d.oblique != 0)
             o << " oblique" << d.oblique;
         if (d.textRotated)

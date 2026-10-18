@@ -378,6 +378,8 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
                 b.a = t.apply(b.a);
                 b.b = t.apply(b.b);
             }
+            for (Vec2& j : o.jogs)
+                j = t.apply(j);
             if (o.kind != DimKind::Angular2Line && o.kind != DimKind::Angular3Point)
                 o.measurement *= s;
             if (o.kind == DimKind::Linear)

@@ -208,6 +208,7 @@ std::unique_ptr<Document> makeRichDocument() {
         dim.oblique = 0.4;
         dim.textRotated = true;
         dim.textRotation = 0.25;
+        dim.jogs = {Vec2{3, 0}, Vec2{4, 0}};
         add(make(std::move(dim), l0));
         add(make(LeaderData{{{0, 0}, {5, 5}, {8, 5}}, arch, "หมายเหตุ", {8.5, 5}}, l0));
         {

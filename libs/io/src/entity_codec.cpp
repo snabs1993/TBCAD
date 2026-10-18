@@ -266,6 +266,12 @@ struct PayloadWriter {
             w.u8(d.textRotated ? 1 : 0);
             w.f64(d.textRotation);
         }
+        if (!d.jogs.empty()) {  // tag 3: DIMJOGLINE
+            w.u8(3);
+            w.varint(d.jogs.size());
+            for (const Vec2& p : d.jogs)
+                w.vec2(p);
+        }
     }
     void operator()(const LeaderData& d) {
         points(d.vertices);
@@ -640,6 +646,13 @@ struct PayloadReader {
                         d.oblique = r.f64();
                         d.textRotated = r.u8() != 0;
                         d.textRotation = r.f64();
+                        continue;
+                    }
+                    if (tag == 3) {
+                        std::size_t nj = r.count(16);
+                        d.jogs.reserve(nj);
+                        for (std::size_t i = 0; i < nj; ++i)
+                            d.jogs.push_back(r.vec2());
                         continue;
                     }
                     if (tag != 1)

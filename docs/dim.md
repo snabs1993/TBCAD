@@ -121,6 +121,11 @@ one MLEADER run is one undo step. To DXF a multileader is written as one LEADER 
 dogleg and the note as MTEXT (or a block as INSERT): other programs show it, but it is no longer one object
 there.
 
+**DIMJOGLINE** (DJL) puts a Z-shaped jog in the dimension line of a linear or aligned dimension, the sign
+that the drawn length is shortened. Pick the dimension, then the place on the dimension line, or press
+Enter for the middle; the keyword **Remove** takes the jogs out. The jog is stored with the dimension, so it
+moves, scales and saves with it.
+
 ## Arc length and ordinate dimensions (Q81)
 
 - **DIMARC** (DAR) dimensions the length of a picked arc. The dimension arc follows the cursor; **Text** overrides the
