@@ -463,17 +463,30 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                                        ImGuiTableFlags_BordersInnerV |
                                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Hideable;
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
+    const float availWidth = ImGui::GetContentRegionAvail().x;
     if (ImGui::BeginTable("##layers", 8, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 140);
+        // Name takes whatever the other columns leave, so a wide panel shows whole layer names.
+        // In a narrow panel Linetype and Weight start hidden (right-click the header to show them).
+        const bool narrow = availWidth < 560;
+        const float others = 30 * 3 + 40 + 34 + (narrow ? 0 : 72 + 56) +
+                             (narrow ? 6 : 8) * ImGui::GetStyle().CellPadding.x * 2;
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed,
+                                std::max(150.0f, availWidth - others));
         ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 40);
-        ImGui::TableSetupColumn("Linetype", ImGuiTableColumnFlags_WidthFixed, 72);
-        ImGui::TableSetupColumn("Weight", ImGuiTableColumnFlags_WidthFixed, 56);
+        ImGui::TableSetupColumn(
+            "Linetype",
+            ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
+            72);
+        ImGui::TableSetupColumn(
+            "Weight",
+            ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
+            56);
         ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 34);
         ImGui::TableHeadersRow();
 

@@ -272,3 +272,16 @@ TEST_CASE("FINDSTRAY leaves ordinary objects alone") {
     host.run("FINDSTRAY", {});
     CHECK(host.logContains("No stray lines found"));
 }
+
+TEST_CASE("PICKTRACE lists the objects drawn near a point") {
+    Fixture f;
+    EntityId near = f.add(line({0, 0}, {10, 0}));
+    f.add(line({0, 50}, {10, 50}));
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("PICKTRACE", {"1", "5,0.5"});
+    CHECK(host.logContains("#" + std::to_string(near.value) + " Line"));
+    CHECK(host.selection().size() == 1);
+    host.clearLog();
+    host.run("PICKTRACE", {"1", "5,20"});
+    CHECK(host.logContains("Nothing is drawn"));
+}

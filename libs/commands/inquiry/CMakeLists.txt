@@ -7,6 +7,7 @@ tbcad_add_library(inquiry
     src/massprop.cpp
     src/dwgprops.cpp
     src/findstray.cpp
+    src/picktrace.cpp
     src/quick.cpp
     src/quickcmd.cpp
     src/ui.cpp
