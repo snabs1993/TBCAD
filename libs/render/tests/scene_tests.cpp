@@ -483,7 +483,8 @@ TEST_CASE("removeMany and removeAllOf drop many objects at once and the scene st
         std::vector<EntityId> ids;
         for (std::size_t i = 0; i < n; ++i) {
             const double x = static_cast<double>(i % 300);
-            s.upsert(EntityId{i + 1}, lineList({x, 0}, {x + 1, 1}), static_cast<unsigned>(i + 1), 0);
+            s.upsert(EntityId{i + 1}, lineList({x, 0}, {x + 1, 1}), static_cast<unsigned>(i + 1),
+                     0);
             ids.push_back(EntityId{i + 1});
         }
         REQUIRE(s.entityCount() == n);

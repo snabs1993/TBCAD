@@ -406,6 +406,9 @@ public:
     // by it so far (entities added in this transaction are not listed). Sorted by id. Lets
     // pre-commit hooks find out what an edit touched, e.g. to update dependent objects.
     std::vector<EntityId> touchedEntities() const;
+    // The same without building the list: how many, and whether one id is among them.
+    std::size_t touchedCount() const { return touched_.size(); }
+    bool wasTouched(EntityId id) const { return touched_.count(id) != 0; }
 
     // The document this transaction edits; reads see the edits made so far.
     const Document& document() const { return *doc_; }

@@ -40,6 +40,14 @@ public:
     // 4x away from the camera's. Returns how many were rebuilt.
     std::size_t refreshStale(const render::Camera2D& camera, std::size_t limit = 20000);
 
+    // A change of a very large number of objects (a MOVE of the whole drawing, its undo) takes
+    // them out of the scene at once but builds their geometry later: first what the camera sees,
+    // a slice per call, then the rest. pumpPending() does one slice; flushPending() builds all.
+    // Nothing else changes: the scene lacks those objects until they are built.
+    std::size_t pendingCount() const { return pending_.size() - pendingDead_; }
+    std::size_t pumpPending(const render::Camera2D& camera, std::size_t limit = 8000);
+    void flushPending();
+
     // Bounds of the rendered geometry, for "zoom extents" on scene content.
     BBox2 bounds() const { return scene_.bounds(); }
 
@@ -51,11 +59,26 @@ private:
     // they are taken out in chunks first.
     void upsertMany(const std::vector<const Entity*>& list);
     void relevelMasks();
+    // Lazy building (see pendingCount): queue instead of build, and the pieces around it.
+    struct PendingRec {
+        EntityId id{};
+        std::uint32_t order = 0;
+        BBox2 box{};
+        bool dead = false;  // built or erased meanwhile
+    };
+    bool lazyOk(std::size_t count) const;
+    void queueLazy(const std::vector<const Entity*>& list);
+    std::optional<std::uint32_t> takePending(EntityId id);
+    std::uint32_t orderFor(EntityId id);
+    void buildPending(PendingRec& rec);
+    void compactPending();
     void syncLayers();
     void rebuildDrawOrder();
 
     Document& doc_;
     render::Scene& scene_;
+    std::vector<PendingRec> pending_{};  // sorted by id
+    std::size_t pendingDead_ = 0;
     double pixelSizeMm_ = 0.1;
     std::unordered_set<LayerId> lockedLayers_{};
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};

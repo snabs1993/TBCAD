@@ -172,6 +172,8 @@ public:
     // or reordered this is true, and the owner must call adoptMaskOrders() and upsert every
     // entity again (keeping its drawOrderOf()).
     bool needsRelevel() const;
+    // True when the scene holds any wipeout (mask fill).
+    bool hasMasks() const { return !masks_.empty(); }
     void adoptMaskOrders();
     std::uint32_t drawOrderOf(EntityId id) const;
 
