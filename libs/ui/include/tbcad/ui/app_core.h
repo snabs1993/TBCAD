@@ -31,6 +31,10 @@
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/underlay/image.h"
 
+namespace tbcad::layout {
+struct Viewport;
+}
+
 namespace tbcad::ui {
 
 struct PointerState {
@@ -341,6 +345,8 @@ public:
     void requestUi(std::string_view what) override {
         if (what.rfind("space:", 0) == 0)
             pendingSpace_ = what.substr(6);  // MSPACE / PSPACE, applied when the command ends
+        else if (what.rfind("zoomxp:", 0) == 0)
+            pendingZoomXp_ = std::atof(std::string(what.substr(7)).c_str());
         else
             uiRequests_.emplace_back(what);
     }
@@ -495,7 +501,11 @@ private:
     std::string pendingSpace_;  // "model" or "paper"
     std::string lastLayout_;    // the sheet we last left for model space
     void applyPendingSpace();
-    void enterViewport(const BBox2& paper, Vec2 center, double scaleN);
+    void enterViewport(const std::string& layoutName, const layout::Viewport& vp);
+    double pendingZoomXp_ = 0;   // ZOOM nXP: the viewport scale as a fraction of paper space
+    std::string editingLayout_;  // the viewport being edited from model space, if any
+    int editingViewport_ = 0;
+    void applyZoomXp();
     underlay::ImageCache imageCache_{};
 };
 

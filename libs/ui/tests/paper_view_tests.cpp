@@ -140,6 +140,41 @@ TEST_CASE("MSPACE enters the model through a viewport and PSPACE returns to the 
     CHECK(core.inPaperSpace());
 }
 
+TEST_CASE("ZOOM nXP sets the viewport scale, from the sheet and from model space") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper_xp") / "cfg", tempDir("paper_xp") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    // On the sheet the only viewport is the target; 1/100XP makes it 1:100.
+    core.submitText("ZOOM");
+    core.submitText("1/100XP");
+    core.updateFrame(std::chrono::steady_clock::now());
+    REQUIRE(layout::findLayout(core.document(), "A")->viewports.front().scaleN ==
+            doctest::Approx(100));
+    // From model space the view follows the new scale: 200 mm at 1:200 is 40 m across.
+    core.submitText("MSPACE");
+    core.submitText("ZOOM");
+    core.submitText("0.005XP");
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(layout::findLayout(core.document(), "A")->viewports.front().scaleN ==
+          doctest::Approx(200));
+    CHECK(core.camera().visibleWorld().max.x - core.camera().visibleWorld().min.x >= 40000);
+    // nX is relative to the current view and changes no viewport.
+    const double before = core.camera().pixelsPerMm;
+    core.submitText("ZOOM");
+    core.submitText("2X");
+    CHECK(core.camera().pixelsPerMm == doctest::Approx(before * 2));
+    CHECK(layout::findLayout(core.document(), "A")->viewports.front().scaleN ==
+          doctest::Approx(200));
+}
+
 TEST_CASE("objects can be drawn on, picked and erased from a layout sheet") {
     auto registry = makeRegistry();
     AppCore core(*registry,
