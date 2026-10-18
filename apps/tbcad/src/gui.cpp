@@ -3112,6 +3112,16 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    if (const auto n = core_.dragSelectCount(); n && *n > 0) {
+        const ImVec2 at(ImGui::GetIO().MousePos.x + 16 * dpiScale_,
+                        ImGui::GetIO().MousePos.y + 20 * dpiScale_);
+        const std::string label = std::to_string(*n) + (*n == 1 ? " object" : " objects");
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        const ImVec2 sz = ImGui::CalcTextSize(label.c_str());
+        dl->AddRectFilled(ImVec2(at.x - 4, at.y - 2), ImVec2(at.x + sz.x + 4, at.y + sz.y + 2),
+                          IM_COL32(20, 22, 26, 200), 4.0f);
+        dl->AddText(at, IM_COL32(230, 232, 235, 255), label.c_str());
+    }
     hoverTooltip();
     quickProperties(rect);
     textEditor(rect);
