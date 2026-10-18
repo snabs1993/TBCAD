@@ -197,12 +197,18 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                                  ": " + std::to_string(t[0]) +
                                                  " end where expected, " + std::to_string(t[1]) +
                                                  " do not");
-    std::size_t skippedShown = 0;
-    for (const auto& [name, count] : drawing.skippedTypes)
-        if (skippedShown++ < 30)
-            report.summary(code::kSkippedObject, std::to_string(count) + " object(s) of type " +
-                                                     name + " are not read yet");
-
+    {
+        // All skipped types on one line, the most numerous first, so drawable ones stand out.
+        std::vector<std::pair<std::size_t, std::string>> byCount;
+        for (const auto& [name, count] : drawing.skippedTypes)
+            byCount.emplace_back(count, name);
+        std::sort(byCount.rbegin(), byCount.rend());
+        std::string t = "object types not read yet (" + std::to_string(byCount.size()) +
+                        " types, most numerous first):";
+        for (std::size_t i = 0; i < byCount.size() && i < 150; ++i)
+            t += " " + byCount[i].second + " x" + std::to_string(byCount[i].first);
+        report.summary(code::kSkippedObject, t);
+    }
     {
         // Where the entities live: the biggest owners, to see whether model space is found.
         std::map<std::uint64_t, std::size_t> perOwner;
