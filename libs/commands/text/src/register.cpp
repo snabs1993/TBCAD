@@ -21,6 +21,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeTxt2MTxtCommand());
     (void)registry.add(makeTCountCommand());
     (void)registry.add(makeTxtExpCommand());
+    (void)registry.add(makeTextAlignCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {

@@ -187,76 +187,82 @@ public:
         scaleFirstAnnotationToView(ctx);  // text readable at this view, as dimensions get
         const MLeaderStyle mls = currentMLeaderStyle(ctx.doc());
         const DimStyleId sid = mls.dim;
-        // Text typed instead of a point is the note itself (AutoCAD's content-first habit).
-        cmd::PointOptions first;
-        first.freeText = true;
-        auto tip = co_await ctx.getPoint("Specify arrowhead location or type the note text", first);
+        // Text typed instead of a point is the note itself (AutoCAD's content-first habit). The
+        // content type is an option of the first prompt only; the style's type is the default.
+        std::string contentType = mls.content;
         std::optional<std::string> typedNote;
-        if (tip.status == Status::Keyword) {
-            typedNote = tip.keyword;
-            ctx.message("Note: \"" + tip.keyword + "\". Now pick where the arrow points.");
-            tip = co_await ctx.getPoint("Specify arrowhead location");
+        auto isOption = [](const cmd::PointResult& r, const char* name) {
+            return r.status == Status::Keyword && r.keyword == name;
+        };
+        cmd::PointResult tip;
+        for (;;) {
+            cmd::PointOptions first;
+            first.freeText = true;
+            first.keywords = {"Content"};
+            tip = co_await ctx.getPoint(
+                "Specify arrowhead location or [Content type] or type the note text", first);
+            if (isOption(tip, "Content")) {
+                cmd::KeywordOptions ko;
+                ko.keywords = {"Text", "Block", "None"};
+                ko.defaultKeyword = contentType;
+                auto k = co_await ctx.getKeyword(
+                    "Content type [Text/Block/None] <" + contentType + ">", ko);
+                if (!k.ok())
+                    co_return;
+                contentType = k.keyword;
+                continue;
+            }
+            if (tip.status == Status::Keyword) {
+                typedNote = tip.keyword;
+                ctx.message("Note: \"" + tip.keyword + "\". Now pick where the arrow points.");
+                tip = co_await ctx.getPoint("Specify arrowhead location");
+            }
+            break;
         }
         if (!tip.ok())
             co_return;
         std::vector<Vec2> tips{tip.point};
 
-        cmd::PointOptions po;
-        po.base = tip.point;
         auto* c = &ctx;
-        const Vec2 t0 = tip.point;
-        po.preview = [c, t0, sid](Vec2 cursor, DisplayList& out) {
-            Entity e;
-            e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t0, cursor}, "", sid));
-            previewEntity(*c, std::move(e), out);
-        };
-        auto land = co_await ctx.getPoint("Specify landing location", po);
-        if (!land.ok())
-            co_return;
-        const Vec2 landing = land.point;
-
+        Vec2 landing{};
         for (;;) {
-            cmd::PointOptions more;
-            more.base = landing;
-            std::vector<Vec2> shown = tips;
-            more.preview = [c, shown, landing, sid](Vec2 cursor, DisplayList& out) {
+            cmd::PointOptions po;
+            po.base = tips.back();
+            po.freeText = true;
+            po.keywords = {"Add"};
+            const std::vector<Vec2> shown = tips;
+            po.preview = [c, shown, sid](Vec2 cursor, DisplayList& out) {
                 for (Vec2 t : shown) {
                     Entity e;
-                    e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t, landing}, "", sid));
+                    e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t, cursor}, "", sid));
                     previewEntity(*c, std::move(e), out);
                 }
-                Entity e;
-                e.data = Indirect<LeaderData>(leaderOf(c->doc(), {cursor, landing}, "", sid));
-                previewEntity(*c, std::move(e), out);
             };
-            auto next =
-                co_await ctx.getPoint("Specify another arrowhead location or <content>", more);
-            if (next.status == Status::None)
-                break;
-            if (!next.ok())
+            auto land = co_await ctx.getPoint(
+                "Specify landing location or [Add another arrowhead] or type the note text", po);
+            if (isOption(land, "Add")) {
+                auto more = co_await ctx.getPoint("Specify another arrowhead location");
+                if (!more.ok())
+                    co_return;
+                tips.push_back(more.point);
+                continue;
+            }
+            if (land.status == Status::Keyword) {
+                typedNote = land.keyword;
+                ctx.message("Note: \"" + land.keyword + "\".");
+                continue;
+            }
+            if (!land.ok())
                 co_return;
-            if (distance(next.point, landing) > tol::kLinear)
-                tips.push_back(next.point);
+            landing = land.point;
+            break;
         }
 
         std::string text;
         const BlockDef* block = nullptr;
-        cmd::KeywordResult content;
-        content.status = Status::Keyword;
-        content.keyword = "Text";
         if (typedNote) {
             text = *typedNote;
-        } else {
-            cmd::KeywordOptions ko;
-            ko.keywords = {"Text", "Block", "None"};
-            ko.defaultKeyword = mls.content;
-            content =
-                co_await ctx.getKeyword("Content type [Text/Block/None] <" + mls.content + ">", ko);
-            if (!content.ok())
-                co_return;
-        }
-        if (typedNote) {
-        } else if (content.keyword == "Text") {
+        } else if (contentType == "Text") {
             cmd::StringOptions so;
             so.allowEmpty = true;
             auto note = co_await ctx.getString("Enter annotation text <none>", so);
@@ -264,7 +270,7 @@ public:
                 co_return;
             if (note.ok())
                 text = note.text;
-        } else if (content.keyword == "Block") {
+        } else if (contentType == "Block") {
             cmd::StringOptions so;
             auto name = co_await ctx.getString("Enter block name", so);
             if (!name.ok())

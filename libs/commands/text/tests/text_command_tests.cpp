@@ -348,3 +348,20 @@ TEST_CASE("MTEXT and TEXT from far away default to a height that can be read") {
     REQUIRE(g.firstMText());
     CHECK(g.firstMText()->height == doctest::Approx(2.5));
 }
+
+TEST_CASE("TEXTALIGN lines texts up with the first one and undoes in one step") {
+    Fixture f;
+    f.host.run("TEXT", {"10,5", "2.5", "0", "AAA"});
+    f.host.run("TEXT", {"40,20", "2.5", "0", "B"});
+    REQUIRE(f.doc.modelSpace().size() == 2);
+    const EntityId ta = f.doc.modelSpace()[0];
+    const EntityId tb = f.doc.modelSpace()[1];
+    f.host.run("TEXTALIGN", {cmd::ScriptItem::select({ta, tb}), cmd::ScriptItem::enter(), "Left"});
+    CHECK(entityAs<TextData>(*f.doc.find(tb))->position.x == doctest::Approx(10));
+    CHECK(entityAs<TextData>(*f.doc.find(tb))->position.y == doctest::Approx(20));
+    f.host.run("TEXTALIGN",
+               {cmd::ScriptItem::select({ta, tb}), cmd::ScriptItem::enter(), "Bottom"});
+    CHECK(entityAs<TextData>(*f.doc.find(tb))->position.y == doctest::Approx(5).epsilon(0.5));
+    f.host.undo();
+    CHECK(entityAs<TextData>(*f.doc.find(tb))->position.y == doctest::Approx(20));
+}
