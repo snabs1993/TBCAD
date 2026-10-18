@@ -1001,6 +1001,10 @@ EffectiveLayer Document::effective(LayerId id) const {
 
 EffectiveLayer Document::effective(const EntityCommon& c) const {
     EffectiveLayer e = effective(c.layer);
+    // ANNOALLVISIBLE off: an annotative object made for other scales is not there.
+    if (c.annotative && !header_.custom.empty() && !annoAllVisible(header_) &&
+        !supportsCurrentAnnotationScale(header_, c))
+        e.on = false;
     const Level* lv = level(c.level);
     if (!lv)
         return e;
@@ -2098,12 +2102,31 @@ std::vector<double> annotationScaleList(const Header& h) {
     return out;
 }
 
+bool annoAutoScale(const Header& h) {
+    return customFlag(h, kAnnoAutoScaleKey, true);
+}
+bool annoAllVisible(const Header& h) {
+    return customFlag(h, kAnnoAllVisibleKey, true);
+}
+bool selectionAnnoDisplay(const Header& h) {
+    return customFlag(h, kSelAnnoDisplayKey, true);
+}
+
+bool supportsCurrentAnnotationScale(const Header& h, const EntityCommon& c) {
+    if (!c.annotative || c.annoScales.empty())
+        return true;
+    const double cur = currentAnnotationScale(h);
+    return std::find(c.annoScales.begin(), c.annoScales.end(), cur) != c.annoScales.end();
+}
+
+// A viewport draws at its own scale. In model space an object is drawn at the current annotation
+// scale when it supports it (or lists none); otherwise at the first scale it has.
 double annotationFactor(const Header& h, const EntityCommon& c, double override) {
     if (!c.annotative)
         return 1.0;
     if (override > 0)
         return override;
-    if (!c.annoScales.empty() && c.annoScales.front() > 0)
+    if (!supportsCurrentAnnotationScale(h, c) && c.annoScales.front() > 0)
         return c.annoScales.front();
     return currentAnnotationScale(h);
 }
