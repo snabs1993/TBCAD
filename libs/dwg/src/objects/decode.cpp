@@ -1159,6 +1159,7 @@ private:
         }
         tally(type, r);
         if (r.failed()) {
+            ++out_.entityFailures[e.dxfType][0];
             note(e.dxfType + " " + hex(self) + " is damaged and was skipped (read to bit " +
                  std::to_string(r.bitPos()) + " of " + std::to_string(mainEnd_) + ")" +
                  (failDumps_[type]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
@@ -1167,6 +1168,7 @@ private:
         for (const Group& g : e.groups) {
             if (const double* v = std::get_if<double>(&g.value.v)) {
                 if (!std::isfinite(*v) || std::abs(*v) > 1e13) {
+                    ++out_.entityFailures[e.dxfType][1];
                     note(e.dxfType + " " + hex(self) +
                          " has a number out of range and was skipped");
                     return;
@@ -1731,26 +1733,42 @@ private:
     void hatch(BitReader& r, EntityRec& e) {
         e.dxfType = "HATCH";
         if (fmt_.r2004) {
-            // Gradient fill description; the hatch is imported with a plain fill.
-            r.bl();  // is gradient
-            r.bl();
-            r.bd();  // angle
-            r.bd();  // shift
-            r.bl();  // single colour
-            r.bd();  // tint
+            // Gradient fill description, passed on as the DXF 450 to 470 groups.
+            const std::int32_t isGradient = r.bl();
+            const std::int32_t reserved = r.bl();
+            const double gradAngle = r.bd();
+            const double gradShift = r.bd();
+            const std::int32_t single = r.bl();
+            const double tint = r.bd();
             const std::int32_t colors = r.bl();
             if (colors < 0 ||
                 static_cast<std::int64_t>(colors) > static_cast<std::int64_t>(r.bitsLeft()) / 8) {
                 r.fail();
                 return;
             }
+            std::vector<std::pair<double, std::uint32_t>> stops;
             for (std::int32_t i = 0; i < colors && !r.failed(); ++i) {
-                r.bd();
+                const double at = r.bd();
                 r.bs();
-                r.bl();
+                const std::uint32_t rgb = r.bl();
                 r.rc();
+                stops.emplace_back(at, rgb & 0xFFFFFF);
             }
-            r.textBytes();  // gradient name
+            const std::string gradName = r.textBytes();
+            if (isGradient != 0 && !r.failed()) {
+                add(e, 450, isGradient);
+                add(e, 451, reserved);
+                add(e, 460, gradAngle);
+                add(e, 461, gradShift);
+                add(e, 452, single);
+                add(e, 462, tint);
+                add(e, 453, colors);
+                for (const auto& [at, rgb] : stops) {
+                    add(e, 463, at);
+                    add(e, 421, static_cast<long long>(rgb));
+                }
+                add(e, 470, gradName);
+            }
         }
         const double elevation = r.bd();
         const Vec3 n = bd3(r);
@@ -2634,7 +2652,9 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r84: the stream walk resumes at the next object the map places correctly, lost places "
+    return "r86: gradient hatches keep colours, angle, shift and name (DXF 450 to 470), failed "
+           "entities counted per type; r84: the stream walk resumes at the next object the map "
+           "places correctly, lost places "
            "listed; r83: object map blocks with offsets outside the data are listed; r83: samples "
            "of "
            "objects found away from the object map place are listed; r82: draw order tables "

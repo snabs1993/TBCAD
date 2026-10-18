@@ -127,6 +127,12 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
         report.info(code::kSkippedObject, drawing.walkSummary);
+    if (!drawing.entityFailures.empty()) {
+        std::string t = "entities left out (damaged / number out of range):";
+        for (const auto& [type, c] : drawing.entityFailures)
+            t += " " + type + " " + std::to_string(c[0]) + "/" + std::to_string(c[1]);
+        report.info(code::kSkippedObject, t);
+    }
     for (const std::string& n : drawing.walkNotes)
         report.info(code::kSkippedObject, n);
     if (!drawing.relocatedSamples.empty()) {

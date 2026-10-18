@@ -4,6 +4,7 @@
 // or seed points depending on where they appear), so the groups are walked with a cursor.
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "importer.h"
 
@@ -63,11 +64,42 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
     HatchData h;
     std::string pattern = dec(r.raw(2));
     bool solid = r.integer(70) == 1 || foldAsciiEquals(pattern, "solid");
+    std::optional<GradientData> gradient;
     if (r.integer(450) == 1) {
-        report_.info(code::kGradient,
-                     "gradient hatch imported as a solid fill (gradient colours are not kept)",
-                     r.line);
         solid = true;
+        std::vector<std::uint32_t> stops;
+        for (const Group& gr : g)
+            if (gr.code == 421)
+                stops.push_back(static_cast<std::uint32_t>(gr.integer()) & 0xFFFFFF);
+        auto toColor = [](std::uint32_t v) {
+            return Color::rgb(static_cast<std::uint8_t>((v >> 16) & 0xFF),
+                              static_cast<std::uint8_t>((v >> 8) & 0xFF),
+                              static_cast<std::uint8_t>(v & 0xFF));
+        };
+        if (stops.empty()) {
+            report_.info(code::kGradient, "gradient hatch without colours imported as a solid fill",
+                         r.line);
+        } else {
+            GradientData gd;
+            gd.color1 = toColor(stops.front());
+            if (stops.size() >= 2) {
+                gd.color2 = toColor(stops[1]);
+            } else {
+                // One colour: it fades towards white by the tint.
+                const double tint = r.has(462) ? std::clamp(r.num(462), 0.0, 1.0) : 1.0;
+                const std::uint32_t v = stops.front();
+                auto mix = [&](int shift) {
+                    const double c = static_cast<double>((v >> shift) & 0xFF);
+                    return static_cast<std::uint8_t>(std::lround(255.0 - (255.0 - c) * tint));
+                };
+                gd.color2 = Color::rgb(mix(16), mix(8), mix(0));
+            }
+            const std::string gname = std::string(r.raw(470));
+            gd.kind = gname.find("CYLINDER") != std::string::npos ? GradientKind::Cylinder
+                                                                  : GradientKind::Linear;
+            gd.angle = f.angle(r.num(460));
+            gradient = gd;
+        }
     }
 
     while (i < n && g[i].code != 91)
@@ -242,6 +274,7 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
     }
 
     h.solid = solid;
+    h.gradient = gradient;
     if (!solid)
         h.pattern = pattern;
     for (std::size_t j = i; j < n; ++j) {
