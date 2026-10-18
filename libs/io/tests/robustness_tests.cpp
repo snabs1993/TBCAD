@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <random>
 
 #include "helpers.h"
@@ -106,6 +107,84 @@ TEST_CASE("10,000 random mutations never crash (run under ASan/UBSan in CI)") {
             }
         }
         INFO("compress=" << compress << " accepted=" << accepted << " rejected=" << rejected);
+        CHECK(rejected > 0);
+    }
+}
+
+TEST_CASE("burst damage to a big file never crashes the reader") {
+    // Runs of damage (not single bytes) in a file with thousands of records: length fields set to
+    // all-ones or zero, blocks swapped or repeated, the tail cut off.
+    auto doc = makeRichDocument();
+    {
+        Transaction tx = doc->begin("many");
+        for (int i = 0; i < 3000; ++i) {
+            Entity e;
+            if (i % 3 == 0) {
+                e.data = LineData{{double(i), 0}, {double(i), 5}};
+            } else if (i % 3 == 1) {
+                PolylineData p;
+                for (int k = 0; k < 5; ++k)
+                    p.v.push_back({{double(i + k), double(k)}, k == 2 ? 0.5 : 0.0, 0, 0});
+                e.data = std::move(p);
+            } else {
+                e.data = TextData{.position = {double(i), 1}, .height = 2, .utf8 = "ข้อความ"};
+            }
+            (void)tx.add(std::move(e));
+        }
+        tx.commit();
+    }
+    std::mt19937 rng(777);
+    for (bool compress : {false, true}) {
+        io::WriteOptions o;
+        o.compress = compress;
+        auto original = writeOrFail(*doc, o);
+        int rejected = 0;
+        for (int i = 0; i < 600; ++i) {
+            auto bytes = original;
+            const std::size_t at = rng() % bytes.size();
+            const std::size_t len = std::min<std::size_t>(1 + rng() % 64, bytes.size() - at);
+            switch (rng() % 6) {
+                case 0:
+                    for (std::size_t k = 0; k < len; ++k)
+                        bytes[at + k] = static_cast<std::uint8_t>(rng());
+                    break;
+                case 1:
+                    std::fill_n(bytes.begin() + static_cast<std::ptrdiff_t>(at), len, 0xFF);
+                    break;
+                case 2:
+                    std::fill_n(bytes.begin() + static_cast<std::ptrdiff_t>(at), len, 0);
+                    break;
+                case 3: {  // swap two blocks
+                    const std::size_t other = rng() % (bytes.size() - len + 1);
+                    std::swap_ranges(bytes.begin() + static_cast<std::ptrdiff_t>(at),
+                                     bytes.begin() + static_cast<std::ptrdiff_t>(at + len),
+                                     bytes.begin() + static_cast<std::ptrdiff_t>(
+                                                         std::min(other, bytes.size() - len)));
+                    break;
+                }
+                case 4: {  // repeat a block
+                    std::vector<std::uint8_t> blk(
+                        bytes.begin() + static_cast<std::ptrdiff_t>(at),
+                        bytes.begin() + static_cast<std::ptrdiff_t>(at + len));
+                    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(at), blk.begin(),
+                                 blk.end());
+                    break;
+                }
+                default:
+                    bytes.resize(at);  // the tail is lost
+                    if (bytes.empty())
+                        bytes.push_back(0);
+            }
+            io::IoReport report;
+            io::ReadOptions opt;
+            opt.verifyCrc = (i % 4 == 0);
+            auto r = io::readTbcad(bytes, report, opt);
+            if (r.ok())
+                (void)canonicalDump(*r.value());
+            else
+                ++rejected;
+        }
+        INFO("compress=" << compress << " rejected=" << rejected);
         CHECK(rejected > 0);
     }
 }

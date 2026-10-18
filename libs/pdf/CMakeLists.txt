@@ -1,7 +1,8 @@
 include(deps/miniz)
 
 tbcad_add_library(pdf SOURCES src/document.cpp src/page.cpp src/format.cpp DEPENDS tbcad::core)
-target_link_libraries(tbcad_pdf PRIVATE miniz)
+find_package(Threads REQUIRED)
+target_link_libraries(tbcad_pdf PRIVATE miniz Threads::Threads)
 
 # Tests inflate content streams with miniz and run `qpdf --check` when available.
 # CI sets TBCAD_REQUIRE_QPDF=1 so a missing qpdf fails there instead of skipping.
