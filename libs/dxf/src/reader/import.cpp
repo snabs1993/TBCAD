@@ -178,7 +178,9 @@ void Importer::parseHeader(const Record& rec) {
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
     std::int64_t psltscale = -1, msltscale = -1, plinegen = -1;
-    std::string clayer;
+    std::string clayer, ucsName;
+    double ucsOx = 0, ucsOy = 0, ucsXx = 1, ucsXy = 0;
+    bool haveUcs = false;
     for (const Group& g : rec.g) {
         if (g.code == 9) {
             var = std::string(g.str());
@@ -199,6 +201,13 @@ void Importer::parseHeader(const Record& rec) {
             msltscale = g.integer();
         } else if (var == "$PLINEGEN" && g.code == 70) {
             plinegen = g.integer();
+        } else if (var == "$UCSNAME" && g.code == 2) {
+            ucsName = dec(std::string(g.str()));
+        } else if (var == "$UCSORG" && (g.code == 10 || g.code == 20)) {
+            (g.code == 10 ? ucsOx : ucsOy) = g.number();
+            haveUcs = true;
+        } else if (var == "$UCSXDIR" && (g.code == 10 || g.code == 20)) {
+            (g.code == 10 ? ucsXx : ucsXy) = g.number();
         } else if (var == "$CLAYER" && g.code == 8) {
             clayer = std::string(g.str());
         }
@@ -219,6 +228,15 @@ void Importer::parseHeader(const Record& rec) {
         h.custom["dxf.acadver"] = acadVer_;
         if (!clayer.empty())
             h.custom["dxf.clayer"] = dec(clayer);
+        const double ang = std::atan2(ucsXy, ucsXx);
+        if (haveUcs && (ucsOx != 0 || ucsOy != 0 || ang != 0)) {
+            for (char& c : ucsName)
+                if (c == '\t' || c == ',' || c == '\r' || c == '\n')
+                    c = '_';
+            char buf[160];
+            std::snprintf(buf, sizeof buf, "\t%.17g\t%.17g\t%.17g", ucsOx * k_, ucsOy * k_, ang);
+            h.custom["tbcad.ucs.current"] = ucsName + buf;
+        }
     });
 }
 

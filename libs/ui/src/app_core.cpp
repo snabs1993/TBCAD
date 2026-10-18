@@ -16,6 +16,7 @@
 #include "app_commands.h"
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/index_refresh.h"
+#include "tbcad/drafting/ucs.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
@@ -117,6 +118,8 @@ struct AppCore::Session {
     std::map<BlockId, std::int64_t> xrefTried{};
     std::vector<AppCore::MissingXref> missingXrefs{};
     std::size_t xrefNoticeDismissedFor = 0;  // the notice was closed at this many missing xrefs
+    // The current UCS (the "drafting.ucs" setting) of this drawing while it is in the background.
+    std::optional<std::string> ucsSetting{};
 };
 
 struct AppCore::DocSlot {
@@ -226,6 +229,35 @@ bool changedOnDisk(const Sess& s) {
 
 }  // namespace
 
+namespace {
+
+constexpr const char* kCurrentUcsKey = "tbcad.ucs.current";
+
+// The "drafting.ucs" setting a drawing was saved with (name TAB x TAB y TAB angle in the header).
+std::string ucsFromHeader(const Document& doc) {
+    auto it = doc.header().custom.find(kCurrentUcsKey);
+    if (it == doc.header().custom.end())
+        return "World";
+    std::vector<std::string> f;
+    std::size_t from = 0;
+    for (std::size_t t; (t = it->second.find('\t', from)) != std::string::npos; from = t + 1)
+        f.push_back(it->second.substr(from, t - from));
+    f.push_back(it->second.substr(from));
+    if (f.size() != 4)
+        return "World";
+    drafting::Ucs u;
+    u.name = f[0];
+    u.origin = {std::strtod(f[1].c_str(), nullptr), std::strtod(f[2].c_str(), nullptr)};
+    u.angle = std::strtod(f[3].c_str(), nullptr);
+    if (!u.name.empty())
+        for (const drafting::Ucs& n : drafting::ucsList(doc))
+            if (n.name == u.name)
+                return u.name;
+    return u.isWorld() ? "World" : drafting::unnamedUcsSetting(u);
+}
+
+}  // namespace
+
 std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document> doc,
                                                        fs::path file) {
     auto s = std::make_unique<Session>(std::move(doc));
@@ -323,9 +355,14 @@ void AppCore::clearTransientState() {
 void AppCore::enterSlot(std::size_t index, bool fitView) {
     leavePaper();
     clearTransientState();
+    if (session_ && session_ != slots_[index].session.get())
+        session_->ucsSetting = settings_.getString(drafting::kUcsSettingKey, "World");
     active_ = index;
     DocSlot& slot = slots_[index];
     session_ = slot.session.get();
+    settings_.setString(drafting::kUcsSettingKey, session_->ucsSetting
+                                                      ? *session_->ucsSetting
+                                                      : ucsFromHeader(session_->doc));
     if (slot.viewSaved && !fitView) {
         const int w = camera_.viewportW, h = camera_.viewportH;
         camera_ = slot.camera;
@@ -1207,6 +1244,29 @@ Result<void> AppCore::save() {
     return saveAs(session_->file);
 }
 
+// Puts the current UCS into the drawing's header so that it comes back when the file is reopened.
+void AppCore::storeCurrentUcs() {
+    const drafting::Ucs u = drafting::currentUcs(&session_->doc, this);
+    std::string row;
+    if (!u.isWorld()) {
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "\t%.17g\t%.17g\t%.17g", u.origin.x, u.origin.y, u.angle);
+        row = u.name + buf;
+    }
+    const auto& custom = session_->doc.header().custom;
+    auto it = custom.find(kCurrentUcsKey);
+    if (row.empty() ? it == custom.end() : (it != custom.end() && it->second == row))
+        return;
+    auto tx = session_->doc.begin("UCS");
+    (void)tx.modifyHeader([&](Header& h) {
+        if (row.empty())
+            h.custom.erase(kCurrentUcsKey);
+        else
+            h.custom[kCurrentUcsKey] = row;
+    });
+    tx.commit();
+}
+
 Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
@@ -1226,6 +1286,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         return makeError(ErrorCode::Unsupported,
                          "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
     }
+    storeCurrentUcs();
     auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path);
     if (!r) {
         print("Cannot save " + path.string() + ": " + r.error().message);

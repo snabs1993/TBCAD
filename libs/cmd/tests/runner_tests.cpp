@@ -471,6 +471,32 @@ TEST_CASE("UNDO/REDO commands and undo groups") {
     CHECK(f.doc.entityCount() == 0);
 }
 
+TEST_CASE("UNDOMARK and UNDOBACK step back to the mark") {
+    Fixture f;
+    ScriptHost host(f.doc, f.reg);
+    host.run("UNDOBACK", {});
+    CHECK(host.logContains("No mark"));
+    host.run("TWOLINE", {"0,0", "1,0"});
+    host.run("UNDOMARK", {});
+    host.run("TWOLINE", {"0,1", "1,1"});
+    host.run("TWOLINE", {"0,2", "1,2"});
+    CHECK(lines(f.doc).size() == 3);
+    host.run("UNDOBACK", {});
+    CHECK(lines(f.doc).size() == 1);
+    CHECK(host.undoStack().undoCount() == 1);
+    host.run("UNDOBACK", {});  // the mark is used up
+    CHECK(lines(f.doc).size() == 1);
+    // stepping back past a mark removes it
+    host.run("UNDOMARK", {});
+    host.run("TWOLINE", {"0,3", "1,3"});
+    host.run("U", {});
+    host.run("U", {});
+    host.run("TWOLINE", {"0,4", "1,4"});
+    host.run("UNDOBACK", {});
+    CHECK(lines(f.doc).size() == 1);
+    CHECK(host.undoStack().undoCount() == 1);
+}
+
 TEST_CASE("undo is refused while a command runs") {
     Fixture f;
     ScriptHost host(f.doc, f.reg);

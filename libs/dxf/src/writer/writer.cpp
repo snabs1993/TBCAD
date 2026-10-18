@@ -1152,6 +1152,28 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.raw(3, "ANSI_1252");
     var("$INSBASE");
     o.pt(10, {0, 0});
+    if (auto it = doc_.header().custom.find("tbcad.ucs.current");
+        it != doc_.header().custom.end()) {
+        // the current coordinate system: name TAB x TAB y TAB angle (name empty when unnamed)
+        std::vector<std::string> f;
+        std::size_t from = 0;
+        for (std::size_t t; (t = it->second.find('\t', from)) != std::string::npos; from = t + 1)
+            f.push_back(it->second.substr(from, t - from));
+        f.push_back(it->second.substr(from));
+        if (f.size() == 4) {
+            const double x = std::strtod(f[1].c_str(), nullptr),
+                         y = std::strtod(f[2].c_str(), nullptr),
+                         a = std::strtod(f[3].c_str(), nullptr);
+            var("$UCSNAME");
+            o.str(2, f[0]);
+            var("$UCSORG");
+            o.pt(10, {x, y}, 0);
+            var("$UCSXDIR");
+            o.pt(10, {std::cos(a), std::sin(a)}, 0);
+            var("$UCSYDIR");
+            o.pt(10, {-std::sin(a), std::cos(a)}, 0);
+        }
+    }
     var("$EXTMIN");
     o.pt(10, extents_.empty() ? Vec2{1e20, 1e20} : extents_.min, extents_.empty() ? 1e20 : 0);
     var("$EXTMAX");

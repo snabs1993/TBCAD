@@ -56,6 +56,14 @@ public:
     bool endGroup();  // false when no group is open
     bool inGroup() const { return groupDepth_ > 0; }
 
+    // UNDO Mark / Back: remembers the current place in the history; undoToMark steps back to the
+    // latest mark that is still ahead of the history's start and removes it. Returns the number of
+    // steps undone, or npos when there is no mark (or a group is open / a step was refused).
+    static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+    void mark();
+    bool hasMark() const { return !marks_.empty(); }
+    std::size_t undoToMark(Document& doc);
+
     void clear();
 
     // Shared drawings: before an entry is undone or redone the guard may look at the document and
@@ -67,6 +75,8 @@ public:
     void setGuard(Guard guard) { guard_ = std::move(guard); }
     const std::string& blockedReason() const { return blocked_; }
 
+    // Steps dropped from the old end to stay inside the limit, since the stack was made.
+    std::size_t droppedSteps() const { return dropped_; }
     std::size_t usedBytes() const { return used_; }
     std::size_t limitBytes() const { return limit_; }
     void setLimitBytes(std::size_t limit);
@@ -87,6 +97,7 @@ private:
     std::vector<Entry> redo_{};
     std::size_t used_ = 0;
     std::size_t limit_;
+    std::vector<std::size_t> marks_{};  // history depths (undo_.size()) of the marks, ascending
     int groupDepth_ = 0;
     Entry group_{};
     std::size_t dropped_ = 0;
