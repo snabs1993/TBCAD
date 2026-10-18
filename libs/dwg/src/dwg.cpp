@@ -48,7 +48,13 @@ Result<bool> readR2000(Bytes file, detail::Drawing& drawing, std::vector<std::st
 // R2004, R2010, R2013 and R2018: compressed sections, objects addressed inside one section.
 Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing,
                            std::vector<std::string>& notes, dxf::Report& report) {
+    using Clock = std::chrono::steady_clock;
+    const auto t0 = Clock::now();
+    auto ms = [](Clock::time_point a, Clock::time_point b) {
+        return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count());
+    };
     auto sections = detail::readSections(file, notes);
+    const auto t1 = Clock::now();
     if (!sections) {
         // Keep the reasons the container reader noted: they say which step failed.
         std::string msg = sections.error().message;
@@ -100,7 +106,13 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
     drawing.unitsKnown = vars.valid;
     drawing.insunits = vars.insunits;
     drawing.ltscale = vars.ltscale;
+    const auto t2 = Clock::now();
     detail::decodeObjects(objects, map, classes, drawing, notes, fmt);
+    const auto t3 = Clock::now();
+    drawing.walkNotes.push_back(
+        "read stages (ms): sections " + ms(t0, t1) + ", map/classes/header " + ms(t1, t2) +
+        ", objects " + ms(t2, t3) + " (" + std::to_string(objects.size() / 1024) +
+        " KB of object data, " + std::to_string(map.size()) + " map entries)");
     return true;
 }
 
