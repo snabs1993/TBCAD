@@ -266,6 +266,8 @@ private:
     std::string noticesText_{};
     bool noticesLoaded_ = false;
     bool showQuickStart_ = false;
+    std::string helpShown_{};
+    std::string helpCommand_{};  // F1 while a command runs: the command whose help is open
     std::string quickStartText_{};
     std::string lastError_{};
 

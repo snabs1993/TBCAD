@@ -948,3 +948,27 @@ TEST_CASE("mouse in the viewport: draw with clicks, select by window and crossin
     CHECK(panned.x == doctest::Approx(cur.x + 100).epsilon(0.03));
     CHECK(panned.y == doctest::Approx(cur.y + 60).epsilon(0.03));
 }
+
+TEST_CASE("F1 explains the running command, else opens the quick start") {
+    Harness h(1920, 1080);
+    h.key(ImGuiKey_F1);
+    h.frame(3);
+    CHECK(h.windowOpen("Quick Start"));
+    h.key(ImGuiKey_Escape);
+    REQUIRE(h.click("Close", "Quick Start"));
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Quick Start"));
+
+    h.core().submitText("CIRCLE");
+    h.frame(2);
+    h.moveMouse(600, 400);
+    h.key(ImGuiKey_F1);
+    h.frame(3);
+    REQUIRE(h.windowOpen("Command Help"));
+    CHECK(h.has("All commands...", "Command Help"));
+    CHECK(matchesGolden(h.windowShot("Command Help"), "command_help_circle"));
+    REQUIRE(h.click("Close", "Command Help"));
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Command Help"));
+    CHECK(h.core().runner().active());  // the command itself keeps waiting
+}
