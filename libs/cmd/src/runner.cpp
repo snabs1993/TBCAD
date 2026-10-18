@@ -502,6 +502,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                         p = parser_->parsePoint(text, pc);
                     if (!p)
                         p = parsePointText(text, pc);
+                    if (!p && req.freeText) {
+                        ans.status = Status::Keyword;
+                        ans.keyword = text;
+                        return complete(std::move(ans));
+                    }
                     if (!p)
                         return reject("Invalid point \"" + text + "\".");
                     lastPoint_ = *p;

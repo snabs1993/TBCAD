@@ -60,6 +60,7 @@ struct PromptRequest {
     std::optional<double> min{};
     std::optional<double> max{};
     bool allowNone = true;
+    bool freeText = false;
     bool allowEmptyString = false;
     bool allowPreselection = true;
     bool single = false;
