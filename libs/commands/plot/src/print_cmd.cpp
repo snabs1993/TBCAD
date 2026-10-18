@@ -83,8 +83,13 @@ public:
                     ctx.message(sheet.error().message);
                     continue;
                 }
-                const print::PrintJob job = printJob(ctx.host(), kw == "Dialog");
+                print::PrintJob job = printJob(ctx.host(), kw == "Dialog");
+                std::string picked;
+                job.chosenPrinter = &picked;
                 auto r = print::printSheet(sheet.value(), job);
+                // The printer picked in the system dialog is the one the next run starts on.
+                if (!picked.empty())
+                    ctx.host().setSetting(kPrinterKey, picked);
                 ctx.message(r ? "Sent " + std::to_string(sheet.value().entityCount) +
                                     " objects to the printer."
                               : r.error().message);

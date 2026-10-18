@@ -317,6 +317,13 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
             return Error{ErrorCode::Io,
                          "The print dialog failed (error " + std::to_string(err) + ")."};
         }
+        if (job.chosenPrinter && pd.hDevNames) {
+            if (const auto* dn = static_cast<const DEVNAMES*>(GlobalLock(pd.hDevNames))) {
+                *job.chosenPrinter =
+                    toUtf8(reinterpret_cast<const wchar_t*>(dn) + dn->wDeviceOffset);
+                GlobalUnlock(pd.hDevNames);
+            }
+        }
         dc = pd.hDC;
         if (pd.hDevMode)
             dialogMode = static_cast<DEVMODEW*>(GlobalLock(pd.hDevMode));

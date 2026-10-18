@@ -405,7 +405,12 @@ void draw(ui::PanelContext& pc) {
                 st.message = sheet.error().message;
                 return;
             }
-            auto r = print::printSheet(sheet.value(), printJob(*pc.host, dialog));
+            print::PrintJob job = printJob(*pc.host, dialog);
+            std::string picked;
+            job.chosenPrinter = &picked;
+            auto r = print::printSheet(sheet.value(), job);
+            if (!picked.empty())
+                pc.host->setSetting("plot.printer", picked);
             st.message =
                 r ? "Sent " + std::to_string(sheet.value().entityCount) + " objects to the printer."
                   : r.error().message;

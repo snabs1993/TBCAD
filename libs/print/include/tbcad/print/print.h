@@ -33,6 +33,8 @@ struct PrintJob {
     std::string title = "TBCAD drawing";
     bool showDialog = false;  // let the user pick the printer and copies in the system dialog
     int copies = 1;
+    // Set, when the system dialog is shown, to the printer the user picked there.
+    std::string* chosenPrinter = nullptr;
 };
 
 // One page per sheet. The paper size and orientation come from each sheet's layout.

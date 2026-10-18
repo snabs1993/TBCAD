@@ -587,3 +587,39 @@ TEST_CASE("a viewport clipped by a polyline of a DXF file from another program")
     CHECK(viewportContains(vp, {160, 100}));
     CHECK_FALSE(viewportContains(vp, {30, 200}));
 }
+
+TEST_CASE("a block's contents on a layer frozen in the viewport are not plotted there") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    LayerId walls = addLayer(doc, "Walls");
+    LayerId hidden = addLayer(doc, "Hidden");
+    BlockId blk;
+    {
+        auto tx = doc.begin("block");
+        blk = tx.addBlock(BlockDef{.name = "B"}).value();
+        REQUIRE(tx.add(line({0, 0}, {10, 0}, walls), blk).ok());
+        REQUIRE(tx.add(line({0, 5}, {10, 5}, hidden), blk).ok());
+        Entity ins;
+        InsertData d;
+        d.block = blk;
+        ins.data = d;
+        ins.common.layer = walls;
+        REQUIRE(tx.add(std::move(ins)).ok());
+        tx.commit();
+    }
+    run(doc, "layout", [&](Transaction& tx) {
+        if (auto r = createLayout(tx, "L"); !r)
+            return r;
+        BBox2 a;
+        a.expand({10, 10});
+        a.expand({100, 100});
+        auto id = addViewport(tx, "L", a, {5, 5}, 1);
+        REQUIRE(id.ok());
+        return setViewportLayerFrozen(tx, "L", id.value(), hidden, true);
+    });
+    auto sheet = buildLayoutSheet(doc, "L", {}, {false}).value();
+    int paths = 0;
+    for (const auto& p : sheet.prims)
+        paths += std::holds_alternative<exportlib::PlotPath>(p);
+    CHECK(paths == 1);
+}
