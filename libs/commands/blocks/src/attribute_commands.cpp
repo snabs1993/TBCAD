@@ -302,6 +302,132 @@ public:
     }
 };
 
+// BATTMAN: the attribute definitions of a block, listed and edited one at a time (tag, prompt,
+// default value, invisible). The inserts are brought in line afterwards, like ATTSYNC.
+class BattManCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "BATTMAN"; }
+    std::string_view description() const override {
+        return "List and edit the attribute definitions of a block";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        const BlockDef* def = nullptr;
+        for (;;) {
+            auto n = co_await ctx.getString("Enter block name");
+            if (!n.ok())
+                co_return;
+            def = doc.blockByName(cmd::trim(n.text));
+            if (def)
+                break;
+            ctx.message("No block named \"" + cmd::trim(n.text) + "\"");
+        }
+        const BlockId block = def->id;
+        list(ctx, *def);
+        bool edited = false;
+        for (;;) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Edit", "Done"};
+            ko.defaultKeyword = "Done";
+            auto k = co_await ctx.getKeyword("Attributes [Edit/Done] <Done>", ko);
+            if (!k.ok() || k.keyword == "Done")
+                break;
+            auto tag = co_await ctx.getString("Tag of the attribute to edit");
+            if (!tag.ok())
+                co_return;
+            const EntityId id = find(doc, block, cmd::toUpperAscii(cmd::trim(tag.text)));
+            if (!id) {
+                ctx.message("That block has no attribute with the tag " + tag.text + ".");
+                continue;
+            }
+            co_await editOne(ctx, id, edited);
+        }
+        if (edited) {
+            const BlockDef* d = ctx.doc().block(block);
+            if (d)
+                blocks::syncInserts(ctx.tx(), ctx.doc(), block);
+            ctx.setUndoLabel("BATTMAN");
+        }
+    }
+
+private:
+    static EntityId find(const Document& doc, BlockId block, const std::string& tag) {
+        const BlockDef* d = doc.block(block);
+        if (!d)
+            return {};
+        for (EntityId id : d->entities)
+            if (const Entity* e = doc.find(id))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef && t->attdef->tag == tag)
+                    return id;
+        return {};
+    }
+
+    static void list(cmd::CommandContext& ctx, const BlockDef& d) {
+        std::size_t n = 0;
+        for (EntityId id : d.entities)
+            if (const Entity* e = ctx.doc().find(id))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef) {
+                    ctx.message(t->attdef->tag + "  prompt \"" + t->attdef->prompt +
+                                "\"  default \"" + t->attdef->defaultValue + "\"" +
+                                (t->attdef->invisible ? "  invisible" : ""));
+                    ++n;
+                }
+        if (n == 0)
+            ctx.message("The block \"" + d.name + "\" has no attributes.");
+    }
+
+    static cmd::Task editOne(cmd::CommandContext& ctx, EntityId id, bool& edited) {
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Tag", "Prompt", "Default", "Invisible"};
+        auto k = co_await ctx.getKeyword("Change [Tag/Prompt/Default/Invisible]", ko);
+        if (!k.ok())
+            co_return;
+        std::string text;
+        bool flag = false;
+        if (k.keyword == "Invisible") {
+            cmd::KeywordOptions yn;
+            yn.keywords = {"Yes", "No"};
+            auto v = co_await ctx.getKeyword("Invisible [Yes/No]", yn);
+            if (!v.ok())
+                co_return;
+            flag = v.keyword == "Yes";
+        } else {
+            cmd::StringOptions so;
+            so.allowEmpty = true;
+            auto v = co_await ctx.getString("New " + k.keyword, so);
+            if (v.status == cmd::Status::Cancel)
+                co_return;
+            text = v.ok() ? v.text : std::string();
+        }
+        const std::string which = k.keyword;
+        if (which == "Tag") {
+            text = cmd::toUpperAscii(cmd::trim(text));
+            if (text.empty() || text.find(' ') != std::string::npos) {
+                ctx.message("A tag is one word.");
+                co_return;
+            }
+        }
+        auto r = ctx.tx().modify(id, [&](Entity& e) {
+            auto* t = entityAs<TextData>(e);
+            if (!t || !t->attdef)
+                return;
+            if (which == "Tag")
+                t->attdef->tag = text;
+            else if (which == "Prompt")
+                t->attdef->prompt = text;
+            else if (which == "Default")
+                t->attdef->defaultValue = text;
+            else
+                t->attdef->invisible = flag;
+        });
+        if (r)
+            edited = true;
+        else
+            ctx.message(r.error().message);
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeAttDefCommand() {
@@ -313,6 +439,9 @@ std::unique_ptr<cmd::Command> makeAttDefLineCommand() {
 }
 std::unique_ptr<cmd::Command> makeAttEditCommand() {
     return std::make_unique<AttEditCommand>();
+}
+std::unique_ptr<cmd::Command> makeBattManCommand() {
+    return std::make_unique<BattManCommand>();
 }
 std::unique_ptr<cmd::Command> makeAttSyncCommand() {
     return std::make_unique<AttSyncCommand>();

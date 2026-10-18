@@ -52,3 +52,23 @@ TEST_CASE("QUICKPROPERTIES toggles the setting the application reads") {
     f.host.run("QUICKPROPERTIES", {});
     CHECK(f.host.setting("ui.quickProps") == "0");
 }
+
+TEST_CASE("CHANGE moves the nearest line end, sets a radius, and can change properties") {
+    Fixture f;
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(CircleData{{0, 20}, 5});
+    f.host.setSelection({a});
+    f.host.run("CHANGE", {"9,5"});
+    const auto* l = entityAs<LineData>(*f.doc.find(a));
+    CHECK(l->a.x == doctest::Approx(0));
+    CHECK(l->b.x == doctest::Approx(9));
+    CHECK(l->b.y == doctest::Approx(5));
+    f.host.setSelection({b});
+    f.host.run("CHANGE", {"0,28"});
+    CHECK(entityAs<CircleData>(*f.doc.find(b))->radius == doctest::Approx(8));
+    CHECK(f.host.undo());
+    CHECK(entityAs<CircleData>(*f.doc.find(b))->radius == doctest::Approx(5));
+    f.host.setSelection({a, b});
+    f.host.run("CHANGE", {"Properties", "Color", "3"});
+    CHECK(f.doc.find(b)->common.color == Color::index(3));
+}
