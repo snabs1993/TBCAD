@@ -11,6 +11,8 @@
 
 namespace tbcad::dxf {
 
+class Lexer;
+
 enum class Encoding {
     Utf8,
     Cp874,   // ANSI_874, Thai
@@ -44,6 +46,8 @@ struct HeaderHints {
 
 // Reads $ACADVER and $DWGCODEPAGE by scanning the HEADER section only (cheap).
 HeaderHints scanHeaderHints(std::span<const std::byte> bytes);
+// The same, from a lexer positioned at the start (it is consumed).
+HeaderHints scanHeaderHints(Lexer& lexer);
 
 // Chooses the text encoding of a DXF file. Order (research/dxf-real-world.md section 2):
 //   1. UTF-8 byte order mark.

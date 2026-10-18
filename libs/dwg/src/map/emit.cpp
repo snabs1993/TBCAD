@@ -252,7 +252,7 @@ void emitWithChildren(DxfText& o, const Drawing& d, const EntityRec& e, const Na
 
 }  // namespace
 
-std::string emitDxf(const Drawing& d) {
+dxf::GroupBuffer emitGroups(const Drawing& d) {
     DxfText o;
     const Names n{d};
 
@@ -488,7 +488,11 @@ std::string emitDxf(const Drawing& d) {
         o.endSection();
     }
     o.endFile();
-    return o.take();
+    return o.takeBuffer();
+}
+
+std::string emitDxf(const Drawing& d) {
+    return emitGroups(d).str();
 }
 
 }  // namespace tbcad::dwg::detail

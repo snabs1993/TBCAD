@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstdint>
+#include <cstring>
 
 #include "codepage.h"
 #include "tbcad/dxf/lexer.h"
@@ -156,6 +158,15 @@ ByteStats analyse(std::span<const std::byte> bytes) {
     const std::string_view s(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     bool inRun = false;
     for (std::size_t i = 0; i < s.size(); ++i) {
+        // Plain ASCII dominates: step over eight bytes at a time while none has the high bit.
+        if (!inRun && i + 8 <= s.size()) {
+            std::uint64_t w;
+            std::memcpy(&w, s.data() + i, 8);
+            if ((w & 0x8080808080808080ULL) == 0) {
+                i += 7;
+                continue;
+            }
+        }
         const unsigned char c = static_cast<unsigned char>(s[i]);
         if (c < 0x80) {
             inRun = false;
@@ -171,7 +182,7 @@ ByteStats analyse(std::span<const std::byte> bytes) {
         }
     }
     // Validate UTF-8 only when there is something to validate.
-    for (std::size_t i = 0; i < s.size() && st.validUtf8;) {
+    for (std::size_t i = 0; i < s.size() && st.validUtf8 && st.high > 0;) {
         char32_t cp = 0;
         const std::size_t len = decodeUtf8At(s, i, cp);
         if (len == 0) {
@@ -250,7 +261,11 @@ HeaderHints scanHeaderHints(std::span<const std::byte> bytes) {
     if (!opened) {
         return hints;
     }
-    Lexer& lx = opened.value();
+    return scanHeaderHints(opened.value());
+}
+
+HeaderHints scanHeaderHints(Lexer& lx) {
+    HeaderHints hints;
     bool inHeader = false;
     int variable = 0;  // 1 = reading $ACADVER, 2 = reading $DWGCODEPAGE
     for (int guard = 0; guard < 100000; ++guard) {

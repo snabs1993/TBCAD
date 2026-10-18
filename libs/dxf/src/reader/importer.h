@@ -82,6 +82,9 @@ class Importer {
 public:
     Importer(std::span<const std::byte> bytes, const ImportOptions& options, Report& report)
         : bytes_(bytes), opts_(options), report_(report) {}
+    // Groups already in memory instead of DXF bytes.
+    Importer(const GroupBuffer& groups, const ImportOptions& options, Report& report)
+        : bytes_(), groups_(&groups), opts_(options), report_(report) {}
 
     Result<ImportResult> run();
 
@@ -183,6 +186,7 @@ private:
 
     // ---- state ------------------------------------------------------------------------------
     std::span<const std::byte> bytes_;
+    const GroupBuffer* groups_ = nullptr;
     const ImportOptions& opts_;
     Report& report_;
     Encoding enc_ = Encoding::Cp1252;

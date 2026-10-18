@@ -792,16 +792,14 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
     }  // options.diagnostics
     const long long diagMs = msSince(tDiag);
     const auto tEmit = Clock::now();
-    const std::string text = detail::emitDxf(drawing);
+    const dxf::GroupBuffer groups = detail::emitGroups(drawing);
     const long long emitMs = msSince(tEmit);
     const auto tImport = Clock::now();
-    auto result = dxf::importDxf(
-        std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
-        options, report);
+    auto result = dxf::importDxfGroups(groups, options, report);
     report.summary(code::kSkippedObject,
                    "timing (ms): read " + std::to_string(readMs) + ", diagnostics " +
                        std::to_string(diagMs) + ", to DXF text " + std::to_string(emitMs) + " (" +
-                       std::to_string(text.size() / 1024) + " KB), DXF import " +
+                       std::to_string(groups.size()) + " groups), DXF import " +
                        std::to_string(msSince(tImport)) + ", total " +
                        std::to_string(msSince(tStart)));
     if (result) {
