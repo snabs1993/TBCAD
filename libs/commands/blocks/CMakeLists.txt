@@ -46,7 +46,8 @@ tbcad_add_tests(block_cmds
     tests/xref_command_tests.cpp
     tests/palette_tests.cpp
     tests/explode_command_tests.cpp
-  DEPENDS tbcad_command_registry)
+    tests/gui_path_tests.cpp
+  DEPENDS tbcad_command_registry tbcad_appcore)
 if(TARGET tbcad_block_cmds_tests)
   target_compile_definitions(tbcad_block_cmds_tests PRIVATE
     TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
