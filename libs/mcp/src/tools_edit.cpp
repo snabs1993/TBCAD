@@ -277,6 +277,7 @@ ToolResult modifyEntities(ToolContext& ctx, const Json& a) {
         t = r.value();
     }
     auto tx = doc.begin(kModifyLabel);
+    tx.expectTouching(ids.value().size());
     for (EntityId id : ids.value()) {
         Entity e = *doc.find(id);
         if (std::string why = whyReadOnly(doc, e); !why.empty())
@@ -293,12 +294,12 @@ ToolResult modifyEntities(ToolContext& ctx, const Json& a) {
                                         kindName(kind(e)) + "): " + r.error().message +
                                         ". Try run_command with MOVE, ROTATE, SCALE or MIRROR.");
             }
-            e.data = r.value().data;
+            e.data = std::move(r.value().data);
         }
         auto m = tx.modify(id, [&](Entity& x) {
             x.common = e.common;
             x.common.id = id;
-            x.data = e.data;
+            x.data = std::move(e.data);
         });
         if (!m)
             return ToolResult::fail("entity " + std::to_string(id.value) + ": " +
@@ -315,23 +316,24 @@ ToolResult deleteEntities(ToolContext& ctx, const Json& a) {
     auto ids = parseIds(doc, a.find("ids"));
     if (!ids)
         return ToolResult::fail(ids.error().message);
-    std::set<EntityId> unique(ids.value().begin(), ids.value().end());
-    auto tx = doc.begin(kDeleteLabel);
+    std::vector<EntityId> unique = std::move(ids.value());
+    std::sort(unique.begin(), unique.end());
+    unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
     for (EntityId id : unique) {
         if (const Entity* e = doc.find(id))
             if (std::string why = whyReadOnly(doc, *e); !why.empty())
                 return ToolResult::fail("entity " + std::to_string(id.value) + ": " + why);
-        auto r = tx.erase(id);
-        if (!r)
-            return ToolResult::fail("entity " + std::to_string(id.value) + ": " +
-                                    r.error().message);
     }
+    auto tx = doc.begin(kDeleteLabel);
+    tx.eraseMany(unique);
     commit(s, tx, kDeleteLabel);
     // Drop erased entities from the selection.
     auto sel = s.selection();
-    sel.erase(
-        std::remove_if(sel.begin(), sel.end(), [&](EntityId id) { return unique.count(id) > 0; }),
-        sel.end());
+    sel.erase(std::remove_if(sel.begin(), sel.end(),
+                             [&](EntityId id) {
+                                 return std::binary_search(unique.begin(), unique.end(), id);
+                             }),
+              sel.end());
     s.setSelection(std::move(sel));
     return ToolResult::ok(Json(Json::Object{{"deleted", static_cast<double>(unique.size())}}));
 }
