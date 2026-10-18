@@ -277,7 +277,7 @@ struct Renderer::Impl {
         setCommon(fill, tile.origin);
         setColor(fill, col, true);
         glBindVertexArray(buf.vaoThin);
-        glDrawArrays(batch.key.kind == BatchKind::Fill ? GL_TRIANGLES : GL_POINTS, 0,
+        glDrawArrays(batch.key.kind == BatchKind::Point ? GL_POINTS : GL_TRIANGLES, 0,
                      static_cast<GLsizei>(batch.verts.size()));
         ++stats.drawCalls;
         stats.vertices += batch.verts.size();

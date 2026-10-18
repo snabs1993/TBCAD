@@ -53,6 +53,8 @@ struct Scene::Cursor {
     EntityId entity{};
     EntityRec* rec = nullptr;
     std::uint32_t drawOrder = 0;
+    std::uint32_t level = 0;      // for strokes, fills and points
+    std::uint32_t maskLevel = 0;  // for the entity's mask fills
     double builtZoom = 0;
     // Last (tile, batch) used, to skip hash lookups for consecutive segments.
     TileKey tileKey{};
@@ -144,9 +146,10 @@ std::uint32_t Scene::internPattern(const DisplayStyle& style) {
     return id;
 }
 
-BatchKey Scene::styleKey(BatchKind kind, const DisplayStyle& style) {
+BatchKey Scene::styleKey(BatchKind kind, const DisplayStyle& style, std::uint32_t level) {
     BatchKey k;
     k.kind = kind;
+    k.level = level;
     k.layer = style.layer;
     k.rgba = packRgba(style.color);
     if (kind == BatchKind::Stroke) {
@@ -162,7 +165,7 @@ void Scene::addPolyline(Cursor& c, const DisplayPolyline& pl) {
     const std::size_t n = pts.size();
     if (n < 2)
         return;
-    BatchKey key = styleKey(BatchKind::Stroke, pl.style);
+    BatchKey key = styleKey(BatchKind::Stroke, pl.style, c.level);
     const double halfWidth = std::max(0.0, pl.style.lineweight) * 0.5;
     const double period = patterns_[key.pattern].period();
     const double maxPiece = period > 0 ? period * kDashedPiecePeriods : 0;
@@ -203,7 +206,9 @@ void Scene::addFill(Cursor& c, const DisplayFill& fill) {
     std::vector<Vec2> tris = triangulateEvenOdd(fill.rings);
     if (tris.empty())
         return;
-    BatchKey key = styleKey(BatchKind::Fill, fill.style);
+    const bool mask = isBackgroundColor(fill.style.color);
+    BatchKey key = mask ? styleKey(BatchKind::Mask, fill.style, c.maskLevel)
+                        : styleKey(BatchKind::Fill, fill.style, c.level);
     for (std::size_t i = 0; i + 2 < tris.size(); i += 3) {
         const Vec2 centroid = (tris[i] + tris[i + 1] + tris[i + 2]) / 3.0;
         if (!drawable(centroid))
@@ -221,7 +226,7 @@ void Scene::addFill(Cursor& c, const DisplayFill& fill) {
 }
 
 void Scene::addPoints(Cursor& c, const DisplayPoints& pts) {
-    BatchKey key = styleKey(BatchKind::Point, pts.style);
+    BatchKey key = styleKey(BatchKind::Point, pts.style, c.level);
     for (const Vec2& p : pts.pts) {
         if (!drawable(p))
             continue;
@@ -239,10 +244,17 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
     remove(id);
     EntityRec& rec = entities_[id];
     rec.drawOrder = drawOrder;
+    for (const DisplayItem& item : list.items)
+        if (const auto* f = std::get_if<DisplayFill>(&item); f && isBackgroundColor(f->style.color))
+            rec.mask = true;
+    if (rec.mask)
+        masks_[id] = drawOrder;
     Cursor c;
     c.entity = id;
     c.rec = &rec;
     c.drawOrder = drawOrder;
+    c.level = levelBelow(drawOrder);
+    c.maskLevel = c.level;
     c.builtZoom = builtPixelsPerMm;
     for (const DisplayItem& item : list.items) {
         // Moving to another item may change tile and style; force a fresh lookup.
@@ -258,6 +270,35 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
     std::sort(rec.refs.begin(), rec.refs.end());
     rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());
     ++changeCounter_;
+}
+
+// Masks drawn before something with this draw order.
+std::uint32_t Scene::levelBelow(std::uint32_t drawOrder) const {
+    return static_cast<std::uint32_t>(
+        std::lower_bound(levelOrders_.begin(), levelOrders_.end(), drawOrder) -
+        levelOrders_.begin());
+}
+
+std::vector<std::uint32_t> Scene::maskOrders() const {
+    std::vector<std::uint32_t> orders;
+    orders.reserve(masks_.size());
+    for (const auto& [id, order] : masks_)
+        orders.push_back(order);
+    std::sort(orders.begin(), orders.end());
+    return orders;
+}
+
+bool Scene::needsRelevel() const {
+    return !(masks_.empty() && levelOrders_.empty()) && maskOrders() != levelOrders_;
+}
+
+void Scene::adoptMaskOrders() {
+    levelOrders_ = maskOrders();
+}
+
+std::uint32_t Scene::drawOrderOf(EntityId id) const {
+    auto it = entities_.find(id);
+    return it == entities_.end() ? 0 : it->second.drawOrder;
 }
 
 void Scene::eraseRefs(EntityId id, const EntityRec& rec) {
@@ -303,6 +344,8 @@ void Scene::remove(EntityId id) {
     if (it == entities_.end())
         return;
     eraseRefs(id, it->second);
+    if (it->second.mask)
+        masks_.erase(id);
     entities_.erase(it);
     ++changeCounter_;
 }
@@ -323,6 +366,8 @@ void Scene::removeMany(std::span<const EntityId> ids) {
             continue;
         for (const auto& ref : it->second.refs)
             touched.insert(ref);
+        if (it->second.mask)
+            masks_.erase(id);
         entities_.erase(it);
     }
     for (const auto& [tk, bk] : touched) {
@@ -372,6 +417,8 @@ void Scene::clear() {
             deleted_.push_back(batch.id);
     tiles_.clear();
     entities_.clear();
+    masks_.clear();
+    levelOrders_.clear();
     ++changeCounter_;
 }
 
@@ -511,8 +558,9 @@ std::vector<VisibleBatch> Scene::visibleBatches(const Camera2D& camera) const {
         }
     }
     std::sort(out.begin(), out.end(), [](const VisibleBatch& a, const VisibleBatch& b) {
-        return std::make_tuple(a.batch->key.kind, a.batch->minDrawOrder, a.batch->id) <
-               std::make_tuple(b.batch->key.kind, b.batch->minDrawOrder, b.batch->id);
+        return std::make_tuple(a.batch->key.level, a.batch->key.kind, a.batch->minDrawOrder,
+                               a.batch->id) < std::make_tuple(b.batch->key.level, b.batch->key.kind,
+                                                              b.batch->minDrawOrder, b.batch->id);
     });
     return out;
 }
