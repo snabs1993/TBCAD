@@ -427,3 +427,44 @@ TEST_CASE("MTEXT: the Columns option cuts the rectangle into columns") {
     CHECK(m->columnGap == doctest::Approx(4));  // two text heights
     CHECK(m->width == doctest::Approx((100 - 2 * 4) / 3.0));
 }
+
+TEST_CASE("EXPLODE turns multiline text into one single-line text per line - undo restores it") {
+    Fixture f;
+    Transaction tx = f.doc.begin("add");
+    MTextData m;
+    m.position = {10, 100};
+    m.height = 4;
+    m.width = 0;
+    m.rotation = kPi / 6;
+    m.utf8 = "First line\\PSecond\\P\\PFourth";
+    Entity e;
+    e.data = Indirect<MTextData>(m);
+    auto id = tx.add(std::move(e));
+    REQUIRE(id.ok());
+    tx.commit();
+    f.host.setSelection({});
+    f.host.run("EXPLODE", {cmd::ScriptItem::select({id.value()}), cmd::ScriptItem::enter()});
+    int texts = 0, mtexts = 0;
+    std::vector<std::string> lines;
+    f.doc.forEachEntity([&](const Entity& x) {
+        if (const auto* t = entityAs<TextData>(x)) {
+            ++texts;
+            lines.push_back(t->utf8);
+            CHECK(t->rotation == doctest::Approx(kPi / 6));
+            CHECK(t->height == doctest::Approx(4).epsilon(0.3));
+        }
+        if (entityAs<MTextData>(x))
+            ++mtexts;
+    });
+    CHECK(mtexts == 0);
+    REQUIRE(texts == 3);  // the empty paragraph makes no text
+    CHECK(lines[0] == "First line");
+    CHECK(f.host.undo());
+    mtexts = texts = 0;
+    f.doc.forEachEntity([&](const Entity& x) {
+        texts += entityAs<TextData>(x) != nullptr;
+        mtexts += entityAs<MTextData>(x) != nullptr;
+    });
+    CHECK(mtexts == 1);
+    CHECK(texts == 0);
+}

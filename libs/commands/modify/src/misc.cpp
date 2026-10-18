@@ -682,7 +682,12 @@ public:
             return k == EntityKind::Polyline || k == EntityKind::Line || k == EntityKind::Arc ||
                    k == EntityKind::Spline;
         };
-        auto pick = co_await ctx.getEntity("Select polyline", eo);
+        eo.keywords = {"Multiple"};
+        auto pick = co_await ctx.getEntity("Select polyline or [Multiple]", eo);
+        if (pick.status == cmd::Status::Keyword && pick.keyword == "Multiple") {
+            co_await editMultiple(ctx, eo.filter);
+            co_return;
+        }
         if (!pick.ok())
             co_return;
         EntityId id = pick.id;
@@ -720,6 +725,7 @@ public:
                 const auto* pl = entityAs<PolylineData>(*e);
                 ko.keywords = {pl && pl->closed ? "Open" : "Close",
                                "Join",
+                               "Fuzz",
                                "Width",
                                "Spline",
                                "Vertices",
@@ -728,9 +734,9 @@ public:
             }
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                isSpline
-                    ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
-                    : "Enter an option [Close/Open/Join/Width/Spline/Vertices/Reverse/Exit] <Exit>",
+                isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
+                         : "Enter an option "
+                           "[Close/Open/Join/Fuzz/Width/Spline/Vertices/Reverse/Exit] <Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
@@ -787,6 +793,12 @@ public:
                     else
                         (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
                 }
+            } else if (k.keyword == "Fuzz") {
+                cmd::DistanceOptions d;
+                d.defaultValue = fuzz_;
+                auto f = co_await ctx.getDistance("Specify the fuzz distance for Join", d);
+                if (f.ok() && f.value >= 0)
+                    fuzz_ = f.value;
             } else if (k.keyword == "Reverse") {
                 if (auto edit = modify::reverseEntity(*e))
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
@@ -822,7 +834,8 @@ public:
                 std::vector<const Entity*> es;
                 for (EntityId m : ids)
                     es.push_back(ctx.doc().find(m));
-                auto res = modify::joinEntities(es, getSetting(ctx.host(), "join.tolerance", 1e-3));
+                auto res = modify::joinEntities(
+                    es, fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3));
                 if (res.consumed.empty()) {
                     ctx.message("Nothing could be joined.");
                     continue;
@@ -840,6 +853,143 @@ public:
                     co_return;
                 }
             }
+        }
+    }
+
+private:
+    double fuzz_ = -1;  // negative = the join.tolerance setting
+
+    // PEDIT Multiple: the options act on every selected object.
+    cmd::Task editMultiple(cmd::CommandContext& ctx, cmd::EntityFilterFn filter) {
+        cmd::SelectionOptions so;
+        so.filter = std::move(filter);
+        auto sel = co_await ctx.getSelection("Select objects", so);
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        std::vector<EntityId> ids = sel.ids;
+        // Lines and arcs become polylines first, like the single-object command's "Yes".
+        std::vector<EntityId> lone;
+        for (EntityId id : ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (e && (kind(*e) == EntityKind::Line || kind(*e) == EntityKind::Arc))
+                lone.push_back(id);
+        }
+        if (!lone.empty()) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Yes", "No"};
+            ko.defaultKeyword = "Yes";
+            auto k = co_await ctx.getKeyword(
+                "Some objects are not polylines. Turn them into polylines? [Yes/No] <Yes>", ko);
+            if (k.status == cmd::Status::Cancel)
+                co_return;
+            const bool convert = k.keyword == "Yes";
+            std::vector<EntityId> kept;
+            for (EntityId id : ids) {
+                const Entity* e = ctx.doc().find(id);
+                if (!e)
+                    continue;
+                if (std::find(lone.begin(), lone.end(), id) == lone.end()) {
+                    kept.push_back(id);
+                } else if (convert) {
+                    auto pl = modify::toPolylineEntity(*e);
+                    if (pl && replaceEntity(ctx.tx(), id, pl.value()))
+                        kept.push_back(id);
+                }
+            }
+            ids = std::move(kept);
+        }
+        for (;;) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Close",  "Open",    "Join",    "Fuzz", "Width",
+                           "Spline", "Decurve", "Reverse", "Exit"};
+            ko.defaultKeyword = "Exit";
+            auto k = co_await ctx.getKeyword(
+                "Enter an option [Close/Open/Join/Fuzz/Width/Spline/Decurve/Reverse/Exit] <Exit>",
+                ko);
+            if (!k.ok() || k.keyword == "Exit")
+                co_return;
+            std::size_t changed = 0;
+            if (k.keyword == "Fuzz") {
+                cmd::DistanceOptions d;
+                d.defaultValue = fuzz_;
+                auto f = co_await ctx.getDistance("Specify the fuzz distance for Join", d);
+                if (f.ok() && f.value >= 0)
+                    fuzz_ = f.value;
+            } else if (k.keyword == "Join") {
+                std::vector<const Entity*> es;
+                for (EntityId id : ids)
+                    es.push_back(ctx.doc().find(id));
+                auto res = modify::joinEntities(
+                    es, fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3));
+                if (res.consumed.empty()) {
+                    ctx.message("Nothing could be joined.");
+                    continue;
+                }
+                std::vector<Entity> created = std::move(res.created);
+                std::vector<EntityId> gone;
+                for (std::size_t c : res.consumed)
+                    gone.push_back(ids[c]);
+                for (EntityId g : gone)
+                    (void)ctx.tx().erase(g);
+                ids.erase(std::remove_if(ids.begin(), ids.end(),
+                                         [&](EntityId i) {
+                                             return std::find(gone.begin(), gone.end(), i) !=
+                                                    gone.end();
+                                         }),
+                          ids.end());
+                changed = gone.size();
+                for (Entity& n : created) {
+                    if (auto added = ctx.tx().add(std::move(n)))
+                        ids.push_back(added.value());
+                }
+            } else {
+                double width = 0;
+                if (k.keyword == "Width") {
+                    cmd::DistanceOptions d;
+                    d.defaultValue = 0;
+                    auto w = co_await ctx.getDistance("Specify new width for all segments", d);
+                    if (!w.ok())
+                        continue;
+                    width = w.value;
+                }
+                for (EntityId id : ids) {
+                    const Entity* e = ctx.doc().find(id);
+                    if (!e)
+                        continue;
+                    const bool spline = kind(*e) == EntityKind::Spline;
+                    Result<modify::EntityEdit> edit = Error{ErrorCode::InvalidArgument, "n/a"};
+                    if (k.keyword == "Close" || k.keyword == "Open") {
+                        Entity copy = *e;
+                        auto* pl = entityAs<PolylineData>(copy);
+                        if (!pl || pl->closed == (k.keyword == "Close"))
+                            continue;
+                        pl->closed = k.keyword == "Close";
+                        if (replaceEntity(ctx.tx(), id, copy))
+                            ++changed;
+                        continue;
+                    }
+                    if (k.keyword == "Width") {
+                        if (spline)
+                            continue;
+                        edit = modify::setPolylineWidth(*e, width);
+                    } else if (k.keyword == "Reverse") {
+                        edit = modify::reverseEntity(*e);
+                    } else if (k.keyword == "Spline" || k.keyword == "Decurve") {
+                        const bool toSpline = k.keyword == "Spline";
+                        if (toSpline == spline)
+                            continue;
+                        auto conv = toSpline ? modify::polylineToSpline(*e)
+                                             : modify::splineToPolyline(*e, 0.001);
+                        if (conv && replaceEntity(ctx.tx(), id, conv.value()))
+                            ++changed;
+                        continue;
+                    }
+                    if (edit && applyEdit(ctx.tx(), id, std::move(edit.value())))
+                        ++changed;
+                }
+            }
+            ctx.message(std::to_string(changed) + (changed == 1 ? " object" : " objects") +
+                        " changed.");
         }
     }
 };

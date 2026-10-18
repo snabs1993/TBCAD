@@ -367,6 +367,35 @@ TEST_CASE("JOIN merges and erases the sources in one undo step") {
     CHECK(g.count(EntityKind::Line) == 2);
 }
 
+TEST_CASE("JOIN joins splines end to end and elliptical arcs of one ellipse") {
+    Fixture f;
+    SplineData s1, s2;
+    for (SplineData* s : {&s1, &s2}) {
+        s->degree = 3;
+        s->knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    }
+    s1.control = {{0, 0}, {5, 8}, {10, 8}, {15, 0}};
+    s2.control = {{15, 0}, {20, -8}, {25, -8}, {30, 0}};
+    EntityId a = f.add(s1), b = f.add(s2);
+    EllipseData e1, e2;
+    for (EllipseData* e : {&e1, &e2}) {
+        e->center = {100, 100};
+        e->majorAxis = {20, 0};
+        e->ratio = 0.5;
+    }
+    e1.startParam = 0;
+    e1.endParam = 2;
+    e2.startParam = 2;
+    e2.endParam = 4;
+    EntityId c = f.add(e1), d = f.add(e2);
+    f.host.run("JOIN", {ScriptItem::select({a, b, c, d}), ScriptItem::enter()});
+    CHECK(f.count(EntityKind::Spline) == 1);
+    CHECK(f.count(EntityKind::Ellipse) == 1);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Spline) == 2);
+    CHECK(f.count(EntityKind::Ellipse) == 2);
+}
+
 TEST_CASE("JOIN fills the gap between collinear lines and between arcs of one circle") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {4, 0}});
@@ -570,6 +599,44 @@ TEST_CASE("PEDIT converts a line, closes, widens and joins") {
             CHECK_FALSE(p->closed);
         }
     });
+}
+
+TEST_CASE("PEDIT Multiple closes, widens and joins every selected object") {
+    Fixture f;
+    EntityId a =
+        f.add(PolylineData{{{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 10}, 0, 0, 0}}, false, 0});
+    EntityId b = f.add(
+        PolylineData{{{{50, 0}, 0, 0, 0}, {{60, 0}, 0, 0, 0}, {{60, 10}, 0, 0, 0}}, false, 0});
+    f.host.run("PEDIT", {"Multiple", ScriptItem::select({a, b}), ScriptItem::enter(), "Close",
+                         "Width", "3", "Exit"});
+    int n = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<PolylineData>(e)) {
+            ++n;
+            CHECK(p->closed);
+            for (const auto& v : p->v) {
+                CHECK(v.startWidth == doctest::Approx(3));
+            }
+        }
+    });
+    CHECK(n == 2);
+    CHECK(f.host.undo());
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* p = entityAs<PolylineData>(e))
+            CHECK_FALSE(p->closed);
+    });
+}
+
+TEST_CASE("PEDIT Multiple joins with a fuzz distance and turns lines into polylines") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{10.3, 0.2}, {10, 10}});  // 0.36 from the end of a
+    f.host.run("PEDIT", {"Multiple", ScriptItem::select({a, b}), ScriptItem::enter(), "Yes", "Join",
+                         "Exit"});
+    CHECK(f.count(EntityKind::Polyline) == 2);  // the default fuzz is too small to join them
+    f.host.run("PEDIT", {"Multiple", ScriptItem::select({a, b}), ScriptItem::enter(), "Fuzz", "0.5",
+                         "Join", "Exit"});
+    CHECK(f.count(EntityKind::Polyline) == 1);
 }
 
 TEST_CASE("EXTRIM cuts several objects on one side of an edge") {

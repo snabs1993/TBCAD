@@ -11,6 +11,7 @@ set(_textcmd_sources
   src/textalign.cpp
   src/tcount.cpp
   src/spell.cpp
+  src/mtext_explode.cpp
   src/register.cpp)
 
 # The editor panel needs Dear ImGui, which is only fetched when the application is built.
@@ -21,7 +22,7 @@ endif()
 
 tbcad_add_library(textcmd
   SOURCES ${_textcmd_sources}
-  DEPENDS tbcad::cmd tbcad::text tbcad::geom tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::text tbcad::geom tbcad::ui tbcad::blocks)
 target_include_directories(tbcad_textcmd PRIVATE src)
 if(TBCAD_BUILD_APP)
   target_link_libraries(tbcad_textcmd PRIVATE tbcad::imgui)
