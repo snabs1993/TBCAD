@@ -59,6 +59,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXUnloadCommand());
     (void)registry.add(makeXClipCommand());
     (void)registry.add(makeXListCommand());
+    (void)registry.add(makeXPathCommand());
+    (void)registry.add(makeXRelinkCommand());
     (void)registry.add(makeBlockCountCommand());
 }
 

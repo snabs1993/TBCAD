@@ -48,6 +48,8 @@ std::unique_ptr<cmd::Command> makeXBindCommand();
 std::unique_ptr<cmd::Command> makeXClipCommand();
 std::unique_ptr<cmd::Command> makeXUnloadCommand();
 std::unique_ptr<cmd::Command> makeXListCommand();
+std::unique_ptr<cmd::Command> makeXPathCommand();
+std::unique_ptr<cmd::Command> makeXRelinkCommand();
 std::unique_ptr<cmd::Command> makeBlockCountCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
 

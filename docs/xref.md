@@ -31,7 +31,9 @@ Everything the source brings is renamed so it cannot clash with the host:
 | `XRELOAD` | `XR` | Reloads one xref by name or `All` (default). Inserts stay where they are. One undo step. |
 | `XDETACH` | | Removes the xref: its inserts, block, nested blocks and the layers nothing uses. |
 | `XUNLOAD` | | Drops the content of the xref but keeps its block, path and inserts and the layer states; `XRELOAD` brings it back. Shown as "unloaded" in `XLIST`. |
-| `XBIND` | `XB` | Makes the xref an ordinary block (the path is dropped). Its layers and blocks stay as they are. |
+| `XBIND` | `XB` | Makes the xref an ordinary block (the path is dropped). **Bind** keeps its layers (`site~walls`) and nested blocks (`site$door`); **Insert** merges the layers into the drawing's own by name (`site~walls` becomes `walls`, sub-layers move below it, `site~0` becomes layer 0, the look is kept) and removes the `site$` prefix from nested blocks when the plain name is free. One undo step. |
+| `XPATH` | | Re-stores the path of an xref as **Relative**, **Absolute** or **None** (file name only) without moving the file. |
+| `XRELINK` | | Points an xref (typically one whose file was not found) at another file, checks it can be read, and reloads it. A file that cannot be read changes nothing. |
 | `XLIST` | | Lists xrefs with path, state (up to date / changed on disk / file not found) and use count. |
 
 Relative paths are taken from the folder of the drawing (the host setting `document.file`); an

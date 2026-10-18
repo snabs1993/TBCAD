@@ -113,10 +113,10 @@ TEST_CASE("XBIND turns the xref into a block - XDETACH removes it") {
     f.host->run("XATTACH", {file.string(), "", "", "other", "5,5"});
     REQUIRE(f.doc.blockByName("other"));
 
-    f.host->run("XBIND", {"plan"});
+    f.host->run("XBIND", {"plan", ""});
     CHECK(f.doc.blockByName("plan")->xrefPath.empty());
     f.host->clearLog();
-    f.host->run("XBIND", {"plan", "other"});
+    f.host->run("XBIND", {"plan", "other", ""});
     CHECK(f.host->logContains("No external reference named"));
     CHECK(f.doc.blockByName("other")->xrefPath.empty());
 
@@ -343,4 +343,44 @@ TEST_CASE("XCLIP clips an insert in block coordinates - OFF, ON and Delete - und
     f.host->run("XCLIP",
                 {cmd::ScriptItem::pick(ins), "New", "Polygonal", "100,0", "108,0", "100,8", ""});
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.size() == 3);
+}
+
+TEST_CASE("XBIND Insert merges the layers of the xref into the drawing's own") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 2);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "0,0"});
+    REQUIRE(f.doc.layerByName("plan") != nullptr);
+    f.host->run("XBIND", {"plan", "Insert"});
+    CHECK(f.doc.blockByName("plan")->xrefPath.empty());
+    CHECK(f.doc.layerByName("plan") == nullptr);
+    CHECK(f.doc.layerByName("walls") != nullptr);
+    CHECK(f.host->undo());
+    CHECK(f.doc.layerByName("plan") != nullptr);
+    CHECK(f.doc.layerByName("walls") == nullptr);
+    CHECK_FALSE(f.doc.blockByName("plan")->xrefPath.empty());
+}
+
+TEST_CASE("XPATH changes how the path is stored, XRELINK repairs a lost file") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 2);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "0,0"});
+    REQUIRE(f.doc.blockByName("plan"));
+    f.host->run("XPATH", {"plan", "None"});
+    CHECK(f.doc.blockByName("plan")->xrefPath == "plan.tbcad");
+    CHECK(f.host->undo());
+    CHECK(fs::path(f.doc.blockByName("plan")->xrefPath) == file);
+
+    // The file moves: the reference is lost until XRELINK points it at the new place.
+    fs::path moved = writeSource(dir.path, "moved.tbcad", 4);
+    f.host->run("XPATH", {"plan", "None"});
+    f.host->clearLog();
+    f.host->run("XRELINK", {"plan", moved.string()});
+    CHECK(fs::path(f.doc.blockByName("plan")->xrefPath).filename() == "moved.tbcad");
+    CHECK(f.doc.blockByName("plan")->entities.size() == 4);
+    f.host->clearLog();
+    f.host->run("XRELINK", {"plan", (dir.path / "gone.tbcad").string()});
+    CHECK(f.host->logContains("Cannot read"));
+    CHECK(f.doc.blockByName("plan")->entities.size() == 4);
 }

@@ -105,8 +105,17 @@ Result<void> detach(Transaction& tx, Document& doc, BlockId block);
 // Drops the snapshot of the xref but keeps the block, its path and its inserts (XRELOAD brings
 // it back). Layers stay, so their states survive the next reload.
 Result<void> unload(Transaction& tx, Document& doc, BlockId block);
+enum class BindMode {
+    Bind,    // the block keeps its layers (site~walls) and nested blocks (site$door)
+    Insert,  // layers merge into the drawing's own by name (site~walls -> walls), nested blocks
+             // lose the "site$" prefix when that name is free, layer "0" -> the host's layer 0
+};
 // Turns the xref into an ordinary block (and its nested blocks and layers into ordinary ones).
-Result<void> bind(Transaction& tx, Document& doc, BlockId block);
+Result<void> bind(Transaction& tx, Document& doc, BlockId block, BindMode mode = BindMode::Bind);
+// Points the xref at another file without reloading it (the snapshot stays until XRELOAD). The
+// text is stored as given; an options part ("#page=2") of the old path is kept when the new path
+// has none.
+Result<void> changePath(Transaction& tx, Document& doc, BlockId block, std::string_view stored);
 
 // ---- content: single items of another drawing (the content browser)
 // ------------------------------

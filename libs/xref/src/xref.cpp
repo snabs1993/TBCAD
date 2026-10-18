@@ -648,16 +648,117 @@ Result<void> unload(Transaction& tx, Document& doc, BlockId block) {
     return tx.modifyBlock(block, [](BlockDef& d) { d.xrefStamp = 0; });
 }
 
-Result<void> bind(Transaction& tx, Document& doc, BlockId block) {
+namespace {
+
+// BIND "Insert": the xref's layer tree (below the top-level layer named like the xref) is merged
+// into the host's own tree by name; entities, in the model and in blocks, follow.
+Result<void> mergeLayersIntoHost(Transaction& tx, Document& doc, const std::string& name) {
+    const Layer* rootRow = doc.layerByName(name);
+    if (!rootRow)
+        return {};
+    const LayerId root = rootRow->id;
+    std::vector<LayerId> order{root};  // breadth first: parents before children
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        std::vector<std::pair<std::string, LayerId>> kids;
+        for (const auto& [id, l] : doc.layers())
+            if (l.parent == order[i])
+                kids.emplace_back(l.name, id);
+        std::sort(kids.begin(), kids.end());
+        for (auto& k : kids)
+            order.push_back(k.second);
+    }
+    std::map<LayerId, LayerId> to;  // xref layer -> host layer
+    for (std::size_t i = 1; i < order.size(); ++i) {
+        const LayerId id = order[i];
+        const Layer* l = doc.layer(id);
+        const LayerId targetParent = l->parent == root ? LayerId{} : to[l->parent];
+        if (l->parent == root && l->name == "0") {
+            to[id] = kLayerZero;
+            continue;
+        }
+        if (const Layer* same = doc.layerByName(targetParent, l->name); same && same->id != root) {
+            to[id] = same->id;
+            continue;
+        }
+        // The copy keeps the look the layer had, also where it inherited it from its parent.
+        EffectiveLayer eff = doc.effective(id);
+        Layer row = *l;
+        row.id = {};
+        row.parent = targetParent;
+        row.color = eff.color;
+        row.linetype = eff.linetype;
+        row.lineweight = eff.lineweight;
+        auto r = tx.addLayer(std::move(row));
+        if (!r)
+            return r.error();
+        to[id] = r.value();
+    }
+    std::vector<EntityId> users;
+    doc.forEachEntity([&](const Entity& e) {
+        if (to.count(e.common.layer))
+            users.push_back(e.common.id);
+    });
+    for (EntityId id : users) {
+        LayerId from = doc.find(id)->common.layer;
+        LayerId target = to[from];
+        if (auto r = tx.modify(id, [&](Entity& e) { e.common.layer = target; }); !r)
+            return r.error();
+    }
+    // Remove the emptied xref layers, leaves first. A layer something still uses stays.
+    std::set<LayerId> used;
+    doc.forEachEntity([&](const Entity& e) { used.insert(e.common.layer); });
+    for (auto it = order.rbegin(); it != order.rend(); ++it)
+        if (!used.count(*it) && *it != doc.header().currentLayer)
+            (void)tx.eraseLayer(*it);
+    return {};
+}
+
+}  // namespace
+
+Result<void> bind(Transaction& tx, Document& doc, BlockId block, BindMode mode) {
     const BlockDef* def = doc.block(block);
     if (!def || def->xrefPath.empty())
         return makeError(ErrorCode::InvalidArgument, "That block is not an external reference");
-    (void)doc;
-    return tx.modifyBlock(block, [](BlockDef& d) {
-        d.xrefPath.clear();
-        d.xrefStamp = 0;
-        d.xrefOverlay = false;
-    });
+    const std::string name = def->name;
+    if (auto r = tx.modifyBlock(block,
+                                [](BlockDef& d) {
+                                    d.xrefPath.clear();
+                                    d.xrefStamp = 0;
+                                    d.xrefOverlay = false;
+                                });
+        !r || mode == BindMode::Bind)
+        return r;
+    if (auto r = mergeLayersIntoHost(tx, doc, name); !r)
+        return r;
+    // Nested blocks lose the "<xref>$" prefix when the plain name is free.
+    const std::string prefix = name + "$";
+    std::vector<std::pair<BlockId, std::string>> renames;
+    for (const auto& [id, b] : doc.blocks()) {
+        if (b.name.rfind(prefix, 0) != 0 || b.name.size() == prefix.size())
+            continue;
+        std::string plain = b.name.substr(prefix.size());
+        if (!doc.blockByName(plain))
+            renames.emplace_back(id, plain);
+    }
+    for (auto& [id, plain] : renames)
+        if (!doc.blockByName(plain))
+            (void)tx.modifyBlock(id, [&](BlockDef& d) { d.name = plain; });
+    return {};
+}
+
+Result<void> changePath(Transaction& tx, Document& doc, BlockId block, std::string_view stored) {
+    const BlockDef* def = doc.block(block);
+    if (!def || def->xrefPath.empty())
+        return makeError(ErrorCode::InvalidArgument, "That block is not an external reference");
+    if (stored.empty())
+        return makeError(ErrorCode::InvalidArgument, "The path is empty");
+    std::string text(stored);
+    if (text.find('#') == std::string::npos) {
+        auto hash = def->xrefPath.find('#');
+        if (hash != std::string::npos)
+            text += def->xrefPath.substr(hash);
+    }
+    return tx.modifyBlock(block, [&](BlockDef& d) { d.xrefPath = text; });
 }
 
 namespace {
