@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <future>
 #include <map>
 #include <span>
 #include <unordered_map>
@@ -142,6 +143,9 @@ public:
                 double builtPixelsPerMm = 0);
     void remove(EntityId id);
     // Same for many objects at once; much faster than calling remove for each.
+    // Drops everything when `ids` (distinct) are exactly the entities of the scene; false and
+    // no change otherwise. Costs one lookup per id, no allocation.
+    bool removeAllOf(std::span<const EntityId> ids);
     void removeMany(std::span<const EntityId> ids);
     void clear();
     bool contains(EntityId id) const { return entities_.count(id) != 0; }
@@ -214,6 +218,9 @@ private:
                                          SelCache& cache) const;
 
     double tileSize_;
+    // Frees a scene's worth of geometry on another thread (see discardAll).
+    std::future<void> graveyard_{};
+    void discardAll();
     std::unordered_map<TileKey, Tile> tiles_{};
     std::unordered_map<EntityId, EntityRec> entities_{};
     std::unordered_set<LayerId> hiddenLayers_{};

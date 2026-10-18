@@ -184,3 +184,8 @@ TEST_CASE("perf: save and open of a big drawing keep every object") {
     CHECK(fresh.document().modelSpaceCount() == count);
     CHECK(canonicalDump(fresh.document()) == canonicalDump(big.core->document()));
 }
+
+TEST_CASE("perf: ERASE of everything alone") {
+    Big big;
+    big.bench("ERASE", {"ERASE"});
+}

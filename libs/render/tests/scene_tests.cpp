@@ -475,3 +475,33 @@ TEST_CASE("a scene of 100k lines builds and culls quickly enough to be useful") 
     Camera2D zoomed = cameraAt({100, 100}, 1, 100, 100);
     CHECK(s.visibleBatches(zoomed).size() < all.size());
 }
+
+TEST_CASE("removeMany and removeAllOf drop many objects at once and the scene stays usable") {
+    for (std::size_t n : {std::size_t{50}, std::size_t{30000}}) {
+        CAPTURE(n);
+        Scene s;
+        std::vector<EntityId> ids;
+        for (std::size_t i = 0; i < n; ++i) {
+            const double x = static_cast<double>(i % 300);
+            s.upsert(EntityId{i + 1}, lineList({x, 0}, {x + 1, 1}), static_cast<unsigned>(i + 1), 0);
+            ids.push_back(EntityId{i + 1});
+        }
+        REQUIRE(s.entityCount() == n);
+        // Half of them: a partial removal keeps the rest.
+        std::vector<EntityId> half(ids.begin(), ids.begin() + static_cast<std::ptrdiff_t>(n / 2));
+        CHECK_FALSE(s.removeAllOf(half));
+        s.removeMany(half);
+        CHECK(s.entityCount() == n - n / 2);
+        CHECK_FALSE(s.contains(ids.front()));
+        CHECK(s.contains(ids.back()));
+        // All of what is left.
+        std::vector<EntityId> rest(ids.begin() + static_cast<std::ptrdiff_t>(n / 2), ids.end());
+        CHECK(s.removeAllOf(rest));
+        CHECK(s.entityCount() == 0);
+        CHECK(totalVertices(s) == 0);
+        // Building again works (the old geometry is freed on another thread).
+        s.upsert(EntityId{7}, lineList({0, 0}, {5, 5}), 1, 0);
+        CHECK(s.entityCount() == 1);
+        CHECK(totalVertices(s) == 2);
+    }
+}
