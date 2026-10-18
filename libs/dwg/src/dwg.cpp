@@ -195,14 +195,15 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
             if (l == drawing.layers.end() || l->second.name.find("COLNHATC") == std::string::npos)
                 continue;
             ++shown;
-            std::string t =
-                "column hatch trace: handle " + std::to_string(e.handle) + " layer " +
-                l->second.name + " layer colour " + std::to_string(l->second.color) +
-                " layer transparency " + std::to_string(l->second.transparency) + " layer eed " +
-                l->second.eed + " | entity colour " + std::to_string(e.color) + " true colour " +
-                std::to_string(e.trueColor) + " transparency " + std::to_string(e.transparency) +
-                " lineweight " + std::to_string(e.lineweight) + " xdic " + std::to_string(e.xdic) +
-                " groups:";
+            std::string t = "column hatch trace: handle " + std::to_string(e.handle) + " layer " +
+                            l->second.name + " layer colour " + std::to_string(l->second.color) +
+                            " layer colour words [" + l->second.colorRaw + "] layer transparency " +
+                            std::to_string(l->second.transparency) + " layer eed " + l->second.eed +
+                            " | entity colour " + std::to_string(e.color) + " true colour " +
+                            std::to_string(e.trueColor) + " transparency " +
+                            std::to_string(e.transparency) + " lineweight " +
+                            std::to_string(e.lineweight) + " xdic " + std::to_string(e.xdic) +
+                            " groups:";
             std::size_t n = 0;
             for (const auto& g : e.groups) {
                 if (n++ >= 40)

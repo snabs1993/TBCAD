@@ -636,7 +636,8 @@ private:
         int rgb = -1;
         bool book = false;
         long long transparency =
-            0;  // DXF 440 value: 0 by layer, 0x01000000 by block, 0x02000000 + alpha
+            0;              // DXF 440 value: 0 by layer, 0x01000000 by block, 0x02000000 + alpha
+        std::string raw{};  // index, RGB word and flag byte as read, for the trace
     };
 
     // CMC: a plain index up to R2000; from R2004 on an index (always 0), an RGB word whose top
@@ -649,6 +650,11 @@ private:
             return c;
         const std::uint32_t word = r.bl();
         const unsigned flags = r.rc();
+        {
+            char buf[48];
+            std::snprintf(buf, sizeof buf, "bs %d word %08X flags %u", idx, word, flags);
+            c.raw = buf;
+        }
         if (flags & 1)
             r.textBytes();
         if (flags & 2)
@@ -920,6 +926,7 @@ private:
                 if ((values & 2) != 0)
                     l.color = -(l.color > 0 && l.color < 256 ? l.color : 7);
                 l.trueColor = color.rgb;
+                l.colorRaw = color.raw;
                 l.flags = (l.frozen ? 1 : 0) | (l.locked ? 4 : 0) | (xdep ? 16 : 0);
                 l.linetype = resolveHandle(lt, self);
                 out_.layers[self] = std::move(l);
