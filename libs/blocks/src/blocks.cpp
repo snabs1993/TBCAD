@@ -124,7 +124,7 @@ namespace {
 // `box` limited to the clipping boundary of `ins` seen through `t` (block space of the insert's
 // block to the space `box` is in).
 BBox2 limitToClip(BBox2 box, const InsertData& ins, const Transform2& t) {
-    if (!ins.clipOn || ins.clip.size() < 3 || box.empty())
+    if (!ins.clipOn || ins.clipInvert || ins.clip.size() < 3 || box.empty())
         return box;
     BBox2 c;
     for (const Vec2& p : ins.clip)

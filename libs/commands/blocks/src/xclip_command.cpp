@@ -32,12 +32,28 @@ public:
             co_return;
         const bool has = ins->clip.size() >= 3;
         auto opt = co_await ctx.getKeyword(
-            std::string("Clip option [ON/OFF/Delete/New] <") + (has ? "ON" : "New") + ">",
-            cmd::KeywordOptions{.keywords = {"ON", "OFF", "Delete", "New"},
+            std::string("Clip option [ON/OFF/Delete/New/Invert] <") + (has ? "ON" : "New") + ">",
+            cmd::KeywordOptions{.keywords = {"ON", "OFF", "Delete", "New", "Invert"},
                                 .defaultKeyword = has ? "ON" : "New"});
         if (!opt.ok())
             co_return;
 
+        if (opt.keyword == "Invert") {
+            if (!has) {
+                ctx.message("This object has no clipping boundary");
+                co_return;
+            }
+            const bool now = !ins->clipInvert;
+            (void)ctx.tx().modify(id, [&](Entity& en) {
+                auto* d = entityAs<InsertData>(en);
+                d->clipInvert = now;
+                d->clipOn = true;
+            });
+            ctx.setUndoLabel("Invert clip");
+            ctx.message(now ? "Clipping inverted: the inside is hidden"
+                            : "Clipping restored: the outside is hidden");
+            co_return;
+        }
         if (opt.keyword == "ON" || opt.keyword == "OFF" || opt.keyword == "Delete") {
             if (!has) {
                 ctx.message("This object has no clipping boundary");
@@ -47,8 +63,10 @@ public:
             const bool del = opt.keyword == "Delete";
             (void)ctx.tx().modify(id, [&](Entity& en) {
                 auto* d = entityAs<InsertData>(en);
-                if (del)
+                if (del) {
                     d->clip.clear();
+                    d->clipInvert = false;
+                }
                 d->clipOn = del ? true : on;
             });
             ctx.setUndoLabel(del ? "Delete clip" : on ? "Clip on" : "Clip off");
@@ -109,6 +127,7 @@ public:
             auto* d = entityAs<InsertData>(en);
             d->clip = std::move(local);
             d->clipOn = true;
+            d->clipInvert = false;
         });
         ctx.setUndoLabel("Clip");
         ctx.message("Clipped to a boundary of " + std::to_string(world.size()) + " points");

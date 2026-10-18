@@ -417,7 +417,8 @@ struct InsertData {
     // Clipping boundary (XCLIP): a closed polygon in the block's own coordinates, so it follows
     // the insert when that is moved, rotated or scaled. Fewer than 3 points = not clipped.
     std::vector<Vec2> clip{};
-    bool clipOn = true;  // false: the boundary is kept but the whole block shows
+    bool clipOn = true;       // false: the boundary is kept but the whole block shows
+    bool clipInvert = false;  // true: show what is outside the boundary (XCLIP Invert)
 };
 
 enum class DimKind : std::uint8_t {

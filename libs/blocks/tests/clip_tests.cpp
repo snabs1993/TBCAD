@@ -101,3 +101,34 @@ TEST_CASE("insert bounds are limited to the clipping boundary") {
     CHECK(near(box.min, {100, 5}));
     CHECK(near(box.max, {110, 5}));
 }
+
+TEST_CASE("clipDisplay with invert keeps the outside: lines, fills (area adds up) and points") {
+    DisplayList in;
+    DisplayPolyline p;
+    p.pts = {{-5, 5}, {15, 5}};
+    in.items.emplace_back(p);
+    DisplayList out = clipDisplay(in, kBox, true);
+    REQUIRE(out.items.size() == 2);  // the parts left of and right of the box
+    CHECK(near(std::get<DisplayPolyline>(out.items[0]).pts.front(), {-5, 5}));
+    CHECK(near(std::get<DisplayPolyline>(out.items[0]).pts.back(), {0, 5}));
+    CHECK(near(std::get<DisplayPolyline>(out.items[1]).pts.front(), {10, 5}));
+
+    DisplayList fills;
+    DisplayFill f;
+    f.rings.push_back({{-5, -5}, {15, -5}, {15, 15}, {-5, 15}});  // 20 x 20
+    fills.items.emplace_back(f);
+    DisplayPoints pts;
+    pts.pts = {{1, 1}, {50, 50}};
+    fills.items.emplace_back(pts);
+    DisplayList o2 = clipDisplay(fills, kBox, true);
+    double area = 0;
+    for (const auto& ring : std::get<DisplayFill>(o2.items[0]).rings) {
+        double s = 0;
+        for (std::size_t i = 0; i < ring.size(); ++i)
+            s += cross(ring[i], ring[(i + 1) % ring.size()]);
+        area += std::abs(s) / 2;
+    }
+    CHECK(std::abs(area - 300.0) < 1e-6);  // the square minus the 10 x 10 box
+    CHECK(std::get<DisplayPoints>(o2.items[1]).pts.size() == 1);
+    CHECK(near(std::get<DisplayPoints>(o2.items[1]).pts[0], {50, 50}));
+}

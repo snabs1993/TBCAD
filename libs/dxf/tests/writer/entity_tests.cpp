@@ -861,6 +861,7 @@ TEST_CASE("an xref block and an insert clipping boundary survive the DXF round t
         InsertData ins{b, {5, 5}, {1, 1}, 0};
         ins.clip = {{0, 0}, {4, 0}, {4, 4}, {0, 4}};
         ins.clipOn = false;
+        ins.clipInvert = true;
         REQUIRE(tx.add(make(ins)).ok());
         tx.commit();
     }
@@ -876,6 +877,7 @@ TEST_CASE("an xref block and an insert clipping boundary survive the DXF round t
     REQUIRE(ins);
     CHECK(ins->clip.size() == 4);
     CHECK_FALSE(ins->clipOn);
+    CHECK(ins->clipInvert);
     CHECK(ins->clip[2] == Vec2{4, 4});
 }
 
