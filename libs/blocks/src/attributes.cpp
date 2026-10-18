@@ -128,9 +128,10 @@ std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
     return changed;
 }
 
-std::optional<Entity> attributeText(const Entity& definition, const InsertData& insert) {
+std::optional<Entity> attributeText(const Entity& definition, const InsertData& insert,
+                                    int attDisplay) {
     const auto* t = entityAs<TextData>(definition);
-    if (!t || !t->attdef || t->attdef->invisible)
+    if (!t || !t->attdef || attDisplay == 2 || (t->attdef->invisible && attDisplay != 1))
         return std::nullopt;
     Entity e = definition;
     auto* td = entityAs<TextData>(e);

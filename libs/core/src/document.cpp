@@ -2012,6 +2012,17 @@ void setDrawingLimits(Header& h, Vec2 lowerLeft, Vec2 upperRight) {
     h.custom[kLimitsKey] = buf;
 }
 
+bool fillMode(const Header& h) {
+    return customFlag(h, kFillModeKey, true);
+}
+
+int attDisplay(const Header& h) {
+    auto it = h.custom.find(kAttDispKey);
+    if (it == h.custom.end())
+        return 0;
+    return it->second == "1" ? 1 : it->second == "2" ? 2 : 0;
+}
+
 bool limitsCheck(const Header& h) {
     return customFlag(h, kLimCheckKey, false);
 }

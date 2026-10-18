@@ -110,6 +110,31 @@ const std::vector<Var>& variables() {
              h.custom[kPlineGenKey] = on ? "1" : "0";
              return {};
          }},
+        {"FILLMODE", "solid fills show (1) or only their outlines do (0)",
+         [](const Document& d) { return std::string(fillMode(d.header()) ? "1" : "0"); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             bool on = false;
+             if (!parseSwitch(v, on))
+                 return "FILLMODE is 0 or 1.";
+             h.custom[kFillModeKey] = on ? "1" : "0";
+             return {};
+         }},
+        {"ATTMODE", "attributes: 0 hidden, 1 as defined, 2 all shown",
+         [](const Document& d) {
+             const int m = attDisplay(d.header());
+             return std::string(m == 0 ? "1" : m == 1 ? "2" : "0");
+         },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             if (v == "0")
+                 h.custom[kAttDispKey] = "2";
+             else if (v == "1")
+                 h.custom[kAttDispKey] = "0";
+             else if (v == "2")
+                 h.custom[kAttDispKey] = "1";
+             else
+                 return "ATTMODE is 0, 1 or 2.";
+             return {};
+         }},
         {"CECOLOR", "colour of new objects",
          [](const Document& d) { return layers::colorName(d.header().currentColor); },
          [](const Document&, std::string_view v, Header& h) -> std::string {

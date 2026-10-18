@@ -178,7 +178,7 @@ void Importer::parseHeader(const Record& rec) {
     int insunits = 0;
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
-    std::int64_t psltscale = -1, msltscale = -1, plinegen = -1;
+    std::int64_t psltscale = -1, msltscale = -1, plinegen = -1, fillmode = -1, attmode = -1;
     std::string clayer, ucsName;
     double ucsOx = 0, ucsOy = 0, ucsXx = 1, ucsXy = 0;
     bool haveUcs = false;
@@ -202,6 +202,10 @@ void Importer::parseHeader(const Record& rec) {
             psltscale = g.integer();
         } else if (var == "$MSLTSCALE" && g.code == 70) {
             msltscale = g.integer();
+        } else if (var == "$FILLMODE" && g.code == 70) {
+            fillmode = g.integer();
+        } else if (var == "$ATTMODE" && g.code == 70) {
+            attmode = g.integer();
         } else if (var == "$PLINEGEN" && g.code == 70) {
             plinegen = g.integer();
         } else if ((var == "$LIMMIN" || var == "$LIMMAX") && (g.code == 10 || g.code == 20)) {
@@ -260,6 +264,12 @@ void Importer::parseHeader(const Record& rec) {
             h.custom[kPsLtScaleKey] = psltscale ? "1" : "0";
         if (msltscale >= 0)
             h.custom[kMsLtScaleKey] = msltscale ? "1" : "0";
+        if (fillmode == 0)
+            h.custom[kFillModeKey] = "0";
+        if (attmode == 0)
+            h.custom[kAttDispKey] = "2";
+        else if (attmode == 2)
+            h.custom[kAttDispKey] = "1";
         if (plinegen >= 0)
             h.custom[kPlineGenKey] = plinegen ? "1" : "0";
         if (haveLimits && std::isfinite(limMin[0] + limMin[1] + limMax[0] + limMax[1]) &&

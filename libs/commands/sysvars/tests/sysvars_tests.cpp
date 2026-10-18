@@ -316,3 +316,21 @@ TEST_CASE("REGENAUTO is accepted") {
     Fixture f;
     CHECK(f.host.run("REGENAUTO", {}).finished);
 }
+
+TEST_CASE("FILL and ATTDISP set the display modes in the header, with undo") {
+    Fixture f;
+    CHECK(fillMode(f.doc.header()));
+    CHECK(attDisplay(f.doc.header()) == 0);
+    f.host.run("FILL", {"OFF"});
+    CHECK_FALSE(fillMode(f.doc.header()));
+    f.host.run("ATTDISP", {"ON"});
+    CHECK(attDisplay(f.doc.header()) == 1);
+    f.host.run("ATTDISP", {"OFF"});
+    CHECK(attDisplay(f.doc.header()) == 2);
+    f.host.run("SETVAR", {"ATTMODE", "1"});
+    CHECK(attDisplay(f.doc.header()) == 0);
+    CHECK(f.host.undo());
+    CHECK(attDisplay(f.doc.header()) == 2);
+    f.host.run("FILL", {"ON"});
+    CHECK(fillMode(f.doc.header()));
+}

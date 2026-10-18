@@ -389,6 +389,35 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
                 appendLinetypeMarks(doc, ctx, *p, marks);
     for (DisplayItem& item : marks.items)
         out.items.push_back(std::move(item));
+    const EntityKind k = kind(e);
+    // Text glyphs are fills too, so only wide polylines are touched here; hatches do it
+    // themselves.
+    const bool fillKind = k == EntityKind::Polyline;
+    if (!ctx.fillMode && fillKind) {
+        // FILL off: each filled area is shown by the outline of its rings. A mask (wipeout, drawn
+        // in the background colour) still hides what lies behind it.
+        std::vector<DisplayItem> kept;
+        kept.reserve(out.items.size() - from);
+        for (std::size_t i = from; i < out.items.size(); ++i) {
+            auto* fill = std::get_if<DisplayFill>(&out.items[i]);
+            if (!fill || isBackgroundColor(fill->style.color)) {
+                kept.push_back(std::move(out.items[i]));
+                continue;
+            }
+            for (auto& ring : fill->rings) {
+                DisplayPolyline p;
+                p.pts = std::move(ring);
+                p.closed = true;
+                p.style = fill->style;
+                p.style.pattern = nullptr;
+                p.style.marks = nullptr;
+                kept.push_back(std::move(p));
+            }
+        }
+        out.items.resize(from);
+        for (DisplayItem& item : kept)
+            out.items.push_back(std::move(item));
+    }
 }
 
 namespace {

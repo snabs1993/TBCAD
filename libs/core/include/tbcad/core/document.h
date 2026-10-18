@@ -82,6 +82,13 @@ inline constexpr const char* kLimCheckKey = "tbcad.limcheck";
 BBox2 drawingLimits(const Header& h);
 void setDrawingLimits(Header& h, Vec2 lowerLeft, Vec2 upperRight);
 bool limitsCheck(const Header& h);
+// FILL (FILLMODE): solid fills of hatches, solids and wide polylines show (default) or only
+// their outlines do. ATTDISP (ATTMODE): 0 Normal (each attribute as defined), 1 all shown,
+// 2 all hidden. Both are kept in Header::custom.
+inline constexpr const char* kFillModeKey = "tbcad.fillmode";
+inline constexpr const char* kAttDispKey = "tbcad.attdisp";
+bool fillMode(const Header& h);
+int attDisplay(const Header& h);
 double ceLtScale(const Header& h);
 bool psLtScale(const Header& h);
 bool msLtScale(const Header& h);

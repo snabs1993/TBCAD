@@ -45,6 +45,23 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
     if (!e.common.lineweight.isValue())
         style.lineweight = 0;  // thinnest, unless the hatch has a weight of its own
 
+    // FILL off: a solid, gradient or dense hatch shows its boundary only.
+    auto outlines = [&](std::vector<std::vector<Vec2>> rings) {
+        for (auto& ring : rings) {
+            DisplayPolyline pl;
+            pl.pts = std::move(ring);
+            pl.closed = true;
+            pl.style = style;
+            out.items.emplace_back(std::move(pl));
+        }
+    };
+    if (!ctx.fillMode && h->gradient) {
+        Pattern solid;
+        solid.solid = true;
+        outlines(std::move(generateFill(*h, solid, FillOptions{}).rings));
+        return;
+    }
+
     if (h->gradient) {
         Rgba c1 = toRgba(h->gradient->color1, style.color, ctx);
         Rgba c2 = toRgba(h->gradient->color2, style.color, ctx);
@@ -82,6 +99,10 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
         case FillResult::Mode::SolidTone: {
             if (r.rings.empty())
                 return;
+            if (!ctx.fillMode) {
+                outlines(std::move(r.rings));
+                return;
+            }
             DisplayFill fill;
             fill.rings = std::move(r.rings);
             fill.style = style;

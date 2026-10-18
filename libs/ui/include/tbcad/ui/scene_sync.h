@@ -88,6 +88,10 @@ private:
     std::unordered_set<LayerId> lockedLayers_{};
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
     bool showTransparency_ = true;
+    bool fillMode_ = true;  // FILL, from the drawing header
+    int attDisplay_ = 0;    // ATTDISP, from the drawing header
+    // Reads FILL and ATTDISP from the header; true when either changed.
+    bool readDisplayModes();
     // Texts holding fields (%<...>%): they show other objects' values, so they are redrawn after
     // every change.
     std::unordered_set<EntityId> fieldTexts_{};

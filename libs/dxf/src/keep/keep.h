@@ -59,7 +59,7 @@ inline bool ownedHeaderVar(std::string_view n) {
         "$UCSXDIR", "$UCSYDIR",   "$EXTMIN",      "$EXTMAX",    "$LIMMIN",   "$LIMMAX",
         "$LTSCALE", "$CELTSCALE", "$PSLTSCALE",   "$MSLTSCALE", "$PLINEGEN", "$CECOLOR",
         "$CELTYPE", "$CLAYER",    "$TEXTSTYLE",   "$DIMSTYLE",  "$LUNITS",   "$LUPREC",
-        "$AUNITS",  "$AUPREC",    "$MEASUREMENT", "$INSUNITS"};
+        "$AUNITS",  "$AUPREC",    "$MEASUREMENT", "$INSUNITS",  "$FILLMODE", "$ATTMODE"};
     for (std::string_view o : owned)
         if (o == n)
             return true;
