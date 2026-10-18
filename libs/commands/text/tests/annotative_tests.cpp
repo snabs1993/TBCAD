@@ -140,3 +140,22 @@ TEST_CASE("a symbol is rescaled when its annotation scale changes") {
     f.host.run("ANNOTATIVE", {"Off"});
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(1));
 }
+
+TEST_CASE("ANNOTATIVE warns when text already sized for the drawing would be multiplied again") {
+    Fixture f;
+    f.host.run("CANNOSCALE", {"100"});
+    EntityId big;
+    {
+        auto tx = f.doc.begin("t");
+        Entity e;
+        TextData t;
+        t.height = 250;
+        t.utf8 = "Big";
+        e.data = Indirect<TextData>(t);
+        big = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    f.host.setSelection({big});
+    f.host.run("ANNOTATIVE", {"On"});
+    CHECK(f.host.logContains("drawn very large"));
+}
