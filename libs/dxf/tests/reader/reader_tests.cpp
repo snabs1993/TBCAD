@@ -724,6 +724,26 @@ TEST_CASE("dimension: style overrides in its extended data and a relative text h
     CHECK(near(ds->arrowSize, 400.0));
 }
 
+TEST_CASE("hatch: gradient colours, angle and name are kept") {
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(2, "SOLID").g(70, 1).g(71, 0);
+    p.g(91, 1).g(92, 3).g(72, 0).g(73, 1).g(93, 4);
+    p.g(10, 0.0).g(20, 0.0).g(10, 10.0).g(20, 0.0).g(10, 10.0).g(20, 10.0).g(10, 0.0).g(20, 10.0);
+    p.g(97, 0).g(75, 0).g(76, 1);
+    p.g(450, 1).g(451, 0).g(460, 1.5).g(461, 0.0).g(452, 0).g(462, 1.0).g(453, 2);
+    p.g(463, 0.0).g(421, 16711680).g(463, 1.0).g(421, 255).g(470, "LINEAR");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 1);
+    REQUIRE(hatches[0]->gradient.has_value());
+    CHECK(hatches[0]->gradient->kind == GradientKind::Linear);
+    CHECK(near(hatches[0]->gradient->angle, 1.5));
+    CHECK(hatches[0]->gradient->color1 == Color::rgb(255, 0, 0));
+    CHECK(hatches[0]->gradient->color2 == Color::rgb(0, 0, 255));
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

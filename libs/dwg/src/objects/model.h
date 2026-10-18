@@ -151,6 +151,8 @@ struct Drawing {
     std::map<std::uint64_t, std::map<std::uint64_t, std::uint64_t>> sortKeys{};
     std::size_t ownerFixed = 0, membersMissing = 0;  // block member lists vs entity owners
     std::string walkSummary{};
+    // Entities that were left out per DXF type: [0] damaged, [1] a number out of range.
+    std::map<std::string, std::array<std::size_t, 2>> entityFailures{};
     std::vector<std::string> walkNotes{};
     std::map<std::uint64_t, std::uint32_t> rawType{};  // object handle -> file type number
     std::size_t layoutSeen = 0;                        // LAYOUT objects met
