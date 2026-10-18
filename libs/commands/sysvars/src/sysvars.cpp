@@ -427,6 +427,14 @@ void registerCommands(cmd::Registry& registry) {
         "Polylines are always kept in the optimized form; there is nothing to convert."));
     (void)registry.add(std::make_unique<QTextCommand>());
     (void)registry.add(std::make_unique<NoteCommand>(
+        "CONVERTCTB", "Convert a drawing to colour-dependent plot styles",
+        "TBCAD plots with colour-dependent tables (CTB) only, so every drawing already uses them. "
+        "Use PLOTSTYLE to pick or import a table."));
+    (void)registry.add(std::make_unique<NoteCommand>(
+        "CONVERTPSTYLES", "Convert a drawing to named plot styles",
+        "Named plot style tables (STB) are not used. Drawings plot with a colour-dependent "
+        "table; use PLOTSTYLE to pick or import one."));
+    (void)registry.add(std::make_unique<NoteCommand>(
         "UPDATEFIELD", "Update fields",
         "Fields are worked out each time they are drawn, so they are always up to date."));
     (void)registry.add(std::make_unique<MultipleCommand>());
