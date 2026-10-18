@@ -125,7 +125,7 @@ public:
                     anchors_.push_back(e.offset);
             std::sort(anchors_.begin(), anchors_.end());
             walkStream();
-            if (walkedList_.size() * 10 >= map.size() * 9) {
+            if (walkedList_.size() * 10 >= map.size() * 7) {
                 calibrate();
                 for (const auto& [h, off] : walkedList_) {
                     MapEntry e;
@@ -133,6 +133,11 @@ public:
                     e.offset = off;
                     decodeOne(e);
                 }
+                // Map entries the walk did not meet but whose frame carries their handle.
+                for (const MapEntry& e : map)
+                    if (!walked_.count(e.handle) && e.offset > 0 &&
+                        frameHandle(e.offset) == e.handle)
+                        decodeOne(e);
                 std::sort(
                     out_.entities.begin(), out_.entities.end(),
                     [](const EntityRec& a, const EntityRec& b) { return a.handle < b.handle; });
@@ -329,7 +334,7 @@ private:
             const std::int64_t viaMap = anchor == anchors_.end() ? 0 : *anchor - off;
             const std::int64_t step = scan != 0 && (viaMap == 0 || scan <= viaMap) ? scan : viaMap;
             if (step > 0) {
-                if (resyncs < 24)
+                if (resyncs < 200)
                     out_.walkNotes.push_back(
                         "stream walk lost its place at " + std::to_string(off) + " (page offset " +
                         std::to_string(off % 0x7400) + "), skipped " + std::to_string(step) +
@@ -2597,6 +2602,30 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
                         for (const auto& [ln, lh] : d->second)
                             nameOf[lh] = ln;
                 }
+        // A damaged layout that no layout dictionary lists is a stray frame, not a layout.
+        if (!nameOf.empty()) {
+            const auto stray = [&](const LayoutRec& l) {
+                return l.damaged && !nameOf.count(l.handle);
+            };
+            for (const LayoutRec& l : out.layoutObjects)
+                if (stray(l)) {
+                    char hx[24];
+                    std::snprintf(hx, sizeof hx, "%llX", static_cast<unsigned long long>(l.handle));
+                    const std::string prefix = std::string("layout ") + hx + " ";
+                    notes.erase(std::remove_if(
+                                    notes.begin(), notes.end(),
+                                    [&](const std::string& n) { return n.rfind(prefix, 0) == 0; }),
+                                notes.end());
+                    out.layoutDiag.erase(
+                        std::remove_if(
+                            out.layoutDiag.begin(), out.layoutDiag.end(),
+                            [&](const std::string& n) { return n.rfind(prefix, 0) == 0; }),
+                        out.layoutDiag.end());
+                }
+            out.layoutObjects.erase(
+                std::remove_if(out.layoutObjects.begin(), out.layoutObjects.end(), stray),
+                out.layoutObjects.end());
+        }
         std::vector<LayoutRec*> todo;
         for (LayoutRec& l : out.layoutObjects)
             if (l.damaged && nameOf.count(l.handle))
@@ -2664,7 +2693,10 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r87: entity and layer transparency passed on (DXF 440), counted per layer in the "
+    return "r88: layers with transparency listed by name and value; r88: the stream walk is used "
+           "when it finds 70% of the map entries, stray damaged "
+           "layouts left out, up to 200 lost places listed; r87: entity and layer transparency "
+           "passed on (DXF 440), counted per layer in the "
            "report; r86: gradient hatches keep colours, angle, shift and name (DXF 450 to 470), "
            "failed "
            "entities counted per type; r84: the stream walk resumes at the next object the map "

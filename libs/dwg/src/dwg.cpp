@@ -126,7 +126,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
     if (!drawing.walkSummary.empty())
-        report.info(code::kSkippedObject, drawing.walkSummary);
+        report.summary(code::kSkippedObject, drawing.walkSummary);
     {
         std::map<std::string, std::size_t> perLayer;
         std::size_t layersWith = 0;
@@ -139,23 +139,32 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 ++perLayer[l == drawing.layers.end() ? std::string("?") : l->second.name];
             }
         if (layersWith != 0 || !perLayer.empty()) {
-            std::string t = "transparency: " + std::to_string(layersWith) +
-                            " layers carry it; entities with their own transparency per layer:";
+            std::string t = "transparency: " + std::to_string(layersWith) + " layers carry it";
+            std::size_t listed = 0;
+            for (const auto& [h, l] : drawing.layers)
+                if (l.transparency != 0 && listed++ < 40) {
+                    char hx[16];
+                    std::snprintf(hx, sizeof hx, "%llX",
+                                  static_cast<unsigned long long>(l.transparency));
+                    t += std::string(listed == 1 ? " [" : ", ") + l.name + "=" + hx;
+                }
+            t += (listed ? "]" : "") +
+                 std::string("; entities with their own transparency per layer:");
             std::size_t shown = 0;
             for (const auto& [name, c] : perLayer)
                 if (shown++ < 12)
                     t += " " + name + " x" + std::to_string(c);
-            report.info(code::kSkippedObject, t);
+            report.summary(code::kSkippedObject, t);
         }
     }
     if (!drawing.entityFailures.empty()) {
         std::string t = "entities left out (damaged / number out of range):";
         for (const auto& [type, c] : drawing.entityFailures)
             t += " " + type + " " + std::to_string(c[0]) + "/" + std::to_string(c[1]);
-        report.info(code::kSkippedObject, t);
+        report.summary(code::kSkippedObject, t);
     }
     for (const std::string& n : drawing.walkNotes)
-        report.info(code::kSkippedObject, n);
+        report.summary(code::kSkippedObject, n);
     if (!drawing.relocatedSamples.empty()) {
         std::string t = "moved objects (handle: map offset -> found offset):";
         for (const auto& smp : drawing.relocatedSamples) {
@@ -165,7 +174,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                           static_cast<long long>(smp[2]));
             t += b;
         }
-        report.info(code::kSkippedObject, t);
+        report.summary(code::kSkippedObject, t);
     }
     if (!drawing.relocated.empty()) {
         std::size_t total = 0;
@@ -176,22 +185,23 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 first += (first.empty() ? "" : ", ") + std::to_string(shift) + " (" +
                          std::to_string(count) + ")";
         }
-        report.info(code::kSkippedObject,
-                    std::to_string(total) +
-                        " object(s) were found away from the place the object map gives; shifts in "
-                        "bytes: " +
-                        first);
+        report.summary(
+            code::kSkippedObject,
+            std::to_string(total) +
+                " object(s) were found away from the place the object map gives; shifts in "
+                "bytes: " +
+                first);
     }
     for (const auto& [type, t] : drawing.layoutCheck)
-        report.info(code::kSkippedObject, "layout check, object type " + std::to_string(type) +
-                                              ": " + std::to_string(t[0]) +
-                                              " end where expected, " + std::to_string(t[1]) +
-                                              " do not");
+        report.summary(code::kSkippedObject, "layout check, object type " + std::to_string(type) +
+                                                 ": " + std::to_string(t[0]) +
+                                                 " end where expected, " + std::to_string(t[1]) +
+                                                 " do not");
     std::size_t skippedShown = 0;
     for (const auto& [name, count] : drawing.skippedTypes)
         if (skippedShown++ < 30)
-            report.info(code::kSkippedObject,
-                        std::to_string(count) + " object(s) of type " + name + " are not read yet");
+            report.summary(code::kSkippedObject, std::to_string(count) + " object(s) of type " +
+                                                     name + " are not read yet");
 
     {
         // Where the entities live: the biggest owners, to see whether model space is found.
@@ -219,7 +229,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     (it == drawing.blocks.end() ? "no block" : it->second.name) + ", " +
                     std::to_string(top[i].first) + ")";
         }
-        report.info(code::kSkippedObject, line);
+        report.summary(code::kSkippedObject, line);
         // Model and paper space: which block headers carry those names and what they own.
         std::string spaces = "spaces:";
         std::map<std::uint64_t, std::size_t> insertsPer;
@@ -242,7 +252,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                   " listed members were not decoded";
         std::size_t unowned = perOwner.count(0) ? perOwner[0] : 0;
         spaces += "; entities with no owner: " + std::to_string(unowned);
-        report.info(code::kSkippedObject, spaces);
+        report.summary(code::kSkippedObject, spaces);
         std::map<std::string, std::size_t> inModel;
         for (const detail::EntityRec& e : drawing.entities)
             if (e.entmode == 2)
@@ -250,7 +260,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         std::string mc = "model space (entity mode 2) holds:";
         for (const auto& [t, c] : inModel)
             mc += " " + t + " " + std::to_string(c);
-        report.info(code::kSkippedObject, mc);
+        report.summary(code::kSkippedObject, mc);
         {
             // Reachability: which blocks (and how many entities) a space reaches through nested
             // inserts.
@@ -291,8 +301,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                        " entities reached, " + std::to_string(missing) +
                        " inserts name a block that was not read";
             };
-            report.info(code::kSkippedObject, "reachable from model space: " + reach(false));
-            report.info(code::kSkippedObject, "reachable from paper spaces: " + reach(true));
+            report.summary(code::kSkippedObject, "reachable from model space: " + reach(false));
+            report.summary(code::kSkippedObject, "reachable from paper spaces: " + reach(true));
         }
         {
             // Every viewport: where it sits on its sheet and what it looks at.
@@ -319,10 +329,11 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     if (kv.second.color < 0 && nh++ < 30)
                         hid += " " + kv.second.name;
                 }
-                report.info(code::kSkippedObject, off + " (" + std::to_string(no) + " of " +
-                                                      std::to_string(drawing.layers.size()) + ")");
-                report.info(code::kSkippedObject, frz + " (" + std::to_string(nf) + ")");
-                report.info(code::kSkippedObject, hid + " (" + std::to_string(nh) + ")");
+                report.summary(code::kSkippedObject, off + " (" + std::to_string(no) + " of " +
+                                                         std::to_string(drawing.layers.size()) +
+                                                         ")");
+                report.summary(code::kSkippedObject, frz + " (" + std::to_string(nf) + ")");
+                report.summary(code::kSkippedObject, hid + " (" + std::to_string(nh) + ")");
             }
             {
                 // Layers that carry an extension dictionary, and the state of xref layers.
@@ -344,8 +355,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         }
                     }
                 }
-                report.info(code::kSkippedObject,
-                            xl + " (" + std::to_string(withDict) + " layers with one)");
+                report.summary(code::kSkippedObject,
+                               xl + " (" + std::to_string(withDict) + " layers with one)");
                 {
                     std::map<std::string, std::pair<std::size_t, std::uint64_t>> all;
                     for (const auto& [dh, items] : drawing.dictionaries)
@@ -361,7 +372,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                       static_cast<unsigned long long>(cs.second));
                         al += " [" + nm + "]" + hb;
                     }
-                    report.info(code::kSkippedObject, al);
+                    report.summary(code::kSkippedObject, al);
                 }
                 {
                     std::string el = "layers with extended data:";
@@ -369,7 +380,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     for (const auto& [lh, l] : drawing.layers)
                         if (!l.eed.empty() && cnt++ < 12)
                             el += " " + l.name + " {" + l.eed + "}";
-                    report.info(code::kSkippedObject, el + " (" + std::to_string(cnt) + ")");
+                    report.summary(code::kSkippedObject, el + " (" + std::to_string(cnt) + ")");
                     std::map<std::string, std::pair<std::size_t, std::string>> kinds;
                     for (const auto& [lh, l] : drawing.layers)
                         if (!l.eed.empty()) {
@@ -380,19 +391,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     std::string kl = "distinct layer extended data (hex x count, first layer):";
                     for (const auto& [hx, k] : kinds)
                         kl += " {" + hx + "} x" + std::to_string(k.first) + " " + k.second;
-                    report.info(code::kSkippedObject, kl);
+                    report.summary(code::kSkippedObject, kl);
                 }
                 std::string nl = "layer extension dictionary entry names:";
                 for (const auto& [nm, c] : names)
                     nl += " " + nm + " x" + std::to_string(c);
-                report.info(code::kSkippedObject, nl);
+                report.summary(code::kSkippedObject, nl);
                 std::string xr = "xref layers (name flags colour):";
                 std::size_t k = 0;
                 for (const auto& [lh, l] : drawing.layers)
                     if (l.name.find('|') != std::string::npos && k++ < 60)
                         xr += " " + l.name + " " + std::to_string(l.flags) + (l.frozen ? "F" : "") +
                               (l.plot ? "" : "N") + " " + std::to_string(l.color);
-                report.info(code::kSkippedObject, xr + " (" + std::to_string(k) + ")");
+                report.summary(code::kSkippedObject, xr + " (" + std::to_string(k) + ")");
             }
             int n = 0;
             for (const detail::EntityRec& e : drawing.entities) {
@@ -412,7 +423,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     val(e, 12), val(e, 22), val(e, 45), val(e, 16), val(e, 26), val(e, 36),
                     val(e, 51), static_cast<unsigned>(e.frozenCount), e.frozenLayers.size(),
                     val(e, 68) != 0 ? "on" : "off");
-                report.info(code::kSkippedObject, t);
+                report.summary(code::kSkippedObject, t);
                 {
                     char xb[64];
                     std::snprintf(xb, sizeof xb, "viewport %llX extension dictionary %llX:",
@@ -432,7 +443,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                   (ty == drawing.rawType.end() ? std::string("absent")
                                                                : std::to_string(ty->second));
                         }
-                    report.info(code::kSkippedObject, xl);
+                    report.summary(code::kSkippedObject, xl);
                 }
                 if (!e.frozenLayers.empty()) {
                     std::string f = "viewport " + std::to_string(e.handle) + " frozen layers:";
@@ -440,7 +451,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         const auto l = drawing.layers.find(e.frozenLayers[i]);
                         f += " " + (l != drawing.layers.end() ? l->second.name : std::string("?"));
                     }
-                    report.info(code::kSkippedObject, f);
+                    report.summary(code::kSkippedObject, f);
                 }
                 if (val(e, 40) > 0 && val(e, 45) > 0 && val(e, 17) != 0) {
                     // How much model space data lies inside what this viewport shows.
@@ -479,7 +490,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         "model entities start inside (%zu more in other blocks); they span "
                         "%.0f,%.0f to %.0f,%.0f",
                         cx, cy, w, h, inside, total, elsewhere, bx0, by0, bx1, by1);
-                    report.info(code::kSkippedObject, u);
+                    report.summary(code::kSkippedObject, u);
                 }
             }
         }
@@ -518,13 +529,13 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                            (t == drawing.rawType.end() ? std::string("absent")
                                                                        : std::to_string(t->second));
                         }
-                        report.info(code::kSkippedObject, entriesLine);
+                        report.summary(code::kSkippedObject, entriesLine);
                     }
             for (const std::string& d : drawing.layoutDiag)
-                report.info(code::kSkippedObject, d);
+                report.summary(code::kSkippedObject, d);
             ls += "; layout objects met: " + std::to_string(drawing.layoutSeen) +
                   "; dictionaries read: " + std::to_string(drawing.dictionaries.size());
-            report.info(code::kSkippedObject, ls);
+            report.summary(code::kSkippedObject, ls);
         }
         {
             // The entities with the widest extent (what dominates "zoom extents").
@@ -582,7 +593,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                                                    : "a space",
                     w.x0, w.y0, w.x1, w.y1, w.e->color,
                     w.e->trueColor >= 0 ? " (true colour)" : "");
-                report.info(code::kSkippedObject, t);
+                report.summary(code::kSkippedObject, t);
                 if (i < 3 || i >= 6) {
                     std::string gl = "  groups:";
                     for (const detail::Group& g : w.e->groups) {
@@ -594,7 +605,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                         else
                             gl += "\"" + std::get<std::string>(g.value.v).substr(0, 24) + "\"";
                     }
-                    report.info(code::kSkippedObject, gl);
+                    report.summary(code::kSkippedObject, gl);
                 }
             }
         }
@@ -628,7 +639,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     else
                         txt += "\"" + std::get<std::string>(g.value.v).substr(0, 30) + "\"";
                 }
-                report.info(code::kSkippedObject, txt);
+                report.summary(code::kSkippedObject, txt);
             }
         }
         {
@@ -654,7 +665,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 if (ts != drawing.styles.end())
                     dsLine += " text style \"" + ts->second.name +
                               "\" height=" + std::to_string(ts->second.height);
-                report.info(code::kSkippedObject, dsLine);
+                report.summary(code::kSkippedObject, dsLine);
             }
         }
         std::string ins = "inserts per owner:";
@@ -669,15 +680,15 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                    (it == drawing.blocks.end() ? "no block" : it->second.name) + ", " +
                    std::to_string(topIns[i].first) + ")";
         }
-        report.info(code::kSkippedObject, ins);
+        report.summary(code::kSkippedObject, ins);
     }
     const std::string text = detail::emitDxf(drawing);
     auto result = dxf::importDxf(
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
         options, report);
     if (result) {
-        report.info(code::kSkippedObject,
-                    "layouts imported: " + std::to_string(result.value().summary.layouts));
+        report.summary(code::kSkippedObject,
+                       "layouts imported: " + std::to_string(result.value().summary.layouts));
         result.value().summary.acadVer = v.code;
         result.value().summary.version = v.name;
     }
