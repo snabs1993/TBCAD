@@ -2,6 +2,7 @@
 #include <cmath>
 
 #include "common.h"
+#include "tbcad/geom/geom.h"
 
 namespace tbcad::select {
 
@@ -79,6 +80,22 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
         if (!weight)
             return std::nullopt;
     }
+    std::optional<double> number;
+    const bool numeric = q.property == Property::Transparency || q.property == Property::Height ||
+                         q.property == Property::Radius || q.property == Property::Length;
+    if (numeric) {
+        try {
+            std::size_t used = 0;
+            const double v = std::stod(q.value, &used);
+            if (used != q.value.size())
+                return std::nullopt;
+            number = v;
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+    if (!numeric && q.compare != Compare::Equals)
+        return std::nullopt;
     const std::string want = upper(q.value);
     if (q.property == Property::Type) {
         static const char* const kKnown[] = {
@@ -128,6 +145,43 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
                 }
                 break;
             }
+            case Property::Transparency:
+            case Property::Height:
+            case Property::Radius:
+            case Property::Length: {
+                std::optional<double> v;
+                if (q.property == Property::Transparency) {
+                    const std::int8_t t = e->common.transparency;
+                    v = t >= 0 ? t : 0;
+                } else if (q.property == Property::Height) {
+                    if (const auto* t = entityAs<TextData>(*e))
+                        v = t->height;
+                    else if (const auto* m = entityAs<MTextData>(*e))
+                        v = m->height;
+                } else if (q.property == Property::Radius) {
+                    if (const auto* c = entityAs<CircleData>(*e))
+                        v = c->radius;
+                    else if (const auto* a = entityAs<ArcData>(*e))
+                        v = a->radius;
+                } else {
+                    const double len = geom::length(*e);
+                    if (len > 0)
+                        v = len;
+                }
+                if (v) {
+                    const double d = *v - *number;
+                    const double tol = 1e-9 * std::max(1.0, std::abs(*number));
+                    hit = q.compare == Compare::Greater ? d > tol
+                          : q.compare == Compare::Less  ? d < -tol
+                                                        : std::abs(d) <= tol;
+                }
+                break;
+            }
+            case Property::Pattern: {
+                if (const auto* h = entityAs<HatchData>(*e))
+                    hit = want == (h->solid ? "SOLID" : upper(h->pattern));
+                break;
+            }
             case Property::Lineweight:
                 hit = (weight->isByLayer() || weight->isByBlock())
                           ? e->common.lineweight == *weight
@@ -162,6 +216,35 @@ std::vector<EntityId> similarEntities(const Document& doc, const Entity& ref, un
 }
 
 namespace detail {
+
+const char* const kPropNames[11] = {"Type",       "Layer",  "Color",        "Linetype",
+                                    "Lineweight", "Level",  "Transparency", "Pattern",
+                                    "Height",     "Radius", "Length"};
+
+cmd::Task askOperator(cmd::CommandContext& ctx, Query& q, std::string_view lead, bool& ok) {
+    ok = false;
+    const bool numeric = q.property == Property::Transparency || q.property == Property::Height ||
+                         q.property == Property::Radius || q.property == Property::Length;
+    cmd::KeywordOptions oo;
+    oo.keywords = {"Equals", "Not"};
+    if (numeric) {
+        oo.keywords.push_back("Greater");
+        oo.keywords.push_back("Less");
+    }
+    oo.defaultKeyword = "Equals";
+    const std::string prompt = std::string(lead) +
+                               (numeric ? " [Equals/Not/Greater/Less]" : " [Equals/Not]") +
+                               " <Equals>";
+    auto o = co_await ctx.getKeyword(prompt, std::move(oo));
+    if (!o.ok())
+        co_return;
+    q.negate = o.keyword == "Not";
+    q.compare = o.keyword == "Greater" ? Compare::Greater
+                : o.keyword == "Less"  ? Compare::Less
+                                       : Compare::Equals;
+    ok = true;
+}
+
 namespace {
 
 // QSELECT [QSEL]: selects the objects whose property has (or does not have) a value.
@@ -173,37 +256,29 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions po;
-        po.keywords = {"Type", "Layer", "Color", "Linetype", "Lineweight", "Level"};
+        po.keywords = {"Type",         "Layer",   "Color",  "Linetype", "Lineweight", "Level",
+                       "Transparency", "Pattern", "Height", "Radius",   "Length"};
         po.defaultKeyword = "Type";
         auto p = co_await ctx.getKeyword(
-            "Property [Type/Layer/Color/Linetype/Lineweight/Level] <Type>", std::move(po));
+            "Property [Type/Layer/Color/Linetype/Lineweight/Level/Transparency/Pattern/Height/"
+            "Radius/Length] <Type>",
+            std::move(po));
         if (!p.ok())
             co_return;
         Query q;
-        if (p.keyword == "Layer")
-            q.property = Property::Layer;
-        else if (p.keyword == "Color")
-            q.property = Property::Color;
-        else if (p.keyword == "Linetype")
-            q.property = Property::Linetype;
-        else if (p.keyword == "Lineweight")
-            q.property = Property::Lineweight;
-        else if (p.keyword == "Level")
-            q.property = Property::Level;
+        for (int i = 0; i < 11; ++i)
+            if (p.keyword == kPropNames[i])
+                q.property = static_cast<Property>(i);
 
         auto v = co_await ctx.getString("Value");
         if (!v.ok())
             co_return;
         q.value = v.text;
 
-        cmd::KeywordOptions oo;
-        oo.keywords = {"Equals", "Not"};
-        oo.defaultKeyword = "Equals";
-        auto o =
-            co_await ctx.getKeyword("Select objects that are [Equals/Not] <Equals>", std::move(oo));
-        if (!o.ok())
+        bool opOk = false;
+        co_await askOperator(ctx, q, "Select objects that are", opOk);
+        if (!opOk)
             co_return;
-        q.negate = o.keyword == "Not";
 
         cmd::KeywordOptions ao;
         ao.keywords = {"Replace", "Append"};

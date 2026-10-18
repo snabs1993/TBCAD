@@ -147,3 +147,39 @@ TEST_CASE("queryEntities by level also finds the dimmed objects of other levels"
     REQUIRE(notUpper);
     CHECK(*notUpper == std::vector<EntityId>{ground});
 }
+
+TEST_CASE("queryEntities by radius, length and pattern with greater and less") {
+    Fixture f;
+    auto small = f.addEntity(CircleData{{0, 0}, 2});
+    auto big = f.addEntity(CircleData{{10, 0}, 5});
+    auto line = f.addEntity(LineData{{0, 0}, {60, 0}});
+    Query q{Property::Radius, "3", false, Compare::Greater};
+    auto r = queryEntities(f.doc, q);
+    REQUIRE(r);
+    CHECK(r->size() == 1);
+    CHECK(has(*r, big));
+    q.compare = Compare::Less;
+    r = queryEntities(f.doc, q);
+    REQUIRE(r);
+    CHECK(r->size() == 1);
+    CHECK(has(*r, small));
+    Query len{Property::Length, "40", false, Compare::Greater};
+    r = queryEntities(f.doc, len);
+    REQUIRE(r);
+    CHECK(r->size() == 1);
+    CHECK(has(*r, line));
+    // Greater makes no sense for a name.
+    CHECK_FALSE(queryEntities(f.doc, {Property::Layer, "0", false, Compare::Greater}));
+    CHECK_FALSE(queryEntities(f.doc, {Property::Radius, "abc", false}));
+}
+
+TEST_CASE("saved filters keep the new properties and comparisons") {
+    std::vector<Query> qs = {{Property::Length, "20", false, Compare::Greater},
+                             {Property::Pattern, "ANSI31", true, Compare::Equals}};
+    auto back = decodeFilter(encodeFilter(qs));
+    REQUIRE(back.size() == 2);
+    CHECK(back[0].property == Property::Length);
+    CHECK(back[0].compare == Compare::Greater);
+    CHECK(back[1].property == Property::Pattern);
+    CHECK(back[1].negate);
+}
