@@ -194,6 +194,37 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
     return out;
 }
 
+namespace {
+
+// What "same style" means per kind; objects without a style compare equal to each other.
+std::string styleKey(const Entity& e) {
+    if (const auto* t = entityAs<TextData>(e))
+        return "T" + std::to_string(t->style.value);
+    if (const auto* m = entityAs<MTextData>(e))
+        return "T" + std::to_string(m->style.value);
+    if (const auto* d = entityAs<DimensionData>(e))
+        return "D" + std::to_string(d->style.value);
+    if (const auto* h = entityAs<HatchData>(e))
+        return h->solid ? "SOLID" : "H" + h->pattern;
+    return {};
+}
+
+// Text height or radius, rounded so equal sizes compare equal; other kinds have no size.
+long long sizeKey(const Entity& e) {
+    double v = -1;
+    if (const auto* t = entityAs<TextData>(e))
+        v = t->height;
+    else if (const auto* m = entityAs<MTextData>(e))
+        v = m->height;
+    else if (const auto* c = entityAs<CircleData>(e))
+        v = c->radius;
+    else if (const auto* a = entityAs<ArcData>(e))
+        v = a->radius;
+    return static_cast<long long>(std::llround(v * 1e6));
+}
+
+}  // namespace
+
 std::vector<EntityId> similarEntities(const Document& doc, const Entity& ref, unsigned match) {
     using namespace detail;
     auto has = [&](Match m) { return (match & static_cast<unsigned>(m)) != 0; };
@@ -209,6 +240,14 @@ std::vector<EntityId> similarEntities(const Document& doc, const Entity& ref, un
             continue;
         if (has(Match::Lineweight) &&
             !(resolvedLineweight(doc, *e) == resolvedLineweight(doc, ref)))
+            continue;
+        if (has(Match::Level) && e->common.level != ref.common.level)
+            continue;
+        if (has(Match::Transparency) && e->common.transparency != ref.common.transparency)
+            continue;
+        if (has(Match::Style) && styleKey(*e) != styleKey(ref))
+            continue;
+        if (has(Match::Size) && sizeKey(*e) != sizeKey(ref))
             continue;
         out.push_back(e->common.id);
     }

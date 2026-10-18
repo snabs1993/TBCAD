@@ -48,3 +48,22 @@ TEST_CASE("SELECTSIMILAR Settings toggles what is matched and is remembered") {
     CHECK(f.host.selection().size() == 1);  // colour now has to match too
     CHECK(f.host.logContains("Type, Layer, Color"));
 }
+
+TEST_CASE("similarEntities can match on size, level and transparency") {
+    Fixture f;
+    auto a = f.addEntity(CircleData{{0, 0}, 2});
+    auto b = f.addEntity(CircleData{{10, 0}, 2});
+    auto c = f.addEntity(CircleData{{20, 0}, 3});
+    f.modify(b, [](Entity& e) { e.common.transparency = 30; });
+    const Entity& ref = *f.doc.find(a);
+    auto bySize = similarEntities(f.doc, ref, static_cast<unsigned>(Match::Size));
+    CHECK(bySize.size() == 2);
+    CHECK_FALSE(has(bySize, c));
+    auto byTransparency = similarEntities(f.doc, ref, static_cast<unsigned>(Match::Transparency));
+    CHECK(byTransparency.size() == 2);
+    CHECK_FALSE(has(byTransparency, b));
+    auto both = similarEntities(
+        f.doc, ref,
+        static_cast<unsigned>(Match::Size) | static_cast<unsigned>(Match::Transparency));
+    CHECK(both.size() == 1);
+}
