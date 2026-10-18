@@ -1,0 +1,115 @@
+#include <doctest/doctest.h>
+
+#include <cctype>
+#include <string>
+
+#include "common.h"
+#include "tbcad/core/dump.h"
+
+using namespace tbtest;
+
+namespace {
+
+bool hasNonFinite(const std::string& dump) {
+    for (const char* bad : {"nan", "inf"}) {
+        std::string low = dump;
+        for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (low.find(bad) != std::string::npos) return true;
+    }
+    return false;
+}
+
+void addSamples(Document& doc, std::vector<EntityId>& ids) {
+    ids.push_back(add(doc, LineData{{0, 0}, {10, 5}}));
+    ids.push_back(add(doc, CircleData{{20, 20}, 4}));
+    ids.push_back(add(doc, ArcData{{0, 30}, 6, 0.3, 2.5}));
+    PolylineData pl;
+    pl.v = {{{0, 0}, 0.5, 0, 0}, {{10, 0}, 0, 1, 2}, {{10, 10}, -0.3, 0, 0}};
+    pl.closed = true;
+    ids.push_back(add(doc, pl));
+    ids.push_back(add(doc, PointData{{3, 3}}));
+    EllipseData el;
+    el.center = {5, 5};
+    el.majorAxis = {6, 2};
+    el.ratio = 0.5;
+    ids.push_back(add(doc, Indirect<EllipseData>(el)));
+    TextData tx;
+    tx.position = {1, 2};
+    tx.alignPoint = {1, 2};
+    tx.utf8 = "Hello";
+    ids.push_back(add(doc, Indirect<TextData>(tx)));
+    RayData ray;
+    ray.origin = {2, 2};
+    ray.dir = {1, 1};
+    ids.push_back(add(doc, Indirect<RayData>(ray)));
+    MlineData ml;
+    ml.v = {{0, 0}, {5, 0}, {5, 5}};
+    ids.push_back(add(doc, Indirect<MlineData>(ml)));
+    LeaderData ld;
+    ld.vertices = {{0, 0}, {4, 4}};
+    ld.utf8 = "note";
+    ld.textPos = {5, 5};
+    ids.push_back(add(doc, Indirect<LeaderData>(ld)));
+}
+
+}  // namespace
+
+TEST_CASE("transforms keep every entity kind finite and undo back to the exact original") {
+    struct Case {
+        const char* cmd;
+        std::vector<cmd::ScriptItem> in;
+    };
+    const Case cases[] = {
+        {"MOVE", {"0,0", "13.5,-7.25"}},       {"MOVE", {"0,0", "1e6,-1e6"}},
+        {"ROTATE", {"3,4", "37"}},              {"ROTATE", {"0,0", "180"}},
+        {"SCALE", {"1,1", "2.5"}},              {"SCALE", {"0,0", "0.001"}},
+        {"MIRROR", {"0,0", "10,3", "No"}},      {"MIRROR", {"0,0", "0,10", "Yes"}},
+    };
+    for (const auto& c : cases) {
+        CAPTURE(c.cmd);
+        Fixture f;
+        std::vector<EntityId> ids;
+        addSamples(f.doc, ids);
+        const std::string before = canonicalDump(f.doc);
+        f.host.setSelection(ids);
+        auto r = f.host.run(c.cmd, c.in);
+        CHECK(r.finished);
+        const std::string after = canonicalDump(f.doc);
+        CHECK_FALSE(hasNonFinite(after));
+        CHECK(after != before);
+        CHECK(f.host.undo());
+        CHECK(canonicalDump(f.doc) == before);
+        CHECK(f.host.redo());
+        CHECK(canonicalDump(f.doc) == after);
+    }
+}
+
+TEST_CASE("rotating by 360 degrees and moving there and back restore the geometry") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    addSamples(f.doc, ids);
+    f.host.setSelection(ids);
+    f.host.run("MOVE", {"0,0", "100,-40"});
+    f.host.setSelection(ids);
+    f.host.run("MOVE", {"0,0", "-100,40"});
+    const auto& l = get<LineData>(f.doc, ids[0]);
+    CHECK(near(l.a, {0, 0}, 1e-9));
+    CHECK(near(l.b, {10, 5}, 1e-9));
+    f.host.setSelection(ids);
+    f.host.run("ROTATE", {"7,3", "360"});
+    CHECK(near(get<LineData>(f.doc, ids[0]).b, {10, 5}, 1e-9));
+    CHECK(near(get<CircleData>(f.doc, ids[1]).center, {20, 20}, 1e-9));
+}
+
+TEST_CASE("scaling by zero or a negative factor is refused without touching the drawing") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    addSamples(f.doc, ids);
+    const std::string before = canonicalDump(f.doc);
+    f.host.setSelection(ids);
+    f.host.run("SCALE", {"0,0", "0"});
+    CHECK(canonicalDump(f.doc) == before);
+    f.host.setSelection(ids);
+    f.host.run("SCALE", {"0,0", "-2"});
+    CHECK(canonicalDump(f.doc) == before);
+}
