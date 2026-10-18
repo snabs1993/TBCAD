@@ -2560,7 +2560,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r76: distinct layer extended data listed; r75: all dictionary entry names and layer "
+    return "r80: --lz21-search tries every cut into blocks of 1, 4 and 8 bytes; r76: distinct "
+           "layer extended data listed; r75: all dictionary entry names and layer "
            "extended data listed; r74: layer extension "
            "dictionaries and xrecords "
            "traced; r79: R2007 literal runs of 11 and 19 bytes re-cut (checked against the class "

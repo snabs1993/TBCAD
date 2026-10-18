@@ -664,12 +664,34 @@ std::string searchCuts(const std::vector<std::span<const std::byte>>& files) {
         }
         return std::make_pair(imported, -warnings);
     };
+    // Every way to cut the length into blocks of 1, 4 and 8 bytes (at most seven blocks), plus the
+    // other orders of the blocks the table has now.
     auto arrangements = [](const std::vector<std::uint8_t>& base) {
         std::vector<std::vector<std::uint8_t>> all;
+        std::size_t total = 0;
+        for (auto b : base)
+            total += b;
+        std::vector<std::uint8_t> cur;
+        auto grow = [&](auto&& self, std::size_t left) -> void {
+            if (left == 0) {
+                all.push_back(cur);
+                return;
+            }
+            if (cur.size() >= 7)
+                return;
+            for (std::uint8_t part : {8, 4, 1})
+                if (part <= left) {
+                    cur.push_back(part);
+                    self(self, left - part);
+                    cur.pop_back();
+                }
+        };
+        grow(grow, total);
         std::vector<std::uint8_t> v = base;
         std::sort(v.begin(), v.end());
         do {
-            all.push_back(v);
+            if (std::find(all.begin(), all.end(), v) == all.end())
+                all.push_back(v);
         } while (std::next_permutation(v.begin(), v.end()));
         return all;
     };
@@ -682,8 +704,8 @@ std::string searchCuts(const std::vector<std::span<const std::byte>>& files) {
     auto best = score();
     out += "start: imported " + std::to_string(best.first) + ", warnings " +
            std::to_string(-best.second) + "\n";
-    for (int pass = 0; pass < 2; ++pass) {
-        for (std::size_t len : {26u, 19u, 21u, 28u, 29u, 31u, 11u}) {
+    for (int pass = 0; pass < 1; ++pass) {
+        for (std::size_t len : {21u, 25u, 29u, 31u, 26u, 28u, 19u, 11u}) {
             const std::vector<std::uint8_t> keep = table[len];
             std::vector<std::uint8_t> winner = keep;
             std::string line = "length " + std::to_string(len) + ":";
@@ -805,7 +827,7 @@ std::string describe(std::span<const std::byte> bytes) {
     auto r = importDwg(bytes, dxf::ImportOptions{}, report);
     line(r ? "import: ok" : "import failed: " + r.error().message);
     // Information lines first (they carry the layout and recovery summaries), then the warnings.
-    for (int pass = 0; pass < 2; ++pass) {
+    for (int pass = 0; pass < 1; ++pass) {
         std::size_t shown = 0;
         for (const dxf::Diagnostic& d : report.diagnostics()) {
             const bool info =
