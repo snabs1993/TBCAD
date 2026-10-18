@@ -35,6 +35,7 @@ namespace tbcad::guitest {
 struct Image {
     int width = 0, height = 0;
     std::vector<std::uint8_t> rgba{};  // 4 bytes a pixel, row 0 on top
+    bool empty() const { return width == 0 || height == 0; }
 };
 
 // The visible part of a rectangle of the frame.
