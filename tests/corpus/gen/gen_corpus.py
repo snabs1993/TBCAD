@@ -509,7 +509,7 @@ def gen_mtext_markup():
         "{\\b1;Bold} plain",
         "{\\H5;Big} {\\H2x;Rel}",
         "{\\C1;Red}",
-        "1/2 and under",
+        "\\S1/2; and \\Lunder\\l",
         "Dia \u230025 \\\\ \\{x\\}",
         "plain",
     ]

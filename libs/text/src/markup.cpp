@@ -81,6 +81,41 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
                 p.attr = cur;
                 out.push_back(std::move(p));
                 i += 2;
+            } else if (k == 'S') {
+                // \S<num>/<den>;  also # (diagonal) and ^ (no bar). An escaped separator
+                // (\/ \# \^) is text.
+                std::size_t j = i + 2;
+                std::string num, den;
+                char bar = 0;
+                bool closed = false;
+                for (; j < s.size(); ++j) {
+                    const char ch = s[j];
+                    if (ch == '\\' && j + 1 < s.size()) {
+                        (bar ? den : num) += s[++j];
+                    } else if (ch == ';') {
+                        closed = true;
+                        break;
+                    } else if (!bar && (ch == '/' || ch == '#' || ch == '^')) {
+                        bar = ch;
+                    } else {
+                        (bar ? den : num) += ch;
+                    }
+                }
+                if (!closed || !bar) {
+                    text += c;  // not a fraction: keep the backslash literally
+                    ++i;
+                    continue;
+                }
+                flush();
+                Piece p;
+                p.text = num + "/" + den;
+                p.attr = cur;
+                p.stacked = true;
+                p.num = std::move(num);
+                p.den = std::move(den);
+                p.bar = bar;
+                out.push_back(std::move(p));
+                i = j + 1;
             } else if (k == 'b' || k == 'i' || k == 'H' || k == 'C') {
                 std::size_t j = i + 2;
                 auto arg = readArg(s, j);

@@ -50,3 +50,22 @@ TEST_CASE("markup: markupFromPlain round trips") {
     CHECK(plainText(markupFromPlain(plain)) == plain);
     CHECK(markupFromPlain("x\r\ny") == "x\\Py");
 }
+
+TEST_CASE("markup: stacked fractions") {
+    auto p = parseMarkup("a\\S1/2;b", 2.0);
+    REQUIRE(p.size() == 3);
+    CHECK(p[1].stacked);
+    CHECK(p[1].num == "1");
+    CHECK(p[1].den == "2");
+    CHECK(p[1].bar == '/');
+    CHECK(plainText("a\\S1/2;b") == "a1/2b");
+    CHECK(parseMarkup("\\S1#2;", 2.0)[0].bar == '#');
+    CHECK(parseMarkup("\\S+0.1^-0.1;", 2.0)[0].bar == '^');
+    // Not a fraction: no separator, or no closing ';'.
+    CHECK_FALSE(parseMarkup("\\S12;", 2.0)[0].stacked);
+    CHECK_FALSE(parseMarkup("\\S1/2", 2.0)[0].stacked);
+    // Inside a format group the fraction takes the format.
+    auto b = parseMarkup("{\\b1;\\S1/2;}", 2.0);
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].attr.bold);
+}

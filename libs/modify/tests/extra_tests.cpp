@@ -379,6 +379,8 @@ TEST_CASE("replaceText in MTEXT leaves the formatting codes alone") {
     CHECK_FALSE(replaceText(mtext("{\\b1;Hello}"), "b1", "x", true).has_value());
     CHECK_FALSE(replaceText(mtext("one\\Ptwo"), "P", "x", true).has_value());
     CHECK_FALSE(replaceText(mtext("{\\C7;red}"), "C7", "x", true).has_value());
+    CHECK_FALSE(
+        replaceText(mtext("\\S1/2;"), "1/2", "x", true).has_value());  // a fraction is one code
     // A match inside formatted text keeps the formatting around it.
     auto r = replaceText(mtext("{\\b1;Hello} world"), "Hello", "Bye", true);
     REQUIRE(r.has_value());

@@ -78,16 +78,22 @@ struct Attr {
 };
 
 struct Piece {
-    std::string text{};  // never contains a newline
+    std::string text{};  // never contains a newline; "num/den" for a stacked fraction
     Attr attr{};
     bool newline = false;  // paragraph break (text is empty)
+    // A stacked fraction (`\S1/2;`): numerator over denominator in smaller type. `bar` is '/'
+    // (horizontal bar), '#' (diagonal bar) or '^' (no bar, as for tolerances).
+    bool stacked = false;
+    std::string num{}, den{};
+    char bar = '/';
 };
 
 // Parses TBCAD markup: `\L` / `\l` underline on / off, `\O` / `\o` overline, `\P` paragraph, `\\ \{
 // \}` literals, `{\b1;..}` `{\i1;..}` bold/italic,
-// `{\H<h>;..}` height in mm (`{\H2x;..}` = relative to the surrounding height), `{\C<i>;..}`
-// palette colour. Anything else after a backslash is kept literally; unmatched braces are
-// ignored. `baseHeight` is the entity's text height.
+// `\S<num>/<den>;` stacked fraction (`#` diagonal, `^` no bar), `{\H<h>;..}` height in mm
+// (`{\H2x;..}` = relative to the surrounding height), `{\C<i>;..}` palette colour. Anything else
+// after a backslash is kept literally; unmatched braces are ignored. `baseHeight` is the entity's
+// text height.
 std::vector<Piece> parseMarkup(std::string_view markup, double baseHeight);
 // Plain text for display in an editor / list: markup removed, paragraphs become '\n'.
 std::string plainText(std::string_view markup);

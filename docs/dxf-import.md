@@ -130,8 +130,8 @@ markup of `docs/text.md` (W4-4):
 
 * kept: `\P` becomes a newline; `\\ \{ \}`; bold/italic taken from `\f...|b1|i1;` as `{\b1;..}`
   `{\i1;..}`; `\H<h>;` as `\H<h in mm>;` (`\H2x;` stays relative); `\C<aci>;` as `\C<index>;`
-  with the palette mapping;
-* flattened: `\S1/2;` becomes `1/2`, `\~` a space, `%%c`/`%%d`/`%%p`;
+  with the palette mapping; `\S1/2;` stacked fractions (also `#` and `^` forms) are kept;
+* flattened: `\~` becomes a space, `%%c`/`%%d`/`%%p` their characters;
 * dropped and counted in one info line: `\A \Q \T \W \X \p \L \l \O \o \K \k \N` and the font
   name.
 

@@ -126,11 +126,21 @@ BBox2 glyphBoxLayout(const PlacedGlyph& g) {
 // ---- line building
 // -------------------------------------------------------------------------------
 
+// A stacked fraction is smaller than the text around it; the bar sits at mid height.
+constexpr double kStackScale = 0.7;
+constexpr double kStackGap = 0.1;  // between bar and digits, in text heights
+
+struct Stack {
+    std::string num{}, den{};
+    char bar = '/';
+};
+
 struct Item {
     std::string text{};
     Attr attr{};
     bool space = false;
     double width = 0;
+    std::optional<Stack> stack{};
 };
 
 using Line = std::vector<Item>;
@@ -139,6 +149,7 @@ struct Token {
     std::string text{};
     Attr attr{};
     enum class Kind { Word, Space, Zwsp } kind = Kind::Word;
+    std::optional<Stack> stack{};
 };
 
 struct Unit {
@@ -148,6 +159,18 @@ struct Unit {
 
 double itemWidth(const TextStyle* style, const std::string& text, const Attr& attr) {
     return shapeChunk(style, text, attr).advance;
+}
+
+Attr stackAttr(const Attr& attr) {
+    Attr a = attr;
+    a.height = attr.height * kStackScale;
+    a.underline = a.overline = false;
+    return a;
+}
+
+double stackWidth(const TextStyle* style, const Stack& st, const Attr& attr) {
+    const Attr a = stackAttr(attr);
+    return std::max(itemWidth(style, st.num, a), itemWidth(style, st.den, a));
 }
 
 std::vector<Unit> splitUnits(const std::vector<Piece>& pieces) {
@@ -172,6 +195,15 @@ std::vector<Unit> splitUnits(const std::vector<Piece>& pieces) {
         buf.clear();
     };
     for (const Piece& p : pieces) {
+        if (p.stacked) {
+            Token t;
+            t.text = p.text;
+            t.attr = p.attr;
+            t.kind = Token::Kind::Word;
+            t.stack = Stack{p.num, p.den, p.bar};
+            cur.word.push_back(std::move(t));
+            continue;
+        }
         std::string buf;
         for (std::size_t i = 0; i < p.text.size();) {
             char32_t cp = 0;
@@ -208,7 +240,10 @@ public:
             double wg = 0;
             std::vector<Item> items;
             for (const Token& t : u.word) {
-                Item it{t.text, t.attr, false, itemWidth(style_, t.text, t.attr)};
+                Item it{t.text, t.attr, false,
+                        t.stack ? stackWidth(style_, *t.stack, t.attr)
+                                : itemWidth(style_, t.text, t.attr),
+                        t.stack};
                 wg += it.width;
                 items.push_back(std::move(it));
             }
@@ -273,6 +308,13 @@ private:
     // never split.
     void splitByClusters(const Unit& u) {
         for (const Token& t : u.word) {
+            if (t.stack) {  // a fraction is never split
+                const double w = stackWidth(style_, *t.stack, t.attr);
+                if (!cur_.empty() && totalWidth() + w > wrap_ + kEps)
+                    newLine();
+                push({t.text, t.attr, false, w, t.stack});
+                continue;
+            }
             auto bounds = clusterBoundaries(t.text);
             for (std::size_t k = 0; k + 1 < bounds.size(); ++k) {
                 std::string cl = t.text.substr(bounds[k], bounds[k + 1] - bounds[k]);
@@ -304,11 +346,45 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
     double pen = 0;
     std::size_t i = 0;
     while (i < n) {
+        if (line[i].stack) {
+            const Item& it = line[i];
+            const Stack& st = *it.stack;
+            const Attr sa = stackAttr(it.attr);
+            const double H = it.attr.height;
+            const double mid = baseline + 0.5 * H;
+            const Chunk num = shapeChunk(style, st.num, sa);
+            const Chunk den = shapeChunk(style, st.den, sa);
+            const double w = it.width;
+            // Numerator above the bar, denominator below it, both centred.
+            auto put = [&](const Chunk& c, double x, double y) {
+                for (PlacedGlyph g : c.glyphs) {
+                    g.origin.x += x;
+                    g.origin.y += y;
+                    glyphs.push_back(g);
+                }
+            };
+            if (st.bar == '#') {
+                // Diagonal bar: numerator high-left, denominator low-right.
+                put(num, pen, baseline + 0.5 * H + kStackGap * H);
+                put(den, pen + w - den.advance, baseline - 0.3 * H);
+                out.rules.push_back({pen, pen + w, mid});  // drawn level; no slanted rules exist
+            } else {
+                put(num, pen + (w - num.advance) / 2, mid + kStackGap * H);
+                put(den, pen + (w - den.advance) / 2, mid - kStackGap * H - sa.height);
+                if (st.bar == '/')
+                    out.rules.push_back({pen, pen + w, mid});
+            }
+            out.height = std::max(out.height, H);
+            out.text += st.num + "/" + st.den;
+            pen += w;
+            ++i;
+            continue;
+        }
         // Merge consecutive items with equal attributes into one shaped chunk.
         std::string text = line[i].text;
         Attr attr = line[i].attr;
         std::size_t j = i + 1;
-        while (j < n && line[j].attr == attr) {
+        while (j < n && !line[j].stack && line[j].attr == attr) {
             text += line[j].text;
             ++j;
         }

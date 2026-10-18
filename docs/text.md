@@ -24,7 +24,8 @@ rotation is ignored for those two.
 
 * Markup: `\P` new paragraph, `\\ \{ \}` literals, `{\b1;..}` bold, `{\i1;..}` italic,
   `{\H<h>;..}` height in mm (`{\H2x;..}` relative to the surrounding height), `{\C<i>;..}` palette
-  colour. Anything else after a backslash is kept as typed; unmatched braces are ignored.
+  colour, `\S<num>/<den>;` a stacked fraction (`#` for a diagonal bar, `^` for none, as in
+  tolerances) set at 70% of the text height. A raw newline counts as `\P`. Anything else after a backslash is kept as typed; unmatched braces are ignored.
   `text::markupFromPlain` / `plainText` convert to and from plain text.
 * Bold and italic use an installed bold/italic face of the style's family when there is one. With
   only the bundled regular face, italic is synthesised (12° shear) and bold is not.
