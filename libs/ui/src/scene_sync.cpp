@@ -99,7 +99,8 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
         if (!locked && kind(e) == EntityKind::Insert) {
             blocks::InsertInstance inst;
             if (blocks::buildInsertInstance(doc_, e, ctx, inst) &&
-                scene_.upsertInstance(id, inst.blockSpace, inst.transform, order, builtZoom))
+                scene_.upsertInstance(id, inst.blockSpace, inst.placements, &inst.extra, order,
+                                      builtZoom))
                 return;
         }
         geom::buildDisplay(doc_, e, ctx, list);

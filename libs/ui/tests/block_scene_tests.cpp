@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 
@@ -194,4 +195,82 @@ TEST_CASE(
     one.expand({5, 5});
     CHECK(ui::selectInBox(d.doc, d.idx, one, false).empty());
     CHECK(ui::selectInBox(d.doc, d.idx, one, true) == std::vector<EntityId>{arr});
+}
+
+namespace {
+
+std::vector<Vec2> sceneVertices(const render::Scene& s, render::BatchKind kind) {
+    std::vector<Vec2> out;
+    for (const auto& [tk, tile] : s.tiles())
+        for (const auto& [bk, batch] : tile.batches)
+            if (bk.kind == kind)
+                for (const render::GpuVertex& v : batch.verts)
+                    out.push_back({tile.origin.x + double(v.hx) + double(v.lx),
+                                   tile.origin.y + double(v.hy) + double(v.ly)});
+    std::sort(out.begin(), out.end(),
+              [](Vec2 a, Vec2 b) { return a.x != b.x ? a.x < b.x : a.y < b.y; });
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("references with attributes and arrays draw the same as the full display list") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    render::Scene fast, plain;
+    SceneSync sync(doc, fast);
+    BlockId b;
+    {
+        Transaction tx = doc.begin("block");
+        b = tx.addBlock(BlockDef{.name = "Tag"}).value();
+        (void)tx.add(Entity{{}, CircleData{{0, 0}, 4.0}}, b);
+        (void)tx.add(Entity{{}, LineData{{-5, 0}, {5, 0}}}, b);
+        TextData t;
+        t.position = {6, -1};
+        t.height = 2;
+        t.utf8 = "X";
+        t.attdef = AttDefInfo{.tag = "NO", .defaultValue = "1"};
+        (void)tx.add(Entity{{}, std::move(t)}, b);
+        tx.commit();
+    }
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("refs");
+        for (int i = 0; i < 4; ++i) {
+            InsertData ins{b, {i * 40.0, 10.0}, {1, 1}, i * 0.4};
+            ins.attribs = blocks::defaultAttribs(doc, b);
+            ins.attribs[0].value = "No." + std::to_string(i);
+            if (i >= 2) {  // an associative array of 3 x 2 items
+                ArrayInfo a;
+                a.rows = 2;
+                a.columns = 3;
+                a.rowSpacing = 15;
+                a.columnSpacing = 20;
+                ins.array = a;
+            }
+            Entity e;
+            e.data = Indirect<InsertData>(std::move(ins));
+            ids.push_back(tx.add(std::move(e)).value());
+        }
+        tx.commit();
+    }
+    {
+        geom::DisplayContext ctx;
+        ctx.pixelSizeMm = sync.pixelSize();
+        blocks::BlockDisplayCache cache;
+        blocks::BlockDisplayScope scope(cache);
+        for (EntityId id : ids) {
+            DisplayList list;
+            geom::buildDisplay(doc, *doc.find(id), ctx, list);
+            plain.upsert(id, list, static_cast<std::uint32_t>(id.value), 1.0 / sync.pixelSize());
+        }
+    }
+    CHECK(fast.entityCount() == plain.entityCount());
+    CHECK(sceneVertices(fast, render::BatchKind::Stroke).size() > 1000);
+    for (render::BatchKind kind : {render::BatchKind::Stroke, render::BatchKind::Fill}) {
+        auto a = sceneVertices(fast, kind), c = sceneVertices(plain, kind);
+        REQUIRE(a.size() == c.size());
+        for (std::size_t i = 0; i < a.size(); ++i)
+            CHECK(distance(a[i], c[i]) < 1e-6);
+    }
 }
