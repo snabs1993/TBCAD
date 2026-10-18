@@ -365,3 +365,30 @@ TEST_CASE("TEXTALIGN lines texts up with the first one and undoes in one step") 
     f.host.undo();
     CHECK(entityAs<TextData>(*f.doc.find(tb))->position.y == doctest::Approx(20));
 }
+
+TEST_CASE("ARCTEXT puts one text object per letter along the arc") {
+    Fixture f;
+    EntityId arc;
+    {
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = ArcData{{0, 0}, 100, 0, 3.141592653589793};
+        arc = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    REQUIRE(f.host.run("ARCTEXT", {cmd::ScriptItem::pick(arc, {0, 100}), "AB C", "5", "Outside"})
+                .finished);
+    std::vector<const TextData*> texts;
+    for (EntityId id : f.doc.modelSpace())
+        if (const auto* t = entityAs<TextData>(*f.doc.find(id)))
+            texts.push_back(t);
+    REQUIRE(texts.size() == 3);  // the space gets none
+    // Outside text on the top half reads left to right: x grows, and the middle letters are
+    // upright.
+    CHECK(texts[0]->position.x < texts[1]->position.x);
+    CHECK(texts[1]->position.x < texts[2]->position.x);
+    CHECK(texts[0]->position.y > 90);
+    CHECK(std::abs(texts[1]->rotation) < 0.3);
+    CHECK(f.host.undo());
+    CHECK(f.doc.modelSpace().size() == 1);
+}
