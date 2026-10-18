@@ -138,10 +138,12 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                     break;
                 }
                 case 'S': {
+                    // Stacked fraction: kept (TBCAD markup has the same \S<num>/<den>; code).
                     std::string_view p = param(i);
-                    for (char ch : p) {
-                        out.push_back(ch == '#' ? '/' : (ch == '^' ? ' ' : ch));
-                    }
+                    out += "\\S";
+                    out += p;
+                    out += ';';
+                    markCode();
                     break;
                 }
                 case 'A':

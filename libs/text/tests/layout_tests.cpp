@@ -386,3 +386,36 @@ TEST_CASE("MTEXT with a raw newline breaks the line like a paragraph mark") {
     CHECK(esc.lines.size() == 2);
     CHECK(raw.lines.size() == 2);
 }
+
+TEST_CASE("a stacked fraction is smaller than its line, has a bar, and is one unit") {
+    Document doc;
+    MTextData m;
+    m.height = 10;
+    m.utf8 = "\\S1/2;";
+    TextLayout st = layoutMText(doc, m);
+    REQUIRE(st.lines.size() == 1);
+    CHECK(st.lines[0].rules.size() == 1);
+    CHECK(st.lines[0].text == "1/2");
+    m.utf8 = "1/2";
+    TextLayout flat = layoutMText(doc, m);
+    CHECK(st.lines[0].width < flat.lines[0].width);
+    // Numerator above the baseline, denominator below the bar.
+    double top = -1e9, bottom = 1e9;
+    for (const PlacedGlyph& g : st.glyphs) {
+        top = std::max(top, g.origin.y);
+        bottom = std::min(bottom, g.origin.y);
+    }
+    CHECK(top > st.lines[0].baseline);
+    CHECK(bottom < st.lines[0].baseline);
+    // No bar for the tolerance form.
+    m.utf8 = "\\S+0.1^-0.1;";
+    CHECK(layoutMText(doc, m).lines[0].rules.empty());
+    // A narrow box never splits a fraction.
+    m.utf8 = "ab \\S12345/67890; cd";
+    m.width = 20;
+    TextLayout w = layoutMText(doc, m);
+    int fractions = 0;
+    for (const LayoutLine& ln : w.lines)
+        fractions += ln.text.find("12345/67890") != std::string::npos;
+    CHECK(fractions == 1);
+}

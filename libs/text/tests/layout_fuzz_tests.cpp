@@ -14,11 +14,14 @@ using namespace tbcad::text;
 namespace {
 
 std::string randomPiece(std::mt19937_64& rng) {
-    static const char* const kBits[] = {
-        "Hello ", "world",   "123",          " ",        "\\P", "\\\\",   "\\{",     "{",
-        "}",      "\\L",     "\\l",          "\\O",      "\\o", "{\\b1;", "{\\i1;",  "{\\H0;",
-        "{\\H3;", "{\\H2x;", "{\\C7;",       "{\\C999;", "\\",  "\\Z",    ";",       "\n",
-        "\r\n",   "สวัสดีครับ", "การทดสอบระบบ", "ก๊า",       "°C",  "​",    "\xff\xfe"};
+    static const char* const kBits[] = {"Hello ",  "world",         "123",     " ",      "\\P",
+                                        "\\\\",    "\\{",           "{",       "}",      "\\L",
+                                        "\\l",     "\\O",           "\\o",     "{\\b1;", "{\\i1;",
+                                        "\\S1/2;", "\\S+0.1^-0.1;", "\\S3#4;", "\\S1/",  "\\S;",
+                                        "{\\H0;",  "{\\H3;",        "{\\H2x;", "{\\C7;", "{\\C999;",
+                                        "\\",      "\\Z",           ";",       "\n",     "\r\n",
+                                        "สวัสดีครับ", "การทดสอบระบบ",  "ก๊า",      "°C",     "​",
+                                        "\xff\xfe"};
     return kBits[rng() % (sizeof kBits / sizeof kBits[0])];
 }
 
@@ -55,7 +58,7 @@ TEST_CASE("random MTEXT markup lays out to finite numbers") {
             CHECK(std::isfinite(b.max.y));
         }
         // A wrapped line is never wider than the box, unless one cluster is wider on its own.
-        if (m.width > 0)
+        if (m.width > 0 && m.utf8.find("\\S") == std::string::npos)  // a fraction is never split
             for (const LayoutLine& ln : l.lines)
                 if (ln.text.size() > 8)  // more than a single word or cluster
                     CHECK(ln.width <= m.width * 1.5 + m.height * 3);

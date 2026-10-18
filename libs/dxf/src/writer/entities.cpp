@@ -35,6 +35,15 @@ std::string plainLines(std::string_view s) {
                 ++i;
             } else if (k == 'L' || k == 'l' || k == 'O' || k == 'o') {
                 ++i;  // underline / overline switches carry no argument
+            } else if (k == 'S') {
+                // Stacked fraction: written flat as num/den.
+                std::size_t semi = s.find(';', i);
+                std::string_view body =
+                    s.substr(i + 2, semi == std::string_view::npos ? s.size() : semi - i - 2);
+                for (char ch : body)
+                    if (ch != '\\')
+                        out.push_back(ch == '#' || ch == '^' ? '/' : ch);
+                i = semi == std::string_view::npos ? s.size() : semi;
             } else {
                 // Formatting code: skip to its ';'.
                 std::size_t semi = s.find(';', i);

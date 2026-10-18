@@ -1129,7 +1129,7 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
             } else if (k == 'P') {
                 atoms.push_back({i, i + 2, '\n'});
                 i += 2;
-            } else if (k == 'b' || k == 'i' || k == 'H' || k == 'C') {
+            } else if (k == 'b' || k == 'i' || k == 'H' || k == 'C' || k == 'S') {
                 const std::size_t semi = markup.find(';', i + 2);
                 if (semi == std::string::npos) {
                     atoms.push_back({i, i + 1, c});  // no ';': a literal backslash

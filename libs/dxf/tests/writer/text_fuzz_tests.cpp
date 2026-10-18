@@ -17,7 +17,7 @@ std::string randomMarkup(std::mt19937_64& rng, int depth = 0) {
     std::string s;
     const int parts = 1 + static_cast<int>(rng() % 5);
     for (int i = 0; i < parts; ++i) {
-        switch (rng() % 9) {
+        switch (rng() % 10) {
             case 0:
                 s += "\\P";
                 break;
@@ -42,6 +42,10 @@ std::string randomMarkup(std::mt19937_64& rng, int depth = 0) {
             case 7:
                 if (depth < 2)
                     s += "{\\b1;" + randomMarkup(rng, depth + 1) + "}";
+                break;
+            case 8:
+                s += "\\S" + std::to_string(1 + rng() % 9) + (rng() % 2 ? "/" : "#") +
+                     std::to_string(1 + rng() % 9) + ";";
                 break;
             default:
                 s += kWords[rng() % 8];
@@ -121,6 +125,9 @@ TEST_CASE("random TEXT and MTEXT survive DXF export and import") {
                 for (std::size_t k = 0; k < pa.size(); ++k) {
                     CHECK(pa[k].text == pb[k].text);
                     CHECK(pa[k].newline == pb[k].newline);
+                    CHECK(pa[k].stacked == pb[k].stacked);
+                    CHECK(pa[k].num == pb[k].num);
+                    CHECK(pa[k].den == pb[k].den);
                     CHECK(pa[k].attr.bold == pb[k].attr.bold);
                     CHECK(pa[k].attr.italic == pb[k].attr.italic);
                     CHECK(pa[k].attr.color == pb[k].attr.color);
