@@ -1169,25 +1169,46 @@ std::string Writer::objectsSection() {
         o.raw(102, "}");
         o.h(330, layoutDict);
         o.raw(100, "AcDbPlotSettings");
-        o.raw(1, "");
-        o.raw(2, "none_device");
-        o.raw(4, "");
-        o.raw(6, "");
-        for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48, 49})
-            o.d(code, code == 44 ? paperW : (code == 45 ? paperH : 0));
-        o.d(140, 0);
-        o.d(141, 0);
-        o.d(142, 1);
-        o.d(143, 1);
-        o.i(70, flags);
-        o.i(72, 0);
-        o.i(73, 0);
-        o.i(74, 5);
-        o.raw(7, "");
-        o.i(75, 16);
-        o.d(147, 1);
-        o.d(148, 0);
-        o.d(149, 0);
+        // The page setup the layout came with, while its paper size is still the same.
+        bool kept = false;
+        if (auto it = keptCustom.find(std::string(kKeptPlotSetPrefix) + name);
+            it != keptCustom.end() && paperW > 0) {
+            const KeptGroups g = unpackGroups(it->second);
+            double w = 0, h = 0;
+            for (const auto& [code, value] : g) {
+                if (code == 44)
+                    w = std::strtod(value.c_str(), nullptr);
+                else if (code == 45)
+                    h = std::strtod(value.c_str(), nullptr);
+            }
+            const auto near = [](double a, double b) { return std::abs(a - b) < 0.5; };
+            if ((near(w, paperW) && near(h, paperH)) || (near(w, paperH) && near(h, paperW))) {
+                for (const auto& [code, value] : g)
+                    o.str(code, value);
+                kept = true;
+            }
+        }
+        if (!kept) {
+            o.raw(1, "");
+            o.raw(2, "none_device");
+            o.raw(4, "");
+            o.raw(6, "");
+            for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48, 49})
+                o.d(code, code == 44 ? paperW : (code == 45 ? paperH : 0));
+            o.d(140, 0);
+            o.d(141, 0);
+            o.d(142, 1);
+            o.d(143, 1);
+            o.i(70, flags);
+            o.i(72, 0);
+            o.i(73, 0);
+            o.i(74, 5);
+            o.raw(7, "");
+            o.i(75, 16);
+            o.d(147, 1);
+            o.d(148, 0);
+            o.d(149, 0);
+        }
         o.raw(100, "AcDbLayout");
         o.str(1, name);
         o.i(70, 1);
