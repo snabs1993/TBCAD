@@ -57,3 +57,18 @@ made in the drawing the first time and can be edited like any block.
 
 Sizes follow common Thai / ISO 128 practice on the sheet: grid bubbles 8 mm across with 3.5 mm
 figures, markers 10 mm across, notes 2.5 mm.
+
+## TOLERANCE (feature control frames)
+
+`TOLERANCE` (`TOL`) draws a geometric tolerance frame as GD&T drawings show it: a symbol cell, the
+tolerance (optionally with a diameter sign and a maximum or least material modifier) and up to
+three datum cells. The prompts are the characteristic (Straightness, Flatness, Circularity,
+Cylindricity, ProfileLine, ProfileSurface, Angularity, Perpendicularity, Parallelism, Position,
+Concentricity, Symmetry, CircularRunout, TotalRunout), the value, the diameter zone, the material
+condition, the datum letters and the position of the left edge of the frame.
+
+The frame is one annotative block insert (`TB_TOL_1`, `TB_TOL_2` ...) drawn at paper size, 5 mm
+high with 2.5 mm text, scaled like the symbols above (the annotation scale, or the size a
+far-away view or a large plan needs). The symbols are drawn as lines, arcs and circles, so they do
+not depend on a font. EXPLODE turns the frame into plain lines and text. `symbolscmd::toleranceEntities`
+returns the geometry for tests and tools. Reading DXF TOLERANCE entities is a separate matter and not done by this command.
