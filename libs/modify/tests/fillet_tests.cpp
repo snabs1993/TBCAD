@@ -371,3 +371,21 @@ TEST_CASE("chamfer between curves of any kind: distances along each object") {
     REQUIRE(r.value().added.size() == 1);
     CHECK(geom::distance(a, as<LineData>(r.value().added[0]).a) < 1e-6);
 }
+
+TEST_CASE("fillet a spline with a short line: the line grows to the tangent point") {
+    Entity sp = wave(0, 0);
+    Entity ln = line({20, -30}, {20, -28});  // stops well short of the wave
+    std::vector<geom::CurveRef> cs;
+    geom::curvesOf(sp, cs);
+    auto r = filletEntities(sp, cs[0].pointAt(0.5), ln, {20, -29}, fr(3));
+    REQUIRE(r.ok());
+    REQUIRE(r.value().added.size() == 1);
+    const auto& arcD = as<ArcData>(r.value().added[0]);
+    CHECK(geom::distance(sp, arcD.center) == doctest::Approx(3).epsilon(1e-6));
+    CHECK(std::abs(arcD.center.x - 20) == doctest::Approx(3).epsilon(1e-6));  // 3 from the line
+    REQUIRE(r.value().modifiedB.has_value());
+    const auto& grown = as<LineData>(*r.value().modifiedB);
+    CHECK(std::max(grown.a.y, grown.b.y) > -28 + 1);
+    CHECK(near(grown.a.x, 20));
+    CHECK(near(grown.b.x, 20));
+}
