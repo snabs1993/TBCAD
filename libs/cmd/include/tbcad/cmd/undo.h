@@ -25,6 +25,10 @@ class UndoStack {
 public:
     static constexpr std::size_t kDefaultLimitBytes = std::size_t{512} * 1024 * 1024;
 
+    // A quarter of the machine's memory, between the default and 2 GB: a big drawing's edits take
+    // 100+ MB each, and the default would keep only three of them.
+    static std::size_t machineLimitBytes();
+
     explicit UndoStack(std::size_t limitBytes = kDefaultLimitBytes) : limit_(limitBytes) {}
 
     // Records a finished command. Empty change sets are skipped; an entry with nothing left is
