@@ -21,6 +21,7 @@ std::unique_ptr<cmd::Command> makeAnnoScaleCommand();
 std::unique_ptr<cmd::Command> makeAnnoNewCommand();
 std::unique_ptr<cmd::Command> makeFieldCommand();
 std::unique_ptr<cmd::Command> makeScaleListCommand();
+std::unique_ptr<cmd::Command> makeObjectScaleCommand();
 std::unique_ptr<cmd::Command> makeTxt2MTxtCommand();
 std::unique_ptr<cmd::Command> makeTCountCommand();
 std::unique_ptr<cmd::Command> makeSpellCommand();

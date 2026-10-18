@@ -1641,6 +1641,14 @@ void AppCore::enterViewport(const BBox2& paper, Vec2 center, double scaleN) {
     const double halfW = paper.width() * scaleN / 2;
     const double halfH = paper.height() * scaleN / 2;
     leavePaper();
+    // The annotation scale follows the viewport being edited, so new notes come out right.
+    if (scaleN > 0 && currentAnnotationScale(session_->doc.header()) != scaleN &&
+        !runner().active()) {
+        char buf[40];
+        std::snprintf(buf, sizeof buf, "%.12g", scaleN);
+        submitText("CANNOSCALE");
+        submitText(buf);
+    }
     zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
 }
 
