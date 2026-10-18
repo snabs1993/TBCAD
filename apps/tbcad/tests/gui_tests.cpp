@@ -1345,3 +1345,27 @@ TEST_CASE("tool strip: every button starts its command or action") {
     // Draw and Modify tools run commands: at least those 17 are waiting for input after a click.
     CHECK(started >= 15);
 }
+
+TEST_CASE("text editor: TEXT is typed in the box on the drawing, Thai included") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.core().submitText("TEXT");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.core().submitText("0");
+    h.frame(8);
+    REQUIRE(h.windowOpen("##textedit"));
+    h.type("Room 101 \xE0\xB8\xAA\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\xAA\xE0\xB8\x94\xE0\xB8\xB5");
+    h.frame(3);
+    h.key(ImGuiKey_Enter);
+    h.frame(5);
+    CHECK_FALSE(h.windowOpen("##textedit"));
+    REQUIRE(entityCount(h) == 1);
+    h.core().document().forEachEntity([&](const Entity& e) {
+        const auto* t = std::get_if<Indirect<TextData>>(&e.data);
+        REQUIRE(t);
+        CHECK((*t)->utf8 ==
+              "Room 101 \xE0\xB8\xAA\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\xAA\xE0\xB8\x94\xE0\xB8\xB5");
+        CHECK((*t)->height == doctest::Approx(5));
+    });
+}
