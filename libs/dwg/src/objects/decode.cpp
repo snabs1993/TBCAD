@@ -1,6 +1,7 @@
 #include "objects/decode.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -323,11 +324,67 @@ private:
             }
         } summary{this, &off, &resyncs};
         std::size_t misses = 0;
+        std::size_t crcOk = 0, crcBad = 0;
+        std::vector<std::int64_t> badAt;
+        std::array<std::size_t, 6> crcVariant{};
+        struct CrcNote {
+            ObjectReader* self;
+            std::size_t* ok;
+            std::size_t* bad;
+            std::vector<std::int64_t>* at;
+            std::array<std::size_t, 6>* variants;
+            ~CrcNote() {
+                std::string t =
+                    "stream walk object check values (CRC from the size field to the end of the "
+                    "data): " +
+                    std::to_string(*ok) + " match, " + std::to_string(*bad) +
+                    " do not; first mismatches at";
+                t += " [whole/C0C1 " + std::to_string((*variants)[0]) + ", whole/0 " +
+                     std::to_string((*variants)[1]) + ", whole/FFFF " +
+                     std::to_string((*variants)[2]) + ", body/C0C1 " +
+                     std::to_string((*variants)[3]) + ", body/0 " + std::to_string((*variants)[4]) +
+                     ", body/FFFF " + std::to_string((*variants)[5]) + "]";
+                for (std::size_t i = 0; i < at->size() && i < 12; ++i)
+                    t += " " + std::to_string((*at)[i]);
+                self->out_.walkNotes.push_back(t);
+            }
+        } crcNote{this, &crcOk, &crcBad, &badAt, &crcVariant};
         const std::int64_t end = static_cast<std::int64_t>(file_.size());
         while (off + 8 < end) {
             const std::uint64_t h = frameHandle(off);
             const std::size_t len = frameLength(off);
             if (h != 0 && len != 0 && off + static_cast<std::int64_t>(len) + 2 <= end) {
+                {
+                    const auto whole = file_.subspan(static_cast<std::size_t>(off), len);
+                    BitReader head(whole);
+                    head.ms();
+                    if (fmt_.r2010)
+                        head.mcUnsigned();
+                    const std::size_t lead = head.bytePos();
+                    const std::size_t at = static_cast<std::size_t>(off) + len;
+                    const auto want = static_cast<std::uint16_t>(file_[at] | (file_[at + 1] << 8));
+                    const auto wantBig =
+                        static_cast<std::uint16_t>(file_[at + 1] | (file_[at] << 8));
+                    bool any = false;
+                    int k = 0;
+                    for (const std::size_t skip : {std::size_t{0}, lead}) {
+                        for (const std::uint16_t seed :
+                             {std::uint16_t{0xC0C1}, std::uint16_t{0}, std::uint16_t{0xFFFF}}) {
+                            const std::uint16_t c = crc16(seed, whole.subspan(skip));
+                            if (c == want || c == wantBig) {
+                                ++crcVariant[static_cast<std::size_t>(k)];
+                                any = true;
+                            }
+                            ++k;
+                        }
+                    }
+                    if (any)
+                        ++crcOk;
+                    else {
+                        ++crcBad;
+                        badAt.push_back(off);
+                    }
+                }
                 walked_.emplace(h, off);
                 walkedList_.emplace_back(h, off);
                 off += static_cast<std::int64_t>(len) + 2;
