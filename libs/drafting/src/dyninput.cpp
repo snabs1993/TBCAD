@@ -91,15 +91,15 @@ std::vector<cmd::CursorField> DynamicInput::fields(const cmd::FilterFeedback& fb
     UnitFormat uf;
     uf.unit = unitOf(env_);
     uf.trimTrailingZeros = true;
-    auto len = [&](double mm) { return formatLength(mm, 4, uf); };
+    auto len = [&](double mm) { return formatLength(mm, 2, uf); };
     auto ang = [](double rad) {
         double deg = rad * 180.0 / kPi;
         deg = std::fmod(deg, 360.0);
         if (deg < 0)
             deg += 360.0;
-        if (std::abs(deg) < 5e-5 || std::abs(deg - 360.0) < 5e-5)
+        if (std::abs(deg) < 5e-3 || std::abs(deg - 360.0) < 5e-3)
             deg = 0;
-        return formatDouble(std::round(deg * 1e4) / 1e4);
+        return formatDouble(std::round(deg * 1e2) / 1e2);
     };
     if (fb.base) {
         const Vec2 v = fb.point - *fb.base;
