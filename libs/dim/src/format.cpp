@@ -101,9 +101,62 @@ double measurement(const DimensionData& d) {
     return 0;
 }
 
+namespace {
+
+// A tolerance value (millimetres, or degrees for an angular dimension) the way the style writes
+// numbers, with the tolerance precision.
+std::string toleranceNumber(const DimStyle& style, double value, bool angular) {
+    std::string s;
+    if (angular) {
+        s = formatAngle(value * kPi / 180, style.tolPrecision, AngleUnit::Degrees, false);
+    } else {
+        UnitFormat f;
+        f.unit = style.units;
+        s = formatLength(value, style.tolPrecision, f);
+    }
+    suppressZeros(s, style);
+    if (angular)
+        s += "\xC2\xB0";
+    return s;
+}
+
+}  // namespace
+
 std::string dimensionText(const DimStyle& style, const DimensionData& d) {
-    std::string num = std::string(kindPrefix(d.kind)) + style.prefix +
-                      formatNumber(style, measurement(d), isAngular(d.kind)) + style.suffix;
+    const bool angular = isAngular(d.kind);
+    const double m = measurement(d);
+    std::string num;
+    if (style.tolerance == DimTolerance::Limits) {
+        // The two limits replace the measurement: the larger, then the smaller.
+        const double toMeasure = angular ? kPi / 180 : 1;  // degrees to radians
+        const double hi = m + style.tolUpper * toMeasure;
+        const double lo = m - style.tolLower * toMeasure;
+        DimStyle limitStyle = style;
+        limitStyle.precision = style.tolPrecision;
+        num = formatNumber(limitStyle, hi, angular) + " / " + formatNumber(limitStyle, lo, angular);
+    } else {
+        num = formatNumber(style, m, angular);
+    }
+    num = std::string(kindPrefix(d.kind)) + style.prefix + num + style.suffix;
+    switch (style.tolerance) {
+        case DimTolerance::Symmetrical:
+            num += " \xC2\xB1" + toleranceNumber(style, style.tolUpper, angular);
+            break;
+        case DimTolerance::Deviation:
+            num += " +" + toleranceNumber(style, style.tolUpper, angular) + " -" +
+                   toleranceNumber(style, style.tolLower, angular);
+            break;
+        case DimTolerance::Limits:
+        case DimTolerance::None:
+            break;
+    }
+    if (style.altUnits && !angular) {
+        UnitFormat f;
+        f.unit = style.altUnit;
+        std::string alt = formatLength(m * style.altScale, style.altPrecision, f);
+        suppressZeros(alt, style);
+        num += " [" + style.altPrefix + alt + style.altSuffix + "]";
+    }
     if (d.textOverride.empty())
         return num;
     std::string out = d.textOverride;

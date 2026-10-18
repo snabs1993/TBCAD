@@ -86,6 +86,7 @@ public:
         loadTextStyles(tx);
         loadTextHeights(tx);
         loadDimStyles(tx);
+        loadDimStyleExtras(tx);
         loadLayers(tx);
         loadLevels(tx);
         loadEntityLevels();
@@ -111,6 +112,7 @@ private:
                 case kLtyp:
                 case kTsty:
                 case kTsth:
+                case kDstx:
                 case kDsty:
                 case kLayr:
                 case kLvls:
@@ -407,6 +409,55 @@ private:
         }
         if (!r.atEnd())
             bad("trailing data in TSTH");
+    }
+
+    // Alternate units and tolerances of dimension styles (the DSTX chunk, absent when no style
+    // uses them).
+    void loadDimStyleExtras(Transaction& tx) {
+        const RawChunk* c = find(kDstx);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(20);
+        for (std::size_t i = 0; i < n; ++i) {
+            const DimStyleId id{id32(r)};
+            const std::uint8_t flags = r.u8();
+            if (flags > 1)
+                bad("invalid dimension style flags");
+            const double altScale = r.f64();
+            const auto altUnit =
+                readEnum<LengthUnit>(r, static_cast<std::uint8_t>(LengthUnit::Foot));
+            const int altPrecision = r.i32();
+            std::string altPrefix = str(r);
+            std::string altSuffix = str(r);
+            const auto tolerance =
+                readEnum<DimTolerance>(r, static_cast<std::uint8_t>(DimTolerance::Limits));
+            const double upper = r.f64();
+            const double lower = r.f64();
+            const int tolPrecision = r.i32();
+            if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
+                !std::isfinite(lower) || upper < 0 || lower < 0)
+                bad("invalid dimension style tolerance");
+            if (!doc_->dimStyle(id))
+                continue;
+            check(tx.modifyDimStyle(id,
+                                    [&](DimStyle& d) {
+                                        d.altUnits = flags != 0;
+                                        d.altScale = altScale;
+                                        d.altUnit = altUnit;
+                                        d.altPrecision = altPrecision;
+                                        d.altPrefix = std::move(altPrefix);
+                                        d.altSuffix = std::move(altSuffix);
+                                        d.tolerance = tolerance;
+                                        d.tolUpper = upper;
+                                        d.tolLower = lower;
+                                        d.tolPrecision = tolPrecision;
+                                    }),
+                  "dimension style");
+        }
+        if (!r.atEnd())
+            bad("trailing data in DSTX");
     }
 
     void loadDimStyles(Transaction& tx) {

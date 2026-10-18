@@ -6,5 +6,6 @@ namespace tbcad::layers {
 void drawLayersPanel(ui::PanelContext&) {}
 void drawLayWalkPanel(ui::PanelContext&) {}
 void drawPropertiesPanel(ui::PanelContext&) {}
+void drawQuickProperties(ui::PanelContext&) {}
 
 }  // namespace tbcad::layers

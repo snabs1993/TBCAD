@@ -9,10 +9,14 @@ namespace tbcad::inquiry {
 namespace {
 
 double shoelace(const std::vector<Vec2>& pts) {
+    // Measured from the first point: with survey-sized coordinates (1e9 mm) the products of
+    // absolute coordinates would have lost every digit of an area of a few thousand mm2.
     double s = 0;
+    if (pts.empty())
+        return 0;
     for (std::size_t i = 0; i < pts.size(); ++i) {
-        const Vec2& a = pts[i];
-        const Vec2& b = pts[(i + 1) % pts.size()];
+        const Vec2 a = pts[i] - pts[0];
+        const Vec2 b = pts[(i + 1) % pts.size()] - pts[0];
         s += cross(a, b);
     }
     return std::abs(s) / 2;
@@ -61,7 +65,8 @@ std::optional<AreaResult> areaOfEntity(const Entity& e) {
         if (!curve)
             return std::nullopt;
         std::vector<Vec2> pts;
-        geom::flatten(curve.value(), 1e-5, pts);
+        const BBox2 box = curve.value().bounds();
+        geom::outlinePoints(e, std::clamp(distance(box.min, box.max) * 1e-9, 1e-10, 1e-5), pts);
         if (pts.size() > 1 && distance(pts.front(), pts.back()) < 1e-9)
             pts.pop_back();
         if (pts.size() < 3)

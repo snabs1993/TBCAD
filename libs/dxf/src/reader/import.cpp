@@ -649,6 +649,45 @@ void Importer::readDimStyle(const Record& r) {
         }
     }
     nonNegative(45, k_, ds.roundOff);  // DIMRND
+    // Tolerances: DIMTOL with equal plus and minus values reads as symmetrical, with different
+    // ones as a deviation; DIMLIM shows the two limits.
+    nonNegative(47, k_, ds.tolUpper);  // DIMTP
+    nonNegative(48, k_, ds.tolLower);  // DIMTM
+    if (r.has(72) && r.find(72)->integer() != 0)
+        ds.tolerance = DimTolerance::Limits;
+    else if (r.has(71) && r.find(71)->integer() != 0)
+        ds.tolerance =
+            ds.tolUpper == ds.tolLower ? DimTolerance::Symmetrical : DimTolerance::Deviation;
+    if (const Group* g = r.find(272)) {  // DIMTDEC
+        const std::int64_t p = g->integer();
+        if (p >= 0 && p <= 16)
+            ds.tolPrecision = static_cast<int>(p);
+    }
+    // Alternate units: the value is the measurement times DIMALTF, shown as plain millimetres of
+    // that number; DIMAPOST wraps it ("[]" marks the number).
+    if (r.has(170) && r.find(170)->integer() != 0) {
+        ds.altUnits = true;
+        ds.altUnit = LengthUnit::Millimeter;
+        double f = 25.4;
+        if (const Group* g = r.find(143); g && std::isfinite(g->number()) && g->number() > 0)
+            f = g->number();
+        ds.altScale = f / k_;
+        if (const Group* g = r.find(171)) {  // DIMALTD
+            const std::int64_t p = g->integer();
+            if (p >= 0 && p <= 16)
+                ds.altPrecision = static_cast<int>(p);
+        }
+        if (r.has(4)) {
+            const std::string post = dec(r.raw(4));
+            const std::size_t at = post.find("[]");
+            if (at == std::string::npos) {
+                ds.altSuffix = post;
+            } else {
+                ds.altPrefix = post.substr(0, at);
+                ds.altSuffix = post.substr(at + 2);
+            }
+        }
+    }
     // Text orientation: inside (73) or outside (74) text kept horizontal; above the line (77).
     if (r.has(73) || r.has(74)) {
         const bool horizontal =
