@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "importer.h"
+#include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/spline.h"
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
@@ -391,6 +392,8 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convWipeout(r, out);
     } else if (t == "IMAGE") {
         convImage(r, out);
+    } else if (t == "TOLERANCE") {
+        convTolerance(r, out);
     } else if (t == "ARC_DIMENSION") {
         convArcDimension(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
@@ -1259,6 +1262,43 @@ bool Importer::convImage(const Record& r, std::vector<Entity>& out) {
     d.position = origin;
     d.scale = {px, px};
     d.rotation = std::atan2(u.y, u.x);
+    out.push_back(makeEntity(std::move(d)));
+    return true;
+}
+
+// A geometric tolerance (feature control frame) becomes a block insert drawn at the size of the
+// dimension style it names, like the TOLERANCE command makes; the table in the header remembers
+// what it says so that it can be written back as a TOLERANCE.
+bool Importer::convTolerance(const Record& r, std::vector<Entity>& out) {
+    const auto spec = gdt::parseDxfText(dec(r.raw(1)));
+    if (!spec)
+        return convForeign(r, out);
+    std::string name;
+    do
+        name = "TB_TOL_" + std::to_string(++toleranceBlocks_);
+    while (doc_->blockByName(name));
+    const BlockId block = blockFor(name);
+    if (!block)
+        return false;
+    blockDefined_.insert(block);
+    ++sum_.blocks;
+    for (Entity& e : gdt::frameEntities(*spec)) {
+        e.common.layer = kLayerZero;
+        (void)tx_->add(std::move(e), block);
+    }
+    (void)gdt::addFrame(*tx_, name, *spec);
+
+    // The frame is 2.5 mm text on paper; the dimension style says how big it is here.
+    double size = gdt::kTextHeight;
+    if (const DimStyle* ds = doc_->dimStyleByName(dec(r.raw(3))))
+        size = ds->textHeight * (ds->overallScale > 0 ? ds->overallScale : 1.0);
+    const double n = std::isfinite(size) && size > 0 ? size / gdt::kTextHeight : 1.0;
+    const Vec2 dir = P(r, 11, 21);
+    InsertData d;
+    d.block = block;
+    d.position = P(r, 10, 20);
+    d.scale = {n, n};
+    d.rotation = (std::hypot(dir.x, dir.y) > 1e-12) ? std::atan2(dir.y, dir.x) : 0.0;
     out.push_back(makeEntity(std::move(d)));
     return true;
 }

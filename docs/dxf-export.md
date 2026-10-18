@@ -107,6 +107,7 @@ Do not choose `|` (xref layers) or `$` (bound xrefs) as separator; the exporter 
 | Hatch | HATCH: polyline and edge paths (line, arc, ellipse, spline), islands, pattern name, scale, angle; the pattern's definition lines are embedded | boundary outline only |
 | Dimension | DIMENSION + anonymous block `*D<n>` (below) | same |
 | Leader | LEADER (+ an MTEXT for its annotation) | polyline |
+| Tolerance frame (insert of a `TB_TOL_n` block listed in the header table `tbcad.tolerances`) | TOLERANCE with the gdt-font text; the size is the current dimension style's (a downgrade is reported when it differs) and the frame block itself is not written | not written (reported) |
 | Proxy | `ACAD_PROXY_ENTITY` with its data; proxies that only carry graphics become LINE/LWPOLYLINE/SOLID/HATCH/POINT | graphics only |
 
 Colours: an index is written as the ACI the reader maps back to the same index, so DXF files

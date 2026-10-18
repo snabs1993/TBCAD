@@ -6,6 +6,7 @@
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/explode.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
@@ -811,8 +812,38 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     return true;
 }
 
+// A feature control frame made by TOLERANCE (or read from a TOLERANCE) is written as one. The
+// size comes from the dimension style (text height x overall scale), so the frame takes the
+// current style and says so when that is not the size it was drawn at.
+bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t owner) {
+    const BlockDef* bd = doc_.block(d.block);
+    if (!bd)
+        return false;
+    const gdt::FrameTable table = gdt::readFrames(doc_.header());
+    auto it = table.find(bd->name);
+    if (it == table.end())
+        return false;
+    if (r12_) {
+        skipEntity("TOLERANCE", "this DXF version has no tolerance frames");
+        return true;
+    }
+    const DimStyle& ds = dim::styleOf(doc_, doc_.header().currentDimStyle);
+    const double have = ds.textHeight * (ds.overallScale > 0 ? ds.overallScale : 1.0);
+    if (std::abs(have - gdt::kTextHeight * d.scale.x) > 1e-6 * std::max(1.0, have))
+        downgrade("TOLERANCE", "is drawn by other programs at the size of the dimension style \"" +
+                                   dimStyleNameOf(doc_.header().currentDimStyle) + "\"");
+    head("TOLERANCE", p, owner, "AcDbFcf");
+    Out& o = *o_;
+    o.str(3, dimStyleNameOf(doc_.header().currentDimStyle));
+    o.pt(10, d.position);
+    o.str(1, gdt::dxfText(it->second));
+    o.pt(11, Vec2{std::cos(d.rotation), std::sin(d.rotation)});
+    count("TOLERANCE");
+    return true;
+}
+
 void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owner) {
-    if (writeImage(p, d, owner))
+    if (writeImage(p, d, owner) || writeTolerance(p, d, owner))
         return;
     std::string name = blockNameOf(d.block);
     if (name.empty()) {

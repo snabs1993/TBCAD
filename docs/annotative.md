@@ -70,5 +70,6 @@ condition, the datum letters and the position of the left edge of the frame.
 The frame is one annotative block insert (`TB_TOL_1`, `TB_TOL_2` ...) drawn at paper size, 5 mm
 high with 2.5 mm text, scaled like the symbols above (the annotation scale, or the size a
 far-away view or a large plan needs). The symbols are drawn as lines, arcs and circles, so they do
-not depend on a font. EXPLODE turns the frame into plain lines and text. `symbolscmd::toleranceEntities`
-returns the geometry for tests and tools. Reading DXF TOLERANCE entities is a separate matter and not done by this command.
+not depend on a font. EXPLODE turns the frame into plain lines and text. `gdt::frameEntities` (libs/gdt)
+returns the geometry for tests and tools. The header table `tbcad.tolerances` remembers what each
+frame block says, so DXF can carry it (see `docs/dxf-import.md`).

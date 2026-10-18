@@ -54,6 +54,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | AEC_*, AECC_*, 3DSOLID, REGION, SURFACE ... (no reader) | read-only `ProxyData` named after the DXF type when the object carries proxy graphics (groups 160/92 + 310), else skipped as before; one `dxf.reader.proxy_graphics` info per type |
 | MLINE | one polyline per style element (offset along the miter); closed if the closed flag is set |
 | IMAGE (+ IMAGEDEF) | a picture block like IMAGEATTACH makes (docs/underlay.md); fade and a rectangle clip are kept, a polygon clip shows the whole picture |
+| TOLERANCE | a feature control frame block `TB_TOL_n` like the TOLERANCE command makes (docs/annotative.md): symbol, value, diameter, material condition and up to three datums are read from the gdt-font text, the size from the named dimension style (text height x overall scale), and the rotation from the direction vector; text that is not a frame stays a placeholder |
 | everything else (3DSOLID, REGION, RAY, XLINE, ...) | skipped; one warning per type with the number of entities |
 
 `ImportSummary::entities` counts, per DXF type, the records read (model space and block

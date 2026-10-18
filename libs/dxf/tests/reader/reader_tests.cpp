@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "reader_helpers.h"
+#include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/underlay/image.h"
 
@@ -937,6 +938,48 @@ TEST_CASE("IMAGE: a picture block with the file of its IMAGEDEF, fade and rectan
     CHECK(p.u1 == doctest::Approx(0.75));
     CHECK(p.v0 == doctest::Approx(0.25));
     CHECK(p.v1 == doctest::Approx(0.75));
+}
+
+TEST_CASE("TOLERANCE: a feature control frame becomes a frame block at the size of its dim style") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE").g(70, 1);
+    p.g(0, "DIMSTYLE").g(2, "Big").g(70, 0).g(140, 5.0).g(40, 2.0);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "TOLERANCE").g(8, "0").g(100, "AcDbFcf").g(3, "Big").g(10, 50.0).g(20, 60.0).g(30, 0.0);
+    p.g(1, "{\\Fgdt;j}%%v%%c0.5{\\Fgdt;m}%%v%%vA%%vB%%v%%v%%v%%v").g(11, 0.0).g(21, 1.0).g(31, 0.0);
+    p.end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const Document& doc = l.doc();
+    const InsertData* ins = nullptr;
+    doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    CHECK(near(ins->position, Vec2{50, 60}));
+    CHECK(ins->rotation == doctest::Approx(3.14159265358979 / 2));
+    CHECK(ins->scale.x == doctest::Approx(4));  // 5 mm text x dimscale 2 over the frame's 2.5 mm
+    const BlockDef* b = doc.block(ins->block);
+    REQUIRE(b);
+    const gdt::FrameTable table = gdt::readFrames(doc.header());
+    REQUIRE(table.count(b->name) == 1);
+    const gdt::Spec& s = table.at(b->name);
+    CHECK(s.symbol == gdt::Symbol::Position);
+    CHECK(s.diameterZone);
+    CHECK(s.material == 'M');
+    CHECK(s.value == "0.5");
+    CHECK(s.datums == std::vector<std::string>{"A", "B"});
+    CHECK(b->entities.size() == gdt::frameEntities(s).size());
+}
+
+TEST_CASE("TOLERANCE: text that is not a frame stays a placeholder") {
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "TOLERANCE").g(8, "0").g(3, "Standard").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(1, "rubbish");
+    p.end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    CHECK(modelEntities<InsertData>(l.doc()).empty());
 }
 
 }  // namespace tbcad::dxf

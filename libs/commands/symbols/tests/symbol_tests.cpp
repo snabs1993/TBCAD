@@ -2,6 +2,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/symbolscmd/symbolscmd.h"
 
@@ -94,13 +95,13 @@ TEST_CASE("all symbols can be placed with default attributes - one undo step eac
 }
 
 TEST_CASE("every geometric characteristic draws its symbol inside the first cell") {
-    for (int i = static_cast<int>(symbolscmd::GdtSymbol::Straightness);
-         i <= static_cast<int>(symbolscmd::GdtSymbol::TotalRunout); ++i) {
-        symbolscmd::ToleranceSpec spec;
-        spec.symbol = static_cast<symbolscmd::GdtSymbol>(i);
+    for (int i = static_cast<int>(gdt::Symbol::Straightness);
+         i <= static_cast<int>(gdt::Symbol::TotalRunout); ++i) {
+        gdt::Spec spec;
+        spec.symbol = static_cast<gdt::Symbol>(i);
         spec.value = "0.1";
-        auto es = symbolscmd::toleranceEntities(spec);
-        CAPTURE(symbolscmd::gdtName(spec.symbol));
+        auto es = gdt::frameEntities(spec);
+        CAPTURE(gdt::symbolName(spec.symbol));
         // Outline + divider + text, and the symbol itself.
         CHECK(es.size() >= 4);
         BBox2 symbol;
@@ -109,9 +110,8 @@ TEST_CASE("every geometric characteristic draws its symbol inside the first cell
                 continue;
             symbol.merge(geom::bounds(e));
         }
-        if (spec.symbol == symbolscmd::GdtSymbol::Flatness ||
-            spec.symbol == symbolscmd::GdtSymbol::CircularRunout ||
-            spec.symbol == symbolscmd::GdtSymbol::TotalRunout)
+        if (spec.symbol == gdt::Symbol::Flatness || spec.symbol == gdt::Symbol::CircularRunout ||
+            spec.symbol == gdt::Symbol::TotalRunout)
             continue;  // polyline parts, checked by the whole frame below
         if (!symbol.empty()) {
             CHECK(symbol.min.x >= 0);

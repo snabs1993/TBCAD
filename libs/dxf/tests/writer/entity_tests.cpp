@@ -8,6 +8,7 @@
 #include "tbcad/dim/dim.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
+#include "tbcad/gdt/gdt.h"
 #include "tbcad/hatch/pattern.h"
 #include "tbcad/underlay/image.h"
 
@@ -946,6 +947,43 @@ TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with
     CHECK(p.fade == doctest::Approx(40));
     CHECK(p.u0 == doctest::Approx(0.25));
     CHECK(p.v1 == doctest::Approx(0.75));
+}
+
+TEST_CASE("a tolerance frame is exported as TOLERANCE and comes back as the same frame") {
+    Document doc;
+    gdt::Spec spec;
+    spec.symbol = gdt::Symbol::Position;
+    spec.value = "0.05";
+    spec.diameterZone = true;
+    spec.material = 'M';
+    spec.datums = {"A", "B"};
+    {
+        auto tx = doc.begin("frame");
+        BlockId b = tx.addBlock(BlockDef{.name = "TB_TOL_1"}).value();
+        for (Entity& e : gdt::frameEntities(spec))
+            REQUIRE(tx.add(std::move(e), b).ok());
+        REQUIRE(gdt::addFrame(tx, "TB_TOL_1", spec));
+        REQUIRE(tx.add(make(InsertData{b, {30, 40}, {1, 1}, 0.25})).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("TOLERANCE") != std::string::npos);
+    CHECK(rt.bytes.find("AcDbFcf") != std::string::npos);
+    CHECK(rt.bytes.find("TB_TOL_1") == std::string::npos);  // no block definition for it
+    const InsertData* ins = nullptr;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    CHECK(ins->position == Vec2{30, 40});
+    CHECK(ins->rotation == doctest::Approx(0.25));
+    const BlockDef* b = rt.back->block(ins->block);
+    REQUIRE(b);
+    const gdt::FrameTable table = gdt::readFrames(rt.back->header());
+    REQUIRE(table.count(b->name) == 1);
+    CHECK(table.at(b->name) == spec);
+    CHECK(b->entities.size() == gdt::frameEntities(spec).size());
 }
 
 }  // namespace tbcad::dxf

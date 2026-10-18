@@ -148,6 +148,8 @@ private:
     bool convMLine(const Record& r, std::vector<Entity>& out);
     bool convWipeout(const Record& r, std::vector<Entity>& out);
     bool convImage(const Record& r, std::vector<Entity>& out);
+    bool convTolerance(const Record& r, std::vector<Entity>& out);
+    int toleranceBlocks_ = 0;
     void resolveImages();
     bool convArcDimension(const Record& r, std::vector<Entity>& out);
     bool convProxy(const Record& r, std::vector<Entity>& out);

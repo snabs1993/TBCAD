@@ -5,6 +5,7 @@
 #include <functional>
 #include <set>
 
+#include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/underlay/image.h"
 #include "writer_impl.h"
@@ -167,6 +168,7 @@ void Writer::prepareBlocks() {
         if (const auto* ins = entityAs<InsertData>(e))
             referenced.insert(ins->block.value);
     });
+    const gdt::FrameTable frames = gdt::readFrames(doc_.header());
     for (const auto& [id, def] : doc_.blocks()) {
         bool anon = def.anonymous || (!def.name.empty() && def.name[0] == '*');
         bool dimBlock = anon && def.name.size() >= 2 && def.name[0] == '*' &&
@@ -176,6 +178,9 @@ void Writer::prepareBlocks() {
             continue;
         // A picture is written as an IMAGE entity; its block has no DXF form.
         if (!def.xrefPath.empty() && underlay::isImagePath(def.xrefPath))
+            continue;
+        // So is a tolerance frame, as a TOLERANCE.
+        if (frames.count(def.name))
             continue;
         std::string name = cleanName(def.name, "block");
         if (anon && name[0] != '*')
