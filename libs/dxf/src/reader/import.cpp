@@ -426,6 +426,10 @@ bool endsWithNoCase(const std::string& s, std::string_view ext) {
 }
 }  // namespace
 
+namespace {
+constexpr double kShxStandInWidth = 1.0 / 0.92;
+}
+
 void Importer::readStyle(const Record& r) {
     std::string name = dec(r.raw(2));
     if (name.empty())
@@ -468,6 +472,10 @@ void Importer::readStyle(const Record& r) {
     }
     double wf = r.num(41, 1);
     ts.widthFactor = (std::isfinite(wf) && wf > 0) ? wf : 1;
+    // The stroke font that stands in for an SHX font sets narrower than SHX does: a title block
+    // in ROMANS measured 0.92 of the SHX width in the owner's plot.
+    if (!ts.fontFamily.empty() && ts.fontFamily == "TBCAD Stroke")
+        ts.widthFactor *= kShxStandInWidth;
     ts.height = r.num(40, 0);
     if (!std::isfinite(ts.height) || ts.height < 0)
         ts.height = 0;

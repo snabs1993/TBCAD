@@ -292,6 +292,8 @@ TEST_CASE("text styles: SHX fonts map to the TBCAD Stroke font and are reported"
     CHECK(b->fontFamily == "TBCAD Stroke");
     CHECK(c->fontFamily.empty());
     CHECK(c->fontFile == "arial.ttf");
+    CHECK(c->widthFactor == doctest::Approx(1.0));
+    CHECK(b->widthFactor == doctest::Approx(1.0 / 0.92));  // the stand-in is widened to SHX size
     CHECK(l.report.countCode(code::kShxFont) == 2);
 }
 

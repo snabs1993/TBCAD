@@ -530,6 +530,21 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
     out.frame.min = {0, bottom};
     out.frame.max = {frameW, 0};
 
+    // Centre and right attachments also set each line centred or right-aligned in the frame.
+    const bool centred = d.attach == Attachment::TopCenter ||
+                         d.attach == Attachment::MiddleCenter ||
+                         d.attach == Attachment::BottomCenter;
+    const bool righted = d.attach == Attachment::TopRight || d.attach == Attachment::MiddleRight ||
+                         d.attach == Attachment::BottomRight;
+    if (centred || righted)
+        for (LayoutLine& ln : out.lines) {
+            const double slack = std::max(0.0, frameW - ln.width);
+            const double move = centred ? slack / 2 : slack;
+            for (std::size_t g = ln.firstGlyph; g < ln.endGlyph; ++g)
+                out.glyphs[g].origin.x += move;
+            ln.x0 += move;
+        }
+
     double dx = 0, dy = 0;
     switch (d.attach) {
         case Attachment::TopCenter:

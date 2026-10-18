@@ -502,7 +502,8 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
         tableRecord(o, "STYLE", newHandle(), table, "AcDbTextStyleTableRecord", tsName_[id.value],
                     0);
         o.d(40, ts.height);
-        o.d(41, ts.widthFactor);
+        // The reader widens the stroke font that stands in for txt.shx by 1/0.92; undo that here.
+        o.d(41, isStrokeFont(ts) ? std::round(ts.widthFactor * 0.92 * 1e9) / 1e9 : ts.widthFactor);
         o.d(50, ts.oblique * kDeg);
         o.i(71, 0);
         o.d(42, 2.5);
