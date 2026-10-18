@@ -216,6 +216,22 @@ TEST_CASE("perf: ERASE of everything alone") {
     big.bench("ERASE", {"ERASE"});
 }
 
+TEST_CASE("perf: ERASE of everything stays one pass with a draw-order override and block objects") {
+    Big big;
+    {
+        // A real drawing has a few objects sent to back (hatches) and a block or two.
+        auto ids = big.core->document().modelSpace();
+        auto tx = big.core->document().begin("order");
+        for (std::size_t i = 0; i < ids.size(); i += 5000)
+            (void)tx.sendToBack(ids[i]);
+        tx.commit();
+    }
+    auto t = std::chrono::steady_clock::now();
+    big.bench("ERASE", {"ERASE"});
+    const double all = ms(t);
+    std::printf("  whole bench incl. undo and redo: %.0f ms\n", all);
+}
+
 TEST_CASE("perf: MOVE of everything alone") {
     Big big;
     big.bench("MOVE", {"MOVE", "0,0", "5,5"});

@@ -1525,25 +1525,27 @@ Result<void> Transaction::eraseEntityInternal(EntityId id) {
 
 std::size_t Transaction::eraseMany(std::span<const EntityId> ids) {
     Document& d = doc();
-    // The one-pass erase covers a fresh transaction over objects that sit directly in model
-    // space; anything else goes object by object.
-    bool simple = touched_.empty() && d.allocCursor() == startNextId_ && order_.empty();
-    for (std::size_t i = 0; simple && i < ids.size(); ++i)
-        simple = !d.owner_.count(ids[i]) && !d.orderOverride_.count(ids[i]);
-    if (!simple) {
-        std::size_t n = 0;
-        for (EntityId id : ids)
-            if (eraseEntityInternal(id))
-                ++n;
-        return n;
+    // Objects that sit directly in model space, were not edited yet in this transaction and keep
+    // their default draw order go in one pass straight into the snapshots (in store order).
+    // The few others (block members, sent to back, already touched, new) go one by one first.
+    std::size_t n = 0;
+    std::vector<EntityId> bulk;
+    bulk.reserve(ids.size());
+    for (EntityId id : ids) {
+        const bool plain = id.value < startNextId_ && touched_.find(id) == TouchedIndex::kNone &&
+                           !d.owner_.count(id) && !d.orderOverride_.count(id);
+        if (plain) {
+            bulk.push_back(id);
+        } else if (eraseEntityInternal(id)) {
+            ++n;
+        }
     }
-    // (they go straight into the snapshots, in store order)
     const std::size_t first = beforeSnaps_.size();
-    d.removeEntities(ids, beforeSnaps_);
-    touched_.reserve(beforeSnaps_.size());
+    d.removeEntities(bulk, beforeSnaps_);
+    touched_.reserve(touched_.size() + (beforeSnaps_.size() - first));
     for (std::size_t i = first; i < beforeSnaps_.size(); ++i)
         touched_.insert(beforeSnaps_[i].common.id, static_cast<std::uint32_t>(i));
-    return beforeSnaps_.size() - first;
+    return n + (beforeSnaps_.size() - first);
 }
 
 std::size_t Transaction::eraseAllIn(BlockId block) {
