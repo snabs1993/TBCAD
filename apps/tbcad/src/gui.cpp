@@ -2079,6 +2079,8 @@ void Gui::commandWindow() {
                 prompt += " <" + *info->defaultText + ">";
             prompt += ": ";
         }
+        if (textEditorActive_)
+            prompt = "Typing in the text box (Ctrl+Enter accepts, Esc cancels): ";
         ImGui::TextUnformatted(prompt.c_str());
         ImGui::SameLine(0, 0);
         ImGui::SetNextItemWidth(-1);
@@ -2530,6 +2532,50 @@ void Gui::textEditor(const ViewportRect& rect) {
     if (ImGui::Begin("##textedit", nullptr, wf)) {
         const ImGuiInputTextFlags flags = hint.multiline ? ImGuiInputTextFlags_AllowTabInput
                                                          : ImGuiInputTextFlags_EnterReturnsTrue;
+        if (hint.multiline && prompt->command == "MTEXT") {
+            // Text height, justification and style, applied to the whole MTEXT as you type.
+            auto& st = core_.settings();
+            bool changed = false;
+            double h = std::atof(st.getString("tmp.mtext.height", "2.5").c_str());
+            ImGui::SetNextItemWidth(72 * dpiScale_);
+            if (ImGui::InputDouble("Height", &h, 0, 0, "%.4g") && h > 0) {
+                st.setString("tmp.mtext.height", std::to_string(h));
+                changed = true;
+            }
+            ImGui::SameLine();
+            static const char* const kJust[] = {"TL", "TC", "TR", "ML", "MC",
+                                                "MR", "BL", "BC", "BR"};
+            static const char* const kJustLong[] = {"Top left",    "Top center",    "Top right",
+                                                    "Middle left", "Middle center", "Middle right",
+                                                    "Bottom left", "Bottom center", "Bottom right"};
+            const std::string cur = st.getString("tmp.mtext.attach", "TL");
+            const char* curLong = "Top left";
+            for (int i = 0; i < 9; ++i)
+                if (cur == kJust[i])
+                    curLong = kJustLong[i];
+            ImGui::SetNextItemWidth(120 * dpiScale_);
+            if (ImGui::BeginCombo("Justify", curLong)) {
+                for (int i = 0; i < 9; ++i)
+                    if (ImGui::Selectable(kJustLong[i], cur == kJust[i])) {
+                        st.setString("tmp.mtext.attach", kJust[i]);
+                        changed = true;
+                    }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            const std::string styleName = st.getString("tmp.mtext.style", "");
+            ImGui::SetNextItemWidth(130 * dpiScale_);
+            if (ImGui::BeginCombo("Style", styleName.c_str())) {
+                for (const auto& [id, ts] : core_.document().textStyles())
+                    if (ImGui::Selectable(ts.name.c_str(), ts.name == styleName)) {
+                        st.setString("tmp.mtext.style", ts.name);
+                        changed = true;
+                    }
+                ImGui::EndCombo();
+            }
+            if (changed)
+                core_.textEdited(newlinesToCodes(textEditorBuf_));
+        }
         if (hint.multiline) {
             ImGui::InputTextMultiline("##text", &textEditorBuf_, ImVec2(boxW, boxH), flags);
             focusEditor();
