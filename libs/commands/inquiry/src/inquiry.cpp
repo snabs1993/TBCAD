@@ -340,6 +340,75 @@ public:
     }
 };
 
+// ---- DBLIST -------------------------------------------------------------------------------------
+class DbList final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DBLIST"; }
+    std::string_view description() const override { return "List every object in the drawing"; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const Precision p = precisionOf(ctx);
+        std::string all;
+        std::size_t n = 0;
+        for (EntityId id : ctx.doc().modelSpace()) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e)
+                continue;
+            ++n;
+            for (auto& line : describeEntity(ctx.doc(), *e, p)) {
+                ctx.message(line);
+                all += line + "\n";
+            }
+        }
+        ctx.message(std::to_string(n) + " objects listed.");
+        ctx.host().setSetting(kLastResultKey, all);
+        co_return;
+    }
+};
+
+// ---- MEASUREGEOM [MEA] --------------------------------------------------------------------------
+class MeasureGeom final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MEASUREGEOM"; }
+    std::vector<std::string> defaultAliases() const override { return {"MEA"}; }
+    std::string_view description() const override {
+        return "Measure a distance, radius, angle or area";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Distance", "Radius", "Angle", "Area"};
+        ko.defaultKeyword = "Distance";
+        auto k = co_await ctx.getKeyword("Measure [Distance/Radius/Angle/Area] <Distance>", ko);
+        if (!k.ok())
+            co_return;
+        if (k.keyword == "Radius") {
+            cmd::EntityOptions eo;
+            eo.filter = [](const Entity& e) {
+                return entityAs<CircleData>(e) || entityAs<ArcData>(e);
+            };
+            auto pick = co_await ctx.getEntity("Select an arc or circle", eo);
+            if (!pick.ok())
+                co_return;
+            const Entity* e = ctx.doc().find(pick.id);
+            if (!e)
+                co_return;
+            const Precision p = precisionOf(ctx);
+            const double r = entityAs<CircleData>(*e) ? entityAs<CircleData>(*e)->radius
+                                                      : entityAs<ArcData>(*e)->radius;
+            report(ctx, "Radius = " + formatLengthIn(ctx.doc(), r, p) +
+                            ", Diameter = " + formatLengthIn(ctx.doc(), 2 * r, p));
+            co_return;
+        }
+        if (k.keyword == "Angle")
+            co_await Angle().run(ctx);
+        else if (k.keyword == "Area")
+            co_await Area().run(ctx);
+        else
+            co_await Dist().run(ctx);
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -357,6 +426,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeFindStray());
     (void)registry.add(makePickTrace());
     (void)registry.add(makeCal());
+    (void)registry.add(std::make_unique<DbList>());
+    (void)registry.add(std::make_unique<MeasureGeom>());
 }
 
 }  // namespace tbcad::inquiry
