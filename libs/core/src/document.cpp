@@ -2033,6 +2033,10 @@ void setDrawingLimits(Header& h, Vec2 lowerLeft, Vec2 upperRight) {
     h.custom[kLimitsKey] = buf;
 }
 
+bool quickText(const Header& h) {
+    return customFlag(h, kQTextKey, false);
+}
+
 bool fillMode(const Header& h) {
     return customFlag(h, kFillModeKey, true);
 }

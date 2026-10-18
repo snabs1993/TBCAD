@@ -1259,12 +1259,14 @@ TEST_CASE("FILL and ATTDISP survive a DXF round trip") {
         REQUIRE(tx.modifyHeader([](Header& h) {
                       h.custom[kFillModeKey] = "0";
                       h.custom[kAttDispKey] = "1";
+                      h.custom[kQTextKey] = "1";
                   }).ok());
         tx.commit();
     }
     RoundTrip rt = roundTrip(doc);
     CHECK_FALSE(fillMode(rt.back->header()));
     CHECK(attDisplay(rt.back->header()) == 1);
+    CHECK(quickText(rt.back->header()));
 }
 
 }  // namespace tbcad::dxf

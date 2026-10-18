@@ -165,7 +165,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
                self.pattern,
                child.chordTolMm,
                ctx.showTransparency ? child.byBlockTransparency : -1,
-               ctx.fillMode};
+               ctx.fillMode,
+               ctx.quickText};
         blockSpace = cache->find(key);
     }
     if (!blockSpace) {
@@ -248,7 +249,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
                                      self.pattern,
                                      child.chordTolMm,
                                      ctx.showTransparency ? child.byBlockTransparency : -1,
-                                     ctx.fillMode};
+                                     ctx.fillMode,
+                                     ctx.quickText};
     std::shared_ptr<const DisplayList> blockSpace = cache->find(key);
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);

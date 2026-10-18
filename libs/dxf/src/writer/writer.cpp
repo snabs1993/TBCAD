@@ -1249,6 +1249,8 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.pt2(10, limits.empty() ? Vec2{0, 0} : limits.min);
     var("$LIMMAX");
     o.pt2(10, limits.empty() ? Vec2{420, 297} : limits.max);
+    var("$QTEXTMODE");
+    o.i(70, quickText(doc_.header()) ? 1 : 0);
     var("$FILLMODE");
     o.i(70, fillMode(doc_.header()) ? 1 : 0);
     var("$ATTMODE");
