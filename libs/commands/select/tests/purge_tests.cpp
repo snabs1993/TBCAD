@@ -24,6 +24,8 @@ TEST_CASE("PURGE removes unused layers, styles, linetypes and blocks") {
     }
     CHECK(f.host.run("PURGE", {""}).finished);
     CHECK(f.host.logContains("Purged"));
+    CHECK(f.host.logContains("Layers purged: Unused"));  // the names, not just counts
+    CHECK(f.host.logContains("Blocks purged: Empty"));
     CHECK(f.doc.layerByName("Unused") == nullptr);
     CHECK(f.doc.layerByName("Used") != nullptr);
     CHECK(f.doc.linetypeByName("DASHED") == nullptr);
