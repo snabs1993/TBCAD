@@ -103,6 +103,8 @@ private:
     std::string dismissedReadOnly_{};  // read-only notice text the user closed
     void docTabs();
     void startPage(const ViewportRect& rect);
+    bool ucsIconShown() const;
+    void ucsIcon(const ViewportRect& rect);
     void statusBar();
     void snapModesPopup();
     float layoutTabsHeight() const;
