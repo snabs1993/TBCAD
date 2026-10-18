@@ -64,7 +64,7 @@ std::string decodeText(std::string_view raw, Encoding from);
 
 // Replaces the "%%" codes of TEXT/ATTRIB strings in UTF-8 text: %%c -> U+2300, %%d -> U+00B0,
 // %%p -> U+00B1, %%% -> %, %%nnn -> code point nnn; %%u %%o %%k toggles are removed.
-std::string replacePercentCodes(std::string_view utf8);
+std::string replacePercentCodes(std::string_view utf8, bool keepRules = false);
 
 // Plain text of an MTEXT string (UTF-8 in, UTF-8 out): \P -> newline, formatting codes
 // (\f \H \C \W \T \Q \A \p ... ending in ';', and \L \l \O \o \K \k) and {} groups removed,

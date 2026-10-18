@@ -464,7 +464,7 @@ std::string decodeText(std::string_view raw, Encoding from) {
     return out;
 }
 
-std::string replacePercentCodes(std::string_view s) {
+std::string replacePercentCodes(std::string_view s, bool keepRules) {
     std::string out;
     out.reserve(s.size());
     for (std::size_t i = 0; i < s.size();) {
@@ -497,6 +497,13 @@ std::string replacePercentCodes(std::string_view s) {
             case 'U':
             case 'o':
             case 'O':
+                if (keepRules) {  // TEXT underlines and overlines itself
+                    out.append(s.substr(i, 3));
+                    i += 3;
+                    continue;
+                }
+                i += 3;
+                continue;
             case 'k':
             case 'K':
                 i += 3;

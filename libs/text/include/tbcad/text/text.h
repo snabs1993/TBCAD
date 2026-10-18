@@ -72,6 +72,8 @@ struct Attr {
     bool italic = false;
     double height = 0;  // mm, capital height (resolved against the entity's height)
     int color = -1;     // palette index, -1 = the entity's colour
+    bool underline = false;
+    bool overline = false;
     friend bool operator==(const Attr&, const Attr&) = default;
 };
 
@@ -81,7 +83,7 @@ struct Piece {
     bool newline = false;  // paragraph break (text is empty)
 };
 
-// Parses TBCAD markup: `\P` paragraph, `\\ \{ \}` literals, `{\b1;..}` `{\i1;..}` bold/italic,
+// Parses TBCAD markup: `\L` / `\l` underline on / off, `\O` / `\o` overline, `\P` paragraph, `\\ \{ \}` literals, `{\b1;..}` `{\i1;..}` bold/italic,
 // `{\H<h>;..}` height in mm (`{\H2x;..}` = relative to the surrounding height), `{\C<i>;..}`
 // palette colour. Anything else after a backslash is kept literally; unmatched braces are
 // ignored. `baseHeight` is the entity's text height.
@@ -102,7 +104,13 @@ struct PlacedGlyph {
     int color = -1;    // palette index or -1
 };
 
+// An underline or overline: a horizontal rule in layout space.
+struct LayoutRule {
+    double x0 = 0, x1 = 0, y = 0;
+};
+
 struct LayoutLine {
+    std::vector<LayoutRule> rules{};
     double baseline = 0;  // y in layout space
     double x0 = 0;        // left edge of the line
     double width = 0;     // advance width, trailing spaces excluded

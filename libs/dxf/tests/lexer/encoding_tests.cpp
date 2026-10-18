@@ -255,6 +255,7 @@ TEST_CASE("replacePercentCodes") {
           "25");
     CHECK(replacePercentCodes("100%%%") == "100%");
     CHECK(replacePercentCodes("%%uunder%%u") == "under");
+    CHECK(replacePercentCodes("%%uunder%%u%%d", true) == "%%uunder%%u\xC2\xB0");
     CHECK(replacePercentCodes("%%065") == "A");
     CHECK(replacePercentCodes("50%") == "50%");
     CHECK(replacePercentCodes("%%") == "%%");

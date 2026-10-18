@@ -320,6 +320,11 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
             g.origin.y += baseline;
             glyphs.push_back(g);
         }
+        // Rules end where the chunk's text does; a chunk that is only spaces still carries one.
+        if (attr.underline)
+            out.rules.push_back({pen, pen + c.advance, baseline - 0.18 * attr.height});
+        if (attr.overline)
+            out.rules.push_back({pen, pen + c.advance, baseline + 1.18 * attr.height});
         pen += c.advance;
         i = j;
     }
@@ -340,6 +345,11 @@ void shiftLayout(TextLayout& l, Vec2 d) {
     for (LayoutLine& ln : l.lines) {
         ln.baseline += d.y;
         ln.x0 += d.x;
+        for (LayoutRule& r : ln.rules) {
+            r.x0 += d.x;
+            r.x1 += d.x;
+            r.y += d.y;
+        }
     }
     if (!l.frame.empty()) {
         l.frame.min += d;
@@ -404,8 +414,32 @@ static TextLayout layoutTextRaw(const Document& doc, const TextData& d) {
 
     Line items;
     std::string text = stripInvisible(d.utf8);
-    if (!text.empty())
-        items.push_back({text, attr, false, 0});
+    // %%u and %%o switch underline and overline on and off, as in AutoCAD TEXT.
+    {
+        Attr cur = attr;
+        std::string run;
+        auto flush = [&] {
+            if (!run.empty())
+                items.push_back({run, cur, false, 0});
+            run.clear();
+        };
+        for (std::size_t i = 0; i < text.size();) {
+            if (text[i] == '%' && i + 2 < text.size() && text[i + 1] == '%') {
+                const char k = text[i + 2];
+                if (k == 'u' || k == 'U' || k == 'o' || k == 'O') {
+                    flush();
+                    if (k == 'u' || k == 'U')
+                        cur.underline = !cur.underline;
+                    else
+                        cur.overline = !cur.overline;
+                    i += 3;
+                    continue;
+                }
+            }
+            run.push_back(text[i++]);
+        }
+        flush();
+    }
     LayoutLine ln = emitLine(style, items, 0, out.glyphs, height);
     ln.height = height;
     out.lines.push_back(ln);
@@ -543,6 +577,10 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
             for (std::size_t g = ln.firstGlyph; g < ln.endGlyph; ++g)
                 out.glyphs[g].origin.x += move;
             ln.x0 += move;
+            for (LayoutRule& r : ln.rules) {
+                r.x0 += move;
+                r.x1 += move;
+            }
         }
 
     double dx = 0, dy = 0;
