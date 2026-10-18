@@ -23,6 +23,15 @@ solver (`libs/constraints`, no third-party solver). Commands live in `libs/comma
   point of the object nearest to the click is used.
 - `DIMCON` (`DCON`): Distance, Length, Radius, Diameter or Angle; the prompt default is the current
   value.
+- `GEOMCONSTRAINT` and `DIMCONSTRAINT` are the long names of `GEOMCON` and `DIMCON`.
+- `AUTOCONSTRAIN` (`AUTOCON`): select objects; adds every Coincident, Horizontal, Vertical,
+  Parallel, Perpendicular, Equal and Tangent constraint the drawing already satisfies (within 0.01
+  mm / 0.01 rad). Each candidate is trial-solved first, redundant ones are left out, and one undo
+  removes them all.
+- `PARAMETERS` (`PARAM`): Set a named value or formula (`Height = Width * 0.5`), Delete, List. A
+  change re-evaluates every formula constraint and solves, so the geometry follows; a parameter that
+  would break the solve is refused. In `DIMCON` the Formula option takes an expression over the
+  parameters (angles in degrees) instead of a number.
 - `SHOWCON`: lists the constraints. `DELCON`: removes the constraints of the selected objects.
   `SOLVECON`: solves again.
 
@@ -50,10 +59,16 @@ parallel/perpendicular normalised by the line lengths, angles wrapped to (-pi, p
 
 The list is kept in `Header::custom["tbcad.constraints"]`, one line per constraint
 (`id kind entityA partA entityB partB value`). It is saved in the .tbcad file and follows undo and
-redo like any header change. Entity ids are never reused (PR #53), so references stay valid.
+redo like any header change. Entity ids are never reused (PR #53), so references stay valid. A
+constraint with a formula ends with `|formula`. Parameters are in `Header::custom["tbcad.parameters"]`,
+one `name<TAB>formula` per line.
+
+In DXF both are written as XRECORDs `TBCAD_CONSTRAINTS` and `TBCAD_PARAMETERS` in the root
+dictionary (one code-1 group per line) and read back by our importer; other programs ignore them.
+ACAD_ASSOCNETWORK is not written: it is an undocumented binary-heavy format and would not carry the
+formulas.
 
 ## Not done yet
 
 Constraints on polylines, ellipses and splines; point-on-object, symmetric and concentric
-constraints; constraint display icons and a dimension-driven parameter table; DXF export (the
-constraints are not written to DXF).
+constraints; constraint display icons and a parameter panel in the UI.

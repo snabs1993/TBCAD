@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -40,6 +41,9 @@ struct Constraint {
     Kind kind = Kind::Coincident;
     Ref a{}, b{};
     double value = 0;  // Distance, Radius, Angle
+    // Dimensional constraints only: a formula over the named parameters (angles in degrees). When
+    // set, `value` follows it each time applyParameters runs.
+    std::string expr{};
 };
 
 std::string_view kindName(Kind k);  // "Coincident", "Horizontal", ...
@@ -91,6 +95,45 @@ ConstraintSet load(const Document& doc);
 // Writes the set into the header (removing the key when it is empty). Part of the transaction.
 Result<void> store(Transaction& tx, const ConstraintSet& set);
 
+// ---- parameters -------------------------------------------------------------------------------
+
+// Named values that dimensional constraints can refer to: "Width = 120", "Height = Width * 0.5".
+// Names are letters, digits and underscores (not starting with a digit); formulas use the
+// libs/expr language (the other parameters, numbers, + - * / ^, min max abs sqrt if(...), pi).
+struct Parameter {
+    std::string name{};
+    std::string expr{};
+};
+
+class ParameterSet {
+public:
+    const std::vector<Parameter>& all() const { return items_; }
+    bool empty() const { return items_.empty(); }
+    const Parameter* find(const std::string& name) const;
+    // Adds or replaces. Fails for a bad name, a formula that does not parse, a name that is
+    // reserved (pi, function names) or a formula that would make the parameters depend on
+    // themselves.
+    Result<void> set(const std::string& name, const std::string& expr);
+    bool remove(const std::string& name);
+    // Every parameter evaluated (in dependency order); an error names the one that fails.
+    Result<std::map<std::string, double>> values() const;
+    // A formula evaluated against the parameters.
+    Result<double> evaluate(const std::string& expr) const;
+    // Names the formula refers to that are not parameters.
+    std::vector<std::string> unknownNames(const std::string& expr) const;
+
+    // Header::custom["tbcad.parameters"], one "name<TAB>formula" per line.
+    std::string toText() const;
+    static ParameterSet fromText(const std::string& text);
+
+private:
+    std::vector<Parameter> items_{};
+};
+
+inline constexpr const char* kParametersKey = "tbcad.parameters";
+ParameterSet loadParameters(const Document& doc);
+Result<void> storeParameters(Transaction& tx, const ParameterSet& set);
+
 // ---- solving ---------------------------------------------------------------------------------
 
 struct SolveOptions {
@@ -116,5 +159,27 @@ Result<SolveResult> solve(Transaction& tx, const ConstraintSet& set, const Solve
 // The value a dimensional constraint would take for the current geometry (for the default of the
 // prompt): distance in mm, radius in mm, angle in radians.
 Result<double> measure(const Document& doc, const Constraint& c);
+
+// Re-evaluates every constraint that has a formula against `params`, then solves. On success the
+// updated constraint values are stored with `set` (and the geometry follows); otherwise nothing is
+// stored and the result says which constraint failed.
+Result<SolveResult> applyParameters(Transaction& tx, ConstraintSet& set,
+                                    const ParameterSet& params);
+
+// ---- AUTOCONSTRAIN ----------------------------------------------------------------------------
+
+struct AutoOptions {
+    double distance =
+        0.01;             // points this close are coincident; lengths and radii this close, equal
+    double angle = 0.01;  // radians: lines this close to horizontal, parallel, ... count as such
+    bool coincident = true, horizontalVertical = true, parallelPerpendicular = true, equal = true,
+         tangent = true;
+};
+
+// The constraints the geometry of `ids` already (nearly) satisfies and that `existing` does not
+// have yet. Redundant ones are left out: equal lengths chain to the first of a group, and
+// parallel/perpendicular pairs of lines that are already horizontal/vertical are skipped.
+std::vector<Constraint> autoConstrain(const Document& doc, const std::vector<EntityId>& ids,
+                                      const ConstraintSet& existing, const AutoOptions& opt = {});
 
 }  // namespace tbcad::constraints

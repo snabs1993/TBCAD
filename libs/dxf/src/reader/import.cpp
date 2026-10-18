@@ -429,7 +429,26 @@ void Importer::processObjects(RecordReader& rr) {
         const Group* g = r.find(1);
         if (!g)
             continue;
+        constexpr const char* kSketchConstraints = "tbcad.constraints";
+        constexpr const char* kSketchParameters = "tbcad.parameters";
         const std::string text = dec(g->str());
+        if (text == kSketchConstraints || text == kSketchParameters) {
+            std::string body;
+            bool first = true;
+            for (const Group& xg : r.g) {
+                if (xg.code != 1)
+                    continue;
+                if (first) {
+                    first = false;
+                    continue;
+                }
+                body += dec(xg.str());
+                body += '\n';
+            }
+            if (!body.empty() && body.size() < (8u << 20))
+                (void)tx_->modifyHeader([&](Header& h) { h.custom[text] = body; });
+            continue;
+        }
         if (text.rfind("current=", 0) != 0)
             continue;
         const std::size_t semi = text.find(";list=");
@@ -498,9 +517,9 @@ void Importer::keepObjects() {
     // Names the writer writes itself, and objects that only make sense next to entities or
     // layouts of the source file.
     static const std::set<std::string> ownedNames = {
-        "ACAD_GROUP",     "ACAD_IMAGE_DICT", "ACAD_IMAGE_VARS",
-        "ACAD_LAYOUT",    "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME",
-        "ACAD_SCALELIST", "TBCAD_ANNOSCALE", "ACAD_SORTENTS"};
+        "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_IMAGE_VARS", "ACAD_LAYOUT",
+        "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME", "ACAD_SCALELIST",  "TBCAD_ANNOSCALE",
+        "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS"};
     static const std::set<std::string> neverKept = {
         "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "SORTENTSTABLE", "GROUP",
         "DIMASSOC", "IMAGEDEFREACTOR", "ACDBPLACEHOLDER",  "MLINESTYLE"};

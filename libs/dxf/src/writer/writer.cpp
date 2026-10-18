@@ -891,6 +891,18 @@ std::string Writer::objectsSection() {
     const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
     std::uint64_t scaleRec = hasScales ? newHandle() : 0;
+    constexpr const char* kSketchConstraints = "tbcad.constraints";
+    constexpr const char* kSketchParameters = "tbcad.parameters";
+    // Constraints and parameters (docs/constraints.md): our own XRECORDs, one line per code-1
+    // group.
+    static const char* const kSketchKeys[2][2] = {{kSketchConstraints, "TBCAD_CONSTRAINTS"},
+                                                  {kSketchParameters, "TBCAD_PARAMETERS"}};
+    std::uint64_t sketchRec[2] = {0, 0};
+    for (int k = 0; k < 2 && !r12_; ++k) {
+        auto it = custom.find(kSketchKeys[k][0]);
+        if (it != custom.end() && !it->second.empty())
+            sketchRec[k] = newHandle();
+    }
     std::vector<double> scaleList = annotationScaleList(doc_.header());
     std::vector<std::uint64_t> scaleHandles;
     for (std::size_t i = 0; scaleObjects && i < scaleList.size(); ++i)
@@ -908,6 +920,12 @@ std::string Writer::objectsSection() {
     if (hasScales) {
         o.raw(3, "TBCAD_ANNOSCALE");
         o.h(350, scaleRec);
+    }
+    for (int k = 0; k < 2; ++k) {
+        if (!sketchRec[k])
+            continue;
+        o.raw(3, kSketchKeys[k][1]);
+        o.h(350, sketchRec[k]);
     }
     o.raw(3, "ACAD_GROUP");
     o.h(350, groupDict);
@@ -979,6 +997,26 @@ std::string Writer::objectsSection() {
         o.raw(100, "AcDbXrecord");
         o.i(280, 1);
         o.str(1, text);
+    }
+    for (int k = 0; k < 2; ++k) {
+        if (!sketchRec[k])
+            continue;
+        o.zero("XRECORD");
+        o.h(5, sketchRec[k]);
+        o.h(330, rootDict_);
+        o.raw(100, "AcDbXrecord");
+        o.i(280, 1);
+        o.str(1, kSketchKeys[k][0]);
+        const std::string& body = custom.at(kSketchKeys[k][0]);
+        std::size_t at = 0;
+        while (at < body.size()) {
+            std::size_t nl = body.find('\n', at);
+            if (nl == std::string::npos)
+                nl = body.size();
+            if (nl > at)
+                o.str(1, std::string_view(body).substr(at, nl - at));
+            at = nl + 1;
+        }
     }
 
     if (!images_.empty()) {

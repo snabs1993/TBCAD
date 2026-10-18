@@ -1,6 +1,6 @@
 tbcad_add_library(constraints_commands
   SOURCES src/constraint_commands.cpp
-  DEPENDS tbcad::cmd tbcad::constraints tbcad::geom)
+  DEPENDS tbcad::cmd tbcad::constraints tbcad::geom tbcad::expr)
 
 tbcad_add_tests(constraints_commands
   SOURCES

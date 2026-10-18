@@ -194,3 +194,74 @@ TEST_CASE("SOLVECON brings objects back in line after they were changed behind t
         CHECK(f.host->logContains("Solved"));
     }
 }
+
+TEST_CASE("AUTOCONSTRAIN adds what the sketch already satisfies, and one undo removes it") {
+    Fixture f;
+    // l2 is nearly parallel to l1 (1.5 off over 10) - not close enough for the defaults - so add
+    // a tidy rectangle corner instead.
+    EntityId a = f.addLine({100, 100}, {120, 100.0001});
+    EntityId b = f.addLine({120, 100.0001}, {120.0001, 110});
+    f.host->run("AUTOCONSTRAIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
+    const auto set = constraints::load(f.doc);
+    bool horiz = false, vert = false, coinc = false;
+    for (const auto& c : set.all()) {
+        horiz = horiz || c.kind == constraints::Kind::Horizontal;
+        vert = vert || c.kind == constraints::Kind::Vertical;
+        coinc = coinc || c.kind == constraints::Kind::Coincident;
+    }
+    CHECK(horiz);
+    CHECK(vert);
+    CHECK(coinc);
+    // The geometry was nudged onto the constraints.
+    CHECK(f.line(a).a.y == doctest::Approx(f.line(a).b.y).epsilon(1e-9));
+    CHECK(f.line(b).a.x == doctest::Approx(f.line(b).b.x).epsilon(1e-9));
+    f.host->undo();
+    CHECK(constraints::load(f.doc).empty());
+    // Nothing to add on a second pass.
+    f.host->run("AUTOCONSTRAIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
+    const std::size_t n = constraints::load(f.doc).all().size();
+    f.host->run("AUTOCONSTRAIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
+    CHECK(constraints::load(f.doc).all().size() == n);
+    CHECK(f.host->logContains("No new constraints"));
+}
+
+TEST_CASE("PARAMETERS drive a DIMCON formula; editing a parameter moves the geometry; saved") {
+    Fixture f;
+    f.host->run("GEOMCON", {"Fix", f.pick(f.l1, {5, 0})});
+    f.host->run("GEOMCON", {"Horizontal", f.pick(f.l2, {5, 5.7})});
+    f.host->run("PARAMETERS", {"Set", "Width", "20", "Set", "Half", "Width / 2", "List", "Exit"});
+    CHECK(f.host->logContains("Half = 10"));
+    f.host->run("DIMCON", {"Length", f.pick(f.l2, {5, 5.7}), "Formula", "Half * 3"});
+    CHECK(length(f.line(f.l2).b - f.line(f.l2).a) == doctest::Approx(30));
+    // Changing the parameter changes the line.
+    f.host->run("PARAMETERS", {"Set", "Width", "40", "Exit"});
+    CHECK(length(f.line(f.l2).b - f.line(f.l2).a) == doctest::Approx(60));
+    const auto set = constraints::load(f.doc);
+    bool formula = false;
+    for (const auto& c : set.all())
+        formula = formula || c.expr == "Half * 3";
+    CHECK(formula);
+    // A value the constraints cannot follow is refused and nothing changes.
+    f.host->run("PARAMETERS", {"Set", "Width", "0 - 8", "Exit"});
+    CHECK(length(f.line(f.l2).b - f.line(f.l2).a) == doctest::Approx(60));
+    CHECK(constraints::loadParameters(f.doc).find("Width")->expr == "40");
+    // A cycle is refused.
+    f.host->run("PARAMETERS", {"Set", "Width", "Half", "Exit"});
+    CHECK(constraints::loadParameters(f.doc).find("Width")->expr == "40");
+    // Deleting a parameter that a constraint uses is refused.
+    f.host->run("PARAMETERS", {"Delete", "Half", "Exit"});
+    CHECK(constraints::loadParameters(f.doc).find("Half") != nullptr);
+
+    auto bytes = io::writeTbcadToMemory(f.doc);
+    REQUIRE(bytes.ok());
+    io::IoReport report;
+    auto reopened = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), report);
+    REQUIRE(reopened.ok());
+    const auto params = constraints::loadParameters(*reopened.value());
+    CHECK(params.all().size() == 2);
+    CHECK(params.values().value().at("Half") == doctest::Approx(20));
+    bool kept = false;
+    for (const auto& c : constraints::load(*reopened.value()).all())
+        kept = kept || c.expr == "Half * 3";
+    CHECK(kept);
+}
