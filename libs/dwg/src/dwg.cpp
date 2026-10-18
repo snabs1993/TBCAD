@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 #include <unordered_map>
+#include <variant>
 
 #include "container/lz21.h"
 #include "container/r2000.h"
@@ -128,7 +129,7 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
     if (!drawing.walkSummary.empty())
         report.summary(code::kSkippedObject, drawing.walkSummary);
     {
-        std::map<std::string, std::size_t> perLayer;
+        std::map<std::string, std::map<long long, std::size_t>> perLayer;
         std::size_t layersWith = 0;
         for (const auto& [h, l] : drawing.layers)
             if (l.transparency != 0)
@@ -136,7 +137,8 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
         for (const auto& e : drawing.entities)
             if (e.transparency != 0) {
                 const auto l = drawing.layers.find(e.layer);
-                ++perLayer[l == drawing.layers.end() ? std::string("?") : l->second.name];
+                ++perLayer[l == drawing.layers.end() ? std::string("?") : l->second.name]
+                          [e.transparency];
             }
         if (layersWith != 0 || !perLayer.empty()) {
             std::string t = "transparency: " + std::to_string(layersWith) + " layers carry it";
@@ -149,11 +151,50 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                     t += std::string(listed == 1 ? " [" : ", ") + l.name + "=" + hx;
                 }
             t += (listed ? "]" : "") +
-                 std::string("; entities with their own transparency per layer:");
-            std::size_t shown = 0;
-            for (const auto& [name, c] : perLayer)
-                if (shown++ < 12)
-                    t += " " + name + " x" + std::to_string(c);
+                 std::string("; entities with their own transparency per layer (value x count):");
+            // Every layer with such entities, not only the first few: the value says which.
+            for (const auto& [name, values] : perLayer) {
+                t += " " + name + "{";
+                for (const auto& [v, n] : values) {
+                    char hx[16];
+                    std::snprintf(hx, sizeof hx, "%llX", static_cast<unsigned long long>(v));
+                    t += std::string(hx) + "x" + std::to_string(n) + " ";
+                }
+                t += "}";
+            }
+            report.summary(code::kSkippedObject, t);
+        }
+    }
+    {
+        // One column hatch and its layer: every property that could make the fill grey.
+        std::size_t shown = 0;
+        for (const auto& e : drawing.entities) {
+            if (e.dxfType != "HATCH" || shown >= 2)
+                continue;
+            const auto l = drawing.layers.find(e.layer);
+            if (l == drawing.layers.end() || l->second.name.find("COLNHATC") == std::string::npos)
+                continue;
+            ++shown;
+            std::string t =
+                "column hatch trace: handle " + std::to_string(e.handle) + " layer " +
+                l->second.name + " layer colour " + std::to_string(l->second.color) +
+                " layer transparency " + std::to_string(l->second.transparency) + " layer eed " +
+                l->second.eed + " | entity colour " + std::to_string(e.color) + " true colour " +
+                std::to_string(e.trueColor) + " transparency " + std::to_string(e.transparency) +
+                " lineweight " + std::to_string(e.lineweight) + " xdic " + std::to_string(e.xdic) +
+                " groups:";
+            std::size_t n = 0;
+            for (const auto& g : e.groups) {
+                if (n++ >= 40)
+                    break;
+                t += " " + std::to_string(g.code) + "=";
+                if (const auto* str = std::get_if<std::string>(&g.value.v))
+                    t += *str;
+                else if (const auto* d = std::get_if<double>(&g.value.v))
+                    t += std::to_string(*d);
+                else
+                    t += std::to_string(std::get<long long>(g.value.v));
+            }
             report.summary(code::kSkippedObject, t);
         }
     }
