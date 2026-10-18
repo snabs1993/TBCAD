@@ -286,8 +286,32 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
         pd.hwndOwner = GetActiveWindow();
         pd.Flags = PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS | PD_USEDEVMODECOPIESANDCOLLATE;
         pd.nCopies = static_cast<WORD>(std::clamp(job.copies, 1, 999));
+        // Open the dialog on the printer chosen in the plot settings, not the system default.
+        if (!printerName.empty()) {
+            const std::wstring driver = L"winspool";
+            const std::size_t head = sizeof(DEVNAMES) / sizeof(wchar_t);
+            const std::size_t chars = head + driver.size() + 1 + printerName.size() + 1 + 1;
+            HGLOBAL mem = GlobalAlloc(GHND, chars * sizeof(wchar_t));
+            if (mem) {
+                auto* dn = static_cast<DEVNAMES*>(GlobalLock(mem));
+                auto* base = reinterpret_cast<wchar_t*>(dn);
+                dn->wDriverOffset = static_cast<WORD>(head);
+                dn->wDeviceOffset = static_cast<WORD>(head + driver.size() + 1);
+                dn->wOutputOffset =
+                    static_cast<WORD>(head + driver.size() + 1 + printerName.size() + 1);
+                dn->wDefault = 0;
+                std::copy(driver.begin(), driver.end(), base + dn->wDriverOffset);
+                std::copy(printerName.begin(), printerName.end(), base + dn->wDeviceOffset);
+                GlobalUnlock(mem);
+                pd.hDevNames = mem;
+            }
+        }
         if (!PrintDlgW(&pd)) {
             const DWORD err = CommDlgExtendedError();
+            if (pd.hDevNames)
+                GlobalFree(pd.hDevNames);
+            if (pd.hDevMode)
+                GlobalFree(pd.hDevMode);
             if (err == 0)
                 return Error{ErrorCode::Generic, "Printing cancelled."};
             return Error{ErrorCode::Io,
