@@ -70,6 +70,12 @@ public:
     // waiting answers it; an empty line is Enter. Esc drops what is left.
     void queueScript(std::vector<std::string> lines, int repeat = 1);
     bool scriptRunning() const { return !script_.empty(); }
+    // MULTIPLE: `name` runs when the current command ends, and again after every run that asked
+    // for input and was not cancelled. Esc (or a failed run) ends the repeating.
+    void setMultiple(std::string name) {
+        multiple_ = std::move(name);
+        multipleHadPrompt_ = true;  // the command setting it asked for the name
+    }
 
     // Not owned; may be null.
     void setFilterChain(PointFilterChain* chain) { chain_ = chain; }
@@ -87,6 +93,8 @@ private:
     SubmitResult submitInput(const Input& input);
     void pumpScript();
     std::deque<std::string> script_{};
+    std::string multiple_{};
+    bool multipleHadPrompt_ = false;
     int entry_ = 0;  // depth of submit/start calls: scripts are pumped by the outermost one
 
     Result<void> startImpl(std::string_view nameOrAlias, bool transparent);

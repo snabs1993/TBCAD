@@ -331,6 +331,33 @@ public:
     }
 };
 
+// MULTIPLE: repeats a command until Esc.
+class MultipleCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MULTIPLE"; }
+    std::string_view description() const override { return "Repeat a command until Esc"; }
+    Task run(CommandContext& ctx) override {
+        for (;;) {
+            auto n = co_await ctx.getString("Enter command name to repeat");
+            if (!n.ok())
+                co_return;
+            const std::string text = cmd::trim(n.text);
+            cmd::Command* c = ctx.registry().find(text);
+            if (!c) {
+                ctx.message("Unknown command \"" + text + "\".");
+                continue;
+            }
+            if (c == ctx.registry().find("MULTIPLE")) {
+                ctx.message("MULTIPLE cannot repeat itself.");
+                continue;
+            }
+            if (!ctx.host().repeatCommand(std::string(c->name())))
+                ctx.message("This window cannot repeat commands.");
+            co_return;
+        }
+    }
+};
+
 // LIMITS: the drawing area. ZOOM All covers it; DXF keeps it in $LIMMIN / $LIMMAX.
 class LimitsCommand final : public cmd::Command {
 public:
@@ -399,6 +426,7 @@ void registerCommands(cmd::Registry& registry) {
         "CONVERTPOLY", "Convert old-style polylines to the optimized form",
         "Polylines are always kept in the optimized form; there is nothing to convert."));
     (void)registry.add(std::make_unique<QTextCommand>());
+    (void)registry.add(std::make_unique<MultipleCommand>());
     (void)registry.add(std::make_unique<AttDispCommand>());
     (void)registry.add(makeRenameCommand());
     (void)registry.add(makeHyperlinkCommand());

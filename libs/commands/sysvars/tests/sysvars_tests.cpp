@@ -345,3 +345,25 @@ TEST_CASE("QTEXT sets quick text in the header; CONVERTPOLY only reports") {
     CHECK(f.host.run("CONVERTPOLY", {}).finished);
     CHECK(f.host.logContains("optimized"));
 }
+
+TEST_CASE("MULTIPLE repeats a command until Esc") {
+    Fixture f;
+    f.host.run("MULTIPLE", {"LINE"});
+    CHECK(f.host.runner().active());  // LINE waits for its first point
+    f.host.feed({"0,0", "10,0", "", "0,5", "10,5", ""});
+    int lines = 0;
+    f.doc.forEachEntity([&](const Entity& e) { lines += kind(e) == EntityKind::Line ? 1 : 0; });
+    CHECK(lines == 2);
+    CHECK(f.host.runner().active());  // a third LINE waits for its first point
+    f.host.feed({cmd::ScriptItem::esc()});
+    CHECK_FALSE(f.host.runner().active());
+    f.host.run("LINE", {"0,9", "10,9", ""});  // no longer repeating
+    CHECK_FALSE(f.host.runner().active());
+}
+
+TEST_CASE("MULTIPLE refuses unknown names and itself") {
+    Fixture f;
+    f.host.run("MULTIPLE", {"NOSUCH", "MULTIPLE"});
+    CHECK(f.host.logContains("Unknown command"));
+    CHECK(f.host.logContains("cannot repeat itself"));
+}

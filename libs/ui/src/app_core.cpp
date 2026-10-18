@@ -2718,6 +2718,13 @@ bool AppCore::queueScript(std::vector<std::string> lines, int repeat) {
     return true;
 }
 
+bool AppCore::repeatCommand(const std::string& name) {
+    if (!session_ || !session_->runner)
+        return false;
+    session_->runner->setMultiple(name);
+    return true;
+}
+
 double AppCore::ucsAngle() const {
     return session_ && session_->runner ? session_->runner->ucsAngle() : 0;
 }
