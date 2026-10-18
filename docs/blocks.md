@@ -119,6 +119,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 | Command | Alias | Flow |
 | --- | --- | --- |
 | `BLOCK` | `B` | name, objects, base point (Enter = the lower-left corner of the objects, shown in the prompt), then `Retain/Convert/Delete`. An existing name offers `Redefine`. |
+| `BASE` | | the insertion base point of this drawing. When the drawing is inserted as a block or attached as an xref, this point lands on the insertion point. Stored in the file as the header entry `tbcad.insbase`; Enter keeps the current one. |
 | `INSERT` | `I` | block name (`?` lists, Enter takes the last one), then the point with `Scale/X/Y/Rotate` options and a live preview. |
 | `EXPLODE` | `X` | objects (selected inserts and polylines), one level. |
 | `NCOPY` | | pick an insert or xref at an object inside it; the closest nested object is copied into the drawing at its place, then moved by base point and second point (Enter keeps it in place). |

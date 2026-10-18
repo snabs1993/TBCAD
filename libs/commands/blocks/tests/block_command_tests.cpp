@@ -1,5 +1,6 @@
 #include "support.h"
 #include "tbcad/block_cmds/block_list.h"
+#include "tbcad/xref/xref.h"
 
 using namespace tbcad;
 using namespace tbcad::block_cmds;
@@ -141,4 +142,15 @@ TEST_CASE("BLOCK base point: Enter takes the lower-left corner of the objects") 
     REQUIRE(def);
     CHECK(def->base.x == doctest::Approx(100));
     CHECK(def->base.y == doctest::Approx(200));
+}
+
+TEST_CASE("BASE stores the insertion base point of the drawing, undo restores it") {
+    Fixture f;
+    auto r = f.host->run("BASE", {"100,50"});
+    CHECK(r.finished);
+    CHECK(xref::insertionBase(f.doc) == Vec2{100, 50});
+    CHECK(f.host->undo());
+    CHECK(xref::insertionBase(f.doc) == Vec2{});
+    f.host->run("BASE", {cmd::ScriptItem::enter()});
+    CHECK(f.host->logContains("stays"));
 }
