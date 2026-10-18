@@ -98,7 +98,7 @@ TEST_CASE("RECTANGLE Fillet rounds the corners and Chamfer cuts them") {
     CHECK(r.closed);
     CHECK(r.v[0].p.x == doctest::Approx(0));
     CHECK(r.v[0].p.y == doctest::Approx(2));
-    CHECK(r.v[0].bulge == doctest::Approx(std::tan(M_PI / 8)).epsilon(1e-6));
+    CHECK(r.v[0].bulge == doctest::Approx(std::tan(kPi / 8)).epsilon(1e-6));
     CHECK(r.v[1].p.x == doctest::Approx(2));
     CHECK(r.v[1].bulge == 0);
 

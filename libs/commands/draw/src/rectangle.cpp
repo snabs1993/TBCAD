@@ -51,7 +51,7 @@ std::optional<std::vector<PolyVertex>> corners(Vec2 c1, Vec2 c2, const RectSpec&
     std::vector<PolyVertex> out;
     if (r > tol::kLinear || c1d > tol::kLinear || c2d > tol::kLinear) {
         // Counter-clockwise when the two signs agree; convex arcs then bulge to the right.
-        const double bulge = std::tan(M_PI / 8) * (dx * dy > 0 ? 1.0 : -1.0);
+        const double bulge = std::tan(kPi / 8) * (dx * dy > 0 ? 1.0 : -1.0);
         for (int i = 0; i < 4; ++i) {
             const Vec2 prev = corner[(i + 3) % 4], next = corner[(i + 1) % 4];
             const Vec2 toPrev = (prev - corner[i]) / length(prev - corner[i]);
