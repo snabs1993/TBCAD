@@ -151,6 +151,7 @@ private:
     void rememberFolder(const std::filesystem::path& picked);
     void doOpenPath(const std::string& path);
     void openPending();
+    void closeTopModalOnEscape();
     void history(bool redo);
     void historyPending();
     void doImportDxf();

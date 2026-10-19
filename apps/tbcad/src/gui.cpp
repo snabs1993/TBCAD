@@ -3442,6 +3442,7 @@ ViewportRect Gui::frame() {
         fg->AddText(at, IM_COL32(242, 169, 59, 255), core_.feedback().tooltip.c_str());
     }
     dialogs();
+    closeTopModalOnEscape();
     return rect;
 }
 
@@ -3519,6 +3520,24 @@ void Gui::ucsIcon(const ViewportRect& rect) {
 }
 
 // ---- dialogs -----------------------------------------------------------------------------------
+
+// ImGui leaves modal dialogs open on Escape. Dialogs that need a decision handle the key
+// themselves; every other modal closes here, unless a text box is being edited (Esc then
+// belongs to the box).
+void Gui::closeTopModalOnEscape() {
+    if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsAnyItemActive())
+        return;
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    for (int i = g.OpenPopupStack.Size - 1; i >= 0; --i) {
+        const ImGuiWindow* w = g.OpenPopupStack[i].Window;
+        if (w && (w->Flags & ImGuiWindowFlags_Modal)) {
+            ImGui::ClosePopupToLevel(i, true);
+            return;
+        }
+        if (w && !(w->Flags & ImGuiWindowFlags_Popup))
+            return;
+    }
+}
 
 void Gui::dialogs() {
     openPending();
@@ -3644,7 +3663,7 @@ void Gui::dialogs() {
             performPending(true);
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(110, 0))) {
+        if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             ImGui::CloseCurrentPopup();
             pending_ = Pending::None;
             saveThenPending_ = false;
@@ -3660,7 +3679,8 @@ void Gui::dialogs() {
     if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextWrapped("%s", errorText_.c_str());
         ImGui::Spacing();
-        if (ImGui::Button("OK", ImVec2(110, 0)))
+        if (ImGui::Button("OK", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+            ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
