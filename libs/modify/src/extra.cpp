@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <numeric>
+#include <unordered_map>
 
 #include "tbcad/modify/break_join.h"
 #include "tbcad/modify/trim.h"
@@ -370,32 +371,37 @@ bool takesPart(const Entity& e) {
     }
 }
 
-double minX(const Entity& e) {
+// The lower-left corner of the box around an entity's geometry (its anchor point for text,
+// inserts and points).
+Vec2 minCorner(const Entity& e) {
     std::vector<CurveRef> cs;
     if (const auto* p = entityAs<PointData>(e))
-        return p->p.x;
+        return p->p;
     if (const auto* t = entityAs<TextData>(e))
-        return t->position.x;
+        return t->position;
     if (const auto* t = entityAs<MTextData>(e))
-        return t->position.x;
+        return t->position;
     if (const auto* i = entityAs<InsertData>(e))
-        return i->position.x;
+        return i->position;
     if (const auto* sp = entityAs<SplineData>(e)) {
-        double m = 0;
+        Vec2 m{0, 0};
         bool any = false;
         for (const auto* pts : {&sp->control, &sp->fit}) {
             for (const Vec2& q : *pts) {
-                m = any ? std::min(m, q.x) : q.x;
+                m = any ? Vec2{std::min(m.x, q.x), std::min(m.y, q.y)} : q;
                 any = true;
             }
         }
         return m;
     }
     if (!geom::curvesOf(e, cs) || cs.empty())
-        return 0;
-    double m = cs.front().bounds().min.x;
-    for (const CurveRef& c : cs)
-        m = std::min(m, c.bounds().min.x);
+        return {0, 0};
+    BBox2 b = cs.front().bounds();
+    Vec2 m = b.min;
+    for (const CurveRef& c : cs) {
+        b = c.bounds();
+        m = {std::min(m.x, b.min.x), std::min(m.y, b.min.y)};
+    }
     return m;
 }
 
@@ -640,9 +646,12 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
         if (entities[i] && takesPart(*entities[i]))
             order.push_back(i);
     }
-    std::vector<double> mx(entities.size(), 0.0);
-    for (std::size_t i : order)
-        mx[i] = minX(*entities[i]);
+    std::vector<double> mx(entities.size(), 0.0), my(entities.size(), 0.0);
+    for (std::size_t i : order) {
+        const Vec2 m = minCorner(*entities[i]);
+        mx[i] = m.x;
+        my[i] = m.y;
+    }
     std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
         if (kind(*entities[a]) != kind(*entities[b]))
             return kind(*entities[a]) < kind(*entities[b]);
@@ -650,14 +659,56 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
     });
     std::vector<bool> gone(entities.size(), false);
 
-    // 1. Exact duplicates: the earliest entity in the input stays.
+    // 1. Exact duplicates: the earliest entity in the input stays. Entities of one kind are binned
+    // by the corner of their box, so an entity is only compared with those whose corner is within
+    // the window in both x and y (a run of equal x, like a grid of parallel lines, stays linear).
+    const double window = o.tolerance * 4 + 1e-9;
+    auto cellOf = [&](double v) {
+        const double c = std::floor(v / window);
+        return std::isfinite(c) ? static_cast<std::int64_t>(std::clamp(c, -1e15, 1e15))
+                                : std::int64_t{0};
+    };
+    auto cellKey = [&](EntityKind k, std::int64_t cx, std::int64_t cy) {
+        std::uint64_t h = static_cast<std::uint64_t>(k) * 0x9E3779B97F4A7C15ull;
+        h ^= static_cast<std::uint64_t>(cx) * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
+        h ^= static_cast<std::uint64_t>(cy) * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
+        return h;
+    };
+    // Cell -> ranks in `order`, ascending. A hash collision only adds candidates, which the
+    // window test below throws out.
+    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> cells;
+    cells.reserve(order.size());
     for (std::size_t oi = 0; oi < order.size(); ++oi) {
-        std::size_t i = order[oi];
-        for (std::size_t oj = oi + 1; oj < order.size(); ++oj) {
-            std::size_t j = order[oj];
-            if (kind(*entities[j]) != kind(*entities[i]) || mx[j] - mx[i] > o.tolerance * 4 + 1e-9)
-                break;
-            std::size_t keep = std::min(i, j), drop = std::max(i, j);
+        const std::size_t i = order[oi];
+        cells[cellKey(kind(*entities[i]), cellOf(mx[i]), cellOf(my[i]))].push_back(
+            static_cast<std::uint32_t>(oi));
+    }
+    std::vector<std::uint32_t> cand;
+    for (std::size_t oi = 0; oi < order.size(); ++oi) {
+        const std::size_t i = order[oi];
+        if (gone[i])
+            continue;
+        cand.clear();
+        const std::int64_t cx = cellOf(mx[i]), cy = cellOf(my[i]);
+        for (std::int64_t dy = -1; dy <= 1; ++dy) {
+            for (std::int64_t dx = -1; dx <= 1; ++dx) {
+                auto it = cells.find(cellKey(kind(*entities[i]), cx + dx, cy + dy));
+                if (it == cells.end())
+                    continue;
+                for (auto r = std::upper_bound(it->second.begin(), it->second.end(),
+                                               static_cast<std::uint32_t>(oi));
+                     r != it->second.end(); ++r)
+                    cand.push_back(*r);
+            }
+        }
+        std::sort(cand.begin(), cand.end());
+        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        for (std::uint32_t oj : cand) {
+            const std::size_t j = order[oj];
+            if (kind(*entities[j]) != kind(*entities[i]) || mx[j] - mx[i] > window ||
+                std::abs(my[j] - my[i]) > window)
+                continue;
+            const std::size_t drop = std::max(i, j);
             if (gone[i] || gone[j])
                 continue;
             if (!o.ignoreProperties && !sameProps(entities[i]->common, entities[j]->common))
@@ -666,7 +717,6 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
                 gone[drop] = true;
                 res.erased.push_back(drop);
                 ++res.duplicates;
-                (void)keep;
                 if (drop == i)
                     break;
             }
