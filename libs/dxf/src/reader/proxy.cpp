@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <set>
 
 #include "importer.h"
 #include "tbcad/geom/entity.h"
@@ -631,6 +632,79 @@ std::vector<std::uint8_t> Importer::proxyGraphicsOf(const Record& r) const {
         }
     }
     return out;
+}
+
+
+// A MESH (subdivision mesh) carries its control cage in plain groups: vertices (92 then 10/20/30),
+// faces (93 then a list of 90: count followed by vertex indices) and edges (94 then pairs of 90).
+// The cage edges are drawn as seen from above; the smoothing of higher subdivision levels is not.
+bool Importer::meshEdges(const Record& r, const EntityCommon& base, ProxyData& proxy) {
+    std::vector<Vec2> verts;
+    std::vector<std::int64_t> faceList, edgeList;
+    enum class Part { None, Verts, Faces, Edges } part = Part::None;
+    std::int64_t left = 0;
+    bool inMesh = false;
+    for (const Group& g : r.g) {
+        if (g.code == 100) {
+            inMesh = g.str() == "AcDbSubDMesh";
+            part = Part::None;
+            continue;
+        }
+        if (!inMesh)
+            continue;
+        if (g.code == 92) {
+            part = Part::Verts;
+            left = g.integer();
+        } else if (g.code == 93) {
+            part = Part::Faces;
+            left = g.integer();
+        } else if (g.code == 94) {
+            part = Part::Edges;
+            left = 2 * g.integer();
+        } else if (g.code == 95 || (g.code == 90 && left <= 0)) {
+            part = Part::None;
+        } else if (part == Part::Verts && g.code == 10 && left > 0) {
+            verts.push_back({g.number() * k_, 0});
+        } else if (part == Part::Verts && g.code == 20 && !verts.empty()) {
+            verts.back().y = g.number() * k_;
+            --left;
+        } else if (g.code == 90 && left > 0 && part == Part::Faces) {
+            faceList.push_back(g.integer());
+            --left;
+        } else if (g.code == 90 && left > 0 && part == Part::Edges) {
+            edgeList.push_back(g.integer());
+            --left;
+        }
+    }
+    const auto nv = static_cast<std::int64_t>(verts.size());
+    std::set<std::pair<std::int64_t, std::int64_t>> seen;
+    std::vector<std::pair<std::int64_t, std::int64_t>> edges;
+    auto add = [&](std::int64_t a, std::int64_t b) {
+        if (a < 0 || b < 0 || a >= nv || b >= nv || a == b)
+            return;
+        if (seen.insert({std::min(a, b), std::max(a, b)}).second)
+            edges.push_back({a, b});
+    };
+    for (std::size_t i = 0; i + 1 < edgeList.size(); i += 2)
+        add(edgeList[i], edgeList[i + 1]);
+    for (std::size_t i = 0; i < faceList.size();) {
+        const std::int64_t n = faceList[i];
+        if (n < 2 || i + 1 + static_cast<std::size_t>(n) > faceList.size())
+            break;
+        for (std::int64_t j = 0; j < n; ++j)
+            add(faceList[i + 1 + j], faceList[i + 1 + (j + 1) % n]);
+        i += 1 + static_cast<std::size_t>(n);
+    }
+    if (edges.empty())
+        return false;
+    geom::DisplayContext ctx;
+    for (const auto& [a, b] : edges) {
+        Entity e;
+        e.common = base;
+        e.data = LineData{verts[static_cast<std::size_t>(a)], verts[static_cast<std::size_t>(b)]};
+        geom::buildDisplay(*doc_, e, ctx, proxy.graphics);
+    }
+    return true;
 }
 
 }  // namespace tbcad::dxf::detail
