@@ -134,6 +134,6 @@ The menu now lists the new commands under Modify (Draw for DIVIDE and MEASURE).
 
 ## FIND, RENAME, COPYTOLAYER (Q75m)
 
-- **FIND** (Ctrl+F): asks for the text, the replacement (Enter = only count) and Match case. Searches model-space text, mtext, leader notes, dimension text overrides, block attribute values and table cells. One undo step. Objects on locked, off or frozen layers are counted but not changed.
+- **FIND** (Ctrl+F): asks for the text, the replacement (Enter = only count) and Match case. Searches text, mtext, leader notes, dimension text overrides, block attribute values and table cells, in model space and on every layout sheet. One undo step. Objects on locked, off or frozen layers are counted but not changed.
 - **RENAME** (REN): Layer, Block, TextStyle or DimStyle, old name, new name. Refuses clashes and layer 0.
 - **COPYTOLAYER**: select objects, pick an object on the destination layer; copies land there.
