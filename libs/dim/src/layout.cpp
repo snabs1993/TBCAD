@@ -413,7 +413,13 @@ void layoutAngular(const Ctx& c, const DimensionData& d, const std::string& txt,
     const double stub = 2 * c.arrow;
     const double am = a1 + g.sweep / 2;
     const Vec2 radial = unit(am);
-    const double rotText = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(am + kPi / 2);
+    // DIMTOH: text beyond the extension lines (an arc too short for its arrows, or text moved out
+    // past the arc) can be horizontal while the text between them follows the arc.
+    // (Moved text sets the arc radius, so "past the arc" is the arc lying beyond the picked lines.)
+    const bool outside = !arrowsIn || (d.textPosUser && !L.lines.empty());
+    const bool horizontal = c.st.textAlign == DimTextAlign::Horizontal ||
+                            (outside && c.st.textAlignOutside == DimTextAlign::Horizontal);
+    const double rotText = horizontal ? 0 : readable(am + kPi / 2);
 
     Vec2 center = V + radial * r;
     bool onArc = true;
