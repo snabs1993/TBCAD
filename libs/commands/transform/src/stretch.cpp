@@ -164,6 +164,39 @@ std::vector<std::pair<EntityId, Entity>> stretchByWindow(const Document& doc,
         [&](const BBox2& b) { return window.containsBox(b); }, delta, error, true);
 }
 
+std::vector<std::pair<EntityId, Entity>> stretchByRegions(const Document& doc,
+                                                          const std::vector<EntityId>& ids,
+                                                          const std::vector<StretchRegion>& regions,
+                                                          Vec2 delta, std::string* error) {
+    bool convex = true;
+    for (const StretchRegion& r : regions)
+        convex = convex && r.polygon.empty();
+    auto boxIn = [](const StretchRegion& r, const BBox2& b) {
+        if (r.polygon.empty())
+            return r.window.containsBox(b);
+        if (r.polygon.size() < 3)
+            return false;
+        return inPolygon(r.polygon, b.min) && inPolygon(r.polygon, b.max) &&
+               inPolygon(r.polygon, {b.min.x, b.max.y}) && inPolygon(r.polygon, {b.max.x, b.min.y});
+    };
+    return stretchImpl(
+        doc, ids,
+        [&](Vec2 p) {
+            for (const StretchRegion& r : regions)
+                if (r.polygon.empty() ? r.window.contains(p)
+                                      : r.polygon.size() >= 3 && inPolygon(r.polygon, p))
+                    return true;
+            return false;
+        },
+        [&](const BBox2& b) {
+            for (const StretchRegion& r : regions)
+                if (boxIn(r, b))
+                    return true;
+            return false;
+        },
+        delta, error, convex);
+}
+
 std::vector<std::pair<EntityId, Entity>> stretchByPolygon(const Document& doc,
                                                           const std::vector<EntityId>& ids,
                                                           const std::vector<Vec2>& polygon,
