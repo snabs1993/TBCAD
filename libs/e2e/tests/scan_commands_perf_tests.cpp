@@ -39,7 +39,7 @@ struct Site {
     std::unique_ptr<ui::AppCore> core;
     int n = 0;
 
-    explicit Site() {
+    explicit Site(int pairs = 0) {
         const bool mixed = true;
         dir = std::filesystem::temp_directory_path() /
               ("tbcad_scan_perf_" + std::to_string(::getpid()) + "scan");
@@ -50,7 +50,7 @@ struct Site {
             std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
         core->setViewportSize(1400, 900);
         const char* env = std::getenv("TBCAD_BENCH_N");
-        n = env ? std::atoi(env) : 170000;
+        n = pairs > 0 ? pairs : env ? std::atoi(env) : 170000;
         auto tx = core->document().begin("gen");
         TextStyleId shx{};
         BlockId block{};
@@ -245,6 +245,62 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         if (const char* only = std::getenv("TBCAD_BENCH_ONLY");
             only && std::string(only) != c.label)
             continue;
+        const Timing t = s.bench(c.lines);
+        std::printf("%-16s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
+                    s.core->history().empty() ? "" : s.core->history().back().c_str());
+#ifdef NDEBUG
+        INFO(c.label);
+        CHECK(t.runMs < c.budgetMs);
+#endif
+    }
+}
+
+// Tables with thousands of rows: layers, blocks and their inserts, as in a drawing that was
+// assembled from many files.
+TEST_CASE("perf: table commands with thousands of layers and blocks stay fast") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Site s(20000);
+    constexpr int kLayers = 3000, kBlocks = 3000, kInserts = 30000;
+    {
+        auto tx = s.core->document().begin("tables");
+        std::vector<LayerId> layers;
+        for (int i = 0; i < kLayers; ++i)
+            layers.push_back(tx.addLayer({.name = "LAYER" + std::to_string(i)}).value());
+        std::vector<BlockId> blocks;
+        for (int b = 0; b < kBlocks; ++b) {
+            const BlockId id = tx.addBlock({.name = "BLK" + std::to_string(b)}).value();
+            for (int k = 0; k < 3; ++k)
+                (void)tx.add(Entity{{}, LineData{{k * 2.0, 0}, {k * 2.0 + 1, 4.0 + b % 5}}}, id);
+            blocks.push_back(id);
+        }
+        for (int i = 0; i < kInserts; ++i) {
+            InsertData in;
+            in.block = blocks[static_cast<std::size_t>(i % kBlocks)];
+            in.position = {(i % 300) * 40.0, 20000.0 + (i / 300) * 40.0};
+            Entity e;
+            e.data = Indirect<InsertData>(std::move(in));
+            e.common.layer = layers[static_cast<std::size_t>(i % kLayers)];
+            (void)tx.add(std::move(e));
+        }
+        tx.commit();
+    }
+    s.core->zoomExtents();
+    s.core->updateFrame();
+    const std::vector<Case> cases = {
+        {"LAYER-OFF", {"-LAYER", "Off", "*", ""}},
+        {"LAYER-FREEZE", {"-LAYER", "Freeze", "*", ""}},
+        {"LAYER-LOCK", {"-LAYER", "Lock", "*", ""}},
+        {"LAYISO", {"LAYISO"}},
+        {"PURGE", {"PURGE", "", "Yes"}},
+        {"BLOCKCOUNT", {"BLOCKCOUNT"}},
+        {"EXPLODE", {"EXPLODE"}},
+        {"QSELECT-layer", {"QSELECT", "Layer", "LAYER7", "Equals", "Replace"}},
+        {"SELECTSIMILAR", {"SELECTSIMILAR"}},
+        {"AUDIT", {"AUDIT"}},
+    };
+    std::printf("%zu objects, %d layers, %d blocks\n", s.core->document().modelSpaceCount(),
+                kLayers, kBlocks);
+    for (const Case& c : cases) {
         const Timing t = s.bench(c.lines);
         std::printf("%-16s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
                     s.core->history().empty() ? "" : s.core->history().back().c_str());
