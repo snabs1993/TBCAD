@@ -3,12 +3,15 @@
 #include <cctype>
 #include <cmath>
 #include <functional>
+#include <future>
 #include <set>
 #include <sstream>
+#include <thread>
 
 #include "keep.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
 #include "writer_impl.h"
 
@@ -1441,7 +1444,6 @@ Result<ExportResult> Writer::run() {
     layoutModel_ = newHandle();
     layoutPaper_ = newHandle();
     prepareSheets();
-
     // Extents of model space for $EXTMIN/$EXTMAX and the active viewport.
     std::vector<EntityId> model = doc_.modelSpace();
     if (opt_.onlyLevel) {
@@ -1452,22 +1454,47 @@ Result<ExportResult> Writer::run() {
                                    }),
                     model.end());
     }
-    for (EntityId id : model) {
-        const Entity* e = doc_.find(id);
-        if (!e)
-            continue;
-        BBox2 b = geom::bounds(*e, doc_);
-        if (const auto* t = entityAs<TextData>(*e)) {
-            b.expand(t->position);
-            b.expand(t->alignPoint);
-        } else if (const auto* m = entityAs<MTextData>(*e)) {
-            b.expand(m->position);
-        } else if (const auto* d = entityAs<DimensionData>(*e)) {
-            for (Vec2 p : d->defPts)
-                b.expand(p);
-            b.expand(d->textPos);
+    {
+        auto extentsOf = [&](std::size_t from, std::size_t to) {
+            BBox2 acc;
+            text::FontScope fonts;  // text bounds are laid out without waiting for other threads
+            for (std::size_t i = from; i < to; ++i) {
+                const Entity* e = doc_.find(model[i]);
+                if (!e)
+                    continue;
+                BBox2 b = geom::bounds(*e, doc_);
+                if (const auto* t = entityAs<TextData>(*e)) {
+                    b.expand(t->position);
+                    b.expand(t->alignPoint);
+                } else if (const auto* m = entityAs<MTextData>(*e)) {
+                    b.expand(m->position);
+                } else if (const auto* d = entityAs<DimensionData>(*e)) {
+                    for (Vec2 p : d->defPts)
+                        b.expand(p);
+                    b.expand(d->textPos);
+                }
+                acc.merge(b);
+            }
+            return acc;
+        };
+        constexpr std::size_t kMinPerLane = 16384;
+        const std::size_t lanes = std::clamp<std::size_t>(
+            std::min<std::size_t>(std::thread::hardware_concurrency(), model.size() / kMinPerLane),
+            1, 16);
+        if (lanes < 2) {
+            extents_.merge(extentsOf(0, model.size()));
+        } else {
+            // The lookups that fill a cache on first use are done before the threads start.
+            for (const auto& [id, layer] : doc_.layers())
+                (void)doc_.effective(id);
+            std::vector<std::future<BBox2>> jobs;
+            for (std::size_t k = 1; k < lanes; ++k)
+                jobs.push_back(std::async(std::launch::async, extentsOf, model.size() * k / lanes,
+                                          model.size() * (k + 1) / lanes));
+            extents_.merge(extentsOf(0, model.size() / lanes));
+            for (auto& j : jobs)
+                extents_.merge(j.get());
         }
-        extents_.merge(b);
     }
 
     // Entities first (they decide which dimension blocks exist), then the sections in file order.
@@ -1515,7 +1542,9 @@ Result<ExportResult> Writer::run() {
     std::string tables = tablesSection();
     std::string objects = r12_ ? std::string() : objectsSection();
 
-    std::string out = headerSection(handleSeed());
+    std::string out;
+    out.reserve(entities.buf.size() + blocks.size() + tables.size() + objects.size() + (1u << 20));
+    out += headerSection(handleSeed());
     if (!r12_) {
         out += "  0\r\nSECTION\r\n  2\r\nCLASSES\r\n";
         if (!images_.empty()) {
