@@ -462,6 +462,19 @@ TEST_CASE("LAYOUT Template brings a layout, its sheet objects and viewports from
         src.host->run("LAYOUT", {"New", "A2 Plan", "A2", "Portrait"});
         src.host->run("MVIEW", {"20,20", "400,500", "1:200", "5000,6000"});
         src.host->run("VPLOCK", {"1", "Lock"});
+        {
+            auto tx = src.doc.begin("frozen");
+            Layer l;
+            l.name = "S-FLOOR";
+            const LayerId top = tx.addLayer(l).value();
+            l.name = "edge";
+            l.parent = top;
+            const LayerId sub = tx.addLayer(l).value();
+            tx.commit();
+            auto tx2 = src.doc.begin("freeze");
+            REQUIRE(layout::setViewportLayerFrozen(tx2, "A2 Plan", 1, sub, true).ok());
+            tx2.commit();
+        }
         src.host->run("TITLEBLOCK", {"Job", "Client", "A. Person", "1", "2026-10-19"});
         {
             auto tx = src.doc.begin("frame");
@@ -482,6 +495,13 @@ TEST_CASE("LAYOUT Template brings a layout, its sheet objects and viewports from
     REQUIRE(got->viewports.size() == 1);
     CHECK(got->viewports[0].scaleN == doctest::Approx(200));
     CHECK(got->viewports[0].locked);
+    // The layer frozen in the viewport came along, sub-layer path included.
+    REQUIRE(got->viewports[0].frozen.size() == 1);
+    const Layer* edge = f.doc.layer(got->viewports[0].frozen[0]);
+    REQUIRE(edge);
+    CHECK(edge->name == "edge");
+    REQUIRE(f.doc.layer(edge->parent));
+    CHECK(f.doc.layer(edge->parent)->name == "S-FLOOR");
     CHECK(got->viewports[0].center.y == doctest::Approx(6000));
     CHECK(sheetObjects(f.doc, "A2 Plan") >= 2);
     CHECK(f.doc.layerByName("TB-FRAME") != nullptr);  // created from the template
