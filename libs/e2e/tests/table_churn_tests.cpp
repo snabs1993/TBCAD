@@ -30,9 +30,9 @@ using cmd::ScriptItem;
 namespace {
 
 bool skipped(const std::string& name) {
-    static const char* const kParts[] = {"EXPORT", "IMPORT",  "SAVE",   "PRINT",   "PLOT",
-                                         "DEVGEN", "NEWFROM", "ATTACH", "RELOAD",  "OPEN",
-                                         "QUIT",   "EXIT",    "NEW",    "TEMPLATE"};
+    static const char* const kParts[] = {"EXPORT", "IMPORT",  "SAVE",   "PRINT",    "PLOT",
+                                         "DEVGEN", "NEWFROM", "ATTACH", "RELOAD",   "OPEN",
+                                         "QUIT",   "EXIT",    "NEW",    "TEMPLATE", "WBLOCK"};
     for (const char* part : kParts)
         if (name.find(part) != std::string::npos)
             return true;
@@ -108,9 +108,9 @@ std::vector<ScriptItem> script(std::mt19937& rng, const std::vector<EntityId>& i
                 break;
             case 2:
                 if (!ids.empty())
-                    out.push_back(ScriptItem::select({ids[rng() % ids.size()],
-                                                      ids[rng() % ids.size()],
-                                                      ids[rng() % ids.size()]}));
+                    out.push_back(
+                        ScriptItem::select({ids[rng() % ids.size()], ids[rng() % ids.size()],
+                                            ids[rng() % ids.size()]}));
                 break;
             default:
                 out.push_back(ScriptItem(kText[rng() % std::size(kText)]));
