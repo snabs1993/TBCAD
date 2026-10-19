@@ -562,7 +562,8 @@ struct DimBreak {
 // dimension). Vertex: a line's end (0 = a, 1 = b), a polyline vertex, an arc's end (0 = start,
 // 1 = end) or a point object. Center: the centre of a circle or an arc.
 struct DimAssoc {
-    enum class Kind : std::uint8_t { None, Vertex, Center };
+    // OnCurve: a point on a circle or arc, at the angle index / 2^32 of a full turn.
+    enum class Kind : std::uint8_t { None, Vertex, Center, OnCurve };
     Kind kind = Kind::None;
     EntityId target{};
     std::uint32_t index = 0;
