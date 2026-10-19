@@ -1121,7 +1121,8 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     o.d(13, w);
     o.d(23, h);
     o.h(340, img.def);
-    o.i(70, ip.clipped() ? 7 : 3);  // shown, shown when not aligned, [clipped]
+    // shown, shown when not aligned, [clipped], [bitonal background clear]
+    o.i(70, (ip.clipped() ? 7 : 3) | (ip.transparent ? 8 : 0));
     o.i(280, ip.clipped() ? 1 : 0);
     o.i(281, ip.brightness);
     o.i(282, ip.contrast);

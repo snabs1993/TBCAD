@@ -952,6 +952,7 @@ TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with
         ip.u1 = 0.75;
         ip.v0 = 0.25;
         ip.v1 = 0.75;
+        ip.transparent = true;
         REQUIRE(underlay::setImageParams(tx, "logo", ip));
         REQUIRE(tx.add(make(InsertData{b, {100, 200}, {2, 2}, 0.5})).ok());
         tx.commit();
@@ -975,6 +976,7 @@ TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with
     CHECK(p.fade == doctest::Approx(40));
     CHECK(p.u0 == doctest::Approx(0.25));
     CHECK(p.v1 == doctest::Approx(0.75));
+    CHECK(p.transparent);
 }
 
 TEST_CASE("MTEXT paragraph settings, column breaks and line spacing survive DXF") {

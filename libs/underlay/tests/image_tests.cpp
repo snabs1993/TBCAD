@@ -246,6 +246,31 @@ TEST_CASE("brightness, contrast, frame and a polygon clip are stored and applied
     CHECK(cut->rgba[0] == 128);
 }
 
+TEST_CASE("transparency clears the white background of a bitonal picture only") {
+    auto bw = std::make_shared<ImageData>();
+    bw->width = 2;
+    bw->height = 1;
+    bw->rgba = {0, 0, 0, 255, 255, 255, 255, 255};  // black, white
+    ImageCache cache;
+    ImageParams p;
+    p.transparent = true;
+    auto out = cache.adjusted(1, bw, p);
+    CHECK(out->rgba[3] == 255);  // black stays
+    CHECK(out->rgba[7] == 0);    // white goes
+    // Without the flag nothing changes.
+    CHECK(cache.adjusted(1, bw, ImageParams{}) == bw);
+    // A grey or coloured picture is not bitonal: the flag does nothing.
+    auto grey = std::make_shared<ImageData>(*bw);
+    grey->rgba[0] = grey->rgba[1] = grey->rgba[2] = 100;
+    CHECK(cache.adjusted(2, grey, p) == grey);
+    // Saved with the other parameters.
+    Header h;
+    ImageParamTable t;
+    t["pic"] = p;
+    writeImageParams(h, t);
+    CHECK(readImageParams(h).at("pic").transparent);
+}
+
 TEST_CASE("hidden inserts and missing files give no image") {
     const auto dir = tempDir();
     writeBmp(dir / "p.bmp", 2, 2, [](int, int) { return std::array<int, 3>{9, 9, 9}; });

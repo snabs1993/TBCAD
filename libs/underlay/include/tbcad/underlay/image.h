@@ -32,6 +32,8 @@ struct ImageInfo {
 };
 // Size of the picture without decoding it.
 Result<ImageInfo> imageInfo(const std::filesystem::path& file);
+// True when every pixel is pure black or pure white.
+bool isBitonal(const ImageData& img);
 // Decodes the picture to RGBA.
 Result<std::shared_ptr<const ImageData>> loadImage(const std::filesystem::path& file);
 // A Document holding the frame (a closed polyline on kImageLayerName) of a width x height picture,
@@ -42,6 +44,7 @@ Result<std::unique_ptr<Document>> imageFrameDocument(int width, int height);
 // invisible); the clip is a rectangle in fractions of the picture (u from the left, v from the
 // top), the default being the whole picture. `clip` is a polygon in the same fractions: when it
 // has three or more points only the inside shows, and u0..v1 are its bounding box.
+// `transparent` only has an effect on bitonal pictures.
 // `brightness` and `contrast` are 0..100 with 50 = the picture as it is. `frame` says whether
 // the outline of the picture is drawn: 0 no, 1 yes and it is plotted, 2 yes but not plotted.
 struct ImageParams {
@@ -49,9 +52,12 @@ struct ImageParams {
     double u0 = 0, v0 = 0, u1 = 1, v1 = 1;
     int brightness = 50, contrast = 50;
     int frame = 2;
+    // Bitonal (black and white only) pictures: the white background does not show (DXF 70 bit 8).
+    bool transparent = false;
     std::vector<Vec2> clip{};
     bool clipped() const { return u0 > 0 || v0 > 0 || u1 < 1 || v1 < 1 || clip.size() >= 3; }
     bool adjusted() const { return brightness != 50 || contrast != 50; }
+    bool derived() const { return adjusted() || transparent || clip.size() >= 3; }
     friend bool operator==(const ImageParams&, const ImageParams&) = default;
 };
 inline constexpr double kDefaultImageFade = 30;
@@ -100,6 +106,7 @@ private:
     };
     std::unordered_map<std::string, Entry> entries_{};
     std::unordered_map<std::string, Entry> derived_{};
+    std::unordered_map<std::uint64_t, bool> bitonal_{};
     std::uint64_t nextKey_ = 1;
 };
 
