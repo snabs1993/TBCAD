@@ -1,5 +1,6 @@
 #include "tbcad/transform/stretch.h"
 
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/transform.h"
 
@@ -88,7 +89,26 @@ std::vector<std::pair<EntityId, Entity>> stretchImpl(const Document& doc,
         const int nv = vertexGrips(*src, grips.size());
         bool whole = false;
         std::vector<int> inside;
-        if (nv < 0) {
+        if (const auto* dm = entityAs<DimensionData>(*src)) {
+            // The definition points that the kind uses, and the text: those inside the window
+            // move, so the measurement follows. Everything inside moves the dimension whole.
+            const std::size_t used = dm->kind == DimKind::Linear || dm->kind == DimKind::Aligned ||
+                                             dm->kind == DimKind::Ordinate
+                                         ? 3
+                                     : dm->kind == DimKind::Radius || dm->kind == DimKind::Diameter
+                                         ? 2
+                                         : 4;
+            std::size_t total = 0;
+            for (std::size_t i = 0; i <= used && i < grips.size(); ++i) {
+                const std::size_t idx = i < used ? i : 4;  // 4 = the text
+                if (idx >= grips.size())
+                    break;
+                ++total;
+                if (contains(grips[idx]))
+                    inside.push_back(static_cast<int>(idx));
+            }
+            whole = !inside.empty() && inside.size() == total;
+        } else if (nv < 0) {
             whole = !grips.empty() && contains(grips[0]);
         } else if (nv == 0) {
             whole = containsBox(geom::bounds(*src, doc));
@@ -119,8 +139,11 @@ std::vector<std::pair<EntityId, Entity>> stretchImpl(const Document& doc,
             }
             cur = std::move(moved).value();
         }
-        if (ok)
+        if (ok) {
+            if (auto* dm = entityAs<DimensionData>(cur))
+                dim::refresh(doc, *dm);
             out.emplace_back(id, std::move(cur));
+        }
     }
     return out;
 }
