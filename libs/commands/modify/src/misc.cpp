@@ -722,7 +722,7 @@ public:
             bool isSpline = kind(*e) == EntityKind::Spline;
             cmd::KeywordOptions ko;
             if (isSpline) {
-                ko.keywords = {"Decurve", "Reverse", "Exit"};
+                ko.keywords = {"Decurve", "Tolerance", "Reverse", "Exit"};
             } else {
                 const auto* pl = entityAs<PolylineData>(*e);
                 ko.keywords = {pl && pl->closed ? "Open" : "Close",
@@ -738,12 +738,12 @@ public:
                                "Exit"};
             }
             ko.defaultKeyword = "Exit";
-            auto k =
-                co_await ctx.getKeyword(isSpline ? "Enter an option [Decurve/Reverse/Exit] <Exit>"
-                                                 : "Enter an option "
-                                                   "[Close/Open/Join/Fuzz/Width/Taper/Fit/Spline/"
-                                                   "Ltypegen/Vertices/Reverse/Exit] <Exit>",
-                                        ko);
+            auto k = co_await ctx.getKeyword(
+                isSpline ? "Enter an option [Decurve/Tolerance/Reverse/Exit] <Exit>"
+                         : "Enter an option "
+                           "[Close/Open/Join/Fuzz/Width/Taper/Fit/Spline/"
+                           "Ltypegen/Vertices/Reverse/Exit] <Exit>",
+                ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
             if (k.keyword == "Close" || k.keyword == "Open") {
@@ -872,6 +872,23 @@ public:
                     continue;
                 }
                 (void)replaceEntity(ctx.tx(), id, sp.value());
+            } else if (k.keyword == "Tolerance") {
+                cmd::RealOptions ro;
+                ro.defaultValue = 0.1;
+                ro.min = 1e-6;
+                auto tolerance = co_await ctx.getReal(
+                    "Specify how far the new curve may stray from the old one <0.1>", ro);
+                if (!tolerance.ok())
+                    continue;
+                auto edit = modify::refitSpline(*e, tolerance.value);
+                if (!edit) {
+                    ctx.message(edit.error().message);
+                    continue;
+                }
+                (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
+                if (const auto* ns = entityAs<SplineData>(*ctx.doc().find(id)))
+                    ctx.message("Fitted again through " + std::to_string(ns->fit.size()) +
+                                " points.");
             } else if (k.keyword == "Decurve") {
                 auto pl = modify::splineToPolyline(*e, 0.001);
                 if (!pl) {
