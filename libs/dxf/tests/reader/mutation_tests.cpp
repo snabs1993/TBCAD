@@ -8,6 +8,14 @@
 #include <string>
 
 #include "reader_helpers.h"
+#include "tbcad/dxf/writer.h"
+#include "tbcad/blocks/display.h"
+#include "tbcad/dim/dim.h"
+#include "tbcad/geom/entity.h"
+#include "tbcad/hatch/hatch.h"
+#include "tbcad/mline/mline.h"
+#include "tbcad/table/table.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::dxf {
 namespace {
@@ -209,6 +217,73 @@ TEST_CASE("bad group codes and huge counts never crash or exhaust memory") {
         }
         importQuietly(bytesOf(lines, lines.size()));
     }
+}
+
+TEST_CASE("hostile numbers in coordinates and sizes: the drawing reads, draws and saves") {
+    // Real-valued groups (points, sizes, angles, XDATA reals) get NaN, infinities, huge,
+    // tiny and denormal values; whatever the reader keeps must draw and save as DXF without a
+    // crash, and the saved file must read again.
+    const char* kHostile[] = {"nan", "-nan", "inf", "-inf", "1e308", "-1e308", "1e-320",
+                              "4.9e-324", "1e300", "-0", "1e18", "NaN", "Infinity"};
+    std::vector<std::vector<std::byte>> seeds;
+    for (const auto& e : std::filesystem::directory_iterator(testing::corpusPath("reader")))
+        if (e.path().extension() == ".dxf" && std::filesystem::file_size(e.path()) < 60000)
+            seeds.push_back(testing::readFile(e.path().string()));
+    REQUIRE(seeds.size() > 10);
+    auto realCode = [](const std::string& c) {
+        if (c.empty() || c.find_first_not_of(" -0123456789") != std::string::npos)
+            return false;
+        const long v = std::strtol(c.c_str(), nullptr, 10);
+        return (v >= 10 && v <= 59) || (v >= 110 && v <= 149) || (v >= 210 && v <= 239) ||
+               (v >= 460 && v <= 469) || (v >= 1010 && v <= 1059);
+    };
+    dim::registerDisplay();
+    text::registerDisplay();
+    mline::registerDisplay();
+    table::registerDisplay();
+    hatch::registerHatchDisplay();
+    blocks::registerInsertDisplay();
+    Rng rng;
+    std::size_t imported = 0;
+    for (int iter = 0; iter < 600; ++iter) {
+        auto lines = linesOf(seeds[rng.below(seeds.size())]);
+        std::vector<std::size_t> reals;
+        for (std::size_t i = 0; i + 1 < lines.size(); i += 2)
+            if (realCode(lines[i]))
+                reals.push_back(i + 1);
+        if (reals.empty())
+            continue;
+        const int edits = 1 + static_cast<int>(rng.below(5));
+        for (int k = 0; k < edits; ++k)
+            lines[reals[rng.below(reals.size())]] =
+                kHostile[rng.below(sizeof(kHostile) / sizeof(*kHostile))];
+        Report report;
+        Result<ImportResult> r = importDxf(bytesOf(lines, lines.size()), ImportOptions{}, report);
+        if (!r.ok())
+            continue;
+        ++imported;
+        const Document& doc = *r.value().document;
+        doc.forEachEntity([&](const Entity& e) {
+            if (doc.ownerBlock(e.common.id))
+                return;  // drawn through the inserts, as on screen
+            DisplayList list;
+            geom::buildDisplay(doc, e, geom::DisplayContext{}, list);
+        });
+        for (DxfVersion v : {DxfVersion::R2000, DxfVersion::R12}) {
+            ExportOptions opt;
+            opt.version = v;
+            Report out;
+            Result<ExportResult> saved = exportDxf(doc, opt, out);
+            REQUIRE(saved.ok());
+            Report again;
+            const std::string& b = saved.value().bytes;
+            Result<ImportResult> back = importDxf(
+                std::span<const std::byte>(reinterpret_cast<const std::byte*>(b.data()), b.size()),
+                ImportOptions{}, again);
+            CHECK_MESSAGE(back.ok(), (back.ok() ? "" : back.error().message));
+        }
+    }
+    CHECK(imported > 300);
 }
 
 }  // namespace tbcad::dxf

@@ -1,4 +1,6 @@
 #include <chrono>
+#include <optional>
+#include <string>
 
 #include "support.h"
 #include "tbcad/index/document_indexer.h"
@@ -192,6 +194,44 @@ TEST_CASE("a cyclic definition (hand-made) does not hang") {
     (void)r;
     BBox2 box = insertBounds(doc, *doc.find(i));
     CHECK_FALSE(box.empty());
+}
+
+TEST_CASE("blocks that hold the next one twice, sixty levels deep, draw and measure at once") {
+    registerInsertDisplay();
+    Document doc;
+    // L59 holds a line; every level below holds the next one twice and a line: 2^60 inserts in
+    // full (drawing stops at kMaxNesting levels, still 2^32).
+    BlockId next = addBlock(doc, "L59", {line(0, 0, 1, 0)});
+    for (int i = 58; i >= 0; --i) {
+        Entity a = insertOf(next, {0, 0}), b = insertOf(next, {1, 0});
+        next = addBlock(doc, ("L" + std::to_string(i)).c_str(), {a, b, line(0, 0, 0, 1)});
+    }
+    const EntityId top = addEntity(doc, insertOf(next, {0, 0}));
+    CHECK(expandedCount(doc, *doc.find(top)) > kMaxExpanded);
+    const BBox2 box = insertBounds(doc, *doc.find(top));
+    REQUIRE_FALSE(box.empty());
+    // Without and with the block display cache: the outline of the insert.
+    for (bool cached : {false, true}) {
+        BlockDisplayCache cache;
+        std::optional<BlockDisplayScope> scope;
+        if (cached)
+            scope.emplace(cache);
+        const DisplayList l = displayOf(doc, top);
+        REQUIRE(l.items.size() == 1);
+        CHECK(poly(l, 0).closed);
+        CHECK(poly(l, 0).pts.size() == 4);
+        InsertInstance inst;
+        CHECK_FALSE(buildInsertInstance(doc, *doc.find(top), geom::DisplayContext{}, inst));
+    }
+    CHECK(snapGeometry(doc, *doc.find(top)).empty());
+    // A small nest is drawn in full.
+    BlockId small = addBlock(doc, "S2", {line(0, 0, 1, 0)});
+    for (int i = 1; i >= 0; --i)
+        small = addBlock(doc, ("S" + std::to_string(i)).c_str(),
+                         {insertOf(small, {0, 0}), insertOf(small, {0, 1})});
+    const EntityId s = addEntity(doc, insertOf(small, {0, 0}));
+    CHECK(expandedCount(doc, *doc.find(s)) == 4 + 2 + 4);  // lines and the inserts below
+    CHECK(displayOf(doc, s).items.size() == 4);
 }
 
 TEST_CASE("the index follows block edits, undo and redo") {

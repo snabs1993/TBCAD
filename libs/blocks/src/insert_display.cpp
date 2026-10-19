@@ -1,5 +1,6 @@
 #include <cmath>
 #include <mutex>
+#include <optional>
 
 #include "internal.h"
 #include "tbcad/blocks/array.h"
@@ -142,6 +143,14 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         return;
     DepthGuard guard;
     const std::size_t firstItem = out.items.size();
+    // Without a cache from the caller, one for this insert: each nested block is built once, not
+    // once per path that reaches it.
+    std::optional<BlockDisplayCache> ownCache;
+    std::optional<BlockDisplayScope> ownScope;
+    if (g_depth == 1 && !g_active) {
+        ownCache.emplace();
+        ownScope.emplace(*ownCache);
+    }
 
     // An assembly's formulas turn its parameter values into the values the content is built from.
     std::optional<AsmResolved> resolved;
@@ -183,6 +192,18 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
                ctx.fillMode,
                ctx.quickText};
         blockSpace = cache->find(key);
+    }
+    if (!blockSpace && g_depth == 1 && expandedCount(doc, insert) > kMaxExpanded) {
+        // Far too many objects to draw (blocks that hold each other many times over): the outline.
+        const BBox2 box = insertBounds(doc, insert);
+        if (!box.empty()) {
+            DisplayPolyline frame;
+            frame.pts = {box.min, {box.max.x, box.min.y}, box.max, {box.min.x, box.max.y}};
+            frame.closed = true;
+            frame.style = self;
+            out.items.emplace_back(std::move(frame));
+        }
+        return;
     }
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, shown,
@@ -282,6 +303,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
                                      ctx.fillMode,
                                      ctx.quickText};
     std::shared_ptr<const DisplayList> blockSpace = cache->find(key);
+    if (!blockSpace && expandedCount(doc, insert) > kMaxExpanded)
+        return false;  // drawn as its outline by buildInsertDisplay
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);
         cache->countBuild();

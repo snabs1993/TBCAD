@@ -145,11 +145,11 @@ def make_aec():
             + EOF_)
     write("aec_objects.dxf", data)
     expect("aec_objects",
-           description="AEC/Civil/ACIS objects carry proxy graphics and are shown read-only; one without graphics is skipped",
-           exit=1, ezdxf=False, version="AC1027", encoding="UTF-8",
+           description="AEC/Civil/ACIS objects carry proxy graphics and are shown read-only; one without graphics is kept as it is (not shown) and written back",
+           exit=0, ezdxf=False, version="AC1027", encoding="UTF-8",
            dxf={"3DSOLID": 1, "AECC_ALIGNMENT": 1, "AEC_OPENING": 1, "AEC_WALL": 1, "LINE": 1},
-           kinds={"Line": 1, "Proxy": 3, "Text": 1}, texts=["สถานี 0+000"],
-           layers=["0", "A-WALL"], warnings=["dxf.reader.skipped_entity"], proxy_items_min=4)
+           kinds={"Line": 1, "Proxy": 4, "Text": 1}, texts=["สถานี 0+000"],
+           layers=["0", "A-WALL"], warnings=[], proxy_items_min=4)
 
 
 def make_damaged():
@@ -297,7 +297,40 @@ def make_missing_tables():
            exit=1, ezdxf=False, version="AC1015", dxf_min={"LINE": 1}, kinds_min={"Line": 1})
 
 
+# ---- block cycles and blow-ups ------------------------------------------------------------------
+
+def make_cycles():
+    def block(name, body, flags=0, path=None):
+        out = grp(0, "BLOCK") + grp(8, "0") + grp(2, name) + grp(70, flags) + grp(10, 0) + grp(20, 0) + grp(30, 0)
+        if path:
+            out += grp(1, path)
+        return out + grp(3, name) + body + grp(0, "ENDBLK") + grp(8, "0")
+
+    def insert(name, x=0, y=0, extra=b""):
+        return grp(0, "INSERT") + grp(8, "0") + grp(2, name) + grp(10, x) + grp(20, y) + extra
+
+    # Each level holds the next one twice: 2^60 lines in the end if nothing stops the expansion.
+    levels = b"".join(block("L%d" % i, insert("L%d" % (i + 1)) + insert("L%d" % (i + 1), 1, 0))
+                      for i in range(60))
+    blocks = (grp(0, "SECTION") + grp(2, "BLOCKS")
+              + block("SELF", line(0, 0, 1, 1) + insert("SELF", 2, 0))
+              + block("PING", insert("PONG")) + block("PONG", insert("PING") + line(0, 0, 0, 1))
+              + levels + block("L60", line(0, 0, 1, 0))
+              + block("ME", b"", 4, "cycles.dxf")
+              + grp(0, "ENDSEC"))
+    big = grp(70, 30000) + grp(71, 30000) + grp(44, 1) + grp(45, 1)
+    data = (header("AC1015", "ANSI_1252") + layer_table("0") + blocks
+            + entities(insert("SELF"), insert("PING"), insert("L0"), insert("L59", 0, 0, big), insert("ME"),
+                       line(0, 0, 5, 5))
+            + EOF_)
+    write("cycles.dxf", data)
+    expect("cycles",
+           description="a block that inserts itself, two that insert each other, 60 levels that each insert the next twice, a 30000 x 30000 MINSERT and an xref to the drawing itself",
+           exit=1, ezdxf=False, version="AC1015", kinds_min={"Line": 1, "Insert": 3},
+           warnings_has=["dxf.reader.entity_rejected"])
+
+
 for fn in (make_proxy_graphics, make_aec, make_damaged, make_bad_utf8, make_mixed_encoding,
-           make_numbers, make_handles, make_missing_tables):
+           make_numbers, make_handles, make_missing_tables, make_cycles):
     fn()
 print("done")
