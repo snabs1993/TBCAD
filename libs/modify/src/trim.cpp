@@ -496,8 +496,20 @@ Result<EntityEdit> extendEntity(const Entity& target, Vec2 pick,
             return extendEllipse(target, *entityAs<EllipseData>(target), ec, pick, opt);
         case EntityKind::Spline:
             return extendSpline(target, *entityAs<SplineData>(target), ec, pick, opt);
-        case EntityKind::Ray:
-            return err("A ray or construction line already runs on without end.");
+        case EntityKind::Ray: {
+            const auto& r = *entityAs<RayData>(target);
+            if (r.infinite)
+                return err("A construction line already runs on without end.");
+            // A ray runs on without end ahead; only its start can reach back to a boundary.
+            Seg s{r.origin, r.origin + r.dir, 0};
+            Seg out;
+            auto res = extendSeg(target, s, false, ec, opt, out);
+            if (!res)
+                return res;
+            EntityEdit edit;
+            edit.modified = withData(target, RayData{out.p0, r.dir, false});
+            return edit;
+        }
         default:
             return err("This kind of object cannot be extended.");
     }

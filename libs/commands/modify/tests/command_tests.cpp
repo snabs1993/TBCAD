@@ -1669,3 +1669,84 @@ TEST_CASE("DRAWORDER of many objects keeps their order and stays fast") {
     CHECK(f.host.undo());
     CHECK(f.doc.modelSpace() == ids);
 }
+
+TEST_CASE("EXTEND a ray back to a boundary behind its start") {
+    Fixture f;
+    RayData ray;
+    ray.origin = {0, 0};
+    ray.dir = {1, 0};
+    EntityId r = f.add(ray);
+    f.add(LineData{{-7, -3}, {-7, 3}});
+    f.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(r, {20, 0}), ScriptItem::enter()});
+    const auto* got = entityAs<RayData>(f.get(r));
+    REQUIRE(got != nullptr);
+    CHECK(near(got->origin, {-7, 0}));
+    CHECK(near(got->dir, {1, 0}));
+    CHECK(f.host.undo());
+    CHECK(near(entityAs<RayData>(f.get(r))->origin, {0, 0}));
+    // A boundary ahead of the ray is no use, and a construction line has no end to move.
+    Fixture g;
+    EntityId r2 = g.add(ray);
+    g.add(LineData{{7, -3}, {7, 3}});
+    g.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(r2, {20, 0}), ScriptItem::esc()});
+    CHECK(near(entityAs<RayData>(g.get(r2))->origin, {0, 0}));
+    CHECK(g.host.logContains("No boundary"));
+    Fixture h;
+    RayData xl = ray;
+    xl.infinite = true;
+    EntityId x = h.add(xl);
+    h.add(LineData{{-7, -3}, {-7, 3}});
+    h.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(x, {20, 0}), ScriptItem::esc()});
+    CHECK(near(entityAs<RayData>(h.get(x))->origin, {0, 0}));
+}
+
+TEST_CASE("JOIN fuses rays and construction lines on one line") {
+    auto ray = [](Vec2 o, Vec2 d, bool inf = false) {
+        RayData r;
+        r.origin = o;
+        r.dir = d;
+        r.infinite = inf;
+        return r;
+    };
+    {  // same way: the earlier start stays
+        Fixture f;
+        EntityId a = f.add(ray({0, 0}, {1, 0}));
+        EntityId b = f.add(ray({5, 0}, {1, 0}));
+        f.host.setSelection({a, b});
+        f.host.run("JOIN", {ScriptItem::enter()});
+        REQUIRE(f.count(EntityKind::Ray) == 1);
+        f.doc.forEachEntity([&](const Entity& e) {
+            const auto* r = entityAs<RayData>(e);
+            CHECK_FALSE(r->infinite);
+            CHECK(near(r->origin, {0, 0}));
+        });
+        CHECK(f.host.undo());
+        CHECK(f.count(EntityKind::Ray) == 2);
+    }
+    {  // facing rays that overlap make a construction line
+        Fixture f;
+        EntityId a = f.add(ray({0, 0}, {1, 0}));
+        EntityId b = f.add(ray({5, 0}, {-1, 0}));
+        f.host.setSelection({a, b});
+        f.host.run("JOIN", {ScriptItem::enter()});
+        REQUIRE(f.count(EntityKind::Ray) == 1);
+        f.doc.forEachEntity([&](const Entity& e) { CHECK(entityAs<RayData>(e)->infinite); });
+    }
+    {  // rays pointing away from each other with a gap between them stay apart
+        Fixture f;
+        EntityId a = f.add(ray({5, 0}, {1, 0}));
+        EntityId b = f.add(ray({0, 0}, {-1, 0}));
+        f.host.setSelection({a, b});
+        f.host.run("JOIN", {ScriptItem::enter()});
+        CHECK(f.count(EntityKind::Ray) == 2);
+    }
+    {  // a ray and a construction line on it; a parallel one is left alone
+        Fixture f;
+        EntityId a = f.add(ray({3, 0}, {1, 0}));
+        EntityId b = f.add(ray({0, 0}, {1, 0}, true));
+        EntityId c = f.add(ray({0, 4}, {1, 0}, true));
+        f.host.setSelection({a, b, c});
+        f.host.run("JOIN", {ScriptItem::enter()});
+        CHECK(f.count(EntityKind::Ray) == 2);
+    }
+}
