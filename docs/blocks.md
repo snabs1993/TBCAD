@@ -182,7 +182,9 @@ readers see an ATTDEF as plain text showing its tag.
 * `INSERT` asks for each attribute that is not constant or preset (twice for Verify). Setting
   `block.attreq` = `0` skips the questions and keeps the defaults.
 * `ATTEDIT` (`ATE`) changes the values of one insert; `ATTSYNC` brings every insert of a block in
-  line with its current definitions (new tags get the default, removed tags are dropped).
+  line with its current definitions (new tags get the default, removed tags are dropped). As in
+  AutoCAD the block is picked through one of its inserts, typed, or named with `Name`; `?` lists
+  the blocks that have attributes.
 * Display: the block's shared display cache leaves definitions out; `buildInsertDisplay` draws
   each visible attribute with the insert's value, on the definition's own layer rules. Bounds
   include the attribute text. `EXPLODE` turns attributes into plain text with the values
@@ -227,7 +229,7 @@ the parts get; **Explode** (the default) then does it. Without an option the par
 
 ## BATTMAN
 
-**BATTMAN** lists the attribute definitions of a block (tag, prompt, default, invisible). **Edit** a tag to change its **Tag**,
-**Prompt**, **Default** or **Invisible** flag; when you finish, the inserts of the block are brought in line like ATTSYNC does.
+**BATTMAN** lists the attribute definitions of a block (tag, prompt, default and modes); pick the block through an insert or type its name, as for ATTSYNC. **Edit** a tag to change its **Tag**,
+**Prompt**, **Default** or the **Invisible**, **Constant**, **Verify** and **Preset** modes; **Remove** deletes an attribute; **Up** and **Down** change the order inserts ask for and keep the values; **List** shows them again. When you finish, the inserts of the block are brought in line like ATTSYNC does, and the whole session is one undo step.
 
 `BLOCKREPLACE` swaps the block of the selected inserts for another block you name. Each insert keeps its position, scale and rotation; attribute values, dynamic values and clipping are reset for the new block.

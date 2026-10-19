@@ -154,3 +154,49 @@ TEST_CASE("BASE stores the insertion base point of the drawing, undo restores it
     f.host->run("BASE", {cmd::ScriptItem::enter()});
     CHECK(f.host->logContains("stays"));
 }
+
+TEST_CASE("redefining a block updates every insert, nested ones too, and undo brings the old one back") {
+    Fixture f;
+    EntityId a = f.addLine(0, 0, 1, 0);
+    f.host->setSelection({a});
+    f.host->run("BLOCK", {"A", "0,0", "C"});
+    const BlockId blockA = f.doc.blockByName("A")->id;
+    // a second insert and one nested in block Outer
+    {
+        auto make = [](InsertData d) {
+            Entity e;
+            e.data = Indirect<InsertData>(std::move(d));
+            return e;
+        };
+        Transaction tx = f.doc.begin("more");
+        REQUIRE(tx.add(make(InsertData{blockA, {100, 0}, {1, 1}, 0})).ok());
+        BlockId outer = tx.addBlock(BlockDef{.name = "Outer"}).value();
+        REQUIRE(tx.add(make(InsertData{blockA, {0, 0}, {1, 1}, 0}), outer).ok());
+        REQUIRE(tx.add(make(InsertData{outer, {200, 0}, {1, 1}, 0})).ok());
+        tx.commit();
+    }
+    auto widths = [&] {
+        std::vector<double> w;
+        for (EntityId id : f.modelSpace())
+            w.push_back(blocks::insertBounds(f.doc, *f.doc.find(id)).width());
+        return w;
+    };
+    for (double w : widths())
+        CHECK(w == doctest::Approx(1));
+    EntityId c = f.addCircle(0, 0, 5);
+    f.host->setSelection({c});
+    f.host->run("BLOCK", {"A", "Y", "0,0", "D"});
+    for (double w : widths())
+        CHECK(w == doctest::Approx(10));
+    CHECK(f.host->undo());
+    REQUIRE(f.doc.block(blockA)->entities.size() == 1);
+    CHECK(entityAs<LineData>(*f.doc.find(f.doc.block(blockA)->entities[0])));
+    // the circle is back in the drawing; every insert shows the line again
+    std::size_t inserts = 0;
+    for (EntityId id : f.modelSpace())
+        if (entityAs<InsertData>(*f.doc.find(id))) {
+            ++inserts;
+            CHECK(blocks::insertBounds(f.doc, *f.doc.find(id)).width() == doctest::Approx(1));
+        }
+    CHECK(inserts == 3);
+}
