@@ -288,6 +288,7 @@ private:
     struct EntityRec {
         std::uint32_t drawOrder = 0;
         bool mask = false;
+        std::uint32_t maskCount = 0;
         RefList refs{};
     };
     std::uint32_t internRef(const TileKey& tile, const BatchKey& key);
@@ -337,7 +338,9 @@ private:
     std::unordered_set<LayerId> hiddenLayers_{};
     std::unordered_set<EntityId> highlighted_{};
     std::unordered_set<EntityId> selected_{};
-    std::unordered_map<EntityId, std::uint32_t> masks_{};  // entities with mask fills -> order
+    // Entities with mask fills -> draw order and the number of separate masks (runs of mask
+    // fills with other geometry between them) the entity has.
+    std::unordered_map<EntityId, std::pair<std::uint32_t, std::uint32_t>> masks_{};
     std::vector<std::uint32_t> levelOrders_{};  // sorted draw orders of the masks batches use
     std::vector<DashPattern> patterns_;
     std::map<std::vector<double>, std::uint32_t> patternIds_{};

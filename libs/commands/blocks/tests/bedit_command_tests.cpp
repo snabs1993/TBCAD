@@ -179,3 +179,15 @@ TEST_CASE("Editing a block that contains another block updates both levels, and 
     CHECK(f.host->undo());
     CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
 }
+
+TEST_CASE("BSAVE keeps the draw order of the edited objects in the block") {
+    BEditFixture f;
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    // A second line drawn on top, then sent to the back with DRAWORDER.
+    EntityId top = f.addLine(100, 60, 110, 60);
+    f.host->run("DRAWORDER", {cmd::ScriptItem::select({top}), cmd::ScriptItem::enter(), "Back"});
+    f.host->run("BCLOSE", {cmd::ScriptItem::enter()});
+    REQUIRE(f.def().entities.size() == 2);
+    const auto* first = entityAs<LineData>(*f.doc.find(f.def().entities[0]));
+    CHECK(near(first->a, {0, 10}));  // the new line is now at the back
+}

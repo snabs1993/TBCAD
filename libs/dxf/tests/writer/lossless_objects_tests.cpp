@@ -171,3 +171,57 @@ TEST_CASE("table styles and the layer filters (the LAYER table's dictionary) are
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+namespace {
+
+// Lines 100, 101, 102 in model space and 110, 111 in block B; the tables send 100 to the front
+// and 110 to the front of B.
+const char* kSortSrc =
+    "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nBLOCKS\n"
+    "  0\nBLOCK\n  5\n50\n  8\n0\n  2\nB\n 70\n     0\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  3\nB\n"
+    "  0\nLINE\n  5\n110\n  8\n0\n 10\n0.0\n 20\n0.0\n 11\n1.0\n 21\n0.0\n"
+    "  0\nLINE\n  5\n111\n  8\n0\n 10\n0.0\n 20\n1.0\n 11\n1.0\n 21\n1.0\n"
+    "  0\nENDBLK\n  5\n51\n  8\n0\n"
+    "  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nENTITIES\n"
+    "  0\nLINE\n  5\n100\n  8\n0\n 10\n0.0\n 20\n0.0\n 11\n5.0\n 21\n0.0\n"
+    "  0\nLINE\n  5\n101\n  8\n0\n 10\n0.0\n 20\n1.0\n 11\n5.0\n 21\n1.0\n"
+    "  0\nLINE\n  5\n102\n  8\n0\n 10\n0.0\n 20\n2.0\n 11\n5.0\n 21\n2.0\n"
+    "  0\nINSERT\n  5\n103\n  8\n0\n  2\nB\n 10\n0.0\n 20\n10.0\n 30\n0.0\n"
+    "  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nOBJECTS\n"
+    "  0\nDICTIONARY\n  5\nC\n330\n0\n100\nAcDbDictionary\n"
+    "  0\nSORTENTSTABLE\n  5\n70\n330\nC\n100\nAcDbSortentsTable\n330\n1F\n331\n100\n  5\n200\n"
+    "  0\nSORTENTSTABLE\n  5\n71\n330\nC\n100\nAcDbSortentsTable\n330\n50\n331\n110\n  5\n300\n"
+    "  0\nENDSEC\n  0\nEOF\n";
+
+double lineY(const Document& d, EntityId id) {
+    const auto* ln = entityAs<LineData>(*d.find(id));
+    return ln ? ln->a.y : -1;
+}
+
+}  // namespace
+
+TEST_CASE("SORTENTSTABLE sets the draw order of model space and of blocks") {
+    Report rep;
+    Result<ImportResult> res = importDxf(testing::bytesOf(kSortSrc), ImportOptions{}, rep);
+    REQUIRE(res.ok());
+    const Document& d = *res.value().document;
+    std::vector<double> ys;
+    for (EntityId id : d.modelSpace())
+        if (entityAs<LineData>(*d.find(id)))
+            ys.push_back(lineY(d, id));
+    // Line 100 (y 0) sorts after 101 and 102 now.
+    CHECK(ys == std::vector<double>{1, 2, 0});
+    const BlockDef* b = d.blockByName("B");
+    REQUIRE(b);
+    REQUIRE(b->entities.size() == 2);
+    // Line 110 (y 0) comes last in the block.
+    CHECK(lineY(d, b->entities[0]) == 1);
+    CHECK(lineY(d, b->entities[1]) == 0);
+}
+
+}  // namespace tbcad::dxf

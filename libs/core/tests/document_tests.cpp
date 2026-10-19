@@ -669,6 +669,41 @@ TEST_CASE("inserts must not create block cycles or reference unknown blocks") {
     tx.commit();
 }
 
+TEST_CASE("draw order inside a block is the order of its list, and undo restores it") {
+    Document doc;
+    BlockId blk;
+    EntityId a, b, c;
+    {
+        Transaction tx = doc.begin("block");
+        blk = tx.addBlock(BlockDef{.name = "B"}).value();
+        Entity e;
+        e.data = LineData{{0, 0}, {1, 0}};
+        a = tx.add(e, blk).value();
+        b = tx.add(e, blk).value();
+        c = tx.add(e, blk).value();
+        tx.commit();
+    }
+    CHECK(doc.block(blk)->entities == std::vector<EntityId>{a, b, c});
+    ChangeSet front;
+    {
+        Transaction tx = doc.begin("front");
+        REQUIRE(tx.bringToFront(a));
+        REQUIRE(tx.sendToBack(c));
+        front = tx.commit();
+    }
+    CHECK(doc.block(blk)->entities == std::vector<EntityId>{c, b, a});
+    CHECK(doc.modelSpace().empty());
+    doc.apply(front, Direction::Undo);
+    CHECK(doc.block(blk)->entities == std::vector<EntityId>{a, b, c});
+    {
+        Transaction tx = doc.begin("order");
+        REQUIRE(tx.setDrawOrder({b, c, a}, blk));
+        REQUIRE_FALSE(tx.setDrawOrder({b, c}, blk));
+        tx.commit();
+    }
+    CHECK(doc.block(blk)->entities == std::vector<EntityId>{b, c, a});
+}
+
 TEST_CASE("draw order creation order bring to front send to back") {
     Document doc;
     EntityId a = addLine(doc, 0);
@@ -1001,7 +1036,8 @@ TEST_CASE("bulk erase takes everything out in one commit and undo brings it back
     CHECK(std::get<LineData>(doc.find(ids[0])->data).b.y == 5.0);
 }
 
-TEST_CASE("eraseMany handles block members, sent-to-back and edited objects together with the rest") {
+TEST_CASE(
+    "eraseMany handles block members, sent-to-back and edited objects together with the rest") {
     Document doc;
     std::vector<EntityId> ids;
     {

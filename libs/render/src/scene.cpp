@@ -203,19 +203,40 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
     remove(id);
     EntityRec& rec = entities_[id];
     rec.drawOrder = drawOrder;
-    for (const DisplayItem& item : list.items)
-        if (const auto* f = std::get_if<DisplayFill>(&item); f && isBackgroundColor(f->style.color))
-            rec.mask = true;
+    // A wipeout inside a block hides what the block drew before it and not what it draws after
+    // it, so every run of mask fills is a mask of its own with its own level.
+    {
+        bool inMask = false;
+        for (const DisplayItem& item : list.items) {
+            const auto* f = std::get_if<DisplayFill>(&item);
+            const bool isMask = f && isBackgroundColor(f->style.color);
+            if (isMask && !inMask)
+                ++rec.maskCount;
+            inMask = isMask;
+        }
+        rec.mask = rec.maskCount > 0;
+    }
     if (rec.mask)
-        masks_[id] = drawOrder;
+        masks_[id] = {drawOrder, rec.maskCount};
     Cursor c;
     c.entity = id;
     c.rec = &rec;
     c.drawOrder = drawOrder;
-    c.level = levelBelow(drawOrder);
-    c.maskLevel = c.level;
+    const std::uint32_t base = levelBelow(drawOrder);
+    c.level = base;
+    c.maskLevel = base;
     c.builtZoom = builtPixelsPerMm;
+    bool inMask = false;
+    std::uint32_t seen = 0;  // masks of this entity passed so far
     for (const DisplayItem& item : list.items) {
+        const auto* mf = std::get_if<DisplayFill>(&item);
+        const bool isMask = mf && isBackgroundColor(mf->style.color);
+        if (isMask && !inMask)
+            ++seen;
+        inMask = isMask;
+        // Geometry after the n-th mask of the entity lies above it.
+        c.level = base + seen;
+        c.maskLevel = base + (seen ? seen - 1 : 0);
         // Moving to another item may change tile and style; force a fresh lookup.
         c.batch = nullptr;
         c.tile = nullptr;
@@ -258,8 +279,8 @@ std::uint32_t Scene::levelBelow(std::uint32_t drawOrder) const {
 std::vector<std::uint32_t> Scene::maskOrders() const {
     std::vector<std::uint32_t> orders;
     orders.reserve(masks_.size());
-    for (const auto& [id, order] : masks_)
-        orders.push_back(order);
+    for (const auto& [id, om] : masks_)
+        orders.insert(orders.end(), om.second, om.first);
     std::sort(orders.begin(), orders.end());
     return orders;
 }

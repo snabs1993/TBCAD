@@ -115,6 +115,7 @@ private:
     void processClasses(RecordReader& rr);
     void storeObject(const Record& r);
     void importGroups();
+    void importDrawOrder();
     void keepObjects();
     void keepHandles();
     void applyPlotStyles();

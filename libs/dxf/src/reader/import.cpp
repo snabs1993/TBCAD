@@ -690,6 +690,82 @@ void Importer::importGroups() {
             [&](Header& h) { h.custom[kKeptGroupDescKey] = std::move(descriptions); });
 }
 
+// SORTENTSTABLE objects give the draw order of model space and of blocks: pairs of an entity
+// handle (331) and a sort handle (5, after the object's own); an entity that is not listed sorts
+// by its own handle. Without a table the order is the order of the handles, which is the order
+// the entities came in the file.
+void Importer::importDrawOrder() {
+    bool any = false;
+    for (const auto& [h, rec] : objStore_)
+        if (rec.type == "SORTENTSTABLE") {
+            any = true;
+            break;
+        }
+    if (!any)
+        return;
+    std::unordered_map<std::uint64_t, std::uint64_t> entityOfHandle, handleOf;
+    for (const auto& [id, handle] : srcHandles_) {
+        entityOfHandle.emplace(handle, id);
+        handleOf.emplace(id, handle);
+    }
+    std::unordered_map<std::uint64_t, std::uint64_t> sortKey;  // entity id -> sort handle
+    for (const auto& [h, rec] : objStore_) {
+        if (rec.type != "SORTENTSTABLE")
+            continue;
+        std::uint64_t entity = 0;
+        bool haveEntity = false, ownHandle = true;
+        for (const auto& [c, v] : rec.g) {
+            if (c == 331) {
+                auto it = entityOfHandle.find(std::strtoull(v.c_str(), nullptr, 16));
+                haveEntity = it != entityOfHandle.end();
+                if (haveEntity)
+                    entity = it->second;
+            } else if (c == 5) {
+                if (ownHandle) {  // the first 5 is the handle of the table itself
+                    ownHandle = false;
+                    continue;
+                }
+                if (haveEntity)
+                    sortKey[entity] = std::strtoull(v.c_str(), nullptr, 16);
+                haveEntity = false;
+            }
+        }
+    }
+    if (sortKey.empty())
+        return;
+    // Containers touched: model space (block 0) and the blocks of the listed entities.
+    std::set<std::uint64_t> containers;
+    for (const auto& [id, key] : sortKey)
+        containers.insert(doc_->ownerBlock(EntityId{id}).value);
+    auto keyOf = [&](EntityId id, std::uint64_t& last) {
+        if (auto it = sortKey.find(id.value); it != sortKey.end())
+            return last = it->second;
+        if (auto it = handleOf.find(id.value); it != handleOf.end())
+            return last = it->second;
+        return last;  // made by the importer: stays after the one before it
+    };
+    for (std::uint64_t container : containers) {
+        std::vector<EntityId> cur;
+        if (container == 0)
+            cur = doc_->modelSpace();
+        else if (const BlockDef* def = doc_->block(BlockId{static_cast<std::uint32_t>(container)}))
+            cur = def->entities;
+        std::uint64_t last = 0;
+        std::vector<std::pair<std::uint64_t, EntityId>> keyed;
+        keyed.reserve(cur.size());
+        for (EntityId id : cur)
+            keyed.emplace_back(keyOf(id, last), id);
+        std::stable_sort(keyed.begin(), keyed.end(),
+                         [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::vector<EntityId> want;
+        want.reserve(keyed.size());
+        for (const auto& [k, id] : keyed)
+            want.push_back(id);
+        if (want != cur)
+            (void)tx_->setDrawOrder(want, BlockId{static_cast<std::uint32_t>(container)});
+    }
+}
+
 namespace {
 // An MLINESTYLE object (or its record) as a style; offsets are scaled by k to millimetres.
 std::optional<mline::Style> mlineStyleOf(const std::vector<std::pair<int, std::string>>& g,
@@ -2320,6 +2396,7 @@ Result<ImportResult> Importer::run() {
     applyPlotStyles();
     keepHandles();
     importGroups();
+    importDrawOrder();
     importMlineStyles();
     keepObjects();
     finish();
