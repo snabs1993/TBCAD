@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 
 #include "tbcad/geom/geom.h"
 #include "tbcad/geom/polybool.h"
@@ -228,4 +230,35 @@ TEST_CASE("fitArcs turns flattened arcs back into arcs and leaves polygons alone
     auto of = fitArcs(oct, 1e-4);
     CHECK_FALSE(of.circle);
     CHECK(of.vertices.size() == 8);
+}
+
+TEST_CASE("boolean operations on rings of tens of thousands of vertices stay fast and consistent") {
+    auto circle = [](Vec2 c, double r, int n, double phase) {
+        Ring g;
+        for (int i = 0; i < n; ++i)
+            g.push_back({c.x + r * std::cos(phase + kTwoPi * i / n),
+                         c.y + r * std::sin(phase + kTwoPi * i / n)});
+        return g;
+    };
+    const Region a = reg({circle({0, 0}, 100, 20000, 0)});
+    const Region b = reg({circle({60, 10}, 90, 25000, 0.1)});
+    const auto t0 = std::chrono::steady_clock::now();
+    const Region u = boolean(a, b, BoolOp::Union);
+    const Region i = boolean(a, b, BoolOp::Intersect);
+    const Region d = boolean(a, b, BoolOp::Subtract);
+    const double sec =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(sec < 3.0);
+    CHECK(area(u) + area(i) == doctest::Approx(area(a) + area(b)).epsilon(1e-9));
+    CHECK(area(d) == doctest::Approx(area(a) - area(i)).epsilon(1e-9));
+    CHECK(u.rings.size() == 1);
+    CHECK(i.rings.size() == 1);
+
+    // A 60 x 60 mesh of touching squares minus a block in the middle: every edge is shared.
+    Region mesh;
+    for (int x = 0; x < 60; ++x)
+        for (int y = 0; y < 60; ++y)
+            mesh.rings.push_back(rect(x, y, x + 1, y + 1));
+    const Region cut = boolean(mesh, reg({rect(20, 20, 40, 40)}), BoolOp::Subtract);
+    CHECK(area(cut) == doctest::Approx(3600 - 400));
 }
