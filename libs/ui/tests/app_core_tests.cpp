@@ -447,6 +447,12 @@ TEST_CASE("opening a missing or corrupt file reports and keeps the current drawi
     CHECK_FALSE(f.core->openFile(f.dir / "junk.tbcad").ok());
     CHECK(f.core->document().modelSpaceCount() == 1);
     CHECK(f.core->history().back().find("Cannot open") != std::string::npos);
+    // A folder given where a drawing file is expected, with either extension.
+    fs::create_directories(f.dir / "folder.dxf");
+    fs::create_directories(f.dir / "folder.tbcad");
+    CHECK_FALSE(f.core->openFile(f.dir / "folder.dxf").ok());
+    CHECK_FALSE(f.core->openFile(f.dir / "folder.tbcad").ok());
+    CHECK(f.core->document().modelSpaceCount() == 1);
 }
 
 TEST_CASE("saveAs adds the extension") {
