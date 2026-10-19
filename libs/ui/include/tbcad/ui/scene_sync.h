@@ -34,6 +34,10 @@ public:
     void setShowTransparency(bool on) { showTransparency_ = on; }
     bool showTransparency() const { return showTransparency_; }
 
+    // Threads used to build the display of many objects at once: 0 = one per core (at most 16),
+    // 1 = none. The scene is the same for any number.
+    void setMaxThreads(unsigned n) { maxThreads_ = n; }
+
     // Rebuilds the whole scene from the document (after loading a file).
     void rebuildAll(double tileSizeMm = 0);
     // Rebuilds up to `limit` entities in view whose curves were tessellated for a zoom more than
@@ -57,6 +61,22 @@ public:
 private:
     bool hiddenByLevel(const Entity& e) const;
     void upsertEntity(const Entity& e, std::optional<std::uint32_t> drawOrder = {});
+    // The part of upsertEntity that only reads the document (safe on several threads once the
+    // layers' effective settings are cached), and the part that changes the scene.
+    struct Prepared {
+        enum class What : std::uint8_t { Remove, Defer, List } what = What::Remove;
+        const Entity* entity = nullptr;
+        std::uint32_t order = 0;
+        double builtZoom = 0;
+        bool fields = false;
+        DisplayList list{};
+    };
+    void prepare(const Entity& e, std::uint32_t order, Prepared& out) const;
+    void commit(Prepared& p);
+    // Builds the display of many entities on all cores and puts them in the scene in the given
+    // order, so the scene is the same as when they are added one by one.
+    void upsertParallel(const std::vector<const Entity*>& list,
+                        const std::vector<std::uint32_t>& orders);
     // Rebuilds many entities, each keeping its place in the draw order. Taking them out of the
     // scene one by one costs a pass over their batches each (quadratic for a whole drawing), so
     // they are taken out in chunks first.
@@ -84,6 +104,7 @@ private:
     std::vector<PendingRec> pending_{};  // sorted by id
     std::size_t pendingDead_ = 0;
     double pixelSizeMm_ = 0.1;
+    unsigned maxThreads_ = 0;
     bool skippedOffscreen_ = false;
     std::unordered_set<LayerId> lockedLayers_{};
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
