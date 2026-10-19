@@ -1,6 +1,7 @@
 // Drawing the same block many times: the shared list is prepared once and every reference only
 // transforms and packs it (see Scene::upsertInstance).
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 
 #include "scene_cursor.h"
@@ -48,8 +49,16 @@ const Scene::InstanceTemplate* Scene::templateFor(const std::shared_ptr<const Di
     auto it = templates_.find(list.get());
     if (it != templates_.end())
         return it->second.get();
-    if (templates_.size() >= kMaxTemplates)
-        templates_.clear();
+    // A block's geometry is built again after every edit (the block cache is per revision), so
+    // templates of lists nobody else holds any more are dropped before they pile up: each keeps
+    // its list, packed copies of every vertex and all.
+    if (templates_.size() >= templateSweepAt_) {
+        for (auto t = templates_.begin(); t != templates_.end();)
+            t = t->second->keep.use_count() == 1 ? templates_.erase(t) : std::next(t);
+        if (templates_.size() >= kMaxTemplates)
+            templates_.clear();
+        templateSweepAt_ = std::max<std::size_t>(64, templates_.size() * 2);
+    }
     std::unique_ptr<InstanceTemplate, InstanceTemplateDeleter> t(new InstanceTemplate);
     t->keep = list;
     t->usable = true;
@@ -143,6 +152,13 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
     c.builtZoom = static_cast<float>(builtPixelsPerMm);
 
     thread_local std::vector<GpuVertex> chunk;
+    struct TileRun {
+        TileKey tile{};
+        Vec2 origin{};
+        std::vector<GpuVertex> verts{};
+        BBox2 box{};
+    };
+    thread_local std::vector<TileRun> runs;
     auto place = [&](const Transform2& t) {
         // The usual case: the whole reference lies in one tile. Then the tile is looked up once and
         // the geometry is only moved and packed.
@@ -170,28 +186,19 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
                 }
             }
         }
+        // The reference spans several tiles: sort its pieces into one run per tile, so each tile
+        // gets one range of this object however often consecutive pieces change tiles.
         for (const InstanceTemplate::Group& g : tpl->groups) {
             if (g.pts.empty())
                 continue;
-            BatchKey key = styleKey(g.kind, g.style, c.level);
+            const BatchKey key = styleKey(g.kind, g.style, c.level);
             const std::size_t step = g.kind == BatchKind::Stroke ? 2
                                      : g.kind == BatchKind::Fill ? 3
                                                                  : 1;
-            c.batch = nullptr;
-            c.tile = nullptr;
-            chunk.clear();
-            TileKey tk{};
-            Vec2 origin{};
-            BBox2 box;
-            auto flush = [&] {
-                if (chunk.empty())
-                    return;
-                c.append(*this, tk, key, g.halfWidthMm, chunk);
-                c.expand(box.min);
-                c.expand(box.max);
-                chunk.clear();
-                box = BBox2{};
-            };
+            for (TileRun& r : runs)
+                r.verts.clear();
+            std::size_t used = 0;
+            std::size_t last = 0;
             for (std::size_t i = 0; i + step <= g.pts.size(); i += step) {
                 Vec2 q[3];
                 for (std::size_t k = 0; k < step; ++k)
@@ -205,18 +212,39 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
                 // (fills), as when the transformed list is added.
                 const Vec2 at = step == 3 ? (q[0] + q[1] + q[2]) / 3.0 : q[0];
                 const TileKey here = tileOf(at);
-                if (chunk.empty() || !(here == tk)) {
-                    flush();
-                    tk = here;
-                    origin = {static_cast<double>(tk.x) * tileSize_,
-                              static_cast<double>(tk.y) * tileSize_};
+                if (used == 0 || !(runs[last].tile == here)) {
+                    last = used;
+                    for (std::size_t r = 0; r < used; ++r)
+                        if (runs[r].tile == here) {
+                            last = r;
+                            break;
+                        }
+                    if (last == used) {
+                        if (runs.size() == used)
+                            runs.emplace_back();
+                        runs[used].tile = here;
+                        runs[used].origin = {static_cast<double>(here.x) * tileSize_,
+                                             static_cast<double>(here.y) * tileSize_};
+                        runs[used].verts.clear();
+                        runs[used].box = BBox2{};
+                        ++used;
+                    }
                 }
+                TileRun& run = runs[last];
                 for (std::size_t k = 0; k < step; ++k) {
-                    chunk.push_back(packVertex(q[k], origin));
-                    box.expand(q[k]);
+                    run.verts.push_back(packVertex(q[k], run.origin));
+                    run.box.expand(q[k]);
                 }
             }
-            flush();
+            for (std::size_t r = 0; r < used; ++r) {
+                if (runs[r].verts.empty())
+                    continue;
+                c.batch = nullptr;
+                c.tile = nullptr;
+                c.append(*this, runs[r].tile, key, g.halfWidthMm, runs[r].verts);
+                c.expand(runs[r].box.min);
+                c.expand(runs[r].box.max);
+            }
         }
     };
     for (const Transform2& t : placements)

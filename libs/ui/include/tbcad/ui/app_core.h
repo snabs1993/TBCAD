@@ -453,6 +453,10 @@ private:
     std::vector<std::pair<std::string, double>> openTimings_;
     std::chrono::steady_clock::time_point openLapAt_{};
     void openLap(const std::string& name);
+    // While a file opens: the start of the current step inside a lap, so the lap's parts show up
+    // in openTimings() too (indented). Empty at other times, when openStep records nothing.
+    std::optional<std::chrono::steady_clock::time_point> openStepAt_{};
+    void openStep(const char* name);
 
     render::Camera2D camera_{};
     std::string activeLayout_{};

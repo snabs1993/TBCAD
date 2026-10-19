@@ -412,6 +412,25 @@ TEST_CASE("DEVGEN LINES makes the test drawing in one undo step") {
     (void)d1;
 }
 
+TEST_CASE("a drawing opened in place of the empty one is framed by its own extents") {
+    Fixture f("openextents");
+    // The empty drawing's (empty) extents are worked out and remembered first.
+    CHECK(f.core->drawingExtents().empty());
+    const fs::path file = f.dir / "far.dxf";
+    {
+        std::ofstream out(file);
+        out << "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n500000\n20\n0\n11\n900000\n21\n"
+               "100000\n0\nENDSEC\n0\nEOF\n";
+    }
+    REQUIRE(f.core->openFile(file).ok());
+    const BBox2 box = f.core->drawingExtents();
+    REQUIRE_FALSE(box.empty());
+    CHECK(box.min.x == doctest::Approx(500000));
+    CHECK(box.max.y == doctest::Approx(100000));
+    // The scene is tiled for the drawing's size, not for an empty one.
+    CHECK(f.core->scene().tileSize() > 10000);
+}
+
 TEST_CASE("save, reopen: same canonical dump, title and modified flag follow") {
     Fixture f("saveopen");
     CHECK(f.core->windowTitle() == "Untitled - TBCAD");
