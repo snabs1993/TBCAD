@@ -1,7 +1,8 @@
 // Commands that read every object of a big drawing (QSELECT, SELECTSIMILAR, LIST, CHANGE, the
 // layer tools, BLOCKCOUNT, FIND) on a real mix of about 392k objects. Each is timed with the whole
-// drawing selected; one that takes more than a second in an optimised build loops badly (the
-// FILTER intersection once took 69 s). Sizes: TBCAD_BENCH_N (pairs).
+// drawing selected; one that takes more than 3 s in an optimised build loops badly (the FILTER
+// intersection once took 69 s, QSELECT Append 25 s). The slowest honest ones, CHANGE and LAYCHANGE,
+// touch every object and take about a second. Sizes: TBCAD_BENCH_N (pairs).
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -231,7 +232,7 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         std::printf("%-16s %8.0f %8.0f %8.0f\n", c.label, t.runMs, t.undoMs, t.redoMs);
 #ifdef NDEBUG
         INFO(c.label);
-        CHECK(t.runMs < 1000);
+        CHECK(t.runMs < 3000);
 #endif
     }
 }
