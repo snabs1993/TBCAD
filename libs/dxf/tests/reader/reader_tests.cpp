@@ -609,6 +609,39 @@ TEST_CASE("inserts: a block defined after its first use is resolved") {
     CHECK(l.report.countCode(code::kMissingBlock) == 0);
 }
 
+// The diagnostics that compare TBCAD's dimensions with the drawings stored in the file: the
+// linear ones of this file are drawn the same; the summary goes into the report JSON.
+TEST_CASE("dimension comparison lists each dimension against its stored block") {
+    ImportOptions compare;
+    compare.dimensionCompare = true;
+    Loaded l = loadCorpus("r2000_dimensions.dxf", compare);
+    const auto& all = l.result.summary.dimCompare;
+    REQUIRE(all.size() == 6);
+    int linear = 0;
+    for (const DimComparison& c : all) {
+        CHECK(c.handle != 0);
+        if (c.kind != "linear")
+            continue;
+        ++linear;
+        CHECK(c.textMatch);
+        CHECK(c.textOffset < 0.5);
+        CHECK(c.heightRatio == doctest::Approx(1).epsilon(0.05));
+        CHECK(c.strayStored < 0.05);
+        CHECK(c.strayGenerated < 0.05);
+        CHECK(c.arrowsUnmatched == 0);
+    }
+    CHECK(linear == 2);
+    // The diameter sign is the same whichever way the file spells it.
+    for (const DimComparison& c : all)
+        if (c.kind == "diameter")
+            CHECK(c.textMatch);
+    const std::string json = l.result.summary.toJson(l.report);
+    CHECK(json.find("\"dimCompare\":{\"total\":{\"count\":6") != std::string::npos);
+    // Without the option nothing is compared.
+    Loaded plain = loadCorpus("r2000_dimensions.dxf");
+    CHECK(plain.result.summary.dimCompare.empty());
+}
+
 TEST_CASE("dimensions: definition points and the drawn graphics") {
     ImportOptions withGraphics;
     withGraphics.dimensionGraphics = true;

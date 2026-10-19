@@ -231,6 +231,13 @@ private:
     // ---- dimension.cpp ----------------------------------------------------------------------
     bool convDimension(const Record& r, std::vector<Entity>& out, BlockId owner);
     void appendDimensionGraphics(const Record& r, const Entity& dim, std::vector<Entity>& out);
+    // The *D block a DIMENSION record names, or null when it is missing or empty.
+    const BlockDef* dimensionBlock(const Record& r);
+    // The block's objects in its own coordinates, nested inserts expanded: text apart.
+    void dimensionBlockEntities(const BlockDef& def, std::vector<Entity>& shapes,
+                                std::vector<Entity>& texts);
+    // ImportOptions::dimensionCompare: adds how `dim` differs from its stored block.
+    void compareDimension(const Record& r, const Entity& dim);
 
     // ---- state ------------------------------------------------------------------------------
     std::span<const std::byte> bytes_;

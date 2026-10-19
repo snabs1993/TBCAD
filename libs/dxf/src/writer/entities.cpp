@@ -1625,17 +1625,28 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     o.d(42, dim::measurement(d));
     if (d.kind == DimKind::Ordinate && d.oblique != 0)
         o.d(51, d.oblique * kDeg);  // the X axis the ordinate is measured along (the UCS)
+    if (d.textRotated)
+        o.d(53, d.textRotation * kDeg);  // text turned by hand: its absolute angle
     sub(subclass);
     switch (d.kind) {
         case DimKind::Linear:
-        case DimKind::Aligned:
+        case DimKind::Aligned: {
             o.pt(13, d.defPts[0]);
             o.pt(14, d.defPts[1]);
-            if (d.kind == DimKind::Linear) {
+            if (d.kind == DimKind::Linear)
                 o.d(50, d.rotation * kDeg);
-                sub("AcDbRotatedDimension");
+            if (d.oblique != 0) {
+                // The angle of the extension lines from the X axis (DIMEDIT Oblique).
+                const Vec2 along = d.defPts[1] - d.defPts[0];
+                const double dimAngle =
+                    d.kind == DimKind::Linear ? d.rotation : std::atan2(along.y, along.x);
+                const double deg = normalizeAngle(dimAngle + kPi / 2 + d.oblique) * kDeg;
+                o.d(52, std::round(deg * 1e9) / 1e9);  // 60, not 59.99999999999999
             }
+            if (d.kind == DimKind::Linear)
+                sub("AcDbRotatedDimension");
             break;
+        }
         case DimKind::Radius:
         case DimKind::Diameter:
             o.pt(15, d.defPts[1]);

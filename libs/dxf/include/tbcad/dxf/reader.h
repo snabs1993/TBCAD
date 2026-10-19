@@ -30,6 +30,9 @@ struct ImportOptions {
     // themselves from their definition points (W5-5). Turn it on to see exactly what the
     // other program drew.
     bool dimensionGraphics = false;
+    // Diagnostics: compare what TBCAD draws for each dimension with the *D block the other
+    // program stored, and list the differences in ImportSummary::dimCompare.
+    bool dimensionCompare = false;
     // DWG only: add the long structure trace to the report (what was found where). The report
     // is for people diagnosing a file; opening a drawing leaves it off, as it takes seconds on a
     // big file.
@@ -62,6 +65,24 @@ struct PlotSetupRecord {
     double windowMinX = 0, windowMinY = 0, windowMaxX = 0, windowMaxY = 0;
 };
 
+// How one dimension TBCAD draws differs from the block the other program stored for it.
+// Distances are in multiples of the stored text height (or of the arrow size without text).
+struct DimComparison {
+    std::uint64_t handle = 0;
+    int line = 0;
+    std::string kind{};           // "linear", "aligned", "radius", ...
+    std::string storedText{};     // without formatting codes
+    std::string generatedText{};
+    bool textMatch = true;
+    double textOffset = 0;        // between the text centres
+    double heightRatio = 1;       // generated / stored text height (1 when either has no text)
+    double strayStored = 0;       // share of the stored lines' length TBCAD does not draw
+    double strayGenerated = 0;    // share of TBCAD's lines the stored block does not have
+    int arrowsStored = 0;         // arrowheads (solids, arrow blocks) in the stored block
+    int arrowsUnmatched = 0;      // of those, how many have no arrowhead of TBCAD's nearby
+    int arrowsGenerated = 0;
+};
+
 struct ImportSummary {
     std::string acadVer{};  // "AC1015" or empty
     std::string version{};  // "R2000", "R12", ... or empty
@@ -80,6 +101,7 @@ struct ImportSummary {
     std::size_t beyondHardCap = 0;    // entities dropped because of the hard coordinate cap
     std::vector<PlotSetupRecord> plotSetups{};    // named page setups
     std::vector<PlotSetupRecord> layoutSetups{};  // the plot settings each layout carries
+    std::vector<DimComparison> dimCompare{};      // with ImportOptions::dimensionCompare
 
     // Full JSON report: {"input":..,"units":..,"entities":..,"summary":..,"report":{...}}.
     std::string toJson(const Report& report) const;

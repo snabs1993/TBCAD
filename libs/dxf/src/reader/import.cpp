@@ -2077,7 +2077,8 @@ void Importer::processBlocks(RecordReader& rr) {
             }
             // The drawn dimension (*D<n>) is regenerated from the definition points; its parts
             // are kept only when the caller asks for the graphics.
-            if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
+            if (!opts_.dimensionGraphics && !opts_.dimensionCompare && f.size() > 2 && f[0] == '*' &&
+                f[1] == 'd')
                 skipBlock_ = true;
             // Table graphics of ours (*TB<n>) are regenerated from the table kept in extended
             // data. An AutoCAD table's block (*T<n>) is kept, for its TABLE to insert; those left
