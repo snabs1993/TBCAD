@@ -388,3 +388,39 @@ TEST_CASE("-LAYERFILTER Group / AddTo / RemoveFrom / DeleteGroup from the comman
     f.host.run("-LAYERFILTER", {"DeleteGroup", "Mine", cmd::ScriptItem::enter()});
     CHECK(layerGroupNames(f.doc).empty());
 }
+
+TEST_CASE(
+    "a layer state exports to a file and imports into another drawing, bad files are refused") {
+    Fixture f;
+    f.build();
+    {
+        auto tx = f.doc.begin("state");
+        REQUIRE(setFrozen(f.doc, tx, f.id("Walls"), true).ok());
+        REQUIRE(saveLayerState(f.doc, tx, "Plan").ok());
+        tx.commit();
+    }
+    auto text = exportLayerStateText(f.doc, "plan");
+    REQUIRE(text.ok());
+    CHECK(text.value().rfind("TBCAD-LAYERSTATE 1\n", 0) == 0);
+    CHECK_FALSE(exportLayerStateText(f.doc, "nope").ok());
+
+    Fixture g;
+    g.build();
+    {
+        auto tx = g.doc.begin("import");
+        REQUIRE(importLayerStateText(g.doc, tx, "Imported", text.value()).ok());
+        tx.commit();
+    }
+    {
+        auto tx = g.doc.begin("restore");
+        std::size_t skipped = 99;
+        REQUIRE(restoreLayerState(g.doc, tx, "imported", {}, &skipped).ok());
+        tx.commit();
+        CHECK(skipped == 0);
+    }
+    CHECK(g.doc.layer(g.id("Walls"))->frozen);
+    auto tx = g.doc.begin("bad");
+    CHECK_FALSE(importLayerStateText(g.doc, tx, "x", "hello\n").ok());
+    CHECK_FALSE(importLayerStateText(g.doc, tx, "x", "TBCAD-LAYERSTATE 1\nWalls\t11\n").ok());
+    CHECK_FALSE(importLayerStateText(g.doc, tx, "x", "TBCAD-LAYERSTATE 1\n").ok());
+}

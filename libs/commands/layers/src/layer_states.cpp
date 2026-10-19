@@ -240,6 +240,68 @@ Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string
     return {};
 }
 
+constexpr std::string_view kStateFileHeader = "TBCAD-LAYERSTATE 1";
+
+Result<std::string> exportLayerStateText(const Document& doc, std::string_view name) {
+    auto key = cleanName(name);
+    if (!key)
+        return key.error();
+    auto it = doc.header().custom.find(std::string(kStatePrefix) + key.value());
+    if (it == doc.header().custom.end())
+        return err(ErrorCode::NotFound, "No layer state \"" + std::string(name) + "\".");
+    return std::string(kStateFileHeader) + '\n' + it->second;
+}
+
+Result<void> importLayerStateText(const Document& doc, Transaction& tx, std::string_view name,
+                                  std::string_view text) {
+    auto key = cleanName(name);
+    if (!key)
+        return key.error();
+    std::string body;
+    std::size_t pos = 0;
+    bool first = true;
+    std::size_t layers = 0;
+    while (pos < text.size()) {
+        std::size_t nl = text.find('\n', pos);
+        std::string line(text.substr(pos, nl == std::string_view::npos ? nl : nl - pos));
+        pos = nl == std::string_view::npos ? text.size() : nl + 1;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (first) {
+            first = false;
+            if (line.size() >= 3 && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
+                line.erase(0, 3);
+            if (line != kStateFileHeader)
+                return err(ErrorCode::InvalidArgument, "Not a layer state file.");
+            continue;
+        }
+        if (line.empty())
+            continue;
+        auto parts = splitTabs(line);
+        if (parts[0] == "#current") {
+            if (parts.size() != 2)
+                return err(ErrorCode::InvalidArgument,
+                           "Bad #current line in the layer state file.");
+        } else if (parts[0] == "#vp") {
+            if (parts.size() < 3)
+                return err(ErrorCode::InvalidArgument, "Bad #vp line in the layer state file.");
+        } else {
+            if (parts.size() != 5 || parts[1].size() != 4)
+                return err(ErrorCode::InvalidArgument,
+                           "Bad layer line in the layer state file: " + parts[0]);
+            ++layers;
+        }
+        body += line + '\n';
+    }
+    if (first)
+        return err(ErrorCode::InvalidArgument, "The layer state file is empty.");
+    if (layers == 0)
+        return err(ErrorCode::InvalidArgument, "The layer state file holds no layers.");
+    (void)doc;
+    return tx.modifyHeader(
+        [&](Header& h) { h.custom[std::string(kStatePrefix) + key.value()] = body; });
+}
+
 Result<void> deleteLayerState(const Document& doc, Transaction& tx, std::string_view name) {
     auto key = cleanName(name);
     if (!key)
