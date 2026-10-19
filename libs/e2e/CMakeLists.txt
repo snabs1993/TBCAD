@@ -20,6 +20,7 @@ tbcad_add_tests(e2e
     tests/stretch_assoc_tests.cpp
     tests/attrib_robust_tests.cpp
     tests/mirrtext_tests.cpp
+    tests/edit_family_perf_tests.cpp
     tests/transform_property_tests.cpp
     tests/bulk_edit_perf_tests.cpp
     tests/plot_perf_tests.cpp

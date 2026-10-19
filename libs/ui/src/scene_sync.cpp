@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <future>
 #include <thread>
+#include <unordered_set>
 
 #include "tbcad/geom/entity.h"
 #include "tbcad/render/layer_sync.h"
@@ -407,7 +408,8 @@ void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
 }
 
 void SceneSync::syncLayers() {
-    flushPending();
+    // Visibility is a property of the scene's layer, so objects still waiting to be built need no
+    // flush: they come out hidden or shown by the layer they are on.
     render::syncLayerVisibility(scene_, doc_);
     // Entities whose layer became locked or unlocked change appearance.
     std::unordered_set<LayerId> locked;
@@ -441,7 +443,10 @@ void SceneSync::syncLayers() {
         if (changed.count(e.common.layer))
             redraw.push_back(&e);
     });
-    upsertMany(redraw);
+    if (lazyOk(redraw.size()))
+        queueLazy(redraw);
+    else
+        upsertMany(redraw);
 }
 
 void SceneSync::rebuildDrawOrder() {
@@ -586,6 +591,23 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         // styles reach dimensions and leaders, text styles also text, tables and their notes.
         flushPending();
         const bool text = !cs.textStyles.empty();
+        // Only what is drawn with a style that changed (an unused one purged or restored changes
+        // no text at all); a text without a style follows the current one.
+        std::unordered_set<TextStyleId> changedStyles;
+        for (const auto& c : cs.textStyles) {
+            if (c.before)
+                changedStyles.insert(c.before->id);
+            if (c.after)
+                changedStyles.insert(c.after->id);
+        }
+        if (cs.header && cs.header->before.currentTextStyle != cs.header->after.currentTextStyle) {
+            changedStyles.insert(cs.header->before.currentTextStyle);
+            changedStyles.insert(cs.header->after.currentTextStyle);
+        }
+        const TextStyleId current = doc_.header().currentTextStyle;
+        auto usesChanged = [&](TextStyleId sid) {
+            return changedStyles.count(sid.value != 0 ? sid : current) != 0;
+        };
         std::vector<const Entity*> styled;
         doc_.forEachEntity([&](const Entity& e) {
             if (doc_.ownerBlock(e.common.id))
@@ -597,8 +619,14 @@ void SceneSync::onChanged(const ChangeSet& cs) {
                     styled.push_back(&e);
                     break;
                 case EntityKind::Text:
+                    if (text && usesChanged(entityAs<TextData>(e)->style))
+                        styled.push_back(&e);
+                    break;
                 case EntityKind::MText:
-                case EntityKind::Table:
+                    if (text && usesChanged(entityAs<MTextData>(e)->style))
+                        styled.push_back(&e);
+                    break;
+                case EntityKind::Table:  // cells may name styles of their own
                     if (text)
                         styled.push_back(&e);
                     break;
