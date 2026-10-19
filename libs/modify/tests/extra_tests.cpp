@@ -200,6 +200,61 @@ TEST_CASE("overkill merges arcs of one circle and drops duplicate polylines") {
     CHECK(overkill({&p, &q}).duplicates == 1);
 }
 
+TEST_CASE("overkill optimizes polylines and drops duplicate text, inserts and splines") {
+    Entity p = poly(pts({{0, 0}, {5, 0}, {5, 0}, {10, 0}, {10, 5}}), false);
+    OverkillOptions o;
+    CHECK(overkill({&p}, o).created.empty());
+    o.optimizePolylines = true;
+    OverkillResult r = overkill({&p}, o);
+    REQUIRE(r.created.size() == 1);
+    CHECK(r.optimized == 1);
+    CHECK(r.erased == std::vector<std::size_t>{0});
+    const auto& v = as<PolylineData>(r.created[0]).v;
+    REQUIRE(v.size() == 3);
+    CHECK(near(v[1].p, {10, 0}));
+    // A real corner and an already-clean polyline are left alone.
+    Entity clean = poly(pts({{0, 0}, {5, 0}, {5, 5}}), false);
+    CHECK(overkill({&clean}, o).created.empty());
+    // A closed polyline keeps three vertices.
+    Entity tri = poly(pts({{0, 0}, {5, 0}, {10, 0}, {5, 5}}), true);
+    const auto& tv = as<PolylineData>(overkill({&tri}, o).created.at(0)).v;
+    CHECK(tv.size() == 3);
+
+    TextData t;
+    t.position = {1, 2};
+    t.utf8 = "hello";
+    Entity t1 = make(t);
+    Entity t2 = make(t);
+    t.utf8 = "other";
+    Entity t3 = make(t);
+    OverkillResult tr = overkill({&t1, &t2, &t3});
+    CHECK(tr.duplicates == 1);
+    CHECK(tr.erased == std::vector<std::size_t>{1});
+
+    InsertData ins;
+    ins.block = BlockId{4};
+    ins.position = {3, 3};
+    Entity i1 = make(ins);
+    Entity i2 = make(ins);
+    ins.rotation = 0.5;
+    Entity i3 = make(ins);
+    CHECK(overkill({&i1, &i2, &i3}).duplicates == 1);
+}
+
+TEST_CASE("overkill groups many parallel lines quickly") {
+    std::vector<Entity> ls;
+    for (int i = 0; i < 20000; ++i)
+        ls.push_back(line({0, i * 1.0}, {10, i * 1.0}));
+    for (int i = 0; i < 20000; i += 2)
+        ls.push_back(line({5, i * 1.0}, {20, i * 1.0}));  // overlaps one of the above
+    std::vector<const Entity*> in;
+    for (const Entity& e : ls)
+        in.push_back(&e);
+    OverkillResult r = overkill(in);
+    CHECK(r.created.size() == 10000);
+    CHECK(r.erased.size() == 20000);
+}
+
 TEST_CASE("polyline conversions") {
     auto pl = toPolylineEntity(line({0, 0}, {3, 4}));
     REQUIRE(pl.ok());
@@ -692,4 +747,34 @@ TEST_CASE("PEDIT Join with a fuzz distance gathers shuffled, reversed and gapped
         auto strict = joinEntities(ptrs_, 1e-9);
         CHECK(strict.created.size() != 1);
     }
+}
+
+TEST_CASE("refitSpline uses fewer fit points and stays within the tolerance") {
+    std::vector<PolyVertex> v;
+    for (int i = 0; i <= 40; ++i)
+        v.push_back(PolyVertex{{i * 0.5, 3 * std::sin(i * 0.5 * 0.4)}, 0, 0, 0});
+    auto sp = polylineToSpline(poly(v, false));
+    REQUIRE(sp.ok());
+    const std::size_t before = as<SplineData>(sp.value()).fit.size();
+    REQUIRE(before >= 30);
+    auto out = refitSpline(sp.value(), 0.05);
+    REQUIRE(out.ok());
+    const auto& ns = as<SplineData>(*out.value().modified);
+    CHECK(ns.fit.size() < before);
+    CHECK(ns.fit.size() >= 4);
+    // every point of the old curve is near the new one
+    std::vector<geom::CurveRef> oc, nc;
+    REQUIRE(geom::curvesOf(sp.value(), oc));
+    REQUIRE(geom::curvesOf(*out.value().modified, nc));
+    double worst = 0;
+    for (int i = 0; i <= 200; ++i) {
+        const Vec2 q = oc.front().pointAt(oc.front().paramAtLength(oc.front().length() * i / 200));
+        worst = std::max(worst, length(nc.front().closestPoint(q) - q));
+    }
+    CHECK(worst <= 0.06);
+    // the ends stay put
+    CHECK(near(ns.fit.front(), as<SplineData>(sp.value()).fit.front(), 1e-6));
+    CHECK(near(ns.fit.back(), as<SplineData>(sp.value()).fit.back(), 1e-6));
+    CHECK_FALSE(refitSpline(sp.value(), 0).ok());
+    CHECK_FALSE(refitSpline(poly(v, false), 0.1).ok());
 }

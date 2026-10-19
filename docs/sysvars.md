@@ -40,7 +40,7 @@ version). One undo step.
 no longer exists go to layer 0, and broken objects (zero or non-numeric sizes, empty hatches, blocks that are
 missing) are removed. **AUDIT** does the same checks and asks first.
 
-`DWGUNITS` is another name for `UNITS`. `FLATTEN` only reports that nothing needs flattening, because TBCAD drawings are 2D. `SYNCHRONIZE` is another name for `ATTSYNC` (it brings the inserts of a block in line with the block's attributes).
+`DWGUNITS` is another name for `UNITS`. `FLATTEN` puts the selected objects on the default level (TBCAD drawings keep no Z, so a level is the only height an object can have) and says so when nothing needed it. `SYNCHRONIZE` is another name for `ATTSYNC` (it brings the inserts of a block in line with the block's attributes).
 
 ## HYPERLINK, SPACETRANS and DELAY
 

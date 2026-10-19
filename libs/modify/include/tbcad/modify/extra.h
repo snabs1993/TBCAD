@@ -56,16 +56,20 @@ struct OverkillOptions {
     bool ignoreProperties = false;   // compare geometry only
     bool combineOverlapping = true;  // merge collinear lines / same-circle arcs that overlap
     bool combineEndToEnd = true;     // ... and ones that only touch end to end
+    // Remove repeated vertices and vertices on a straight run of polylines of one width.
+    bool optimizePolylines = false;
 };
 
 struct OverkillResult {
     std::vector<std::size_t> erased{};  // indices into the input to delete
     std::vector<Entity> created{};      // replacements for merged groups
     std::size_t duplicates = 0;         // entries of `erased` that were exact duplicates
+    std::size_t optimized = 0;          // polylines replaced by a version with fewer vertices
 };
 
 // Removes duplicate entities and merges overlapping collinear lines and arcs of one circle.
-// Lines, arcs, circles, points, polylines and ellipses take part; other kinds are left alone.
+// Lines, arcs, circles, points, polylines, ellipses, splines, text and inserts take part in the
+// duplicate check; lines and arcs are merged; other kinds are left alone.
 OverkillResult overkill(const std::vector<const Entity*>& entities,
                         const OverkillOptions& options = {});
 
@@ -121,6 +125,12 @@ enum class SplineFitOp { Add, Delete, Move, Close, Open };
 // Close / Open change whether the curve returns to its first point. Errors when the spline has
 // no fit points or fewer than two would remain.
 Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a = {}, Vec2 b = {});
+
+// Fits the spline again through as few points as it takes: the new curve interpolates fit points
+// taken from the old one and stays within `tolerance` of it (SPLINEDIT Fit data / Tolerance). The
+// old fit points or control vertices are replaced by the new fit points. Errors for a tolerance
+// that is not positive.
+Result<EntityEdit> refitSpline(const Entity& e, double tolerance);
 
 enum class SplineCvOp { Add, Delete, Move, Weight, Close, Open, Purge, ToPolyline };
 // Edits the control vertices of a spline. Add: a vertex is inserted at the curve point closest to

@@ -131,8 +131,18 @@ PolylineData loopPolyline(const HatchLoop& loop) {
     return d;
 }
 
+constexpr const char* kIslands = "boundary.islands";  // 0 Normal, 1 Outer, 2 Ignore
+
+hatch::IslandStyle islandStyleOf(double v) {
+    return v >= 1.5   ? hatch::IslandStyle::Ignore
+           : v >= 0.5 ? hatch::IslandStyle::Outer
+                      : hatch::IslandStyle::Normal;
+}
+
 // BOUNDARY [BO]: a closed polyline for the region around each picked point, and one for every
-// island inside it. Uses the same boundary finder as HATCH.
+// island inside it. Uses the same boundary finder as HATCH. The Islands keyword picks how islands
+// are treated: Normal (every closed shape inside), Outer (only the first level) or Ignore (the
+// outline alone).
 class BoundaryCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BOUNDARY"; }
@@ -144,7 +154,26 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         ctx.commitOnCancel();
         for (;;) {
-            auto p = co_await ctx.getPoint("Specify internal point");
+            cmd::PointOptions po;
+            po.keywords = {"Islands"};
+            auto p = co_await ctx.getPoint("Specify internal point or [Islands]", std::move(po));
+            if (p.status == cmd::Status::Keyword) {
+                cmd::KeywordOptions ko;
+                ko.keywords = {"Normal", "Outer", "Ignore"};
+                const hatch::IslandStyle cur = islandStyleOf(settingNumber(ctx, kIslands, 0));
+                ko.defaultKeyword = cur == hatch::IslandStyle::Ignore  ? "Ignore"
+                                    : cur == hatch::IslandStyle::Outer ? "Outer"
+                                                                       : "Normal";
+                auto st = co_await ctx.getKeyword("Island detection [Normal/Outer/Ignore]",
+                                                  std::move(ko));
+                if (!st.ok())
+                    co_return;
+                saveSetting(ctx, kIslands,
+                            st.keyword == "Ignore"  ? 2
+                            : st.keyword == "Outer" ? 1
+                                                    : 0);
+                continue;
+            }
             if (!p.ok())
                 co_return;
             auto found =
@@ -155,12 +184,15 @@ public:
                 ctx.message(found.error().message);
                 continue;
             }
+            hatch::Boundary boundary = std::move(found.value());
+            hatch::applyIslandStyle(boundary, islandStyleOf(settingNumber(ctx, kIslands, 0)),
+                                    [&](EntityId id) { return ctx.doc().find(id); });
             ctx.checkpoint();
-            for (const HatchLoop& loop : found.value().loops)
+            for (const HatchLoop& loop : boundary.loops)
                 addEntity(ctx, loopPolyline(loop));
-            ctx.message(
-                std::to_string(found.value().loops.size()) +
-                (found.value().loops.size() == 1 ? " polyline created." : " polylines created."));
+            ctx.message(std::to_string(boundary.loops.size()) + (boundary.loops.size() == 1
+                                                                     ? " polyline created."
+                                                                     : " polylines created."));
         }
     }
 };

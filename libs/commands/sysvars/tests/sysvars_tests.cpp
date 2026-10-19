@@ -165,8 +165,26 @@ TEST_CASE("DWGUNITS is UNITS, and FLATTEN says the drawing is flat") {
     Fixture f;
     f.host.run("DWGUNITS", {"Feet"});
     CHECK(f.doc.header().units == LengthUnit::Foot);
-    f.host.run("FLATTEN", {});
+    EntityId a, b;
+    LevelId upper;
+    {
+        Transaction tx = f.doc.begin("lines");
+        a = tx.add(Entity{{}, LineData{{0, 0}, {1, 0}}}).value();
+        b = tx.add(Entity{{}, LineData{{0, 1}, {1, 1}}}).value();
+        Level up;
+        up.name = "Roof";
+        up.elevation = 3000;
+        upper = tx.addLevel(up).value();
+        REQUIRE(tx.modify(b, [&](Entity& e) { e.common.level = upper; }));
+        tx.commit();
+    }
+    f.host.run("FLATTEN", {cmd::ScriptItem::select({a}), cmd::ScriptItem::enter()});
     CHECK(f.host.logContains("nothing to flatten"));
+    f.host.run("FLATTEN", {cmd::ScriptItem::select({a, b}), cmd::ScriptItem::enter()});
+    CHECK(f.host.logContains("1 object moved to the default level"));
+    CHECK(f.doc.find(b)->common.level == kLevelDefault);
+    f.host.undo();
+    CHECK(f.doc.find(b)->common.level == upper);
 }
 
 TEST_CASE("HYPERLINK sets, lists, opens and removes a link; the link is saved in the drawing") {

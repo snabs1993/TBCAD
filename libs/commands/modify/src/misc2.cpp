@@ -329,11 +329,12 @@ public:
             co_return;
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Add",  "Delete", "Move",     "Weight",  "Close",
-                           "Open", "Purge",  "Polyline", "Reverse", "Exit"};
+            ko.keywords = {"Add",   "Delete",   "Move",    "Weight",    "Close", "Open",
+                           "Purge", "Polyline", "Reverse", "Tolerance", "Exit"};
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                "Enter an option [Add/Delete/Move/Weight/Close/Open/Purge/Polyline/Reverse/Exit] "
+                "Enter an option "
+                "[Add/Delete/Move/Weight/Close/Open/Purge/Polyline/Reverse/Tolerance/Exit] "
                 "<Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
@@ -352,6 +353,22 @@ public:
             bool endAfter = false;
             if (k.keyword == "Reverse") {
                 edit = modify::reverseEntity(*e0);
+            } else if (k.keyword == "Tolerance") {
+                cmd::RealOptions ro;
+                ro.defaultValue = 0.1;
+                ro.min = 1e-6;
+                auto tolerance = co_await ctx.getReal(
+                    "Specify how far the new curve may stray from the old one <0.1>", ro);
+                if (!tolerance.ok())
+                    continue;
+                edit = modify::refitSpline(*e0, tolerance.value);
+                if (edit && edit.value().modified)
+                    if (const auto* ns = entityAs<SplineData>(*edit.value().modified))
+                        ctx.message("Fitted again through " + std::to_string(ns->fit.size()) +
+                                    " points (was " +
+                                    std::to_string(sd->fit.size() >= 2 ? sd->fit.size()
+                                                                       : sd->control.size()) +
+                                    (sd->fit.size() >= 2 ? " fit points)." : " vertices)."));
             } else if (k.keyword == "Purge") {
                 edit = modify::editSplineCv(*e0, modify::SplineCvOp::Purge);
             } else if (k.keyword == "Polyline") {
