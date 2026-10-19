@@ -340,7 +340,16 @@ std::optional<StackedText> stackedDimensionText(const DimStyle& style, const Dim
         }
         return o;
     };
-    s.markup = text::markupFromPlain(t.before) + "\\S" + esc(t.up) + "^" + esc(t.down) + ";" +
+    // MTEXT draws a stack at 0.7 of the height around it: DIMTFAC sets the height of each line,
+    // and \A1 keeps the measurement centred on the stack.
+    std::string stackMarkup = "\\S" + esc(t.up) + "^" + esc(t.down) + ";";
+    const double f = style.tolHeightFactor / 0.7;
+    if (std::abs(f - 1) > 1e-9) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.6g", f);
+        stackMarkup = std::string("{\\H") + buf + "x;" + stackMarkup + "}";
+    }
+    s.markup = "\\A1;" + text::markupFromPlain(t.before) + stackMarkup +
                text::markupFromPlain(t.after);
     s.before = std::move(t.before);
     s.up = std::move(t.up);

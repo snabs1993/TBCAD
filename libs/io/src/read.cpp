@@ -519,7 +519,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 63)
+            if (flags > 127 || ((flags & 64) && !(flags & 32)))
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -555,6 +555,7 @@ private:
             int textFill = 0, textFillColor = 0;
             bool textFrame = false;
             DimLinearFormat linearFormat = DimLinearFormat::Decimal;
+            double tolHeightFactor = 1;
             if (flags & 8) {
                 angleFormat =
                     readEnum<DimAngleFormat>(r, static_cast<std::uint8_t>(DimAngleFormat::Radians));
@@ -578,6 +579,11 @@ private:
             if (flags & 32)
                 linearFormat = readEnum<DimLinearFormat>(
                     r, static_cast<std::uint8_t>(DimLinearFormat::Fractional));
+            if (flags & 64) {
+                tolHeightFactor = r.f64();
+                if (!std::isfinite(tolHeightFactor) || !(tolHeightFactor > 0))
+                    bad("invalid dimension style tolerance height");
+            }
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
                 bad("invalid dimension style tolerance");
@@ -599,6 +605,7 @@ private:
                                         d.textFillColor = textFillColor;
                                         d.textFrame = textFrame;
                                         d.linearFormat = linearFormat;
+                                        d.tolHeightFactor = tolHeightFactor;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

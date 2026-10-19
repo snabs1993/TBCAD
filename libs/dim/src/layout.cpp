@@ -834,8 +834,8 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     const std::string txt = dimensionText(st, shown);
     const std::optional<StackedText> stacked = stackedDimensionText(st, shown);
     if (stacked) {
-        // The stack is 0.7 of the text height (as MTEXT draws \S), as wide as its wider part.
-        const double sh = c.th * 0.7;
+        // Each line of the stack is DIMTFAC times the text height; it is as wide as its wider part.
+        const double sh = c.th * st.tolHeightFactor;
         c.stackedWidth =
             textWidth(c, stacked->before) + textWidth(c, stacked->after) +
             std::max(text::measureWidth(c.tstyle, stacked->up, sh),

@@ -1546,6 +1546,7 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         s.textFillColor = 251;
         s.textFrame = true;
         s.linearFormat = DimLinearFormat::Fractional;
+        s.tolHeightFactor = 0.6;
         REQUIRE(tx.addDimStyle(s).ok());
         tx.commit();
     }
@@ -1581,6 +1582,7 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         CHECK(s->textFillColor == 251);
         CHECK(s->textFrame);
         CHECK(s->linearFormat == DimLinearFormat::Fractional);
+        CHECK(s->tolHeightFactor == doctest::Approx(0.6));
     };
     RoundTrip rt = roundTrip(doc);
     check(*rt.back);
