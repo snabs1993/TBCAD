@@ -120,7 +120,15 @@ private:
     }
 
     // Rewrites the id-bearing tokens of dumpEntity() output (outside quoted strings).
-    std::string entityLine(const Entity& e) const {
+    std::string entityLine(const Entity& in) const {
+        // A DXF hatch has one colour: a ByLayer hatch with its own fill colour comes back with
+        // that colour as the hatch's and a ByLayer fill, which draws the same.
+        Entity e = in;
+        if (auto* h = entityAs<HatchData>(e); h && e.common.color.kind == ColorKind::ByLayer &&
+                                              h->fill.kind != ColorKind::ByLayer) {
+            e.common.color = h->fill;
+            h->fill = Color::byLayer();
+        }
         std::string raw = dumpEntity(e);
         std::string out;
         std::string plain;
@@ -274,9 +282,11 @@ private:
 
         rows.clear();
         for (const auto& [id, s] : doc_.textStyles()) {
-            // An empty font is written as "txt", AutoCAD's default.
-            rows.push_back("textstyle " + s.name + " font " +
-                           (s.fontFile.empty() ? std::string("txt") : s.fontFile) + " wf " +
+            // An empty font is written as "txt", AutoCAD's default, a family as its .ttf file.
+            const std::string font = !s.fontFile.empty()     ? s.fontFile
+                                     : !s.fontFamily.empty() ? s.fontFamily + ".ttf"
+                                                             : std::string("txt");
+            rows.push_back("textstyle " + s.name + " font " + font + " wf " +
                            formatDouble(s.widthFactor) + " ob " + formatDouble(s.oblique) + " h " +
                            formatDouble(s.height));
         }

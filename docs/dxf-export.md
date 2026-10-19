@@ -161,6 +161,15 @@ cannot write). The file is written to `<output>.tmp` first and renamed.
   with ids replaced by names (ids depend on read order), dimension blocks left out (they are
   regenerated), closing points of filled rings and angles modulo a full turn treated as equal, and
   numbers compared within 1e-9 relative.
+* `libs/dxf/tests/writer/version_roundtrip_tests.cpp`: every corpus file, sample (`.dxf` and
+  `.tbcad`) and library block is saved as R2000, R2007 and R12 and opened again. At R2000 and
+  R2007 the same objects of the same kinds come back with the same properties; at R12 the kinds
+  R12 has (lines, circles, arcs, polylines, points, texts, inserts, dimensions) may only grow, as
+  hatches, splines, notes and leaders turn into them. Layers are never lost. In the comparison a
+  ByLayer hatch with its own fill colour equals the same hatch with that colour (DXF has one).
+* R12 has one paper space: the first layout's objects are written among the entities with group
+  67 (they open as one layout), its viewports and the other layouts are left out with a
+  downgrade warning. Defpoints is read as not plotted when the file has no plot flag (R12).
 * `libs/dxf/tests/writer/writer_tests.cpp` and `entity_tests.cpp`: file structure, handles and
   owners, Thai text in R2000 and R2007, sub-layer XDATA and tree, name repair, R12, every entity
   kind, colours, patterns, dimensions, proxies.

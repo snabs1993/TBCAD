@@ -1784,7 +1784,8 @@ void Importer::readLayerRow(const Record& r) {
                                    static_cast<std::uint8_t>(v & 0xFF));
     }
     row.linetype = std::string(r.raw(6));
-    row.plot = r.integer(290, 1) != 0;
+    // A file without the plot flag (R12) still never plots Defpoints, as AutoCAD does.
+    row.plot = r.integer(290, fold(row.name) == "defpoints" ? 0 : 1) != 0;
     row.plotStyleHandle = std::string(r.raw(390));
     row.lineweight = static_cast<int>(r.integer(370, -3));
     if (const Group* g = r.find(440)) {
