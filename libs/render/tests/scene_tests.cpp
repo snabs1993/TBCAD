@@ -349,6 +349,27 @@ TEST_CASE("a mask (wipeout) hides only what was drawn before it") {
     CHECK(s.needsRelevel());  // the levels are stale until the owner rebuilds
 }
 
+TEST_CASE("a wipeout inside one entity hides what comes before it and not what comes after") {
+    DisplayList l = lineList({0, 0}, {5, 5}, style(kRed));  // before the mask
+    DisplayFill f;
+    f.rings = {{{0, 0}, {5, 0}, {5, 5}, {0, 5}}};
+    f.style = style(kBackgroundColor);
+    l.items.push_back(f);
+    DisplayList after = lineList({0, 1}, {5, 6}, style(kGreen));  // after the mask
+    l.items.push_back(after.items[0]);
+
+    Scene s;
+    s.upsert({1}, l, 5);
+    s.adoptMaskOrders();
+    s.upsert({1}, l, 5);
+    CHECK_FALSE(s.needsRelevel());
+    auto v = s.visibleBatches(cameraAt({2, 2}));
+    REQUIRE(v.size() == 3);
+    CHECK(v[0].batch->key.kind == BatchKind::Stroke);
+    CHECK(v[1].batch->key.kind == BatchKind::Mask);
+    CHECK(v[2].batch->key.kind == BatchKind::Stroke);
+}
+
 TEST_CASE("batch versions change whenever geometry changes") {
     Scene s;
     s.upsert({1}, lineList({0, 0}, {1, 0}), 0);

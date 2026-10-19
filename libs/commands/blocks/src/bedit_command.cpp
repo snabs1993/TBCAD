@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "commands.h"
@@ -66,9 +67,22 @@ std::vector<EntityId> editedIds(const Document& doc, const cmd::IHost& host) {
     std::unordered_set<EntityId> have(ids.begin(), ids.end());
     const std::vector<EntityId> excl = decodeIds(host.setting(kExclKey).value_or(""));
     const std::unordered_set<EntityId> out(excl.begin(), excl.end());
-    for (EntityId id : doc.modelSpace())
+    const std::vector<EntityId> drawn = doc.modelSpace();
+    for (EntityId id : drawn)
         if (id.value > mark && !have.count(id) && !out.count(id))
             ids.push_back(id);
+    // Back to front as they are drawn, so BSAVE keeps the draw order (DRAWORDER, TEXTTOFRONT,
+    // HATCHTOBACK) in the block's own list.
+    std::unordered_map<EntityId, std::size_t> rank;
+    rank.reserve(drawn.size());
+    for (std::size_t i = 0; i < drawn.size(); ++i)
+        rank.emplace(drawn[i], i);
+    std::stable_sort(ids.begin(), ids.end(), [&](EntityId a, EntityId b) {
+        auto ia = rank.find(a), ib = rank.find(b);
+        const std::size_t ra = ia == rank.end() ? drawn.size() : ia->second;
+        const std::size_t rb = ib == rank.end() ? drawn.size() : ib->second;
+        return ra < rb;
+    });
     return ids;
 }
 
