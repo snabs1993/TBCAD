@@ -84,6 +84,8 @@ void drawAddPopup(ui::PanelContext& pc, State& st) {
     ImGui::SameLine();
     ImGui::RadioButton("Command", &st.kind, 2);
     t.kind = st.kind == 0 ? ToolKind::Block : st.kind == 1 ? ToolKind::Hatch : ToolKind::Command;
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
     ImGui::SetNextItemWidth(260);
     ImGui::InputText("Name", &t.name);
     if (t.kind == ToolKind::Block) {
@@ -137,6 +139,8 @@ void drawNamePopup(State& st, const char* title, bool& open, bool rename) {
     }
     if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         return;
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
     ImGui::SetNextItemWidth(260);
     const bool enter =
         ImGui::InputText("##paletteName", &st.nameInput, ImGuiInputTextFlags_EnterReturnsTrue);
