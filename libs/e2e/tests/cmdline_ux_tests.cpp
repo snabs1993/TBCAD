@@ -76,7 +76,7 @@ TEST_CASE("AutoCAD's everyday aliases are there") {
         {"EX", "EXTEND"},       {"F", "FILLET"},        {"CHA", "CHAMFER"},
         {"S", "STRETCH"},       {"AR", "ARRAY"},        {"BR", "BREAK"},
         {"J", "JOIN"},          {"X", "EXPLODE"},       {"PE", "PEDIT"},
-        {"LEN", "LENGTHEN"},    {"AL", "ALIGN"},        {"U", "UNDO"},
+        {"LEN", "LENGTHEN"},    {"AL", "ALIGN"},        {"U", "U"},
         {"Z", "ZOOM"},          {"P", "PAN"},           {"RE", "REGEN"},
         {"LA", "LAYER"},        {"LT", "LINETYPE"},     {"DI", "DIST"},
         {"ID", "ID"},           {"AA", "AREA"},         {"LI", "LIST"},

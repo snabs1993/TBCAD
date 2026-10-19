@@ -36,9 +36,17 @@ std::optional<std::string> matchKeyword(const std::vector<std::string>& keywords
         if (toUpperAscii(k) == in)
             return k;
     }
+    // AutoCAD's capital-letter shortcuts: "BEgin" needs at least "BE", so "B" can mean "Back".
+    auto shortest = [](const std::string& k) {
+        std::size_t n = 0;
+        while (n < k.size() && std::isupper(static_cast<unsigned char>(k[n])))
+            ++n;
+        const bool mixed = n < k.size() && std::islower(static_cast<unsigned char>(k[n]));
+        return mixed && n >= 2 ? n : std::size_t{1};
+    };
     const std::string* found = nullptr;
     for (const std::string& k : keywords) {
-        if (toUpperAscii(k).rfind(in, 0) == 0) {
+        if (in.size() >= shortest(k) && toUpperAscii(k).rfind(in, 0) == 0) {
             if (found)
                 return std::nullopt;  // ambiguous prefix
             found = &k;

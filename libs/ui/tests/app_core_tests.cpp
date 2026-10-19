@@ -1533,3 +1533,52 @@ TEST_CASE("saveAs into another folder keeps relative xref paths pointing at the 
     REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "c.tbcad").ok());
     CHECK(f.core->document().blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
 }
+
+TEST_CASE("undo and redo across Save, Save As and opening the file again") {
+    Fixture f("undosave");
+    f.line("0,0", "10,0");
+    f.line("0,5", "10,5");
+    f.line("0,9", "10,9");
+    const auto dump = [&] { return canonicalDump(f.core->document()); };
+    REQUIRE(f.core->document().entityCount() == 3);
+    const std::string three = dump();
+
+    // Saving keeps the history: undo still works and the drawing is modified again.
+    const fs::path file = f.dir / "undosave.tbcad";
+    REQUIRE(f.core->saveAs(file).ok());
+    CHECK_FALSE(f.core->modified());
+    REQUIRE(f.core->undo());
+    CHECK(f.core->document().entityCount() == 2);
+    CHECK(f.core->modified());
+    REQUIRE(f.core->redo());
+    CHECK(dump() == three);
+
+    // Undo, then save that state: the file holds two lines and redo still brings the third back.
+    REQUIRE(f.core->undo());
+    REQUIRE(f.core->save().ok());
+    const std::string two = dump();
+    REQUIRE(f.core->redo());
+    CHECK(dump() == three);
+    REQUIRE(f.core->undo());
+    CHECK(dump() == two);
+
+    // Save As to another folder keeps the history too.
+    fs::create_directories(f.dir / "other");
+    REQUIRE(f.core->saveAs(f.dir / "other" / "copy.tbcad").ok());
+    while (f.core->undo()) {
+    }
+    CHECK(f.core->document().entityCount() == 0);
+    while (f.core->redo()) {
+    }
+    CHECK(dump() == three);
+
+    // A fresh open starts with an empty history and the saved content.
+    f.core->newDocument();
+    REQUIRE(f.core->openFile(file).ok());
+    CHECK(f.core->document().entityCount() == 2);
+    CHECK_FALSE(f.core->undo());
+    f.line("0,20", "10,20");
+    REQUIRE(f.core->undo());
+    CHECK(f.core->document().entityCount() == 2);
+    CHECK_FALSE(f.core->undo());
+}

@@ -464,11 +464,52 @@ TEST_CASE("UNDO/REDO commands and undo groups") {
     CHECK(lines(f.doc).size() == 1);
     host.run("REDO", {});
     CHECK(lines(f.doc).size() == 3);
-    host.run("UNDO", {});
-    host.run("UNDO", {});
-    host.run("UNDO", {});
-    CHECK(host.logContains("Nothing to undo."));
+    host.run("UNDO", {ScriptItem::enter()});  // <1>
+    CHECK(lines(f.doc).size() == 1);
+    host.run("UNDO", {"5"});  // only one step left: it stops there
     CHECK(f.doc.entityCount() == 0);
+    host.run("UNDO", {ScriptItem::enter()});
+    CHECK(host.logContains("Nothing to undo."));
+}
+
+TEST_CASE("UNDO takes a count and the BEgin, End, Mark and Back options") {
+    Fixture f;
+    ScriptHost host(f.doc, f.reg);
+    for (int i = 0; i < 4; ++i)
+        host.run("TWOLINE", {"0," + std::to_string(i), "1," + std::to_string(i)});
+    host.run("UNDO", {"2"});
+    CHECK(lines(f.doc).size() == 2);
+    CHECK(host.logContains("Undid 2 steps."));
+    host.run("REDO", {});
+    CHECK(lines(f.doc).size() == 3);
+
+    // BE begins a group, E ends it: the two commands undo as one step.
+    host.run("UNDO", {"BE"});
+    host.run("TWOLINE", {"0,5", "1,5"});
+    host.run("TWOLINE", {"0,6", "1,6"});
+    host.run("UNDO", {"E"});
+    CHECK(lines(f.doc).size() == 5);
+    host.run("U", {});
+    CHECK(lines(f.doc).size() == 3);
+
+    // M marks, B goes back to it ("B" is Back, not BEgin).
+    host.run("UNDO", {"M"});
+    host.run("TWOLINE", {"0,7", "1,7"});
+    host.run("TWOLINE", {"0,8", "1,8"});
+    host.run("UNDO", {"B"});
+    CHECK(lines(f.doc).size() == 3);
+    CHECK(host.logContains("back to the mark"));
+    // Back without a mark asks before undoing everything.
+    host.run("UNDO", {"Back", "No"});
+    CHECK(lines(f.doc).size() == 3);
+    host.run("UNDO", {"Back", ScriptItem::enter()});
+    CHECK(lines(f.doc).empty());
+    // Auto and Control are accepted for AutoCAD scripts.
+    CHECK(host.run("UNDO", {"Auto", "OFF"}).finished);
+    CHECK(host.run("UNDO", {"Control", "All"}).finished);
+    while (host.redo()) {
+    }
+    CHECK(lines(f.doc).size() == 5);  // up to the two lines Back undid
 }
 
 TEST_CASE("UNDOMARK and UNDOBACK step back to the mark") {
