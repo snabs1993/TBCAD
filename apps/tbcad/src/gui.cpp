@@ -1468,10 +1468,15 @@ void Gui::statusBar() {
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
     // The controls wrap onto further rows when the window is narrow (a side panel open), instead
     // of running off the right edge. The row count comes from the previous frame.
+    // Even padding above and below, so the combo boxes are not cut off at the window's edge.
+    constexpr float kPadY = 4.0f;
     const float h = statusRows_ * ImGui::GetFrameHeight() +
-                    (statusRows_ - 1) * ImGui::GetStyle().ItemSpacing.y +
-                    ImGui::GetStyle().WindowPadding.y * 0.8f;
-    if (ImGui::BeginViewportSideBar("##statusbar", vp, ImGuiDir_Down, h, flags)) {
+                    (statusRows_ - 1) * ImGui::GetStyle().ItemSpacing.y + 2 * kPadY;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(ImGui::GetStyle().WindowPadding.x, kPadY));
+    const bool statusOpen = ImGui::BeginViewportSideBar("##statusbar", vp, ImGuiDir_Down, h, flags);
+    ImGui::PopStyleVar();
+    if (statusOpen) {
         int rows = 1;
         const ImGuiStyle& sty = ImGui::GetStyle();
         // Continue on this row when `w` more pixels fit after the last item, else start a new one.
@@ -1500,6 +1505,7 @@ void Gui::statusBar() {
         ImFont* mono = monoFont();  // digits of equal width, so the readout does not jitter
         if (mono)
             ImGui::PushFont(mono);
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("X %s   Y %s   %s", shown(c.x).c_str(), shown(c.y).c_str(),
                     std::string(unitSuffix(fmt.unit)).c_str());
         const float pad = ImGui::CalcTextSize("X -1000000.000   Y -1000000.000   mm").x -
@@ -1545,6 +1551,7 @@ void Gui::statusBar() {
         const Layer* layer = doc.layer(doc.header().currentLayer);
         const float layerW = ImGui::CalcTextSize("A-WALL~interior").x + 30.0f;
         place(textW("  Layer:") + sty.ItemSpacing.x + layerW);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("  Layer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(layerW);
@@ -1577,6 +1584,7 @@ void Gui::statusBar() {
             const Level* cur = doc.level(doc.header().currentLevel);
             const float levelW = ImGui::CalcTextSize("Level 00 (mmm)").x + 40.0f;
             place(textW("  Level:") + sty.ItemSpacing.x + levelW);
+            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted("  Level:");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(levelW);
@@ -1608,6 +1616,7 @@ void Gui::statusBar() {
             std::snprintf(label, sizeof label, "1:%g", cur);
             place(textW("  Scale") + sty.ItemSpacing.x + 72 + sty.ItemSpacing.x + textW("ANNO") +
                   sty.FramePadding.x * 2);
+            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted("  Scale");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(72);
@@ -1656,6 +1665,7 @@ void Gui::statusBar() {
         const float w = ImGui::CalcTextSize(right.c_str()).x;
         if (w <= free) {
             ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);
+            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(right.c_str());
         }
         statusRows_ = rows;

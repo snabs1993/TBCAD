@@ -989,7 +989,9 @@ TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
     h.scroll(700, 500, -3.0f);
     h.frame(30);
     REQUIRE(entityCount(h) == 1);
-    const ImVec2 onLine = screenOf(h, {180, 100});
+    // (a pixel up: the viewport starts on a fraction of a pixel, and the pick aperture is tight)
+    ImVec2 onLine = screenOf(h, {180, 100});
+    onLine.y -= 1.0f;
 
     // Off by default: resting on the line shows nothing. Set as text, like the SETTING command.
     h.moveMouse(onLine.x, onLine.y);
@@ -1734,4 +1736,20 @@ TEST_CASE("dimension styles panel: linear factor, fit and dragged text fields") 
     REQUIRE(h.click("Move freely", "Combo"));
     h.frame(3);
     CHECK(style().textMove == DimTextMove::Free);
+}
+
+TEST_CASE("status bar: its controls sit on one line and are not cut off") {
+    Harness h(1920, 1080);
+    h.frame(4);
+    const auto* snap = h.find("SNAP", "statusbar");
+    const auto* layer = h.find("##layersw", "statusbar");
+    const auto* scale = h.find("##annoscale", "statusbar");
+    REQUIRE(snap);
+    REQUIRE(layer);
+    REQUIRE(scale);
+    // Toggles and combo boxes share the row, and the boxes end inside the window.
+    CHECK(layer->min.y >= snap->min.y - 6);
+    CHECK(layer->max.y <= 1080.0f);
+    CHECK(scale->max.y <= 1080.0f);
+    CHECK(layer->min.y == doctest::Approx(scale->min.y));
 }
