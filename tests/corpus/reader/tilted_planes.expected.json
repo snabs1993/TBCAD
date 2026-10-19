@@ -1,5 +1,5 @@
 {
-  "description": "entities in tilted 3D planes are projected; tilted text and a one-vertex polyline are not",
+  "description": "entities and text in tilted 3D planes are projected; a one-vertex polyline is dropped",
   "dxf": {
     "ARC": 1,
     "CIRCLE": 2,
@@ -15,15 +15,18 @@
   "kinds": {
     "Ellipse": 3,
     "Hatch": 2,
-    "Polyline": 3
+    "Polyline": 3,
+    "Text": 1
   },
   "layers": [
     "0",
     "Defpoints"
   ],
+  "texts": [
+    "tilted"
+  ],
   "version": "AC1015",
   "warnings": [
-    "dxf.reader.bad_entity",
-    "dxf.reader.extrusion_3d"
+    "dxf.reader.bad_entity"
   ]
 }

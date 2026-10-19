@@ -445,8 +445,8 @@ def gen_extrusion():
 
 def gen_tilted_planes():
     # The failure classes of a sweep over real drawings: entities in tilted 3D planes (most of
-    # them ellipses and polylines) are drawn as seen from above; only text in such a plane and a
-    # polyline with a single vertex are still dropped.
+    # them ellipses and polylines) are drawn as seen from above; only a polyline with a single
+    # vertex is still dropped.
     doc = new_doc("R2000")
     msp = doc.modelspace()
     tilt = {"extrusion": (0, -0.6, 0.8)}
@@ -463,12 +463,12 @@ def gen_tilted_planes():
     msp.add_text("tilted", dxfattribs=dict(tilt, height=1))
     msp.add_lwpolyline([(60, 20)], dxfattribs=dict(tilt))
     save_ezdxf(doc, "tilted_planes",
-               description="entities in tilted 3D planes are projected; tilted text and a one-vertex polyline are not",
+               description="entities and text in tilted 3D planes are projected; a one-vertex polyline is dropped",
                exit=1, version="AC1015", encoding="ANSI_1252",
                dxf={"CIRCLE": 2, "ARC": 1, "ELLIPSE": 1, "LWPOLYLINE": 2, "POLYLINE": 1, "HATCH": 1,
                     "SOLID": 1, "TEXT": 1},
-               kinds={"Ellipse": 3, "Polyline": 3, "Hatch": 2},
-               layers=["0"], warnings=["dxf.reader.bad_entity", "dxf.reader.extrusion_3d"])
+               kinds={"Ellipse": 3, "Polyline": 3, "Hatch": 2, "Text": 1},
+               layers=["0"], texts=["tilted"], warnings=["dxf.reader.bad_entity"])
 
 
 def gen_far():
