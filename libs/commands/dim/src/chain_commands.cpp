@@ -2,6 +2,7 @@
 // editing.
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "dim_internal.h"
 #include "tbcad/core/dim_assoc.h"
@@ -20,12 +21,32 @@ bool isAnyDim(const Entity& e) {
     return kind(e) == EntityKind::Dimension;
 }
 
-// The most recently drawn linear or aligned dimension of model space.
-EntityId lastLengthDim(const Document& doc) {
+Vec2 unitAt(double a) {
+    return {std::cos(a), std::sin(a)};
+}
+
+double angleOf(Vec2 v) {
+    return std::atan2(v.y, v.x);
+}
+
+bool isAngularDim(const DimensionData& d) {
+    return d.kind == DimKind::Angular2Line || d.kind == DimKind::Angular3Point;
+}
+
+// Dimensions DIMCONTINUE and DIMBASELINE build on, as in AutoCAD: linear, aligned, angular and
+// ordinate.
+bool isChainDim(const Entity& e) {
+    const auto* d = entityAs<DimensionData>(e);
+    return d && (d->kind == DimKind::Linear || d->kind == DimKind::Aligned ||
+                 d->kind == DimKind::Ordinate || isAngularDim(*d));
+}
+
+// The most recently drawn dimension of model space that a chain can continue.
+EntityId lastChainDim(const Document& doc) {
     const auto& ms = doc.modelSpace();
     for (auto it = ms.rbegin(); it != ms.rend(); ++it) {
         const Entity* e = doc.find(*it);
-        if (e && isLengthDim(*e))
+        if (e && isChainDim(*e))
             return *it;
     }
     return EntityId{};
@@ -38,6 +59,66 @@ Vec2 normalOf(const DimensionData& d) {
 
 double sideOf(const DimensionData& d) {
     return dot(d.defPts[2] - d.defPts[0], normalOf(d)) >= 0 ? 1.0 : -1.0;
+}
+
+// The next dimension of a chain from `prev` to the picked point. Linear and aligned: from the
+// second (continue) or first (baseline) extension line. Angular: around the same vertex, from the
+// side of the previous arc nearest the pick (continue, same radius) or the side away from it
+// (baseline, one step further out). Ordinate: the same datum and axis, the leader ending in line
+// with the previous one.
+DimensionData chainNext(const DimensionData& prev, Vec2 pick, bool baseline, double spacing) {
+    DimensionData d = prev;
+    d.textPosUser = false;
+    d.textOverride.clear();
+    d.breaks.clear();
+    d.jogs.clear();
+    d.assoc = {};
+    if (prev.kind == DimKind::Ordinate) {
+        const Vec2 n = Vec2{-std::sin(prev.rotation), std::cos(prev.rotation)};  // leader direction
+        d.defPts[0] = pick;
+        d.defPts[1] = pick + n * dot(prev.defPts[1] - pick, n);
+        return d;
+    }
+    if (isAngularDim(prev)) {
+        const dim::AngularGeometry g = dim::angularGeometry(prev);
+        const Vec2 dirs[2] = {unitAt(g.startAngle), unitAt(g.startAngle + g.sweep)};
+        const double a = angleOf(pick - g.vertex);
+        auto gapTo = [&](Vec2 dir) {
+            const double t = std::abs(normalizeAngle(a - angleOf(dir)));
+            return std::min(t, kTwoPi - t);
+        };
+        const bool nearEnd = gapTo(dirs[1]) <= gapTo(dirs[0]);
+        // continue: from the side nearest the pick; baseline: from the other one
+        const Vec2 from = dirs[nearEnd != baseline ? 1 : 0];
+        const double r = g.radius + (baseline ? spacing : 0.0);
+        d.kind = DimKind::Angular3Point;
+        d.defPts[2] = g.vertex;
+        d.defPts[0] = g.vertex + from * r;
+        d.defPts[1] = pick;
+        // the arc point halfway round the smaller angle between the two sides
+        const Vec2 to = normalized(pick - g.vertex);
+        Vec2 mid = normalized(from + to);
+        if (tol::isZeroLength(mid))
+            mid = perp(from);
+        d.defPts[3] = g.vertex + mid * r;
+        return d;
+    }
+    const Vec2 origin = baseline ? prev.defPts[0] : prev.defPts[1];
+    d.defPts[0] = origin;
+    d.defPts[1] = pick;
+    d.defPts[2] =
+        baseline ? prev.defPts[2] + normalOf(prev) * (sideOf(prev) * spacing) : prev.defPts[2];
+    return d;
+}
+
+bool degenerateChain(const DimensionData& d) {
+    if (d.kind == DimKind::Ordinate)
+        return false;
+    if (isAngularDim(d))
+        return distance(d.defPts[1], d.defPts[2]) < tol::kLinear ||
+               std::abs(cross(normalized(d.defPts[0] - d.defPts[2]),
+                              normalized(d.defPts[1] - d.defPts[2]))) < 1e-9;
+    return distance(d.defPts[0], d.defPts[1]) < tol::kLinear;
 }
 
 class ChainCommand final : public cmd::Command {
@@ -54,44 +135,39 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
-        EntityId baseId = lastLengthDim(ctx.doc());
+        EntityId baseId = lastChainDim(ctx.doc());
+        // What this run made, with the base each one was built on, for Undo.
+        std::vector<std::pair<EntityId, EntityId>> made;
         for (;;) {
             if (!baseId) {
                 cmd::EntityOptions eo;
-                eo.filter = isLengthDim;
-                auto o = co_await ctx.getEntity("Select base dimension", eo);
+                eo.filter = isChainDim;
+                auto o = co_await ctx.getEntity(
+                    baseline_ ? "Select base dimension" : "Select continued dimension", eo);
                 if (!o.ok())
                     co_return;
                 baseId = o.id;
             }
             const Entity* be = ctx.doc().find(baseId);
             const auto* base = be ? entityAs<DimensionData>(*be) : nullptr;
-            if (!base || !isLengthDim(*be)) {
-                ctx.message("Select a linear or aligned dimension.");
+            if (!base || !isChainDim(*be)) {
+                ctx.message("Select a linear, aligned, angular or ordinate dimension.");
                 co_return;
             }
-            DimensionData prev = *base;
+            const DimensionData prev = *base;
             const DimStyle& st = dim::styleOf(ctx.doc(), prev.style);
             const double k = st.overallScale > 0 ? st.overallScale : 1.0;
             const double spacing =
                 st.baselineSpacing > 0 ? st.baselineSpacing * k : st.textHeight * 2.5 * k;
+            const bool ordinate = prev.kind == DimKind::Ordinate;
 
-            Vec2 origin = baseline_ ? prev.defPts[0] : prev.defPts[1];
             auto* c = &ctx;
             const bool baseline = baseline_;
-            auto build = [=](Vec2 second) {
-                DimensionData d = prev;
-                d.defPts[0] = origin;
-                d.defPts[1] = second;
-                d.defPts[2] = baseline ? prev.defPts[2] + normalOf(prev) * (sideOf(prev) * spacing)
-                                       : prev.defPts[2];
-                d.textPosUser = false;
-                d.textOverride.clear();
-                return d;
-            };
+            auto build = [=](Vec2 pick) { return chainNext(prev, pick, baseline, spacing); };
             cmd::PointOptions po;
-            po.base = prev.defPts[1];
-            po.keywords = {"Select"};
+            if (!ordinate && !isAngularDim(prev))
+                po.base = prev.defPts[1];
+            po.keywords = {"Undo", "Select"};
             po.preview = [c, build](Vec2 cursor, DisplayList& out) {
                 DimensionData d = build(cursor);
                 dim::refresh(c->doc(), d);
@@ -99,8 +175,20 @@ public:
                 e.data = Indirect<DimensionData>(std::move(d));
                 previewEntity(*c, std::move(e), out);
             };
-            auto next =
-                co_await ctx.getPoint("Specify second extension line origin or [Select]", po);
+            auto next = co_await ctx.getPoint(
+                ordinate ? "Specify feature location or [Undo/Select]"
+                         : "Specify second extension line origin or [Undo/Select]",
+                po);
+            if (next.status == Status::Keyword && next.keyword == "Undo") {
+                if (made.empty()) {
+                    ctx.message("Nothing to undo.");
+                    continue;
+                }
+                (void)ctx.tx().erase(made.back().first);
+                baseId = made.back().second;
+                made.pop_back();
+                continue;
+            }
             if (next.status == Status::Keyword) {
                 baseId = EntityId{};
                 continue;
@@ -108,7 +196,7 @@ public:
             if (!next.ok())
                 co_return;
             DimensionData d = build(next.point);
-            if (distance(d.defPts[0], d.defPts[1]) < tol::kLinear) {
+            if (degenerateChain(d)) {
                 ctx.message("The extension line origins coincide.");
                 continue;
             }
@@ -123,6 +211,7 @@ public:
                 ctx.message(id.error().message);
                 co_return;
             }
+            made.emplace_back(id.value(), baseId);
             // The next one chains from the dimension just made.
             baseId = id.value();
         }
@@ -281,20 +370,34 @@ public:
             ctx.message("Nothing to dimension.");
             co_return;
         }
-        bool baseline = false;
+        enum class Mode { Continuous, Staggered, Baseline, Ordinate };
+        Mode mode = Mode::Continuous;
+        std::optional<Vec2> datum;  // datumPoint: where Baseline starts and Ordinate measures from
         cmd::PointResult at;
         for (;;) {
+            static constexpr const char* kModeNames[] = {"Continuous", "Staggered", "Baseline",
+                                                         "Ordinate"};
             cmd::PointOptions po;
-            po.keywords = {"Continuous", "Baseline", "Radius", "Diameter"};
+            po.keywords = {"Continuous", "Staggered", "Baseline",  "Ordinate",
+                           "Radius",     "Diameter",  "datumPoint"};
             at = co_await ctx.getPoint(
-                std::string("Specify dimension line position or [Continuous/Baseline/Radius/"
-                            "Diameter] <") +
-                    (baseline ? "Baseline" : "Continuous") + ">",
+                std::string("Specify dimension line position or [Continuous/Staggered/Baseline/"
+                            "Ordinate/Radius/Diameter/datumPoint] <") +
+                    kModeNames[static_cast<int>(mode)] + ">",
                 po);
             if (at.status != cmd::Status::Keyword)
                 break;
-            if (at.keyword == "Continuous" || at.keyword == "Baseline") {
-                baseline = at.keyword == "Baseline";
+            if (at.keyword == "datumPoint") {
+                auto dp = co_await ctx.getPoint("Select new datum point");
+                if (!dp.ok())
+                    co_return;
+                datum = dp.point;
+                continue;
+            }
+            if (at.keyword != "Radius" && at.keyword != "Diameter") {
+                for (int m = 0; m < 4; ++m)
+                    if (at.keyword == kModeNames[m])
+                        mode = static_cast<Mode>(m);
                 continue;
             }
             // Radius and Diameter dimension every circle and arc of the selection at once.
@@ -339,15 +442,13 @@ public:
         const bool horizontal = atU.y > box.max.y || atU.y < box.min.y;
         const double rotation = ucs + (horizontal ? 0.0 : kPi / 2);
         auto key = [&](Vec2 p) { return horizontal ? inUcs(p).x : inUcs(p).y; };
+        if (datum && mode != Mode::Ordinate)
+            pts.push_back(*datum);
         std::sort(pts.begin(), pts.end(), [&](Vec2 a, Vec2 b) { return key(a) < key(b); });
         std::vector<Vec2> uniq;
         for (const Vec2& p : pts)
             if (uniq.empty() || std::abs(key(p) - key(uniq.back())) > tol::kLinear)
                 uniq.push_back(p);
-        if (uniq.size() < 2) {
-            ctx.message("The key points are all at the same place along that direction.");
-            co_return;
-        }
         const DimStyle& st = dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
         const double k = st.overallScale > 0 ? st.overallScale : 1.0;
         const double spacing =
@@ -355,14 +456,59 @@ public:
         const Vec2 normal{-std::sin(rotation), std::cos(rotation)};
         const Vec2 offU = atU - box.center();
         const double side = (horizontal ? offU.y : offU.x) >= 0 ? 1.0 : -1.0;
+        if (mode == Mode::Ordinate) {
+            // One ordinate dimension per key point, measured from the datum (the origin unless
+            // datumPoint moved it), the leaders ending on the line through the picked point.
+            const Vec2 origin = datum ? *datum : Vec2{0, 0};
+            for (const Vec2& p : uniq) {
+                DimensionData d;
+                d.kind = DimKind::Ordinate;
+                d.rotation = rotation;
+                d.defPts = {p, p + normal * dot(at.point - p, normal), origin, Vec2{}};
+                dim::refresh(ctx.doc(), d);
+                if (!addDim(ctx, std::move(d)))
+                    co_return;
+            }
+            ctx.message(std::to_string(uniq.size()) + " dimensions created.");
+            co_return;
+        }
+        if (uniq.size() < 2) {
+            ctx.message("The key points are all at the same place along that direction.");
+            co_return;
+        }
+        if (mode == Mode::Staggered) {
+            // Pairs from the outside in: the innermost pair sits at the picked line, each pair
+            // further out one step further from the objects.
+            const std::size_t pairs = uniq.size() / 2;
+            for (std::size_t i = 0; i < pairs; ++i) {
+                DimensionData d;
+                d.kind = DimKind::Linear;
+                d.rotation = rotation;
+                const double out = side * spacing * double(pairs - 1 - i);
+                d.defPts = {uniq[i], uniq[uniq.size() - 1 - i], at.point + normal * out, Vec2{}};
+                dim::refresh(ctx.doc(), d);
+                if (!addDim(ctx, std::move(d)))
+                    co_return;
+            }
+            ctx.message(std::to_string(pairs) + " dimensions created.");
+            co_return;
+        }
+        // Baseline starts at the datum when one was given, else at the first key point.
+        std::size_t first = 0;
+        if (mode == Mode::Baseline && datum)
+            for (std::size_t i = 0; i < uniq.size(); ++i)
+                if (std::abs(key(uniq[i]) - key(*datum)) <= tol::kLinear)
+                    first = i;
+        std::size_t step = 0;
         for (std::size_t i = 0; i + 1 < uniq.size(); ++i) {
             DimensionData d;
             d.kind = DimKind::Linear;
             d.rotation = rotation;
-            if (baseline) {
-                // Every dimension starts at the first key point; each sits one step further out.
-                d.defPts = {uniq[0], uniq[i + 1], at.point + normal * (side * spacing * double(i)),
-                            Vec2{}};
+            if (mode == Mode::Baseline) {
+                // Every dimension starts at the base point; each sits one step further out.
+                const std::size_t to = i < first ? i : i + 1;
+                d.defPts = {uniq[first], uniq[to],
+                            at.point + normal * (side * spacing * double(step++)), Vec2{}};
             } else {
                 d.defPts = {uniq[i], uniq[i + 1], at.point, Vec2{}};
             }
@@ -551,11 +697,78 @@ public:
         if (!dims.ok() || dims.ids.empty())
             co_return;
         cmd::KeywordOptions ko;
-        ko.keywords = {"Auto", "Remove"};
+        ko.keywords = {"Auto", "Manual", "Remove"};
         ko.defaultKeyword = "Auto";
-        auto mode = co_await ctx.getKeyword("Break [Auto/Remove] <Auto>", ko);
+        auto mode = co_await ctx.getKeyword("Break [Auto/Manual/Remove] <Auto>", ko);
         if (!mode.ok())
             co_return;
+        if (mode.keyword == "Manual") {
+            // As AutoCAD: two points on a dimension or extension line of one dimension; the
+            // gap between them is added to the breaks the dimension already has.
+            if (dims.ids.size() != 1) {
+                ctx.message("Manual breaks one dimension at a time.");
+                co_return;
+            }
+            const EntityId id = dims.ids.front();
+            auto p1 = co_await ctx.getPoint("Specify first break point");
+            if (!p1.ok())
+                co_return;
+            cmd::PointOptions po;
+            po.base = p1.point;
+            auto p2 = co_await ctx.getPoint("Specify second break point", po);
+            if (!p2.ok())
+                co_return;
+            const Entity* e = ctx.doc().find(id);
+            const auto* d0 = e ? entityAs<DimensionData>(*e) : nullptr;
+            if (!d0)
+                co_return;
+            DimensionData bare = *d0;
+            bare.breaks.clear();
+            const dim::Layout L = dim::layoutDimension(ctx.doc(), bare);
+            // the straight line of the dimension nearest the first point
+            double best = 1e300;
+            Vec2 la{}, lb{};
+            for (const dim::Layout::Line& line : L.lines) {
+                if (line.role == dim::Role::Text)
+                    continue;
+                for (std::size_t i = 0; i + 1 < line.pts.size(); ++i) {
+                    const Vec2 a = line.pts[i], b = line.pts[i + 1];
+                    const Vec2 ab = b - a;
+                    const double len2 = dot(ab, ab);
+                    if (!(len2 > 1e-18))
+                        continue;
+                    const double t = std::clamp(dot(p1.point - a, ab) / len2, 0.0, 1.0);
+                    const double dd = distance(p1.point, a + ab * t);
+                    if (dd < best) {
+                        best = dd;
+                        la = a;
+                        lb = b;
+                    }
+                }
+            }
+            if (best == 1e300) {
+                ctx.message("The dimension has no line to break.");
+                co_return;
+            }
+            const Vec2 ab = lb - la;
+            const double len2 = dot(ab, ab);
+            auto onLine = [&](Vec2 p) {
+                return la + ab * std::clamp(dot(p - la, ab) / len2, 0.0, 1.0);
+            };
+            DimBreak b{onLine(p1.point), onLine(p2.point)};
+            if (distance(b.a, b.b) < tol::kLinear) {
+                ctx.message("The break points are at the same place on the line.");
+                co_return;
+            }
+            ctx.setUndoLabel("DIMBREAK");
+            auto r = ctx.tx().modify(id, [&](Entity& ent) {
+                if (auto* d = entityAs<DimensionData>(ent))
+                    d->breaks.push_back(b);
+            });
+            if (!r)
+                ctx.message(r.error().message);
+            co_return;
+        }
 
         std::vector<EntityId> cutters;
         if (mode.keyword == "Auto") {
