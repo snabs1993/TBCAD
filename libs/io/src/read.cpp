@@ -968,13 +968,21 @@ Result<std::unique_ptr<Document>> readTbcad(std::span<const std::uint8_t> bytes,
 
 Result<std::unique_ptr<Document>> readTbcad(const std::filesystem::path& path, IoReport& report,
                                             const ReadOptions& options) {
+    std::error_code ec;
+    if (std::filesystem::is_directory(platform::longPath(path), ec))
+        return makeError(ErrorCode::Io, path.string() + " is a folder, not a drawing file");
     std::ifstream in(platform::longPath(path), std::ios::binary | std::ios::ate);
     if (!in)
         return makeError(ErrorCode::Io, "cannot open " + path.string());
     std::streamoff size = in.tellg();
     if (size < 0)
         return makeError(ErrorCode::Io, "cannot read " + path.string());
-    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
+    std::vector<std::uint8_t> bytes;
+    try {
+        bytes.resize(static_cast<std::size_t>(size));
+    } catch (const std::bad_alloc&) {
+        return makeError(ErrorCode::Io, path.string() + " is too large to open");
+    }
     in.seekg(0);
     if (size > 0 && !in.read(reinterpret_cast<char*>(bytes.data()), size))
         return makeError(ErrorCode::Io, "cannot read " + path.string());
