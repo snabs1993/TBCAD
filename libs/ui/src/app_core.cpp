@@ -267,6 +267,9 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
                                                        fs::path file) {
     auto s = std::make_unique<Session>(std::move(doc));
     Document& d = s->doc;
+    // The new session can take the address of one just closed, at the same revision number: the
+    // extents remembered for that one must not be taken for this one's.
+    extentsCache_ = {};
     s->indexer = std::make_unique<index::DocumentIndexer>(
         d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); },
         [] { return std::make_shared<blocks::BoundsMemoScope>(); },
@@ -278,8 +281,11 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
             };
             return std::make_shared<Scope>();
         });
+    openStep("  index the objects");
     s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
+    openStep("  index the blocks");
     s->sync = std::make_unique<SceneSync>(d, scene_);
+    openStep("  scene link");
     s->observer = std::make_unique<AppObserver>(d, *this);
     s->runner = std::make_unique<cmd::CommandRunner>(d, s->undo, *this, registry_);
     s->runner->setFilterChain(&filterChain_);
@@ -288,7 +294,9 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     s->file = std::move(file);
     d.setFilePath(platform::pathToUtf8(s->file));
     s->savedRevision = d.revision();
+    openStep("  command setup");
     watchFile(*s);
+    openStep("  watch the file");
     if (s->lockedElsewhere)
         print(
             s->file.filename().string() +
@@ -387,14 +395,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
                                         [&](EntityId id) { return !session_->doc.find(id); }),
                          selection_.end());
     }
-    auto stepStart = std::chrono::steady_clock::now();
-    auto step = [&](const char* name) {
-        const auto t = std::chrono::steady_clock::now();
-        if (fitView)
-            openTimings_.emplace_back(
-                name, std::chrono::duration<double, std::milli>(t - stepStart).count());
-        stepStart = t;
-    };
+    auto step = [&](const char* name) { openStep(name); };
     // Fit the view first: the scene is then built for the zoom the drawing is first seen at, not
     // built once and then built again when the zoom change makes curves and text stale.
     if (fitView && (!session_->index.empty() || !slot.viewSaved)) {
@@ -413,7 +414,9 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     ++generation_;
     lastTessellatedFor_ = camera_;
     notifySessionHooks();
+    step("  panels and hooks");
     scanMissingXrefs();
+    step("  look for missing xrefs");
 }
 
 void AppCore::scanMissingXrefs() {
@@ -992,6 +995,17 @@ void AppCore::openLap(const std::string& name) {
     openTimings_.emplace_back(name,
                               std::chrono::duration<double, std::milli>(t - openLapAt_).count());
     openLapAt_ = t;
+    if (openStepAt_)
+        openStepAt_ = t;
+}
+
+void AppCore::openStep(const char* name) {
+    if (!openStepAt_)
+        return;
+    const auto t = std::chrono::steady_clock::now();
+    openTimings_.emplace_back(name,
+                              std::chrono::duration<double, std::milli>(t - *openStepAt_).count());
+    openStepAt_ = t;
 }
 
 Result<void> AppCore::openDxf(const fs::path& path) {
@@ -1142,8 +1156,10 @@ Result<void> AppCore::finishForeignOpen(const fs::path& path, const std::string&
     }
     for (const auto& m : r.messages)
         print(m);
+    openStep("  print messages");
     settings_.addRecentFile(platform::pathToUtf8(path));
     (void)settings_.save(paths_.settingsFile());
+    openStep("  save recent files");
     print("Opened " + path.string() + (r.format.empty() ? "" : " (" + r.format + ")") +
           (readOnly ? " read-only" : ""));
     if (readOnly)
@@ -1216,6 +1232,11 @@ Result<void> AppCore::openFile(const fs::path& path) {
     }
     openTimings_.clear();
     openLapAt_ = std::chrono::steady_clock::now();
+    openStepAt_ = openLapAt_;
+    struct StopSteps {
+        std::optional<std::chrono::steady_clock::time_point>& at;
+        ~StopSteps() { at.reset(); }
+    } stopSteps{openStepAt_};
     if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
         auto res = it->second.read(path);
         openLap("read " + it->first + " file (all steps)");

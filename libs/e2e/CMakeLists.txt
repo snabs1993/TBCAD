@@ -34,6 +34,7 @@ tbcad_add_tests(e2e
     tests/block_scale_tests.cpp
     tests/linetype_scale_tests.cpp
     tests/hatch_scale_tests.cpp
+    tests/open_file_bench_tests.cpp
     tests/text_fonts_tests.cpp
     tests/cmdline_ux_tests.cpp
     tests/drawing_objects_tests.cpp

@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <sstream>
 
 #include "app.h"
@@ -197,6 +198,77 @@ int App::runGate() {
 
 // --gate-file: the same measurements on any drawing, with whole frames (UI included) so a slow
 // panel or overlay shows up too. Nothing is asserted; it prints timings.
+namespace {
+
+std::size_t vertexCount(const DisplayList& list) {
+    std::size_t n = 0;
+    for (const DisplayItem& item : list.items)
+        std::visit(
+            [&](const auto& it) {
+                using T = std::decay_t<decltype(it)>;
+                if constexpr (std::is_same_v<T, DisplayFill>) {
+                    for (const auto& ring : it.rings)
+                        n += ring.size();
+                } else {
+                    n += it.pts.size();
+                }
+            },
+            item);
+    return n;
+}
+
+// The objects with the most geometry at the zoom-extents view, so a slow drawing shows what makes
+// it slow (a hatch pattern drawn line by line, a block with a huge hatch inside).
+void printHeaviest(const ui::AppCore& core) {
+    const Document& doc = core.document();
+    geom::DisplayContext ctx;
+    ctx.pixelSizeMm = core.camera().pixelSizeMm();
+    struct Heavy {
+        std::size_t vertices = 0;
+        std::size_t items = 0;
+        const Entity* e = nullptr;
+    };
+    std::vector<Heavy> all;
+    std::size_t total = 0;
+    std::map<int, std::size_t> byKind;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        DisplayList list;
+        geom::buildDisplay(doc, *e, ctx, list);
+        const std::size_t v = vertexCount(list);
+        total += v;
+        byKind[static_cast<int>(kind(*e))] += v;
+        all.push_back({v, list.items.size(), e});
+    }
+    auto describe = [&](const Entity& e) {
+        std::string s = "kind " + std::to_string(static_cast<int>(kind(e)));
+        if (const auto* ins = entityAs<InsertData>(e)) {
+            const BlockDef* b = doc.block(ins->block);
+            s = "insert of " + (b ? b->name : std::string("?"));
+        } else if (const auto* h = entityAs<HatchData>(e)) {
+            s = "hatch " + h->pattern + (h->solid ? " (solid)" : "");
+        }
+        if (const Layer* l = doc.layer(e.common.layer))
+            s += " on " + l->name;
+        return s;
+    };
+    std::printf("geometry at zoom extents: %zu vertices (pixel %.4g)\n", total, ctx.pixelSizeMm);
+    for (const auto& [k, v] : byKind)
+        if (v * 50 >= total)
+            std::printf("  kind %-3d %12zu vertices\n", k, v);
+    const std::size_t top = std::min<std::size_t>(12, all.size());
+    std::partial_sort(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(top), all.end(),
+                      [](const Heavy& a, const Heavy& b) { return a.vertices > b.vertices; });
+    for (std::size_t i = 0; i < top; ++i)
+        std::printf("  %10zu vertices %8zu items  #%llu %s\n", all[i].vertices, all[i].items,
+                    static_cast<unsigned long long>(all[i].e->common.id.value),
+                    describe(*all[i].e).c_str());
+}
+
+}  // namespace
+
 int App::runGateFile() {
     ui::AppCore& core = *core_;
     int w = 0, h = 0;
@@ -252,6 +324,7 @@ int App::runGateFile() {
     frame();
     glFinish();
     std::printf("zoom extents + first frame: %.0f ms\n", msSince(t0));
+    printHeaviest(core);
     {
         const std::vector<double> ms = frames(30, [](int) {});
         std::printf("static frame times (ms):");

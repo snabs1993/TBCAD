@@ -330,6 +330,7 @@ private:
     std::unordered_map<const DisplayList*,
                        std::unique_ptr<InstanceTemplate, InstanceTemplateDeleter>>
         templates_{};
+    std::size_t templateSweepAt_ = 64;  // template count at which unused ones are dropped
 
     double tileSize_;
     // Frees a scene's worth of geometry on another thread (see discardAll).
