@@ -90,6 +90,31 @@ void mergeCollinear(std::vector<Seg>& run, bool closed) {
     }
 }
 
+// The offset keeps the widths of the source: each new segment takes the width of the source
+// segment nearest to it, interpolated along that segment.
+void carryWidths(const PolylineData& source, const std::vector<Seg>& segs, PolylineData& made) {
+    if (segs.empty() || source.v.size() < segs.size())
+        return;
+    const std::vector<Seg> out = polylineSegs(made);
+    auto widthAt = [&](double g, bool start) {
+        const std::size_t i = std::min(static_cast<std::size_t>(g), segs.size() - 1);
+        const double u = std::clamp(g - static_cast<double>(i), 0.0, 1.0);
+        (void)start;
+        return source.v[i].startWidth + (source.v[i].endWidth - source.v[i].startWidth) * u;
+    };
+    for (std::size_t k = 0; k < out.size() && k < made.v.size(); ++k) {
+        // Sample inside the segment so a vertex shared with a neighbour does not decide.
+        const double g0 = closestGlobalParam(segs, segPoint(out[k], 0.02));
+        const double g1 = closestGlobalParam(segs, segPoint(out[k], 0.98));
+        const double w0 = widthAt(g0, true), w1 = widthAt(g1, false);
+        // Extend the interpolation back to the segment ends.
+        made.v[k].startWidth = w0 + (w0 - w1) * 0.02 / 0.96;
+        made.v[k].endWidth = w1 + (w1 - w0) * 0.02 / 0.96;
+        made.v[k].startWidth = std::max(0.0, made.v[k].startWidth);
+        made.v[k].endWidth = std::max(0.0, made.v[k].endWidth);
+    }
+}
+
 Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData& raw, double d,
                                            const OffsetOptions& opt) {
     PolylineData pl = cleanPolyline(raw);
@@ -376,13 +401,19 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
     if (runs.empty())
         return err("The offset distance is too large: nothing is left.");
 
+    const bool wide = std::any_of(pl.v.begin(), pl.v.end(), [](const PolyVertex& v) {
+        return v.startWidth != 0 || v.endWidth != 0;
+    });
     std::vector<Entity> out;
     for (auto& run : runs) {
         bool isClosed = run.size() > 1 && samePoint(run.back().p1, run.front().p0, kJoinTol);
         if (isClosed && !closed)
             isClosed = false;  // an open source stays open unless the offset really closes
         mergeCollinear(run, isClosed);
-        out.push_back(withData(src, polylineFromSegs(run, isClosed, &pl)));
+        PolylineData made = polylineFromSegs(run, isClosed, &pl);
+        if (wide)
+            carryWidths(pl, segs, made);
+        out.push_back(withData(src, std::move(made)));
     }
     return out;
 }
