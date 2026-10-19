@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include "commands.h"
 #include "common.h"
@@ -21,20 +22,37 @@ public:
 
     cmd::Task run(CommandContext& ctx) override {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Polygon", "Rectangle", "Polyline", "Remove"};
+        ko.keywords = {"Polygon", "Rectangle", "Polyline", "Remove", "Frames"};
         ko.defaultKeyword = "Polygon";
-        auto k =
-            co_await ctx.getKeyword("Wipeout [Polygon/Rectangle/Polyline/Remove] <Polygon>", ko);
+        auto k = co_await ctx.getKeyword(
+            "Wipeout [Polygon/Rectangle/Polyline/Remove/Frames] <Polygon>", ko);
         if (!k.ok())
             co_return;
+
+        if (k.keyword == "Frames") {  // as WIPEOUTFRAME, by name like AutoCAD's Frames option
+            cmd::KeywordOptions fo;
+            fo.keywords = {"On", "Off", "Display"};
+            const int now = wipeoutFrameMode(ctx.doc().header());
+            fo.defaultKeyword = now == 0 ? "Off" : now == 2 ? "Display" : "On";
+            auto f = co_await ctx.getKeyword(
+                "Wipeout frames [On/Off/Display] <" + *fo.defaultKeyword + ">", fo);
+            if (!f.ok())
+                co_return;
+            const std::string value = f.keyword == "Off" ? "0" : f.keyword == "Display" ? "2" : "1";
+            (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[kWipeoutFrameKey] = value; });
+            ctx.setUndoLabel("WIPEOUTFRAME");
+            ctx.message("WIPEOUTFRAME = " + value);
+            co_return;
+        }
 
         if (k.keyword == "Polyline" || k.keyword == "Remove") {
             const bool remove = k.keyword == "Remove";
             auto sel = co_await ctx.getSelection(
                 remove ? "Select wipeouts" : "Select closed polylines",
-                cmd::SelectionOptions{.filter = [remove](const Entity& e) {
+                cmd::SelectionOptions{.filter = [remove, c = &ctx](const Entity& e) {
                     const auto* p = entityAs<PolylineData>(e);
-                    return p && p->closed && e.common.wipeout == remove;
+                    return p && p->closed && e.common.wipeout == remove &&
+                           !c->doc().effective(e.common).locked;
                 }});
             if (!sel.ok() || sel.ids.empty())
                 co_return;
@@ -70,14 +88,28 @@ public:
                 po.allowNone = pts.size() >= 3;
                 if (!pts.empty())
                     po.base = pts.back();
+                if (!pts.empty())
+                    po.keywords = {"Undo"};
                 auto a = co_await ctx.getPoint(
-                    pts.size() >= 3 ? "Next point (Enter closes)" : "Next point", po);
+                    pts.size() >= 3 ? "Next point or [Undo] (Enter closes)" : "Next point", po);
+                if (a.status == cmd::Status::Keyword) {
+                    pts.pop_back();
+                    continue;
+                }
                 if (!a.ok()) {
                     if (a.status == cmd::Status::None && pts.size() >= 3)
                         break;
                     co_return;
                 }
-                pts.push_back(a.point);
+                // A point on the last one adds nothing.
+                if (pts.empty() || !tol::isZeroLength(a.point - pts.back()))
+                    pts.push_back(a.point);
+            }
+            while (pts.size() > 1 && tol::isZeroLength(pts.front() - pts.back()))
+                pts.pop_back();
+            if (pts.size() < 3 || std::abs(ringArea(pts)) < tol::kLinear) {
+                ctx.message("A wipeout needs at least three points that enclose an area.");
+                co_return;
             }
         }
         PolylineData pl;

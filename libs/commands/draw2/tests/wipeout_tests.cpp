@@ -84,3 +84,41 @@ TEST_CASE("WIPEOUTFRAME shows, hides or screen-only shows the outline, and is un
     f.host.undo();  // back to the default
     CHECK(wipeoutFrameMode(f.doc.header()) == 1);
 }
+
+TEST_CASE("WIPEOUT points: Undo drops a point, repeated points count once, no area makes nothing") {
+    Fixture f;
+    REQUIRE(f.host.run("WO", {"Polygon", "0,0", "10,0", "10,0", "50,50", "Undo", "10,10", "0,0",
+                              ""})
+                .finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
+    REQUIRE(pl.v.size() == 3);  // 0,0 10,0 10,10: the repeated and the closing point dropped
+    CHECK(close(pl.v[2].p, {10, 10}));
+
+    REQUIRE(f.host.run("WO", {"Polygon", "0,0", "10,0", "20,0", ""}).finished);
+    CHECK(f.entities().size() == 1);
+    CHECK(f.host.logContains("enclose an area"));
+}
+
+TEST_CASE("WIPEOUT Frames sets the frame mode, and Polyline leaves locked layers alone") {
+    Fixture f;
+    REQUIRE(f.host.run("WIPEOUT", {"Frames", "Off"}).finished);
+    CHECK(wipeoutFrameMode(f.doc.header()) == 0);
+    REQUIRE(f.host.run("WIPEOUT", {"Frames", "Display"}).finished);
+    CHECK(wipeoutFrameMode(f.doc.header()) == 2);
+
+    Transaction tx = f.doc.begin("layer");
+    const LayerId locked = tx.addLayer(Layer{.name = "L", .locked = true}).value();
+    tx.commit();
+    PolylineData pl;
+    pl.closed = true;
+    pl.v = {{.p = {0, 0}}, {.p = {10, 0}}, {.p = {10, 10}}};
+    EntityId id = f.addEntity(pl);
+    Transaction tx2 = f.doc.begin("move");
+    REQUIRE(tx2.modify(id, [&](Entity& e) { e.common.layer = locked; }));
+    tx2.commit();
+    f.host.setSelection({id});
+    f.host.run("WIPEOUT", {"Polyline", ScriptItem::esc()});
+    CHECK_FALSE(f.doc.find(id)->common.wipeout);
+}
