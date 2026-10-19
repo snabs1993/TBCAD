@@ -506,6 +506,19 @@ void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = {}) {
                 b->style = a->style;
                 b->widthFactor = a->widthFactor;
                 b->oblique = a->oblique;
+                // Justification: the point the text hangs from stays where it is. Aligned and Fit
+                // need two points of their own, so they are not passed on or replaced.
+                const auto twoPoint = [](HAlign h) { return h == HAlign::Aligned || h == HAlign::Fit; };
+                if (!twoPoint(a->h) && !twoPoint(b->h) && (a->h != b->h || a->v != b->v)) {
+                    const auto leftBase = [](const TextData& t) {
+                        return t.h == HAlign::Left && t.v == VAlign::Baseline;
+                    };
+                    const Vec2 anchor = leftBase(*b) ? b->position : b->alignPoint;
+                    b->h = a->h;
+                    b->v = a->v;
+                    b->position = anchor;
+                    b->alignPoint = anchor;
+                }
             }
         }
         if (const auto* a = entityAs<MTextData>(src)) {
