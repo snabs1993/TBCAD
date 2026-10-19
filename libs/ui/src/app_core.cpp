@@ -148,6 +148,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("file.saveAs", "Ctrl+Shift+S");
     keybindings_.declare("file.close", "Ctrl+W");
     keybindings_.declare("view.nextDocument", "Ctrl+Tab");
+    keybindings_.declare("view.prevDocument", "Ctrl+Shift+Tab");
     keybindings_.declare("edit.undo", "Ctrl+Z");
     keybindings_.declare("edit.redo", "Ctrl+Y");
     keybindings_.declare("edit.selectAll", "Ctrl+A");
