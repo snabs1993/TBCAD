@@ -283,7 +283,9 @@ Rgba plotColor(Rgba c, ColorMode mode) {
     base.a = 255;
     if (mode == ColorMode::Monochrome)
         return {0, 0, 0, 255};
-    if (lum > 0.9)  // white lines would vanish on the white sheet
+    // White (ACI 7 and near-white) would vanish on the white sheet and prints black, as AutoCAD
+    // does; light colours such as yellow keep their colour.
+    if (c.r >= 250 && c.g >= 250 && c.b >= 250)
         return {0, 0, 0, 255};
     // AutoCAD's sheets print index colour 253 as grey 186, not the screen's 130 (measured in the
     // PDF it makes of the S2312 sheet, where the column fills have layer colour 253).
