@@ -177,6 +177,16 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
             }
             break;
         }
+        case EntityKind::Leader: {
+            const auto& ld = *entityAs<LeaderData>(*e);
+            const int n = static_cast<int>(ld.vertices.size());
+            if (grip.index < n) {
+                out.push_back(GripAction::AddVertex);
+                if (n > 2)
+                    out.push_back(GripAction::RemoveVertex);
+            }
+            break;
+        }
         case EntityKind::Spline: {
             // Only a spline defined by fit points can grow or shrink by one point.
             const auto& sp = *entityAs<SplineData>(*e);
@@ -331,6 +341,23 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
                 }
                 default:
                     break;
+            }
+            break;
+        }
+        case EntityKind::Leader: {
+            auto& ld = *entityAs<LeaderData>(out);
+            const int n = static_cast<int>(ld.vertices.size());
+            if (index < 0 || index >= n)
+                break;
+            if (action == GripAction::AddVertex) {
+                ld.vertices.insert(ld.vertices.begin() + index + 1, target);
+                return out;
+            }
+            if (action == GripAction::RemoveVertex) {
+                if (n <= 2)
+                    return fail("a leader needs two vertices");
+                ld.vertices.erase(ld.vertices.begin() + index);
+                return out;
             }
             break;
         }

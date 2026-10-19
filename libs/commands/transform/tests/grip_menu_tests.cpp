@@ -426,3 +426,31 @@ TEST_CASE("spline without fit points offers no vertex actions") {
     auto id = add(f.doc, sp);
     CHECK_FALSE(offers(f.doc, id, 1, GripAction::AddVertex));
 }
+
+TEST_CASE("leader: add a vertex after the grip, remove one, never below two") {
+    Fixture f;
+    LeaderData ld;
+    ld.vertices = {{0, 0}, {10, 10}, {20, 10}};
+    ld.textPos = {22, 10};
+    auto id = add(f.doc, ld);
+    f.host.setSelection({id});
+    CHECK(offers(f.doc, id, 1, GripAction::AddVertex));
+    CHECK(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    CHECK_FALSE(offers(f.doc, id, 3, GripAction::AddVertex));  // the text grip
+    auto r = f.host.run("GRIPEDIT", {"0,0", "AddVertex", "5,2"});
+    CHECK(r.finished);
+    {
+        const auto& v = get<LeaderData>(f.doc, id).vertices;
+        REQUIRE(v.size() == 4);
+        CHECK(near(v[1], {5, 2}));
+        CHECK(near(v[2], {10, 10}));
+    }
+    CHECK(f.host.undo());
+    CHECK(get<LeaderData>(f.doc, id).vertices.size() == 3);
+    r = f.host.run("GRIPEDIT", {"10,10", "RemoveVertex"});
+    CHECK(r.finished);
+    REQUIRE(get<LeaderData>(f.doc, id).vertices.size() == 2);
+    CHECK_FALSE(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    CHECK(f.host.undo());
+    CHECK(get<LeaderData>(f.doc, id).vertices.size() == 3);
+}
