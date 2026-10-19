@@ -412,6 +412,25 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
         std::sort(curves.begin(), curves.end(),
                   [](const Cand& a, const Cand& b) { return a.box.min.x < b.box.min.x; });
         std::vector<geom::Intersection> hits;
+        auto crossings = [&](const Cand& x, const Cand& y) {
+            hits.clear();
+            geom::intersect(*x.curve, *y.curve, hits);
+            for (const geom::Intersection& h : hits)
+                add(out, rq, SnapMode::Intersection, h.p, items[x.item].id, items[y.item].id);
+        };
+        // Lines, arcs and line-ellipse pairs have closed forms; the rest (splines, two ellipses)
+        // are worked out numerically, which costs a hundred times more. Of those only the pairs
+        // among the nearest objects are done, so a crowd of splines cannot stall the cursor.
+        using Kind = geom::CurveRef::Kind;
+        auto closedForm = [](const Cand& x, const Cand& y) {
+            const Kind a = x.curve->kind(), b = y.curve->kind();
+            if (a == Kind::Spline || b == Kind::Spline)
+                return false;
+            if (a == Kind::Ellipse && b == Kind::Ellipse)
+                return false;
+            return true;
+        };
+        std::vector<std::pair<std::size_t, std::pair<std::size_t, std::size_t>>> heavy;
         for (std::size_t a = 0; a < curves.size(); ++a)
             for (std::size_t b = a + 1;
                  b < curves.size() && curves[b].box.min.x <= curves[a].box.max.x; ++b) {
@@ -420,12 +439,19 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
                 if (curves[b].box.min.y > curves[a].box.max.y ||
                     curves[a].box.min.y > curves[b].box.max.y)
                     continue;
-                hits.clear();
-                geom::intersect(*curves[a].curve, *curves[b].curve, hits);
-                for (const geom::Intersection& h : hits)
-                    add(out, rq, SnapMode::Intersection, h.p, items[curves[a].item].id,
-                        items[curves[b].item].id);
+                if (closedForm(curves[a], curves[b]))
+                    crossings(curves[a], curves[b]);
+                else
+                    heavy.push_back({std::max(curves[a].item, curves[b].item), {a, b}});
             }
+        constexpr std::size_t kNumericPairs = 16;
+        if (heavy.size() > kNumericPairs) {
+            std::nth_element(heavy.begin(), heavy.begin() + kNumericPairs, heavy.end(),
+                             [](const auto& l, const auto& r) { return l.first < r.first; });
+            heavy.resize(kNumericPairs);
+        }
+        for (const auto& h : heavy)
+            crossings(curves[h.second.first], curves[h.second.second]);
     }
 
     if (rq.modes & maskOf(SnapMode::ApparentIntersection)) {

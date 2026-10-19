@@ -152,10 +152,10 @@ void runBench(double ox, double oy, const char* label, double extent,
             "%.3f ms per move (%.1f candidates)\n",
             label, pixel, kN, total / kMoves, worst, double(hits) / kMoves);
 #if defined(NDEBUG)
-        // The aim is under 1 ms on a spread-out drawing and under 5 ms on a pathologically dense
+        // The aim is under 1 ms on a spread-out drawing and under 5 ms (mean) on a pathologically dense
         // one (hundreds of objects per aperture, ellipses, splines and hatches among them); the
         // gates leave room for a busy CI machine.
-        CHECK(total / kMoves < (extent > 1.0e6 ? 2.0 : 10.0));
+        CHECK(total / kMoves < (extent > 1.0e6 ? 2.0 : 5.0));
 #endif
     }
 }

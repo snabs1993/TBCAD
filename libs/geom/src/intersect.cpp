@@ -366,7 +366,7 @@ void numeric(const CurveRef& A0, const CurveRef& B0, bool extA, bool extB, Out& 
     double diag = length(bb.max - bb.min);
     double maxAbs = std::max(
         {std::abs(bb.min.x), std::abs(bb.min.y), std::abs(bb.max.x), std::abs(bb.max.y), 1.0});
-    double ftol = std::max(1e-3, 1e-4 * diag);  // refine() polishes each crossing
+    double ftol = std::max(1e-3, 1e-3 * diag);  // refine() polishes each crossing
     std::vector<Piece> pa = pieces(A, ftol), pb = pieces(B, ftol);
     // Pieces outside the other curve's box cannot meet it, and the rest are paired by a sweep
     // along x instead of every piece against every piece (a long spline has about a thousand).

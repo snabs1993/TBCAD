@@ -42,13 +42,13 @@ modes, 300 random mouse moves, Release:
 
 | Drawing | mean per move | worst |
 |---|---|---|
-| spread out, 2 km | 0.11 ms | 22 ms (first, cold move) |
+| spread out, 2 km | 0.08 ms | 20 ms (first, cold move) |
 | survey coordinates 1e6, 2 km | 0.02 ms | 0.3 ms |
-| dense, 200 m, aperture 100 mm/px | 4.5 ms | 8.6 ms |
-| dense, 200 m, aperture 1000 mm/px | 5.7 ms | 10.9 ms |
-| survey 1e9, dense | 6.2 ms | 13 ms |
+| dense, 200 m, aperture 100 mm/px | 2.4 ms | 5.1 ms |
+| dense, 200 m, aperture 1000 mm/px | 3.5 ms | 6.6 ms |
+| survey 1e9, dense | 3.3 ms | 6.4 ms |
 
 The dense cases put 393000 objects in 200 m, so 65 snap candidates fall in one aperture; real
 drawings are far sparser. Before this work the same dense drawing took 120 ms per move because
 every ellipse, spline and hatch whose bounding box held the cursor was intersected over its whole
-length.
+length. Numeric (spline) intersections are limited to the 16 pairs among the nearest objects.
