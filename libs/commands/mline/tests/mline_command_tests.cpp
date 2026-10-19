@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <set>
 #include <variant>
 
@@ -228,4 +229,59 @@ TEST_CASE("MLSTYLE gives each line a colour, and the display and explode use the
         CHECK(ex.value()[0].common.color == Color::index(1));
         CHECK(ex.value()[1].common.color == Color::index(3));
     });
+}
+
+TEST_CASE(
+    "MLEDIT on random, parallel, overlapping and degenerate walls keeps every multiline sane") {
+    std::uint32_t seed = 777;
+    auto rnd = [&] {
+        seed = seed * 1664525u + 1013904223u;
+        return static_cast<double>(seed >> 8) / static_cast<double>(1u << 24);
+    };
+    auto pt = [&] { return Vec2{std::floor(rnd() * 5) * 25, std::floor(rnd() * 5) * 25}; };
+    auto txt = [](Vec2 p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
+    const char* keys[] = {"Corner", "Add", "Delete", "Close", "Open",
+                          "Cross",  "Tee", "Cut",    "Weld"};
+    for (int round = 0; round < 150; ++round) {
+        Fx f;
+        for (int w = 0; w < 2; ++w) {
+            const int n = 2 + static_cast<int>(rnd() * 3);
+            std::vector<ScriptItem> items;
+            for (int i = 0; i < n; ++i)
+                items.push_back(txt(pt()));
+            items.push_back("");
+            f.host->run("MLINE", items);
+        }
+        auto ids = mlineIds(f.doc);
+        if (ids.size() < 2)
+            continue;
+        for (int step = 0; step < 6; ++step) {
+            const char* key = keys[static_cast<int>(rnd() * 9)];
+            std::vector<ScriptItem> items{ScriptItem(std::string(key))};
+            for (int i = 0; i < 4; ++i) {
+                const EntityId id = ids[static_cast<int>(rnd() * ids.size())];
+                items.push_back(ScriptItem::pick(id, pt()));
+                if (rnd() < 0.5)
+                    items.push_back(txt(pt()));
+            }
+            items.push_back(ScriptItem::enter());
+            f.host->run("MLEDIT", items);
+            for (EntityId id : ids) {
+                const Entity* e = f.doc.find(id);
+                if (!e)
+                    continue;
+                const auto* m = entityAs<MlineData>(*e);
+                REQUIRE(m);
+                REQUIRE(m->v.size() >= 2);
+                for (const Vec2& v : m->v) {
+                    REQUIRE(std::isfinite(v.x));
+                    REQUIRE(std::isfinite(v.y));
+                }
+                const mline::Strokes s = mline::strokes(f.doc, *m);
+                for (const auto& line : s.lines)
+                    for (const Vec2& p : line)
+                        REQUIRE(std::isfinite(p.x));
+            }
+        }
+    }
 }
