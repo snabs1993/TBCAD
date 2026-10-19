@@ -68,7 +68,7 @@ public:
             co_return;
         }
         const Grip hot = *found;
-        if (hot.index >= kDynGripBase) {
+        if (hot.index >= kDynGripBase && hot.index < kAttGripBase) {
             // Flip and visibility grips act on the click: no second point.
             const Entity* src = ctx.doc().find(hot.entity);
             if (src && blocks::dynGripIsClick(ctx.doc(), *src, hot.index - kDynGripBase)) {
@@ -83,7 +83,8 @@ public:
                 co_return;
             }
         }
-        const HotGrips hotSet = hotGripsOf(grips, hot, warmGrips());  // the same for every mouse move
+        const HotGrips hotSet =
+            hotGripsOf(grips, hot, warmGrips());  // the same for every mouse move
         struct HotScope {  // the overlay draws the hot grip red while the command runs
             explicit HotScope(Vec2 p) { setHotGrip(p); }
             ~HotScope() {
@@ -183,10 +184,9 @@ public:
                     Entity changed = std::move(res).value();
                     if (copy) {
                         (void)ctx.tx().add(std::move(changed));
-                    } else if (auto m = ctx.tx().modify(hot.entity,
-                                                        [&](Entity& tgt) {
-                                                            tgt.data = std::move(changed.data);
-                                                        });
+                    } else if (auto m = ctx.tx().modify(
+                                   hot.entity,
+                                   [&](Entity& tgt) { tgt.data = std::move(changed.data); });
                                !m) {
                         ctx.message(std::string(gripActionLabel(act)) + ": " + m.error().message);
                         continue;

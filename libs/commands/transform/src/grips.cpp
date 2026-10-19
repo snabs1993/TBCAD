@@ -7,6 +7,7 @@
 #include <limits>
 #include <unordered_map>
 
+#include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/dynamic.h"
 #include "tbcad/geom/geom.h"
 
@@ -61,6 +62,8 @@ std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> id
             out.push_back({id, static_cast<int>(i), pts[i]});
         for (const blocks::DynHandle& h : blocks::dynHandles(doc, *e))
             out.push_back({id, kDynGripBase + h.param, h.world});
+        for (const blocks::AttribHandle& h : blocks::attribHandles(doc, *e))
+            out.push_back({id, kAttGripBase + h.index, h.world});
     }
     return out;
 }
@@ -192,8 +195,10 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, con
         for (std::size_t j = 0; j < set.indices[k].size(); ++j) {
             const int idx = set.indices[k][j];
             const Vec2 target = set.from[k][j] + delta;
-            auto moved = idx >= kDynGripBase ? blocks::dynDrag(doc, cur, idx - kDynGripBase, target)
-                                             : geom::moveGrip(cur, idx, target);
+            auto moved =
+                idx >= kAttGripBase   ? blocks::attribDrag(doc, cur, idx - kAttGripBase, target)
+                : idx >= kDynGripBase ? blocks::dynDrag(doc, cur, idx - kDynGripBase, target)
+                                      : geom::moveGrip(cur, idx, target);
             if (!moved) {
                 ok = false;
                 if (error && error->empty())
