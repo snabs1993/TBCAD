@@ -68,6 +68,17 @@ TEST_CASE("centered text breaks the dimension line") {
         }
 }
 
+TEST_CASE("text placed below hangs under the dimension line") {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard,
+                              [](DimStyle& s) { s.textPlacement = DimTextPlacement::Below; }));
+    tx.commit();
+    Layout L = layoutDimension(doc, linear({0, 0}, {100, 0}, {50, 10}));
+    CHECK(count(L, Role::DimLine) == 1);
+    CHECK(L.text.center.y == doctest::Approx(10 - 0.625 - 1.25));
+}
+
 TEST_CASE("fit: arrows move outside, then text, when the extension lines are close") {
     Document doc;
     // Text fits between the lines but the arrows do not fit beside it.
