@@ -168,6 +168,33 @@ TEST_CASE("Outline of O has two closed contours with opposite winding") {
     }
 }
 
+TEST_CASE("Glyph bounds are the box of the outline, and a glyph with no outline has none") {
+    Fonts f;
+    for (FontId id : {f.lato, f.sarabun}) {
+        const auto gid = f.lib.shape(id, "O")[0].glyphs[0].glyphId;
+        const auto& o = f.lib.outline(id, gid);
+        double x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+        for (const auto& c : o.contours)
+            for (const auto& p : c.points) {
+                x0 = std::min<double>(x0, p.x);
+                y0 = std::min<double>(y0, p.y);
+                x1 = std::max<double>(x1, p.x);
+                y1 = std::max<double>(y1, p.y);
+            }
+        const auto b = f.lib.glyphBounds(id, gid);
+        REQUIRE_FALSE(b.empty);
+        CHECK(b.minX == x0);
+        CHECK(b.minY == y0);
+        CHECK(b.maxX == x1);
+        CHECK(b.maxY == y1);
+        const auto again = f.lib.glyphBounds(id, gid);  // from the cache
+        CHECK(again.minX == b.minX);
+        CHECK(again.maxY == b.maxY);
+        const auto space = f.lib.shape(id, " ")[0].glyphs[0].glyphId;
+        CHECK(f.lib.glyphBounds(id, space).empty);
+    }
+}
+
 TEST_CASE("Flattening tolerance controls point count") {
     Fonts f;
     const auto gid = f.lib.shape(f.lato, "S")[0].glyphs[0].glyphId;
