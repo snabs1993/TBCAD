@@ -34,6 +34,9 @@ struct ImportOptions {
     // is for people diagnosing a file; opening a drawing leaves it off, as it takes seconds on a
     // big file.
     bool diagnostics = true;
+    // DXF only: threads for reading (0 = as many as fit, 1 = none). A second thread splits the
+    // text into records while the first builds the drawing; the result is the same.
+    std::size_t maxThreads = 0;
 };
 
 struct EntityCount {
