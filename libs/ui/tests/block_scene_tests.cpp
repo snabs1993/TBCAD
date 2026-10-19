@@ -92,6 +92,25 @@ TEST_CASE("edits outside blocks keep the blocks' geometry, a block edit builds i
     CHECK(scene.bounds().height() >= 50);
 }
 
+TEST_CASE("the first edit of a drawing opened before its scene keeps the blocks' geometry") {
+    blocks::registerInsertDisplay();
+    Document doc;  // filled first, as a file is opened, then shown
+    BlockId b = makeBlock(doc, 2);
+    addInserts(doc, b, 3);
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    sync.rebuildAll();
+    const std::size_t built = sync.blockBuilds();
+    CHECK(built >= 1);
+    {
+        Transaction tx = doc.begin("move the references");
+        for (EntityId id : doc.modelSpace())
+            (void)tx.modify(id, [](Entity& e) { entityAs<InsertData>(e)->position.x += 100; });
+        tx.commit();
+    }
+    CHECK(sync.blockBuilds() == built);  // was every block again on the first MOVE of 063
+}
+
 TEST_CASE("the spatial index follows block edits when the refresher is installed") {
     blocks::registerInsertDisplay();
     Document doc;

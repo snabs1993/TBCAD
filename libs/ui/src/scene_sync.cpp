@@ -91,7 +91,10 @@ std::uint32_t drawOrderOf(EntityId id) {
 
 }  // namespace
 
-SceneSync::SceneSync(Document& doc, render::Scene& scene) : doc_(doc), scene_(scene) {
+SceneSync::SceneSync(Document& doc, render::Scene& scene)
+    : doc_(doc), scene_(scene), seenRevision_(doc.revision()) {
+    // (A document opened before the scene was linked: its first edit must still find the block
+    // cache built for this revision, or every block is tessellated again on the first MOVE.)
     doc_.addObserver(this);
 }
 
