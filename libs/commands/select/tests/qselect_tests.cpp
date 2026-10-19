@@ -214,3 +214,79 @@ TEST_CASE("queryEntities by type knows tables, rays, xlines, mlines and multilea
     REQUIRE(all);
     CHECK(all->size() == 5);
 }
+
+TEST_CASE("queryEntities by block name, style and contents, with wildcards") {
+    Fixture f;
+    BlockId door, window;
+    {
+        Transaction tx = f.doc.begin("setup");
+        BlockDef a;
+        a.name = "Door-900";
+        BlockDef b;
+        b.name = "Window";
+        door = tx.addBlock(a).value();
+        window = tx.addBlock(b).value();
+        TextStyle ts;
+        ts.name = "Notes";
+        REQUIRE(tx.addTextStyle(ts).ok());
+        tx.commit();
+    }
+    InsertData i1;
+    i1.block = door;
+    InsertData i2;
+    i2.block = window;
+    auto d = f.addEntity(Indirect<InsertData>(i1));
+    auto w = f.addEntity(Indirect<InsertData>(i2));
+    TextData t1;
+    t1.utf8 = "ROOM 101";
+    t1.height = 2.5;
+    TextData t2;
+    t2.utf8 = "Kitchen";
+    t2.height = 2.5;
+    t2.style = f.doc.textStyleByName("Notes")->id;
+    MTextData m;
+    m.utf8 = "{\\H2x;Room} 102";
+    m.height = 2.5;
+    auto a = f.addEntity(Indirect<TextData>(t1));
+    auto b = f.addEntity(Indirect<TextData>(t2));
+    auto c = f.addEntity(Indirect<MTextData>(m));
+
+    auto run = [&](Property p, const char* v, Compare cmp = Compare::Equals, bool neg = false) {
+        Query q;
+        q.property = p;
+        q.value = v;
+        q.compare = cmp;
+        q.negate = neg;
+        auto r = queryEntities(f.doc, q);
+        REQUIRE(r);
+        return *r;
+    };
+    CHECK(run(Property::Name, "window") == std::vector<EntityId>{w});
+    CHECK(run(Property::Name, "door*", Compare::Wildcard) == std::vector<EntityId>{d});
+    CHECK(run(Property::Style, "notes") == std::vector<EntityId>{b});
+    CHECK(run(Property::Style, "Standard") == std::vector<EntityId>{a, c});
+    CHECK(run(Property::Contents, "room 101") == std::vector<EntityId>{a});
+    CHECK(run(Property::Contents, "ROOM 1??", Compare::Wildcard) == std::vector<EntityId>{a, c});
+    CHECK(run(Property::Contents, "*k*", Compare::Wildcard) == std::vector<EntityId>{b});
+    CHECK(run(Property::Type, "*TEXT", Compare::Wildcard) == std::vector<EntityId>{a, b, c});
+    // Wildcards do not apply to colours or numbers.
+    CHECK_FALSE(queryEntities(f.doc, {Property::Color, "1*", false, Compare::Wildcard}));
+    CHECK_FALSE(queryEntities(f.doc, {Property::Height, "2", false, Compare::Wildcard}));
+}
+
+TEST_CASE("QSELECT Wildcard and FILTER save and reuse a wildcard condition") {
+    Fixture f;
+    LayerId w1 = f.addLayer("A-WALL");
+    LayerId w2 = f.addLayer("A-WALL-EXT");
+    LayerId o = f.addLayer("S-COL");
+    auto a = f.addEntity(LineData{{0, 0}, {1, 0}}, w1);
+    auto b = f.addEntity(LineData{{0, 1}, {1, 1}}, w2);
+    f.addEntity(LineData{{0, 2}, {1, 2}}, o);
+    f.host.run("QSELECT", {"Layer", "a-wall*", "Wildcard", "Replace"});
+    CHECK(f.host.selection() == std::vector<EntityId>{a, b});
+    f.host.run("FILTER", {"Add", "Layer", "*EXT", "Wildcard", "Save", "ext", "Apply"});
+    CHECK(f.host.selection() == std::vector<EntityId>{b});
+    f.host.setSelection({});
+    f.host.run("FILTER", {"Use", "EXT", "Apply"});
+    CHECK(f.host.selection() == std::vector<EntityId>{b});
+}

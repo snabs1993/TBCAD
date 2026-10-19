@@ -10,7 +10,7 @@ tbcad_add_library(select
     src/select.cpp
     src/similar.cpp
     src/selectall.cpp
-  DEPENDS tbcad::cmd tbcad::core tbcad::geom)
+  DEPENDS tbcad::cmd tbcad::core tbcad::geom tbcad::text)
 
 tbcad_add_tests(select
   SOURCES

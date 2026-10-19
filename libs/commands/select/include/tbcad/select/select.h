@@ -47,11 +47,15 @@ enum class Property {
     Pattern,       // hatch pattern name ("SOLID" for a solid fill)
     Height,        // text and MText height
     Radius,        // circles and arcs
-    Length         // length of the curve (circumference for circles)
+    Length,        // length of the curve (circumference for circles)
+    Name,          // block name of a block reference
+    Style,         // text style (text, MText), dimension style (dimensions, leaders, multileaders)
+    Contents       // text of a TEXT, MTEXT (markup removed) or multileader note
 };
 
 // How a numeric property (Transparency, Height, Radius, Length) is compared with the value.
-enum class Compare { Equals, Greater, Less };
+// Wildcard (* and ?, any case) applies to the properties named by text.
+enum class Compare { Equals, Greater, Less, Wildcard };
 
 struct Query {
     Property property = Property::Type;
