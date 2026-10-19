@@ -106,12 +106,7 @@ void registerUi(ui::UiRegistry& ui) {
 namespace detail {
 
 std::vector<EntityId> inDrawOrder(const Document& doc, const std::vector<EntityId>& ids) {
-    std::unordered_set<EntityId> want(ids.begin(), ids.end());
-    std::vector<EntityId> out;
-    for (EntityId id : doc.modelSpace())
-        if (want.count(id))
-            out.push_back(id);
-    return out;
+    return doc.inDrawOrder(ids);
 }
 
 bool editable(const Document& doc, const Entity& e) {

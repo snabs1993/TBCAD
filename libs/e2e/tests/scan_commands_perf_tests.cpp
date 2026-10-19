@@ -420,6 +420,10 @@ TEST_CASE("perf: single-object edits on a drawing of 392k objects stay interacti
         {"MOVE-one", {"MOVE", "@click10,5", "", "0,0", "50,50"}},
         {"COPY-one", {"COPY", "@click10,5", "", "0,0", "50,50", ""}},
         {"ROTATE-one", {"ROTATE", "@click10,5", "", "0,0", "30"}},
+        {"SCALE-one", {"SCALE", "@click10,5", "", "0,0", "2"}},
+        {"MIRROR-one", {"MIRROR", "@click10,5", "", "0,0", "10,0", "N"}},
+        {"STRETCH-one", {"STRETCH", "5,3", "12,8", "0,0", "5,0"}},
+        {"ARRAY-one", {"ARRAYRECT", "@click10,5", "", ""}},
         {"OFFSET-one", {"OFFSET", "3", "@click10,5", "@click12,2", ""}},
         {"TRIM-one", {"TRIM", "", "@click10,5", ""}},
         {"BREAK-one", {"BREAK", "@click10,5", "@click14,7"}},
@@ -433,7 +437,7 @@ TEST_CASE("perf: single-object edits on a drawing of 392k objects stay interacti
                     s.core->history().empty() ? "" : s.core->history().back().c_str());
 #ifdef NDEBUG
         INFO(c.label);
-        CHECK(t.runMs < 500);
+        CHECK(t.runMs < 100);  // a pick costs what it costs on a small drawing (about 20 ms)
 #endif
     }
 }
