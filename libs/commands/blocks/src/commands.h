@@ -59,6 +59,7 @@ std::unique_ptr<cmd::Command> makeXBindCommand();
 std::unique_ptr<cmd::Command> makeXClipCommand();
 std::unique_ptr<cmd::Command> makeXUnloadCommand();
 std::unique_ptr<cmd::Command> makeXListCommand();
+std::unique_ptr<cmd::Command> makeETransmitCommand();
 std::unique_ptr<cmd::Command> makeXrefPaletteCommand();
 std::unique_ptr<cmd::Command> makeXPathCommand();
 std::unique_ptr<cmd::Command> makeXRelinkCommand();
