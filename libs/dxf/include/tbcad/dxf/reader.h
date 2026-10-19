@@ -46,6 +46,7 @@ struct EntityCount {
     std::size_t read = 0;      // records of this type found in model space and blocks
     std::size_t imported = 0;  // TBCAD entities produced from them
     std::size_t skipped = 0;   // records dropped (unsupported, degenerate, rejected)
+    std::size_t empty = 0;     // records that draw nothing (text without a string), left out
 };
 
 // A named page setup of the file (a PLOTSETTINGS object), as stored; lengths in millimetres.

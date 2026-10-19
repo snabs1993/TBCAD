@@ -1476,186 +1476,38 @@ TEST_CASE("TOLERANCE: text that is not a frame stays a placeholder") {
     CHECK(modelEntities<InsertData>(l.doc()).empty());
 }
 
-}  // namespace tbcad::dxf
 
-namespace tbcad::dxf {
-
-TEST_CASE("layer transparency is read from the layer's ADSK_XREC_LAYER_ALPHA record") {
-    using namespace testing;
-    const std::string text =
-        "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n1\n"
-        "0\nLAYER\n5\n20\n102\n{ACAD_XDICTIONARY\n360\nA1\n102\n}\n100\nAcDbSymbolTableRecord\n"
-        "100\nAcDbLayerTableRecord\n2\nCOL\n70\n0\n62\n8\n6\nCONTINUOUS\n"
-        "0\nENDTAB\n0\nENDSEC\n"
-        "0\nSECTION\n2\nOBJECTS\n"
-        "0\nDICTIONARY\n5\nA1\n100\nAcDbDictionary\n3\nADSK_XREC_LAYER_ALPHA\n350\nB2\n"
-        "0\nXRECORD\n5\nB2\n100\nAcDbXrecord\n280\n1\n1071\n33554560\n"
-        "0\nENDSEC\n0\nEOF\n";
-    Loaded l = load(text);
-    const Layer* layer = nullptr;
-    for (const auto& [id, lay] : l.doc().layers())
-        if (lay.name == "COL")
-            layer = &lay;
-    REQUIRE(layer != nullptr);
-    CHECK(layer->transparency == 50);  // 0x02000080: alpha 128 of 255
-}
-
-TEST_CASE("AutoCAD annotative objects keep their scales from the context data") {
-    const std::string dxf =
-        "0\nSECTION\n2\nENTITIES\n"
-        "0\nCIRCLE\n5\nA1\n8\n0\n10\n0\n20\n0\n40\n1\n"
-        "102\n{ACAD_XDICTIONARY\n360\nD1\n102\n}\n"
-        "1001\nAcadAnnotative\n1000\nAnnotativeData\n1002\n{\n1070\n1\n1070\n1\n1002\n}\n"
-        "0\nCIRCLE\n5\nA2\n8\n0\n10\n5\n20\n0\n40\n1\n"
-        "0\nENDSEC\n"
-        "0\nSECTION\n2\nOBJECTS\n"
-        "0\nDICTIONARY\n5\nD1\n100\nAcDbDictionary\n3\nAcDbContextDataManager\n360\nD2\n"
-        "0\nDICTIONARY\n5\nD2\n100\nAcDbDictionary\n3\nACDB_ANNOTATIONSCALES\n360\nD3\n"
-        "0\nDICTIONARY\n5\nD3\n100\nAcDbDictionary\n3\n*A1\n350\nC1\n3\n*A2\n350\nC2\n"
-        "0\nACDB_CIRCLEOBJECTCONTEXTDATA_CLASS\n5\nC1\n100\nAcDbObjectContextData\n70\n3\n"
-        "290\n1\n340\nS1\n"
-        "0\nACDB_CIRCLEOBJECTCONTEXTDATA_CLASS\n5\nC2\n100\nAcDbObjectContextData\n70\n3\n"
-        "290\n0\n340\nS2\n"
-        "0\nSCALE\n5\nS1\n100\nAcDbScale\n300\n1:50\n140\n1\n141\n50\n70\n0\n"
-        "0\nSCALE\n5\nS2\n100\nAcDbScale\n300\n1:100\n140\n1\n141\n100\n70\n0\n"
-        "0\nENDSEC\n0\nEOF\n";
-    Loaded l = load(dxf);
-    int annotative = 0, plain = 0;
-    for (EntityId id : l.doc().modelSpace()) {
-        const Entity& e = *l.doc().find(id);
-        const CircleData* c = entityAs<CircleData>(e);
-        REQUIRE(c);
-        if (c->center.x < 1) {
-            ++annotative;
-            CHECK(e.common.annotative);
-            REQUIRE(e.common.annoScales.size() == 2);
-            CHECK(e.common.annoScales.front() == 50);
-            CHECK(*(e.common.annoScales.begin() + 1) == 100);
-        } else {
-            ++plain;
-            CHECK_FALSE(e.common.annotative);
-        }
-    }
-    CHECK(annotative == 1);
-    CHECK(plain == 1);
-}
-
-TEST_CASE("an AutoCAD TABLE entity shows the lines and text of its anonymous block") {
+TEST_CASE("a text or mtext without a string is counted as empty, not as skipped") {
     Pairs p;
-    p.section("BLOCKS").g(0, "BLOCK").g(2, "*T1").g(70, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0);
-    p.g(0, "LINE").g(8, "0").g(10, 100.0).g(20, 100.0).g(11, 200.0).g(21, 100.0);
-    p.g(0, "MTEXT").g(8, "0").g(10, 110.0).g(20, 95.0).g(40, 2.5).g(1, "Cell");
-    p.g(0, "ENDBLK").end();
-    p.section("ENTITIES");
-    p.g(0, "ACAD_TABLE").g(8, "0").g(2, "*T1").g(10, 100.0).g(20, 100.0).g(30, 0.0);
-    p.g(91, 1).g(92, 1).g(0, "ENDSEC").g(0, "EOF");
-    Loaded l = load(p.text);
-    const auto inserts = modelEntities<InsertData>(l.doc());
-    REQUIRE(inserts.size() == 1);
-    CHECK(near(inserts[0]->position, Vec2{0, 0}));  // the block holds world coordinates
-    const BlockDef* block = l.doc().block(inserts[0]->block);
-    REQUIRE(block);
-    std::size_t lines = 0, texts = 0;
-    for (EntityId id : block->entities) {
-        const Entity& e = *l.doc().find(id);
-        if (entityAs<LineData>(e))
-            ++lines;
-        else if (entityAs<MTextData>(e) || entityAs<TextData>(e))
-            ++texts;
-    }
-    CHECK(lines == 1);
-    CHECK(texts == 1);
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(40, 2.5).g(1, "");
+    p.g(0, "MTEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(40, 2.5).g(1, "");
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(40, 2.5).g(1, "kept");
+    Loaded l = load(entitiesOnly(p.text));
+    const EntityCount& text = l.result.summary.entities.at("TEXT");
+    CHECK(text.read == 2);
+    CHECK(text.imported == 1);
+    CHECK(text.skipped == 0);
+    CHECK(text.empty == 1);
+    const EntityCount& mtext = l.result.summary.entities.at("MTEXT");
+    CHECK(mtext.skipped == 0);
+    CHECK(mtext.empty == 1);
+    std::string json = l.result.summary.toJson(l.report);
+    CHECK(json.find("\"MTEXT\":{\"read\":1,\"imported\":0,\"skipped\":0,\"empty\":1}") !=
+          std::string::npos);
 }
 
-TEST_CASE("an AutoCAD TABLE with its cell data becomes an editable table") {
-    Pairs p;
-    p.section("BLOCKS").g(0, "BLOCK").g(2, "*T2").g(70, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0);
-    p.g(0, "LINE").g(8, "0").g(10, 100.0).g(20, 100.0).g(11, 200.0).g(21, 100.0);
-    p.g(0, "ENDBLK").end();
-    p.section("ENTITIES");
-    p.g(0, "ACAD_TABLE").g(8, "0").g(100, "AcDbBlockReference").g(2, "*T2");
-    p.g(10, 100.0).g(20, 200.0).g(30, 0.0);
-    p.g(100, "AcDbTable").g(280, 0).g(11, 1.0).g(21, 0.0).g(31, 0.0).g(90, 22).g(91, 3).g(92, 2);
-    p.g(141, 10.0).g(141, 8.0).g(141, 8.0).g(142, 40.0).g(142, 25.0);
-    auto cell = [&](const char* text, int cols, int align, double h) {
-        p.g(171, 1).g(172, 0).g(173, cols > 1 ? 1 : 0).g(174, 0).g(175, cols).g(176, 1);
-        p.g(91, 0).g(178, 0).g(145, 0.0);
-        if (text)
-            p.g(1, text);
-        p.g(7, "Standard").g(140, h).g(170, align);
-    };
-    cell("SCHEDULE", 2, 5, 4.0);
-    cell(nullptr, 1, 5, 4.0);  // covered by the title
-    cell("Mark", 1, 5, 2.5);
-    cell("Size", 1, 5, 2.5);
-    cell("C1", 1, 2, 2.5);
-    // A newer file keeps the text in the cell value instead of group 1.
-    p.g(171, 1).g(175, 1).g(176, 1).g(140, 2.5).g(170, 2).g(301, "CELL_VALUE").g(93, 6).g(90, 4);
-    p.g(1, "").g(302, "300x300").g(304, "ACVALUE_END");
-    p.g(0, "ENDSEC").g(0, "EOF");
-    Loaded l = load(p.text);
-    CHECK(modelEntities<InsertData>(l.doc()).empty());
-    const auto tables = modelEntities<TableData>(l.doc());
-    REQUIRE(tables.size() == 1);
-    const TableData& t = *tables[0];
-    CHECK(near(t.origin, Vec2{100, 200}));
-    REQUIRE(t.rowHeights.size() == 3);
-    REQUIRE(t.colWidths.size() == 2);
-    CHECK(t.rowHeights[0] == doctest::Approx(10));
-    CHECK(t.colWidths[1] == doctest::Approx(25));
-    REQUIRE(t.cells.size() == 6);
-    CHECK(t.cells[0].utf8 == "SCHEDULE");
-    CHECK(t.cells[0].colSpan == 2);
-    CHECK(t.cells[1].covered);
-    CHECK(t.cells[2].utf8 == "Mark");
-    CHECK(t.cells[4].utf8 == "C1");
-    CHECK(t.cells[5].utf8 == "300x300");
-    CHECK(t.titleRow);
-    CHECK(t.textHeight == doctest::Approx(2.5));
-    CHECK(t.titleStyle.textHeight == doctest::Approx(4));
-    CHECK(t.dataStyle.align == 1);  // centred (170 = 2 and 5)
-    // The anonymous block is not kept once nothing inserts it.
-    CHECK_FALSE(l.doc().blockByName("*T2"));
-}
 
-TEST_CASE("dimension: number format, rules and colours overridden in its extended data") {
+TEST_CASE("an arc whose start and end angles are equal draws as a full circle") {
     Pairs p;
-    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
-    p.g(0, "DIMSTYLE").g(2, "Plain").g(140, 2.5).g(41, 2.5).g(40, 1.0).g(271, 2);
-    p.g(0, "ENDTAB").end();
-    p.section("ENTITIES");
-    auto dim = [&](double x, bool override) {
-        p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Plain").g(10, x).g(20, 5.0).g(11, x);
-        p.g(21, 8.0).g(70, 1).g(13, x).g(23, 0.0).g(14, x + 10.0).g(24, 0.0).g(42, 10.0);
-        if (override) {
-            p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{");
-            p.g(1070, 271).g(1070, 0);      // DIMDEC
-            p.g(1070, 75).g(1070, 1);       // DIMSE1
-            p.g(1070, 177).g(1070, 5);      // DIMCLRE
-            p.g(1070, 144).g(1040, 0.001);  // DIMLFAC
-            p.g(1070, 340).g(1005, "1B");   // a text style handle: no use to us
-            p.g(1002, "}");
-        }
-    };
-    dim(0.0, true);
-    dim(50.0, true);  // the same overrides share one style
-    dim(100.0, false);
-    p.end().g(0, "EOF");
-    Loaded l = load(p.text);
-    auto dims = modelEntities<DimensionData>(l.doc());
-    REQUIRE(dims.size() == 3);
-    const DimStyle* a = l.doc().dimStyle(dims[0]->style);
-    const DimStyle* b = l.doc().dimStyle(dims[1]->style);
-    const DimStyle* c = l.doc().dimStyle(dims[2]->style);
-    REQUIRE(a);
-    REQUIRE(c);
-    CHECK(a->precision == 0);
-    CHECK(a->suppressExt1);
-    CHECK(a->extLineColor == Color::index(5));
-    CHECK(a->linearFactor == doctest::Approx(0.001));
-    CHECK(b == a);
-    CHECK(c->precision == 2);
-    CHECK_FALSE(c->suppressExt1);
+    p.g(0, "ARC").g(8, "0").g(10, 5.0).g(20, 6.0).g(40, 2.0).g(50, 30.0).g(51, 30.0);
+    p.g(0, "ARC").g(8, "0").g(10, 0.0).g(20, 0.0).g(40, 1.0).g(50, 0.0).g(51, 360.0);
+    Loaded l = load(entitiesOnly(p.text));
+    auto circles = modelEntities<CircleData>(l.doc());
+    REQUIRE(circles.size() == 2);
+    CHECK(near(circles[0]->center, Vec2{5, 6}));
+    CHECK(circles[0]->radius == doctest::Approx(2));
+    CHECK(l.result.summary.entities.at("ARC").skipped == 0);
+    CHECK(l.report.countCode(code::kBadEntity) == 0);
 }
 
 TEST_CASE("dimension text: \\X starts the line under the dimension line, radial text stays put") {

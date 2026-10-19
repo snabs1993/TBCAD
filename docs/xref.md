@@ -21,6 +21,16 @@ Everything the source brings is renamed so it cannot clash with the host:
   when that name is taken).
 * **Linetypes, text styles, dimension styles**: matched by name; missing ones are added.
 
+## Opening a DXF or DWG
+
+A DXF or DWG file only names its xrefs (the block is empty in the file). When such a drawing is
+opened, and in `tbcad-convert` unless `--no-xrefs` is given, every xref whose file is found is
+loaded into its block (`xref::loadOnOpen`), nested xrefs included. The file is looked for where
+the stored path points and then, as AutoCAD does, by its name in the drawing's own folder, so a
+project copied from another disk still finds its xrefs; the stored path is kept as it was. An
+xref whose file is not found stays an empty, unloaded block and is listed in the missing-xref
+notice; XREF > Reload loads it once the file is there.
+
 ## Commands
 
 | Command | Alias | What it does |

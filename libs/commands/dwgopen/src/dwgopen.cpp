@@ -98,7 +98,22 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
 }
 
 void registerForeignFormats(ui::AppCore& core) {
-    core.setForeignReader(".dwg", readDwgFile, /*readOnly=*/true);
+    // External references whose files are found are loaded, as AutoCAD does on open (not in
+    // readDwgFile itself: that is also the xref loader, which reloads nested xrefs on its own).
+    core.setForeignReader(
+        ".dwg",
+        [](const std::filesystem::path& file) -> Result<ui::ForeignOpenResult> {
+            auto r = readDwgFile(file);
+            if (!r || !r.value().document)
+                return r;
+            const xref::OpenLoad load = xref::loadOnOpen(*r.value().document, file);
+            for (const std::string& name : load.loaded)
+                r.value().messages.push_back("Loaded external reference " + name + ".");
+            for (const std::string& line : load.failed)
+                r.value().messages.push_back("Cannot load external reference " + line + ".");
+            return r;
+        },
+        /*readOnly=*/true);
     // A .dwg can also be an external reference.
     xref::registerLoader(".dwg", [](const std::filesystem::path& file) -> Result<xref::Source> {
         auto r = readDwgFile(file);

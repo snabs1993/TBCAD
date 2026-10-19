@@ -43,7 +43,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 
 | Entity | Result |
 |---|---|
-| LINE, CIRCLE, ARC, POINT | `LineData`, `CircleData`, `ArcData`, `PointData`; an ARC whose angles differ by 360 is a circle |
+| LINE, CIRCLE, ARC, POINT | `LineData`, `CircleData`, `ArcData`, `PointData`; an ARC whose start and end angles are equal (or differ by 360) is a circle, as AutoCAD draws it; a TEXT or MTEXT without a string is left out and counted as `empty` in the report, not as skipped |
 | LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon meshes become polylines along their rows and columns (the fitted grid of a smoothed surface) and polyface meshes become lines along their visible edges, each shared edge once (one info line `dxf.reader.flattened_3d`) |
 | ELLIPSE | `EllipseData` (a ratio above 1 swaps the axes) |
 | SPLINE | `SplineData`; fit-point-only splines are interpolated with `geom::interpolateSpline`, the fit points stay in `fit`; a knot vector that does not fit is replaced by a uniform one with a warning; too few control points for the degree lowers the degree (with a warning) instead of dropping the spline |
@@ -248,7 +248,7 @@ Speed: a 50 MB synthetic DXF (about 480 000 entities) imports in 0.65 s and conv
 
 ## Not done yet
 
-OBJECTS (layouts, groups, dictionaries), paper space and viewports, xrefs (the block stays empty),
+OBJECTS (layouts, groups, dictionaries), paper space and viewports, xrefs (loaded on open when the file is found, else the block stays empty; see docs/xref.md),
 proxy graphics records for 3D mesh/shell lighting, images and rich text frames, complex linetype elements (text/shape), gradient colours,
 3D entities, mirrored text, DIMSTYLE variables beyond the basic ones.
 

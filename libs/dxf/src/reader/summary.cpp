@@ -155,7 +155,10 @@ std::string ImportSummary::toJson(const Report& report) const {
         appendString(o, type);
         o += ":{\"read\":" + std::to_string(c.read) +
              ",\"imported\":" + std::to_string(c.imported) +
-             ",\"skipped\":" + std::to_string(c.skipped) + "}";
+             ",\"skipped\":" + std::to_string(c.skipped);
+        if (c.empty)
+            o += ",\"empty\":" + std::to_string(c.empty);
+        o += "}";
     }
     o += "},\"summary\":{\"layers\":" + std::to_string(layers) +
          ",\"blocks\":" + std::to_string(blocks) +

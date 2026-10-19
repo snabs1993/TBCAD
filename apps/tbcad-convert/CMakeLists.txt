@@ -5,7 +5,7 @@ list(FILTER _convert_sources EXCLUDE REGEX "/src/main\\.cpp$")
 
 tbcad_add_library(convert
   SOURCES ${_convert_sources}
-  DEPENDS tbcad::core tbcad::dxf tbcad::dwg tbcad::io tbcad::platform)
+  DEPENDS tbcad::core tbcad::dxf tbcad::dwg tbcad::io tbcad::platform tbcad::xref)
 
 # File names with Thai characters and paths over 260 characters need the manifest on Windows.
 if(WIN32)

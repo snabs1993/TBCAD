@@ -2,8 +2,10 @@
 
 #include <chrono>
 #include <filesystem>
+#include <cstring>
 #include <fstream>
 
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/xref/xref.h"
 
@@ -703,4 +705,55 @@ TEST_CASE("perf: attach, reload, bind and undo of an xref with 300000 entities")
     CHECK(reloadMs < 5000);
     CHECK(bindMs < 5000);
     CHECK(undoMs < 5000);
+}
+
+TEST_CASE("open: an xref a DXF names is loaded from beside the drawing, a missing one stays") {
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / "tbcad_xref_open_tests";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    {
+        auto doc = makeSource();
+        REQUIRE(io::writeTbcad(*doc, dir / "site.tbcad", io::WriteOptions{.keepBackup = false})
+                    .ok());
+    }
+    auto xrefBlock = [](const char* name, const char* path) {
+        return std::string("  0\nBLOCK\n  8\n0\n  2\n") + name + "\n 70\n4\n 10\n0\n 20\n0\n 30\n0\n  3\n" +
+               name + "\n  1\n" + path + "\n  0\nENDBLK\n";
+    };
+    const std::string text = std::string("  0\nSECTION\n  2\nBLOCKS\n") +
+                             xrefBlock("site", "C:\\old project\\xrefs\\site.tbcad") +
+                             xrefBlock("gone", "gone.dwg") +
+                             "  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n"
+                             "  0\nINSERT\n  8\n0\n  2\nsite\n 10\n0\n 20\n0\n"
+                             "  0\nINSERT\n  8\n0\n  2\ngone\n 10\n0\n 20\n0\n"
+                             "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    dxf::Report report;
+    auto imported = dxf::importDxf(bytes, {}, report);
+    REQUIRE(imported.ok());
+    Document& doc = *imported.value().document;
+    const fs::path host = dir / "host.dxf";
+
+    OpenLoad r = loadOnOpen(doc, host);
+    CHECK(r.loaded == std::vector<std::string>{"site"});
+    CHECK(r.missing == std::vector<std::string>{"gone"});
+    CHECK(r.failed.empty());
+    const BlockDef* site = doc.blockByName("site");
+    REQUIRE(site);
+    CHECK_FALSE(site->entities.empty());
+    CHECK(site->xrefStamp != 0);
+    CHECK(site->xrefPath == "C:\\old project\\xrefs\\site.tbcad");  // the stored path stays
+    CHECK(state(doc, site->id, host) == State::UpToDate);
+    const BlockDef* gone = doc.blockByName("gone");
+    REQUIRE(gone);
+    CHECK(gone->entities.empty());
+    CHECK(state(doc, gone->id, host) == State::Unloaded);
+
+    // Nothing left to load: a second pass does nothing.
+    OpenLoad again = loadOnOpen(doc, host);
+    CHECK(again.loaded.empty());
+    CHECK(again.missing == std::vector<std::string>{"gone"});
+    fs::remove_all(dir);
 }
