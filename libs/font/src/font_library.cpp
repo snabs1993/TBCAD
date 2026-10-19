@@ -210,6 +210,9 @@ struct FontLibrary::Impl {
     // Shaped text by (fallback chain, direction, text): drawings repeat their strings and the
     // layout shapes every string more than once (index bounds, display list, hit tests).
     std::unordered_map<std::string, std::vector<ShapedRun>> shapeCache;
+    std::unordered_map<std::uint64_t, GlyphBounds> boundsCache;
+    std::string keyScratch;            // the cache key being looked up
+    hb_buffer_t* shapeBuf = nullptr;   // reused between calls (made on first use)
     FT_Library ftLib = nullptr;
     std::vector<std::unique_ptr<Face>> faces;
     std::map<std::pair<std::string, int>, FontId> byPath;
@@ -228,6 +231,8 @@ struct FontLibrary::Impl {
 #endif
     }
     ~Impl() {
+        if (shapeBuf)
+            hb_buffer_destroy(shapeBuf);
         faces.clear();  // faces must go before the library
         if (ftLib)
             FT_Done_FreeType(ftLib);
@@ -547,17 +552,18 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
     if (utf8.size() > 0x7FFFFFFF)
         return runs;
 
-    std::vector<FontId> chain{font};
+    // The font asked for, then the bundled Thai and Latin ones (each once).
+    FontId chain[3] = {font, font, font};
+    std::size_t chainSize = 1;
     for (auto extra : {impl_->thaiFont(), impl_->latinFont()}) {
-        if (extra && std::find(chain.begin(), chain.end(), *extra) == chain.end()) {
-            chain.push_back(*extra);
-        }
+        if (extra && std::find(chain, chain + chainSize, *extra) == chain + chainSize)
+            chain[chainSize++] = *extra;
     }
 
-    std::string cacheKey;
-    cacheKey.reserve(utf8.size() + chain.size() * sizeof(FontId::value) + 1);
-    for (FontId id : chain)
-        cacheKey.append(reinterpret_cast<const char*>(&id.value), sizeof id.value);
+    std::string& cacheKey = impl_->keyScratch;
+    cacheKey.clear();
+    for (std::size_t k = 0; k < chainSize; ++k)
+        cacheKey.append(reinterpret_cast<const char*>(&chain[k].value), sizeof chain[k].value);
     cacheKey.push_back(direction == Direction::RTL ? 'r' : 'l');
     cacheKey.append(utf8);
     if (auto hit = impl_->shapeCache.find(cacheKey); hit != impl_->shapeCache.end())
@@ -573,7 +579,7 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
             pick[i] = pick[i - 1];
             continue;
         }
-        for (std::size_t k = 0; k < chain.size(); ++k) {
+        for (std::size_t k = 0; k < chainSize; ++k) {
             if (impl_->hasGlyphLocked(chain[k], c)) {
                 pick[i] = k;
                 break;
@@ -581,7 +587,9 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
         }
     }
 
-    hb_buffer_t* buf = hb_buffer_create();
+    if (!impl_->shapeBuf)
+        impl_->shapeBuf = hb_buffer_create();
+    hb_buffer_t* buf = impl_->shapeBuf;
     for (std::size_t i = 0; i < cps.size();) {
         std::size_t j = i + 1;
         while (j < cps.size() && pick[j] == pick[i])
@@ -618,12 +626,11 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
         runs.push_back(std::move(run));
         i = j;
     }
-    hb_buffer_destroy(buf);
     if (direction == Direction::RTL)
         std::reverse(runs.begin(), runs.end());
     if (impl_->shapeCache.size() >= 50000)
         impl_->shapeCache.clear();
-    impl_->shapeCache.emplace(std::move(cacheKey), runs);
+    impl_->shapeCache.emplace(cacheKey, runs);
     return runs;
 }
 
@@ -689,6 +696,38 @@ Result<FontId> FontLibrary::loadBundledStroke(std::string_view name) {
             return impl_->loadStrokeFile(d / file);
     }
     return Error{"bundled stroke font not found: " + file};
+}
+
+FontLibrary::GlyphBounds FontLibrary::glyphBounds(FontId font, std::uint32_t glyphId) {
+    const std::uint64_t key = (static_cast<std::uint64_t>(font.value) << 32) | glyphId;
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (auto it = impl_->boundsCache.find(key); it != impl_->boundsCache.end())
+            return it->second;
+    }
+    GlyphBounds b;
+    auto grow = [&](double x, double y) {
+        if (b.empty) {
+            b = {x, y, x, y, false};
+            return;
+        }
+        b.minX = std::min(b.minX, x);
+        b.minY = std::min(b.minY, y);
+        b.maxX = std::max(b.maxX, x);
+        b.maxY = std::max(b.maxY, y);
+    };
+    if (isStroke(font)) {
+        for (const auto& path : strokes(font, glyphId).paths)
+            for (const auto& p : path.points)
+                grow(p.x, p.y);
+    } else {
+        for (const auto& c : outline(font, glyphId).contours)
+            for (const auto& p : c.points)
+                grow(p.x, p.y);
+    }
+    std::lock_guard lock(impl_->mutex);
+    impl_->boundsCache.emplace(key, b);
+    return b;
 }
 
 bool FontLibrary::isStroke(FontId font) {
