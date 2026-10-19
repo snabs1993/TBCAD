@@ -611,6 +611,8 @@ void layerTranslator(ui::PanelContext& ctx, const Document& doc, PanelState& st)
         "Type a new name beside a layer. A name that exists already merges the "
         "layer into it.");
     ImGui::SetNextItemWidth(-1);
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
     ImGui::InputTextWithHint("##trfilter", "Filter", &st.trFilter);
     const std::string f = lowered(st.trFilter);
     std::string pairs;

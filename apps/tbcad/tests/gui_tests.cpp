@@ -957,8 +957,7 @@ TEST_CASE("F1 explains the running command, else opens the quick start") {
     h.key(ImGuiKey_F1);
     h.frame(3);
     CHECK(h.windowOpen("Quick Start"));
-    h.key(ImGuiKey_Escape);
-    REQUIRE(h.click("Close", "Quick Start"));
+    h.key(ImGuiKey_Escape);  // Esc closes the dialog
     h.frame(3);
     CHECK_FALSE(h.windowOpen("Quick Start"));
 
@@ -1692,4 +1691,19 @@ TEST_CASE("heavy undo and redo show a hint for a frame, then run") {
     CHECK(entityCount(h) == 0);
     ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false);
     h.frame(2);
+}
+
+TEST_CASE("keyboard: layer dialogs close on Esc and take typing on open") {
+    for (const char* opener : {"Manager...", "Translate..."}) {
+        const std::string win =
+            std::string(opener) == "Manager..." ? "Layer States Manager" : "Layer Translator";
+        Harness h(1920, 1080);
+        threeLayers(h);
+        REQUIRE(h.click(opener, "Layers"));
+        h.frame(3);
+        REQUIRE(h.windowOpen(win));
+        h.key(ImGuiKey_Escape);
+        h.frame(3);
+        CHECK_FALSE(h.windowOpen(win));
+    }
 }
