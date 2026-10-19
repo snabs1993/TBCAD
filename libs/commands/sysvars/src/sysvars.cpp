@@ -146,13 +146,44 @@ public:
     }
     Task run(CommandContext& ctx) override {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Millimeters", "Centimeters", "Meters", "Inches", "Feet"};
+        ko.keywords = {"Millimeters", "Centimeters", "Meters", "Inches", "Feet", "Precision"};
         ko.defaultKeyword = unitName(ctx.doc().header().units);
-        auto k = co_await ctx.getKeyword(
-            "Length unit [Millimeters/Centimeters/Meters/Inches/Feet] <" + *ko.defaultKeyword + ">",
-            ko);
+        auto k = co_await ctx.getKeyword("Length unit [Millimeters/Centimeters/Meters/Inches/Feet/"
+                                         "Precision] <" +
+                                             *ko.defaultKeyword + ">",
+                                         ko);
         if (!k.ok())
             co_return;
+        if (k.keyword == "Precision") {
+            // Decimal places of lengths and angles in measurements and lists (LUPREC, AUPREC).
+            const Header& h = ctx.doc().header();
+            cmd::IntOptions lo;
+            lo.min = 0;
+            lo.max = 8;
+            lo.defaultValue = linearPrecision(h);
+            auto l = co_await ctx.getInteger(
+                "Decimal places for lengths <" + std::to_string(linearPrecision(h)) + ">", lo);
+            if (!l.ok())
+                co_return;
+            cmd::IntOptions ao = lo;
+            ao.defaultValue = anglePrecision(h);
+            auto a = co_await ctx.getInteger(
+                "Decimal places for angles <" + std::to_string(anglePrecision(h)) + ">", ao);
+            if (!a.ok())
+                co_return;
+            const int lp = static_cast<int>(l.value), ap = static_cast<int>(a.value);
+            ctx.setUndoLabel("Units precision");
+            if (auto r = ctx.tx().modifyHeader([&](Header& hh) {
+                    setLinearPrecision(hh, lp);
+                    setAnglePrecision(hh, ap);
+                });
+                !r)
+                ctx.message(r.error().message);
+            else
+                ctx.message("Lengths show " + std::to_string(lp) + " and angles " +
+                            std::to_string(ap) + " decimal places.");
+            co_return;
+        }
         LengthUnit u = LengthUnit::Millimeter;
         for (LengthUnit c : {LengthUnit::Millimeter, LengthUnit::Centimeter, LengthUnit::Meter,
                              LengthUnit::Inch, LengthUnit::Foot})

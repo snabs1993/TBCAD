@@ -447,3 +447,39 @@ TEST_CASE("the page setup of a layout is written back while its paper size is th
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("unit precision comes in from a DXF and goes out with the value set in TBCAD") {
+    const std::string src =
+        "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1027\n"
+        "  9\n$LUPREC\n 70\n     2\n  9\n$AUPREC\n 70\n     3\n"
+        "  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+    Report r1;
+    Result<ImportResult> in = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(in.ok());
+    Document& doc = *in.value().document;
+    CHECK(linearPrecision(doc.header()) == 2);
+    CHECK(anglePrecision(doc.header()) == 3);
+    {
+        Transaction tx = doc.begin("units");
+        REQUIRE(tx.modifyHeader([](Header& h) { setLinearPrecision(h, 6); }));
+        tx.commit();
+    }
+    Report r2;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string dxf(reinterpret_cast<const char*>(out.value().bytes.data()),
+                          out.value().bytes.size());
+    CHECK(headerVar(dxf, "$LUPREC") == "\r\n9\r\n$LUPREC\r\n70\r\n6");
+    CHECK(headerVar(dxf, "$AUPREC").find("3") != std::string::npos);
+    CHECK(dxf.find("$LUPREC") == dxf.rfind("$LUPREC"));
+    // A new drawing has the defaults.
+    Document fresh;
+    CHECK(linearPrecision(fresh.header()) == 4);
+    CHECK(anglePrecision(fresh.header()) == 0);
+}
+
+}  // namespace tbcad::dxf

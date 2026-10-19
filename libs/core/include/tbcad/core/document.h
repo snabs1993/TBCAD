@@ -127,6 +127,12 @@ std::string resolvedPlotStyle(const Header& h, EntityId id, LayerId layer);
 bool fillMode(const Header& h);
 int attDisplay(const Header& h);
 double ceLtScale(const Header& h);
+// Decimal places used when lengths (LUPREC, default 4) and angles (AUPREC, default 0) are shown,
+// 0 to 8. Kept as the DXF header variables, so they come in with a DXF and go out with it.
+int linearPrecision(const Header& h);
+void setLinearPrecision(Header& h, int places);
+int anglePrecision(const Header& h);
+void setAnglePrecision(Header& h, int places);
 bool psLtScale(const Header& h);
 bool msLtScale(const Header& h);
 bool plineGen(const Header& h);
