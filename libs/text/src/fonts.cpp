@@ -295,6 +295,13 @@ std::filesystem::path locateFontFile(const std::string& name) {
     namespace fs = std::filesystem;
     if (name.empty())
         return {};
+    // A font on a file server (\\server\share\romand.shx): the copy of that name in the font
+    // folders is used when there is one, so a server that is gone costs no wait at all.
+    if (const fs::path onServer(name); onServer.is_absolute() && isNetworkPath(onServer)) {
+        if (auto local = locateFontFile(onServer.filename().string()); !local.empty())
+            return local;
+        return fontPathThere(onServer) ? onServer : fs::path{};
+    }
     const auto start = std::chrono::steady_clock::now();
     std::string slowDirs;  // folders that took a while, for the profile line
     struct Report {
@@ -470,7 +477,7 @@ bool fontAvailable(const std::string& family, const std::string& file) {
     font::FontLibrary& lib = fonts();
     if (endsWithNoCase(file, ".shx"))
         return !locateFontFile(file).empty();
-    if (!file.empty() && isNetworkPath(file) && !fontPathThere(file))
+    if (!file.empty() && isNetworkPath(file))
         return !locateFontFile(file).empty();
     if (!file.empty())
         return isStrokeFile(file) ? lib.loadStroke(std::filesystem::path(file)).ok()
@@ -524,7 +531,7 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
         // Drawings name the file bare ("arial.ttf") or with the author's folders: look it up in
         // the font folders when it is not where the name says.
         std::filesystem::path path(file);
-        bool there = isNetworkPath(path) ? fontPathThere(path) : fileThere(path);
+        bool there = !isNetworkPath(path) && fileThere(path);
         if (!there)
             if (auto located = locateFontFile(file); !located.empty()) {
                 path = located;
