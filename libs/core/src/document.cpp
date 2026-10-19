@@ -115,6 +115,9 @@ ChangeSet ChangeSet::inverted() const {
     ChangeSet r;
     r.name = name;
     r.snapshots = snapshots;
+    if (!boxMemo)
+        boxMemo = std::make_shared<BoxMemo>();
+    r.boxMemo = boxMemo;  // the same snapshots, so the same boxes
     r.entities.reserve(entities.size());
     for (const auto& c : entities)
         r.entities.push_back({c.after, c.before});

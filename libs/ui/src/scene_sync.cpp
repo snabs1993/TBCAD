@@ -68,8 +68,8 @@ BBox2 waitingBox(const Entity& e, const Document& doc) {
     };
     if (const auto* t = entityAs<TextData>(e)) {
         BBox2 box;
-        const double r = t->height * (static_cast<double>(t->utf8.size()) + 2) *
-                         std::max(1.0, t->widthFactor);
+        const double r =
+            t->height * (static_cast<double>(t->utf8.size()) + 2) * std::max(1.0, t->widthFactor);
         around(box, t->position, r);
         around(box, t->alignPoint, r);
         return box;
@@ -301,24 +301,28 @@ bool SceneSync::lazyOk(std::size_t count) const {
     return count >= kLazyMin && !scene_.needsRelevel() && !scene_.hasMasks();
 }
 
-void SceneSync::queueLazy(const std::vector<const Entity*>& list) {
-    std::vector<const Entity*> sorted = list;
-    if (!std::is_sorted(sorted.begin(), sorted.end(), [](const Entity* a, const Entity* b) {
-            return a->common.id < b->common.id;
-        }))
-        std::sort(sorted.begin(), sorted.end(),
-                  [](const Entity* a, const Entity* b) { return a->common.id < b->common.id; });
+void SceneSync::queueLazy(const std::vector<const Entity*>& list,
+                          const std::vector<const BBox2*>* known) {
+    std::vector<std::pair<const Entity*, const BBox2*>> sorted;
+    sorted.reserve(list.size());
+    for (std::size_t i = 0; i < list.size(); ++i)
+        sorted.emplace_back(list[i], known ? (*known)[i] : nullptr);
+    const auto byId = [](const auto& a, const auto& b) {
+        return a.first->common.id < b.first->common.id;
+    };
+    if (!std::is_sorted(sorted.begin(), sorted.end(), byId))
+        std::sort(sorted.begin(), sorted.end(), byId);
     std::vector<EntityId> ids;
     ids.reserve(sorted.size());
     std::vector<PendingRec> fresh;
     fresh.reserve(sorted.size());
     std::size_t at = 0;  // walks pending_ in step with the sorted list
-    for (const Entity* e : sorted) {
+    for (const auto& [e, knownBox] : sorted) {
         const EntityId id = e->common.id;
         ids.push_back(id);
         PendingRec rec;
         rec.id = id;
-        rec.box = waitingBox(*e, doc_);
+        rec.box = knownBox ? *knownBox : waitingBox(*e, doc_);
         if (scene_.contains(id)) {
             rec.order = scene_.drawOrderOf(id);
         } else {
@@ -330,9 +334,15 @@ void SceneSync::queueLazy(const std::vector<const Entity*>& list) {
         }
         fresh.push_back(rec);
     }
-    if (!scene_.removeAllOf(ids))
+    if (scene_.entityCount() != 0 &&
+        !scene_.removeAllOf(ids))  // (nothing drawn: nothing to take out)
         scene_.removeMany(ids);
     // Merge into the waiting ones; a newer record replaces an older one of the same object.
+    if (pending_.empty()) {  // nothing waiting yet: the fresh records are the list
+        pending_ = std::move(fresh);
+        pendingDead_ = 0;
+        return;
+    }
     std::vector<PendingRec> merged;
     merged.reserve(pending_.size() + fresh.size());
     std::size_t i = 0, j = 0;
@@ -560,6 +570,9 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     if (!pending_.empty())
         dropPending(removed);
     std::vector<const Entity*> redraw;
+    // Boxes the spatial index measured for entities that come back (an undo of ERASE ALL): the
+    // waiting list needs the same ones. Text has its own cheap estimate, so it keeps it.
+    std::vector<const BBox2*> known;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
         if (!after)
@@ -569,8 +582,13 @@ void SceneSync::onChanged(const ChangeSet& cs) {
             continue;
         }
         const Entity* live = doc_.find(after->common.id);
-        if (live)
+        if (live) {
             redraw.push_back(live);
+            const BBox2* box = c.before == kNoSnapshot ? cs.memoBox(c.after) : nullptr;
+            if (box && (entityAs<TextData>(*live) || entityAs<MTextData>(*live)))
+                box = nullptr;
+            known.push_back(box);
+        }
     }
     // Changes of what is already drawn wait. New objects are built at once, so the scene does
     // not lag behind a paste, unless there are so many (an undo of ERASE ALL) that building them
@@ -585,7 +603,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
                                [&](const Entity* e) { return scene_.contains(e->common.id); })) >=
                            redraw.size());
     if (lazy)
-        queueLazy(redraw);
+        queueLazy(redraw, &known);
     else
         upsertMany(redraw);
     if (!fieldTexts_.empty() && (!cs.entities.empty() || cs.header)) {
