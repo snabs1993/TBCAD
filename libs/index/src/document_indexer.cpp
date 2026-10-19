@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <future>
 #include <thread>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -41,10 +40,14 @@ void DocumentIndexer::rebuild() {
 // the index: laying out every text again just to rebuild after a big edit is most of the cost.
 void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     std::shared_ptr<void> run = batch_ ? batch_() : nullptr;
-    std::unordered_set<EntityId> touched;
-    if (changes)
+    std::vector<EntityId> touched;  // sorted: binary search beats hashing a million ids
+    if (changes) {
+        touched.reserve(changes->entities.size());
         for (const EntityChange& c : changes->entities)
-            touched.insert(changes->idOf(c));
+            touched.push_back(changes->idOf(c));
+        if (!std::is_sorted(touched.begin(), touched.end()))
+            std::sort(touched.begin(), touched.end());
+    }
     std::vector<const Entity*> todo;
     todo.reserve(doc_.modelSpaceCount());
     doc_.forEachEntity([&](const Entity& e) {
@@ -55,7 +58,7 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     auto measure = [&](std::size_t a, std::size_t b) {
         for (std::size_t i = a; i < b; ++i) {
             const Entity& e = *todo[i];
-            if (changes && !touched.count(e.common.id) && index_.contains(e.common.id))
+            if (changes && !std::binary_search(touched.begin(), touched.end(), e.common.id) && index_.contains(e.common.id))
                 boxes[i] = index_.boxOf(e.common.id);
             else
                 boxes[i] = bounds_(e);
