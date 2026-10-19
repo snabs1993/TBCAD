@@ -144,6 +144,25 @@ TEST_CASE("extrusion: steeply tilted circles, ellipses and polylines are project
     CHECK(ellipses[0]->ratio == doctest::Approx(0.25));
 }
 
+TEST_CASE("extrusion: the tilted plane corpus counts what was projected and what was dropped") {
+    Loaded l = loadCorpus("tilted_planes.dxf");
+    int infos = 0, warnings = 0;
+    for (const Diagnostic& d : l.report.diagnostics()) {
+        if (d.code != code::kExtrusion3d)
+            continue;
+        if (d.severity == Severity::Info) {
+            ++infos;
+            CHECK(d.message.rfind("8 ", 0) == 0);  // 2 circles, arc, ellipse, 2 polylines, hatch, solid
+        } else {
+            ++warnings;
+            CHECK(d.message.find("TEXT") != std::string::npos);
+        }
+    }
+    CHECK(infos == 1);
+    CHECK(warnings == 1);
+    CHECK(l.report.countCode(code::kBadEntity) == 1);  // the one-vertex polyline
+}
+
 TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are projected") {
     // Normal (0, -0.866, 0.5): object X is world +X, object Y is (0, 0.5, 0.866).
     Pairs p;
