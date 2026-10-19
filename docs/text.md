@@ -116,7 +116,7 @@ is done by the renderer from the rings.
 |---|---|---|
 | `TEXT` | `T`, `DT` | start point `[Justify/Style]`, height, rotation, text. Height and justification are remembered |
 | `MTEXT` | `MT` | first corner `[Height/Justify/Rotation/Style/Width]`, opposite corner (rectangle preview), text (type `\P` for a new line) |
-| `TXT2MTXT` | | select single-line and multiline text; they are merged top to bottom into one multiline text and the originals are erased |
+| `TXT2MTXT` | | select single-line and multiline text; they are merged top to bottom into one multiline text and the originals are erased. **SEttings** (at the selection prompt) chooses the **Order** (top down, or the order you selected them) and **Wrap** (one paragraph wrapped at the widest text instead of one line each); both are remembered |
 | `TCOUNT` | | select single-line text in the order you want, then give a start number, an increment, a prefix and a suffix; each text is replaced by its number |
 | `MTEXTFORMAT` | `MTF` | select MTEXT; Background (None / Window / Colour, then the border factor) or LineSpacing. The Text panel has buttons for underline, strike, width, paragraph alignment, indent and tab, and a shortcut to this command |
 | `SPELL` | | select text; each English word that is not in the dictionary asks Ignore / Change / Add / All, plus Suggest (takes the nearest known word) when there is one. Words with Thai or other non-ASCII letters, digits or all capitals are never flagged. Added words are saved in the drawing |
@@ -138,7 +138,7 @@ style panel. It is read from and written to DXF (group 40 of the STYLE record; D
 same reader). In `.tbcad` it is a separate `TSTH` chunk (format minor 11) that programs which do not
 know it keep unchanged; collaboration change records are version 3 (version 2 is still read).
 
-**TEXTALIGN** lines several texts (single-line or multiline) up with the first one selected: by Left, Center, Right, Top, Middle or Bottom edge of their bounding boxes. One undo step.
+**TEXTALIGN** lines several texts (single-line or multiline) up with the first one selected: by Left, Center, Right, Top, Middle or Bottom edge of their bounding boxes, or, as in AutoCAD, along a line from the first text's lower left corner through a picked point: **Points** slides each text onto the line, **Distribute** spreads them evenly up to the point and **Spacing** puts them a given distance apart, in their order along the line. One undo step.
 
 ## ARCTEXT
 
