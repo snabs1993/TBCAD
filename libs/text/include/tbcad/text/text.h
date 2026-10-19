@@ -23,6 +23,24 @@ namespace tbcad::text {
 // The process-wide font library (thread-safe). Bundled Sarabun is the default font.
 font::FontLibrary& fonts();
 
+// Gives the calling thread a font library of its own for as long as the scope lives, so that
+// threads laying out many texts at once do not wait for each other on the shared library's lock.
+// The libraries are kept for the next scope. FontIds are only meaningful on the thread that got
+// them, which is how layouts use them (a layout is built and drawn on one thread).
+class FontScope {
+public:
+    FontScope();
+    ~FontScope();
+    FontScope(const FontScope&) = delete;
+    FontScope& operator=(const FontScope&) = delete;
+
+    struct Private;
+
+private:
+    Private* mine_ = nullptr;
+    Private* previous_ = nullptr;
+};
+
 // Font for a style: TextStyle::fontFile, else fontFamily (installed font), else the bundled Thai
 // font. `bold` / `italic` ask for that face when one is installed; otherwise the regular face is
 // used (italic is then synthesised by shearing, bold is not synthesised).

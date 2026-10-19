@@ -1,8 +1,10 @@
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <tuple>
 
@@ -10,9 +12,58 @@
 
 namespace tbcad::text {
 
-font::FontLibrary& fonts() {
+namespace {
+font::FontLibrary& sharedFonts() {
     static font::FontLibrary lib;
     return lib;
+}
+std::atomic<std::uint64_t>& fontGeneration() {
+    static std::atomic<std::uint64_t> g{1};
+    return g;
+}
+}  // namespace
+
+struct FontScope::Private {
+    font::FontLibrary lib;
+    std::map<std::tuple<std::string, std::string, bool, bool>, font::FontId> cache;
+    std::uint64_t generation = 0;
+};
+
+namespace {
+thread_local FontScope::Private* g_threadFonts = nullptr;
+std::mutex& poolMutex() {
+    static std::mutex m;
+    return m;
+}
+std::vector<std::unique_ptr<FontScope::Private>>& pool() {
+    static std::vector<std::unique_ptr<FontScope::Private>> p;
+    return p;
+}
+}  // namespace
+
+FontScope::FontScope() : previous_(g_threadFonts) {
+    {
+        std::lock_guard lock(poolMutex());
+        if (!pool().empty()) {
+            mine_ = pool().back().release();
+            pool().pop_back();
+        }
+    }
+    if (!mine_) {
+        mine_ = new Private();
+        mine_->lib.setBundledDirectory(sharedFonts().bundledDirectory());
+    }
+    g_threadFonts = mine_;
+}
+
+FontScope::~FontScope() {
+    g_threadFonts = previous_;
+    std::lock_guard lock(poolMutex());
+    pool().emplace_back(mine_);
+}
+
+font::FontLibrary& fonts() {
+    return g_threadFonts ? g_threadFonts->lib : sharedFonts();
 }
 
 const TextStyle* styleFor(const Document& doc, TextStyleId id) {
@@ -111,6 +162,7 @@ void setFontSearchPaths(std::vector<std::filesystem::path> dirs) {
         std::lock_guard lock(shxMutex());
         shxAnswers().clear();
     }
+    fontGeneration().fetch_add(1);
     std::lock_guard lock(cacheMutex());
     fontCache().clear();
 }
@@ -253,8 +305,20 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
     std::string family = style ? style->fontFamily : std::string{};
     std::string file = style ? style->fontFile : std::string{};
     Key key{family, file + '\n' + (style ? style->shxFile : std::string{}), bold, italic};
-    std::lock_guard lock(cacheMutex());
-    auto& cache = fontCache();
+    // A thread with a library of its own keeps its answers in it, without taking the lock.
+    std::unique_lock<std::mutex> lock;
+    std::map<Key, font::FontId>* cachePtr;
+    if (g_threadFonts) {
+        if (g_threadFonts->generation != fontGeneration().load()) {
+            g_threadFonts->cache.clear();
+            g_threadFonts->generation = fontGeneration().load();
+        }
+        cachePtr = &g_threadFonts->cache;
+    } else {
+        lock = std::unique_lock<std::mutex>(cacheMutex());
+        cachePtr = &fontCache();
+    }
+    auto& cache = *cachePtr;
     if (auto it = cache.find(key); it != cache.end())
         return it->second;
 

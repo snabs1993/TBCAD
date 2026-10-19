@@ -1,9 +1,12 @@
 #include "tbcad/ui/scene_sync.h"
 
 #include <algorithm>
+#include <future>
+#include <thread>
 
 #include "tbcad/geom/entity.h"
 #include "tbcad/render/layer_sync.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::ui {
 
@@ -122,6 +125,100 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     if (locked)
         fade(list);
     scene_.upsert(id, list, order, builtZoom);
+}
+
+void SceneSync::prepare(const Entity& e, std::uint32_t order, Prepared& out) const {
+    out.entity = &e;
+    out.order = order;
+    const EntityId id = e.common.id;
+    if (!e.common.visible || doc_.ownerBlock(id) || hiddenByLevel(e)) {
+        out.what = Prepared::What::Remove;
+        return;
+    }
+    out.fields = holdsFields(e);
+    // References to blocks share geometry through the (single threaded) block cache.
+    if (kind(e) == EntityKind::Insert) {
+        out.what = Prepared::What::Defer;
+        return;
+    }
+    geom::DisplayContext ctx;
+    ctx.pixelSizeMm = pixelSizeMm_;
+    ctx.showTransparency = showTransparency_;
+    ctx.fillMode = fillMode_;
+    ctx.attDisplay = attDisplay_;
+    ctx.quickText = quickText_;
+    out.builtZoom = needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0;
+    geom::buildDisplay(doc_, e, ctx, out.list);
+    if (doc_.effective(e.common).locked)
+        fade(out.list);
+    out.what = Prepared::What::List;
+}
+
+void SceneSync::commit(Prepared& p) {
+    const EntityId id = p.entity->common.id;
+    switch (p.what) {
+        case Prepared::What::Remove:
+            scene_.remove(id);
+            fieldTexts_.erase(id);
+            return;
+        case Prepared::What::Defer:
+            upsertEntity(*p.entity, p.order);
+            return;
+        case Prepared::What::List:
+            if (p.fields)
+                fieldTexts_.insert(id);
+            else
+                fieldTexts_.erase(id);
+            scene_.upsert(id, p.list, p.order, p.builtZoom);
+            return;
+    }
+}
+
+void SceneSync::upsertParallel(const std::vector<const Entity*>& list,
+                               const std::vector<std::uint32_t>& orders) {
+    constexpr std::size_t kChunk = 8192;
+    const std::size_t lanes = std::clamp<std::size_t>(
+        maxThreads_ ? maxThreads_ : std::thread::hardware_concurrency(), 1, 16);
+    if (list.size() < 2 * kChunk || lanes < 2) {
+        for (std::size_t i = 0; i < list.size(); ++i)
+            upsertEntity(*list[i], orders[i]);
+        return;
+    }
+    // Several threads read the document: the lookups that fill a cache on first use are done now.
+    for (const auto& [id, layer] : doc_.layers())
+        (void)doc_.effective(id);
+    auto buildChunk = [&](std::size_t from, std::size_t to) {
+        std::vector<Prepared> out(to - from);
+        const std::size_t n = to - from;
+        const std::size_t parts = std::min(lanes, (n + 255) / 256);
+        std::vector<std::future<void>> jobs;
+        auto run = [&](std::size_t a, std::size_t b) {
+            text::FontScope fonts;  // texts are laid out without waiting for the other threads
+            for (std::size_t i = a; i < b; ++i)
+                prepare(*list[from + i], orders[from + i], out[i]);
+        };
+        for (std::size_t k = 1; k < parts; ++k)
+            jobs.push_back(std::async(std::launch::async, run, n * k / parts, n * (k + 1) / parts));
+        run(0, n / parts);
+        for (auto& j : jobs)
+            j.get();
+        return out;
+    };
+    // The next chunk is built while the scene takes the last one.
+    std::size_t from = 0;
+    std::vector<Prepared> current = buildChunk(0, std::min(kChunk, list.size()));
+    while (from < list.size()) {
+        const std::size_t next = from + current.size();
+        std::future<std::vector<Prepared>> ahead;
+        if (next < list.size())
+            ahead = std::async(std::launch::async, buildChunk, next,
+                               std::min(next + kChunk, list.size()));
+        for (Prepared& p : current)
+            commit(p);
+        from = next;
+        if (ahead.valid())
+            current = ahead.get();
+    }
 }
 
 // Where an object goes in the draw order: where it already is, or where it was waiting to be
@@ -297,8 +394,15 @@ void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
             orders.push_back(orderFor(id));
         }
         scene_.removeMany(ids);
-        for (std::size_t i = from; i < to; ++i)
-            upsertEntity(*list[i], orders[i - from]);
+        if (to - from >= kChunk) {
+            upsertParallel(
+                std::vector<const Entity*>(list.begin() + static_cast<std::ptrdiff_t>(from),
+                                           list.begin() + static_cast<std::ptrdiff_t>(to)),
+                orders);
+        } else {
+            for (std::size_t i = from; i < to; ++i)
+                upsertEntity(*list[i], orders[i - from]);
+        }
     }
 }
 
@@ -535,7 +639,13 @@ void SceneSync::rebuildAll(double tileSizeMm) {
             lockedLayers_.insert(id);
     }
     render::syncLayerVisibility(scene_, doc_);
-    doc_.forEachEntity([&](const Entity& e) { upsertEntity(e); });
+    std::vector<const Entity*> all;
+    std::vector<std::uint32_t> orders;
+    doc_.forEachEntity([&](const Entity& e) {
+        all.push_back(&e);
+        orders.push_back(drawOrderOf(e.common.id));
+    });
+    upsertParallel(all, orders);
     relevelMasks();
 }
 

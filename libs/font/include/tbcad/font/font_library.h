@@ -53,6 +53,7 @@ public:
     // assets/fonts (set at build time), then ./assets/fonts. The installer sets
     // it to the shipped location.
     void setBundledDirectory(std::filesystem::path dir);
+    std::filesystem::path bundledDirectory();
 
     // Finds an installed font by family name (case-insensitive) without any
     // Win32 font API: Windows scans C:\Windows\Fonts, Linux /usr/share/fonts.

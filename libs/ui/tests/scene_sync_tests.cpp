@@ -1,6 +1,10 @@
 #include <doctest/doctest.h>
 
+#include <cstring>
+
+#include "tbcad/blocks/display.h"
 #include "tbcad/cmd/undo.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/scene_sync.h"
 #include "test_support.h"
 
@@ -302,4 +306,106 @@ TEST_CASE("FILL and QTEXT changes in the header rebuild the scene") {
         tx.commit();
     }
     CHECK(countKind(render::BatchKind::Fill) > 0);
+}
+
+// ---- building on several threads ---------------------------------------------------------------
+
+namespace {
+
+bool sameScene(const render::Scene& a, const render::Scene& b) {
+    if (a.entityCount() != b.entityCount() || a.tiles().size() != b.tiles().size())
+        return false;
+    for (const auto& [key, ta] : a.tiles()) {
+        const auto tb = b.tiles().find(key);
+        if (tb == b.tiles().end() || ta.batches.size() != tb->second.batches.size())
+            return false;
+        for (const auto& [bk, ba] : ta.batches) {
+            const auto bb = tb->second.batches.find(bk);
+            if (bb == tb->second.batches.end() || ba.verts.size() != bb->second.verts.size() ||
+                ba.ranges.size() != bb->second.ranges.size())
+                return false;
+            if (!ba.verts.empty() && std::memcmp(ba.verts.data(), bb->second.verts.data(),
+                                                 ba.verts.size() * sizeof(ba.verts[0])) != 0)
+                return false;
+            for (std::size_t i = 0; i < ba.ranges.size(); ++i) {
+                const auto &ra = ba.ranges[i], &rb = bb->second.ranges[i];
+                if (ra.entity != rb.entity || ra.begin != rb.begin || ra.count != rb.count ||
+                    ra.drawOrder != rb.drawOrder || ra.builtPixelsPerMm != rb.builtPixelsPerMm)
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+TEST_CASE("a scene built on several threads equals the one built on one") {
+    text::registerDisplay();
+    blocks::registerInsertDisplay();
+    Document doc;
+    LayerId plain = addLayer(doc, "Plain");
+    LayerId locked = addLayer(doc, "Locked");
+    modifyLayer(doc, locked, [](Layer& l) { l.locked = true; });
+    BlockId block;
+    {
+        auto tx = doc.begin("fill");
+        BlockDef def;
+        def.name = "SYM";
+        block = tx.addBlock(def).value();
+        (void)tx.add(Entity{{}, CircleData{{0, 0}, 2}}, block);
+        (void)tx.add(Entity{{}, LineData{{-3, 0}, {3, 0}}}, block);
+        for (int i = 0; i < 60000; ++i) {
+            const double x = (i % 300) * 25.0, y = (i / 300) * 25.0;
+            Entity e;
+            switch (i % 8) {
+                case 0:
+                    e.data = LineData{{x, y}, {x + 10, y + 7}};
+                    break;
+                case 1: {
+                    PolylineData pl;
+                    pl.v = {{{x, y}, 0}, {{x + 8, y}, 0.5}, {{x + 12, y + 9}, 0}};
+                    e.data = std::move(pl);
+                    break;
+                }
+                case 2:
+                    e.data = CircleData{{x, y}, 4};
+                    break;
+                case 3: {
+                    TextData t;
+                    t.position = {x, y};
+                    t.height = 2.5;
+                    t.utf8 = "T" + std::to_string(i);
+                    e.data = std::move(t);
+                    break;
+                }
+                case 4:
+                    e.data = ArcData{{x, y}, 5, 0.2, 2.5};
+                    break;
+                case 5: {
+                    InsertData ins;
+                    ins.block = block;
+                    ins.position = {x, y};
+                    e.data = std::move(ins);
+                    break;
+                }
+                default:
+                    e.data = LineData{{x, y}, {x + 3, y + 3}};
+                    break;
+            }
+            e.common.layer = (i % 5 == 0) ? locked : plain;
+            (void)tx.add(std::move(e));
+        }
+        tx.commit();
+    }
+    render::Scene one, many;
+    SceneSync a(doc, one), b(doc, many);
+    a.setMaxThreads(1);
+    b.setMaxThreads(8);
+    a.setPixelSize(0.5);
+    b.setPixelSize(0.5);
+    a.rebuildAll(500);
+    b.rebuildAll(500);
+    CHECK(one.entityCount() == 60000);
+    CHECK(sameScene(one, many));
 }

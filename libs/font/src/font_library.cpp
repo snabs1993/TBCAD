@@ -503,6 +503,11 @@ Result<FontId> FontLibrary::loadBundled(std::string_view name) {
     return impl_->loadBundledLocked(name);
 }
 
+std::filesystem::path FontLibrary::bundledDirectory() {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->bundledDir;
+}
+
 void FontLibrary::setBundledDirectory(std::filesystem::path dir) {
     std::lock_guard lock(impl_->mutex);
     impl_->bundledDir = std::move(dir);
