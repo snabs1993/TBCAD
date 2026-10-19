@@ -25,9 +25,9 @@ const Layer* findLayer(const Document& doc, const std::string& path) {
 cmd::Task changeProperties(cmd::CommandContext& ctx, std::vector<EntityId> ids) {
     for (;;) {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Layer", "Color", "Linetype", "Lineweight", "Scale"};
+        ko.keywords = {"Layer", "Color", "Linetype", "Lineweight", "Scale", "Transparency", "Plotstyle"};
         auto k = co_await ctx.getKeyword(
-            "Property to change [Layer/Color/Linetype/Lineweight/Scale]", std::move(ko));
+            "Property to change [Layer/Color/Linetype/Lineweight/Scale/Transparency/Plotstyle]", std::move(ko));
         if (!k.ok())
             co_return;
         auto v = co_await ctx.getString("New " + k.keyword + " value");
@@ -72,6 +72,42 @@ cmd::Task changeProperties(cmd::CommandContext& ctx, std::vector<EntityId> ids) 
             }
             const LineWeight lw = *w;
             apply = [lw](EntityCommon& x) { x.lineweight = lw; };
+        } else if (k.keyword == "Transparency") {
+            const std::string u = cmd::toUpperAscii(cmd::trim(v.text));
+            int t = kTransparencyByLayer;
+            if (u == "BYBLOCK") {
+                t = kTransparencyByBlock;
+            } else if (u != "BYLAYER") {
+                try {
+                    std::size_t used = 0;
+                    t = std::stoi(u, &used);
+                    if (used != u.size())
+                        t = -99;
+                } catch (...) {
+                    t = -99;
+                }
+            }
+            if (!validObjectTransparency(t)) {
+                ctx.message("The transparency must be 0 to 90 percent, ByLayer or ByBlock.");
+                continue;
+            }
+            const auto value = static_cast<std::int8_t>(t);
+            apply = [value](EntityCommon& x) { x.transparency = value; };
+        } else if (k.keyword == "Plotstyle") {
+            ctx.checkpoint();
+            const std::string name = cmd::trim(v.text);
+            int n = 0;
+            for (EntityId id : ids)
+                if (const Entity* e = ctx.doc().find(id); e && !ctx.doc().effective(e->common).locked)
+                    ++n;
+            (void)ctx.tx().modifyHeader([&](Header& h) {
+                for (EntityId id : ids)
+                    if (const Entity* e = ctx.doc().find(id);
+                        e && !ctx.doc().effective(e->common).locked)
+                        setEntityPlotStyle(h, id, name);
+            });
+            ctx.message(std::to_string(n) + " object(s) changed.");
+            co_return;
         } else {
             double scale = 0;
             try {
@@ -89,9 +125,13 @@ cmd::Task changeProperties(cmd::CommandContext& ctx, std::vector<EntityId> ids) 
         }
         ctx.checkpoint();
         int n = 0;
-        for (EntityId id : ids)
+        for (EntityId id : ids) {
+            const Entity* cur = ctx.doc().find(id);
+            if (!cur || ctx.doc().effective(cur->common).locked)
+                continue;  // objects on locked layers cannot be edited
             if (ctx.tx().modify(id, [&](Entity& e) { apply(e.common); }))
                 ++n;
+        }
         ctx.message(std::to_string(n) + " object(s) changed.");
         co_return;
     }
@@ -145,7 +185,7 @@ public:
         for (EntityId id : sel.ids) {
             bool changed = false;
             const Entity* e = ctx.doc().find(id);
-            if (!e)
+            if (!e || ctx.doc().effective(e->common).locked)
                 continue;
             if (auto r = ctx.tx().modify(
                     id,
