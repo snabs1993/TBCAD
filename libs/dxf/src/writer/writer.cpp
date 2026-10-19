@@ -425,7 +425,21 @@ void Writer::writeMark(Out& o, const LinetypeMark& m) {
     o.d(49, 0);
     o.i(74, (shape ? 4 : 2) | (m.rotationKind == R::Absolute ? 1 : 0) |
                 (m.rotationKind == R::Upright ? 8 : 0));
-    o.i(75, 0);
+    // A shape named "#n" is shape number n of its shape file.
+    int shapeNo = 0;
+    if (shape && m.text.size() > 1 && m.text[0] == '#') {
+        char* end = nullptr;
+        const long n = std::strtol(m.text.c_str() + 1, &end, 10);
+        if (end && *end == '\0' && n > 0 && n < 65536)
+            shapeNo = static_cast<int>(n);
+    }
+    o.i(75, shapeNo);
+    if (shape && !m.style.empty()) {
+        auto& h = shapeFileHandle_[m.style];
+        if (h == 0)
+            h = newHandle();
+        o.h(340, h);
+    }
     if (!shape && !m.style.empty()) {
         for (const auto& [id, ts] : doc_.textStyles()) {
             if (ts.name != m.style)
@@ -441,7 +455,8 @@ void Writer::writeMark(Out& o, const LinetypeMark& m) {
     o.d(50, m.rotation * kDeg);
     o.d(44, m.shift.x);
     o.d(45, m.shift.y);
-    o.str(9, m.text);
+    if (!shapeNo)
+        o.str(9, m.text);
 }
 
 void Writer::writeLinetypes(Out& o, std::uint64_t table) {
@@ -585,11 +600,12 @@ double styleWidthWritten(const TextStyle& ts) {
 }
 
 void Writer::writeStyles(Out& o, std::uint64_t table) {
-    tableBegin(o, "STYLE", table, doc_.textStyles().size());
+    tableBegin(o, "STYLE", table, doc_.textStyles().size() + shapeFileHandle_.size());
     for (const auto& [id, ts] : doc_.textStyles()) {
         std::uint64_t& reserved = tsHandle_[id.value];
-        tableRecord(o, "STYLE", reserved ? reserved : newHandle(), table,
-                    "AcDbTextStyleTableRecord", tsName_[id.value], 0);
+        if (reserved == 0)
+            reserved = newHandle();
+        tableRecord(o, "STYLE", reserved, table, "AcDbTextStyleTableRecord", tsName_[id.value], 0);
         o.d(40, ts.height);
         // The reader widens the stroke font that stands in for txt.shx by 1/0.92; undo that here.
         o.d(41, styleWidthWritten(ts));
@@ -613,6 +629,18 @@ void Writer::writeStyles(Out& o, std::uint64_t table) {
             o.i(1070, 0);
             o.str(1002, "}");
         }
+    }
+    // Shape files that linetypes draw from: a style record of the file, flag 1.
+    for (const auto& [file, handle] : shapeFileHandle_) {
+        std::string stem = file.substr(0, file.rfind('.'));
+        tableRecord(o, "STYLE", handle, table, "AcDbTextStyleTableRecord", stem, 1);
+        o.d(40, 0);
+        o.d(41, 1);
+        o.d(50, 0);
+        o.i(71, 0);
+        o.d(42, 2.5);
+        o.str(3, file);
+        o.str(4, "");
     }
     tableEnd(o);
 }
@@ -918,6 +946,17 @@ std::string Writer::objectsSection() {
         if (!t.empty() && t[0] == '#') {  // an entity of the source file, if it was written
             const std::uint64_t h = std::strtoull(t.c_str() + 1, nullptr, 16);
             return entityHandlesWritten_.count(h) ? h : 0;
+        }
+        if (t.rfind("$S:", 0) == 0) {  // a text style of the drawing, by name
+            for (const auto& [id, ts] : doc_.textStyles()) {
+                if (tsName_[id.value] != t.substr(3))
+                    continue;
+                std::uint64_t& h = tsHandle_[id.value];
+                if (h == 0)
+                    h = newHandle();
+                return h;
+            }
+            return 0;
         }
         if (t.size() < 2 || t[0] != '@')
             return 0;
@@ -1293,7 +1332,7 @@ std::string Writer::objectsSection() {
         // The page setup the layout came with, while its paper size is still the same.
         bool kept = false;
         if (auto it = keptCustom.find(std::string(kKeptPlotSetPrefix) + name);
-            it != keptCustom.end() && paperW > 0) {
+            it != keptCustom.end()) {
             const KeptGroups g = unpackGroups(it->second);
             double w = 0, h = 0;
             for (const auto& [code, value] : g) {
@@ -1303,7 +1342,8 @@ std::string Writer::objectsSection() {
                     h = std::strtod(value.c_str(), nullptr);
             }
             const auto near = [](double a, double b) { return std::abs(a - b) < 0.5; };
-            if ((near(w, paperW) && near(h, paperH)) || (near(w, paperH) && near(h, paperW))) {
+            if (paperW <= 0 || (near(w, paperW) && near(h, paperH)) ||
+                (near(w, paperH) && near(h, paperW))) {
                 for (const auto& [code, value] : g)
                     o.str(code, value);
                 kept = true;
