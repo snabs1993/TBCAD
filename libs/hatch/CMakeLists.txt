@@ -41,3 +41,13 @@ tbcad_add_tests(hatch
     tests/perf_tests.cpp
     tests/fuzz_tests.cpp
     tests/messy_tests.cpp)
+
+# Optional libFuzzer build (clang only): cmake -DTBCAD_FORMATS_FUZZ=ON
+if(TBCAD_FORMATS_FUZZ)
+  set(_fuzz_flags -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined)
+  target_compile_options(tbcad_hatch PRIVATE ${_fuzz_flags})
+  add_executable(tbcad_hatch_fuzz_patterns tests/fuzz_patterns.cpp)
+  target_link_libraries(tbcad_hatch_fuzz_patterns PRIVATE tbcad::hatch)
+  target_compile_options(tbcad_hatch_fuzz_patterns PRIVATE ${_fuzz_flags})
+  target_link_options(tbcad_hatch_fuzz_patterns PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()
