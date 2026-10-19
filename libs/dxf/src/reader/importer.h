@@ -181,6 +181,7 @@ private:
     bool mlStylesLoaded_ = false;
     bool convWipeout(const Record& r, std::vector<Entity>& out);
     bool convImage(const Record& r, std::vector<Entity>& out);
+    bool convPdfUnderlay(const Record& r, std::vector<Entity>& out);
     bool convTolerance(const Record& r, std::vector<Entity>& out);
     int toleranceBlocks_ = 0;
     void resolveImages();
@@ -322,6 +323,20 @@ private:
         std::vector<Vec2> clip{};  // polygon in picture fractions
         int line = 0;
     };
+    struct PendingPdf {
+        BlockId block{};
+        std::string name{};
+        std::string defHandle{};
+        double fade = 25;
+        int contrast = 50;
+        int line = 0;
+    };
+    struct PdfDef {
+        std::string file{};
+        int page = 1;
+    };
+    std::vector<PendingPdf> pdfs_{};
+    std::map<std::string, PdfDef> pdfDefs_{};  // PDFDEFINITION handle -> file and page
     std::vector<PendingImage> images_{};
     int imageFrame_ = -1;  // 0 when RASTERVARIABLES hides the frames of all pictures; -1 = no say
     std::map<std::string, std::vector<Vec2>>

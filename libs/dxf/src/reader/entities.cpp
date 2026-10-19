@@ -9,6 +9,7 @@
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::dxf::detail {
 
@@ -543,6 +544,8 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convWipeout(r, out);
     } else if (t == "IMAGE") {
         convImage(r, out);
+    } else if (t == "PDFUNDERLAY") {
+        convPdfUnderlay(r, out);
     } else if (t == "TOLERANCE") {
         convTolerance(r, out);
     } else if (t == "ARC_DIMENSION") {
@@ -1581,8 +1584,69 @@ bool Importer::convTolerance(const Record& r, std::vector<Entity>& out) {
     return true;
 }
 
+// PDFUNDERLAY: a PDF page placed in the drawing. It becomes the same thing PDFATTACH makes: a block
+// that is an external reference to "file.pdf#page=N,fade=F", inserted with the underlay's scale.
+// The file name and page are in the PDFDEFINITION object, read later (resolveImages); until the
+// host loads the page, a unit square stands in for it.
+bool Importer::convPdfUnderlay(const Record& r, std::vector<Entity>& out) {
+    const double sx = r.num(41, 1), sy = r.num(42, 1);
+    if (!(sx > 0) || !(sy > 0) || !std::isfinite(sx) || !std::isfinite(sy))
+        return convForeign(r, out);
+    std::string handle(r.raw(340));
+    std::string base = "PDFUNDERLAY_" + (handle.empty() ? std::string("0") : handle);
+    const int n = imageNames_[base]++;
+    const std::string name = n == 0 ? base : base + "_" + std::to_string(n + 1);
+    const BlockId block = blockFor(name);
+    if (!block)
+        return false;
+    blockDefined_.insert(block);
+    ++sum_.blocks;
+
+    PolylineData frame;
+    frame.closed = true;
+    for (const Vec2 p : {Vec2{0, 0}, Vec2{1, 0}, Vec2{1, 1}, Vec2{0, 1}})
+        frame.v.push_back({p, 0, 0, 0});
+    Entity fe = makeEntity(std::move(frame));
+    fe.common = commonOf(r);
+    (void)tx_->add(std::move(fe), block);
+
+    PendingPdf pdf;
+    pdf.block = block;
+    pdf.name = name;
+    pdf.defHandle = handle;
+    pdf.line = r.line;
+    pdf.fade = std::clamp(r.num(282, 25), 0.0, 90.0);
+    pdf.contrast = static_cast<int>(std::clamp(r.num(281, 50), 0.0, 100.0));
+    pdfs_.push_back(std::move(pdf));
+
+    InsertData d;
+    d.block = block;
+    d.position = P(r, 10, 20);
+    d.scale = {sx, sy};
+    d.rotation = r.num(50) * kDeg;
+    out.push_back(makeEntity(std::move(d)));
+    return true;
+}
+
 // Gives the picture blocks their file (IMAGEDEF) and display settings (fade, clip).
 void Importer::resolveImages() {
+    for (const PendingPdf& pdf : pdfs_) {
+        auto it = pdfDefs_.find(pdf.defHandle);
+        if (it == pdfDefs_.end() || it->second.file.empty()) {
+            report_.warn(code::kXref,
+                         "PDFUNDERLAY \"" + pdf.name + "\" has no PDF file (PDFDEFINITION)",
+                         pdf.line);
+            continue;
+        }
+        std::string path = it->second.file;
+        std::replace(path.begin(), path.end(), '\\', '/');
+        underlay::PdfOptions o;
+        o.page = it->second.page;
+        o.fadePercent = pdf.fade;
+        o.contrast = pdf.contrast;
+        const std::string stored = underlay::makeSpec(path, o);
+        (void)tx_->modifyBlock(pdf.block, [&](BlockDef& b) { b.xrefPath = stored; });
+    }
     underlay::ImageParamTable table = underlay::readImageParams(doc_->header());
     for (const PendingImage& img : images_) {
         auto it = imageDefs_.find(img.defHandle);
