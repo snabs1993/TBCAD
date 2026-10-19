@@ -64,7 +64,10 @@ struct Big {
 
     // Runs one command with the given answers on everything; prints the time of the command, its
     // undo and its redo, each including the next frame.
-    void bench(const char* label, std::initializer_list<const char*> lines) {
+    struct Timing {
+        double runMs = 0, undoMs = 0, redoMs = 0;
+    };
+    Timing bench(const char* label, std::initializer_list<const char*> lines) {
         core->selectAll();
         const std::size_t before = core->document().modelSpaceCount();
         auto t = std::chrono::steady_clock::now();
@@ -112,6 +115,7 @@ struct Big {
             done && undone && redone ? "" : "  [command, undo or redo did not run]");
         core->undo();
         core->updateFrame();
+        return {run, undoMs, redoMs};
     }
 };
 
@@ -217,19 +221,27 @@ TEST_CASE("perf: ERASE of everything alone") {
 }
 
 TEST_CASE("perf: ERASE of everything stays one pass with a draw-order override and block objects") {
-    Big big;
+    // (a big site plan from a DWG has hatches sent to back; the erase, its undo and the redo must
+    // cost about what they do without any: this guard was added when they cost five times more)
+    Big::Timing plain, ordered;
     {
-        // A real drawing has a few objects sent to back (hatches) and a block or two.
+        Big big;
+        plain = big.bench("ERASE", {"ERASE"});
+    }
+    {
+        Big big;
         auto ids = big.core->document().modelSpace();
         auto tx = big.core->document().begin("order");
         for (std::size_t i = 0; i < ids.size(); i += 5000)
             (void)tx.sendToBack(ids[i]);
         tx.commit();
+        ordered = big.bench("ERASE", {"ERASE"});
     }
-    auto t = std::chrono::steady_clock::now();
-    big.bench("ERASE", {"ERASE"});
-    const double all = ms(t);
-    std::printf("  whole bench incl. undo and redo: %.0f ms\n", all);
+    std::printf("  erase %.0f -> %.0f ms, undo %.0f -> %.0f ms\n", plain.runMs, ordered.runMs,
+                plain.undoMs, ordered.undoMs);
+    CHECK(ordered.runMs < 3 * plain.runMs + 200);
+    CHECK(ordered.undoMs < 3 * plain.undoMs + 200);
+    CHECK(ordered.redoMs < 3 * plain.redoMs + 200);
 }
 
 TEST_CASE("perf: MOVE of everything alone") {

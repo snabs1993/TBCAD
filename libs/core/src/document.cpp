@@ -941,8 +941,15 @@ std::vector<EntityId> Document::modelSpace() const {
             out.push_back(id);
     }
     if (!orderOverride_.empty()) {
-        std::stable_sort(out.begin(), out.end(),
-                         [&](EntityId a, EntityId b) { return orderKey(a) < orderKey(b); });
+        // (keys looked up once per object, not once per comparison)
+        std::vector<std::pair<std::int64_t, EntityId>> keyed;
+        keyed.reserve(out.size());
+        for (EntityId id : out)
+            keyed.emplace_back(orderKey(id), id);
+        std::stable_sort(keyed.begin(), keyed.end(),
+                         [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (std::size_t i = 0; i < keyed.size(); ++i)
+            out[i] = keyed[i].second;
     }
     return out;
 }
@@ -1885,8 +1892,15 @@ ChangeSet Transaction::commit() {
     touchedIds.reserve(beforeSnaps_.size());
     for (std::uint32_t i = 0; i < beforeSnaps_.size(); ++i)
         touchedIds.emplace_back(beforeSnaps_[i].common.id, i);
-    if (!std::is_sorted(touchedIds.begin(), touchedIds.end()))
-        std::sort(touchedIds.begin(), touchedIds.end());
+    if (auto brk = std::is_sorted_until(touchedIds.begin(), touchedIds.end());
+        brk != touchedIds.end()) {
+        // (two ascending runs, as an erase of everything with a few special objects leaves them,
+        // merge in linear time)
+        if (std::is_sorted(brk, touchedIds.end()))
+            std::inplace_merge(touchedIds.begin(), brk, touchedIds.end());
+        else
+            std::sort(touchedIds.begin(), touchedIds.end());
+    }
 
     std::size_t added = 0;
     for (std::uint64_t v = startNextId_; v < d.allocCursor(); ++v) {

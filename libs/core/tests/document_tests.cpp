@@ -1000,3 +1000,32 @@ TEST_CASE("bulk erase takes everything out in one commit and undo brings it back
     CHECK(doc.entityCount() == 1000);
     CHECK(std::get<LineData>(doc.find(ids[0])->data).b.y == 5.0);
 }
+
+TEST_CASE("eraseMany handles block members, sent-to-back and edited objects together with the rest") {
+    Document doc;
+    std::vector<EntityId> ids;
+    {
+        auto tx = doc.begin("gen");
+        for (int i = 0; i < 40; ++i)
+            ids.push_back(tx.add(Entity{{}, LineData{{double(i), 0}, {double(i), 1}}}).value());
+        tx.commit();
+    }
+    {
+        auto tx = doc.begin("order");
+        REQUIRE(tx.sendToBack(ids[7]));
+        REQUIRE(tx.sendToBack(ids[30]));
+        tx.commit();
+    }
+    const std::string before = canonicalDump(doc);
+    auto tx = doc.begin("erase");
+    REQUIRE(tx.modify(ids[3], [](Entity& e) { std::get<LineData>(e.data).b = {3, 9}; }));
+    auto added = tx.add(Entity{{}, LineData{{0, 5}, {1, 5}}}).value();
+    ids.push_back(added);
+    CHECK(tx.eraseMany(ids) == 41);
+    const ChangeSet cs = tx.commit();
+    CHECK(doc.modelSpaceCount() == 0);
+    doc.apply(cs, Direction::Undo);
+    CHECK(canonicalDump(doc) == before);
+    doc.apply(cs, Direction::Redo);
+    CHECK(doc.modelSpaceCount() == 0);
+}
