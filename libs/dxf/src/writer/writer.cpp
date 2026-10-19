@@ -307,6 +307,8 @@ void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& bloc
         o.d(41, h);
         o.i(68, v.on ? 1 : 0);
         o.i(69, v.id + 1);  // 1 is the sheet's own overall viewport
+        // Status flags: always enabled (32768), zoom locking (16384), turned off (131072).
+        o.i(90, 32768 | (v.locked ? 16384 : 0) | (v.on ? 0 : 131072));
         o.d(12, v.center.x);
         o.d(22, v.center.y);
         o.pt(16, {0, 0}, 1);
