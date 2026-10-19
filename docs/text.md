@@ -44,6 +44,13 @@ heights). `\~` is a no-break space, `\N` forces the next column. `MTextData::lin
 (0.25 to 4, default 1) multiplies the line pitch. DXF: `\p` (lengths scaled to mm), `\N`, group
 44 with 73 = 1; .tbcad: optional f64 after the column tail.
 
+### Background mask
+
+`MTextData::bgMode` 1 draws a rectangle behind the text in the drawing background colour (it hides
+what lies behind, like a wipeout, also in plots); 2 fills it with palette colour `bgColor`. The
+rectangle is the text frame grown by `(bgScale - 1)` text heights on every side (`bgScale` 1 to 5,
+default 1.5). DXF groups 90 (1 colour, 2/3 background), 63, 45; .tbcad: tail after the line spacing.
+
 ### Columns
 
 `MTextData::columns` (2 to 8) with a `width` flows the text through that many columns, each

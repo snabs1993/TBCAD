@@ -160,11 +160,16 @@ struct PayloadWriter {
         w.u8(static_cast<std::uint8_t>(d.attach));
         w.varint(d.style.value);
         str(d.utf8);
-        if (d.columns > 1 || d.lineSpacing != 1.0) {  // a tail that older readers ignore
+        if (d.columns > 1 || d.lineSpacing != 1.0 || d.bgMode) {  // a tail older readers ignore
             w.u8(d.columns);
             w.f64(d.columnGap);
-            if (d.lineSpacing != 1.0)
+            if (d.lineSpacing != 1.0 || d.bgMode)
                 w.f64(d.lineSpacing);
+            if (d.bgMode) {
+                w.u8(d.bgMode);
+                w.u8(static_cast<std::uint8_t>(d.bgColor));
+                w.f64(d.bgScale);
+            }
         }
     }
     void operator()(const HatchData& d) {
@@ -681,6 +686,14 @@ struct PayloadReader {
                         d.lineSpacing = r.f64();
                         if (!(d.lineSpacing >= 0.25 && d.lineSpacing <= 4.0))
                             d.lineSpacing = 1.0;
+                        if (r.remaining() > 0) {
+                            const std::uint8_t mode = r.u8();
+                            d.bgMode = mode <= 2 ? mode : 0;
+                            d.bgColor = r.u8();
+                            d.bgScale = r.f64();
+                            if (!(d.bgScale >= 1.0 && d.bgScale <= 5.0))
+                                d.bgScale = 1.5;
+                        }
                     }
                 }
                 return make(std::move(d));

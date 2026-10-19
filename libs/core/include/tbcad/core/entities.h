@@ -401,6 +401,12 @@ struct MTextData {
     double columnGap = 0;
     // Line pitch as a multiple of the usual one (DXF 44: 0.25 to 4).
     double lineSpacing = 1.0;
+    // Background mask (DXF 90/63/45): 0 none, 1 hides what is behind in the drawing background
+    // colour (like a wipeout), 2 fills with palette colour `bgColor`. The box is the text frame
+    // grown by (bgScale - 1) text heights on every side (bgScale 1 to 5).
+    std::uint8_t bgMode = 0;
+    int bgColor = 7;
+    double bgScale = 1.5;
 };
 
 struct HatchLineEdge {

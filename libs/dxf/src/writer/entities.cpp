@@ -1058,6 +1058,12 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
         o.i(73, 1);  // at least: the line pitch follows the text
         o.d(44, d.lineSpacing);
     }
+    if (d.bgMode) {
+        o.i(90, d.bgMode == 2 ? 1 : 3);
+        if (d.bgMode == 2)
+            o.i(63, d.bgColor);
+        o.d(45, d.bgScale);
+    }
     if (d.columns > 1 && d.width > 0) {
         o.i(75, 2);  // dynamic columns, automatic height
         o.i(76, d.columns);
