@@ -452,6 +452,49 @@ TEST_CASE("layouts imported from a DXF file are read by the layout table") {
     CHECK(sheet->entities.size() == 1);
 }
 
+TEST_CASE("a viewport's frozen layers (group 331) come from an AutoCAD file and go back to one") {
+    const std::string dxfText =
+        "  0\nSECTION\n  2\nTABLES\n  0\nTABLE\n  2\nLAYER\n 70\n3\n"
+        "  0\nLAYER\n  5\n10\n  2\n0\n 70\n0\n 62\n7\n  6\nContinuous\n"
+        "  0\nLAYER\n  5\n2A\n  2\nWalls\n 70\n0\n 62\n1\n  6\nContinuous\n"
+        "  0\nLAYER\n  5\n2B\n  2\nGrid\n 70\n0\n 62\n2\n  6\nContinuous\n"
+        "  0\nENDTAB\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\n*Paper_Space\n 70\n0\n 10\n0\n 20\n0\n 30\n0\n"
+        "  0\nVIEWPORT\n  8\n0\n 67\n1\n 10\n210\n 20\n148.5\n 40\n400\n 41\n280\n 69\n2\n"
+        " 68\n1\n 12\n1000\n 22\n2000\n 45\n28000\n331\n2B\n331\nFFFF\n  0\nENDBLK\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n  0\nLAYOUT\n  1\nSheet A1\n 71\n1\n 44\n841\n 45\n594\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    dxf::Report report;
+    auto r = dxf::importDxf(std::span<const std::byte>(
+                                reinterpret_cast<const std::byte*>(dxfText.data()), dxfText.size()),
+                            {}, report);
+    REQUIRE(r.ok());
+    const Document& doc = *r.value().document;
+    const std::vector<Layout> all = layouts(doc);
+    REQUIRE(all.size() == 1);
+    REQUIRE(all[0].viewports.size() == 1);
+    REQUIRE(all[0].viewports[0].frozen.size() == 1);  // the unknown handle FFFF is ignored
+    CHECK(doc.layer(all[0].viewports[0].frozen[0])->name == "Grid");
+
+    // Written back, the frozen layer is a group 331 handle that other programs understand, even
+    // without our own XDATA.
+    dxf::ExportOptions opts;
+    auto out = dxf::exportDxf(doc, opts, report);
+    REQUIRE(out.ok());
+    std::string text = out.value().bytes;
+    CHECK(text.find("331\r\n") != std::string::npos);
+    for (std::size_t at; (at = text.find("frozen=Grid")) != std::string::npos;)
+        text.replace(at, 11, "xxxxxx=Grid");
+    auto in = dxf::importDxf(
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()),
+        {}, report);
+    REQUIRE(in.ok());
+    const std::vector<Layout> back = layouts(*in.value().document);
+    REQUIRE(back.size() == 1);
+    REQUIRE(back[0].viewports.size() == 1);
+    CHECK(back[0].viewports[0].frozen.size() == 1);
+}
+
 TEST_CASE("layouts survive a DXF export and import") {
     Document doc;
     const LayerId walls = addLayer(doc, "Walls");

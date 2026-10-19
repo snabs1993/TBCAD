@@ -312,6 +312,11 @@ void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& bloc
         o.pt(16, {0, 0}, 1);
         o.pt(17, {0, 0}, 0);
         o.d(45, h * v.scaleN);
+        // The layers frozen in this viewport, as other programs read them (the names are also
+        // kept in the TBCAD XDATA below).
+        if (!r12_)
+            for (LayerId id : v.frozen)
+                o.h(331, layerHandleOf(id));
         if (!v.frozen.empty() || !v.clip.empty() || v.locked || !v.border || v.level != 0) {
             o.raw(1001, "TBCAD");
             if (v.locked)
@@ -531,6 +536,15 @@ std::uint64_t Writer::pstyleHandle(const std::string& name) {
     return pstyles_.back().second;
 }
 
+// The handle of a layer's table record. Sheets are written before the tables, so it is given out
+// the first time anything asks for it.
+std::uint64_t Writer::layerHandleOf(LayerId id) {
+    auto [it, fresh] = layerHandle_.try_emplace(id.value, 0);
+    if (fresh)
+        it->second = newHandle();
+    return it->second;
+}
+
 void Writer::writeLayers(Out& o, std::uint64_t table) {
     layerTable_ = table;
     if (!r12_) {
@@ -545,7 +559,8 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
     for (const auto& [id, layer] : doc_.layers()) {
         EffectiveLayer eff = doc_.effective(id);
         int flags = (eff.frozen ? 1 : 0) | (eff.locked ? 4 : 0);
-        tableRecord(o, "LAYER", newHandle(), table, "AcDbLayerTableRecord", layerName_[id.value],
+        const std::uint64_t layerRec = layerHandleOf(id);
+        tableRecord(o, "LAYER", layerRec, table, "AcDbLayerTableRecord", layerName_[id.value],
                     flags);
         // Sub-layers carry their effective look so that other programs show the same drawing;
         // the TBCAD XDATA below restores the tree and the ByParent settings.

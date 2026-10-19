@@ -218,6 +218,7 @@ private:
     void skipEntity(std::string_view what, const std::string& why);
     void downgrade(std::string_view what, const std::string& why);
 
+    std::uint64_t layerHandleOf(LayerId id);
     void writeEntityList(const std::vector<EntityId>& ids, std::uint64_t owner);
     // True for an object whose record is written from the object alone: the only thing it takes
     // from the writer is one handle, so many such records can be written on several threads once
@@ -311,6 +312,7 @@ private:
     // Handles given to text styles before their table is written (linetype marks refer to them).
     std::unordered_map<std::uint32_t, std::uint64_t> tsHandle_{};
     std::map<std::string, std::uint64_t> shapeFileHandle_{};  // shape files named by linetypes
+    std::unordered_map<std::uint32_t, std::uint64_t> layerHandle_{};  // LAYER record handles
     std::unordered_map<std::uint32_t, std::string> layerName_{}, ltName_{}, tsName_{}, dsName_{},
         blockName_{};
     NameSet layerSet_{}, ltSet_{}, tsSet_{}, dsSet_{}, blockSet_{};

@@ -1699,6 +1699,7 @@ void Importer::readLayerRow(const Record& r) {
     }
     // Entities refer to layers by raw name bytes; remember them next to the decoded name.
     layerRawNames_.push_back(std::string(r.raw(2)));
+    row.handle = std::strtoull(std::string(r.raw(5)).c_str(), nullptr, 16);
     layerRows_.push_back(std::move(row));
 }
 
@@ -2091,6 +2092,16 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
         v.id = static_cast<int>(sh.viewports.size()) + 1;
         if (r.integer(90, 0) & 16384)  // non-rectangular clipping is on
             v.clipHandle = std::string(r.raw(340));
+        // Frozen layers as AutoCAD writes them: one layer record handle per group 331.
+        for (const Group& g : r.g) {
+            if (g.code != 331)
+                continue;
+            const std::uint64_t hnd = std::strtoull(std::string(g.str()).c_str(), nullptr, 16);
+            for (const LayerRow& row : layerRows_)
+                if (hnd != 0 && row.handle == hnd &&
+                    std::find(v.frozen.begin(), v.frozen.end(), row.name) == v.frozen.end())
+                    v.frozen.push_back(row.name);
+        }
         bool ours = false;
         for (const Group& g : r.g) {
             if (g.code == 1001) {
@@ -2098,7 +2109,8 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
             } else if (ours && g.code == 1000) {
                 const std::string t = dec(g.str());
                 if (t.rfind("frozen=", 0) == 0) {
-                    v.frozen.push_back(t.substr(7));
+                    if (std::find(v.frozen.begin(), v.frozen.end(), t.substr(7)) == v.frozen.end())
+                        v.frozen.push_back(t.substr(7));
                 } else if (t.rfind("vlevel=", 0) == 0) {
                     v.level = t.substr(7);
                 } else if (t == "locked=1") {
