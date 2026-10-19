@@ -37,6 +37,12 @@ Result<void> saveLayerState(const Document& doc, Transaction& tx, std::string_vi
 Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string_view name,
                                StateParts parts = {}, std::size_t* skipped = nullptr);
 Result<void> deleteLayerState(const Document& doc, Transaction& tx, std::string_view name);
+// A saved state as a text file body ("TBCAD-LAYERSTATE 1" header then the stored lines), for
+// sharing between drawings; importLayerStateText stores such text under `name` (replacing any
+// state of that name) after checking every line.
+Result<std::string> exportLayerStateText(const Document& doc, std::string_view name);
+Result<void> importLayerStateText(const Document& doc, Transaction& tx, std::string_view name,
+                                  std::string_view text);
 Result<void> renameLayerState(const Document& doc, Transaction& tx, std::string_view from,
                               std::string_view to);
 

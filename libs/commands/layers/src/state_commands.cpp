@@ -1,5 +1,7 @@
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 
 #include "commands.h"
@@ -43,7 +45,7 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYERSTATE");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Save", "Restore", "Delete", "Rename", "List"};
+        opts.keywords = {"Save", "Restore", "Delete", "Rename", "List", "Export", "Import"};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer state option", opts);
             if (!k.ok())
@@ -132,6 +134,40 @@ private:
                                      : "."));
         } else if (option == "Delete") {
             report(ctx, deleteLayerState(doc, ctx.tx(), name));
+        } else if (option == "Export" || option == "Import") {
+            std::string file;
+            co_await askText(ctx, "Layer state file <" + name + ".las>", file, ok);
+            if (!ok)
+                co_return;
+            if (file.empty())
+                file = name + ".las";
+            const std::filesystem::path path{std::u8string(file.begin(), file.end())};
+            if (option == "Export") {
+                auto text = exportLayerStateText(doc, name);
+                if (!text) {
+                    ctx.message(text.error().message);
+                    co_return;
+                }
+                std::ofstream out(path, std::ios::binary);
+                if (!out) {
+                    ctx.message("Cannot write " + file);
+                    co_return;
+                }
+                out << text.value();
+                ctx.message("Wrote layer state \"" + name + "\" to " + file);
+            } else {
+                std::ifstream in(path, std::ios::binary);
+                if (!in) {
+                    ctx.message("Cannot read " + file);
+                    co_return;
+                }
+                std::ostringstream ss;
+                ss << in.rdbuf();
+                auto r = importLayerStateText(doc, ctx.tx(), name, ss.str());
+                report(ctx, r);
+                if (r.ok())
+                    ctx.message("Imported layer state \"" + name + "\" from " + file);
+            }
         } else if (option == "Rename") {
             std::string to;
             co_await askText(ctx, "New name", to, ok);
