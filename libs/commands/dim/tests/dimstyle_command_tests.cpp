@@ -141,6 +141,12 @@ TEST_CASE("every DIMSTYLE property accepts a valid value") {
     CHECK(s.baselineSpacing == 0);
     CHECK(ok("CenterMark", "-3").empty());
     CHECK(s.centerMark == doctest::Approx(-3));
+    CHECK(ok("TextFill", "Color").empty());
+    CHECK(s.textFill == 2);
+    CHECK(ok("TextFillColor", "251").empty());
+    CHECK(s.textFillColor == 251);
+    CHECK(ok("TextFrame", "Yes").empty());
+    CHECK(s.textFrame);
     for (const std::string& k : dimcmd::propertyKeywords())
         if (k != "Prefix" && k != "Suffix" && k != "AltPrefix" && k != "AltSuffix")  // free text
             CHECK(!ok(k.c_str(), "@@@").empty());

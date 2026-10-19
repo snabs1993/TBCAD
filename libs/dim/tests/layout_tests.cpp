@@ -402,3 +402,23 @@ TEST_CASE("DIMCEN draws a centre mark on radius and diameter dimensions") {
             atMiddle = true;
     CHECK(atMiddle);
 }
+
+TEST_CASE("a text frame (DIMGAP below zero) draws a closed box round the dimension text") {
+    auto build = [&](bool frame) {
+        Document doc;
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) { s.textFrame = frame; }));
+        tx.commit();
+        return layoutDimension(doc, linear({0, 0}, {40, 0}, {0, 10}));
+    };
+    const Layout plain = build(false), framed = build(true);
+    REQUIRE(framed.lines.size() == plain.lines.size() + 1);
+    const auto& box = framed.lines.back();
+    REQUIRE(box.pts.size() == 5);
+    CHECK(box.pts.front().x == doctest::Approx(box.pts.back().x));
+    CHECK(box.pts.front().y == doctest::Approx(box.pts.back().y));
+    // The box is wider than the text and centred on it.
+    const double w = std::abs(box.pts[1].x - box.pts[0].x);
+    CHECK(w > framed.text.width);
+    CHECK((box.pts[0].x + box.pts[2].x) / 2 == doctest::Approx(framed.text.center.x));
+}

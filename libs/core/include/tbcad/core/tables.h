@@ -172,6 +172,12 @@ struct DimStyle {
     // draws centre lines).
     double baselineSpacing = 0;
     double centerMark = 0;
+    // DIMTFILL (0 none, 1 the drawing background, 2 the colour `textFillColor`, palette index)
+    // and a frame round the text (DIMGAP below zero in a DXF).
+    int textFill = 0;
+    int textFillColor = 0;
+    bool textFrame = false;
+    bool hasTextBox() const { return textFill != 0 || textFrame; }
     bool hasNumberFormat() const {
         return angleFormat != DimAngleFormat::Degrees || angularPrecision != -1 || commaDecimal ||
                baselineSpacing != 0 || centerMark != 0;

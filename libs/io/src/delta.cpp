@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 9;
+constexpr std::uint8_t kDeltaVersion = 10;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -125,6 +125,10 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     // (version 9) baseline spacing, centre mark
     w.f64(r.baselineSpacing);
     w.f64(r.centerMark);
+    // (version 10) text fill and frame
+    w.u8(static_cast<std::uint8_t>(r.textFill));
+    w.u8(static_cast<std::uint8_t>(r.textFillColor));
+    w.u8(r.textFrame ? 1 : 0);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -325,6 +329,11 @@ struct Reader {
             if (!std::isfinite(d.baselineSpacing) || d.baselineSpacing < 0 ||
                 !std::isfinite(d.centerMark))
                 bad("invalid dimension style spacing");
+        }
+        if (version >= 10) {
+            d.textFill = std::min<int>(r.u8(), 2);
+            d.textFillColor = r.u8();
+            d.textFrame = r.u8() != 0;
         }
     }
     void row(BlockDef& b) {

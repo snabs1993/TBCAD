@@ -91,3 +91,28 @@ TEST_CASE("bounds cover the dimension line, extension lines and text") {
     CHECK(b.max.x >= 100.0);
     CHECK(b.max.y >= 11.25);
 }
+
+TEST_CASE("DIMTFILL puts a box in the background or chosen colour behind the dimension text") {
+    registerDisplay();
+    Document doc;
+    EntityId id = add(doc, entityOf(Indirect<DimensionData>(linear({0, 0}, {100, 0}, {50, 10}))));
+    for (int mode : {1, 2}) {
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) {
+            s.textFill = mode;
+            s.textFillColor = 251;
+        }));
+        tx.commit();
+        DisplayList out;
+        geom::buildDisplay(doc, *doc.find(id), geom::DisplayContext{}, out);
+        const DisplayFill* box = nullptr;
+        for (const auto& it : out.items)
+            if (const auto* f = std::get_if<DisplayFill>(&it);
+                f && f->rings.size() == 1 && f->rings[0].size() == 4 &&
+                f->style.color == (mode == 2 ? paletteColor(251) : kBackgroundColor))
+                box = f;
+        REQUIRE(box);
+        // The box lies round the text: it comes before the glyphs in the list.
+        CHECK(box->rings[0][0].x < box->rings[0][2].x);
+    }
+}
