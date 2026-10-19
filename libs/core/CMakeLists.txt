@@ -8,6 +8,9 @@ tbcad_add_library(core
     src/groups.cpp
     src/math.cpp
     src/units.cpp)
+if(TBCAD_HARDEN_EDITS)
+  target_compile_definitions(tbcad_core PRIVATE TBCAD_HARDEN_EDITS)
+endif()
 tbcad_add_tests(core
   SOURCES
     tests/main.cpp
