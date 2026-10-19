@@ -37,6 +37,51 @@ TEST_CASE("explode a linear dimension into lines, solid arrowheads and text") {
     CHECK(texts == 1);
 }
 
+TEST_CASE("explode keeps the text fill box and frame: a wipeout behind the text, then the frame") {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) {
+        s.textFill = 1;
+        s.textFrame = true;
+    }));
+    tx.commit();
+    EntityId id = add(doc, entityOf(Indirect<DimensionData>(linear({0, 0}, {100, 0}, {50, 10}))));
+    auto r = explodeDimension(doc, *doc.find(id));
+    REQUIRE(r.ok());
+    int wipeouts = 0, frames = 0;
+    std::size_t wipeAt = 0, frameAt = 0, textAt = 0;
+    for (std::size_t i = 0; i < r.value().size(); ++i) {
+        const Entity& x = r.value()[i];
+        if (x.common.wipeout) {
+            ++wipeouts;
+            wipeAt = i;
+        } else if (kind(x) == EntityKind::Polyline) {
+            ++frames;
+            frameAt = i;
+        } else if (kind(x) == EntityKind::Text) {
+            textAt = i;
+        }
+    }
+    CHECK(wipeouts == 1);
+    CHECK(frames == 1);
+    CHECK(wipeAt < frameAt);
+    CHECK(wipeAt < textAt);
+
+    Transaction tx2 = doc.begin("colour");
+    REQUIRE(tx2.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) {
+        s.textFill = 2;
+        s.textFillColor = 3;
+    }));
+    tx2.commit();
+    auto r2 = explodeDimension(doc, *doc.find(id));
+    REQUIRE(r2.ok());
+    int fills = 0;
+    for (const Entity& x : r2.value())
+        if (kind(x) == EntityKind::Hatch && x.common.color == Color::index(3))
+            ++fills;
+    CHECK(fills == 1);
+}
+
 TEST_CASE("explode an angular dimension keeps its arc as an arc - a leader gives MText") {
     Document doc;
     EntityId a = add(
