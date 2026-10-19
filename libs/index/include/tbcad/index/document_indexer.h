@@ -26,10 +26,16 @@ public:
     // `batch`, when set, is called before a run of many bounds calls (loading, a big change) and
     // the object it returns is kept until the run ends: a hook for caches that help a run.
     using BatchFn = std::function<std::shared_ptr<void>()>;
-    DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds, BatchFn batch = {});
+    DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds, BatchFn batch = {},
+                    BatchFn workerScope = {}, std::size_t maxThreads = 0);
     ~DocumentIndexer() override;
     DocumentIndexer(const DocumentIndexer&) = delete;
     DocumentIndexer& operator=(const DocumentIndexer&) = delete;
+
+    // With `workerScope` set a big load measures on several threads. `workerScope` is called once
+    // on each thread before it measures and the object it returns is kept until the thread is done
+    // (per-thread caches, like the one `batch` gives the loading thread). The bounds callback must
+    // then be safe to call from several threads at once.
 
     void onChanged(const ChangeSet& changes) override;
 
@@ -45,6 +51,8 @@ private:
     SpatialIndex& index_;
     BoundsFn bounds_;
     BatchFn batch_;
+    BatchFn workerScope_;
+    std::size_t maxThreads_ = 0;  // 0 = the machine's
 };
 
 }  // namespace tbcad::index

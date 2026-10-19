@@ -1,5 +1,8 @@
 #include "tbcad/index/document_indexer.h"
 
+#include <algorithm>
+#include <future>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -14,8 +17,14 @@ bool usable(const BBox2& b) {
 
 }  // namespace
 
-DocumentIndexer::DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds, BatchFn batch)
-    : doc_(doc), index_(index), bounds_(std::move(bounds)), batch_(std::move(batch)) {
+DocumentIndexer::DocumentIndexer(Document& doc, SpatialIndex& index, BoundsFn bounds, BatchFn batch,
+                                 BatchFn workerScope, std::size_t maxThreads)
+    : doc_(doc),
+      index_(index),
+      bounds_(std::move(bounds)),
+      batch_(std::move(batch)),
+      workerScope_(std::move(workerScope)),
+      maxThreads_(maxThreads) {
     rebuild();
     doc_.addObserver(this);
 }
@@ -36,19 +45,49 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     if (changes)
         for (const EntityChange& c : changes->entities)
             touched.insert(changes->idOf(c));
-    std::vector<IdBox> items;
-    items.reserve(doc_.modelSpaceCount());
+    std::vector<const Entity*> todo;
+    todo.reserve(doc_.modelSpaceCount());
     doc_.forEachEntity([&](const Entity& e) {
-        if (doc_.ownerBlock(e.common.id))
-            return;
-        BBox2 b;
-        if (changes && !touched.count(e.common.id) && index_.contains(e.common.id))
-            b = index_.boxOf(e.common.id);
-        else
-            b = bounds_(e);
-        if (usable(b))
-            items.emplace_back(e.common.id, b);
+        if (!doc_.ownerBlock(e.common.id))
+            todo.push_back(&e);
     });
+    std::vector<BBox2> boxes(todo.size());
+    auto measure = [&](std::size_t a, std::size_t b) {
+        for (std::size_t i = a; i < b; ++i) {
+            const Entity& e = *todo[i];
+            if (changes && !touched.count(e.common.id) && index_.contains(e.common.id))
+                boxes[i] = index_.boxOf(e.common.id);
+            else
+                boxes[i] = bounds_(e);
+        }
+    };
+    constexpr std::size_t kMinPerLane = 8192;
+    const std::size_t hw = maxThreads_ ? maxThreads_ : std::thread::hardware_concurrency();
+    const std::size_t lanes =
+        std::clamp<std::size_t>(std::min(hw, todo.size() / kMinPerLane), 1, 16);
+    if (lanes < 2 || !workerScope_) {
+        measure(0, todo.size());
+    } else {
+        // The lookups that fill a cache on first use are done before the threads start.
+        for (const auto& [id, layer] : doc_.layers())
+            (void)doc_.effective(id);
+        auto lane = [&](std::size_t a, std::size_t b) {
+            std::shared_ptr<void> scope = workerScope_();
+            measure(a, b);
+        };
+        std::vector<std::future<void>> jobs;
+        for (std::size_t k = 1; k < lanes; ++k)
+            jobs.push_back(std::async(std::launch::async, lane, todo.size() * k / lanes,
+                                      todo.size() * (k + 1) / lanes));
+        lane(0, todo.size() / lanes);
+        for (auto& j : jobs)
+            j.get();
+    }
+    std::vector<IdBox> items;
+    items.reserve(todo.size());
+    for (std::size_t i = 0; i < todo.size(); ++i)
+        if (usable(boxes[i]))
+            items.emplace_back(todo[i]->common.id, boxes[i]);
     index_.bulkLoad(items);
 }
 

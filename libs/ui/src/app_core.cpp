@@ -27,6 +27,7 @@
 #include "tbcad/platform/file_lock.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/text/text.h"
 #include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/settings_model.h"
@@ -265,7 +266,15 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     Document& d = s->doc;
     s->indexer = std::make_unique<index::DocumentIndexer>(
         d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); },
-        [] { return std::make_shared<blocks::BoundsMemoScope>(); });
+        [] { return std::make_shared<blocks::BoundsMemoScope>(); },
+        [] {
+            // Boxes are measured on several threads: each has its own block memo and fonts.
+            struct Scope {
+                blocks::BoundsMemoScope memo;
+                text::FontScope fonts;
+            };
+            return std::make_shared<Scope>();
+        });
     s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
     s->sync = std::make_unique<SceneSync>(d, scene_);
     s->observer = std::make_unique<AppObserver>(d, *this);
