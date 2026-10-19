@@ -230,49 +230,130 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
                     cutPair(i, j);
     }
 
+    const double absd = std::abs(d);
+    // Distance from `p` to the source, looking only at the segments that can be closer than |d|.
+    std::vector<BBox2> segBoxes;
+    std::optional<BoxGrid> segGrid;
+    if (useGrid) {
+        for (const Seg& s0 : segs)
+            segBoxes.push_back(segCurve(s0).bounds());
+        segGrid.emplace(segBoxes);
+    }
+    const auto nearSource = [&](Vec2 mid) {
+        if (!segGrid)
+            return distanceToSegs(segs, mid);
+        double best = std::numeric_limits<double>::infinity();
+        segGrid->query(BBox2{mid, mid}.inflated(absd + 1e-6), [&](std::size_t k) {
+            best = std::min(best, distance(segPoint(segs[k], segParam(segs[k], mid)), mid));
+        });
+        return best;
+    };
+    // A raw line that stays |d| away from every nearby source segment cannot enter the zone: it
+    // needs neither zone cuts nor a distance test per piece (most of a smooth contour).
+    std::vector<char> clear(cn, 0);
+    if (useGrid && !segs.empty() && std::none_of(segs.begin(), segs.end(), [](const Seg& q) { return q.isArc(); })) {
+        const double need = std::abs(d) - 1e-6 * std::max(1.0, std::abs(d));
+        const auto lineGap = [](Vec2 a0, Vec2 a1, Vec2 b0, Vec2 b1) {
+            const auto toSeg = [](Vec2 p, Vec2 q0, Vec2 q1) {
+                const Vec2 e = q1 - q0;
+                const double l2 = dot(e, e);
+                const double t = l2 > 0 ? std::clamp(dot(p - q0, e) / l2, 0.0, 1.0) : 0.0;
+                return distance(q0 + e * t, p);
+            };
+            const double o1 = cross(a1 - a0, b0 - a0), o2 = cross(a1 - a0, b1 - a0);
+            const double o3 = cross(b1 - b0, a0 - b0), o4 = cross(b1 - b0, a1 - b0);
+            if (((o1 > 0) != (o2 > 0) || o1 == 0 || o2 == 0) && ((o3 > 0) != (o4 > 0) || o3 == 0 || o4 == 0))
+                return 0.0;
+            return std::min({toSeg(a0, b0, b1), toSeg(a1, b0, b1), toSeg(b0, a0, a1), toSeg(b1, a0, a1)});
+        };
+        for (std::size_t i = 0; i < cn; ++i) {
+            if (chain[i].isArc())
+                continue;
+            bool ok = true;
+            segGrid->query(boxes[i].inflated(absd), [&](std::size_t k) {
+                if (ok && lineGap(chain[i].p0, chain[i].p1, segs[k].p0, segs[k].p1) < need)
+                    ok = false;
+            });
+            clear[i] = ok;
+        }
+    }
+
     // 4b. A raw segment can also run into the offset distance of the opposite side of the source
     // (a thin feature, the tip of a spike) without crossing any other raw segment. The edge of the
     // zone closer than |d| to the source is made of the offsets of both sides and of circles
     // around the vertices; where a raw segment meets those it may enter or leave the zone. These
     // extra cuts are only kept where they separate a surviving piece from a discarded one.
-    const double absd = std::abs(d);
-    std::vector<Seg> zoneEdge;
-    for (const Seg& s0 : segs) {
+    const auto zoneEdgesOf = [&](const Seg& s0, std::vector<Seg>& out) {
         bool ok = false;
         const Seg o = offsetSeg(s0, -d, ok);
         if (ok)
-            zoneEdge.push_back(o);
+            out.push_back(o);
         for (const Vec2 v : {s0.p0, s0.p1}) {
-            zoneEdge.push_back(Seg{v + Vec2{absd, 0}, v - Vec2{absd, 0}, 1.0});
-            zoneEdge.push_back(Seg{v - Vec2{absd, 0}, v + Vec2{absd, 0}, 1.0});
+            out.push_back(Seg{v + Vec2{absd, 0}, v - Vec2{absd, 0}, 1.0});
+            out.push_back(Seg{v - Vec2{absd, 0}, v + Vec2{absd, 0}, 1.0});
         }
-    }
+    };
     std::vector<std::vector<double>> extras(cn);
-    if (useGrid || cn * zoneEdge.size() <= 4000000) {
-        std::vector<CurveRef> zc;
-        std::vector<BBox2> zb;
-        for (const Seg& z : zoneEdge) {
-            zc.push_back(segCurve(z));
-            zb.push_back(zc.back().bounds().inflated(1e-7));
-        }
-        const auto cutZone = [&](std::size_t i, std::size_t j) {
-            std::vector<geom::Intersection> xs;
-            geom::intersect(curves[i], zc[j], xs);
-            for (const auto& x : xs) {
-                const double ui = segParam(chain[i], x.p);
-                if (ui > 1e-9 && ui < 1.0 - 1e-9)
-                    extras[i].push_back(ui);
-            }
+    std::vector<geom::Intersection> xs;  // reused by the passes below
+    if (useGrid) {
+        // Only the raw segments that may enter the zone look at the zone edges, and only at those of
+        // the source segments close enough to matter (built on demand).
+        struct ZoneOf {
+            std::vector<Seg> edges;
+            std::vector<CurveRef> curves;
+            std::vector<BBox2> boxes;
+            bool built = false;
         };
-        if (useGrid) {
-            const BoxGrid grid(zb);
+        std::vector<ZoneOf> zones(n);
+        for (std::size_t i = 0; i < cn; ++i) {
+            if (clear[i])
+                continue;
+            segGrid->query(boxes[i].inflated(absd + 1e-6), [&](std::size_t k) {
+                ZoneOf& z = zones[k];
+                if (!z.built) {
+                    z.built = true;
+                    zoneEdgesOf(segs[k], z.edges);
+                    for (const Seg& e : z.edges) {  // `edges` no longer grows: the curves stay valid
+                        z.curves.push_back(segCurve(e));
+                        z.boxes.push_back(z.curves.back().bounds().inflated(1e-7));
+                    }
+                }
+                for (std::size_t m = 0; m < z.edges.size(); ++m) {
+                    if (!boxes[i].intersects(z.boxes[m]))
+                        continue;
+                    xs.clear();
+                    geom::intersect(curves[i], z.curves[m], xs);
+                    for (const auto& x : xs) {
+                        const double ui = segParam(chain[i], x.p);
+                        if (ui > 1e-9 && ui < 1.0 - 1e-9)
+                            extras[i].push_back(ui);
+                    }
+                }
+            });
+        }
+    } else {
+        std::vector<Seg> zoneEdge;
+        for (const Seg& s0 : segs)
+            zoneEdgesOf(s0, zoneEdge);
+        if (cn * zoneEdge.size() <= 4000000) {
+            std::vector<CurveRef> zc;
+            std::vector<BBox2> zb;
+            for (const Seg& z : zoneEdge) {
+                zc.push_back(segCurve(z));
+                zb.push_back(zc.back().bounds().inflated(1e-7));
+            }
             for (std::size_t i = 0; i < cn; ++i)
-                grid.query(boxes[i], [&](std::size_t j) { cutZone(i, j); });
-        } else {
-            for (std::size_t i = 0; i < cn; ++i)
-                for (std::size_t j = 0; j < zc.size(); ++j)
-                    if (boxes[i].intersects(zb[j]))
-                        cutZone(i, j);
+                for (std::size_t j = 0; j < zc.size(); ++j) {
+                    if (!boxes[i].intersects(zb[j]))
+                        continue;
+                    xs.clear();
+                    geom::intersect(curves[i], zc[j], xs);
+                    for (const auto& x : xs) {
+                        const double ui = segParam(chain[i], x.p);
+                        if (ui > 1e-9 && ui < 1.0 - 1e-9)
+                            extras[i].push_back(ui);
+                    }
+                }
         }
     }
 
@@ -298,23 +379,6 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
             valid.push_back(piece);
         }
     };
-    // Distance from `p` to the source, looking only at the segments that can be closer than |d|.
-    std::vector<BBox2> segBoxes;
-    std::optional<BoxGrid> segGrid;
-    if (useGrid) {
-        for (const Seg& s0 : segs)
-            segBoxes.push_back(segCurve(s0).bounds());
-        segGrid.emplace(segBoxes);
-    }
-    const auto nearSource = [&](Vec2 mid) {
-        if (!segGrid)
-            return distanceToSegs(segs, mid);
-        double best = std::numeric_limits<double>::infinity();
-        segGrid->query(BBox2{mid, mid}.inflated(absd + 1e-6), [&](std::size_t k) {
-            best = std::min(best, distance(segPoint(segs[k], segParam(segs[k], mid)), mid));
-        });
-        return best;
-    };
     for (std::size_t i = 0; i < cn; ++i) {
         // Every cut with a flag: true for the extra ones.
         std::vector<std::pair<double, bool>> all;
@@ -338,7 +402,7 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
             if (segLength(piece) <= tol::kLinear)
                 continue;
             const Vec2 mid = segPoint(chain[i], 0.5 * (bounds[b].first + bounds[b + 1].first));
-            good[b] = nearSource(mid) >= absd - validTol;  // else inside the distance
+            good[b] = clear[i] || nearSource(mid) >= absd - validTol;  // else inside the distance
         }
         for (std::size_t b = 0; b < count;) {
             if (!good[b]) {

@@ -515,6 +515,8 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
     };
     (void)y;
     for (const Case& c : cases) {
+        if (const char* only = std::getenv("TBCAD_BENCH_ONLY"); only && std::string(only) != c.label)
+            continue;
         const Timing t = s.bench(c.lines, false);
         std::printf("%-20s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
                     s.core->history().empty() ? "" : s.core->history().back().c_str());
