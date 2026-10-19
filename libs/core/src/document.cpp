@@ -670,7 +670,10 @@ bool isBuiltin(DimStyleId id) {
 namespace detail {
 // Which table rows the objects (blocks' included) refer to; see Transaction::cacheObjectReferences.
 struct ObjectRefs {
-    std::unordered_set<std::uint32_t> layers, levels, linetypes, textStyles, dimStyles, blocks;
+    std::unordered_set<std::uint32_t> layers, levels, linetypes, textStyles, dimStyles;
+    // Inserts per block, as a count, so erasing an unused block frees the blocks it inserted in
+    // the same pass (a chain of 300 nested unused blocks goes in one scan, not 300).
+    std::unordered_map<std::uint32_t, std::uint32_t> blockUses;
 };
 }  // namespace detail
 
@@ -693,7 +696,7 @@ std::unique_ptr<detail::ObjectRefs> scanObjectRefs(const Document& d) {
         else if (const auto* t = entityAs<MLeaderData>(e))
             r->dimStyles.insert(t->style.value);
         else if (const auto* t = entityAs<InsertData>(e))
-            r->blocks.insert(t->block.value);
+            ++r->blockUses[t->block.value];
     });
     return r;
 }
@@ -769,7 +772,7 @@ bool inUse(const Document& d, DimStyleId id, const detail::ObjectRefs* refs = nu
 }
 bool inUse(const Document& d, BlockId id, const detail::ObjectRefs* refs = nullptr) {
     if (refs)
-        return refs->blocks.count(id.value) != 0;
+        return refs->blockUses.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) {
         if (const auto* t = entityAs<InsertData>(e))
@@ -1811,8 +1814,21 @@ Result<void> Transaction::eraseBlock(BlockId id) {
     const BlockDef* def = d.block(id);
     if (!def)
         return makeError(ErrorCode::NotFound, "unknown block");
-    if (inUse(d, id, objectRefs()))
+    const detail::ObjectRefs* refs = objectRefs();
+    if (inUse(d, id, refs))
         return makeError(ErrorCode::Conflict, "block is referenced by an insert");
+    if (refs_) {
+        // The inserts inside this block go with it: what they used is free again.
+        for (EntityId eid : def->entities) {
+            const Entity* e = d.find(eid);
+            const auto* in = e ? entityAs<InsertData>(*e) : nullptr;
+            if (!in)
+                continue;
+            if (auto it = refs_->blockUses.find(in->block.value);
+                it != refs_->blockUses.end() && --it->second == 0)
+                refs_->blockUses.erase(it);
+        }
+    }
     (void)eraseAllIn(id);
     touchBlock(id);
     replaceRow<BlockDef, BlockId>(d.blocks_, id, std::nullopt);

@@ -3,7 +3,8 @@
 // objects. Each is timed with the whole drawing selected; one that takes more than 3 s in an
 // optimised build loops badly (the FILTER intersection once took 69 s, QSELECT Append 25 s). The
 // slowest honest ones, CHANGE and LAYCHANGE, touch every object and take about a second. Sizes:
-// TBCAD_BENCH_N (pairs).
+// TBCAD_BENCH_N pairs; 170000 is the 392k drawing, the default 40000 keeps the debug and
+// sanitizer CI runs short.
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -50,7 +51,7 @@ struct Site {
             std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
         core->setViewportSize(1400, 900);
         const char* env = std::getenv("TBCAD_BENCH_N");
-        n = pairs > 0 ? pairs : env ? std::atoi(env) : 170000;
+        n = pairs > 0 ? pairs : env ? std::atoi(env) : 40000;
         auto tx = core->document().begin("gen");
         TextStyleId shx{};
         BlockId block{};
