@@ -516,7 +516,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 1)
+            if (flags > 3)
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -529,6 +529,16 @@ private:
             const double upper = r.f64();
             const double lower = r.f64();
             const int tolPrecision = r.i32();
+            double linearFactor = 1;
+            DimFit fit = DimFit::Best;
+            DimTextMove textMove = DimTextMove::WithLine;
+            if (flags & 2) {
+                linearFactor = r.f64();
+                fit = readEnum<DimFit>(r, static_cast<std::uint8_t>(DimFit::BothOutside));
+                textMove = readEnum<DimTextMove>(r, static_cast<std::uint8_t>(DimTextMove::Free));
+                if (!std::isfinite(linearFactor) || !(linearFactor > 0))
+                    bad("invalid dimension style linear factor");
+            }
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
                 bad("invalid dimension style tolerance");
@@ -536,7 +546,10 @@ private:
                 continue;
             check(tx.modifyDimStyle(id,
                                     [&](DimStyle& d) {
-                                        d.altUnits = flags != 0;
+                                        d.altUnits = (flags & 1) != 0;
+                                        d.linearFactor = linearFactor;
+                                        d.fit = fit;
+                                        d.textMove = textMove;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

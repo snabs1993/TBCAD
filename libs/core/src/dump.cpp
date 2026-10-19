@@ -479,6 +479,9 @@ std::string canonicalDump(const Document& doc) {
             r.tolPrecision != 2)
             o << " tol" << static_cast<int>(r.tolerance) << "/" << r.tolUpper << "/" << r.tolLower
               << "/" << r.tolPrecision;
+        if (r.linearFactor != 1 || r.fit != DimFit::Best || r.textMove != DimTextMove::WithLine)
+            o << " fit" << r.linearFactor << "/" << static_cast<int>(r.fit) << "/"
+              << static_cast<int>(r.textMove);
         o << "\n";
     }
     for (const auto& [id, r] : doc.blocks()) {

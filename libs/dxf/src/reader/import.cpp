@@ -1194,6 +1194,21 @@ void Importer::readDimStyle(const Record& r) {
     if (r.has(77))
         ds.textPlacement =
             r.find(77)->integer() != 0 ? DimTextPlacement::AboveLine : DimTextPlacement::Centered;
+    if (const Group* g = r.find(144); g && std::isfinite(g->number()) && g->number() > 0)
+        ds.linearFactor = g->number();   // DIMLFAC
+    if (const Group* g = r.find(279)) {  // DIMTMOVE
+        const std::int64_t t = g->integer();
+        ds.textMove = t == 1   ? DimTextMove::Leader
+                      : t == 2 ? DimTextMove::Free
+                               : DimTextMove::WithLine;
+    }
+    if (const Group* g = r.find(289)) {  // DIMATFIT
+        const std::int64_t t = g->integer();
+        ds.fit = t == 0   ? DimFit::BothOutside
+                 : t == 1 ? DimFit::ArrowsFirst
+                 : t == 2 ? DimFit::TextFirst
+                          : DimFit::Best;
+    }
     if (const Group* g = r.find(78)) {  // DIMZIN
         const std::int64_t z = g->integer();
         ds.suppressLeadingZeros = (z & 4) != 0;

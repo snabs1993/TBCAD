@@ -176,7 +176,7 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         double tc = dot(center - A, uu);
         textIn = tc > 0 && tc < len;
         lineEnd = (arrowsIn ? len : len + stub) + c.dext;
-        if (!textIn && tw > 0) {
+        if (!textIn && tw > 0 && c.st.textMove != DimTextMove::Free) {
             Vec2 E = tc <= 0 ? A - uu * (arrowsIn ? 0 : stub) : B + uu * (arrowsIn ? 0 : stub);
             Vec2 v = center - E;
             double dl = length(v);
@@ -188,9 +188,25 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
             }
         }
     } else {
+        // DIMATFIT decides what leaves first when text and arrows do not fit together.
+        const DimFit fit = c.st.fit;
         if (len >= textW + 2 * c.arrow) {
             arrowsIn = true;
             textIn = true;
+        } else if (fit == DimFit::BothOutside) {
+            arrowsIn = false;
+            textIn = false;
+        } else if (fit == DimFit::TextFirst) {
+            if (len >= 2 * c.arrow) {
+                arrowsIn = true;
+                textIn = false;
+            } else if (tw > 0 && len >= textW) {
+                arrowsIn = false;
+                textIn = true;
+            } else {
+                arrowsIn = false;
+                textIn = false;
+            }
         } else if (tw > 0 && len >= textW) {
             arrowsIn = false;
             textIn = true;
@@ -285,7 +301,7 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
     } else {
         addSeg(L, A, B, Role::DimLine, c.tol);
     }
-    if (!inside && tw > 0) {
+    if (!inside && tw > 0 && c.st.textMove != DimTextMove::Free) {
         Vec2 v = center - B;
         double dl = length(v);
         if (dl > tol::kLinear) {

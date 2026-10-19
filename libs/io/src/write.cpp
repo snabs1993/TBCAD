@@ -219,10 +219,14 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             if (!r.altUnits && r.altScale == 1 && r.altUnit == LengthUnit::Inch &&
                 r.altPrecision == 2 && r.altPrefix.empty() && r.altSuffix.empty() &&
                 r.tolerance == DimTolerance::None && r.tolUpper == 0 && r.tolLower == 0 &&
-                r.tolPrecision == 2)
+                r.tolPrecision == 2 && r.linearFactor == 1 && r.fit == DimFit::Best &&
+                r.textMove == DimTextMove::WithLine)
                 continue;
+            const bool extras =
+                r.linearFactor != 1 || r.fit != DimFit::Best || r.textMove != DimTextMove::WithLine;
             dstx.varint(id.value);
-            dstx.u8(r.altUnits ? 1 : 0);
+            // bit 0: alternate units on; bit 1: linear factor, fit and text movement follow
+            dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0));
             dstx.f64(r.altScale);
             dstx.u8(static_cast<std::uint8_t>(r.altUnit));
             dstx.i32(r.altPrecision);
@@ -232,6 +236,11 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             dstx.f64(r.tolUpper);
             dstx.f64(r.tolLower);
             dstx.i32(r.tolPrecision);
+            if (extras) {
+                dstx.f64(r.linearFactor);
+                dstx.u8(static_cast<std::uint8_t>(r.fit));
+                dstx.u8(static_cast<std::uint8_t>(r.textMove));
+            }
             ++dstxCount;
         }
 
