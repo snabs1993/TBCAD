@@ -180,6 +180,7 @@ private:
     std::string tablesSection();
     std::string objectsSection();
     void writeLayers(Out& o, std::uint64_t table);
+    std::uint64_t layerTable_ = 0, layerTableDict_ = 0;  // LAYER table and its dictionary
     void writeLinetypes(Out& o, std::uint64_t table);
     void writeStyles(Out& o, std::uint64_t table);
     void writeMark(Out& o, const LinetypeMark& m);

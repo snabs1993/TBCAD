@@ -218,11 +218,12 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
         cmd::KeywordOptions ko;
-        ko.keywords = {"List",      "New",  "Delete", "Offsets",     "Caps",   "Colors",
-                       "Linetypes", "Fill", "Joints", "Description", "Current"};
+        ko.keywords = {"List",      "New",  "Delete", "Offsets",     "Caps",    "Colors",
+                       "Linetypes", "Fill", "Joints", "Description", "Current", "Arcs"};
         ko.defaultKeyword = "List";
         auto k = co_await ctx.getKeyword(
-            "Style option [List/New/Delete/Offsets/Caps/Colors/Linetypes/Fill/Joints/Description/"
+            "Style option "
+            "[List/New/Delete/Offsets/Caps/Arcs/Colors/Linetypes/Fill/Joints/Description/"
             "Current]",
             ko);
         if (!k.ok())
@@ -240,6 +241,10 @@ public:
                     line += ", start cap";
                 if (s && s->endCap)
                     line += ", end cap";
+                if (s && s->startArc)
+                    line += s->startArc == 1 ? ", outer arc at start" : ", inner arcs at start";
+                if (s && s->endArc)
+                    line += s->endArc == 1 ? ", outer arc at end" : ", inner arcs at end";
                 if (s && s->joints)
                     line += ", joints";
                 if (s && s->fill >= 0)
@@ -345,7 +350,19 @@ public:
             style.startCap = c.keyword == "Start" || c.keyword == "Both";
             style.endCap = c.keyword == "End" || c.keyword == "Both";
         }
-        if (k.keyword == "Colors") {
+        if (k.keyword == "Arcs") {
+            cmd::KeywordOptions ao;
+            ao.keywords = {"None", "Outer", "Inner"};
+            ao.defaultKeyword = "None";
+            auto a1 = co_await ctx.getKeyword("Arcs at the start [None/Outer/Inner]", ao);
+            if (!a1.ok())
+                co_return;
+            auto a2 = co_await ctx.getKeyword("Arcs at the end [None/Outer/Inner]", ao);
+            if (!a2.ok())
+                co_return;
+            style.startArc = a1.keyword == "Outer" ? 1 : a1.keyword == "Inner" ? 2 : 0;
+            style.endArc = a2.keyword == "Outer" ? 1 : a2.keyword == "Inner" ? 2 : 0;
+        } else if (k.keyword == "Colors") {
             std::string def;
             for (std::size_t i = 0; i < style.offsets.size(); ++i)
                 def += (def.empty() ? "" : " ") + std::to_string(style.colorOf(i));

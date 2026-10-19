@@ -233,7 +233,8 @@ private:
     };
     std::unordered_map<std::string, ObjRec> objStore_{};
     std::size_t objStoreBytes_ = 0;
-    std::string objRoot_{};  // handle of the root dictionary
+    std::string layerTableDict_{};  // extension dictionary of the LAYER table (layer filters)
+    std::string objRoot_{};         // handle of the root dictionary
     // (entity id, handle in the source file) of the entities added so far
     std::vector<std::pair<std::uint64_t, std::uint64_t>> srcHandles_{};
     // Named plot styles: name of each plot style object by handle, and the entities (source
