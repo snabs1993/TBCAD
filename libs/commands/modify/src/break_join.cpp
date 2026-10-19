@@ -123,6 +123,40 @@ public:
                 entities.push_back(e);
             }
         }
+        // A single arc or elliptical arc can be closed into a full circle or ellipse (cLose).
+        if (entities.size() == 1) {
+            const Entity& one = *entities[0];
+            const auto* arc = entityAs<ArcData>(one);
+            const auto* el = entityAs<EllipseData>(one);
+            const bool fullEllipse = el && std::abs(el->endParam - el->startParam) >= kTwoPi - 1e-9;
+            if (!arc && (!el || fullEllipse)) {
+                ctx.message("Select at least two objects to join.");
+                co_return;
+            }
+            cmd::KeywordOptions ko;
+            ko.keywords = {"cLose", "eXit"};
+            ko.defaultKeyword = "eXit";
+            auto k = co_await ctx.getKeyword(
+                arc ? "Close the arc into a circle? [cLose/eXit]"
+                    : "Close the elliptical arc into an ellipse? [cLose/eXit]",
+                std::move(ko));
+            if (!k.ok() || k.keyword != "cLose")
+                co_return;
+            Entity closed = one;
+            if (arc) {
+                closed.data = CircleData{arc->center, arc->radius};
+            } else {
+                auto& d = *entityAs<EllipseData>(closed);
+                d.startParam = 0;
+                d.endParam = kTwoPi;
+            }
+            if (auto r = replaceEntity(ctx.tx(), ids[0], closed); !r)
+                ctx.message(r.error().message);
+            else
+                ctx.message(arc ? "Arc converted to a circle."
+                                : "Elliptical arc converted to an ellipse.");
+            co_return;
+        }
         // Like AutoCAD, collinear lines and arcs of one circle join across a gap.
         auto res = modify::joinEntities(entities, getSetting(ctx.host(), "join.tolerance", 1e-3),
                                         /*bridgeGaps=*/true);
