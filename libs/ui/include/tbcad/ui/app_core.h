@@ -530,6 +530,9 @@ private:
     void applyPendingSpace();
     void enterViewport(const std::string& layoutName, const layout::Viewport& vp);
     double pendingZoomXp_ = 0;   // ZOOM nXP: the viewport scale as a fraction of paper space
+    void hideViewportFrozenLayers();
+    std::string vpHiddenKey_{};  // layout:viewport:revision the hidden layers were found for
+    const void* vpHiddenSession_ = nullptr;
     std::string editingLayout_;  // the viewport being edited from model space, if any
     int editingViewport_ = 0;
     // The view when the viewport was entered: zooms and pans made since go back into the

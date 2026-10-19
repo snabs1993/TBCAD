@@ -41,10 +41,10 @@ const layout::Viewport* borderAt(const layout::Layout& lay, Vec2 p, double reach
 }  // namespace
 
 int selectedViewport(const cmd::IHost& host, const Document& doc) {
-    if (host.drawingOwner() == BlockId{})
-        return 0;
+    // In model space: the viewport being edited, if any.
+    const bool model = host.drawingOwner() == BlockId{};
     const std::string name = currentLayout(host, doc);
-    auto sel = host.setting("tmp.layout.viewport");
+    auto sel = host.setting(model ? "tmp.layout.editing" : "tmp.layout.viewport");
     if (name.empty() || !sel || sel->empty())
         return 0;
     const auto colon = sel->find(':');

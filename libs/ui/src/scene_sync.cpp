@@ -444,10 +444,23 @@ void SceneSync::upsertMany(const std::vector<const Entity*>& list) {
     }
 }
 
+void SceneSync::syncLayerVisibility() {
+    render::syncLayerVisibility(scene_, doc_);
+    for (LayerId id : extraHidden_)
+        scene_.setLayerVisible(id, false);
+}
+
+void SceneSync::setExtraHiddenLayers(std::unordered_set<LayerId> layers) {
+    if (layers == extraHidden_)
+        return;
+    extraHidden_ = std::move(layers);
+    syncLayerVisibility();
+}
+
 void SceneSync::syncLayers() {
     // Visibility is a property of the scene's layer, so objects still waiting to be built need no
     // flush: they come out hidden or shown by the layer they are on.
-    render::syncLayerVisibility(scene_, doc_);
+    syncLayerVisibility();
     // Entities whose layer became locked or unlocked change appearance.
     std::unordered_set<LayerId> locked;
     for (const auto& [id, layer] : doc_.layers())
@@ -753,7 +766,7 @@ void SceneSync::rebuildAll(double tileSizeMm) {
         if (doc_.effective(id).locked)
             lockedLayers_.insert(id);
     }
-    render::syncLayerVisibility(scene_, doc_);
+    syncLayerVisibility();
     std::vector<const Entity*> all;
     doc_.forEachEntity([&](const Entity& e) { all.push_back(&e); });
     if (lazyOk(all.size())) {

@@ -370,6 +370,33 @@ public:
     }
 };
 
+// PAGESETUPPANEL: the Page Setup Manager (PAGESETUP is its typed form).
+class PageSetupPanelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PAGESETUPPANEL"; }
+    std::string_view description() const override {
+        return "Show the Page Setup Manager: the drawing's page setups and which sheet uses which";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("pagesetup");
+        co_return;
+    }
+};
+
+// PREVIEW: the current sheet (or the model) as it will plot, in a panel of its own.
+class PreviewCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PREVIEW"; }
+    std::vector<std::string> defaultAliases() const override { return {"PRE"}; }
+    std::string_view description() const override {
+        return "Show how the drawing or the current layout will plot";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("plotpreview");
+        co_return;
+    }
+};
+
 // PLOTSET: plots every sheet of a sheet list (see tbcad/sheets/sheets.h) into one PDF.
 class PlotSetCommand final : public cmd::Command {
 public:
@@ -926,6 +953,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PlotSetCommand>());
     (void)registry.add(std::make_unique<PlotStyleCommand>());
     (void)registry.add(std::make_unique<PageSetupCommand>());
+    (void)registry.add(std::make_unique<PageSetupPanelCommand>());
+    (void)registry.add(std::make_unique<PreviewCommand>());
 }
 
 }  // namespace tbcad::plot

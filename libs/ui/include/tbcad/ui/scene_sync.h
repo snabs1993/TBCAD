@@ -58,6 +58,11 @@ public:
     // Bounds of the rendered geometry, for "zoom extents" on scene content.
     BBox2 bounds() const { return scene_.bounds(); }
 
+    // Layers hidden on top of their own state: those frozen in the layout viewport being edited
+    // from model space. Applied at once and kept through later layer changes.
+    void setExtraHiddenLayers(std::unordered_set<LayerId> layers);
+    const std::unordered_set<LayerId>& extraHiddenLayers() const { return extraHidden_; }
+
     // Block-space lists built since construction (for tests).
     std::size_t blockBuilds() const { return blockCache_.builds(); }
 
@@ -103,7 +108,9 @@ private:
     void buildPending(PendingRec& rec);
     void compactPending();
     void syncLayers();
+    void syncLayerVisibility();  // the document's layer states, then extraHidden_
     void rebuildDrawOrder();
+    std::unordered_set<LayerId> extraHidden_{};
 
     Document& doc_;
     render::Scene& scene_;

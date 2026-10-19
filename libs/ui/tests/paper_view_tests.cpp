@@ -359,3 +359,51 @@ TEST_CASE("ZOOM Extents and ZOOM All frame the sheet while a layout is active") 
         CHECK(core.camera().pixelsPerMm < 5);
     }
 }
+
+TEST_CASE("layers frozen in a viewport are hidden while it is edited from model space") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper6") / "cfg", tempDir("paper6") / "data"});
+    core.setViewportSize(1000, 800);
+    LayerId walls;
+    {
+        auto tx = core.document().begin("layout");
+        Layer l;
+        l.name = "VP test";
+        walls = tx.addLayer(l).value();
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        REQUIRE(layout::setViewportLayerFrozen(tx, "A", 1, walls, true).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.zoomExtents();
+    core.doubleClick({core.camera().worldToScreen({100, 100}), false, false});
+    REQUIRE_FALSE(core.inPaperSpace());
+    core.updateFrame();
+    CHECK_FALSE(core.scene().layerVisible(walls));
+    CHECK(core.setting("layout.current") == std::optional<std::string>("A"));
+    CHECK(core.setting("tmp.layout.editing") == std::optional<std::string>("A:1"));
+
+    // Thawed in the viewport: shown again.
+    {
+        auto tx = core.document().begin("thaw");
+        REQUIRE(layout::setViewportLayerFrozen(tx, "A", 1, walls, false).ok());
+        tx.commit();
+    }
+    core.updateFrame();
+    CHECK(core.scene().layerVisible(walls));
+
+    // Leaving the viewport for the plain model shows every layer.
+    {
+        auto tx = core.document().begin("freeze");
+        REQUIRE(layout::setViewportLayerFrozen(tx, "A", 1, walls, true).ok());
+        tx.commit();
+    }
+    core.updateFrame();
+    CHECK_FALSE(core.scene().layerVisible(walls));
+    REQUIRE(core.setActiveLayout(""));
+    core.updateFrame();
+    CHECK(core.scene().layerVisible(walls));
+    CHECK_FALSE(core.setting("tmp.layout.editing").has_value());
+}

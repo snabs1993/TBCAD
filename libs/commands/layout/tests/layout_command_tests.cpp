@@ -604,3 +604,47 @@ TEST_CASE("VPMOVE and VPRESIZE keep a clipped viewport's scale and view centre, 
     CHECK(vp().paper.min.x == doctest::Approx(before.paper.min.x));
     CHECK(vp().paper.width() == doctest::Approx(before.paper.width()));
 }
+
+TEST_CASE("MVIEW Fit fills the sheet inside the margins and Fit scale shows the whole drawing") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("plan");
+        Entity a;
+        a.data = LineData{{0, 0}, {40000, 10000}};
+        REQUIRE(tx.add(std::move(a)));
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    CHECK(f.host->run("MVIEW", {"Fit", "Fit"}).finished);
+    const auto vp = layout::findLayout(f.doc, "Plan")->viewports.at(0);
+    CHECK(vp.paper.min.x == doctest::Approx(10));
+    CHECK(vp.paper.max.x == doctest::Approx(410));
+    CHECK(vp.paper.max.y == doctest::Approx(287));
+    CHECK(vp.scaleN == doctest::Approx(100));  // 40 m across 400 mm
+    CHECK(vp.center.x == doctest::Approx(20000));
+}
+
+TEST_CASE("MVIEW Polygonal and Object make clipped viewports - ON, OFF and Lock switch them") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    CHECK(f.host->run("MVIEW", {"Polygonal", "10,10", "200,10", "100,150", "Close", "1:50",
+                                "0,0"})
+              .finished);
+    auto vp = [&](int id) { return *layout::findLayout(f.doc, "Plan")->findViewport(id); };
+    CHECK(vp(1).clip.size() == 3);
+    CHECK(vp(1).paper.max.x == doctest::Approx(200));
+    CHECK(vp(1).scaleN == doctest::Approx(50));
+
+    f.host->run("MVIEW", {"OFF", "1"});
+    CHECK_FALSE(vp(1).on);
+    f.host->run("MVIEW", {"ON", "1"});
+    CHECK(vp(1).on);
+    f.host->run("MVIEW", {"Lock", "ON", "1"});
+    CHECK(vp(1).locked);
+    f.host->run("MVIEW", {"Lock", "OFF", "1"});
+    CHECK_FALSE(vp(1).locked);
+
+    f.host->run("MVIEW", {"10,10", "1,1", cmd::ScriptItem::esc()});
+    f.host->run("MVIEW", {"Polygonal", "10,10", "20,20", cmd::ScriptItem::esc()});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports.size() == 1);
+}
