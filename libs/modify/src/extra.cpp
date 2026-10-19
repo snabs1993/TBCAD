@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <numeric>
@@ -370,8 +371,14 @@ bool takesPart(const Entity& e) {
     }
 }
 
+<<<<<<< HEAD
 // The lower-left corner of the box of the entity (its position for entities without curves).
 Vec2 minPoint(const Entity& e) {
+=======
+// The lower-left corner of the box around an entity's geometry (its anchor point for text,
+// inserts and points).
+Vec2 minCorner(const Entity& e) {
+>>>>>>> origin/main
     std::vector<CurveRef> cs;
     if (const auto* p = entityAs<PointData>(e))
         return p->p;
@@ -382,7 +389,11 @@ Vec2 minPoint(const Entity& e) {
     if (const auto* i = entityAs<InsertData>(e))
         return i->position;
     if (const auto* sp = entityAs<SplineData>(e)) {
+<<<<<<< HEAD
         Vec2 m{};
+=======
+        Vec2 m{0, 0};
+>>>>>>> origin/main
         bool any = false;
         for (const auto* pts : {&sp->control, &sp->fit}) {
             for (const Vec2& q : *pts) {
@@ -393,10 +404,20 @@ Vec2 minPoint(const Entity& e) {
         return m;
     }
     if (!geom::curvesOf(e, cs) || cs.empty())
+<<<<<<< HEAD
         return {};
     Vec2 m = cs.front().bounds().min;
     for (const CurveRef& c : cs)
         m = {std::min(m.x, c.bounds().min.x), std::min(m.y, c.bounds().min.y)};
+=======
+        return {0, 0};
+    BBox2 b = cs.front().bounds();
+    Vec2 m = b.min;
+    for (const CurveRef& c : cs) {
+        b = c.bounds();
+        m = {std::min(m.x, b.min.x), std::min(m.y, b.min.y)};
+    }
+>>>>>>> origin/main
     return m;
 }
 
@@ -641,6 +662,7 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
         if (entities[i] && takesPart(*entities[i]))
             order.push_back(i);
     }
+<<<<<<< HEAD
     std::vector<bool> gone(entities.size(), false);
 
     // 1. Exact duplicates: the earliest entity in the input stays. Entities of one kind whose
@@ -654,6 +676,81 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             long long cx, cy;
             bool operator==(const Key& k) const {
                 return kind == k.kind && cx == k.cx && cy == k.cy;
+=======
+    std::vector<double> mx(entities.size(), 0.0), my(entities.size(), 0.0);
+    for (std::size_t i : order) {
+        const Vec2 m = minCorner(*entities[i]);
+        mx[i] = m.x;
+        my[i] = m.y;
+    }
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        if (kind(*entities[a]) != kind(*entities[b]))
+            return kind(*entities[a]) < kind(*entities[b]);
+        return mx[a] < mx[b];
+    });
+    std::vector<bool> gone(entities.size(), false);
+
+    // 1. Exact duplicates: the earliest entity in the input stays. Entities of one kind are binned
+    // by the corner of their box, so an entity is only compared with those whose corner is within
+    // the window in both x and y (a run of equal x, like a grid of parallel lines, stays linear).
+    const double window = o.tolerance * 4 + 1e-9;
+    auto cellOf = [&](double v) {
+        const double c = std::floor(v / window);
+        return std::isfinite(c) ? static_cast<std::int64_t>(std::clamp(c, -1e15, 1e15))
+                                : std::int64_t{0};
+    };
+    auto cellKey = [&](EntityKind k, std::int64_t cx, std::int64_t cy) {
+        std::uint64_t h = static_cast<std::uint64_t>(k) * 0x9E3779B97F4A7C15ull;
+        h ^= static_cast<std::uint64_t>(cx) * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
+        h ^= static_cast<std::uint64_t>(cy) * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
+        return h;
+    };
+    // Cell -> ranks in `order`, ascending. A hash collision only adds candidates, which the
+    // window test below throws out.
+    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> cells;
+    cells.reserve(order.size());
+    for (std::size_t oi = 0; oi < order.size(); ++oi) {
+        const std::size_t i = order[oi];
+        cells[cellKey(kind(*entities[i]), cellOf(mx[i]), cellOf(my[i]))].push_back(
+            static_cast<std::uint32_t>(oi));
+    }
+    std::vector<std::uint32_t> cand;
+    for (std::size_t oi = 0; oi < order.size(); ++oi) {
+        const std::size_t i = order[oi];
+        if (gone[i])
+            continue;
+        cand.clear();
+        const std::int64_t cx = cellOf(mx[i]), cy = cellOf(my[i]);
+        for (std::int64_t dy = -1; dy <= 1; ++dy) {
+            for (std::int64_t dx = -1; dx <= 1; ++dx) {
+                auto it = cells.find(cellKey(kind(*entities[i]), cx + dx, cy + dy));
+                if (it == cells.end())
+                    continue;
+                for (auto r = std::upper_bound(it->second.begin(), it->second.end(),
+                                               static_cast<std::uint32_t>(oi));
+                     r != it->second.end(); ++r)
+                    cand.push_back(*r);
+            }
+        }
+        std::sort(cand.begin(), cand.end());
+        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        for (std::uint32_t oj : cand) {
+            const std::size_t j = order[oj];
+            if (kind(*entities[j]) != kind(*entities[i]) || mx[j] - mx[i] > window ||
+                std::abs(my[j] - my[i]) > window)
+                continue;
+            const std::size_t drop = std::max(i, j);
+            if (gone[i] || gone[j])
+                continue;
+            if (!o.ignoreProperties && !sameProps(entities[i]->common, entities[j]->common))
+                continue;
+            if (sameGeometry(*entities[i], *entities[j], o.tolerance)) {
+                gone[drop] = true;
+                res.erased.push_back(drop);
+                ++res.duplicates;
+                if (drop == i)
+                    break;
+>>>>>>> origin/main
             }
         };
         struct KeyHash {
@@ -1541,6 +1638,74 @@ Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b
     return r;
 }
 
+namespace {
+
+// Squared distance from a point to the nearest segment of a polyline, through a uniform grid of
+// the segments: a ring of cells at a time, stopping once the next ring is farther than the best.
+class PolylineGrid {
+public:
+    explicit PolylineGrid(const std::vector<Vec2>& pts) : pts_(pts) {
+        lo_ = hi_ = pts.empty() ? Vec2{0, 0} : pts.front();
+        for (const Vec2& p : pts) {
+            lo_ = {std::min(lo_.x, p.x), std::min(lo_.y, p.y)};
+            hi_ = {std::max(hi_.x, p.x), std::max(hi_.y, p.y)};
+        }
+        const double ext = std::max(hi_.x - lo_.x, hi_.y - lo_.y);
+        const double segs = static_cast<double>(pts.size() > 1 ? pts.size() - 1 : 1);
+        n_ = std::clamp(static_cast<int>(std::sqrt(segs)), 1, 128);
+        cell_ = ext > 0 ? ext / n_ : 1.0;
+        cells_.assign(static_cast<std::size_t>(n_) * static_cast<std::size_t>(n_), {});
+        for (std::size_t k = 0; k + 1 < pts.size(); ++k) {
+            const Vec2 a = pts[k], b = pts[k + 1];
+            const int x0 = cellOf(std::min(a.x, b.x), lo_.x), x1 = cellOf(std::max(a.x, b.x), lo_.x);
+            const int y0 = cellOf(std::min(a.y, b.y), lo_.y), y1 = cellOf(std::max(a.y, b.y), lo_.y);
+            for (int cy = y0; cy <= y1; ++cy)
+                for (int cx = x0; cx <= x1; ++cx)
+                    cells_[static_cast<std::size_t>(cy * n_ + cx)].push_back(
+                        static_cast<std::uint32_t>(k));
+        }
+    }
+
+    double nearestDist2(Vec2 q) const {
+        double best = 1e300;
+        const int qx = cellOf(q.x, lo_.x), qy = cellOf(q.y, lo_.y);
+        for (int r = 0; r < n_ + 1; ++r) {
+            for (int cy = qy - r; cy <= qy + r; ++cy) {
+                if (cy < 0 || cy >= n_)
+                    continue;
+                const bool edgeRow = cy == qy - r || cy == qy + r;
+                for (int cx = qx - r; cx <= qx + r; cx += edgeRow || r == 0 ? 1 : 2 * r) {
+                    if (cx < 0 || cx >= n_)
+                        continue;
+                    for (std::uint32_t k : cells_[static_cast<std::size_t>(cy * n_ + cx)]) {
+                        const Vec2 a = pts_[k], b = pts_[k + 1], ab = b - a;
+                        const double l2 = dot(ab, ab);
+                        const double u = l2 > 0 ? std::clamp(dot(q - a, ab) / l2, 0.0, 1.0) : 0.0;
+                        const Vec2 d = q - (a + ab * u);
+                        best = std::min(best, dot(d, d));
+                    }
+                }
+            }
+            if (best < 1e300 && r * cell_ >= std::sqrt(best))
+                break;
+        }
+        return best;
+    }
+
+private:
+    int cellOf(double v, double lo) const {
+        return std::clamp(static_cast<int>(std::floor((v - lo) / cell_)), 0, n_ - 1);
+    }
+
+    const std::vector<Vec2>& pts_;
+    Vec2 lo_, hi_;
+    double cell_ = 1;
+    int n_ = 1;
+    std::vector<std::vector<std::uint32_t>> cells_;
+};
+
+}  // namespace
+
 Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
     const auto* sp = entityAs<SplineData>(e);
     if (!sp)
@@ -1585,18 +1750,11 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
         poly.reserve(static_cast<std::size_t>(m) + 1);
         for (int i = 0; i <= m; ++i)
             poly.push_back(nc.front().pointAt(nc.front().paramAtLength(nl * i / m)));
+        const PolylineGrid grid(poly);
         double worst = 0;
         int worstAt = -1;
         for (int i = 0; i <= n; ++i) {
-            const Vec2 q = samples[static_cast<std::size_t>(i)];
-            double d2 = 1e300;
-            for (std::size_t k = 0; k + 1 < poly.size(); ++k) {
-                const Vec2 a = poly[k], b = poly[k + 1], ab = b - a;
-                const double l2 = dot(ab, ab);
-                const double u = l2 > 0 ? std::clamp(dot(q - a, ab) / l2, 0.0, 1.0) : 0.0;
-                const Vec2 r = q - (a + ab * u);
-                d2 = std::min(d2, dot(r, r));
-            }
+            const double d2 = grid.nearestDist2(samples[static_cast<std::size_t>(i)]);
             if (d2 > worst) {
                 worst = d2;
                 worstAt = i;

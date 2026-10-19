@@ -1504,6 +1504,9 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         s.commaDecimal = true;
         s.baselineSpacing = 7;
         s.centerMark = -3;
+        s.textFill = 2;
+        s.textFillColor = 251;
+        s.textFrame = true;
         REQUIRE(tx.addDimStyle(s).ok());
         tx.commit();
     }
@@ -1535,6 +1538,9 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         CHECK(s->commaDecimal);
         CHECK(s->baselineSpacing == doctest::Approx(7));
         CHECK(s->centerMark == doctest::Approx(-3));
+        CHECK(s->textFill == 2);
+        CHECK(s->textFillColor == 251);
+        CHECK(s->textFrame);
     };
     RoundTrip rt = roundTrip(doc);
     check(*rt.back);

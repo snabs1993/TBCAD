@@ -519,7 +519,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 15)
+            if (flags > 31)
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -552,6 +552,8 @@ private:
             int angularPrecision = -1;
             bool commaDecimal = false;
             double baselineSpacing = 0, centerMark = 0;
+            int textFill = 0, textFillColor = 0;
+            bool textFrame = false;
             if (flags & 8) {
                 angleFormat =
                     readEnum<DimAngleFormat>(r, static_cast<std::uint8_t>(DimAngleFormat::Radians));
@@ -564,6 +566,13 @@ private:
                     bad("invalid dimension style spacing");
                 if (angularPrecision < -1 || angularPrecision > 8)
                     bad("invalid dimension style angular precision");
+            }
+            if (flags & 16) {
+                textFill = r.u8();
+                textFillColor = r.u8();
+                textFrame = r.u8() != 0;
+                if (textFill > 2)
+                    bad("invalid dimension style text fill");
             }
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
@@ -582,6 +591,9 @@ private:
                                         d.commaDecimal = commaDecimal;
                                         d.baselineSpacing = baselineSpacing;
                                         d.centerMark = centerMark;
+                                        d.textFill = textFill;
+                                        d.textFillColor = textFillColor;
+                                        d.textFrame = textFrame;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

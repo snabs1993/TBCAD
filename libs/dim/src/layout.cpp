@@ -852,6 +852,17 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
         applyBreaks(L, d.breaks);
     if (!d.jogs.empty())
         applyJogs(L, d.jogs, 2 * c.arrow);
+    // A box round the text (DIMGAP below zero): the text plus a gap on every side.
+    if (st.textFrame && L.text.valid() && L.text.width > 0) {
+        const Vec2 ux = unit(L.text.rotation), uy = perp(ux);
+        const double hw = L.text.width / 2 + c.gap, hh = L.text.height / 2 + c.gap;
+        const Vec2 m = L.text.center;
+        Layout::Line box;
+        box.role = Role::DimLine;
+        box.pts = {m - ux * hw - uy * hh, m + ux * hw - uy * hh, m + ux * hw + uy * hh,
+                   m - ux * hw + uy * hh, m - ux * hw - uy * hh};
+        L.lines.push_back(std::move(box));
+    }
     return L;
 }
 

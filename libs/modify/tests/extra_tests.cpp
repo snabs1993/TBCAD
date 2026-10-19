@@ -1,5 +1,8 @@
 #include <algorithm>
+#include <map>
 #include <random>
+#include <set>
+#include <string>
 
 #include "test_support.h"
 
@@ -810,4 +813,43 @@ TEST_CASE("overkill on a grid of lines and circles finds duplicates and row over
             ++copiesErased;
     CHECK(copiesErased == 80);
     CHECK(res.created.size() == 30);
+TEST_CASE("overkill removes exactly the repeats among random lines, circles and points") {
+    std::mt19937 rng(11);
+    std::vector<Entity> es;
+    std::map<std::string, int> firstSeen;
+    std::set<std::size_t> expected;
+    auto note = [&](const std::string& key) {
+        auto [it, fresh] = firstSeen.emplace(key, static_cast<int>(es.size() - 1));
+        if (!fresh)
+            expected.insert(es.size() - 1);
+    };
+    for (int n = 0; n < 6000; ++n) {
+        const int x = static_cast<int>(rng() % 12), y = static_cast<int>(rng() % 12);
+        const int w = 1 + static_cast<int>(rng() % 3);
+        switch (rng() % 3) {
+            case 0: {
+                const bool flip = rng() % 2;
+                es.push_back(flip ? line({x + w * 1.0, y * 1.0}, {x * 1.0, y * 1.0})
+                                  : line({x * 1.0, y * 1.0}, {x + w * 1.0, y * 1.0}));
+                note("L" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(w));
+                break;
+            }
+            case 1:
+                es.push_back(circle({x * 1.0, y * 1.0}, w));
+                note("C" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(w));
+                break;
+            default:
+                es.push_back(line({x * 1.0, y * 1.0}, {x * 1.0, y + w * 1.0}));
+                note("V" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(w));
+        }
+    }
+    std::vector<const Entity*> in;
+    for (const Entity& e : es)
+        in.push_back(&e);
+    OverkillOptions oo;
+    oo.combineOverlapping = false;
+    oo.combineEndToEnd = false;
+    OverkillResult r = overkill(in, oo);
+    CHECK(std::set<std::size_t>(r.erased.begin(), r.erased.end()) == expected);
+    CHECK(r.erased.size() == expected.size());
 }

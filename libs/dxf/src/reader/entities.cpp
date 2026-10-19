@@ -549,6 +549,9 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         convArcDimension(r, out);
     } else if (t == "ACAD_PROXY_ENTITY") {
         convProxy(r, out);
+    } else if (t == "ACAD_TABLE") {
+        if (!convAcadTable(r, rr, f, out) && !convForeign(r, out))
+            return false;
     } else if (!convForeign(r, out)) {
         return false;
     }
@@ -1652,6 +1655,54 @@ bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {
 // An entity this importer has no reader for (AEC and Civil objects, 3DSOLID, REGION, SURFACE ...)
 // is kept when it carries proxy graphics: they are drawn as a read-only proxy named after the
 // DXF type. Without graphics it is skipped, as before.
+// AutoCAD keeps the lines and text of a TABLE in the anonymous block named by group 2 (*T1, ...),
+// in world coordinates, so an INSERT of that block at the origin draws the table as it was. The
+// cell data (groups 91, 92, 301...) is not read: the table is no longer editable as a table.
+bool Importer::convAcadTable(const Record& r, RecordReader& rr, const Frame& f,
+                             std::vector<Entity>& out) {
+    if (r.raw(2).empty())
+        return false;
+    Record ins;
+    ins.type = "INSERT";
+    ins.line = r.line;
+    auto number = [&](int code, double v) {
+        Group g;
+        g.code = code;
+        g.value = v;
+        g.line = r.line;
+        ins.g.push_back(std::move(g));
+    };
+    for (const Group& g : r.g) {
+        switch (g.code) {
+            case 2:    // the block
+            case 5:    // handle
+            case 6:    // linetype
+            case 8:    // layer
+            case 48:   // linetype scale
+            case 60:   // visibility
+            case 62:   // colour
+            case 67:   // space
+            case 370:  // lineweight
+            case 420:  // true colour
+            case 440:  // transparency
+                ins.g.push_back(g);
+                break;
+            default:
+                break;
+        }
+    }
+    number(10, 0.0);
+    number(20, 0.0);
+    number(30, 0.0);
+    number(41, 1.0);
+    number(42, 1.0);
+    number(43, 1.0);
+    number(50, 0.0);
+    if (!convInsert(ins, rr, f, out) || out.empty())
+        return false;
+    return true;
+}
+
 bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
     ProxyData d;
     d.originalType = std::string(r.type);

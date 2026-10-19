@@ -1109,4 +1109,31 @@ TEST_CASE("AutoCAD annotative objects keep their scales from the context data") 
     CHECK(plain == 1);
 }
 
+TEST_CASE("an AutoCAD TABLE entity shows the lines and text of its anonymous block") {
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "*T1").g(70, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(10, 100.0).g(20, 100.0).g(11, 200.0).g(21, 100.0);
+    p.g(0, "MTEXT").g(8, "0").g(10, 110.0).g(20, 95.0).g(40, 2.5).g(1, "Cell");
+    p.g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "ACAD_TABLE").g(8, "0").g(2, "*T1").g(10, 100.0).g(20, 100.0).g(30, 0.0);
+    p.g(91, 1).g(92, 1).g(0, "ENDSEC").g(0, "EOF");
+    Loaded l = load(p.text);
+    const auto inserts = modelEntities<InsertData>(l.doc());
+    REQUIRE(inserts.size() == 1);
+    CHECK(near(inserts[0]->position, Vec2{0, 0}));  // the block holds world coordinates
+    const BlockDef* block = l.doc().block(inserts[0]->block);
+    REQUIRE(block);
+    std::size_t lines = 0, texts = 0;
+    for (EntityId id : block->entities) {
+        const Entity& e = *l.doc().find(id);
+        if (entityAs<LineData>(e))
+            ++lines;
+        else if (entityAs<MTextData>(e) || entityAs<TextData>(e))
+            ++texts;
+    }
+    CHECK(lines == 1);
+    CHECK(texts == 1);
+}
+
 }  // namespace tbcad::dxf

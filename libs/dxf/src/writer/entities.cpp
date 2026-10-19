@@ -664,7 +664,7 @@ void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
     const TableData& t = *entityAs<TableData>(e);
     DimBlock block;
     do {
-        block.name = "*T" + std::to_string(++dimCounter_);
+        block.name = "*TB" + std::to_string(++dimCounter_);  // ours: the reader skips it
     } while (blockSet_.has(block.name));
     blockSet_.add(block.name);
     block.rec = newHandle();

@@ -606,6 +606,8 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
         return invalid("linear scale factor must be positive");
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
+    r.textFill = std::clamp(r.textFill, 0, 2);
+    r.textFillColor = std::clamp(r.textFillColor, 0, 255);
     if (!std::isfinite(r.baselineSpacing) || r.baselineSpacing < 0)
         return invalid("baseline spacing must not be negative");
     if (!std::isfinite(r.centerMark))
