@@ -705,6 +705,9 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         if (ds.roundOff > 0)
             o.d(45, ds.roundOff);
         o.d(46, ds.dimLineExtension);
+        if (ds.baselineSpacing > 0)
+            o.d(43, ds.baselineSpacing);  // DIMDLI
+        o.d(141, ds.centerMark);          // DIMCEN
         if (ds.tolerance != DimTolerance::None) {
             o.i(ds.tolerance == DimTolerance::Limits ? 72 : 71, 1);
             o.d(47, ds.tolUpper);
@@ -735,9 +738,13 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(178, clr(ds.textColor));
         if (!r12_) {
             o.i(271, std::clamp(ds.precision, 0, 16));
-            o.i(280, ds.textJustify);           // DIMJUST
-            o.i(281, ds.suppressDim1 ? 1 : 0);  // DIMSD1
-            o.i(282, ds.suppressDim2 ? 1 : 0);  // DIMSD2
+            o.i(280, ds.textJustify);                    // DIMJUST
+            o.i(275, static_cast<int>(ds.angleFormat));  // DIMAUNIT (same numbering)
+            if (ds.angularPrecision >= 0)
+                o.i(179, ds.angularPrecision);      // DIMADEC (absent: the same as DIMDEC)
+            o.i(278, ds.commaDecimal ? ',' : '.');  // DIMDSEP
+            o.i(281, ds.suppressDim1 ? 1 : 0);      // DIMSD1
+            o.i(282, ds.suppressDim2 ? 1 : 0);      // DIMSD2
             // DIMTMOVE (279) and DIMATFIT (289); 0 and 3 are the AutoCAD defaults.
             o.i(279, static_cast<int>(ds.textMove));
             o.i(289, ds.fit == DimFit::BothOutside   ? 0

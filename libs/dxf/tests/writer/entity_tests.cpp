@@ -1499,6 +1499,11 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         s.suppressExt1 = true;
         s.suppressDim2 = true;
         s.textJustify = 2;
+        s.angleFormat = DimAngleFormat::Dms;
+        s.angularPrecision = 4;
+        s.commaDecimal = true;
+        s.baselineSpacing = 7;
+        s.centerMark = -3;
         REQUIRE(tx.addDimStyle(s).ok());
         tx.commit();
     }
@@ -1525,6 +1530,11 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         CHECK_FALSE(s->suppressDim1);
         CHECK(s->suppressDim2);
         CHECK(s->textJustify == 2);
+        CHECK(s->angleFormat == DimAngleFormat::Dms);
+        CHECK(s->angularPrecision == 4);
+        CHECK(s->commaDecimal);
+        CHECK(s->baselineSpacing == doctest::Approx(7));
+        CHECK(s->centerMark == doctest::Approx(-3));
     };
     RoundTrip rt = roundTrip(doc);
     check(*rt.back);

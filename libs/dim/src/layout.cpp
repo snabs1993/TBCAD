@@ -369,6 +369,19 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
     addArrow(L, c, B, -dir);
     if (dia)
         addArrow(L, c, A, dir);
+    // DIMCEN: a cross at the centre; a negative size also lets the axes run through the circle.
+    if (c.st.centerMark != 0) {
+        const double k = c.st.overallScale > 0 ? c.st.overallScale : 1.0;
+        const double m = std::abs(c.st.centerMark) * k;
+        const Vec2 ax{1, 0}, ay{0, 1};
+        for (const Vec2 u : {ax, ay}) {
+            addSeg(L, O - u * m, O + u * m, Role::DimLine, c.tol);
+            if (c.st.centerMark < 0 && r > m) {
+                addSeg(L, O + u * (r - m), O + u * (r + m), Role::DimLine, c.tol);
+                addSeg(L, O - u * (r + m), O - u * (r - m), Role::DimLine, c.tol);
+            }
+        }
+    }
     if (!txt.empty())
         L.text = {txt, center, rotText, c.th, false, false, tw};
 }

@@ -605,6 +605,14 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     if (!std::isfinite(r.linearFactor) || !(r.linearFactor > 0))
         return invalid("linear scale factor must be positive");
     r.textJustify = std::clamp(r.textJustify, 0, 2);
+    r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
+    if (!std::isfinite(r.baselineSpacing) || r.baselineSpacing < 0)
+        return invalid("baseline spacing must not be negative");
+    if (!std::isfinite(r.centerMark))
+        return invalid("centre mark size must be a number");
+    if (static_cast<std::uint8_t>(r.angleFormat) >
+        static_cast<std::uint8_t>(DimAngleFormat::Radians))
+        r.angleFormat = DimAngleFormat::Degrees;
     r.altPrecision = std::clamp(r.altPrecision, 0, 16);
     r.tolPrecision = std::clamp(r.tolPrecision, 0, 16);
     return {};

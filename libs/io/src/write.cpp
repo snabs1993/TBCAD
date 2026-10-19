@@ -221,7 +221,7 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 r.tolerance == DimTolerance::None && r.tolUpper == 0 && r.tolLower == 0 &&
                 r.tolPrecision == 2 && r.linearFactor == 1 && r.fit == DimFit::Best &&
                 r.textMove == DimTextMove::WithLine && packDimRules(r) == kDimRulesDefault &&
-                r.textJustify == 0)
+                r.textJustify == 0 && !r.hasNumberFormat())
                 continue;
             const bool extras =
                 r.linearFactor != 1 || r.fit != DimFit::Best || r.textMove != DimTextMove::WithLine;
@@ -229,7 +229,9 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             dstx.varint(id.value);
             // bit 0: alternate units on; bit 1: linear factor, fit and text movement follow;
             // bit 2: the text and line rules follow
-            dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0) | (rules ? 4 : 0));
+            // bit 3: the number format follows (angle format, angular decimals, decimal comma)
+            dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0) | (rules ? 4 : 0) |
+                    (r.hasNumberFormat() ? 8 : 0));
             dstx.f64(r.altScale);
             dstx.u8(static_cast<std::uint8_t>(r.altUnit));
             dstx.i32(r.altPrecision);
@@ -247,6 +249,13 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             if (rules) {
                 dstx.u8(packDimRules(r));
                 dstx.u8(static_cast<std::uint8_t>(r.textJustify));
+            }
+            if (r.hasNumberFormat()) {
+                dstx.u8(static_cast<std::uint8_t>(r.angleFormat));
+                dstx.u8(static_cast<std::uint8_t>(r.angularPrecision + 1));
+                dstx.u8(r.commaDecimal ? 1 : 0);
+                dstx.f64(r.baselineSpacing);
+                dstx.f64(r.centerMark);
             }
             ++dstxCount;
         }

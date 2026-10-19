@@ -73,7 +73,8 @@ public:
             DimensionData prev = *base;
             const DimStyle& st = dim::styleOf(ctx.doc(), prev.style);
             const double k = st.overallScale > 0 ? st.overallScale : 1.0;
-            const double spacing = st.textHeight * 2.5 * k;
+            const double spacing =
+                st.baselineSpacing > 0 ? st.baselineSpacing * k : st.textHeight * 2.5 * k;
 
             Vec2 origin = baseline_ ? prev.defPts[0] : prev.defPts[1];
             auto* c = &ctx;
@@ -349,7 +350,8 @@ public:
         }
         const DimStyle& st = dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
         const double k = st.overallScale > 0 ? st.overallScale : 1.0;
-        const double spacing = st.textHeight * 2.5 * k;
+        const double spacing =
+            st.baselineSpacing > 0 ? st.baselineSpacing * k : st.textHeight * 2.5 * k;
         const Vec2 normal{-std::sin(rotation), std::cos(rotation)};
         const Vec2 offU = atU - box.center();
         const double side = (horizontal ? offU.y : offU.x) >= 0 ? 1.0 : -1.0;

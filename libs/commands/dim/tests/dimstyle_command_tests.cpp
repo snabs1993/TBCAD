@@ -127,6 +127,20 @@ TEST_CASE("every DIMSTYLE property accepts a valid value") {
     CHECK(s.suppressDim2);
     CHECK(ok("Justify", "Ext2").empty());
     CHECK(s.textJustify == 2);
+    CHECK(ok("AngleFormat", "Dms").empty());
+    CHECK(s.angleFormat == DimAngleFormat::Dms);
+    CHECK(ok("AngularPrecision", "4").empty());
+    CHECK(s.angularPrecision == 4);
+    CHECK(ok("AngularPrecision", "Same").empty());
+    CHECK(s.angularPrecision == -1);
+    CHECK(ok("DecimalMark", "Comma").empty());
+    CHECK(s.commaDecimal);
+    CHECK(ok("BaselineSpacing", "7").empty());
+    CHECK(s.baselineSpacing == doctest::Approx(7));
+    CHECK(ok("BaselineSpacing", "Auto").empty());
+    CHECK(s.baselineSpacing == 0);
+    CHECK(ok("CenterMark", "-3").empty());
+    CHECK(s.centerMark == doctest::Approx(-3));
     for (const std::string& k : dimcmd::propertyKeywords())
         if (k != "Prefix" && k != "Suffix" && k != "AltPrefix" && k != "AltSuffix")  // free text
             CHECK(!ok(k.c_str(), "@@@").empty());

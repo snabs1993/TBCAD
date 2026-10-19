@@ -102,6 +102,8 @@ enum class DimFit : std::uint8_t { Best, ArrowsFirst, TextFirst, BothOutside };
 // DIMTMOVE: where text goes when it is dragged away. Outside the extension lines it keeps a
 // leader (WithLine, Leader) or none (Free).
 enum class DimTextMove : std::uint8_t { WithLine, Leader, Free };
+// DIMAUNIT: how an angular dimension writes its measurement.
+enum class DimAngleFormat : std::uint8_t { Degrees, Dms, Gradians, Radians };
 
 struct DimStyle {
     DimStyleId id{};
@@ -160,6 +162,20 @@ struct DimStyle {
     bool suppressDim1 = false,
          suppressDim2 = false;  // DIMSD1, DIMSD2 (half dimension line + arrow)
     int textJustify = 0;  // DIMJUST: 0 centred, 1 next to the first extension line, 2 the second
+    // Number format: DIMAUNIT, DIMADEC (decimals of angles; -1 = the same as `precision`) and
+    // DIMDSEP (a comma instead of the point between the whole and the fraction).
+    DimAngleFormat angleFormat = DimAngleFormat::Degrees;
+    int angularPrecision = -1;
+    bool commaDecimal = false;
+    // DIMDLI: distance between baseline dimension lines (0 = 2.5 times the text height).
+    // DIMCEN: size of the centre mark of radius and diameter dimensions (0 none, negative also
+    // draws centre lines).
+    double baselineSpacing = 0;
+    double centerMark = 0;
+    bool hasNumberFormat() const {
+        return angleFormat != DimAngleFormat::Degrees || angularPrecision != -1 || commaDecimal ||
+               baselineSpacing != 0 || centerMark != 0;
+    }
 };
 
 // The text and line rules of a dimension style packed in one byte (bit 0 outside text horizontal,
