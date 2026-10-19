@@ -2521,8 +2521,36 @@ std::string Importer::keptRecord(const Record& r) {
     if (k_ != 1)
         return {};
     std::string body;
+    // A record from a file without subclass markers (R12, or a careless writer) still needs them
+    // when it is written to R2000 or later as a known type: readers refuse it otherwise.
+    struct Marker {
+        std::string_view type, name;
+        int before;  // added before the first group with this code; 0 = first
+    };
+    static constexpr Marker kMarkers[] = {
+        {"LWPOLYLINE", "AcDbPolyline", 0}, {"LINE", "AcDbLine", 0},
+        {"CIRCLE", "AcDbCircle", 0},       {"ARC", "AcDbCircle", 0},
+        {"ARC", "AcDbArc", 50},            {"POINT", "AcDbPoint", 0},
+        {"ELLIPSE", "AcDbEllipse", 0},     {"SPLINE", "AcDbSpline", 0},
+        {"INSERT", "AcDbBlockReference", 0}, {"SOLID", "AcDbTrace", 0},
+        {"TRACE", "AcDbTrace", 0},         {"3DFACE", "AcDbFace", 0},
+        {"MTEXT", "AcDbMText", 0},
+    };
+    std::vector<const Marker*> pending;
+    bool hasMarker = false;
+    for (const Group& g : r.g)
+        hasMarker = hasMarker || (g.code == 100 && g.str() != "AcDbEntity");
+    if (!hasMarker) {
+        for (const Marker& m : kMarkers)
+            if (m.type == r.type)
+                pending.push_back(&m);
+    }
     for (const Group& g : r.g) {
         const int c = g.code;
+        while (!pending.empty() && (pending.front()->before == 0 || pending.front()->before == c)) {
+            packGroup(body, 100, std::string(pending.front()->name));
+            pending.erase(pending.begin());
+        }
         if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 || c == 102 ||
             c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 || c >= 1000 ||
             handleCode(c) || (c >= 480 && c <= 481) || (c == 100 && g.str() == "AcDbEntity"))
