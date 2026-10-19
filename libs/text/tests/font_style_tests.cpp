@@ -148,7 +148,7 @@ TEST_CASE("SHX font styles: 20,000 texts lay out without scanning the font folde
     std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("a font on an unreachable file server costs one short wait, then its name is looked up") {
+TEST_CASE("a font on an unreachable file server costs no wait when the font folders have it") {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "tbcad_unc_font";
     fs::create_directories(dir);
@@ -166,21 +166,33 @@ TEST_CASE("a font on an unreachable file server costs one short wait, then its n
         return true;
     });
     setFontSearchPaths({dir});
-    const std::string unc = "//gone-server/share/fonts/tiny.shx";
-    const auto t0 = std::chrono::steady_clock::now();
-    std::vector<std::thread> lookups;
+    auto timed = [](const std::string& name, std::vector<fs::path>& got) {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::vector<std::thread> lookups;
+        for (std::size_t k = 0; k < got.size(); ++k)
+            lookups.emplace_back([&got, &name, k] { got[k] = locateFontFile(name); });
+        for (auto& t : lookups)
+            t.join();
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    };
+
+    // The folders have tiny.shx: the server is not asked.
     std::vector<fs::path> got(3);
-    for (int k = 0; k < 3; ++k)
-        lookups.emplace_back([&got, &unc, k] { got[k] = locateFontFile(unc); });
-    for (auto& t : lookups)
-        t.join();
-    const fs::path again = locateFontFile(unc);
-    const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    CHECK(s < 1.5);  // was 2.7 s per lookup on the owner's PC
+    CHECK(timed("//gone-server/share/fonts/tiny.shx", got) < 0.2);
     for (const fs::path& p : got)
-        CHECK(p.filename() == "tiny.shx");
-    CHECK(again.parent_path() == dir);
-    CHECK(asked.load() == 1);  // asked once, not once per lookup
+        CHECK(p.parent_path() == dir);
+    CHECK(asked.load() == 0);
+
+    // Nowhere but on the server: asked once, one short wait shared by the lookups at the same
+    // time, none after it (was 2.7 s per lookup on the owner's PC).
+    const std::string only = "//gone-server/share/fonts/only-there.shx";
+    CHECK(timed(only, got) < 1.0);
+    for (const fs::path& p : got)
+        CHECK(p.empty());
+    const auto t0 = std::chrono::steady_clock::now();
+    CHECK(locateFontFile(only).empty());
+    CHECK(std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() < 0.1);
+    CHECK(asked.load() == 1);
     setFontFileProbe({});
     setFontSearchPaths({});
 }
