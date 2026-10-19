@@ -177,6 +177,16 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
             }
             break;
         }
+        case EntityKind::Spline: {
+            // Only a spline defined by fit points can grow or shrink by one point.
+            const auto& sp = *entityAs<SplineData>(*e);
+            if (!sp.fit.empty()) {
+                out.push_back(GripAction::AddVertex);
+                if (sp.fit.size() > 2)
+                    out.push_back(GripAction::RemoveVertex);
+            }
+            break;
+        }
         case EntityKind::Dimension: {
             const auto& d = *entityAs<DimensionData>(*e);
             if (grip.index == 4 && d.textPosUser)
@@ -323,6 +333,32 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
                     break;
             }
             break;
+        }
+        case EntityKind::Spline: {
+            auto& sp = *entityAs<SplineData>(out);
+            if (sp.fit.empty() || index < 0 || index >= static_cast<int>(sp.fit.size()))
+                break;
+            if (action == GripAction::AddVertex) {
+                // The new fit point goes right after the one under the cursor.
+                sp.fit.insert(sp.fit.begin() + index + 1, target);
+            } else if (action == GripAction::RemoveVertex) {
+                if (sp.fit.size() <= 2)
+                    return fail("the spline needs its remaining fit points");
+                sp.fit.erase(sp.fit.begin() + index);
+            } else {
+                break;
+            }
+            geom::InterpolateOptions o;
+            o.degree = sp.degree;
+            o.closed = sp.closed;
+            auto r = geom::interpolateSpline(sp.fit, o);
+            if (!r)
+                return r.error();
+            sp.degree = r.value().degree;  // fewer points than degree + 1 lower the degree
+            sp.knots = r.value().knots;
+            sp.control = r.value().control;
+            sp.weights.clear();
+            return out;
         }
         case EntityKind::Dimension: {
             if (action == GripAction::ResetText && index == 4) {

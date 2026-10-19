@@ -226,6 +226,14 @@ TEST_CASE("every action on every grip of every sample kind keeps the drawing val
     PolylineData arcs;
     arcs.v = {{{0, 0}, 0.5}, {{10, 0}, -0.3}, {{10, 10}, 0}};
     ids.push_back(add(f.doc, arcs));
+    SplineData fitted;
+    fitted.fit = {{0, 0}, {5, 4}, {10, 0}};
+    if (auto sr = geom::interpolateSpline(fitted.fit, {})) {
+        fitted.degree = sr.value().degree;
+        fitted.knots = sr.value().knots;
+        fitted.control = sr.value().control;
+        ids.push_back(add(f.doc, fitted));
+    }
     const Vec2 targets[] = {{4, 4}, {0, 0}, {1e6, -1e6}, {-7, 2}};
     for (EntityId id : ids)
         for (const auto& g : tf::collectGrips(f.doc, std::vector<EntityId>{id}))
@@ -371,4 +379,50 @@ TEST_CASE("hatch: GRIPEDIT stretches a corner, one undo step, redo") {
     CHECK(near(corner(), {10, 10}));
     CHECK(f.host.redo());
     CHECK(near(corner(), {14, 15}));
+}
+
+TEST_CASE("spline with fit points: add and remove a fit point, one undo step each") {
+    Fixture f;
+    SplineData sp;
+    sp.fit = {{0, 0}, {10, 8}, {20, 0}, {30, 8}};
+    auto r0 = geom::interpolateSpline(sp.fit, {});
+    REQUIRE(r0);
+    sp.knots = r0.value().knots;
+    sp.control = r0.value().control;
+    auto id = add(f.doc, sp);
+    f.host.setSelection({id});
+    CHECK(offers(f.doc, id, 1, GripAction::AddVertex));
+    CHECK(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    auto r = f.host.run("GRIPEDIT", {"10,8", "AddVertex", "15,9"});
+    CHECK(r.finished);
+    {
+        const auto& d = get<SplineData>(f.doc, id);
+        REQUIRE(d.fit.size() == 5);
+        CHECK(near(d.fit[2], {15, 9}));
+        CHECK(near(d.fit[3], {20, 0}));
+        CHECK(d.control.size() >= 5);
+    }
+    CHECK(f.host.undo());
+    CHECK(get<SplineData>(f.doc, id).fit.size() == 4);
+    r = f.host.run("GRIPEDIT", {"10,8", "RemoveVertex"});
+    CHECK(r.finished);
+    CHECK(get<SplineData>(f.doc, id).fit.size() == 3);
+    // Two fit points are the least a spline can keep.
+    CHECK(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    r = f.host.run("GRIPEDIT", {"20,0", "RemoveVertex"});
+    CHECK(r.finished);
+    CHECK(get<SplineData>(f.doc, id).fit.size() == 2);
+    CHECK_FALSE(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    for (int i = 0; i < 2; ++i)
+        CHECK(f.host.undo());
+    CHECK(get<SplineData>(f.doc, id).fit.size() == 4);
+}
+
+TEST_CASE("spline without fit points offers no vertex actions") {
+    Fixture f;
+    SplineData sp;
+    sp.control = {{0, 0}, {5, 8}, {10, 0}, {15, 8}};
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    auto id = add(f.doc, sp);
+    CHECK_FALSE(offers(f.doc, id, 1, GripAction::AddVertex));
 }

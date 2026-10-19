@@ -160,9 +160,13 @@ public:
                     Entity changed = std::move(res).value();
                     if (copy) {
                         (void)ctx.tx().add(std::move(changed));
-                    } else {
-                        (void)ctx.tx().modify(
-                            hot.entity, [&](Entity& tgt) { tgt.data = std::move(changed.data); });
+                    } else if (auto m = ctx.tx().modify(hot.entity,
+                                                        [&](Entity& tgt) {
+                                                            tgt.data = std::move(changed.data);
+                                                        });
+                               !m) {
+                        ctx.message(std::string(gripActionLabel(act)) + ": " + m.error().message);
+                        continue;
                     }
                     if (!copy)
                         co_return;
