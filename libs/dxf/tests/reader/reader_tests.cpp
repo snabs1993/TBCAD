@@ -369,7 +369,7 @@ TEST_CASE("polylines: LWPOLYLINE and 2D POLYLINE keep bulges, widths and the clo
     CHECK(polys[2]->v.size() == 3);
 }
 
-TEST_CASE("polylines: old-style POLYLINE reads its VERTEX records and skips 3D polylines") {
+TEST_CASE("polylines: old-style POLYLINE reads its VERTEX records; 3D polylines are drawn flat, meshes skipped") {
     Pairs p;
     p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(70, 1);
     p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(42, 1.0);
@@ -380,14 +380,20 @@ TEST_CASE("polylines: old-style POLYLINE reads its VERTEX records and skips 3D p
     p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 32);
     p.g(0, "VERTEX").g(8, "0").g(10, 1.0).g(20, 1.0).g(30, 5.0).g(70, 32);
     p.g(0, "SEQEND").g(8, "0");
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(70, 64);  // polyface mesh
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 192);
+    p.g(0, "SEQEND").g(8, "0");
     p.g(0, "LINE").g(8, "0").g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 1.0);
     Loaded l = load(entitiesOnly(p.text));
     auto polys = modelEntities<PolylineData>(l.doc());
-    REQUIRE(polys.size() == 1);
+    REQUIRE(polys.size() == 2);
     CHECK(polys[0]->closed);
     CHECK(near(polys[0]->v[0].bulge, 1.0));
+    REQUIRE(polys[1]->v.size() == 2);  // the 3D polyline, without its Z
+    CHECK(near(polys[1]->v[1].p, Vec2{1, 1}));
     CHECK(modelEntities<LineData>(l.doc()).size() == 1);  // the entity after SEQEND still loads
-    CHECK(l.report.countCode(code::kBadEntity) == 1);
+    CHECK(l.report.countCode(code::kBadEntity) == 1);     // the mesh
+    CHECK(l.report.countCode(code::kFlattened) == 1);
 }
 
 TEST_CASE("ellipse, spline: fit points are interpolated, control points kept") {

@@ -666,16 +666,23 @@ bool Importer::convLwPolyline(const Record& r, const Frame& f, std::vector<Entit
 bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*unused*/,
                             std::vector<Entity>& out) {
     const std::int64_t flags = r.integer(70);
-    const bool threeD = (flags & (8 | 16 | 64)) != 0;  // 3D polyline, mesh, polyface mesh
+    const bool mesh = (flags & (16 | 64)) != 0;  // polygon mesh, polyface mesh
+    const bool line3d = (flags & 8) != 0 && !mesh;  // 3D polyline: drawn flat, Z dropped
     const double defStart = r.num(40) * k_, defEnd = r.num(41) * k_;
 
     std::vector<PolyVertex> plain, splineVerts;
+    bool zSeen = false;
     Record v;
     while (rr.next(v)) {
         if (v.type == "VERTEX") {
             std::int64_t vf = v.integer(70);
             if (vf & 16)
                 continue;  // spline frame control point
+            if (line3d && !zSeen && std::abs(v.num(30)) > 1e-9) {
+                zSeen = true;
+                if (flattened_++ == 0)
+                    firstFlattenedLine_ = v.line;
+            }
             PolyVertex pv;
             pv.p = P(v, 10, 20);
             pv.bulge = v.num(42);
@@ -689,12 +696,12 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
             break;
         }
     }
-    if (threeD) {
-        bad(r, "POLYLINE", "3D polylines and meshes are not supported; skipped");
+    if (mesh) {
+        bad(r, "POLYLINE", "polygon meshes and polyface meshes are not supported; skipped");
         return false;
     }
-    Frame f;
-    if (!frameOf(r, f, "POLYLINE"))
+    Frame f;  // a 3D polyline is in world coordinates; its vertices have no extrusion
+    if (!line3d && !frameOf(r, f, "POLYLINE"))
         return false;
     PolylineData pl;
     pl.v = ((flags & (2 | 4)) && !splineVerts.empty()) ? std::move(splineVerts) : std::move(plain);
