@@ -41,6 +41,10 @@ public:
     // Menu labels: "Line", "Move"... Empty when there is nothing to undo / redo.
     std::string undoLabel() const { return undo_.empty() ? std::string{} : undo_.back().label; }
     std::string redoLabel() const { return redo_.empty() ? std::string{} : redo_.back().label; }
+    // Size estimate of the step undo / redo would apply next (0 when there is none): a hint for
+    // how long it will take.
+    std::size_t nextUndoBytes() const { return undo_.empty() ? 0 : undo_.back().bytes; }
+    std::size_t nextRedoBytes() const { return redo_.empty() ? 0 : redo_.back().bytes; }
     std::size_t undoCount() const { return undo_.size(); }
     std::size_t redoCount() const { return redo_.size(); }
     // Labels, oldest first.

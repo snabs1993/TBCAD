@@ -151,6 +151,8 @@ private:
     void rememberFolder(const std::filesystem::path& picked);
     void doOpenPath(const std::string& path);
     void openPending();
+    void history(bool redo);
+    void historyPending();
     void doImportDxf();
     void doExportDxf();
     void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
@@ -199,6 +201,9 @@ private:
     std::size_t recoveryCount_ = 0;
     std::string pendingOpen_{};  // big file waiting for the "Opening ..." message to be shown
     bool pendingOpenShown_ = false;
+    int pendingHistory_ = 0;  // 1 undo, 2 redo: waiting for its hint to be drawn
+    bool pendingHistoryShown_ = false;
+    std::string pendingHistoryLabel_{};
     std::string crashReport_{};  // newest unacknowledged crash report file, if any
     bool openRecoveryPrompt_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;

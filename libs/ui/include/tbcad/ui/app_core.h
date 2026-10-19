@@ -179,6 +179,9 @@ public:
     // ---- undo / redo -------------------------------------------------------------------------
     bool undo();
     bool redo();
+    // True when the next undo (redo) is big enough to block the window for a noticeable time, so
+    // the caller can show a hint first. The limit is the setting "undo.busyBytes" (default 16 MB).
+    bool historyStepHeavy(bool redo) const;
     std::string undoLabel() const;  // "Undo Line" ; empty when nothing to undo or a command runs
     std::string redoLabel() const;
 
