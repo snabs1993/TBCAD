@@ -705,6 +705,9 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         if (ds.roundOff > 0)
             o.d(45, ds.roundOff);
         o.d(46, ds.dimLineExtension);
+        if (ds.baselineSpacing > 0)
+            o.d(43, ds.baselineSpacing);  // DIMDLI
+        o.d(141, ds.centerMark);          // DIMCEN
         if (ds.tolerance != DimTolerance::None) {
             o.i(ds.tolerance == DimTolerance::Limits ? 72 : 71, 1);
             o.d(47, ds.tolUpper);

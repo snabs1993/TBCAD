@@ -254,6 +254,8 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 dstx.u8(static_cast<std::uint8_t>(r.angleFormat));
                 dstx.u8(static_cast<std::uint8_t>(r.angularPrecision + 1));
                 dstx.u8(r.commaDecimal ? 1 : 0);
+                dstx.f64(r.baselineSpacing);
+                dstx.f64(r.centerMark);
             }
             ++dstxCount;
         }

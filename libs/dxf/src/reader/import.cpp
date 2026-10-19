@@ -1620,11 +1620,14 @@ void Importer::readDimStyle(const Record& r) {
                 ds.arrowType = static_cast<ArrowType>(a);
         }
     }
-    nonNegative(147, k_, ds.textGap);          // DIMGAP
-    nonNegative(42, k_, ds.extLineOffset);     // DIMEXO
-    nonNegative(44, k_, ds.extLineExtension);  // DIMEXE
-    nonNegative(46, k_, ds.dimLineExtension);  // DIMDLE
-    if (const Group* g = r.find(275)) {        // DIMAUNIT
+    nonNegative(147, k_, ds.textGap);                                   // DIMGAP
+    nonNegative(42, k_, ds.extLineOffset);                              // DIMEXO
+    nonNegative(44, k_, ds.extLineExtension);                           // DIMEXE
+    nonNegative(46, k_, ds.dimLineExtension);                           // DIMDLE
+    nonNegative(43, k_, ds.baselineSpacing);                            // DIMDLI
+    if (const Group* g = r.find(141); g && std::isfinite(g->number()))  // DIMCEN
+        ds.centerMark = g->number() * k_;
+    if (const Group* g = r.find(275)) {  // DIMAUNIT
         const std::int64_t u = g->integer();
         ds.angleFormat = u == 1   ? DimAngleFormat::Dms
                          : u == 2 ? DimAngleFormat::Gradians
