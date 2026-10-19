@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <unordered_set>
 
 #include "commands.h"
@@ -15,6 +16,18 @@ std::vector<EntityId> spaceOrder(const Document& doc, BlockId space) {
         return doc.modelSpace();
     const BlockDef* b = doc.block(space);
     return b ? b->entities : std::vector<EntityId>{};
+}
+
+// Group names are not case sensitive (AutoCAD).
+bool sameGroupName(const std::string& a, const std::string& b) {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    }
+    return true;
 }
 
 // ---- GROUP / UNGROUP ----------------------------------------------------------------------------
@@ -42,9 +55,11 @@ public:
         auto name = co_await ctx.getString("Enter a group name <" + fallback + ">", sopt);
         if (!name.ok())
             co_return;
-        std::string chosen = name.text.empty() ? fallback : name.text;
+        std::string chosen = cmd::trim(name.text);
+        if (chosen.empty())
+            chosen = fallback;
         for (const Group& g : groups) {
-            if (g.name == chosen) {
+            if (sameGroupName(g.name, chosen)) {
                 ctx.message("There is already a group named \"" + chosen + "\".");
                 co_return;
             }
@@ -152,7 +167,7 @@ public:
             if (!g || chosen.empty())
                 co_return;
             for (const Group& other : groups) {
-                if (&other != g && other.name == chosen) {
+                if (&other != g && sameGroupName(other.name, chosen)) {
                     ctx.message("There is already a group named \"" + chosen + "\".");
                     co_return;
                 }
@@ -183,12 +198,21 @@ public:
             // One member at a time: a selection would bring the whole group along.
             std::size_t removed = 0;
             std::string target;
-            for (;;) {
+            {
                 std::vector<Group> groups = readGroups(ctx.doc());
-                Group* g = find(groups);
+                if (Group* g = find(groups))
+                    target = g->name;
+            }
+            for (;;) {
+                // The group is found again by name: the picked object may be the one just removed.
+                std::vector<Group> groups = readGroups(ctx.doc());
+                Group* g = nullptr;
+                for (Group& cand : groups) {
+                    if (cand.name == target)
+                        g = &cand;
+                }
                 if (!g)
                     break;
-                target = g->name;
                 cmd::EntityOptions mo;
                 mo.filter = [members = g->members](const Entity& e) {
                     return std::find(members.begin(), members.end(), e.common.id) != members.end();

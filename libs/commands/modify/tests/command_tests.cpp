@@ -888,6 +888,50 @@ TEST_CASE("GROUPEDIT adds and removes members, renames and toggles selectable") 
     CHECK(readGroups(f.doc)[0].selectable);
 }
 
+TEST_CASE("GROUP names are trimmed and unique ignoring case, a new group takes members over") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 2}, {1, 2}});
+    EntityId c = f.add(LineData{{0, 4}, {1, 4}});
+    f.host.run("GROUP", {ScriptItem::select({a, b}), ScriptItem::enter(), "  Pair  "});
+    REQUIRE(readGroups(f.doc).size() == 1);
+    CHECK(readGroups(f.doc)[0].name == "Pair");
+    f.host.run("GROUP", {ScriptItem::select({c}), ScriptItem::enter(), "PAIR"});
+    CHECK(f.host.logContains("already a group"));
+    CHECK(readGroups(f.doc).size() == 1);
+    // Picking b selects the whole group, so a new group takes all three over.
+    f.host.run("GROUP", {ScriptItem::select({b, c}), ScriptItem::enter(), "other"});
+    auto gs = readGroups(f.doc);
+    REQUIRE(gs.size() == 1);
+    CHECK(gs[0].name == "other");
+    CHECK(gs[0].members.size() == 3);
+    f.host.run("UNGROUP", {ScriptItem::pick(c, {0.5, 4})});
+    CHECK(readGroups(f.doc).empty());
+    f.host.run("GROUP", {ScriptItem::select({a}), ScriptItem::enter(), "Pair"});
+    // Renaming to an existing name in other case is refused.
+    f.host.run("GROUP", {ScriptItem::select({b}), ScriptItem::enter(), "second"});
+    f.host.run("GROUPEDIT", {ScriptItem::pick(b, {0.5, 2}), "Rename", "pAiR"});
+    CHECK(f.host.logContains("already a group"));
+    CHECK(readGroups(f.doc)[1].name == "second");
+}
+
+TEST_CASE("A non-selectable group does not expand and removing the last member drops the group") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 2}, {1, 2}});
+    f.host.run("GROUP", {ScriptItem::select({a, b}), ScriptItem::enter(), "pair"});
+    f.host.run("GROUPEDIT", {ScriptItem::pick(a, {0.5, 0}), "Selectable", "No"});
+    f.host.run("ERASE", {ScriptItem::pick(a, {0.5, 0}), ScriptItem::enter()});
+    CHECK(f.doc.find(a) == nullptr);
+    CHECK(f.doc.find(b) != nullptr);
+    f.host.undo();
+    f.host.run("GROUPEDIT", {ScriptItem::pick(a, {0.5, 0}), "Remove", ScriptItem::pick(a, {0.5, 0}),
+                             ScriptItem::pick(b, {0.5, 2}), ScriptItem::enter()});
+    CHECK(readGroups(f.doc).empty());
+    f.host.undo();
+    CHECK(readGroups(f.doc).size() == 1);
+}
+
 TEST_CASE("DRAWORDER front, back and above/below an object") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {1, 0}});
