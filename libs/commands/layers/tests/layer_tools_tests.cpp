@@ -202,3 +202,18 @@ TEST_CASE("LAYTRANS renames, merges and restyles layers from a CSV standard; Exp
     CHECK(buf.str().find("A,A,") != std::string::npos);
     fs::remove_all(dir);
 }
+
+TEST_CASE("LAYTRANS Map renames and merges from old>new pairs in one undo step") {
+    Fixture f;
+    f.setup();  // layers A (with ea) and B (with eb)
+    CHECK(f.run("LAYTRANS", {"Map", "A>A-WALL; B > A-WALL;Nope>X;junk"}).finished);
+    const Layer* wall = f.doc.layerByName("A-WALL");
+    REQUIRE(wall);
+    CHECK(f.doc.layerByName("A") == nullptr);
+    CHECK(f.doc.layerByName("B") == nullptr);
+    CHECK(f.doc.find(f.eb)->common.layer == wall->id);
+    CHECK(f.host.logContains("1 renamed, 1 merged"));
+    CHECK(f.host.undo());
+    CHECK(f.doc.layerByName("A") != nullptr);
+    CHECK(f.doc.layerByName("B") != nullptr);
+}

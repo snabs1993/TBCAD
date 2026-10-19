@@ -52,6 +52,9 @@ struct PanelState {
     std::string mgrSel{};   // the state picked in the list
     std::string mgrName{};  // text field for the new name / the rename
     bool mgrVisibility = true, mgrLock = true, mgrPlot = true, mgrLook = true, mgrCurrent = true;
+    // Layer Translator dialog.
+    std::string trFilter{};
+    std::map<std::uint32_t, std::string> trNew{};  // typed replacement name per layer
     std::set<std::uint32_t> collapsed{};
     std::set<std::string> collapsedXrefs{};  // external references whose layers are folded away
     LayerId selected{};
@@ -597,6 +600,95 @@ void layerStatesManager(ui::PanelContext& ctx, const Document& doc, PanelState& 
     ImGui::EndPopup();
 }
 
+// The Layer Translator: every layer with a box for the name it should get. Layers given a name
+// that exists already are merged into it. Apply runs LAYTRANS Map as one undo step.
+void layerTranslator(ui::PanelContext& ctx, const Document& doc, PanelState& st) {
+    ImGui::SetNextWindowSize(ImVec2(480, 460), ImGuiCond_Appearing);
+    bool open = true;
+    if (!ImGui::BeginPopupModal("Layer Translator", &open, ImGuiWindowFlags_NoSavedSettings))
+        return;
+    ImGui::TextWrapped(
+        "Type a new name beside a layer. A name that exists already merges the "
+        "layer into it.");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##trfilter", "Filter", &st.trFilter);
+    const std::string f = lowered(st.trFilter);
+    std::string pairs;
+    std::size_t changes = 0;
+    if (ImGui::BeginChild("##trlist", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 2), true)) {
+        if (ImGui::BeginTable("##trtable", 2, ImGuiTableFlags_SizingStretchSame)) {
+            ImGui::TableSetupColumn("Layer");
+            ImGui::TableSetupColumn("Translate to");
+            ImGui::TableHeadersRow();
+            for (LayerId id : layerTreeOrder(doc)) {
+                const Layer* l = doc.layer(id);
+                if (!l || id == kLayerZero)
+                    continue;
+                const std::string path = layerPath(doc, id);
+                std::string& to = st.trNew[id.value];
+                const bool changed = !to.empty() && to != path;
+                if (changed) {
+                    pairs += (pairs.empty() ? "" : ";") + path + ">" + to;
+                    ++changes;
+                }
+                if (!f.empty() && lowered(path).find(f) == std::string::npos)
+                    continue;
+                ImGui::PushID(static_cast<int>(id.value));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(path.c_str());
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputTextWithHint("##to", path.c_str(), &to);
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::BeginDisabled(changes == 0);
+    if (ImGui::Button("Translate")) {
+        // No trailing Enter (exec adds one): on an idle command line it would repeat LAYTRANS.
+        if (ctx.runCommand) {
+            if (ctx.cancelCommand)
+                ctx.cancelCommand();
+            ctx.runCommand("LAYTRANS");
+            ctx.runCommand("Map");
+            ctx.runCommand(pairs);
+        }
+        st.trNew.clear();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu to change", changes);
+    ImGui::SameLine();
+    if (ImGui::Button("Load CSV...")) {
+        ImGui::CloseCurrentPopup();
+        if (ctx.runCommand) {  // leaves the file name prompt open for the user
+            if (ctx.cancelCommand)
+                ctx.cancelCommand();
+            ctx.runCommand("LAYTRANS");
+            ctx.runCommand("Load");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export CSV...")) {
+        ImGui::CloseCurrentPopup();
+        if (ctx.runCommand) {
+            if (ctx.cancelCommand)
+                ctx.cancelCommand();
+            ctx.runCommand("LAYTRANS");
+            ctx.runCommand("Export");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close") || !open)
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
 void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     if (!ctx.doc)
         return;
@@ -778,6 +870,14 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Save, restore, rename and delete layer states");
     layerStatesManager(ctx, doc, st);
+    ImGui::SameLine();
+    if (ImGui::Button("Translate...")) {
+        st.trNew.clear();
+        ImGui::OpenPopup("Layer Translator");
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Rename or merge layers to an office standard");
+    layerTranslator(ctx, doc, st);
 
     std::vector<Row> rows = buildRows(doc, st);
     st.order.clear();

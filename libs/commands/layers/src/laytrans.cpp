@@ -36,6 +36,63 @@ std::vector<std::string> splitFields(const std::string& line) {
     return out;
 }
 
+// One "old,new[,colour[,linetype[,lineweight]]]" per line, as the Load keyword reads a file.
+void translate(cmd::CommandContext& ctx, std::istream& in) {
+    ctx.setUndoLabel("LAYTRANS");
+    std::string line;
+    std::size_t renamed = 0, merged = 0, styled = 0, skipped = 0;
+    bool first = true;
+    while (std::getline(in, line)) {
+        if (first && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
+            line.erase(0, 3);
+        first = false;
+        if (cmd::trim(line).empty())
+            continue;
+        const auto f2 = splitFields(line);
+        if (f2.size() < 2 || f2[0].empty() || f2[1].empty() || f2[0] == "Old")
+            continue;
+        auto from = resolveLayer(ctx.doc(), f2[0]);
+        if (!from) {
+            ++skipped;  // a standard may list layers this drawing does not have
+            continue;
+        }
+        LayerId target = from.value();
+        if (f2[0] != f2[1]) {
+            if (auto existing = resolveLayer(ctx.doc(), f2[1]); existing) {
+                if (existing.value() == from.value())
+                    continue;
+                if (auto r = mergeLayer(ctx.doc(), ctx.tx(), from.value(), existing.value()); !r) {
+                    ctx.message(f2[0] + ": " + r.error().message);
+                    ++skipped;
+                    continue;
+                }
+                target = existing.value();
+                ++merged;
+            } else if (auto r = renameLayer(ctx.doc(), ctx.tx(), from.value(), f2[1]); !r) {
+                ctx.message(f2[0] + ": " + r.error().message);
+                ++skipped;
+                continue;
+            } else {
+                ++renamed;
+            }
+        }
+        bool style = false;
+        if (f2.size() > 2 && !f2[2].empty())
+            if (auto c = parseColor(f2[2]); c)
+                style = bool(setLayerColor(ctx.doc(), ctx.tx(), target, c.value())) || style;
+        if (f2.size() > 3 && !f2[3].empty())
+            if (auto lt = resolveLinetype(ctx.doc(), ctx.tx(), f2[3]); lt)
+                style = bool(setLayerLinetype(ctx.doc(), ctx.tx(), target, lt.value())) || style;
+        if (f2.size() > 4 && !f2[4].empty())
+            if (auto w = parseLineweight(f2[4]); w)
+                style = bool(setLayerLineweight(ctx.doc(), ctx.tx(), target, w.value())) || style;
+        if (style)
+            ++styled;
+    }
+    ctx.message(std::to_string(renamed) + " renamed, " + std::to_string(merged) + " merged, " +
+                std::to_string(styled) + " restyled, " + std::to_string(skipped) + " skipped.");
+}
+
 class LayTransCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYTRANS"; }
@@ -45,10 +102,10 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Load", "Export"};
+        ko.keywords = {"Load", "Export", "Map"};
         ko.defaultKeyword = "Load";
-        auto k =
-            co_await ctx.getKeyword("Layer translator [Load a standard/Export layers] <Load>", ko);
+        auto k = co_await ctx.getKeyword(
+            "Layer translator [Load a standard/Export layers/Map pairs] <Load>", ko);
         if (!k.ok())
             co_return;
         if (k.keyword == "Export") {
@@ -79,6 +136,27 @@ public:
             co_return;
         }
 
+        if (k.keyword == "Map") {
+            // "old>new;old>new": what the Layer Translator dialog sends. Layer names cannot hold
+            // '>' or ';', so they split the text safely.
+            auto m = co_await ctx.getString("Enter old>new pairs separated by ;");
+            if (!m.ok())
+                co_return;
+            std::string csv;
+            std::stringstream pairs(m.text);
+            std::string item;
+            while (std::getline(pairs, item, ';')) {
+                const auto gt = item.find('>');
+                if (gt == std::string::npos)
+                    continue;
+                csv += "\"" + cmd::trim(item.substr(0, gt)) + "\",\"" +
+                       cmd::trim(item.substr(gt + 1)) + "\"\n";
+            }
+            std::istringstream in(csv);
+            translate(ctx, in);
+            co_return;
+        }
+
         auto f = co_await ctx.getString("Enter the CSV file name of the layer standard");
         if (!f.ok())
             co_return;
@@ -88,62 +166,7 @@ public:
             ctx.message("Cannot read " + file);
             co_return;
         }
-        ctx.setUndoLabel("LAYTRANS");
-        std::string line;
-        std::size_t renamed = 0, merged = 0, styled = 0, skipped = 0;
-        bool first = true;
-        while (std::getline(in, line)) {
-            if (first && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
-                line.erase(0, 3);
-            first = false;
-            if (cmd::trim(line).empty())
-                continue;
-            const auto f2 = splitFields(line);
-            if (f2.size() < 2 || f2[0].empty() || f2[1].empty() || f2[0] == "Old")
-                continue;
-            auto from = resolveLayer(ctx.doc(), f2[0]);
-            if (!from) {
-                ++skipped;  // a standard may list layers this drawing does not have
-                continue;
-            }
-            LayerId target = from.value();
-            if (f2[0] != f2[1]) {
-                if (auto existing = resolveLayer(ctx.doc(), f2[1]); existing) {
-                    if (existing.value() == from.value())
-                        continue;
-                    if (auto r = mergeLayer(ctx.doc(), ctx.tx(), from.value(), existing.value());
-                        !r) {
-                        ctx.message(f2[0] + ": " + r.error().message);
-                        ++skipped;
-                        continue;
-                    }
-                    target = existing.value();
-                    ++merged;
-                } else if (auto r = renameLayer(ctx.doc(), ctx.tx(), from.value(), f2[1]); !r) {
-                    ctx.message(f2[0] + ": " + r.error().message);
-                    ++skipped;
-                    continue;
-                } else {
-                    ++renamed;
-                }
-            }
-            bool style = false;
-            if (f2.size() > 2 && !f2[2].empty())
-                if (auto c = parseColor(f2[2]); c)
-                    style = bool(setLayerColor(ctx.doc(), ctx.tx(), target, c.value())) || style;
-            if (f2.size() > 3 && !f2[3].empty())
-                if (auto lt = resolveLinetype(ctx.doc(), ctx.tx(), f2[3]); lt)
-                    style =
-                        bool(setLayerLinetype(ctx.doc(), ctx.tx(), target, lt.value())) || style;
-            if (f2.size() > 4 && !f2[4].empty())
-                if (auto w = parseLineweight(f2[4]); w)
-                    style =
-                        bool(setLayerLineweight(ctx.doc(), ctx.tx(), target, w.value())) || style;
-            if (style)
-                ++styled;
-        }
-        ctx.message(std::to_string(renamed) + " renamed, " + std::to_string(merged) + " merged, " +
-                    std::to_string(styled) + " restyled, " + std::to_string(skipped) + " skipped.");
+        translate(ctx, in);
     }
 };
 
