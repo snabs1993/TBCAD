@@ -10,6 +10,7 @@
 #include <initializer_list>
 
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/ui/app_core.h"
 
 using namespace tbcad;
@@ -46,6 +47,7 @@ TEST_CASE("bench: open one drawing (TBCAD_BENCH_FILE)") {
     cmd::Registry registry;
     registerAllCommands(registry);
     ui::AppCore core(registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    dwgopen::registerForeignFormats(core);  // .dwg opens as in the application
     core.setViewportSize(1400, 900);
     const double base = rssMb();
     auto t = std::chrono::steady_clock::now();
@@ -63,13 +65,14 @@ TEST_CASE("bench: open one drawing (TBCAD_BENCH_FILE)") {
         std::printf("frame: %.1f ms\n", ms(t));
     }
     auto run = [&](const char* label, std::initializer_list<const char*> lines) {
+        std::fprintf(stderr, "-- %s\n", label);  // heads the TBCAD_EDIT_PROFILE lines of it
         t = std::chrono::steady_clock::now();
         for (const char* l : lines)
             core.submitText(l);
         const double edit = ms(t);
         core.updateFrame();
-        std::printf("%-12s %8.0f ms (frame %.0f ms), memory +%.0f MB\n", label, ms(t),
-                    ms(t) - edit, rssMb() - base);
+        std::printf("%-12s %8.0f ms (frame %.0f ms), memory +%.0f MB\n", label, ms(t), ms(t) - edit,
+                    rssMb() - base);
     };
     auto undoRedo = [&] {
         run("  undo", {"U"});

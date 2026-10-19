@@ -5,6 +5,7 @@
 #include <thread>
 #include <unordered_set>
 
+#include "tbcad/core/profile.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/render/layer_sync.h"
 #include "tbcad/text/text.h"
@@ -645,8 +646,11 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     for (const EntityChange& c : cs.entities)
         if (!cs.after(c))
             removed.push_back(cs.idOf(c));
-    if (!scene_.removeAllOf(removed))
-        scene_.removeMany(removed);
+    {
+        profile::EditTimer t("scene: remove", removed.size());
+        if (!scene_.removeAllOf(removed))
+            scene_.removeMany(removed);
+    }
     if (!pending_.empty())
         dropPending(removed);
     std::vector<const Entity*> redraw;
@@ -683,10 +687,14 @@ void SceneSync::onChanged(const ChangeSet& cs) {
                                redraw.begin(), redraw.end(),
                                [&](const Entity* e) { return scene_.contains(e->common.id); })) >=
                            redraw.size());
-    if (lazy)
-        queueLazy(redraw, &known);
-    else
-        upsertMany(redraw);
+    {
+        profile::EditTimer t(lazy ? "scene: queue changed objects" : "scene: build changed objects",
+                             redraw.size());
+        if (lazy)
+            queueLazy(redraw, &known);
+        else
+            upsertMany(redraw);
+    }
     if (!fieldTexts_.empty() && (!cs.entities.empty() || cs.header)) {
         std::vector<EntityId> ids(fieldTexts_.begin(), fieldTexts_.end());
         for (EntityId id : ids)
