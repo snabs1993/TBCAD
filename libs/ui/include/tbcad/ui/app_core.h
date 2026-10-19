@@ -190,6 +190,9 @@ public:
     // remaining words answer its prompts ("DEVGEN LINES 1000000"); empty text repeats the last
     // command (or, in a prompt, takes the default).
     void submitText(std::string_view text);
+    // A script line as --script and the gate take it: each part between semicolons is submitted
+    // in turn, an empty part being Enter ("ERASE;ALL;" erases everything).
+    void submitScript(std::string_view script);
     // The same for a line a panel sends: the command line shows names instead of the internal
     // "#id" references the panels use, and answers to prompts are not echoed a second time.
     void submitPanelText(std::string_view text);

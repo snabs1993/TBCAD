@@ -208,16 +208,7 @@ void App::shutdownWindow() {
 }
 
 void App::runScript(const std::string& script) {
-    std::size_t start = 0;
-    while (start <= script.size()) {
-        std::size_t end = script.find(';', start);
-        std::string line =
-            script.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        core_->submitText(line);
-        if (end == std::string::npos)
-            break;
-        start = end + 1;
-    }
+    core_->submitScript(script);
 }
 
 void App::runScriptFile(const std::string& file) {

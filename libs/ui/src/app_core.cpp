@@ -1541,6 +1541,16 @@ std::string AppCore::friendlyEcho(const std::string& line) const {
     return out;
 }
 
+void AppCore::submitScript(std::string_view script) {
+    for (std::size_t at = 0; at <= script.size();) {
+        const std::size_t end = script.find(';', at);
+        submitText(script.substr(at, end == std::string_view::npos ? end : end - at));
+        if (end == std::string_view::npos)
+            break;
+        at = end + 1;
+    }
+}
+
 void AppCore::submitText(std::string_view text) {
     std::string trimmed = cmd::trim(text);
     cmd::CommandRunner& run = runner();
