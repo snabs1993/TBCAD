@@ -807,6 +807,42 @@ TEST_CASE("JUSTIFYTEXT keeps the text where it is") {
     CHECK(near(before, after, 1e-6));
 }
 
+TEST_CASE("JUSTIFYTEXT to and from Align and Fit keeps the text's place and size") {
+    Fixture f;
+    TextData t;
+    t.position = {10, 20};
+    t.height = 2;
+    t.utf8 = "hello";
+    EntityId id = f.add(Indirect<TextData>(t));
+    const auto before = text::layoutEntity(f.doc, f.get(id)).frameCorners();
+    f.host.run("JUSTIFYTEXT", {ScriptItem::select({id}), ScriptItem::enter(), "Fit"});
+    const auto* now = entityAs<TextData>(f.get(id));
+    CHECK(now->h == HAlign::Fit);
+    auto after = text::layoutEntity(f.doc, f.get(id)).frameCorners();
+    for (int i = 0; i < 4; ++i)
+        CHECK(near(before[static_cast<std::size_t>(i)], after[static_cast<std::size_t>(i)], 1e-6));
+
+    // Aligned text twice as long as it would be: back to TL it keeps the doubled height
+    {
+        Transaction tx = f.doc.begin("stretch");
+        REQUIRE(tx.modify(id, [](Entity& e) {
+                      auto* x = entityAs<TextData>(e);
+                      x->h = HAlign::Aligned;
+                      x->alignPoint = x->position + (x->alignPoint - x->position) * 2.0;
+                  }).ok());
+        tx.commit();
+    }
+    const auto wide = text::layoutEntity(f.doc, f.get(id)).frameCorners();
+    f.host.run("JUSTIFYTEXT", {ScriptItem::select({id}), ScriptItem::enter(), "TL"});
+    now = entityAs<TextData>(f.get(id));
+    CHECK(now->h == HAlign::Left);
+    CHECK(now->v == VAlign::Top);
+    CHECK(now->height == doctest::Approx(4));
+    after = text::layoutEntity(f.doc, f.get(id)).frameCorners();
+    for (int i = 0; i < 4; ++i)
+        CHECK(near(wide[static_cast<std::size_t>(i)], after[static_cast<std::size_t>(i)], 1e-6));
+}
+
 TEST_CASE("PEDIT edits vertices") {
     Fixture f;
     EntityId p =
@@ -1871,7 +1907,8 @@ TEST_CASE("FILLET and CHAMFER of two segments with an arc between them remove th
                                    {{10, 0}, 0.4142135623730951, 0, 0},
                                    {{12, 2}, 0, 0, 0},
                                    {{12, 10}, 0, 0, 0}},
-                                  false, 0});
+                                  false,
+                                  0});
     };
     {
         Fixture f;
@@ -1898,7 +1935,8 @@ TEST_CASE("FILLET and CHAMFER of two segments with an arc between them remove th
     }
 }
 
-TEST_CASE("MATCHPROP copies every basic property, the plot style included, and undoes in one step") {
+TEST_CASE(
+    "MATCHPROP copies every basic property, the plot style included, and undoes in one step") {
     Fixture f;
     LayerId walls{};
     {
@@ -2100,8 +2138,9 @@ TEST_CASE("ALIGN asks for a third pair like AutoCAD, scales on request, and dime
         // two pairs, Enter at the third, then Yes: the line is scaled to the destination
         Fixture f;
         EntityId l = f.add(LineData{{0, 0}, {10, 0}});
-        REQUIRE(f.host.run("ALIGN", {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5",
-                                     "10,0", "5,25", ScriptItem::enter(), "Yes"})
+        REQUIRE(f.host
+                    .run("ALIGN", {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5",
+                                   "10,0", "5,25", ScriptItem::enter(), "Yes"})
                     .finished);
         const auto* ld = entityAs<LineData>(f.get(l));
         CHECK(near(ld->a, {5, 5}));
@@ -2112,8 +2151,9 @@ TEST_CASE("ALIGN asks for a third pair like AutoCAD, scales on request, and dime
         // a third pair is accepted and ignored in a flat drawing; No keeps the size
         Fixture f;
         EntityId l = f.add(LineData{{0, 0}, {10, 0}});
-        REQUIRE(f.host.run("ALIGN", {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5",
-                                     "10,0", "5,25", "3,3", "8,8", "No"})
+        REQUIRE(f.host
+                    .run("ALIGN", {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5",
+                                   "10,0", "5,25", "3,3", "8,8", "No"})
                     .finished);
         const auto* ld = entityAs<LineData>(f.get(l));
         CHECK(near(ld->b, {5, 15}));
@@ -2132,8 +2172,9 @@ TEST_CASE("ALIGN asks for a third pair like AutoCAD, scales on request, and dime
                 dim = e.common.id;
         });
         REQUIRE(dim);
-        REQUIRE(f.host.run("ALIGN", {ScriptItem::select(all), ScriptItem::enter(), "0,0", "0,0",
-                                     "10,0", "0,20", "Yes"})
+        REQUIRE(f.host
+                    .run("ALIGN", {ScriptItem::select(all), ScriptItem::enter(), "0,0", "0,0",
+                                   "10,0", "0,20", "Yes"})
                     .finished);
         CHECK(near(entityAs<LineData>(f.get(l))->b, {0, 20}));
         CHECK(entityAs<DimensionData>(f.get(dim))->measurement == doctest::Approx(20));

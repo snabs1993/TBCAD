@@ -4,6 +4,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/text/text.h"
 
 using namespace tbcad;
@@ -293,6 +294,35 @@ TEST_CASE("TXT2MTXT merges lines top to bottom into one multiline text") {
     CHECK(f.firstMText() == nullptr);
 }
 
+TEST_CASE("TXT2MTXT SEttings: selection order and word wrap into one paragraph") {
+    Fixture f;
+    auto addText = [&](Vec2 at, const std::string& s) {
+        TextData t;
+        t.position = at;
+        t.height = 2.5;
+        t.utf8 = s;
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId low = addText({0, 0}, "second");
+    EntityId high = addText({0, 10}, "first line");
+    REQUIRE(f.host
+                .run("TXT2MTXT", {"SEttings", "Order", "Select", "Wrap", "Yes", "eXit",
+                                  cmd::ScriptItem::select({low, high}), cmd::ScriptItem::enter()})
+                .finished);
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->utf8 == "second first line");  // as selected, one paragraph
+    CHECK(m->width > 0);
+    CHECK(m->position.y == doctest::Approx(12.5));  // still starts at the top line
+    // the settings are remembered
+    CHECK(f.host.setting("txt2mtxt.wrap") == std::optional<std::string>("1"));
+}
+
 TEST_CASE("TXTEXP turns text into closed polylines and undo brings the text back") {
     Fixture f;
     f.host.run("TEXT", {"0,0", "10", "0", "HOH"});
@@ -435,6 +465,44 @@ TEST_CASE("MTEXT and TEXT from far away default to a height that can be read") {
     g.host.run("MT", {"0,100", "40,60", "near"});
     REQUIRE(g.firstMText());
     CHECK(g.firstMText()->height == doctest::Approx(2.5));
+}
+
+TEST_CASE("TEXTALIGN along a line: Distribute spreads, Spacing sets the gap, Points slides") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "A"});
+    f.host.run("TEXT", {"7,30", "2.5", "0", "B"});
+    f.host.run("TEXT", {"3,12", "2.5", "0", "C"});
+    REQUIRE(f.doc.modelSpace().size() == 3);
+    const EntityId ta = f.doc.modelSpace()[0];
+    const EntityId tb = f.doc.modelSpace()[1];
+    const EntityId tc = f.doc.modelSpace()[2];
+    auto corner = [&](EntityId id) { return geom::bounds(*f.doc.find(id), f.doc).min; };
+    const Vec2 a = corner(ta);
+    // a vertical line up from A: C (lower) first, then B, evenly up to y + 40
+    REQUIRE(
+        f.host
+            .run("TEXTALIGN", {cmd::ScriptItem::select({ta, tb, tc}), cmd::ScriptItem::enter(),
+                               "Distribute", std::to_string(a.x) + "," + std::to_string(a.y + 40)})
+            .finished);
+    CHECK(corner(tc).x == doctest::Approx(a.x));
+    CHECK(corner(tc).y == doctest::Approx(a.y + 20));
+    CHECK(corner(tb).y == doctest::Approx(a.y + 40));
+    CHECK(f.host.undo());
+    REQUIRE(f.host
+                .run("TEXTALIGN",
+                     {cmd::ScriptItem::select({ta, tb, tc}), cmd::ScriptItem::enter(), "Spacing",
+                      "5", std::to_string(a.x) + "," + std::to_string(a.y + 40)})
+                .finished);
+    CHECK(corner(tc).y == doctest::Approx(a.y + 5));
+    CHECK(corner(tb).y == doctest::Approx(a.y + 10));
+    CHECK(f.host.undo());
+    const double bY = corner(tb).y;
+    REQUIRE(f.host
+                .run("TEXTALIGN", {cmd::ScriptItem::select({ta, tb, tc}), cmd::ScriptItem::enter(),
+                                   "Points", std::to_string(a.x) + "," + std::to_string(a.y + 40)})
+                .finished);
+    CHECK(corner(tb).x == doctest::Approx(a.x));  // onto the line
+    CHECK(corner(tb).y == doctest::Approx(bY));   // at the same height
 }
 
 TEST_CASE("TEXTALIGN lines texts up with the first one and undoes in one step") {

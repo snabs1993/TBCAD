@@ -127,7 +127,7 @@ ALIGN, MATCHPROP, SETBYLAYER and SCALETEXT accept every entity kind on an editab
 | Command | Alias | What it does |
 | --- | --- | --- |
 | `SPLINEDIT` | `SPE` | Add, Delete or Move fit points (the spline is fitted again), Tolerance (fits the spline again through as few fit points as keep it within a distance of the old curve), Close, Open, Reverse. Needs a spline that has fit points. |
-| `JUSTIFYTEXT` | | Changes the justification of Text (Left, Center, Right, Middle, TL..BR) or the attachment of MText without moving it. Aligned and Fit text are skipped. |
+| `JUSTIFYTEXT` | | Changes the justification of Text (Left, Align, Fit, Center, Middle, Right, TL..BR) or the attachment of MText without moving it. Align and Fit span the text between where it now starts and ends; Aligned or Fit text turned into another justification keeps its size (its height or width factor takes the stretch). The Justify row of the Properties panel works the same way. |
 | `PEDIT` > Vertices | | Insert (splits a straight or arc segment), Remove (neighbours joined by a straight segment) and Move a vertex. Per-vertex widths are not preserved when inserting. |
 
 The menu now lists the new commands under Modify (Draw for DIVIDE and MEASURE).

@@ -263,13 +263,18 @@ public:
         if (!sel.ok())
             co_return;
         cmd::KeywordOptions ko;
-        ko.keywords = {"Left", "Center", "Right", "Middle", "TL", "TC", "TR",
-                       "ML",   "MC",     "MR",    "BL",     "BC", "BR"};
+        ko.keywords = {"Left", "Align", "Fit", "Center", "Middle", "Right", "TL", "TC",
+                       "TR",   "ML",    "MC",  "MR",     "BL",     "BC",    "BR"};
         auto k = co_await ctx.getKeyword(
-            "Enter a justification [Left/Center/Right/Middle/TL/TC/TR/ML/MC/MR/BL/BC/BR]", ko);
+            "Enter a justification [Left/Align/Fit/Center/Middle/"
+            "Right/TL/TC/TR/ML/MC/MR/BL/BC/BR]",
+            ko);
         if (!k.ok())
             co_return;
-        auto j = justifyFor(k.keyword);
+        // Align and Fit span the text between two points on its baseline: as in AutoCAD the
+        // points are where the text now starts and ends, so it stays where it is.
+        const bool toSpan = k.keyword == "Align" || k.keyword == "Fit";
+        auto j = justifyFor(toSpan ? "Left" : k.keyword);
         if (!j)
             co_return;
         std::size_t n = 0;
@@ -281,9 +286,27 @@ public:
             if (before.empty())
                 continue;
             Entity moved = *e;
+            if (toSpan && kind(moved) != EntityKind::Text)
+                continue;  // multiline text has no Align or Fit
             if (auto* t = entityAs<TextData>(moved)) {
-                if (t->h == HAlign::Aligned || t->h == HAlign::Fit)
-                    continue;
+                if (t->h == HAlign::Aligned || t->h == HAlign::Fit) {
+                    // Keep its look: Aligned text grows with its width, Fit text stretches.
+                    TextData plain = *t;
+                    plain.h = HAlign::Left;
+                    plain.v = VAlign::Baseline;
+                    plain.alignPoint = plain.position;
+                    const auto pc = text::layoutText(ctx.doc(), plain).frameCorners();
+                    const double natural = distance(pc[0], pc[1]);
+                    const Vec2 span = t->alignPoint - t->position;
+                    const double D = length(span);
+                    if (natural > tol::kLinear && D > tol::kLinear) {
+                        if (t->h == HAlign::Aligned)
+                            t->height *= D / natural;
+                        else
+                            t->widthFactor *= D / natural;
+                        t->rotation = std::atan2(span.y, span.x);
+                    }
+                }
                 t->h = j->h;
                 t->v = j->v;
                 t->position = t->alignPoint = {0, 0};
@@ -295,10 +318,16 @@ public:
             if (after.empty())
                 continue;
             Vec2 shift = before.frameCorners()[0] - after.frameCorners()[0];
-            if (auto* t = entityAs<TextData>(moved))
+            if (auto* t = entityAs<TextData>(moved)) {
                 t->position = t->alignPoint = shift;
-            else if (auto* m = entityAs<MTextData>(moved))
+                if (toSpan) {
+                    const auto c = after.frameCorners();
+                    t->h = k.keyword == "Align" ? HAlign::Aligned : HAlign::Fit;
+                    t->alignPoint = shift + (c[1] - c[0]);
+                }
+            } else if (auto* m = entityAs<MTextData>(moved)) {
                 m->position = shift;
+            }
             if (replaceEntity(ctx.tx(), id, moved))
                 ++n;
         }

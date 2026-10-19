@@ -735,14 +735,28 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
             for (const JustRow& r : kJustify) {
                 if (chosen != r.name)
                     continue;
-                if (t->h == HAlign::Aligned || t->h == HAlign::Fit || r.h == HAlign::Aligned ||
-                    r.h == HAlign::Fit) {
-                    // Two-point justifications need a second point; only the plain ones convert.
-                    return makeError(ErrorCode::InvalidArgument,
-                                     "Aligned and Fit text is changed with the grips.");
-                }
                 text::TextLayout before = text::layoutEntity(doc, *cur);
-                t->h = r.h;
+                if (t->h == HAlign::Aligned || t->h == HAlign::Fit) {
+                    // Keep its look: Aligned text grows with its width, Fit text stretches.
+                    TextData plain = *t;
+                    plain.h = HAlign::Left;
+                    plain.v = VAlign::Baseline;
+                    plain.alignPoint = plain.position;
+                    const auto pc = text::layoutText(doc, plain).frameCorners();
+                    const double natural = distance(pc[0], pc[1]);
+                    const Vec2 span = t->alignPoint - t->position;
+                    const double D = length(span);
+                    if (natural > tol::kLinear && D > tol::kLinear) {
+                        if (t->h == HAlign::Aligned)
+                            t->height *= D / natural;
+                        else
+                            t->widthFactor *= D / natural;
+                        t->rotation = std::atan2(span.y, span.x);
+                    }
+                }
+                // Aligned and Fit span the text from where it now starts to where it ends.
+                const bool toSpan = r.h == HAlign::Aligned || r.h == HAlign::Fit;
+                t->h = toSpan ? HAlign::Left : r.h;
                 t->v = r.v;
                 t->position = t->alignPoint = {0, 0};
                 text::TextLayout after = text::layoutEntity(doc, next);
@@ -751,6 +765,11 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
                         before.frameCorners()[0] - after.frameCorners()[0];
                 else
                     t->position = t->alignPoint = entityAs<TextData>(*cur)->position;
+                if (toSpan && !after.empty()) {
+                    const auto c = after.frameCorners();
+                    t->h = r.h;
+                    t->alignPoint = t->position + (c[1] - c[0]);
+                }
                 break;
             }
         }
