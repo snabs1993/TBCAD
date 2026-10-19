@@ -86,6 +86,16 @@ public:
     // Family name as stored in the font ("Sarabun").
     std::string familyName(FontId font);
 
+    // The font file an outline font was loaded from (for embedding it in a PDF): the bytes, the
+    // face number within a collection and the PostScript name. Null data for stroke fonts. The
+    // bytes stay valid for the life of the library.
+    struct FileData {
+        const std::vector<unsigned char>* bytes = nullptr;
+        int faceIndex = 0;
+        std::string postscriptName{};
+    };
+    FileData fileData(FontId font);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

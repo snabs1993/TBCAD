@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -125,6 +126,9 @@ struct PlotFill {  // even-odd
     // Also stroked with a hairline of the fill colour, as AutoCAD plots solid hatches, solids and
     // wide polylines (text characters are not).
     bool outline = false;
+    // For a character of an outline font: the same glyph as text, its emToWorld mapping the em
+    // square to paper mm. A PDF writes it as real (selectable) text in the embedded font.
+    std::optional<GlyphRef> glyph{};
 };
 struct PlotDots {
     std::vector<Vec2> pts{};

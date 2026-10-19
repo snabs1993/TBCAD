@@ -150,6 +150,18 @@ DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon,
                     inside = clipHalfPlane(inside, a, b);
                 }
             }
+            // Real text can only stand for a glyph the clip left whole.
+            if (fill->glyphRef && f.rings.size() == fill->rings.size()) {
+                bool same = true;
+                for (std::size_t i = 0; same && i < f.rings.size(); ++i) {
+                    same = f.rings[i].size() == fill->rings[i].size();
+                    for (std::size_t k = 0; same && k < f.rings[i].size(); ++k)
+                        same = f.rings[i][k].x == fill->rings[i][k].x &&
+                               f.rings[i][k].y == fill->rings[i][k].y;
+                }
+                if (same)
+                    f.glyphRef = fill->glyphRef;
+            }
             if (!f.rings.empty())
                 out.items.emplace_back(std::move(f));
         } else if (const auto* pts = std::get_if<DisplayPoints>(&item)) {
