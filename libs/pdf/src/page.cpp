@@ -6,12 +6,51 @@
 
 namespace tbcad::pdf {
 
+void Page::endText() {
+    if (!inText_)
+        return;
+    content_ += "ET\n";
+    inText_ = false;
+    textFont_ = -1;
+}
+
+void Page::showGlyph(int font, std::uint16_t glyphId, std::u32string_view text, double a,
+                     double b, double c, double d, double e, double f) {
+    if (!inText_) {
+        content_ += "BT\n";
+        inText_ = true;
+    }
+    if (font != textFont_) {
+        content_ += "/F" + std::to_string(font) + " 1 Tf\n";
+        textFont_ = font;
+        fontsUsed_.insert(font);
+    }
+    for (double v : {a, b, c, d}) {
+        content_ += formatNumber(v, 6);
+        content_ += ' ';
+    }
+    content_ += formatNumber(e) + ' ' + formatNumber(f) + " Tm <";
+    static const char* hex = "0123456789ABCDEF";
+    for (int sh = 12; sh >= 0; sh -= 4)
+        content_ += hex[(glyphId >> sh) & 0xF];
+    content_ += "> Tj\n";
+    auto& used = glyphsUsed_[font];
+    auto it = used.find(glyphId);
+    if (it == used.end())
+        used.emplace(glyphId, std::u32string(text));
+    else if (it->second.empty() && !text.empty())
+        it->second = text;
+}
+
 void Page::op(std::string_view text) {
+    endText();
     content_ += text;
     content_ += '\n';
 }
 
 void Page::nums(std::initializer_list<double> values, std::string_view opName) {
+    if (opName != "rg")  // the fill colour may change inside a text object
+        endText();
     for (double v : values) {
         content_ += formatNumber(v);
         content_ += ' ';
@@ -37,6 +76,7 @@ void Page::restore() {
 }
 
 void Page::transform(double a, double b, double c, double d, double e, double f) {
+    endText();
     // Matrix entries need more than 4 decimals (e.g. cos/sin of a rotation).
     for (double v : {a, b, c, d, e, f}) {
         content_ += formatNumber(v, 8);
@@ -51,6 +91,7 @@ void Page::drawImage(std::shared_ptr<const ImageData> image, double blx, double 
         image->rgba.size() <
             static_cast<std::size_t>(image->width) * static_cast<std::size_t>(image->height) * 4)
         return;
+    endText();
     const std::size_t i = pics_.size();
     pics_.push_back({std::move(image), std::clamp(opacity, 0.0, 1.0)});
     save();
@@ -75,6 +116,7 @@ void Page::setLineWidthMm(double widthMm) {
 }
 
 void Page::setDashMm(const std::vector<double>& pattern, double phase) {
+    endText();
     content_ += '[';
     bool any = false;
     for (double v : pattern) {

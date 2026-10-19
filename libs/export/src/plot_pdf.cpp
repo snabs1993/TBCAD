@@ -1,4 +1,5 @@
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -9,6 +10,10 @@ namespace tbcad::exportlib {
 
 namespace {
 
+// PDF font number per font file face, -1 when it cannot be embedded (drawn as outlines).
+using FontKey = std::pair<const unsigned char*, std::uint32_t>;
+using FontMap = std::map<FontKey, int>;
+
 bool sameStyle(const PlotStyle& a, const PlotStyle& b) {
     return a.color == b.color && a.widthMm == b.widthMm && a.dashMm == b.dashMm;
 }
@@ -16,8 +21,9 @@ bool sameStyle(const PlotStyle& a, const PlotStyle& b) {
 class PdfPainter {
 public:
     // `docLayers[i]` is the PDF layer of the sheet's layer i + 1.
-    PdfPainter(pdf::Page& page, const std::vector<int>& docLayers)
-        : page_(page), docLayers_(docLayers) {}
+    PdfPainter(pdf::PdfDocument& doc, pdf::Page& page, const std::vector<int>& docLayers,
+               FontMap& fonts)
+        : doc_(doc), page_(page), docLayers_(docLayers), fonts_(fonts) {}
 
     // Marked content for the layer of the next thing drawn; layer 0 closes the open one.
     void layer(std::uint32_t l) {
@@ -70,6 +76,15 @@ public:
         flush();
         layer(f.layer);
         page_.setFillRGB(f.color.r / 255.0, f.color.g / 255.0, f.color.b / 255.0);
+        if (f.glyph && f.glyph->fontData) {
+            const int font = fontFor(*f.glyph);
+            if (font >= 0) {
+                const Transform2& m = f.glyph->emToWorld;
+                page_.showGlyph(font, static_cast<std::uint16_t>(f.glyph->glyphId), f.glyph->text,
+                                m.m00, m.m10, m.m01, m.m11, m.tx, m.ty);
+                return;
+            }
+        }
         if (f.outline) {
             // The stroke state is changed here, so the next path sets its own again.
             have_ = false;
@@ -109,6 +124,18 @@ public:
     }
 
 private:
+    int fontFor(const GlyphRef& g) {
+        const FontKey key{g.fontData, g.faceIndex};
+        if (auto it = fonts_.find(key); it != fonts_.end())
+            return it->second;
+        auto file = std::make_shared<std::vector<unsigned char>>(g.fontData, g.fontData + g.fontSize);
+        int font = -1;
+        if (g.glyphId <= 0xFFFF && pdf::canEmbedTrueType(*file, static_cast<int>(g.faceIndex)))
+            font = doc_.addFont({file, static_cast<int>(g.faceIndex), {}});
+        fonts_.emplace(key, font);
+        return font;
+    }
+
     // Lines and arcs of one style and layer, one after another, become one painted path: much
     // smaller and faster to read than a stroke each. (Capped, as some readers limit path size.)
     void begin(const PlotStyle& st) {
@@ -138,15 +165,18 @@ private:
         }
     }
 
+    pdf::PdfDocument& doc_;
     pdf::Page& page_;
     const std::vector<int>& docLayers_;
+    FontMap& fonts_;
     std::uint32_t layer_ = 0;
     PlotStyle last_{};
     bool have_ = false;
     pdf::LineCap cap_ = pdf::LineCap::Butt;
 };
 
-void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, std::map<std::string, int>& layerIds) {
+void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, std::map<std::string, int>& layerIds,
+           FontMap& fonts) {
     std::vector<int> docLayers;
     for (const std::string& name : sheet.layerNames) {
         auto it = layerIds.find(name);
@@ -160,7 +190,7 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, std::map<std::string, 
     page.clipRect(lay.printable.min.x, lay.printable.min.y, lay.printable.width(),
                   lay.printable.height());
     page.setLineJoin(pdf::LineJoin::Round);
-    PdfPainter painter(page, docLayers);
+    PdfPainter painter(doc, page, docLayers, fonts);
     for (const PlotPrimitive& prim : sheet.prims) {
         if (const auto* p = std::get_if<PlotPath>(&prim))
             painter.path(*p);
@@ -211,8 +241,9 @@ Result<void> writePdfPages(const std::vector<PlotSheet>& sheets, const std::stri
     doc.setCompression(compress);
     doc.setInfo(title, "TBCAD");
     std::map<std::string, int> layerIds;
+    FontMap fonts;
     for (const PlotSheet& sheet : sheets)
-        paint(sheet, doc, layerIds);
+        paint(sheet, doc, layerIds, fonts);
     return doc.writeFile(path);
 }
 
@@ -221,7 +252,8 @@ Result<std::string> pdfBytes(const PlotSheet& sheet, bool compress) {
     doc.setCompression(compress);
     doc.setInfo("TBCAD drawing", "TBCAD");
     std::map<std::string, int> layerIds;
-    paint(sheet, doc, layerIds);
+    FontMap fonts;
+    paint(sheet, doc, layerIds, fonts);
     std::ostringstream out;
     Result<void> r = doc.write(out);
     if (!r)

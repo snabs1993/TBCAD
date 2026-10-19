@@ -75,6 +75,8 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             out.items.emplace_back(std::move(rule));
         }
 
+    font::FontId lastFont = kNoFont;
+    font::FontLibrary::FileData file;
     for (const PlacedGlyph& g : layout.glyphs) {
         if (fonts().isStroke(g.font)) {
             for (const font::StrokePath& sp : fonts().strokes(g.font, g.glyphId).paths) {
@@ -115,8 +117,24 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             }
             fill.rings.push_back(std::move(ring));
         }
-        if (!fill.rings.empty())
-            out.items.emplace_back(std::move(fill));
+        if (fill.rings.empty())
+            continue;
+        // The same glyph as real text, for outputs that can embed the font (PDF).
+        Transform2 em;
+        em.m00 = g.scale * g.xScale;
+        em.m01 = g.shear * g.scale;
+        em.tx = g.origin.x;
+        em.m11 = g.scale;
+        em.ty = g.origin.y;
+        if (g.font != lastFont) {
+            file = fonts().fileData(g.font);
+            lastFont = g.font;
+        }
+        if (file.bytes)
+            fill.glyphRef = GlyphRef{file.bytes->data(), file.bytes->size(),
+                                     static_cast<std::uint32_t>(file.faceIndex), g.glyphId, g.text,
+                                     layout.toWorld * em};
+        out.items.emplace_back(std::move(fill));
     }
 }
 

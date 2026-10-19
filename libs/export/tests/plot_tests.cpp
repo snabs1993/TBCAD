@@ -12,6 +12,7 @@
 #include "miniz.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/export/plot.h"
+#include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
 
 using namespace tbcad;
@@ -1114,6 +1115,65 @@ TEST_CASE("filled areas get a hairline edge of their colour, text characters do 
     REQUIRE(pdf.ok());
     CHECK(pdf.value().find("0 w") != std::string::npos);
     CHECK(pdf.value().find("B*") != std::string::npos);
-    if (plain > 0)  // characters drawn as outlines (when a font is found) are only filled
-        CHECK(pdf.value().find("f*") != std::string::npos);
+    if (plain > 0)  // characters (when a font is found) are text, never stroked
+        CHECK(pdf.value().find("Tj") != std::string::npos);
+}
+
+TEST_CASE("text plots as real text in the embedded font, also inside a rotated block") {
+    text::registerDisplay();
+    blocks::registerInsertDisplay();
+    Document doc;
+    Entity text;
+    TextData t;
+    t.position = {10, 20};
+    t.height = 5;
+    t.utf8 = "Plan A \xE0\xB8\x9C\xE0\xB8\xB1\xE0\xB8\x87";  // "Plan A ผัง"
+    text.data = t;
+    addEntity(doc, text);
+    {
+        auto tx = doc.begin("block");
+        BlockId blk = tx.addBlock(BlockDef{.name = "TAG"}).value();
+        Entity inner;
+        TextData it;
+        it.height = 2;
+        it.utf8 = "Room 12";
+        inner.data = it;
+        REQUIRE(tx.add(std::move(inner), blk).ok());
+        Entity ins;
+        ins.data = InsertData{blk, {50, 50}, {2, 2}, 0.5};
+        REQUIRE(tx.add(std::move(ins)).ok());
+        tx.commit();
+    }
+
+    PlotSettings s;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    int glyphs = 0;
+    for (const PlotPrimitive& p : sheet.value().prims)
+        if (const auto* f = std::get_if<PlotFill>(&p); f && f->glyph)
+            ++glyphs;
+    REQUIRE(glyphs > 10);
+    auto pdf = pdfBytes(sheet.value(), false);
+    REQUIRE(pdf.ok());
+    const std::string& bytes = pdf.value();
+    CHECK(bytes.find(" Tj") != std::string::npos);
+    CHECK(bytes.find("/FontFile2") != std::string::npos);
+    CHECK(bytes.find("/ToUnicode") != std::string::npos);
+
+    if (std::system("pdftotext -v > /dev/null 2>&1") == 0) {
+        const auto dir = std::filesystem::temp_directory_path();
+        const auto file = dir / "tbcad_plot_text.pdf", txt = dir / "tbcad_plot_text.txt";
+        {
+            std::ofstream out(file, std::ios::binary);
+            out << bytes;
+        }
+        REQUIRE(std::system(("pdftotext -raw \"" + file.string() + "\" \"" + txt.string() + "\"").c_str()) == 0);
+        std::ifstream in(txt, std::ios::binary);
+        std::string out((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(out.find("Plan") != std::string::npos);
+        CHECK(out.find("\xE0\xB8\x9C") != std::string::npos);  // ผ
+        CHECK(out.find("Room") != std::string::npos);
+        std::filesystem::remove(file);
+        std::filesystem::remove(txt);
+    }
 }

@@ -104,7 +104,7 @@ TEST_CASE("a solid hatch plots as an even-odd fill") {
     REQUIRE(sheet.prims.size() == 1);
     CHECK(std::holds_alternative<PlotFill>(sheet.prims[0]));
     auto pdf = pdfBytes(sheet).value();
-    CHECK(pdf.find("f*") != std::string::npos);
+    CHECK(pdf.find("B*") != std::string::npos);  // filled, edged with a hairline of its colour
     std::string svg = svgString(sheet);
     CHECK(svg.find("fill-rule=\"evenodd\"") != std::string::npos);
 }
@@ -146,7 +146,7 @@ TEST_CASE("Thai text is plotted as filled glyph outlines at the right size, mark
     CHECK(half.height() == doctest::Approx(withMark.height() / 2).epsilon(0.02));
 
     auto pdf = pdfBytes(buildSheet(doc, s).value()).value();
-    CHECK(pdf.find("f*") != std::string::npos);
+    CHECK(pdf.find(" Tj") != std::string::npos);  // real text in the embedded font
     std::string svg = svgString(buildSheet(doc, s).value());
     CHECK(svg.find("evenodd") != std::string::npos);
 }
