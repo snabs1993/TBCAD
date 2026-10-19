@@ -5,6 +5,8 @@
 
 #include "common.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/geom/geom.h"
+#include "tbcad/transform/grip_menu.h"
 #include "tbcad/transform/grips.h"
 
 using namespace tbtest;
@@ -171,4 +173,74 @@ TEST_CASE("STRETCH over a window that catches parts of every entity kind undoes 
             CHECK(canonicalDump(f.doc) == after);
         }
     }
+}
+
+TEST_CASE("every grip menu action on every grip stays finite and undoes exactly") {
+    using tbcad::transform::GripAction;
+    auto samples = [](Document& doc, std::vector<EntityId>& ids) {
+        ids.push_back(add(doc, LineData{{0, 0}, {10, 5}}));
+        ids.push_back(add(doc, CircleData{{20, 20}, 4}));
+        ids.push_back(add(doc, ArcData{{0, 30}, 6, 0.3, 2.5}));
+        PolylineData pl;
+        pl.v = {{{0, 0}, 0.5, 0, 0}, {{10, 0}, 0, 1, 2}, {{10, 10}, -0.3, 0, 0}};
+        pl.closed = true;
+        ids.push_back(add(doc, pl));
+        SplineData sp;
+        sp.fit = {{0, 0}, {5, 4}, {10, 0}, {15, 4}};
+        if (auto r = geom::interpolateSpline(sp.fit, {})) {
+            sp.degree = r.value().degree;
+            sp.knots = r.value().knots;
+            sp.control = r.value().control;
+        }
+        ids.push_back(add(doc, Indirect<SplineData>(sp)));
+        LeaderData ld;
+        ld.vertices = {{0, 0}, {4, 4}, {8, 4}};
+        ld.textPos = {9, 4};
+        ids.push_back(add(doc, Indirect<LeaderData>(ld)));
+        HatchLoop loop;
+        loop.edges = {HatchArcEdge{{0, 0}, 5, 0, kPi, true}, HatchLineEdge{{-5, 0}, {5, 0}}};
+        HatchData h;
+        h.loops.push_back(loop);
+        ids.push_back(add(doc, Indirect<HatchData>(h)));
+    };
+    Fixture f0;
+    std::vector<EntityId> ids0;
+    samples(f0.doc, ids0);
+    std::size_t tried = 0;
+    for (std::size_t k = 0; k < ids0.size(); ++k)
+        for (const auto& g0 : tbcad::transform::collectGrips(f0.doc, std::vector<EntityId>{ids0[k]}))
+            for (GripAction a : tbcad::transform::gripActions(f0.doc, g0)) {
+                if (a == GripAction::Stretch)
+                    continue;
+                CAPTURE(k);
+                CAPTURE(g0.index);
+                CAPTURE(tbcad::transform::gripActionKeyword(a));
+                Fixture f;
+                std::vector<EntityId> ids;
+                samples(f.doc, ids);
+                const auto gs = tbcad::transform::collectGrips(f.doc, std::vector<EntityId>{ids[k]});
+                const auto gi = std::find_if(gs.begin(), gs.end(), [&](const auto& g) {
+                    return g.index == g0.index;
+                });
+                REQUIRE(gi != gs.end());
+                const std::string before = canonicalDump(f.doc);
+                f.host.setSelection({ids[k]});
+                std::vector<cmd::ScriptItem> in{
+                    std::to_string(gi->pos.x) + "," + std::to_string(gi->pos.y),
+                    tbcad::transform::gripActionKeyword(a)};
+                if (tbcad::transform::gripActionNeedsPoint(a))
+                    in.push_back(std::to_string(gi->pos.x + 1.5) + "," +
+                                 std::to_string(gi->pos.y + 2.5));
+                f.host.run("GRIPEDIT", in);
+                if (f.host.runner().active())
+                    f.host.feed({cmd::ScriptItem::esc()});
+                const std::string after = canonicalDump(f.doc);
+                CHECK_FALSE(hasNonFinite(after));
+                ++tried;
+                if (after != before) {
+                    CHECK(f.host.undo());
+                    CHECK(canonicalDump(f.doc) == before);
+                }
+            }
+    CHECK(tried > 10);
 }
