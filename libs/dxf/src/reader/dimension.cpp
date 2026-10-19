@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 
 #include "importer.h"
 #include "tbcad/dim/dim.h"
@@ -50,6 +51,7 @@ void bulgeArc(Vec2 a, Vec2 b, double bulge, std::vector<Vec2>& out) {
 DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     std::optional<double> txt, asz, scale, gap, exo, exe, dle, tp, tm;
     std::optional<std::int64_t> tolOn, limOn, altOn;
+    std::map<int, double> extra;  // the other overridable variables, by variable number
     bool inDstyle = false, inAcad = false;
     int var = -1;
     for (const Group& g : r.g) {
@@ -112,6 +114,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                         altOn = static_cast<std::int64_t>(v);
                         break;
                     default:
+                        extra[var] = v;
                         break;
                 }
             }
@@ -133,7 +136,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
         }
     }
     if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && !tp && !tm && !tolOn && !limOn &&
-        !altOn && factor == 1)
+        !altOn && extra.empty() && factor == 1)
         return base;
     const DimStyle* b = base ? doc_->dimStyle(base) : nullptr;
     DimStyle ds = b ? *b : DimStyle{};
@@ -167,12 +170,124 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
         ds.tolerance = DimTolerance::None;
     if (altOn)
         ds.altUnits = *altOn != 0;
+    // The other variables an override can carry (number format, text rules, colours, spacing).
+    std::string extraKey;
+    for (const auto& [var, v] : extra) {
+        const auto whole = static_cast<std::int64_t>(v);
+        switch (var) {
+            case 271:  // DIMDEC
+                ds.precision = static_cast<int>(std::clamp<std::int64_t>(whole, 0, 16));
+                break;
+            case 272:  // DIMTDEC
+                ds.tolPrecision = static_cast<int>(std::clamp<std::int64_t>(whole, 0, 16));
+                break;
+            case 144:  // DIMLFAC
+                if (v > 0)
+                    ds.linearFactor = v;
+                break;
+            case 45:  // DIMRND
+                if (v >= 0)
+                    ds.roundOff = v * k_;
+                break;
+            case 73:
+                ds.textAlign = whole ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+                break;
+            case 74:
+                ds.textAlignOutside = whole ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+                break;
+            case 77:
+                ds.textPlacement = whole ? DimTextPlacement::AboveLine : DimTextPlacement::Centered;
+                break;
+            case 75:
+                ds.suppressExt1 = whole != 0;
+                break;
+            case 76:
+                ds.suppressExt2 = whole != 0;
+                break;
+            case 281:
+                ds.suppressDim1 = whole != 0;
+                break;
+            case 282:
+                ds.suppressDim2 = whole != 0;
+                break;
+            case 172:
+                ds.forceLineInside = whole != 0;
+                break;
+            case 174:
+                ds.textInsideForced = whole != 0;
+                break;
+            case 175:
+                ds.suppressArrowsOutside = whole != 0;
+                break;
+            case 78:  // DIMZIN
+                ds.suppressLeadingZeros = (whole & 4) != 0;
+                ds.suppressTrailingZeros = (whole & 8) != 0;
+                break;
+            case 280:
+                ds.textJustify = whole == 1 || whole == 2 ? static_cast<int>(whole) : 0;
+                break;
+            case 279:
+                ds.textMove = whole == 1   ? DimTextMove::Leader
+                              : whole == 2 ? DimTextMove::Free
+                                           : DimTextMove::WithLine;
+                break;
+            case 289:
+                ds.fit = whole == 0   ? DimFit::BothOutside
+                         : whole == 1 ? DimFit::ArrowsFirst
+                         : whole == 2 ? DimFit::TextFirst
+                                      : DimFit::Best;
+                break;
+            case 176:
+            case 177:
+            case 178: {
+                Color& c = var == 176   ? ds.dimLineColor
+                           : var == 177 ? ds.extLineColor
+                                        : ds.textColor;
+                if (whole == 0)
+                    c = Color::byBlock();
+                else if (whole == 256)
+                    c = Color::byLayer();
+                else if (whole >= 1 && whole <= 255)
+                    c = Color::index(static_cast<std::uint8_t>(whole));
+                break;
+            }
+            case 275:
+                ds.angleFormat = whole == 1   ? DimAngleFormat::Dms
+                                 : whole == 2 ? DimAngleFormat::Gradians
+                                 : whole == 3 ? DimAngleFormat::Radians
+                                              : DimAngleFormat::Degrees;
+                break;
+            case 179:
+                ds.angularPrecision = static_cast<int>(std::clamp<std::int64_t>(whole, -1, 8));
+                break;
+            case 278:
+                ds.commaDecimal = whole == ',';
+                break;
+            case 43:
+                if (v >= 0)
+                    ds.baselineSpacing = v * k_;
+                break;
+            case 141:
+                ds.centerMark = v * k_;
+                break;
+            case 69:
+                ds.textFill = static_cast<int>(std::clamp<std::int64_t>(whole, 0, 2));
+                break;
+            default:
+                continue;  // not a variable of ours
+        }
+        extraKey += "|" + std::to_string(var) + "=" + std::to_string(v);
+    }
+    if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && !tp && !tm && !tolOn && !limOn &&
+        !altOn && extraKey.empty() && factor == 1)
+        return base;  // only variables of no use to us
     char key[320];
     std::snprintf(key, sizeof key, "%u|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%.9g|%d|%.9g|%.9g|%d",
                   base.value, ds.textHeight, ds.arrowSize, ds.overallScale, ds.textGap,
                   ds.extLineOffset, ds.extLineExtension, ds.dimLineExtension, factor,
                   static_cast<int>(ds.tolerance), ds.tolUpper, ds.tolLower, ds.altUnits ? 1 : 0);
-    auto it = dimOverrideStyles_.find(key);
+    const std::string fullKey = std::string(key) + extraKey;
+    auto it = dimOverrideStyles_.find(fullKey);
     if (it != dimOverrideStyles_.end())
         return it->second;
     ds.name = (b ? b->name : std::string("Standard")) + "$" +
@@ -181,7 +296,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     tbcad::Result<DimStyleId> id = tx_->addDimStyle(std::move(ds));
     if (!id)
         return base;
-    dimOverrideStyles_[key] = id.value();
+    dimOverrideStyles_[fullKey] = id.value();
     return id.value();
 }
 
