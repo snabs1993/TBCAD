@@ -101,7 +101,8 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions menu;
-        menu.keywords = {"New", "Copy", "Delete", "Rename", "Move", "Paper", "Set", "List", "Template"};
+        menu.keywords = {"New",   "Copy", "Delete", "Rename",  "Move",
+                         "Paper", "Set",  "List",   "Template"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Layout", menu);
         if (choice.status == Status::Cancel)
@@ -204,10 +205,11 @@ public:
                 "Place in the tab order (1-" + std::to_string(all.size()) + ")", io);
             if (!pos.ok())
                 co_return;
-            report(ctx,
-                   layout::moveLayout(ctx.tx(), named.text,
-                                      static_cast<std::size_t>(std::max<long long>(1, pos.value) - 1)),
-                   "Layout \"" + named.text + "\" moved.");
+            report(
+                ctx,
+                layout::moveLayout(ctx.tx(), named.text,
+                                   static_cast<std::size_t>(std::max<long long>(1, pos.value) - 1)),
+                "Layout \"" + named.text + "\" moved.");
         } else if (kw == "Paper") {
             cmd::StringOptions po;
             po.defaultValue = layout::findLayout(ctx.doc(), named.text)->paperName;
@@ -530,9 +532,10 @@ public:
         if (!requireLayout(ctx, target))
             co_return;
         cmd::KeywordOptions ko;
-        ko.keywords = {"Freeze", "Thaw"};
+        ko.keywords = {"Freeze", "Thaw", "NewFreeze", "NewThaw"};
         ko.defaultKeyword = "Freeze";
-        auto action = co_await ctx.getKeyword("Viewport layer", ko);
+        auto action = co_await ctx.getKeyword(
+            "Viewport layer [Freeze/Thaw/NewFreeze/NewThaw] (New: for viewports made later)", ko);
         if (!action.ok())
             co_return;
         auto layerName = co_await ctx.getString("Layer name");
@@ -545,6 +548,14 @@ public:
         if (!layer) {
             ctx.message("No layer named \"" + layerName.text +
                         "\" (sub-layers: use the layer panel).");
+            co_return;
+        }
+        if (action.keyword == "NewFreeze" || action.keyword == "NewThaw") {
+            const bool freeze = action.keyword == "NewFreeze";
+            report(ctx,
+                   layout::setLayerFrozenInNewViewports(ctx.doc(), ctx.tx(), layer->id, freeze),
+                   layer->name + (freeze ? " will be frozen" : " will not be frozen") +
+                       " in new viewports.");
             co_return;
         }
         int vpId = 0;

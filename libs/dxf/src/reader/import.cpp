@@ -1746,6 +1746,17 @@ void Importer::createLayers() {
     layersCreated_ = true;
     createLayerRows(layerRows_);
     sum_.layers = doc_->layers().size();
+    // Layer flag 2: frozen in new viewports (VPLAYER New freeze).
+    std::string newFrozen;
+    for (const LayerRow& row : layerRows_) {
+        if (!(row.flags & 2))
+            continue;
+        const auto it = layerByFold_.find(fold(row.name));
+        if (it != layerByFold_.end())
+            newFrozen += (newFrozen.empty() ? "" : ",") + std::to_string(it->second.value);
+    }
+    if (!newFrozen.empty())
+        (void)tx_->modifyHeader([&](Header& h) { h.custom["tbcad.vpnewfrozen"] = newFrozen; });
 }
 
 void Importer::createLayerRows(const std::vector<LayerRow>& rows) {

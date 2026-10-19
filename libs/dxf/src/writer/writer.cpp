@@ -557,10 +557,17 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
             layerTableDict_ = newHandle();
     }
     tableBegin(o, "LAYER", table, doc_.layers().size());
+    std::set<std::uint32_t> newVpFrozen;
+    if (const auto it = doc_.header().custom.find("tbcad.vpnewfrozen");
+        it != doc_.header().custom.end())
+        for (const std::string& part : splitOn(it->second, ','))
+            newVpFrozen.insert(static_cast<std::uint32_t>(std::strtoul(part.c_str(), nullptr, 10)));
     std::size_t flattened = 0;
     for (const auto& [id, layer] : doc_.layers()) {
         EffectiveLayer eff = doc_.effective(id);
-        int flags = (eff.frozen ? 1 : 0) | (eff.locked ? 4 : 0);
+        // Flag 2: frozen in new viewports.
+        int flags =
+            (eff.frozen ? 1 : 0) | (eff.locked ? 4 : 0) | (newVpFrozen.count(id.value) ? 2 : 0);
         const std::uint64_t layerRec = layerHandleOf(id);
         tableRecord(o, "LAYER", layerRec, table, "AcDbLayerTableRecord", layerName_[id.value],
                     flags);

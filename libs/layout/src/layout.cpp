@@ -373,6 +373,43 @@ Result<Edit> openEdit(Transaction& tx, const std::string& layoutName, int vpId,
 
 }  // namespace
 
+std::vector<LayerId> layersFrozenInNewViewports(const Document& doc) {
+    std::vector<LayerId> out;
+    const auto it = doc.header().custom.find(kNewViewportFrozenKey);
+    if (it == doc.header().custom.end())
+        return out;
+    for (const std::string& part : split(it->second, ',')) {
+        const LayerId id{static_cast<std::uint32_t>(std::strtoul(part.c_str(), nullptr, 10))};
+        if (id.value != 0 && doc.layer(id))
+            out.push_back(id);
+    }
+    return out;
+}
+
+Result<void> setLayerFrozenInNewViewports(const Document& doc, Transaction& tx, LayerId layer,
+                                          bool frozen) {
+    if (!doc.layer(layer))
+        return err(ErrorCode::NotFound, "No such layer");
+    return tx.modifyHeader([&](Header& h) {
+        std::vector<std::uint32_t> now;
+        if (auto it = h.custom.find(kNewViewportFrozenKey); it != h.custom.end())
+            for (const std::string& part : split(it->second, ','))
+                now.push_back(static_cast<std::uint32_t>(std::strtoul(part.c_str(), nullptr, 10)));
+        const auto at = std::find(now.begin(), now.end(), layer.value);
+        if (frozen && at == now.end())
+            now.push_back(layer.value);
+        else if (!frozen && at != now.end())
+            now.erase(at);
+        std::string text;
+        for (std::uint32_t id : now)
+            text += (text.empty() ? "" : ",") + std::to_string(id);
+        if (text.empty())
+            h.custom.erase(kNewViewportFrozenKey);
+        else
+            h.custom[kNewViewportFrozenKey] = text;
+    });
+}
+
 Result<int> addViewport(Transaction& tx, const std::string& layoutName, const BBox2& rect,
                         Vec2 center, double scaleN) {
     if (rect.empty() || !(rect.width() > 0) || !(rect.height() > 0))
@@ -390,6 +427,7 @@ Result<int> addViewport(Transaction& tx, const std::string& layoutName, const BB
     v.paper = rect;
     v.center = center;
     v.scaleN = scaleN;
+    v.frozen = layersFrozenInNewViewports(tx.document());
     int id = v.id;
     ed.layout->viewports.push_back(std::move(v));
     if (auto r = store(tx, ed.all); !r)

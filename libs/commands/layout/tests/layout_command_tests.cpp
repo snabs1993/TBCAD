@@ -77,6 +77,30 @@ TEST_CASE("MVIEW, VPSCALE and VPLAYER edit the current layout") {
     CHECK(f.host->logContains("No layer named"));
 }
 
+TEST_CASE("VPLAYER NewFreeze freezes a layer in every viewport made later") {
+    Fixture f;
+    LayerId walls;
+    {
+        auto tx = f.doc.begin("layer");
+        Layer l;
+        l.name = "Walls";
+        walls = tx.addLayer(l).value();
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "200,200", "1:50", "0,0"});
+    f.host->run("VPLAYER", {"NewFreeze", "walls"});
+    CHECK(layout::layersFrozenInNewViewports(f.doc) == std::vector<LayerId>{walls});
+    f.host->run("MVIEW", {"210,10", "400,200", "1:50", "0,0"});
+    const auto plan = layout::findLayout(f.doc, "Plan");
+    REQUIRE(plan);
+    REQUIRE(plan->viewports.size() == 2);
+    CHECK(plan->viewports[0].frozen.empty());
+    CHECK(plan->viewports[1].frozen == std::vector<LayerId>{walls});
+    f.host->run("VPLAYER", {"NewThaw", "Walls"});
+    CHECK(layout::layersFrozenInNewViewports(f.doc).empty());
+}
+
 TEST_CASE("VPLOCK stops VPSCALE until it is switched off") {
     Fixture f;
     f.host->run("LAYOUT", {"New", "Plan", "A3", ""});

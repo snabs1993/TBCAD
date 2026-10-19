@@ -17,6 +17,9 @@
 namespace tbcad::layout {
 
 inline constexpr const char* kHeaderKey = "tbcad.layouts";
+// Layers that are frozen in every viewport added from now on (VPLAYER New freeze, the "frozen in
+// new viewports" flag of a DXF layer): a comma list of layer ids.
+inline constexpr const char* kNewViewportFrozenKey = "tbcad.vpnewfrozen";
 
 struct Viewport {
     int id = 0;     // unique within the layout, starts at 1
@@ -98,6 +101,11 @@ Result<void> setViewportLayerFrozen(Transaction& tx, const std::string& layout, 
 
 // Shows one level only in the viewport (an empty id shows every visible level again).
 Result<void> setViewportLevel(Transaction& tx, const std::string& layout, int id, LevelId level);
+
+// The layers frozen in new viewports, and the switch for one layer.
+std::vector<LayerId> layersFrozenInNewViewports(const Document& doc);
+Result<void> setLayerFrozenInNewViewports(const Document& doc, Transaction& tx, LayerId layer,
+                                          bool frozen);
 
 // True when the layer, or one of its parents, is frozen in the viewport.
 bool frozenInViewport(const Document& doc, const Viewport& vp, LayerId layer);
