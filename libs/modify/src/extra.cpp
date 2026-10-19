@@ -1956,7 +1956,16 @@ char lowerAscii(char c) {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
 }
 
-int replaceAllIn(std::string& text, std::string_view find, std::string_view repl, bool matchCase) {
+// Whole-word search: a letter, digit, underscore or non-ASCII byte beside a match makes it part of
+// a longer word.
+bool isWordChar(char c) {
+    const auto u = static_cast<unsigned char>(c);
+    return u >= 0x80 || c == '_' || (u >= '0' && u <= '9') || (u >= 'a' && u <= 'z') ||
+           (u >= 'A' && u <= 'Z');
+}
+
+int replaceAllIn(std::string& text, std::string_view find, std::string_view repl, bool matchCase,
+                 bool wholeWord) {
     if (find.empty() || text.size() < find.size())
         return 0;
     auto same = [&](std::size_t at) {
@@ -1965,6 +1974,9 @@ int replaceAllIn(std::string& text, std::string_view find, std::string_view repl
             if (matchCase ? a != b : lowerAscii(a) != lowerAscii(b))
                 return false;
         }
+        if (wholeWord && ((at > 0 && isWordChar(text[at - 1])) ||
+                          (at + find.size() < text.size() && isWordChar(text[at + find.size()]))))
+            return false;
         return true;
     };
     std::string out;
@@ -1991,7 +2003,7 @@ int replaceAllIn(std::string& text, std::string_view find, std::string_view repl
 // codes inside the match stay, so the pieces around it keep their look. Special characters in
 // the replacement are escaped.
 int replaceInMarkup(std::string& markup, std::string_view find, std::string_view repl,
-                    bool matchCase) {
+                    bool matchCase, bool wholeWord) {
     if (find.empty())
         return 0;
     struct Atom {
@@ -2058,6 +2070,12 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
             const char a = atoms[text[t + k]].ch, b = find[k];
             same = matchCase ? a == b : lowerAscii(a) == lowerAscii(b);
         }
+        if (same && wholeWord) {
+            const std::size_t end = t + find.size();
+            if ((t > 0 && isWordChar(atoms[text[t - 1]].ch)) ||
+                (end < text.size() && isWordChar(atoms[text[end]].ch)))
+                same = false;
+        }
         if (!same) {
             ++t;
             continue;
@@ -2083,11 +2101,14 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
 }  // namespace
 
 std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
-                                       std::string_view replacement, bool matchCase) {
+                                       std::string_view replacement, bool matchCase,
+                                       bool wholeWord) {
     TextReplace r{e, 0};
-    auto edit = [&](std::string& s) { r.count += replaceAllIn(s, find, replacement, matchCase); };
+    auto edit = [&](std::string& s) {
+        r.count += replaceAllIn(s, find, replacement, matchCase, wholeWord);
+    };
     auto editMarkup = [&](std::string& s) {
-        r.count += replaceInMarkup(s, find, replacement, matchCase);
+        r.count += replaceInMarkup(s, find, replacement, matchCase, wholeWord);
     };
     if (auto* t = entityAs<TextData>(r.entity))
         edit(t->utf8);

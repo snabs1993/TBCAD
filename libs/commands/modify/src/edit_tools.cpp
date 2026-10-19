@@ -34,6 +34,10 @@ public:
         if (!cs.ok())
             co_return;
         bool matchCase = cs.keyword == "Yes";
+        auto ww = co_await ctx.getKeyword("Whole words only", ko);
+        if (!ww.ok())
+            co_return;
+        const bool wholeWord = ww.keyword == "Yes";
         bool replace = !with.text.empty();
         // The whole drawing: model space, the objects drawn on every layout sheet and the
         // definitions of the blocks (text inside a block changes in every insert). Generated
@@ -59,7 +63,7 @@ public:
             const Entity* e = ctx.doc().find(id);
             if (!e)
                 continue;
-            auto r = modify::replaceText(*e, what.text, with.text, matchCase);
+            auto r = modify::replaceText(*e, what.text, with.text, matchCase, wholeWord);
             if (!r)
                 continue;
             ++objects;
