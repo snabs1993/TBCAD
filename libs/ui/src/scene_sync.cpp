@@ -714,11 +714,18 @@ void SceneSync::rebuildAll(double tileSizeMm) {
     }
     render::syncLayerVisibility(scene_, doc_);
     std::vector<const Entity*> all;
+    doc_.forEachEntity([&](const Entity& e) { all.push_back(&e); });
+    if (lazyOk(all.size())) {
+        // A big drawing: only the places of the objects are recorded now and they are built in
+        // the frames that follow, nearest the camera first, so the window shows and answers at
+        // once instead of waiting for the whole scene.
+        queueLazy(all);
+        return;
+    }
     std::vector<std::uint32_t> orders;
-    doc_.forEachEntity([&](const Entity& e) {
-        all.push_back(&e);
-        orders.push_back(drawOrderOf(e.common.id));
-    });
+    orders.reserve(all.size());
+    for (const Entity* e : all)
+        orders.push_back(drawOrderOf(e->common.id));
     upsertParallel(all, orders);
     relevelMasks();
 }
