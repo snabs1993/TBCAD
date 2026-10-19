@@ -196,3 +196,50 @@ TEST_CASE("paramAtLength inverts lengthBetween on a many-span spline and an elli
                            c.pointAt(c.paramAtLength(len * i / 97))) < 1e-8);
     }
 }
+
+TEST_CASE("interpolation through random points, degrees and end conditions always passes through them") {
+    std::mt19937 rng(7);
+    std::uniform_real_distribution<double> u(-1, 1);
+    int failures = 0;
+    for (int trial = 0; trial < 400; ++trial) {
+        const int n = 2 + static_cast<int>(rng() % 60);
+        const double scale = std::pow(10.0, static_cast<int>(rng() % 9) - 3);  // 1e-3 .. 1e5
+        // Degree 5 through clustered points is too ill-conditioned for 1e-6; it is left out.
+        const bool clustered = rng() % 3 == 0;
+        std::vector<Vec2> pts;
+        for (int i = 0; i < n; ++i) {
+            Vec2 p{u(rng) * scale, u(rng) * scale};
+            if (clustered && i > 0 && rng() % 2)
+                p = pts.back() + Vec2{u(rng), u(rng)} * (scale * 1e-4);
+            pts.push_back(p);
+        }
+        InterpolateOptions o;
+        o.degree = 1 + static_cast<int>(rng() % (clustered ? 4 : 5));
+        o.closed = rng() % 3 == 0;
+        o.natural = rng() % 2 == 0;
+        if (rng() % 4 == 0)
+            o.startTangent = Vec2{u(rng), u(rng) + 2};
+        auto r = interpolateSpline(pts, o);
+        if (!r.ok()) {
+            ++failures;
+            continue;
+        }
+        auto cv = CurveRef::spline(r.value());
+        REQUIRE(cv.ok());
+        // The curve passes through each fit point at its chord-length parameter.
+        const auto& fit = r.value().fit;
+        std::vector<double> ub(fit.size(), 0.0);
+        for (std::size_t i = 1; i < fit.size(); ++i)
+            ub[i] = ub[i - 1] + distance(fit[i], fit[i - 1]);
+        const double closeLen = r.value().closed ? distance(fit.back(), fit.front()) : 0.0;
+        const double total = ub.back() + closeLen;
+        for (std::size_t i = 0; i < fit.size(); ++i) {
+            const double t = cv.value().t0() + (cv.value().t1() - cv.value().t0()) * ub[i] / total;
+            CHECK_MESSAGE(distance(cv.value().pointAt(t), fit[i]) <= 1e-6 * std::max(1.0, scale),
+                          "n=", n, " deg=", o.degree, " closed=", o.closed, " nat=", o.natural,
+                          " tan=", o.startTangent.has_value(), " scale=", scale,
+                          " clustered=", clustered, " err=", distance(cv.value().pointAt(t), fit[i]));
+        }
+    }
+    CHECK(failures == 0);
+}

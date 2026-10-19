@@ -242,6 +242,9 @@ TEST_CASE("monochrome turns red black - white is always black - greyscale") {
     CHECK(plotColor(Rgba{255, 0, 0, 255}, ColorMode::Monochrome) == Rgba{0, 0, 0, 255});
     CHECK(plotColor(Rgba{255, 0, 0, 255}, ColorMode::AsDisplayed) == Rgba{255, 0, 0, 255});
     CHECK(plotColor(Rgba{255, 255, 255, 255}, ColorMode::AsDisplayed) == Rgba{0, 0, 0, 255});
+    // Yellow and other light colours print in colour; only white turns black (as AutoCAD).
+    CHECK(plotColor(Rgba{255, 255, 0, 255}, ColorMode::AsDisplayed) == Rgba{255, 255, 0, 255});
+    CHECK(plotColor(Rgba{255, 255, 127, 255}, ColorMode::AsDisplayed) == Rgba{255, 255, 127, 255});
     Rgba g = plotColor(Rgba{255, 0, 0, 255}, ColorMode::Greyscale);
     CHECK(g.r == g.g);
     CHECK(g.g == g.b);
