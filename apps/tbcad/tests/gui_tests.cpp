@@ -1239,6 +1239,23 @@ TEST_CASE("layout tabs: copy and move from the right-click menu") {
     CHECK(h.has("Two (2)", "##layouttabs"));
 }
 
+TEST_CASE("drawing tabs: Ctrl+Tab and Ctrl+Shift+Tab switch") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    run(h, "LINE 0,0 100,0");
+    h.core().pressEscape();
+    h.core().newDocument();
+    h.frame(3);
+    REQUIRE(h.core().documentCount() == 2);
+    CHECK(h.core().activeDocument() == 1);
+    h.key(ImGuiKey_Tab, true, true);
+    h.frame(3);
+    CHECK(h.core().activeDocument() == 0);
+    h.key(ImGuiKey_Tab, true);
+    h.frame(3);
+    CHECK(h.core().activeDocument() == 1);
+}
+
 TEST_CASE("grips: click-move a vertex, and the hover menu adds a vertex") {
     Harness h(1920, 1080);
     h.core().setSetting("drafting.osnap", "0");

@@ -282,6 +282,9 @@ void Gui::runAction(const std::string& action) {
         requestAction(Pending::Close);
     else if (action == "view.nextDocument")
         core_.activateDocument((core_.activeDocument() + 1) % core_.documentCount());
+    else if (action == "view.prevDocument")
+        core_.activateDocument((core_.activeDocument() + core_.documentCount() - 1) %
+                               core_.documentCount());
     else if (action == "file.save")
         doSave();
     else if (action == "file.saveAs")
@@ -2528,6 +2531,18 @@ void Gui::docTabs() {
                 }
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
                     open = false;  // middle-click closes a tab
+                if (ImGui::BeginPopupContextItem("##doctabmenu")) {
+                    // The commands work on the active drawing, so the tab is made active first.
+                    const bool here = i == active || (!external && core_.activateDocument(i));
+                    if (ImGui::MenuItem("Save", nullptr, false, here))
+                        runAction("file.save");
+                    if (ImGui::MenuItem("Close", nullptr, false, here))
+                        open = false;
+                    if (ImGui::MenuItem("Copy full path", nullptr, false,
+                                        here && core_.hasFile()))
+                        ImGui::SetClipboardText(core_.file().string().c_str());
+                    ImGui::EndPopup();
+                }
                 if (!open)
                     toClose = i;
             }
