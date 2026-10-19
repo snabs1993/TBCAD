@@ -385,8 +385,9 @@ void Importer::note3d(const Record& r) {
 // Dispatch
 
 void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
-                   std::optional<std::uint64_t> handle) {
+                   std::optional<std::uint64_t> handle, const Record* source) {
     EntityCount& cnt = sum_.entities[std::string(type)];
+    const EntityCommon common = e.common;
     tbcad::Result<EntityId> res = tx_->add(std::move(e), owner);
     if (res) {
         ++cnt.imported;
@@ -394,13 +395,29 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
             srcHandles_.emplace_back(res.value().value, *handle);
         return;
     }
-    ++cnt.skipped;
     if (res.error().code == ErrorCode::OutOfRange) {
         ++sum_.beyondHardCap;
+        // AutoCAD keeps objects however far away they are. Such an object cannot be drawn here,
+        // but its record is kept as it was and written back when the drawing is saved as DXF.
+        std::vector<Entity> kept;
+        if (source && keepUnshown(*source, kept)) {
+            kept[0].common = common;
+            if (tx_->add(std::move(kept[0]), owner)) {
+                ++cnt.imported;
+                report_.warn(code::kBeyondHardCap,
+                             std::string(type) +
+                                 ": coordinates beyond the hard limit of 1e10 mm; kept for "
+                                 "saving, not shown",
+                             line, handle);
+                return;
+            }
+        }
+        ++cnt.skipped;
         report_.warn(code::kBeyondHardCap,
                      std::string(type) + ": coordinates beyond the hard limit of 1e10 mm; dropped",
-                     line);
+                     line, handle);
     } else {
+        ++cnt.skipped;
         report_.warn(code::kRejected,
                      std::string(type) + " rejected by the document: " + res.error().message, line);
     }
@@ -477,6 +494,8 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
     }
     EntityCommon c = commonOf(r);
     std::optional<std::uint64_t> handle = handleOf(r);  // (only the first entity of a record)
+    // A record that made one object can be kept as it was if that object cannot be stored.
+    const Record* source = out.size() == 1 ? &r : nullptr;
     for (Entity& e : out) {
         if (!e.common.layer) {
             const bool wipeout = e.common.wipeout;
@@ -484,7 +503,7 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
             if (wipeout)
                 e.common.wipeout = true;
         }
-        add(std::move(e), owner, type, r.line, handle);
+        add(std::move(e), owner, type, r.line, handle, source);
         handle.reset();
     }
 }
@@ -659,6 +678,13 @@ bool Importer::convLwPolyline(const Record& r, const Frame& f, std::vector<Entit
     pl.restartLinetype = (r.integer(70) & 128) == 0;  // flag 128: the linetype runs on
     pl.constantWidth = std::max(0.0, r.num(43) * k_);
     if (pl.v.size() < 2) {
+        // AutoCAD keeps such a polyline (it draws as nothing, or a dot): so does a save to DXF.
+        if (keepUnshown(r, out)) {
+            report_.warn(code::kBadEntity,
+                         "LWPOLYLINE with fewer than two vertices; kept for saving, not shown",
+                         r.line, handleOf(r));
+            return true;
+        }
         bad(r, "LWPOLYLINE", "fewer than two vertices; skipped");
         return false;
     }
@@ -1942,6 +1968,40 @@ bool Importer::convAcadTable(const Record& r, RecordReader& rr, const Frame& f,
     return true;
 }
 
+std::string Importer::keptRecord(const Record& r) {
+    // Valid while the units were not scaled.
+    if (k_ != 1)
+        return {};
+    std::string body;
+    for (const Group& g : r.g) {
+        const int c = g.code;
+        if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 || c == 102 ||
+            c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 || c >= 1000 ||
+            handleCode(c) || (c >= 480 && c <= 481) || (c == 100 && g.str() == "AcDbEntity"))
+            continue;
+        // The ATTRIB records that followed an INSERT are not kept with it, so it no longer says
+        // they follow.
+        if (c == 66 && r.type == "INSERT")
+            continue;
+        std::string text;
+        if (!keptValue(g, [&](std::string_view v) { return dec(v); }, text))
+            return {};
+        packGroup(body, c, text);
+    }
+    return body.empty() ? std::string{} : std::string(kProxyDxfFresh) + body;
+}
+
+bool Importer::keepUnshown(const Record& r, std::vector<Entity>& out) {
+    const std::string kept = keptRecord(r);
+    if (kept.empty())
+        return false;
+    ProxyData d;
+    d.originalType = std::string(r.type);
+    d.raw.assign(kept.begin(), kept.end());
+    out.push_back(makeEntity(std::move(d)));
+    return true;
+}
+
 bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
     ProxyData d;
     d.originalType = std::string(r.type);
@@ -1952,29 +2012,10 @@ bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
     if (gfx.size() >= 16)
         unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
 
-    // The record itself, to be written back unchanged (valid while the units were not scaled).
-    std::string kept;
-    if (k_ == 1) {
-        std::string body;
-        for (const Group& g : r.g) {
-            const int c = g.code;
-            if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 ||
-                c == 102 || c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 ||
-                c >= 1000 || handleCode(c) || (c >= 480 && c <= 481) ||
-                (c == 100 && g.str() == "AcDbEntity"))
-                continue;
-            std::string text;
-            if (!keptValue(g, [&](std::string_view v) { return dec(v); }, text)) {
-                body.clear();
-                break;
-            }
-            packGroup(body, c, text);
-        }
-        if (!body.empty()) {
-            kept = std::string(kProxyDxfFresh) + body;
-            d.raw.assign(kept.begin(), kept.end());
-        }
-    }
+    // The record itself, to be written back unchanged.
+    const std::string kept = keptRecord(r);
+    if (!kept.empty())
+        d.raw.assign(kept.begin(), kept.end());
     if (d.graphics.items.empty() && texts.empty() && kept.empty())
         return false;
     std::string type(r.type);
