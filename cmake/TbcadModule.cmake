@@ -55,21 +55,21 @@ function(tbcad_add_tests name)
   endif()
   cmake_parse_arguments(ARG "" "" "SOURCES;DEPENDS" ${ARGN})
   set(target tbcad_${name}_tests)
-  # ctest cuts a test name at ';' (CMake's list separator), so such a test would run as nothing and
-  # pass: keep ';' out of TEST_CASE names.
+  # ctest cuts a test name at ';' (CMake's list separator): a build-time check (not configure,
+  # which would break every developer) fails with a clear message.
+  set(_abs_sources "")
   foreach(_src IN LISTS ARG_SOURCES)
     if(NOT IS_ABSOLUTE "${_src}")
       set(_src "${CMAKE_CURRENT_SOURCE_DIR}/${_src}")
     endif()
-    if(EXISTS "${_src}")
-      file(READ "${_src}" _text)
-      string(REGEX MATCH "TEST_CASE\\(\"[^\"\n]*;" _bad "${_text}")
-      if(_bad)
-        message(FATAL_ERROR "${_src}: a TEST_CASE name has a ';' in it (ctest would not run it): ${_bad}")
-      endif()
-    endif()
+    list(APPEND _abs_sources "${_src}")
   endforeach()
+  string(REPLACE ";" "|" _joined "${_abs_sources}")
   add_executable(${target} ${ARG_SOURCES})
+  add_custom_target(${target}_names
+    COMMAND ${CMAKE_COMMAND} -DSOURCES=${_joined} -P "${PROJECT_SOURCE_DIR}/cmake/CheckTestNames.cmake"
+    COMMENT "Checking TEST_CASE names in ${target}" VERBATIM)
+  add_dependencies(${target} ${target}_names)
   target_compile_features(${target} PRIVATE cxx_std_20)
   tbcad_set_warnings(${target})
   target_link_libraries(${target} PRIVATE tbcad::${name} ${ARG_DEPENDS} doctest::doctest)
