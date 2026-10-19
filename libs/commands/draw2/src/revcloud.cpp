@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 #include "commands.h"
 #include "common.h"
@@ -14,11 +16,55 @@ constexpr double kDefaultArcLength = 10;
 // Each cloud arc sweeps 120 degrees: bulge = tan(sweep / 4).
 const double kCloudBulge = std::tan(kPi / 6);
 
+// More arcs than this would make an object too heavy to draw: the command asks for a longer arc.
+constexpr std::size_t kMaxArcs = 20000;
+
+// `ring` without repeated points (a polyline vertex given twice, the last point on the first).
+std::vector<Vec2> distinct(const std::vector<Vec2>& ring) {
+    std::vector<Vec2> out;
+    for (const Vec2& p : ring)
+        if (out.empty() || !tol::isZeroLength(p - out.back()))
+            out.push_back(p);
+    while (out.size() > 1 && tol::isZeroLength(out.front() - out.back()))
+        out.pop_back();
+    return out;
+}
+
+// How many arcs cloud() makes along `ring`.
+double arcCount(const std::vector<Vec2>& ring, bool corners, double arcLength) {
+    double total = 0, count = 0;
+    for (std::size_t i = 0; i < ring.size(); ++i) {
+        const double d = distance(ring[i], ring[(i + 1) % ring.size()]);
+        total += d;
+        count += std::max(1.0, std::ceil(d / arcLength - 1e-9));
+    }
+    return corners ? count : std::max(3.0, std::ceil(total / arcLength - 1e-9));
+}
+
+std::string shortNumber(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.4g", v);
+    return buf;
+}
+
+// The message when `ring` needs too many arcs, or empty.
+std::string tooManyArcs(const std::vector<Vec2>& ring, bool corners, double arcLength) {
+    const double n = arcCount(ring, corners, arcLength);
+    if (std::isfinite(n) && n <= static_cast<double>(kMaxArcs))
+        return {};
+    double total = 0;
+    for (std::size_t i = 0; i < ring.size(); ++i)
+        total += distance(ring[i], ring[(i + 1) % ring.size()]);
+    return "The arc length is too small for a cloud this size; use " +
+           shortNumber(total / static_cast<double>(kMaxArcs) * 1.01) + " or more.";
+}
+
 // A closed polyline of arcs along `ring`. With `corners` the ring's own vertices stay cloud
 // vertices and every edge is divided into pieces no longer than `arcLength`; otherwise the ring is
 // divided into equal pieces by length. The arcs bulge outwards (inwards with `reverse`).
-PolylineData cloud(const std::vector<Vec2>& ring, bool corners, double arcLength, bool reverse,
+PolylineData cloud(const std::vector<Vec2>& ringIn, bool corners, double arcLength, bool reverse,
                    bool calligraphy = false) {
+    const std::vector<Vec2> ring = distinct(ringIn);
     std::vector<Vec2> pts;
     const std::size_t n = ring.size();
     if (corners) {
@@ -205,8 +251,12 @@ private:
             if (!tol::isZeroLength(r.point - pts.back()))
                 pts.push_back(r.point);
         }
-        if (pts.size() < 3 || std::abs(ringArea(pts)) < tol::kLinear) {
+        if (distinct(pts).size() < 3 || std::abs(ringArea(pts)) < tol::kLinear) {
             ctx.message("A revision cloud needs at least three points that enclose an area.");
+            co_return;
+        }
+        if (const std::string m = tooManyArcs(pts, true, len); !m.empty()) {
+            ctx.message(m);
             co_return;
         }
         addEntity(ctx, cloud(pts, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
@@ -228,12 +278,19 @@ private:
         }
         const std::vector<Vec2> ring{
             a.point, {b.point.x, a.point.y}, b.point, {a.point.x, b.point.y}};
+        if (const std::string m = tooManyArcs(ring, true, len); !m.empty()) {
+            ctx.message(m);
+            co_return;
+        }
         addEntity(ctx, cloud(ring, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
     }
 
     static cmd::Task fromObject(cmd::CommandContext& ctx, double len) {
         cmd::EntityOptions eo;
-        eo.filter = cloudable;
+        auto* c = &ctx;
+        eo.filter = [c](const Entity& x) {
+            return cloudable(x) && !c->doc().effective(x.common).locked;
+        };
         auto e = co_await ctx.getEntity("Select a closed object", std::move(eo));
         if (!e.ok())
             co_return;
@@ -243,14 +300,31 @@ private:
             ctx.message("That object cannot be turned into a revision cloud.");
             co_return;
         }
+        if (const std::string m = tooManyArcs(ring->pts, ring->corners, len); !m.empty()) {
+            ctx.message(m);
+            co_return;
+        }
         cmd::KeywordOptions ko;
         ko.keywords = {"Yes", "No"};
         ko.defaultKeyword = "No";
         auto rev = co_await ctx.getKeyword("Reverse direction [Yes/No] <No>", std::move(ko));
         if (!rev.ok())
             co_return;
-        addEntity(ctx, cloud(ring->pts, ring->corners, len, rev.keyword == "Yes",
-                             settingNumber(ctx, kCalligraphy, 0) > 0));
+        ent = ctx.doc().find(e.id);
+        if (!ent)
+            co_return;
+        // Like AutoCAD the object is converted: the cloud takes its place and its properties
+        // (layer, colour, linetype, ...) and the object is erased.
+        Entity cloudEntity{ent->common, cloud(ring->pts, ring->corners, len,
+                                              rev.keyword == "Yes",
+                                              settingNumber(ctx, kCalligraphy, 0) > 0)};
+        cloudEntity.common.id = {};
+        auto id = ctx.tx().add(std::move(cloudEntity));
+        if (!id) {
+            ctx.message(id.error().message);
+            co_return;
+        }
+        (void)ctx.tx().erase(e.id);
     }
 };
 
