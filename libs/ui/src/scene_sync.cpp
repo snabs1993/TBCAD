@@ -293,6 +293,8 @@ void SceneSync::compactPending() {
         return;
     std::erase_if(pending_, [](const PendingRec& r) { return r.dead; });
     pendingDead_ = 0;
+    if (pending_.capacity() > 4096 && pending_.size() * 2 < pending_.capacity())
+        pending_.shrink_to_fit();  // (the records of a big drawing are tens of MB)
 }
 
 bool SceneSync::lazyOk(std::size_t count) const {
@@ -371,7 +373,7 @@ void SceneSync::buildPending(PendingRec& rec) {
 
 std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t limit) {
     if (pendingCount() == 0) {
-        pending_.clear();
+        std::vector<PendingRec>().swap(pending_);
         pendingDead_ = 0;
         return 0;
     }
@@ -407,7 +409,7 @@ void SceneSync::flushPending() {
     for (PendingRec& rec : pending_)
         if (!rec.dead)
             buildPending(rec);
-    pending_.clear();
+    std::vector<PendingRec>().swap(pending_);
     pendingDead_ = 0;
 }
 
