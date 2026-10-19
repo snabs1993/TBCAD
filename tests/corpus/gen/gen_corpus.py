@@ -433,13 +433,42 @@ def gen_extrusion():
     h = msp.add_hatch(color=1, dxfattribs={"extrusion": (0, 0, -1)})
     h.paths.add_polyline_path([(0, 10), (4, 10), (4, 14), (0, 14)], is_closed=True)
     msp.add_arc((0, 0), 1, 0, 90, dxfattribs={"extrusion": (0.5, 0.0, 0.8660254037844386)})
-    save_ezdxf(doc, "extrusion_neg_z", description="entities with extrusion (0,0,-1); one tilted arc is skipped",
-               exit=1, version="AC1015", encoding="ANSI_1252",
+    save_ezdxf(doc, "extrusion_neg_z",
+               description="entities with extrusion (0,0,-1); one arc in a tilted plane is drawn as an ellipse",
+               exit=0, version="AC1015", encoding="ANSI_1252",
                dxf={"ARC": 2, "CIRCLE": 1, "LWPOLYLINE": 1, "TEXT": 1, "INSERT": 1, "LINE": 2,
                     "ELLIPSE": 1, "HATCH": 1},
-               kinds={"Arc": 1, "Circle": 1, "Polyline": 1, "Text": 1, "Insert": 1, "Ellipse": 1,
+               kinds={"Arc": 1, "Circle": 1, "Polyline": 1, "Text": 1, "Insert": 1, "Ellipse": 2,
                       "Hatch": 1},
-               layers=["0"], texts=["neg"], warnings=["dxf.reader.extrusion_3d"])
+               layers=["0"], texts=["neg"], warnings=[])
+
+
+def gen_tilted_planes():
+    # The failure classes of a sweep over real drawings: entities in tilted 3D planes (most of
+    # them ellipses and polylines) are drawn as seen from above; only text in such a plane and a
+    # polyline with a single vertex are still dropped.
+    doc = new_doc("R2000")
+    msp = doc.modelspace()
+    tilt = {"extrusion": (0, -0.6, 0.8)}
+    msp.add_circle((0, 0), 5, dxfattribs=dict(tilt))
+    msp.add_arc((20, 0), 3, 0, 180, dxfattribs=dict(tilt))
+    msp.add_ellipse((40, 0, 0), major_axis=(6, 0, 0), ratio=0.5, dxfattribs=dict(tilt))
+    msp.add_lwpolyline([(0, 20, 0, 0, 1), (10, 20, 0, 0, 0), (10, 30, 0, 0, 0)], format="xyseb",
+                       dxfattribs=dict(tilt, elevation=2))
+    msp.add_polyline2d([(20, 20), (30, 20), (30, 30)], dxfattribs=dict(tilt))
+    h = msp.add_hatch(color=1, dxfattribs=dict(tilt))
+    h.paths.add_polyline_path([(40, 20), (44, 20), (44, 24), (40, 24)], is_closed=True)
+    msp.add_solid([(50, 20), (54, 20), (50, 24)], dxfattribs=dict(tilt))
+    msp.add_circle((0, 0), 2, dxfattribs={"extrusion": (1, 0, 0)})  # seen edge-on
+    msp.add_text("tilted", dxfattribs=dict(tilt, height=1))
+    msp.add_lwpolyline([(60, 20)], dxfattribs=dict(tilt))
+    save_ezdxf(doc, "tilted_planes",
+               description="entities in tilted 3D planes are projected; tilted text and a one-vertex polyline are not",
+               exit=1, version="AC1015", encoding="ANSI_1252",
+               dxf={"CIRCLE": 2, "ARC": 1, "ELLIPSE": 1, "LWPOLYLINE": 2, "POLYLINE": 1, "HATCH": 1,
+                    "SOLID": 1, "TEXT": 1},
+               kinds={"Ellipse": 3, "Polyline": 3, "Hatch": 2},
+               layers=["0"], warnings=["dxf.reader.bad_entity", "dxf.reader.extrusion_3d"])
 
 
 def gen_far():
@@ -611,7 +640,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     for fn in [gen_r12, gen_r2000_entities, gen_dimensions, gen_layers, gen_tilde_layers,
                gen_xdata_sublayers, gen_thai, gen_blocks, gen_r2018, gen_r2004_basic, gen_binary,
-               gen_extrusion, gen_far, gen_inches, gen_proxy, gen_unknown, gen_mtext_markup,
+               gen_extrusion, gen_tilted_planes, gen_far, gen_inches, gen_proxy, gen_unknown, gen_mtext_markup,
                gen_hatch_variants, gen_broken]:
         fn()
     print("corpus written to", os.path.normpath(OUT))
