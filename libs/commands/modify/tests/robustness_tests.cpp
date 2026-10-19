@@ -504,7 +504,7 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
         for (int step = 0; step < 40; ++step) {
             const std::size_t a = rng() % ids.size(), b = rng() % ids.size();
             const std::string ra = std::to_string(rnd(0.2, 6.0)), rb = std::to_string(rnd(0.2, 6.0));
-            switch (rng() % 14) {
+            switch (rng() % 17) {
                 case 0:
                     go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickOn(a % ss.size())),
                                         ScriptItem::enter()});
@@ -552,6 +552,23 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
                 case 11:
                     go("MIRROR", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
                                   std::to_string(rnd(-5, 5)) + "," + std::to_string(rnd(-5, 5)), "N"});
+                    break;
+                case 14: {
+                    const double x = rnd(-2, 18), y = rnd(-4, 8);
+                    go("STRETCH", {std::to_string(x) + "," + std::to_string(y),
+                                   std::to_string(x + rnd(2, 12)) + "," + std::to_string(y + rnd(2, 12)),
+                                   "0,0", std::to_string(rnd(-6, 6)) + "," + std::to_string(rnd(-6, 6))});
+                    break;
+                }
+                case 15:
+                    go("LENGTHEN", {"Delta", std::to_string(rnd(-4, 6)),
+                                    ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                    ScriptItem::enter()});
+                    break;
+                case 16:
+                    go("ARRAY", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "R", "Rows", "2",
+                                 "Columns", "2", "Spacing", std::to_string(rnd(3, 12)),
+                                 std::to_string(rnd(3, 12)), ""});
                     break;
                 case 12:
                     go("HATCH", {std::to_string(rnd(-2, 22)) + "," + std::to_string(rnd(-3, 12)),
