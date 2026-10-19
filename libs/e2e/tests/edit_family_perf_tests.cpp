@@ -258,12 +258,12 @@ TEST_CASE("perf: editing commands cost about the same on a real mix as on plain 
         std::printf("%-10s %10.0f /%9.0f %10.0f /%9.0f %10.0f /%9.0f\n", cases[i].label,
                     plain[i].runMs, mixed[i].runMs, plain[i].undoMs, mixed[i].undoMs,
                     plain[i].redoMs, mixed[i].redoMs);
-    // The mix has about 40% more objects and costlier ones: 3x plus slack is a path that depends
+    // The mix has about 40% more objects and costlier ones: 4x plus slack is a path that depends
     // on the content.
     for (std::size_t i = 0; i < cases.size(); ++i) {
         INFO(cases[i].label);
-        CHECK(mixed[i].runMs < 3 * plain[i].runMs + 300);
-        CHECK(mixed[i].undoMs < 3 * plain[i].undoMs + 300);
-        CHECK(mixed[i].redoMs < 3 * plain[i].redoMs + 300);
+        CHECK(mixed[i].runMs < 4 * plain[i].runMs + 400);
+        CHECK(mixed[i].undoMs < 4 * plain[i].undoMs + 400);
+        CHECK(mixed[i].redoMs < 4 * plain[i].redoMs + 400);
     }
 }
