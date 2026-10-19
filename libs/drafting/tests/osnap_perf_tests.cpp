@@ -123,6 +123,8 @@ void runBench(double ox, double oy, const char* label, double extent,
         rq.apertureMm = 10 * pixel;
         rq.modes = kAllSnapModes;
         double total = 0, worst = 0;
+        std::vector<double> times;
+        times.reserve(static_cast<std::size_t>(kMoves));
         std::size_t hits = 0;
         for (int i = 0; i < kMoves; ++i) {
             rq.cursor = {ox + pos(rng), oy + pos(rng)};
@@ -132,6 +134,7 @@ void runBench(double ox, double oy, const char* label, double extent,
             const double t = ms(t0, Clock::now());
             total += t;
             worst = std::max(worst, t);
+            times.push_back(t);
             hits += found.size();
             // Every candidate is inside the aperture and lies on the geometry it names (an
             // intersection on both objects); coordinates up to 1e9 leave about 1e-7 of precision.
@@ -147,15 +150,19 @@ void runBench(double ox, double oy, const char* label, double extent,
                     CHECK(distanceToEntity(w.doc, c.entity2, c.point) < tol);
             }
         }
+        std::sort(times.begin(), times.end());
+        const double p99 = times[std::min(times.size() - 1, times.size() * 99 / 100)];
         std::printf(
-            "[osnap perf] %s (pixel %.0f mm): %zu objects, all modes: mean %.3f ms, worst "
-            "%.3f ms per move (%.1f candidates)\n",
-            label, pixel, kN, total / kMoves, worst, double(hits) / kMoves);
+            "[osnap perf] %s (pixel %.0f mm): %zu objects, all modes: mean %.3f ms, p99 %.3f ms, "
+            "worst %.3f ms per move (%.1f candidates)\n",
+            label, pixel, kN, total / kMoves, p99, worst, double(hits) / kMoves);
 #if defined(NDEBUG)
         // The aim is under 1 ms on a spread-out drawing and under 5 ms (mean) on a pathologically dense
         // one (hundreds of objects per aperture, ellipses, splines and hatches among them); the
         // gates leave room for a busy CI machine.
         CHECK(total / kMoves < (extent > 1.0e6 ? 2.0 : 5.0));
+        // A spike is one slow move in a hundred, not the cursor stalling.
+        CHECK(p99 < 10.0);
 #endif
     }
 }
