@@ -1,6 +1,6 @@
 tbcad_add_library(hatch_commands
   SOURCES src/hatch_commands.cpp
-  DEPENDS tbcad::cmd tbcad::hatch tbcad::geom)
+  DEPENDS tbcad::cmd tbcad::hatch tbcad::geom tbcad::blocks)
 
 if(TBCAD_BUILD_APP)
   include(deps/imgui)

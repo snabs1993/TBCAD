@@ -67,10 +67,35 @@ Chunk shapeChunk(const TextStyle* style, std::string_view text, const Attr& attr
         return c;
     const double s = attr.height / fi.capHeight;  // mm per em
     double pen = 0;
-    for (const font::ShapedRun& run : fonts().shape(fi.id, clean)) {
+    const std::vector<font::ShapedRun> runs = fonts().shape(fi.id, clean);
+    // Each cluster's characters go to the first glyph drawn for it.
+    std::vector<std::uint32_t> clusters;
+    for (const font::ShapedRun& run : runs)
+        for (const font::ShapedGlyph& g : run.glyphs)
+            clusters.push_back(g.cluster);
+    std::sort(clusters.begin(), clusters.end());
+    clusters.erase(std::unique(clusters.begin(), clusters.end()), clusters.end());
+    std::vector<char> named(clusters.size(), 0);
+    auto textOf = [&](std::uint32_t cluster) {
+        std::u32string out;
+        const auto it = std::lower_bound(clusters.begin(), clusters.end(), cluster);
+        const std::size_t k = static_cast<std::size_t>(it - clusters.begin());
+        if (it == clusters.end() || *it != cluster || named[k])
+            return out;
+        named[k] = 1;
+        const std::size_t end = k + 1 < clusters.size() ? clusters[k + 1] : clean.size();
+        for (std::size_t i = cluster; i < end && i < clean.size();) {
+            char32_t cp = 0;
+            i += detail::decodeAt(clean, i, cp);
+            out += cp;
+        }
+        return out;
+    };
+    for (const font::ShapedRun& run : runs) {
         const double k = s / std::max(1, run.unitsPerEm);
         for (const font::ShapedGlyph& g : run.glyphs) {
             PlacedGlyph pg;
+            pg.text = textOf(g.cluster);
             pg.font = run.font;
             pg.glyphId = g.glyphId;
             pg.origin = {pen + g.xOffset * k * attr.widthFactor, g.yOffset * k};
