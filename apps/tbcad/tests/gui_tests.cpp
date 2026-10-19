@@ -1566,3 +1566,24 @@ TEST_CASE("layer states manager: new, restore chosen properties, rename, delete"
     h.frame(3);
     CHECK_FALSE(h.windowOpen("Layer States Manager"));
 }
+
+TEST_CASE("dimension styles panel golden") {
+    Harness h(1920, 1080);
+    h.core().openPanel("dimstyles");
+    h.frame(3);
+    h.click("Dimension Styles", "DockSpace");
+    h.frame(3);
+    // Panel selection is process-wide state; pin it so the picture does not depend on test order.
+    h.click("Standard  (current)", "Dimension Styles");
+    h.frame(3);
+    CHECK(matchesGolden(h.windowShot("Dimension Styles"), "dimstyles_panel"));
+}
+
+TEST_CASE("hatch panel golden") {
+    Harness h(1920, 1080);
+    h.core().openPanel("hatch");
+    h.frame(3);
+    h.click("Hatch", "DockSpace");
+    h.frame(3);
+    CHECK(matchesGolden(h.windowShot("Hatch"), "hatch_panel"));
+}

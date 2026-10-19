@@ -122,10 +122,15 @@ void drawPreview(ui::PanelContext& pc, const DimStyle& style) {
     ImGui::Dummy(size);
 }
 
-// Input boxes take part of the panel's width, so the labels beside them stay readable when the
-// panel is docked narrow (a fixed 120 px box pushed the label out of view).
-float fieldWidth() {
-    return std::clamp(ImGui::GetContentRegionAvail().x * 0.42f, 70.0f, 160.0f);
+// Label on the left, box filling the rest of the row (like the Properties panel). Returns the
+// hidden widget id to give the input.
+std::string leftLabel(const char* label) {
+    const float labelW = std::clamp(ImGui::GetContentRegionAvail().x * 0.42f, 90.0f, 150.0f);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(labelW);
+    ImGui::SetNextItemWidth(-1);
+    return std::string("##") + label;
 }
 
 // An input box that leaves room for a button of the given label on its row.
@@ -137,8 +142,8 @@ float boxBeside(const char* buttonLabel) {
 
 void enumCombo(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
                int current, const std::vector<std::pair<const char*, const char*>>& options) {
-    ImGui::SetNextItemWidth(fieldWidth());
-    if (ImGui::BeginCombo(label, options[static_cast<std::size_t>(current)].first)) {
+    if (ImGui::BeginCombo(leftLabel(label).c_str(),
+                          options[static_cast<std::size_t>(current)].first)) {
         for (std::size_t i = 0; i < options.size(); ++i)
             if (ImGui::Selectable(options[i].first, static_cast<int>(i) == current))
                 pc.runCommand(editLine(s.name, key, options[i].second));
@@ -149,8 +154,7 @@ void enumCombo(ui::PanelContext& pc, const DimStyle& s, const char* label, const
 void realField(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
                double value) {
     double v = value;
-    ImGui::SetNextItemWidth(fieldWidth());
-    ImGui::InputDouble(label, &v, 0, 0, "%.6g", kNumber);
+    ImGui::InputDouble(leftLabel(label).c_str(), &v, 0, 0, "%.6g", kNumber);
     if (ImGui::IsItemDeactivatedAfterEdit() && v != value)
         pc.runCommand(editLine(s.name, key, number(v)));
 }
@@ -159,8 +163,7 @@ void textField(ui::PanelContext& pc, const DimStyle& s, const char* label, const
                const std::string& value) {
     char buf[64];
     std::snprintf(buf, sizeof buf, "%s", value.c_str());
-    ImGui::SetNextItemWidth(fieldWidth());
-    if (ImGui::InputText(label, buf, sizeof buf, kEnter)) {
+    if (ImGui::InputText(leftLabel(label).c_str(), buf, sizeof buf, kEnter)) {
         std::string v = buf;
         std::replace(v.begin(), v.end(), ' ', '_');
         pc.runCommand(editLine(s.name, key, v.empty() ? "none" : v));
@@ -171,8 +174,7 @@ void colorField(ui::PanelContext& pc, const DimStyle& s, const char* label, cons
                 const Color& value) {
     char buf[32];
     std::snprintf(buf, sizeof buf, "%s", colorText(value).c_str());
-    ImGui::SetNextItemWidth(fieldWidth());
-    if (ImGui::InputText(label, buf, sizeof buf, kEnter))
+    if (ImGui::InputText(leftLabel(label).c_str(), buf, sizeof buf, kEnter))
         pc.runCommand(editLine(s.name, key, buf));
 }
 
@@ -209,8 +211,7 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
     enumCombo(pc, s, "Units", "Units", static_cast<int>(s.units),
               {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
     int prec = s.precision;
-    ImGui::SetNextItemWidth(fieldWidth());
-    ImGui::InputInt("Decimals", &prec, 1, 1, kNumber);
+    ImGui::InputInt(leftLabel("Decimals").c_str(), &prec, 1, 1, kNumber);
     if (ImGui::IsItemDeactivatedAfterEdit() && prec != s.precision)
         pc.runCommand(editLine(s.name, "Precision", std::to_string(std::clamp(prec, 0, 8))));
     realField(pc, s, "Round off", "RoundOff", s.roundOff);
@@ -231,8 +232,7 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
               {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
     realField(pc, s, "Multiplier", "AltScale", s.altScale);
     int altPrec = s.altPrecision;
-    ImGui::SetNextItemWidth(fieldWidth());
-    ImGui::InputInt("Alt decimals", &altPrec, 1, 1, kNumber);
+    ImGui::InputInt(leftLabel("Alt decimals").c_str(), &altPrec, 1, 1, kNumber);
     if (ImGui::IsItemDeactivatedAfterEdit() && altPrec != s.altPrecision)
         pc.runCommand(editLine(s.name, "AltPrecision", std::to_string(std::clamp(altPrec, 0, 8))));
     textField(pc, s, "Alt prefix", "AltPrefix", s.altPrefix);
@@ -249,8 +249,7 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
     realField(pc, s, "Upper", "TolUpper", s.tolUpper);
     realField(pc, s, "Lower", "TolLower", s.tolLower);
     int tolPrec = s.tolPrecision;
-    ImGui::SetNextItemWidth(fieldWidth());
-    ImGui::InputInt("Tol decimals", &tolPrec, 1, 1, kNumber);
+    ImGui::InputInt(leftLabel("Tol decimals").c_str(), &tolPrec, 1, 1, kNumber);
     if (ImGui::IsItemDeactivatedAfterEdit() && tolPrec != s.tolPrecision)
         pc.runCommand(editLine(s.name, "TolPrecision", std::to_string(std::clamp(tolPrec, 0, 8))));
     ImGui::EndDisabled();
@@ -292,7 +291,7 @@ void drawPanel(ui::PanelContext& pc) {
             pc.runCommand("DIMSTYLE Delete " + sel->name + " Done");
         ImGui::EndDisabled();
         ImGui::SetNextItemWidth(boxBeside("Rename"));
-        ImGui::InputText("##renamedimstyle", st.renameTo, sizeof st.renameTo);
+        ImGui::InputTextWithHint("##renamedimstyle", "New name", st.renameTo, sizeof st.renameTo);
         ImGui::SameLine();
         ImGui::BeginDisabled(st.selected == kDimStyleStandard || hasSpace(sel->name) ||
                              hasSpace(st.renameTo) || st.renameTo[0] == '\0' ||
@@ -304,7 +303,7 @@ void drawPanel(ui::PanelContext& pc) {
         ImGui::EndDisabled();
     }
     ImGui::SetNextItemWidth(boxBeside("New from current"));
-    ImGui::InputText("##newdimstyle", st.newName, sizeof st.newName);
+    ImGui::InputTextWithHint("##newdimstyle", "Name for new style", st.newName, sizeof st.newName);
     ImGui::SameLine();
     ImGui::BeginDisabled(hasSpace(st.newName) || pc.doc->dimStyleByName(st.newName) != nullptr);
     if (ImGui::Button("New from current")) {
@@ -371,8 +370,7 @@ void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
     const DimStyle& s0 = dim::styleOf(*pc.doc, style0);
 
     ImGui::BeginDisabled(pc.commandActive);
-    ImGui::SetNextItemWidth(fieldWidth());
-    if (ImGui::BeginCombo("Style", sameStyle ? s0.name.c_str() : "*VARIES*")) {
+    if (ImGui::BeginCombo(leftLabel("Style").c_str(), sameStyle ? s0.name.c_str() : "*VARIES*")) {
         for (const auto& [sid, st] : pc.doc->dimStyles())
             if (!hasSpace(st.name) &&
                 ImGui::Selectable(st.name.c_str(), sameStyle && sid == style0))
@@ -384,9 +382,8 @@ void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
         std::snprintf(buf, sizeof buf, "%g", scale0);
     else
         std::snprintf(buf, sizeof buf, "*VARIES*");
-    ImGui::SetNextItemWidth(fieldWidth());
     if (ImGui::InputText(
-            "Overall scale", buf, sizeof buf,
+            leftLabel("Overall scale").c_str(), buf, sizeof buf,
             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
         double v = 0;
         auto [ptr, ec] = std::from_chars(buf, buf + std::strlen(buf), v);
