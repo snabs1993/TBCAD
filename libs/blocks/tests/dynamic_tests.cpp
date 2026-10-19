@@ -219,3 +219,49 @@ TEST_CASE("dynamic: an ordinary block is unaffected") {
     CHECK(items.size() == 5);
     CHECK(storage.empty());
 }
+
+TEST_CASE("dynamic: flip and visibility parameters have click-only grips") {
+    Frame f;
+    {
+        Transaction tx = f.doc.begin("dyn");
+        REQUIRE(tx.modifyBlock(f.block, [&](BlockDef& d) {
+                      DynamicDef def;
+                      DynParam fl;
+                      fl.kind = DynParam::Kind::Flip;
+                      fl.name = "Flip";
+                      fl.base = {5, 0};
+                      fl.end = {5, 5};
+                      def.params.push_back(fl);
+                      DynParam v;
+                      v.kind = DynParam::Kind::Visibility;
+                      v.name = "Style";
+                      v.base = {0, 8};
+                      v.states = {"A", "B", "C"};
+                      v.stateObjects = {{f.hole}, {f.bottom}, {f.top}};
+                      def.params.push_back(v);
+                      d.dynamic = std::move(def);
+                  }).ok());
+        tx.commit();
+    }
+    EntityId id = f.insert({}, {100, 0});
+    auto handles = dynHandles(f.doc, *f.doc.find(id));
+    REQUIRE(handles.size() == 2);
+    CHECK(near(handles[0].world, {105, 2.5}));  // middle of the mirror axis
+    CHECK(near(handles[1].world, {100, 8}));
+    CHECK(dynGripIsClick(f.doc, *f.doc.find(id), 0));
+    CHECK(dynGripIsClick(f.doc, *f.doc.find(id), 1));
+    // Each use flips, or steps to the next state and wraps round after the last.
+    auto a = dynDrag(f.doc, *f.doc.find(id), 0, {0, 0});
+    REQUIRE(a.ok());
+    CHECK(entityAs<InsertData>(a.value())->dynValues[0] == 1);
+    auto b = dynDrag(f.doc, a.value(), 0, {0, 0});
+    REQUIRE(b.ok());
+    CHECK(entityAs<InsertData>(b.value())->dynValues[0] == 0);
+    Entity cur = *f.doc.find(id);
+    for (double want : {1.0, 2.0, 0.0}) {
+        auto n = dynDrag(f.doc, cur, 1, {0, 0});
+        REQUIRE(n.ok());
+        CHECK(entityAs<InsertData>(n.value())->dynValues[1] == want);
+        cur = n.value();
+    }
+}

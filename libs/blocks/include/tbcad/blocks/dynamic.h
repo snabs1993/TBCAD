@@ -40,7 +40,11 @@ std::vector<DynHandle> dynHandles(const Document& doc, const Entity& insert);
 // that is not dynamic or a parameter out of range.
 Result<Entity> dynSet(const Document& doc, const Entity& insert, int param, double value);
 // The insert with a linear or rotation parameter dragged so its handle sits at `world`.
+// A flip or visibility parameter has a click-only grip: dynDrag toggles the flip, or moves to the
+// next visibility state, wherever `world` is.
 Result<Entity> dynDrag(const Document& doc, const Entity& insert, int param, Vec2 world);
+// True for such a click-only grip (flip, visibility).
+bool dynGripIsClick(const Document& doc, const Entity& insert, int param);
 
 // Index of the parameter called `name` (ASCII case-insensitive), or -1.
 int dynFind(const DynamicDef& def, std::string_view name);
