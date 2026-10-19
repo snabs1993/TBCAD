@@ -343,3 +343,40 @@ TEST_CASE("a big load measured on several threads gives the same index") {
     CHECK(idx.size() == 40000);
     checkSame(doc, idx);
 }
+
+TEST_CASE("a big move keeps the old and new boxes with the change for the other observers") {
+    Document doc;
+    SpatialIndex idx;
+    DocumentIndexer indexer(doc, idx, boundsOf);
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("bulk");
+        for (int i = 0; i < 3000; ++i)
+            ids.push_back(tx.add(line(i, 0, i + 1, 1)).value());
+        tx.commit();
+    }
+    ChangeSet moved;
+    {
+        Transaction tx = doc.begin("move all");
+        for (EntityId id : ids)
+            REQUIRE(tx.modify(id, [](Entity& e) {
+                auto* l = entityAs<LineData>(e);
+                l->a.y += 100;
+                l->b.y += 100;
+            }));
+        moved = tx.commit();
+    }
+    checkSame(doc, idx);
+    std::size_t withBoth = 0;
+    for (const EntityChange& c : moved.entities) {
+        const BBox2* before = moved.memoBox(c.before);
+        const BBox2* after = moved.memoBox(c.after);
+        if (before && after && before->min.y == 0 && after->min.y == 100)
+            ++withBoth;
+    }
+    CHECK(withBoth == ids.size());
+    doc.apply(moved, Direction::Undo);
+    checkSame(doc, idx);
+    doc.apply(moved, Direction::Redo);
+    checkSame(doc, idx);
+}

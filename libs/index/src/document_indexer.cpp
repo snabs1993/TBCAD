@@ -48,7 +48,7 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes, bool keepOld) {
     struct Touched {
         EntityId id{};
         std::optional<BBox2> known{};
-        std::uint32_t addedAs = kNoSnapshot;
+        std::uint32_t snapAfter = kNoSnapshot;
     };
     std::vector<Touched> touched;
     std::size_t unmeasured = 0;  // entities that come back without a remembered box
@@ -62,8 +62,8 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes, bool keepOld) {
         for (const EntityChange& c : changes->entities) {
             Touched t;
             t.id = changes->idOf(c);
-            if (c.before == kNoSnapshot && c.after != kNoSnapshot) {
-                t.addedAs = c.after;
+            if (c.after != kNoSnapshot) {
+                t.snapAfter = c.after;
                 if (const BBox2* known = changes->memoBox(c.after))
                     t.known = *known;
                 else
@@ -142,7 +142,7 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes, bool keepOld) {
     if (unmeasured)  // (here, not in the lanes: the memo is not safe to fill from several threads)
         for (std::size_t i = 0; i < todo.size(); ++i)
             if (const Touched* t = touchedOf(todo[i]->common.id); t && !t->known)
-                changes->memoizeBox(t->addedAs, boxes[i]);
+                changes->memoizeBox(t->snapAfter, boxes[i]);
     std::vector<IdBox> items;
     items.reserve(todo.size());
     for (std::size_t i = 0; i < todo.size(); ++i)
@@ -184,10 +184,11 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
         other_.indexSize = index_.size();
         return;
     }
-    // Entities that go away still have their box in the index: keep it with the snapshot, so an
-    // undo that brings them back does not have to measure them again.
+    // Entities that go away or change still have their old box in the index: keep it with the
+    // snapshot, so an undo that brings them back does not have to measure them again (for a
+    // change, only a big one: that is where undo swaps trees instead of measuring).
     for (const EntityChange& c : changes.entities)
-        if (c.before != kNoSnapshot && c.after == kNoSnapshot) {
+        if (c.before != kNoSnapshot && (c.after == kNoSnapshot || big)) {
             const EntityId id = changes.before(c)->common.id;
             if (index_.contains(id))
                 changes.memoizeBox(c.before, index_.boxOf(id));
