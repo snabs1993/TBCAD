@@ -341,3 +341,22 @@ TEST_CASE("DIMTOH sets the orientation of text beyond the extension lines apart 
     CHECK(rot(false, true) == doctest::Approx(0));
     CHECK(std::abs(rot(true, false)) > 0.1);
 }
+
+TEST_CASE("DIMTOH also turns the text of a radius or diameter horizontal when it sits outside") {
+    auto rot = [&](DimKind k, Vec2 a, Vec2 b, bool oh) {
+        Document doc;
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) {
+            s.textAlign = DimTextAlign::WithDimLine;
+            s.textAlignOutside = oh ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+        }));
+        tx.commit();
+        return layoutDimension(doc, radial(k, a, b)).text.rotation;
+    };
+    CHECK(rot(DimKind::Radius, {0, 0}, {7, 7}, true) == doctest::Approx(0));
+    CHECK(std::abs(rot(DimKind::Radius, {0, 0}, {7, 7}, false)) > 0.1);
+    // A diameter whose text fits inside keeps following the line.
+    CHECK(std::abs(rot(DimKind::Diameter, {-20, -20}, {20, 20}, true)) > 0.1);
+    // One that does not fit goes outside and turns horizontal.
+    CHECK(rot(DimKind::Diameter, {-2, -2}, {2, 2}, true) == doctest::Approx(0));
+}
