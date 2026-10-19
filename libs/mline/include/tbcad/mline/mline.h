@@ -17,6 +17,8 @@ struct Style {
     std::vector<double> offsets{0.5, -0.5};  // one line each, any order
     bool startCap = false;                   // a line across the first end
     bool endCap = false;                     // a line across the last end
+    int startArc = 0;                        // arcs at the first end: 0 none, 1 outer, 2 inner
+    int endArc = 0;                          // the same at the last end
     // Per line, in the order of `offsets`; shorter or empty = every line takes the multiline's.
     std::vector<int> colors{};             // palette index; 256 = as the multiline, 0 = ByBlock
     std::vector<std::string> linetypes{};  // linetype name; empty = as the multiline

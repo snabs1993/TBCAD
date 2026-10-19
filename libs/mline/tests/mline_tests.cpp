@@ -209,3 +209,34 @@ TEST_CASE("a cut stays on its segment when repeated points are dropped") {
     CHECK(s.lines[0].back().x == doctest::Approx(12.5));
     CHECK(s.lines[1].front().x == doctest::Approx(17.5));
 }
+
+TEST_CASE("arc caps close an end with half circles; inner arcs join the lines in pairs") {
+    MlineData d;
+    d.v = {{0, 0}, {10, 0}};
+    Style outer;
+    outer.offsets = {1, -1};
+    outer.startArc = 1;
+    Strokes s = strokes(d, outer);
+    REQUIRE(s.lines.size() == 3);  // two lines and one arc
+    const auto& arc = s.lines[2];
+    CHECK(arc.front().y == doctest::Approx(1).epsilon(1e-9));
+    CHECK(arc.back().y == doctest::Approx(-1).epsilon(1e-9));
+    double minX = 0;
+    for (const Vec2& p : arc)
+        minX = std::min(minX, p.x);
+    CHECK(minX == doctest::Approx(-1));  // bulges outwards, past the start of the path
+
+    Style inner;
+    inner.offsets = {2, 1, -1, -2};
+    inner.endArc = 2;
+    s = strokes(d, inner);
+    REQUIRE(s.lines.size() == 5);  // four lines and one arc joining the two middle lines
+    double maxX = 0;
+    for (const Vec2& p : s.lines[4])
+        maxX = std::max(maxX, p.x);
+    CHECK(maxX == doctest::Approx(11));
+
+    Style rt = *decode("X", encode(outer));
+    CHECK(rt.startArc == 1);
+    CHECK(rt.endArc == 0);
+}

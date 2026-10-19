@@ -649,6 +649,7 @@ void Importer::importGroups() {
     for (const auto& [id, handle] : srcHandles_)
         entityOfHandle.emplace(handle, id);
     std::vector<tbcad::Group> groups;
+    std::string descriptions;  // lines "name TAB text"
     std::string name;
     for (const auto& [c, v] : dit->second.g) {
         if (c == 3) {
@@ -665,6 +666,9 @@ void Importer::importGroups() {
         for (const auto& [gc, gv] : git->second.g) {
             if (gc == 71)
                 grp.selectable = gv != "0";
+            else if (gc == 300 && !gv.empty() && gv.find_first_of("\t\n") == std::string::npos &&
+                     name.find_first_of("\t\n") == std::string::npos)
+                descriptions += name + '\t' + gv + '\n';
             else if (gc == 340) {
                 auto eit = entityOfHandle.find(std::strtoull(gv.c_str(), nullptr, 16));
                 if (eit != entityOfHandle.end())
@@ -677,6 +681,9 @@ void Importer::importGroups() {
     }
     if (!groups.empty())
         (void)writeGroups(*tx_, groups);
+    if (!groups.empty() && !descriptions.empty())
+        (void)tx_->modifyHeader(
+            [&](Header& h) { h.custom[kKeptGroupDescKey] = std::move(descriptions); });
 }
 
 namespace {
@@ -717,8 +724,10 @@ std::optional<mline::Style> mlineStyleOf(const std::vector<std::pair<int, std::s
     }
     if (!named || st.name.empty() || st.offsets.empty())
         return std::nullopt;
-    st.startCap = (flags & (16 | 32 | 64)) != 0;
-    st.endCap = (flags & (256 | 512 | 1024)) != 0;
+    st.startCap = (flags & 16) != 0;
+    st.endCap = (flags & 256) != 0;
+    st.startArc = (flags & 64) ? 1 : (flags & 32) ? 2 : 0;
+    st.endArc = (flags & 1024) ? 1 : (flags & 512) ? 2 : 0;
     st.joints = (flags & 2) != 0;
     st.fill = (flags & 1) ? (fillColor >= 0 && fillColor <= 256 ? fillColor : 256) : -1;
     if (std::any_of(colors.begin(), colors.end(), [](int c) { return c != 256; }))
@@ -813,6 +822,19 @@ void Importer::keepObjects() {
                 name = v;
             else if ((c == 350 || c == 360) && !name.empty()) {
                 entries.emplace_back(name, upperHandle(v));
+                name.clear();
+            }
+        }
+    }
+
+    // The layer table's own dictionary: its entries are kept as root entries with a marker.
+    if (auto lit = objStore_.find(layerTableDict_); lit != objStore_.end()) {
+        std::string name;
+        for (const auto& [c, v] : lit->second.g) {
+            if (c == 3)
+                name = v;
+            else if ((c == 350 || c == 360) && !name.empty()) {
+                entries.emplace_back("%LAYERTABLE%" + name, upperHandle(v));
                 name.clear();
             }
         }
@@ -924,7 +946,17 @@ void Importer::processTables(RecordReader& rr) {
             rr.pushBack(std::move(r));
             break;
         }
-        if (r.type == "LAYER")
+        if (r.type == "TABLE") {
+            if (r.raw(2) == "LAYER") {  // its extension dictionary holds the layer filters
+                bool inX = false;
+                for (const Group& g : r.g) {
+                    if (g.code == 102)
+                        inX = g.str() == "{ACAD_XDICTIONARY";
+                    else if (inX && g.code == 360)
+                        layerTableDict_ = upperHandle(g.str());
+                }
+            }
+        } else if (r.type == "LAYER")
             readLayerRow(r);
         else if (r.type == "LTYPE")
             readLinetype(r);
