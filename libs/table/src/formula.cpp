@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <set>
 #include <string>
+#include <unordered_map>
 
 #include "tbcad/table/table.h"
 
@@ -18,6 +19,9 @@ constexpr int kMaxDepth = 64;
 struct Eval {
     const TableData& t;
     std::set<std::size_t> active{};  // cells being worked out, to catch a formula that needs itself
+    // Formula cells already worked out in this evaluation: a cell used by two others (=A1+A1 down
+    // a column) is worked out once, not once per way of reaching it.
+    std::unordered_map<std::size_t, double> done{};
     int depth = 0;
     std::string error{};
 };
@@ -353,6 +357,10 @@ double cellValue(Eval& ev, std::size_t row, std::size_t col, bool& numeric) {
         return 0;
     if (body[0] == '=') {
         const std::size_t key = a.row * colCount(ev.t) + a.col;
+        if (const auto hit = ev.done.find(key); hit != ev.done.end()) {
+            numeric = true;
+            return hit->second;
+        }
         if (ev.active.count(key) || ev.depth >= kMaxDepth) {
             ev.error = "#LOOP";
             return 0;
@@ -368,6 +376,7 @@ double cellValue(Eval& ev, std::size_t row, std::size_t col, bool& numeric) {
         if (p.failed)
             return 0;
         numeric = true;
+        ev.done[key] = v;
         return v;
     }
     double v = 0;
