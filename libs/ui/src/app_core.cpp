@@ -2335,15 +2335,50 @@ std::string AppCore::describeEntity(EntityId id) const {
                                          "Block",   "Dimension", "Leader", "Proxy",    "Table",
                                          "Ray",     "Multiline"};
     const auto k = static_cast<std::size_t>(kind(*e));
+    // As AutoCAD's rollover tooltip: the type, then colour, layer and linetype, then the size.
     std::string out = k < std::size(kNames) ? kNames[k] : "Object";
-    if (const Layer* l = session_->doc.layer(e->common.layer))
-        out += ", layer " + l->name;
+    const EntityCommon& c = e->common;
+    std::string color;
+    switch (c.color.kind) {
+        case ColorKind::ByLayer:
+            color = "ByLayer";
+            break;
+        case ColorKind::ByBlock:
+            color = "ByBlock";
+            break;
+        case ColorKind::ByParent:
+            color = "ByParent";
+            break;
+        case ColorKind::Index: {
+            static const char* const names[] = {"red",  "yellow",  "green", "cyan",
+                                                "blue", "magenta", "white"};
+            const int i = c.color.indexValue();
+            color = i >= 1 && i <= 7 ? names[i - 1] : std::to_string(i);
+            break;
+        }
+        case ColorKind::Rgb:
+            color = std::to_string(c.color.r) + "," + std::to_string(c.color.g) + "," +
+                    std::to_string(c.color.b);
+            break;
+    }
+    out += "\nColor: " + color;
+    if (const Layer* l = session_->doc.layer(c.layer))
+        out += "\nLayer: " + l->name;
+    std::string linetype = "ByLayer";
+    if (c.linetype == kLinetypeByBlock)
+        linetype = "ByBlock";
+    else if (c.linetype == kLinetypeByParent)
+        linetype = "ByParent";
+    else if (c.linetype != kLinetypeByLayer)
+        if (const Linetype* lt = session_->doc.linetype(c.linetype))
+            linetype = lt->name;
+    out += "\nLinetype: " + linetype;
     char buf[64];
-    if (const auto* c = std::get_if<CircleData>(&e->data)) {
-        std::snprintf(buf, sizeof buf, ", radius %.2f mm", c->radius);
+    if (const auto* circle = std::get_if<CircleData>(&e->data)) {
+        std::snprintf(buf, sizeof buf, "\nRadius: %.2f mm", circle->radius);
         out += buf;
     } else if (const double len = geom::length(*e); len > 0) {
-        std::snprintf(buf, sizeof buf, ", length %.2f mm", len);
+        std::snprintf(buf, sizeof buf, "\nLength: %.2f mm", len);
         out += buf;
     }
     return out;

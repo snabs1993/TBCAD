@@ -151,6 +151,33 @@ TEST_CASE("layers panel: groups and merge") {
     CHECK(onWalls == 2);
 }
 
+TEST_CASE("quick properties open next to the pointer, or in the corner") {
+    Harness h(1920, 1080);
+    threeLayers(h);
+    h.core().setSetting("ui.quickProps", "1");
+    h.moveMouse(700, 250);
+    h.core().selectAll();
+    h.frame(3);
+    const auto* general = h.find("General", "##quickprops");
+    REQUIRE(general);
+    // Below and to the right of the pointer, not on it.
+    CHECK(general->min.x > 700);
+    CHECK(general->min.x < 800);
+    CHECK(general->min.y > 250);
+    CHECK(general->min.y < 350);
+    // The box stays put while the pointer moves on.
+    h.moveMouse(300, 300);
+    h.frame(2);
+    REQUIRE(h.find("General", "##quickprops"));
+    CHECK(h.find("General", "##quickprops")->min.x > 700);
+    // QPLOCATION in the corner instead.
+    h.core().setSetting("ui.quickProps.location", "corner");
+    h.frame(3);
+    REQUIRE(h.find("General", "##quickprops"));
+    CHECK(h.find("General", "##quickprops")->min.x > 1000);
+    CHECK(h.find("General", "##quickprops")->min.y < 300);
+}
+
 TEST_CASE("quick properties: change the layer and a size of the selection") {
     Harness h(1920, 1080);
     threeLayers(h);
@@ -999,7 +1026,9 @@ TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
     ImVec2 onLine = screenOf(h, {180, 100});
     onLine.y -= 1.0f;
 
-    // Off by default: resting on the line shows nothing. Set as text, like the SETTING command.
+    // On by default, as AutoCAD's ROLLOVERTIPS; turned off, resting on the line shows nothing.
+    // Set as text, like the SETTING command.
+    h.core().setSetting("hover.tooltip", "0");
     h.moveMouse(onLine.x, onLine.y);
     h.frame(60);
     CHECK(h.windowShot("##Tooltip").empty());

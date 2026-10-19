@@ -20,7 +20,11 @@
 
 ## Quick Properties
 
-When on, a small box in the corner of the viewport shows the common layer, colour, linetype and lineweight of the selection (`*VARIES*` when they differ). Changing a field runs `CHPROP`, so the edit is one undo step.
+When on (`QPMODE` 1, or `QUICKPROPERTIES`), a small box next to the pointer where the selection was made shows the common layer, colour, linetype and lineweight of the selection (`*VARIES*` when they differ). It stays put while the pointer moves on, and moves out of the way near the edges of the drawing. Settings > Selection can keep it in the top right corner of the drawing instead (AutoCAD's QPLOCATION). Changing a field runs `CHPROP`, so the edit is one undo step.
+
+## Rollover tooltips
+
+When the pointer rests on an object for a moment, a tooltip lists its type, colour, layer, linetype and length or radius. `ROLLOVERTIPS` 0 (or Settings) turns this off.
 
 ## CHANGE
 

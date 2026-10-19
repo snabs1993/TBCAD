@@ -497,6 +497,8 @@ void registerCommands(cmd::Registry& registry) {
                           "ANNOALLVISIBLE", "SELECTIONANNODISPLAY", "PICKSTYLE", "MIRRTEXT"})
         (void)registry.add(makeVarCommand(v));
     (void)registry.add(makeLwDisplayCommand());
+    (void)registry.add(makeQpModeCommand());
+    (void)registry.add(makeRolloverTipsCommand());
     (void)registry.add(makeViewCommand());
     (void)registry.add(makeAddSelectedCommand());
 }

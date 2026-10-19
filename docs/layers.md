@@ -15,4 +15,4 @@ The Properties panel (and `-PROP Set <field> <value>` on the command line) shows
 - **Table**: position, rotation, rows, columns, table width and height (read-only), text height, cell margin and text style.
 - **Hatch**: the number of boundaries and the area (read-only); pattern, scale, angle and origin are in the Hatch section below.
 
-With several objects of one kind selected, a row whose value differs between them shows *varies*.
+With several objects of one kind selected, a row whose value differs between them shows *VARIES*, as in AutoCAD.

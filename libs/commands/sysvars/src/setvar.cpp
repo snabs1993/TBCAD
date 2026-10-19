@@ -349,36 +349,57 @@ std::unique_ptr<cmd::Command> makeVarCommand(const std::string& name) {
 }
 
 namespace {
-// LWDISPLAY: show lineweights on screen (the LWT button of the status bar). A setting of this
-// installation, not of the drawing.
-class LwDisplayCommand final : public cmd::Command {
+// A 0/1 switch kept as a setting of this installation, not of the drawing: LWDISPLAY (the LWT
+// button of the status bar), QPMODE (Quick Properties), ROLLOVERTIPS (hover tooltips).
+class SwitchSettingCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "LWDISPLAY"; }
-    std::string_view description() const override {
-        return "Show lineweights on screen (On/Off, same as the LWT button)";
-    }
+    SwitchSettingCommand(std::string name, std::string key, bool fallback, std::string help)
+        : name_(std::move(name)),
+          key_(std::move(key)),
+          fallback_(fallback),
+          help_(std::move(help)) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return help_; }
     Task run(CommandContext& ctx) override {
-        const auto cur = ctx.host().setting("view.lineweights");
-        const bool on = !cur || *cur == "1" || *cur == "true";
+        const auto cur = ctx.host().setting(key_);
+        const bool on = cur ? (*cur == "1" || *cur == "true") : fallback_;
         cmd::StringOptions so;
         so.defaultValue = on ? "1" : "0";
         auto val = co_await ctx.getString(
-            std::string("Enter new value for LWDISPLAY <") + *so.defaultValue + ">", so);
+            "Enter new value for " + name_ + " <" + *so.defaultValue + ">", so);
         if (!val.ok())
             co_return;
         bool want = false;
         if (!parseSwitch(cmd::trim(val.text), want)) {
-            ctx.message("LWDISPLAY is 0 or 1.");
+            ctx.message(name_ + " is 0 or 1.");
             co_return;
         }
-        ctx.host().setSetting("view.lineweights", want ? "1" : "0");
-        ctx.message(std::string("LWDISPLAY = ") + (want ? "1" : "0"));
+        ctx.host().setSetting(key_, want ? "1" : "0");
+        ctx.message(name_ + " = " + (want ? "1" : "0"));
     }
+
+private:
+    std::string name_, key_;
+    bool fallback_;
+    std::string help_;
 };
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeLwDisplayCommand() {
-    return std::make_unique<LwDisplayCommand>();
+    return std::make_unique<SwitchSettingCommand>(
+        "LWDISPLAY", "view.lineweights", true,
+        "Show lineweights on screen (On/Off, same as the LWT button)");
+}
+
+std::unique_ptr<cmd::Command> makeQpModeCommand() {
+    return std::make_unique<SwitchSettingCommand>(
+        "QPMODE", "ui.quickProps", false, "Show Quick Properties for the selection (0 or 1)");
+}
+
+std::unique_ptr<cmd::Command> makeRolloverTipsCommand() {
+    return std::make_unique<SwitchSettingCommand>(
+        "ROLLOVERTIPS", "hover.tooltip", true,
+        "Show an object's type, layer, colour and size when the pointer rests on it (0 or 1)");
 }
 
 std::unique_ptr<cmd::Command> makeSetvarCommand() {

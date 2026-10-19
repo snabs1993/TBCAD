@@ -1337,10 +1337,10 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Activate Model tab", nullptr, false, core_.inPaperSpace()))
                     core_.setActiveLayout("");
-                if (ImGui::MenuItem("Activate previous layout", nullptr, false,
-                                    !previousLayout_.empty() &&
-                                        std::find(names.begin(), names.end(), previousLayout_) !=
-                                            names.end()))
+                if (ImGui::MenuItem(
+                        "Activate previous layout", nullptr, false,
+                        !previousLayout_.empty() &&
+                            std::find(names.begin(), names.end(), previousLayout_) != names.end()))
                     core_.setActiveLayout(previousLayout_);
                 ImGui::EndPopup();
             }
@@ -2578,8 +2578,7 @@ void Gui::docTabs() {
                         runAction("file.save");
                     if (ImGui::MenuItem("Close", nullptr, false, here))
                         open = false;
-                    if (ImGui::MenuItem("Copy full path", nullptr, false,
-                                        here && core_.hasFile()))
+                    if (ImGui::MenuItem("Copy full path", nullptr, false, here && core_.hasFile()))
                         ImGui::SetClipboardText(core_.file().string().c_str());
                     ImGui::EndPopup();
                 }
@@ -2848,14 +2847,44 @@ void Gui::quickProperties(const ViewportRect& rect) {
     if (core_.setting("ui.quickProps").value_or("0") != "1" || core_.selection().empty() ||
         core_.runner().active() || !registry_.quickProperties())
         return;
-    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - 12, rect.y + 12), ImGuiCond_Always,
-                            ImVec2(1.0f, 0.0f));
+    // QPLOCATION: next to the pointer where the selection was made (AutoCAD's default), or in the
+    // top right corner of the drawing ("ui.quickProps.location" = "corner").
+    if (core_.setting("ui.quickProps.location").value_or("cursor") == "corner") {
+        ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - 12, rect.y + 12), ImGuiCond_Always,
+                                ImVec2(1.0f, 0.0f));
+    } else {
+        std::size_t key = core_.selection().size();
+        for (EntityId id : core_.selection())
+            key = (key ^ id.value) * 1099511628211ull;
+        if (key != quickPropsKey_ || !quickPropsPlaced_) {
+            quickPropsKey_ = key;
+            quickPropsPlaced_ = true;
+            // Selected without the pointer over the window (a command, select all from a key):
+            // the middle of the drawing.
+            quickPropsAt_ = ImGui::IsMousePosValid()
+                                ? ImGui::GetIO().MousePos
+                                : ImVec2(rect.x + rect.w / 2, rect.y + rect.h / 2);
+        }
+        // Below and to the right of the pointer, kept inside the drawing area; it never covers
+        // the spot that was clicked.
+        // The box's size in the last frame (it sizes itself to its contents).
+        const float kW = quickPropsSize_.x, kH = quickPropsSize_.y, kGap = 24;
+        float x = quickPropsAt_.x + kGap, y = quickPropsAt_.y + kGap;
+        if (x + kW > rect.x + rect.w)
+            x = quickPropsAt_.x - kGap - kW;
+        if (y + kH > rect.y + rect.h)
+            y = quickPropsAt_.y - kGap - kH;
+        x = std::clamp(x, rect.x + 4, std::max(rect.x + 4, rect.x + rect.w - kW - 4));
+        y = std::clamp(y, rect.y + 4, std::max(rect.y + 4, rect.y + rect.h - kH - 4));
+        ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
+    }
     ImGui::SetNextWindowBgAlpha(0.94f);
     ImGui::SetNextWindowSizeConstraints(ImVec2(260, 0), ImVec2(360, 520));
     const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
                                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
     if (ImGui::Begin("##quickprops", nullptr, wf)) {
+        quickPropsSize_ = ImGui::GetWindowSize();
         ui::PanelContext pc;
         fillPanelContext(pc);
         registry_.quickProperties()(pc);
@@ -3174,8 +3203,8 @@ bool Gui::flag(std::string_view key, bool fallback) const {
     return v ? drafting::parseBoolSetting(*v, fallback) : fallback;
 }
 
-// Setting hover.tooltip: after the pointer rests 600 ms on an object, a tooltip names its type,
-// layer and length or radius.
+// Setting hover.tooltip (ROLLOVERTIPS, on unless turned off): after the pointer rests 600 ms on an
+// object, a tooltip names its type, colour, layer, linetype and length or radius.
 void Gui::hoverTooltip() {
     const ImGuiIO& io = ImGui::GetIO();
     const double now = ImGui::GetTime();
@@ -3184,7 +3213,7 @@ void Gui::hoverTooltip() {
         hoverTipPos_ = io.MousePos;
         hoverTipSince_ = now;
     }
-    if (!flag("hover.tooltip", false) || now - hoverTipSince_ < 0.6 || core_.runner().active() ||
+    if (!flag("hover.tooltip", true) || now - hoverTipSince_ < 0.6 || core_.runner().active() ||
         io.WantCaptureMouse)
         return;
     const EntityId id = core_.hoveredEntity();

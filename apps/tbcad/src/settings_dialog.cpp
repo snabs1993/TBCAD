@@ -226,7 +226,7 @@ void SettingsDialog::display(ui::AppCore& core) {
                 s.setString("view.crosshair", kCross[i]);
         ImGui::EndCombo();
     }
-    bool hoverTip = s.getBool("hover.tooltip", false);
+    bool hoverTip = s.getBool("hover.tooltip", true);
     if (ImGui::Checkbox("Tooltip with type, layer and size when resting on an object", &hoverTip))
         s.setBool("hover.tooltip", hoverTip);
     bool rightIsEnter = s.getString("ui.rightClick", "menu") == "enter";
@@ -392,8 +392,14 @@ void SettingsDialog::drafting(ui::AppCore& core) {
             ImGui::TextDisabled("On: a command uses the objects already selected.");
             ImGui::Spacing();
         }
-        flag("Quick properties", "ui.quickProps", false,
+        flag("Quick properties (QPMODE)", "ui.quickProps", false,
              "A small panel next to the cursor shows the common properties of the selection.");
+        {
+            bool corner = core.setting("ui.quickProps.location").value_or("cursor") == "corner";
+            if (ImGui::Checkbox("Quick properties in the corner of the drawing", &corner))
+                core.setSetting("ui.quickProps.location", corner ? "corner" : "cursor");
+            ImGui::TextDisabled("Off: next to the pointer where you selected (QPLOCATION 0).");
+        }
         ImGui::EndTabItem();
     }
     ImGui::EndTabBar();
