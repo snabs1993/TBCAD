@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 #include "tbcad/convert/cli.h"
 #include "tbcad/core/dump.h"
@@ -209,4 +210,34 @@ TEST_CASE("a .dwg input is routed to the DWG reader and fails cleanly when it is
     Run old = run({(dir / "old.dwg").string(), "-o", (dir / "old.tbcad").string()});
     CHECK(old.exit == 2);
     CHECK(old.err.find("unsupported DWG version") != std::string::npos);
+}
+
+TEST_CASE("cli: --timeout is checked and does not disturb a normal conversion") {
+    TempDir dir;
+    auto bad = run({"x.dxf", "-o", "y.tbcad", "--timeout", "soon"});
+    CHECK(bad.exit == tbcad::convert::kExitFailed);
+    auto neg = run({"x.dxf", "-o", "y.tbcad", "--timeout", "-3"});
+    CHECK(neg.exit == tbcad::convert::kExitFailed);
+    auto ok = run(
+        {(corpus("r12_basic.dxf")).string(), "-o", (dir / "o.tbcad").string(), "--timeout", "60"});
+    CHECK(ok.exit != tbcad::convert::kExitFailed);
+    CHECK(fs::exists(dir / "o.tbcad"));
+}
+
+TEST_CASE("watchdog: fires when the work takes too long, stays quiet when it is done in time") {
+    std::atomic<int> fired{0};
+    {
+        tbcad::convert::Watchdog quiet(std::chrono::seconds(30), [&] { ++fired; });
+    }  // destroyed at once: must not wait 30 s and must not fire
+    CHECK(fired == 0);
+    {
+        tbcad::convert::Watchdog slow(std::chrono::seconds(1), [&] { ++fired; });
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    }
+    CHECK(fired == 1);
+    {
+        tbcad::convert::Watchdog off(std::chrono::seconds(0), [&] { ++fired; });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    CHECK(fired == 1);
 }

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -37,6 +39,8 @@ const char* kUsage =
     "  --lz21-search FILE...   try other literal-run cuts on R2007 files, print scores\n"
     "  --dwg-info FILE         describe a .dwg file's structure (for diagnosing files that fail)\n"
     "  --report FILE           write a JSON report (counts, units, encoding, warnings)\n"
+    "  --timeout SECONDS       give up (exit 2) when the conversion takes longer; 0 = never\n"
+    "                          (default 600)\n"
     "  -q, --quiet             print nothing except errors\n"
     "  -h, --help              show this text\n"
     "\n"
@@ -127,8 +131,29 @@ std::string jsonString(const std::string& s) {
 
 }  // namespace
 
+Watchdog::Watchdog(std::chrono::seconds limit, std::function<void()> onExpire) {
+    if (limit.count() <= 0)
+        return;
+    thread_ = std::thread([this, limit, onExpire = std::move(onExpire)] {
+        std::unique_lock lock(m_);
+        if (!cv_.wait_for(lock, limit, [this] { return done_; }))
+            onExpire();
+    });
+}
+
+Watchdog::~Watchdog() {
+    {
+        std::lock_guard lock(m_);
+        done_ = true;
+    }
+    cv_.notify_all();
+    if (thread_.joinable())
+        thread_.join();
+}
+
 int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream& err) {
     std::string input, output, reportPath;
+    long timeoutSeconds = 600;
     dxf::ImportOptions options;
     dxf::ExportOptions exportOptions;
     bool quiet = false;
@@ -207,6 +232,16 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             if (!v)
                 return kExitFailed;
             options.splitLayers = *v;
+        } else if (a == "--timeout") {
+            auto v = value("a number of seconds");
+            if (!v)
+                return kExitFailed;
+            char* end = nullptr;
+            timeoutSeconds = std::strtol(v->c_str(), &end, 10);
+            if (v->empty() || *end != '\0' || timeoutSeconds < 0) {
+                err << "tbcad-convert: --timeout needs a number of seconds (0 = never)\n";
+                return kExitFailed;
+            }
         } else if (a == "--dimension-graphics") {
             options.dimensionGraphics = true;
         } else if (a == "--no-dimension-graphics") {
@@ -262,6 +297,16 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         }
         return kExitFailed;
     };
+
+    // A pathological file may not keep the converter busy for ever: report it and stop.
+    Watchdog watchdog(std::chrono::seconds(timeoutSeconds), [&] {
+        err << "tbcad-convert: " << input << ": gave up after " << timeoutSeconds
+            << " s (use --timeout to allow longer)\n";
+        err.flush();
+        if (!reportPath.empty())
+            writeText(reportPath, "{\"failed\":true,\"error\":\"timeout\"}");
+        std::_Exit(kExitFailed);
+    });
 
     std::vector<std::byte> bytes;
     dxf::Report report;
