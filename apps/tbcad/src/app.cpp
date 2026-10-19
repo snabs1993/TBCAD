@@ -33,6 +33,7 @@
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
+#include "tbcad/ui/selection.h"
 
 namespace tbcad::app {
 
@@ -356,10 +357,34 @@ int App::runCapture() {
     std::map<std::string, std::string> vars{{"layout", ""}, {"pick", ""}, {"picked", ""}};
     struct Counts {
         std::size_t objects = 0, layouts = 0;
+        std::map<int, std::size_t> byKind{};  // model space objects of each kind
     };
     std::map<std::string, Counts> counts;
     const auto countNow = [&] {
-        return Counts{core_->document().modelSpaceCount(), core_->layoutNames().size()};
+        Counts c{core_->document().modelSpaceCount(), core_->layoutNames().size(), {}};
+        for (EntityId id : core_->document().modelSpace())
+            if (const Entity* e = core_->document().find(id))
+                ++c.byKind[static_cast<int>(kind(*e))];
+        return c;
+    };
+    // "line +40, text -2": the kinds whose count changed, to tell what a round trip added.
+    const auto kindDiff = [&](const Counts& then, const Counts& now) {
+        std::map<int, long long> d;
+        for (const auto& [k, n] : now.byKind)
+            d[k] += static_cast<long long>(n);
+        for (const auto& [k, n] : then.byKind)
+            d[k] -= static_cast<long long>(n);
+        std::string out;
+        for (const auto& [k, n] : d) {
+            if (n == 0)
+                continue;
+            const char* nm = k >= 0 && k < static_cast<int>(std::size(kKindNames))
+                                 ? kKindNames[static_cast<std::size_t>(k)]
+                                 : "other";
+            out += (out.empty() ? "" : ", ") + std::string(nm) + (n > 0 ? " +" : " ") +
+                   std::to_string(n);
+        }
+        return out;
     };
     double vpScaleBefore = 0;
     bool skipping = false;  // @skip-step-unless: until the next @step
@@ -505,6 +530,9 @@ int App::runCapture() {
                 ok = now.layouts == it->second.layouts &&
                      static_cast<long long>(now.objects) ==
                          static_cast<long long>(it->second.objects) + (what == "added" ? k : 0);
+                if (!ok)
+                    if (const std::string d = kindDiff(it->second, now); !d.empty())
+                        got += "; by kind: " + d;
             }
         } else if (what == "viewport-zoomed") {
             // viewport-zoomed F: the viewport entered by @enter-viewport shows F times closer
@@ -802,7 +830,9 @@ int App::runCapture() {
                 if (value->empty() && bar != std::string::npos)
                     value = spec.substr(bar + 1);
             } else if (key.rfind("stem:", 0) == 0) {
+                // Spaces become '_': @shot and @expect file take a name without spaces.
                 value = platform::pathToUtf8(platform::pathFromUtf8(env(key.substr(5))).stem());
+                std::replace(value->begin(), value->end(), ' ', '_');
             } else if (const auto v = vars.find(key.substr(0, key.find('|'))); v != vars.end()) {
                 value = v->second;  // {name|fallback}: the fallback when the step found nothing
                 if (value->empty() && key.find('|') != std::string::npos)
@@ -1010,21 +1040,62 @@ int App::runCapture() {
             vpScaleBefore = pick->scaleN;
             core_->setActiveLayout(name);
             settle();
+            // The middle first, then other points inside it (a clipped viewport, or a note on
+            // the sheet over the middle), as a user would try.
             const BBox2 box = pick->paper;
-            const ImVec2 w = toWindow((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2);
-            moveTo(w.x, w.y);
-            for (int k = 0; k < 2; ++k) {
-                io.AddMouseButtonEvent(0, true);
-                captureFrames(1);
-                io.AddMouseButtonEvent(0, false);
-                captureFrames(1);
+            std::vector<Vec2> tries{{(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2}};
+            for (int gy = 1; gy < 6; ++gy)
+                for (int gx = 1; gx < 6; ++gx)
+                    tries.push_back({box.min.x + box.width() * gx / 6,
+                                     box.min.y + box.height() * gy / 6});
+            int attempts = 0;
+            for (const Vec2 at : tries) {
+                if (!core_->inPaperSpace() || attempts == 6)
+                    break;
+                if (!layout::viewportContains(*pick, at))
+                    continue;
+                if (attempts == 0)
+                    if (auto id = ui::pickEntity(core_->document(), core_->spatialIndex(), at,
+                                             core_->apertureMm()))
+                        if (const Entity* e = core_->document().find(*id)) {
+                            const Layer* l = core_->document().layer(e->common.layer);
+                            std::printf("enter-viewport: a %s on layer %s is under %.6g,%.6g\n",
+                                        kKindNames[std::min<std::size_t>(
+                                            static_cast<std::size_t>(kind(*e)),
+                                            std::size(kKindNames) - 1)],
+                                        l ? l->name.c_str() : "?", at.x, at.y);
+                        }
+                ++attempts;
+                const ImVec2 w = toWindow(at.x, at.y);
+                moveTo(w.x, w.y);
+                for (int k = 0; k < 2; ++k) {
+                    io.AddMouseButtonEvent(0, true);
+                    captureFrames(1);
+                    io.AddMouseButtonEvent(0, false);
+                    captureFrames(1);
+                }
+                settle();
+                if (core_->inPaperSpace())
+                    std::printf("enter-viewport: a double click at %.6g,%.6g stayed on the sheet\n",
+                                at.x, at.y);
             }
-            settle();
             std::printf("enter-viewport: layout \"%s\" viewport %d at 1:%.6g%s\n", name.c_str(),
                         pick->id, pick->scaleN, pick->locked ? " (locked)" : "");
             if (core_->inPaperSpace()) {
                 std::printf("enter-viewport: the double click did not enter it\n");
                 ++failed, ++failedSinceShot;
+            } else if (core_->editingLayout() != name || core_->editingViewport() != pick->id) {
+                // Another viewport lies over the middle of this one: the checks follow the one
+                // the double click entered.
+                const auto l = layout::findLayout(core_->document(), core_->editingLayout());
+                const layout::Viewport* in =
+                    l ? l->findViewport(core_->editingViewport()) : nullptr;
+                std::printf("enter-viewport: the double click entered viewport %d of \"%s\"%s\n",
+                            core_->editingViewport(), core_->editingLayout().c_str(),
+                            in && in->locked ? " (locked)" : "");
+                vars["layout"] = core_->editingLayout();
+                vars["vpid"] = std::to_string(core_->editingViewport());
+                vpScaleBefore = in ? in->scaleN : 0;
             }
             std::fflush(stdout);
         } else if (op == "select-kind") {

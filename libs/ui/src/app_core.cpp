@@ -2422,9 +2422,27 @@ void AppCore::click(const PointerState& p) {
 }
 
 void AppCore::doubleClick(const PointerState& p) {
-    const bool onSheetObject =
-        inPaperSpace() && !runner().active() &&
-        pickEntity(session_->doc, spatialIndex(), camera_.screenToWorld(p.screen), apertureMm());
+    bool onSheetObject = false;
+    if (inPaperSpace() && !runner().active()) {
+        const Vec2 at = camera_.screenToWorld(p.screen);
+        if (auto id = pickEntity(session_->doc, spatialIndex(), at, apertureMm())) {
+            onSheetObject = true;
+            // Inside a viewport only notes, dimensions and tables on the sheet keep the double
+            // click for themselves (to edit them). Hatches, frames, title blocks and images
+            // drawn over or behind the viewport would otherwise make it impossible to enter.
+            bool inViewport = false;
+            if (auto lay = layout::findLayout(session_->doc, activeLayout_))
+                for (const layout::Viewport& vp : lay->viewports)
+                    inViewport = inViewport || (vp.on && layout::viewportContains(vp, at));
+            const Entity* e = session_->doc.find(*id);
+            if (inViewport && e) {
+                const EntityKind k = kind(*e);
+                onSheetObject = k == EntityKind::Text || k == EntityKind::MText ||
+                                k == EntityKind::Dimension || k == EntityKind::Leader ||
+                                k == EntityKind::MLeader || k == EntityKind::Table;
+            }
+        }
+    }
     if (inPaperSpace() && !onSheetObject && !runner().active()) {
         // A double click inside a viewport goes to model space, showing what the viewport shows
         // there, so the drawing can be edited from the sheet.

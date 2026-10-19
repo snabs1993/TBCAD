@@ -94,6 +94,10 @@ public:
     // (the sheet, its objects and the viewports); editing it is done with the layout commands.
     const std::string& activeLayout() const { return activeLayout_; }
     bool inPaperSpace() const { return !activeLayout_.empty(); }
+    // The viewport being edited from model space (entered by a double click or MSPACE): its
+    // layout and id; empty and 0 when none.
+    const std::string& editingLayout() const { return editingLayout_; }
+    int editingViewport() const { return editingViewport_; }
     std::vector<std::string> layoutNames() const;
     // Empty or an unknown name goes back to Model. Returns false when the layout can't be shown.
     bool setActiveLayout(const std::string& name);

@@ -147,7 +147,7 @@ from a copy of `NAME.config` next to the script when there is one. Their test
 plot style table `data/ep-test.ctb` is made by `tools/make_test_ctb.py`.
 
 Scripts can also run on real drawings. `{env:NAME}` (or `{env:NAME|fallback}`) is replaced by an
-environment variable and `{stem:NAME}` by the file name, without extension, of the path in it;
+environment variable and `{stem:NAME}` by the file name, without extension and with spaces as `_`, of the path in it;
 `@require-env NAME` skips the script (exit 77) when the variable is not set. `@step NAME` starts a
 timed step: when the next one starts (or the script ends) the program waits for the drawing to
 settle and prints `step NAME: S s (N frames)`; a command still running at a step boundary is ended

@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/app_core.h"
 #include "test_support.h"
 
@@ -119,6 +121,55 @@ TEST_CASE("double click in a viewport goes to model space showing that viewport"
     CHECK(core.camera().center.y == doctest::Approx(3000).epsilon(0.01));
     // 200 mm of sheet at 1:50 is 10 m of model across, so the view shows about that much.
     CHECK(core.camera().visibleWorld().max.x - core.camera().visibleWorld().min.x >= 10000);
+}
+
+TEST_CASE("a hatch on the sheet over a viewport does not stop a double click entering it") {
+    hatch::registerHatchDisplay();
+    text::registerDisplay();
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper5") / "cfg", tempDir("paper5") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        tx.commit();
+    }
+    const BlockId sheet = layout::findLayout(core.document(), "A")->content;
+    {
+        // A solid fill drawn on the sheet across the whole viewport, and a note inside it.
+        HatchData h;
+        HatchLoop loop;
+        HatchPolylineEdge pe;
+        for (Vec2 q : {Vec2{10, 10}, Vec2{230, 10}, Vec2{230, 180}, Vec2{10, 180}})
+            pe.v.push_back(PolyVertex{q});
+        pe.closed = true;
+        loop.edges.push_back(pe);
+        h.loops.push_back(loop);
+        TextData t;
+        t.position = {150, 150};
+        t.height = 5;
+        t.utf8 = "NOTE";
+        auto tx = core.document().begin("sheet objects");
+        REQUIRE(tx.add(Entity{{}, h}, sheet).ok());
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        REQUIRE(tx.add(std::move(e), sheet).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.zoomExtents();
+    core.updateFrame();
+    // On the note (its outline): the note keeps the double click (it opens its editor), the sheet stays.
+    core.doubleClick({core.camera().worldToScreen({150, 152}), false, false});
+    CHECK(core.inPaperSpace());
+    core.pressEscape();
+    core.pressEscape();
+    // On the fill: the viewport is entered.
+    core.doubleClick({core.camera().worldToScreen({100, 100}), false, false});
+    CHECK_FALSE(core.inPaperSpace());
+    CHECK(core.editingViewport() == 1);
 }
 
 TEST_CASE("MSPACE enters the model through a viewport and PSPACE returns to the sheet") {
