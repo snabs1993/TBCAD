@@ -3,6 +3,7 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <cstdlib>
 
 namespace tbcad::drafting {
@@ -10,8 +11,8 @@ namespace tbcad::drafting {
 namespace {
 
 constexpr std::array<std::string_view, kSnapModeCount> kNames = {
-    "endpoint", "intersection", "midpoint", "center",    "quadrant", "perpendicular",
-    "tangent",  "nearest",      "node",     "insertion", "apparent", "extension"};
+    "endpoint", "intersection", "midpoint",  "center",   "quadrant",  "perpendicular", "tangent",
+    "nearest",  "node",         "insertion", "apparent", "extension", "parallel"};
 constexpr std::array<std::string_view, kSnapModeCount> kLabels = {"Endpoint",
                                                                   "Intersection",
                                                                   "Midpoint",
@@ -23,7 +24,8 @@ constexpr std::array<std::string_view, kSnapModeCount> kLabels = {"Endpoint",
                                                                   "Node",
                                                                   "Insertion",
                                                                   "Apparent intersection",
-                                                                  "Extension"};
+                                                                  "Extension",
+                                                                  "Parallel"};
 
 std::string lower(std::string_view s) {
     std::string r(s);
@@ -200,6 +202,17 @@ std::vector<double> parsePolarIncrements(std::string_view text) {
     return out;
 }
 
+std::optional<std::vector<double>> parsePolarAngles(std::string_view text) {
+    std::vector<double> out;
+    for (const std::string& w : words(text)) {
+        double v = 0;
+        if (!toDouble(w, v) || !std::isfinite(v) || v < -360 || v > 360)
+            return std::nullopt;
+        out.push_back(v);
+    }
+    return out;
+}
+
 DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
     DraftingSettings s;
     auto get = [&](const char* key) { return host.setting(key); };
@@ -247,6 +260,10 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
         if (!inc.empty())
             s.polarIncrementsDeg = std::move(inc);
     }
+    if (auto p = get(keys::polarAdditional))
+        if (auto a = parsePolarAngles(*p))
+            s.polarAdditionalDeg = std::move(*a);
+    s.polarRelative = boolOf(keys::polarRelative, false);
     // Ortho and polar tracking exclude each other; if both are stored, ortho wins.
     if (s.ortho)
         s.polar = false;

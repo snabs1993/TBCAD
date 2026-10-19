@@ -71,6 +71,11 @@ it `Input` events: `Input::typed("0,0")`, `enter()`, `cancel()` (Esc), `click(Ra
   the origin), `#x,y`. Lengths accept units (`1m`, `3in`); angles are in degrees by default.
   Drafting aids extend this by installing a `CommandLineParser` with `runner.setLineParser(...)`
   (asked first; return `nullopt` to fall back to the built-in grammar).
+* Point modifiers at any point prompt: `FROM` (base point, then an offset such as `@10,0`), `M2P`
+  / `MTP` (midpoint of two points), `TT` (temporary tracking point; its horizontal and vertical
+  rays are tracked until the next click). A snap name typed at a point prompt (`END`, `MID`,
+  `INT`, `APP`, `CEN`, `QUA`, `PER`, `TAN`, `NEA`, `NOD`, `INS`, `EXT`, `PAR`, `NON`) overrides the
+  running snaps for one pick (`CommandLineParser::snapOverride`, stored in `drafting.osnap.once`).
 * Point filters: implement `PointFilter`, add to a `PointFilterChain` with an `order`, and hand the
   chain to `runner.setFilterChain(...)`. The filter with the lowest `order` that returns a point
   wins (osnap before polar/ortho before grid), and its `FilterFeedback` goes to the overlay.

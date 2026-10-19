@@ -104,6 +104,11 @@ void drawSnapMarker(Overlay& o, const render::Camera2D& camera, Vec2 p, SnapMode
             for (double dx : {-h, 0.0, h})
                 o.line(Space::Screen, {c.x + dx - h * 0.12, c.y}, {c.x + dx + h * 0.12, c.y}, st);
             break;
+        case SnapMode::Parallel:
+            // Two slanted strokes side by side.
+            o.line(Space::Screen, {c.x - h, c.y - h * 0.4}, {c.x - h * 0.2, c.y + h}, st);
+            o.line(Space::Screen, {c.x + h * 0.2, c.y - h}, {c.x + h, c.y + h * 0.4}, st);
+            break;
     }
 }
 

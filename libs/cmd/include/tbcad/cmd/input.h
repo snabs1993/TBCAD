@@ -202,6 +202,9 @@ struct PointQuery {
     std::optional<Vec2> base{};  // current rubber-band origin, if any
     bool click = false;          // true when the point is being committed, false while hovering
     bool shift = false;          // Shift is held: temporary ortho (flips the ORTHO setting)
+    // Direction of the segment that ended at `base` in this command (base minus the point before
+    // it), for polar angles measured relative to the last segment. Empty when there is none.
+    std::optional<Vec2> lastSegment{};
     double pixelSize = 1;
 };
 
@@ -290,7 +293,16 @@ public:
     virtual std::optional<Vec2> parsePoint(std::string_view text, const PointParseContext& ctx) = 0;
     // Rotation of the current UCS (radians), for angle prompts that are asked in the UCS.
     virtual double ucsAngle() const { return 0; }
+    // A typed object snap override ("END", "MID", "NON" ...): the value the runner stores in
+    // the host setting kOsnapOnceSetting for the next point; nullopt when `word` is none.
+    virtual std::optional<std::string> snapOverride(std::string_view /*word*/) const { return {}; }
+    // TT at a point prompt: `p` becomes a temporary tracking point for the next point.
+    virtual void trackPoint(Vec2 /*p*/) {}
 };
+
+// The host setting a typed object snap override goes to (read by the drafting aids for the next
+// point; the application clears it after each picked point).
+inline constexpr const char* kOsnapOnceSetting = "drafting.osnap.once";
 
 // Built-in grammar: `x,y` absolute, `@dx,dy` relative to lastPoint, `@d<a` and `d<a` polar
 // (relative to lastPoint when prefixed with @, otherwise to the origin), `#x,y` absolute.

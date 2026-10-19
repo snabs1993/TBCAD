@@ -24,7 +24,9 @@ std::optional<Vec2> orthoPolarDirection(const DraftingEnv* env, const cmd::Point
                                         Vec2 raw);
 
 // Snaps to the best object snap candidate under the cursor when OSNAP is on. FilterFeedback:
-// marker = the mode name ("endpoint" ...), markerPos, tooltip = the mode label.
+// marker = the mode name ("endpoint" ...), markerPos, tooltip = the mode label. With PARallel on
+// and a base point, resting on a straight edge acquires its direction; moving the rubber band
+// close to parallel to it then snaps onto the parallel line through the base point.
 class OsnapFilter final : public cmd::PointFilter {
 public:
     explicit OsnapFilter(const DraftingEnv* env, const SnapGeometryRegistry* providers = nullptr);
@@ -37,10 +39,15 @@ public:
     const std::vector<SnapCandidate>& candidates() const { return candidates_; }
 
 private:
+    std::optional<Vec2> parallel(const cmd::PointQuery& query, Vec2 raw, double aperture,
+                                 cmd::FilterFeedback& feedback);
+
     const DraftingEnv* env_;
     const SnapGeometryRegistry* providers_;
     std::vector<SnapCandidate> candidates_{};
     std::size_t cycle_ = 0;
+    // PARallel: the straight edge the cursor last rested on (kept until the point is picked).
+    std::optional<std::pair<Vec2, Vec2>> parallelEdge_{};
 };
 
 // Object snap tracking (OTRACK). Hovering an osnap candidate acquires its point (at most three are

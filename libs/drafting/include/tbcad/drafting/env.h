@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include "tbcad/cmd/host.h"
 #include "tbcad/core/core.h"
@@ -33,6 +34,10 @@ struct DraftingEnv {
     // the edge, X axis along it. Ortho, polar and grid snap use it instead of the current UCS.
     // Mutable because the filters that read it hold the environment as const.
     mutable std::optional<Ucs> dynamicUcs{};
+
+    // Temporary tracking points (TT typed at a point prompt) for the next point: object snap
+    // tracking runs from them even when OTRACK is off. Cleared once that point is picked.
+    mutable std::vector<Vec2> tempTrack{};
 
     // The system the point filters work in right now.
     Ucs effectiveUcs() const;

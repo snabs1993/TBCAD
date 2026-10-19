@@ -148,6 +148,8 @@ Result<void> CommandRunner::startImpl(std::string_view nameOrAlias, bool transpa
                              std::string(c->name()) + " cannot be used transparently");
     } else if (!stack_.empty()) {
         return makeError(ErrorCode::Conflict, "A command is already running");
+    } else {
+        lastSeg_.reset();
     }
     Active a;
     a.command = c;
@@ -304,6 +306,9 @@ Vec2 CommandRunner::filtered(const RawInput& raw, bool click, const std::optiona
     q.click = click;
     q.shift = raw.shift;
     q.pixelSize = raw.pixelSize;
+    if (base && lastSeg_ && distance(*base, lastSeg_->second) < 1e-9 &&
+        distance(lastSeg_->first, lastSeg_->second) > 1e-9)
+        q.lastSegment = lastSeg_->second - lastSeg_->first;
     const Vec2 p = chain_->apply(q, raw.worldCursor, feedback_);
     feedback_.hasPoint = true;
     feedback_.base = base;
@@ -318,6 +323,9 @@ double CommandRunner::ucsTurn(const detail::PromptRequest& req) const {
 PointParseContext CommandRunner::parseContext(const detail::PromptRequest& req) const {
     PointParseContext c;
     c.base = req.base;
+    // FROM's offset and M2P's second point are measured from the point just given.
+    if (ptMod_ == PtMod::FromOffset || ptMod_ == PtMod::Mid2)
+        c.base = ptModA_;
     c.lastPoint = lastPoint_;
     c.cursor = cursor_;
     c.unit = doc_.header().units;
@@ -548,8 +556,54 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         return SubmitResult::Accepted;
     };
 
+    // A point for a point, distance or angle prompt; FROM, M2P and TT take theirs first.
+    auto deliverPoint = [&](Vec2 p) -> SubmitResult {
+        lastPoint_ = p;
+        switch (ptMod_) {
+            case PtMod::FromBase:
+                ptModA_ = p;
+                ptMod_ = PtMod::FromOffset;
+                host_.print("<Offset>:");
+                return SubmitResult::Accepted;
+            case PtMod::Mid1:
+                ptModA_ = p;
+                ptMod_ = PtMod::Mid2;
+                host_.print("Second point of mid:");
+                return SubmitResult::Accepted;
+            case PtMod::Mid2:
+                p = (ptModA_ + p) * 0.5;
+                lastPoint_ = p;
+                break;
+            case PtMod::Track:
+                ptMod_ = PtMod::None;
+                if (parser_)
+                    parser_->trackPoint(p);
+                host_.print(req.text + ":");
+                return SubmitResult::Accepted;
+            default:
+                break;
+        }
+        ptMod_ = PtMod::None;
+        ans.status = Status::Ok;
+        if (req.kind == K::Point) {
+            ans.point = p;
+            if (req.base)
+                lastSeg_ = std::make_pair(*req.base, p);
+        } else if (!req.base) {
+            return reject("Type a value; there is no base point to measure from.");
+        } else if (req.kind == K::Distance) {
+            ans.real = distance(*req.base, p);
+        } else {
+            ans.real = normalizeAngle(std::atan2(p.y - req.base->y, p.x - req.base->x));
+        }
+        return complete(std::move(ans));
+    };
+    const bool pointPrompt =
+        req.kind == K::Point || req.kind == K::Distance || req.kind == K::Angle;
+
     switch (in.kind) {
         case Input::Kind::Cancel:
+            ptMod_ = PtMod::None;
             ans.status = Status::Cancel;
             return complete(std::move(ans));
 
@@ -743,6 +797,42 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 }
                 return applyBatch(found, false, "No objects found.");
             }
+            if (pointPrompt) {
+                const std::string up = upper(text);
+                if (up == "FROM" || up == "FRO") {
+                    ptMod_ = PtMod::FromBase;
+                    host_.print("Base point:");
+                    return SubmitResult::Accepted;
+                }
+                if (up == "M2P" || up == "MTP") {
+                    ptMod_ = PtMod::Mid1;
+                    host_.print("First point of mid:");
+                    return SubmitResult::Accepted;
+                }
+                if (up == "TT") {
+                    ptMod_ = PtMod::Track;
+                    host_.print("Specify temporary OTRACK point:");
+                    return SubmitResult::Accepted;
+                }
+                if (parser_)
+                    if (auto mode = parser_->snapOverride(text)) {
+                        host_.setSetting(kOsnapOnceSetting, *mode);
+                        host_.print(*mode == "none" ? "Object snaps off for the next point."
+                                                    : "Snap to " + *mode + " for the next point.");
+                        return SubmitResult::Accepted;
+                    }
+                if (ptMod_ != PtMod::None) {
+                    const PointParseContext pc = parseContext(req);
+                    std::optional<Vec2> p;
+                    if (parser_)
+                        p = parser_->parsePoint(text, pc);
+                    if (!p)
+                        p = parsePointText(text, pc);
+                    if (!p)
+                        return reject("Invalid point \"" + text + "\".");
+                    return deliverPoint(*p);
+                }
+            }
             switch (req.kind) {
                 case K::Point: {
                     const PointParseContext pc = parseContext(req);
@@ -759,6 +849,8 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     if (!p)
                         return reject("Invalid point \"" + text + "\".");
                     lastPoint_ = *p;
+                    if (req.base)
+                        lastSeg_ = std::make_pair(*req.base, *p);
                     ans.status = Status::Ok;
                     ans.point = *p;
                     return complete(std::move(ans));
@@ -851,19 +943,12 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             }
             if (req.kind != K::Point && req.kind != K::Distance && req.kind != K::Angle)
                 return SubmitResult::Ignored;
-            const Vec2 p = filtered(in.raw, true, req.base, req.snap);
-            lastPoint_ = p;
-            ans.status = Status::Ok;
-            if (req.kind == K::Point) {
-                ans.point = p;
-            } else if (!req.base) {
-                return reject("Type a value; there is no base point to measure from.");
-            } else if (req.kind == K::Distance) {
-                ans.real = distance(*req.base, p);
-            } else {
-                ans.real = normalizeAngle(std::atan2(p.y - req.base->y, p.x - req.base->x));
-            }
-            return complete(std::move(ans));
+            // While FROM or M2P collects its points the rubber band starts at the last of them.
+            const std::optional<Vec2> base = ptMod_ == PtMod::FromOffset || ptMod_ == PtMod::Mid2
+                                                 ? std::optional<Vec2>(ptModA_)
+                                             : ptMod_ == PtMod::None ? req.base
+                                                                     : std::nullopt;
+            return deliverPoint(filtered(in.raw, true, base, req.snap));
         }
 
         case Input::Kind::Entity: {

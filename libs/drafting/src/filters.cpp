@@ -17,6 +17,10 @@ Ucs DraftingEnv::effectiveUcs() const {
     return currentUcs(doc, host);
 }
 
+namespace {
+bool nearestEdge(const Entity& e, Vec2 p, Vec2& a, Vec2& b, double& dist);
+}  // namespace
+
 OsnapFilter::OsnapFilter(const DraftingEnv* env, const SnapGeometryRegistry* providers)
     : env_(env), providers_(providers ? providers : &SnapGeometryRegistry::instance()) {}
 
@@ -43,6 +47,10 @@ std::optional<Vec2> OsnapFilter::filter(const cmd::PointQuery& query, Vec2 raw,
     if (!same)
         cycle_ = 0;
     candidates_ = std::move(found);
+    if (candidates_.empty() && (s.modes & maskOf(SnapMode::Parallel)) && query.base)
+        return parallel(query, raw, rq.apertureMm, feedback);
+    if (query.click)
+        parallelEdge_.reset();
     if (candidates_.empty())
         return std::nullopt;
     const SnapCandidate& c = candidates_[cycle_ % candidates_.size()];
@@ -50,6 +58,41 @@ std::optional<Vec2> OsnapFilter::filter(const cmd::PointQuery& query, Vec2 raw,
     feedback.markerPos = c.point;
     feedback.tooltip = std::string(snapModeLabel(c.mode));
     return c.point;
+}
+
+std::optional<Vec2> OsnapFilter::parallel(const cmd::PointQuery& query, Vec2 raw, double aperture,
+                                          cmd::FilterFeedback& feedback) {
+    const Vec2 base = *query.base;
+    // Resting on a straight edge acquires it.
+    double best = aperture;
+    env_->index->queryPoint(raw, aperture, [&](EntityId id, const BBox2&) {
+        const Entity* e = env_->doc->find(id);
+        Vec2 a{}, b{};
+        double d = 0;
+        if (e && nearestEdge(*e, raw, a, b, d) && d <= best) {
+            best = d;
+            parallelEdge_ = std::make_pair(a, b);
+        }
+        return true;
+    });
+    const auto edge = parallelEdge_;
+    if (query.click)
+        parallelEdge_.reset();
+    if (!edge)
+        return std::nullopt;
+    const Vec2 dir = normalized(edge->second - edge->first);
+    const Vec2 v = raw - base;
+    const double t = dot(v, dir);
+    const Vec2 p = base + dir * t;
+    if (length(raw - p) > aperture || std::abs(t) < aperture)
+        return std::nullopt;
+    const double reach = 4000.0 * std::max(query.pixelSize, 1e-9);
+    const Vec2 s = t >= 0 ? dir : dir * -1.0;
+    feedback.marker = std::string(snapModeName(SnapMode::Parallel));
+    feedback.markerPos = (edge->first + edge->second) * 0.5;
+    feedback.tooltip = std::string(snapModeLabel(SnapMode::Parallel));
+    feedback.guide = std::make_pair(base, base + s * (std::abs(t) + reach));
+    return p;
 }
 
 void OsnapFilter::cycle() {
@@ -82,6 +125,8 @@ struct Constrained {
     double d = 0;
     bool ortho = false;
     bool iso = false;
+    bool relative = false;             // polar angle measured from the last segment
+    std::optional<double> shownDeg{};  // the polar angle to show, when not angleDeg
     DraftingSettings s{};
     Ucs ucs{};
 };
@@ -132,7 +177,23 @@ std::optional<Constrained> constrain(const DraftingEnv* env, const cmd::PointQue
         d = std::abs(dir.x != 0 ? v.x : v.y);  // project instead of rotate
         angleDeg = std::atan2(dir.y, dir.x) * 180.0 / kPi;
     } else {
-        const double ang = std::atan2(v.y, v.x) * 180.0 / kPi;  // (-180, 180]
+        // Relative polar: angles count from the direction of the last segment.
+        double zero = 0;
+        if (s.polarRelative && query.lastSegment) {
+            const Vec2 seg = c.ucs.dirFromWorld(*query.lastSegment);
+            zero = std::atan2(seg.y, seg.x) * 180.0 / kPi;
+            c.relative = true;
+        }
+        // Angle from `zero`, wrapped into (-180, 180].
+        auto wrap = [](double a) {
+            a = std::fmod(a, 360.0);
+            if (a > 180)
+                a -= 360;
+            if (a <= -180)
+                a += 360;
+            return a;
+        };
+        const double ang = wrap(std::atan2(v.y, v.x) * 180.0 / kPi - zero);
         double best = 1e9, bestAngle = 0;
         for (double inc : s.polarIncrementsDeg) {
             const double m = roundTo(ang, inc);
@@ -142,10 +203,19 @@ std::optional<Constrained> constrain(const DraftingEnv* env, const cmd::PointQue
                 bestAngle = m;
             }
         }
+        // Additional angles track only themselves, not their multiples.
+        for (double a : s.polarAdditionalDeg) {
+            const double diff = std::abs(wrap(ang - a));
+            if (diff < best) {
+                best = diff;
+                bestAngle = wrap(a);
+            }
+        }
         if (best > s.polarToleranceDeg)
             return std::nullopt;
-        angleDeg = bestAngle;
-        const double rad = bestAngle * kPi / 180.0;
+        c.shownDeg = bestAngle;
+        angleDeg = bestAngle + zero;
+        const double rad = angleDeg * kPi / 180.0;
         dir = {std::cos(rad), std::sin(rad)};
         // Exact axis directions must not carry cos(90°) noise.
         if (std::abs(dir.x) < 1e-12)
@@ -179,7 +249,7 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     const DraftingSettings& s = c->s;
     const Vec2 base = *query.base;
     double d = c->d;
-    const double angleDeg = c->angleDeg;
+    const double angleDeg = c->shownDeg ? *c->shownDeg : c->angleDeg;
     if (s.snap && s.snapSpacing > 0) {
         const double snapped = roundTo(d, s.snapSpacing);
         if (snapped > 0)
@@ -193,9 +263,10 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     char ang[32];
     std::snprintf(ang, sizeof ang, "%.4g",
                   std::fabs(shown) < 1e-9 ? 0.0 : std::round(shown * 100) / 100);
-    feedback.tooltip =
-        std::string(c->ortho ? (c->iso ? "Iso ortho: " : "Ortho: ") : "Polar: ") +
-        formatDistance(*env_, d) + " < " + ang + "\xC2\xB0";
+    feedback.tooltip = std::string(c->ortho      ? (c->iso ? "Iso ortho: " : "Ortho: ")
+                                   : c->relative ? "Relative polar: "
+                                                 : "Polar: ") +
+                       formatDistance(*env_, d) + " < " + ang + "\xC2\xB0";
     const double reach = std::max(d, 1.0) + 4000.0 * std::max(query.pixelSize, 1e-9);
     feedback.guide =
         std::make_pair(base - dir * (4000.0 * std::max(query.pixelSize, 1e-9)), base + dir * reach);
@@ -337,7 +408,13 @@ std::optional<Vec2> OtrackFilter::filter(const cmd::PointQuery& query, Vec2 raw,
     if (!env_ || !env_->host)
         return std::nullopt;
     const DraftingSettings s = DraftingSettings::read(*env_->host);
-    if (!s.otrack || (acquired_.empty() && !query.base))
+    // Temporary tracking points (TT) work for the next point whether OTRACK is on or not.
+    const std::vector<Vec2> temp = env_->tempTrack;
+    if (query.click)
+        env_->tempTrack.clear();
+    if (!s.otrack && temp.empty())
+        return std::nullopt;
+    if (acquired_.empty() && temp.empty() && !query.base)
         return std::nullopt;
     const Ucs ucs = env_->effectiveUcs();
     const double px = std::max(query.pixelSize, 1e-9);
@@ -372,7 +449,11 @@ std::optional<Vec2> OtrackFilter::filter(const cmd::PointQuery& query, Vec2 raw,
         bool base;
     };
     std::vector<Ray> rays;
-    for (const Vec2& o : acquired_)
+    if (s.otrack)
+        for (const Vec2& o : acquired_)
+            for (const Vec2& d : dirs)
+                rays.push_back({o, d, false});
+    for (const Vec2& o : temp)
         for (const Vec2& d : dirs)
             rays.push_back({o, d, false});
     if (query.base && (s.polar || s.ortho))
