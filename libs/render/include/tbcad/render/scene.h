@@ -165,6 +165,9 @@ public:
     void clear();
     bool contains(EntityId id) const { return entities_.count(id) != 0; }
     std::size_t entityCount() const { return entities_.size(); }
+    // Gives back the spare room that growing batches keep (up to double the size). The content
+    // and the batch versions stay as they are. Returns the bytes released.
+    std::size_t trimMemory();
 
     // Layers are visible unless switched off. Use syncLayerVisibility() to follow a Document.
     void setLayerVisible(LayerId layer, bool visible);
