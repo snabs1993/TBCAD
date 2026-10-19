@@ -19,6 +19,7 @@
 #include "tbcad/core/document.h"
 #include "tbcad/dxf/lexer.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/mline/mline.h"
 
 namespace tbcad::dxf::detail {
 
@@ -113,6 +114,7 @@ private:
     void processObjects(RecordReader& rr);
     void processClasses(RecordReader& rr);
     void storeObject(const Record& r);
+    void importGroups();
     void keepObjects();
     void keepHandles();
     void applyPlotStyles();
@@ -169,6 +171,10 @@ private:
     bool convMLeader(const Record& r, std::vector<Entity>& out);
     bool conv3dFace(const Record& r, std::vector<Entity>& out);
     bool convMLine(const Record& r, std::vector<Entity>& out);
+    void loadMlineStyles();
+    void importMlineStyles();
+    std::unordered_map<std::string, mline::Style> mlStyles_{};  // by upper-case name
+    bool mlStylesLoaded_ = false;
     bool convWipeout(const Record& r, std::vector<Entity>& out);
     bool convImage(const Record& r, std::vector<Entity>& out);
     bool convTolerance(const Record& r, std::vector<Entity>& out);

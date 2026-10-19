@@ -11,6 +11,7 @@
 #include "keep.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/mline/mline.h"
 #include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
 #include "writer_impl.h"
@@ -884,6 +885,30 @@ std::string Writer::objectsSection() {
     std::uint64_t groupDict = newHandle(), layoutDict = newHandle(), mlineDict = newHandle(),
                   plotDict = newHandle(), mlineStyle = newHandle(), placeholder = newHandle();
 
+    struct GroupOut {
+        std::string name;
+        std::uint64_t handle = 0;
+        bool selectable = true;
+        std::vector<std::uint64_t> members;
+    };
+    std::vector<GroupOut> groupOut;
+    if (!r12_) {
+        for (const tbcad::Group& g : readGroups(doc_)) {
+            GroupOut out;
+            out.name = g.name;
+            out.selectable = g.selectable;
+            for (EntityId m : g.members) {
+                auto it = groupHandle_.find(m.value);
+                if (it != groupHandle_.end() && it->second)
+                    out.members.push_back(it->second);
+            }
+            if (out.members.empty())
+                continue;
+            out.handle = newHandle();
+            groupOut.push_back(std::move(out));
+        }
+    }
+
     // Objects kept from the source file: a new handle for each "@N" token.
     const auto& keptCustom = doc_.header().custom;
     std::unordered_map<std::string, std::uint64_t> tokenHandle;
@@ -994,6 +1019,10 @@ std::string Writer::objectsSection() {
         o.i(281, 1);
     };
     ownedDict(groupDict);
+    for (const GroupOut& g : groupOut) {
+        o.str(3, g.name);
+        o.h(350, g.handle);
+    }
     if (scaleObjects) {
         ownedDict(scaleDict);
         for (std::size_t i = 0; i < scaleList.size(); ++i) {
@@ -1095,6 +1124,21 @@ std::string Writer::objectsSection() {
         }
     }
 
+    for (const GroupOut& g : groupOut) {
+        o.zero("GROUP");
+        o.h(5, g.handle);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, groupDict);
+        o.raw(102, "}");
+        o.h(330, groupDict);
+        o.raw(100, "AcDbGroup");
+        o.str(300, "");
+        o.i(70, !g.name.empty() && g.name[0] == '*' ? 1 : 0);
+        o.i(71, g.selectable ? 1 : 0);
+        for (std::uint64_t m : g.members)
+            o.h(340, m);
+    }
+
     ownedDict(layoutDict);
     if (sheets_.empty()) {
         o.raw(3, "Layout1");
@@ -1107,9 +1151,29 @@ std::string Writer::objectsSection() {
     o.raw(3, "Model");
     o.h(350, layoutModel_);
 
+    // Styles other than Standard (a stored STANDARD replaces the built-in one).
+    struct StyleOut {
+        mline::Style style;
+        std::uint64_t handle;
+    };
+    std::vector<StyleOut> extraStyles;
+    mline::Style standard = mline::standardStyle();
+    for (const std::string& n : mline::styleNames(doc_)) {
+        auto st = mline::findStyle(doc_, n);
+        if (!st)
+            continue;
+        if (n == "STANDARD")
+            standard = *st;
+        else
+            extraStyles.push_back({*st, newHandle()});
+    }
     ownedDict(mlineDict);
     o.raw(3, "Standard");
     o.h(350, mlineStyle);
+    for (const StyleOut& e : extraStyles) {
+        o.str(3, e.style.name);
+        o.h(350, e.handle);
+    }
 
     o.zero("ACDBDICTIONARYWDFLT");
     o.h(5, plotDict);
@@ -1145,26 +1209,35 @@ std::string Writer::objectsSection() {
         o.h(330, plotDict);
     }
 
-    o.zero("MLINESTYLE");
-    o.h(5, mlineStyle);
-    o.raw(102, "{ACAD_REACTORS");
-    o.h(330, mlineDict);
-    o.raw(102, "}");
-    o.h(330, mlineDict);
-    o.raw(100, "AcDbMlineStyle");
-    o.raw(2, "Standard");
-    o.i(70, 0);
-    o.raw(3, "");
-    o.i(62, 256);
-    o.d(51, 90);
-    o.d(52, 90);
-    o.i(71, 2);
-    o.d(49, 0.5);
-    o.i(62, 256);
-    o.raw(6, "BYLAYER");
-    o.d(49, -0.5);
-    o.i(62, 256);
-    o.raw(6, "BYLAYER");
+    auto writeStyle = [&](const mline::Style& st, std::uint64_t handle, const char* name) {
+        o.zero("MLINESTYLE");
+        o.h(5, handle);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, mlineDict);
+        o.raw(102, "}");
+        o.h(330, mlineDict);
+        o.raw(100, "AcDbMlineStyle");
+        if (name)
+            o.raw(2, name);
+        else
+            o.str(2, st.name);
+        o.i(70, (st.startCap ? 16 : 0) | (st.endCap ? 256 : 0));
+        o.str(3, st.description);
+        o.i(62, 256);
+        o.d(51, 90);
+        o.d(52, 90);
+        std::vector<double> offs = st.offsets;
+        std::sort(offs.begin(), offs.end(), std::greater<>());
+        o.i(71, static_cast<int>(offs.size()));
+        for (double off : offs) {
+            o.d(49, off);
+            o.i(62, 256);
+            o.raw(6, "BYLAYER");
+        }
+    };
+    writeStyle(standard, mlineStyle, "Standard");
+    for (const StyleOut& e : extraStyles)
+        writeStyle(e.style, e.handle, nullptr);
 
     // Extension dictionaries of entities: a dictionary per entity, one XRECORD per entry.
     for (const PendingDict& pd : pendingDicts_) {
@@ -1446,6 +1519,11 @@ Result<ExportResult> Writer::run() {
     }
 
     loadSourceHandles();
+    if (!r12_) {
+        for (const tbcad::Group& g : readGroups(doc_))
+            for (EntityId m : g.members)
+                groupMembers_.insert(m.value);
+    }
     prepareNames();
     prepareBlocks();
     modelRec_ = newHandle();

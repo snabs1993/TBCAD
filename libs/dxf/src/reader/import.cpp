@@ -627,6 +627,147 @@ void Importer::applyPlotStyles() {
     });
 }
 
+// GROUP objects under ACAD_GROUP become the drawing's groups (GROUP / UNGROUP). Members are found
+// by the handle their entity had in the file.
+void Importer::importGroups() {
+    if (objRoot_.empty() || !objStore_.count(objRoot_))
+        return;
+    std::string dictHandle;
+    {
+        std::string name;
+        for (const auto& [c, v] : objStore_.at(objRoot_).g) {
+            if (c == 3)
+                name = v;
+            else if ((c == 350 || c == 360) && name == "ACAD_GROUP")
+                dictHandle = upperHandle(v);
+        }
+    }
+    auto dit = objStore_.find(dictHandle);
+    if (dit == objStore_.end())
+        return;
+    std::unordered_map<std::uint64_t, std::uint64_t> entityOfHandle;
+    for (const auto& [id, handle] : srcHandles_)
+        entityOfHandle.emplace(handle, id);
+    std::vector<tbcad::Group> groups;
+    std::string name;
+    for (const auto& [c, v] : dit->second.g) {
+        if (c == 3) {
+            name = v;
+            continue;
+        }
+        if ((c != 350 && c != 360) || name.empty())
+            continue;
+        auto git = objStore_.find(upperHandle(v));
+        if (git == objStore_.end() || git->second.type != "GROUP")
+            continue;
+        tbcad::Group grp;
+        grp.name = name;
+        for (const auto& [gc, gv] : git->second.g) {
+            if (gc == 71)
+                grp.selectable = gv != "0";
+            else if (gc == 340) {
+                auto eit = entityOfHandle.find(std::strtoull(gv.c_str(), nullptr, 16));
+                if (eit != entityOfHandle.end())
+                    grp.members.push_back(EntityId{eit->second});
+            }
+        }
+        name.clear();
+        if (!grp.members.empty())
+            groups.push_back(std::move(grp));
+    }
+    if (!groups.empty())
+        (void)writeGroups(*tx_, groups);
+}
+
+namespace {
+// An MLINESTYLE object (or its record) as a style; offsets are scaled by k to millimetres.
+std::optional<mline::Style> mlineStyleOf(const std::vector<std::pair<int, std::string>>& g,
+                                         double k) {
+    mline::Style st;
+    st.offsets.clear();
+    bool named = false;
+    int flags = 0;
+    for (const auto& [c, v] : g) {
+        if (c == 2 && !named) {
+            st.name = v;
+            named = true;
+        } else if (c == 3) {
+            st.description = v;
+        } else if (c == 70) {
+            flags = std::atoi(v.c_str());
+        } else if (c == 49) {
+            st.offsets.push_back(std::strtod(v.c_str(), nullptr) * k);
+        }
+    }
+    if (!named || st.name.empty() || st.offsets.empty())
+        return std::nullopt;
+    st.startCap = (flags & (16 | 32 | 64)) != 0;
+    st.endCap = (flags & (256 | 512 | 1024)) != 0;
+    return st;
+}
+}  // namespace
+
+// The styles in the file's MLINESTYLE objects become the drawing's multiline styles.
+void Importer::importMlineStyles() {
+    std::vector<mline::Style> styles;
+    for (const auto& [h, rec] : objStore_) {
+        if (rec.type != "MLINESTYLE")
+            continue;
+        if (auto st = mlineStyleOf(rec.g, k_))
+            styles.push_back(std::move(*st));
+    }
+    for (const auto& [key, st] : mlStyles_)
+        styles.push_back(st);
+    // The built-in Standard style needs no entry of its own.
+    const mline::Style builtin = mline::standardStyle();
+    std::erase_if(styles, [&](const mline::Style& st) {
+        std::string up = st.name;
+        for (char& c : up)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return up == "STANDARD" && st.offsets == builtin.offsets &&
+               st.startCap == builtin.startCap && st.endCap == builtin.endCap &&
+               st.description == builtin.description;
+    });
+    if (styles.empty())
+        return;
+    (void)tx_->modifyHeader([&](Header& hd) {
+        for (const mline::Style& st : styles)
+            mline::storeStyle(hd, st);
+    });
+}
+
+// Reads the MLINESTYLE records of the file ahead of the entities (they come later in the file),
+// so a multiline can be checked against its style.
+void Importer::loadMlineStyles() {
+    if (mlStylesLoaded_)
+        return;
+    mlStylesLoaded_ = true;
+    Report scratch;
+    std::optional<Lexer> lx;
+    if (groups_) {
+        lx.emplace(Lexer::fromBuffer(*groups_, scratch));
+    } else {
+        Result<Lexer> opened = Lexer::open(bytes_, scratch);
+        if (!opened)
+            return;
+        lx.emplace(std::move(opened.value()));
+    }
+    RecordReader rr(*lx);
+    Record rec;
+    while (rr.next(rec)) {
+        if (rec.type != "MLINESTYLE")
+            continue;
+        std::vector<std::pair<int, std::string>> g;
+        for (const Group& gr : rec.g) {
+            std::string text;
+            if (keptValue(gr, [&](std::string_view v) { return dec(v); }, text))
+                g.emplace_back(gr.code, std::move(text));
+        }
+        if (auto st = mlineStyleOf(g, k_))
+            mlStyles_.emplace(fold(st->name), std::move(*st));
+    }
+}
+
 void Importer::keepObjects() {
     if (objRoot_.empty() || !objStore_.count(objRoot_))
         return;
@@ -2103,6 +2244,8 @@ Result<ImportResult> Importer::run() {
     resolveExtDictionaries();
     applyPlotStyles();
     keepHandles();
+    importGroups();
+    importMlineStyles();
     keepObjects();
     finish();
 
