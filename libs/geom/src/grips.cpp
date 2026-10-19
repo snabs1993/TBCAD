@@ -14,6 +14,28 @@ Error badGrip() {
     return makeError(ErrorCode::OutOfRange, "grip index out of range");
 }
 
+// The two ends of the dimension line of a linear or aligned dimension, where the extension lines
+// (leaning by the oblique angle) meet it, and the line's direction.
+struct DimLineEnds {
+    Vec2 a{}, b{}, u{};
+};
+DimLineEnds dimLineEnds(const DimensionData& d) {
+    Vec2 u = d.kind == DimKind::Linear ? Vec2{std::cos(d.rotation), std::sin(d.rotation)}
+                                       : normalized(d.defPts[1] - d.defPts[0]);
+    if (tol::isZeroLength(u))
+        u = {1, 0};
+    const Vec2 n = perp(u);
+    const Vec2 e =
+        d.oblique == 0 ? n : normalized(n * std::cos(d.oblique) - u * std::sin(d.oblique));
+    const double lean = dot(e, n);
+    const Vec2 P = d.defPts[2];
+    return {d.defPts[0] + e * (dot(P - d.defPts[0], n) / lean),
+            d.defPts[1] + e * (dot(P - d.defPts[1], n) / lean), u};
+}
+
+bool linearDim(const DimensionData& d) {
+    return d.kind == DimKind::Linear || d.kind == DimKind::Aligned;
+}
 
 // ---- hatch boundary ---------------------------------------------------------------------------
 // A hatch has a grip on each corner of its boundary: ends of line and arc edges and the vertices
@@ -46,8 +68,9 @@ HatchArcEdge hatchArcFromEnds(const HatchArcEdge& old, Vec2 start, Vec2 end, boo
     out.endAngle = std::atan2(end.y - out.center.y, end.x - out.center.x);
     // arcFromThreePoints runs counter-clockwise from its first to its last point when the three
     // go that way round; when they go clockwise the arc it names starts at the last point.
-    const Vec2 first = out.center + Vec2{std::cos(r.value().startAngle),
-                                         std::sin(r.value().startAngle)} * out.radius;
+    const Vec2 first =
+        out.center +
+        Vec2{std::cos(r.value().startAngle), std::sin(r.value().startAngle)} * out.radius;
     out.ccw = distance(first, start) <= distance(first, end);
     ok = true;
     return out;
@@ -91,7 +114,8 @@ bool moveHatchCorner(HatchData& h, Vec2 from, Vec2 to) {
                     moved = true;
                 }
             } else if (auto* a = std::get_if<HatchArcEdge>(&ed)) {
-                Vec2 s = a->center + Vec2{std::cos(a->startAngle), std::sin(a->startAngle)} * a->radius;
+                Vec2 s =
+                    a->center + Vec2{std::cos(a->startAngle), std::sin(a->startAngle)} * a->radius;
                 Vec2 e = a->center + Vec2{std::cos(a->endAngle), std::sin(a->endAngle)} * a->radius;
                 const bool ms = distance(s, from) <= kJoin, me = distance(e, from) <= kJoin;
                 if (ms || me) {
@@ -302,6 +326,18 @@ Result<void> moveArrayGrip(InsertData& d, int index, Vec2 to) {
 
 }  // namespace
 
+int dimTextGrip(const DimensionData& d) {
+    switch (d.kind) {
+        case DimKind::Radius:
+        case DimKind::Diameter:
+            return 2;  // centre (or first end) and the point on the circle
+        case DimKind::Ordinate:
+            return 2;  // feature point and leader end (the origin is not dragged)
+        default:
+            return 4;
+    }
+}
+
 std::vector<Vec2> gripPoints(const Entity& e) {
     std::vector<Vec2> g;
     switch (kind(e)) {
@@ -395,8 +431,15 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             break;
         }
         case EntityKind::Dimension: {
+            // As in AutoCAD: the extension line origins and the ends of the dimension line of a
+            // linear dimension; the points that place other kinds; then the text.
             const auto& d = *entityAs<DimensionData>(e);
-            g.assign(d.defPts.begin(), d.defPts.end());
+            if (linearDim(d)) {
+                const DimLineEnds ends = dimLineEnds(d);
+                g = {d.defPts[0], d.defPts[1], ends.a, ends.b};
+            } else {
+                g.assign(d.defPts.begin(), d.defPts.begin() + dimTextGrip(d));
+            }
             g.push_back(d.textPos);
             break;
         }
@@ -669,13 +712,19 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
         }
         case EntityKind::Dimension: {
             auto& d = *entityAs<DimensionData>(out);
-            if (index < 4) {
-                d.defPts[static_cast<std::size_t>(index)] = to;
-            } else if (index == 4) {
+            const int text = dimTextGrip(d);
+            if (index < 0 || index > text)
+                return badGrip();
+            if (index == text) {
                 d.textPos = to;
                 d.textPosUser = true;
-            } else
-                return badGrip();
+            } else if (linearDim(d) && index >= 2) {
+                // A dimension line end moves the whole line (sideways only).
+                const Vec2 n = perp(dimLineEnds(d).u);
+                d.defPts[2] = d.defPts[2] + n * dot(to - d.defPts[2], n);
+            } else {
+                d.defPts[static_cast<std::size_t>(index)] = to;
+            }
             return out;
         }
         case EntityKind::Leader: {

@@ -116,6 +116,10 @@ Layout layoutMLeader(const Document& doc, const MLeaderData& d, double tolerance
 // placed the text (textPosUser). Used by the commands after creating or editing a dimension.
 void refresh(const Document& doc, DimensionData& d);
 
+// Text put at `at` by hand (its middle). With DIMTMOVE 0 the dimension line of a linear or
+// aligned dimension moves with it, as in AutoCAD, keeping the text's lift (DIMTAD) above it.
+void placeText(const Document& doc, DimensionData& d, Vec2 at);
+
 // Vertices of an arc as a polyline, for display.
 std::vector<Vec2> arcPoints(const Layout::Arc& a, double tolerance);
 
