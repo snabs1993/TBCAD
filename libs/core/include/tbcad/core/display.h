@@ -43,6 +43,7 @@ struct DisplayPolyline {
 struct DisplayFill {
     std::vector<std::vector<Vec2>> rings{};
     DisplayStyle style{};
+    bool glyph = false;  // the outline of a text character (plots without an edge stroke)
 };
 
 struct DisplayPoints {

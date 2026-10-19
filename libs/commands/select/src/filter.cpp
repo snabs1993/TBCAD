@@ -40,8 +40,9 @@ std::string encodeFilter(const std::vector<Query>& queries) {
                                                   : 'a' + static_cast<int>(q.property) - 10)) +
              (q.negate                        ? "!"
               : q.compare == Compare::Greater ? ">"
-              : q.compare == Compare::Less    ? "<"
-                                              : "=") +
+              : q.compare == Compare::Less     ? "<"
+              : q.compare == Compare::Wildcard ? "~"
+                                               : "=") +
              q.value + "\n";
     return s;
 }
@@ -56,13 +57,14 @@ std::vector<Query> decodeFilter(const std::string& text) {
         const int idx = line[0] >= '0' && line[0] <= '9'   ? line[0] - '0'
                         : line[0] >= 'a' && line[0] <= 'z' ? line[0] - 'a' + 10
                                                            : -1;
-        if (idx < 0 || idx > static_cast<int>(Property::Length))
+        if (idx < 0 || idx >= detail::kPropCount)
             continue;
         Query q;
         q.property = static_cast<Property>(idx);
         q.negate = line[1] == '!';
         q.compare = line[1] == '>'   ? Compare::Greater
                     : line[1] == '<' ? Compare::Less
+                    : line[1] == '~' ? Compare::Wildcard
                                      : Compare::Equals;
         q.value = line.substr(2);
         out.push_back(std::move(q));
@@ -86,8 +88,9 @@ std::string describeQuery(const Query& q) {
     return std::string(kPropNames[static_cast<int>(q.property)]) +
            (q.negate                        ? " <> "
             : q.compare == Compare::Greater ? " > "
-            : q.compare == Compare::Less    ? " < "
-                                            : " = ") +
+            : q.compare == Compare::Less     ? " < "
+            : q.compare == Compare::Wildcard ? " like "
+                                             : " = ") +
            q.value;
 }
 
@@ -171,17 +174,13 @@ public:
 private:
     static cmd::Task add(cmd::CommandContext& ctx, std::vector<Query>& conds) {
         cmd::KeywordOptions po;
-        po.keywords = {"Type",         "Layer",   "Color",  "Linetype", "Lineweight", "Level",
-                       "Transparency", "Pattern", "Height", "Radius",   "Length"};
+        po.keywords.assign(kPropNames, kPropNames + kPropCount);
         po.defaultKeyword = "Type";
-        auto p = co_await ctx.getKeyword(
-            "Property [Type/Layer/Color/Linetype/Lineweight/Level/Transparency/Pattern/Height/"
-            "Radius/Length] <Type>",
-            std::move(po));
+        auto p = co_await ctx.getKeyword(propertyPrompt(), std::move(po));
         if (!p.ok())
             co_return;
         Query q;
-        for (int i = 0; i < 11; ++i)
+        for (int i = 0; i < kPropCount; ++i)
             if (p.keyword == kPropNames[i])
                 q.property = static_cast<Property>(i);
         auto v = co_await ctx.getString("Value");

@@ -7,10 +7,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 
 #include "../src/dim_internal.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::dimcmd {
@@ -114,9 +116,12 @@ void drawPreview(ui::PanelContext& pc, const DimStyle& style) {
             }
         }
         if (L.text.valid()) {
-            ImVec2 sz = ImGui::CalcTextSize(L.text.utf8.c_str());
+            // A stacked tolerance is markup: the preview shows it on one line.
+            const std::string shown =
+                L.text.stacked ? text::plainText(L.text.utf8) : L.text.utf8;
+            ImVec2 sz = ImGui::CalcTextSize(shown.c_str());
             ImVec2 p = map(L.text.center);
-            dl->AddText(ImVec2(p.x - sz.x / 2, p.y - sz.y / 2), col, L.text.utf8.c_str());
+            dl->AddText(ImVec2(p.x - sz.x / 2, p.y - sz.y / 2), col, shown.c_str());
         }
     }
     ImGui::Dummy(size);
@@ -183,7 +188,7 @@ void colorField(ui::PanelContext& pc, const DimStyle& s, const char* label, cons
         pc.runCommand(editLine(s.name, key, buf));
 }
 
-void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
+void drawEditor(ui::PanelContext& pc, const DimStyle s) {  // by value: fields run DIMSTYLE
     drawPreview(pc, s);
     if (hasSpace(s.name)) {
         ImGui::TextWrapped("Names with spaces cannot be edited here; use the DIMSTYLE command.");
@@ -300,7 +305,12 @@ void drawPanel(ui::PanelContext& pc) {
 
     ImGui::SameLine();
     ImGui::BeginGroup();
-    const DimStyle* sel = pc.doc->dimStyle(st.selected);
+    // A copy: Delete, Rename and the editor's fields run DIMSTYLE, which replaces or removes the
+    // row while this frame still draws it.
+    std::optional<DimStyle> selRow;
+    if (const DimStyle* found = pc.doc->dimStyle(st.selected))
+        selRow = *found;
+    const DimStyle* sel = selRow ? &*selRow : nullptr;
     if (sel) {
         ImGui::BeginDisabled(st.selected == current || hasSpace(sel->name));
         if (ImGui::Button("Set current"))

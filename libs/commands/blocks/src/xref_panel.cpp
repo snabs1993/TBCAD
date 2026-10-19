@@ -143,9 +143,10 @@ void drawXrefPanel(ui::PanelContext& ctx) {
         ImGui::TextDisabled("Select a reference to reload, unload, detach, bind or relink it.");
         return;
     }
-    // The buttons below run commands that may replace or erase the definition: keep copies.
+    // Copies: the buttons below run commands that rewrite or remove this block, so `sel` must not
+    // be used after them.
     const std::string name = sel->name;
-    const auto selId = sel->id;
+    const BlockId selId = sel->id;
     const xref::State s = xref::state(doc, selId, hostFile);
     if (ImGui::Button("Reload"))
         runOn(ctx, "XRELOAD", name);

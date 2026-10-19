@@ -562,3 +562,30 @@ TEST_CASE("LIST of a large selection lists the first objects and counts the rest
         lines += l.rfind("LINE", 0) == 0 ? 1 : 0;
     CHECK(lines == 300);
 }
+
+TEST_CASE("UNITS Precision sets the decimal places DIST, ID and ANGLE show") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("DIST", {"0,0", "3,4"});
+    CHECK(host.logContains("Distance = 5.0000"));  // the default: 4 places, angles whole degrees
+    CHECK(host.logContains("Angle in XY plane = 53"));
+    CHECK_FALSE(host.logContains("53.1"));
+    CHECK(host.run("UNITS", {"Precision", "2", "1"}).finished);
+    CHECK(linearPrecision(f.doc.header()) == 2);
+    CHECK(anglePrecision(f.doc.header()) == 1);
+    host.clearLog();
+    host.run("DIST", {"0,0", "3,4"});
+    CHECK(host.logContains("Distance = 5.00 mm"));
+    CHECK(host.logContains("Angle in XY plane = 53.1"));
+    host.clearLog();
+    host.run("ID", {"1.23456,2"});
+    CHECK(host.logContains("X = 1.23"));
+    CHECK_FALSE(host.logContains("1.234"));
+    // An inquiry precision set by the application still wins.
+    host.setSetting("inquiry.precision", "3");
+    host.clearLog();
+    host.run("DIST", {"0,0", "3,4"});
+    CHECK(host.logContains("Distance = 5.000"));
+    CHECK(host.undo());  // the UNITS change undoes
+    CHECK(linearPrecision(f.doc.header()) == 4);
+}

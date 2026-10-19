@@ -100,6 +100,7 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             continue;
         DisplayFill fill;
         fill.style = base;
+        fill.glyph = true;
         if (g.color >= 1 && g.color <= 255)
             fill.style.color = paletteColor(static_cast<std::uint8_t>(g.color));
         for (const font::Contour& c : o.contours) {

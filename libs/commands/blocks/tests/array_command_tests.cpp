@@ -247,3 +247,61 @@ TEST_CASE("ARRAYEDIT changes the count and alignment of a path array") {
     CHECK(ins->array->count == 3);
     CHECK(ins->array->rotateItems);
 }
+
+TEST_CASE("ARRAYPATH follows an ellipse and a spline, items on the curve") {
+    Fixture f;
+    EntityId c = f.addCircle(10, 0, 0.5);
+    EllipseData el;
+    el.center = {0, 0};
+    el.majorAxis = {10, 0};
+    el.ratio = 0.5;
+    Entity ee;
+    ee.data = Indirect<EllipseData>(el);
+    EntityId path = f.add(ee);
+    f.host->setSelection({c});
+    // path, base point = the circle's centre, count, 4 items, not aligned
+    f.host->run("ARRAYPATH", {cmd::ScriptItem::pick(path), "10,0", "", "4", "N"});
+    EntityId arr;
+    for (EntityId id : f.modelSpace())
+        if (entityAs<InsertData>(*f.doc.find(id)))
+            arr = id;
+    REQUIRE(arr);
+    REQUIRE(entityAs<InsertData>(*f.doc.find(arr))->array->pathClosed);
+    auto ex = blocks::explode(f.doc, *f.doc.find(arr));
+    REQUIRE(ex.ok());
+    REQUIRE(ex.value().entities.size() == 4);
+    for (const Entity& e : ex.value().entities) {
+        const Vec2 p = entityAs<CircleData>(e)->center;
+        CHECK((p.x / 10) * (p.x / 10) + (p.y / 5) * (p.y / 5) == doctest::Approx(1).epsilon(1e-3));
+    }
+    // Closed: the four items are spread round the whole ellipse, not doubled at the seam.
+    CHECK(near(entityAs<CircleData>(ex.value().entities[0])->center, {10, 0}, 1e-6));
+    CHECK(entityAs<CircleData>(ex.value().entities[2])->center.x < -9.9);
+
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = {{0, 20}, {10, 30}, {20, 10}, {30, 20}};
+    Entity se;
+    se.data = Indirect<SplineData>(sp);
+    EntityId sPath = f.add(se);
+    EntityId d = f.addCircle(0, 20, 0.5);
+    f.host->setSelection({d});
+    f.host->run("ARRAYPATH", {cmd::ScriptItem::pick(sPath), "0,20", "", "5", "Y"});
+    EntityId arr2;
+    for (EntityId id : f.modelSpace())
+        if (id != arr && entityAs<InsertData>(*f.doc.find(id)))
+            arr2 = id;
+    REQUIRE(arr2);
+    auto ex2 = blocks::explode(f.doc, *f.doc.find(arr2));
+    REQUIRE(ex2.ok());
+    REQUIRE(ex2.value().entities.size() == 5);
+    CHECK(near(entityAs<CircleData>(ex2.value().entities[0])->center, {0, 20}, 1e-6));
+    CHECK(near(entityAs<CircleData>(ex2.value().entities[4])->center, {30, 20}, 1e-6));
+    double lastX = -1;
+    for (const Entity& e : ex2.value().entities) {
+        const double x = entityAs<CircleData>(e)->center.x;
+        CHECK(x > lastX);
+        lastX = x;
+    }
+}

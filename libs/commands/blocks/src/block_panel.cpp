@@ -124,7 +124,7 @@ void drawDrawingTab(ui::PanelContext& ctx) {
             slot = {rev + 1, thumbnailOfBlock(*ctx.doc, r.id)};
             ++made;
         }
-        // (read once: the menu below runs commands that may replace the definition)
+        // Read once: the menu items below run commands that can rewrite the block table.
         const BlockDef* def = ctx.doc->block(r.id);
         const bool isXref = def && !def->xrefPath.empty();
         std::string caption = isXref ? "xref" : "x" + std::to_string(r.references);

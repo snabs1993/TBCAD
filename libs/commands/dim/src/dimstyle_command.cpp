@@ -90,7 +90,7 @@ const std::vector<std::string> kProps = {
     "TextInside",   "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
     "DimLine1",     "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
     "DecimalMark",  "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
-    "TextFrame",    "LengthFormat"};
+    "TextFrame",    "LengthFormat",    "TolHeight"};
 
 std::string num(double v) {
     char buf[40];
@@ -154,6 +154,7 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TolUpper", num(s.tolUpper)},
         {"TolLower", num(s.tolLower)},
         {"TolPrecision", std::to_string(s.tolPrecision)},
+        {"TolHeight", num(s.tolHeightFactor)},
         {"LinearFactor", num(s.linearFactor)},
         {"Fit", fit[static_cast<int>(s.fit)]},
         {"TextMove", move[static_cast<int>(s.textMove)]},
@@ -466,6 +467,8 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
     }
     if (same(key, "LinearFactor"))
         return real(s.linearFactor, true);
+    if (same(key, "TolHeight"))
+        return real(s.tolHeightFactor, true);
     if (same(key, "Fit")) {
         if (same(value, "Best"))
             s.fit = DimFit::Best;

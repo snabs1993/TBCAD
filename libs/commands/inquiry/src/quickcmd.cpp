@@ -50,7 +50,7 @@ Precision precisionOf(cmd::CommandContext& ctx) {
         } catch (...) {
         }
     }
-    return 4;
+    return linearPrecision(ctx.doc().header());  // UNITS precision
 }
 
 // QUICKMEASURE [QM]: hover over the drawing to see the length, radius and gap of the objects under

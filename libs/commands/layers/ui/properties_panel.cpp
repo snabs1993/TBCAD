@@ -4,9 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
-#include <optional>
-#include <string>
-#include <utility>
 
 #include "panel_util.h"
 #include "panels.h"
@@ -486,16 +483,18 @@ void assemblySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     }
     if (!def || !first)
         return;
-    const AssemblyDef& ad = *def->assembly;
+    // Copies: -ASMSET below replaces the insert (and may touch the block), so nothing may point
+    // into the document once a parameter was set.
+    const AssemblyDef ad = *def->assembly;
+    const bool joinOff = first->joinOff;
+    const auto values = blocks::asmEffectiveValues(ad, *first);
     if (!ImGui::CollapsingHeader(("Assembly: " + def->name).c_str(),
                                  ImGuiTreeNodeFlags_DefaultOpen))
         return;
-    const auto values = blocks::asmEffectiveValues(ad, *first);
-    // The edit runs at the end: -ASMSET may replace the inserts and the block that `first` and
-    // `ad` point into.
-    std::optional<std::pair<std::string, std::string>> edit;
+    def = nullptr;
+    first = nullptr;
     auto set = [&](const std::string& name, const std::string& value) {
-        edit.emplace(name, value);
+        exec(ctx, {"-ASMSET " + name, value});
     };
     if (!ad.presets.empty()) {
         ImGui::SetNextItemWidth(-1);
@@ -535,13 +534,11 @@ void assemblySection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::EndTable();
     }
     if (!ad.joinClass.empty()) {
-        bool joined = !first->joinOff;
+        bool joined = !joinOff;
         if (ImGui::Checkbox(("Join with other \"" + ad.joinClass + "\"").c_str(), &joined))
             if (ctx.runCommand)
                 ctx.runCommand(joined ? "JOINASM" : "UNJOINASM");
     }
-    if (edit)
-        exec(ctx, {"-ASMSET " + edit->first, edit->second});
 }
 
 // Both the palette and the quick properties box draw this: the type drop-down, then General and

@@ -130,6 +130,7 @@ DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon,
         } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
             DisplayFill f;
             f.style = fill->style;
+            f.glyph = fill->glyph;
             for (const auto& ring : fill->rings) {
                 if (!invert) {
                     std::vector<Vec2> r = ring;

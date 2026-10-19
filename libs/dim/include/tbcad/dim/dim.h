@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,15 @@ double measurement(const DimensionData& d);
 // zero suppression, prefix and suffix (R / Ø for radius / diameter, ° for angles), or the entity's
 // text override where "<>" stands for the measurement.
 std::string dimensionText(const DimStyle& style, const DimensionData& d);
+
+// Deviation and limits tolerances are shown stacked, upper over lower, in smaller text (as
+// AutoCAD draws them): `markup` is the MTEXT form of the whole text, and the parts are plain text.
+// Empty for other tolerance kinds and for an override without "<>".
+struct StackedText {
+    std::string markup{};
+    std::string before{}, up{}, down{}, after{};
+};
+std::optional<StackedText> stackedDimensionText(const DimStyle& style, const DimensionData& d);
 
 // Number formatting shared with tests and the style editor. `value` is millimetres, or radians
 // when `angular`.
@@ -55,6 +65,7 @@ struct Layout {
         bool mtext = false;  // leader annotation: markup, left / right attached to `center`
         bool attachRight = false;
         double width = 0;  // advance width (dimensions only)
+        bool stacked = false;  // dimension text with a stacked tolerance: markup centred
         bool valid() const { return !utf8.empty(); }
     };
     std::vector<Line> lines{};

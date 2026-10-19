@@ -1607,7 +1607,9 @@ void Importer::readDimStyle(const Record& r) {
                            : r.find(77)->integer() != 0 ? DimTextPlacement::AboveLine
                                                         : DimTextPlacement::Centered;
     if (const Group* g = r.find(144); g && std::isfinite(g->number()) && g->number() > 0)
-        ds.linearFactor = g->number();   // DIMLFAC
+        ds.linearFactor = g->number();  // DIMLFAC
+    if (const Group* g = r.find(146); g && std::isfinite(g->number()) && g->number() > 0)
+        ds.tolHeightFactor = std::min(g->number(), 10.0);  // DIMTFAC
     if (const Group* g = r.find(279)) {  // DIMTMOVE
         const std::int64_t t = g->integer();
         ds.textMove = t == 1   ? DimTextMove::Leader

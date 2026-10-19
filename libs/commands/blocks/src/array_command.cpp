@@ -1,9 +1,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/geom/curve.h"
 
 namespace tbcad::block_cmds {
 
@@ -56,7 +58,35 @@ bool pathVertices(const Entity& e, std::vector<PolyVertex>& v, bool& closed) {
         closed = true;
         return true;
     }
-    return false;
+    // Ellipses and splines: a fine polyline (a few hundredths of a millimetre on a 1 m curve), so
+    // the items sit on the curve and turn with it.
+    std::optional<geom::CurveRef> curve;
+    if (const auto* el = entityAs<EllipseData>(e)) {
+        double sweep = el->endParam - el->startParam;
+        if (sweep <= 0)
+            sweep += kTwoPi;
+        closed = std::abs(sweep - kTwoPi) < 1e-9;
+        curve = geom::CurveRef::ellipse(el->center, el->majorAxis, el->ratio, el->startParam, sweep);
+    } else if (const auto* sp = entityAs<SplineData>(e)) {
+        auto c = geom::CurveRef::spline(*sp);
+        if (!c)
+            return false;
+        curve = c.value();
+        closed = sp->closed;
+    }
+    if (!curve)
+        return false;
+    const double size = std::max(curve->length(), 1e-9);
+    std::vector<Vec2> pts;
+    geom::flatten(*curve, std::max(size * 2e-5, 1e-6), pts);
+    if (closed && pts.size() > 2 && distance(pts.front(), pts.back()) < 1e-9)
+        pts.pop_back();
+    if (pts.size() < 2)
+        return false;
+    v.clear();
+    for (Vec2 q : pts)
+        v.push_back(PolyVertex{q});
+    return true;
 }
 
 // A number for prompts: at most two decimals, no trailing zeros, never 2506.265664160396.
@@ -210,7 +240,7 @@ private:
             return pathVertices(e, v, closed);
         };
         auto picked =
-            co_await ctx.getEntity("Select path curve (line, arc, circle or polyline)", eo);
+            co_await ctx.getEntity("Select path curve (line, arc, circle, polyline, ellipse or spline)", eo);
         if (!picked.ok())
             co_return;
         info.kind = ArrayInfo::Kind::Path;

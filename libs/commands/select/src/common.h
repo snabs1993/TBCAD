@@ -30,7 +30,14 @@ LinetypeId resolvedLinetype(const Document& doc, const Entity& e);
 LineWeight resolvedLineweight(const Document& doc, const Entity& e);
 std::string kindName(const Entity& e);
 
-extern const char* const kPropNames[11];
+inline constexpr int kPropCount = 14;
+// "Property [Type/Layer/...] <Type>".
+std::string propertyPrompt();
+// * and ? pattern match; both strings upper case.
+bool wildcardMatch(std::string_view pattern, std::string_view text);
+// Text or dimension style name of an object; empty when it has none.
+std::string styleName(const Document& doc, const Entity& e);
+extern const char* const kPropNames[kPropCount];
 // Asks Equals/Not (and Greater/Less for numeric properties) and stores it in the query.
 cmd::Task askOperator(cmd::CommandContext& ctx, Query& q, std::string_view lead, bool& ok);
 
