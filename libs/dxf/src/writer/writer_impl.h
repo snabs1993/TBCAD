@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -15,6 +16,7 @@
 #include "colors.h"
 #include "tbcad/core/document.h"
 #include "tbcad/dxf/writer.h"
+#include "tbcad/gdt/gdt.h"
 
 namespace tbcad::dxf::detail {
 
@@ -150,16 +152,16 @@ private:
     bool r12() const { return r12_; }
     // New handles skip the ones entities keep from the source file.
     std::uint64_t newHandle() {
-        while (srcHandleReserved_.count(nextHandle_))
-            ++nextHandle_;
-        return nextHandle_++;
+        while (srcHandleReserved_.count(L().nextHandle))
+            ++L().nextHandle;
+        return L().nextHandle++;
     }
     std::uint64_t peekHandle() {
-        while (srcHandleReserved_.count(nextHandle_))
-            ++nextHandle_;
-        return nextHandle_;
+        while (srcHandleReserved_.count(L().nextHandle))
+            ++L().nextHandle;
+        return L().nextHandle;
     }
-    std::uint64_t handleSeed() const { return std::max(nextHandle_, srcHandleTop_ + 1); }
+    std::uint64_t handleSeed() const { return std::max(L().nextHandle, srcHandleTop_ + 1); }
     std::string cleanName(const std::string& name, const char* what);
     std::string uniqueName(NameSet& set, const std::string& base, const char* what);
     void prepareNames();
@@ -202,9 +204,10 @@ private:
     void sub(std::string_view subclass);
     void count(std::string_view type, std::size_t n = 1) {
         emitLevelTag();
-        auto it = summary_.entities.find(type);
-        if (it == summary_.entities.end())
-            it = summary_.entities.emplace(std::string(type), 0).first;
+        auto& counts = L().counts;
+        auto it = counts.find(type);
+        if (it == counts.end())
+            it = counts.emplace(std::string(type), 0).first;
         it->second += n;
     }
     // TBCAD XDATA naming the entity's level ("level=<name>"), written at the end of the
@@ -216,6 +219,26 @@ private:
     void downgrade(std::string_view what, const std::string& why);
 
     void writeEntityList(const std::vector<EntityId>& ids, std::uint64_t owner);
+    // True for an object whose record is written from the object alone: the only thing it takes
+    // from the writer is one handle, so many such records can be written on several threads once
+    // their handles are fixed (see writeEntityList).
+    bool plainEntity(const Entity& e);
+    bool plainBlock(BlockId id);
+    std::unordered_map<std::uint32_t, bool> plainBlock_{};
+    const gdt::FrameTable& frames();
+    std::optional<gdt::FrameTable> frames_{};
+    struct PlainItem {
+        const Entity* e = nullptr;
+        std::uint64_t kept = 0;   // the handle it came with, or 0
+        std::uint64_t fresh = 0;  // the handle it takes when it came with none
+    };
+    struct PlainUnit {
+        std::size_t at = 0;            // where in the output the unit's records go
+        std::size_t from = 0, to = 0;  // PlainItems
+    };
+    // Writes the deferred plain records (on several threads) and puts them in place.
+    void flushPlain(std::vector<PlainItem>& items, std::vector<PlainUnit>& units,
+                    std::uint64_t owner);
     void writeEntity(const Entity& e, std::uint64_t owner);
     void writeDisplayList(const DisplayList& list, const std::string& fallbackLayer,
                           std::uint64_t owner);
@@ -267,15 +290,12 @@ private:
     bool utf8_;
     std::string layerSep_;
 
-    std::uint64_t nextHandle_ = 0x20;
     // Handles entities had in the source file (entity id -> handle), each handle once.
     std::unordered_map<std::uint64_t, std::uint64_t> srcHandle_{};
     std::unordered_set<std::uint64_t> srcHandleReserved_{};
     std::uint64_t srcHandleTop_ = 0;
-    std::unordered_set<std::uint64_t> entityHandlesWritten_{};
     std::unordered_set<std::uint64_t> groupMembers_{};                // entities named by a group
     std::unordered_map<std::uint64_t, std::uint64_t> groupHandle_{};  // their handles
-    std::uint64_t entHandle_ = 0;  // the handle the next head() gives the entity, 0 = a new one
     void loadSourceHandles();
     void pickEntityHandle(EntityId id);
     struct ImageOut {
@@ -285,7 +305,6 @@ private:
         std::uint64_t def = 0, reactor = 0, image = 0;
     };
     std::vector<ImageOut> images_{};
-    Out* o_ = nullptr;
     ExportSummary summary_{};
 
     // Handles given to text styles before their table is written (linetype marks refer to them).
@@ -304,8 +323,24 @@ private:
         std::uint64_t handle = 0, owner = 0;
         std::vector<DictRecord> records{};
     };
-    std::vector<PendingDict> pendingDicts_{};
-    const EntityCommon* curCommon_ = nullptr;  // the entity writeEntity is on
+
+    // The state that changes while entities are written. The entities of a big plain run are
+    // written on several threads, each with a Lane of its own (see writeParallelRun); L() is the
+    // calling thread's.
+    struct Lane {
+        Out* o = nullptr;
+        std::uint64_t nextHandle = 0x20;
+        std::uint64_t entHandle = 0;  // the handle the next head() gives the entity, 0 = a new one
+        std::string levelTag{};
+        const EntityCommon* cur = nullptr;  // the entity writeEntity is on
+        std::vector<PendingDict> pendingDicts{};
+        std::unordered_set<std::uint64_t> handlesWritten{};
+        std::map<std::string, std::size_t, std::less<>> counts{};  // DXF type name -> records
+    };
+    Lane main_{};
+    static thread_local Lane* tlLane_;
+    Lane& L() { return tlLane_ ? *tlLane_ : main_; }
+    const Lane& L() const { return tlLane_ ? *tlLane_ : main_; }
     // Set while the items of an associative array are written: the TBCAD_ARRAY XDATA that lets
     // the importer fuse them into one array again.
     std::vector<DataItem> arrayTag_{};
@@ -350,7 +385,6 @@ private:
     BBox2 extents_{};
     bool r12HatchWarned_ = false;
     bool tagLevels_ = false;  // the document has more than the pristine default level
-    std::string levelTag_{};
     // False when no object has a plot style of its own, so the per-object lookup can be skipped.
     bool anyEntityPlotStyle_ = true;
     std::unordered_map<std::string, std::vector<HatchPatternLine>> patternCache_{};

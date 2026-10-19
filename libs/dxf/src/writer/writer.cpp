@@ -18,6 +18,8 @@
 
 namespace tbcad::dxf::detail {
 
+thread_local Writer::Lane* Writer::tlLane_ = nullptr;
+
 namespace {
 
 constexpr double kDeg = 180.0 / kPi;
@@ -284,10 +286,10 @@ void Writer::prepareSheets() {
 void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& blockName) {
     blockBegin(o, blockName, sheet.rec, {0, 0}, 0, true);
     if (const BlockDef* def = doc_.block(sheet.content)) {
-        Out* saved = o_;
-        o_ = &o;
+        Out* saved = L().o;
+        L().o = &o;
         writeEntityList(def->entities, sheet.rec);
-        o_ = saved;
+        L().o = saved;
     }
     // The viewports: where the window sits on the paper (10/20, 40/41) and which model area it
     // shows (view centre 12/22, view height 45); the frozen layers are TBCAD XDATA.
@@ -972,7 +974,7 @@ std::string Writer::objectsSection() {
             return rootDict_;
         if (!t.empty() && t[0] == '#') {  // an entity of the source file, if it was written
             const std::uint64_t h = std::strtoull(t.c_str() + 1, nullptr, 16);
-            return entityHandlesWritten_.count(h) ? h : 0;
+            return L().handlesWritten.count(h) ? h : 0;
         }
         if (t.rfind("$S:", 0) == 0) {  // a text style of the drawing, by name
             for (const auto& [id, ts] : doc_.textStyles()) {
@@ -1339,7 +1341,7 @@ std::string Writer::objectsSection() {
         writeStyle(e.style, e.handle, nullptr);
 
     // Extension dictionaries of entities: a dictionary per entity, one XRECORD per entry.
-    for (const PendingDict& pd : pendingDicts_) {
+    for (const PendingDict& pd : L().pendingDicts) {
         std::vector<std::uint64_t> recHandles;
         for (std::size_t i = 0; i < pd.records.size(); ++i)
             recHandles.push_back(newHandle());
@@ -1694,7 +1696,7 @@ Result<ExportResult> Writer::run() {
 
     // Entities first (they decide which dimension blocks exist), then the sections in file order.
     Out entities(utf8_, r12_);
-    o_ = &entities;
+    L().o = &entities;
     writeEntityList(model, modelRec_);
 
     std::string blocks;
@@ -1713,10 +1715,10 @@ Result<ExportResult> Writer::run() {
             std::uint64_t rec = blockRec_[id.value];
             bool anon = blockName_[id.value][0] == '*';
             blockBegin(o, blockName_[id.value], rec, def.base, anon ? 1 : 0, false, &def);
-            Out* saved = o_;
-            o_ = &o;
+            Out* saved = L().o;
+            L().o = &o;
             writeEntityList(def.entities, rec);
-            o_ = saved;
+            L().o = saved;
             blockEnd(o, rec, false);
         }
         // The sheets come after the blocks they insert, so an INSERT finds its definition.
@@ -1778,6 +1780,8 @@ Result<ExportResult> Writer::run() {
 
     ExportResult result;
     result.bytes = std::move(out);
+    for (const auto& [type, count] : main_.counts)
+        summary_.entities[type] += count;
     summary_.acadVer = std::string(versionCode(opt_.version));
     summary_.version = opt_.version == DxfVersion::R12
                            ? "R12"
