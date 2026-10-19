@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <random>
 
 #include "helpers.h"
@@ -332,4 +334,29 @@ TEST_CASE("associative dimension links survive a .tbcad round trip") {
         }
     });
     CHECK(seen == 1);
+}
+
+TEST_CASE("files that are not .tbcad at all give a clear error, not a crash") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_notatbcad";
+    fs::create_directories(dir);
+    auto write = [&](const char* name, const std::string& text) {
+        std::ofstream(dir / name, std::ios::binary) << text;
+        return dir / name;
+    };
+    const fs::path files[] = {write("empty.tbcad", ""),
+                              write("one.tbcad", "T"),
+                              write("text.tbcad", "0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n"),
+                              write("zeros.tbcad", std::string(4096, '\0')),
+                              write("ones.tbcad", std::string(4096, '\xff')),
+                              write("pdf.tbcad", "%PDF-1.7\n1 0 obj\n"),
+                              dir / "missing.tbcad",
+                              dir};
+    for (const fs::path& f : files) {
+        io::IoReport report;
+        auto r = io::readTbcad(f, report);
+        CHECK_FALSE(r.ok());
+        if (!r.ok())
+            CHECK_FALSE(r.error().message.empty());
+    }
 }
