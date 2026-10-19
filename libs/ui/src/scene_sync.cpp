@@ -248,10 +248,12 @@ void SceneSync::packInserts(std::vector<Prepared>& chunk, std::size_t lanes) {
 }
 
 void SceneSync::upsertParallel(const std::vector<const Entity*>& list,
-                               const std::vector<std::uint32_t>& orders, std::size_t minParallel) {
+                               const std::vector<std::uint32_t>& orders, std::size_t minParallel,
+                               std::size_t maxLanes) {
     constexpr std::size_t kChunk = 8192;
-    const std::size_t lanes = std::clamp<std::size_t>(
-        maxThreads_ ? maxThreads_ : std::thread::hardware_concurrency(), 1, 16);
+    const std::size_t lanes =
+        std::clamp<std::size_t>(maxThreads_ ? maxThreads_ : std::thread::hardware_concurrency(), 1,
+                                std::min<std::size_t>(16, maxLanes));
     if (list.size() < minParallel || lanes < 2) {
         for (std::size_t i = 0; i < list.size(); ++i)
             upsertEntity(*list[i], orders[i]);
@@ -463,7 +465,9 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
             return;
         built += slice.size();
         scene_.removeMany(ids);
-        upsertParallel(slice, orders, 512);
+        // (half the cores: the frame shares the machine with whatever else runs)
+        upsertParallel(slice, orders, 512,
+                       std::max<std::size_t>(2, std::thread::hardware_concurrency() / 2));
         slice.clear();
         orders.clear();
         ids.clear();
@@ -730,7 +734,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     // Changes of what is already drawn wait. New objects are built at once, so the scene does
     // not lag behind a paste, unless there are so many (an undo of ERASE ALL) that building them
     // all in one go is a long stall: those wait too, camera first.
-    constexpr std::size_t kNewWaitMin = 20000;
+    constexpr std::size_t kNewWaitMin = 50000;
     const bool lazy =
         lazyOk(redraw.size()) &&
         std::none_of(redraw.begin(), redraw.end(),

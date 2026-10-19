@@ -94,7 +94,8 @@ private:
     // order, so the scene is the same as when they are added one by one.
     // Lists shorter than minParallel are built on this thread.
     void upsertParallel(const std::vector<const Entity*>& list,
-                        const std::vector<std::uint32_t>& orders, std::size_t minParallel = 16384);
+                        const std::vector<std::uint32_t>& orders, std::size_t minParallel = 16384,
+                        std::size_t maxLanes = 16);
     // Rebuilds many entities, each keeping its place in the draw order. Taking them out of the
     // scene one by one costs a pass over their batches each (quadratic for a whole drawing), so
     // they are taken out in chunks first.
