@@ -44,7 +44,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | Entity | Result |
 |---|---|
 | LINE, CIRCLE, ARC, POINT | `LineData`, `CircleData`, `ArcData`, `PointData`; an ARC whose angles differ by 360 is a circle |
-| LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon and polyface meshes are skipped with a warning |
+| LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon meshes become polylines along their rows and columns (the fitted grid of a smoothed surface) and polyface meshes become lines along their visible edges, each shared edge once (one info line `dxf.reader.flattened_3d`) |
 | ELLIPSE | `EllipseData` (a ratio above 1 swaps the axes) |
 | SPLINE | `SplineData`; fit-point-only splines are interpolated with `geom::interpolateSpline`, the fit points stay in `fit`; a knot vector that does not fit is replaced by a uniform one with a warning |
 | TEXT, ATTRIB | `TextData` (`position` = group 10, `alignPoint` = group 11 when the alignment is not left/baseline, else equal to `position`); `%%c %%d %%p` are replaced; ATTDEF becomes a text with attribute-definition info (`TextData::attdef`: tag upper-cased, prompt, default, flags in group 70: 1 invisible, 2 constant, 4 verify, 8 preset) and shows its tag; the ATTRIB records after an INSERT (group 66 = 1, up to SEQEND) become that insert's `attribs` when the block has a matching non-constant definition, so the position and style of the definition win; any other ATTRIB stays a plain text (invisible ones are dropped) |

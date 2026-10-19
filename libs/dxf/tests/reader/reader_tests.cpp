@@ -262,6 +262,48 @@ TEST_CASE("extrusion: inserts in a tilted plane become squashed blocks seen from
     CHECK(l.report.countCode(code::kExtrusion3d) == 2);  // the info line and the 45 degree one
 }
 
+TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen from above") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A polyface: a square of 4 vertices split into two triangles. The diagonal they share is
+    // hidden (negative index) in one face and visible in the other: drawn once.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 64);
+    p.g(71, 4).g(72, 2);
+    for (const auto& [x, y] : {std::pair{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}})
+        p.g(0, "VERTEX").g(8, "0").g(10, x).g(20, y).g(30, 5.0).g(70, 192);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 128);
+    p.g(71, 1).g(72, 2).g(73, 3);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 128);
+    p.g(71, -3).g(72, 4).g(73, -1);  // edges 3-4 hidden, 4-1 visible, 1-3 hidden
+    p.g(0, "SEQEND").g(8, "0");
+    // A 2 x 3 polygon mesh: 2 rows of 3 points and 3 columns of 2.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 16);
+    p.g(71, 2).g(72, 3);
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 3; ++j)
+            p.g(0, "VERTEX").g(8, "0").g(10, 100.0 + j).g(20, static_cast<double>(i)).g(30, 1.0)
+                .g(70, 64);
+    p.g(0, "SEQEND").g(8, "0");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto lines = modelEntities<LineData>(l.doc());
+    CHECK(lines.size() == 4);  // 1-2, 2-3, 3-1 (the diagonal) and 4-1
+    bool diagonal = false, hidden = false;
+    for (const LineData* ln : lines) {
+        const Vec2 lo = ln->a.x + ln->a.y < ln->b.x + ln->b.y ? ln->a : ln->b;
+        const Vec2 hi = lo == ln->a ? ln->b : ln->a;
+        diagonal = diagonal || (near(lo, Vec2{0, 0}) && near(hi, Vec2{10, 10}));
+        hidden = hidden || (near(lo, Vec2{0, 10}) && near(hi, Vec2{10, 10}));
+    }
+    CHECK(diagonal);
+    CHECK_FALSE(hidden);
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 5);
+    CHECK(polys[0]->v.size() == 3);
+    CHECK(near(polys[1]->v.back().p, Vec2{102, 1}));
+    CHECK(polys[2]->v.size() == 2);
+    CHECK(l.report.countCode(code::kBadEntity) == 0);
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).

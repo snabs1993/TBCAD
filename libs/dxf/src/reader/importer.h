@@ -156,6 +156,8 @@ private:
                                                const Tilt& t, double elev);
     static void projectHatch(HatchData& h, const Tilt& t, double elev);
     static bool projectText(TextData& d, const Tilt& t, double elev);
+    bool convMesh(const Record& r, const std::vector<Vec2>& ctrl, const std::vector<Vec2>& fit,
+                  const std::vector<std::array<std::int64_t, 4>>& faces, std::vector<Entity>& out);
     bool projectMText(MTextData& d, const Record& r, const Tilt& t) const;
     void countProjected(const Record& r) {
         if (projected_++ == 0)
@@ -382,6 +384,8 @@ private:
     std::size_t acadTables_ = 0;  // AutoCAD tables read into editable tables
     std::size_t projected_ = 0;   // entities in tilted planes drawn as seen from above
     int firstProjectedLine_ = 0;
+    std::size_t meshes_ = 0;  // polygon and polyface meshes drawn as edges
+    int firstMeshLine_ = 0;
     std::map<std::string, PdfDef> pdfDefs_{};  // PDFDEFINITION handle -> file and page
     std::vector<PendingImage> images_{};
     int imageFrame_ = -1;  // 0 when RASTERVARIABLES hides the frames of all pictures; -1 = no say
