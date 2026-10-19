@@ -627,6 +627,17 @@ struct TableCell {
     bool covered = false;
 };
 
+// How the cells of one role (the title row, the header row, every other row) look: the cell
+// styles of a table style. 0 and -1 mean "as the cell is".
+struct TableCellStyle {
+    double textHeight = 0;  // 0 = the table's text height
+    int color = 0;          // text colour, palette index 1..255; 0 = the cell's own
+    int fill = 0;           // background fill, palette index 1..255; 0 = none
+    int align = -1;         // 0 left, 1 centre, 2 right; -1 = left (centre for a title)
+    friend bool operator==(const TableCellStyle&, const TableCellStyle&) = default;
+    bool isDefault() const { return *this == TableCellStyle{}; }
+};
+
 // A grid of text cells. `origin` is the top-left corner, rows go down and columns go right in the
 // table's own frame, which is rotated by `rotation` around `origin`.
 struct TableData {
@@ -639,6 +650,10 @@ struct TableData {
     double margin = 1.0;    // between cell border and text
     TextStyleId style{};    // null = document's current text style
     bool titleRow = false;  // the first row is a title: its text is centred
+    // Cell styles by role: the title row (row 0 when titleRow), the header row (the next one,
+    // when headerRow) and every other row.
+    bool headerRow = false;
+    TableCellStyle titleStyle{}, headerStyle{}, dataStyle{};
 };
 
 // A line that goes on without end: a ray from `origin` along `dir` (unit vector), or with

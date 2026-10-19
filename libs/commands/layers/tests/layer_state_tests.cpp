@@ -8,6 +8,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/layer_states.h"
+#include "tbcad/layout/layout.h"
 
 using namespace tbcad;
 using namespace tbcad::layers;
@@ -112,6 +113,43 @@ TEST_CASE("a layer state restores switches and look, ignores layers added later"
     CHECK_FALSE(f.doc.layer(f.id("S-FLOOR~edge"))->locked);
     CHECK(f.doc.layer(f.id("Walls"))->color == Color::index(7));
     CHECK_FALSE(f.doc.layer(f.id("Later"))->on);  // not in the state: untouched
+}
+
+TEST_CASE("a layer state also saves the layers frozen in each layout viewport") {
+    Fixture f;
+    f.build();
+    f.edit([&](Transaction& tx) { REQUIRE(layout::createLayout(tx, "Plan", "A3", true).ok()); });
+    int vp1 = 0, vp2 = 0;
+    f.edit([&](Transaction& tx) {
+        vp1 = layout::addViewport(tx, "Plan", BBox2{{10, 10}, {100, 100}}, {0, 0}, 50).value();
+        vp2 = layout::addViewport(tx, "Plan", BBox2{{110, 10}, {200, 100}}, {0, 0}, 50).value();
+        REQUIRE(layout::setViewportLayerFrozen(tx, "Plan", vp1, f.id("Walls"), true).ok());
+    });
+    f.edit([&](Transaction& tx) { REQUIRE(saveLayerState(f.doc, tx, "Sheet").ok()); });
+    // Swap the freezing between the two viewports.
+    f.edit([&](Transaction& tx) {
+        REQUIRE(layout::setViewportLayerFrozen(tx, "Plan", vp1, f.id("Walls"), false).ok());
+        REQUIRE(layout::setViewportLayerFrozen(tx, "Plan", vp2, f.id("Walls"), true).ok());
+        REQUIRE(layout::setViewportLayerFrozen(tx, "Plan", vp2, f.id("S-FLOOR"), true).ok());
+    });
+    std::size_t skipped = 99;
+    f.edit([&](Transaction& tx) {
+        REQUIRE(restoreLayerState(f.doc, tx, "sheet", {}, &skipped).ok());
+    });
+    CHECK(skipped == 0);
+    auto lay = layout::findLayout(f.doc, "Plan");
+    REQUIRE(lay);
+    CHECK(lay->findViewport(vp1)->frozen == std::vector<LayerId>{f.id("Walls")});
+    CHECK(lay->findViewport(vp2)->frozen.empty());
+    // Only the Look part leaves the viewports alone.
+    f.edit([&](Transaction& tx) {
+        REQUIRE(layout::setViewportLayerFrozen(tx, "Plan", vp1, f.id("Walls"), false).ok());
+    });
+    f.edit([&](Transaction& tx) {
+        StateParts look{false, false, false, true, false, false};
+        REQUIRE(restoreLayerState(f.doc, tx, "sheet", look).ok());
+    });
+    CHECK(layout::findLayout(f.doc, "Plan")->findViewport(vp1)->frozen.empty());
 }
 
 TEST_CASE("restoring part of a state only touches that part, missing layers are counted") {

@@ -300,6 +300,33 @@ bool setRowHeight(TableData& t, std::size_t row, double height) {
     return true;
 }
 
+namespace {
+std::string fixed(double v) {
+    char buf[40];
+    std::snprintf(buf, sizeof buf, "%.6g", v);
+    return buf;
+}
+}  // namespace
+
+int rowRole(const TableData& t, std::size_t row) {
+    if (t.titleRow && row == 0)
+        return 0;
+    if (t.headerRow && row == (t.titleRow ? 1u : 0u))
+        return 1;
+    return 2;
+}
+
+const TableCellStyle& cellStyleOfRow(const TableData& t, std::size_t row) {
+    switch (rowRole(t, row)) {
+        case 0:
+            return t.titleStyle;
+        case 1:
+            return t.headerStyle;
+        default:
+            return t.dataStyle;
+    }
+}
+
 Layout layout(const TableData& t) {
     Layout out;
     if (!valid(t))
@@ -349,17 +376,37 @@ Layout layout(const TableData& t) {
     for (std::size_t r = 0; r < rows; ++r) {
         for (std::size_t c = 0; c < cols; ++c) {
             const TableCell& cell = cellAt(t, r, c);
-            if (cell.covered || cellBody(cell.utf8).empty())
+            if (cell.covered)
+                continue;
+            const TableCellStyle& cs = cellStyleOfRow(t, r);
+            if (cs.fill >= 1 && cs.fill <= 255) {
+                const Rect fr = cellRect(t, r, c);
+                Fill f;
+                f.corners[0] = toWorld(t, {fr.x0, fr.y0});
+                f.corners[1] = toWorld(t, {fr.x1, fr.y0});
+                f.corners[2] = toWorld(t, {fr.x1, fr.y1});
+                f.corners[3] = toWorld(t, {fr.x0, fr.y1});
+                f.color = cs.fill;
+                out.fills.push_back(f);
+            }
+            if (cellBody(cell.utf8).empty())
                 continue;
             const Rect rc = cellRect(t, r, c);
             TextItem item;
             item.rotation = t.rotation;
             item.utf8 = displayText(t, r, c);
+            if (cs.color >= 1 && cs.color <= 255)
+                item.utf8 = "\\C" + std::to_string(cs.color) + ";" + item.utf8;
+            if (cs.textHeight > 0)
+                item.utf8 = "\\H" + fixed(cs.textHeight) + ";" + item.utf8;
             item.width = std::max(0.0, rc.x1 - rc.x0 - 2 * t.margin);
             const double cy = (rc.y0 + rc.y1) / 2;
             const std::optional<CellAlign> align = cellAlign(cell);
             const CellAlign eff =
-                align ? *align : (t.titleRow && r == 0 ? CellAlign::Center : CellAlign::Left);
+                align ? *align
+                : cs.align >= 0 && cs.align <= 2
+                    ? static_cast<CellAlign>(cs.align)
+                    : (t.titleRow && r == 0 ? CellAlign::Center : CellAlign::Left);
             if (eff == CellAlign::Center) {
                 item.attach = Attachment::MiddleCenter;
                 item.position = toWorld(t, {(rc.x0 + rc.x1) / 2, cy});
@@ -486,12 +533,19 @@ std::string serialize(const TableData& t) {
         s += (i ? ";" : "") + std::to_string(c.colSpan) + ":" + std::to_string(c.rowSpan) + ":" +
              (c.covered ? "1" : "0") + ":" + escape(c.utf8);
     }
+    if (t.headerRow || !t.titleStyle.isDefault() || !t.headerStyle.isDefault() ||
+        !t.dataStyle.isDefault()) {
+        s += std::string("|") + (t.headerRow ? "1" : "0");
+        for (const TableCellStyle* cs : {&t.titleStyle, &t.headerStyle, &t.dataStyle})
+            s += "," + num(cs->textHeight) + ":" + std::to_string(cs->color) + ":" +
+                 std::to_string(cs->fill) + ":" + std::to_string(cs->align);
+    }
     return s;
 }
 
 std::optional<TableData> parse(std::string_view s) {
     auto parts = split(s, '|');
-    if (parts.size() != 10 || parts[0] != "tbcad-table 1")
+    if ((parts.size() != 10 && parts.size() != 11) || parts[0] != "tbcad-table 1")
         return std::nullopt;
     TableData t;
     if (!toDouble(parts[1], t.origin.x) || !toDouble(parts[2], t.origin.y) ||
@@ -499,6 +553,24 @@ std::optional<TableData> parse(std::string_view s) {
         !toDouble(parts[5], t.margin))
         return std::nullopt;
     t.titleRow = parts[6] == "1";
+    if (parts.size() == 11) {  // cell styles: headerRow, then title, header and data
+        auto styles = split(parts[10], ',');
+        if (styles.size() != 4)
+            return std::nullopt;
+        t.headerRow = styles[0] == "1";
+        TableCellStyle* targets[3] = {&t.titleStyle, &t.headerStyle, &t.dataStyle};
+        for (int i = 0; i < 3; ++i) {
+            auto f = split(styles[static_cast<std::size_t>(i) + 1], ':');
+            double h = 0, c = 0, fl = 0, a = -1;
+            if (f.size() != 4 || !toDouble(f[0], h) || !toDouble(f[1], c) || !toDouble(f[2], fl) ||
+                !toDouble(f[3], a) || h < 0)
+                return std::nullopt;
+            targets[i]->textHeight = h;
+            targets[i]->color = c >= 1 && c <= 255 ? static_cast<int>(c) : 0;
+            targets[i]->fill = fl >= 1 && fl <= 255 ? static_cast<int>(fl) : 0;
+            targets[i]->align = a >= 0 && a <= 2 ? static_cast<int>(a) : -1;
+        }
+    }
     for (std::string_view w : split(parts[7], ',')) {
         double v = 0;
         if (!toDouble(w, v) || !(v > 0) || t.colWidths.size() >= kMaxCols)

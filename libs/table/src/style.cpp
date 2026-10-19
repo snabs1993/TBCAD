@@ -60,6 +60,21 @@ std::vector<TableStyle> tableStyles(const Header& h) {
         s.margin = mg;
         if (f.size() > 4)
             s.textStyle = f[4];
+        if (f.size() > 8) {  // headerRow, then the title, header and data cell styles
+            s.headerRow = f[5] == "1";
+            TableCellStyle* targets[3] = {&s.title, &s.header, &s.data};
+            for (int i = 0; i < 3; ++i) {
+                double v[4] = {0, 0, 0, -1};
+                std::stringstream cs(f[6 + static_cast<std::size_t>(i)]);
+                std::string part;
+                for (int k = 0; k < 4 && std::getline(cs, part, ':'); ++k)
+                    v[k] = std::atof(part.c_str());
+                targets[i]->textHeight = v[0] > 0 ? v[0] : 0;
+                targets[i]->color = v[1] >= 1 && v[1] <= 255 ? static_cast<int>(v[1]) : 0;
+                targets[i]->fill = v[2] >= 1 && v[2] <= 255 ? static_cast<int>(v[2]) : 0;
+                targets[i]->align = v[3] >= 0 && v[3] <= 2 ? static_cast<int>(v[3]) : -1;
+            }
+        }
         if (s.name == "Standard")
             out[0] = s;  // a stored Standard replaces the built-in one
         else
@@ -84,6 +99,11 @@ void setTableStyle(Header& h, const TableStyle& s) {
     std::ostringstream v;
     v << s.colWidth << '|' << s.rowHeight << '|' << s.textHeight << '|' << s.margin << '|'
       << s.textStyle;
+    if (s.headerRow || !s.title.isDefault() || !s.header.isDefault() || !s.data.isDefault()) {
+        v << '|' << (s.headerRow ? 1 : 0);
+        for (const TableCellStyle* cs : {&s.title, &s.header, &s.data})
+            v << '|' << cs->textHeight << ':' << cs->color << ':' << cs->fill << ':' << cs->align;
+    }
     // Replace a style of the same name whatever the case.
     for (auto it = h.custom.begin(); it != h.custom.end();) {
         const std::string prefix = std::string(kPrefix) + "s:";
