@@ -222,7 +222,7 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 r.tolPrecision == 2 && r.linearFactor == 1 && r.fit == DimFit::Best &&
                 r.textMove == DimTextMove::WithLine && packDimRules(r) == kDimRulesDefault &&
                 r.textJustify == 0 && !r.hasNumberFormat() && !r.hasTextBox() &&
-                !r.hasLinearFormat())
+                !r.hasLinearFormat() && !r.hasFixedExt())
                 continue;
             const bool extras =
                 r.linearFactor != 1 || r.fit != DimFit::Best || r.textMove != DimTextMove::WithLine;
@@ -233,7 +233,7 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             // bit 3: the number format follows (angle format, angular decimals, decimal comma)
             dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0) | (rules ? 4 : 0) |
                     (r.hasNumberFormat() ? 8 : 0) | (r.hasTextBox() ? 16 : 0) | (r.hasLinearFormat() ? 32 : 0) |
-                    (r.tolHeightFactor != 1 ? 64 : 0));
+                    (r.tolHeightFactor != 1 ? 64 : 0) | (r.hasFixedExt() ? 128 : 0));
             dstx.f64(r.altScale);
             dstx.u8(static_cast<std::uint8_t>(r.altUnit));
             dstx.i32(r.altPrecision);
@@ -268,6 +268,10 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 dstx.u8(static_cast<std::uint8_t>(r.linearFormat));
                 if (r.tolHeightFactor != 1)
                     dstx.f64(r.tolHeightFactor);
+            }
+            if (r.hasFixedExt()) {  // bit 7: fixed length extension lines
+                dstx.u8(r.fixedExtLines ? 1 : 0);
+                dstx.f64(r.fixedExtLength);
             }
             ++dstxCount;
         }

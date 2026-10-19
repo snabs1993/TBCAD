@@ -765,6 +765,15 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                                                      : 3);
             if (ds.tolerance != DimTolerance::None)
                 o.i(272, std::clamp(ds.tolPrecision, 0, 16));
+            // Fixed length extension lines go as extended data, as AutoCAD writes them.
+            if (ds.hasFixedExt()) {
+                o.raw(1001, "ACAD_DSTYLE_DIMEXT_ENABLED");
+                o.i(1070, 383);
+                o.i(1070, ds.fixedExtLines ? 1 : 0);
+                o.raw(1001, "ACAD_DSTYLE_DIMEXT_LENGTH");
+                o.i(1070, 378);
+                o.d(1040, ds.fixedExtLength);
+            }
             // The arrow kind has no group TBCAD can write (DIMBLK wants a block record's handle):
             // it travels as extended data of the style.
             if (ds.arrowType != ArrowType::ClosedFilled) {
@@ -945,6 +954,11 @@ std::string Writer::tablesSection() {
             layerNotes = layerNotes || !layer.description.empty();
         if (layerNotes && !r12_)
             extApps.insert("AcAecLayerStandard");
+        for (const auto& [id, ds] : doc_.dimStyles())
+            if (ds.hasFixedExt() && !r12_) {
+                extApps.insert("ACAD_DSTYLE_DIMEXT_ENABLED");
+                extApps.insert("ACAD_DSTYLE_DIMEXT_LENGTH");
+            }
         tableBegin(o, "APPID", table, 2 + extApps.size());
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "ACAD", 0);
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "TBCAD", 0);

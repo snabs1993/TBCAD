@@ -1709,6 +1709,28 @@ void Importer::readDimStyle(const Record& r) {
     nonNegative(44, k_, ds.extLineExtension);                           // DIMEXE
     nonNegative(46, k_, ds.dimLineExtension);                           // DIMDLE
     nonNegative(43, k_, ds.baselineSpacing);                            // DIMDLI
+    // Fixed length extension lines: groups 290 and 49 (as the DWG reader writes them), or the
+    // extended data AutoCAD writes them as in a DXF file.
+    flag(290, ds.fixedExtLines);                // DIMFXLON
+    nonNegative(49, k_, ds.fixedExtLength);     // DIMFXL
+    {
+        std::string app;
+        bool var = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                app = g.str();
+                var = false;
+            } else if (g.code == 1070 && !var) {
+                var = true;  // the variable number (383 or 378), then its value
+            } else if (var && app == "ACAD_DSTYLE_DIMEXT_ENABLED" && g.code == 1070) {
+                ds.fixedExtLines = g.integer() != 0;
+            } else if (var && app == "ACAD_DSTYLE_DIMEXT_LENGTH" && g.code == 1040) {
+                const double v = g.number() * k_;
+                if (std::isfinite(v) && v >= 0)
+                    ds.fixedExtLength = v;
+            }
+        }
+    }
     if (const Group* g = r.find(141); g && std::isfinite(g->number()))  // DIMCEN
         ds.centerMark = g->number() * k_;
     if (const Group* g = r.find(275)) {  // DIMAUNIT

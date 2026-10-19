@@ -607,6 +607,8 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     if (!std::isfinite(r.tolHeightFactor) || !(r.tolHeightFactor > 0))
         return invalid("tolerance height factor must be positive");
     r.tolHeightFactor = std::min(r.tolHeightFactor, 10.0);
+    if (!std::isfinite(r.fixedExtLength) || r.fixedExtLength < 0)
+        return invalid("fixed extension line length must not be negative");
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
     r.textFill = std::clamp(r.textFill, 0, 2);

@@ -1658,4 +1658,21 @@ TEST_CASE("dimension: number format, rules and colours overridden in its extende
     CHECK_FALSE(c->suppressExt1);
 }
 
+TEST_CASE("dimension text: \\X starts the line under the dimension line, radial text stays put") {
+    Pairs p;
+    p.g(0, "DIMENSION").g(8, "0").g(10, 10.0).g(20, 5.0).g(11, 5.0).g(21, 5.0).g(70, 0);
+    p.g(1, "Y\\XMIN <>mm").g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0).g(50, 0.0);
+    // Radius dimension with its text inside the circle and no "moved" flag.
+    p.g(0, "DIMENSION").g(8, "0").g(10, 100.0).g(20, 0.0).g(11, 103.0).g(21, 1.0).g(70, 4);
+    p.g(15, 110.0).g(25, 0.0);
+    Loaded l = load(entitiesOnly(p.text));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[0]->textOverride == "Y\nMIN <>mm");
+    CHECK_FALSE(dims[0]->textPosUser);
+    CHECK(dims[1]->kind == DimKind::Radius);
+    CHECK(dims[1]->textPosUser);
+    CHECK(near(dims[1]->textPos, Vec2{103, 1}));
+}
+
 }  // namespace tbcad::dxf

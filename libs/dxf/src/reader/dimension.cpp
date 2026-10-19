@@ -53,6 +53,16 @@ double leanOf(double obliqueAngle, double dimAngle) {
     return std::abs(lean) < 1e-12 ? 0 : lean;
 }
 
+// "\X" in a dimension's text puts what follows under the dimension line: a second line.
+std::string dimensionLines(std::string t) {
+    for (std::size_t at = t.find("\\X"); at != std::string::npos; at = t.find("\\X", at + 2)) {
+        if (at > 0 && t[at - 1] == '\\')
+            continue;  // an escaped backslash followed by X
+        t[at + 1] = 'P';
+    }
+    return t;
+}
+
 }  // namespace
 
 // A dimension can carry its own values for a few style variables (the "DSTYLE" block of its
@@ -194,6 +204,13 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             case 144:  // DIMLFAC
                 if (v > 0)
                     ds.linearFactor = v;
+                break;
+            case 290:  // DIMFXLON
+                ds.fixedExtLines = whole != 0;
+                break;
+            case 49:  // DIMFXL
+                if (v >= 0)
+                    ds.fixedExtLength = v * k_;
                 break;
             case 146:  // DIMTFAC
                 if (v > 0)
@@ -383,7 +400,7 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
     if ((flags & 7) == 2 && r.has(16))
         d.textPos = P(r, 16, 26);
     d.textPosUser = (flags & 128) != 0;
-    std::string text = stripMText(dec(r.raw(1)));
+    std::string text = stripMText(dimensionLines(dec(r.raw(1))));
     if (text != "<>")
         d.textOverride = text;
     d.style = dimStyleWithOverrides(r, dimStyleFor(r.raw(3)));
@@ -411,6 +428,16 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
                 break;
         }
     }
+    // A radius or diameter dimension's text goes where it was picked, so its middle point is
+    // where AutoCAD shows it even without the "moved" flag; it counts as placed by hand unless
+    // it is where TBCAD would put it anyway (a file TBCAD wrote).
+    if ((d.kind == DimKind::Radius || d.kind == DimKind::Diameter) && r.has(11) &&
+        !d.textPosUser) {
+        const dim::Layout auto_ = dim::layoutDimension(*doc_, d, 0.01, 1);
+        const double h = std::max(auto_.text.height, 1e-9);
+        if (!auto_.text.valid() || distance(auto_.text.center, d.textPos) > 0.01 * h)
+            d.textPosUser = true;
+    }
     Entity e;
     e.data = Indirect<DimensionData>(std::move(d));
     if (opts_.dimensionCompare) {
@@ -436,7 +463,7 @@ bool Importer::convArcDimension(const Record& r, std::vector<Entity>& out) {
     d.defPts = {P(r, 15, 25), P(r, 13, 23), P(r, 14, 24), P(r, 10, 20)};
     d.textPos = P(r, 11, 21);
     d.textPosUser = (r.integer(70) & 128) != 0;
-    const std::string text = stripMText(dec(r.raw(1)));
+    const std::string text = stripMText(dimensionLines(dec(r.raw(1))));
     if (text != "<>")
         d.textOverride = text;
     d.style = dimStyleWithOverrides(r, dimStyleFor(r.raw(3)));
