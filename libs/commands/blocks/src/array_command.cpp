@@ -612,12 +612,78 @@ public:
     }
 };
 
+// Moves the base point of the array `id` (whose parameters are `a`, updated here) to `world`
+// without moving its items: the array's block and its parameters shift the other way. A block
+// shared with other inserts (a copied array) is copied first, so they stay as they are.
+Result<void> moveBasePoint(cmd::CommandContext& ctx, EntityId id, ArrayInfo& a, Vec2 world) {
+    Document& doc = ctx.doc();
+    Transaction& tx = ctx.tx();
+    const Entity* e = doc.find(id);
+    const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+    const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+    if (!def)
+        return makeError(ErrorCode::NotFound, "The array's objects no longer exist.");
+    InsertData now = *ins;
+    now.array = a;
+    const Transform2 inst = blocks::instanceTransform(now, def->base);
+    auto inv = inst.inverse();
+    if (!inv)
+        return makeError(ErrorCode::InvalidArgument, "This array is scaled to nothing.");
+    const Vec2 shift = inv.value().apply(world) - def->base;  // in block coordinates
+    if (std::hypot(shift.x, shift.y) < 1e-12)
+        return {};
+    std::size_t users = 0;
+    doc.forEachEntity([&](const Entity& x) {
+        if (const auto* i = entityAs<InsertData>(x); i && i->block == ins->block)
+            ++users;
+    });
+    BlockId block = ins->block;
+    const Transform2 back = Transform2::translate(shift * -1.0);
+    std::vector<Entity> moved;
+    for (EntityId member : def->entities) {
+        auto m = geom::transformed(*doc.find(member), back);
+        if (!m)
+            return m.error();
+        moved.push_back(std::move(m).value());
+    }
+    if (users > 1) {
+        auto copy = tx.addBlock(BlockDef{.name = freeArrayName(doc), .anonymous = true});
+        if (!copy)
+            return copy.error();
+        block = copy.value();
+        for (Entity& m : moved) {
+            m.common.id = {};
+            if (auto r = tx.add(std::move(m), block); !r)
+                return r.error();
+        }
+    } else {
+        for (std::size_t i = 0; i < moved.size(); ++i) {
+            Entity m = std::move(moved[i]);
+            if (auto r = tx.modify(def->entities[i], [&](Entity& x) { x = m; }); !r)
+                return r.error();
+        }
+    }
+    a.center = a.center - shift;
+    a.reference = a.reference - shift;
+    for (PolyVertex& v : a.path)
+        v.p = v.p - shift;
+    for (ArrayItemSwap& sw : a.swaps)
+        sw.at = sw.at - shift;
+    return tx.modify(id, [&](Entity& x) {
+        if (auto* d = entityAs<InsertData>(x)) {
+            d->block = block;
+            d->position = world;
+            d->array = a;
+        }
+    });
+}
+
 // ARRAYEDIT: change the parameters of an associative array, one option at a time as in AutoCAD
 // (Enter or eXit ends). Rectangular: Rows, Columns (count, then spacing or Total). Polar: Items,
 // Angle between, Fill angle, ROTate items. Path: Method (Divide or Measure), Items, Align items.
-// All kinds: Source (edit the source objects in place, as BEDIT; BSAVE or BCLOSE updates every
-// item), REPlace (show chosen items as other objects) and RESet (bring back removed and replaced
-// items). Every change shows at once and the whole edit is one undo step.
+// All kinds: Base (moves the array's base grip, not its items), Source (edit the source objects
+// in place, as BEDIT; BSAVE or BCLOSE updates every item), REPlace (show chosen items as other
+// objects) and RESet (bring back removed and replaced items). Every change shows at once and the whole edit is one undo step.
 class ArrayEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ARRAYEDIT"; }
@@ -664,14 +730,15 @@ public:
             std::string prompt;
             switch (a.kind) {
                 case ArrayInfo::Kind::Rectangular:
-                    ko.keywords = {"Source", "REPlace", "Rows", "Columns", "RESet", "eXit"};
+                    ko.keywords = {"Source", "REPlace", "Base", "Rows", "Columns", "RESet", "eXit"};
                     break;
                 case ArrayInfo::Kind::Polar:
-                    ko.keywords = {"Source", "REPlace", "Items", "Angle",
+                    ko.keywords = {"Source", "REPlace", "Base", "Items", "Angle",
                                    "Fill",   "ROTate",  "RESet", "eXit"};
                     break;
                 case ArrayInfo::Kind::Path:
-                    ko.keywords = {"Source", "REPlace", "Method", "Items", "Align", "RESet", "eXit"};
+                    ko.keywords = {"Source", "REPlace", "Base",  "Method",
+                                   "Items",  "Align",   "RESet", "eXit"};
                     break;
             }
             for (const std::string& k : ko.keywords)
@@ -704,6 +771,16 @@ public:
                 if (!detail::startBlockEdit(ctx, *def, xf))
                     continue;
                 co_return;
+            }
+            if (k == "Base") {
+                // A new base point (the array's grip); the items stay where they are.
+                auto bp = co_await ctx.getPoint("Specify the base point of the array",
+                                                cmd::PointOptions{.allowNone = false});
+                if (!bp.ok())
+                    co_return;
+                if (auto r = moveBasePoint(ctx, picked.id, a, bp.point); !r)
+                    ctx.message(r.error().message);
+                continue;
             }
             if (k == "RESet") {
                 if (a.removed.empty() && a.swaps.empty()) {
