@@ -3,6 +3,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "tbcad/core/core.h"
@@ -71,13 +72,19 @@ struct GeometryField {
 };
 
 // Fields for Line (start/end, length, angle), Circle (centre, radius, diameter, circumference,
-// area), Arc (centre, radius, angles, length) and Polyline (vertex count, closed, length, area,
-// global width). Empty for other kinds.
-std::vector<GeometryField> geometryFields(const Entity& e);
+// area), Arc (centre, radius, angles, length), Polyline (vertex count, the current vertex and its
+// X / Y and segment widths, closed, length, area, global width), Hatch (area), Dimension
+// (measurement, text position and rotation), Table (position, size, text height, margin),
+// Multileader and the other kinds. `vertex` (0-based, clamped) is the polyline's current vertex.
+std::vector<GeometryField> geometryFields(const Entity& e, int vertex = 0);
 // Sets one editable field. Fails for read-only fields, invalid values (radius <= 0 ...) or an
-// entity kind without that field.
+// entity kind without that field. Per-vertex fields name their vertex after an '@', counted from
+// 1: "vertexx@3"; without it the first vertex is meant.
 Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& fieldId,
                               double value);
+// "vertexx@3" -> {"vertexx", 2}; a field without '@' -> {field, 0}. The index is -1 when the
+// text after '@' is not a whole number of at least 1.
+std::pair<std::string, int> splitFieldVertex(const std::string& fieldId);
 
 // ---- Text fields (contents, style, justification ...) ------------------------------------------
 
@@ -91,8 +98,9 @@ struct StringField {
     std::vector<std::string> choices{};
 };
 
-// Fields for Text (contents, style, justify), MText (contents, style, attachment) and Insert
-// (block name, read-only). Empty for other kinds.
+// Fields for Text (contents, style, justify), MText (contents, style, attachment), Insert (block
+// name, read-only, and one "att:TAG" field per attribute), Dimension and Leader (text override,
+// dimension style), Multileader (contents, style) and Table (text style). Empty for other kinds.
 std::vector<StringField> stringFields(const Document& doc, const Entity& e);
 // Sets one editable text field. Justification and attachment keep the text where it is on the
 // sheet. Fails for read-only fields, unknown styles or values outside `choices`.

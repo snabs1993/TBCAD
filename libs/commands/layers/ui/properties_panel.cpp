@@ -1,6 +1,7 @@
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -39,6 +40,7 @@ struct Cache {
     std::vector<Words> words{};   // contents, style, justification ...
     std::size_t pickedIndex = 0;  // entities shown in the Geometry section
     std::vector<EntityId> shown{};
+    int vertex = 0;  // the polyline's current vertex (0-based), as AutoCAD's "Current vertex"
 };
 
 Cache& cache() {
@@ -93,6 +95,8 @@ void refresh(tbcad::ui::PanelContext& ctx) {
     const std::vector<EntityId>& sel = *ctx.selection;
     if (c.revision == doc.revision() && c.selection == sel)
         return;
+    if (c.selection != sel)
+        c.vertex = 0;
     c.revision = doc.revision();
     c.selection = sel;
     c.common = readCommon(doc, sel);
@@ -119,25 +123,40 @@ void refresh(tbcad::ui::PanelContext& ctx) {
             if (!e || kind(*e) != *kindInPlay)
                 continue;
             c.shown.push_back(id);
+            // Rows are matched by id: objects of one kind can still have different rows (the
+            // attributes of two blocks). A row the others lack shows as varying.
+            const bool first = c.shown.size() == 1;
             auto ws = stringFields(doc, *e);
-            if (c.words.empty()) {
+            if (first) {
                 for (auto& w : ws)
                     c.words.push_back({w, false});
             } else {
-                for (std::size_t i = 0; i < ws.size() && i < c.words.size(); ++i)
-                    if (ws[i].value != c.words[i].field.value)
-                        c.words[i].varies = true;
+                for (auto& cw : c.words) {
+                    auto it = std::find_if(ws.begin(), ws.end(), [&](const StringField& x) {
+                        return x.id == cw.field.id;
+                    });
+                    if (it == ws.end() || it->value != cw.field.value)
+                        cw.varies = true;
+                }
             }
-            auto fs = geometryFields(*e);
-            if (c.fields.empty()) {
+            auto fs = geometryFields(*e, c.vertex);
+            if (first) {
                 for (auto& f : fs)
                     c.fields.push_back({f, false});
             } else {
-                for (std::size_t i = 0; i < fs.size() && i < c.fields.size(); ++i)
-                    if (std::fabs(fs[i].value - c.fields[i].field.value) > 1e-9)
-                        c.fields[i].varies = true;
+                for (auto& cf : c.fields) {
+                    auto it = std::find_if(fs.begin(), fs.end(), [&](const GeometryField& x) {
+                        return x.id == cf.field.id;
+                    });
+                    if (it == fs.end() || std::fabs(it->value - cf.field.value) > 1e-9)
+                        cf.varies = true;
+                }
             }
         }
+        // The current vertex follows the first polyline (clamped there).
+        for (const auto& cf : c.fields)
+            if (cf.field.id == "vertex")
+                c.vertex = static_cast<int>(cf.field.value) - 1;
     }
 }
 
@@ -422,7 +441,7 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
             // Lengths are millimetres, areas mm²; ratios and scale factors have no unit.
             const std::string& fid = f.field.id;
             const bool unitless = fid == "ratio" || fid == "widthfactor" || fid == "scale" ||
-                                  fid == "scalex" || fid == "scaley";
+                                  fid == "scalex" || fid == "scaley" || fid == "blockscale";
             if (f.field.type == FieldType::Number && !unitless) {
                 ImGui::SameLine(0, 4);
                 ImGui::TextDisabled(
@@ -440,7 +459,25 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
                 text = formatNumber(f.field.value);
             }
             ImGui::PushID(f.field.id.c_str());
-            if (!f.field.editable || f.field.type == FieldType::Count) {
+            // Per-vertex rows name the current vertex: "-PROP Set vertexx@3".
+            const bool perVertex =
+                fid == "vertexx" || fid == "vertexy" || fid == "startwidth" || fid == "endwidth";
+            const std::string setId = perVertex ? fid + "@" + std::to_string(c.vertex + 1) : fid;
+            if (fid == "vertex") {
+                // Steps through the vertices of the polyline, like AutoCAD's spinner.
+                int count = 0;
+                for (const auto& o : c.fields)
+                    if (o.field.id == "vertices")
+                        count = static_cast<int>(o.field.value);
+                int v = c.vertex + 1;
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::InputInt("##vertex", &v, 1, 5)) {
+                    if (count > 0)
+                        v = ((v - 1) % count + count) % count + 1;  // wraps around, as in AutoCAD
+                    c.vertex = v - 1;
+                    c.revision = ~0ull;  // recompute the vertex rows
+                }
+            } else if (!f.field.editable || f.field.type == FieldType::Count) {
                 ImGui::TextDisabled("%s", text.c_str());
             } else if (f.field.type == FieldType::Flag) {
                 bool v = f.field.value != 0;
@@ -454,7 +491,7 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
                 std::string first = "-PROP";
                 if (kindInPlay)
                     first += " Only " + std::string(kindLabel(*kindInPlay));
-                exec(ctx, {first + " Set " + f.field.id, *t});
+                exec(ctx, {first + " Set " + setId, *t});
             }
             ImGui::PopID();
         }

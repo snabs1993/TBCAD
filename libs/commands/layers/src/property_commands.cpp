@@ -201,8 +201,16 @@ private:
                 return;
             }
         }
-        bool angleLike = field.find("angle") != std::string::npos;
-        bool flag = field == "closed";
+        const auto split = splitFieldVertex(field);
+        const std::string& base = split.first;
+        const int vertex = split.second;
+        if (vertex < 0) {
+            ctx.message("Vertices are counted from 1.");
+            return;
+        }
+        bool angleLike =
+            base.find("angle") != std::string::npos || base.find("rotation") != std::string::npos;
+        bool flag = base == "closed";
         double value = 0;
         if (flag) {
             std::string t = lowerAscii(text);
@@ -222,9 +230,9 @@ private:
                 continue;
             if (ctx.doc().effective(e->common).locked)
                 continue;
-            auto fields = geometryFields(*e);
+            auto fields = geometryFields(*e, vertex);
             auto it = std::find_if(fields.begin(), fields.end(),
-                                   [&](const GeometryField& f) { return f.id == field; });
+                                   [&](const GeometryField& f) { return f.id == base; });
             if (it == fields.end())
                 continue;  // other kinds in a mixed selection simply do not have it
             if (!it->editable) {
