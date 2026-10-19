@@ -36,6 +36,15 @@ std::optional<Vec2> dimAssocPoint(const Entity& e, const DimAssoc& a) {
             return r->center;
         return std::nullopt;
     }
+    if (a.kind == DimAssoc::Kind::OnCurve) {
+        const double t = static_cast<double>(a.index) / 4294967296.0 * kTwoPi;
+        const Vec2 dir{std::cos(t), std::sin(t)};
+        if (const auto* c = entityAs<CircleData>(e))
+            return c->center + dir * c->radius;
+        if (const auto* r = entityAs<ArcData>(e))
+            return r->center + dir * r->radius;
+        return std::nullopt;
+    }
     if (a.kind != DimAssoc::Kind::Vertex)
         return std::nullopt;
     if (const auto* l = entityAs<LineData>(e))
@@ -83,6 +92,36 @@ std::optional<DimAssoc> findDimAssoc(const Document& doc, Vec2 p, BlockId owner)
     return found;
 }
 
+std::optional<DimAssoc> findDimAssocOnCurve(const Document& doc, Vec2 p, BlockId owner) {
+    std::optional<DimAssoc> found;
+    doc.forEachEntity([&](const Entity& e) {
+        if (found || doc.ownerBlock(e.common.id) != owner)
+            return;
+        Vec2 c{};
+        double r = 0;
+        if (const auto* ci = entityAs<CircleData>(e)) {
+            c = ci->center;
+            r = ci->radius;
+        } else if (const auto* ar = entityAs<ArcData>(e)) {
+            c = ar->center;
+            r = ar->radius;
+        } else {
+            return;
+        }
+        const Vec2 v = p - c;
+        if (!(r > 0) || std::abs(length(v) - r) > 1e-7 * (1.0 + r + std::abs(p.x) + std::abs(p.y)))
+            return;
+        const double t = normalizeAngle(std::atan2(v.y, v.x));
+        DimAssoc a;
+        a.kind = DimAssoc::Kind::OnCurve;
+        a.target = e.common.id;
+        a.index =
+            static_cast<std::uint32_t>(std::llround(t / kTwoPi * 4294967296.0) & 0xFFFFFFFFll);
+        found = a;
+    });
+    return found;
+}
+
 int linkDimension(const Document& doc, DimensionData& d, BlockId owner) {
     int n = 0;
     std::size_t count = 0;
@@ -97,8 +136,25 @@ int linkDimension(const Document& doc, DimensionData& d, BlockId owner) {
         case DimKind::Angular3Point:
             count = 3;
             break;
+        case DimKind::Radius:
+        case DimKind::Diameter: {
+            // The centre (radius) and the points on the circle or arc follow it, as in AutoCAD.
+            for (std::size_t i = 0; i < 2; ++i) {
+                d.assoc[i] = {};
+                std::optional<DimAssoc> a;
+                if (i == 0 && d.kind == DimKind::Radius)
+                    a = findDimAssoc(doc, d.defPts[0], owner);
+                if (!a)
+                    a = findDimAssocOnCurve(doc, d.defPts[i], owner);
+                if (a) {
+                    d.assoc[i] = *a;
+                    ++n;
+                }
+            }
+            return n;
+        }
         default:
-            return 0;  // radius and diameter points sit on the curve, not on a vertex
+            return 0;
     }
     for (std::size_t i = 0; i < count; ++i) {
         d.assoc[i] = {};

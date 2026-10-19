@@ -263,3 +263,47 @@ TEST_CASE("grip edit of the dimension's own text moves only the text") {
     CHECK(distance(r.l().b, b) < 1e-9);
     r.checkFollows();
 }
+
+TEST_CASE("radius and diameter dimensions follow their circle through MOVE and SCALE") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    EntityId circle{};
+    {
+        auto tx = doc.begin("setup");
+        Entity e;
+        e.data = CircleData{{0, 0}, 10};
+        circle = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    REQUIRE(host.run("DIMRADIUS", {ScriptItem::pick(circle, {10, 0}), "20,5"}).finished);
+    REQUIRE(host.run("DIMDIAMETER", {ScriptItem::pick(circle, {0, 10}), "-20,5"}).finished);
+    std::vector<EntityId> dims;
+    doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dims.push_back(e.common.id);
+    });
+    REQUIRE(dims.size() == 2);
+    auto dim = [&](std::size_t i) { return *entityAs<DimensionData>(*doc.find(dims[i])); };
+    for (std::size_t i = 0; i < 2; ++i)
+        CHECK(dim(i).assoc[1].kind == DimAssoc::Kind::OnCurve);
+    CHECK(dim(0).assoc[0].kind == DimAssoc::Kind::Center);
+    host.setSelection({circle});
+    REQUIRE(host.run("MOVE", {"0,0", "100,50"}).finished);
+    host.setSelection({circle});
+    REQUIRE(host.run("SCALE", {"100,50", "2"}).finished);
+    CHECK(dim(0).measurement == doctest::Approx(20));
+    CHECK(dim(1).measurement == doctest::Approx(40));
+    CHECK(distance(dim(0).defPts[0], {100, 50}) < 1e-9);
+    CHECK(distance(dim(0).defPts[1], {100, 50}) == doctest::Approx(20));
+    // The link survives a .tbcad round trip.
+    const auto path = std::filesystem::temp_directory_path() / "tbcad_radial_assoc.tbcad";
+    REQUIRE(io::writeTbcad(doc, path).ok());
+    io::IoReport rep;
+    auto back = io::readTbcad(path, rep);
+    REQUIRE(back.ok());
+    CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}

@@ -871,7 +871,7 @@ struct PayloadReader {
                                 continue;
                             DimAssoc a;
                             a.kind = enumeration<DimAssoc::Kind>(
-                                static_cast<std::uint8_t>(DimAssoc::Kind::Center));
+                                static_cast<std::uint8_t>(DimAssoc::Kind::OnCurve));
                             a.target = id<EntityId>();
                             a.index = static_cast<std::uint32_t>(r.varint());
                             d.assoc[i] = a;
