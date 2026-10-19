@@ -1,0 +1,19 @@
+# Draw with the mouse: the second line starts on the end of the first through the endpoint snap.
+@zoom -50 -100 250 200
+LINE
+0,0
+100,0
+
+@expect line 1
+LINE
+@clickw 99.3 0.6
+@clickw 100 80
+@key Enter
+@expect line 2
+@expect endpoint 100 0 2
+# A circle centred on the midpoint of the first line, picked with the mouse.
+CIRCLE
+@clickw 50.4 0.5
+25
+@expect circle 1
+@shot 01_draw_osnap.png

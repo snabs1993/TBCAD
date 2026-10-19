@@ -162,11 +162,12 @@ Result<void> CommandRunner::startImpl(std::string_view nameOrAlias, bool transpa
     // Like AutoCAD, a drawing command that starts with objects selected drops the selection
     // (the grips go away); the editing commands take it as their first answer instead.
     if (!transparent && !stack_.empty() && stack_.back().ctx->hasPending() &&
-        stack_.back().ctx->pending()->kind == detail::PromptKind::Point && !host_.selection().empty()) {
+        stack_.back().ctx->pending()->kind == detail::PromptKind::Point &&
+        !host_.selection().empty()) {
         static const std::unordered_set<std::string_view> kDrawing = {
-            "LINE",    "PLINE",  "POLYLINE", "RECTANG", "RECTANGLE", "POLYGON", "CIRCLE",
-            "ARC",     "ELLIPSE", "SPLINE",  "XLINE",   "RAY",       "POINT",   "DONUT",
-            "TEXT",    "MTEXT",  "MLINE",    "REVCLOUD"};
+            "LINE",   "PLINE", "POLYLINE", "RECTANG", "RECTANGLE", "POLYGON",
+            "CIRCLE", "ARC",   "ELLIPSE",  "SPLINE",  "XLINE",     "RAY",
+            "POINT",  "DONUT", "TEXT",     "MTEXT",   "MLINE",     "REVCLOUD"};
         if (kDrawing.count(c->name()))
             host_.setSelection({});
     }
@@ -215,6 +216,15 @@ void CommandRunner::finishTop(bool failed, std::string_view error, bool notify) 
         if (failed && !message.empty())
             host_.print("Command " + std::string(a.command->name()) + " failed: " + message);
         host_.setPreview(nullptr);
+        // Like AutoCAD: a modify command that used the pickfirst selection leaves nothing
+        // selected, unless it chose a selection of its own. Grip edits and the Properties panel
+        // keep it.
+        static const std::unordered_set<std::string_view> kConsumes = {
+            "MOVE",      "COPY",       "ROTATE",    "SCALE",   "MIRROR", "STRETCH", "ARRAY",
+            "ARRAYRECT", "ARRAYPOLAR", "ARRAYPATH", "EXPLODE", "ALIGN",  "ERASE"};
+        if (!a.ctx->usedPreselection().empty() && kConsumes.count(a.command->name()) &&
+            host_.selection() == a.ctx->usedPreselection())
+            host_.setSelection({});
         feedback_ = FilterFeedback{};
         host_.feedbackChanged(feedback_);
         refreshPrompt();

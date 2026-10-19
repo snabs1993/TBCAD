@@ -23,7 +23,8 @@ struct Cli {
     std::unique_ptr<ui::AppCore> core;
 
     Cli() {
-        dir = fs::temp_directory_path() / ("tbcad_cmdline_ux_" + std::to_string(std::random_device{}()));
+        dir = fs::temp_directory_path() /
+              ("tbcad_cmdline_ux_" + std::to_string(std::random_device{}()));
         fs::remove_all(dir);
         fs::create_directories(dir);
         registerAllCommands(registry);
@@ -236,6 +237,10 @@ TEST_CASE("a drawing command drops the selection, an editing command takes it") 
     c.core->submitText("MOVE");  // takes the two lines as its objects
     CHECK(c.core->selection().size() == 2);
     c.core->pressEscape();
+    c.core->submitText("SELECTALL");
+    c.say({"MOVE", "0,0", "10,0"});  // done: the objects it used are no longer selected
+    CHECK_FALSE(c.core->runner().active());
+    CHECK(c.core->selection().empty());
 }
 
 TEST_CASE("closing the program in the middle of a command does not crash") {

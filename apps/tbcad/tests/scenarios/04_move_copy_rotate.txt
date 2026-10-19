@@ -1,0 +1,32 @@
+# The editing commands take the selection made before them; a clicked base point snaps to an end,
+# the second point is typed relative to it.
+@zoom -100 -100 300 200
+LINE
+0,0
+100,0
+
+SELECTALL
+MOVE
+0,0
+10,5
+@expect endpoint 10 5 1
+SELECTALL
+COPY
+@clickw 10.4 5.3
+@0,50
+@key Escape
+@expect line 2
+@expect endpoint 10 55 1
+@key Escape
+@expect selected 0
+@clickw 60 5
+@expect selected 1
+ROTATE
+10,5
+90
+@expect endpoint 10 105 1
+U
+U
+U
+@expect endpoint 0 0 1
+@shot 04_move_copy_rotate.png

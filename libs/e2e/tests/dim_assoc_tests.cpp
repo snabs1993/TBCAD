@@ -55,10 +55,13 @@ TEST_CASE("the dimension follows its line through MOVE, ROTATE, SCALE, MIRROR an
     r.host.setSelection({r.line});
     REQUIRE(r.host.run("MOVE", {"0,0", "10,5"}).finished);
     r.checkFollows();
+    r.host.setSelection({r.line});
     REQUIRE(r.host.run("ROTATE", {"10,5", "45"}).finished);
     r.checkFollows();
+    r.host.setSelection({r.line});
     REQUIRE(r.host.run("SCALE", {"10,5", "2"}).finished);
     r.checkFollows();
+    r.host.setSelection({r.line});
     REQUIRE(r.host.run("MIRROR", {"0,0", "0,10", "No"}).finished);
     r.checkFollows();
     // Stretch the line's end by a crossing window around it.

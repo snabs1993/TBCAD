@@ -139,6 +139,8 @@ bool CommandContext::tryImmediate(detail::PromptRequest& req) {
                 ids.push_back(id);
         }
         if (!ids.empty()) {
+            if (usedPreselection_.empty())
+                usedPreselection_ = host_.selection();
             // (the group members come after the ids that were already filtered)
             const std::size_t already = ids.size();
             std::vector<EntityId> grouped = expandGroups(doc_, ids);

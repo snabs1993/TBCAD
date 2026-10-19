@@ -55,6 +55,8 @@ public:
 
     // Builds the whole UI for this frame. Returns the viewport rectangle (window points).
     ViewportRect frame();
+    // The viewport rectangle of the last frame (window points).
+    const ViewportRect& lastViewportRect() const { return lastRect_; }
     // Shows the rendered drawing in the viewport rectangle; call after frame(), before Render().
     void showViewport(unsigned texture, const ViewportRect& rect);
 
