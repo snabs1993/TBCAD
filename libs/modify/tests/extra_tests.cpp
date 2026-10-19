@@ -782,6 +782,39 @@ TEST_CASE("refitSpline uses fewer fit points and stays within the tolerance") {
     CHECK_FALSE(refitSpline(poly(v, false), 0.1).ok());
 }
 
+TEST_CASE("overkill on a grid of lines and circles finds duplicates and row overlaps") {
+    // 30 x 30 cells with a vertical line and a circle each, 30 rows of 30 separate horizontal
+    // pieces; then exact copies of 40 circles and of 40 lines, and 30 pieces overlapping the
+    // first piece of each row.
+    std::vector<Entity> store;
+    for (int r = 0; r < 30; ++r)
+        for (int c = 0; c < 30; ++c) {
+            store.push_back(line({c * 10.0, r * 10.0}, {c * 10.0 + 5, r * 10.0}));
+            store.push_back(line({c * 10.0 + 7, r * 10.0 + 1}, {c * 10.0 + 7, r * 10.0 + 4}));
+            store.push_back(Entity{{}, CircleData{{c * 10.0 + 3, r * 10.0 + 6}, 1.5}});
+        }
+    const std::size_t base = store.size();
+    for (int k = 0; k < 40; ++k) {
+        store.push_back(store[static_cast<std::size_t>(k) * 3 + 2]);  // circle copies
+        store.push_back(store[static_cast<std::size_t>(k) * 3 + 1]);  // vertical line copies
+    }
+    for (int r = 0; r < 30; ++r)
+        store.push_back(line({2.0, r * 10.0}, {4.0, r * 10.0}));  // inside the first piece of the row
+    std::vector<const Entity*> in;
+    for (const Entity& e : store)
+        in.push_back(&e);
+    OverkillResult res = overkill(in);
+    CHECK(res.duplicates == 80);
+    // 80 copies + 30 overlapping pieces are erased; each row's first piece is replaced by an
+    // equal one only when it merged with something (it does, with the inner piece).
+    std::size_t copiesErased = 0;
+    for (std::size_t i : res.erased)
+        if (i >= base && i < base + 80)
+            ++copiesErased;
+    CHECK(copiesErased == 80);
+    CHECK(res.created.size() == 30);
+}
+
 TEST_CASE("overkill removes exactly the repeats among random lines, circles and points") {
     std::mt19937 rng(11);
     std::vector<Entity> es;
