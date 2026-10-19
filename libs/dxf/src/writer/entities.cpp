@@ -151,7 +151,8 @@ Props Writer::propsOf(const EntityCommon& c) {
         p.ltScale = std::strtod(buf, nullptr);
     }
     p.visible = c.visible;
-    p.plotStyle = entityPlotStyle(doc_.header(), c.id);
+    if (anyEntityPlotStyle_)
+        p.plotStyle = entityPlotStyle(doc_.header(), c.id);
     if (!c.ext.get().dict.empty())
         p.dict = &c.ext.get().dict;
     return p;
@@ -815,7 +816,7 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
         if (d.v != VAlign::Baseline)
             o.i(74, static_cast<int>(d.v));
     }
-    count(std::string(type));
+    count(type);
 }
 
 void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner) {

@@ -28,7 +28,7 @@ struct Scene::Cursor {
             tile = &s.tiles_.at(tk);
             tileKey = tk;
             batchKey = key;
-            rec->refs.emplace_back(tk, key);
+            rec->refs.push_back(s.internRef(tk, key));
         }
         if (batch->ranges.empty() || batch->ranges.back().entity != entity ||
             batch->ranges.back().builtPixelsPerMm != builtZoom ||

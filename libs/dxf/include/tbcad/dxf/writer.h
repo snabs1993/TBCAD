@@ -56,7 +56,7 @@ struct ExportSummary {
     std::string acadVer{};  // "AC1015"
     std::string version{};  // "R2000"
     bool utf8 = false;
-    std::map<std::string, std::size_t> entities{};  // DXF type name -> records written
+    std::map<std::string, std::size_t, std::less<>> entities{};  // DXF type name -> records written
     std::size_t layers = 0;
     std::size_t blocks = 0;
     std::size_t skipped = 0;     // entities that could not be written (see the report)
