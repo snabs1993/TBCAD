@@ -30,6 +30,9 @@ the stored path points and then, as AutoCAD does, by its name in the drawing's o
 project copied from another disk still finds its xrefs; the stored path is kept as it was. An
 xref whose file is not found stays an empty, unloaded block and is listed in the missing-xref
 notice; XREF > Reload loads it once the file is there.
+The host file's own rows for the xref's layers (`site|walls`, where AutoCAD keeps the host's
+colour, on/off, frozen, locked, plot, line weight and linetype for them) are applied to the loaded
+sub-layers (`site~walls`), and those rows are removed when nothing is drawn on them.
 
 ## Commands
 
