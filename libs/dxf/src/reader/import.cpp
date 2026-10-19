@@ -419,8 +419,10 @@ void Importer::processObjects(RecordReader& rr) {
             continue;
         }
         if (r.type == "RASTERVARIABLES") {
-            if (r.has(71))
-                imageFrame_ = std::clamp(static_cast<int>(r.integer(71)), 0, 2);
+            // 70 is "frame shown"; only an off frame says something (shown and plotted or not
+            // is the IMAGEFRAME value, which the file does not keep).
+            if (r.has(70) && r.integer(70) == 0)
+                imageFrame_ = 0;
         }
         if (r.type == "IMAGEDEF") {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));

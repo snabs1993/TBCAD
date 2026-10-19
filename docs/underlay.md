@@ -59,7 +59,7 @@ file, how much to fade it (0 to 95 percent, default 30), a name and the insertio
   (0 to 100, 50 = as is). `IMAGEFRAME` (`IFR`) hides the frame (`Hide`), shows it (`Show`, not
   plotted) or plots it (`Plot`). These are stored per picture in `tbcad.underlays` (columns:
   brightness, contrast, frame, outline). IMAGE in DXF keeps the polygon (71=2, 91, 14/24),
-  brightness (281) and contrast (282); IMAGEFRAME is read from RASTERVARIABLES.
+  brightness (281) and contrast (282); IMAGEFRAME is read from and written to RASTERVARIABLES (only "frames hidden" travels; shown or plotted is not kept).
 * `UNDERLAYFADE` (`UF`) changes the fade of a picture or a PDF page (0 = as is, 95 = nearly gone;
   a PDF page is limited to 90 and is read again with the new colours).
 * Display settings (fade, clip) of each picture live in the drawing header under

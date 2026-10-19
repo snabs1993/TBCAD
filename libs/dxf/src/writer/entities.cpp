@@ -1095,6 +1095,7 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     img.path = bd->xrefPath;
     img.w = w;
     img.h = h;
+    img.frame = ip.frame != 0;
     img.def = newHandle();
     img.reactor = newHandle();
     img.image = L().entHandle ? L().entHandle : peekHandle();  // the handle head() gives the IMAGE

@@ -991,6 +991,7 @@ TEST_CASE("a picture keeps its polygon clip, brightness and contrast through DXF
         underlay::ImageParams ip;
         ip.brightness = 70;
         ip.contrast = 30;
+        ip.frame = 0;
         ip.clip = {{0.25, 0.25}, {0.75, 0.25}, {0.5, 0.75}};
         ip.u0 = 0.25;
         ip.u1 = 0.75;
@@ -1012,6 +1013,8 @@ TEST_CASE("a picture keeps its polygon clip, brightness and contrast through DXF
     const underlay::ImageParams p = underlay::imageParams(rt.back->header(), b->name);
     CHECK(p.brightness == 70);
     CHECK(p.contrast == 30);
+    CHECK(p.frame == 0);  // RASTERVARIABLES says the frames are hidden
+    CHECK(rt.bytes.find("RASTERVARIABLES") != std::string::npos);
     REQUIRE(p.clip.size() == 3);
     CHECK(p.clip[2].x == doctest::Approx(0.5));
     CHECK(p.clip[2].y == doctest::Approx(0.75));

@@ -303,6 +303,7 @@ private:
         std::string path{};
         double w = 0, h = 0;
         std::uint64_t def = 0, reactor = 0, image = 0;
+        bool frame = true;  // the frame of the picture is shown
     };
     std::vector<ImageOut> images_{};
     ExportSummary summary_{};

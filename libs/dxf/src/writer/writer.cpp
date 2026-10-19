@@ -1020,6 +1020,7 @@ std::string Writer::objectsSection() {
         !r12_ && (custom.count(kAnnoScaleKey) || custom.count(kAnnoScaleListKey));
     const bool scaleObjects = hasScales && opt_.version == DxfVersion::R2007;
     const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
+    const std::uint64_t imageVars = images_.empty() ? 0 : newHandle();
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
     std::uint64_t scaleRec = hasScales ? newHandle() : 0;
     constexpr const char* kSketchConstraints = "tbcad.constraints";
@@ -1063,6 +1064,8 @@ std::string Writer::objectsSection() {
     if (!images_.empty()) {
         o.raw(3, "ACAD_IMAGE_DICT");
         o.h(350, imageDict);
+        o.raw(3, "ACAD_IMAGE_VARS");
+        o.h(350, imageVars);
     }
     o.raw(3, "ACAD_LAYOUT");
     o.h(350, layoutDict);
@@ -1174,6 +1177,21 @@ std::string Writer::objectsSection() {
     }
 
     if (!images_.empty()) {
+        // IMAGEFRAME: the frame is shown unless every picture has it hidden.
+        bool anyFrame = false;
+        for (const ImageOut& im : images_)
+            anyFrame = anyFrame || im.frame;
+        o.zero("RASTERVARIABLES");
+        o.h(5, imageVars);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, rootDict_);
+        o.raw(102, "}");
+        o.h(330, rootDict_);
+        o.raw(100, "AcDbRasterVariables");
+        o.i(90, 0);
+        o.i(70, anyFrame ? 1 : 0);
+        o.i(71, 1);
+        o.i(72, 0);
         ownedDict(imageDict);
         std::set<std::string> used;
         std::vector<std::string> keys;
@@ -1754,6 +1772,9 @@ Result<ExportResult> Writer::run() {
             out +=
                 "  0\r\nCLASS\r\n  1\r\nIMAGEDEF_REACTOR\r\n  2\r\nAcDbRasterImageDefReactor\r\n"
                 "  3\r\nISM\r\n 90\r\n1\r\n280\r\n0\r\n281\r\n0\r\n";
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nRASTERVARIABLES\r\n  2\r\nAcDbRasterVariables\r\n"
+                "  3\r\nISM\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         }
         if (auto it = doc_.header().custom.find(kKeptClassesKey);
             it != doc_.header().custom.end()) {
