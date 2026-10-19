@@ -77,10 +77,10 @@ public:
         Format format = format_;
         for (;;) {
             KeywordOptions menu;
-            menu.keywords = {"Paper",        "Orientation", "Area",   "Scale",
-                             "Center",       "Offset",      "Margin", "LineWeights",
-                             "Transparency", "Color",       "Style",  "Format",
-                             "Resolution",   "Layout",      "Stamp",  "Export"};
+            menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
+                             "Offset",  "Margin",      "LineWeights", "Transparency", "Color",
+                             "Style",   "Format",      "Resolution",  "Layout",       "Stamp",
+                             "LWScale", "Screening",   "Export"};
             menu.defaultKeyword = "Export";
             auto choice =
                 co_await ctx.getKeyword("Plot " + summary(ctx.doc(), ctx.host(), s, format), menu);
@@ -239,6 +239,22 @@ public:
                 auto r = co_await ctx.getKeyword("Plot lineweights", ko);
                 if (r.ok())
                     s.lineweights = r.keyword == "On";
+            } else if (kw == "LWScale") {
+                cmd::RealOptions ro;
+                ro.defaultValue = s.lineweightScale;
+                ro.min = 0.01;
+                ro.max = 100;
+                auto r = co_await ctx.getReal("Lineweight scale (1 = as drawn)", ro);
+                if (r.ok())
+                    s.lineweightScale = r.value;
+            } else if (kw == "Screening") {
+                cmd::IntOptions io;
+                io.defaultValue = s.screening;
+                io.min = 0;
+                io.max = 100;
+                auto r = co_await ctx.getInteger("Screening % (100 = full tone)", io);
+                if (r.ok())
+                    s.screening = r.value;
             } else if (kw == "Transparency") {
                 KeywordOptions ko;
                 ko.keywords = {"On", "Off"};

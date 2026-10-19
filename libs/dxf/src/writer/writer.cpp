@@ -1021,6 +1021,8 @@ std::string Writer::objectsSection() {
     const bool scaleObjects = hasScales && opt_.version == DxfVersion::R2007;
     const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
     const std::uint64_t imageVars = images_.empty() ? 0 : newHandle();
+    const bool hasWipeoutVars = !r12_ && doc_.header().custom.count(kWipeoutFrameKey) != 0;
+    const std::uint64_t wipeoutVars = hasWipeoutVars ? newHandle() : 0;
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
     std::uint64_t scaleRec = hasScales ? newHandle() : 0;
     constexpr const char* kSketchConstraints = "tbcad.constraints";
@@ -1061,6 +1063,10 @@ std::string Writer::objectsSection() {
     }
     o.raw(3, "ACAD_GROUP");
     o.h(350, groupDict);
+    if (hasWipeoutVars) {
+        o.raw(3, "ACAD_WIPEOUT_VARS");
+        o.h(350, wipeoutVars);
+    }
     if (!images_.empty()) {
         o.raw(3, "ACAD_IMAGE_DICT");
         o.h(350, imageDict);
@@ -1174,6 +1180,14 @@ std::string Writer::objectsSection() {
                 o.str(1, std::string_view(body).substr(at, nl - at));
             at = nl + 1;
         }
+    }
+
+    if (hasWipeoutVars) {
+        o.zero("WIPEOUTVARIABLES");
+        o.h(5, wipeoutVars);
+        o.h(330, rootDict_);
+        o.raw(100, "AcDbWipeoutVariables");
+        o.i(70, wipeoutFrameMode(doc_.header()));
     }
 
     if (!images_.empty()) {
@@ -1776,6 +1790,10 @@ Result<ExportResult> Writer::run() {
                 "  0\r\nCLASS\r\n  1\r\nRASTERVARIABLES\r\n  2\r\nAcDbRasterVariables\r\n"
                 "  3\r\nISM\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         }
+        if (!r12_ && doc_.header().custom.count(kWipeoutFrameKey))
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nWIPEOUTVARIABLES\r\n  2\r\nAcDbWipeoutVariables\r\n"
+                "  3\r\nWipeOut\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         if (auto it = doc_.header().custom.find(kKeptClassesKey);
             it != doc_.header().custom.end()) {
             Out c(utf8_, false);

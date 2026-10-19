@@ -4,6 +4,8 @@
 #include <limits>
 
 #include "common.h"
+#include "tbcad/transform/transform.h"
+#include "tbcad/ui/ui_registry.h"
 #include "tbcad/transform/grips.h"
 
 using namespace tbtest;
@@ -366,4 +368,86 @@ TEST_CASE("performance: a grip drag where 100k lines meet keeps the preview ligh
     CHECK(near(get<LineData>(f.doc, ids[99999]).a, {3, 4}));
     CHECK(f.host.undo());
     CHECK(near(get<LineData>(f.doc, ids[99999]).a, {0, 0}));
+}
+
+TEST_CASE("Shift-picked grips are dragged together by the same displacement") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    auto b = add(f.doc, LineData{{0, 5}, {10, 5}});
+    auto c = add(f.doc, LineData{{0, 9}, {10, 9}});
+    f.host.setSelection({a, b, c});
+    tf::clearWarmGrips();
+    tf::toggleWarmGrip({10, 0});
+    tf::toggleWarmGrip({10, 5});
+    auto r = f.host.run("GRIPEDIT", {"10,0", "13,4"});
+    CHECK(r.finished);
+    CHECK(near(get<LineData>(f.doc, a).b, {13, 4}));
+    CHECK(near(get<LineData>(f.doc, b).b, {13, 9}));  // moved by the same (3, 4)
+    CHECK(near(get<LineData>(f.doc, c).b, {10, 9}));  // not picked
+    CHECK(tf::warmGrips().empty());                   // the drag ends the pick
+    CHECK(f.host.undo());                              // one step for both
+    CHECK(near(get<LineData>(f.doc, a).b, {10, 0}));
+    CHECK(near(get<LineData>(f.doc, b).b, {10, 5}));
+}
+
+TEST_CASE("A grip that was not picked drags alone even when others are picked") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    auto b = add(f.doc, LineData{{0, 5}, {10, 5}});
+    f.host.setSelection({a, b});
+    tf::clearWarmGrips();
+    tf::toggleWarmGrip({10, 5});
+    f.host.run("GRIPEDIT", {"10,0", "12,2"});
+    CHECK(near(get<LineData>(f.doc, a).b, {12, 2}));
+    CHECK(near(get<LineData>(f.doc, b).b, {10, 5}));
+    tf::clearWarmGrips();
+}
+
+TEST_CASE("Picking a picked grip again lets it go; two grips of one polyline move together") {
+    tf::clearWarmGrips();
+    tf::toggleWarmGrip({1, 1});
+    tf::toggleWarmGrip({2, 2});
+    tf::toggleWarmGrip({1, 1});
+    REQUIRE(tf::warmGrips().size() == 1);
+    CHECK(near(tf::warmGrips()[0], {2, 2}));
+    tf::clearWarmGrips();
+    Fixture f;
+    PolylineData pl;
+    pl.v = {{{0, 0}, 0}, {{10, 0}, 0}, {{10, 10}, 0}, {{0, 10}, 0}};
+    pl.closed = true;
+    auto id = add(f.doc, pl);
+    f.host.setSelection({id});
+    tf::toggleWarmGrip({10, 0});
+    tf::toggleWarmGrip({10, 10});
+    f.host.run("GRIPEDIT", {"10,0", "15,0"});
+    const auto& v = get<PolylineData>(f.doc, id).v;
+    CHECK(near(v[1].p, {15, 0}));
+    CHECK(near(v[2].p, {15, 10}));
+    CHECK(near(v[0].p, {0, 0}));
+}
+
+TEST_CASE("Shift-click on a grip picks it without starting a drag, a plain click elsewhere forgets") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    ui::UiRegistry reg;
+    tf::registerUi(reg);
+    std::vector<EntityId> sel{a};
+    std::vector<std::string> ran;
+    ui::PanelContext ctx;
+    ctx.doc = &f.doc;
+    ctx.host = &f.host;
+    ctx.selection = &sel;
+    ctx.runCommand = [&](const std::string& l) { ran.push_back(l); };
+    tf::clearWarmGrips();
+    const auto& hook = reg.idleClickHooks().front();
+    CHECK(hook(ctx, {10.1, 0.1}, 1.0, true, false));
+    CHECK(ran.empty());
+    REQUIRE(tf::warmGrips().size() == 1);
+    CHECK(near(tf::warmGrips()[0], {10, 0}));
+    CHECK(hook(ctx, {10.1, 0.1}, 1.0, false, false));  // plain click on it: the drag starts
+    REQUIRE(ran.size() == 1);
+    CHECK(ran[0].rfind("GRIPEDIT ", 0) == 0);
+    CHECK_FALSE(hook(ctx, {50, 50}, 1.0, false, false));  // elsewhere: forget
+    CHECK(tf::warmGrips().empty());
 }

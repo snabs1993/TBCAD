@@ -35,6 +35,15 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addPointFilter(drafting::kOtrackAcquireOrder,
                       std::make_unique<drafting::OtrackAcquirer>(&st.env, st.osnap, st.otrack));
     ui.addPointFilter(drafting::kOtrackOrder, std::move(otrack));
+    // The registry owns the filters; the module state must not keep pointers to them afterwards.
+    ui.addTeardown([&st, d = st.dyn, o = st.osnap, t = st.otrack] {
+        if (st.dyn == d)
+            st.dyn = nullptr;
+        if (st.osnap == o)
+            st.osnap = nullptr;
+        if (st.otrack == t)
+            st.otrack = nullptr;
+    });
     ui.addPointFilter(drafting::kDynamicUcsOrder,
                       std::make_unique<drafting::DynamicUcsFilter>(&st.env));
     ui.addPointFilter(drafting::kPolarOrder, std::make_unique<drafting::PolarOrthoFilter>(&st.env));

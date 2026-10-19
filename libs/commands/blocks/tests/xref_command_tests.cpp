@@ -228,7 +228,7 @@ TEST_CASE("XATTACH takes a PDF too, and XRELOAD keeps the page and fade of the s
     CHECK(f.doc.find(def->entities[0])->common.color == Color::rgb(0, 0, 0));  // fade=0 kept
 }
 
-TEST_CASE("a PDF underlay offers no snap points") {
+TEST_CASE("a PDF underlay offers no snap points unless PDFOSNAP is on") {
     Dir dir;
     fs::path file = writePdf(dir.path, "s.pdf", "0 0 m 100 0 l S");
     Fixture f;
@@ -239,6 +239,15 @@ TEST_CASE("a PDF underlay offers no snap points") {
                                                              g));
     CHECK(g.endpoints.empty());
     CHECK(g.curves.empty());
+
+    CHECK(f.host->run("PDFOSNAP", {"1"}).finished);
+    CHECK(pdfOsnap(f.doc.header()));
+    drafting::SnapGeometry on;
+    CHECK(drafting::SnapGeometryRegistry::instance().collect(f.doc, *f.doc.find(f.modelSpace()[0]),
+                                                             on));
+    CHECK(on.endpoints.size() == 2);  // the ends of the PDF line
+    f.host->undo();
+    CHECK_FALSE(pdfOsnap(f.doc.header()));
 }
 
 namespace {
@@ -335,7 +344,7 @@ TEST_CASE("IMAGECLIP Polygonal clips to an outline - IMAGEADJUST and IMAGEFRAME 
     f.host->run("IMAGECLIP", {"Delete"});
     CHECK(underlay::imageParams(f.doc.header(), "site").clip.empty());
 
-    f.host->run("IMAGEADJUST", {"65", "40"});
+    f.host->run("IMAGEADJUST", {"65", "40", "No"});
     p = underlay::imageParams(f.doc.header(), "site");
     CHECK(p.brightness == 65);
     CHECK(p.contrast == 40);
@@ -343,6 +352,10 @@ TEST_CASE("IMAGECLIP Polygonal clips to an outline - IMAGEADJUST and IMAGEFRAME 
     CHECK(underlay::imageParams(f.doc.header(), "site").frame == 0);
     f.host->run("IMAGEFRAME", {"Plot"});
     CHECK(underlay::imageParams(f.doc.header(), "site").frame == 1);
+    f.host->run("IMAGETRANSPARENCY", {"ON"});
+    CHECK(underlay::imageParams(f.doc.header(), "site").transparent);
+    f.host->run("IMAGETRANSPARENCY", {"OFF"});
+    CHECK_FALSE(underlay::imageParams(f.doc.header(), "site").transparent);
 }
 
 TEST_CASE("UNDERLAYFADE changes the fade of a picture and of a PDF page") {

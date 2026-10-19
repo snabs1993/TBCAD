@@ -12,6 +12,7 @@ std::unique_ptr<cmd::Command> makeDonut();
 std::unique_ptr<cmd::Command> makeBreakLine();
 std::unique_ptr<cmd::Command> makeRevCloud();
 std::unique_ptr<cmd::Command> makeWipeout();
+std::unique_ptr<cmd::Command> makeWipeoutFrame();
 std::unique_ptr<cmd::Command> makeCenterMark();
 std::unique_ptr<cmd::Command> makeCenterLine();
 std::unique_ptr<cmd::Command> makeBoundary();

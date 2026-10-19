@@ -143,7 +143,7 @@ void applyTheme(const ui::Theme& t, float scale) {
     style.GrabRounding = 4.0f;
     style.ScrollbarRounding = 4.0f;
     style.TabRounding = 4.0f;
-    style.FrameBorderSize = 0.0f;
+    style.FrameBorderSize = 1.0f;  // an empty check box or field must still read as one on a dark panel
     style.WindowBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
     style.WindowPadding = ImVec2(8, 8);
@@ -161,7 +161,7 @@ void applyTheme(const ui::Theme& t, float scale) {
     c[ImGuiCol_WindowBg] = toVec(t.bgPanel);
     c[ImGuiCol_ChildBg] = toVec(t.bgPanel, 0.0);
     c[ImGuiCol_PopupBg] = toVec(t.bgPanel);
-    c[ImGuiCol_Border] = toVec(t.border);
+    c[ImGuiCol_Border] = toVec(ui::mix(t.border, t.text, 0.12));
     c[ImGuiCol_BorderShadow] = toVec(t.border, 0.0);
     c[ImGuiCol_FrameBg] = toVec(frame);
     c[ImGuiCol_FrameBgHovered] = toVec(hover, 0.6);

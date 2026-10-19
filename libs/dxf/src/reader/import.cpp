@@ -425,6 +425,10 @@ void Importer::processObjects(RecordReader& rr) {
             if (r.has(70) && r.integer(70) == 0)
                 imageFrame_ = 0;
         }
+        if (r.type == "WIPEOUTVARIABLES" && r.has(70) && r.integer(70) >= 0 && r.integer(70) <= 2) {
+            const std::string mode = std::to_string(r.integer(70));
+            (void)tx_->modifyHeader([&](Header& h) { h.custom[kWipeoutFrameKey] = mode; });
+        }
         if (r.type == "IMAGEDEF") {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
             continue;
@@ -889,9 +893,9 @@ void Importer::keepObjects() {
     // Names the writer writes itself, and objects that only make sense next to entities or
     // layouts of the source file.
     static const std::set<std::string> ownedNames = {
-        "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_IMAGE_VARS", "ACAD_LAYOUT",
-        "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME", "ACAD_SCALELIST",  "TBCAD_ANNOSCALE",
-        "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS"};
+        "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_IMAGE_VARS",  "ACAD_LAYOUT",
+        "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME", "ACAD_SCALELIST",   "TBCAD_ANNOSCALE",
+        "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS", "ACAD_WIPEOUT_VARS"};
     static const std::set<std::string> neverKept = {
         "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "SORTENTSTABLE", "GROUP",
         "DIMASSOC", "IMAGEDEFREACTOR", "ACDBPLACEHOLDER",  "MLINESTYLE"};

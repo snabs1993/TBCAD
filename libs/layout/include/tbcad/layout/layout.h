@@ -67,6 +67,8 @@ Result<void> deleteLayout(Transaction& tx, const std::string& name);
 // frozen layers) and every object on the sheet.
 Result<void> copyLayout(Transaction& tx, const std::string& name, const std::string& newName);
 Result<void> renameLayout(Transaction& tx, const std::string& name, const std::string& newName);
+// Puts the layout at a 0-based place in the tab order (past the end means last).
+Result<void> moveLayout(Transaction& tx, const std::string& name, std::size_t position);
 // Changes the sheet; viewports and objects stay where they are (in millimetres).
 // Sets only the name of the page setup the layout uses (see pagesetup.h; use assignPageSetup).
 Result<void> setLayoutPageSetupName(Transaction& tx, const std::string& name,

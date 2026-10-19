@@ -30,6 +30,7 @@ struct DisplayStyle {
     // by the renderer; points into the linetype table like `pattern`.
     const std::vector<LinetypeMark>* marks = nullptr;
     LayerId layer{};
+    bool noPlot = false;  // shown on screen only (a wipeout frame with WIPEOUTFRAME 2)
 };
 
 struct DisplayPolyline {

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "commands.h"
@@ -96,7 +97,41 @@ public:
     }
 };
 
+// WIPEOUTFRAME: 0 hides the outlines of wipeouts, 1 shows and plots them, 2 shows them on screen
+// only. It is a setting of the drawing.
+class WipeoutFrameCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "WIPEOUTFRAME"; }
+    std::vector<std::string> defaultAliases() const override { return {"WFRAME"}; }
+    std::string_view description() const override {
+        return "Show, hide or plot the outlines of wipeouts";
+    }
+
+    cmd::Task run(CommandContext& ctx) override {
+        const int now = wipeoutFrameMode(ctx.doc().header());
+        cmd::IntOptions io;
+        io.defaultValue = now;
+        io.min = 0;
+        io.max = 2;
+        auto v = co_await ctx.getInteger(
+            "WIPEOUTFRAME 0 hidden, 1 shown and plotted, 2 shown not "
+            "plotted <" +
+                std::to_string(now) + ">",
+            io);
+        if (!v.ok())
+            co_return;
+        const std::string value = std::to_string(std::clamp<long long>(v.value, 0, 2));
+        (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[kWipeoutFrameKey] = value; });
+        ctx.setUndoLabel("WIPEOUTFRAME");
+        ctx.message("WIPEOUTFRAME = " + value);
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeWipeoutFrame() {
+    return std::make_unique<WipeoutFrameCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeWipeout() {
     return std::make_unique<WipeoutCommand>();

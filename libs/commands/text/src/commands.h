@@ -26,6 +26,7 @@ std::unique_ptr<cmd::Command> makeObjectScaleCommand();
 std::unique_ptr<cmd::Command> makeTxt2MTxtCommand();
 std::unique_ptr<cmd::Command> makeTCountCommand();
 std::unique_ptr<cmd::Command> makeSpellCommand();
+std::unique_ptr<cmd::Command> makeMTextFormatCommand();
 std::unique_ptr<cmd::Command> makeTxtExpCommand();
 std::unique_ptr<cmd::Command> makeTextAlignCommand();
 void registerMTextExplode();

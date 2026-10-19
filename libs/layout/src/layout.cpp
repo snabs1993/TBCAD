@@ -300,6 +300,23 @@ Result<void> renameLayout(Transaction& tx, const std::string& name, const std::s
     return store(tx, all);
 }
 
+Result<void> moveLayout(Transaction& tx, const std::string& name, std::size_t position) {
+    std::vector<Layout> all = current(tx, tx.document());
+    std::size_t from = all.size();
+    for (std::size_t i = 0; i < all.size(); ++i)
+        if (lower(all[i].name) == lower(name))
+            from = i;
+    if (from == all.size())
+        return err(ErrorCode::NotFound, "No layout named \"" + name + "\"");
+    const std::size_t to = std::min(position, all.size() - 1);
+    if (to == from)
+        return {};
+    Layout moved = std::move(all[from]);
+    all.erase(all.begin() + static_cast<std::ptrdiff_t>(from));
+    all.insert(all.begin() + static_cast<std::ptrdiff_t>(to), std::move(moved));
+    return store(tx, all);
+}
+
 Result<void> setLayoutPageSetupName(Transaction& tx, const std::string& name,
                                     const std::string& pageSetup) {
     std::vector<Layout> all = current(tx, tx.document());

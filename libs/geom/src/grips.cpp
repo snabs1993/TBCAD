@@ -179,9 +179,16 @@ std::vector<Vec2> gripPoints(const Entity& e) {
         case EntityKind::Text:
             g = {entityAs<TextData>(e)->position};
             break;
-        case EntityKind::MText:
-            g = {entityAs<MTextData>(e)->position};
+        case EntityKind::MText: {
+            const auto& d = *entityAs<MTextData>(e);
+            g = {d.position};
+            if (d.width > 0 && d.columns <= 1) {  // the wrapping width: drag the free side
+                const int col = static_cast<int>(d.attach) % 3;  // 0 left, 1 centre, 2 right
+                const double off = col == 0 ? d.width : col == 1 ? d.width * 0.5 : -d.width;
+                g.push_back(d.position + Vec2{std::cos(d.rotation), std::sin(d.rotation)} * off);
+            }
             break;
+        }
         case EntityKind::Insert:
             g = {entityAs<InsertData>(e)->position};
             break;
@@ -224,6 +231,18 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             const double c = std::cos(d.rotation), si = std::sin(d.rotation);
             // bottom-right corner in the rotated frame (y points down)
             g.push_back(d.origin + Vec2{w * c + h * si, w * si - h * c});
+            // Column borders on the top edge, then row borders on the left edge; the outer
+            // borders are the origin and the corner.
+            double x = 0;
+            for (std::size_t i = 0; i + 1 < d.colWidths.size(); ++i) {
+                x += d.colWidths[i];
+                g.push_back(d.origin + Vec2{x * c, x * si});
+            }
+            double y = 0;
+            for (std::size_t i = 0; i + 1 < d.rowHeights.size(); ++i) {
+                y += d.rowHeights[i];
+                g.push_back(d.origin + Vec2{y * si, -y * c});
+            }
             break;
         }
         case EntityKind::Hatch:
@@ -407,11 +426,23 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             d.alignPoint += delta;
             return out;
         }
-        case EntityKind::MText:
+        case EntityKind::MText: {
+            auto& d = *entityAs<MTextData>(out);
+            if (index == 1 && d.width > 0 && d.columns <= 1) {
+                const double along = (to.x - d.position.x) * std::cos(d.rotation) +
+                                     (to.y - d.position.y) * std::sin(d.rotation);
+                const int col = static_cast<int>(d.attach) % 3;
+                const double w = col == 0 ? along : col == 1 ? along * 2 : -along;
+                if (!(w > 1e-9))
+                    return makeError(ErrorCode::InvalidArgument, "the width would collapse");
+                d.width = w;
+                return out;
+            }
             if (index != 0)
                 return badGrip();
-            entityAs<MTextData>(out)->position = to;
+            d.position = to;
             return out;
+        }
         case EntityKind::Insert:
             if (index != 0)
                 return badGrip();
@@ -487,6 +518,37 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             if (index == 0) {
                 d.origin = to;
                 return out;
+            }
+            if (index > 1) {
+                // A border grip moves one column or row border: that column or row changes size,
+                // the table grows or shrinks with it.
+                const std::size_t cols = d.colWidths.size() > 0 ? d.colWidths.size() - 1 : 0;
+                const std::size_t rows = d.rowHeights.size() > 0 ? d.rowHeights.size() - 1 : 0;
+                const std::size_t k = static_cast<std::size_t>(index - 2);
+                const double c = std::cos(d.rotation), si = std::sin(d.rotation);
+                const Vec2 v = to - d.origin;
+                if (k < cols) {
+                    double before = 0;
+                    for (std::size_t i = 0; i < k; ++i)
+                        before += d.colWidths[i];
+                    const double nw = v.x * c + v.y * si - before;
+                    if (!(nw > 1e-9))
+                        return makeError(ErrorCode::InvalidArgument, "column would collapse");
+                    d.colWidths[k] = nw;
+                    return out;
+                }
+                if (k - cols < rows) {
+                    const std::size_t r = k - cols;
+                    double before = 0;
+                    for (std::size_t i = 0; i < r; ++i)
+                        before += d.rowHeights[i];
+                    const double nh = v.x * si - v.y * c - before;
+                    if (!(nh > 1e-9))
+                        return makeError(ErrorCode::InvalidArgument, "row would collapse");
+                    d.rowHeights[r] = nh;
+                    return out;
+                }
+                return badGrip();
             }
             if (index != 1)
                 return badGrip();

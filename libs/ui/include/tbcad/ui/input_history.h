@@ -8,7 +8,8 @@ namespace tbcad::ui {
 
 // The lines typed on the command line, for the Up and Down keys. Like AutoCAD: Up goes back
 // through what was typed, Down comes forward again and ends on what was being typed before the
-// first Up. A line equal to the last one is not stored twice, and the list is capped.
+// first Up. With something typed already, Up and Down visit only the lines that start with it
+// (ignoring case): "ci" then Up gives the last circle command. A line equal to the last one is not stored twice, and the list is capped.
 class InputHistory {
 public:
     explicit InputHistory(std::size_t limit = 500) : limit_(limit) {}

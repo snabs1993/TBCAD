@@ -56,6 +56,25 @@ struct Header {
     std::map<std::string, std::string> custom{};  // settings stored in the file
 };
 
+// WIPEOUTFRAME: whether the outline of a wipeout is shown. 0 hidden, 1 shown and plotted (the
+// default, as in AutoCAD), 2 shown but not plotted. Kept in Header::custom.
+inline constexpr const char* kWipeoutFrameKey = "tbcad.wipeoutframe";
+inline int wipeoutFrameMode(const Header& h) {
+    const auto it = h.custom.find(kWipeoutFrameKey);
+    if (it == h.custom.end() || it->second.size() != 1 || it->second[0] < '0' ||
+        it->second[0] > '2')
+        return 1;
+    return it->second[0] - '0';
+}
+
+// PDFOSNAP: whether object snap sees the geometry of PDF underlays. Off by default (a page can
+// hold millions of vertices). Kept in Header::custom.
+inline constexpr const char* kPdfOsnapKey = "tbcad.pdfosnap";
+inline bool pdfOsnap(const Header& h) {
+    const auto it = h.custom.find(kPdfOsnapKey);
+    return it != h.custom.end() && it->second == "1";
+}
+
 // Annotation scale: model units per paper unit (100 for 1:100). Kept in Header::custom so it is
 // saved with the drawing. Always positive; 1 when unset or damaged.
 inline constexpr const char* kAnnoScaleKey = "tbcad.annoscale";

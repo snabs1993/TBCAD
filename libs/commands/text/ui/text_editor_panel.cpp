@@ -20,12 +20,18 @@ struct EditorState {
     std::string stored;    // what the entity contained when the editor last loaded it
     std::string buffer;    // editable form (MTEXT: "\P" shown as a newline)
     std::string wrapOpen;  // markup to wrap around the selection on the next callback
+    std::string insert;    // markup to put at the cursor on the next callback
 };
 
 EditorState g_state;
 
 int wrapCallback(ImGuiInputTextCallbackData* d) {
     auto* st = static_cast<EditorState*>(d->UserData);
+    if (!st->insert.empty()) {
+        d->InsertChars(d->CursorPos, st->insert.c_str());
+        st->insert.clear();
+        return 0;
+    }
     if (st->wrapOpen.empty())
         return 0;
     int a = std::min(d->SelectionStart, d->SelectionEnd);
@@ -75,7 +81,34 @@ void drawPanel(ui::PanelContext& pc) {
         if (ImGui::SmallButton("Height x2"))
             g_state.wrapOpen = "{\\H2x;";
         ImGui::SameLine();
+        if (ImGui::SmallButton("U"))
+            g_state.wrapOpen = "{\\L";
+        ImGui::SameLine();
+        if (ImGui::SmallButton("S"))
+            g_state.wrapOpen = "{\\K";
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Narrow"))
+            g_state.wrapOpen = "{\\W0.8;";
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Wide"))
+            g_state.wrapOpen = "{\\W1.25;";
+        ImGui::SameLine();
         ImGui::TextDisabled("(wraps the selected text)");
+        // Paragraph settings go in at the cursor and hold until the next one.
+        ImGui::TextDisabled("Paragraph:");
+        for (const auto& [label, code] : {std::pair<const char*, const char*>{"Left", "\\pql;"},
+                                          {"Centre", "\\pqc;"},
+                                          {"Right", "\\pqr;"},
+                                          {"Justify", "\\pqj;"},
+                                          {"Indent", "\\pxi-3,l3;"},
+                                          {"Tab", "\\pt10,20,30;"}}) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton(label))
+                g_state.insert = code;
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Background / spacing...") && pc.runCommand)
+            pc.runCommand("MTEXTFORMAT");
     }
     ImVec2 size(-FLT_MIN, ImGui::GetTextLineHeight() * (isMText ? 10 : 3));
     ImGui::InputTextMultiline("##text", &g_state.buffer, size, ImGuiInputTextFlags_CallbackAlways,

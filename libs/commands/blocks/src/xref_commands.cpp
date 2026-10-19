@@ -830,10 +830,48 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
         const BlockDef* def = nullptr;
-        co_await pickUnderlay(ctx, true, def, "Enter the picture to adjust");
+        co_await pickUnderlay(ctx, false, def, "Enter the picture or PDF to adjust");
         if (!def)
             co_return;
         const std::string blockName = def->name;
+        if (!underlay::isImagePath(def->xrefPath)) {
+            // A PDF page is drawn in adjusted colours: rewrite the stored path, read it again.
+            underlay::Spec spec = underlay::parseSpec(def->xrefPath);
+            auto co = co_await ctx.getReal(
+                "Enter the contrast, 0 to 100 <" + std::to_string(spec.pdf.contrast) + ">",
+                cmd::RealOptions{.defaultValue = spec.pdf.contrast});
+            if (!co.ok())
+                co_return;
+            auto mono = co_await ctx.getKeyword(
+                "Monochrome [Yes/No] <" + std::string(spec.pdf.monochrome ? "Yes" : "No") + ">",
+                cmd::KeywordOptions{.keywords = {"Yes", "No"},
+                                    .defaultKeyword = spec.pdf.monochrome ? "Yes" : "No"});
+            if (mono.status == cmd::Status::Cancel)
+                co_return;
+            spec.pdf.contrast = static_cast<int>(std::lround(std::clamp(co.value, 0.0, 100.0)));
+            spec.pdf.monochrome = mono.keyword == "Yes";
+            const std::string stored = underlay::makeSpec(spec.file, spec.pdf);
+            auto loaded = xref::loadStored(stored, hostFileOf(ctx));
+            if (!loaded) {
+                ctx.message(loaded.error().message);
+                co_return;
+            }
+            const BlockId id = def->id;
+            auto mod = ctx.tx().modifyBlock(id, [&](BlockDef& b) { b.xrefPath = stored; });
+            if (!mod) {
+                ctx.message(mod.error().message);
+                co_return;
+            }
+            auto r = xref::reload(ctx.tx(), doc, id, loaded.value());
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            ctx.setUndoLabel("Adjust " + blockName);
+            ctx.message("\"" + blockName + "\": contrast " + std::to_string(spec.pdf.contrast) +
+                        (spec.pdf.monochrome ? ", monochrome" : ""));
+            co_return;
+        }
         underlay::ImageParams params = underlay::imageParams(doc.header(), blockName);
         auto br = co_await ctx.getReal(
             "Enter the brightness, 0 to 100 <" + std::to_string(params.brightness) + ">",
@@ -847,6 +885,13 @@ public:
             co_return;
         params.brightness = static_cast<int>(std::lround(std::clamp(br.value, 0.0, 100.0)));
         params.contrast = static_cast<int>(std::lround(std::clamp(co.value, 0.0, 100.0)));
+        auto mono = co_await ctx.getKeyword(
+            "Monochrome [Yes/No] <" + std::string(params.monochrome ? "Yes" : "No") + ">",
+            cmd::KeywordOptions{.keywords = {"Yes", "No"},
+                                .defaultKeyword = params.monochrome ? "Yes" : "No"});
+        if (mono.status == cmd::Status::Cancel)
+            co_return;
+        params.monochrome = mono.keyword == "Yes";
         auto set = underlay::setImageParams(ctx.tx(), blockName, params);
         if (!set) {
             ctx.message(set.error().message);
@@ -894,7 +939,73 @@ public:
     }
 };
 
+// IMAGETRANSPARENCY [ITR]: whether the white background of a black and white picture shows.
+class ImageTransparencyCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "IMAGETRANSPARENCY"; }
+    std::vector<std::string> defaultAliases() const override { return {"ITR"}; }
+    std::string_view description() const override {
+        return "Make the background of a black and white picture transparent or opaque";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        const BlockDef* def = nullptr;
+        co_await pickUnderlay(ctx, true, def, "Enter the picture");
+        if (!def)
+            co_return;
+        const std::string blockName = def->name;
+        underlay::ImageParams params = underlay::imageParams(doc.header(), blockName);
+        auto kw = co_await ctx.getKeyword("Enter the transparency [ON/OFF]",
+                                          cmd::KeywordOptions{.keywords = {"ON", "OFF"}});
+        if (!kw.ok())
+            co_return;
+        params.transparent = kw.keyword == "ON";
+        auto set = underlay::setImageParams(ctx.tx(), blockName, params);
+        if (!set) {
+            ctx.message(set.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Transparency " + blockName);
+        ctx.message("\"" + blockName + "\" background transparency " +
+                    (params.transparent ? "on (black and white pictures only)" : "off"));
+    }
+};
+
+// PDFOSNAP: 1 lets object snap pick up the lines and corners of PDF underlays (0 = off, default).
+class PdfOsnapCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PDFOSNAP"; }
+    std::string_view description() const override {
+        return "Snap to the geometry of PDF underlays (0 off, 1 on)";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const int now = pdfOsnap(ctx.doc().header()) ? 1 : 0;
+        cmd::IntOptions io;
+        io.defaultValue = now;
+        io.min = 0;
+        io.max = 1;
+        auto v = co_await ctx.getInteger(
+            "PDFOSNAP 0 ignore PDF underlays, 1 snap to them <" + std::to_string(now) + ">", io);
+        if (!v.ok())
+            co_return;
+        const std::string value = v.value ? "1" : "0";
+        (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[kPdfOsnapKey] = value; });
+        ctx.setUndoLabel("PDFOSNAP");
+        ctx.message("PDFOSNAP = " + value);
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makePdfOsnapCommand() {
+    return std::make_unique<PdfOsnapCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeImageTransparencyCommand() {
+    return std::make_unique<ImageTransparencyCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeXAttachCommand() {
     return std::make_unique<XAttachCommand>(XAttachCommand::Kind::Drawing);

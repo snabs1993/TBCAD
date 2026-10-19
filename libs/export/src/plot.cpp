@@ -129,7 +129,14 @@ struct Builder {
     mutable std::map<std::uint32_t, std::pair<Rgba, std::size_t>> seen{};
 
     Rgba color(Rgba c) const {
-        const Rgba out = colorImpl(c);
+        Rgba out = colorImpl(c);
+        if (s.screening < 100) {  // the whole plot at a lighter tone (blended with the sheet)
+            const double k = std::clamp(s.screening, 0, 100) / 100.0;
+            auto mix = [k](std::uint8_t v) {
+                return static_cast<std::uint8_t>(std::lround(v * k + 255.0 * (1.0 - k)));
+            };
+            out = {mix(out.r), mix(out.g), mix(out.b), out.a};
+        }
         if (s.traceColors) {
             auto& row = seen[(std::uint32_t{c.r} << 24) | (std::uint32_t{c.g} << 16) |
                              (std::uint32_t{c.b} << 8) | c.a];
@@ -609,6 +616,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
                 li = pl->style.layer;
             else if (const auto* fl = std::get_if<DisplayFill>(&it))
                 li = fl->style.layer;
+            if (const auto* np = std::get_if<DisplayPolyline>(&it); np && np->style.noPlot)
+                continue;
             if (li != LayerId{} && li != e->common.layer &&
                 (isDefpoints(doc, li) || !doc.effective(li).visible() ||
                  (lay.layerHidden && lay.layerHidden(li))))

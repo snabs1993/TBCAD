@@ -312,6 +312,7 @@ private:
         double fade = 0;
         double u0 = 0, v0 = 0, u1 = 1, v1 = 1;
         int brightness = 50, contrast = 50;
+        bool transparent = false;  // DXF 70 bit 8: bitonal background clear
         std::vector<Vec2> clip{};  // polygon in picture fractions
         int line = 0;
     };

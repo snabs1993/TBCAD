@@ -46,6 +46,14 @@ cmd::PreviewFn previewOf(CommandContext& ctx, const std::vector<EntityId>& ids,
     };
 }
 
+// A zero displacement moves nothing and, for COPY, stacks duplicates on the originals.
+bool noDisplacement(CommandContext& ctx, Vec2 d) {
+    if (std::abs(d.x) > 1e-12 || std::abs(d.y) > 1e-12)
+        return false;
+    ctx.message("The displacement is zero: nothing to do.");
+    return true;
+}
+
 // COPY > Array: a row of copies. A second point sets the spacing between neighbours, Fit makes
 // it the position of the last copy.
 Task arrayCopies(CommandContext& ctx, const std::vector<EntityId>& ids, Vec2 base) {
@@ -85,6 +93,8 @@ Task arrayCopies(CommandContext& ctx, const std::vector<EntityId>& ids, Vec2 bas
             co_return;
         const Vec2 step =
             fit ? (to.point - base) * (1.0 / static_cast<double>(n - 1)) : to.point - base;
+        if (noDisplacement(ctx, step))
+            continue;
         for (long long k = 1; k < n; ++k)
             report(ctx, applyTransform(ctx, ids, Transform2::translate(step * double(k)), true));
         co_return;
@@ -107,7 +117,7 @@ public:
         auto base = co_await ctx.getPoint("Specify base point or [Displacement]", std::move(bo));
         if (base.status == Status::Keyword) {
             auto d = co_await ctx.getPoint("Specify displacement");
-            if (d.ok())
+            if (d.ok() && !noDisplacement(ctx, d.point))
                 report(ctx, applyTransform(ctx, ids, Transform2::translate(d.point), false));
             co_return;
         }
@@ -126,6 +136,8 @@ public:
         else if (to.ok())
             delta = to.point - base.point;
         else
+            co_return;
+        if (noDisplacement(ctx, delta))
             co_return;
         report(ctx, applyTransform(ctx, ids, Transform2::translate(delta), false));
     }
@@ -148,7 +160,7 @@ public:
         auto base = co_await ctx.getPoint("Specify base point or [Displacement]", std::move(bo));
         if (base.status == Status::Keyword) {
             auto d = co_await ctx.getPoint("Specify displacement");
-            if (d.ok())
+            if (d.ok() && !noDisplacement(ctx, d.point))
                 report(ctx, applyTransform(ctx, ids, Transform2::translate(d.point), true));
             co_return;
         }
@@ -173,11 +185,15 @@ public:
                 co_return;
             }
             if (to.status == Status::None && first) {
+                if (noDisplacement(ctx, base.point))
+                    co_return;
                 report(ctx, applyTransform(ctx, ids, Transform2::translate(base.point), true));
                 co_return;
             }
             if (!to.ok())
                 co_return;  // Enter, Exit or Esc ends the repeat
+            if (noDisplacement(ctx, to.point - base.point))
+                continue;  // a copy on top of the original: ask again
             first = false;
             ++copies;
             report(ctx,
@@ -510,7 +526,11 @@ public:
             co_return;
         }
         // Only objects with an end point or vertex inside the window move; say how many do.
-        const std::size_t movable = stretchWith(ids, {1, 0}, nullptr).size();
+        // The ones that move are kept: the preview and the final stretch work on those only.
+        std::vector<EntityId> moving;
+        for (const auto& r : stretchWith(ids, {1, 0}, nullptr))
+            moving.push_back(r.first);
+        const std::size_t movable = moving.size();
         if (movable == 0) {
             ctx.message(
                 "No end point or vertex lies inside the crossing window; nothing to stretch.");
@@ -522,15 +542,15 @@ public:
             co_return;
         PointOptions o;
         o.base = base.point;
-        o.preview = [&ctx, &ids, &stretchWith, b = base.point](Vec2 c, DisplayList& out) {
+        o.preview = [&ctx, &moving, &stretchWith, b = base.point](Vec2 c, DisplayList& out) {
             geom::DisplayContext dc;
             dc.pixelSizeMm = ctx.host().view().scale > 0 ? ctx.host().view().scale : 1;
             // A drawing-sized selection would rebuild every object on each mouse move; the
             // preview shows the first few thousand.
             constexpr std::size_t kPreviewMax = 4000;
             const std::vector<EntityId> shown(
-                ids.begin(),
-                ids.begin() + static_cast<std::ptrdiff_t>(std::min(ids.size(), kPreviewMax)));
+                moving.begin(),
+                moving.begin() + static_cast<std::ptrdiff_t>(std::min(moving.size(), kPreviewMax)));
             for (auto& [id, e] : stretchWith(shown, c - b, nullptr))
                 geom::buildDisplay(ctx.doc(), e, dc, out);
         };
@@ -545,7 +565,7 @@ public:
             co_return;
         std::string err;
         std::size_t n = 0;
-        for (auto& [id, e] : stretchWith(ids, delta, &err)) {
+        for (auto& [id, e] : stretchWith(moving, delta, &err)) {
             Entity moved = std::move(e);
             if (ctx.tx().modify(id, [&](Entity& tgt) { tgt.data = std::move(moved.data); }))
                 ++n;

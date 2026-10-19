@@ -8,7 +8,7 @@ namespace {
 bool drawsAsMask(const Document& doc, const Entity& e) {
     DisplayList d;
     geom::buildDisplay(doc, e, geom::DisplayContext{}, d);
-    if (d.items.size() != 1)
+    if (d.items.empty())
         return false;
     const auto* f = std::get_if<DisplayFill>(&d.items[0]);
     return f && isBackgroundColor(f->style.color);
@@ -50,4 +50,37 @@ TEST_CASE("WIPEOUT Polyline and Remove switch an existing closed polyline") {
     REQUIRE(f.host.run("WIPEOUT", {"Remove"}).finished);
     CHECK_FALSE(f.doc.find(id)->common.wipeout);
     CHECK_FALSE(drawsAsMask(f.doc, *f.doc.find(id)));
+}
+
+TEST_CASE("WIPEOUTFRAME shows, hides or screen-only shows the outline, and is undoable") {
+    Fixture f;
+    REQUIRE(f.host.run("WIPEOUT", {"Rectangle", "0,0", "40,20"}).finished);
+    const Entity& e = *f.entities()[0];
+    auto items = [&] {
+        DisplayList d;
+        geom::buildDisplay(f.doc, e, geom::DisplayContext{}, d);
+        return d;
+    };
+    // The default shows and plots the frame: the mask, then the outline above it.
+    DisplayList d = items();
+    REQUIRE(d.items.size() == 2);
+    const auto* frame = std::get_if<DisplayPolyline>(&d.items[1]);
+    REQUIRE(frame);
+    CHECK(frame->closed);
+    CHECK_FALSE(frame->style.noPlot);
+    CHECK(frame->pts.size() == 4);
+
+    REQUIRE(f.host.run("WIPEOUTFRAME", {"2"}).finished);
+    d = items();
+    REQUIRE(d.items.size() == 2);
+    CHECK(std::get<DisplayPolyline>(d.items[1]).style.noPlot);
+
+    REQUIRE(f.host.run("WIPEOUTFRAME", {"0"}).finished);
+    CHECK(items().items.size() == 1);
+    CHECK(drawsAsMask(f.doc, e));
+
+    f.host.undo();  // back to 2
+    CHECK(items().items.size() == 2);
+    f.host.undo();  // back to the default
+    CHECK(wipeoutFrameMode(f.doc.header()) == 1);
 }

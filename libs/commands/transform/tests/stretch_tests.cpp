@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
+
 #include "common.h"
 
 using namespace tbtest;
@@ -141,4 +143,36 @@ TEST_CASE("STRETCH moves the fit points of a fit-only spline inside the window")
     CHECK(near(s.fit[0], {0, 0}));
     CHECK(near(s.fit[1], {30, 20}));
     CHECK(near(s.fit[2], {65, 20}));
+}
+
+TEST_CASE("performance: STRETCH of 100k lines in a crossing window is one undo step and its preview is light") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    {
+        auto tx = f.doc.begin("setup");
+        for (int i = 0; i < 100000; ++i)
+            ids.push_back(
+                tx.add(Entity{{}, LineData{{double(i % 500), double(i / 500)}, {double(i % 500) + 0.5, double(i / 500) + 0.5}}})
+                    .value());
+        (void)tx.commit();
+    }
+    // The window holds the right-hand ends of the lines in columns 0..249, so half the lines move.
+    f.host.run("STRETCH", {"-1,-1", "249.7,201", "0,0"});
+    f.host.runner().pointerMoved(cmd::RawInput{{1, 1}, {1, 1}, 1});
+    REQUIRE_FALSE(f.host.preview().items.empty());
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 2; i < 42; ++i)
+        f.host.runner().pointerMoved(cmd::RawInput{{double(i), 1}, {double(i), 1}, 1});
+    const double previewMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() /
+        40;
+    f.host.feed({"10,10"});
+    MESSAGE("preview per move: " << previewMs << " ms");
+    CHECK(previewMs < 15);
+    CHECK_FALSE(f.host.runner().active());
+    CHECK(near(get<LineData>(f.doc, ids[0]).a, {10, 10}));
+    CHECK(near(get<LineData>(f.doc, ids[499]).b, {499.5, 0.5}));  // outside the window
+    CHECK(f.host.undo());
+    CHECK(near(get<LineData>(f.doc, ids[0]).a, {0, 0}));
+    CHECK_FALSE(f.host.undoStack().canUndo());
 }

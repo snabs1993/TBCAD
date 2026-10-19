@@ -1210,6 +1210,52 @@ TEST_CASE("layout tabs: add, switch, rename, delete and back to Model") {
     CHECK_FALSE(h.core().inPaperSpace());
 }
 
+TEST_CASE("layout tabs: copy and move from the right-click menu") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    for (const char* n : {"One", "Two"}) {
+        REQUIRE(h.click("+", "##layouttabs"));
+        h.frame(3);
+        CHECK(h.enterText("##n", n, "Popup"));
+        h.frame(5);
+    }
+    auto order = [&] {
+        std::string s;
+        for (const auto& n : h.core().layoutNames())
+            s += n + ",";
+        return s;
+    };
+    CHECK(order() == "One,Two,");
+    REQUIRE(h.rightClick("Two", "##layouttabs"));
+    h.frame(2);
+    REQUIRE(h.click("Move left", "Popup"));
+    h.frame(5);
+    CHECK(order() == "Two,One,");
+    REQUIRE(h.rightClick("Two", "##layouttabs"));
+    h.frame(2);
+    REQUIRE(h.click("Copy", "Popup"));
+    h.frame(5);
+    CHECK(h.core().layoutNames().size() == 3);
+    CHECK(h.has("Two (2)", "##layouttabs"));
+}
+
+TEST_CASE("drawing tabs: Ctrl+Tab and Ctrl+Shift+Tab switch") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    run(h, "LINE 0,0 100,0");
+    h.core().pressEscape();
+    h.core().newDocument();
+    h.frame(3);
+    REQUIRE(h.core().documentCount() == 2);
+    CHECK(h.core().activeDocument() == 1);
+    h.key(ImGuiKey_Tab, true, true);
+    h.frame(3);
+    CHECK(h.core().activeDocument() == 0);
+    h.key(ImGuiKey_Tab, true);
+    h.frame(3);
+    CHECK(h.core().activeDocument() == 1);
+}
+
 TEST_CASE("grips: click-move a vertex, and the hover menu adds a vertex") {
     Harness h(1920, 1080);
     h.core().setSetting("drafting.osnap", "0");

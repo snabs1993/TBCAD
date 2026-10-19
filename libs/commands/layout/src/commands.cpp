@@ -101,7 +101,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions menu;
-        menu.keywords = {"New", "Copy", "Delete", "Rename", "Paper", "Set", "List", "Template"};
+        menu.keywords = {"New", "Copy", "Delete", "Rename", "Move", "Paper", "Set", "List", "Template"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Layout", menu);
         if (choice.status == Status::Cancel)
@@ -192,6 +192,22 @@ public:
             report(ctx, r, "Renamed to \"" + nn.text + "\".");
             if (r && lower(currentLayout(ctx.host(), ctx.doc())) == lower(named.text))
                 ctx.host().setSetting("layout.current", nn.text);
+        } else if (kw == "Move") {
+            const auto all = layout::layouts(ctx.doc());
+            std::size_t at = 0;
+            for (std::size_t i = 0; i < all.size(); ++i)
+                if (lower(all[i].name) == lower(named.text))
+                    at = i;
+            cmd::IntOptions io;
+            io.defaultValue = static_cast<long long>(at) + 1;
+            auto pos = co_await ctx.getInteger(
+                "Place in the tab order (1-" + std::to_string(all.size()) + ")", io);
+            if (!pos.ok())
+                co_return;
+            report(ctx,
+                   layout::moveLayout(ctx.tx(), named.text,
+                                      static_cast<std::size_t>(std::max<long long>(1, pos.value) - 1)),
+                   "Layout \"" + named.text + "\" moved.");
         } else if (kw == "Paper") {
             cmd::StringOptions po;
             po.defaultValue = layout::findLayout(ctx.doc(), named.text)->paperName;
@@ -230,9 +246,39 @@ public:
     }
 
 private:
+    // The layer of `dst` with the same name path as `layer` of `src`, created when missing.
+    static LayerId matchLayer(cmd::CommandContext& ctx, const Document& src, LayerId layer) {
+        std::vector<const Layer*> chain;  // the layer first, then its parents
+        for (const Layer* l = src.layer(layer); l && chain.size() < 16;
+             l = l->parent.value ? src.layer(l->parent) : nullptr)
+            chain.push_back(l);
+        if (chain.empty())
+            return {};
+        LayerId parent{};
+        for (std::size_t i = chain.size(); i-- > 0;) {
+            const Layer* have = parent.value ? ctx.doc().layerByName(parent, chain[i]->name)
+                                             : ctx.doc().layerByName(chain[i]->name);
+            if (!have) {
+                Layer row;
+                row.name = chain[i]->name;
+                row.parent = parent;
+                row.color = chain[i]->color;
+                row.description = chain[i]->description;
+                auto made = ctx.tx().addLayer(row);
+                if (!made)
+                    return {};
+                parent = made.value();
+            } else {
+                parent = have->id;
+            }
+        }
+        return parent;
+    }
+
     // LAYOUT Template: brings a layout (paper, sheet objects and viewports) from a drawing file
     // (.tbcad or .dxf) into this drawing. Layers, styles and blocks the sheet uses are matched by
-    // name and created when missing; layers frozen per viewport are not carried over.
+    // name and created when missing; layers frozen per viewport are matched by name (path for
+    // sub-layers) and created when missing.
     static cmd::Task fromTemplate(cmd::CommandContext& ctx) {
         auto f = co_await ctx.getString("Drawing file with the layout (.tbcad or .dxf)");
         if (!f.ok())
@@ -330,6 +376,11 @@ private:
                 (void)layout::setViewportOn(ctx.tx(), name, id.value(), false);
             if (v.locked)
                 (void)layout::setViewportLocked(ctx.tx(), name, id.value(), true);
+            for (LayerId fz : v.frozen) {
+                const LayerId mapped = matchLayer(ctx, *src, fz);
+                if (mapped.value != 0)
+                    (void)layout::setViewportLayerFrozen(ctx.tx(), name, id.value(), mapped, true);
+            }
         }
         ctx.host().setSetting("layout.current", name);
         ctx.host().setSetting("layout.show", name);

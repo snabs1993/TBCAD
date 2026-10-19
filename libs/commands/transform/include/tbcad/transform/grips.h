@@ -60,8 +60,12 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
 struct HotGrips {
     std::vector<EntityId> order{};
     std::vector<std::vector<int>> indices{};
+    std::vector<std::vector<Vec2>> from{};  // where each of those grips sits now
 };
-HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot);
+// `warm` are other grips picked with Shift: when the hot grip is one of them, they all move
+// with it by the same displacement.
+HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot,
+                    const std::vector<Vec2>& warm = {});
 // As stretchResults, for at most `limit` entities (a preview of a huge selection shows the first
 // few thousand).
 std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, const HotGrips& set,
@@ -78,6 +82,12 @@ std::optional<Transform2> modeTransform(GripMode mode, Vec2 base, Vec2 hotPos, V
 // Position of the grip a running GRIPEDIT edits (drawn red); empty when none. UI thread only.
 void setHotGrip(std::optional<Vec2> pos);
 std::optional<Vec2> hotGrip();
+
+// Grips picked with Shift (drawn red like the hot one): clicking one of them drags them all.
+// Picking a picked grip again lets it go. Cleared when a drag ends. UI thread only.
+void toggleWarmGrip(Vec2 pos);
+const std::vector<Vec2>& warmGrips();
+void clearWarmGrips();
 
 // The command line the UI runs when the user clicks at `world` with grips showing: `GRIPEDIT x,y`
 // (plus `Copy` when `copy`), or empty when no grip of `ids` lies within `apertureMm`.

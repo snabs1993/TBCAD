@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdio>
 
 #include "tbcad/transform/grip_menu.h"
@@ -21,14 +22,28 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Stretch", "STRETCH", "modify.stretch", "");
 
     // A click on a grip of the selection starts GRIPEDIT; Ctrl makes it a copy.
-    ui.addIdleClickHook([](ui::PanelContext& ctx, Vec2 world, double aperture, bool /*shift*/,
+    ui.addIdleClickHook([](ui::PanelContext& ctx, Vec2 world, double aperture, bool shift,
                            bool ctrlKey) {
+        if (!ctx.selection || ctx.selection->empty())
+            clearWarmGrips();  // nothing selected: nothing stays picked
         if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty() || !ctx.runCommand)
             return false;
+        // Shift picks grips without dragging: clicking one of the picked grips then drags them
+        // all by the same amount.
+        if (shift) {
+            const auto& grips = cachedGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
+            if (const Grip* g = hitGrip(grips, world, aperture * kGripReach)) {
+                toggleWarmGrip(g->pos);
+                return true;
+            }
+            return false;
+        }
         std::string line = gripClickCommand(*ctx.doc, *ctx.selection, world, aperture * kGripReach,
                                             gripLimit(*ctx.host), ctrlKey);
-        if (line.empty())
+        if (line.empty()) {
+            clearWarmGrips();
             return false;
+        }
         ctx.runCommand(line);
         return true;
     });
@@ -81,8 +96,13 @@ void registerUi(ui::UiRegistry& ui) {
             if (++drawn > kMaxDrawn)
                 break;
             Rgba colour{38, 120, 255, 255};
+            const auto& warm = warmGrips();
             if (hot && distance(g.pos, *hot) < 1e-9)
                 colour = Rgba{255, 50, 50, 255};
+            else if (!warm.empty() && std::any_of(warm.begin(), warm.end(), [&](Vec2 w) {
+                         return distance(g.pos, w) < 1e-9;
+                     }))
+                colour = Rgba{255, 50, 50, 255};  // picked with Shift
             else if (hover && hover == &g)
                 colour = Rgba{255, 105, 180, 255};
             overlay.marker(render::Space::World, g.pos, render::MarkerKind::Square, 8.0, colour,

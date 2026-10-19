@@ -16,6 +16,8 @@ namespace tbcad::underlay {
 struct PdfOptions {
     int page = 1;             // 1-based
     double fadePercent = 50;  // 0 = original colours, 90 = nearly the neutral grey
+    int contrast = 50;        // 0..100, 50 = the colours as they are (as for pictures)
+    bool monochrome = false;  // every stroke in one grey tone (by luminance), before the fade
     std::size_t maxVertices = 4'000'000;
 };
 
@@ -47,7 +49,7 @@ Result<std::unique_ptr<Document>> importPdfFile(const std::filesystem::path& fil
 // Number of pages (0 on error).
 Result<int> pdfPageCount(const std::filesystem::path& file);
 
-// "file.pdf#page=2,fade=60": the options part of a stored underlay path. `file` is what comes
+// "file.pdf#page=2,fade=60,contrast=70,mono=1": the options part of a stored underlay path. `file` is what comes
 // before the '#'. Unknown keys are ignored; a stored path without a valid spec is returned whole.
 struct Spec {
     std::string file{};

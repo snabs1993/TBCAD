@@ -516,15 +516,24 @@ void buildDisplayItems(const Document& doc, const Entity& e, const DisplayContex
                 // A mask: filled with the background colour, no outline.
                 DisplayList outline;
                 polylineDisplay(pl, tol, resolveStyle(doc, e, ctx), outline);
+                const int frame = wipeoutFrameMode(doc.header());
+                std::vector<DisplayItem> frames;
                 for (auto& item : outline.items) {
                     if (auto* line = std::get_if<DisplayPolyline>(&item)) {
                         DisplayFill fill;
-                        fill.rings.push_back(std::move(line->pts));
+                        fill.rings.push_back(line->pts);
                         fill.style = line->style;
                         fill.style.color = kBackgroundColor;
                         out.items.push_back(std::move(fill));
+                        if (frame != 0) {  // the outline, above the mask
+                            line->closed = true;
+                            line->style.noPlot = frame == 2;
+                            frames.push_back(std::move(*line));
+                        }
                     }
                 }
+                for (DisplayItem& f : frames)
+                    out.items.push_back(std::move(f));
                 return;
             }
             polylineDisplay(pl, tol, resolveStyle(doc, e, ctx), out);
