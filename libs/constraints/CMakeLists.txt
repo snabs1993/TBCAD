@@ -6,7 +6,7 @@ tbcad_add_library(constraints
     src/solver.cpp
     src/params.cpp
     src/autoconstrain.cpp
-  DEPENDS tbcad::core tbcad::expr)
+  DEPENDS tbcad::core tbcad::geom tbcad::expr)
 
 tbcad_add_tests(constraints
   SOURCES
