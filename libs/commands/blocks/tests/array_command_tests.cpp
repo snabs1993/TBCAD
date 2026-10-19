@@ -315,8 +315,9 @@ TEST_CASE("ARRAYEDIT options: Columns with Total, Angle between, Divide and Meas
         f.host->run("ARRAY", {"R", "Rows", "2", "Columns", "2", "Spacing", "5", "5", ""});
         EntityId arr = f.modelSpace()[0];
         const std::size_t steps = f.host->undoStack().undoCount();
-        REQUIRE(f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "C", "5", "Total", "100",
-                                          "R", "3", "", ""})
+        REQUIRE(f.host
+                    ->run("ARRAYEDIT",
+                          {cmd::ScriptItem::pick(arr), "C", "5", "Total", "100", "R", "3", "", ""})
                     .finished);
         const ArrayInfo& a = *onlyInsert(f)->array;
         CHECK(a.columns == 5);
@@ -351,9 +352,10 @@ TEST_CASE("ARRAYEDIT options: Columns with Total, Angle between, Divide and Meas
             if (entityAs<InsertData>(*f.doc.find(id)))
                 arr = id;
         // Measure keeps the spacing Divide gave (20 / 4 = 5), then Items asks for it
-        REQUIRE(f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "M", "Measure", "I", "2",
-                                          "3", ""})
-                    .finished);
+        REQUIRE(
+            f.host
+                ->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "M", "Measure", "I", "2", "3", ""})
+                .finished);
         const InsertData* ins = nullptr;
         f.doc.forEachEntity([&](const Entity& e) {
             if (const auto* i = entityAs<InsertData>(e))
@@ -414,7 +416,42 @@ TEST_CASE("array grips change the count and spacing of rectangular and polar arr
         CHECK(entityAs<InsertData>(fill.value())->array->fillAngle == doctest::Approx(kPi));
         auto step = geom::moveGrip(e, 1, {0, 10});  // 90 between 4 items: 270 filled
         REQUIRE(step.ok());
-        CHECK(entityAs<InsertData>(step.value())->array->fillAngle ==
-              doctest::Approx(3 * kPi / 2));
+        CHECK(entityAs<InsertData>(step.value())->array->fillAngle == doctest::Approx(3 * kPi / 2));
+    }
+}
+
+TEST_CASE(
+    "ARRAY polar Between sets the angle between items, rectangular COUnt asks columns then rows") {
+    {
+        Fixture f;
+        EntityId c = f.addCircle(10, 0, 1);
+        f.host->setSelection({c});
+        // 4 items 30 degrees apart: fill 90
+        auto r = f.host->run("ARRAY", {"PO", "0,0", "Items", "4", "Between", "30", "As", ""});
+        CHECK(r.finished);
+        REQUIRE(f.modelSpace().size() == 4);
+        bool last = false;
+        for (EntityId id : f.modelSpace())
+            last |= near(entityAs<CircleData>(*f.doc.find(id))->center, {0, 10}, 1e-9);
+        CHECK(last);
+    }
+    {
+        // 90 degrees apart with 4 items goes round once: a full circle
+        Fixture f;
+        EntityId c = f.addCircle(10, 0, 1);
+        f.host->setSelection({c});
+        f.host->run("ARRAY", {"PO", "0,0", "Items", "4", "Between", "90", "As", ""});
+        REQUIRE(f.modelSpace().size() == 4);
+        bool left = false;
+        for (EntityId id : f.modelSpace())
+            left |= near(entityAs<CircleData>(*f.doc.find(id))->center, {-10, 0}, 1e-9);
+        CHECK(left);
+    }
+    {
+        Fixture f;
+        EntityId c = f.addCircle(0, 0, 1);
+        f.host->setSelection({c});
+        f.host->run("ARRAY", {"R", "COU", "5", "2", "As", ""});
+        CHECK(f.modelSpace().size() == 10);
     }
 }
