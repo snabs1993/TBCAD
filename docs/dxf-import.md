@@ -75,8 +75,12 @@ definitions), the TBCAD entities produced and the records dropped.
   flip, polyline/hatch coordinates are mirrored, the rotation of text is `pi - r`, an INSERT gets
   `rotation = -r` and `scale.x = -sx`, an ELLIPSE keeps its centre and axis (they are in world
   coordinates) but its parameters run the other way. Text and MText can only be placed correctly,
-  not mirrored (one info line `dxf.reader.mirrored_text`). Any other extrusion is a tilted 3D plane:
-  the entity is skipped with `dxf.reader.extrusion_3d`.
+  not mirrored (one info line `dxf.reader.mirrored_text`). A normal within a few degrees of Z is
+  treated as flat, and one with |nz| >= 0.9 goes through the arbitrary axis algorithm. A plane
+  tilted further is drawn as seen from above: circles and arcs become ellipses (or a straight
+  polyline when the plane is vertical), an ELLIPSE gets its projected axes, and an LWPOLYLINE is
+  projected with its bulges cut into short segments; one info line `dxf.reader.extrusion_3d` counts
+  them. Other entity types in such a plane are still skipped with a warning of the same code.
 * **Units.** `$INSUNITS` is converted with the usual factors (inch 25.4, foot 304.8, metre 1000,
   ...). Unitless (0) or missing: the numbers are taken as millimetres and an info line says so.
   When a factor other than 1 is applied an info line names it. Every length is scaled: coordinates,
