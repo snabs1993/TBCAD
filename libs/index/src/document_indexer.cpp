@@ -199,26 +199,16 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
         other_.count = n;
         other_.valid = big && key;
     };
-    // A large edit (an import, a paste of thousands) is cheaper as one bulk load.
-    if (n > 1000 && n * 2 > index_.size()) {
-        rebuildKeeping(&changes, big && key);
+    // A large edit (an import, a paste of thousands, a quarter of the drawing moved, scaled or
+    // erased) is cheaper as one bulk load: the changed boxes are measured on all cores, the others
+    // kept, and the undo swaps trees. Updating a quarter of the entries one by one (SCALE of 33,000
+    // of 74,000 objects) took twice as long, and taking many out condenses the tree again and
+    // again.
+    if (big) {
+        rebuildKeeping(&changes, key != nullptr);
         remember();
         other_.indexSize = index_.size();
         return;
-    }
-    // Taking out many entries one by one condenses the tree again and again (several times the
-    // cost of putting them in), so a quarter of the index going away is also a rebuild.
-    if (n > 1000 && n * 4 > index_.size()) {
-        std::size_t gone = 0;
-        for (const EntityChange& c : changes.entities)
-            if (!changes.after(c))
-                ++gone;
-        if (gone * 4 > index_.size()) {
-            rebuildKeeping(&changes, big && key);
-            remember();
-            other_.indexSize = index_.size();
-            return;
-        }
     }
     std::shared_ptr<void> run = (batch_ && n > 8) ? batch_() : nullptr;
     for (const EntityChange& c : changes.entities)
