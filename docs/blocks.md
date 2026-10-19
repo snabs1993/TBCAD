@@ -63,7 +63,7 @@ An associative array is one Insert whose `InsertData::array` (`ArrayInfo`) says 
 where the block is shown. `ARRAY` moves the selected objects into a new anonymous block (`*A1`, `*A2`,
 ...) with base point (0, 0) and inserts it at the origin, so the array geometry (centre, path, spacing)
 is in block coordinates and moving, rotating or scaling the Insert moves the whole array. The
-parameters stay editable with `ARRAYEDIT`; the source objects can be edited by changing the block.
+parameters stay editable with `ARRAYEDIT`; the source objects can be edited by changing the block. In DXF an array is written as one INSERT per item, each with a `TBCAD_ARRAY` note (array id, item index, and on item 0 the parameters); TBCAD fuses the items of a whole array back into one associative array on import, other programs just see the inserts. An array whose items are incomplete (some deleted) or that lies inside a block definition stays plain inserts.
 
 `blocks::arrayItemTransforms(info)` gives the block-space transform of every item (item 0 included):
 rectangular and polar items are translations or rotations about the centre (item 0 is the identity);
@@ -128,7 +128,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 | `BPARAM` | | Block name, type (`Linear`, `Rotation`, `Flip`, `Visibility`), parameter name, then its points (and limits, or the states with the window of objects each shows). |
 | `BACTION` | | Block name, parameter, action (`Stretch`/`Move`/`Scale` for linear), the stretch frame (stretch only) and the window of objects it changes. |
 | `DYNSET` | | Pick a dynamic Insert, name a parameter and give its value (distance, angle, `Yes`/`No`, or a state name). |
-| `ARRAYEDIT` | | Pick an associative array and change its rows, columns and spacing (rectangular), or its count and angle or distance (polar, path). One undo step. |
+| `ARRAYEDIT` | | Pick an associative array and change its rows, columns and spacing (rectangular), or its count and angle or distance (polar, path), and whether items rotate (polar) or align to the path (path). One undo step. |
 
 Defaults are 3 x 4 for rectangular arrays (spacing 1.5 x the selection's size) and 6 items over
 360 degrees for polar ones, so pressing Enter all the way gives a sensible result.

@@ -34,4 +34,76 @@ TEST_CASE("constraint and parameter text survive a DXF round trip") {
     CHECK(custom.at("tbcad.parameters") == params);
 }
 
+TEST_CASE("associative arrays are fused back into one insert after a DXF round trip") {
+    Document doc;
+    ArrayInfo rect;
+    rect.rows = 2;
+    rect.columns = 3;
+    rect.rowSpacing = 4;
+    rect.columnSpacing = 6;
+    ArrayInfo polar;
+    polar.kind = ArrayInfo::Kind::Polar;
+    polar.center = {0, 0};
+    polar.count = 5;
+    polar.fillAngle = 3;
+    ArrayInfo path;
+    path.kind = ArrayInfo::Kind::Path;
+    path.path = {PolyVertex{{0, 0}, 0, 0, 0}, PolyVertex{{20, 0}, 0, 0, 0},
+                 PolyVertex{{20, 10}, 0, 0, 0}};
+    path.count = 4;
+    path.pathSpacing = 0;
+    {
+        auto tx = doc.begin("arrays");
+        BlockDef def;
+        def.name = "*A1";
+        def.anonymous = true;
+        BlockId b = tx.addBlock(def).value();
+        Entity c;
+        c.data = CircleData{{10, 0}, 1};
+        REQUIRE(tx.add(std::move(c), b).ok());
+        for (const ArrayInfo* a : {&rect, &polar, &path}) {
+            InsertData ins;
+            ins.block = b;
+            ins.position = {a == &rect ? 0.0 : a == &polar ? 100.0 : 200.0, 0};
+            ins.array = *a;
+            Entity e;
+            e.data = Indirect<InsertData>(ins);
+            REQUIRE(tx.add(std::move(e)).ok());
+        }
+        tx.commit();
+    }
+    Report r1;
+    auto out = exportDxf(doc, ExportOptions{}, r1);
+    REQUIRE(out.ok());
+    Report r2;
+    auto in = importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, r2);
+    REQUIRE(in.ok());
+    std::vector<InsertData> got;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            got.push_back(*i);
+    });
+    REQUIRE(got.size() == 3);
+    int arrays = 0;
+    for (const InsertData& i : got) {
+        REQUIRE(i.array);
+        ++arrays;
+        if (i.array->kind == ArrayInfo::Kind::Rectangular) {
+            CHECK(i.array->rows == 2);
+            CHECK(i.array->columns == 3);
+            CHECK(i.array->columnSpacing == doctest::Approx(6));
+            CHECK(i.position.x == doctest::Approx(0));
+        } else if (i.array->kind == ArrayInfo::Kind::Polar) {
+            CHECK(i.array->count == 5);
+            CHECK(i.array->fillAngle == doctest::Approx(3));
+            CHECK(i.position.x == doctest::Approx(100));
+        } else {
+            CHECK(i.array->path.size() == 3);
+            CHECK(i.array->count == 4);
+            CHECK(i.position.x == doctest::Approx(200));
+        }
+    }
+    CHECK(arrays == 3);
+}
+
 }  // namespace tbcad::dxf

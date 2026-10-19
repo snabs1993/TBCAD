@@ -207,3 +207,43 @@ TEST_CASE("ARRAY with every default is one Enter and the spacing has no long dec
     CHECK(ins->array->columnSpacing == doctest::Approx(22));
     CHECK(ins->array->rowSpacing == doctest::Approx(22));
 }
+
+TEST_CASE("ARRAYEDIT changes count, fill angle and rotation of a polar array, with undo") {
+    Fixture f;
+    EntityId c = f.addCircle(10, 0, 1);
+    f.host->setSelection({c});
+    f.host->run("ARRAYPOLAR", {"0,0", "Items", "4", ""});
+    EntityId arr = f.modelSpace()[0];
+    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "6", "180", "No"});
+    const InsertData* ins = onlyInsert(f);
+    REQUIRE(ins);
+    REQUIRE(ins->array);
+    CHECK(ins->array->count == 6);
+    CHECK(ins->array->fillAngle == doctest::Approx(kPi));
+    CHECK(!ins->array->rotateItems);
+    CHECK(f.host->undo());
+    CHECK(onlyInsert(f)->array->count == 4);
+    CHECK(onlyInsert(f)->array->rotateItems);
+}
+
+TEST_CASE("ARRAYEDIT changes the count and alignment of a path array") {
+    Fixture f;
+    EntityId c = f.addCircle(0, 0, 1);
+    EntityId path = f.addLine(0, 0, 20, 0);
+    f.host->setSelection({c});
+    f.host->run("ARRAYPATH", {cmd::ScriptItem::pick(path), "", "", "5", "N"});
+    EntityId arr;
+    for (EntityId id : f.modelSpace())
+        if (entityAs<InsertData>(*f.doc.find(id)))
+            arr = id;
+    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "3", "", "Yes"});
+    const InsertData* ins = nullptr;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    REQUIRE(ins->array);
+    CHECK(ins->array->count == 3);
+    CHECK(ins->array->rotateItems);
+}

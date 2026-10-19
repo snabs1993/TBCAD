@@ -572,6 +572,17 @@ public:
                     co_return;
                 a.pathSpacing = sp.value;
             }
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Yes", "No"};
+            ko.defaultKeyword = a.rotateItems ? "Yes" : "No";
+            auto rot = co_await ctx.getKeyword(
+                std::string(a.kind == ArrayInfo::Kind::Polar ? "Rotate items as they are arrayed"
+                                                             : "Align items to the path") +
+                    " [Yes/No] <" + (a.rotateItems ? "Yes" : "No") + ">",
+                ko);
+            if (!rot.ok())
+                co_return;
+            a.rotateItems = rot.keyword == "Yes";
         }
         (void)ctx.tx().modify(picked.id, [&](Entity& ent) {
             if (auto* d = entityAs<InsertData>(ent))

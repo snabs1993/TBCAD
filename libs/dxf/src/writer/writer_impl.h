@@ -299,6 +299,10 @@ private:
     };
     std::vector<PendingDict> pendingDicts_{};
     const EntityCommon* curCommon_ = nullptr;  // the entity writeEntity is on
+    // Set while the items of an associative array are written: the TBCAD_ARRAY XDATA that lets
+    // the importer fuse them into one array again.
+    std::vector<DataItem> arrayTag_{};
+    int nextArrayId_ = 1;
     std::uint64_t layoutModel_ = 0, layoutPaper_ = 0;
     std::vector<BlockId> userBlocks_{};  // blocks written to BLOCKS, in id order
 

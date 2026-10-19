@@ -985,12 +985,34 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         const bool uniform = std::abs(std::abs(d.scale.x) - std::abs(d.scale.y)) < 1e-9;
         const double flip = d.scale.x * d.scale.y < 0 ? -1.0 : 1.0;
         bool noted = false;
-        for (const Transform2& item : blocks::arrayItemTransforms(*d.array)) {
+        const auto items = blocks::arrayItemTransforms(*d.array);
+        const int arrayId = nextArrayId_++;
+        std::size_t index = 0;
+        for (const Transform2& item : items) {
             InsertData one = d;
             one.array.reset();
             one.position = (inst * item).apply(base);
             const double phi = std::atan2(item.m10, item.m00);
             one.rotation = d.rotation + flip * phi;
+            auto text = [](int code, std::string s) {
+                DataItem it;
+                it.code = code;
+                it.text = std::move(s);
+                return it;
+            };
+            arrayTag_.clear();
+            arrayTag_.push_back(text(1000, "a=" + std::to_string(arrayId) +
+                                               ";n=" + std::to_string(items.size()) +
+                                               ";i=" + std::to_string(index)));
+            if (index == 0) {
+                char buf[160];
+                std::snprintf(buf, sizeof buf, "dpos=%.17g,%.17g;drot=%.17g",
+                              d.position.x - one.position.x, d.position.y - one.position.y,
+                              d.rotation - one.rotation);
+                arrayTag_.push_back(text(1000, buf));
+                arrayTag_.push_back(text(1000, "info=" + blocks::arrayToText(*d.array)));
+            }
+            ++index;
             if (!uniform && std::abs(phi) > 1e-9 && !noted) {
                 noted = true;
                 downgrade("INSERT",
@@ -998,6 +1020,7 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                           "approximate placement");
             }
             writeInsert(p, one, owner);
+            arrayTag_.clear();
         }
         return;
     }
@@ -1030,6 +1053,11 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         downgrade("INSERT",
                   "a clipping boundary is kept only in TBCAD XDATA; other programs "
                   "show the whole block");
+    }
+    if (!arrayTag_.empty()) {
+        o.raw(1001, "TBCAD_ARRAY");
+        for (const DataItem& it : arrayTag_)
+            o.str(it.code, it.text);
     }
     if (curCommon_)
         writeExtXdata(*curCommon_);

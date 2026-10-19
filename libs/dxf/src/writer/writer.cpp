@@ -828,6 +828,8 @@ std::string Writer::tablesSection() {
             for (const XdataApp& app : e.common.ext.get().xdata)
                 if (!app.app.empty() && app.app != "ACAD" && app.app != "TBCAD")
                     extApps.insert(app.app);
+            if (const auto* ins = entityAs<InsertData>(e); ins && ins->array)
+                extApps.insert("TBCAD_ARRAY");
         });
         bool layerNotes = false;
         for (const auto& [lid, layer] : doc_.layers())
