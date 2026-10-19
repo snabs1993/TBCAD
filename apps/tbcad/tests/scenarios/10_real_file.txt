@@ -1,0 +1,99 @@
+# The daily steps on a real drawing, timed: set TBCAD_SCENARIO_DWG to a .dwg or .dxf (read in
+# place, never written) and optionally TBCAD_SCENARIO_CTB to a plot style table. Without
+# TBCAD_SCENARIO_DWG the scenario is skipped. Outputs go to the --capture-out folder.
+@require-env TBCAD_SCENARIO_DWG
+FILEDIA
+0
+@step open
+OPEN
+{env:TBCAD_SCENARIO_DWG}
+@wait
+@count opened
+@zoom-all
+@shot {stem:TBCAD_SCENARIO_DWG}-1-opened.png
+@step layout viewport zoom and pan
+@enter-viewport
+@skip-step-unless layout
+ZOOM
+2X
+PAN
+0,0
+100,0
+PSPACE
+@expect viewport-zoomed 2
+@shot {stem:TBCAD_SCENARIO_DWG}-2-layout.png
+U
+@expect same opened
+@step back to model space
+@clickitem Model
+@expect layout Model
+@step select all
+SELECTALL
+@wait
+@step move all and undo
+MOVE
+0,0
+100,0
+@wait
+@expect same opened
+U
+@wait
+@expect same opened
+@step hatch pick
+HPLAYER
+.
+@hatch-pick
+@skip-step-unless pick
+HATCH
+Pattern
+SOLID
+{pick}
+
+@expect added opened 1
+@shot {stem:TBCAD_SCENARIO_DWG}-3-hatch.png
+U
+@expect same opened
+@step edit text
+@select-kind text|mtext 0
+@skip-step-unless picked
+TEXTEDIT
+TBCAD scenario edit
+@expect text 1 TBCAD scenario edit
+@shot {stem:TBCAD_SCENARIO_DWG}-4-text.png
+U
+@expect text 0 TBCAD scenario edit
+@expect same opened
+@step plot layout to PDF
+PLOT
+Style
+{env:TBCAD_SCENARIO_CTB|monochrome.ctb}
+Layout
+{layout|Model}
+Format
+Pdf
+Export
+{out}/{stem:TBCAD_SCENARIO_DWG}-plot.pdf
+@expect file {stem:TBCAD_SCENARIO_DWG}-plot.pdf
+@step save as tbcad, close and reopen
+SAVEAS
+{out}/{stem:TBCAD_SCENARIO_DWG}-resaved.tbcad
+@wait
+@expect file {stem:TBCAD_SCENARIO_DWG}-resaved.tbcad
+CLOSE
+@wait
+OPEN
+{out}/{stem:TBCAD_SCENARIO_DWG}-resaved.tbcad
+@wait
+@expect same opened
+@step save as dxf, close and reopen
+SAVEAS
+{out}/{stem:TBCAD_SCENARIO_DWG}-resaved.dxf
+@wait
+@expect file {stem:TBCAD_SCENARIO_DWG}-resaved.dxf
+CLOSE
+@wait
+OPEN
+{out}/{stem:TBCAD_SCENARIO_DWG}-resaved.dxf
+@wait
+@expect same opened
+@shot {stem:TBCAD_SCENARIO_DWG}-5-reopened.png

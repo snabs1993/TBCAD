@@ -410,6 +410,9 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     session_->sync->rebuildAll(tileSize);
     step("  build scene");
     scene_.setSelected(selection_);
+    // PLOT follows what is on screen: a layout named for the drawing shown before means nothing
+    // here.
+    settings_.setString("plot.layout", activeLayout_);
     ++generation_;
     lastTessellatedFor_ = camera_;
     notifySessionHooks();
