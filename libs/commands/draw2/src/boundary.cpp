@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <cmath>
+#include <deque>
 
 #include "commands.h"
 #include "common.h"
+#include "tbcad/blocks/blocks.h"
 #include "tbcad/hatch/hatch.h"
 
 namespace tbcad::draw2::detail {
@@ -23,16 +25,29 @@ bool hasCurves(const Entity& e) {
     }
 }
 
-// Visible model-space entities that can bound a region and meet `window`.
-std::vector<hatch::Candidate> candidatesIn(cmd::CommandContext& ctx, const BBox2& window) {
+// Visible model-space entities that can bound a region and meet `window`. A block reference
+// offers the visible curves it is made of, copied into `store` (cleared first) in world space.
+std::vector<hatch::Candidate> candidatesIn(cmd::CommandContext& ctx, const BBox2& window,
+                                           std::deque<Entity>& store) {
     const Document& doc = ctx.doc();
+    store.clear();
     std::vector<hatch::Candidate> out;
     auto consider = [&](const Entity& e) {
-        if (!e.common.visible || !hasCurves(e) || doc.ownerBlock(e.common.id))
+        const bool insert = kind(e) == EntityKind::Insert;
+        if (!e.common.visible || !(insert || hasCurves(e)) || doc.ownerBlock(e.common.id))
             return;
         if (!doc.effective(e.common).live())
             return;
-        out.push_back({e.common.id, &e});
+        if (!insert) {
+            out.push_back({e.common.id, &e});
+            return;
+        }
+        for (Entity& part : blocks::snapGeometry(doc, e)) {
+            if (!hasCurves(part) || !doc.effective(part.common).live())
+                continue;
+            store.push_back(std::move(part));
+            out.push_back({e.common.id, &store.back()});
+        }
     };
     if (auto ids = ctx.host().entitiesInWindow(window)) {
         for (EntityId id : *ids)
@@ -41,7 +56,9 @@ std::vector<hatch::Candidate> candidatesIn(cmd::CommandContext& ctx, const BBox2
         return out;
     }
     doc.forEachEntity([&](const Entity& e) {
-        if (window.intersects(geom::bounds(e)))
+        const BBox2 box = kind(e) == EntityKind::Insert ? blocks::insertBounds(doc, e)
+                                                        : geom::bounds(e);
+        if (window.intersects(box))
             consider(e);
     });
     return out;
@@ -180,10 +197,11 @@ public:
             // other by less than that are joined.
             hatch::BoundaryOptions bo;
             bo.gapTolerance = std::max(0.0, settingNumber(ctx, "hatch.gap", 0));
-            auto found =
-                hatch::findBoundaryNear([&](const BBox2& w) { return candidatesIn(ctx, w); },
-                                        searchWindow(ctx), p.point, bo)
-                    .result;
+            std::deque<Entity> store;
+            auto found = hatch::findBoundaryNear(
+                             [&](const BBox2& w) { return candidatesIn(ctx, w, store); },
+                             searchWindow(ctx), p.point, bo)
+                             .result;
             if (!found) {
                 ctx.message(found.error().message);
                 continue;

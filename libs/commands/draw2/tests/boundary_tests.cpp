@@ -247,3 +247,50 @@ TEST_CASE("BOUNDARY closes gaps with the HATCH gap tolerance, among 50 000 nearb
     MESSAGE("50k objects with a gap: BOUNDARY pick " << ms << " ms");
     CHECK(ms < 3000);
 }
+
+namespace {
+BlockId addBlock(Document& doc, const char* name, const std::vector<EntityData>& content) {
+    Transaction tx = doc.begin("block");
+    BlockId id = tx.addBlock(BlockDef{.name = name}).value();
+    for (const EntityData& d : content)
+        REQUIRE(tx.add(Entity{{}, d}, id));
+    tx.commit();
+    return id;
+}
+}  // namespace
+
+// Walls drawn as lines, the doorway closed by a door block: the block's lines bound the room,
+// rotated and scaled, through a nested block, but not when the door leaf sits on a layer that
+// is off.
+TEST_CASE("BOUNDARY closes a room through the lines inside a block reference") {
+    Fixture f;
+    f.addEntity(LineData{{0, 0}, {100, 0}});
+    f.addEntity(LineData{{100, 0}, {100, 60}});
+    f.addEntity(LineData{{100, 60}, {0, 60}});
+    f.addEntity(LineData{{0, 60}, {0, 40}});
+    f.addEntity(LineData{{0, 20}, {0, 0}});
+    CHECK(f.host.run("BO", {"50,30", ""}).finished);
+    REQUIRE(f.entities().size() == 5);  // the doorway leaks
+
+    // The leaf: a 5 long line scaled 4 inside a DOOR block, which is inserted at (0, 20) rotated
+    // a quarter turn, so it runs from (0, 20) to (0, 40).
+    const BlockId leaf = addBlock(f.doc, "LEAF", {LineData{{0, 0}, {5, 0}}});
+    const BlockId door = addBlock(f.doc, "DOOR", {Indirect<InsertData>(InsertData{leaf, {0, 0}, {4, 4}, 0})});
+    f.addEntity(Indirect<InsertData>(InsertData{door, {0, 20}, {1, 1}, kPi / 2}));
+    const std::size_t before = f.entities().size();  // block contents count too
+    CHECK(f.host.run("BO", {"50,30", ""}).finished);
+    REQUIRE(f.entities().size() == before + 1);
+    const auto& pl = as<PolylineData>(f.entities().back());
+    CHECK(pl.closed);
+    CHECK(close(std::abs(geom::signedArea(pl)), 6000, 1e-6));
+
+    // The leaf on a layer that is off no longer closes the room.
+    REQUIRE(f.host.undo());  // drop the outline just made, which would bound the room itself
+    Transaction tx = f.doc.begin("layer");
+    const LayerId off = tx.addLayer(Layer{.name = "DOOR", .on = false}).value();
+    const EntityId leafLine = f.doc.block(leaf)->entities.front();
+    REQUIRE(tx.modify(leafLine, [&](Entity& e) { e.common.layer = off; }));
+    tx.commit();
+    CHECK(f.host.run("BO", {"50,30", ""}).finished);
+    CHECK(f.entities().size() == before);
+}
