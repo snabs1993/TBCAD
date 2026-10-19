@@ -1,6 +1,7 @@
 #include "tbcad/transform/apply.h"
 
 #include <cmath>
+#include <cstdint>
 
 #include "tbcad/geom/geom.h"
 
@@ -85,10 +86,27 @@ void buildPreview(const Document& doc, std::span<const EntityId> ids, const Tran
     geom::DisplayContext dc;
     dc.pixelSizeMm = pixelSizeMm > 0 ? pixelSizeMm : 1;
     if (ids.size() > kPreviewEntityLimit) {
+        // The cursor moves many times over the same selection: measure it once.
+        struct Cached {
+            std::uint64_t uid = 0, revision = 0;
+            std::uint64_t hash = 0;
+            std::size_t size = 0;
+            BBox2 box{};
+        };
+        thread_local Cached cache;
+        std::uint64_t hash = 1469598103934665603ULL;  // FNV-1a over the ids: the same selection
+        for (EntityId id : ids)
+            hash = (hash ^ id.value) * 1099511628211ULL;
         BBox2 box;
-        for (EntityId id : ids) {
-            if (const Entity* e = doc.find(id))
-                box.merge(geom::bounds(*e, doc));
+        if (cache.uid == doc.uid() && cache.revision == doc.revision() && cache.hash == hash &&
+            cache.size == ids.size()) {
+            box = cache.box;
+        } else {
+            for (EntityId id : ids) {
+                if (const Entity* e = doc.find(id))
+                    box.merge(geom::bounds(*e, doc));
+            }
+            cache = {doc.uid(), doc.revision(), hash, ids.size(), box};
         }
         if (box.empty())
             return;

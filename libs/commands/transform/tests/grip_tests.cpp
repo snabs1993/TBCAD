@@ -306,3 +306,27 @@ TEST_CASE("grips of a very big selection are found quickly") {
     REQUIRE(g);
     CHECK(near(g->pos, {25000.0, 0.0}));
 }
+
+TEST_CASE("performance: the MOVE preview of 100k selected lines does not re-measure them per move") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    {
+        auto tx = f.doc.begin("setup");
+        for (int i = 0; i < 100000; ++i)
+            ids.push_back(tx.add(Entity{{}, LineData{{double(i), 0}, {double(i), 1}}}).value());
+        tx.commit();
+    }
+    f.host.setSelection(ids);
+    f.host.run("MOVE", {"0,0"});
+    // The first move measures the selection; the next ones reuse that.
+    f.host.runner().pointerMoved(cmd::RawInput{{1, 1}, {1, 1}, 1});
+    REQUIRE_FALSE(f.host.preview().items.empty());
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 2; i < 52; ++i)
+        f.host.runner().pointerMoved(cmd::RawInput{{double(i), 1}, {double(i), 1}, 1});
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    MESSAGE("50 preview moves over 100k lines: " << ms << " ms");
+    CHECK(ms / 50 < 4);  // measured: 0.8 ms per move cached, 8 ms when every move measures
+    f.host.feed({cmd::ScriptItem::esc()});
+}
