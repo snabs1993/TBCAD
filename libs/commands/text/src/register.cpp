@@ -24,6 +24,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeTxt2MTxtCommand());
     (void)registry.add(makeTCountCommand());
     (void)registry.add(makeSpellCommand());
+    (void)registry.add(makeMTextFormatCommand());
     (void)registry.add(makeTxtExpCommand());
     (void)registry.add(makeArcTextCommand());
     (void)registry.add(makeTextAlignCommand());

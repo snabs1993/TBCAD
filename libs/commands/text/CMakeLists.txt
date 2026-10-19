@@ -11,6 +11,7 @@ set(_textcmd_sources
   src/textalign.cpp
   src/tcount.cpp
   src/spell.cpp
+  src/mtext_format.cpp
   src/mtext_explode.cpp
   src/register.cpp)
 
