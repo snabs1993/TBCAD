@@ -411,6 +411,19 @@ int App::runCapture() {
         const Vec2 p = core_->camera().worldToScreen({wx, wy});
         return ImVec2(static_cast<float>(r.x + p.x / s), static_cast<float>(r.y + p.y / s));
     };
+    // Two clicks where the mouse is, read as a double click however long the frames between them
+    // take: a big drawing can draw slower than the double-click time, a user's hand cannot.
+    const auto doubleClickHere = [&] {
+        const float keep = io.MouseDoubleClickTime;
+        io.MouseDoubleClickTime = 3600.0f;
+        for (int k = 0; k < 2; ++k) {
+            io.AddMouseButtonEvent(0, true);
+            captureFrames(1);
+            io.AddMouseButtonEvent(0, false);
+            captureFrames(1);
+        }
+        io.MouseDoubleClickTime = keep;
+    };
     // "Enter", "Escape", "F8", "A", "ctrl+Z", "shift+Tab", ...
     const auto pressKey = [&](std::string name) {
         bool ctrl = false, shift = false;
@@ -901,12 +914,7 @@ int App::runCapture() {
         } else if (op == "dblclickw" && (ss >> a >> b)) {
             const ImVec2 w = toWindow(a, b);
             moveTo(w.x, w.y);
-            for (int k = 0; k < 2; ++k) {
-                io.AddMouseButtonEvent(0, true);
-                captureFrames(1);
-                io.AddMouseButtonEvent(0, false);
-                captureFrames(1);
-            }
+            doubleClickHere();
             captureFrames(2);
         } else if (op == "dragw" && (ss >> a >> b >> c >> d)) {
             const ImVec2 w0 = toWindow(a, b), w1 = toWindow(c, d);
@@ -947,7 +955,9 @@ int App::runCapture() {
                 const float y = (it->min.y + it->max.y) * 0.5f;
                 const int button = op == "rclickitem" ? 1 : 0;
                 moveTo(x, y);
-                for (int k = op == "dblclickitem" ? 2 : 1; k > 0; --k) {
+                if (op == "dblclickitem") {
+                    doubleClickHere();
+                } else {
                     io.AddMouseButtonEvent(button, true);
                     captureFrames(1);
                     io.AddMouseButtonEvent(button, false);
@@ -1068,19 +1078,23 @@ int App::runCapture() {
                 ++attempts;
                 const ImVec2 w = toWindow(at.x, at.y);
                 moveTo(w.x, w.y);
-                for (int k = 0; k < 2; ++k) {
-                    io.AddMouseButtonEvent(0, true);
-                    captureFrames(1);
-                    io.AddMouseButtonEvent(0, false);
-                    captureFrames(1);
-                }
+                doubleClickHere();
                 settle();
-                if (core_->inPaperSpace())
-                    std::printf("enter-viewport: a double click at %.6g,%.6g stayed on the sheet\n",
-                                at.x, at.y);
+                if (core_->inPaperSpace()) {
+                    const ViewportRect& r = gui_->lastViewportRect();
+                    const bool inside =
+                        w.x >= r.x && w.y >= r.y && w.x < r.x + r.w && w.y < r.y + r.h;
+                    std::printf("enter-viewport: a double click at %.6g,%.6g stayed on the sheet "
+                                "(window %.0f,%.0f, drawing area %.0f,%.0f %.0fx%.0f%s)\n",
+                                at.x, at.y, w.x, w.y, r.x, r.y, r.w, r.h,
+                                inside ? "" : ", outside it");
+                }
             }
-            std::printf("enter-viewport: layout \"%s\" viewport %d at 1:%.6g%s\n", name.c_str(),
-                        pick->id, pick->scaleN, pick->locked ? " (locked)" : "");
+            std::printf("enter-viewport: layout \"%s\" viewport %d at 1:%.6g%s, on the sheet "
+                        "%.6g,%.6g to %.6g,%.6g%s\n",
+                        name.c_str(), pick->id, pick->scaleN, pick->locked ? " (locked)" : "",
+                        pick->paper.min.x, pick->paper.min.y, pick->paper.max.x, pick->paper.max.y,
+                        pick->clip.empty() ? "" : " (clipped)");
             if (core_->inPaperSpace()) {
                 std::printf("enter-viewport: the double click did not enter it\n");
                 ++failed, ++failedSinceShot;

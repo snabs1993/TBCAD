@@ -64,6 +64,9 @@ ImU32 col(Rgba c) {
 // of a few hundred thousand objects would cost a frame each.
 constexpr std::size_t kBigDrawing = 50000;
 constexpr std::size_t kPreviewPrims = 30000;
+// The renderer may use 16-bit indices: the preview stops adding primitives at this many vertices
+// in the window's draw list.
+constexpr int kPreviewVertices = 55000;
 
 void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
     const auto& lay = sheet.layout;
@@ -92,6 +95,8 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
                                  ? (sheet.prims.size() + kPreviewPrims - 1) / kPreviewPrims
                                  : 1;
     for (std::size_t pi = 0; pi < sheet.prims.size(); pi += step) {
+        if (dl->VtxBuffer.Size > kPreviewVertices)
+            break;
         const auto& prim = sheet.prims[pi];
         if (const auto* p = std::get_if<exportlib::PlotPath>(&prim)) {
             pts.clear();
@@ -134,6 +139,12 @@ void draw(ui::PanelContext& pc) {
     PanelState& st = state();
     if (!pc.doc || !pc.host)
         return;
+    // Opened by Modify in the Page Setup Manager: show that setup's options, ready to save back.
+    if (auto n = pc.host->setting("tmp.plot.setupName"); n && !n->empty()) {
+        st.setupName = *n;
+        pc.host->setSetting("tmp.plot.setupName", "");
+        st.reloadWhenIdle = true;
+    }
     if (st.reloadWhenIdle && !pc.commandActive) {
         st.loaded = false;
         st.reloadWhenIdle = false;
@@ -465,10 +476,224 @@ void draw(ui::PanelContext& pc) {
         ImGui::TextWrapped("%s", st.message.c_str());
 }
 
+// Runs the lines one after another, as typed: a command and the answers to its prompts (names
+// with spaces stay whole this way).
+void runLines(ui::PanelContext& pc, std::initializer_list<std::string> lines) {
+    if (!pc.runCommand)
+        return;
+    if (pc.cancelCommand)
+        pc.cancelCommand();
+    for (const std::string& l : lines)
+        pc.runCommand(l);
+}
+
+// PAGESETUPPANEL: the page setups of the drawing, which sheet uses which, and the buttons to make
+// one current, create, change, rename, delete and import them.
+struct SetupState {
+    std::string selected{};
+    std::string nameInput{};
+    std::string importInput{};
+    enum class Ask { None, New, Rename, Import } ask = Ask::None;
+};
+
+void drawPageSetups(ui::PanelContext& pc) {
+    static SetupState st;
+    if (!pc.doc || !pc.host)
+        return;
+    const std::string sheet = plotLayout(*pc.host);
+    const std::string where = sheet.empty() ? std::string("Model") : sheet;
+    std::string inUse = layout::modelPageSetup(*pc.doc);
+    if (!sheet.empty())
+        if (auto l = layout::findLayout(*pc.doc, sheet))
+            inUse = l->pageSetup;
+    ImGui::Text("Current: %s", where.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("page setup: %s", inUse.empty() ? "<none>" : inUse.c_str());
+
+    const auto all = layout::pageSetups(*pc.doc);
+    if (st.selected.empty() || !layout::findPageSetup(*pc.doc, st.selected))
+        st.selected = !inUse.empty() ? inUse : all.empty() ? std::string() : all.front().name;
+    const float listH = std::max(120.0f, ImGui::GetContentRegionAvail().y - 150.0f);
+    if (ImGui::BeginTable("##setups", 5,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+                              ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable,
+                          ImVec2(0, listH))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Name");
+        ImGui::TableSetupColumn("Paper");
+        ImGui::TableSetupColumn("Scale");
+        ImGui::TableSetupColumn("Plot style");
+        ImGui::TableSetupColumn("Used by");
+        ImGui::TableHeadersRow();
+        const std::string model = layout::modelPageSetup(*pc.doc);
+        const auto sheets = layout::layouts(*pc.doc);
+        for (const auto& ps : all) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            const std::string label = (ps.name == inUse ? "* " : "  ") + ps.name;
+            if (ImGui::Selectable(label.c_str(), st.selected == ps.name,
+                                  ImGuiSelectableFlags_SpanAllColumns |
+                                      ImGuiSelectableFlags_AllowDoubleClick)) {
+                st.selected = ps.name;
+                if (ImGui::IsMouseDoubleClicked(0))  // double click: make it current
+                    runLines(pc, {"PAGESETUP", "Assign", ps.name, where, "PAGESETUP", "Apply",
+                                  ps.name});
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted((ps.settings.paperName +
+                                    (ps.settings.landscape ? " landscape" : " portrait"))
+                                       .c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(scaleText(ps.settings).c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(ps.styleName.empty() ? "none" : ps.styleName.c_str());
+            ImGui::TableNextColumn();
+            std::string users = ps.name == model ? "Model" : "";
+            for (const auto& l : sheets)
+                if (l.pageSetup == ps.name)
+                    users += (users.empty() ? "" : ", ") + l.name;
+            ImGui::TextUnformatted(users.c_str());
+        }
+        ImGui::EndTable();
+    }
+    if (all.empty())
+        ImGui::TextDisabled("No page setups yet. New saves the current plot options under a name.");
+
+    const bool have = !st.selected.empty();
+    ImGui::BeginDisabled(!have);
+    if (ImGui::Button("Set current"))
+        runLines(pc, {"PAGESETUP", "Assign", st.selected, where, "PAGESETUP", "Apply",
+                      st.selected});
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Use this page setup for %s", where.c_str());
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("New...")) {
+        st.ask = SetupState::Ask::New;
+        st.nameInput = "Setup" + std::to_string(all.size() + 1);
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!have);
+    if (ImGui::Button("Modify...")) {
+        // The plot options take this setup's values; the Plot panel edits them and saves them
+        // back under the same name.
+        runLines(pc, {"PAGESETUP", "Apply", st.selected});
+        pc.host->setSetting("tmp.plot.setupName", st.selected);
+        pc.host->openPanel("plot");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Rename...")) {
+        st.ask = SetupState::Ask::Rename;
+        st.nameInput = st.selected;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete"))
+        runLines(pc, {"PAGESETUP", "Delete", st.selected});
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Import..."))
+        st.ask = SetupState::Ask::Import;
+
+    if (st.ask == SetupState::Ask::New || st.ask == SetupState::Ask::Rename) {
+        ImGui::SetNextItemWidth(220);
+        const bool enter = ImGui::InputText(st.ask == SetupState::Ask::New ? "New name" : "Rename to",
+                                            &st.nameInput, ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if ((ImGui::Button("OK") || enter) && !st.nameInput.empty()) {
+            if (st.ask == SetupState::Ask::New)
+                runLines(pc, {"PAGESETUP", "Save", st.nameInput});
+            else
+                runLines(pc, {"PAGESETUP", "Rename", st.selected, st.nameInput});
+            st.selected = st.nameInput;
+            st.ask = SetupState::Ask::None;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            st.ask = SetupState::Ask::None;
+    } else if (st.ask == SetupState::Ask::Import) {
+        ImGui::SetNextItemWidth(-140);
+        const bool enter = ImGui::InputTextWithHint("##importfile", "Drawing (.tbcad or .dxf)",
+                                                    &st.importInput,
+                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        if ((ImGui::Button("Import") || enter) && !st.importInput.empty()) {
+            std::string f = st.importInput;
+            if (f.size() >= 2 && f.front() == '"' && f.back() == '"')
+                f = f.substr(1, f.size() - 2);
+            runLines(pc, {"PAGESETUP", "Import", f});
+            st.ask = SetupState::Ask::None;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            st.ask = SetupState::Ask::None;
+    }
+    if (const auto p = layout::findPageSetup(*pc.doc, st.selected)) {
+        const auto& ss = p->settings;
+        ImGui::SeparatorText("Details");
+        ImGui::Text("%s, %s, scale %s, margins %.4g mm", ss.paperName.c_str(),
+                    ss.landscape ? "landscape" : "portrait", scaleText(ss).c_str(), ss.marginMm);
+        ImGui::Text("Plot style %s, %s", p->styleName.empty() ? "none" : p->styleName.c_str(),
+                    ss.lineweights ? "with lineweights" : "no lineweights");
+    }
+}
+
+// PREVIEW: the sheet as it will plot, as large as the panel allows.
+void drawPlotPreview(ui::PanelContext& pc) {
+    static exportlib::PlotSheet sheet;
+    static std::string error;
+    static std::string builtKey;
+    static std::uint64_t builtRevision = ~0ull;
+    static bool refresh = false;
+    if (!pc.doc || !pc.host)
+        return;
+    PlotSettings s = loadSettings(*pc.host);
+    const BBox2 view = s.area == PlotArea::Display ? viewWindow(*pc.host) : BBox2{};
+    if (s.area == PlotArea::Display)
+        s.window = view;
+    const std::string key = keyOf(s, view) + "|" + plotLayout(*pc.host) + "|" + plotStyleName(*pc.host);
+    bool build = key != builtKey || pc.doc->revision() != builtRevision;
+    // A big drawing takes seconds to build: only on request, as in the Plot panel.
+    if (build && pc.doc->entityCount() > kBigDrawing && !refresh) {
+        ImGui::TextDisabled(builtRevision == ~0ull
+                                ? "Large drawing: the preview takes a moment to build."
+                                : "Large drawing: the preview is not updated while you work.");
+        ImGui::SameLine();
+        if (ImGui::Button(builtRevision == ~0ull ? "Build preview" : "Update preview"))
+            refresh = true;
+        build = false;
+        if (builtRevision == ~0ull)
+            return;
+    }
+    if (build) {
+        refresh = false;
+        auto built = buildPlotSheet(*pc.doc, *pc.host, s);
+        error = built ? std::string() : built.error().message;
+        sheet = built ? std::move(built.value()) : exportlib::PlotSheet{};
+        builtKey = key;
+        builtRevision = pc.doc->revision();
+    }
+    const std::string where = plotLayout(*pc.host).empty() ? "Model" : plotLayout(*pc.host);
+    ImGui::Text("%s: %s %s, %s", where.c_str(), s.paperName.c_str(),
+                s.landscape ? "landscape" : "portrait", scaleText(s).c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Plot..."))
+        pc.host->openPanel("plot");
+    if (!error.empty()) {
+        ImGui::TextDisabled("%s", error.c_str());
+        return;
+    }
+    if (sheet.layout.overflows)
+        ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f}, "The drawing is larger than the paper.");
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    drawPreview(sheet, {avail.x, std::max(120.0f, avail.y)});
+}
+
 }  // namespace
 
 void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("plot", "Plot", draw, false);
+    registry.addPanel("pagesetup", "Page Setup Manager", drawPageSetups, false);
+    registry.addPanel("plotpreview", "Plot Preview", drawPlotPreview, false);
     registerStylePanel(registry);
 }
 

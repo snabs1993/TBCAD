@@ -11,7 +11,8 @@ void registerUi(ui::UiRegistry& registry) {
     registry.addMenuItem("File/Export SVG", "EXPORTSVG", "file.export_svg");
     registry.addMenuItem("File/Export PNG", "EXPORTPNG", "file.export_png");
     registry.addMenuItem("File/Export JPEG", "EXPORTJPG", "file.export_jpg");
-    registry.addMenuItem("File/Page Setup...", "PAGESETUP", "file.page_setup");
+    registry.addMenuItem("File/Page Setup Manager...", "PAGESETUPPANEL", "file.page_setup");
+    registry.addMenuItem("File/Plot Preview", "PREVIEW", "file.plot_preview");
 #ifdef TBCAD_PLOT_WITH_IMGUI
     registerPlotPanel(registry);
 #endif

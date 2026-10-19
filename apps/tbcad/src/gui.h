@@ -92,7 +92,7 @@ public:
 
 private:
     enum class Pending { None, Close, Exit };
-    enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf };
+    enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf, LayoutTemplate };
 
     void shortcuts();
     void menuBar();
@@ -157,6 +157,7 @@ private:
     void history(bool redo);
     void historyPending();
     void doImportDxf();
+    void doLayoutFromTemplate();  // LAYOUT Template with a file chosen in a dialog
     void doExportDxf();
     void dxfCommandWithPath(const char* command, const std::filesystem::path& path);
     void doSave();
@@ -298,6 +299,8 @@ private:
     ViewportRect lastRect_{};
     std::string layoutDialog_{};  // "new" / "rename", while its name popup is open
     std::string layoutTarget_{};
+    std::string shownLayout_{};     // the layout on screen last frame ("" = Model)
+    std::string previousLayout_{};  // the one shown before it
     float layoutScrollDelta_ = 0.0f;  // pending sideways scroll of the tab strip
     float layoutScrollMax_ = 0.0f;
     std::string layoutFollowed_{};  // the tab the strip last scrolled to

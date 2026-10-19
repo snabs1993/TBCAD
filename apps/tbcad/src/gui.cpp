@@ -455,6 +455,23 @@ void Gui::doImportDxf() {
     browser_.open(FileBrowser::Mode::Open, start, "", ".dxf");
 }
 
+void Gui::doLayoutFromTemplate() {
+    static const std::vector<platform::FileFilter> filters = {
+        {"Drawings and templates", "*.tbcad;*.dxf"}};
+    if (platform::nativeDialogsAvailable()) {
+        if (auto p = platform::showOpenDialog(nativeHandle(), filters, "Layout from template",
+                                              dialogFolder())) {
+            rememberFolder(*p);
+            core_.submitText("LAYOUT");
+            core_.submitText("Template");
+            core_.submitText(platform::pathToUtf8(*p));
+        }
+        return;
+    }
+    browserPurpose_ = BrowserPurpose::LayoutTemplate;
+    browser_.open(FileBrowser::Mode::Open, core_.templateFolder(), "", ".tbcad;.dxf");
+}
+
 void Gui::doExportDxf() {
     static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
     std::filesystem::path stem = core_.hasFile() ? core_.file() : std::filesystem::path{"Drawing1"};
@@ -1224,6 +1241,13 @@ void Gui::layoutTabs(const ViewportRect& rect) {
     const std::vector<std::string> names = core_.layoutNames();
     const bool readOnly = !core_.readOnlyBanner().empty();
     std::string openPopup;
+    bool templatePending = false;
+    // The layout shown before this one, for "Activate previous layout".
+    if (core_.activeLayout() != shownLayout_) {
+        if (!shownLayout_.empty())
+            previousLayout_ = shownLayout_;
+        shownLayout_ = core_.activeLayout();
+    }
     ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y + rect.h));
     ImGui::SetNextWindowSize(ImVec2(rect.w, h));
     if (ImGui::Begin("##layouttabs", nullptr, flags)) {
@@ -1283,6 +1307,8 @@ void Gui::layoutTabs(const ViewportRect& rect) {
             if (ImGui::BeginPopupContextItem("##tabmenu")) {
                 if (guarded("New layout..."))
                     openPopup = "new";
+                if (guarded("From template..."))
+                    templatePending = true;
                 if (!name.empty()) {
                     if (guarded("Rename..."))
                         openPopup = "rename";
@@ -1295,7 +1321,11 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                         run({"LAYOUT", "Move", name, std::to_string(at + 2)});
                     if (ImGui::MenuItem("Page setup...")) {
                         core_.setActiveLayout(name);
-                        run({"PAGESETUP"});
+                        openPanel("pagesetup");
+                    }
+                    if (ImGui::MenuItem("Plot...")) {
+                        core_.setActiveLayout(name);
+                        run({"PLOTPANEL"});
                     }
                     if (guarded("Delete")) {
                         if (core_.activeLayout() == name)
@@ -1304,6 +1334,14 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                     }
                     layoutTarget_ = name;
                 }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Activate Model tab", nullptr, false, core_.inPaperSpace()))
+                    core_.setActiveLayout("");
+                if (ImGui::MenuItem("Activate previous layout", nullptr, false,
+                                    !previousLayout_.empty() &&
+                                        std::find(names.begin(), names.end(), previousLayout_) !=
+                                            names.end()))
+                    core_.setActiveLayout(previousLayout_);
                 ImGui::EndPopup();
             }
             ImGui::PopID();
@@ -1382,6 +1420,8 @@ void Gui::layoutTabs(const ViewportRect& rect) {
     }
     ImGui::End();
 
+    if (templatePending)
+        doLayoutFromTemplate();
     if (!openPopup.empty()) {
         layoutDialog_ = openPopup;
         if (openPopup == "new") {
@@ -3957,6 +3997,10 @@ void Gui::dialogs() {
                 doOpenPath(platform::pathToUtf8(*path));
             } else if (browserPurpose_ == BrowserPurpose::ImportDxf) {
                 dxfCommandWithPath("IMPORTDXF", *path);
+            } else if (browserPurpose_ == BrowserPurpose::LayoutTemplate) {
+                core_.submitText("LAYOUT");
+                core_.submitText("Template");
+                core_.submitText(platform::pathToUtf8(*path));
             } else if (browserPurpose_ == BrowserPurpose::ExportDxf) {
                 dxfCommandWithPath("EXPORTDXF", *path);
             } else {

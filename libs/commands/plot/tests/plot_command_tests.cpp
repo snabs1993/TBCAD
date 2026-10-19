@@ -198,6 +198,9 @@ TEST_CASE("the default file name follows the open drawing - PLOTPANEL opens the 
     CHECK(r.finished);
     REQUIRE(h.panels.size() == 1);
     CHECK(h.panels[0] == "plot");
+    CHECK(h.run("PREVIEW", {}).finished);
+    CHECK(h.run("PAGESETUPPANEL", {}).finished);
+    CHECK(h.panels == std::vector<std::string>{"plot", "plotpreview", "pagesetup"});
 }
 
 TEST_CASE("the Layout option plots a layout at 1:1 instead of model space") {

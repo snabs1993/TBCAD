@@ -218,7 +218,11 @@ struct VpTarget {
 
 VpTarget viewportTarget(const tbcad::ui::PanelContext& ctx) {
     VpTarget t;
-    if (!ctx.host || !ctx.doc || ctx.host->drawingOwner() == BlockId{})
+    if (!ctx.host || !ctx.doc)
+        return t;
+    // In model space: the viewport being edited (entered by a double click), if any.
+    const bool model = ctx.host->drawingOwner() == BlockId{};
+    if (model && !ctx.host->setting("tmp.layout.editing"))
         return t;
     std::string name = ctx.host->setting("layout.current").value_or("");
     auto lay = name.empty() ? std::nullopt : layout::findLayout(*ctx.doc, name);
@@ -229,11 +233,12 @@ VpTarget viewportTarget(const tbcad::ui::PanelContext& ctx) {
         lay = all.front();
     }
     const layout::Viewport* vp = nullptr;
-    const std::string sel = ctx.host->setting("tmp.layout.viewport").value_or("");
+    const std::string sel =
+        ctx.host->setting(model ? "tmp.layout.editing" : "tmp.layout.viewport").value_or("");
     if (const auto colon = sel.find(':');
         colon != std::string::npos && sel.substr(0, colon) == lay->name)
         vp = lay->findViewport(std::atoi(sel.c_str() + colon + 1));
-    if (!vp && lay->viewports.size() == 1)
+    if (!vp && !model && lay->viewports.size() == 1)
         vp = &lay->viewports.front();
     if (!vp)
         return t;

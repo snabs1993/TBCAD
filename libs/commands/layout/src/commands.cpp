@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -391,62 +392,199 @@ private:
     }
 };
 
-// MVIEW: a viewport on the current layout. Corners are typed on the sheet in millimetres.
+// Points of a polygon on the sheet, picked one after another (MVIEW Polygonal, VPCLIP).
+// Leaves fewer than three points when cancelled.
+cmd::Task pickOutline(cmd::CommandContext& ctx, std::vector<Vec2>& outline) {
+    for (;;) {
+        cmd::PointOptions po;
+        if (!outline.empty())
+            po.base = outline.back();
+        if (outline.size() >= 3)
+            po.keywords = {"Close"};
+        po.preview = [&outline](Vec2 cursor, DisplayList& out) {
+            DisplayPolyline pl;
+            pl.pts = outline;
+            pl.pts.push_back(cursor);
+            if (pl.pts.size() >= 3)
+                pl.closed = true;
+            if (pl.pts.size() >= 2)
+                out.items.emplace_back(std::move(pl));
+        };
+        po.allowNone = outline.size() >= 3;
+        const std::string prompt =
+            outline.size() < 3
+                ? "Specify point " + std::to_string(outline.size() + 1) +
+                      " of the outline on the sheet (mm)"
+                : "Specify point " + std::to_string(outline.size() + 1) + " or [Close] <accept " +
+                      std::to_string(outline.size()) + " points>";
+        auto p = co_await ctx.getPoint(prompt, po);
+        if (p.status == Status::Keyword || p.status == Status::None)
+            co_return;
+        if (!p.ok()) {
+            outline.clear();
+            co_return;
+        }
+        outline.push_back(p.point);
+    }
+}
+
+// A closed polyline drawn on the sheet, as an outline (MVIEW Object, VPCLIP Object).
+cmd::Task pickOutlineObject(cmd::CommandContext& ctx, std::vector<Vec2>& outline) {
+    cmd::EntityOptions eo;
+    eo.filter = [](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        return pl && pl->closed && pl->v.size() >= 3;
+    };
+    auto o = co_await ctx.getEntity("Select a closed polyline on the sheet", eo);
+    if (!o.ok())
+        co_return;
+    const Entity* e = ctx.doc().find(o.id);
+    if (const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr)
+        for (const PolyVertex& v : pl->v)
+            outline.push_back(v.p);
+}
+
+BBox2 modelExtents(const Document& doc) {
+    BBox2 box;
+    for (EntityId id : doc.modelSpace())
+        if (const Entity* e = doc.find(id))
+            box.merge(geom::bounds(*e, doc));
+    return box;
+}
+
+// MVIEW: a viewport on the current layout. Corners are typed on the sheet in millimetres, or the
+// viewport fills the sheet inside its margins (Fit), or follows a polygon (Polygonal) or a closed
+// polyline on the sheet (Object). ON / OFF and Lock act on viewports already there.
 class MviewCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "MVIEW"; }
     std::vector<std::string> defaultAliases() const override { return {"MV"}; }
     std::string_view description() const override {
-        return "Add a viewport to the current layout (sheet millimetres)";
+        return "Add a viewport to the current layout, or switch viewports on, off or locked";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         std::string target;
         if (!requireLayout(ctx, target))
             co_return;
-        auto a = co_await ctx.getPoint("Specify first corner on the sheet (mm)");
-        if (!a.ok())
-            co_return;
-        cmd::PointOptions po;
-        po.base = a.point;
-        auto b = co_await ctx.getPoint("Specify opposite corner on the sheet (mm)", po);
-        if (!b.ok())
-            co_return;
-        cmd::StringOptions so;
-        so.defaultValue = "1:100";
-        auto scale = co_await ctx.getString("Viewport scale (1:N)", so);
-        if (!scale.ok())
-            co_return;
-        double n = 0;
-        if (!parseScaleN(scale.text, n)) {
-            ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
+        cmd::PointOptions fo;
+        fo.keywords = {"Fit", "Polygonal", "Object", "ON", "OFF", "Lock"};
+        auto a = co_await ctx.getPoint(
+            "Specify first corner on the sheet (mm) or [Fit/Polygonal/Object/ON/OFF/Lock]", fo);
+        if (a.status == Status::Keyword && (a.keyword == "ON" || a.keyword == "OFF")) {
+            int vpId = 0;
+            bool picked = false;
+            co_await askViewport(ctx, target, vpId, picked);
+            if (picked)
+                report(ctx, layout::setViewportOn(ctx.tx(), target, vpId, a.keyword == "ON"),
+                       "Viewport " + std::to_string(vpId) +
+                           (a.keyword == "ON" ? " is on." : " is off."));
             co_return;
         }
-        cmd::PointOptions co;
-        auto center = co_await ctx.getPoint(
-            "Specify the model point at the viewport centre <centre of the drawing>", co);
-        Vec2 centre{};
-        if (center.status == Status::None) {  // Enter: show the middle of the drawing
-            BBox2 box;
-            for (EntityId id : ctx.doc().modelSpace())
-                if (const Entity* e = ctx.doc().find(id))
-                    box.merge(geom::bounds(*e, ctx.doc()));
-            if (box.empty()) {
-                ctx.message("The drawing is empty: type the model point.");
+        if (a.status == Status::Keyword && a.keyword == "Lock") {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"ON", "OFF"};
+            ko.defaultKeyword = "ON";
+            auto mode = co_await ctx.getKeyword("Viewport view locking [ON/OFF] <ON>", ko);
+            if (!mode.ok())
                 co_return;
+            int vpId = 0;
+            bool picked = false;
+            co_await askViewport(ctx, target, vpId, picked);
+            if (picked) {
+                const bool on = mode.keyword == "ON";
+                report(ctx, layout::setViewportLocked(ctx.tx(), target, vpId, on),
+                       "Viewport " + std::to_string(vpId) + (on ? " is locked." : " is unlocked."));
             }
-            centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
-        } else if (center.ok()) {
-            centre = center.point;
-        } else {
             co_return;
         }
         BBox2 rect;
-        rect.expand(a.point);
-        rect.expand(b.point);
+        std::vector<Vec2> outline;
+        if (a.status == Status::Keyword && a.keyword == "Fit") {
+            const auto lay = layout::findLayout(ctx.doc(), target);
+            if (!lay)
+                co_return;
+            const double m = std::min({kFitMarginMm, lay->widthMm / 4, lay->heightMm / 4});
+            rect.expand({m, m});
+            rect.expand({lay->widthMm - m, lay->heightMm - m});
+        } else if (a.status == Status::Keyword) {
+            if (a.keyword == "Object")
+                co_await pickOutlineObject(ctx, outline);
+            else
+                co_await pickOutline(ctx, outline);
+            if (outline.size() < 3) {
+                ctx.message("A viewport outline needs at least three points.");
+                co_return;
+            }
+            for (Vec2 q : outline)
+                rect.expand(q);
+        } else if (a.ok()) {
+            cmd::PointOptions po;
+            po.base = a.point;
+            auto b = co_await ctx.getPoint("Specify opposite corner on the sheet (mm)", po);
+            if (!b.ok())
+                co_return;
+            rect.expand(a.point);
+            rect.expand(b.point);
+        } else {
+            co_return;
+        }
+
+        // The scale: typed, or Fit to show the whole drawing.
+        cmd::StringOptions so;
+        so.defaultValue = "1:100";
+        auto scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <1:100>", so);
+        if (!scale.ok())
+            co_return;
+        double n = 0;
+        Vec2 centre{};
+        const bool fit = lower(scale.text) == "fit" || lower(scale.text) == "f";
+        if (fit) {
+            const BBox2 box = modelExtents(ctx.doc());
+            if (box.empty() || !(rect.width() > 0) || !(rect.height() > 0)) {
+                ctx.message("The drawing is empty: type a scale.");
+                co_return;
+            }
+            n = std::max(box.width() / rect.width(), box.height() / rect.height());
+            if (!(n > 0))
+                n = 1;
+            centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+        } else {
+            if (!parseScaleN(scale.text, n)) {
+                ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
+                co_return;
+            }
+            cmd::PointOptions co;
+            auto center = co_await ctx.getPoint(
+                "Specify the model point at the viewport centre <centre of the drawing>", co);
+            if (center.status == Status::None) {  // Enter: show the middle of the drawing
+                const BBox2 box = modelExtents(ctx.doc());
+                if (box.empty()) {
+                    ctx.message("The drawing is empty: type the model point.");
+                    co_return;
+                }
+                centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+            } else if (center.ok()) {
+                centre = center.point;
+            } else {
+                co_return;
+            }
+        }
         auto id = layout::addViewport(ctx.tx(), target, rect, centre, n);
-        ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target + "\"."
+        if (id && !outline.empty())
+            if (auto r = layout::setViewportClip(ctx.tx(), target, id.value(), outline); !r)
+                ctx.message(r.error().message);
+        ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target +
+                             "\"" + (fit ? " at 1:" + formatScale(n) : std::string()) + "."
                        : id.error().message);
+    }
+
+private:
+    static constexpr double kFitMarginMm = 10;  // the default plot margin
+    static std::string formatScale(double n) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.4g", n);
+        return buf;
     }
 };
 
@@ -787,52 +925,10 @@ public:
                    "Viewport " + std::to_string(vpId) + " is a rectangle again.");
             co_return;
         }
-        if (mode.keyword == "Object") {
-            cmd::EntityOptions eo;
-            eo.filter = [](const Entity& e) {
-                const auto* pl = entityAs<PolylineData>(e);
-                return pl && pl->closed && pl->v.size() >= 3;
-            };
-            auto o = co_await ctx.getEntity("Select a closed polyline on the sheet", eo);
-            if (!o.ok())
-                co_return;
-            const Entity* e = ctx.doc().find(o.id);
-            const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr;
-            if (!pl)
-                co_return;
-            for (const PolyVertex& v : pl->v)
-                outline.push_back(v.p);
-        } else {
-            for (;;) {
-                cmd::PointOptions po;
-                if (!outline.empty())
-                    po.base = outline.back();
-                if (outline.size() >= 3)
-                    po.keywords = {"Close"};
-                po.preview = [&outline](Vec2 cursor, DisplayList& out) {
-                    DisplayPolyline pl;
-                    pl.pts = outline;
-                    pl.pts.push_back(cursor);
-                    if (pl.pts.size() >= 3)
-                        pl.closed = true;
-                    if (pl.pts.size() >= 2)
-                        out.items.emplace_back(std::move(pl));
-                };
-                po.allowNone = outline.size() >= 3;
-                const std::string prompt =
-                    outline.size() < 3
-                        ? "Specify point " + std::to_string(outline.size() + 1) +
-                              " of the outline on the sheet (mm)"
-                        : "Specify point " + std::to_string(outline.size() + 1) +
-                              " or [Close] <accept " + std::to_string(outline.size()) + " points>";
-                auto p = co_await ctx.getPoint(prompt, po);
-                if (p.status == Status::Keyword || p.status == Status::None)
-                    break;
-                if (!p.ok())
-                    co_return;
-                outline.push_back(p.point);
-            }
-        }
+        if (mode.keyword == "Object")
+            co_await pickOutlineObject(ctx, outline);
+        else
+            co_await pickOutline(ctx, outline);
         if (outline.size() < 3) {
             ctx.message("A clip needs at least three points.");
             co_return;

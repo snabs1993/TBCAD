@@ -2023,6 +2023,29 @@ void AppCore::followLockedViewport() {
     annoSyncRevision_ = session_->doc.revision();
 }
 
+// While a layout viewport is edited from model space, the layers frozen in it are hidden there
+// too, as on the sheet (VPLAYER, the VP Frz column of the Layers panel).
+void AppCore::hideViewportFrozenLayers() {
+    if (!session_)
+        return;
+    const std::string key = editingLayout_.empty()
+                                ? std::string()
+                                : editingLayout_ + ":" + std::to_string(editingViewport_) + ":" +
+                                      std::to_string(session_->doc.revision());
+    if (key == vpHiddenKey_ && session_ == vpHiddenSession_)
+        return;
+    vpHiddenKey_ = key;
+    vpHiddenSession_ = session_;
+    std::unordered_set<LayerId> hidden;
+    if (!editingLayout_.empty())
+        if (const auto lay = layout::findLayout(session_->doc, editingLayout_))
+            if (const layout::Viewport* vp = lay->findViewport(editingViewport_))
+                for (const auto& [id, l] : session_->doc.layers())
+                    if (layout::frozenInViewport(session_->doc, *vp, id))
+                        hidden.insert(id);
+    session_->sync->setExtraHiddenLayers(std::move(hidden));
+}
+
 // ZOOM nXP: sets the scale of the viewport on the sheet (the selected one, else the only one) or
 // of the one being edited from model space to n times paper space, i.e. 1:(1/n).
 void AppCore::applyZoomXp() {
@@ -2142,6 +2165,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             return;
     }
     followLockedViewport();
+    hideViewportFrozenLayers();
     retileIfFragmented();
     {
         // Objects picked so far at "Select objects:" show as selected, so the drafter sees them.
@@ -3020,6 +3044,19 @@ double AppCore::ucsAngle() const {
 std::optional<std::string> AppCore::setting(std::string_view key) const {
     if (key == "document.file")
         return documentFile();
+    // The layout commands work on the sheet on screen, or on the one whose viewport is being
+    // edited from model space.
+    if (key == "layout.current") {
+        if (inPaperSpace())
+            return activeLayout_;
+        if (!editingLayout_.empty())
+            return editingLayout_;
+    }
+    if (key == "tmp.layout.editing")  // "Layout:id" while a viewport is edited from model space
+        return editingLayout_.empty()
+                   ? std::nullopt
+                   : std::optional<std::string>(editingLayout_ + ":" +
+                                                std::to_string(editingViewport_));
     if (key.rfind("tmp.", 0) == 0) {  // hand-over between a command and its dialog; never saved
         auto it = transient_.find(std::string(key));
         return it == transient_.end() ? std::nullopt : std::optional<std::string>(it->second);
