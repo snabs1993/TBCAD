@@ -92,6 +92,19 @@ inline constexpr const char* kAttDispKey = "tbcad.attdisp";
 // QTEXT (QTEXTMODE): text shows as a box (default off).
 inline constexpr const char* kQTextKey = "tbcad.qtext";
 bool quickText(const Header& h);
+// Named plot styles (an .stb table): a layer or an object names the style it plots with; an object's own name wins, "ByLayer" or empty takes the layer's, and a layer without one
+// plots with "Normal". Kept in Header::custom. PSTYLEMODE (colour-dependent or named, DXF
+// $PSTYLEMODE) records which kind of table the drawing was made for; the plot uses whichever kind
+// of table is chosen.
+inline constexpr const char* kPStyleModeKey = "tbcad.pstylemode";
+bool colorDependentPlotStyles(const Header& h);
+void setColorDependentPlotStyles(Header& h, bool on);
+std::string layerPlotStyle(const Header& h, LayerId layer);
+void setLayerPlotStyle(Header& h, LayerId layer, const std::string& name);
+std::string entityPlotStyle(const Header& h, EntityId id);
+void setEntityPlotStyle(Header& h, EntityId id, const std::string& name);
+// The style name an object plots with: its own, else its layer's, else "Normal".
+std::string resolvedPlotStyle(const Header& h, EntityId id, LayerId layer);
 bool fillMode(const Header& h);
 int attDisplay(const Header& h);
 double ceLtScale(const Header& h);

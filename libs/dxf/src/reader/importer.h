@@ -62,6 +62,7 @@ struct LayerRow {
     int transparency = 0;       // percent
     std::string description{};  // AcAecLayerStandard XDATA
     int line = 0;
+    std::string plotStyleHandle{};  // group 390: a plot style name object (named plot styles)
     // TBCAD XDATA
     std::optional<std::string> xParent{};
     std::optional<std::string> xName{};
@@ -114,6 +115,8 @@ private:
     void storeObject(const Record& r);
     void keepObjects();
     void keepHandles();
+    void applyPlotStyles();
+    void readPlotSettings(const Record& r);
     BlockId blockFor(std::string_view dxfName);
     void finish();
     void finishLayouts();
@@ -225,6 +228,10 @@ private:
     std::string objRoot_{};  // handle of the root dictionary
     // (entity id, handle in the source file) of the entities added so far
     std::vector<std::pair<std::uint64_t, std::uint64_t>> srcHandles_{};
+    // Named plot styles: name of each plot style object by handle, and the entities (source
+    // handle) that name one.
+    std::unordered_map<std::string, std::string> plotStyleNames_{};
+    std::vector<std::pair<std::uint64_t, std::string>> entityPlotStyles_{};
     ExtData extOf(const Record& r);
     void resolveExtDictionaries();
     ScaleList annotativeScalesOf(const std::vector<std::pair<std::string, std::string>>& xd);

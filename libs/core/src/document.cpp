@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -2055,6 +2056,69 @@ void setDrawingLimits(Header& h, Vec2 lowerLeft, Vec2 upperRight) {
 
 bool quickText(const Header& h) {
     return customFlag(h, kQTextKey, false);
+}
+
+namespace {
+std::string layerStyleKey(LayerId l) {
+    return "tbcad.pstyle.layer:" + std::to_string(l.value);
+}
+std::string entityStyleKey(EntityId e) {
+    return "tbcad.pstyle.ent:" + std::to_string(e.value);
+}
+std::string customString(const Header& h, const std::string& key) {
+    auto it = h.custom.find(key);
+    return it == h.custom.end() ? std::string() : it->second;
+}
+void setCustomString(Header& h, const std::string& key, const std::string& v) {
+    if (v.empty())
+        h.custom.erase(key);
+    else
+        h.custom[key] = v;
+}
+bool isByLayerName(const std::string& n) {
+    if (n.size() != 7)
+        return false;
+    const char* want = "bylayer";
+    for (std::size_t i = 0; i < 7; ++i)
+        if (std::tolower(static_cast<unsigned char>(n[i])) != want[i])
+            return false;
+    return true;
+}
+}  // namespace
+
+bool colorDependentPlotStyles(const Header& h) {
+    return customFlag(h, kPStyleModeKey, true);
+}
+
+void setColorDependentPlotStyles(Header& h, bool on) {
+    if (on)
+        h.custom.erase(kPStyleModeKey);
+    else
+        h.custom[kPStyleModeKey] = "0";
+}
+
+std::string layerPlotStyle(const Header& h, LayerId layer) {
+    return customString(h, layerStyleKey(layer));
+}
+
+void setLayerPlotStyle(Header& h, LayerId layer, const std::string& name) {
+    setCustomString(h, layerStyleKey(layer), name);
+}
+
+std::string entityPlotStyle(const Header& h, EntityId id) {
+    return customString(h, entityStyleKey(id));
+}
+
+void setEntityPlotStyle(Header& h, EntityId id, const std::string& name) {
+    setCustomString(h, entityStyleKey(id), isByLayerName(name) ? std::string() : name);
+}
+
+std::string resolvedPlotStyle(const Header& h, EntityId id, LayerId layer) {
+    std::string own = entityPlotStyle(h, id);
+    if (!own.empty())
+        return own;
+    std::string byLayer = layerPlotStyle(h, layer);
+    return byLayer.empty() ? "Normal" : byLayer;
 }
 
 bool fillMode(const Header& h) {

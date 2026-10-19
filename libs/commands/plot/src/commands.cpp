@@ -6,6 +6,7 @@
 #include <optional>
 #include <sstream>
 
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
@@ -459,6 +460,15 @@ public:
                 ctx.message(t ? "No plot style table is selected." : t.error().message);
                 co_return;
             }
+            if (t.value()->named) {
+                for (const auto& st : t.value()->styles)
+                    ctx.message("  " + st.name + ": screening " + std::to_string(st.screen) + "%" +
+                                (st.color ? ", own colour" : ", object colour") +
+                                (st.lineweightMm
+                                     ? ", lineweight " + std::to_string(*st.lineweightMm) + " mm"
+                                     : std::string(", object lineweight")));
+                co_return;
+            }
             cmd::IntOptions io;
             io.defaultValue = 7;
             io.min = 1;
@@ -534,7 +544,7 @@ public:
         }
         if (kw == "Import") {
             cmd::StringOptions so;
-            auto file = co_await ctx.getString("Path of the .ctb file to import", so);
+            auto file = co_await ctx.getString("Path of the .ctb or .stb file to import", so);
             if (!file.ok())
                 co_return;
             auto folder = plotStyleFolder(ctx.host());
@@ -587,6 +597,138 @@ public:
     }
 };
 
+// The plot options of a named page setup (PLOTSETTINGS object) of a DXF file.
+layout::PageSetup pageSetupOf(const dxf::PlotSetupRecord& r) {
+    layout::PageSetup p;
+    p.name = r.name;
+    exportlib::PlotSettings& s = p.settings;
+    const double lo = std::min(r.paperWidthMm, r.paperHeightMm);
+    const double hi = std::max(r.paperWidthMm, r.paperHeightMm);
+    s.paperName = "Custom";
+    for (const exportlib::PaperSize& ps : exportlib::paperSizes())
+        if (std::abs(ps.shortMm - lo) < 1.5 && std::abs(ps.longMm - hi) < 1.5) {
+            s.paperName = ps.name;
+            break;
+        }
+    if (s.paperName == "Custom" && lo > 0 && hi > 0) {
+        s.customWidthMm = lo;
+        s.customHeightMm = hi;
+    }
+    // The paper is stored unrotated; a quarter turn swaps its orientation.
+    s.landscape = (r.paperWidthMm >= r.paperHeightMm) == (r.rotation % 2 == 0);
+    if (r.plotType == 4 && r.windowMaxX > r.windowMinX && r.windowMaxY > r.windowMinY) {
+        s.area = exportlib::PlotArea::Window;
+        s.window.expand({r.windowMinX, r.windowMinY});
+        s.window.expand({r.windowMaxX, r.windowMaxY});
+    }
+    s.fitToPaper = r.scaleType == 0 || !(r.scaleNum > 0) || !(r.scaleDen > 0);
+    if (!s.fitToPaper)
+        s.scaleN = r.scaleDen / r.scaleNum;
+    s.centerOnPaper = r.centered;
+    s.offsetMm = {r.originX, r.originY};
+    s.lineweights = r.lineweights;
+    std::string style = r.styleSheet;
+    if (style.empty() || style == "None")
+        style = "none";
+    p.styleName = style;
+    return p;
+}
+
+// PSTYLEMODE: colour-dependent (CTB) or named (STB) plot styles for this drawing.
+class PStyleModeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PSTYLEMODE"; }
+    std::string_view description() const override {
+        return "Plot with colour-dependent or named plot styles";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool colour = colorDependentPlotStyles(ctx.doc().header());
+        KeywordOptions ko;
+        ko.keywords = {"Colour", "Named"};
+        ko.defaultKeyword = colour ? "Colour" : "Named";
+        auto r = co_await ctx.getKeyword(std::string("Plot styles [Colour-dependent/Named] <") +
+                                             (colour ? "Colour" : "Named") + ">",
+                                         ko);
+        if (!r.ok())
+            co_return;
+        const bool wantColour = r.keyword == "Colour";
+        if (wantColour == colour) {
+            ctx.message(colour ? "Colour-dependent plot styles stay on."
+                               : "Named plot styles stay on.");
+            co_return;
+        }
+        (void)ctx.tx().modifyHeader([&](Header& h) { setColorDependentPlotStyles(h, wantColour); });
+        ctx.setUndoLabel("PSTYLEMODE");
+        ctx.message(wantColour ? "Plot styles follow the colour of each object."
+                               : "Plot styles follow the style name of each layer or object. "
+                                 "Choose a .stb table with PLOTSTYLE and give styles with "
+                                 "ASSIGNPSTYLE.");
+    }
+};
+
+// ASSIGNPSTYLE: gives a layer or objects the name of a plot style from a named (.stb) table.
+class AssignPStyleCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ASSIGNPSTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"APS"}; }
+    std::string_view description() const override {
+        return "Give a layer or objects a named plot style";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        KeywordOptions ko;
+        ko.keywords = {"Layer", "Objects"};
+        ko.defaultKeyword = "Layer";
+        auto what = co_await ctx.getKeyword("Assign to [Layer/Objects] <Layer>", ko);
+        if (!what.ok())
+            co_return;
+        std::vector<EntityId> ids;
+        LayerId layer{};
+        if (what.keyword == "Layer") {
+            cmd::StringOptions lo;
+            auto ln = co_await ctx.getString("Layer name", lo);
+            if (!ln.ok())
+                co_return;
+            const Layer* l = ctx.doc().layerByName(ln.text);
+            if (!l) {
+                ctx.message("No layer named \"" + ln.text + "\".");
+                co_return;
+            }
+            layer = l->id;
+        } else {
+            auto sel = co_await ctx.getSelection("Select objects");
+            if (!sel.ok() || sel.ids.empty())
+                co_return;
+            ids = sel.ids;
+        }
+        // Names from the table in use help catching typing mistakes, but are not required: the
+        // table can be chosen later.
+        std::string known;
+        if (auto t = resolveStyleTable(ctx.host(), plotStyleName(ctx.host()));
+            t && t.value() && t.value()->named)
+            for (const auto& st : t.value()->styles)
+                known += (known.empty() ? "" : ", ") + st.name;
+        cmd::StringOptions so;
+        so.defaultValue = "Normal";
+        auto name = co_await ctx.getString(
+            known.empty() ? "Plot style name (ByLayer for objects to follow their layer)"
+                          : "Plot style name [" + known + "]",
+            so);
+        if (!name.ok() || name.text.empty())
+            co_return;
+        (void)ctx.tx().modifyHeader([&](Header& h) {
+            if (layer)
+                setLayerPlotStyle(h, layer, name.text);
+            for (EntityId id : ids)
+                setEntityPlotStyle(h, id, name.text);
+        });
+        ctx.setUndoLabel("Plot style");
+        ctx.message(std::string("Plot style \"") + name.text + "\" given to " +
+                    (layer ? "the layer." : std::to_string(ids.size()) + " objects."));
+        if (colorDependentPlotStyles(ctx.doc().header()))
+            ctx.message("This drawing plots by colour; use PSTYLEMODE to plot by style name.");
+    }
+};
+
 // PAGESETUP: named page setups saved in the drawing.
 class PageSetupCommand final : public cmd::Command {
 public:
@@ -626,17 +768,37 @@ public:
             co_return;
         }
         if (kw == "Import") {
-            auto f = co_await ctx.getString("Drawing (.tbcad) to take page setups from");
+            auto f = co_await ctx.getString("Drawing (.tbcad or .dxf) to take page setups from");
             if (!f.ok() || f.text.empty())
                 co_return;
-            io::IoReport report;
-            auto other = io::readTbcad(std::filesystem::path(f.text), report);
-            if (!other) {
-                ctx.message(other.error().message);
-                co_return;
+            std::vector<layout::PageSetup> found;
+            if (lower(std::filesystem::path(f.text).extension().string()) == ".dxf") {
+                std::ifstream in(platform::pathFromUtf8(f.text), std::ios::binary);
+                if (!in) {
+                    ctx.message("Cannot read " + f.text);
+                    co_return;
+                }
+                std::vector<char> raw((std::istreambuf_iterator<char>(in)), {});
+                dxf::Report report;
+                auto other = dxf::importDxf(
+                    {reinterpret_cast<const std::byte*>(raw.data()), raw.size()}, {}, report);
+                if (!other) {
+                    ctx.message(other.error().message);
+                    co_return;
+                }
+                for (const auto& rec : other.value().summary.plotSetups)
+                    found.push_back(pageSetupOf(rec));
+            } else {
+                io::IoReport report;
+                auto other = io::readTbcad(std::filesystem::path(f.text), report);
+                if (!other) {
+                    ctx.message(other.error().message);
+                    co_return;
+                }
+                found = layout::pageSetups(*other.value());
             }
             std::size_t count = 0;
-            for (const auto& p : layout::pageSetups(*other.value())) {
+            for (const auto& p : found) {
                 auto r = layout::savePageSetup(ctx.tx(), p);
                 if (!r) {
                     ctx.message(p.name + ": " + r.error().message);
@@ -712,6 +874,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTSVG", std::vector<std::string>{}, "Export the drawing to an SVG file", Format::Svg));
     (void)registry.add(makePrinterCommand());
+    (void)registry.add(std::make_unique<PStyleModeCommand>());
+    (void)registry.add(std::make_unique<AssignPStyleCommand>());
     (void)registry.add(std::make_unique<PlotCommand>(
         "EXPORTPNG", std::vector<std::string>{}, "Export the drawing to a PNG image", Format::Png));
     (void)registry.add(

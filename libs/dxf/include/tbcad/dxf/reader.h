@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "tbcad/core/document.h"
 #include "tbcad/dxf/encoding.h"
@@ -41,6 +42,23 @@ struct EntityCount {
     std::size_t skipped = 0;   // records dropped (unsupported, degenerate, rejected)
 };
 
+// A named page setup of the file (a PLOTSETTINGS object), as stored; lengths in millimetres.
+struct PlotSetupRecord {
+    std::string name{};
+    std::string paperSize{};   // the paper's name in the file
+    std::string styleSheet{};  // the plot style table (.ctb / .stb)
+    double paperWidthMm = 0, paperHeightMm = 0;
+    int rotation = 0;     // 0, 1 (90 degrees), 2, 3 (270 degrees)
+    int plotType = 1;     // 0 last screen, 1 extents, 2 limits, 3 view, 4 window, 5 layout
+    int scaleType = 0;    // 0 fit to paper, otherwise a standard scale
+    double scaleNum = 1;  // custom scale: paper units ...
+    double scaleDen = 1;  // ... per drawing units
+    bool centered = true;
+    bool lineweights = true;
+    double originX = 0, originY = 0;  // plot origin offset
+    double windowMinX = 0, windowMinY = 0, windowMaxX = 0, windowMaxY = 0;
+};
+
 struct ImportSummary {
     std::string acadVer{};  // "AC1015" or empty
     std::string version{};  // "R2000", "R12", ... or empty
@@ -57,6 +75,7 @@ struct ImportSummary {
     std::size_t layouts = 0;          // paper space layouts imported
     std::size_t outsideWorkArea = 0;  // entities kept but beyond the working area
     std::size_t beyondHardCap = 0;    // entities dropped because of the hard coordinate cap
+    std::vector<PlotSetupRecord> plotSetups{};  // named page setups
 
     // Full JSON report: {"input":..,"units":..,"entities":..,"summary":..,"report":{...}}.
     std::string toJson(const Report& report) const;
