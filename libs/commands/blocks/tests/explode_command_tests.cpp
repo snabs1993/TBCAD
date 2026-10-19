@@ -124,7 +124,7 @@ TEST_CASE("XPLODE explodes and gives the parts the chosen colour") {
     CHECK(found);
 }
 
-TEST_CASE("BURST breaks an insert and keeps its attribute values as text; polylines are left alone") {
+TEST_CASE("BURST breaks an insert and keeps its attribute values as text and leaves polylines alone") {
     Fixture f;
     BlockId b{};
     {
@@ -172,6 +172,57 @@ TEST_CASE("BURST breaks an insert and keeps its attribute values as text; polyli
     CHECK(polyline);  // BURST does not touch it
     CHECK(line);
     CHECK(f.modelSpace().size() == 3);
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().size() == 2);
+}
+
+TEST_CASE("EXPLODE turns attributes back into definitions that show their tags") {
+    Fixture f;
+    BlockId b{};
+    {
+        Transaction tx = f.doc.begin("block");
+        b = tx.addBlock(BlockDef{.name = "Tag", .base = {0, 0}}).value();
+        Entity l;
+        l.data = LineData{{0, 0}, {5, 0}};
+        REQUIRE(tx.add(l, b));
+        TextData td;
+        td.position = {0, 2};
+        td.utf8 = "NO";
+        td.attdef = AttDefInfo{"NO", "", "none", false, false, false, false};
+        Entity t;
+        t.data = Indirect<TextData>(std::move(td));
+        REQUIRE(tx.add(t, b));
+        InsertData ins{b, {50, 50}, {1, 1}, 0};
+        ins.attribs = {AttribValue{"NO", "A-17", {}}};
+        Entity e;
+        e.data = Indirect<InsertData>(std::move(ins));
+        REQUIRE(tx.add(e));
+        PolylineData pl;
+        pl.v = {{{0, 0}, 0, 0, 0}, {{5, 0}, 0, 0, 0}, {{5, 5}, 0, 0, 0}};
+        Entity p;
+        p.data = pl;
+        REQUIRE(tx.add(p));
+        tx.commit();
+    }
+    std::vector<EntityId> all = f.modelSpace();
+    REQUIRE(all.size() == 2);
+    f.host->setSelection(all);
+    CHECK(f.host->run("EXPLODE", {}).finished);
+    bool def = false, polyline = false, line = false;
+    for (EntityId id : f.modelSpace()) {
+        const Entity& e = *f.doc.find(id);
+        if (const auto* t = entityAs<TextData>(e)) {
+            def = t->attdef && t->attdef->tag == "NO" && t->utf8 == "NO";
+        } else if (entityAs<PolylineData>(e)) {
+            polyline = true;
+        } else if (entityAs<LineData>(e)) {
+            line = true;
+        }
+    }
+    CHECK(def);
+    CHECK(line);
+    CHECK(f.modelSpace().size() == 4);  // line, definition, and the polyline's two segments
+    (void)polyline;
     CHECK(f.host->undo());
     CHECK(f.modelSpace().size() == 2);
 }

@@ -87,7 +87,7 @@ public:
             const Entity* e = doc.find(id);
             if (!e || !blocks::canExplode(kind(*e)))
                 continue;
-            auto r = blocks::explode(doc, *e);
+            auto r = blocks::explode(doc, *e, !burst_);
             if (!r) {
                 ctx.message(r.error().message);
                 continue;
