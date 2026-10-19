@@ -122,6 +122,12 @@ enum class SplineFitOp { Add, Delete, Move, Close, Open };
 // no fit points or fewer than two would remain.
 Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a = {}, Vec2 b = {});
 
+// Fits the spline again through as few points as it takes: the new curve interpolates fit points
+// taken from the old one and stays within `tolerance` of it (SPLINEDIT Fit data / Tolerance). The
+// old fit points or control vertices are replaced by the new fit points. Errors for a tolerance
+// that is not positive.
+Result<EntityEdit> refitSpline(const Entity& e, double tolerance);
+
 enum class SplineCvOp { Add, Delete, Move, Weight, Close, Open, Purge, ToPolyline };
 // Edits the control vertices of a spline. Add: a vertex is inserted at the curve point closest to
 // `a` without changing the curve (open splines); Delete: the vertex nearest to `a` goes and the

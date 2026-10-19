@@ -693,3 +693,33 @@ TEST_CASE("PEDIT Join with a fuzz distance gathers shuffled, reversed and gapped
         CHECK(strict.created.size() != 1);
     }
 }
+
+TEST_CASE("refitSpline uses fewer fit points and stays within the tolerance") {
+    std::vector<PolyVertex> v;
+    for (int i = 0; i <= 40; ++i)
+        v.push_back(PolyVertex{{i * 0.5, 3 * std::sin(i * 0.5 * 0.4)}, 0, 0, 0});
+    auto sp = polylineToSpline(poly(v, false));
+    REQUIRE(sp.ok());
+    const std::size_t before = as<SplineData>(sp.value()).fit.size();
+    REQUIRE(before >= 30);
+    auto out = refitSpline(sp.value(), 0.05);
+    REQUIRE(out.ok());
+    const auto& ns = as<SplineData>(*out.value().modified);
+    CHECK(ns.fit.size() < before);
+    CHECK(ns.fit.size() >= 4);
+    // every point of the old curve is near the new one
+    std::vector<geom::CurveRef> oc, nc;
+    REQUIRE(geom::curvesOf(sp.value(), oc));
+    REQUIRE(geom::curvesOf(*out.value().modified, nc));
+    double worst = 0;
+    for (int i = 0; i <= 200; ++i) {
+        const Vec2 q = oc.front().pointAt(oc.front().paramAtLength(oc.front().length() * i / 200));
+        worst = std::max(worst, length(nc.front().closestPoint(q) - q));
+    }
+    CHECK(worst <= 0.06);
+    // the ends stay put
+    CHECK(near(ns.fit.front(), as<SplineData>(sp.value()).fit.front(), 1e-6));
+    CHECK(near(ns.fit.back(), as<SplineData>(sp.value()).fit.back(), 1e-6));
+    CHECK_FALSE(refitSpline(sp.value(), 0).ok());
+    CHECK_FALSE(refitSpline(poly(v, false), 0.1).ok());
+}

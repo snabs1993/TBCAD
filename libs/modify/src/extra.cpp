@@ -1330,6 +1330,77 @@ Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b
     return r;
 }
 
+Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
+    const auto* sp = entityAs<SplineData>(e);
+    if (!sp)
+        return err("Select a spline.");
+    if (!(tolerance > 0) || !std::isfinite(tolerance))
+        return err("The tolerance must be more than zero.");
+    std::vector<CurveRef> cs;
+    if (!geom::curvesOf(e, cs) || cs.empty())
+        return err("The spline has no geometry.");
+    const CurveRef& c = cs.front();
+    const double len = c.length();
+    if (!(len > 0))
+        return err("The spline has no length.");
+    const int n = static_cast<int>(std::clamp(len / tolerance, 200.0, 2000.0));
+    std::vector<Vec2> samples;
+    samples.reserve(static_cast<std::size_t>(n) + 1);
+    for (int i = 0; i <= n; ++i)
+        samples.push_back(c.pointAt(c.paramAtLength(len * i / n)));
+    const bool closed = sp->closed;
+    std::vector<int> idx = closed ? std::vector<int>{0, n / 4, n / 2, 3 * n / 4}
+                                  : std::vector<int>{0, n};
+    geom::InterpolateOptions io;
+    io.degree = sp->degree;
+    io.closed = closed;
+    SplineData best;
+    for (int round = 0; round < 500; ++round) {
+        std::vector<Vec2> fit;
+        for (int i : idx)
+            fit.push_back(samples[static_cast<std::size_t>(i)]);
+        auto fitted = geom::interpolateSpline(fit, io);
+        if (!fitted)
+            return err("The spline could not be fitted: " + fitted.error().message);
+        best = std::move(fitted.value());
+        const Entity trial = withData(e, Indirect<SplineData>(best));
+        std::vector<CurveRef> nc;
+        if (!geom::curvesOf(trial, nc) || nc.empty())
+            return err("The new spline has no geometry.");
+        const double nl = nc.front().length();
+        const int m = static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
+        std::vector<Vec2> poly;
+        poly.reserve(static_cast<std::size_t>(m) + 1);
+        for (int i = 0; i <= m; ++i)
+            poly.push_back(nc.front().pointAt(nc.front().paramAtLength(nl * i / m)));
+        double worst = 0;
+        int worstAt = -1;
+        for (int i = 0; i <= n; ++i) {
+            const Vec2 q = samples[static_cast<std::size_t>(i)];
+            double d2 = 1e300;
+            for (std::size_t k = 0; k + 1 < poly.size(); ++k) {
+                const Vec2 a = poly[k], b = poly[k + 1], ab = b - a;
+                const double l2 = dot(ab, ab);
+                const double u = l2 > 0 ? std::clamp(dot(q - a, ab) / l2, 0.0, 1.0) : 0.0;
+                const Vec2 r = q - (a + ab * u);
+                d2 = std::min(d2, dot(r, r));
+            }
+            if (d2 > worst) {
+                worst = d2;
+                worstAt = i;
+            }
+        }
+        if (worstAt < 0 || std::sqrt(worst) <= tolerance * 0.9 || idx.size() >= samples.size())
+            break;
+        idx.push_back(worstAt);
+        std::sort(idx.begin(), idx.end());
+        idx.erase(std::unique(idx.begin(), idx.end()), idx.end());
+    }
+    EntityEdit r;
+    r.modified = withData(e, Indirect<SplineData>(std::move(best)));
+    return r;
+}
+
 // ---- SPLINEDIT: control vertices ----------------------------------------------------------------
 
 namespace {
