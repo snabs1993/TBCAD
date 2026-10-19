@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -55,6 +56,9 @@ void setFontSearchPaths(std::vector<std::filesystem::path> dirs);
 bool isShxName(std::string_view name);
 /// The file for a font name such as "romans.shx" or "C:/fonts/thai.shx"; empty when not found.
 std::filesystem::path locateFontFile(const std::string& name);
+/// Tests: replaces the check whether a full font path is there (empty restores the file system)
+/// and forgets the answers for network paths.
+void setFontFileProbe(std::function<bool(const std::filesystem::path&)> probe);
 
 /// How a style gets its font on this machine.
 struct FontResolution {

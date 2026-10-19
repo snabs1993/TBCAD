@@ -6,9 +6,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -206,13 +208,113 @@ const std::vector<std::filesystem::path>& installedCadFontDirs() {
 }  // namespace
 #endif
 
+namespace {
+// TBCAD_FONT_PROFILE / TBCAD_INDEX_PROFILE: slow font lookups on stderr.
+bool fontProfileOn() {
+    static const bool on = [] {
+        for (const char* var : {"TBCAD_FONT_PROFILE", "TBCAD_INDEX_PROFILE"})
+            if (const char* v = std::getenv(var); v && *v && *v != '0')
+                return true;
+        return false;
+    }();
+    return on;
+}
+double msSince(std::chrono::steady_clock::time_point t) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
+}
+}  // namespace
+
+namespace {
+// A path on another computer (\\server\share\...): asking for it can take seconds when the
+// server is gone, so it is asked once per run on a thread of its own.
+bool isNetworkPath(const std::filesystem::path& p) {
+    const auto& s = p.native();
+    return s.size() > 2 && (s[0] == '\\' || s[0] == '/') && (s[1] == '\\' || s[1] == '/');
+}
+constexpr auto kNetworkWait = std::chrono::milliseconds(300);
+struct NetworkProbe {
+    std::shared_future<bool> answer;
+    bool waited = false;  // someone already waited kNetworkWait: later lookups do not wait again
+};
+std::mutex& probeMutex() {
+    static std::mutex m;
+    return m;
+}
+std::map<std::string, NetworkProbe>& networkProbes() {
+    static auto* m = new std::map<std::string, NetworkProbe>;  // probe threads may outlive main
+    return *m;
+}
+std::function<bool(const std::filesystem::path&)>& probeOverride() {
+    static std::function<bool(const std::filesystem::path&)> f;
+    return f;
+}
+bool fileThere(const std::filesystem::path& p) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(p, ec);
+}
+// Whether the file a full path names is there; a network path that has not answered within
+// kNetworkWait counts as missing (the name is then looked up in the font folders).
+bool fontPathThere(const std::filesystem::path& p) {
+    std::function<bool(const std::filesystem::path&)> probe;
+    {
+        std::lock_guard lock(probeMutex());
+        probe = probeOverride();
+    }
+    if (!isNetworkPath(p))
+        return probe ? probe(p) : fileThere(p);
+    std::shared_future<bool> answer;
+    bool wait = true;
+    {
+        std::lock_guard lock(probeMutex());
+        NetworkProbe& slot = networkProbes()[p.string()];
+        if (!slot.answer.valid()) {
+            auto task = std::make_shared<std::packaged_task<bool()>>(
+                [p, probe] { return probe ? probe(p) : fileThere(p); });
+            slot.answer = task->get_future().share();
+            std::thread([task] { (*task)(); }).detach();
+        }
+        answer = slot.answer;
+        wait = !slot.waited;
+    }
+    if (answer.wait_for(wait ? kNetworkWait : std::chrono::milliseconds(0)) ==
+        std::future_status::ready)
+        return answer.get();
+    std::lock_guard lock(probeMutex());
+    networkProbes()[p.string()].waited = true;
+    return false;
+}
+}  // namespace
+
+void setFontFileProbe(std::function<bool(const std::filesystem::path&)> probe) {
+    std::lock_guard lock(probeMutex());
+    probeOverride() = std::move(probe);
+    networkProbes().clear();
+}
+
 std::filesystem::path locateFontFile(const std::string& name) {
     namespace fs = std::filesystem;
     if (name.empty())
         return {};
+    const auto start = std::chrono::steady_clock::now();
+    std::string slowDirs;  // folders that took a while, for the profile line
+    struct Report {
+        const std::string& name;
+        const std::string& slowDirs;
+        std::chrono::steady_clock::time_point start;
+        const fs::path* found = nullptr;
+        ~Report() {
+            if (!fontProfileOn())
+                return;
+            const double ms = msSince(start);
+            if (ms > 20)
+                std::fprintf(stderr, "font profile: locate '%s' took %.1f ms (%s)%s\n",
+                             name.c_str(), ms, found ? "found" : "not found", slowDirs.c_str());
+        }
+    };
+    Report report{name, slowDirs, start};
     std::error_code ec;
     const fs::path given(name);
-    if (given.is_absolute() && fs::is_regular_file(given, ec))
+    if (given.is_absolute() && fontPathThere(given))
         return given;
     std::vector<fs::path> dirs;
     {
@@ -261,16 +363,34 @@ std::filesystem::path locateFontFile(const std::string& name) {
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return s;
     };
+    static const fs::path kFound;
     for (const fs::path& d : dirs) {
+        const auto dirStart = std::chrono::steady_clock::now();
+        struct DirTime {
+            std::string& slowDirs;
+            const fs::path& d;
+            std::chrono::steady_clock::time_point at;
+            ~DirTime() {
+                if (const double ms = msSince(at); ms > 5 && fontProfileOn()) {
+                    char buf[32];
+                    std::snprintf(buf, sizeof buf, " %.1f ms", ms);
+                    slowDirs += "; " + d.string() + buf;
+                }
+            }
+        } dirTime{slowDirs, d, dirStart};
         if (!fs::is_directory(d, ec))
             continue;
-        if (fs::is_regular_file(d / file, ec))
+        if (fs::is_regular_file(d / file, ec)) {
+            report.found = &kFound;
             return d / file;
+        }
         // File names differ in case between systems: look the name up without it.
         const std::string want = lower(file);
         for (const auto& entry : fs::directory_iterator(d, ec))
-            if (entry.is_regular_file(ec) && lower(entry.path().filename().string()) == want)
+            if (entry.is_regular_file(ec) && lower(entry.path().filename().string()) == want) {
+                report.found = &kFound;
                 return entry.path();
+            }
     }
     return {};
 }
@@ -287,6 +407,15 @@ FontResolution resolveShx(const std::string& shx) {
     }
     FontResolution r;
     r.wanted = shx;
+    struct Report {
+        const std::string& shx;
+        std::chrono::steady_clock::time_point at = std::chrono::steady_clock::now();
+        ~Report() {
+            if (const double ms = msSince(at); ms > 20 && fontProfileOn())
+                std::fprintf(stderr, "font profile: resolve shx '%s' took %.1f ms\n", shx.c_str(),
+                             ms);
+        }
+    } report{shx};
     const auto path = locateFontFile(shx);
     if (!path.empty() && fonts().loadStroke(path).ok()) {
         r.kind = FontResolution::Kind::Shx;
@@ -341,6 +470,8 @@ bool fontAvailable(const std::string& family, const std::string& file) {
     font::FontLibrary& lib = fonts();
     if (endsWithNoCase(file, ".shx"))
         return !locateFontFile(file).empty();
+    if (!file.empty() && isNetworkPath(file) && !fontPathThere(file))
+        return !locateFontFile(file).empty();
     if (!file.empty())
         return isStrokeFile(file) ? lib.loadStroke(std::filesystem::path(file)).ok()
                                   : lib.load(std::filesystem::path(file)).ok();
@@ -393,13 +524,17 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
         // Drawings name the file bare ("arial.ttf") or with the author's folders: look it up in
         // the font folders when it is not where the name says.
         std::filesystem::path path(file);
-        std::error_code ec;
-        if (!std::filesystem::is_regular_file(path, ec))
-            if (auto located = locateFontFile(file); !located.empty())
+        bool there = isNetworkPath(path) ? fontPathThere(path) : fileThere(path);
+        if (!there)
+            if (auto located = locateFontFile(file); !located.empty()) {
                 path = located;
-        auto r = isStrokeFile(file) ? lib.loadStroke(path) : lib.load(path);
-        if (r.ok())
-            found = r.value();
+                there = true;
+            }
+        if (there) {
+            auto r = isStrokeFile(file) ? lib.loadStroke(path) : lib.load(path);
+            if (r.ok())
+                found = r.value();
+        }
         // Not on this machine: the installed font of the same name ("arial" for arial.ttf).
         // Only for a TrueType / OpenType file name: a bare "txt" (TBCAD writes it for a style
         // with no font) must not become AutoCAD's installed "Txt" font on the way back in.
@@ -422,17 +557,9 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
             found = r.value();
     }
     font::FontId id = found.value_or(kNoFont);
-    // TBCAD_FONT_PROFILE / TBCAD_INDEX_PROFILE: a font lookup that took long, on stderr.
-    static const bool profile = [] {
-        for (const char* var : {"TBCAD_FONT_PROFILE", "TBCAD_INDEX_PROFILE"})
-            if (const char* v = std::getenv(var); v && *v && *v != '0')
-                return true;
-        return false;
-    }();
-    if (profile) {
-        const double ms = std::chrono::duration<double, std::milli>(
-                              std::chrono::steady_clock::now() - lookupStart)
-                              .count();
+    // A font lookup that took long, on stderr.
+    if (fontProfileOn()) {
+        const double ms = msSince(lookupStart);
         if (ms > 20)
             std::fprintf(stderr,
                          "font profile: style '%s' (family '%s', file '%s', shx '%s'%s%s) took "

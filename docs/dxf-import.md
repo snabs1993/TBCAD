@@ -241,7 +241,14 @@ files), each with an `.expected.json`. `libs/dxf/tests/reader/corpus_tests.cpp` 
 per DXF type, model space entities per kind, layer paths, texts, the warning codes and the exit
 status. `tests/corpus/gen/check_corpus_ezdxf.py` cross-checks the expected counts with ezdxf in CI.
 Robustness: `mutation_tests.cpp` (2500 mutated files in every test run, also under ASan/UBSan) and
-the libFuzzer target `fuzz_reader.cpp` (`.github/workflows/fuzz-dxf.yml`).
+the libFuzzer target `fuzz_reader.cpp`, which also measures, draws and saves what it read
+(`.github/workflows/fuzz-dxf.yml`, with the `.tbcad` reader's `libs/io/tests/fuzz_tbcad.cpp`).
+`mutation_tests.cpp` also puts NaN, infinities, huge and denormal values into every real-valued
+group and draws and saves the result at R2000 and R12. `cycles.dxf` holds a block that inserts
+itself, two that insert each other, 60 levels that each insert the next twice (2^60 objects in
+full), a 30000 x 30000 MINSERT and an xref to the drawing itself: it opens, measures and draws at
+once. An insert that would draw more than `blocks::kMaxExpanded` (8M) objects through its nested
+blocks is drawn as its outline.
 
 Speed: a 50 MB synthetic DXF (about 480 000 entities) imports in 0.65 s and converts end to end
 (read, import, write `.tbcad`) in 1.4 s with a Release build on the development container.

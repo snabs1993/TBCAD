@@ -496,3 +496,26 @@ TEST_CASE("ROTATE and SCALE offer the last angle and factor, Enter repeats them"
     REQUIRE(f.host.run("SCALE", {"0,0", ScriptItem::enter()}).finished);  // 2 again
     CHECK(near(get<LineData>(f.doc, a).b, {-40, 0}, 1e-9));
 }
+
+TEST_CASE(
+    "MOVE, COPY and STRETCH: Enter at the base point asks for a displacement, Enter repeats the "
+    "last") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("MOVE", {ScriptItem::enter(), "5,2"}).finished);
+    CHECK(near(get<LineData>(f.doc, a).a, {5, 2}));
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("MOVE", {"D", ScriptItem::enter()}).finished);  // 5,2 again
+    CHECK(near(get<LineData>(f.doc, a).a, {10, 4}));
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("COPY", {ScriptItem::enter(), ScriptItem::enter()}).finished);
+    CHECK(f.doc.modelSpace().size() == 2);
+    // STRETCH: a window round the right end, Enter, then the last displacement
+    REQUIRE(f.host.run("STRETCH", {"14,3", "30,6", ScriptItem::enter(), "0,-4"}).finished);
+    bool stretched = false;
+    for (EntityId id : f.doc.modelSpace())
+        stretched |=
+            near(get<LineData>(f.doc, id).b, {20, 0}) && near(get<LineData>(f.doc, id).a, {10, 4});
+    CHECK(stretched);
+}

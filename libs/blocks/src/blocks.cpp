@@ -1,7 +1,10 @@
 #include "tbcad/blocks/blocks.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <tuple>
 #include <unordered_map>
@@ -132,6 +135,14 @@ Result<void> validateBlockName(const Document& doc, std::string_view name, Block
 }
 
 namespace {
+// TBCAD_INDEX_PROFILE: an object inside a block that takes long to measure, on stderr.
+bool profileBlocks() {
+    static const bool on = [] {
+        const char* v = std::getenv("TBCAD_INDEX_PROFILE");
+        return v && *v && *v != '0';
+    }();
+    return on;
+}
 
 // Blocks directly inserted by `block`.
 void directChildren(const Document& doc, BlockId block, std::vector<BlockId>& out) {
@@ -219,8 +230,8 @@ BBox2 limitToClip(BBox2 box, const InsertData& ins, const Transform2& t) {
 // for one call, or for a BoundsMemoScope (many measurements while the drawing does not change).
 struct Local {
     bool plain = false;
-    bool attdefs = false;  // has attribute definitions of its own (not counted in `box`)
-    BBox2 box{};  // everything but its own attribute definitions, in block space
+    bool attdefs = false;    // has attribute definitions of its own (not counted in `box`)
+    BBox2 box{};             // everything but its own attribute definitions, in block space
     std::size_t leaves = 0;  // drawn objects below it, counting nested ones (capped)
 };
 struct Memo {
@@ -248,9 +259,15 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
 Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
     if (auto it = memo.blocks.find(def.id); it != memo.blocks.end())
         return it->second;
-    memo.blocks[def.id] = {};  // (a block that contains itself stays "not plain")
     Local loc;
-    if (def.assembly || def.dynamic || depth > kMaxNesting)
+    if (depth > kMaxNesting) {
+        // Nothing this deep is drawn: measured as empty, so that a chain of blocks that each
+        // hold the next one several times is not walked through every path.
+        loc.plain = true;
+        return loc;
+    }
+    memo.blocks[def.id] = {};  // (a block that contains itself stays "not plain")
+    if (def.assembly || def.dynamic)
         return loc;
     bool plain = true;
     std::size_t leaves = 0;
@@ -305,9 +322,10 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
                 const auto key = std::make_tuple(def.id.value, t.m00, t.m01, t.m10, t.m11);
                 auto it = memo.turned.find(key);
                 if (it == memo.turned.end())
-                    it = memo.turned
-                             .emplace(key, contentBounds(doc, def, turn, depth, nullptr, memo, true))
-                             .first;
+                    it =
+                        memo.turned
+                            .emplace(key, contentBounds(doc, def, turn, depth, nullptr, memo, true))
+                            .first;
                 box = it->second;
                 if (!box.empty()) {
                     box.min += Vec2{t.tx, t.ty};
@@ -358,11 +376,25 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
                 continue;
             e = &*shown;
         }
+        const auto start = profileBlocks() ? std::chrono::steady_clock::now()
+                                           : std::chrono::steady_clock::time_point{};
         auto moved = geom::transformed(*e, t);
         if (moved) {
             box.merge(geom::bounds(moved.value(), doc));
         } else {
             box.merge(t.applyToBox(geom::bounds(*e, doc)));
+        }
+        if (profileBlocks()) {
+            const double ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count();
+            if (ms > 20)
+                std::fprintf(stderr,
+                             "block profile: #%llu (kind %zu) in block '%s' measured in %.1f ms "
+                             "(%s)\n",
+                             static_cast<unsigned long long>(e->common.id.value), e->data.index(),
+                             def.name.c_str(), ms,
+                             moved ? "transformed" : "box of the untransformed object");
         }
     }
     return box;
@@ -400,6 +432,51 @@ BBox2 insertBounds(const Document& doc, const Entity& insert) {
     return box;
 }
 
+namespace {
+
+std::size_t countDrawn(const Document& doc, const BlockDef& def, int depth,
+                       std::unordered_map<BlockId, std::size_t>& memo) {
+    constexpr std::size_t kCap = std::size_t{1} << 40;
+    if (depth > kMaxNesting)
+        return 0;  // not drawn
+    if (auto it = memo.find(def.id); it != memo.end())
+        return it->second;
+    memo[def.id] = 0;  // a block that contains itself
+    std::size_t n = 0;
+    for (EntityId id : def.entities) {
+        const Entity* e = doc.find(id);
+        const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+        const BlockDef* inner = ins ? doc.block(ins->block) : nullptr;
+        if (!inner) {
+            ++n;
+            continue;
+        }
+        // The insert itself counts too: going through inserts is work even when they end in
+        // nothing that is drawn.
+        const std::size_t each = 1 + countDrawn(doc, *inner, depth + 1, memo);
+        // (an insert without items still has its block built once)
+        const std::size_t items =
+            std::max<std::size_t>(instanceTransforms(*ins, inner->base).size(), 1);
+        const std::size_t add = items > kCap / std::max<std::size_t>(each, 1) ? kCap : each * items;
+        n = std::min(kCap, n + add);
+    }
+    memo[def.id] = n;
+    return n;
+}
+
+}  // namespace
+
+std::size_t expandedCount(const Document& doc, const Entity& insert) {
+    const auto* ins = entityAs<InsertData>(insert);
+    const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+    if (!def)
+        return 0;
+    std::unordered_map<BlockId, std::size_t> memo;
+    const std::size_t each = countDrawn(doc, *def, 0, memo);
+    const std::size_t items = std::max<std::size_t>(instanceTransforms(*ins, def->base).size(), 1);
+    return each > (std::size_t{1} << 40) / items ? std::size_t{1} << 40 : each * items;
+}
+
 BBox2 blockBounds(const Document& doc, BlockId block) {
     const BlockDef* def = doc.block(block);
     Memo own;
@@ -408,8 +485,8 @@ BBox2 blockBounds(const Document& doc, BlockId block) {
 }
 
 std::vector<Entity> snapGeometry(const Document& doc, const Entity& insert) {
-    if (!entityAs<InsertData>(insert))
-        return {};
+    if (!entityAs<InsertData>(insert) || expandedCount(doc, insert) > kMaxExpanded)
+        return {};  // (one drawn as its outline offers nothing inside it)
     detail::Flatten f{doc};
     f.expandNested = true;
     f.curvesOnly = true;

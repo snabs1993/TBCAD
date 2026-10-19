@@ -1,5 +1,6 @@
 #include <cmath>
 #include <mutex>
+#include <optional>
 
 #include "internal.h"
 #include "tbcad/blocks/array.h"
@@ -94,8 +95,20 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
 void BlockDisplayCache::sync(std::uint64_t revision) {
     if (revision != revision_) {
         entries_.clear();
+        attdefs_.clear();
         revision_ = revision;
     }
+}
+
+const std::vector<EntityId>& BlockDisplayCache::attdefsOf(const Document& doc,
+                                                          const BlockDef& def) {
+    auto [it, fresh] = attdefs_.try_emplace(def.id);
+    if (fresh)
+        for (EntityId id : def.entities)
+            if (const Entity* e = doc.find(id))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef)
+                    it->second.push_back(id);
+    return it->second;
 }
 
 std::shared_ptr<const DisplayList> BlockDisplayCache::find(const Key& key) const {
@@ -109,6 +122,7 @@ void BlockDisplayCache::put(const Key& key, std::shared_ptr<const DisplayList> l
 
 void BlockDisplayCache::clear() {
     entries_.clear();
+    attdefs_.clear();
     revision_ = ~std::uint64_t{0};
 }
 
@@ -142,6 +156,14 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         return;
     DepthGuard guard;
     const std::size_t firstItem = out.items.size();
+    // Without a cache from the caller, one for this insert: each nested block is built once, not
+    // once per path that reaches it.
+    std::optional<BlockDisplayCache> ownCache;
+    std::optional<BlockDisplayScope> ownScope;
+    if (g_depth == 1 && !g_active) {
+        ownCache.emplace();
+        ownScope.emplace(*ownCache);
+    }
 
     // An assembly's formulas turn its parameter values into the values the content is built from.
     std::optional<AsmResolved> resolved;
@@ -184,6 +206,18 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
                ctx.quickText};
         blockSpace = cache->find(key);
     }
+    if (!blockSpace && g_depth == 1 && expandedCount(doc, insert) > kMaxExpanded) {
+        // Far too many objects to draw (blocks that hold each other many times over): the outline.
+        const BBox2 box = insertBounds(doc, insert);
+        if (!box.empty()) {
+            DisplayPolyline frame;
+            frame.pts = {box.min, {box.max.x, box.min.y}, box.max, {box.min.x, box.max.y}};
+            frame.closed = true;
+            frame.style = self;
+            out.items.emplace_back(std::move(frame));
+        }
+        return;
+    }
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, shown,
                                      resolved ? &resolved->nested : nullptr, child);
@@ -213,8 +247,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             continue;
         Entity plain = insert;
         plain.data = Indirect<InsertData>(InsertData{.block = sw.block});
-        const auto list = buildBlockSpace(doc, *other, plain, entityAs<InsertData>(plain),
-                                          nullptr, child);
+        const auto list =
+            buildBlockSpace(doc, *other, plain, entityAs<InsertData>(plain), nullptr, child);
         transformList(*list, sw.t, out);
     }
 
@@ -282,6 +316,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
                                      ctx.fillMode,
                                      ctx.quickText};
     std::shared_ptr<const DisplayList> blockSpace = cache->find(key);
+    if (!blockSpace && expandedCount(doc, insert) > kMaxExpanded)
+        return false;  // drawn as its outline by buildInsertDisplay
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);
         cache->countBuild();
@@ -289,7 +325,7 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
     }
     // Attribute values differ per insert: drawn here, once per array item.
     out.extra.items.clear();
-    for (EntityId id : def->entities) {
+    for (EntityId id : cache->attdefsOf(doc, *def)) {
         const Entity* e = doc.find(id);
         if (!e || !e->common.visible)
             continue;

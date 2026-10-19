@@ -116,13 +116,13 @@ TEST_CASE("-STYLE Edit sets the fixed height") {
 
 TEST_CASE("a shape font that is not installed is reported by FONTCHECK and stands in") {
     Fixture f;
-    f.host.run("STYLE", {"Plan", "romans.shx", "1", "0", "0"});
+    f.host.run("STYLE", {"Plan", "tbcad-no-such-font.shx", "1", "0", "0"});
     const TextStyle* s = f.doc.textStyleByName("Plan");
     REQUIRE(s);
-    CHECK(s->fontFile == "romans.shx");
+    CHECK(s->fontFile == "tbcad-no-such-font.shx");
     f.host.run("FONTCHECK", {});
     CHECK(f.host.logContains("Style Plan"));
-    CHECK(f.host.logContains("romans.shx not found"));
+    CHECK(f.host.logContains("tbcad-no-such-font.shx not found"));
     // Choosing a normal font again forgets the shape font.
     f.host.run("STYLE", {"Plan", "Sarabun", "1", "0", "0"});
     CHECK(f.doc.textStyleByName("Plan")->fontFile.empty());

@@ -35,9 +35,10 @@ PreparedChunk prepareChunk(std::span<const std::uint8_t> raw, bool compress) {
             const std::uint64_t n = raw.size();
             for (int i = 0; i < 8; ++i)
                 z[i] = static_cast<std::uint8_t>(n >> (8 * i));
-            z.resize(zlen + 8);
             out.flags = kChunkDeflate;
-            out.stored = std::move(z);
+            // Copied out at its size: the work buffer has room for the raw bytes, and keeping it
+            // would hold that much per chunk until the file is laid out.
+            out.stored.assign(z.begin(), z.begin() + static_cast<std::ptrdiff_t>(zlen + 8));
             out.crc = tbcadCrc32(out.stored);
             return out;
         }

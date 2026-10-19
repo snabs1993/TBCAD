@@ -249,6 +249,12 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             case 174:
                 ds.textInsideForced = whole != 0;
                 break;
+            case 173:  // DIMSAH: the separate arrows (DIMBLK1) instead of DIMBLK
+                if (const auto a = dimArrows_.find(ds.name); a != dimArrows_.end())
+                    ds.arrowType = whole != 0 ? a->second.second : a->second.first;
+                else if (whole != 0)
+                    ds.arrowType = ArrowType::ClosedFilled;
+                break;
             case 175:
                 ds.suppressArrowsOutside = whole != 0;
                 break;

@@ -188,6 +188,14 @@ void SceneSync::commit(Prepared& p) {
             fieldTexts_.erase(id);
             return;
         case Prepared::What::Defer:
+            if (p.packed) {
+                if (p.fields)
+                    fieldTexts_.insert(id);
+                else
+                    fieldTexts_.erase(id);
+                if (scene_.commitInstance(id, p.pack, &p.inst.extra, p.order, p.builtZoom))
+                    return;
+            }
             upsertEntity(*p.entity, p.order);
             return;
         case Prepared::What::List:
@@ -198,6 +206,43 @@ void SceneSync::commit(Prepared& p) {
             scene_.upsert(id, p.list, p.order, p.builtZoom);
             return;
     }
+}
+
+void SceneSync::packInserts(std::vector<Prepared>& chunk, std::size_t lanes) {
+    geom::DisplayContext ctx;
+    ctx.pixelSizeMm = pixelSizeMm_;
+    ctx.showTransparency = showTransparency_;
+    ctx.fillMode = fillMode_;
+    ctx.attDisplay = attDisplay_;
+    ctx.quickText = quickText_;
+    std::vector<Prepared*> todo;
+    {
+        blocks::BlockDisplayScope scope(blockCache_);
+        for (Prepared& p : chunk) {
+            p.packed = false;
+            if (p.what != Prepared::What::Defer || doc_.effective(p.entity->common).locked)
+                continue;
+            p.inst = {};
+            if (!blocks::buildInsertInstance(doc_, *p.entity, ctx, p.inst) ||
+                !scene_.instanceUsable(p.inst.blockSpace))
+                continue;
+            p.builtZoom = needsTessellation(*p.entity) ? 1.0 / pixelSizeMm_ : 0.0;
+            p.packed = true;
+            todo.push_back(&p);
+        }
+    }
+    auto pack = [&](std::size_t a, std::size_t b) {
+        for (std::size_t i = a; i < b; ++i)
+            scene_.packInstance(todo[i]->inst.blockSpace, todo[i]->inst.placements, todo[i]->pack);
+    };
+    const std::size_t parts = std::clamp<std::size_t>(todo.size() / 64, 1, lanes);
+    std::vector<std::future<void>> jobs;
+    for (std::size_t k = 1; k < parts; ++k)
+        jobs.push_back(std::async(std::launch::async, pack, todo.size() * k / parts,
+                                  todo.size() * (k + 1) / parts));
+    pack(0, todo.size() / parts);
+    for (auto& j : jobs)
+        j.get();
 }
 
 void SceneSync::upsertParallel(const std::vector<const Entity*>& list,
@@ -239,6 +284,7 @@ void SceneSync::upsertParallel(const std::vector<const Entity*>& list,
         if (next < list.size())
             ahead = std::async(std::launch::async, buildChunk, next,
                                std::min(next + kChunk, list.size()));
+        packInserts(current, lanes);
         for (Prepared& p : current)
             commit(p);
         from = next;
@@ -604,8 +650,9 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     if (!pending_.empty())
         dropPending(removed);
     std::vector<const Entity*> redraw;
-    // Boxes the spatial index measured for entities that come back (an undo of ERASE ALL): the
-    // waiting list needs the same ones. Text has its own cheap estimate, so it keeps it.
+    // Boxes the spatial index measured for entities that come back or changed (an undo of ERASE
+    // ALL, a MOVE of everything): the waiting list needs the same ones. Text has its own cheap
+    // estimate, so it keeps it.
     std::vector<const BBox2*> known;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
@@ -618,7 +665,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         const Entity* live = doc_.find(after->common.id);
         if (live) {
             redraw.push_back(live);
-            const BBox2* box = c.before == kNoSnapshot ? cs.memoBox(c.after) : nullptr;
+            const BBox2* box = cs.memoBox(c.after);
             if (box && (entityAs<TextData>(*live) || entityAs<MTextData>(*live)))
                 box = nullptr;
             known.push_back(box);
@@ -722,7 +769,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         flushPending();
         if (!blockTouched) {
             // Blocks that hold an insert of a changed block change too, all the way up.
-            std::unordered_multimap<BlockId, BlockId> parents;  // shown block -> block that holds it
+            std::unordered_multimap<BlockId, BlockId>
+                parents;  // shown block -> block that holds it
             for (const auto& [bid, def] : doc_.blocks())
                 for (EntityId member : def.entities)
                     if (const Entity* m = doc_.find(member))

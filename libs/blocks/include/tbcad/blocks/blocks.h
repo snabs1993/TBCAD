@@ -65,6 +65,12 @@ std::vector<BlockId> dependentBlocks(const Document& doc, const std::vector<Bloc
 // Bounds of an Insert in the space it lives in (nested inserts included). Empty for a missing or
 // empty block.
 BBox2 insertBounds(const Document& doc, const Entity& insert);
+// About how many objects drawing an insert goes through: every nested insert, array item and
+// object, down to kMaxNesting levels (nothing deeper is drawn).
+std::size_t expandedCount(const Document& doc, const Entity& insert);
+// Above this many drawn objects an insert is shown as its outline (a block that holds another
+// block many times over, many levels deep, would otherwise never finish drawing).
+inline constexpr std::size_t kMaxExpanded = std::size_t{1} << 23;
 
 // While one of these is alive on a thread, what insertBounds / blockBounds learn about blocks is
 // kept and reused by later calls on that thread. Use it around a loop that measures many inserts
