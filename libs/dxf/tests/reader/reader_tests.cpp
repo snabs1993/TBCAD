@@ -144,6 +144,51 @@ TEST_CASE("extrusion: steeply tilted circles, ellipses and polylines are project
     CHECK(ellipses[0]->ratio == doctest::Approx(0.25));
 }
 
+TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are projected") {
+    // Normal (0, -0.866, 0.5): object X is world +X, object Y is (0, 0.5, 0.866).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "SOLID").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 10.0).g(21, 0.0);
+    p.g(12, 0.0).g(22, 10.0).g(13, 10.0).g(23, 10.0);
+    p.g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    // A hatch bounded by a full circle of radius 5 (one arc edge).
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(210, 0.0).g(220, -0.8660254);
+    p.g(230, 0.5).g(2, "SOLID").g(70, 1).g(71, 0).g(91, 1).g(92, 1).g(93, 1);
+    p.g(72, 2).g(10, 0.0).g(20, 0.0).g(40, 5.0).g(50, 0.0).g(51, 360.0).g(73, 1);
+    p.g(97, 0).g(75, 0).g(76, 1).g(98, 0);
+    // An old style 2D polyline with a half circle bulge, at elevation 4.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 4.0).g(70, 0);
+    p.g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(42, 1.0);
+    p.g(0, "VERTEX").g(8, "0").g(10, 10.0).g(20, 0.0).g(0, "SEQEND").g(8, "0");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    CHECK(l.report.countCode(code::kExtrusion3d) == 1);  // the one info line
+    const auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 2);
+    const HatchData* solid = hatches[0]->loops[0].edges.size() == 1 ? hatches[0] : hatches[1];
+    const HatchData* round = solid == hatches[0] ? hatches[1] : hatches[0];
+    const auto* quad = std::get_if<HatchPolylineEdge>(&solid->loops[0].edges[0]);
+    REQUIRE(quad);
+    REQUIRE(quad->v.size() == 4);
+    CHECK(near(quad->v[2].p, Vec2{10, 5}, 1e-6));
+    CHECK(near(quad->v[3].p, Vec2{0, 5}, 1e-6));
+    double top = -1e9, left = 1e9;
+    for (const HatchEdge& e : round->loops[0].edges) {
+        const auto* line = std::get_if<HatchLineEdge>(&e);
+        REQUIRE(line);
+        top = std::max(top, line->a.y);
+        left = std::min(left, line->a.x);
+    }
+    CHECK(top == doctest::Approx(2.5));
+    CHECK(left == doctest::Approx(-5));
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 1);
+    // Elevation 4 along the normal moves everything by (0, -3.464).
+    CHECK(near(polys[0]->v.front().p, Vec2{0, -3.4641016}, 1e-6));
+    CHECK(near(polys[0]->v.back().p, Vec2{10, -3.4641016}, 1e-6));
+    CHECK(polys[0]->v.size() > 10);
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).

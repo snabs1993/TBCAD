@@ -152,6 +152,13 @@ private:
     bool frameOf(const Record& r, Frame& f, std::string_view type);
     // Set when the entity's extrusion is tilted beyond what frameOf reads as flat.
     std::optional<Tilt> tiltOf(const Record& r) const;
+    static std::vector<PolyVertex> projectPath(const std::vector<PolyVertex>& vs, bool closed,
+                                               const Tilt& t, double elev);
+    static void projectHatch(HatchData& h, const Tilt& t, double elev);
+    void countProjected(const Record& r) {
+        if (projected_++ == 0)
+            firstProjectedLine_ = r.line;
+    }
     // Circles, arcs, ellipses and polylines in a tilted plane, drawn as seen from above (an
     // ellipse, or a polyline). Returns false when nothing could be drawn.
     bool convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out);

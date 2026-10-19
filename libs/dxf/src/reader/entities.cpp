@@ -444,6 +444,101 @@ void Importer::addProjectedEllipse(const double c[3], const double u3[3], const 
     out.push_back(makeEntity(std::move(d)));
 }
 
+namespace {
+
+// Points along an arc of a polyline segment from `p0` with `bulge`, both ends excluded.
+void bulgePoints(Vec2 p0, Vec2 p1, double bulge, std::vector<Vec2>& out) {
+    const Vec2 ch = p1 - p0;
+    if (std::abs(bulge) < 1e-9 || !std::isfinite(bulge) || !(length(ch) > 0))
+        return;
+    const Vec2 centre = p0 + ch * 0.5 + perp(ch) * ((1 - bulge * bulge) / (4 * bulge));
+    const double rad = length(p0 - centre);
+    const double a0 = std::atan2(p0.y - centre.y, p0.x - centre.x);
+    const double sweep = 4 * std::atan(bulge);
+    const int k = std::clamp(static_cast<int>(std::ceil(std::abs(sweep) / (kPi / 18))), 2, 72);
+    for (int j = 1; j < k; ++j) {
+        const double a = a0 + sweep * j / k;
+        out.push_back(centre + Vec2{std::cos(a), std::sin(a)} * rad);
+    }
+}
+
+// Points along a counter-clockwise arc of an ellipse (`minor` is the second half axis) from
+// parameter `from` to `to`, both ends included, reversed when `ccw` is false.
+std::vector<Vec2> arcPoints(Vec2 c, Vec2 major, Vec2 minor, double from, double to, bool ccw) {
+    if (!ccw)
+        std::swap(from, to);
+    double sweep = std::fmod(to - from, kTwoPi);
+    if (sweep <= 1e-12)
+        sweep += kTwoPi;
+    const int k = std::clamp(static_cast<int>(std::ceil(sweep / (kPi / 36))), 2, 144);
+    std::vector<Vec2> pts;
+    for (int j = 0; j <= k; ++j) {
+        const double a = from + sweep * j / k;
+        pts.push_back(c + major * std::cos(a) + minor * std::sin(a));
+    }
+    if (!ccw)
+        std::reverse(pts.begin(), pts.end());
+    return pts;
+}
+
+}  // namespace
+
+// An object-coordinate path with bulges, projected: the arcs become short segments.
+std::vector<PolyVertex> Importer::projectPath(const std::vector<PolyVertex>& vs, bool closed,
+                                              const Tilt& t, double elev) {
+    std::vector<PolyVertex> out;
+    const std::size_t n = vs.size(), segs = closed ? n : n - 1;
+    std::vector<Vec2> mid;
+    for (std::size_t i = 0; i < n; ++i) {
+        out.push_back({t.map(vs[i].p, elev), 0, 0, 0});
+        if (i >= segs)
+            continue;
+        mid.clear();
+        bulgePoints(vs[i].p, vs[(i + 1) % n].p, vs[i].bulge, mid);
+        for (Vec2 q : mid)
+            out.push_back({t.map(q, elev), 0, 0, 0});
+    }
+    return out;
+}
+
+// A hatch built in object coordinates, projected. Arcs, elliptical arcs and bulges become line
+// segments; splines keep their shape (projection is affine).
+void Importer::projectHatch(HatchData& h, const Tilt& t, double elev) {
+    auto m = [&](Vec2 p) { return t.map(p, elev); };
+    auto lines = [&](const std::vector<Vec2>& pts, std::vector<HatchEdge>& out) {
+        for (std::size_t i = 1; i < pts.size(); ++i)
+            out.emplace_back(HatchLineEdge{m(pts[i - 1]), m(pts[i])});
+    };
+    for (HatchLoop& loop : h.loops) {
+        std::vector<HatchEdge> edges;
+        for (HatchEdge& e : loop.edges) {
+            if (auto* l = std::get_if<HatchLineEdge>(&e)) {
+                edges.emplace_back(HatchLineEdge{m(l->a), m(l->b)});
+            } else if (auto* a = std::get_if<HatchArcEdge>(&e)) {
+                lines(arcPoints(a->center, {a->radius, 0}, {0, a->radius}, a->startAngle,
+                                a->endAngle, a->ccw),
+                      edges);
+            } else if (auto* el = std::get_if<HatchEllipseEdge>(&e)) {
+                lines(arcPoints(el->center, el->majorAxis, perp(el->majorAxis) * el->ratio,
+                                el->startParam, el->endParam, el->ccw),
+                      edges);
+            } else if (auto* sp = std::get_if<HatchSplineEdge>(&e)) {
+                for (Vec2& p : sp->spline.control)
+                    p = m(p);
+                for (Vec2& p : sp->spline.fit)
+                    p = m(p);
+                edges.push_back(std::move(e));
+            } else if (auto* pl = std::get_if<HatchPolylineEdge>(&e)) {
+                if (pl->v.size() >= 2)
+                    pl->v = projectPath(pl->v, pl->closed, t, elev);
+                edges.push_back(std::move(e));
+            }
+        }
+        loop.edges = std::move(edges);
+    }
+    h.patternOrigin = m(h.patternOrigin);
+}
+
 bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out) {
     const std::string_view type = r.type;
     const std::size_t before = out.size();
@@ -480,51 +575,26 @@ bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& o
             e += kTwoPi;
         addProjectedEllipse(c, u, v, s, e, e - s >= kTwoPi - 1e-9, out);
     } else if (type == "LWPOLYLINE") {
-        std::vector<PolyVertex> vs;
+        PolylineData pl;
         for (const Group& g : r.g) {
             if (g.code == 10)
-                vs.push_back({{g.number() * k_, 0}, 0, 0, 0});
-            else if (g.code == 20 && !vs.empty())
-                vs.back().p.y = g.number() * k_;
-            else if (g.code == 42 && !vs.empty())
-                vs.back().bulge = g.number();
+                pl.v.push_back({{g.number() * k_, 0}, 0, 0, 0});
+            else if (g.code == 20 && !pl.v.empty())
+                pl.v.back().p.y = g.number() * k_;
+            else if (g.code == 42 && !pl.v.empty())
+                pl.v.back().bulge = g.number();
         }
-        if (vs.size() < 2)
+        if (pl.v.size() < 2)
             return false;
-        const double elev = r.num(38) * k_;
-        // Arcs (bulges) become short segments in the object's plane, then everything is
-        // projected.
-        PolylineData pl;
         pl.closed = (r.integer(70) & 1) != 0;
-        const std::size_t n = vs.size(), segs = pl.closed ? n : n - 1;
-        for (std::size_t i = 0; i < n; ++i) {
-            pl.v.push_back({t.map(vs[i].p, elev), 0, 0, 0});
-            const double b = vs[i].bulge;
-            if (i >= segs || std::abs(b) < 1e-9 || !std::isfinite(b))
-                continue;
-            const Vec2 p0 = vs[i].p, ch = vs[(i + 1) % n].p - p0;
-            if (!(length(ch) > 0))
-                continue;
-            const Vec2 centre = p0 + ch * 0.5 + perp(ch) * ((1 - b * b) / (4 * b));
-            const double rad = length(p0 - centre);
-            const double a0 = std::atan2(p0.y - centre.y, p0.x - centre.x);
-            const double sweep = 4 * std::atan(b);
-            const int k =
-                std::clamp(static_cast<int>(std::ceil(std::abs(sweep) / (kPi / 18))), 2, 72);
-            for (int j = 1; j < k; ++j) {
-                const double a = a0 + sweep * j / k;
-                pl.v.push_back(
-                    {t.map(centre + Vec2{std::cos(a), std::sin(a)} * rad, elev), 0, 0, 0});
-            }
-        }
+        pl.v = projectPath(pl.v, pl.closed, t, r.num(38) * k_);
         out.push_back(makeEntity(std::move(pl)));
     } else {
         return false;
     }
     if (out.size() == before)
         return false;
-    if (projected_++ == 0)
-        firstProjectedLine_ = r.line;
+    countProjected(r);
     return true;
 }
 
@@ -676,6 +746,22 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         if (const std::optional<Tilt> tilt = tiltOf(r)) {
             if (!convTilted(r, *tilt, out))
                 bad(r, t, "degenerate in its tilted plane; skipped");
+            return true;
+        }
+    }
+    if (t == "HATCH" || t == "SOLID" || t == "TRACE") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            // Built in object coordinates, then projected.
+            const std::size_t before = out.size();
+            if (t == "HATCH")
+                convHatch(r, f, out);
+            else
+                convSolid(r, f, out);
+            for (std::size_t i = before; i < out.size(); ++i)
+                if (auto* h = std::get_if<Indirect<HatchData>>(&out[i].data))
+                    projectHatch(**h, *tilt, r.num(30) * k_);
+            if (out.size() > before)
+                countProjected(r);
             return true;
         }
     }
@@ -894,7 +980,8 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
         return false;
     }
     Frame f;  // a 3D polyline is in world coordinates; its vertices have no extrusion
-    if (!line3d && !frameOf(r, f, "POLYLINE"))
+    const std::optional<Tilt> tilt = line3d ? std::nullopt : tiltOf(r);
+    if (!line3d && !tilt && !frameOf(r, f, "POLYLINE"))
         return false;
     PolylineData pl;
     pl.v = ((flags & (2 | 4)) && !splineVerts.empty()) ? std::move(splineVerts) : std::move(plain);
@@ -907,6 +994,10 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
     if (pl.v.size() < 2) {
         bad(r, "POLYLINE", "fewer than two vertices; skipped");
         return false;
+    }
+    if (tilt) {
+        pl.v = projectPath(pl.v, pl.closed, *tilt, r.num(30) * k_);
+        countProjected(r);
     }
     out.push_back(makeEntity(std::move(pl)));
     return true;
