@@ -244,6 +244,46 @@ TEST_CASE("erasing everything and undoing it again and again keeps the boxes rig
     }
 }
 
+TEST_CASE("a big erase kept as a swapped tree stays right when other edits come in between") {
+    Document doc;
+    SpatialIndex idx;
+    DocumentIndexer indexer(doc, idx, boundsOf);
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("bulk");
+        for (int i = 0; i < 3000; ++i)
+            ids.push_back(tx.add(line(i, 0, i + 1, 1 + i % 7)).value());
+        tx.commit();
+    }
+    auto eraseHalf = [&](int from) {
+        Transaction tx = doc.begin("erase half");
+        for (int i = from; i < from + 1500; ++i)
+            REQUIRE(tx.erase(ids[i]));
+        return tx.commit();
+    };
+    ChangeSet first = eraseHalf(0);
+    CHECK(idx.size() == 1500);
+    doc.apply(first, Direction::Undo);
+    CHECK(idx.size() == 3000);
+    checkSame(doc, idx);
+    {  // an edit that is not the kept change: the kept tree must not be used afterwards
+        Transaction tx = doc.begin("add");
+        REQUIRE(tx.add(line(5000, 0, 5001, 1)));
+        tx.commit();
+    }
+    CHECK(idx.size() == 3001);
+    ChangeSet second = eraseHalf(1500);
+    CHECK(idx.size() == 1501);
+    checkSame(doc, idx);
+    doc.apply(second, Direction::Undo);
+    checkSame(doc, idx);
+    doc.apply(second, Direction::Redo);
+    checkSame(doc, idx);
+    doc.apply(second, Direction::Undo);
+    CHECK(idx.size() == 3001);
+    checkSame(doc, idx);
+}
+
 TEST_CASE("a big load measured on several threads gives the same index") {
     Document doc;
     std::mt19937_64 rng(9);
