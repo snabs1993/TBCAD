@@ -2090,8 +2090,14 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
         v.on = r.integer(68, 1) != 0;
         v.layer = dec(r.raw(8));
         v.id = static_cast<int>(sh.viewports.size()) + 1;
-        if (r.integer(90, 0) & 16384)  // non-rectangular clipping is on
+        // Status flags (group 90): 16384 zoom locking, 65536 non-rectangular clipping, 131072 off.
+        const long long status = r.integer(90, 0);
+        if (status & 65536)
             v.clipHandle = std::string(r.raw(340));
+        if (status & 16384)
+            v.locked = true;
+        if (status & 131072)
+            v.on = false;
         // Frozen layers as AutoCAD writes them: one layer record handle per group 331.
         for (const Group& g : r.g) {
             if (g.code != 331)

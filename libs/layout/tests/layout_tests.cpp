@@ -495,6 +495,34 @@ TEST_CASE("a viewport's frozen layers (group 331) come from an AutoCAD file and 
     CHECK(back[0].viewports[0].frozen.size() == 1);
 }
 
+TEST_CASE("a viewport's lock and off flags (group 90) are read and written") {
+    const std::string dxfText =
+        "  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\n*Paper_Space\n 70\n0\n 10\n0\n 20\n0\n 30\n0\n"
+        "  0\nVIEWPORT\n  8\n0\n 67\n1\n 10\n210\n 20\n148.5\n 40\n400\n 41\n280\n 69\n2\n"
+        " 68\n1\n 12\n1000\n 22\n2000\n 45\n28000\n 90\n49152\n"
+        "  0\nVIEWPORT\n  8\n0\n 67\n1\n 10\n60\n 20\n60\n 40\n50\n 41\n50\n 69\n3\n"
+        " 68\n1\n 12\n0\n 22\n0\n 45\n5000\n 90\n163840\n  0\nENDBLK\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n  0\nLAYOUT\n  1\nSheet A1\n 71\n1\n 44\n841\n 45\n594\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    dxf::Report report;
+    auto r = dxf::importDxf(std::span<const std::byte>(
+                                reinterpret_cast<const std::byte*>(dxfText.data()), dxfText.size()),
+                            {}, report);
+    REQUIRE(r.ok());
+    const std::vector<Layout> all = layouts(*r.value().document);
+    REQUIRE(all.size() == 1);
+    REQUIRE(all[0].viewports.size() == 2);
+    CHECK(all[0].viewports[0].locked);
+    CHECK(all[0].viewports[0].on);
+    CHECK_FALSE(all[0].viewports[1].locked);
+    CHECK_FALSE(all[0].viewports[1].on);
+    dxf::ExportOptions opts;
+    auto out = dxf::exportDxf(*r.value().document, opts, report);
+    REQUIRE(out.ok());
+    CHECK(out.value().bytes.find("\r\n90\r\n49152\r\n") != std::string::npos);
+    CHECK(out.value().bytes.find("\r\n90\r\n163840\r\n") != std::string::npos);
+}
+
 TEST_CASE("layouts survive a DXF export and import") {
     Document doc;
     const LayerId walls = addLayer(doc, "Walls");
@@ -622,7 +650,7 @@ TEST_CASE("a viewport clipped by a polyline of a DXF file from another program")
         "  0\nLWPOLYLINE\n  5\nB1\n  8\nDefpoints\n 67\n1\n 90\n3\n 70\n1\n"
         " 10\n20\n 20\n20\n 10\n300\n 20\n20\n 10\n160\n 20\n250\n"
         "  0\nVIEWPORT\n  8\n0\n 67\n1\n 10\n160\n 20\n135\n 40\n280\n 41\n230\n 69\n2\n"
-        " 68\n1\n 12\n1000\n 22\n2000\n 45\n23000\n 90\n16384\n340\nB1\n  0\nENDBLK\n  0\nENDSEC\n"
+        " 68\n1\n 12\n1000\n 22\n2000\n 45\n23000\n 90\n65536\n340\nB1\n  0\nENDBLK\n  0\nENDSEC\n"
         "  0\nSECTION\n  2\nOBJECTS\n  0\nLAYOUT\n  1\nSheet A3\n 71\n1\n 44\n420\n 45\n297\n"
         "  0\nENDSEC\n  0\nEOF\n";
     dxf::Report report;
