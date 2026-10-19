@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
@@ -112,7 +113,19 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
         REQUIRE(out2.ok());
         std::size_t bad = 0;
         if (!sameExport(out.value().bytes, out2.value().bytes, bad)) {
-            FAIL_CHECK("second export differs at line " << bad + 1);
+            if (const char* dump = std::getenv("TBCAD_DUMP_RT")) {
+                std::ofstream(std::string(dump) + ".1") << out.value().bytes;
+                std::ofstream(std::string(dump) + ".2") << out2.value().bytes;
+            }
+            auto lineAt = [&](const std::string& b, std::size_t n) {
+                std::size_t p0 = 0;
+                for (std::size_t i = 0; i < n; ++i)
+                    p0 = b.find('\n', p0) + 1;
+                return b.substr(p0, b.find('\n', p0) - p0);
+            };
+            FAIL_CHECK("second export differs at line "
+                       << bad + 1 << ": '" << lineAt(out.value().bytes, bad) << "' vs '"
+                       << lineAt(out2.value().bytes, bad) << "'");
         }
         ++roundTripped;
     }

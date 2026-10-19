@@ -541,6 +541,51 @@ void Importer::processObjects(RecordReader& rr) {
                 (void)tx_->modifyHeader([&](Header& h) { h.custom[text] = body; });
             continue;
         }
+        if (text == "tbcad.settings") {
+            std::string key, value;
+            std::map<std::string, std::string> found;
+            auto finish = [&] {
+                if (key.empty())
+                    return;
+                std::string out;
+                for (std::size_t i = 0; i < value.size(); ++i) {
+                    if (value[i] == '\\' && i + 1 < value.size()) {
+                        const char n = value[++i];
+                        out.push_back(n == 'n' ? '\n' : n == 'r' ? '\r' : n);
+                    } else {
+                        out.push_back(value[i]);
+                    }
+                }
+                found[key] = std::move(out);
+                key.clear();
+                value.clear();
+            };
+            bool first = true;
+            for (const Group& xg : r.g) {
+                if (xg.code != 1)
+                    continue;
+                if (first) {
+                    first = false;
+                    continue;
+                }
+                const std::string line = dec(xg.str());
+                if (line.empty())
+                    continue;
+                if (line[0] == 'K') {
+                    finish();
+                    key = line.substr(1);
+                } else if (line[0] == 'V' && !key.empty() && value.size() < (8u << 20)) {
+                    value += line.substr(1);
+                }
+            }
+            finish();
+            (void)tx_->modifyHeader([&](Header& h) {
+                for (auto& [k, v] : found)
+                    if (k.rfind("tbcad.", 0) == 0)
+                        h.custom.emplace(k, std::move(v));  // a setting read elsewhere wins
+            });
+            continue;
+        }
         if (text.rfind("current=", 0) != 0)
             continue;
         const std::size_t semi = text.find(";list=");
@@ -895,7 +940,8 @@ void Importer::keepObjects() {
     static const std::set<std::string> ownedNames = {
         "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_IMAGE_VARS",  "ACAD_LAYOUT",
         "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME", "ACAD_SCALELIST",   "TBCAD_ANNOSCALE",
-        "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS", "ACAD_WIPEOUT_VARS"};
+        "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS", "ACAD_WIPEOUT_VARS",
+        "TBCAD_SETTINGS"};
     static const std::set<std::string> neverKept = {
         "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "SORTENTSTABLE", "GROUP",
         "DIMASSOC", "IMAGEDEFREACTOR", "ACDBPLACEHOLDER",  "MLINESTYLE"};

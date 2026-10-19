@@ -1583,3 +1583,31 @@ TEST_CASE("a drawing without named plot styles writes none") {
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+TEST_CASE(
+    "TBCAD settings kept in the header (styles, layer states, ...) survive a DXF round trip") {
+    std::string longValue;
+    for (int i = 0; i < 700; ++i)
+        longValue += "แถว" + std::to_string(i) + "\\x\t";
+    longValue += "line1\nline2\r\nend";
+    Document doc;
+    {
+        auto tx = doc.begin("k");
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      h.custom["tbcad.mleaderstyle.Note"] = "Text";
+                      h.custom["tbcad.mleadercurrent"] = "Note";
+                      h.custom["tbcad.layerstate.Plan"] = longValue;
+                      h.custom["tbcad.tablestyle.Grid"] = "a\tb\nc";
+                  }).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const auto& c = rt.back->header().custom;
+    REQUIRE(c.count("tbcad.layerstate.Plan"));
+    CHECK(c.at("tbcad.layerstate.Plan") == longValue);
+    CHECK(c.at("tbcad.mleaderstyle.Note") == "Text");
+    CHECK(c.at("tbcad.mleadercurrent") == "Note");
+    CHECK(c.at("tbcad.tablestyle.Grid") == "a\tb\nc");
+}
+}  // namespace tbcad::dxf
