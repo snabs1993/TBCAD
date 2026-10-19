@@ -1,0 +1,13 @@
+{
+  "description": "a block that inserts itself, two that insert each other, 60 levels that each insert the next twice, a 30000 x 30000 MINSERT and an xref to the drawing itself",
+  "exit": 1,
+  "ezdxf": false,
+  "kinds_min": {
+    "Insert": 3,
+    "Line": 1
+  },
+  "version": "AC1015",
+  "warnings_has": [
+    "dxf.reader.entity_rejected"
+  ]
+}

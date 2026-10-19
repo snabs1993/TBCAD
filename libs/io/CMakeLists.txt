@@ -18,6 +18,17 @@ add_executable(tbcad-dump tools/tbcad-dump.cpp)
 target_link_libraries(tbcad-dump PRIVATE tbcad::io)
 tbcad_set_warnings(tbcad-dump)
 
+# Optional libFuzzer build (clang only): cmake -DTBCAD_IO_FUZZ=ON
+option(TBCAD_IO_FUZZ "Build the .tbcad reader fuzz target with libFuzzer + ASan/UBSan" OFF)
+if(TBCAD_IO_FUZZ)
+  set(_fuzz_flags -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined)
+  target_compile_options(tbcad_io PRIVATE ${_fuzz_flags})
+  add_executable(tbcad_io_fuzz_tbcad tests/fuzz_tbcad.cpp)
+  target_link_libraries(tbcad_io_fuzz_tbcad PRIVATE tbcad::io)
+  target_compile_options(tbcad_io_fuzz_tbcad PRIVATE ${_fuzz_flags})
+  target_link_options(tbcad_io_fuzz_tbcad PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()
+
 tbcad_add_tests(io
   SOURCES
     tests/main.cpp
