@@ -12,6 +12,7 @@
 #include "miniz.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/export/plot.h"
+#include "tbcad/underlay/image.h"
 
 using namespace tbcad;
 using namespace tbcad::exportlib;
@@ -495,6 +496,76 @@ TEST_CASE("circles and arcs stay arcs: Béziers in PDF, arc commands in SVG") {
     CHECK(wellFormedXml(svg));
 }
 
+TEST_CASE("wipeouts are plotted in draw order, also inside blocks") {
+    auto wipeout = [] {
+        PolylineData p;
+        p.closed = true;
+        for (Vec2 v : {Vec2{10, -5}, Vec2{20, -5}, Vec2{20, 5}, Vec2{10, 5}})
+            p.v.push_back({v, 0, 0, 0});
+        Entity e;
+        e.data = p;
+        e.common.wipeout = true;
+        return e;
+    };
+    auto kinds = [](const Document& d) {
+        PlotSettings s;
+        s.paperName = "A4";
+        auto sheet = buildSheet(d, s);
+        REQUIRE(sheet.ok());
+        std::string k;
+        for (const PlotPrimitive& p : sheet.value().prims)
+            k += std::holds_alternative<PlotFill>(p)   ? 'F'
+                 : std::holds_alternative<PlotPath>(p) ? 'P'
+                                                       : '?';
+        return k;
+    };
+    Document doc;
+    EntityId first, last;
+    {
+        auto tx = doc.begin("add");
+        first = tx.add(line({0, 0}, {30, 0})).value();
+        REQUIRE(tx.add(wipeout()).ok());
+        last = tx.add(line({0, 1}, {30, 1})).value();
+        tx.commit();
+    }
+    CHECK(kinds(doc) == "PFP");
+    {
+        auto tx = doc.begin("back");
+        REQUIRE(tx.sendToBack(last));
+        tx.commit();
+    }
+    CHECK(kinds(doc) == "PPF");  // the wipeout is now in front of both lines
+    {
+        auto tx = doc.begin("front");
+        REQUIRE(tx.bringToFront(first));
+        tx.commit();
+    }
+    CHECK(kinds(doc) == "PFP");
+
+    // A block with a wipeout and a line: the order of the block decides what the wipeout hides.
+    blocks::registerInsertDisplay();
+    Document d2;
+    BlockId blk;
+    EntityId wipe;
+    {
+        auto tx = d2.begin("block");
+        blk = tx.addBlock(BlockDef{.name = "B"}).value();
+        REQUIRE(tx.add(line({0, 0}, {30, 0}), blk).ok());
+        wipe = tx.add(wipeout(), blk).value();
+        Entity ins;
+        ins.data = InsertData{blk, {0, 0}, {1, 1}, 0};
+        REQUIRE(tx.add(std::move(ins)).ok());
+        tx.commit();
+    }
+    CHECK(kinds(d2) == "PF");
+    {
+        auto tx = d2.begin("send");
+        REQUIRE(tx.sendToBack(wipe));
+        tx.commit();
+    }
+    CHECK(kinds(d2) == "FP");
+}
+
 TEST_CASE("layers with plot off, off layers and hidden entities are skipped") {
     Document doc;
     LayerId noPlot;
@@ -753,6 +824,33 @@ TEST_CASE("a picture block is plotted as a picture in PDF, SVG and raster output
     CHECK(c[0] == 255);
     CHECK(c[1] < 10);
     CHECK(c[2] < 10);
+
+    // A polygon clip and a plotted frame: the outside of the polygon is transparent, the frame is
+    // drawn as a path.
+    {
+        auto tx = doc.begin("clip");
+        underlay::ImageParams ip;
+        ip.clip = {{0, 0}, {1, 0}, {0, 1}};
+        ip.frame = 1;
+        REQUIRE(underlay::setImageParams(tx, "red", ip));
+        tx.commit();
+    }
+    auto clipped = buildSheet(doc, s);
+    REQUIRE(clipped.ok());
+    const PlotImage* cp = nullptr;
+    std::size_t framePaths = 0;
+    for (const PlotPrimitive& p : clipped.value().prims) {
+        if (const auto* i = std::get_if<PlotImage>(&p))
+            cp = i;
+        else if (std::get_if<PlotPath>(&p))
+            ++framePaths;
+    }
+    REQUIRE(cp);
+    CHECK(framePaths == 1);
+    const auto& rgba = cp->data->rgba;
+    CHECK(rgba[3] == 255);                    // top-left pixel is inside
+    CHECK(rgba[((1 * 4 + 3) * 4) + 3] == 0);  // bottom-right pixel is outside
+    s.hostFile = dir / "drawing.tbcad";
 
     // A picture whose file cannot be found is left out.
     s.hostFile = dir / "nowhere" / "drawing.tbcad";

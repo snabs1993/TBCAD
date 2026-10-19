@@ -30,6 +30,8 @@ inline constexpr const char* kKeptObjectRootKey = "dxf.objroot";
 inline constexpr const char* kKeptHandlesKey = "dxf.handles";
 // The page setup of a layout (its AcDbPlotSettings groups), by layout name.
 inline constexpr std::string_view kKeptPlotSetPrefix = "dxf.plotset.";
+// Descriptions of groups: lines "name TAB description".
+inline constexpr const char* kKeptGroupDescKey = "dxf.groupdesc";
 
 inline void packGroup(std::string& out, int code, std::string_view value) {
     out += std::to_string(code);

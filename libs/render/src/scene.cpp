@@ -203,19 +203,40 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
     remove(id);
     EntityRec& rec = entities_[id];
     rec.drawOrder = drawOrder;
-    for (const DisplayItem& item : list.items)
-        if (const auto* f = std::get_if<DisplayFill>(&item); f && isBackgroundColor(f->style.color))
-            rec.mask = true;
+    // A wipeout inside a block hides what the block drew before it and not what it draws after
+    // it, so every run of mask fills is a mask of its own with its own level.
+    {
+        bool inMask = false;
+        for (const DisplayItem& item : list.items) {
+            const auto* f = std::get_if<DisplayFill>(&item);
+            const bool isMask = f && isBackgroundColor(f->style.color);
+            if (isMask && !inMask)
+                ++rec.maskCount;
+            inMask = isMask;
+        }
+        rec.mask = rec.maskCount > 0;
+    }
     if (rec.mask)
-        masks_[id] = drawOrder;
+        masks_[id] = {drawOrder, rec.maskCount};
     Cursor c;
     c.entity = id;
     c.rec = &rec;
     c.drawOrder = drawOrder;
-    c.level = levelBelow(drawOrder);
-    c.maskLevel = c.level;
+    const std::uint32_t base = levelBelow(drawOrder);
+    c.level = base;
+    c.maskLevel = base;
     c.builtZoom = builtPixelsPerMm;
+    bool inMask = false;
+    std::uint32_t seen = 0;  // masks of this entity passed so far
     for (const DisplayItem& item : list.items) {
+        const auto* mf = std::get_if<DisplayFill>(&item);
+        const bool isMask = mf && isBackgroundColor(mf->style.color);
+        if (isMask && !inMask)
+            ++seen;
+        inMask = isMask;
+        // Geometry after the n-th mask of the entity lies above it.
+        c.level = base + seen;
+        c.maskLevel = base + (seen ? seen - 1 : 0);
         // Moving to another item may change tile and style; force a fresh lookup.
         c.batch = nullptr;
         c.tile = nullptr;
@@ -226,9 +247,26 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
         else if (const auto* p = std::get_if<DisplayPoints>(&item))
             addPoints(c, *p);
     }
-    std::sort(rec.refs.begin(), rec.refs.end());
-    rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());
+    finishRefs(rec);
     ++changeCounter_;
+}
+
+std::uint32_t Scene::internRef(const TileKey& tile, const BatchKey& key) {
+    auto [it, fresh] =
+        refIds_.try_emplace(RefPair{tile, key}, static_cast<std::uint32_t>(refPairs_.size()));
+    if (fresh)
+        refPairs_.push_back(it->first);
+    return it->second;
+}
+
+void Scene::finishRefs(EntityRec& rec) {
+    if (rec.refs.size() < 2)
+        return;
+    std::sort(rec.refs.begin(), rec.refs.end(),
+              [this](std::uint32_t a, std::uint32_t b) { return refPairs_[a] < refPairs_[b]; });
+    // The same pair has the same number, so equal numbers are the repeats.
+    rec.refs.truncate(static_cast<std::uint32_t>(std::unique(rec.refs.begin(), rec.refs.end()) -
+                                                 rec.refs.begin()));
 }
 
 // Masks drawn before something with this draw order.
@@ -241,8 +279,8 @@ std::uint32_t Scene::levelBelow(std::uint32_t drawOrder) const {
 std::vector<std::uint32_t> Scene::maskOrders() const {
     std::vector<std::uint32_t> orders;
     orders.reserve(masks_.size());
-    for (const auto& [id, order] : masks_)
-        orders.push_back(order);
+    for (const auto& [id, om] : masks_)
+        orders.insert(orders.end(), om.second, om.first);
     std::sort(orders.begin(), orders.end());
     return orders;
 }
@@ -261,7 +299,8 @@ std::uint32_t Scene::drawOrderOf(EntityId id) const {
 }
 
 void Scene::eraseRefs(EntityId id, const EntityRec& rec) {
-    for (const auto& [tk, bk] : rec.refs) {
+    for (std::uint32_t refId : rec.refs) {
+        const auto& [tk, bk] = refPair(refId);
         auto tit = tiles_.find(tk);
         if (tit == tiles_.end())
             continue;
@@ -326,6 +365,21 @@ void Scene::removeMany(std::span<const EntityId> ids) {
             remove(id);
         return;
     }
+    // Most ids of a big change are often not in the scene at all (objects that were only queued):
+    // look at the scene's side first instead of hashing every id into a set.
+    std::vector<EntityId> present;
+    for (EntityId id : ids)
+        if (entities_.count(id))
+            present.push_back(id);
+    if (present.size() <= 8) {
+        for (EntityId id : present)
+            remove(id);
+        return;
+    }
+    if (present.size() != ids.size()) {
+        removeMany(present);
+        return;
+    }
     // Erasing one object shifts every later range of its batches, so erasing many one by one is
     // quadratic. Here each touched batch is compacted once.
     const std::unordered_set<EntityId> drop(ids.begin(), ids.end());
@@ -347,8 +401,8 @@ void Scene::removeMany(std::span<const EntityId> ids) {
         auto it = entities_.find(id);
         if (it == entities_.end())
             continue;
-        for (const auto& ref : it->second.refs)
-            touched.insert(ref);
+        for (std::uint32_t ref : it->second.refs)
+            touched.insert(refPair(ref));
         if (it->second.mask)
             masks_.erase(id);
         entities_.erase(it);
@@ -412,6 +466,8 @@ void Scene::discardAll() {
     }
     tiles_.clear();
     entities_.clear();
+    refPairs_.clear();
+    refIds_.clear();
     masks_.clear();
     levelOrders_.clear();
 }
@@ -481,7 +537,8 @@ const SelectionGeometry& Scene::geometryFor(const std::unordered_set<EntityId>& 
             auto eit = entities_.find(id);
             if (eit == entities_.end())
                 continue;
-            for (const auto& [tk, bk] : eit->second.refs) {
+            for (std::uint32_t refId : eit->second.refs) {
+                const auto& [tk, bk] = refPair(refId);
                 if (bk.kind != BatchKind::Stroke || !layerVisible(bk.layer))
                     continue;
                 auto tit = tiles_.find(tk);

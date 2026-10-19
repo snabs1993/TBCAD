@@ -115,6 +115,7 @@ private:
     void processClasses(RecordReader& rr);
     void storeObject(const Record& r);
     void importGroups();
+    void importDrawOrder();
     void keepObjects();
     void keepHandles();
     void applyPlotStyles();
@@ -233,7 +234,8 @@ private:
     };
     std::unordered_map<std::string, ObjRec> objStore_{};
     std::size_t objStoreBytes_ = 0;
-    std::string objRoot_{};  // handle of the root dictionary
+    std::string layerTableDict_{};  // extension dictionary of the LAYER table (layer filters)
+    std::string objRoot_{};         // handle of the root dictionary
     // (entity id, handle in the source file) of the entities added so far
     std::vector<std::pair<std::uint64_t, std::uint64_t>> srcHandles_{};
     // Named plot styles: name of each plot style object by handle, and the entities (source
@@ -309,9 +311,12 @@ private:
         std::string defHandle{};
         double fade = 0;
         double u0 = 0, v0 = 0, u1 = 1, v1 = 1;
+        int brightness = 50, contrast = 50;
+        std::vector<Vec2> clip{};  // polygon in picture fractions
         int line = 0;
     };
     std::vector<PendingImage> images_{};
+    int imageFrame_ = -1;  // IMAGEFRAME of the RASTERVARIABLES object (all pictures); -1 = none
     std::map<std::string, std::vector<Vec2>>
         sheetRings_{};                                // closed polylines on sheets, by handle
     std::map<std::string, std::string> imageDefs_{};  // IMAGEDEF handle -> file path

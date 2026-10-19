@@ -1595,6 +1595,13 @@ Result<void> Transaction::bringToFront(EntityId id) {
     Document& d = doc();
     if (!d.find(id))
         return makeError(ErrorCode::NotFound, "unknown entity");
+    if (auto ow = d.owner_.find(id); ow != d.owner_.end()) {
+        touchBlock(ow->second);
+        auto& list = d.blocks_.rows.find(ow->second)->second.entities;
+        list.erase(std::remove(list.begin(), list.end(), id), list.end());
+        list.push_back(id);
+        return {};
+    }
     std::int64_t key = kFrontBase;
     for (const auto& [eid, k] : d.orderOverride_) {
         if (eid != id && k >= kFrontBase)
@@ -1609,6 +1616,13 @@ Result<void> Transaction::sendToBack(EntityId id) {
     Document& d = doc();
     if (!d.find(id))
         return makeError(ErrorCode::NotFound, "unknown entity");
+    if (auto ow = d.owner_.find(id); ow != d.owner_.end()) {
+        touchBlock(ow->second);
+        auto& list = d.blocks_.rows.find(ow->second)->second.entities;
+        list.erase(std::remove(list.begin(), list.end(), id), list.end());
+        list.insert(list.begin(), id);
+        return {};
+    }
     std::int64_t key = -kFrontBase;
     for (const auto& [eid, k] : d.orderOverride_) {
         if (eid != id && k <= -kFrontBase)
@@ -1616,6 +1630,51 @@ Result<void> Transaction::sendToBack(EntityId id) {
     }
     touchOrder(id);
     d.orderOverride_[id] = key;
+    return {};
+}
+
+Result<void> Transaction::setDrawOrder(const std::vector<EntityId>& order, BlockId block) {
+    Document& d = doc();
+    if (block) {
+        const BlockDef* def = d.block(block);
+        if (!def)
+            return makeError(ErrorCode::NotFound, "unknown block");
+        std::vector<EntityId> a = order, b = def->entities;
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        if (a != b)
+            return makeError(ErrorCode::InvalidArgument,
+                             "the draw order is not the entities of the block");
+        if (order == def->entities)
+            return {};
+        touchBlock(block);
+        d.blocks_.rows.find(block)->second.entities = order;
+        return {};
+    }
+    std::vector<EntityId> a = order, b = d.modelSpace();
+    std::sort(a.begin(), a.end());
+    std::sort(b.begin(), b.end());
+    if (a != b)
+        return makeError(ErrorCode::InvalidArgument,
+                         "the draw order is not the entities of model space");
+    // Entities without an override sit in id order. The longest ascending window of the order
+    // can stay that way; what precedes it is sent to the back and what follows is brought to the
+    // front.
+    std::size_t bestStart = 0, bestLen = 0, runStart = 0;
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        if (i > 0 && !(order[i - 1] < order[i]))
+            runStart = i;
+        if (i + 1 - runStart > bestLen) {
+            bestLen = i + 1 - runStart;
+            bestStart = runStart;
+        }
+    }
+    for (std::size_t i = bestStart; i-- > 0;)
+        if (auto r = sendToBack(order[i]); !r)
+            return r;
+    for (std::size_t i = bestStart + bestLen; i < order.size(); ++i)
+        if (auto r = bringToFront(order[i]); !r)
+            return r;
     return {};
 }
 

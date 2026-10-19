@@ -18,6 +18,8 @@
 
 namespace tbcad::dxf::detail {
 
+thread_local Writer::Lane* Writer::tlLane_ = nullptr;
+
 namespace {
 
 constexpr double kDeg = 180.0 / kPi;
@@ -284,10 +286,10 @@ void Writer::prepareSheets() {
 void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& blockName) {
     blockBegin(o, blockName, sheet.rec, {0, 0}, 0, true);
     if (const BlockDef* def = doc_.block(sheet.content)) {
-        Out* saved = o_;
-        o_ = &o;
+        Out* saved = L().o;
+        L().o = &o;
         writeEntityList(def->entities, sheet.rec);
-        o_ = saved;
+        L().o = saved;
     }
     // The viewports: where the window sits on the paper (10/20, 40/41) and which model area it
     // shows (view centre 12/22, view height 45); the frozen layers are TBCAD XDATA.
@@ -389,6 +391,11 @@ void Writer::tableBegin(Out& o, std::string_view name, std::uint64_t handle, std
     if (!r12_) {
         o.h(5, handle);
         o.i(330, 0);
+        if (name == "LAYER" && layerTableDict_) {
+            o.raw(102, "{ACAD_XDICTIONARY");
+            o.h(360, layerTableDict_);
+            o.raw(102, "}");
+        }
         o.raw(100, "AcDbSymbolTable");
     }
     o.i(70, static_cast<long long>(count));
@@ -525,6 +532,14 @@ std::uint64_t Writer::pstyleHandle(const std::string& name) {
 }
 
 void Writer::writeLayers(Out& o, std::uint64_t table) {
+    layerTable_ = table;
+    if (!r12_) {
+        const auto it = doc_.header().custom.find(kKeptObjectRootKey);
+        if (it != doc_.header().custom.end() &&
+            it->second.find("%LAYERTABLE%") != std::string::npos &&
+            doc_.header().custom.count(kKeptObjectsKey))
+            layerTableDict_ = newHandle();
+    }
     tableBegin(o, "LAYER", table, doc_.layers().size());
     std::size_t flattened = 0;
     for (const auto& [id, layer] : doc_.layers()) {
@@ -914,16 +929,30 @@ std::string Writer::objectsSection() {
                   plotDict = newHandle(), mlineStyle = newHandle(), placeholder = newHandle();
 
     struct GroupOut {
-        std::string name;
+        std::string name, description;
         std::uint64_t handle = 0;
         bool selectable = true;
         std::vector<std::uint64_t> members;
     };
     std::vector<GroupOut> groupOut;
+    std::map<std::string, std::string> groupDesc;
+    if (auto dit = doc_.header().custom.find(kKeptGroupDescKey);
+        dit != doc_.header().custom.end()) {
+        std::string_view text = dit->second;
+        while (!text.empty()) {
+            const std::size_t nl = text.find('\n');
+            const std::string_view line = text.substr(0, nl);
+            text = nl == std::string_view::npos ? std::string_view{} : text.substr(nl + 1);
+            if (const std::size_t tab = line.find('\t'); tab != std::string_view::npos)
+                groupDesc[std::string(line.substr(0, tab))] = std::string(line.substr(tab + 1));
+        }
+    }
     if (!r12_) {
         for (const tbcad::Group& g : readGroups(doc_)) {
             GroupOut out;
             out.name = g.name;
+            if (auto d = groupDesc.find(g.name); d != groupDesc.end())
+                out.description = d->second;
             out.selectable = g.selectable;
             for (EntityId m : g.members) {
                 auto it = groupHandle_.find(m.value);
@@ -945,7 +974,7 @@ std::string Writer::objectsSection() {
             return rootDict_;
         if (!t.empty() && t[0] == '#') {  // an entity of the source file, if it was written
             const std::uint64_t h = std::strtoull(t.c_str() + 1, nullptr, 16);
-            return entityHandlesWritten_.count(h) ? h : 0;
+            return L().handlesWritten.count(h) ? h : 0;
         }
         if (t.rfind("$S:", 0) == 0) {  // a text style of the drawing, by name
             for (const auto& [id, ts] : doc_.textStyles()) {
@@ -1042,6 +1071,8 @@ std::string Writer::objectsSection() {
     o.raw(3, "ACAD_PLOTSTYLENAME");
     o.h(350, plotDict);
     for (const auto& [unused, entry] : keptRootEntries) {
+        if (entry.rfind("%LAYERTABLE%", 0) == 0)
+            continue;
         const std::size_t tab = entry.find('\t');
         o.str(3, entry.substr(0, tab));
         o.h(350, handleOfToken(entry.substr(tab + 1)));
@@ -1057,6 +1088,23 @@ std::string Writer::objectsSection() {
         o.raw(100, "AcDbDictionary");
         o.i(281, 1);
     };
+    if (layerTableDict_) {  // the layer filters: the LAYER table's extension dictionary
+        o.zero("DICTIONARY");
+        o.h(5, layerTableDict_);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, layerTable_);
+        o.raw(102, "}");
+        o.h(330, layerTable_);
+        o.raw(100, "AcDbDictionary");
+        o.i(281, 1);
+        for (const auto& [unused, entry] : keptRootEntries) {
+            if (entry.rfind("%LAYERTABLE%", 0) != 0)
+                continue;
+            const std::size_t tab = entry.find('\t');
+            o.str(3, entry.substr(12, tab - 12));
+            o.h(350, handleOfToken(entry.substr(tab + 1)));
+        }
+    }
     ownedDict(groupDict);
     for (const GroupOut& g : groupOut) {
         o.str(3, g.name);
@@ -1171,7 +1219,7 @@ std::string Writer::objectsSection() {
         o.raw(102, "}");
         o.h(330, groupDict);
         o.raw(100, "AcDbGroup");
-        o.str(300, "");
+        o.str(300, g.description);
         o.i(70, !g.name.empty() && g.name[0] == '*' ? 1 : 0);
         o.i(71, g.selectable ? 1 : 0);
         for (std::uint64_t m : g.members)
@@ -1261,6 +1309,12 @@ std::string Writer::objectsSection() {
         else
             o.str(2, st.name);
         o.i(70, (st.startCap ? 16 : 0) | (st.endCap ? 256 : 0) | (st.joints ? 2 : 0) |
+                    (st.startArc == 1   ? 64
+                     : st.startArc == 2 ? 32
+                                        : 0) |
+                    (st.endArc == 1   ? 1024
+                     : st.endArc == 2 ? 512
+                                      : 0) |
                     (st.fill >= 0 ? 1 : 0));
         o.str(3, st.description);
         o.i(62, st.fill >= 0 ? st.fill : 256);
@@ -1287,7 +1341,7 @@ std::string Writer::objectsSection() {
         writeStyle(e.style, e.handle, nullptr);
 
     // Extension dictionaries of entities: a dictionary per entity, one XRECORD per entry.
-    for (const PendingDict& pd : pendingDicts_) {
+    for (const PendingDict& pd : L().pendingDicts) {
         std::vector<std::uint64_t> recHandles;
         for (std::size_t i = 0; i < pd.records.size(); ++i)
             recHandles.push_back(newHandle());
@@ -1580,6 +1634,13 @@ Result<ExportResult> Writer::run() {
     layoutModel_ = newHandle();
     layoutPaper_ = newHandle();
     prepareSheets();
+    {
+        constexpr std::string_view kPrefix = "tbcad.pstyle.ent:";
+        const auto& custom = doc_.header().custom;
+        auto it = custom.lower_bound(std::string(kPrefix));
+        anyEntityPlotStyle_ =
+            it != custom.end() && it->first.compare(0, kPrefix.size(), kPrefix) == 0;
+    }
     // Extents of model space for $EXTMIN/$EXTMAX and the active viewport.
     std::vector<EntityId> model = doc_.modelSpace();
     if (opt_.onlyLevel) {
@@ -1635,7 +1696,7 @@ Result<ExportResult> Writer::run() {
 
     // Entities first (they decide which dimension blocks exist), then the sections in file order.
     Out entities(utf8_, r12_);
-    o_ = &entities;
+    L().o = &entities;
     writeEntityList(model, modelRec_);
 
     std::string blocks;
@@ -1654,10 +1715,10 @@ Result<ExportResult> Writer::run() {
             std::uint64_t rec = blockRec_[id.value];
             bool anon = blockName_[id.value][0] == '*';
             blockBegin(o, blockName_[id.value], rec, def.base, anon ? 1 : 0, false, &def);
-            Out* saved = o_;
-            o_ = &o;
+            Out* saved = L().o;
+            L().o = &o;
             writeEntityList(def.entities, rec);
-            o_ = saved;
+            L().o = saved;
             blockEnd(o, rec, false);
         }
         // The sheets come after the blocks they insert, so an INSERT finds its definition.
@@ -1719,6 +1780,8 @@ Result<ExportResult> Writer::run() {
 
     ExportResult result;
     result.bytes = std::move(out);
+    for (const auto& [type, count] : main_.counts)
+        summary_.entities[type] += count;
     summary_.acadVer = std::string(versionCode(opt_.version));
     summary_.version = opt_.version == DxfVersion::R12
                            ? "R12"

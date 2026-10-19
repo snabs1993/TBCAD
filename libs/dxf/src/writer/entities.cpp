@@ -1,6 +1,11 @@
 // DXF export: entity records.
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <exception>
+#include <future>
+#include <memory>
+#include <thread>
 
 #include "keep.h"
 #include "tbcad/blocks/array.h"
@@ -12,6 +17,7 @@
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 #include "tbcad/text/field.h"
+#include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
 #include "writer_impl.h"
 
@@ -151,7 +157,8 @@ Props Writer::propsOf(const EntityCommon& c) {
         p.ltScale = std::strtod(buf, nullptr);
     }
     p.visible = c.visible;
-    p.plotStyle = entityPlotStyle(doc_.header(), c.id);
+    if (anyEntityPlotStyle_)
+        p.plotStyle = entityPlotStyle(doc_.header(), c.id);
     if (!c.ext.get().dict.empty())
         p.dict = &c.ext.get().dict;
     return p;
@@ -178,11 +185,11 @@ Props Writer::propsOfStyle(const DisplayStyle& st, const std::string& fallbackLa
 
 void Writer::sub(std::string_view subclass) {
     if (!r12_ && !subclass.empty())
-        o_->raw(100, subclass);
+        L().o->raw(100, subclass);
 }
 
 void Writer::colorGroups(const Props& p) {
-    Out& o = *o_;
+    Out& o = *L().o;
     if (p.trueColor) {
         AciChoice c = aciForRgba(*p.trueColor);
         o.i(62, c.aci);
@@ -209,13 +216,13 @@ void Writer::colorGroups(const Props& p) {
 
 void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
                   std::string_view subclass) {
-    Out& o = *o_;
+    Out& o = *L().o;
     o.zero(type);
     if (!r12_) {
-        const std::uint64_t self = entHandle_ ? entHandle_ : newHandle();
-        if (entHandle_)
-            entityHandlesWritten_.insert(entHandle_);
-        entHandle_ = 0;
+        const std::uint64_t self = L().entHandle ? L().entHandle : newHandle();
+        if (L().entHandle)
+            L().handlesWritten.insert(L().entHandle);
+        L().entHandle = 0;
         o.h(5, self);
         if (p.dict) {
             PendingDict pd;
@@ -225,7 +232,7 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
             o.raw(102, "{ACAD_XDICTIONARY");
             o.h(360, pd.handle);
             o.raw(102, "}");
-            pendingDicts_.push_back(std::move(pd));
+            L().pendingDicts.push_back(std::move(pd));
         }
         o.h(330, owner);
         o.raw(100, "AcDbEntity");
@@ -290,18 +297,89 @@ void Writer::loadSourceHandles() {
 }
 
 void Writer::pickEntityHandle(EntityId id) {
-    entHandle_ = 0;
+    L().entHandle = 0;
     auto it = srcHandle_.find(id.value);
     if (it != srcHandle_.end())
-        entHandle_ = it->second;
+        L().entHandle = it->second;
     if (!groupMembers_.count(id.value))
         return;
-    if (!entHandle_ && !r12_)
-        entHandle_ = newHandle();
-    groupHandle_[id.value] = entHandle_;
+    if (!L().entHandle && !r12_)
+        L().entHandle = newHandle();
+    groupHandle_[id.value] = L().entHandle;
+}
+
+const gdt::FrameTable& Writer::frames() {
+    if (!frames_)
+        frames_ = gdt::readFrames(doc_.header());
+    return *frames_;
+}
+
+bool Writer::plainBlock(BlockId id) {
+    auto [it, fresh] = plainBlock_.try_emplace(id.value, false);
+    if (!fresh)
+        return it->second;
+    const BlockDef* bd = doc_.block(id);
+    if (!bd || bd->dynamic || bd->assembly || blockNameOf(id).empty())
+        return false;
+    if (!bd->xrefPath.empty() && underlay::isImagePath(bd->xrefPath))
+        return false;
+    if (frames().count(bd->name))
+        return false;
+    for (EntityId eid : bd->entities)
+        if (const Entity* e = doc_.find(eid))
+            if (const auto* t = entityAs<TextData>(*e); t && t->attdef && !t->attdef->constant)
+                return false;  // its attributes are records of their own
+    return it->second = true;
+}
+
+bool Writer::plainEntity(const Entity& e) {
+    if (r12_)
+        return false;
+    switch (kind(e)) {
+        case EntityKind::Line:
+        case EntityKind::Circle:
+        case EntityKind::Arc:
+        case EntityKind::Point:
+            break;
+        case EntityKind::Polyline:
+            if (entityAs<PolylineData>(e)->v.size() < 2)
+                return false;  // skipped with a warning
+            break;
+        case EntityKind::Text: {
+            const auto* t = entityAs<TextData>(e);
+            if (t->attdef || text::hasFields(t->utf8))
+                return false;
+            break;
+        }
+        case EntityKind::MText:
+            if (text::hasFields(entityAs<MTextData>(e)->utf8))
+                return false;
+            break;
+        case EntityKind::Insert: {
+            const auto* d = entityAs<InsertData>(e);
+            if (d->array || d->clip.size() >= 3 || !plainBlock(d->block))
+                return false;
+            break;
+        }
+        default:
+            return false;
+    }
+    if (!e.common.ext.get().dict.empty())
+        return false;  // takes a handle of its own for the dictionary
+    if (anyEntityPlotStyle_ && !entityPlotStyle(doc_.header(), e.common.id).empty())
+        return false;  // plot style names get their handles in order of first use
+    return groupMembers_.empty() || !groupMembers_.count(e.common.id.value);
 }
 
 void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t owner) {
+    // A long list: the plain records are set aside with the handles they will have, and written
+    // together at the end on several threads.
+    constexpr std::size_t kDeferMin = 40000;
+    constexpr std::size_t kUnit = 4096;
+    const std::size_t hw = opt_.maxThreads ? opt_.maxThreads : std::thread::hardware_concurrency();
+    const bool defer = !tlLane_ && !r12_ && hw >= 2 && ids.size() >= kDeferMin;
+    std::vector<PlainItem> items;
+    std::vector<PlainUnit> units;
     for (std::size_t i = 0; i < ids.size();) {
         const Entity* e = doc_.find(ids[i]);
         if (!e) {
@@ -310,36 +388,141 @@ void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t own
         }
         if (entityAs<DimensionData>(*e)) {
             i += writeDimension(ids, i, owner);
-            entHandle_ = 0;
+            L().entHandle = 0;
             writeAnnotativeData(*e);
+            continue;
+        }
+        if (defer && plainEntity(*e)) {
+            PlainItem item;
+            item.e = e;
+            auto it = srcHandle_.find(ids[i].value);
+            if (it != srcHandle_.end())
+                item.kept = it->second;
+            else
+                item.fresh = newHandle();
+            const std::size_t at = L().o->buf.size();
+            if (units.empty() || units.back().at != at ||
+                units.back().to - units.back().from >= kUnit)
+                units.push_back({at, items.size(), items.size()});
+            items.push_back(item);
+            units.back().to = items.size();
+            ++i;
             continue;
         }
         pickEntityHandle(ids[i]);
         writeEntity(*e, owner);
-        entHandle_ = 0;
+        L().entHandle = 0;
         ++i;
+    }
+    if (!items.empty())
+        flushPlain(items, units, owner);
+}
+
+void Writer::flushPlain(std::vector<PlainItem>& items, std::vector<PlainUnit>& units,
+                        std::uint64_t owner) {
+    const std::size_t hw = opt_.maxThreads ? opt_.maxThreads : std::thread::hardware_concurrency();
+    const std::size_t lanes = std::clamp<std::size_t>(std::min(hw, units.size()), 1, 16);
+    // Several threads read the document: the lookups that fill a cache on first use are done now.
+    for (const auto& [id, layer] : doc_.layers())
+        (void)doc_.effective(id);
+    std::vector<std::string> blobs(units.size());
+    struct Worker {
+        Lane lane;
+        Out out;
+        Worker(bool utf8, bool r12) : out(utf8, r12) {}
+    };
+    std::vector<std::unique_ptr<Worker>> workers;
+    for (std::size_t c = 0; c < lanes; ++c)
+        workers.push_back(std::make_unique<Worker>(utf8_, r12_));
+    std::atomic<std::size_t> next{0};
+    auto work = [&](std::size_t c) {
+        Worker& w = *workers[c];
+        w.lane.o = &w.out;
+        Lane* saved = tlLane_;
+        tlLane_ = &w.lane;
+        try {
+            text::FontScope fonts;  // texts are written without waiting for the other threads
+            for (std::size_t u = next++; u < units.size(); u = next++) {
+                for (std::size_t k = units[u].from; k < units[u].to; ++k) {
+                    const PlainItem& item = items[k];
+                    L().entHandle = item.kept;
+                    if (!item.kept)
+                        L().nextHandle = item.fresh;  // newHandle() hands out exactly this one
+                    writeEntity(*item.e, owner);
+                    L().entHandle = 0;
+                }
+                blobs[u] = std::move(w.out.buf);
+                w.out.buf = std::string();
+            }
+        } catch (...) {
+            tlLane_ = saved;
+            throw;
+        }
+        tlLane_ = saved;
+    };
+    std::vector<std::future<void>> jobs;
+    for (std::size_t c = 1; c < lanes; ++c)
+        jobs.push_back(std::async(std::launch::async, work, c));
+    std::exception_ptr failure;
+    try {
+        work(0);
+    } catch (...) {
+        failure = std::current_exception();
+    }
+    for (auto& j : jobs) {
+        try {
+            j.get();
+        } catch (...) {
+            if (!failure)
+                failure = std::current_exception();
+        }
+    }
+    if (failure)
+        std::rethrow_exception(failure);
+
+    // Each unit's text goes where it was set aside; what the workers counted is added up.
+    Out& dest = *L().o;
+    std::size_t total = dest.buf.size();
+    for (const std::string& b : blobs)
+        total += b.size();
+    std::string merged;
+    merged.reserve(total);
+    std::size_t done = 0;
+    for (std::size_t u = 0; u < units.size(); ++u) {
+        merged.append(dest.buf, done, units[u].at - done);
+        done = units[u].at;
+        merged += blobs[u];
+        std::string().swap(blobs[u]);
+    }
+    merged.append(dest.buf, done, std::string::npos);
+    dest.buf = std::move(merged);
+    for (auto& w : workers) {
+        dest.badNumbers += w->out.badNumbers;
+        for (const auto& [type, count] : w->lane.counts)
+            L().counts[type] += count;
+        L().handlesWritten.insert(w->lane.handlesWritten.begin(), w->lane.handlesWritten.end());
     }
 }
 
 void Writer::setLevelTag(const EntityCommon& c) {
-    levelTag_.clear();
+    L().levelTag.clear();
     if (!tagLevels_)
         return;
     if (const Level* l = doc_.level(c.level))
-        levelTag_ = l->name;
+        L().levelTag = l->name;
 }
 
 void Writer::emitLevelTag() {
-    if (levelTag_.empty() || !o_)
+    if (L().levelTag.empty() || !L().o)
         return;
-    o_->raw(1001, "TBCAD");
-    o_->str(1000, "level=" + levelTag_);
-    levelTag_.clear();
+    L().o->raw(1001, "TBCAD");
+    L().o->str(1000, "level=" + L().levelTag);
+    L().levelTag.clear();
 }
 
 void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
     Props p = propsOf(e.common);
-    curCommon_ = &e.common;
+    L().cur = &e.common;
     setLevelTag(e.common);
     switch (kind(e)) {
         case EntityKind::Line:
@@ -437,17 +620,17 @@ void Writer::writeAnnotativeData(const Entity& e) {
 // record. Items are written as stored; the 1001 group opens each application.
 void Writer::writeExtXdata(const EntityCommon& c) {
     for (const XdataApp& a : c.ext.get().xdata) {
-        o_->str(1001, a.app);
+        L().o->str(1001, a.app);
         for (const DataItem& it : a.items) {
             switch (dataKindOf(it.code)) {
                 case DataKind::Text:
-                    o_->str(it.code, it.text);
+                    L().o->str(it.code, it.text);
                     break;
                 case DataKind::Integer:
-                    o_->i(it.code, it.integer);
+                    L().o->i(it.code, it.integer);
                     break;
                 case DataKind::Real:
-                    o_->d(it.code, it.real);
+                    L().o->d(it.code, it.real);
                     break;
             }
         }
@@ -457,12 +640,12 @@ void Writer::writeExtXdata(const EntityCommon& c) {
 void Writer::writeTbcadFlags(const Entity& e) {
     if (!e.common.annotative && !e.common.wipeout)
         return;
-    o_->raw(1001, "TBCAD");
+    L().o->raw(1001, "TBCAD");
     if (e.common.wipeout)
-        o_->str(1000, "wipeout=1");
+        L().o->str(1000, "wipeout=1");
     if (!e.common.annotative)
         return;
-    o_->str(1000, "annotative=1");
+    L().o->str(1000, "annotative=1");
     if (!e.common.annoScales.empty()) {
         std::string s = "annoscales=";
         for (double v : e.common.annoScales) {
@@ -470,7 +653,7 @@ void Writer::writeTbcadFlags(const Entity& e) {
             std::snprintf(buf, sizeof buf, "%.12g", v);
             s += (s.back() == '=' ? "" : ",") + std::string(buf);
         }
-        o_->str(1000, s);
+        L().o->str(1000, s);
     }
 }
 
@@ -487,21 +670,21 @@ void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
     block.rec = newHandle();
     {
         Out bo(utf8_, r12_);
-        Out* saved = o_;
-        o_ = &bo;
+        Out* saved = L().o;
+        L().o = &bo;
         auto parts = table::explodeTable(doc_, e);
         if (parts) {
             for (const Entity& part : parts.value())
                 writeEntity(part, block.rec);
         }
-        o_ = saved;
+        L().o = saved;
         block.body = std::move(bo.buf);
     }
     const std::string blockName = block.name;
     dimBlocks_.push_back(std::move(block));
 
     head("INSERT", p, owner, "AcDbBlockReference");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.str(2, blockName);
     o.pt(10, Vec2{0, 0});
     o.d(41, 1);
@@ -519,8 +702,8 @@ void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
 
 void Writer::writeLine(const Props& p, const LineData& d, std::uint64_t owner) {
     head("LINE", p, owner, "AcDbLine");
-    o_->pt(10, d.a);
-    o_->pt(11, d.b);
+    L().o->pt(10, d.a);
+    L().o->pt(11, d.b);
     count("LINE");
 }
 
@@ -533,8 +716,8 @@ void Writer::writeRay(const Props& p, const RayData& d, const Entity& e, std::ui
     (void)e;
     const char* name = d.infinite ? "XLINE" : "RAY";
     head(name, p, owner, d.infinite ? "AcDbXline" : "AcDbRay");
-    o_->pt(10, d.origin);
-    o_->pt(11, d.dir);
+    L().o->pt(10, d.origin);
+    L().o->pt(11, d.dir);
     count(name);
 }
 
@@ -549,21 +732,21 @@ void Writer::writeMline(const Props& p, const MlineData& d, const Entity& e, std
     block.rec = newHandle();
     {
         Out bo(utf8_, r12_);
-        Out* saved = o_;
-        o_ = &bo;
+        Out* saved = L().o;
+        L().o = &bo;
         auto parts = mline::explodeMline(doc_, e);
         if (parts) {
             for (const Entity& part : parts.value())
                 writeEntity(part, block.rec);
         }
-        o_ = saved;
+        L().o = saved;
         block.body = std::move(bo.buf);
     }
     const std::string blockName = block.name;
     dimBlocks_.push_back(std::move(block));
 
     head("INSERT", p, owner, "AcDbBlockReference");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.str(2, blockName);
     o.pt(10, Vec2{0, 0});
     o.d(41, 1);
@@ -579,24 +762,24 @@ void Writer::writeMline(const Props& p, const MlineData& d, const Entity& e, std
 
 void Writer::writePoint(const Props& p, const PointData& d, std::uint64_t owner) {
     head("POINT", p, owner, "AcDbPoint");
-    o_->pt(10, d.p);
+    L().o->pt(10, d.p);
     count("POINT");
 }
 
 void Writer::writeCircle(const Props& p, const CircleData& d, std::uint64_t owner) {
     head("CIRCLE", p, owner, "AcDbCircle");
-    o_->pt(10, d.center);
-    o_->d(40, d.radius);
+    L().o->pt(10, d.center);
+    L().o->d(40, d.radius);
     count("CIRCLE");
 }
 
 void Writer::writeArc(const Props& p, const ArcData& d, std::uint64_t owner) {
     head("ARC", p, owner, "AcDbCircle");
-    o_->pt(10, d.center);
-    o_->d(40, d.radius);
+    L().o->pt(10, d.center);
+    L().o->d(40, d.radius);
     sub("AcDbArc");
-    o_->d(50, d.startAngle * kDeg);
-    o_->d(51, d.endAngle * kDeg);
+    L().o->d(50, d.startAngle * kDeg);
+    L().o->d(51, d.endAngle * kDeg);
     count("ARC");
 }
 
@@ -604,7 +787,7 @@ void Writer::writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& 
                                  double constantWidth, std::uint64_t owner, bool runsOn) {
     // R12 has no LWPOLYLINE: a POLYLINE followed by VERTEX records and SEQEND.
     head("POLYLINE", p, owner, "AcDb2dPolyline");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.i(66, 1);
     o.pt(10, {0, 0});
     if (constantWidth > 0) {
@@ -639,7 +822,7 @@ void Writer::writePolyline(const Props& p, const PolylineData& d, std::uint64_t 
         return;
     }
     head("LWPOLYLINE", p, owner, "AcDbPolyline");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.i(90, static_cast<long long>(d.v.size()));
     o.i(70, (d.closed ? 1 : 0) | (d.restartLinetype ? 0 : 128));  // 128: linetype runs on
     if (d.constantWidth != 0)
@@ -683,7 +866,7 @@ void Writer::writeEllipse(const Props& p, const EllipseData& d, const Entity& e,
         return;
     }
     head("ELLIPSE", p, owner, "AcDbEllipse");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.pt(10, d.center);
     o.pt(11, d.majorAxis);
     o.d(210, 0);
@@ -714,7 +897,7 @@ void Writer::writeSpline(const Props& p, const SplineData& d, const Entity& e,
         return;
     }
     head("SPLINE", p, owner, "AcDbSpline");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.d(210, 0);
     o.d(220, 0);
     o.d(230, 1);
@@ -771,7 +954,7 @@ void Writer::writeText(const Props& p, const TextData& d, std::uint64_t owner) {
 void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t owner,
                              std::string_view type, const std::string& shown) {
     head(type, p, owner, "AcDbText");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.pt(10, d.position);
     o.d(40, d.height);
     o.str(1, type == "ATTDEF" ? d.attdef->defaultValue : shown);
@@ -815,7 +998,7 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
         if (d.v != VAlign::Baseline)
             o.i(74, static_cast<int>(d.v));
     }
-    count(std::string(type));
+    count(type);
 }
 
 void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner) {
@@ -842,7 +1025,7 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
                                                 : (n - 1 - static_cast<double>(k)) * step);
             Vec2 at = d.position + down * (-shift);
             head("TEXT", p, owner, "AcDbText");
-            Out& o = *o_;
+            Out& o = *L().o;
             o.pt(10, at);
             o.d(40, d.height);
             o.str(1, lines[k]);
@@ -857,7 +1040,7 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
         return;
     }
     head("MTEXT", p, owner, "AcDbMText");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.pt(10, d.position);
     o.d(40, d.height);
     o.d(41, d.width);
@@ -914,12 +1097,12 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     img.h = h;
     img.def = newHandle();
     img.reactor = newHandle();
-    img.image = entHandle_ ? entHandle_ : peekHandle();  // the handle head() gives the IMAGE
+    img.image = L().entHandle ? L().entHandle : peekHandle();  // the handle head() gives the IMAGE
     const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
     const Vec2 u{c * d.scale.x, sn * d.scale.x}, v{-sn * d.scale.y, c * d.scale.y};
     const Vec2 origin = d.position - u * bd->base.x - v * bd->base.y;
     head("IMAGE", p, owner, "AcDbRasterImage");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.i(90, 0);
     o.pt(10, origin);
     o.pt(11, u);
@@ -927,16 +1110,26 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     o.d(13, w);
     o.d(23, h);
     o.h(340, img.def);
-    o.i(70, 7);  // shown, shown when not aligned, clipped
-    o.i(280, 1);
-    o.i(281, 50);
-    o.i(282, 50);
+    o.i(70, ip.clipped() ? 7 : 3);  // shown, shown when not aligned, [clipped]
+    o.i(280, ip.clipped() ? 1 : 0);
+    o.i(281, ip.brightness);
+    o.i(282, ip.contrast);
     o.i(283, static_cast<long long>(std::lround(ip.fade)));
     o.h(360, img.reactor);
-    o.i(71, 1);  // rectangular clip: two corners, in pixels counted from the lower-left corner
-    o.i(91, 2);
-    o.pt2(14, {ip.u0 * w - 0.5, (1 - ip.v1) * h - 0.5});
-    o.pt2(14, {ip.u1 * w - 0.5, (1 - ip.v0) * h - 0.5});
+    // Clip corners are in pixels counted from the lower-left corner of the picture.
+    auto px = [&](double u, double v) { return Vec2{u * w - 0.5, (1 - v) * h - 0.5}; };
+    if (ip.clip.size() >= 3) {
+        o.i(71, 2);
+        o.i(91, static_cast<long long>(ip.clip.size()) + 1);
+        for (const Vec2& c : ip.clip)
+            o.pt2(14, px(c.x, c.y));
+        o.pt2(14, px(ip.clip.front().x, ip.clip.front().y));
+    } else {
+        o.i(71, 1);
+        o.i(91, 2);
+        o.pt2(14, px(ip.u0, ip.v1));
+        o.pt2(14, px(ip.u1, ip.v0));
+    }
     images_.push_back(std::move(img));
     count("IMAGE");
     return true;
@@ -949,7 +1142,7 @@ bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t o
     const BlockDef* bd = doc_.block(d.block);
     if (!bd)
         return false;
-    const gdt::FrameTable table = gdt::readFrames(doc_.header());
+    const gdt::FrameTable& table = frames();
     auto it = table.find(bd->name);
     if (it == table.end())
         return false;
@@ -963,7 +1156,7 @@ bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t o
         downgrade("TOLERANCE", "is drawn by other programs at the size of the dimension style \"" +
                                    dimStyleNameOf(doc_.header().currentDimStyle) + "\"");
     head("TOLERANCE", p, owner, "AcDbFcf");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.str(3, dimStyleNameOf(doc_.header().currentDimStyle));
     o.pt(10, d.position);
     o.str(1, gdt::dxfText(it->second));
@@ -1035,7 +1228,7 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                 if (const auto* t = entityAs<TextData>(*e); t && t->attdef && !t->attdef->constant)
                     defs.push_back(t);
     head("INSERT", p, owner, "AcDbBlockReference");
-    Out& o = *o_;
+    Out& o = *L().o;
     if (!defs.empty())
         o.i(66, 1);
     o.str(2, name);
@@ -1062,8 +1255,8 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         for (const DataItem& it : arrayTag_)
             o.str(it.code, it.text);
     }
-    if (curCommon_)
-        writeExtXdata(*curCommon_);
+    if (L().cur)
+        writeExtXdata(*L().cur);
     count("INSERT");
     if (defs.empty())
         return;
@@ -1113,7 +1306,7 @@ void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owne
         writeVertexPolyline(p, v, false, 0, owner);
     } else {
         head("LEADER", p, owner, "AcDbLeader");
-        Out& o = *o_;
+        Out& o = *L().o;
         o.str(3, dimStyleNameOf(d.style));
         o.i(71, 1);
         o.i(72, 0);
@@ -1147,7 +1340,7 @@ void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owne
 void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner) {
     if (d.originalType == "ACAD_PROXY_ENTITY" && !d.raw.empty() && !r12_) {
         head("ACAD_PROXY_ENTITY", p, owner, "AcDbProxyEntity");
-        Out& o = *o_;
+        Out& o = *L().o;
         o.i(90, 498);
         o.i(91, 500);
         o.i(95, 0);
@@ -1171,7 +1364,7 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
         !groups.empty() && !r12_ && d.originalType != "ACAD_PROXY_ENTITY") {
         head(d.originalType, p, owner, "");
         for (const auto& [code, value] : unpackGroups(groups))
-            o_->str(code, value);
+            L().o->str(code, value);
         count(d.originalType);
         return;
     }
@@ -1184,7 +1377,7 @@ void Writer::writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner)
 
 void Writer::writeSolid(const Props& p, const std::vector<Vec2>& ring, std::uint64_t owner) {
     head("SOLID", p, owner, "AcDbTrace");
-    Out& o = *o_;
+    Out& o = *L().o;
     Vec2 p1 = ring[0], p2 = ring[1], p3 = ring.size() == 4 ? ring[3] : ring[2],
          p4 = ring.size() == 4 ? ring[2] : ring[2];
     o.pt(10, p1);
@@ -1276,14 +1469,14 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     block.rec = newHandle();
     {
         Out bo(utf8_, r12_);
-        Out* saved = o_;
-        o_ = &bo;
+        Out* saved = L().o;
+        L().o = &bo;
         auto parts = dim::explodeDimension(doc_, *e);
         if (parts) {
             for (const Entity& part : parts.value())
                 writeEntity(part, block.rec);
         }
-        o_ = saved;
+        L().o = saved;
         block.body = std::move(bo.buf);
     }
     std::string blockName = block.name;
@@ -1346,7 +1539,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
 
     setLevelTag(e->common);
     head("DIMENSION", p, owner, "AcDbDimension");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.str(2, blockName);
     switch (d.kind) {
         case DimKind::Linear:

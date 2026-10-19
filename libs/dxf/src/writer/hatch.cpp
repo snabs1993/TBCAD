@@ -152,7 +152,7 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
     }
     bool solid = d.solid || d.pattern.empty();
     head("HATCH", p, owner, "AcDbHatch");
-    Out& o = *o_;
+    Out& o = *L().o;
     o.pt(10, {0, 0});
     o.d(210, 0);
     o.d(220, 0);

@@ -24,10 +24,13 @@ struct PdfReport {
     double widthMm = 0, heightMm = 0;  // of the imported page, after rotation
     std::size_t paths = 0;             // polylines created
     std::size_t vertices = 0;
-    std::size_t textRuns = 0;          // text objects (not drawn)
-    std::size_t images = 0;            // raster images (not drawn)
-    std::size_t skippedFills = 0;      // white or page-sized fills
-    bool truncated = false;            // hit maxVertices
+    std::size_t textRuns = 0;      // text objects (not drawn)
+    std::size_t images = 0;        // raster images (not drawn)
+    std::size_t skippedFills = 0;  // white or page-sized fills
+    bool truncated = false;        // hit maxVertices
+    // Optional-content layers of the page (PDF layers); each becomes a layer of its own below the
+    // imported document, so it can be switched off in the host. Content outside any is on "PDF".
+    std::vector<std::string> layers{};
     std::vector<std::string> notes{};  // human readable remarks
 };
 

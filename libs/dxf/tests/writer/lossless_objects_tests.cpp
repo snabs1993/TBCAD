@@ -33,7 +33,7 @@ const char* kSrc =
     "  0\nGROUP\n  5\nF\n330\nD\n100\nAcDbGroup\n  300\nmy lines\n 70\n     0\n 71\n     1\n"
     "340\n100\n340\n101\n"
     "  0\nDICTIONARY\n  5\nE\n330\nC\n100\nAcDbDictionary\n  3\nDOUBLE\n350\n10\n"
-    "  0\nMLINESTYLE\n  5\n10\n330\nE\n100\nAcDbMlineStyle\n  2\nDOUBLE\n 70\n    16\n"
+    "  0\nMLINESTYLE\n  5\n10\n330\nE\n100\nAcDbMlineStyle\n  2\nDOUBLE\n 70\n  1040\n"
     "  3\nDouble line\n 62\n   256\n 51\n90.0\n 52\n90.0\n 71\n     2\n"
     " 49\n0.5\n 62\n     1\n  6\nBYLAYER\n 49\n-0.5\n 62\n     2\n  6\nBYLAYER\n"
     "  0\nENDSEC\n  0\nEOF\n";
@@ -53,6 +53,7 @@ TEST_CASE("groups, multiline styles and multilines survive the .tbcad and DXF ro
     auto style = mline::findStyle(d1, "double");
     REQUIRE(style.has_value());
     CHECK(style->description == "Double line");
+    CHECK(style->endArc == 1);  // flag 1024: round cap at the end
     CHECK(style->startCap);
     REQUIRE(style->offsets.size() == 2);
     CHECK(style->offsets[0] == doctest::Approx(0.5));
@@ -73,6 +74,8 @@ TEST_CASE("groups, multiline styles and multilines survive the .tbcad and DXF ro
     Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
     REQUIRE(out.ok());
 
+    CHECK(out.value().bytes.find("my lines") != std::string::npos);  // the group's description
+
     // And the exported file gives the same things back.
     std::vector<std::byte> raw(out.value().bytes.size());
     std::memcpy(raw.data(), out.value().bytes.data(), raw.size());
@@ -83,6 +86,7 @@ TEST_CASE("groups, multiline styles and multilines survive the .tbcad and DXF ro
     auto style3 = mline::findStyle(d3, "DOUBLE");
     REQUIRE(style3.has_value());
     CHECK(style3->description == "Double line");
+    CHECK(style3->endArc == 1);
     CHECK(style3->offsets.size() == 2);
     REQUIRE(style3->colors.size() == 2);
     CHECK(style3->colors[1] == 2);
@@ -130,6 +134,94 @@ TEST_CASE("shape linetypes keep their shape number and shape file; a layout keep
     CHECK(text.find("ltypeshp.shx") != std::string::npos);  // the shape file, as a flag 1 style
     CHECK(text.find("\r\nA3\r\n") != std::string::npos);    // the model layout's paper
     CHECK(text.find("\r\n420.0") != std::string::npos);
+}
+
+TEST_CASE("table styles and the layer filters (the LAYER table's dictionary) are kept") {
+    const char* src =
+        "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1021\n  9\n$INSUNITS\n 70\n     4\n"
+        "  0\nENDSEC\n  0\nSECTION\n  2\nTABLES\n"
+        "  0\nTABLE\n  2\nLAYER\n  5\n2\n330\n0\n102\n{ACAD_XDICTIONARY\n360\n50\n102\n}\n"
+        "100\nAcDbSymbolTable\n 70\n     1\n"
+        "  0\nLAYER\n  5\n10\n330\n2\n100\nAcDbSymbolTableRecord\n100\nAcDbLayerTableRecord\n"
+        "  2\n0\n 70\n     0\n 62\n     7\n  6\nCONTINUOUS\n"
+        "  0\nENDTAB\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n"
+        "  0\nDICTIONARY\n  5\nC\n330\n0\n100\nAcDbDictionary\n  3\nACAD_TABLESTYLE\n350\nD\n"
+        "  0\nDICTIONARY\n  5\nD\n330\nC\n100\nAcDbDictionary\n  3\nStandard\n350\nE\n"
+        "  0\nTABLESTYLE\n  5\nE\n330\nD\n100\nAcDbTableStyle\n  3\nMy table style\n 70\n     0\n"
+        " 71\n     0\n 40\n1.5\n 41\n1.5\n  7\nStandard\n140\n2.5\n170\n     2\n 62\n     5\n"
+        "  0\nDICTIONARY\n  5\n50\n330\n2\n100\nAcDbDictionary\n  3\nACAD_LAYERFILTERS\n350\n51\n"
+        "  0\nDICTIONARY\n  5\n51\n330\n50\n100\nAcDbDictionary\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    Report r1;
+    Result<ImportResult> first = importDxf(testing::bytesOf(src), ImportOptions{}, r1);
+    REQUIRE(first.ok());
+    auto bytes = io::writeTbcadToMemory(*first.value().document);
+    REQUIRE(bytes.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(bytes.value(), ioReport);
+    REQUIRE(reopened.ok());
+    Report r2;
+    Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string& text = out.value().bytes;
+    CHECK(text.find("My table style") != std::string::npos);
+    CHECK(text.find("ACAD_LAYERFILTERS") != std::string::npos);
+    CHECK(text.find("{ACAD_XDICTIONARY") != std::string::npos);
+}
+
+}  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+namespace {
+
+// Lines 100, 101, 102 in model space and 110, 111 in block B; the tables send 100 to the front
+// and 110 to the front of B.
+const char* kSortSrc =
+    "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nBLOCKS\n"
+    "  0\nBLOCK\n  5\n50\n  8\n0\n  2\nB\n 70\n     0\n 10\n0.0\n 20\n0.0\n 30\n0.0\n  3\nB\n"
+    "  0\nLINE\n  5\n110\n  8\n0\n 10\n0.0\n 20\n0.0\n 11\n1.0\n 21\n0.0\n"
+    "  0\nLINE\n  5\n111\n  8\n0\n 10\n0.0\n 20\n1.0\n 11\n1.0\n 21\n1.0\n"
+    "  0\nENDBLK\n  5\n51\n  8\n0\n"
+    "  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nENTITIES\n"
+    "  0\nLINE\n  5\n100\n  8\n0\n 10\n0.0\n 20\n0.0\n 11\n5.0\n 21\n0.0\n"
+    "  0\nLINE\n  5\n101\n  8\n0\n 10\n0.0\n 20\n1.0\n 11\n5.0\n 21\n1.0\n"
+    "  0\nLINE\n  5\n102\n  8\n0\n 10\n0.0\n 20\n2.0\n 11\n5.0\n 21\n2.0\n"
+    "  0\nINSERT\n  5\n103\n  8\n0\n  2\nB\n 10\n0.0\n 20\n10.0\n 30\n0.0\n"
+    "  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nOBJECTS\n"
+    "  0\nDICTIONARY\n  5\nC\n330\n0\n100\nAcDbDictionary\n"
+    "  0\nSORTENTSTABLE\n  5\n70\n330\nC\n100\nAcDbSortentsTable\n330\n1F\n331\n100\n  5\n200\n"
+    "  0\nSORTENTSTABLE\n  5\n71\n330\nC\n100\nAcDbSortentsTable\n330\n50\n331\n110\n  5\n300\n"
+    "  0\nENDSEC\n  0\nEOF\n";
+
+double lineY(const Document& d, EntityId id) {
+    const auto* ln = entityAs<LineData>(*d.find(id));
+    return ln ? ln->a.y : -1;
+}
+
+}  // namespace
+
+TEST_CASE("SORTENTSTABLE sets the draw order of model space and of blocks") {
+    Report rep;
+    Result<ImportResult> res = importDxf(testing::bytesOf(kSortSrc), ImportOptions{}, rep);
+    REQUIRE(res.ok());
+    const Document& d = *res.value().document;
+    std::vector<double> ys;
+    for (EntityId id : d.modelSpace())
+        if (entityAs<LineData>(*d.find(id)))
+            ys.push_back(lineY(d, id));
+    // Line 100 (y 0) sorts after 101 and 102 now.
+    CHECK(ys == std::vector<double>{1, 2, 0});
+    const BlockDef* b = d.blockByName("B");
+    REQUIRE(b);
+    REQUIRE(b->entities.size() == 2);
+    // Line 110 (y 0) comes last in the block.
+    CHECK(lineY(d, b->entities[0]) == 1);
+    CHECK(lineY(d, b->entities[1]) == 0);
 }
 
 }  // namespace tbcad::dxf

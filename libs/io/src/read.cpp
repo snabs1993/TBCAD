@@ -968,22 +968,7 @@ private:
             report_.warnings.push_back("ignored draw order that does not match the model space");
             return;
         }
-        // Entities without an override sit in id order. The longest ascending window of the
-        // stored order can stay that way; what precedes it is sent to the back and what follows
-        // is brought to the front.
-        std::size_t bestStart = 0, bestLen = 0, runStart = 0;
-        for (std::size_t i = 0; i < order.size(); ++i) {
-            if (i > 0 && !(order[i - 1] < order[i]))
-                runStart = i;
-            if (i + 1 - runStart > bestLen) {
-                bestLen = i + 1 - runStart;
-                bestStart = runStart;
-            }
-        }
-        for (std::size_t i = bestStart; i-- > 0;)
-            check(tx.sendToBack(order[i]), "draw order");
-        for (std::size_t i = bestStart + bestLen; i < order.size(); ++i)
-            check(tx.bringToFront(order[i]), "draw order");
+        check(tx.setDrawOrder(order), "draw order");
     }
 
     const ParsedFile& file_;

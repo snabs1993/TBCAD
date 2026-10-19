@@ -45,6 +45,8 @@ Style standardStyle() {
 std::string encode(const Style& s) {
     std::string out = "desc=" + s.description + "\n";
     out += std::string("caps=") + (s.startCap ? "1" : "0") + (s.endCap ? "1" : "0") + "\n";
+    if (s.startArc || s.endArc)
+        out += "arcs=" + std::to_string(s.startArc) + std::to_string(s.endArc) + "\n";
     out += "offsets=";
     for (std::size_t i = 0; i < s.offsets.size(); ++i)
         out += (i ? "," : "") + num(s.offsets[i]);
@@ -82,6 +84,9 @@ std::optional<Style> decode(const std::string& name, const std::string& text) {
         } else if (key == "caps" && val.size() >= 2) {
             s.startCap = val[0] == '1';
             s.endCap = val[1] == '1';
+        } else if (key == "arcs" && val.size() >= 2) {
+            s.startArc = std::clamp(val[0] - '0', 0, 2);
+            s.endArc = std::clamp(val[1] - '0', 0, 2);
         } else if (key == "colors") {
             std::istringstream in(val);
             std::string item;
@@ -286,6 +291,44 @@ Strokes strokes(const MlineData& d, const Style& style) {
             cap(0);
         if (style.endCap)
             cap(n - 1);
+        // Arcs across an end: outer = one half circle over all the lines, inner = half circles
+        // joining the lines in pairs from the outside in (the outermost pair is left out).
+        auto arcs = [&](std::size_t idx, int kind, bool atStart) {
+            if (kind == 0)
+                return;
+            const Vec2 dir = normalized(atStart ? p[0] - p[1] : p[n - 1] - p[n - 2]);  // outwards
+            std::vector<std::pair<double, Vec2>> ends;
+            for (std::size_t i = 0; i < style.offsets.size(); ++i)
+                ends.emplace_back(style.offsets[i], capPoints[i][idx]);
+            std::sort(ends.begin(), ends.end(),
+                      [](const auto& a, const auto& b) { return a.first < b.first; });
+            const std::size_t count = ends.size();
+            // outer: the outermost pair; inner: the pairs inside it, outermost first
+            for (std::size_t lo = kind == 1 ? 0 : 1; lo < count - 1 - lo; ++lo) {
+                const std::size_t hi = count - 1 - lo;
+                const Vec2 a = ends[lo].second, b = ends[hi].second;
+                const Vec2 mid = (a + b) * 0.5;
+                const Vec2 half = (b - a) * 0.5;
+                std::vector<Vec2> arc;
+                constexpr int kSteps = 24;
+                // from a through the outward point to b
+                for (int k = 0; k <= kSteps; ++k) {
+                    const double t = std::acos(-1.0) * k / kSteps;
+                    // half rotated by t about the centre, bulging along `dir`
+                    const double c = std::cos(t), sn = std::sin(t);
+                    const Vec2 across = half * -c;
+                    const double r = std::hypot(half.x, half.y);
+                    arc.push_back(mid + across + dir * (r * sn));
+                }
+                out.lines.push_back(std::move(arc));
+                out.closed.push_back(false);
+                out.element.push_back(-1);
+                if (kind == 1)
+                    break;
+            }
+        };
+        arcs(0, style.startArc, true);
+        arcs(n - 1, style.endArc, false);
     }
     // The outer lines of the style (lowest and highest offset) bound its fill and its joints.
     if (style.offsets.size() >= 2) {

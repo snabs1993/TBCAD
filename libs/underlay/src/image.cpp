@@ -120,7 +120,7 @@ ImageParamTable readImageParams(const Header& header) {
                 break;
             start = tab + 1;
         }
-        if (f.size() != 6 || f[0].empty())
+        if (f.size() < 6 || f[0].empty())
             continue;
         ImageParams p;
         try {
@@ -129,11 +129,31 @@ ImageParamTable readImageParams(const Header& header) {
             p.v0 = std::clamp(std::stod(f[3]), 0.0, 1.0);
             p.u1 = std::clamp(std::stod(f[4]), 0.0, 1.0);
             p.v1 = std::clamp(std::stod(f[5]), 0.0, 1.0);
+            if (f.size() >= 9) {  // brightness, contrast, frame
+                p.brightness = std::clamp(std::stoi(f[6]), 0, 100);
+                p.contrast = std::clamp(std::stoi(f[7]), 0, 100);
+                p.frame = std::clamp(std::stoi(f[8]), 0, 2);
+            }
+            if (f.size() >= 10 && !f[9].empty()) {  // polygon: u,v;u,v;...
+                std::istringstream ps(f[9]);
+                std::string item;
+                while (std::getline(ps, item, ';')) {
+                    const auto comma = item.find(',');
+                    if (comma == std::string::npos)
+                        throw std::invalid_argument("clip");
+                    p.clip.push_back({std::clamp(std::stod(item.substr(0, comma)), 0.0, 1.0),
+                                      std::clamp(std::stod(item.substr(comma + 1)), 0.0, 1.0)});
+                }
+                if (p.clip.size() < 3 || p.clip.size() > 4096)
+                    p.clip.clear();
+            }
         } catch (...) {
             continue;
         }
-        if (p.u1 <= p.u0 || p.v1 <= p.v0)
+        if (p.u1 <= p.u0 || p.v1 <= p.v0) {
             p.u0 = p.v0 = 0, p.u1 = p.v1 = 1;
+            p.clip.clear();
+        }
         table[f[0]] = p;
     }
     return table;
@@ -143,10 +163,16 @@ void writeImageParams(Header& header, const ImageParamTable& table) {
     std::string text;
     for (const auto& [name, p] : table) {
         char buf[160];
-        std::snprintf(buf, sizeof buf, "\t%.6g\t%.9g\t%.9g\t%.9g\t%.9g\n", p.fade, p.u0, p.v0, p.u1,
-                      p.v1);
+        std::snprintf(buf, sizeof buf, "\t%.6g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\t%d\t%d\t", p.fade, p.u0,
+                      p.v0, p.u1, p.v1, p.brightness, p.contrast, p.frame);
         text += name;
         text += buf;
+        for (std::size_t i = 0; i < p.clip.size(); ++i) {
+            char pt[64];
+            std::snprintf(pt, sizeof pt, "%s%.9g,%.9g", i ? ";" : "", p.clip[i].x, p.clip[i].y);
+            text += pt;
+        }
+        text += '\n';
     }
     if (text.empty())
         header.custom.erase(kImageParamsKey);
@@ -192,15 +218,79 @@ std::shared_ptr<const ImageData> ImageCache::get(const std::filesystem::path& fi
     return it->second.data;
 }
 
-void ImageCache::sweep() {
-    for (auto it = entries_.begin(); it != entries_.end();) {
-        if (!it->second.used)
-            it = entries_.erase(it);
-        else {
-            it->second.used = false;
-            ++it;
-        }
+std::shared_ptr<const ImageData> ImageCache::adjusted(std::uint64_t key,
+                                                      const std::shared_ptr<const ImageData>& src,
+                                                      const ImageParams& params,
+                                                      std::uint64_t* outKey) {
+    const bool poly = params.clip.size() >= 3;
+    if (!src || (!poly && !params.adjusted())) {
+        if (outKey)
+            *outKey = key;
+        return src;
     }
+    std::string id = std::to_string(key) + "|" + std::to_string(params.brightness) + "|" +
+                     std::to_string(params.contrast);
+    if (poly)
+        for (const Vec2& p : params.clip) {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "|%.9g,%.9g", p.x, p.y);
+            id += buf;
+        }
+    auto it = derived_.find(id);
+    if (it == derived_.end()) {
+        auto img = std::make_shared<ImageData>(*src);
+        if (params.adjusted()) {
+            const double gain = params.contrast <= 50 ? params.contrast / 50.0
+                                                      : 1.0 + (params.contrast - 50) / 50.0 * 3.0;
+            const double off = (params.brightness - 50) / 50.0 * 255.0;
+            std::uint8_t lut[256];
+            for (int i = 0; i < 256; ++i)
+                lut[i] = static_cast<std::uint8_t>(
+                    std::clamp((i - 128.0) * gain + 128.0 + off, 0.0, 255.0) + 0.5);
+            for (std::size_t i = 0; i + 3 < img->rgba.size(); i += 4)
+                for (int c = 0; c < 3; ++c)
+                    img->rgba[i + c] = lut[img->rgba[i + c]];
+        }
+        if (poly) {
+            const auto& pts = params.clip;
+            const int w = img->width, h = img->height;
+            for (int y = 0; y < h; ++y) {
+                const double v = (y + 0.5) / h;
+                for (int x = 0; x < w; ++x) {
+                    const double u = (x + 0.5) / w;
+                    bool in = false;
+                    for (std::size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+                        const Vec2 &a = pts[i], &b = pts[j];
+                        if ((a.y > v) != (b.y > v) &&
+                            u < (b.x - a.x) * (v - a.y) / (b.y - a.y) + a.x)
+                            in = !in;
+                    }
+                    if (!in)
+                        img->rgba[(static_cast<std::size_t>(y) * w + x) * 4 + 3] = 0;
+                }
+            }
+        }
+        Entry e;
+        e.key = nextKey_++;
+        e.data = std::move(img);
+        it = derived_.emplace(id, std::move(e)).first;
+    }
+    it->second.used = true;
+    if (outKey)
+        *outKey = it->second.key;
+    return it->second.data;
+}
+
+void ImageCache::sweep() {
+    for (auto* m : {&entries_, &derived_})
+        for (auto it = m->begin(); it != m->end();) {
+            if (!it->second.used)
+                it = m->erase(it);
+            else {
+                it->second.used = false;
+                ++it;
+            }
+        }
 }
 
 // ---- collecting --------------------------------------------------------------------------------
@@ -223,8 +313,7 @@ std::optional<ImageInstance> imageOfInsert(
         p = it->second;
 
     ImageInstance im;
-    im.key = key;
-    im.data = data;
+    im.data = cache.adjusted(key, data, p, &im.key);
     im.insert = e.common.id;
     im.uMin = p.u0;
     im.uMax = p.u1;
@@ -232,7 +321,7 @@ std::optional<ImageInstance> imageOfInsert(
     im.vMax = p.v1;
     im.opacity = static_cast<float>(1.0 - p.fade / 100.0);
     // Pixel units, origin bottom-left, y up; the visible part is the clip rectangle.
-    const double w = data->width, h = data->height;
+    const double w = im.data->width, h = im.data->height;
     const double x0 = p.u0 * w, x1 = p.u1 * w;
     const double y0 = (1 - p.v1) * h, y1 = (1 - p.v0) * h;
     const double c = std::cos(ins->rotation), s = std::sin(ins->rotation);

@@ -50,6 +50,22 @@ void registerOutlines() {
                 pts.push_back(l.textPos);
                 box(out, pts);
             });
+        geom::DisplayRegistry::set(
+            EntityKind::Hatch,
+            [box](const Document&, const Entity& e, const geom::DisplayContext&, DisplayList& out) {
+                std::vector<Vec2> pts;
+                for (const HatchLoop& l : entityAs<HatchData>(e)->loops)
+                    for (const HatchEdge& ed : l.edges) {
+                        if (const auto* ln = std::get_if<HatchLineEdge>(&ed)) {
+                            pts.push_back(ln->a);
+                            pts.push_back(ln->b);
+                        } else if (const auto* a = std::get_if<HatchArcEdge>(&ed)) {
+                            pts.push_back(a->center + Vec2{a->radius, a->radius});
+                            pts.push_back(a->center - Vec2{a->radius, a->radius});
+                        }
+                    }
+                box(out, pts);
+            });
         return true;
     }();
     (void)once;
@@ -220,4 +236,29 @@ TEST_CASE("apparent intersection points lie on both unbounded lines, also at sur
             tx.commit();
         }
     }
+}
+
+TEST_CASE("the boundary of a hatch snaps like the objects it was made from") {
+    Modes w;
+    HatchData h;
+    HatchLoop loop;
+    loop.edges.push_back(HatchLineEdge{{0, 0}, {20, 0}});
+    loop.edges.push_back(HatchLineEdge{{20, 0}, {20, 10}});
+    loop.edges.push_back(HatchArcEdge{{10, 10}, 10, 0, kPi, true});  // over the top, ccw
+    loop.edges.push_back(HatchLineEdge{{0, 10}, {0, 0}});
+    h.loops.push_back(std::move(loop));
+    w.add(Entity{{}, std::move(h)});
+    CHECK(near(snapped(w, {1, 1}, "endpoint"), {0, 0}));
+    CHECK(near(snapped(w, {10.5, 1}, "midpoint"), {10, 0}));
+    CHECK(near(snapped(w, {10.5, 19}, "quadrant"), {10, 20}));
+    CHECK(near(snapped(w, {9.5, 9}, "center"), {10, 10}));
+    CHECK(near(snapped(w, {7, 0.4}, "nearest"), {7, 0}));
+    // A clockwise edge is the same arc seen from its other end.
+    Modes c;
+    HatchData hc;
+    HatchLoop lc;
+    lc.edges.push_back(HatchArcEdge{{0, 0}, 5, kPi, 0, false});  // from 180 down to 0 over the top
+    hc.loops.push_back(std::move(lc));
+    c.add(Entity{{}, std::move(hc)});
+    CHECK(near(snapped(c, {0.3, 5.4}, "quadrant"), {0, 5}));
 }

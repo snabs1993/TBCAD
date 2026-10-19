@@ -651,13 +651,70 @@ public:
             ctx.message(info.error().message);
             co_return;
         }
-        auto p1 = co_await ctx.getPoint("Specify the first corner of the clip or [Delete]",
-                                        cmd::PointOptions{.keywords = {"Delete"}});
-        if (!p1.ok() && p1.keyword != "Delete")
+        // World point to picture fractions (u from the left, v from the top).
+        const double rc = std::cos(-ins->rotation), rs = std::sin(-ins->rotation);
+        auto toUv = [&](Vec2 w) {
+            const double dx = w.x - ins->position.x, dy = w.y - ins->position.y;
+            const double lx = (rc * dx - rs * dy) / ins->scale.x + def->base.x;
+            const double ly = (rs * dx + rc * dy) / ins->scale.y + def->base.y;
+            return Vec2{std::clamp(lx / info.value().width, 0.0, 1.0),
+                        std::clamp(1.0 - ly / info.value().height, 0.0, 1.0)};
+        };
+        auto p1 =
+            co_await ctx.getPoint("Specify the first corner of the clip or [Polygonal/Delete]",
+                                  cmd::PointOptions{.keywords = {"Polygonal", "Delete"}});
+        if (!p1.ok() && p1.keyword != "Delete" && p1.keyword != "Polygonal")
             co_return;
         if (p1.keyword == "Delete") {
             params.u0 = params.v0 = 0;
             params.u1 = params.v1 = 1;
+            params.clip.clear();
+        } else if (p1.keyword == "Polygonal") {
+            // Corners of the outline, in the world; at least three, closed by Close or Enter.
+            std::vector<Vec2> world;
+            for (;;) {
+                cmd::PointOptions po;
+                if (!world.empty()) {
+                    po.base = world.back();
+                    po.preview = [pts = world](Vec2 c, DisplayList& out) {
+                        DisplayPolyline pl;
+                        pl.closed = pts.size() >= 2;
+                        pl.pts = pts;
+                        pl.pts.push_back(c);
+                        out.items.emplace_back(std::move(pl));
+                    };
+                }
+                if (world.size() >= 3)
+                    po.keywords = {"Close"};
+                auto pt =
+                    co_await ctx.getPoint(world.empty() ? "Specify the first point of the outline"
+                                                        : "Specify the next point of the outline",
+                                          std::move(po));
+                if (!pt.ok() && pt.keyword != "Close")
+                    break;
+                if (pt.keyword == "Close")
+                    break;
+                world.push_back(pt.point);
+            }
+            if (world.size() < 3) {
+                ctx.message("A polygonal clip needs at least three points.");
+                co_return;
+            }
+            params.clip.clear();
+            params.u0 = params.v0 = 1;
+            params.u1 = params.v1 = 0;
+            for (Vec2 w : world) {
+                const Vec2 uv = toUv(w);
+                params.clip.push_back(uv);
+                params.u0 = std::min(params.u0, uv.x);
+                params.u1 = std::max(params.u1, uv.x);
+                params.v0 = std::min(params.v0, uv.y);
+                params.v1 = std::max(params.v1, uv.y);
+            }
+            if (params.u1 - params.u0 < 1e-4 || params.v1 - params.v0 < 1e-4) {
+                ctx.message("The outline does not cover the picture.");
+                co_return;
+            }
         } else {
             cmd::PointOptions po;
             po.base = p1.point;
@@ -672,16 +729,8 @@ public:
                 co_await ctx.getPoint("Specify the opposite corner of the clip", std::move(po));
             if (!p2.ok())
                 co_return;
-            // World point to picture fractions (u from the left, v from the top).
-            const double c = std::cos(-ins->rotation), s = std::sin(-ins->rotation);
-            auto toUv = [&](Vec2 w) {
-                const double dx = w.x - ins->position.x, dy = w.y - ins->position.y;
-                const double lx = (c * dx - s * dy) / ins->scale.x + def->base.x;
-                const double ly = (s * dx + c * dy) / ins->scale.y + def->base.y;
-                return Vec2{std::clamp(lx / info.value().width, 0.0, 1.0),
-                            std::clamp(1.0 - ly / info.value().height, 0.0, 1.0)};
-            };
             const Vec2 a = toUv(p1.point), b = toUv(p2.point);
+            params.clip.clear();
             params.u0 = std::min(a.x, b.x);
             params.u1 = std::max(a.x, b.x);
             params.v0 = std::min(a.y, b.y);
@@ -769,6 +818,82 @@ public:
     }
 };
 
+// IMAGEADJUST [IAD]: brightness and contrast of a picture, 0 to 100 with 50 as the picture is.
+class ImageAdjustCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "IMAGEADJUST"; }
+    std::vector<std::string> defaultAliases() const override { return {"IAD"}; }
+    std::string_view description() const override {
+        return "Change the brightness and contrast of a picture";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        const BlockDef* def = nullptr;
+        co_await pickUnderlay(ctx, true, def, "Enter the picture to adjust");
+        if (!def)
+            co_return;
+        const std::string blockName = def->name;
+        underlay::ImageParams params = underlay::imageParams(doc.header(), blockName);
+        auto br = co_await ctx.getReal(
+            "Enter the brightness, 0 to 100 <" + std::to_string(params.brightness) + ">",
+            cmd::RealOptions{.defaultValue = params.brightness});
+        if (!br.ok())
+            co_return;
+        auto co = co_await ctx.getReal(
+            "Enter the contrast, 0 to 100 <" + std::to_string(params.contrast) + ">",
+            cmd::RealOptions{.defaultValue = params.contrast});
+        if (!co.ok())
+            co_return;
+        params.brightness = static_cast<int>(std::lround(std::clamp(br.value, 0.0, 100.0)));
+        params.contrast = static_cast<int>(std::lround(std::clamp(co.value, 0.0, 100.0)));
+        auto set = underlay::setImageParams(ctx.tx(), blockName, params);
+        if (!set) {
+            ctx.message(set.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Adjust " + blockName);
+        ctx.message("\"" + blockName + "\": brightness " + std::to_string(params.brightness) +
+                    ", contrast " + std::to_string(params.contrast));
+    }
+};
+
+// IMAGEFRAME [IFR]: whether the outline of a picture is drawn (and plotted).
+class ImageFrameCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "IMAGEFRAME"; }
+    std::vector<std::string> defaultAliases() const override { return {"IFR"}; }
+    std::string_view description() const override {
+        return "Show, hide or plot the frame of a picture";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        const BlockDef* def = nullptr;
+        co_await pickUnderlay(ctx, true, def, "Enter the picture");
+        if (!def)
+            co_return;
+        const std::string blockName = def->name;
+        underlay::ImageParams params = underlay::imageParams(doc.header(), blockName);
+        auto kw =
+            co_await ctx.getKeyword("Enter the frame setting [Hide/Show/Plot]",
+                                    cmd::KeywordOptions{.keywords = {"Hide", "Show", "Plot"}});
+        if (!kw.ok())
+            co_return;
+        params.frame = kw.keyword == "Hide" ? 0 : kw.keyword == "Plot" ? 1 : 2;
+        auto set = underlay::setImageParams(ctx.tx(), blockName, params);
+        if (!set) {
+            ctx.message(set.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Frame " + blockName);
+        ctx.message("\"" + blockName + "\" frame: " +
+                    std::string(params.frame == 0   ? "hidden"
+                                : params.frame == 1 ? "shown and plotted"
+                                                    : "shown, not plotted"));
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeXAttachCommand() {
@@ -783,6 +908,12 @@ std::unique_ptr<cmd::Command> makeImageAttachCommand() {
 }
 std::unique_ptr<cmd::Command> makeImageClipCommand() {
     return std::make_unique<ImageClipCommand>();
+}
+std::unique_ptr<cmd::Command> makeImageAdjustCommand() {
+    return std::make_unique<ImageAdjustCommand>();
+}
+std::unique_ptr<cmd::Command> makeImageFrameCommand() {
+    return std::make_unique<ImageFrameCommand>();
 }
 std::unique_ptr<cmd::Command> makeUnderlayFadeCommand() {
     return std::make_unique<UnderlayFadeCommand>();

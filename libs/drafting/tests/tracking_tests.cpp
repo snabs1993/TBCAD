@@ -217,3 +217,76 @@ TEST_CASE("isometric snap rounds to the lattice of the plane") {
     CHECK(near(w.hover(p + Vec2{1.2, -0.8}), p, 1e-6));
     CHECK(near(w.hover(Vec2{0.4, 0.3}), {0, 0}, 1e-6));
 }
+
+TEST_CASE("object snap tracking keeps three acquired points, drops the oldest, ignores repeats") {
+    World w;
+    w.line({0, 0}, {0, -50});
+    w.line({100, 40}, {100, 90});
+    w.line({200, 80}, {200, 130});
+    w.line({300, 120}, {300, 170});
+    w.set(keys::osnap, "1");
+    w.set(keys::osnapModes, "endpoint");
+    w.set(keys::otrack, "1");
+    auto acquire = [&](Vec2 p) {
+        for (int i = 0; i < 3; ++i)
+            (void)w.hover(p);  // the same point again acquires nothing new
+    };
+    acquire({1, 1});
+    acquire({101, 41});
+    acquire({201, 81});
+    REQUIRE(w.otrack.acquired().size() == 3);
+    acquire({301, 121});
+    REQUIRE(w.otrack.acquired().size() == 3);
+    CHECK(near(w.otrack.acquired()[0], {100, 40}));
+    CHECK(near(w.otrack.acquired()[2], {300, 120}));
+    // The dropped point no longer tracks: nothing to snap to near y = 0 at x = 150.
+    CHECK(near(w.hover({150, 3}), {150, 3}));
+    // The kept ones do, each along its own horizontal.
+    CHECK(near(w.hover({150, 42}), {150, 40}));
+    CHECK(near(w.hover({150, 122}), {150, 120}));
+}
+
+TEST_CASE("object snap tracking meets the vertical of one point and the horizontal of another") {
+    World w;
+    w.line({40, 0}, {40, -10});
+    w.line({0, 70}, {-10, 70});
+    w.set(keys::osnap, "1");
+    w.set(keys::osnapModes, "endpoint");
+    w.set(keys::otrack, "1");
+    for (Vec2 p : {Vec2{41, 1}, Vec2{41, 1}, Vec2{1, 71}, Vec2{1, 71}})
+        (void)w.hover(p);
+    REQUIRE(w.otrack.acquired().size() == 2);
+    cmd::FilterFeedback fb;
+    CHECK(near(w.hover({41, 72}, std::nullopt, 1, &fb), {40, 70}));
+    CHECK(fb.guide);
+}
+
+TEST_CASE("object snap tracking along a polar ray from the base point crosses a tracking ray") {
+    World w;
+    w.line({50, 0}, {50, -20});
+    w.set(keys::osnap, "1");
+    w.set(keys::osnapModes, "endpoint");
+    w.set(keys::otrack, "1");
+    w.set(keys::polar, "1");
+    w.set(keys::polarIncrement, "45");
+    for (Vec2 p : {Vec2{51, 1}, Vec2{51, 1}})
+        (void)w.hover(p, Vec2{0, 0});
+    REQUIRE(w.otrack.acquired().size() == 1);
+    // From the base (0,0) at 45 degrees, the vertical through (50,0) is met at (50,50).
+    CHECK(near(w.hover({51, 49}, Vec2{0, 0}), {50, 50}, 1e-6));
+}
+
+TEST_CASE("object snap tracking is forgotten when OTRACK is switched off") {
+    World w;
+    w.line({0, 0}, {0, -50});
+    w.set(keys::osnap, "1");
+    w.set(keys::osnapModes, "endpoint");
+    w.set(keys::otrack, "1");
+    for (Vec2 p : {Vec2{1, 1}, Vec2{1, 1}})
+        (void)w.hover(p);
+    REQUIRE(w.otrack.acquired().size() == 1);
+    w.set(keys::otrack, "0");
+    CHECK(near(w.hover({80, 3}), {80, 3}));
+    w.set(keys::otrack, "1");
+    CHECK(near(w.hover({80, 3}), {80, 3}));
+}

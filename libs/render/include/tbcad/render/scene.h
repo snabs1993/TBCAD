@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <map>
 #include <memory>
@@ -206,11 +208,95 @@ public:
     void clearAndRetile(double tileSizeMm);
 
 private:
+    using RefPair = std::pair<TileKey, BatchKey>;
+    // The batches an entity has geometry in, as numbers from the scene's table of (tile, batch)
+    // pairs: a pair is 48 bytes and a drawing of 700,000 objects would otherwise hold that for
+    // each. One or two fit in the record itself.
+    class RefList {
+    public:
+        RefList() = default;
+        RefList(const RefList& o) { assign(o.begin(), o.size()); }
+        RefList(RefList&& o) noexcept { steal(o); }
+        RefList& operator=(const RefList& o) {
+            if (this != &o) {
+                release();
+                assign(o.begin(), o.size());
+            }
+            return *this;
+        }
+        RefList& operator=(RefList&& o) noexcept {
+            if (this != &o) {
+                release();
+                steal(o);
+            }
+            return *this;
+        }
+        ~RefList() { release(); }
+        std::uint32_t size() const { return n_; }
+        bool empty() const { return n_ == 0; }
+        std::uint32_t* begin() { return cap_ == kInline ? u_.in : u_.heap; }
+        std::uint32_t* end() { return begin() + n_; }
+        const std::uint32_t* begin() const { return cap_ == kInline ? u_.in : u_.heap; }
+        const std::uint32_t* end() const { return begin() + n_; }
+        void push_back(std::uint32_t v) {
+            if (n_ == cap_) {
+                const std::uint32_t cap = cap_ * 2;
+                auto* p = new std::uint32_t[cap];
+                std::copy(begin(), end(), p);
+                if (cap_ != kInline)
+                    delete[] u_.heap;
+                u_.heap = p;
+                cap_ = cap;
+            }
+            begin()[n_++] = v;
+        }
+        void truncate(std::uint32_t n) { n_ = n; }
+
+    private:
+        static constexpr std::uint32_t kInline = 2;
+        void release() {
+            if (cap_ != kInline)
+                delete[] u_.heap;
+            cap_ = kInline;
+            n_ = 0;
+        }
+        void assign(const std::uint32_t* from, std::uint32_t n) {
+            for (std::uint32_t i = 0; i < n; ++i)
+                push_back(from[i]);
+        }
+        void steal(RefList& o) {
+            n_ = o.n_;
+            cap_ = o.cap_;
+            if (o.cap_ == kInline)
+                std::copy(o.u_.in, o.u_.in + kInline, u_.in);
+            else
+                u_.heap = o.u_.heap;
+            o.cap_ = kInline;
+            o.n_ = 0;
+        }
+        std::uint32_t n_ = 0, cap_ = kInline;
+        union {
+            std::uint32_t in[kInline];
+            std::uint32_t* heap;
+        } u_{};
+    };
+    struct RefPairHash {
+        std::size_t operator()(const RefPair& r) const noexcept {
+            return std::hash<TileKey>{}(r.first) * 31 ^ std::hash<BatchKey>{}(r.second);
+        }
+    };
     struct EntityRec {
         std::uint32_t drawOrder = 0;
         bool mask = false;
-        std::vector<std::pair<TileKey, BatchKey>> refs{};
+        std::uint32_t maskCount = 0;
+        RefList refs{};
     };
+    std::uint32_t internRef(const TileKey& tile, const BatchKey& key);
+    const RefPair& refPair(std::uint32_t id) const { return refPairs_[id]; }
+    // Puts an entity's refs in order of (tile, batch) and drops repeats.
+    void finishRefs(EntityRec& rec);
+    std::vector<RefPair> refPairs_{};
+    std::unordered_map<RefPair, std::uint32_t, RefPairHash> refIds_{};
     struct SelCache {
         std::uint64_t builtFor = ~0ull;    // scene changeCounter_ the geometry was built for
         std::uint64_t builtStamp = ~0ull;  // this set's own stamp at that time
@@ -252,7 +338,9 @@ private:
     std::unordered_set<LayerId> hiddenLayers_{};
     std::unordered_set<EntityId> highlighted_{};
     std::unordered_set<EntityId> selected_{};
-    std::unordered_map<EntityId, std::uint32_t> masks_{};  // entities with mask fills -> order
+    // Entities with mask fills -> draw order and the number of separate masks (runs of mask
+    // fills with other geometry between them) the entity has.
+    std::unordered_map<EntityId, std::pair<std::uint32_t, std::uint32_t>> masks_{};
     std::vector<std::uint32_t> levelOrders_{};  // sorted draw orders of the masks batches use
     std::vector<DashPattern> patterns_;
     std::map<std::vector<double>, std::uint32_t> patternIds_{};

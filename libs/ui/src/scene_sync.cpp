@@ -693,7 +693,10 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         });
         upsertMany(inserts);
     }
-    if (!cs.order.empty())
+    // A draw order override that went away with its (erased) object moves nobody else: only an
+    // object that is still there can change its place among the rest.
+    if (std::any_of(cs.order.begin(), cs.order.end(),
+                    [&](const OrderChange& c) { return doc_.find(c.id) != nullptr; }))
         rebuildDrawOrder();
 }
 

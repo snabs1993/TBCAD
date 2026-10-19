@@ -40,11 +40,18 @@ Result<std::unique_ptr<Document>> imageFrameDocument(int width, int height);
 
 // How an image is shown. `fade` is the percentage of transparency (0 = opaque, 95 = nearly
 // invisible); the clip is a rectangle in fractions of the picture (u from the left, v from the
-// top), the default being the whole picture.
+// top), the default being the whole picture. `clip` is a polygon in the same fractions: when it
+// has three or more points only the inside shows, and u0..v1 are its bounding box.
+// `brightness` and `contrast` are 0..100 with 50 = the picture as it is. `frame` says whether
+// the outline of the picture is drawn: 0 no, 1 yes and it is plotted, 2 yes but not plotted.
 struct ImageParams {
     double fade = 0;
     double u0 = 0, v0 = 0, u1 = 1, v1 = 1;
-    bool clipped() const { return u0 > 0 || v0 > 0 || u1 < 1 || v1 < 1; }
+    int brightness = 50, contrast = 50;
+    int frame = 2;
+    std::vector<Vec2> clip{};
+    bool clipped() const { return u0 > 0 || v0 > 0 || u1 < 1 || v1 < 1 || clip.size() >= 3; }
+    bool adjusted() const { return brightness != 50 || contrast != 50; }
     friend bool operator==(const ImageParams&, const ImageParams&) = default;
 };
 inline constexpr double kDefaultImageFade = 30;
@@ -75,6 +82,12 @@ public:
     // Null when the file cannot be decoded (the failure is remembered until the stamp changes).
     std::shared_ptr<const ImageData> get(const std::filesystem::path& file, std::int64_t stamp,
                                          std::uint64_t* key = nullptr);
+    // The picture `key` with the brightness, contrast and polygon clip of `params` applied (the
+    // polygon becomes transparency). Same pixels and key when there is nothing to apply.
+    std::shared_ptr<const ImageData> adjusted(std::uint64_t key,
+                                              const std::shared_ptr<const ImageData>& src,
+                                              const ImageParams& params,
+                                              std::uint64_t* outKey = nullptr);
     // Forgets pictures that were not asked for since the last call.
     void sweep();
     std::size_t size() const { return entries_.size(); }
@@ -86,6 +99,7 @@ private:
         bool used = false;
     };
     std::unordered_map<std::string, Entry> entries_{};
+    std::unordered_map<std::string, Entry> derived_{};
     std::uint64_t nextKey_ = 1;
 };
 

@@ -463,8 +463,14 @@ public:
     // Erases every entity of a block (O(n) however many there are; one by one would shift the
     // block's list each time). The block stays. Returns how many were erased.
     std::size_t eraseAllIn(BlockId block);
+    // Draw order. In model space these set an override; for an entity of a block they move it
+    // within the block's list (which is the block's draw order, back to front).
     Result<void> bringToFront(EntityId id);
     Result<void> sendToBack(EntityId id);
+    // Makes `order` (back to front) the draw order of a container: every entity of model space,
+    // or every entity of `block` when it is given. It must be a permutation of them. Entities
+    // that keep their relative position get no override.
+    Result<void> setDrawOrder(const std::vector<EntityId>& order, BlockId block = {});
 
     // Tables. `add*` ignores the row's id and returns the assigned one.
     Result<LayerId> addLayer(Layer row);

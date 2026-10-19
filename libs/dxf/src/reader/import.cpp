@@ -418,6 +418,10 @@ void Importer::processObjects(RecordReader& rr) {
             readPlotSettings(r);
             continue;
         }
+        if (r.type == "RASTERVARIABLES") {
+            if (r.has(71))
+                imageFrame_ = std::clamp(static_cast<int>(r.integer(71)), 0, 2);
+        }
         if (r.type == "IMAGEDEF") {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
             continue;
@@ -649,6 +653,7 @@ void Importer::importGroups() {
     for (const auto& [id, handle] : srcHandles_)
         entityOfHandle.emplace(handle, id);
     std::vector<tbcad::Group> groups;
+    std::string descriptions;  // lines "name TAB text"
     std::string name;
     for (const auto& [c, v] : dit->second.g) {
         if (c == 3) {
@@ -665,6 +670,9 @@ void Importer::importGroups() {
         for (const auto& [gc, gv] : git->second.g) {
             if (gc == 71)
                 grp.selectable = gv != "0";
+            else if (gc == 300 && !gv.empty() && gv.find_first_of("\t\n") == std::string::npos &&
+                     name.find_first_of("\t\n") == std::string::npos)
+                descriptions += name + '\t' + gv + '\n';
             else if (gc == 340) {
                 auto eit = entityOfHandle.find(std::strtoull(gv.c_str(), nullptr, 16));
                 if (eit != entityOfHandle.end())
@@ -677,6 +685,85 @@ void Importer::importGroups() {
     }
     if (!groups.empty())
         (void)writeGroups(*tx_, groups);
+    if (!groups.empty() && !descriptions.empty())
+        (void)tx_->modifyHeader(
+            [&](Header& h) { h.custom[kKeptGroupDescKey] = std::move(descriptions); });
+}
+
+// SORTENTSTABLE objects give the draw order of model space and of blocks: pairs of an entity
+// handle (331) and a sort handle (5, after the object's own); an entity that is not listed sorts
+// by its own handle. Without a table the order is the order of the handles, which is the order
+// the entities came in the file.
+void Importer::importDrawOrder() {
+    bool any = false;
+    for (const auto& [h, rec] : objStore_)
+        if (rec.type == "SORTENTSTABLE") {
+            any = true;
+            break;
+        }
+    if (!any)
+        return;
+    std::unordered_map<std::uint64_t, std::uint64_t> entityOfHandle, handleOf;
+    for (const auto& [id, handle] : srcHandles_) {
+        entityOfHandle.emplace(handle, id);
+        handleOf.emplace(id, handle);
+    }
+    std::unordered_map<std::uint64_t, std::uint64_t> sortKey;  // entity id -> sort handle
+    for (const auto& [h, rec] : objStore_) {
+        if (rec.type != "SORTENTSTABLE")
+            continue;
+        std::uint64_t entity = 0;
+        bool haveEntity = false, ownHandle = true;
+        for (const auto& [c, v] : rec.g) {
+            if (c == 331) {
+                auto it = entityOfHandle.find(std::strtoull(v.c_str(), nullptr, 16));
+                haveEntity = it != entityOfHandle.end();
+                if (haveEntity)
+                    entity = it->second;
+            } else if (c == 5) {
+                if (ownHandle) {  // the first 5 is the handle of the table itself
+                    ownHandle = false;
+                    continue;
+                }
+                if (haveEntity)
+                    sortKey[entity] = std::strtoull(v.c_str(), nullptr, 16);
+                haveEntity = false;
+            }
+        }
+    }
+    if (sortKey.empty())
+        return;
+    // Containers touched: model space (block 0) and the blocks of the listed entities.
+    std::set<std::uint64_t> containers;
+    for (const auto& [id, key] : sortKey)
+        containers.insert(doc_->ownerBlock(EntityId{id}).value);
+    auto keyOf = [&](EntityId id, std::uint64_t& last) {
+        if (auto it = sortKey.find(id.value); it != sortKey.end())
+            return last = it->second;
+        if (auto it = handleOf.find(id.value); it != handleOf.end())
+            return last = it->second;
+        return last;  // made by the importer: stays after the one before it
+    };
+    for (std::uint64_t container : containers) {
+        std::vector<EntityId> cur;
+        if (container == 0)
+            cur = doc_->modelSpace();
+        else if (const BlockDef* def = doc_->block(BlockId{static_cast<std::uint32_t>(container)}))
+            cur = def->entities;
+        std::uint64_t last = 0;
+        std::vector<std::pair<std::uint64_t, EntityId>> keyed;
+        keyed.reserve(cur.size());
+        for (EntityId id : cur)
+            keyed.emplace_back(keyOf(id, last), id);
+        std::stable_sort(keyed.begin(), keyed.end(),
+                         [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::vector<EntityId> want;
+        want.reserve(keyed.size());
+        for (const auto& [k, id] : keyed)
+            want.push_back(id);
+        if (want != cur)
+            (void)tx_->setDrawOrder(want, BlockId{static_cast<std::uint32_t>(container)});
+    }
 }
 
 namespace {
@@ -717,8 +804,10 @@ std::optional<mline::Style> mlineStyleOf(const std::vector<std::pair<int, std::s
     }
     if (!named || st.name.empty() || st.offsets.empty())
         return std::nullopt;
-    st.startCap = (flags & (16 | 32 | 64)) != 0;
-    st.endCap = (flags & (256 | 512 | 1024)) != 0;
+    st.startCap = (flags & 16) != 0;
+    st.endCap = (flags & 256) != 0;
+    st.startArc = (flags & 64) ? 1 : (flags & 32) ? 2 : 0;
+    st.endArc = (flags & 1024) ? 1 : (flags & 512) ? 2 : 0;
     st.joints = (flags & 2) != 0;
     st.fill = (flags & 1) ? (fillColor >= 0 && fillColor <= 256 ? fillColor : 256) : -1;
     if (std::any_of(colors.begin(), colors.end(), [](int c) { return c != 256; }))
@@ -813,6 +902,19 @@ void Importer::keepObjects() {
                 name = v;
             else if ((c == 350 || c == 360) && !name.empty()) {
                 entries.emplace_back(name, upperHandle(v));
+                name.clear();
+            }
+        }
+    }
+
+    // The layer table's own dictionary: its entries are kept as root entries with a marker.
+    if (auto lit = objStore_.find(layerTableDict_); lit != objStore_.end()) {
+        std::string name;
+        for (const auto& [c, v] : lit->second.g) {
+            if (c == 3)
+                name = v;
+            else if ((c == 350 || c == 360) && !name.empty()) {
+                entries.emplace_back("%LAYERTABLE%" + name, upperHandle(v));
                 name.clear();
             }
         }
@@ -924,7 +1026,17 @@ void Importer::processTables(RecordReader& rr) {
             rr.pushBack(std::move(r));
             break;
         }
-        if (r.type == "LAYER")
+        if (r.type == "TABLE") {
+            if (r.raw(2) == "LAYER") {  // its extension dictionary holds the layer filters
+                bool inX = false;
+                for (const Group& g : r.g) {
+                    if (g.code == 102)
+                        inX = g.str() == "{ACAD_XDICTIONARY";
+                    else if (inX && g.code == 360)
+                        layerTableDict_ = upperHandle(g.str());
+                }
+            }
+        } else if (r.type == "LAYER")
             readLayerRow(r);
         else if (r.type == "LTYPE")
             readLinetype(r);
@@ -2284,6 +2396,7 @@ Result<ImportResult> Importer::run() {
     applyPlotStyles();
     keepHandles();
     importGroups();
+    importDrawOrder();
     importMlineStyles();
     keepObjects();
     finish();
