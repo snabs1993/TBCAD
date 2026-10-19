@@ -4,7 +4,7 @@ Module `libs/commands/transform`. All commands run in one transaction, so each i
 
 | Command | Alias | Notes |
 | --- | --- | --- |
-| MOVE | M | base point, second point (Enter: the base point is the displacement) |
+| MOVE | M | base point, second point (Enter: the base point is the displacement); Enter at the base point (or Displacement) asks for a displacement, Enter repeats the last (`transform.displacement`, shared with COPY and STRETCH) |
 | COPY | CO, CP | repeats until Enter or Exit (`Undo` takes back the last copy); `mOde` Single/Multiple sets COPYMODE (`copy.mode`); **Array** makes a row of copies (see below) |
 | ROTATE | RO | angle or Reference; Copy keeps the source; Enter repeats the last angle (`rotate.angle`) |
 | SCALE | SC | factor or Reference; Copy keeps the source; Enter repeats the last factor (`scale.factor`) |

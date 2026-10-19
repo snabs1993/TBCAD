@@ -57,6 +57,30 @@ bool noDisplacement(CommandContext& ctx, Vec2 d) {
     return true;
 }
 
+// AutoCAD's Displacement for MOVE, COPY and STRETCH: the last one is offered and Enter repeats it.
+// `out` stays empty on Esc.
+Task askDisplacement(CommandContext& ctx, std::optional<Vec2>& out) {
+    out.reset();
+    Vec2 last{};
+    if (const auto v = ctx.host().setting("transform.displacement")) {
+        double x = 0, y = 0;
+        if (std::sscanf(v->c_str(), "%lf,%lf", &x, &y) == 2 && std::isfinite(x) && std::isfinite(y))
+            last = {x, y};
+    }
+    char shown[96];
+    std::snprintf(shown, sizeof shown, "%.4f, %.4f", last.x, last.y);
+    auto d = co_await ctx.getPoint(std::string("Specify displacement <") + shown + ">");
+    if (d.status == Status::None)
+        out = last;
+    else if (d.ok())
+        out = d.point;
+    if (out) {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "%.17g,%.17g", out->x, out->y);
+        ctx.host().setSetting("transform.displacement", buf);
+    }
+}
+
 // COPY > Array: a row of copies. A second point sets the spacing between neighbours, Fit makes
 // it the position of the last copy.
 Task arrayCopies(CommandContext& ctx, const std::vector<EntityId>& ids, Vec2 base) {
@@ -117,11 +141,13 @@ public:
             co_return;
         PointOptions bo;
         bo.keywords = {"Displacement"};
-        auto base = co_await ctx.getPoint("Specify base point or [Displacement]", std::move(bo));
-        if (base.status == Status::Keyword) {
-            auto d = co_await ctx.getPoint("Specify displacement");
-            if (d.ok() && !noDisplacement(ctx, d.point))
-                report(ctx, applyTransform(ctx, ids, Transform2::translate(d.point), false));
+        auto base = co_await ctx.getPoint("Specify base point or [Displacement] <Displacement>",
+                                          std::move(bo));
+        if (base.status == Status::Keyword || base.status == Status::None) {
+            std::optional<Vec2> d;
+            co_await askDisplacement(ctx, d);
+            if (d && !noDisplacement(ctx, *d))
+                report(ctx, applyTransform(ctx, ids, Transform2::translate(*d), false));
             co_return;
         }
         if (!base.ok())
@@ -166,8 +192,8 @@ public:
         for (;;) {
             PointOptions bo;
             bo.keywords = {"Displacement", "mOde"};
-            base =
-                co_await ctx.getPoint("Specify base point or [Displacement/mOde]", std::move(bo));
+            base = co_await ctx.getPoint("Specify base point or [Displacement/mOde] <Displacement>",
+                                         std::move(bo));
             if (base.status == Status::Keyword && base.keyword == "mOde") {
                 KeywordOptions ko;
                 ko.keywords = {"Single", "Multiple"};
@@ -182,10 +208,11 @@ public:
             }
             break;
         }
-        if (base.status == Status::Keyword) {
-            auto d = co_await ctx.getPoint("Specify displacement");
-            if (d.ok() && !noDisplacement(ctx, d.point))
-                report(ctx, applyTransform(ctx, ids, Transform2::translate(d.point), true));
+        if (base.status == Status::Keyword || base.status == Status::None) {
+            std::optional<Vec2> d;
+            co_await askDisplacement(ctx, d);
+            if (d && !noDisplacement(ctx, *d))
+                report(ctx, applyTransform(ctx, ids, Transform2::translate(*d), true));
             co_return;
         }
         if (!base.ok())
@@ -612,12 +639,15 @@ public:
             PointOptions bo;
             bo.keywords = {"Displacement", "Window", "CPolygon", "Remove"};
             auto base = co_await ctx.getPoint(
-                "Specify base point or [Displacement/Window/CPolygon/Remove]", std::move(bo));
-            if (base.status == Status::Keyword && base.keyword == "Displacement") {
-                auto d = co_await ctx.getPoint("Specify displacement");
-                if (!d.ok())
+                "Specify base point or [Displacement/Window/CPolygon/Remove] <Displacement>",
+                std::move(bo));
+            if ((base.status == Status::Keyword && base.keyword == "Displacement") ||
+                base.status == Status::None) {
+                std::optional<Vec2> d;
+                co_await askDisplacement(ctx, d);
+                if (!d)
                     co_return;
-                delta = d.point;
+                delta = *d;
                 break;
             }
             if (base.status == Status::Keyword) {
