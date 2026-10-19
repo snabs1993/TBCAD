@@ -540,6 +540,14 @@ void Importer::projectHatch(HatchData& h, const Tilt& t, double elev) {
         loop.edges = std::move(edges);
     }
     h.patternOrigin = m(h.patternOrigin);
+    // A named pattern cannot shear: it keeps the direction of its base angle seen from above, and
+    // its scale shrinks by the square root of the area factor |nz|.
+    if (!h.solid) {
+        const Vec2 dir = t.map(Vec2{std::cos(h.patternAngle), std::sin(h.patternAngle)}, 0);
+        if (length(dir) > 1e-9)
+            h.patternAngle = normalizeAngle(std::atan2(dir.y, dir.x));
+        h.patternScale *= std::sqrt(std::abs(t.n[2]));
+    }
 }
 
 // A text built in object coordinates, projected. The projection of the text's plane is an affine

@@ -389,6 +389,21 @@ TEST_CASE("extrusion: a loose attribute of an insert in a tilted plane is projec
     CHECK(l.report.countCode(code::kBadEntity) == 0);
 }
 
+TEST_CASE("extrusion: a pattern hatch in a tilted plane keeps its angle seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(210, 0.0).g(220, -0.6);
+    p.g(230, 0.8).g(2, "ANSI31").g(70, 0).g(71, 0).g(91, 1).g(92, 2).g(72, 0).g(73, 1).g(93, 4);
+    p.g(10, 0.0).g(20, 0.0).g(10, 10.0).g(20, 0.0).g(10, 10.0).g(20, 10.0).g(10, 0.0).g(20, 10.0);
+    p.g(97, 0).g(75, 0).g(76, 1).g(52, 90.0).g(41, 4.0).g(77, 0).g(78, 0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 1);
+    CHECK(near(hatches[0]->patternAngle, kPi / 2));          // object Y still points up
+    CHECK(hatches[0]->patternScale == doctest::Approx(4 * std::sqrt(0.8)));
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).
