@@ -237,3 +237,22 @@ TEST_CASE("a spline absorbs lines at its ends, fit-only splines included") {
     auto r = joinEntities(ptrs(v));
     CHECK(r.consumed == std::vector<std::size_t>{1, 2});
 }
+
+TEST_CASE("joining collinear lines whose directions fall either side of a direction bucket edge") {
+    // 140 direction buckets of the half circle: pairs on one line at angles just below and just
+    // above each edge, with a gap between the two pieces (bridged), plus short pieces on the way.
+    constexpr double kPi = 3.14159265358979323846;
+    std::vector<Entity> v;
+    for (int k = 1; k < 140; ++k) {
+        const double a = k * kPi / 140 + ((k % 2) ? -1e-9 : 1e-9);
+        const Vec2 d{std::cos(a), std::sin(a)};
+        const Vec2 o{k * 1000.0, -k * 400.0};
+        v.push_back(line(o, o + d * 30));
+        v.push_back(line(o + d * 50, o + d * 90));
+        v.push_back(line(o + d * 100, o + d * 100.01));  // a short piece beyond the second
+    }
+    const auto r = joinEntities(ptrs(v), 1e-3, true);
+    CHECK(r.created.size() == 139);
+    CHECK(r.consumed.size() == v.size());
+}
+

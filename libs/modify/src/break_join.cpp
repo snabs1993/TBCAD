@@ -465,9 +465,10 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
         if (gone[i])
             continue;
         for (bool changed = true; changed;) {
-            cand.clear();
+            changed = false;
             const Span s = spanOf(lines[i]);
             if (!bridgeGaps && small(s)) {
+                cand.clear();
                 for (std::int64_t x = s.x0; x <= s.x1; ++x)
                     for (std::int64_t y = s.y0; y <= s.y1; ++y)
                         if (auto it = grid.find(cellKey(x, y)); it != grid.end())
@@ -477,27 +478,45 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
                 for (std::uint32_t j : large)
                     if (j > i)
                         cand.push_back(j);
-            } else {
-                for (int d = -1; d <= 1; ++d) {
-                    const auto& v =
-                        byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
-                    for (std::uint32_t j : v)
-                        if (j > i)
-                            cand.push_back(j);
+                std::sort(cand.begin(), cand.end());
+                cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+                for (std::uint32_t j : cand) {
+                    if (gone[j])
+                        continue;
+                    if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
+                        gone[j] = 1;
+                        changed = true;
+                    }
                 }
-                for (std::uint32_t j : shorts)
-                    if (j > i)
-                        cand.push_back(j);
-            }
-            std::sort(cand.begin(), cand.end());
-            cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
-            changed = false;
-            for (std::uint32_t j : cand) {
-                if (gone[j])
-                    continue;
-                if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
-                    gone[j] = 1;
-                    changed = true;
+            } else {
+                // The three direction lists and the short lines each hold their indices in
+                // ascending order and share none, so walking them together visits the candidates
+                // after i in order without gathering and sorting them.
+                const std::vector<std::uint32_t>* lists[4];
+                std::size_t at[4];
+                for (int d = -1; d <= 1; ++d)
+                    lists[d + 1] = &byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
+                lists[3] = &shorts;
+                for (int k = 0; k < 4; ++k)
+                    at[k] = static_cast<std::size_t>(
+                        std::upper_bound(lists[k]->begin(), lists[k]->end(),
+                                         static_cast<std::uint32_t>(i)) -
+                        lists[k]->begin());
+                for (;;) {
+                    int best = -1;
+                    for (int k = 0; k < 4; ++k)
+                        if (at[k] < lists[k]->size() &&
+                            (best < 0 || (*lists[k])[at[k]] < (*lists[best])[at[best]]))
+                            best = k;
+                    if (best < 0)
+                        break;
+                    const std::uint32_t j = (*lists[best])[at[best]++];
+                    if (gone[j])
+                        continue;
+                    if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
+                        gone[j] = 1;
+                        changed = true;
+                    }
                 }
             }
             if (bridgeGaps)
