@@ -541,3 +541,24 @@ TEST_CASE("LIST of an insert names its block, scale and xref source") {
     host.run("LIST", {cmd::ScriptItem::pick(ib), ""});
     CHECK(host.logContains("external reference site.dxf, overlay"));
 }
+
+TEST_CASE("LIST of a large selection lists the first objects and counts the rest") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("gen");
+        for (int i = 0; i < 1000; ++i)
+            ids.push_back(tx.add(Entity{{}, LineData{{0.0 + i, 0}, {1.0 + i, 1}}}).value());
+        tx.commit();
+    }
+    host.setSelection(ids);
+    host.run("LIST", {});
+    CHECK(host.logContains("700 more object(s) not listed"));
+    std::size_t lines = 0;
+    for (const auto& l : host.log())
+        lines += l.rfind("LINE", 0) == 0 ? 1 : 0;
+    CHECK(lines == 300);
+}

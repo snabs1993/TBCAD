@@ -304,15 +304,28 @@ public:
         if (!sel.ok() || sel.ids.empty())
             co_return;
         const Precision p = precisionOf(ctx);
+        // The text window is for reading: a selection of hundreds of thousands lists its first
+        // objects and says how many were left out, instead of formatting every one of them.
+        constexpr std::size_t kMaxListed = 300;
         std::string all;
+        std::size_t listed = 0;
         for (EntityId id : sel.ids) {
+            if (listed == kMaxListed)
+                break;
             const Entity* e = ctx.doc().find(id);
             if (!e)
                 continue;
+            ++listed;
             for (auto& line : describeEntity(ctx.doc(), *e, p)) {
                 ctx.message(line);
                 all += line + "\n";
             }
+        }
+        if (sel.ids.size() > listed) {
+            const std::string more = std::to_string(sel.ids.size() - listed) +
+                                     " more object(s) not listed; select fewer to see them.";
+            ctx.message(more);
+            all += more + "\n";
         }
         ctx.host().setSetting(kLastResultKey, all);
     }
