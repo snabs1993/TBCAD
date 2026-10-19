@@ -61,6 +61,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeImageAdjustCommand());
     (void)registry.add(makeImageFrameCommand());
     (void)registry.add(makeImageTransparencyCommand());
+    (void)registry.add(makePdfOsnapCommand());
     (void)registry.add(makeUnderlayFadeCommand());
     (void)registry.add(makeXReloadCommand());
     (void)registry.add(makeXDetachCommand());

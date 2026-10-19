@@ -27,7 +27,7 @@ cover the page are dropped as paper. Plots from CAD programs keep their text as 
 come through whole; a PDF made from a word processor shows its drawings but not its words.
 
 All geometry is on one layer, `PDF`, below the xref's own layer (`site` > `PDF`). Turn the layer
-off or freeze it to hide the underlay. **Object snap ignores underlays**, so the cursor does not
+off or freeze it to hide the underlay. **Object snap ignores PDF underlays** unless `PDFOSNAP` is 1, so the cursor does not
 jump to a thousand PDF vertices while you trace.
 
 Limits: encrypted PDFs are refused with a message; a page may hold up to 4 million vertices (the
