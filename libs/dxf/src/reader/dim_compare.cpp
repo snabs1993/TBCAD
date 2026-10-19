@@ -4,6 +4,7 @@
 // dimension's groups, does not do the same way.
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "importer.h"
 #include "tbcad/dim/dim.h"
@@ -117,6 +118,54 @@ std::string plain(const std::string& s) {
     return t.substr(i);
 }
 
+std::string num(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.6g", v);
+    return buf;
+}
+
+std::string pt(Vec2 p) {
+    return "(" + num(p.x) + "," + num(p.y) + ")";
+}
+
+std::string box(const BBox2& b) {
+    return b.empty() ? "none" : pt(b.min) + "-" + pt(b.max);
+}
+
+// The DSTYLE variables of the ACAD extended data as "var=value" pairs.
+std::string dstyleGroups(const Record& r) {
+    std::string o;
+    bool inAcad = false, inDstyle = false;
+    int var = -1;
+    for (const Group& g : r.g) {
+        if (g.code == 1001) {
+            inAcad = g.str() == "ACAD";
+            inDstyle = false;
+            continue;
+        }
+        if (!inAcad)
+            continue;
+        if (g.code == 1000) {
+            inDstyle = g.str() == "DSTYLE";
+            continue;
+        }
+        if (!inDstyle)
+            continue;
+        if (g.code == 1070 && var < 0) {
+            var = static_cast<int>(g.integer());
+            continue;
+        }
+        if (var >= 0) {
+            o += (o.empty() ? "" : " ") + std::to_string(var) + "=";
+            o += g.code == 1040 ? num(g.number())
+                 : g.code == 1070 || g.code == 1071 ? std::to_string(g.integer())
+                                                    : std::string(g.str());
+            var = -1;
+        }
+    }
+    return o;
+}
+
 }  // namespace
 
 void Importer::compareDimension(const Record& r, const Entity& dim) {
@@ -137,20 +186,29 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
     c.kind = kindName(d->kind);
 
     // Text: the stored one is the first text of the block (AutoCAD writes one MTEXT).
+    // Its centre: AutoCAD writes it middle-centre aligned, so the insertion point is the centre;
+    // other alignments go by the drawn box when the text has one here.
     double storedHeight = 0;
     std::optional<Vec2> storedCenter;
+    std::string storedRaw;
     if (!texts.empty()) {
         const Entity& t = texts.front();
         if (const auto* m = entityAs<MTextData>(t)) {
             c.storedText = plain(m->utf8);
+            storedRaw = m->utf8;
             storedHeight = m->height;
+            if (m->attach == Attachment::MiddleCenter)
+                storedCenter = m->position;
         } else if (const auto* x = entityAs<TextData>(t)) {
             c.storedText = plain(x->utf8);
+            storedRaw = x->utf8;
             storedHeight = x->height;
         }
-        const BBox2 box = geom::bounds(t);
-        if (!box.empty())
-            storedCenter = (box.min + box.max) * 0.5;
+        if (!storedCenter) {
+            const BBox2 b = geom::bounds(t, *doc_);
+            if (!b.empty())
+                storedCenter = (b.min + b.max) * 0.5;
+        }
     }
     c.generatedText = plain(L.text.utf8);
     c.textMatch = c.storedText == c.generatedText;
@@ -211,6 +269,28 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         if (!found)
             ++c.arrowsUnmatched;
     }
+
+    BBox2 storedBox, generatedBox;
+    for (const Segment& s : stored) {
+        storedBox.expand(s.a);
+        storedBox.expand(s.b);
+    }
+    for (const Segment& s : generated) {
+        generatedBox.expand(s.a);
+        generatedBox.expand(s.b);
+    }
+    c.detail = "override=\"" + dec(r.raw(1)) + "\" storedRaw=\"" + storedRaw + "\" style=\"" +
+               style.name + "\" txt=" + num(style.textHeight) + " scale=" +
+               num(style.overallScale) + " annotation=" + num(factor) +
+               " lfac=" + num(style.linearFactor) + " prefix=\"" + style.prefix +
+               "\" suffix=\"" + style.suffix + "\" units=" + num(k_) +
+               " storedHeight=" + num(storedHeight) + " generatedHeight=" + num(L.text.height) +
+               " measured=" + num(dim::measurement(*d)) + " defPts=" + pt(d->defPts[0]) +
+               pt(d->defPts[1]) + pt(d->defPts[2]) + pt(d->defPts[3]) +
+               " textPos=" + pt(d->textPos) + " storedText@" +
+               (storedCenter ? pt(*storedCenter) : std::string("none")) +
+               " generatedText@" + pt(L.text.center) + " storedBox=" + box(storedBox) +
+               " generatedBox=" + box(generatedBox) + " dstyle={" + dstyleGroups(r) + "}";
     sum_.dimCompare.push_back(std::move(c));
 }
 

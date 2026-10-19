@@ -859,6 +859,9 @@ TEST_CASE("dimension comparison lists each dimension against its stored block") 
         CHECK(c.strayStored < 0.05);
         CHECK(c.strayGenerated < 0.05);
         CHECK(c.arrowsUnmatched == 0);
+        // The details name what the dimension was read as.
+        CHECK(c.detail.find("measured=10 ") != std::string::npos);
+        CHECK(c.detail.find("storedText@(") != std::string::npos);
     }
     CHECK(linear == 2);
     // The diameter sign is the same whichever way the file spells it.
