@@ -15,6 +15,13 @@
 #include "tbcad/core/dump.h"
 #include "tbcad/io/tbcad.h"
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 using namespace tbcad;
 using cmd::ScriptItem;
 
@@ -87,7 +94,7 @@ TEST_CASE("every command survives scripted and random input on the Thai house sa
         names.emplace_back(c->name());
     REQUIRE(names.size() > 100);
 
-    auto dir = std::filesystem::temp_directory_path() / "tbcad_fuzz";
+    auto dir = std::filesystem::temp_directory_path() / ("tbcad_fuzz_" + std::to_string(getpid()));
     std::filesystem::create_directories(dir);
 
     std::mt19937 rng(20261013);
