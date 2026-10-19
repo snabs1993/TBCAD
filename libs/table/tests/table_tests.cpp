@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
+#include <string>
+
 #include "tbcad/geom/geom.h"
 #include "tbcad/table/table.h"
 
@@ -357,4 +360,28 @@ TEST_CASE("cell alignment is a paragraph code that formulas and CSV look through
     auto back = parse(serialize(t));
     REQUIRE(back);
     CHECK(cellAlign(cellAt(*back, 0, 1)) == CellAlign::Right);
+}
+
+TEST_CASE("formulas: a cell used twice by the next one is worked out once") {
+    // =A1+A1 down a column doubles each step: 2^50 without caching would never finish.
+    TableData t = grid(51, 1);
+    setText(t, 0, 0, "1");
+    for (std::size_t r = 1; r < 51; ++r)
+        setText(t, r, 0, "=A" + std::to_string(r) + "+A" + std::to_string(r));
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(displayText(t, 50, 0) == "1125899906842624");
+    // A grid of formulas that all sum a column that is itself formulas.
+    TableData g = grid(200, 6);
+    for (std::size_t r = 0; r < 200; ++r)
+        setText(g, r, 0, std::to_string(r));
+    for (std::size_t r = 0; r < 200; ++r)
+        for (std::size_t c = 1; c < 6; ++c)
+            setText(g, r, c,
+                    "=SUM(" + std::string(1, char('A' + c - 1)) +
+                        "1:" + std::string(1, char('A' + c - 1)) + "200)");
+    for (std::size_t r = 0; r < 200; ++r)
+        CHECK_FALSE(displayText(g, r, 1).empty());
+    const double secs =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    CHECK(secs < 20.0);
 }
