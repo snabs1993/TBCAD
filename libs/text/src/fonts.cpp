@@ -206,10 +206,43 @@ const std::vector<std::filesystem::path>& installedCadFontDirs() {
 }  // namespace
 #endif
 
+namespace {
+// TBCAD_FONT_PROFILE / TBCAD_INDEX_PROFILE: slow font lookups on stderr.
+bool fontProfileOn() {
+    static const bool on = [] {
+        for (const char* var : {"TBCAD_FONT_PROFILE", "TBCAD_INDEX_PROFILE"})
+            if (const char* v = std::getenv(var); v && *v && *v != '0')
+                return true;
+        return false;
+    }();
+    return on;
+}
+double msSince(std::chrono::steady_clock::time_point t) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
+}
+}  // namespace
+
 std::filesystem::path locateFontFile(const std::string& name) {
     namespace fs = std::filesystem;
     if (name.empty())
         return {};
+    const auto start = std::chrono::steady_clock::now();
+    std::string slowDirs;  // folders that took a while, for the profile line
+    struct Report {
+        const std::string& name;
+        const std::string& slowDirs;
+        std::chrono::steady_clock::time_point start;
+        const fs::path* found = nullptr;
+        ~Report() {
+            if (!fontProfileOn())
+                return;
+            const double ms = msSince(start);
+            if (ms > 20)
+                std::fprintf(stderr, "font profile: locate '%s' took %.1f ms (%s)%s\n",
+                             name.c_str(), ms, found ? "found" : "not found", slowDirs.c_str());
+        }
+    };
+    Report report{name, slowDirs, start};
     std::error_code ec;
     const fs::path given(name);
     if (given.is_absolute() && fs::is_regular_file(given, ec))
@@ -261,16 +294,34 @@ std::filesystem::path locateFontFile(const std::string& name) {
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return s;
     };
+    static const fs::path kFound;
     for (const fs::path& d : dirs) {
+        const auto dirStart = std::chrono::steady_clock::now();
+        struct DirTime {
+            std::string& slowDirs;
+            const fs::path& d;
+            std::chrono::steady_clock::time_point at;
+            ~DirTime() {
+                if (const double ms = msSince(at); ms > 5 && fontProfileOn()) {
+                    char buf[32];
+                    std::snprintf(buf, sizeof buf, " %.1f ms", ms);
+                    slowDirs += "; " + d.string() + buf;
+                }
+            }
+        } dirTime{slowDirs, d, dirStart};
         if (!fs::is_directory(d, ec))
             continue;
-        if (fs::is_regular_file(d / file, ec))
+        if (fs::is_regular_file(d / file, ec)) {
+            report.found = &kFound;
             return d / file;
+        }
         // File names differ in case between systems: look the name up without it.
         const std::string want = lower(file);
         for (const auto& entry : fs::directory_iterator(d, ec))
-            if (entry.is_regular_file(ec) && lower(entry.path().filename().string()) == want)
+            if (entry.is_regular_file(ec) && lower(entry.path().filename().string()) == want) {
+                report.found = &kFound;
                 return entry.path();
+            }
     }
     return {};
 }
@@ -287,6 +338,15 @@ FontResolution resolveShx(const std::string& shx) {
     }
     FontResolution r;
     r.wanted = shx;
+    struct Report {
+        const std::string& shx;
+        std::chrono::steady_clock::time_point at = std::chrono::steady_clock::now();
+        ~Report() {
+            if (const double ms = msSince(at); ms > 20 && fontProfileOn())
+                std::fprintf(stderr, "font profile: resolve shx '%s' took %.1f ms\n", shx.c_str(),
+                             ms);
+        }
+    } report{shx};
     const auto path = locateFontFile(shx);
     if (!path.empty() && fonts().loadStroke(path).ok()) {
         r.kind = FontResolution::Kind::Shx;
@@ -422,17 +482,9 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
             found = r.value();
     }
     font::FontId id = found.value_or(kNoFont);
-    // TBCAD_FONT_PROFILE / TBCAD_INDEX_PROFILE: a font lookup that took long, on stderr.
-    static const bool profile = [] {
-        for (const char* var : {"TBCAD_FONT_PROFILE", "TBCAD_INDEX_PROFILE"})
-            if (const char* v = std::getenv(var); v && *v && *v != '0')
-                return true;
-        return false;
-    }();
-    if (profile) {
-        const double ms = std::chrono::duration<double, std::milli>(
-                              std::chrono::steady_clock::now() - lookupStart)
-                              .count();
+    // A font lookup that took long, on stderr.
+    if (fontProfileOn()) {
+        const double ms = msSince(lookupStart);
         if (ms > 20)
             std::fprintf(stderr,
                          "font profile: style '%s' (family '%s', file '%s', shx '%s'%s%s) took "
