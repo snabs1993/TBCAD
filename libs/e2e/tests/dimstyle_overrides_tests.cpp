@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -67,7 +68,9 @@ std::unique_ptr<Document> viaDxf(const Document& doc) {
 }
 
 std::unique_ptr<Document> viaTbcad(const Document& doc) {
-    const auto file = std::filesystem::temp_directory_path() / "tbcad_dimvars.tbcad";
+    // Each test case runs as its own process under ctest -j: a shared name would race.
+    const auto file = std::filesystem::temp_directory_path() /
+                      ("tbcad_dimvars_" + std::to_string(std::random_device{}()) + ".tbcad");
     REQUIRE(io::writeTbcad(doc, file, io::WriteOptions{.keepBackup = false}).ok());
     io::IoReport rep;
     auto back = io::readTbcad(file, rep);
