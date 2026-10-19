@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <future>
@@ -1347,6 +1348,15 @@ bool AppCore::redo() {
     bool ok = runner().redo();
     inUndo_ = false;
     return ok;
+}
+
+bool AppCore::historyStepHeavy(bool redo) const {
+    std::size_t limit = std::size_t{16} << 20;
+    if (auto v = setting("undo.busyBytes"))
+        if (const long long n = std::strtoll(v->c_str(), nullptr, 10); n > 0)
+            limit = static_cast<std::size_t>(n);
+    const auto& u = session_->undo;
+    return (redo ? u.nextRedoBytes() : u.nextUndoBytes()) >= limit;
 }
 
 std::string AppCore::undoLabel() const {

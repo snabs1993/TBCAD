@@ -3,6 +3,8 @@
 // so a panel that compiles but does nothing, or draws wrongly, fails here.
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
+#include <imgui.h>
+#include <imgui_internal.h>
 
 #include <filesystem>
 #include <fstream>
@@ -1645,4 +1647,49 @@ TEST_CASE("define attribute panel: focus on open, Enter accepts, Esc cancels") {
         h.frame(4);
         CHECK_FALSE(h.windowOpen("Define Attribute"));
     }
+}
+
+TEST_CASE("heavy undo and redo show a hint for a frame, then run") {
+    Harness h(1920, 1080);
+    h.core().setSetting("undo.busyBytes", "1");  // every step counts as heavy
+    h.command("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("10");
+    h.frame(3);
+    REQUIRE(entityCount(h) == 1);
+    auto hintShown = [] {
+        const ImGuiWindow* w = ImGui::FindWindowByName("##history");
+        return w && w->Active;
+    };
+    auto press = [&](ImGuiKey k) {  // Ctrl+key, stopping after the frame that reads the key
+        ImGuiIO& io = ImGui::GetIO();
+        io.AddKeyEvent(ImGuiMod_Ctrl, true);
+        h.frame();
+        io.AddKeyEvent(k, true);
+        h.frame();
+        io.AddKeyEvent(k, false);
+    };
+
+    press(ImGuiKey_Z);
+    CHECK(hintShown());  // hint drawn, step not run yet
+    CHECK(entityCount(h) == 1);
+    h.frame(2);
+    CHECK_FALSE(hintShown());
+    CHECK(entityCount(h) == 0);
+    ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false);
+    h.frame(2);
+
+    press(ImGuiKey_Y);
+    h.frame(3);
+    ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false);
+    h.frame(2);
+    CHECK(entityCount(h) == 1);
+
+    // Small steps (default limit) run at once, no hint.
+    h.core().setSetting("undo.busyBytes", "1073741824");
+    press(ImGuiKey_Z);
+    CHECK_FALSE(hintShown());
+    CHECK(entityCount(h) == 0);
+    ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, false);
+    h.frame(2);
 }

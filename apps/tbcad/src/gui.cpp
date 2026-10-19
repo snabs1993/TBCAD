@@ -287,9 +287,9 @@ void Gui::runAction(const std::string& action) {
     else if (action == "file.saveAs")
         doSaveAs();
     else if (action == "edit.undo")
-        core_.undo();
+        history(false);
     else if (action == "edit.redo")
-        core_.redo();
+        history(true);
     else if (action == "edit.selectAll")
         core_.selectAll();
     else if (action == "edit.delete") {
@@ -510,6 +510,43 @@ void Gui::repairAfterOpen() {
     recoverAfterOpen_ = false;
     core_.submitText("RECOVER");
     core_.submitText("");
+}
+
+// Undo and redo of a big edit block the window for a while (the step is applied in one go). When
+// the step is heavy, a hint is drawn first and the step runs on the next frame.
+void Gui::history(bool redo) {
+    if (pendingHistory_ != 0)
+        return;  // a step is already waiting for its hint to be drawn
+    if (core_.historyStepHeavy(redo)) {
+        pendingHistory_ = redo ? 2 : 1;
+        pendingHistoryLabel_ = redo ? core_.redoLabel() : core_.undoLabel();
+        anyActivity_ = true;
+        return;
+    }
+    redo ? core_.redo() : core_.undo();
+}
+
+void Gui::historyPending() {
+    if (pendingHistory_ == 0)
+        return;
+    anyActivity_ = true;
+    if (!pendingHistoryShown_) {
+        pendingHistoryShown_ = true;  // draw the hint now, run the step on the next frame
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (ImGui::Begin("##history", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {
+            ImGui::Text("%s ...", pendingHistoryLabel_.c_str());
+            ImGui::TextDisabled("A big change is being applied.");
+        }
+        ImGui::End();
+        return;
+    }
+    const bool redo = pendingHistory_ == 2;
+    pendingHistory_ = 0;
+    pendingHistoryShown_ = false;
+    redo ? core_.redo() : core_.undo();
 }
 
 void Gui::openPending() {
@@ -896,10 +933,10 @@ void Gui::menuBar() {
         std::string redoLabel = core_.redoLabel();
         if (ImGui::MenuItem(undoLabel.empty() ? "Undo" : undoLabel.c_str(),
                             keys.label("edit.undo").c_str(), false, !undoLabel.empty()))
-            core_.undo();
+            history(false);
         if (ImGui::MenuItem(redoLabel.empty() ? "Redo" : redoLabel.c_str(),
                             keys.label("edit.redo").c_str(), false, !redoLabel.empty()))
-            core_.redo();
+            history(true);
         ImGui::Separator();
         if (ImGui::MenuItem("Select All", keys.label("edit.selectAll").c_str()))
             core_.selectAll();
@@ -3202,9 +3239,9 @@ void Gui::viewportMenu() {
         const std::string undo = core_.undoLabel();
         const std::string redo = core_.redoLabel();
         if (ImGui::MenuItem(undo.empty() ? "Undo" : undo.c_str(), nullptr, false, !undo.empty()))
-            core_.undo();
+            history(false);
         if (ImGui::MenuItem(redo.empty() ? "Redo" : redo.c_str(), nullptr, false, !redo.empty()))
-            core_.redo();
+            history(true);
         ImGui::Separator();
         if (ImGui::MenuItem("Zoom Extents"))
             core_.zoomExtents();
@@ -3485,6 +3522,7 @@ void Gui::ucsIcon(const ViewportRect& rect) {
 
 void Gui::dialogs() {
     openPending();
+    historyPending();
     settings_.draw(core_);
     workspaceDialog();
     if (openRecoveryPrompt_) {
