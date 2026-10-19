@@ -1021,6 +1021,60 @@ State state(const Document& doc, BlockId block, const std::filesystem::path& hos
     return fileStamp(p) == def->xrefStamp ? State::UpToDate : State::Changed;
 }
 
+namespace {
+std::string foldAscii(std::string_view s) {
+    std::string o(s);
+    for (char& c : o)
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
+    return o;
+}
+
+// AutoCAD keeps the xref's layers in the host as "site|walls" rows that carry the host's own
+// settings for them (colour, on/off, frozen, ...). Once the xref is loaded its layers are the
+// sub-layers site~walls: they take those settings, and the "|" rows nothing is drawn on go.
+void applyDependentLayers(Transaction& tx, Document& doc, const std::string& xrefName) {
+    const Layer* root = nullptr;
+    for (const auto& [id, l] : doc.layers())
+        if (!l.parent && foldAscii(l.name) == foldAscii(xrefName))
+            root = &l;
+    if (!root)
+        return;
+    const LayerId rootId = root->id;
+    const std::string prefix = foldAscii(xrefName) + "|";
+    std::vector<std::pair<LayerId, LayerId>> pairs;  // host "|" row, loaded sub-layer
+    for (const auto& [id, l] : doc.layers()) {
+        if (l.parent || l.name.size() <= prefix.size() ||
+            foldAscii(std::string_view(l.name).substr(0, prefix.size())) != prefix)
+            continue;
+        const std::string rest = foldAscii(std::string_view(l.name).substr(prefix.size()));
+        for (const auto& [sid, sub] : doc.layers())
+            if (sub.parent == rootId && foldAscii(sub.name) == rest)
+                pairs.emplace_back(id, sid);
+    }
+    if (pairs.empty())
+        return;
+    std::set<LayerId> used;
+    doc.forEachEntity([&](const Entity& e) { used.insert(e.common.layer); });
+    for (const auto& [dep, sub] : pairs) {
+        const Layer from = *doc.layer(dep);
+        (void)tx.modifyLayer(sub, [&](Layer& l) {
+            l.color = from.color;
+            if (from.linetype)
+                l.linetype = from.linetype;
+            l.lineweight = from.lineweight;
+            l.on = from.on;
+            l.frozen = from.frozen;
+            l.locked = from.locked;
+            l.plot = from.plot;
+            l.transparency = from.transparency;
+        });
+        if (!used.count(dep))
+            (void)tx.eraseLayer(dep);
+    }
+}
+}  // namespace
+
 OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile) {
     OpenLoad out;
     std::vector<BlockId> todo;
@@ -1059,6 +1113,7 @@ OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile) {
             out.failed.push_back(name + ": " + r.error().message);
             continue;
         }
+        applyDependentLayers(tx, doc, name);
         out.loaded.push_back(name);
     }
     tx.commit();

@@ -757,3 +757,48 @@ TEST_CASE("open: an xref a DXF names is loaded from beside the drawing, a missin
     CHECK(again.missing == std::vector<std::string>{"gone"});
     fs::remove_all(dir);
 }
+
+TEST_CASE("open: the host's settings for the xref's layers (site|walls) go to the loaded layers") {
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / "tbcad_xref_open_layers";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    {
+        auto doc = makeSource();  // has the layer "walls", colour 3
+        REQUIRE(io::writeTbcad(*doc, dir / "site.tbcad", io::WriteOptions{.keepBackup = false})
+                    .ok());
+    }
+    const std::string text =
+        "  0\nSECTION\n  2\nTABLES\n  0\nTABLE\n  2\nLAYER\n"
+        "  0\nLAYER\n  2\n0\n 70\n0\n 62\n7\n  6\nCONTINUOUS\n"
+        "  0\nLAYER\n  2\nSITE|WALLS\n 70\n48\n 62\n-1\n  6\nCONTINUOUS\n"
+        "  0\nLAYER\n  2\nsite|nothing\n 70\n48\n 62\n2\n  6\nCONTINUOUS\n"
+        "  0\nENDTAB\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  8\n0\n  2\nsite\n 70\n4\n 10\n0\n 20\n0\n"
+        " 30\n0\n  3\nsite\n  1\nsite.tbcad\n  0\nENDBLK\n  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  8\n0\n  2\nsite\n 10\n0\n 20\n0\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    dxf::Report report;
+    auto imported = dxf::importDxf(bytes, {}, report);
+    REQUIRE(imported.ok());
+    Document& doc = *imported.value().document;
+    OpenLoad r = loadOnOpen(doc, dir / "host.dxf");
+    REQUIRE(r.loaded == std::vector<std::string>{"site"});
+    const Layer* root = doc.layerByName("site");
+    REQUIRE(root);
+    const Layer* walls = doc.layerByName(root->id, "walls");
+    REQUIRE(walls);
+    CHECK_FALSE(walls->on);  // colour -1: off in the host
+    CHECK(walls->color == Color::index(1));
+    // The "|" row nothing is drawn on is gone; one with no loaded layer stays.
+    bool depWalls = false, depNothing = false;
+    for (const auto& [id, l] : doc.layers()) {
+        depWalls = depWalls || l.name == "SITE|WALLS";
+        depNothing = depNothing || l.name == "site|nothing";
+    }
+    CHECK_FALSE(depWalls);
+    CHECK(depNothing);
+    fs::remove_all(dir);
+}
