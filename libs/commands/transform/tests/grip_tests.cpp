@@ -330,3 +330,40 @@ TEST_CASE("performance: the MOVE preview of 100k selected lines does not re-meas
     CHECK(ms / 50 < 4);  // measured: 0.8 ms per move cached, 8 ms when every move measures
     f.host.feed({cmd::ScriptItem::esc()});
 }
+
+TEST_CASE("performance: a grip drag where 100k lines meet keeps the preview light") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    {
+        auto tx = f.doc.begin("setup");
+        for (int i = 0; i < 100000; ++i)
+            ids.push_back(
+                tx.add(Entity{{}, LineData{{0, 0}, {10 + double(i % 100), double(i / 100)}}})
+                    .value());
+        (void)tx.commit();
+    }
+    f.host.setSetting("grips.limit", "0");
+    f.host.setSelection(ids);
+    auto grips = tf::collectGrips(f.doc, ids, std::numeric_limits<std::size_t>::max());
+    REQUIRE_FALSE(grips.empty());
+    const tf::Grip* hot = tf::hitGrip(grips, {0, 0}, 0.5);
+    REQUIRE(hot);
+    auto t0 = std::chrono::steady_clock::now();
+    const tf::HotGrips set = tf::hotGripsOf(grips, *hot);
+    const double setMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(set.order.size() == 100000);
+    t0 = std::chrono::steady_clock::now();
+    auto some = tf::stretchResults(f.doc, set, *hot, {3, 4}, nullptr, 4000);
+    const double dragMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(some.size() == 4000);
+    MESSAGE("hot set of 100k: " << setMs << " ms, one preview of 4000: " << dragMs << " ms");
+    CHECK(setMs < 2000);  // was quadratic: minutes
+    // The real drag moves all of them, as one undo step.
+    auto r = f.host.run("GRIPEDIT", {"0,0", "3,4"});
+    CHECK(r.finished);
+    CHECK(near(get<LineData>(f.doc, ids[99999]).a, {3, 4}));
+    CHECK(f.host.undo());
+    CHECK(near(get<LineData>(f.doc, ids[99999]).a, {0, 0}));
+}

@@ -54,6 +54,21 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
                                                         const Grip& hot, Vec2 delta,
                                                         std::string* error = nullptr);
 
+// The part of `stretchResults` that does not depend on the cursor: which entities have a grip at
+// the hot grip's place, and which of their grips. A drag keeps one of these and asks for results
+// at every mouse move.
+struct HotGrips {
+    std::vector<EntityId> order{};
+    std::vector<std::vector<int>> indices{};
+};
+HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot);
+// As stretchResults, for at most `limit` entities (a preview of a huge selection shows the first
+// few thousand).
+std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, const HotGrips& set,
+                                                        const Grip& hot, Vec2 delta,
+                                                        std::string* error,
+                                                        std::size_t limit);
+
 // Transform for the Move / Rotate / Scale / Mirror modes while the cursor is at `p`.
 // Rotate: the hot grip follows the cursor around `base`. Scale: the hot grip's distance from
 // `base` becomes the cursor's (1 mm reference when the grip sits on the base). Move: the hot
