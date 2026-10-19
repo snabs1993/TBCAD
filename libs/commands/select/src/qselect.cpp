@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 #include "common.h"
 #include "tbcad/geom/geom.h"
@@ -335,8 +336,9 @@ public:
         std::vector<EntityId> ids = *found;
         if (a.keyword == "Append") {
             std::vector<EntityId> merged = ctx.host().selection();
+            std::unordered_set<EntityId> have(merged.begin(), merged.end());
             for (EntityId id : ids)
-                if (std::find(merged.begin(), merged.end(), id) == merged.end())
+                if (have.insert(id).second)
                     merged.push_back(id);
             ids = std::move(merged);
         }
