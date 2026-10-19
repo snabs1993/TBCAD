@@ -360,6 +360,78 @@ double CurveRef::paramAtLength(double s) const {
     return t1();
 }
 
+std::vector<Vec2> CurveRef::pointsAtEqualLength(int n) const {
+    std::vector<Vec2> out;
+    if (n < 1)
+        return out;
+    out.reserve(static_cast<std::size_t>(n) + 1);
+    if (kind_ != Kind::Ellipse && kind_ != Kind::Spline) {
+        const double total = length();
+        for (int i = 0; i <= n; ++i)
+            out.push_back(pointAt(paramAtLength(total * i / n)));
+        return out;
+    }
+    std::vector<double> cuts;
+    cuts.push_back(t0());
+    if (kind_ == Kind::Spline) {
+        for (double b : sp_->breaks())
+            if (b > t0() && b < t1())
+                cuts.push_back(b);
+    }
+    cuts.push_back(t1());
+    const int sub = kind_ == Kind::Ellipse ? 16 : 6;
+    auto speed = [&](double t) { return tbcad::length(derivativeAt(t)); };
+    struct Piece {
+        double a, b, start, len;
+    };
+    std::vector<Piece> pieces;
+    double total = 0;
+    for (std::size_t i = 0; i + 1 < cuts.size(); ++i) {
+        for (int k = 0; k < sub; ++k) {
+            const double a = cuts[i] + (cuts[i + 1] - cuts[i]) * k / sub;
+            const double b = cuts[i] + (cuts[i + 1] - cuts[i]) * (k + 1) / sub;
+            const double l = gauss8(speed, a, b);
+            pieces.push_back({a, b, total, l});
+            total += l;
+        }
+    }
+    std::size_t pi = 0;
+    for (int i = 0; i <= n; ++i) {
+        const double s = total * i / n;
+        if (s <= 0) {
+            out.push_back(pointAt(t0()));
+            continue;
+        }
+        if (s >= total) {
+            out.push_back(pointAt(t1()));
+            continue;
+        }
+        while (pi + 1 < pieces.size() && pieces[pi].start + pieces[pi].len < s)
+            ++pi;
+        const Piece& pc = pieces[pi];
+        const double want = s - pc.start;
+        double lo = pc.a, hi = pc.b;
+        double t = pc.len > 0 ? pc.a + (pc.b - pc.a) * std::clamp(want / pc.len, 0.0, 1.0)
+                              : 0.5 * (pc.a + pc.b);
+        for (int it = 0; it < 60; ++it) {
+            const double f = gauss8(speed, pc.a, t) - want;
+            if (f < 0)
+                lo = t;
+            else
+                hi = t;
+            if (std::abs(f) <= 1e-13 * std::max(total, 1.0) || hi - lo <= 1e-15 * std::abs(hi))
+                break;
+            const double v = speed(t);
+            double next = v > 0 ? t - f / v : 0.5 * (lo + hi);
+            if (!(next > lo && next < hi))
+                next = 0.5 * (lo + hi);
+            t = next;
+        }
+        out.push_back(pointAt(t));
+    }
+    return out;
+}
+
 BBox2 CurveRef::bounds() const {
     BBox2 b;
     switch (kind_) {

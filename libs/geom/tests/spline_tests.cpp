@@ -189,5 +189,10 @@ TEST_CASE("paramAtLength inverts lengthBetween on a many-span spline and an elli
             CHECK(t < c.t1());
             CHECK(c.lengthBetween(c.t0(), t) == doctest::Approx(s).epsilon(1e-9));
         }
+        const auto pts = c.pointsAtEqualLength(97);
+        REQUIRE(pts.size() == 98);
+        for (int i = 0; i <= 97; ++i)
+            CHECK(distance(pts[static_cast<std::size_t>(i)],
+                           c.pointAt(c.paramAtLength(len * i / 97))) < 1e-8);
     }
 }
