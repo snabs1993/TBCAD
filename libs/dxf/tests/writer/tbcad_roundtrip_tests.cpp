@@ -543,3 +543,46 @@ TEST_CASE("an object beyond the coordinate limit and a one-vertex polyline are s
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+// DIMEDIT Oblique (group 52, the angle of the extension lines from the X axis) and text turned by
+// hand (group 53) come in and go out again.
+TEST_CASE("a dimension's oblique extension lines and turned text survive a DXF round trip") {
+    const std::string src =
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nDIMENSION\n  8\n0\n  2\n*D1\n 10\n100\n 20\n20\n 30\n0\n 11\n50\n 21\n22\n 31\n0\n"
+        " 70\n32\n  1\n<>\n 53\n45\n100\nAcDbAlignedDimension\n"
+        " 13\n0\n 23\n0\n 33\n0\n 14\n100\n 24\n0\n 34\n0\n 50\n0\n 52\n60\n"
+        "100\nAcDbRotatedDimension\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    auto load = [](const std::string& text) {
+        Report r;
+        Result<ImportResult> in = importDxf(std::as_bytes(std::span(text)), ImportOptions{}, r);
+        REQUIRE(in.ok());
+        return std::move(in.value().document);
+    };
+    auto check = [](const Document& doc) {
+        const DimensionData* d = nullptr;
+        doc.forEachEntity([&](const Entity& e) {
+            if (const auto* x = entityAs<DimensionData>(e))
+                d = x;
+        });
+        REQUIRE(d != nullptr);
+        CHECK(d->kind == DimKind::Linear);
+        CHECK(d->oblique == doctest::Approx(-kPi / 6));  // 60 degrees from X: 30 from upright
+        CHECK(d->textRotated);
+        CHECK(d->textRotation == doctest::Approx(kPi / 4));
+    };
+    auto doc = load(src);
+    check(*doc);
+    Report r2;
+    Result<ExportResult> out = exportDxf(*doc, ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string text(out.value().bytes.begin(), out.value().bytes.end());
+    CHECK(text.find("\r\n52\r\n60.0\r\n") != std::string::npos);
+    CHECK(text.find("\r\n53\r\n45.0\r\n") != std::string::npos);
+    check(*load(text));
+}
+
+}  // namespace tbcad::dxf
