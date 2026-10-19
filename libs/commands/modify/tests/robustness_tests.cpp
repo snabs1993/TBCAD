@@ -3,6 +3,8 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -398,4 +400,77 @@ TEST_CASE("EXTEND, JOIN and BREAKATPOINT work on splines, fit-only ones included
             CHECK(canonicalDump(r.doc) == before);
         }
     }
+}
+
+// EXTEND follows the ray its end moves on through the spatial index; it must stop where the scan
+// of every object stops, boundaries behind, parallel, touching the end or far away included.
+TEST_CASE("EXTEND by the index gives the same result as testing every object") {
+    std::mt19937 rng(7);
+    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    int extended = 0;
+    for (int round = 0; round < 60; ++round) {
+        struct Pair {
+            Rig scan, indexed;
+        };
+        auto pair = std::make_unique<Pair>();
+        std::vector<EntityData> edges;
+        for (int i = 0; i < 40; ++i) {
+            if (i % 4 == 0) {
+                edges.push_back(CircleData{{rnd(-200, 200), rnd(-200, 200)}, rnd(2, 40)});
+            } else {
+                const Vec2 a{rnd(-200, 200), rnd(-200, 200)};
+                edges.push_back(LineData{a, a + Vec2{rnd(-60, 60), rnd(-60, 60)}});
+            }
+        }
+        // A target that is short, so the nearest boundary is often far and sometimes absent.
+        const Vec2 a{rnd(-100, 100), rnd(-100, 100)};
+        EntityData target;
+        if (round % 3 == 2) {
+            PolylineData pl;
+            pl.v = {{a, 0, 0, 0}, {a + Vec2{rnd(2, 9), rnd(-4, 4)}, 0, 0, 0},
+                    {a + Vec2{rnd(10, 20), rnd(-6, 6)}, 0, 0, 0}};
+            target = pl;
+        } else {
+            target = LineData{a, a + Vec2{rnd(-12, 12), rnd(-12, 12)}};
+        }
+        EntityId idA{}, idB{};
+        for (Rig* rig : {&pair->scan, &pair->indexed}) {
+            for (const EntityData& d : edges)
+                rig->add(d);
+            (rig == &pair->scan ? idA : idB) = rig->add(target);
+        }
+        Rig& ix = pair->indexed;
+        ix.host.setViewExtents(BBox2{{-400, -400}, {400, 400}});
+        ix.host.setWindowQuery([&doc = ix.doc](const BBox2& w) {
+            std::vector<EntityId> out;
+            for (EntityId id : doc.modelSpace())
+                if (const Entity* e = doc.find(id); e && geom::bounds(*e, doc).intersects(w))
+                    out.push_back(id);
+            return out;
+        });
+        const Vec2 pick = a + Vec2{rnd(-3, 3), rnd(-3, 3)};
+        pair->scan.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(idA, pick),
+                                       ScriptItem::esc()});
+        ix.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(idB, pick), ScriptItem::esc()});
+        const Entity* ea = pair->scan.doc.find(idA);
+        const Entity* eb = ix.doc.find(idB);
+        REQUIRE(ea);
+        REQUIRE(eb);
+        INFO("round " << round);
+        if (const auto* la = entityAs<LineData>(*ea)) {
+            const auto* lb = entityAs<LineData>(*eb);
+            REQUIRE(lb);
+            CHECK(distance(la->a, lb->a) < 1e-9);
+            CHECK(distance(la->b, lb->b) < 1e-9);
+            extended += distance(la->a, std::get<LineData>(target).a) +
+                                    distance(la->b, std::get<LineData>(target).b) > 1e-9;
+        } else if (const auto* pa = entityAs<PolylineData>(*ea)) {
+            const auto* pb = entityAs<PolylineData>(*eb);
+            REQUIRE(pb);
+            REQUIRE(pa->v.size() == pb->v.size());
+            for (std::size_t k = 0; k < pa->v.size(); ++k)
+                CHECK(distance(pa->v[k].p, pb->v[k].p) < 1e-9);
+        }
+    }
+    CHECK(extended > 10);  // the scenes do extend now and then
 }

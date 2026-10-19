@@ -1,6 +1,9 @@
 #include <algorithm>
+#include <cmath>
 #include <deque>
+#include <limits>
 #include <map>
+#include <unordered_set>
 
 #include "commands.h"
 #include "tbcad/blocks/blocks.h"
@@ -18,6 +21,74 @@ struct EdgeSet {
     bool all = true;  // every visible curve is an edge
 };
 
+// One candidate edge: skips the target and what cannot cut; inserts give their curves, kept alive
+// in `owned`.
+void considerEdge(const Document& doc, EntityId id, EntityId target, std::vector<const Entity*>& out,
+                  std::deque<Entity>& owned) {
+    if (id == target)
+        return;
+    const Entity* e = doc.find(id);
+    if (!e || !isUsableBoundary(doc, *e))
+        return;
+    if (kind(*e) == EntityKind::Insert) {
+        for (Entity& part : blocks::snapGeometry(doc, *e))
+            if (modify::isCurveEntity(part))
+                out.push_back(&owned.emplace_back(std::move(part)));
+        return;
+    }
+    out.push_back(e);
+}
+
+// The end of a line or open straight-sided polyline that EXTEND would move, as a ray going on from
+// it. Other objects (arcs, polylines with bulges) have no simple ray.
+struct ExtendRay {
+    Vec2 origin{}, dir{};
+};
+std::optional<ExtendRay> extensionRay(const Entity& e, Vec2 pick) {
+    auto make = [](Vec2 end, Vec2 from) -> std::optional<ExtendRay> {
+        const Vec2 d = end - from;
+        const double len = length(d);
+        if (!(len > 1e-12))
+            return std::nullopt;
+        return ExtendRay{end, d / len};
+    };
+    if (const auto* l = entityAs<LineData>(e))
+        return distance(pick, l->b) < distance(pick, l->a) ? make(l->b, l->a) : make(l->a, l->b);
+    if (const auto* p = entityAs<PolylineData>(e)) {
+        const std::size_t n = p->v.size();
+        if (p->closed || n < 2)
+            return std::nullopt;
+        if (distance(pick, p->v.back().p) < distance(pick, p->v.front().p))
+            return p->v[n - 2].bulge == 0 ? make(p->v[n - 1].p, p->v[n - 2].p) : std::nullopt;
+        return p->v[0].bulge == 0 ? make(p->v[0].p, p->v[1].p) : std::nullopt;
+    }
+    return std::nullopt;
+}
+
+// How far the end at `origin` moved; infinity when the other end moved instead or the object has no
+// two ends.
+double movedBy(const Entity& before, const Entity& after, Vec2 origin) {
+    auto ends = [](const Entity& e) -> std::optional<std::pair<Vec2, Vec2>> {
+        if (const auto* l = entityAs<LineData>(e))
+            return std::make_pair(l->a, l->b);
+        if (const auto* p = entityAs<PolylineData>(e); p && !p->v.empty())
+            return std::make_pair(p->v.front().p, p->v.back().p);
+        return std::nullopt;
+    };
+    const auto a = ends(before), b = ends(after);
+    constexpr double inf = std::numeric_limits<double>::infinity();
+    if (!a || !b)
+        return inf;
+    const bool first = distance(a->first, origin) < 1e-9;
+    const bool last = distance(a->second, origin) < 1e-9;
+    if (first == last)
+        return inf;
+    const double other = first ? distance(a->second, b->second) : distance(a->first, b->first);
+    if (other > 1e-9)
+        return inf;
+    return first ? distance(a->first, b->first) : distance(a->second, b->second);
+}
+
 // Edges for one operation. Trimming only needs edges that can touch the target, extending also
 // looks at edges far from it.
 // Curves taken out of block references are kept alive in `owned`.
@@ -31,20 +102,12 @@ std::vector<const Entity*> collectEdges(const Document& doc, const EdgeSet& set,
     if (prune)
         box = geom::bounds(*t, doc).inflated(1e-6);
     auto consider = [&](EntityId id) {
-        if (id == target)
-            return;
-        const Entity* e = doc.find(id);
-        if (!e || !isUsableBoundary(doc, *e))
-            return;
-        if (prune && !geom::bounds(*e, doc).intersects(box))
-            return;
-        if (kind(*e) == EntityKind::Insert) {
-            for (Entity& part : blocks::snapGeometry(doc, *e))
-                if (modify::isCurveEntity(part))
-                    out.push_back(&owned.emplace_back(std::move(part)));
-            return;
+        if (prune) {
+            const Entity* e = doc.find(id);
+            if (e && isUsableBoundary(doc, *e) && !geom::bounds(*e, doc).intersects(box))
+                return;
         }
-        out.push_back(e);
+        considerEdge(doc, id, target, out, owned);
     };
     if (set.all) {
         // Trimming only needs the edges near the target: the spatial index finds them without
@@ -70,21 +133,81 @@ std::vector<const Entity*> collectEdges(const Document& doc, const EdgeSet& set,
 
 // Trims or extends one entity at a pick. Returns the ids standing for it afterwards.
 std::optional<std::vector<EntityId>> doOne(cmd::CommandContext& ctx, EntityId id, Vec2 pick,
-                                           bool trimming, const EdgeSet& set) {
+                                           bool trimming, const EdgeSet& set,
+                                           bool checkpoint = true) {
     const Entity* target = ctx.doc().find(id);
     if (!target)
         return std::nullopt;
     modify::TrimOptions opt;
     opt.extendEdges = getFlag(ctx.host(), kEdgeExtendKey, false);
     std::deque<Entity> owned;
-    auto edges = collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges, owned, &ctx.host());
-    auto edit = trimming ? modify::trimEntity(*target, pick, edges, opt)
-                         : modify::extendEntity(*target, pick, edges, opt);
+    Result<modify::EntityEdit> edit = Error{ErrorCode::NotFound, ""};
+    if (!trimming && set.all && !opt.extendEdges) {
+        // The nearest boundary ahead is looked for along the ray the end moves on, in squares
+        // that follow it and a span that grows by steps, so a click or a fence over thousands of
+        // objects tests each only against the objects near its own path. A hit inside the span
+        // already searched is the nearest one.
+        const BBox2 world = ctx.host().viewExtents();
+        const auto ray = extensionRay(*target, pick);
+        if (ray && !world.empty()) {
+            const BBox2 own = geom::bounds(*target, ctx.doc());
+            const double size = std::max({own.width(), own.height(), 1.0});
+            const double maxT = length(world.max - world.min) + distance(ray->origin, world.center());
+            std::unordered_set<EntityId> seen;
+            std::vector<const Entity*> edges;
+            double t0 = 0;
+            for (double t1 = size * 4;; t1 *= 4) {
+                t1 = std::min(t1, maxT + 1);
+                const double q = std::max(size * 0.5, (t1 - t0) / 1024.0);
+                bool indexed = true;
+                for (double t = t0; t < t1 && indexed; t += q) {
+                    const Vec2 c = ray->origin + ray->dir * (t + q * 0.5);
+                    const double r = q * 0.75;
+                    const auto ids = ctx.host().entitiesInWindow(BBox2{{c.x - r, c.y - r}, {c.x + r, c.y + r}});
+                    if (!ids) {
+                        indexed = false;
+                        break;
+                    }
+                    for (EntityId e : *ids)
+                        if (seen.insert(e).second)
+                            considerEdge(ctx.doc(), e, id, edges, owned);
+                }
+                if (!indexed) {
+                    edges.clear();
+                    owned.clear();
+                    edges = collectEdges(ctx.doc(), set, id, false, false, owned, &ctx.host());
+                    edit = modify::extendEntity(*target, pick, edges, opt);
+                    break;
+                }
+                edit = modify::extendEntity(*target, pick, edges, opt);
+                double moved = 0;
+                if (edit && edit.value().modified)
+                    moved = movedBy(*target, *edit.value().modified, ray->origin);
+                if (std::isinf(moved)) {  // not the end the ray follows: look at everything
+                    edges = collectEdges(ctx.doc(), set, id, false, false, owned, &ctx.host());
+                    edit = modify::extendEntity(*target, pick, edges, opt);
+                    break;
+                }
+                if ((edit && moved <= t1 - q * 0.25) || t1 > maxT)
+                    break;
+                t0 = t1;
+            }
+        } else {
+            auto edges = collectEdges(ctx.doc(), set, id, false, false, owned, &ctx.host());
+            edit = modify::extendEntity(*target, pick, edges, opt);
+        }
+    } else {
+        auto edges =
+            collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges, owned, &ctx.host());
+        edit = trimming ? modify::trimEntity(*target, pick, edges, opt)
+                        : modify::extendEntity(*target, pick, edges, opt);
+    }
     if (!edit) {
         ctx.message(edit.error().message);
         return std::nullopt;
     }
-    ctx.checkpoint();
+    if (checkpoint)
+        ctx.checkpoint();
     auto ids = applyEdit(ctx.tx(), id, std::move(edit.value()));
     if (!ids) {
         ctx.message(ids.error().message);
@@ -132,6 +255,9 @@ void batch(cmd::CommandContext& ctx, std::vector<std::pair<EntityId, Vec2>> pick
            const EdgeSet& set) {
     std::map<EntityId, std::vector<EntityId>> pieces;
     std::size_t done = 0;
+    // One undo step for the whole fence or crossing: committing after every pick would walk the
+    // drawing (dimension and hatch associations) once per object.
+    ctx.checkpoint();
     for (auto& [id, pt] : picks) {
         auto& list = pieces[id];
         if (list.empty())
@@ -140,7 +266,7 @@ void batch(cmd::CommandContext& ctx, std::vector<std::pair<EntityId, Vec2>> pick
             const Entity* e = ctx.doc().find(candidate);
             if (!e || geom::distance(*e, pt, &ctx.doc()) > 1e-6)
                 continue;
-            if (auto ids = doOne(ctx, candidate, pt, trimming, set)) {
+            if (auto ids = doOne(ctx, candidate, pt, trimming, set, false)) {
                 list.insert(list.end(), ids->begin(), ids->end());
                 ++done;
             }
