@@ -1617,6 +1617,7 @@ bool Importer::convPdfUnderlay(const Record& r, std::vector<Entity>& out) {
     pdf.line = r.line;
     pdf.fade = std::clamp(r.num(282, 25), 0.0, 90.0);
     pdf.contrast = static_cast<int>(std::clamp(r.num(281, 50), 0.0, 100.0));
+    pdf.monochrome = (r.integer(280, 0) & 4) != 0;
     pdfs_.push_back(std::move(pdf));
 
     InsertData d;
@@ -1644,6 +1645,7 @@ void Importer::resolveImages() {
         o.page = it->second.page;
         o.fadePercent = pdf.fade;
         o.contrast = pdf.contrast;
+        o.monochrome = pdf.monochrome;
         const std::string stored = underlay::makeSpec(path, o);
         (void)tx_->modifyBlock(pdf.block, [&](BlockDef& b) { b.xrefPath = stored; });
     }

@@ -78,6 +78,9 @@ file, how much to fade it (0 to 95 percent, default 30), a name and the insertio
 * DXF: a picture is written as `IMAGE` + `IMAGEDEF` (rectangle clip and fade kept; the file path
   is stored as given) and read back the same way, so logos and site photos in a drawing from
   another program come in. A polygon clip is not supported (the whole picture shows).
+* DXF: a PDF page is written as `PDFUNDERLAY` + `PDFDEFINITION` (file, page, fade, contrast,
+  monochrome, scale and rotation) and read back the same way. The underlay clip boundary is not
+  kept.
 
 ## PDF layers
 

@@ -12,6 +12,7 @@
 #include "tbcad/hatch/pattern.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::dxf {
 namespace {
@@ -1012,6 +1013,43 @@ TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with
     CHECK(p.u0 == doctest::Approx(0.25));
     CHECK(p.v1 == doctest::Approx(0.75));
     CHECK(p.transparent);
+}
+
+TEST_CASE("a PDF page block is exported as PDFUNDERLAY and PDFDEFINITION and comes back") {
+    Document doc;
+    {
+        auto tx = doc.begin("pdf");
+        BlockId b = tx.addBlock(BlockDef{.name = "plan", .base = {0, 0}}).value();
+        LineData ln{{0, 0}, {10, 10}};
+        REQUIRE(tx.add(make(ln), b).ok());
+        REQUIRE(tx.modifyBlock(b, [](BlockDef& d) {
+                      d.xrefPath = "sheets/plan.pdf#page=2,fade=60,contrast=70,mono=1";
+                  }).ok());
+        REQUIRE(tx.add(make(InsertData{b, {5, 6}, {3, 3}, 0.25})).ok());
+        REQUIRE(tx.add(make(InsertData{b, {50, 6}, {1, 1}, 0})).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("PDFDEFINITION") != std::string::npos);
+    CHECK(rt.bytes.find("ACAD_PDFDEFINITIONS") != std::string::npos);
+    std::vector<const InsertData*> ins;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins.push_back(i);
+    });
+    REQUIRE(ins.size() == 2);
+    const InsertData* a = ins[0]->position == Vec2{5, 6} ? ins[0] : ins[1];
+    CHECK(a->position == Vec2{5, 6});
+    CHECK(a->scale.x == doctest::Approx(3));
+    CHECK(a->rotation == doctest::Approx(0.25));
+    const BlockDef* b = rt.back->block(a->block);
+    REQUIRE(b);
+    const underlay::Spec spec = underlay::parseSpec(b->xrefPath);
+    CHECK(spec.file == "sheets/plan.pdf");
+    CHECK(spec.pdf.page == 2);
+    CHECK(spec.pdf.fadePercent == doctest::Approx(60));
+    CHECK(spec.pdf.contrast == 70);
+    CHECK(spec.pdf.monochrome);
 }
 
 TEST_CASE("MTEXT paragraph settings, column breaks and line spacing survive DXF") {

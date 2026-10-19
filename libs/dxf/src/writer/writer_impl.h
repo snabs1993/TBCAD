@@ -259,6 +259,9 @@ private:
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
     // A picture block (IMAGEATTACH, or an IMAGE read from DXF) is written as IMAGE + IMAGEDEF.
     bool writeImage(const Props& p, const InsertData& d, std::uint64_t owner);
+    // A PDF page block (PDFATTACH, or a PDFUNDERLAY read from DXF) is written as PDFUNDERLAY +
+    // PDFDEFINITION.
+    bool writePdfUnderlay(const Props& p, const InsertData& d, std::uint64_t owner);
     bool writeTolerance(const Props& p, const InsertData& d, std::uint64_t owner);
     void writeLeader(const Props& p, const LeaderData& d, std::uint64_t owner);
     void writeTable(const Props& p, const Entity& e, std::uint64_t owner);
@@ -307,6 +310,13 @@ private:
         bool frame = true;  // the frame of the picture is shown
     };
     std::vector<ImageOut> images_{};
+    struct PdfOut {
+        std::string name{};  // key in ACAD_PDFDEFINITIONS
+        std::string file{};
+        std::string page{};
+        std::uint64_t def = 0;
+    };
+    std::vector<PdfOut> pdfs_{};
     ExportSummary summary_{};
 
     // Handles given to text styles before their table is written (linetype marks refer to them).

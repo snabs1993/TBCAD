@@ -987,7 +987,7 @@ void Importer::keepObjects() {
     // Names the writer writes itself, and objects that only make sense next to entities or
     // layouts of the source file.
     static const std::set<std::string> ownedNames = {
-        "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_IMAGE_VARS",  "ACAD_LAYOUT",
+        "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_PDFDEFINITIONS",    "ACAD_IMAGE_VARS",  "ACAD_LAYOUT",
         "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME", "ACAD_SCALELIST",   "TBCAD_ANNOSCALE",
         "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS", "ACAD_WIPEOUT_VARS",
         "TBCAD_SETTINGS"};

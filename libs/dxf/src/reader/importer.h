@@ -329,6 +329,7 @@ private:
         std::string defHandle{};
         double fade = 25;
         int contrast = 50;
+        bool monochrome = false;  // DXF 280 bit 4
         int line = 0;
     };
     struct PdfDef {
