@@ -2139,3 +2139,68 @@ TEST_CASE("ALIGN asks for a third pair like AutoCAD, scales on request, and dime
         CHECK(entityAs<DimensionData>(f.get(dim))->measurement == doctest::Approx(20));
     }
 }
+
+TEST_CASE("MATCHPROP Settings switch single basic properties, and a window matches many at once") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 5}, {10, 5}});
+    EntityId c = f.add(LineData{{0, 8}, {10, 8}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(a, [&](Entity& e) {
+            e.common.color = Color::index(3);
+            e.common.linetypeScale = 2;
+        }));
+        tx.commit();
+    }
+    // colour off: only the linetype scale is passed on; one selection of two lines at once
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {5, 0}), "Settings", "C", ScriptItem::enter(),
+                             ScriptItem::select({b, c}), ScriptItem::esc()});
+    for (EntityId id : {b, c}) {
+        CHECK(f.get(id).common.color != Color::index(3));
+        CHECK(f.get(id).common.linetypeScale == doctest::Approx(2));
+    }
+    CHECK(f.host.setting("matchprop.Color") == "0");
+    // Basic switches the seven basic ones together: off while any is on, then on again
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {5, 0}), "Settings", "Basic", ScriptItem::enter(),
+                             ScriptItem::esc()});
+    CHECK(f.host.setting("matchprop.Color") == "0");
+    CHECK(f.host.setting("matchprop.Layer") == "0");
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {5, 0}), "Settings", "Basic", ScriptItem::enter(),
+                             ScriptItem::esc()});
+    CHECK(f.host.setting("matchprop.Color") == "1");
+    CHECK(f.host.setting("matchprop.Layer") == "1");
+}
+
+TEST_CASE("MATCHPROP passes text height and style between text and MText, and table styles") {
+    Fixture f;
+    TextData ta;
+    ta.height = 7;
+    ta.utf8 = "one";
+    EntityId a = f.add(ta);
+    MTextData mb;
+    mb.utf8 = "two";
+    mb.height = 2;
+    EntityId b = f.add(mb);
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {0, 0}), ScriptItem::pick(b, {0, 0}), ScriptItem::esc()});
+    CHECK(entityAs<MTextData>(f.get(b))->height == doctest::Approx(7));
+    CHECK(entityAs<MTextData>(f.get(b))->utf8 == "two");
+
+    TableData t1;
+    t1.colWidths = {10};
+    t1.rowHeights = {5};
+    t1.cells.resize(1);
+    t1.textHeight = 4;
+    t1.margin = 2;
+    TableData t2 = t1;
+    t2.textHeight = 1;
+    t2.margin = 0.5;
+    t2.origin = {0, 50};
+    EntityId x = f.add(t1);
+    EntityId y = f.add(t2);
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(x, {1, -1}), ScriptItem::pick(y, {1, 49}), ScriptItem::esc()});
+    CHECK(entityAs<TableData>(f.get(y))->textHeight == doctest::Approx(4));
+    CHECK(entityAs<TableData>(f.get(y))->margin == doctest::Approx(2));
+}

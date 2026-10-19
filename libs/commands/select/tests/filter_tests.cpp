@@ -50,3 +50,43 @@ TEST_CASE("encode and decode of a filter round-trip - bad values are refused") {
     f.host.run("FI", {"Add", "Color", "banana", "Equals", "Apply"});
     CHECK(f.host.logContains("not a valid"));
 }
+
+TEST_CASE("FILTER Or joins groups of conditions, SElect looks only in the chosen objects") {
+    Fixture f;
+    const LayerId a = f.addLayer("A");
+    auto l1 = f.addEntity(LineData{{0, 0}, {1, 0}}, a);
+    auto l2 = f.addEntity(LineData{{0, 0}, {2, 0}});
+    auto c1 = f.addEntity(CircleData{{0, 0}, 1}, a);
+    auto c2 = f.addEntity(CircleData{{5, 0}, 1});
+    // (LINE AND layer A) OR CIRCLE
+    f.host.run("FI", {"Add", "Type", "LINE", "Equals", "Add", "Layer", "A", "Equals", "Or",
+                      "Type", "CIRCLE", "Equals", "Save", "mixed", "Apply"});
+    CHECK(f.host.selection().size() == 3);
+    CHECK(has(f.host.selection(), l1));
+    CHECK(has(f.host.selection(), c1));
+    CHECK(has(f.host.selection(), c2));
+    CHECK_FALSE(has(f.host.selection(), l2));
+    // the saved filter keeps the OR
+    auto back = select::decodeFilter(f.doc.header().custom.at("filter.MIXED"));
+    REQUIRE(back.size() == 3);
+    CHECK_FALSE(back[1].orPrevious);
+    CHECK(back[2].orPrevious);
+    // SElect: only among the objects picked now
+    f.host.setSelection({});
+    f.host.run("FILTER", {"Use", "mixed", "SElect", cmd::ScriptItem::select({l1, l2, c2}), ""});
+    CHECK(f.host.selection().size() == 2);
+    CHECK(has(f.host.selection(), l1));
+    CHECK(has(f.host.selection(), c2));
+}
+
+TEST_CASE("QSELECT Within searches only the current selection") {
+    Fixture f;
+    auto l1 = f.addEntity(LineData{{0, 0}, {1, 0}});
+    auto l2 = f.addEntity(LineData{{0, 0}, {2, 0}});
+    auto c1 = f.addEntity(CircleData{{0, 0}, 1});
+    f.host.setSelection({l1, c1});
+    f.host.run("QSELECT", {"Type", "LINE", "Equals", "Within"});
+    REQUIRE(f.host.selection().size() == 1);
+    CHECK(f.host.selection()[0] == l1);
+    (void)l2;
+}

@@ -447,10 +447,12 @@ public:
             co_return;
 
         cmd::KeywordOptions ao;
-        ao.keywords = {"Replace", "Append"};
+        // Within: only the objects selected now are searched (AutoCAD's "Apply to: Current
+        // selection").
+        ao.keywords = {"Replace", "Append", "Within"};
         ao.defaultKeyword = "Replace";
-        auto a = co_await ctx.getKeyword("Apply to the selection [Replace/Append] <Replace>",
-                                         std::move(ao));
+        auto a = co_await ctx.getKeyword(
+            "Apply to the selection [Replace/Append/Within] <Replace>", std::move(ao));
         if (!a.ok())
             co_return;
 
@@ -460,6 +462,14 @@ public:
             co_return;
         }
         std::vector<EntityId> ids = *found;
+        if (a.keyword == "Within") {
+            const std::vector<EntityId>& now = ctx.host().selection();
+            const std::unordered_set<EntityId> within(now.begin(), now.end());
+            std::erase_if(ids, [&](EntityId id) { return !within.count(id); });
+            ctx.host().setSelection(ids);
+            ctx.message(std::to_string(ids.size()) + " object(s) found.");
+            co_return;
+        }
         if (a.keyword == "Append") {
             std::vector<EntityId> merged = ctx.host().selection();
             std::unordered_set<EntityId> have(merged.begin(), merged.end());
