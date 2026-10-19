@@ -487,6 +487,12 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
         {"BREAK-contour", {"BREAK", "@click0,-300000", "100,-300000"}},
         {"FILLET-contour", {"FILLET", "R", "0.2", "Polyline", "@click0,-300000"}},
         {"EXPLODE-contour", {"EXPLODE", "@click0,-300000", ""}},
+        {"CHAMFER-contour", {"CHAMFER", "Distance", "0.2", "0.2", "Polyline", "@click0,-300000"}, 3000},
+        {"REVERSE-contour", {"REVERSE", "@click0,-300000", ""}, 3000},
+        {"SCALE-contour", {"SCALE", "@click0,-300000", "", "0,-300000", "2"}, 3000},
+        {"ROTATE-contour", {"ROTATE", "@click0,-300000", "", "0,-300000", "30"}, 3000},
+        {"MIRROR-contour", {"MIRROR", "@click0,-300000", "", "0,-300000", "100,-300000", "No"}, 3000},
+        {"COPY-contour", {"COPY", "@click0,-300000", "", "0,0", "5,5"}, 3000},
         {"LIST-contour", {"LIST", "@click0,-300000", ""}},
         {"MOVE-contour", {"MOVE", "@click0,-300000", "", "0,0", "5,5"}},
     };
