@@ -479,3 +479,20 @@ TEST_CASE("SCALE and ROTATE Reference: Points gives the new length or angle by t
         CHECK(canonicalDump(f.doc) == before);
     }
 }
+
+TEST_CASE("ROTATE and SCALE offer the last angle and factor, Enter repeats them") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("ROTATE", {"0,0", "90"}).finished);
+    CHECK(near(get<LineData>(f.doc, a).b, {0, 10}, 1e-9));
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("ROTATE", {"0,0", ScriptItem::enter()}).finished);  // 90 again
+    CHECK(near(get<LineData>(f.doc, a).b, {-10, 0}, 1e-9));
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("SCALE", {"0,0", "2"}).finished);
+    CHECK(near(get<LineData>(f.doc, a).b, {-20, 0}, 1e-9));
+    f.host.setSelection({a});
+    REQUIRE(f.host.run("SCALE", {"0,0", ScriptItem::enter()}).finished);  // 2 again
+    CHECK(near(get<LineData>(f.doc, a).b, {-40, 0}, 1e-9));
+}

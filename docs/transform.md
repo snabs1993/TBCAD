@@ -6,8 +6,8 @@ Module `libs/commands/transform`. All commands run in one transaction, so each i
 | --- | --- | --- |
 | MOVE | M | base point, second point (Enter: the base point is the displacement) |
 | COPY | CO, CP | repeats until Enter or Exit (`Undo` takes back the last copy); `mOde` Single/Multiple sets COPYMODE (`copy.mode`); **Array** makes a row of copies (see below) |
-| ROTATE | RO | angle or Reference; Copy keeps the source |
-| SCALE | SC | factor or Reference; Copy keeps the source |
+| ROTATE | RO | angle or Reference; Copy keeps the source; Enter repeats the last angle (`rotate.angle`) |
+| SCALE | SC | factor or Reference; Copy keeps the source; Enter repeats the last factor (`scale.factor`) |
 | MIRROR | MI | two points; optionally erase the source |
 | STRETCH | S | crossing window or CPolygon, then at the base point `Window` / `CPolygon` add more areas and `Remove` takes out the objects an area crosses; base point (or `Displacement`), second point |
 | GRIPEDIT | | started by clicking a grip of the selection (Ctrl: copy) |

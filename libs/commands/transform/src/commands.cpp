@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <unordered_set>
 
 #include "tbcad/geom/geom.h"
@@ -235,6 +237,22 @@ public:
     }
 };
 
+// ROTATE and SCALE offer the last value as the default, the way AutoCAD does.
+static double lastValue(CommandContext& ctx, const char* key, double fallback) {
+    const auto v = ctx.host().setting(key);
+    if (!v)
+        return fallback;
+    char* end = nullptr;
+    const double d = std::strtod(v->c_str(), &end);
+    return end != v->c_str() && std::isfinite(d) ? d : fallback;
+}
+
+static void rememberValue(CommandContext& ctx, const char* key, double value) {
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "%.17g", value);
+    ctx.host().setSetting(key, buf);
+}
+
 class RotateCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ROTATE"; }
@@ -252,10 +270,12 @@ public:
         const Vec2 b = base.point;
         bool copy = false;
         double angle = 0;
+        const double lastAngle = lastValue(ctx, "rotate.angle", 0);
         for (;;) {
             AngleOptions o;
             o.base = b;
             o.keywords = {"Copy", "Reference"};
+            o.defaultValue = lastAngle;
             o.preview = previewOf(ctx, ids, [b](Vec2 c) -> std::optional<Transform2> {
                 return Transform2::rotate(std::atan2(c.y - b.y, c.x - b.x), b);
             });
@@ -337,6 +357,7 @@ public:
             angle = r.value;
             break;
         }
+        rememberValue(ctx, "rotate.angle", angle);
         report(ctx, applyTransform(ctx, ids, Transform2::rotate(angle, b), copy));
     }
 };
@@ -358,11 +379,14 @@ public:
         const Vec2 b = base.point;
         bool copy = false;
         double factor = 1;
+        const double lastFactor = lastValue(ctx, "scale.factor", 1);
         for (;;) {
             DistanceOptions o;
             o.base = b;
             o.keywords = {"Copy", "Reference"};
             o.allowZero = false;
+            if (lastFactor > 0)
+                o.defaultValue = lastFactor;
             o.preview = previewOf(ctx, ids, [b](Vec2 c) -> std::optional<Transform2> {
                 const double f = distance(c, b);
                 if (f < kEps)
@@ -450,6 +474,7 @@ public:
             ctx.message("The scale factor must be greater than zero.");
             co_return;
         }
+        rememberValue(ctx, "scale.factor", factor);
         report(ctx, applyTransform(ctx, ids, Transform2::scale(factor, factor, b), copy));
     }
 };
