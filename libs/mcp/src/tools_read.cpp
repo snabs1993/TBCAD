@@ -1,6 +1,8 @@
 #include <cmath>
 
 #include "tbcad/blocks/attributes.h"
+#include "tbcad/hatch/fill.h"
+#include "tbcad/hatch/hatch.h"
 #include "tools_common.h"
 
 namespace tbcad::mcp::detail {
@@ -328,6 +330,16 @@ double entityArea(const Entity& e, std::optional<double>& perimeter) {
             return kPi * aa * bb;
         }
     }
+    if (const auto* h = entityAs<HatchData>(e)) {
+        const BBox2 box = hatch::hatchBounds(*h);
+        const double tol = std::max(1e-6, std::max(box.width(), box.height()) * 1e-5);
+        double len = 0;
+        for (const std::vector<Vec2>& ring : hatch::loopRings(*h, tol))
+            for (std::size_t i = 0; i < ring.size(); ++i)
+                len += length(ring[(i + 1) % ring.size()] - ring[i]);
+        perimeter = len;
+        return hatch::hatchArea(*h);
+    }
     return -1;
 }
 
@@ -378,8 +390,9 @@ ToolResult measure(ToolContext& ctx, const Json& a) {
             std::optional<double> p;
             double ar = entityArea(*doc.find(id), p);
             if (ar < 0)
-                return ToolResult::fail("entity " + std::to_string(id.value) +
-                                        " has no area (use a closed polyline, circle or ellipse)");
+                return ToolResult::fail(
+                    "entity " + std::to_string(id.value) +
+                    " has no area (use a closed polyline, circle, ellipse or hatch)");
             total += ar;
             per += p.value_or(0);
         }
@@ -573,8 +586,8 @@ void registerReadTools(ToolSet& tools) {
          Edit::None, false, true, true, getEntity});
 
     add({"measure", "Measure",
-         "distance between two points, area of closed shapes (ids) or of a polygon (points), or "
-         "total length of curves (ids). Results in mm and mm^2.",
+         "distance between two points, area of closed shapes and hatches (ids) or of a polygon "
+         "(points), or total length of curves (ids). Results in mm and mm^2.",
          tObject({{"kind", tEnum({"distance", "area", "length"})},
                   {"points", tArray(tPoint())},
                   {"ids", idArray()}},
