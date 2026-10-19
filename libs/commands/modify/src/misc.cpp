@@ -620,6 +620,15 @@ public:
             if (ctx.tx().modify(dst.id, [&](Entity& d) { matchProps(copy, d, cats); })) {
                 for (EntityId id : inner)
                     (void)ctx.tx().modify(id, [&](Entity& d) { matchProps(copy, d, cats); });
+                if (cats.basic) {  // the plot style name lives in the header, not on the object
+                    const std::string style = entityPlotStyle(ctx.doc().header(), src.id);
+                    if (style != entityPlotStyle(ctx.doc().header(), dst.id))
+                        (void)ctx.tx().modifyHeader([&](Header& h) {
+                            setEntityPlotStyle(h, dst.id, style);
+                            for (EntityId id : inner)
+                                setEntityPlotStyle(h, id, style);
+                        });
+                }
                 ++done;
             }
         }
