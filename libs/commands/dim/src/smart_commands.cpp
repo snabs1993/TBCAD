@@ -189,111 +189,246 @@ public:
         scaleFirstAnnotationToView(ctx);  // text readable at this view, as dimensions get
         const MLeaderStyle mls = currentMLeaderStyle(ctx.doc());
         const DimStyleId sid = mls.dim;
-        // Text typed instead of a point is the note itself (AutoCAD's content-first habit). The
-        // content type is an option of the first prompt only; the style's type is the default.
+        // As AutoCAD: arrowhead first (the default), leader Landing first or Content first, and
+        // Options for the content type, the number of points of a leader line and the dogleg.
+        // Text typed instead of a point is the note itself.
         std::string contentType = mls.content;
+        long long maxPoints = 2;  // points of a leader line, arrowhead and landing included
+        bool dogleg = true;
         std::optional<std::string> typedNote;
+        const BlockDef* block = nullptr;
         auto isOption = [](const cmd::PointResult& r, const char* name) {
             return r.status == Status::Keyword && r.keyword == name;
         };
-        cmd::PointResult tip;
+        enum class Order { Arrow, Landing, Content } order = Order::Arrow;
+        cmd::PointResult first;
         for (;;) {
-            cmd::PointOptions first;
-            first.freeText = true;
-            first.keywords = {"Content"};
-            tip = co_await ctx.getPoint(
-                "Specify arrowhead location or [Content type] or type the note text", first);
-            if (isOption(tip, "Content")) {
-                cmd::KeywordOptions ko;
-                ko.keywords = {"Text", "Block", "None"};
-                ko.defaultKeyword = contentType;
-                auto k = co_await ctx.getKeyword(
-                    "Content type [Text/Block/None] <" + contentType + ">", ko);
-                if (!k.ok())
-                    co_return;
-                contentType = k.keyword;
+            cmd::PointOptions fo;
+            fo.freeText = true;
+            fo.keywords = {"Landing", "Content", "Options"};
+            first = co_await ctx.getPoint(
+                "Specify leader arrowhead location or [leader Landing first/Content first/Options] "
+                "or type the note text",
+                fo);
+            if (isOption(first, "Options")) {
+                for (;;) {
+                    cmd::KeywordOptions ko;
+                    ko.keywords = {"Type", "Maxpoints", "Dogleg", "eXit"};
+                    ko.defaultKeyword = "eXit";
+                    auto k = co_await ctx.getKeyword(
+                        "Enter an option [Type of content/Maxpoints/Dogleg/eXit] <eXit>", ko);
+                    if (!k.ok())
+                        co_return;
+                    if (k.keyword == "eXit")
+                        break;
+                    if (k.keyword == "Type") {
+                        cmd::KeywordOptions to;
+                        to.keywords = {"Text", "Block", "None"};
+                        to.defaultKeyword = contentType;
+                        auto t = co_await ctx.getKeyword(
+                            "Content type [Text/Block/None] <" + contentType + ">", to);
+                        if (!t.ok())
+                            co_return;
+                        contentType = t.keyword;
+                    } else if (k.keyword == "Maxpoints") {
+                        cmd::IntOptions io;
+                        io.min = 2;
+                        io.max = 100;
+                        io.defaultValue = maxPoints;
+                        auto n = co_await ctx.getInteger(
+                            "Maximum points of a leader line <" + std::to_string(maxPoints) + ">",
+                            io);
+                        if (!n.ok())
+                            co_return;
+                        maxPoints = n.value;
+                    } else {
+                        cmd::KeywordOptions yo;
+                        yo.keywords = {"Yes", "No"};
+                        yo.defaultKeyword = dogleg ? "Yes" : "No";
+                        auto y = co_await ctx.getKeyword(
+                            std::string("Use a dogleg [Yes/No] <") + (dogleg ? "Yes" : "No") + ">",
+                            yo);
+                        if (!y.ok())
+                            co_return;
+                        dogleg = y.keyword == "Yes";
+                    }
+                }
                 continue;
             }
-            if (tip.status == Status::Keyword) {
-                typedNote = tip.keyword;
-                ctx.message("Note: \"" + tip.keyword + "\". Now pick where the arrow points.");
-                tip = co_await ctx.getPoint("Specify arrowhead location");
+            if (isOption(first, "Landing"))
+                order = Order::Landing;
+            else if (isOption(first, "Content"))
+                order = Order::Content;
+            else if (first.status == Status::Keyword) {
+                typedNote = first.keyword;
+                ctx.message("Note: \"" + first.keyword + "\". Now pick where the arrow points.");
+                first = co_await ctx.getPoint("Specify leader arrowhead location");
             }
             break;
         }
-        if (!tip.ok())
-            co_return;
-        std::vector<Vec2> tips{tip.point};
+
+        // The note (or block) asked for when the content type needs one: first in Content-first
+        // order, last otherwise.
+        bool contentAsked = false;
+        std::string text;
+        bool cancelled = false;
+        auto takeContent = [&](cmd::StringResult r, bool isBlock) {
+            contentAsked = true;
+            if (r.status == Status::Cancel) {
+                cancelled = true;
+                return;
+            }
+            if (!r.ok())
+                return;
+            if (isBlock) {
+                block = ctx.doc().blockByName(r.text);
+                if (!block) {
+                    ctx.message("There is no block named \"" + r.text + "\".");
+                    cancelled = true;
+                }
+            } else {
+                text = r.text;
+            }
+        };
 
         auto* c = &ctx;
+        std::vector<std::vector<Vec2>> lines;  // each from its arrowhead; the landing is added
         Vec2 landing{};
-        for (;;) {
-            cmd::PointOptions po;
-            po.base = tips.back();
-            po.freeText = true;
-            po.keywords = {"Add"};
-            const std::vector<Vec2> shown = tips;
-            po.preview = [c, shown, sid](Vec2 cursor, DisplayList& out) {
-                for (Vec2 t : shown) {
-                    Entity e;
-                    e.data = Indirect<LeaderData>(leaderOf(c->doc(), {t, cursor}, "", sid));
-                    previewEntity(*c, std::move(e), out);
-                }
-            };
-            auto land = co_await ctx.getPoint(
-                "Specify landing location or [Add another arrowhead] or type the note text", po);
-            if (isOption(land, "Add")) {
-                auto more = co_await ctx.getPoint("Specify another arrowhead location");
-                if (!more.ok())
-                    co_return;
-                tips.push_back(more.point);
-                continue;
+        std::optional<Vec2> contentAt;  // Content first: where the note goes
+
+        if (order == Order::Content) {
+            if (contentType == "Block") {
+                cmd::StringOptions so;
+                takeContent(co_await ctx.getString("Enter block name", so), true);
+            } else if (contentType == "Text") {
+                cmd::StringOptions so;
+                so.allowEmpty = true;
+                takeContent(co_await ctx.getString("Enter the note", so), false);
             }
-            if (land.status == Status::Keyword) {
-                typedNote = land.keyword;
-                ctx.message("Note: \"" + land.keyword + "\".");
-                continue;
-            }
-            if (!land.ok())
+            if (cancelled)
                 co_return;
-            landing = land.point;
-            break;
+            auto at = co_await ctx.getPoint("Specify content location");
+            if (!at.ok())
+                co_return;
+            contentAt = at.point;
+        }
+        if (order == Order::Landing || order == Order::Content) {
+            if (order == Order::Landing) {
+                auto at = co_await ctx.getPoint("Specify leader landing location");
+                if (!at.ok())
+                    co_return;
+                landing = at.point;
+            }
+            // Arrowheads to the landing (or to the content point, which the landing follows).
+            for (;;) {
+                const Vec2 to = contentAt ? *contentAt : landing;
+                cmd::PointOptions po;
+                po.base = to;
+                po.preview = [c, to, sid](Vec2 cursor, DisplayList& out) {
+                    Entity e;
+                    e.data = Indirect<LeaderData>(leaderOf(c->doc(), {cursor, to}, "", sid));
+                    previewEntity(*c, std::move(e), out);
+                };
+                auto tip = co_await ctx.getPoint(
+                    lines.empty() ? "Specify leader arrowhead location"
+                                  : "Specify another arrowhead location or Enter to finish",
+                    po);
+                if (tip.status == Status::None && !lines.empty())
+                    break;
+                if (!tip.ok())
+                    co_return;
+                lines.push_back({tip.point});
+            }
+        } else {
+            if (!first.ok())
+                co_return;
+            lines.push_back({first.point});
+            for (;;) {
+                cmd::PointOptions po;
+                po.base = lines.back().back();
+                po.freeText = true;
+                po.keywords = {"Add"};
+                const std::vector<std::vector<Vec2>> shown = lines;
+                po.preview = [c, shown, sid](Vec2 cursor, DisplayList& out) {
+                    for (const auto& l : shown) {
+                        std::vector<Vec2> pts = l;
+                        pts.push_back(cursor);
+                        Entity e;
+                        e.data = Indirect<LeaderData>(leaderOf(c->doc(), pts, "", sid));
+                        previewEntity(*c, std::move(e), out);
+                    }
+                };
+                // With more than two points a leader line bends at each point before the landing.
+                const bool more = static_cast<long long>(lines.front().size()) + 1 < maxPoints &&
+                                  lines.size() == 1;
+                auto land = co_await ctx.getPoint(
+                    more ? "Specify next point or [Add another arrowhead] or type the note text"
+                         : "Specify landing location or [Add another arrowhead] or type the note "
+                           "text",
+                    po);
+                if (isOption(land, "Add")) {
+                    auto tip = co_await ctx.getPoint("Specify another arrowhead location");
+                    if (!tip.ok())
+                        co_return;
+                    lines.push_back({tip.point});
+                    continue;
+                }
+                if (land.status == Status::Keyword) {
+                    typedNote = land.keyword;
+                    ctx.message("Note: \"" + land.keyword + "\".");
+                    continue;
+                }
+                if (land.status == Status::None && lines.front().size() > 1) {
+                    // Enter: the last bend is the landing.
+                    landing = lines.front().back();
+                    lines.front().pop_back();
+                    break;
+                }
+                if (!land.ok())
+                    co_return;
+                if (more) {
+                    lines.front().push_back(land.point);
+                    continue;
+                }
+                landing = land.point;
+                break;
+            }
         }
 
-        std::string text;
-        const BlockDef* block = nullptr;
         if (typedNote) {
             text = *typedNote;
-        } else if (contentType == "Text") {
+        } else if (!contentAsked && contentType == "Text") {
             cmd::StringOptions so;
             so.allowEmpty = true;
-            auto note = co_await ctx.getString("Enter annotation text <none>", so);
-            if (note.status == Status::Cancel)
-                co_return;
-            if (note.ok())
-                text = note.text;
-        } else if (contentType == "Block") {
+            takeContent(co_await ctx.getString("Enter annotation text <none>", so), false);
+        } else if (!contentAsked && contentType == "Block") {
             cmd::StringOptions so;
-            auto name = co_await ctx.getString("Enter block name", so);
-            if (!name.ok())
-                co_return;
-            block = ctx.doc().blockByName(name.text);
-            if (!block) {
-                ctx.message("There is no block named \"" + name.text + "\".");
-                co_return;
-            }
+            takeContent(co_await ctx.getString("Enter block name", so), true);
         }
+        if (cancelled)
+            co_return;
 
         ctx.setUndoLabel("MLEADER");
         MLeaderData m;
         m.style = sid;
-        for (Vec2 t : tips)
-            m.lines.push_back({t, landing});
-        m.landing = landing;
+        m.dogleg = dogleg;
         const DimStyle& ds = dim::styleOf(ctx.doc(), sid);
         const double k = ds.overallScale > 0 ? ds.overallScale : 1.0;
-        const double side = landing.x >= tips.front().x ? 1 : -1;
-        m.contentPos = landing + Vec2{side * ds.arrowSize * k, 0};
+        const double doglegLen = dogleg ? ds.arrowSize * k : 0.0;
+        if (contentAt) {
+            // The note sits where it was put; the landing is one dogleg towards the arrows.
+            const double side = contentAt->x >= lines.front().front().x ? 1 : -1;
+            landing = *contentAt - Vec2{side * doglegLen, 0};
+        }
+        for (auto& l : lines) {
+            l.push_back(landing);
+            m.lines.push_back(std::move(l));
+        }
+        m.landing = landing;
+        const Vec2 from = m.lines.front().size() > 1 ? m.lines.front()[m.lines.front().size() - 2]
+                                                     : m.lines.front().front();
+        const double side = landing.x >= from.x ? 1 : -1;
+        m.contentPos = contentAt ? *contentAt : landing + Vec2{side * doglegLen, 0};
         if (block) {
             m.content = MLeaderData::Content::Block;
             m.block = block->id;
@@ -332,6 +467,44 @@ public:
         return std::nullopt;
     }
 
+    // The last segment of the (first) leader line, pointing at the landing.
+    static std::optional<Vec2> lastSegment(const Entity& e) {
+        if (const auto* m = entityAs<MLeaderData>(e)) {
+            if (m->lines.empty() || m->lines.front().empty())
+                return std::nullopt;
+            const auto& l = m->lines.front();
+            const Vec2 from =
+                l.size() > 1 && distance(l.back(), m->landing) < 1e-9 ? l[l.size() - 2] : l.back();
+            const Vec2 v = m->landing - from;
+            return tol::isZeroLength(v) ? std::nullopt : std::optional<Vec2>(v);
+        }
+        if (const auto* l = entityAs<LeaderData>(e); l && l->vertices.size() >= 2) {
+            const Vec2 v = l->vertices.back() - l->vertices[l->vertices.size() - 2];
+            return tol::isZeroLength(v) ? std::nullopt : std::optional<Vec2>(v);
+        }
+        return std::nullopt;
+    }
+
+    // Moves the landing end by `d`: the lines that ended there follow, arrowheads stay put, and
+    // the note goes with it.
+    static bool moveLanding(cmd::CommandContext& ctx, EntityId id, Vec2 d) {
+        return ctx.tx()
+            .modify(id,
+                    [d](Entity& x) {
+                        if (auto* m = entityAs<MLeaderData>(x)) {
+                            for (auto& line : m->lines)
+                                if (!line.empty() && distance(line.back(), m->landing) < 1e-9)
+                                    line.back() += d;
+                            m->landing += d;
+                            m->contentPos += d;
+                        } else if (auto* ld = entityAs<LeaderData>(x)) {
+                            ld->vertices.back() += d;
+                            ld->textPos += d;
+                        }
+                    })
+            .ok();
+    }
+
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
         so.filter = [](const Entity& e) { return landingOf(e).has_value(); };
@@ -344,7 +517,7 @@ public:
         if (!ref.ok())
             co_return;
         cmd::KeywordOptions ko;
-        ko.keywords = {"Vertical", "Horizontal", "Spacing"};
+        ko.keywords = {"Vertical", "Horizontal", "Spacing", "Distribute", "Parallel"};
         ko.defaultKeyword = "Vertical";
         // Spacing 0 keeps each leader where it is along the line; above 0 the leaders are placed
         // that far apart in their current order, the reference staying where it is.
@@ -352,7 +525,9 @@ public:
         cmd::KeywordResult dir;
         while (true) {
             dir = co_await ctx.getKeyword(
-                "Align in a [Vertical/Horizontal/Spacing] line <Vertical> (same X / same Y)", ko);
+                "Align in a [Vertical/Horizontal/Spacing] line, or "
+                "[Distribute/Parallel] <Vertical>",
+                ko);
             if (!dir.ok())
                 co_return;
             if (dir.keyword != "Spacing")
@@ -369,6 +544,71 @@ public:
         if (!anchor)
             co_return;
         const bool vertical = dir.keyword == "Vertical";
+        if (dir.keyword == "Distribute") {
+            // As AutoCAD: the landings are spread evenly between two points, in their order
+            // along that line.
+            auto p1 = co_await ctx.getPoint("Specify first point");
+            if (!p1.ok())
+                co_return;
+            cmd::PointOptions po;
+            po.base = p1.point;
+            auto p2 = co_await ctx.getPoint("Specify second point", po);
+            if (!p2.ok())
+                co_return;
+            const Vec2 a = p1.point, ab = p2.point - p1.point;
+            struct Spot {
+                EntityId id;
+                Vec2 end;
+            };
+            std::vector<Spot> spots;
+            for (EntityId id : sel.ids) {
+                const Entity* e = ctx.doc().find(id);
+                if (const auto end = e ? landingOf(*e) : std::nullopt)
+                    spots.push_back({id, *end});
+            }
+            if (std::none_of(spots.begin(), spots.end(),
+                             [&](const Spot& sp) { return sp.id == ref.id; }))
+                spots.push_back({ref.id, *anchor});
+            std::stable_sort(spots.begin(), spots.end(), [&](const Spot& x, const Spot& y) {
+                return dot(x.end - a, ab) < dot(y.end - a, ab);
+            });
+            ctx.setUndoLabel("MLEADERALIGN");
+            const double n = static_cast<double>(spots.size());
+            for (std::size_t i = 0; i < spots.size(); ++i) {
+                const double t = n > 1 ? static_cast<double>(i) / (n - 1) : 0.5;
+                moveLanding(ctx, spots[i].id, a + ab * t - spots[i].end);
+            }
+            ctx.message(std::to_string(spots.size()) + " leaders distributed.");
+            co_return;
+        }
+        if (dir.keyword == "Parallel") {
+            // The last segment of every leader line turns parallel to the reference's, keeping
+            // its length and the point it starts from.
+            const auto refDir = lastSegment(*r);
+            if (!refDir) {
+                ctx.message("The reference leader has no line to follow.");
+                co_return;
+            }
+            ctx.setUndoLabel("MLEADERALIGN");
+            std::size_t n = 0;
+            for (EntityId id : sel.ids) {
+                if (id == ref.id)
+                    continue;
+                const Entity* e = ctx.doc().find(id);
+                const auto seg = e ? lastSegment(*e) : std::nullopt;
+                const auto end = e ? landingOf(*e) : std::nullopt;
+                if (!seg || !end)
+                    continue;
+                const Vec2 from = *end - *seg;
+                const Vec2 u = normalized(*refDir);
+                // the same sense as before, so the note stays on its side
+                const double len = length(*seg) * (dot(*seg, u) >= 0 ? 1.0 : -1.0);
+                moveLanding(ctx, id, from + u * len - *end);
+                ++n;
+            }
+            ctx.message(std::to_string(n) + " leaders made parallel.");
+            co_return;
+        }
         ctx.setUndoLabel("MLEADERALIGN");
 
         // Target landing of every leader, the reference included.
@@ -406,20 +646,7 @@ public:
                     (static_cast<double>(i) - static_cast<double>(refIndex)) * spacing;
                 (vertical ? want.y : want.x) += off;
             }
-            const Vec2 d = want - it.end;
-            if (!ctx.tx().modify(it.id, [d](Entity& x) {
-                    if (auto* m = entityAs<MLeaderData>(x)) {
-                        // The lines that ended at the landing follow it; arrowheads stay put.
-                        for (auto& line : m->lines)
-                            if (!line.empty() && distance(line.back(), m->landing) < 1e-9)
-                                line.back() += d;
-                        m->landing += d;
-                        m->contentPos += d;
-                    } else if (auto* ld = entityAs<LeaderData>(x)) {
-                        ld->vertices.back() += d;
-                        ld->textPos += d;
-                    }
-                }))
+            if (!moveLanding(ctx, it.id, want - it.end))
                 continue;
             ++n;
         }
@@ -494,12 +721,22 @@ public:
 
 // Adds an arrowhead (a leader line to the landing) to a multileader, or removes the one nearest
 // to the pick point.
+// AIMLEADEREDITADD and AIMLEADEREDITREMOVE (the ribbon's Add Leader / Remove Leader buttons in
+// AutoCAD) are the same command with the choice made.
 class MLeaderEditCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "MLEADEREDIT"; }
-    std::vector<std::string> defaultAliases() const override { return {"MLE"}; }
+    MLeaderEditCommand() = default;
+    MLeaderEditCommand(std::string name, std::string mode)
+        : name_(std::move(name)), mode_(std::move(mode)) {}
+
+    std::string_view name() const override { return name_; }
+    std::vector<std::string> defaultAliases() const override {
+        return mode_.empty() ? std::vector<std::string>{"MLE"} : std::vector<std::string>{};
+    }
     std::string_view description() const override {
-        return "Add or remove leader lines (arrowheads) of a multileader";
+        return mode_ == "Add"      ? "Add leader lines (arrowheads) to a multileader"
+               : mode_ == "Remove" ? "Remove leader lines (arrowheads) from a multileader"
+                                   : "Add or remove leader lines (arrowheads) of a multileader";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -508,13 +745,17 @@ public:
         auto pick = co_await ctx.getEntity("Select a multileader", eo);
         if (!pick.ok())
             co_return;
-        cmd::KeywordOptions ko;
-        ko.keywords = {"Add", "Remove"};
-        ko.defaultKeyword = "Add";
-        auto k = co_await ctx.getKeyword("Leader lines [Add/Remove] <Add>", ko);
-        if (!k.ok())
-            co_return;
-        if (k.keyword == "Add") {
+        std::string mode = mode_;
+        if (mode.empty()) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Add", "Remove"};
+            ko.defaultKeyword = "Add";
+            auto k = co_await ctx.getKeyword("Leader lines [Add/Remove] <Add>", ko);
+            if (!k.ok())
+                co_return;
+            mode = k.keyword;
+        }
+        if (mode == "Add") {
             for (;;) {
                 auto tip = co_await ctx.getPoint("Specify arrowhead location or Enter to finish",
                                                  cmd::PointOptions{});
@@ -561,6 +802,10 @@ public:
             }
         }
     }
+
+private:
+    std::string name_ = "MLEADEREDIT";
+    std::string mode_{};
 };
 
 }  // namespace
@@ -571,6 +816,14 @@ std::unique_ptr<cmd::Command> makeSmartDimCommand() {
 
 std::unique_ptr<cmd::Command> makeMLeaderEditCommand() {
     return std::make_unique<MLeaderEditCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeMLeaderEditAddCommand() {
+    return std::make_unique<MLeaderEditCommand>("AIMLEADEREDITADD", "Add");
+}
+
+std::unique_ptr<cmd::Command> makeMLeaderEditRemoveCommand() {
+    return std::make_unique<MLeaderEditCommand>("AIMLEADEREDITREMOVE", "Remove");
 }
 
 std::unique_ptr<cmd::Command> makeMLeaderAlignCommand() {
