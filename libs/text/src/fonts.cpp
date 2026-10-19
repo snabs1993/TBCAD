@@ -6,9 +6,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -222,6 +224,73 @@ double msSince(std::chrono::steady_clock::time_point t) {
 }
 }  // namespace
 
+namespace {
+// A path on another computer (\\server\share\...): asking for it can take seconds when the
+// server is gone, so it is asked once per run on a thread of its own.
+bool isNetworkPath(const std::filesystem::path& p) {
+    const auto& s = p.native();
+    return s.size() > 2 && (s[0] == '\\' || s[0] == '/') && (s[1] == '\\' || s[1] == '/');
+}
+constexpr auto kNetworkWait = std::chrono::milliseconds(300);
+struct NetworkProbe {
+    std::shared_future<bool> answer;
+    bool waited = false;  // someone already waited kNetworkWait: later lookups do not wait again
+};
+std::mutex& probeMutex() {
+    static std::mutex m;
+    return m;
+}
+std::map<std::string, NetworkProbe>& networkProbes() {
+    static auto* m = new std::map<std::string, NetworkProbe>;  // probe threads may outlive main
+    return *m;
+}
+std::function<bool(const std::filesystem::path&)>& probeOverride() {
+    static std::function<bool(const std::filesystem::path&)> f;
+    return f;
+}
+bool fileThere(const std::filesystem::path& p) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(p, ec);
+}
+// Whether the file a full path names is there; a network path that has not answered within
+// kNetworkWait counts as missing (the name is then looked up in the font folders).
+bool fontPathThere(const std::filesystem::path& p) {
+    std::function<bool(const std::filesystem::path&)> probe;
+    {
+        std::lock_guard lock(probeMutex());
+        probe = probeOverride();
+    }
+    if (!isNetworkPath(p))
+        return probe ? probe(p) : fileThere(p);
+    std::shared_future<bool> answer;
+    bool wait = true;
+    {
+        std::lock_guard lock(probeMutex());
+        NetworkProbe& slot = networkProbes()[p.string()];
+        if (!slot.answer.valid()) {
+            auto task = std::make_shared<std::packaged_task<bool()>>(
+                [p, probe] { return probe ? probe(p) : fileThere(p); });
+            slot.answer = task->get_future().share();
+            std::thread([task] { (*task)(); }).detach();
+        }
+        answer = slot.answer;
+        wait = !slot.waited;
+    }
+    if (answer.wait_for(wait ? kNetworkWait : std::chrono::milliseconds(0)) ==
+        std::future_status::ready)
+        return answer.get();
+    std::lock_guard lock(probeMutex());
+    networkProbes()[p.string()].waited = true;
+    return false;
+}
+}  // namespace
+
+void setFontFileProbe(std::function<bool(const std::filesystem::path&)> probe) {
+    std::lock_guard lock(probeMutex());
+    probeOverride() = std::move(probe);
+    networkProbes().clear();
+}
+
 std::filesystem::path locateFontFile(const std::string& name) {
     namespace fs = std::filesystem;
     if (name.empty())
@@ -245,7 +314,7 @@ std::filesystem::path locateFontFile(const std::string& name) {
     Report report{name, slowDirs, start};
     std::error_code ec;
     const fs::path given(name);
-    if (given.is_absolute() && fs::is_regular_file(given, ec))
+    if (given.is_absolute() && fontPathThere(given))
         return given;
     std::vector<fs::path> dirs;
     {
@@ -401,6 +470,8 @@ bool fontAvailable(const std::string& family, const std::string& file) {
     font::FontLibrary& lib = fonts();
     if (endsWithNoCase(file, ".shx"))
         return !locateFontFile(file).empty();
+    if (!file.empty() && isNetworkPath(file) && !fontPathThere(file))
+        return !locateFontFile(file).empty();
     if (!file.empty())
         return isStrokeFile(file) ? lib.loadStroke(std::filesystem::path(file)).ok()
                                   : lib.load(std::filesystem::path(file)).ok();
@@ -453,13 +524,17 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
         // Drawings name the file bare ("arial.ttf") or with the author's folders: look it up in
         // the font folders when it is not where the name says.
         std::filesystem::path path(file);
-        std::error_code ec;
-        if (!std::filesystem::is_regular_file(path, ec))
-            if (auto located = locateFontFile(file); !located.empty())
+        bool there = isNetworkPath(path) ? fontPathThere(path) : fileThere(path);
+        if (!there)
+            if (auto located = locateFontFile(file); !located.empty()) {
                 path = located;
-        auto r = isStrokeFile(file) ? lib.loadStroke(path) : lib.load(path);
-        if (r.ok())
-            found = r.value();
+                there = true;
+            }
+        if (there) {
+            auto r = isStrokeFile(file) ? lib.loadStroke(path) : lib.load(path);
+            if (r.ok())
+                found = r.value();
+        }
         // Not on this machine: the installed font of the same name ("arial" for arial.ttf).
         // Only for a TrueType / OpenType file name: a bare "txt" (TBCAD writes it for a style
         // with no font) must not become AutoCAD's installed "Txt" font on the way back in.

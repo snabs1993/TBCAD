@@ -1,8 +1,10 @@
 #include <doctest/doctest.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 
 #include "tbcad/text/text.h"
 
@@ -144,4 +146,41 @@ TEST_CASE("SHX font styles: 20,000 texts lay out without scanning the font folde
     CHECK(ms < 3000);
     setFontSearchPaths({});
     std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("a font on an unreachable file server costs one short wait, then its name is looked up") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_unc_font";
+    fs::create_directories(dir);
+    {
+        const auto bytes = tinyShx();
+        std::ofstream(dir / "tiny.shx", std::ios::binary)
+            .write(reinterpret_cast<const char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+    }
+    std::atomic<int> asked{0};
+    // The server never answers within the test: each question hangs for 3 s.
+    setFontFileProbe([&asked](const fs::path&) {
+        asked.fetch_add(1);
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        return true;
+    });
+    setFontSearchPaths({dir});
+    const std::string unc = "//gone-server/share/fonts/tiny.shx";
+    const auto t0 = std::chrono::steady_clock::now();
+    std::vector<std::thread> lookups;
+    std::vector<fs::path> got(3);
+    for (int k = 0; k < 3; ++k)
+        lookups.emplace_back([&got, &unc, k] { got[k] = locateFontFile(unc); });
+    for (auto& t : lookups)
+        t.join();
+    const fs::path again = locateFontFile(unc);
+    const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(s < 1.5);  // was 2.7 s per lookup on the owner's PC
+    for (const fs::path& p : got)
+        CHECK(p.filename() == "tiny.shx");
+    CHECK(again.parent_path() == dir);
+    CHECK(asked.load() == 1);  // asked once, not once per lookup
+    setFontFileProbe({});
+    setFontSearchPaths({});
 }
