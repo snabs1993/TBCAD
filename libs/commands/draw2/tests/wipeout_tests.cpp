@@ -31,7 +31,7 @@ TEST_CASE("WIPEOUT from a rectangle makes a closed polyline that draws as a back
 
 TEST_CASE("WIPEOUT from points closes with Enter and needs three") {
     Fixture f;
-    REQUIRE(f.host.run("WO", {"Polygon", "0,0", "10,0", "10,10", ""}).finished);
+    REQUIRE(f.host.run("WO", {"0,0", "10,0", "10,10", ""}).finished);
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     CHECK(as<PolylineData>(es[0]).v.size() == 3);
@@ -44,8 +44,9 @@ TEST_CASE("WIPEOUT Polyline and Remove switch an existing closed polyline") {
     pl.v = {{.p = {0, 0}}, {.p = {10, 0}}, {.p = {10, 10}}};
     EntityId id = f.addEntity(pl);
     f.host.setSelection({id});
-    REQUIRE(f.host.run("WIPEOUT", {"Polyline"}).finished);
+    REQUIRE(f.host.run("WIPEOUT", {"Polyline", "Yes"}).finished);
     CHECK(f.doc.find(id)->common.wipeout);
+    CHECK(f.entities().size() == 1);
     f.host.setSelection({id});
     REQUIRE(f.host.run("WIPEOUT", {"Remove"}).finished);
     CHECK_FALSE(f.doc.find(id)->common.wipeout);
@@ -87,7 +88,7 @@ TEST_CASE("WIPEOUTFRAME shows, hides or screen-only shows the outline, and is un
 
 TEST_CASE("WIPEOUT points: Undo drops a point, repeated points count once, no area makes nothing") {
     Fixture f;
-    REQUIRE(f.host.run("WO", {"Polygon", "0,0", "10,0", "10,0", "50,50", "Undo", "10,10", "0,0",
+    REQUIRE(f.host.run("WO", {"0,0", "10,0", "10,0", "50,50", "Undo", "10,10", "0,0",
                               ""})
                 .finished);
     auto es = f.entities();
@@ -96,7 +97,7 @@ TEST_CASE("WIPEOUT points: Undo drops a point, repeated points count once, no ar
     REQUIRE(pl.v.size() == 3);  // 0,0 10,0 10,10: the repeated and the closing point dropped
     CHECK(close(pl.v[2].p, {10, 10}));
 
-    REQUIRE(f.host.run("WO", {"Polygon", "0,0", "10,0", "20,0", ""}).finished);
+    REQUIRE(f.host.run("WO", {"0,0", "10,0", "20,0", ""}).finished);
     CHECK(f.entities().size() == 1);
     CHECK(f.host.logContains("enclose an area"));
 }
@@ -121,4 +122,46 @@ TEST_CASE("WIPEOUT Frames sets the frame mode, and Polyline leaves locked layers
     f.host.setSelection({id});
     f.host.run("WIPEOUT", {"Polyline", ScriptItem::esc()});
     CHECK_FALSE(f.doc.find(id)->common.wipeout);
+}
+
+TEST_CASE("WIPEOUT: Enter takes a polyline and keeps it unless Erase polyline is Yes") {
+    Fixture f;
+    Transaction tx = f.doc.begin("layer");
+    const LayerId walls = tx.addLayer(Layer{.name = "Walls"}).value();
+    tx.commit();
+    PolylineData pl;
+    pl.closed = true;
+    pl.v = {{.p = {0, 0}, .bulge = 0.5}, {.p = {10, 0}}, {.p = {10, 10}}};
+    EntityId id = f.addEntity(pl);
+    Transaction tx2 = f.doc.begin("move");
+    REQUIRE(tx2.modify(id, [&](Entity& e) { e.common.layer = walls; }));
+    tx2.commit();
+
+    REQUIRE(f.host.run("WIPEOUT", {"", ScriptItem::pick(id, {5, 0}), "", ""}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 2);
+    CHECK_FALSE(es[0]->common.wipeout);  // the polyline stays as it was
+    CHECK(es[1]->common.wipeout);
+    CHECK(es[1]->common.layer == walls);
+    CHECK(as<PolylineData>(es[1]).v.size() == 3);
+    CHECK(as<PolylineData>(es[1]).v[0].bulge == 0.5);
+    CHECK(f.host.logContains("1 wipeout made"));
+    f.host.undo();
+    CHECK(f.entities().size() == 1);
+    // a wipeout is not offered again
+    REQUIRE(f.host.run("WIPEOUT", {"P", ScriptItem::pick(id, {5, 0}), "", "Y"}).finished);
+    CHECK(f.doc.find(id)->common.wipeout);
+    f.host.setSelection({id});
+    f.host.run("WIPEOUT", {"P"});
+    CHECK(f.host.runner().active());  // the wipeout was filtered out of the selection
+    f.host.feed({ScriptItem::esc()});
+}
+
+TEST_CASE("WIPEOUT: the first point starts the outline, and Undo of the first point ends it") {
+    Fixture f;
+    CHECK(f.host.run("WIPEOUT", {"0,0", "Undo"}).finished);
+    CHECK(f.entities().empty());
+    REQUIRE(f.host.run("WO", {"0,0", "20,0", "20,10", "0,10", ""}).finished);
+    REQUIRE(f.entities().size() == 1);
+    CHECK(as<PolylineData>(f.entities()[0]).v.size() == 4);
 }

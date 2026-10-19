@@ -51,11 +51,14 @@ and sized for a plot scale afterwards.
 ## Wipeout
 
 `WIPEOUT` (`WO`) makes a closed shape that hides what was drawn before it: pick points (Enter
-closes), a `Rectangle`, or turn a closed `Polyline` (a revision cloud too) into one. `Remove`
-turns it back into an ordinary polyline. It is filled with the background colour of the screen
+closes) or a `Rectangle`, or press Enter to make wipeouts from closed polylines (a revision
+cloud too). `Erase polyline? Yes` turns the polylines themselves into wipeouts; `No` (the default)
+keeps them and adds a wipeout of the same shape and properties. `Remove` turns a wipeout back
+into an ordinary polyline. It is filled with the background colour of the screen
 (or the white sheet when plotted) and shows no outline; what is drawn after it stays on top.
-It is saved in `.tbcad`; DXF files carry an ordinary polyline plus a TBCAD note, so other
-programs show the outline only.
+It is saved in `.tbcad`. DXF files (R2000 and later) carry a WIPEOUT object that AutoCAD and
+other programs show as a mask; arc segments are written as short lines. R12 DXF has no wipeouts
+and gets an ordinary polyline.
 
 ## Symbols
 

@@ -12,8 +12,9 @@ namespace {
 using cmd::CommandContext;
 
 // WIPEOUT [WO]: a closed shape that hides what is behind it (drawn earlier), for text on top of
-// hatches or clutter. Pick points (Enter closes), give a Rectangle, or turn a closed Polyline
-// into a wipeout. Remove turns wipeouts back into ordinary polylines.
+// hatches or clutter. Pick points (Enter closes), give a Rectangle, or make wipeouts from closed
+// polylines (Enter at the first prompt; Erase polyline Yes turns them into the wipeouts). Remove
+// turns wipeouts back into ordinary polylines.
 class WipeoutCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "WIPEOUT"; }
@@ -21,15 +22,21 @@ public:
     std::string_view description() const override { return "Hide what is behind a closed shape"; }
 
     cmd::Task run(CommandContext& ctx) override {
-        cmd::KeywordOptions ko;
-        ko.keywords = {"Polygon", "Rectangle", "Polyline", "Remove", "Frames"};
-        ko.defaultKeyword = "Polygon";
-        auto k = co_await ctx.getKeyword(
-            "Wipeout [Polygon/Rectangle/Polyline/Remove/Frames] <Polygon>", ko);
-        if (!k.ok())
+        // As AutoCAD: a point starts the outline, Enter takes a polyline.
+        cmd::PointOptions first;
+        first.keywords = {"Frames", "Polyline", "Rectangle", "Remove"};
+        first.allowNone = true;
+        auto k = co_await ctx.getPoint(
+            "Specify first point or [Frames/Polyline/Rectangle/Remove] <Polyline>", first);
+        if (k.status == cmd::Status::None) {
+            k.status = cmd::Status::Keyword;
+            k.keyword = "Polyline";
+        }
+        if (k.status != cmd::Status::Keyword && !k.ok())
             co_return;
 
-        if (k.keyword == "Frames") {  // as WIPEOUTFRAME, by name like AutoCAD's Frames option
+        if (k.status == cmd::Status::Keyword && k.keyword == "Frames") {
+            // as WIPEOUTFRAME, by name like AutoCAD's Frames option
             cmd::KeywordOptions fo;
             fo.keywords = {"On", "Off", "Display"};
             const int now = wipeoutFrameMode(ctx.doc().header());
@@ -45,29 +52,65 @@ public:
             co_return;
         }
 
-        if (k.keyword == "Polyline" || k.keyword == "Remove") {
-            const bool remove = k.keyword == "Remove";
+        if (k.status == cmd::Status::Keyword && k.keyword == "Remove") {
             auto sel = co_await ctx.getSelection(
-                remove ? "Select wipeouts" : "Select closed polylines",
-                cmd::SelectionOptions{.filter = [remove, c = &ctx](const Entity& e) {
+                "Select wipeouts", cmd::SelectionOptions{.filter = [c = &ctx](const Entity& e) {
                     const auto* p = entityAs<PolylineData>(e);
-                    return p && p->closed && e.common.wipeout == remove &&
+                    return p && p->closed && e.common.wipeout &&
                            !c->doc().effective(e.common).locked;
                 }});
             if (!sel.ok() || sel.ids.empty())
                 co_return;
             std::size_t n = 0;
             for (EntityId id : sel.ids)
-                if (ctx.tx().modify(id, [remove](Entity& x) { x.common.wipeout = !remove; }))
+                if (ctx.tx().modify(id, [](Entity& x) { x.common.wipeout = false; }))
                     ++n;
-            ctx.message(std::to_string(n) + (remove ? " no longer hide" : " now hide") +
-                        " what is behind");
+            ctx.message(std::to_string(n) + " no longer hide what is behind");
+            ctx.setUndoLabel("Wipeout");
+            co_return;
+        }
+
+        if (k.status == cmd::Status::Keyword && k.keyword == "Polyline") {
+            // A wipeout of the same shape and properties; Erase polyline Yes turns the polyline
+            // itself into the wipeout.
+            auto sel = co_await ctx.getSelection(
+                "Select closed polylines",
+                cmd::SelectionOptions{.filter = [c = &ctx](const Entity& e) {
+                    const auto* p = entityAs<PolylineData>(e);
+                    return p && p->closed && p->v.size() >= 2 && !e.common.wipeout &&
+                           !c->doc().effective(e.common).locked;
+                }});
+            if (!sel.ok() || sel.ids.empty())
+                co_return;
+            cmd::KeywordOptions eo;
+            eo.keywords = {"Yes", "No"};
+            eo.defaultKeyword = "No";
+            auto erase = co_await ctx.getKeyword("Erase polyline? [Yes/No] <No>", eo);
+            if (!erase.ok())
+                co_return;
+            std::size_t n = 0;
+            for (EntityId id : sel.ids) {
+                if (erase.keyword == "Yes") {
+                    if (ctx.tx().modify(id, [](Entity& x) { x.common.wipeout = true; }))
+                        ++n;
+                    continue;
+                }
+                const Entity* src = ctx.doc().find(id);
+                if (!src)
+                    continue;
+                Entity copy = *src;
+                copy.common.id = {};
+                copy.common.wipeout = true;
+                if (ctx.tx().add(std::move(copy)))
+                    ++n;
+            }
+            ctx.message(std::to_string(n) + (n == 1 ? " wipeout" : " wipeouts") + " made");
             ctx.setUndoLabel("Wipeout");
             co_return;
         }
 
         std::vector<Vec2> pts;
-        if (k.keyword == "Rectangle") {
+        if (k.status == cmd::Status::Keyword) {  // Rectangle
             auto a = co_await ctx.getPoint("First corner");
             if (!a.ok())
                 co_return;
@@ -83,6 +126,7 @@ public:
             }
             pts = {p, {q.x, p.y}, q, {p.x, q.y}};
         } else {
+            pts.push_back(k.point);
             for (;;) {
                 cmd::PointOptions po;
                 po.allowNone = pts.size() >= 3;
@@ -90,10 +134,14 @@ public:
                     po.base = pts.back();
                 if (!pts.empty())
                     po.keywords = {"Undo"};
-                auto a = co_await ctx.getPoint(
-                    pts.size() >= 3 ? "Next point or [Undo] (Enter closes)" : "Next point", po);
+                auto a = co_await ctx.getPoint(pts.size() >= 3
+                                                   ? "Specify next point or [Undo] <close>"
+                                                   : "Specify next point or [Undo]",
+                                               po);
                 if (a.status == cmd::Status::Keyword) {
                     pts.pop_back();
+                    if (pts.empty())
+                        co_return;  // undid the first point: nothing left to outline
                     continue;
                 }
                 if (!a.ok()) {

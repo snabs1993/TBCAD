@@ -260,4 +260,4 @@ tests check `decodeText` against it.
 
 ## MULTILEADER, 3DFACE, WIPEOUT and ARC_DIMENSION
 
-A MULTILEADER comes in as one multileader object: its leader lines, the landing point, the dogleg to the text and the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane. A WIPEOUT becomes a closed polyline that hides what is behind it, and an ARC_DIMENSION an arc length dimension.
+A MULTILEADER comes in as one multileader object: its leader lines, the landing point, the dogleg to the text and the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane. A WIPEOUT becomes a closed polyline that hides what is behind it (its boundary is read in pixel units counted down from the top of its frame, as AutoCAD writes it), and an ARC_DIMENSION an arc length dimension.

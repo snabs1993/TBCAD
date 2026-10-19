@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <string>
 
 #include "commands.h"
@@ -12,6 +13,9 @@ namespace {
 
 constexpr const char* kArcLength = "revcloud.arclength";
 constexpr const char* kCalligraphy = "revcloud.calligraphy";
+// REVCLOUDCREATEMODE: how the first point is used. 0 freehand, 1 rectangular, 2 polygonal.
+constexpr const char* kCreateMode = "revcloud.createmode";
+enum CreateMode { kFreehand = 0, kRectangular = 1, kPolygonal = 2 };
 constexpr double kDefaultArcLength = 10;
 // Each cloud arc sweeps 120 degrees: bulge = tan(sweep / 4).
 const double kCloudBulge = std::tan(kPi / 6);
@@ -115,6 +119,27 @@ PolylineData cloud(const std::vector<Vec2>& ringIn, bool corners, double arcLeng
     return d;
 }
 
+// An open cloud along `path`: each piece no longer than `arcLength`, the arcs on the side away from
+// the area the path encloses (the other side with `reverse`).
+PolylineData openCloud(const std::vector<Vec2>& pathIn, double arcLength, bool reverse,
+                       bool calligraphy) {
+    std::vector<Vec2> path;
+    for (const Vec2& p : pathIn)
+        if (path.empty() || !tol::isZeroLength(p - path.back()))
+            path.push_back(p);
+    PolylineData d = cloud(path, true, arcLength, reverse, calligraphy);
+    // cloud() closes the ring: drop the pieces of the closing edge, keep the last point.
+    d.closed = false;
+    const Vec2 last = path.back();
+    while (d.v.size() > 1 && !tol::isZeroLength(d.v.back().p - last))
+        d.v.pop_back();
+    if (!d.v.empty()) {
+        d.v.back().bulge = 0;
+        d.v.back().startWidth = d.v.back().endWidth = 0;
+    }
+    return d;
+}
+
 struct Ring {
     std::vector<Vec2> pts{};
     bool corners = false;
@@ -178,15 +203,26 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         for (;;) {
             const double len = settingNumber(ctx, kArcLength, kDefaultArcLength);
+            const int mode = static_cast<int>(settingNumber(ctx, kCreateMode, kPolygonal));
             cmd::PointOptions o;
-            o.keywords = {"Arclength", "Object", "Rectangular", "Style"};
-            o.allowNone = false;
+            o.keywords = {"Arclength", "Object",    "Rectangular", "Polygonal",
+                          "Freehand",  "Style"};
+            o.allowNone = true;
+            const char* what = mode == kRectangular ? "first corner point" : "start point";
             auto first = co_await ctx.getPoint(
-                promptWith("Specify start point (arc length " + std::to_string(len) + ")",
-                           o.keywords),
+                "Specify " + std::string(what) + " (arc length " + shortNumber(len) + ", " +
+                    (mode == kRectangular ? "rectangular"
+                     : mode == kFreehand  ? "freehand"
+                                          : "polygonal") +
+                    ") or [Arclength/Object/Rectangular/Polygonal/Freehand/Style] <Object>",
                 std::move(o));
+            if (first.status == cmd::Status::None) {  // Enter: like AutoCAD, pick an object
+                co_await fromObject(ctx, len);
+                co_return;
+            }
             if (first.status == cmd::Status::Keyword) {
-                if (first.keyword == "Arclength") {
+                const std::string& kw = first.keyword;
+                if (kw == "Arclength") {
                     cmd::DistanceOptions lo;
                     lo.defaultValue = len;
                     lo.allowZero = false;
@@ -197,7 +233,7 @@ public:
                     saveSetting(ctx, kArcLength, l.value);
                     continue;
                 }
-                if (first.keyword == "Style") {
+                if (kw == "Style") {
                     cmd::KeywordOptions so;
                     so.keywords = {"Normal", "Calligraphy"};
                     so.defaultKeyword =
@@ -209,16 +245,25 @@ public:
                     saveSetting(ctx, kCalligraphy, st.keyword == "Calligraphy" ? 1 : 0);
                     continue;
                 }
-                if (first.keyword == "Rectangular") {
-                    co_await fromRectangle(ctx, len);
-                    co_return;
+                if (kw == "Rectangular" || kw == "Polygonal" || kw == "Freehand") {
+                    // as REVCLOUDCREATEMODE: remembered for the next cloud
+                    saveSetting(ctx, kCreateMode,
+                                kw == "Rectangular" ? kRectangular
+                                : kw == "Freehand"  ? kFreehand
+                                                    : kPolygonal);
+                    continue;
                 }
                 co_await fromObject(ctx, len);
                 co_return;
             }
             if (!first.ok())
                 co_return;
-            co_await fromPoints(ctx, first.point, len);
+            if (mode == kRectangular)
+                co_await fromRectangle(ctx, first.point, len);
+            else if (mode == kFreehand)
+                co_await freehand(ctx, first.point, len);
+            else
+                co_await fromPoints(ctx, first.point, len);
             co_return;
         }
     }
@@ -262,27 +307,105 @@ private:
         addEntity(ctx, cloud(pts, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
     }
 
-    static cmd::Task fromRectangle(cmd::CommandContext& ctx, double len) {
-        auto a = co_await ctx.getPoint("Specify first corner point");
-        if (!a.ok())
-            co_return;
+    static cmd::Task fromRectangle(cmd::CommandContext& ctx, Vec2 corner, double len) {
+        auto* c = &ctx;
         cmd::PointOptions po;
-        po.base = a.point;
+        po.base = corner;
+        po.preview = [c, corner, len](Vec2 cursor, DisplayList& out) {
+            if (std::abs(corner.x - cursor.x) < tol::kLinear ||
+                std::abs(corner.y - cursor.y) < tol::kLinear)
+                return;
+            const std::vector<Vec2> ring{
+                corner, {cursor.x, corner.y}, cursor, {corner.x, cursor.y}};
+            if (tooManyArcs(ring, true, len).empty())
+                previewEntity(*c, makeEntity(cloud(ring, true, len, false)), out);
+        };
         auto b = co_await ctx.getPoint("Specify opposite corner point", std::move(po));
         if (!b.ok())
             co_return;
-        if (std::abs(a.point.x - b.point.x) < tol::kLinear ||
-            std::abs(a.point.y - b.point.y) < tol::kLinear) {
+        if (std::abs(corner.x - b.point.x) < tol::kLinear ||
+            std::abs(corner.y - b.point.y) < tol::kLinear) {
             ctx.message("The two corners must differ in both directions.");
             co_return;
         }
         const std::vector<Vec2> ring{
-            a.point, {b.point.x, a.point.y}, b.point, {a.point.x, b.point.y}};
+            corner, {b.point.x, corner.y}, b.point, {corner.x, b.point.y}};
         if (const std::string m = tooManyArcs(ring, true, len); !m.empty()) {
             ctx.message(m);
             co_return;
         }
         addEntity(ctx, cloud(ring, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
+    }
+
+    // Freehand: moving the cursor lays an arc each time it gets an arc length away from the last
+    // one; picked points are added too. Coming back near the start closes the cloud ("Revision
+    // cloud finished"); Enter ends an open cloud and asks which way its arcs face.
+    static cmd::Task freehand(cmd::CommandContext& ctx, Vec2 start, double len) {
+        auto* c = &ctx;
+        auto path = std::make_shared<std::vector<Vec2>>(std::vector<Vec2>{start});
+        bool closed = false;
+        auto nearStart = [path, len](Vec2 p) {
+            return path->size() >= 3 && distance(p, path->front()) <= len * 0.5 + tol::kLinear;
+        };
+        for (;;) {
+            cmd::PointOptions o;
+            o.base = path->back();
+            o.allowNone = true;
+            o.preview = [c, path, len](Vec2 cursor, DisplayList& out) {
+                // follow the cursor: a vertex every arc length along its way
+                while (distance(cursor, path->back()) >= len && path->size() < kMaxArcs) {
+                    const Vec2 d = cursor - path->back();
+                    path->push_back(path->back() + d * (len / std::hypot(d.x, d.y)));
+                }
+                std::vector<Vec2> p = *path;
+                p.push_back(cursor);
+                if (p.size() >= 2)
+                    previewEntity(*c, makeEntity(openCloud(p, len, false, false)), out);
+            };
+            auto r = co_await ctx.getPoint("Guide crosshairs along cloud path (Enter ends it)",
+                                           std::move(o));
+            if (r.status == cmd::Status::None)
+                break;
+            if (!r.ok())
+                co_return;
+            if (nearStart(r.point)) {
+                closed = true;
+                break;
+            }
+            if (!tol::isZeroLength(r.point - path->back()))
+                path->push_back(r.point);
+            if (path->size() >= kMaxArcs)
+                break;
+        }
+        const bool calligraphy = settingNumber(ctx, kCalligraphy, 0) > 0;
+        if (closed) {
+            if (distinct(*path).size() < 3 || std::abs(ringArea(*path)) < tol::kLinear) {
+                ctx.message("A revision cloud needs at least three points that enclose an area.");
+                co_return;
+            }
+            if (const std::string m = tooManyArcs(*path, true, len); !m.empty()) {
+                ctx.message(m);
+                co_return;
+            }
+            ctx.message("Revision cloud finished.");
+            addEntity(ctx, cloud(*path, true, len, false, calligraphy));
+            co_return;
+        }
+        if (distinct(*path).size() < 2) {
+            ctx.message("Move the cursor along the cloud path first.");
+            co_return;
+        }
+        if (const std::string m = tooManyArcs(*path, true, len); !m.empty()) {
+            ctx.message(m);
+            co_return;
+        }
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Yes", "No"};
+        ko.defaultKeyword = "No";
+        auto rev = co_await ctx.getKeyword("Reverse direction [Yes/No] <No>", std::move(ko));
+        if (!rev.ok())
+            co_return;
+        addEntity(ctx, openCloud(*path, len, rev.keyword == "Yes", calligraphy));
     }
 
     static cmd::Task fromObject(cmd::CommandContext& ctx, double len) {

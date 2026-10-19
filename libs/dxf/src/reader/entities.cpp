@@ -1922,9 +1922,11 @@ bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
 }
 
 // WIPEOUT: a closed polyline that hides what is behind it. The clip boundary is in pixel units of
-// an image frame: world = insert + u * (x + 0.5) + v * (y + 0.5).
+// an image frame counted from its top-left corner, y down, as for IMAGE clips:
+// world = insert + u * (x + 0.5) + v * (height - (y + 0.5)), height (23) being 1 in practice.
 bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     const Vec2 origin = P(r, 10, 20), u = P(r, 11, 21), v = P(r, 12, 22);
+    const double height = r.has(23) && std::isfinite(r.num(23)) && r.num(23) > 0 ? r.num(23) : 1;
     std::vector<Vec2> pix;
     for (const Group& g : r.g) {
         if (g.code == 14)
@@ -1946,7 +1948,7 @@ bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     pl.closed = true;
     for (const Vec2& p : pix) {
         PolyVertex vtx;
-        vtx.p = origin + u * (p.x + 0.5) + v * (p.y + 0.5);
+        vtx.p = origin + u * (p.x + 0.5) + v * (height - (p.y + 0.5));
         pl.v.push_back(vtx);
     }
     Entity e = makeEntity(std::move(pl));
