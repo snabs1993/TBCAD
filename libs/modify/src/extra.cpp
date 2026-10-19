@@ -296,6 +296,55 @@ bool sameGeometry(const Entity& a, const Entity& b, double tol) {
             }
             return false;
         }
+        case EntityKind::Text: {
+            const auto& x = *entityAs<TextData>(a);
+            const auto& y = *entityAs<TextData>(b);
+            return x.utf8 == y.utf8 && samePoint(x.position, y.position, tol) &&
+                   std::abs(x.height - y.height) <= tol &&
+                   std::abs(x.rotation - y.rotation) <= 1e-9 &&
+                   std::abs(x.widthFactor - y.widthFactor) <= 1e-9 && x.h == y.h && x.v == y.v &&
+                   x.style == y.style && !x.attdef && !y.attdef;
+        }
+        case EntityKind::MText: {
+            const auto& x = *entityAs<MTextData>(a);
+            const auto& y = *entityAs<MTextData>(b);
+            return x.utf8 == y.utf8 && samePoint(x.position, y.position, tol) &&
+                   std::abs(x.height - y.height) <= tol && std::abs(x.width - y.width) <= tol &&
+                   std::abs(x.rotation - y.rotation) <= 1e-9 && x.attach == y.attach &&
+                   x.style == y.style && x.columns == y.columns;
+        }
+        case EntityKind::Insert: {
+            const auto& x = *entityAs<InsertData>(a);
+            const auto& y = *entityAs<InsertData>(b);
+            if (x.array || y.array || !(x.block == y.block) ||
+                x.attribs.size() != y.attribs.size() || x.dynValues != y.dynValues ||
+                x.asmValues.size() != y.asmValues.size() || !x.clip.empty() || !y.clip.empty())
+                return false;
+            for (std::size_t i = 0; i < x.attribs.size(); ++i) {
+                if (x.attribs[i].tag != y.attribs[i].tag ||
+                    x.attribs[i].value != y.attribs[i].value)
+                    return false;
+            }
+            return samePoint(x.position, y.position, tol) && samePoint(x.scale, y.scale, 1e-9) &&
+                   std::abs(x.rotation - y.rotation) <= 1e-9;
+        }
+        case EntityKind::Spline: {
+            const auto& x = *entityAs<SplineData>(a);
+            const auto& y = *entityAs<SplineData>(b);
+            if (x.degree != y.degree || x.closed != y.closed ||
+                x.control.size() != y.control.size() || x.fit.size() != y.fit.size() ||
+                x.weights != y.weights)
+                return false;
+            for (std::size_t i = 0; i < x.control.size(); ++i) {
+                if (!samePoint(x.control[i], y.control[i], tol))
+                    return false;
+            }
+            for (std::size_t i = 0; i < x.fit.size(); ++i) {
+                if (!samePoint(x.fit[i], y.fit[i], tol))
+                    return false;
+            }
+            return true;
+        }
         default:
             return false;
     }
@@ -309,6 +358,10 @@ bool takesPart(const Entity& e) {
         case EntityKind::Point:
         case EntityKind::Ellipse:
         case EntityKind::Polyline:
+        case EntityKind::Text:
+        case EntityKind::MText:
+        case EntityKind::Insert:
+        case EntityKind::Spline:
             return true;
         default:
             return false;
@@ -319,6 +372,23 @@ double minX(const Entity& e) {
     std::vector<CurveRef> cs;
     if (const auto* p = entityAs<PointData>(e))
         return p->p.x;
+    if (const auto* t = entityAs<TextData>(e))
+        return t->position.x;
+    if (const auto* t = entityAs<MTextData>(e))
+        return t->position.x;
+    if (const auto* i = entityAs<InsertData>(e))
+        return i->position.x;
+    if (const auto* sp = entityAs<SplineData>(e)) {
+        double m = 0;
+        bool any = false;
+        for (const auto* pts : {&sp->control, &sp->fit}) {
+            for (const Vec2& q : *pts) {
+                m = any ? std::min(m, q.x) : q.x;
+                any = true;
+            }
+        }
+        return m;
+    }
     if (!geom::curvesOf(e, cs) || cs.empty())
         return 0;
     double m = cs.front().bounds().min.x;
@@ -621,10 +691,43 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
         };
         std::vector<std::size_t> idxs(lines.size());
         std::iota(idxs.begin(), idxs.end(), std::size_t{0});
-        std::sort(idxs.begin(), idxs.end(), [&](std::size_t a, std::size_t b) {
-            Vec2 da = canonical(lines[a]), db = canonical(lines[b]);
-            return std::atan2(da.y, da.x) < std::atan2(db.y, db.x);
-        });
+        std::vector<double> angOf(lines.size());
+        for (std::size_t k = 0; k < lines.size(); ++k) {
+            Vec2 dk = canonical(lines[k]);
+            angOf[k] = std::atan2(dk.y, dk.x);
+        }
+        std::sort(idxs.begin(), idxs.end(),
+                  [&](std::size_t a, std::size_t b) { return angOf[a] < angOf[b]; });
+        // Lines of one direction (within 1e-4 rad) are ordered by their offset across it, so a line
+        // only meets the ones close enough to lie on the same line.
+        std::vector<double> key(lines.size(), 0.0);
+        std::vector<std::size_t> slot(lines.size(), 0);
+        std::vector<std::vector<std::size_t>> clusters;
+        std::vector<double> windows;
+        std::vector<std::size_t> clusterOf(lines.size(), 0);
+        for (std::size_t ai = 0; ai < idxs.size();) {
+            std::size_t aj = ai;
+            while (aj < idxs.size() && angOf[idxs[aj]] - angOf[idxs[ai]] <= 1e-4)
+                ++aj;
+            Vec2 dc = canonical(lines[idxs[ai]]);
+            dc = dc * (1.0 / length(dc));
+            std::vector<std::size_t> c(idxs.begin() + static_cast<std::ptrdiff_t>(ai),
+                                       idxs.begin() + static_cast<std::ptrdiff_t>(aj));
+            double maxLen = 0;
+            for (std::size_t k : c) {
+                Vec2 mid = (lines[k].a + lines[k].b) * 0.5;
+                key[k] = cross(dc, mid);
+                clusterOf[k] = clusters.size();
+                maxLen = std::max(maxLen, length(lines[k].b - lines[k].a));
+            }
+            std::sort(c.begin(), c.end(),
+                      [&](std::size_t x, std::size_t y) { return key[x] < key[y]; });
+            for (std::size_t q = 0; q < c.size(); ++q)
+                slot[c[q]] = q;
+            clusters.push_back(std::move(c));
+            windows.push_back(2 * o.tolerance + 2e-4 * maxLen + 1e-12);
+            ai = aj;
+        }
         for (std::size_t ai = 0; ai < idxs.size(); ++ai) {
             std::size_t a = idxs[ai];
             if (used[a])
@@ -632,22 +735,24 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             Vec2 d = canonical(lines[a]);
             double dl = length(d);
             d = d * (1.0 / dl);
-            double ang = std::atan2(d.y, d.x);
+            double ang = angOf[a];
             std::vector<std::size_t> group{a};
-            for (std::size_t bi = ai + 1; bi < idxs.size(); ++bi) {
-                std::size_t b = idxs[bi];
-                Vec2 db = canonical(lines[b]);
-                if (std::atan2(db.y, db.x) - ang > 1e-4)
-                    break;
-                if (used[b])
-                    continue;
+            const std::vector<std::size_t>& cl = clusters[clusterOf[a]];
+            double window = windows[clusterOf[a]];
+            auto consider = [&](std::size_t b) {
+                if (b == a || used[b] || std::abs(angOf[b] - ang) > 1e-4)
+                    return;
                 if (!o.ignoreProperties &&
                     !sameProps(entities[lines[a].idx]->common, entities[lines[b].idx]->common))
-                    continue;
+                    return;
                 auto off = [&](Vec2 p) { return std::abs(cross(d, p - lines[a].a)); };
                 if (off(lines[b].a) <= o.tolerance && off(lines[b].b) <= o.tolerance)
                     group.push_back(b);
-            }
+            };
+            for (std::size_t q = slot[a] + 1; q < cl.size() && key[cl[q]] - key[a] <= window; ++q)
+                consider(cl[q]);
+            for (std::size_t q = slot[a]; q-- > 0 && key[a] - key[cl[q]] <= window;)
+                consider(cl[q]);
             if (group.size() < 2)
                 continue;
             struct Iv {
@@ -726,6 +831,63 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             }
             for (Entity& n : jr.created)
                 res.created.push_back(std::move(n));
+        }
+    }
+
+    // 4. Polylines: drop repeated vertices and vertices that lie on the straight line between
+    // their neighbours. Only polylines of one width are touched, so no taper is lost.
+    if (o.optimizePolylines) {
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            if (!entities[i] || gone[i])
+                continue;
+            const auto* p = entityAs<PolylineData>(*entities[i]);
+            if (!p || p->v.size() < 3)
+                continue;
+            bool uniform = true;
+            for (const PolyVertex& v : p->v) {
+                if (v.startWidth != p->v.front().startWidth ||
+                    v.endWidth != p->v.front().startWidth)
+                    uniform = false;
+            }
+            if (!uniform)
+                continue;
+            PolylineData q = *p;
+            std::size_t before = q.v.size();
+            const std::size_t minCount = q.closed ? 3 : 2;
+            for (bool changed = true; changed && q.v.size() > minCount;) {
+                changed = false;
+                for (std::size_t k = 0; k < q.v.size() && q.v.size() > minCount; ++k) {
+                    std::size_t n = q.v.size();
+                    bool hasPrev = q.closed || k > 0;
+                    std::size_t pk = (k + n - 1) % n, nk = (k + 1) % n;
+                    if (hasPrev && samePoint(q.v[pk].p, q.v[k].p, o.tolerance)) {
+                        q.v[pk].bulge = q.v[k].bulge;  // the segment that leaves survives
+                        q.v.erase(q.v.begin() + static_cast<std::ptrdiff_t>(k));
+                        changed = true;
+                        --k;
+                        continue;
+                    }
+                    bool hasNext = q.closed || k + 1 < n;
+                    if (!hasPrev || !hasNext || q.v[pk].bulge != 0 || q.v[k].bulge != 0)
+                        continue;
+                    Vec2 d = q.v[nk].p - q.v[pk].p;
+                    double dl = length(d);
+                    if (dl < 1e-12)
+                        continue;
+                    d = d * (1.0 / dl);
+                    Vec2 w = q.v[k].p - q.v[pk].p;
+                    if (std::abs(cross(d, w)) <= o.tolerance && dot(d, w) > 0 && dot(d, w) < dl) {
+                        q.v.erase(q.v.begin() + static_cast<std::ptrdiff_t>(k));
+                        changed = true;
+                        --k;
+                    }
+                }
+            }
+            if (q.v.size() < before) {
+                res.erased.push_back(i);
+                res.created.push_back(withData(*entities[i], std::move(q)));
+                ++res.optimized;
+            }
         }
     }
     std::sort(res.erased.begin(), res.erased.end());

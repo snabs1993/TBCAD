@@ -56,16 +56,20 @@ struct OverkillOptions {
     bool ignoreProperties = false;   // compare geometry only
     bool combineOverlapping = true;  // merge collinear lines / same-circle arcs that overlap
     bool combineEndToEnd = true;     // ... and ones that only touch end to end
+    // Remove repeated vertices and vertices on a straight run of polylines of one width.
+    bool optimizePolylines = false;
 };
 
 struct OverkillResult {
     std::vector<std::size_t> erased{};  // indices into the input to delete
     std::vector<Entity> created{};      // replacements for merged groups
     std::size_t duplicates = 0;         // entries of `erased` that were exact duplicates
+    std::size_t optimized = 0;          // polylines replaced by a version with fewer vertices
 };
 
 // Removes duplicate entities and merges overlapping collinear lines and arcs of one circle.
-// Lines, arcs, circles, points, polylines and ellipses take part; other kinds are left alone.
+// Lines, arcs, circles, points, polylines, ellipses, splines, text and inserts take part in the
+// duplicate check; lines and arcs are merged; other kinds are left alone.
 OverkillResult overkill(const std::vector<const Entity*>& entities,
                         const OverkillOptions& options = {});
 

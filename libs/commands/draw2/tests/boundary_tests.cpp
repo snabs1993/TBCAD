@@ -157,3 +157,53 @@ TEST_CASE("BOUNDARY answers quickly in a drawing of 50 000 objects") {
     CHECK(ms < 2000);
 #endif
 }
+
+TEST_CASE("BOUNDARY Islands keyword: Normal, Outer and Ignore on nested shapes") {
+    auto build = [](Fixture& f) {
+        addRect(f, {0, 0}, {100, 100});
+        addRect(f, {10, 10}, {90, 90});  // island
+        addRect(f, {30, 30}, {70, 70});  // inside the island
+    };
+    {
+        Fixture f;
+        build(f);
+        f.host.run("BO", {"5,5", ""});
+        CHECK(f.entities().size() == 12 + 3);  // outer, island and the square inside it
+    }
+    {
+        Fixture f;
+        build(f);
+        f.host.run("BO", {"50,50", ""});
+        CHECK(f.entities().size() == 12 + 1);  // the innermost square only
+    }
+    {
+        Fixture f;
+        build(f);
+        f.host.run("BO", {"Islands", "Ignore", "5,5", ""});
+        CHECK(f.entities().size() == 12 + 1);
+        f.host.run("BO", {"Islands", "Normal", "5,5", ""});
+        CHECK(f.entities().size() == 12 + 1 + 3);
+    }
+    {
+        Fixture f;
+        build(f);
+        f.host.run("BO", {"Islands", "Outer", "5,5", ""});
+        CHECK(f.entities().size() == 12 + 2);
+    }
+}
+
+TEST_CASE("BOUNDARY finds the outline among many islands and refuses a gap") {
+    Fixture f;
+    addRect(f, {0, 0}, {200, 200});
+    for (int i = 0; i < 100; ++i)
+        f.addEntity(CircleData{{10.0 + (i % 10) * 18, 10.0 + (i / 10) * 18}, 5});
+    f.host.run("BO", {"1,1", ""});
+    CHECK(f.entities().size() == 104 + 101);
+    Fixture g;
+    g.addEntity(LineData{{0, 0}, {10, 0}});
+    g.addEntity(LineData{{10, 0}, {10, 10}});
+    g.addEntity(LineData{{10, 10}, {0, 10}});
+    g.addEntity(LineData{{0, 10}, {0, 1}});  // gap of 1 at the start
+    g.host.run("BO", {"5,5", ""});
+    CHECK(g.entities().size() == 4);
+}

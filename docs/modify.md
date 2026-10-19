@@ -104,7 +104,7 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
 | `MEASURE` | `ME` | Points every L mm, starting at the end nearest the pick. |
 | `ALIGN` | `AL` | One or two source/destination point pairs, optional scaling for the second pair. |
 | `MATCHPROP` | `MA` | Copies layer, level, colour, linetype, linetype scale, lineweight and transparency, plus text height/style, polyline width, hatch pattern/scale/angle/fill, dimension, leader and multileader style, and the annotative flag and scales, from one object to others. `Settings` at the destination prompt switches the groups Basic, Text, Dimension, Hatch, Polyline and Annotative on and off; the choice is remembered. |
-| `OVERKILL` | | Deletes duplicates (lines, circles, arcs, points, ellipses, polylines, also reversed) and merges overlapping or touching collinear lines and arcs of one circle. Settings: `overkill.tolerance`, `overkill.ignoreproperties`, `overkill.overlapping`, `overkill.endtoend`. |
+| `OVERKILL` | | Deletes duplicates (lines, circles, arcs, points, ellipses, polylines, splines, text, mtext and inserts; lines also reversed) and merges overlapping or touching collinear lines and arcs of one circle. With `overkill.optimize` set it also removes repeated vertices and vertices on a straight run from polylines of one width. Settings: `overkill.tolerance`, `overkill.ignoreproperties`, `overkill.overlapping`, `overkill.endtoend`, `overkill.optimize`. Lines are grouped by direction and offset, so tens of thousands of parallel lines are quick. |
 | `PEDIT` | `PE` | Turn a line or arc into a polyline, Close/Open, Join (with a Fuzz distance), Width, Fit (each segment becomes two tangent-continuous arcs through the vertices), Ltypegen (OFF restarts a dashed pattern at every vertex; ON runs it on, the default), Reverse, Spline (polyline to spline entity) and Decurve (spline to polyline). `Multiple` at the first prompt applies Close/Open/Join/Fuzz/Width/Spline/Decurve/Reverse to every selected object. |
 
 DIVIDE and MEASURE also take the option **Block**: they insert a named block at each division instead of a point, turned along the object when you answer Yes to "Align block with object?".
@@ -126,7 +126,7 @@ ALIGN, MATCHPROP, SETBYLAYER and SCALETEXT accept every entity kind on an editab
 
 | Command | Alias | What it does |
 | --- | --- | --- |
-| `SPLINEDIT` | `SPE` | Add, Delete or Move fit points (the spline is fitted again), Close, Open, Reverse. Needs a spline that has fit points. |
+| `SPLINEDIT` | `SPE` | Add, Delete or Move fit points (the spline is fitted again), Tolerance (fits the spline again through as few fit points as keep it within a distance of the old curve), Close, Open, Reverse. Needs a spline that has fit points. |
 | `JUSTIFYTEXT` | | Changes the justification of Text (Left, Center, Right, Middle, TL..BR) or the attachment of MText without moving it. Aligned and Fit text are skipped. |
 | `PEDIT` > Vertices | | Insert (splits a straight or arc segment), Remove (neighbours joined by a straight segment) and Move a vertex. Per-vertex widths are not preserved when inserting. |
 

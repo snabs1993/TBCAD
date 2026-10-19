@@ -632,6 +632,7 @@ public:
         oo.ignoreProperties = getFlag(ctx.host(), "overkill.ignoreproperties", false);
         oo.combineOverlapping = getFlag(ctx.host(), "overkill.overlapping", true);
         oo.combineEndToEnd = getFlag(ctx.host(), "overkill.endtoend", true);
+        oo.optimizePolylines = getFlag(ctx.host(), "overkill.optimize", false);
         std::vector<EntityId> ids;
         std::vector<const Entity*> entities;
         for (EntityId id : sel.ids) {
@@ -650,13 +651,16 @@ public:
             if (auto r = ctx.tx().add(std::move(e)); !r)
                 ctx.message(r.error().message);
         }
-        std::size_t merged = res.erased.size() - res.duplicates;
+        std::size_t merged = res.erased.size() - res.duplicates - res.optimized;
         if (res.erased.empty()) {
             ctx.message("No duplicate or overlapping objects found.");
         } else {
-            ctx.message(plural(res.duplicates, "duplicate", "duplicates") + " deleted, " +
-                        plural(merged, "object", "objects") + " merged into " +
-                        std::to_string(created.size()) + ".");
+            std::string msg = plural(res.duplicates, "duplicate", "duplicates") + " deleted, " +
+                              plural(merged, "object", "objects") + " merged into " +
+                              std::to_string(created.size() - res.optimized) + ".";
+            if (res.optimized)
+                msg += " " + plural(res.optimized, "polyline", "polylines") + " optimized.";
+            ctx.message(msg);
         }
     }
 };

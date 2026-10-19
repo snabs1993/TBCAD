@@ -191,15 +191,31 @@ public:
     }
 };
 
-// FLATTEN: the drawing is 2D, so every object already has no height; the command only says so.
+// FLATTEN: TBCAD drawings keep no Z coordinate (DWG/DXF import drops it), so the only height an
+// object can have is its 2D level; FLATTEN puts the selected objects on the default level.
 class FlattenCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "FLATTEN"; }
     std::string_view description() const override {
-        return "Remove the Z coordinate of objects (all objects here are already flat)";
+        return "Remove the height of objects: put them on the default level";
     }
     Task run(CommandContext& ctx) override {
-        ctx.message("TBCAD drawings are 2D: nothing to flatten.");
+        auto sel = co_await ctx.getSelection("Select objects to flatten");
+        if (!sel.ok())
+            co_return;
+        std::size_t n = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e || ctx.doc().ownerBlock(id) || e->common.level == kLevelDefault)
+                continue;
+            if (ctx.tx().modify(id, [](Entity& x) { x.common.level = kLevelDefault; }))
+                ++n;
+        }
+        if (n == 0)
+            ctx.message("TBCAD drawings are 2D: nothing to flatten.");
+        else
+            ctx.message(std::to_string(n) + (n == 1 ? " object" : " objects") +
+                        " moved to the default level.");
         co_return;
     }
 };
