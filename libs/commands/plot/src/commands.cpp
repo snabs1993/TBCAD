@@ -73,7 +73,8 @@ public:
     std::string_view description() const override { return description_; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
-        PlotSettings s = loadSettings(ctx.host());
+        PlotSettings s;
+        timePhase("load settings", [&] { s = loadSettings(ctx.host()); });
         Format format = format_;
         for (;;) {
             KeywordOptions menu;
@@ -82,8 +83,10 @@ public:
                              "Style",   "Format",      "Resolution",  "Layout",       "Stamp",
                              "LWScale", "Screening",   "Export"};
             menu.defaultKeyword = "Export";
-            auto choice =
-                co_await ctx.getKeyword("Plot " + summary(ctx.doc(), ctx.host(), s, format), menu);
+            std::string prompt;
+            timePhase("menu summary",
+                      [&] { prompt = "Plot " + summary(ctx.doc(), ctx.host(), s, format); });
+            auto choice = co_await ctx.getKeyword(prompt, menu);
             if (choice.status == Status::Cancel)
                 co_return;
             const std::string& kw = choice.keyword;
@@ -91,7 +94,10 @@ public:
             if (kw == "Export") {
                 // Never a question here: scripts and headless plots must run through. The
                 // drawing keeps its object colours, as AutoCAD does without the table.
-                if (!s.styleTable && styleTableMissing(ctx.host()))
+                bool missing = false;
+                timePhase("style check",
+                          [&] { missing = !s.styleTable && styleTableMissing(ctx.host()); });
+                if (missing)
                     ctx.message("Plot style table \"" + plotStyleName(ctx.host()) +
                                 "\" was not found: plotting with object colours (Style picks "
                                 "another table, e.g. monochrome.ctb).");
@@ -118,13 +124,17 @@ public:
                     if (!over.ok() || over.keyword != "Yes")
                         continue;  // back to the plot options to pick another name
                 }
-                auto r = exportFile(ctx.doc(), ctx.host(), s, format, file.text);
+                Result<std::string> r = std::string();
+                timePhase("export file",
+                          [&] { r = exportFile(ctx.doc(), ctx.host(), s, format, file.text); });
                 if (!r) {
                     ctx.message(r.error().message);
                     continue;  // let the user fix the settings and try again
                 }
-                saveSettings(ctx.host(), s);
-                setLastFile(ctx.host(), format, withExtension(file.text, format));
+                timePhase("save settings", [&] {
+                    saveSettings(ctx.host(), s);
+                    setLastFile(ctx.host(), format, withExtension(file.text, format));
+                });
                 ctx.message(r.value());
                 co_return;
             }
@@ -282,8 +292,12 @@ public:
                 so.defaultValue = plotLayout(ctx.host());
                 auto r = co_await ctx.getString("Layout to plot (empty = model space)", so);
                 if (r.ok()) {
-                    setPlotLayout(ctx.host(), r.text);
-                    if (const auto m = applyAssignedPageSetup(ctx.doc(), ctx.host()); !m.empty()) {
+                    std::string m;
+                    timePhase("layout page setup", [&] {
+                        setPlotLayout(ctx.host(), r.text);
+                        m = applyAssignedPageSetup(ctx.doc(), ctx.host());
+                    });
+                    if (!m.empty()) {
                         s = loadSettings(ctx.host());
                         ctx.message(m);
                     }
