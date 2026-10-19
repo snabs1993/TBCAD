@@ -39,6 +39,8 @@ public:
     void reindex(EntityId id);
 
 private:
+    void rebuildKeeping(const ChangeSet* changes);
+
     Document& doc_;
     SpatialIndex& index_;
     BoundsFn bounds_;

@@ -1,5 +1,6 @@
 #include "tbcad/index/document_indexer.h"
 
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -24,13 +25,27 @@ DocumentIndexer::~DocumentIndexer() {
 }
 
 void DocumentIndexer::rebuild() {
+    rebuildKeeping(nullptr);
+}
+
+// Loads every entity again. With `changes`, entities it does not name keep the box they have in
+// the index: laying out every text again just to rebuild after a big edit is most of the cost.
+void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     std::shared_ptr<void> run = batch_ ? batch_() : nullptr;
+    std::unordered_set<EntityId> touched;
+    if (changes)
+        for (const EntityChange& c : changes->entities)
+            touched.insert(changes->idOf(c));
     std::vector<IdBox> items;
     items.reserve(doc_.modelSpaceCount());
     doc_.forEachEntity([&](const Entity& e) {
         if (doc_.ownerBlock(e.common.id))
             return;
-        BBox2 b = bounds_(e);
+        BBox2 b;
+        if (changes && !touched.count(e.common.id) && index_.contains(e.common.id))
+            b = index_.boxOf(e.common.id);
+        else
+            b = bounds_(e);
         if (usable(b))
             items.emplace_back(e.common.id, b);
     });
@@ -54,7 +69,7 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
     std::size_t n = changes.entities.size();
     // A large edit (an import, a paste of thousands) is cheaper as one bulk load.
     if (n > 1000 && n * 2 > index_.size()) {
-        rebuild();
+        rebuildKeeping(&changes);
         return;
     }
     // Taking out many entries one by one condenses the tree again and again (several times the
@@ -65,7 +80,7 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
             if (!changes.after(c))
                 ++gone;
         if (gone * 4 > index_.size()) {
-            rebuild();
+            rebuildKeeping(&changes);
             return;
         }
     }
