@@ -235,7 +235,7 @@ public:
     explicit HatchCommand(bool gradient = false) : gradient_(gradient) {}
     std::string_view name() const override { return gradient_ ? "GRADIENT" : "HATCH"; }
     std::vector<std::string> defaultAliases() const override {
-        return gradient_ ? std::vector<std::string>{"GR"} : std::vector<std::string>{"H", "BHATCH"};
+        return gradient_ ? std::vector<std::string>{"GR"} : std::vector<std::string>{"H", "BHATCH", "-HATCH"};
     }
     std::string_view description() const override {
         return gradient_ ? "Fill an enclosed area with a colour gradient"

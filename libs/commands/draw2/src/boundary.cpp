@@ -146,7 +146,7 @@ hatch::IslandStyle islandStyleOf(double v) {
 class BoundaryCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BOUNDARY"; }
-    std::vector<std::string> defaultAliases() const override { return {"BO", "BPOLY"}; }
+    std::vector<std::string> defaultAliases() const override { return {"BO", "BPOLY", "-BOUNDARY"}; }
     std::string_view description() const override {
         return "Create a closed polyline from the region around a point";
     }
