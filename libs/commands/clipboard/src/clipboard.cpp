@@ -137,6 +137,7 @@ public:
         return e;
     }
     const std::string& error() const { return error_; }
+    std::vector<std::pair<LayerId, std::string>> newLayerStyles_{};
 
     BlockId newBlock(const std::string& name, Vec2 base) {
         BlockDef def;
@@ -175,10 +176,14 @@ private:
             row.parent = parent;
             row.linetype = linetype(row.linetype);
             auto r = tx_.addLayer(std::move(row));
-            if (r)
+            if (r) {
                 result = r.value();
-            else
+                // A layer made here brings the plot style name it had.
+                if (auto st = clip_.layerPlotStyles.find(id); st != clip_.layerPlotStyles.end())
+                    newLayerStyles_.emplace_back(result, st->second);
+            } else {
                 fail(r.error().message);
+            }
         }
         return layers_[id] = result;
     }
@@ -328,7 +333,13 @@ Clip capture(const Document& doc, std::span<const EntityId> ids, std::optional<V
             continue;
         clip.bounds.merge(geom::bounds(*e, doc));
         clip.entities.push_back(*e);
+        clip.plotStyles.push_back(entityPlotStyle(doc.header(), id));
         collector.collect(clip.entities.back());
+    }
+    for (const auto& [id, row] : clip.layers) {
+        (void)row;
+        if (std::string st = layerPlotStyle(doc.header(), id); !st.empty())
+            clip.layerPlotStyles[id] = std::move(st);
     }
     clip.base = base ? *base : (clip.bounds.empty() ? Vec2{} : clip.bounds.min);
     return clip;
@@ -339,6 +350,10 @@ Result<std::vector<EntityId>> paste(Transaction& tx, const Clip& clip, const Pas
         return Error{ErrorCode::InvalidArgument, "The clipboard is empty."};
     Importer in(tx, clip);
     std::vector<EntityId> created;
+    std::vector<std::pair<EntityId, std::string>> entityStyles;  // new entity, own style name
+    auto styleOf = [&](std::size_t i) {
+        return i < clip.plotStyles.size() ? clip.plotStyles[i] : std::string();
+    };
     if (opts.asBlock) {
         std::string name;
         for (int n = 1;; ++n) {
@@ -349,24 +364,33 @@ Result<std::vector<EntityId>> paste(Transaction& tx, const Clip& clip, const Pas
         BlockId block = in.newBlock(name, clip.base);
         if (!block)
             return Error{ErrorCode::InvalidArgument, in.error()};
-        for (const Entity& src : clip.entities) {
-            Entity e = in.import(src);
-            if (auto r = tx.add(std::move(e), block); !r)
+        for (std::size_t i = 0; i < clip.entities.size(); ++i) {
+            Entity e = in.import(clip.entities[i]);
+            if (opts.layer)
+                e.common.layer = opts.layer;
+            auto r = tx.add(std::move(e), block);
+            if (!r)
                 return r.error();
+            if (std::string st = styleOf(i); !st.empty())
+                entityStyles.emplace_back(r.value(), std::move(st));
         }
         Entity ins;
         InsertData d;
         d.block = block;
         d.position = opts.target;
         ins.data = std::move(d);
+        if (opts.layer)
+            ins.common.layer = opts.layer;
         auto r = tx.add(std::move(ins));
         if (!r)
             return r.error();
         created.push_back(r.value());
     } else {
         Transform2 move = Transform2::translate(opts.target - clip.base);
-        for (const Entity& src : clip.entities) {
-            Entity e = in.import(src);
+        for (std::size_t i = 0; i < clip.entities.size(); ++i) {
+            Entity e = in.import(clip.entities[i]);
+            if (opts.layer)
+                e.common.layer = opts.layer;
             auto moved = geom::transformed(e, move);
             if (!moved)
                 continue;
@@ -374,10 +398,20 @@ Result<std::vector<EntityId>> paste(Transaction& tx, const Clip& clip, const Pas
             if (!r)
                 return r.error();
             created.push_back(r.value());
+            if (std::string st = styleOf(i); !st.empty())
+                entityStyles.emplace_back(r.value(), std::move(st));
         }
     }
     if (!in.error().empty())
         return Error{ErrorCode::InvalidArgument, in.error()};
+    if (!entityStyles.empty() || !in.newLayerStyles_.empty()) {
+        (void)tx.modifyHeader([&](Header& h) {
+            for (const auto& [layer, st] : in.newLayerStyles_)
+                setLayerPlotStyle(h, layer, st);
+            for (const auto& [id, st] : entityStyles)
+                setEntityPlotStyle(h, id, st);
+        });
+    }
     return created;
 }
 

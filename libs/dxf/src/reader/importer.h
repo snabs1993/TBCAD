@@ -117,6 +117,7 @@ private:
     void keepHandles();
     void applyPlotStyles();
     void readPlotSettings(const Record& r);
+    PlotSetupRecord plotSetupOf(const Record& r, const std::string& name);
     BlockId blockFor(std::string_view dxfName);
     void finish();
     void finishLayouts();

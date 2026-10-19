@@ -50,7 +50,7 @@ bool near(Vec2 a, Vec2 b, double tol = 1e-6) {
 TEST_CASE("clipboard commands are registered") {
     Fixture f;
     for (const char* n :
-         {"COPYCLIP", "COPYBASE", "CUTCLIP", "PASTECLIP", "PASTEBLOCK", "PASTEORIG"})
+         {"COPYCLIP", "COPYBASE", "CUTCLIP", "PASTECLIP", "PASTEBLOCK", "PASTEORIG", "PASTESPEC"})
         CHECK(f.reg.find(n) != nullptr);
 }
 
@@ -207,4 +207,95 @@ TEST_CASE("WBLOCK writes the selection to a drawing file at the base point") {
     });
     CHECK(n == 1);
     std::filesystem::remove(path);
+}
+
+TEST_CASE("plot style names of objects and new layers go with a copy") {
+    Fixture src;
+    Layer lay;
+    lay.name = "WALLS";
+    LayerId walls;
+    {
+        Transaction tx = src.doc.begin("layer");
+        walls = tx.addLayer(lay).value();
+        tx.commit();
+    }
+    EntityId a = src.add(LineData{{0, 0}, {10, 0}}, walls);
+    EntityId b = src.add(LineData{{0, 5}, {10, 5}}, walls);
+    {
+        Transaction tx = src.doc.begin("styles");
+        (void)tx.modifyHeader([&](Header& h) {
+            setLayerPlotStyle(h, walls, "Heavy");
+            setEntityPlotStyle(h, b, "Thin Red");
+        });
+        tx.commit();
+    }
+    src.host.run("COPYCLIP", {ScriptItem::select({a, b}), ScriptItem::enter()});
+
+    Fixture dst;
+    dst.host.run("PASTECLIP", {"0,0"});
+    const Layer* layer = dst.doc.layerByName("WALLS");
+    REQUIRE(layer);
+    CHECK(layerPlotStyle(dst.doc.header(), layer->id) == "Heavy");
+    std::vector<std::string> names;
+    for (EntityId id : dst.doc.modelSpace())
+        names.push_back(resolvedPlotStyle(dst.doc.header(), id, dst.get(id).common.layer));
+    std::sort(names.begin(), names.end());
+    REQUIRE(names.size() == 2);
+    CHECK(names[0] == "Heavy");
+    CHECK(names[1] == "Thin Red");
+}
+
+TEST_CASE("PASTESPEC pastes as a block, at the original place or on the current layer") {
+    Fixture f;
+    Layer lay;
+    lay.name = "OTHER";
+    LayerId other;
+    {
+        Transaction tx = f.doc.begin("layer");
+        other = tx.addLayer(lay).value();
+        tx.commit();
+    }
+    EntityId a = f.add(LineData{{10, 10}, {20, 10}}, other);
+    f.host.run("COPYBASE", {ScriptItem::select({a}), ScriptItem::enter(), "10,10"});
+    {
+        Transaction tx = f.doc.begin("current");
+        (void)tx.modifyHeader([](Header& h) { h.currentLayer = kLayerZero; });
+        tx.commit();
+    }
+    CHECK(f.host.run("PASTESPEC", {"Block", "50,50"}).finished);
+    CHECK(f.count(EntityKind::Insert) == 1);
+    CHECK(f.host.run("PASTESPEC", {"Original"}).finished);
+    std::size_t inPlace = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e);
+            l && near(l->a, {10, 10}) && !f.doc.ownerBlock(e.common.id))
+            ++inPlace;
+    });
+    CHECK(inPlace == 2);
+    CHECK(f.host.run("PASTESPEC", {"CurrentLayer", "0,0"}).finished);
+    bool onZero = false;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e); l && near(l->a, {0, 0}))
+            onZero = e.common.layer == kLayerZero;
+    });
+    CHECK(onZero);
+}
+
+TEST_CASE("a drawing kept in inches pastes into a millimetre drawing at the same real size") {
+    Fixture src;
+    {
+        Transaction tx = src.doc.begin("units");
+        (void)tx.modifyHeader([](Header& h) { h.units = LengthUnit::Inch; });
+        tx.commit();
+    }
+    EntityId a = src.add(LineData{{0, 0}, {25.4, 0}});  // one inch, stored in millimetres
+    src.host.run("COPYCLIP", {ScriptItem::select({a}), ScriptItem::enter()});
+    Fixture dst;
+    dst.host.run("PASTECLIP", {"0,0"});
+    double length = 0;
+    dst.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e))
+            length = distance(l->a, l->b);
+    });
+    CHECK(length == doctest::Approx(25.4));
 }

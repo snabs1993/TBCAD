@@ -788,6 +788,18 @@ public:
                 }
                 for (const auto& rec : other.value().summary.plotSetups)
                     found.push_back(pageSetupOf(rec));
+                // The settings a layout carries become setups named after it, unless a named
+                // setup already has that name.
+                for (auto rec : other.value().summary.layoutSetups) {
+                    if (rec.paperWidthMm <= 0 || rec.paperHeightMm <= 0)
+                        continue;
+                    const std::string layoutName = rec.name;
+                    if (std::any_of(found.begin(), found.end(), [&](const layout::PageSetup& p) {
+                            return lower(p.name) == lower(layoutName);
+                        }))
+                        continue;
+                    found.push_back(pageSetupOf(rec));
+                }
             } else {
                 io::IoReport report;
                 auto other = io::readTbcad(std::filesystem::path(f.text), report);
