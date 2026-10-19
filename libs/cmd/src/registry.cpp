@@ -238,11 +238,12 @@ Result<void> Registry::add(std::unique_ptr<Command> command) {
     if (commands_.count(name))
         return makeError(ErrorCode::Conflict, "command \"" + name + "\" is already registered");
     commands_.emplace(std::move(name), std::move(command));
-    rebuild();
+    stale_ = true;
     return {};
 }
 
 Command* Registry::find(std::string_view nameOrAlias) const {
+    refresh();
     std::string key = toUpperAscii(trim(nameOrAlias));
     if (auto it = commands_.find(key); it != commands_.end())
         return it->second.get();
@@ -262,6 +263,7 @@ std::vector<Command*> Registry::list() const {
 }
 
 std::vector<std::string> Registry::aliasesOf(std::string_view commandName) const {
+    refresh();
     std::string key = toUpperAscii(commandName);
     std::vector<std::string> out;
     for (const auto& [alias, target] : aliases_) {
@@ -327,7 +329,8 @@ std::vector<AliasEntry> Registry::aliasTable() const {
     return out;
 }
 
-AliasReport Registry::rebuild() {
+AliasReport Registry::rebuild() const {
+    stale_ = false;
     aliases_.clear();
     conflicts_.clear();
     AliasReport report;

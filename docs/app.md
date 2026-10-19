@@ -133,16 +133,21 @@ and `@expect`: `objects N`, `selected N`, `KIND N` (line, circle, hatch, ...), `
 `on-layer KIND LAYER N` and `color KIND ACI N` (KIND `any` counts all), `text N SUBSTRING` (TEXT
 and MTEXT holding it), `layout NAME` (`Model` in model space), `viewport LAYOUT ID scale N` and
 `viewport LAYOUT ID center X Y`, `file NAME` (exists and is not empty), `contains NAME TEXT` (the
-file holds the text) and `prompt TEXT` (the current prompt contains it). The command line's history
+file holds the text), `prompt TEXT` (the current prompt contains it), `setting KEY VALUE`,
+`current-layer NAME`, `units mm`, `status LABEL on|off` (a status bar toggle such as OSNAP), `item
+LABEL` (a widget with that label was drawn), `log TEXT` (a command history line holds it),
+`warnings N` (startup warnings about the settings files) and `startup-ms N` (the first frame came
+within N milliseconds). The command line's history
 is printed with a `| ` prefix. A failed check prints `FAILED line N` and the exit status is 1.
 Lines like `@10,5` or `@20<45` are relative points, not capture lines. `{out}` in a line is
 replaced by the output folder (`--capture-out`, default the script's folder) and `{dir}` by the
 script's folder. The scenarios in `apps/tbcad/tests/scenarios` run as ctest `tbcad_scenario_*`
-(skipped without a display); each gets fresh settings through `TBCAD_CONFIG_DIR`. Their test
+(skipped without a display); each starts from an empty settings folder (`TBCAD_CONFIG_DIR`), or
+from a copy of `NAME.config` next to the script when there is one. Their test
 plot style table `data/ep-test.ctb` is made by `tools/make_test_ctb.py`.
 
 Scripts can also run on real drawings. `{env:NAME}` (or `{env:NAME|fallback}`) is replaced by an
-environment variable and `{stem:NAME}` by the file name, without extension, of the path in it;
+environment variable and `{stem:NAME}` by the file name, without extension and with spaces as `_`, of the path in it;
 `@require-env NAME` skips the script (exit 77) when the variable is not set. `@step NAME` starts a
 timed step: when the next one starts (or the script ends) the program waits for the drawing to
 settle and prints `step NAME: S s (N frames)`; a command still running at a step boundary is ended
@@ -166,6 +171,15 @@ tbcad --capture-script apps\tbcad\tests\scenarios\10_real_file.txt --capture-out
 `--self-test` opens a hidden window, runs the script, draws the frames and checks that something
 was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenGL 3.3, unless
 `TBCAD_REQUIRE_GUI` is set. `--gate` runs the M1 measurements (see the pull request for the limits).
+
+Startup prints one line to stderr when the first frame is drawn: `Startup: first frame after N ms`
+with the time of each phase (commands, settings and drawing, plugins, panels, window, interface and
+fonts, open file, first frame). Capture runs print it to stdout as well, and with
+`TBCAD_STARTUP_TRACE=1` it also goes to the command history. A settings file that cannot be read
+never stops the program: it starts with the defaults, says so on the command line, and keeps the
+damaged `settings.json` as `settings.json.bad`. Values of the wrong type, or numbers outside what the
+Settings dialog offers (interface scale, pick box, tool wheel delay, autosave minutes), are put back
+to the default or the nearest allowed value.
 
 ## Automated GUI tests
 

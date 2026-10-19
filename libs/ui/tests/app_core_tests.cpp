@@ -745,6 +745,34 @@ TEST_CASE("broken settings files are reported, defaults stay") {
     CHECK(core.startupWarnings().size() == 2);
     CHECK(core.settings().getString("ui.theme") == "dark");
     CHECK(core.keybindings().label("edit.undo") == "Ctrl+Z");
+    // The damaged file is kept aside, so saving the defaults does not lose what the user had.
+    CHECK(fs::exists(dir / "cfg" / "settings.json.bad"));
+    CHECK(core.startupWarnings()[0].find("settings.json.bad") != std::string::npos);
+    core.shutdown();
+    std::ifstream bad(dir / "cfg" / "settings.json.bad");
+    CHECK(std::string(std::istreambuf_iterator<char>(bad), {}) == "{ nope");
+}
+
+TEST_CASE("a fresh profile starts in millimetres on layer 0 with object snap on") {
+    fs::path dir = tempDir("freshprofile");
+    auto registry = makeRegistry();
+    AppCore core(*registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    CHECK(core.startupWarnings().empty());
+    CHECK(core.document().header().units == LengthUnit::Millimeter);
+    CHECK(core.document().header().currentLayer == kLayerZero);
+    CHECK(core.settings().getBool("drafting.osnap"));
+    CHECK(core.promptText() == "Command: ");
+}
+
+TEST_CASE("settings values a hand edit broke are repaired at startup") {
+    fs::path dir = tempDir("oddsettings");
+    fs::create_directories(dir / "cfg");
+    { std::ofstream(dir / "cfg" / "settings.json") << R"({"ui.scale": -3, "drafting.osnap": 1})"; }
+    auto registry = makeRegistry();
+    AppCore core(*registry, platform::AppPaths{dir / "cfg", dir / "data"});
+    CHECK(core.startupWarnings().size() == 2);
+    CHECK(core.settings().getNumber("ui.scale") == 0.75);
+    CHECK(core.settings().getBool("drafting.osnap"));
 }
 
 TEST_CASE("command completion lists names and aliases") {

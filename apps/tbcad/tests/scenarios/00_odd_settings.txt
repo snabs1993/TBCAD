@@ -1,0 +1,20 @@
+# Settings a hand edit made unusable: an interface scale of 0, a pick box of "big", object snap
+# "yes", negative autosave minutes, a deleted workspace and template, recent files that are not a
+# list. Each is put back and reported; the program starts as usual.
+@expect warnings 5
+@expect setting ui.scale 0.75
+@expect setting pick.aperturePx 6
+@expect setting drafting.osnap true
+@expect setting autosave.minutes 1
+@expect log Using the built-in drawing
+@expect units mm
+@expect current-layer 0
+@expect status OSNAP on
+@expect item ##command
+@expect item OSNAP
+LINE
+0,0
+100,0
+
+@expect line 1
+@shot 00_odd_settings.png

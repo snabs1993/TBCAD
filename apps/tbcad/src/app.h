@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -83,6 +84,13 @@ private:
     bool recordItems_ = false;     // capture mode: widgets are recorded for @clickitem
     std::size_t historySeen_ = 0;  // capture mode: command-line lines already logged
     std::size_t framesDrawn_ = 0;
+    // Startup timing: the time from the start of the program to the end of each phase, up to the
+    // first frame. Printed (and added to the command log with TBCAD_STARTUP_TRACE=1) once drawn.
+    void startupMark(const char* phase);
+    void reportStartup();
+    std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
+    std::vector<std::pair<std::string, double>> startupPhases_;
+    bool startupReported_ = false;
     bool hidden() const { return options_.selfTest || !options_.captureScript.empty(); }
 
     Options options_;

@@ -1,0 +1,22 @@
+# The first start on a new computer: no settings at all. The program comes up in millimetres on
+# layer 0 with object snap on, shows the menus, toolbar, command line and status bar, and draws at once.
+@expect warnings 0
+@expect startup-ms 60000
+@expect units mm
+@expect current-layer 0
+@expect setting drafting.osnap true
+@expect status OSNAP on
+@expect status ORTHO off
+@expect status GRID off
+@expect prompt Command:
+@expect item File
+@expect item ##toolstrip
+@expect item ##command
+@expect item OSNAP
+LINE
+0,0
+100,0
+
+@expect line 1
+@expect on-layer line 0 1
+@shot 00_fresh_profile.png

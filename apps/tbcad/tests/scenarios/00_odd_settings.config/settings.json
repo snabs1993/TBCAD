@@ -1,0 +1,11 @@
+{
+  "ui.scale": 0,
+  "ui.theme": "purple",
+  "pick.aperturePx": "big",
+  "drafting.osnap": "yes",
+  "autosave.minutes": -5,
+  "workspace.current": "A workspace that was deleted",
+  "template.default": "A template that was deleted",
+  "files.recent": "not a list",
+  "plot.layout": "A layout that does not exist"
+}
