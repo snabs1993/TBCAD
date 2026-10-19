@@ -219,6 +219,22 @@ TEST_CASE("hatch boundary edited with FILLET, JOIN or OFFSET stays sane and undo
         CHECK(after.box.max.x <= 100 + 1e-6);
         CHECK(after.box.max.y <= 60 + 1e-6);
         (void)base;
+        if (w == "FILLET" || w == "JOIN") {
+            // The new arc or polyline replaces the edges exactly, so the hatch stays tied to the
+            // boundary; with a rounded corner it no longer fills the sharp corner.
+            CHECK(after.sources > 0);
+            if (w == "FILLET") {
+                const Entity* he = r.doc.find(r.theHatch());
+                const auto& hd = *entityAs<HatchData>(*he);
+                CHECK(hatch::hatchBounds(hd).max.x == doctest::Approx(100));
+                bool hasArc = false;
+                for (const HatchEdge& e : hd.loops.front().edges)
+                    hasArc = hasArc || std::holds_alternative<HatchArcEdge>(e);
+                CHECK(hasArc);
+            }
+        }
+        if (w == "BREAK")
+            CHECK(after.sources == 0);  // an open outline cannot hold the association
         if (canonicalDump(r.doc) != before) {
             CHECK(r.host.undo());
             CHECK(canonicalDump(r.doc) == before);
