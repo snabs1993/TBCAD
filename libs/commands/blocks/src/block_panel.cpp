@@ -100,10 +100,10 @@ void drawDrawingTab(ui::PanelContext& ctx) {
         st = DrawingTab{};
         st.doc = ctx.doc;
     }
-    ImGui::SetNextItemWidth(-FLT_MIN - 70);
+    ImGui::SetNextItemWidth(-FLT_MIN - 100);
     ImGui::InputTextWithHint("##blockfilter", "Filter blocks", &filter);
     ImGui::SameLine();
-    if (ImGui::Button("Count") && ctx.runCommand)
+    if (ImGui::Button("Count uses") && ctx.runCommand)
         ctx.runCommand("BLOCKCOUNT");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Count the inserts of each block (BLOCKCOUNT)");
@@ -295,6 +295,21 @@ struct AttDefForm {
     bool loaded = false;
 };
 
+// Label on the left, box filling the rest of the row (matches the Properties panel).
+std::string leftLabel(const char* label) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(110);
+    ImGui::SetNextItemWidth(-1);
+    return std::string("##") + label;
+}
+
+// True when Enter was pressed in the field just drawn (the form's default action).
+bool enterPressed() {
+    return ImGui::IsItemDeactivated() &&
+           (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter));
+}
+
 void drawAttDefPanel(ui::PanelContext& ctx) {
     static AttDefForm f;
     if (!ctx.host)
@@ -305,10 +320,17 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
                 f.height = v;
         f.loaded = true;
     }
+    bool ok = false;
     ImGui::TextUnformatted("Attribute");
-    ImGui::InputText("Tag", &f.tag, ImGuiInputTextFlags_AutoSelectAll);
-    ImGui::InputText("Prompt", &f.prompt, ImGuiInputTextFlags_AutoSelectAll);
-    ImGui::InputText("Default value", &f.defaultValue, ImGuiInputTextFlags_AutoSelectAll);
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
+    ImGui::InputText(leftLabel("Tag").c_str(), &f.tag, ImGuiInputTextFlags_AutoSelectAll);
+    ok = enterPressed() || ok;
+    ImGui::InputText(leftLabel("Prompt").c_str(), &f.prompt, ImGuiInputTextFlags_AutoSelectAll);
+    ok = enterPressed() || ok;
+    ImGui::InputText(leftLabel("Default value").c_str(), &f.defaultValue,
+                     ImGuiInputTextFlags_AutoSelectAll);
+    ok = enterPressed() || ok;
     ImGui::Separator();
     ImGui::TextUnformatted("Mode");
     ImGui::Checkbox("Invisible", &f.invisible);
@@ -319,11 +341,15 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
     ImGui::SameLine();
     ImGui::Checkbox("Preset", &f.preset);
     ImGui::Separator();
-    ImGui::InputDouble("Text height", &f.height, 0, 0, "%.6g");
-    ImGui::InputDouble("Rotation (deg)", &f.rotation, 0, 0, "%.6g");
+    ImGui::InputDouble(leftLabel("Text height").c_str(), &f.height, 0, 0, "%.6g");
+    ok = enterPressed() || ok;
+    ImGui::InputDouble(leftLabel("Rotation (deg)").c_str(), &f.rotation, 0, 0, "%.6g");
+    ok = enterPressed() || ok;
     if (!f.error.empty())
         ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", f.error.c_str());
-    if (ImGui::Button("OK, pick the start point")) {
+    if (ImGui::Button("OK, pick the start point"))
+        ok = true;
+    if (ok) {
         const std::string tag = blocks::normalizeTag(f.tag);
         if (auto ok = blocks::validateTag(tag); !ok.ok()) {
             f.error = ok.error().message;
@@ -350,7 +376,8 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
         }
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel"))
+    if (ImGui::Button("Cancel") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                                    ImGui::IsKeyPressed(ImGuiKey_Escape)))
         ctx.host->closePanel("attdef");
 }
 
@@ -382,14 +409,19 @@ void drawAttValuesPanel(ui::PanelContext& ctx) {
             at = end + 1;
         }
     }
+    bool okKey = false;
     ImGui::Text("Attributes of %s", ctx.host->setting("tmp.insatt.block").value_or("").c_str());
     ImGui::Separator();
     for (std::size_t i = 0; i < rows.size(); ++i) {
         ImGui::PushID(static_cast<int>(i));
-        ImGui::InputText(rows[i][1].c_str(), &rows[i][2], ImGuiInputTextFlags_AutoSelectAll);
+        if (i == 0 && ImGui::IsWindowAppearing())
+            ImGui::SetKeyboardFocusHere();
+        ImGui::InputText(leftLabel(rows[i][1].c_str()).c_str(), &rows[i][2],
+                         ImGuiInputTextFlags_AutoSelectAll);
+        okKey = enterPressed() || okKey;
         ImGui::PopID();
     }
-    if (ImGui::Button("OK")) {
+    if (ImGui::Button("OK") || okKey) {
         std::string result;
         for (const auto& r : rows)
             result += r[0] + "\x1f" + r[2] + "\x1e";
@@ -399,7 +431,8 @@ void drawAttValuesPanel(ui::PanelContext& ctx) {
             ctx.runCommand("");
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel")) {
+    if (ImGui::Button("Cancel") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                                    ImGui::IsKeyPressed(ImGuiKey_Escape))) {
         shownFor.clear();
         if (ctx.cancelCommand)
             ctx.cancelCommand();

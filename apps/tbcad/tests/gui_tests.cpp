@@ -1622,3 +1622,27 @@ TEST_CASE("layer translator: rename, merge, one undo step") {
     CHECK(layer(h, "A-Notes") != nullptr);
     CHECK(layer(h, "B-Doors") == nullptr);
 }
+
+TEST_CASE("define attribute panel: focus on open, Enter accepts, Esc cancels") {
+    {
+        Harness h(1920, 1080);
+        h.core().openPanel("attdef");
+        h.frame(4);
+        REQUIRE(h.windowOpen("Define Attribute"));
+        h.type("PART");  // goes to the Tag box: it has focus without a click
+        h.frame(2);
+        h.key(ImGuiKey_Enter);
+        h.frame(4);
+        CHECK(h.core().setting("tmp.attdef.tag").value_or("") == "PART");
+        CHECK_FALSE(h.windowOpen("Define Attribute"));
+    }
+    {
+        Harness h(1920, 1080);
+        h.core().openPanel("attdef");
+        h.frame(4);
+        REQUIRE(h.windowOpen("Define Attribute"));
+        h.key(ImGuiKey_Escape);
+        h.frame(4);
+        CHECK_FALSE(h.windowOpen("Define Attribute"));
+    }
+}
