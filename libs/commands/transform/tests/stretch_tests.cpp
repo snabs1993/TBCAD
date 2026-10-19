@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include <chrono>
+#include <ctime>
 
 #include "common.h"
 
@@ -161,12 +161,11 @@ TEST_CASE("performance: STRETCH of 100k lines in a crossing window is one undo s
     f.host.run("STRETCH", {"-1,-1", "249.7,201", "0,0"});
     f.host.runner().pointerMoved(cmd::RawInput{{1, 1}, {1, 1}, 1});
     REQUIRE_FALSE(f.host.preview().items.empty());
-    auto t0 = std::chrono::steady_clock::now();
+    // Processor time, so other tests running beside this one do not count against it.
+    const std::clock_t t0 = std::clock();
     for (int i = 2; i < 42; ++i)
         f.host.runner().pointerMoved(cmd::RawInput{{double(i), 1}, {double(i), 1}, 1});
-    const double previewMs =
-        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() /
-        40;
+    const double previewMs = 1000.0 * double(std::clock() - t0) / CLOCKS_PER_SEC / 40;
     f.host.feed({"10,10"});
     MESSAGE("preview per move: " << previewMs << " ms");
     CHECK(previewMs < 15);
