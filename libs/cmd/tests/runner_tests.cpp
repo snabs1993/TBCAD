@@ -598,6 +598,27 @@ TEST_CASE("point filters: priority order, preview gets the filtered point") {
     CHECK(near(lines(f.doc)[0].b, {40, 40}));
 }
 
+TEST_CASE("a point prompt without snaps takes the click where it is") {
+    struct RawPoint final : Command {
+        std::string_view name() const override { return "RAWPT"; }
+        Task run(CommandContext& ctx) override {
+            PointOptions o;
+            o.snap = false;
+            auto r = co_await ctx.getPoint("Pick inside", o);
+            if (r.ok())
+                (void)ctx.tx().add(lineEntity({0, 0}, r.point));
+        }
+    };
+    Fixture f;
+    (void)f.reg.add(std::make_unique<RawPoint>());
+    ScriptHost host(f.doc, f.reg);
+    GridSnap grid;
+    host.filters().add(&grid, 20);
+    host.run("RAWPT", {ScriptItem::click({23, 18})});
+    REQUIRE(lines(f.doc).size() == 1);
+    CHECK(near(lines(f.doc)[0].b, {23, 18}));
+}
+
 TEST_CASE("a CommandLineParser hook extends typed points") {
     Fixture f;
     ScriptHost host(f.doc, f.reg);

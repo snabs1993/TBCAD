@@ -540,6 +540,14 @@ void Importer::projectHatch(HatchData& h, const Tilt& t, double elev) {
         loop.edges = std::move(edges);
     }
     h.patternOrigin = m(h.patternOrigin);
+    // A named pattern cannot shear: it keeps the direction of its base angle seen from above, and
+    // its scale shrinks by the square root of the area factor |nz|.
+    if (!h.solid) {
+        const Vec2 dir = t.map(Vec2{std::cos(h.patternAngle), std::sin(h.patternAngle)}, 0);
+        if (length(dir) > 1e-9)
+            h.patternAngle = normalizeAngle(std::atan2(dir.y, dir.x));
+        h.patternScale *= std::sqrt(std::abs(t.n[2]));
+    }
 }
 
 // A text built in object coordinates, projected. The projection of the text's plane is an affine
@@ -601,6 +609,58 @@ bool Importer::projectMText(MTextData& d, const Record& r, const Tilt& t) const 
     d.height *= b;
     d.width *= dl;
     return true;
+}
+
+// An insert whose block is turned by an angle other than a multiple of 90 degrees in a tilted
+// plane: seen from above, its linear map A = M R(rot) S(sx, sy) has a shear. Split by singular
+// values, A = R(phi) S(a, b) R(psi): the block turned by psi becomes a small block of its own (one
+// nested insert, which also takes the attribute values and clipping), inserted with rotation phi
+// and scale (a, b).
+void Importer::shearInsert(InsertData& in, const Tilt& t, double elev) {
+    const double c = std::cos(in.rotation), s = std::sin(in.rotation);
+    // Columns of R(rot) S: (c sx, s sx) and (-s sy, c sy); then the plane map.
+    const Vec2 col0 = t.map(Vec2{c, s} * in.scale.x, 0);
+    const Vec2 col1 = t.map(Vec2{-s, c} * in.scale.y, 0);
+    const double a = col0.x, b = col1.x, cc = col0.y, d = col1.y;
+    const double e = (a + d) / 2, f = (a - d) / 2, g = (cc + b) / 2, h = (cc - b) / 2;
+    const double q = std::hypot(e, h), r = std::hypot(f, g);
+    const double a1 = std::atan2(g, f), a2 = std::atan2(h, e);
+    const double psi = (a2 - a1) / 2, phi = (a2 + a1) / 2;
+
+    const bool own = !in.attribs.empty() || in.clip.size() >= 3;
+    const long key = std::lround(normalizeAngle(psi) * 1e6);
+    BlockId inner{};
+    if (!own) {
+        auto it = shearBlocks_.find({in.block.value, key});
+        if (it != shearBlocks_.end())
+            inner = it->second;
+    }
+    if (!inner) {
+        const BlockDef* def = doc_->block(in.block);
+        const std::string name =
+            (def ? def->name : std::string("B")) + "$TILT" + std::to_string(++shearCount_);
+        inner = blockFor(name);
+        if (!inner)
+            return;
+        blockDefined_.insert(inner);
+        ++sum_.blocks;
+        InsertData nested;
+        nested.block = in.block;
+        nested.rotation = psi;
+        nested.attribs = std::move(in.attribs);
+        nested.clip = std::move(in.clip);
+        nested.clipOn = in.clipOn;
+        nested.clipInvert = in.clipInvert;
+        (void)tx_->add(makeEntity(std::move(nested)), inner);
+        if (!own)
+            shearBlocks_[{in.block.value, key}] = inner;
+    }
+    in.block = inner;
+    in.attribs.clear();
+    in.clip.clear();
+    in.position = t.map(in.position, elev);
+    in.rotation = phi;
+    in.scale = {q + r, q - r};
 }
 
 bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out) {
@@ -865,26 +925,23 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
             convInsert(r, rr, f, out);  // also consumes the ATTRIB records
             const double q = r.num(50) / 90;
             const double k = std::round(q);
-            if (std::abs(q - k) > 1e-6) {
-                out.resize(before);
-                report_.warn(code::kExtrusion3d,
-                             "INSERT turned by " + formatDouble(r.num(50)) +
-                                 " degrees in a tilted 3D plane cannot be drawn as seen from "
-                                 "above; skipped",
-                             r.line, handleOf(r));
-                return true;
-            }
-            const double theta = std::atan2(tilt->ax[1], tilt->ax[0]);
-            const bool odd = std::fmod(std::abs(k), 2.0) == 1;
-            const Vec2 squash = odd ? Vec2{tilt->n[2], 1} : Vec2{1, tilt->n[2]};
             const double elev = r.num(30) * k_;
-            for (std::size_t i = before; i < out.size(); ++i) {
-                if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data)) {
-                    InsertData& in = **d;
-                    in.position = tilt->map(in.position, elev);
-                    in.rotation += theta;
-                    in.scale = Vec2{in.scale.x * squash.x, in.scale.y * squash.y};
+            if (std::abs(q - k) <= 1e-6) {
+                const double theta = std::atan2(tilt->ax[1], tilt->ax[0]);
+                const bool odd = std::fmod(std::abs(k), 2.0) == 1;
+                const Vec2 squash = odd ? Vec2{tilt->n[2], 1} : Vec2{1, tilt->n[2]};
+                for (std::size_t i = before; i < out.size(); ++i) {
+                    if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data)) {
+                        InsertData& in = **d;
+                        in.position = tilt->map(in.position, elev);
+                        in.rotation += theta;
+                        in.scale = Vec2{in.scale.x * squash.x, in.scale.y * squash.y};
+                    }
                 }
+            } else {
+                for (std::size_t i = before; i < out.size(); ++i)
+                    if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data))
+                        shearInsert(**d, *tilt, elev);
             }
             if (out.size() > before)
                 countProjected(r);
@@ -1945,9 +2002,11 @@ bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
 }
 
 // WIPEOUT: a closed polyline that hides what is behind it. The clip boundary is in pixel units of
-// an image frame: world = insert + u * (x + 0.5) + v * (y + 0.5).
+// an image frame counted from its top-left corner, y down, as for IMAGE clips:
+// world = insert + u * (x + 0.5) + v * (height - (y + 0.5)), height (23) being 1 in practice.
 bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     const Vec2 origin = P(r, 10, 20), u = P(r, 11, 21), v = P(r, 12, 22);
+    const double height = r.has(23) && std::isfinite(r.num(23)) && r.num(23) > 0 ? r.num(23) : 1;
     std::vector<Vec2> pix;
     for (const Group& g : r.g) {
         if (g.code == 14)
@@ -1969,7 +2028,7 @@ bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     pl.closed = true;
     for (const Vec2& p : pix) {
         PolyVertex vtx;
-        vtx.p = origin + u * (p.x + 0.5) + v * (p.y + 0.5);
+        vtx.p = origin + u * (p.x + 0.5) + v * (height - (p.y + 0.5));
         pl.v.push_back(vtx);
     }
     Entity e = makeEntity(std::move(pl));
@@ -2462,8 +2521,36 @@ std::string Importer::keptRecord(const Record& r) {
     if (k_ != 1)
         return {};
     std::string body;
+    // A record from a file without subclass markers (R12, or a careless writer) still needs them
+    // when it is written to R2000 or later as a known type: readers refuse it otherwise.
+    struct Marker {
+        std::string_view type, name;
+        int before;  // added before the first group with this code; 0 = first
+    };
+    static constexpr Marker kMarkers[] = {
+        {"LWPOLYLINE", "AcDbPolyline", 0}, {"LINE", "AcDbLine", 0},
+        {"CIRCLE", "AcDbCircle", 0},       {"ARC", "AcDbCircle", 0},
+        {"ARC", "AcDbArc", 50},            {"POINT", "AcDbPoint", 0},
+        {"ELLIPSE", "AcDbEllipse", 0},     {"SPLINE", "AcDbSpline", 0},
+        {"INSERT", "AcDbBlockReference", 0}, {"SOLID", "AcDbTrace", 0},
+        {"TRACE", "AcDbTrace", 0},         {"3DFACE", "AcDbFace", 0},
+        {"MTEXT", "AcDbMText", 0},
+    };
+    std::vector<const Marker*> pending;
+    bool hasMarker = false;
+    for (const Group& g : r.g)
+        hasMarker = hasMarker || (g.code == 100 && g.str() != "AcDbEntity");
+    if (!hasMarker) {
+        for (const Marker& m : kMarkers)
+            if (m.type == r.type)
+                pending.push_back(&m);
+    }
     for (const Group& g : r.g) {
         const int c = g.code;
+        while (!pending.empty() && (pending.front()->before == 0 || pending.front()->before == c)) {
+            packGroup(body, 100, std::string(pending.front()->name));
+            pending.erase(pending.begin());
+        }
         if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 || c == 102 ||
             c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 || c >= 1000 ||
             handleCode(c) || (c >= 480 && c <= 481) || (c == 100 && g.str() == "AcDbEntity"))

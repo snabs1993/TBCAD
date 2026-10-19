@@ -252,14 +252,29 @@ TEST_CASE("extrusion: inserts in a tilted plane become squashed blocks seen from
     p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
     Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
     const auto inserts = modelEntities<InsertData>(l.doc());
-    REQUIRE(inserts.size() == 2);
+    REQUIRE(inserts.size() == 3);
     CHECK(near(inserts[0]->position, Vec2{2, 2.4}, 1e-9));
     CHECK(near(inserts[0]->rotation, 0.0));
     CHECK(near(inserts[0]->scale, Vec2{1, 0.8}, 1e-9));
     // Turned 90 degrees: the block's X runs along object Y, which is foreshortened.
     CHECK(near(inserts[1]->rotation, kPi / 2));
     CHECK(near(inserts[1]->scale, Vec2{1.6, 1}, 1e-9));
-    CHECK(l.report.countCode(code::kExtrusion3d) == 2);  // the info line and the 45 degree one
+    // Turned 45 degrees: a shear, split into a block turned inside a rotated, scaled insert.
+    const InsertData& outer = *inserts[2];
+    const BlockDef* inner = l.doc().block(outer.block);
+    REQUIRE(inner);
+    CHECK(inner->name.rfind("B$TILT", 0) == 0);
+    const auto nested = blockEntities<InsertData>(l.doc(), outer.block);
+    REQUIRE(nested.size() == 1);
+    auto place = [](const InsertData& in, Vec2 p) {
+        p = Vec2{p.x * in.scale.x, p.y * in.scale.y};
+        const double c = std::cos(in.rotation), s = std::sin(in.rotation);
+        return in.position + Vec2{p.x * c - p.y * s, p.x * s + p.y * c};
+    };
+    // Object (cos 45, sin 45) seen from above: y shrinks by 0.8.
+    CHECK(near(place(outer, place(*nested[0], Vec2{1, 0})), Vec2{0.7071068, 0.5656854}, 1e-6));
+    CHECK(near(place(outer, place(*nested[0], Vec2{0, 1})), Vec2{-0.7071068, 0.5656854}, 1e-6));
+    CHECK(l.report.countCode(code::kExtrusion3d) == 1);  // the info line only
 }
 
 TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen from above") {
@@ -372,6 +387,21 @@ TEST_CASE("extrusion: a loose attribute of an insert in a tilted plane is projec
     CHECK(near(texts[0]->position, Vec2{5, 4}, 1e-9));
     CHECK(texts[0]->height == doctest::Approx(1.6));
     CHECK(l.report.countCode(code::kBadEntity) == 0);
+}
+
+TEST_CASE("extrusion: a pattern hatch in a tilted plane keeps its angle seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(210, 0.0).g(220, -0.6);
+    p.g(230, 0.8).g(2, "ANSI31").g(70, 0).g(71, 0).g(91, 1).g(92, 2).g(72, 0).g(73, 1).g(93, 4);
+    p.g(10, 0.0).g(20, 0.0).g(10, 10.0).g(20, 0.0).g(10, 10.0).g(20, 10.0).g(10, 0.0).g(20, 10.0);
+    p.g(97, 0).g(75, 0).g(76, 1).g(52, 90.0).g(41, 4.0).g(77, 0).g(78, 0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 1);
+    CHECK(near(hatches[0]->patternAngle, kPi / 2));          // object Y still points up
+    CHECK(hatches[0]->patternScale == doctest::Approx(4 * std::sqrt(0.8)));
 }
 
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
@@ -1281,6 +1311,31 @@ TEST_CASE("WIPEOUT: the clip boundary becomes a closed polyline that hides what 
         CHECK(near(b.max, Vec2{120, 20}));
     });
     CHECK(found);
+}
+
+TEST_CASE("WIPEOUT: the clip boundary counts y down from the top of the frame") {
+    // AutoCAD's L-shaped wipeout over (0,0)-(40,20): the foot of the L is at the bottom.
+    Pairs p;
+    p.g(0, "WIPEOUT").g(8, "0").g(100, "AcDbWipeout").g(90, 0);
+    p.g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 40.0).g(21, 0.0).g(31, 0.0);
+    p.g(12, 0.0).g(22, 20.0).g(32, 0.0).g(13, 1.0).g(23, 1.0).g(71, 2).g(91, 7);
+    // (0,0) (40,0) (40,10) (10,10) (10,20) (0,20) in pixel units: x/40 - 0.5, 0.5 - y/20
+    const double px[][2] = {{-0.5, 0.5}, {0.5, 0.5}, {0.5, 0.0}, {-0.25, 0.0},
+                            {-0.25, -0.5}, {-0.5, -0.5}, {-0.5, 0.5}};
+    for (const auto& q : px)
+        p.g(14, q[0]).g(24, q[1]);
+    Loaded l = load(entitiesOnly(p.text));
+    const Vec2 want[] = {{0, 0}, {40, 0}, {40, 10}, {10, 10}, {10, 20}, {0, 20}};
+    std::size_t found = 0;
+    l.doc().forEachEntity([&](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        REQUIRE(pl != nullptr);
+        ++found;
+        REQUIRE(pl->v.size() == 6);
+        for (std::size_t i = 0; i < 6; ++i)
+            CHECK(near(pl->v[i].p, want[i]));
+    });
+    CHECK(found == 1);
 }
 
 TEST_CASE("ARC_DIMENSION: centre, ends and arc point give an arc length dimension") {

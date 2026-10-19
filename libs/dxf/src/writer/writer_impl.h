@@ -249,6 +249,7 @@ private:
     void writeCircle(const Props& p, const CircleData& d, std::uint64_t owner);
     void writeArc(const Props& p, const ArcData& d, std::uint64_t owner);
     void writePolyline(const Props& p, const PolylineData& d, std::uint64_t owner);
+    bool writeWipeout(const Props& p, const PolylineData& d, std::uint64_t owner);
     void writePoint(const Props& p, const PointData& d, std::uint64_t owner);
     void writeEllipse(const Props& p, const EllipseData& d, const Entity& e, std::uint64_t owner);
     void writeSpline(const Props& p, const SplineData& d, const Entity& e, std::uint64_t owner);
@@ -310,6 +311,7 @@ private:
         bool frame = true;  // the frame of the picture is shown
     };
     std::vector<ImageOut> images_{};
+    bool wipeouts_ = false;  // a WIPEOUT was written: it needs its class and variables
     struct PdfOut {
         std::string name{};  // key in ACAD_PDFDEFINITIONS
         std::string file{};

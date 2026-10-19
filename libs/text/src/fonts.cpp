@@ -141,6 +141,10 @@ bool endsWithNoCase(std::string_view s, std::string_view ext) {
             return false;
     return true;
 }
+bool isOutlineFontFile(std::string_view name) {
+    return endsWithNoCase(name, ".ttf") || endsWithNoCase(name, ".ttc") ||
+           endsWithNoCase(name, ".otf") || endsWithNoCase(name, ".otc");
+}
 // The .shx font a style asks for, if any.
 std::string shxNameOf(const TextStyle& st) {
     if (endsWithNoCase(st.fontFile, ".shx"))
@@ -357,7 +361,9 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
         if (r.ok())
             found = r.value();
         // Not on this machine: the installed font of the same name ("arial" for arial.ttf).
-        if (!found && family.empty() && !isStrokeFile(file))
+        // Only for a TrueType / OpenType file name: a bare "txt" (TBCAD writes it for a style
+        // with no font) must not become AutoCAD's installed "Txt" font on the way back in.
+        if (!found && family.empty() && isOutlineFontFile(file))
             found = lib.findSystem(std::filesystem::path(file).stem().string(), bold, italic);
     }
     if (!found && isStrokeFamily(family)) {

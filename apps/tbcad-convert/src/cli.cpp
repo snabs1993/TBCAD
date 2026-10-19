@@ -14,6 +14,7 @@
 #include <sstream>
 
 #include "export/export.h"
+#include "timing.h"
 #include "tbcad/core/document.h"
 #include "tbcad/dwg/dwg.h"
 #include "tbcad/dxf/encoding.h"
@@ -42,6 +43,7 @@ const char* kUsage =
     "  --timeout SECONDS       give up (exit 2) when the conversion takes longer; 0 = never\n"
     "                          (default 600)\n"
     "  -q, --quiet             print nothing except errors\n"
+    "  --timing                print the time and memory of each step (read, convert, write)\n"
     "  -h, --help              show this text\n"
     "\n"
     "import options (DXF -> .tbcad):\n"
@@ -101,11 +103,15 @@ bool readFile(const std::string& path, std::vector<std::byte>& bytes) {
     std::ifstream f(platform::longPath(platform::pathFromUtf8(path)), std::ios::binary);
     if (!f)
         return false;
-    std::vector<char> raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    bytes.resize(raw.size());
-    std::transform(raw.begin(), raw.end(), bytes.begin(),
-                   [](char c) { return static_cast<std::byte>(c); });
-    return true;
+    // One read straight into the buffer: copying through a char vector doubled the peak memory.
+    f.seekg(0, std::ios::end);
+    const std::streamoff size = f.tellg();
+    if (size < 0)
+        return false;
+    f.seekg(0, std::ios::beg);
+    bytes.resize(static_cast<std::size_t>(size));
+    f.read(reinterpret_cast<char*>(bytes.data()), size);
+    return f.gcount() == size;
 }
 
 bool writeText(const std::string& path, const std::string& text) {
@@ -159,6 +165,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     dxf::ImportOptions options;
     dxf::ExportOptions exportOptions;
     bool quiet = false;
+    bool timing = false;
 
     for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string& a = args[i];
@@ -201,6 +208,8 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             return kExitOk;
         } else if (a == "-q" || a == "--quiet") {
             quiet = true;
+        } else if (a == "--timing") {
+            timing = true;
         } else if (a == "-o" || a == "--output") {
             auto v = value("a file name");
             if (!v)
@@ -290,6 +299,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         exportArgs.reportPath = reportPath;
         exportArgs.options = exportOptions;
         exportArgs.quiet = quiet;
+        exportArgs.timing = timing;
         return runExport(exportArgs, out, err);
     }
 
@@ -312,10 +322,12 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         std::_Exit(kExitFailed);
     });
 
+    PhaseTimer timer(err, timing);
     std::vector<std::byte> bytes;
     dxf::Report report;
     if (!readFile(input, bytes))
         return fail("cannot read " + input, report);
+    timer.phase("read file");
 
     const bool fromDwg = lower(std::filesystem::path(input).extension().string()) == ".dwg";
     Result<dxf::ImportResult> result =
@@ -323,6 +335,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     if (!result)
         return fail(input + ": " + result.error().message, report);
     dxf::ImportResult& imported = result.value();
+    timer.phase(fromDwg ? "read dwg" : "import dxf");
 
     // A DWG file whose objects could not be read must not leave an empty drawing behind. A drawing
     // that really is empty reads without complaints, so only an empty result with warnings fails.
@@ -347,6 +360,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         if (!written)
             return fail("cannot write " + output + ": " + written.error().message, report);
     }
+    timer.phase("write");
 
     if (!reportPath.empty() && !writeText(reportPath, imported.summary.toJson(report))) {
         return fail("cannot write " + reportPath, report);

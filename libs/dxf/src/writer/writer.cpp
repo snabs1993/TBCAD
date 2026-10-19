@@ -1093,7 +1093,8 @@ std::string Writer::objectsSection() {
     const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
     const std::uint64_t imageVars = images_.empty() ? 0 : newHandle();
     const std::uint64_t pdfDict = pdfs_.empty() ? 0 : newHandle();
-    const bool hasWipeoutVars = !r12_ && doc_.header().custom.count(kWipeoutFrameKey) != 0;
+    const bool hasWipeoutVars =
+        !r12_ && (wipeouts_ || doc_.header().custom.count(kWipeoutFrameKey) != 0);
     const std::uint64_t wipeoutVars = hasWipeoutVars ? newHandle() : 0;
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
     std::uint64_t scaleRec = hasScales ? newHandle() : 0;
@@ -1980,7 +1981,11 @@ Result<ExportResult> Writer::run() {
                 "  0\r\nCLASS\r\n  1\r\nPDFDEFINITION\r\n  2\r\nAcDbUnderlayDefinition\r\n"
                 "  3\r\nObjectDBX Classes\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         }
-        if (!r12_ && doc_.header().custom.count(kWipeoutFrameKey))
+        if (wipeouts_)
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nWIPEOUT\r\n  2\r\nAcDbWipeout\r\n"
+                "  3\r\nWipeOut\r\n 90\r\n127\r\n280\r\n0\r\n281\r\n1\r\n";
+        if (!r12_ && (wipeouts_ || doc_.header().custom.count(kWipeoutFrameKey)))
             out +=
                 "  0\r\nCLASS\r\n  1\r\nWIPEOUTVARIABLES\r\n  2\r\nAcDbWipeoutVariables\r\n"
                 "  3\r\nWipeOut\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";

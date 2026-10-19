@@ -1,0 +1,61 @@
+# Notes in Thai: write a text, edit it in place with a double click, then copy layer and colour
+# from one object to others with MATCHPROP.
+@zoom -50 -50 250 150
+# New text goes on the current layer (the built-in template has a text layer).
+TEXTLAYER
+.
+-LAYER
+Make
+A-ANNO
+Color
+3
+A-ANNO
+Make
+A-WALL
+Color
+4
+A-WALL
+
+TEXT
+0,0
+5
+0
+ผนังเดิม
+@key Escape
+@expect text 1 ผนังเดิม
+@expect on-layer text A-WALL 1
+# Double click the text: the editor opens on it, select everything and type the new words.
+@dblclickw 10 2
+@key ctrl+A
+@type ผนังใหม่ ชั้น 2
+@key Enter
+@frames 3
+@expect text 1 ผนังใหม่ ชั้น 2
+@expect text 0 ผนังเดิม
+@shot 08_text.png
+# A line on A-ANNO, then MATCHPROP from it onto the text and a circle.
+-LAYER
+Set
+A-ANNO
+
+LINE
+0,-20
+100,-20
+
+-LAYER
+Set
+A-WALL
+
+CIRCLE
+150,50
+20
+@expect on-layer circle A-WALL 1
+MATCHPROP
+@clickw 50 -20
+@clickw 10 2
+@clickw 170 50
+
+@expect on-layer text A-ANNO 1
+@expect on-layer circle A-ANNO 1
+@expect on-layer line A-ANNO 1
+@shot 08_matchprop.png

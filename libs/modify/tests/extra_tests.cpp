@@ -1,5 +1,5 @@
-#include <chrono>
 #include <algorithm>
+#include <ctime>
 #include <map>
 #include <random>
 #include <set>
@@ -863,9 +863,11 @@ TEST_CASE("refitSpline on a long wavy curve is fast and within the tolerance") {
         v.push_back(PolyVertex{{i * 0.5, 3 * std::sin(i * 0.5 * 0.4) + 0.4 * std::sin(i * 1.3)}, 0, 0, 0});
     auto sp = polylineToSpline(poly(v, false));
     REQUIRE(sp.ok());
-    const auto t0 = std::chrono::steady_clock::now();
+    // Processor time, not wall time: ctest runs many test processes at once, and a busy machine
+    // must not fail a speed check (MSVC's std::clock is wall time, which is no worse than before).
+    const std::clock_t t0 = std::clock();
     auto out = refitSpline(sp.value(), 0.05);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    const double ms = 1000.0 * static_cast<double>(std::clock() - t0) / CLOCKS_PER_SEC;
     REQUIRE(out.ok());
     CHECK(ms < 1500.0);
     std::vector<geom::CurveRef> oc, nc;

@@ -419,3 +419,12 @@ TEST_CASE("a stacked fraction is smaller than its line, has a bar, and is one un
         fractions += ln.text.find("12345/67890") != std::string::npos;
     CHECK(fractions == 1);
 }
+
+// TBCAD writes "txt" for a style with no font; reading it back must give the same font, also
+// where AutoCAD installed its "Txt" TrueType font (txt_____.ttf) on the machine.
+TEST_CASE("a style naming the bare file txt gets the same font as a style naming none") {
+    TextStyle none;
+    TextStyle txt;
+    txt.fontFile = "txt";
+    CHECK(fontForStyle(&txt).value == fontForStyle(&none).value);
+}

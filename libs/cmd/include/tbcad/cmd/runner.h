@@ -102,7 +102,8 @@ private:
     void finishTop(bool failed, std::string_view error, bool notify);
     void refreshPrompt();
     SubmitResult answerTop(const Input& input);
-    Vec2 filtered(const RawInput& raw, bool click, const std::optional<Vec2>& base);
+    Vec2 filtered(const RawInput& raw, bool click, const std::optional<Vec2>& base,
+                  bool snap = true);
     PointParseContext parseContext(const detail::PromptRequest& req) const;
     // What a typed angle at an in-UCS prompt is turned by: the rotation of the current UCS.
     double ucsTurn(const detail::PromptRequest& req) const;

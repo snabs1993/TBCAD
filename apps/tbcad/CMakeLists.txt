@@ -69,6 +69,9 @@ tbcad_set_warnings(tbcad)
 target_include_directories(tbcad PRIVATE src)
 target_compile_definitions(tbcad PRIVATE ${_tbcad_app_defs})
 target_link_libraries(tbcad PRIVATE tbcad_gui ${_tbcad_app_libs})
+# Capture mode's `@expect contains` reads compressed PDF page content.
+include(deps/miniz)
+target_link_libraries(tbcad PRIVATE miniz)
 if(WIN32)
   target_link_libraries(tbcad PRIVATE imm32)
   # A GUI program that keeps `main` as its entry point.

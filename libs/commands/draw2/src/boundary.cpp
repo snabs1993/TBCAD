@@ -173,6 +173,7 @@ public:
         for (;;) {
             cmd::PointOptions po;
             po.keywords = {"Islands"};
+            po.snap = false;  // a snapped pick would sit on the boundary
             auto p = co_await ctx.getPoint("Specify internal point or [Islands]", std::move(po));
             if (p.status == cmd::Status::Keyword) {
                 cmd::KeywordOptions ko;
