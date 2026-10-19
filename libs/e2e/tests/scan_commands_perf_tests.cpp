@@ -7,6 +7,7 @@
 // sanitizer CI runs short.
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -15,6 +16,7 @@
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/ui/ui_registry.h"
 
 #ifdef _WIN32
 #include <process.h>
@@ -519,4 +521,146 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
         CHECK(t.runMs < c.budgetMs);
 #endif
     }
+}
+
+// What a hand does all day on a drawing of a few ten thousand objects: pick, hover, window select,
+// drag a grip, switch a layer, zoom. Each step includes the frame after it.
+TEST_CASE("perf: everyday interactions on a drawing of 100k objects") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+#ifdef NDEBUG
+    Site s(std::getenv("TBCAD_BENCH_N") ? 0 : 50000);
+#else
+    Site s(5000);  // (the debug and sanitizer runs stay short)
+#endif
+    ui::AppCore& c = *s.core;
+    ui::UiRegistry uiRegistry;  // (grips, snaps and the panels live in the UI registry)
+    registerAllUi(uiRegistry);
+    c.registerBuiltinUi(uiRegistry);
+    c.applyUiKeybindings(uiRegistry);
+    std::printf("%zu objects\n", c.document().modelSpaceCount());
+    auto step = [&](const char* what, auto&& fn) {
+        const auto t = std::chrono::steady_clock::now();
+        fn();
+        c.updateFrame();
+        const double took = ms(t);
+        std::printf("  %-34s %8.1f ms   (%zu selected, %zu objects, prompt: %.30s)\n", what, took,
+                    c.selection().size(), c.document().modelSpaceCount(), c.promptText().c_str());
+        return took;
+    };
+    {
+        const auto t = std::chrono::steady_clock::now();
+        int frames = 0;
+        while (c.sceneBuilding() && frames < 100000) {
+            c.updateFrame();
+            ++frames;
+        }
+        std::printf("  settle after build: %d frames, %.0f ms\n", frames, ms(t));
+    }
+    c.submitText("ZOOM");
+    c.submitText("Window");
+    c.submitText("-5,-5");
+    c.submitText("205,105");
+    c.updateFrame();
+    CHECK(c.runner().active() == false);
+    ui::PointerState on;
+    on.screen = c.camera().worldToScreen({10, 5});
+    step("zoom window to a cell", [] {});
+    [[maybe_unused]] const double pickMs = step("pick one object", [&] { c.click(on); });
+    {
+        std::vector<double> idle;
+        for (int i = 0; i < 10; ++i) {
+            const auto t = std::chrono::steady_clock::now();
+            c.updateFrame();
+            idle.push_back(ms(t));
+        }
+        std::printf("   idle frames:");
+        for (double v : idle)
+            std::printf(" %.1f", v);
+        std::printf("\n");
+        std::sort(idle.begin(), idle.end());
+        std::printf("  %-34s median %.2f ms, worst %.2f ms\n", "idle frame (nothing changed)",
+                    idle[5], idle.back());
+    }
+    std::vector<double> hover, movedMs;
+    for (int i = 0; i < 40; ++i) {
+        ui::PointerState p;
+        p.screen = {200.0 + i * 11, 300.0 + (i % 5) * 7};
+        const auto t = std::chrono::steady_clock::now();
+        c.pointerMoved(p);
+        movedMs.push_back(ms(t));
+        c.updateFrame();
+        hover.push_back(ms(t));
+    }
+    std::sort(movedMs.begin(), movedMs.end());
+    std::printf("  %-34s median %.2f ms\n", "  (of which pointerMoved)", movedMs[20]);
+    std::sort(hover.begin(), hover.end());
+    std::printf("  %-34s median %.2f ms, worst %.2f ms\n", "hover 40 positions", hover[20],
+                hover.back());
+#ifdef NDEBUG
+    CHECK(pickMs < 100);
+    CHECK(hover[20] < 20);
+#endif
+    step("window select", [&] {
+        c.dragSelect({100, 100}, {700, 500}, {});
+    });
+    step("clear selection", [&] { c.clearSelection(); });
+    // A grip drag: select a polyline, press on its first grip, move, release.
+    c.click(on);
+    c.updateFrame();
+    const Vec2 grip = c.camera().worldToScreen({0, 0});
+    step("press on a grip", [&] {
+        ui::PointerState p;
+        p.screen = grip;
+        c.pointerMoved(p);
+        std::printf("    pressOnGrip -> %d\n", c.pressOnGrip(p) ? 1 : 0);
+    });
+    step("drag the grip", [&] {
+        ui::PointerState p;
+        p.screen = {grip.x + 60, grip.y + 40};
+        c.pointerMoved(p);
+    });
+    step("release the grip", [&] {
+        ui::PointerState p;
+        p.screen = {grip.x + 60, grip.y + 40};
+        c.click(p);
+    });
+    c.pressEscape();
+    step("undo the grip edit", [&] { (void)c.undo(); });
+    c.pressEscape();
+    [[maybe_unused]] const double extentsMs = step("zoom extents", [&] { c.zoomExtents(); });
+#ifdef NDEBUG
+    CHECK(extentsMs < 500);
+#endif
+    step("layer off (Topo, one tenth)", [&] {
+        c.submitText("-LAYER");
+        c.submitText("Off");
+        c.submitText("Topo");
+        c.submitText("");
+    });
+    step("layer on (Topo, one tenth)", [&] {
+        c.submitText("-LAYER");
+        c.submitText("On");
+        c.submitText("Topo");
+        c.submitText("");
+    });
+    while (c.sceneBuilding())
+        c.updateFrame();
+    std::vector<double> zoom;
+    for (int i = 0; i < 30; ++i) {
+        const auto t = std::chrono::steady_clock::now();
+        c.zoomAtScreen({700, 450}, i % 2 ? -1.0 : 1.0);
+        c.updateFrame();
+        zoom.push_back(ms(t));
+    }
+    std::sort(zoom.begin(), zoom.end());
+    std::printf("  %-34s median %.2f ms, worst %.2f ms\n", "30 wheel zoom steps", zoom[15],
+                zoom.back());
+    step("select all", [&] { c.selectAll(); });
+    step("erase all", [&] {
+        c.submitText("ERASE");
+        c.pressEscape();
+    });
+    step("undo erase all", [&] { (void)c.undo(); });
+    while (c.sceneBuilding())
+        c.updateFrame();
 }
