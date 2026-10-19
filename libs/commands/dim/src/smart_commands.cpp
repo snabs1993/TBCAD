@@ -344,28 +344,70 @@ public:
         if (!ref.ok())
             co_return;
         cmd::KeywordOptions ko;
-        ko.keywords = {"Vertical", "Horizontal"};
+        ko.keywords = {"Vertical", "Horizontal", "Spacing"};
         ko.defaultKeyword = "Vertical";
-        auto dir = co_await ctx.getKeyword(
-            "Align in a [Vertical/Horizontal] line <Vertical> (same X / same Y)", ko);
-        if (!dir.ok())
-            co_return;
+        // Spacing 0 keeps each leader where it is along the line; above 0 the leaders are placed
+        // that far apart in their current order, the reference staying where it is.
+        double spacing = 0;
+        cmd::KeywordResult dir;
+        while (true) {
+            dir = co_await ctx.getKeyword(
+                "Align in a [Vertical/Horizontal/Spacing] line <Vertical> (same X / same Y)", ko);
+            if (!dir.ok())
+                co_return;
+            if (dir.keyword != "Spacing")
+                break;
+            cmd::DistanceOptions dopt;
+            dopt.defaultValue = spacing;
+            auto sp = co_await ctx.getDistance("Spacing between leaders (0 keeps positions)", dopt);
+            if (!sp.ok())
+                co_return;
+            spacing = std::max(0.0, sp.value);
+        }
         const Entity* r = ctx.doc().find(ref.id);
         const auto anchor = r ? landingOf(*r) : std::nullopt;
         if (!anchor)
             co_return;
         const bool vertical = dir.keyword == "Vertical";
         ctx.setUndoLabel("MLEADERALIGN");
-        std::size_t n = 0;
+
+        // Target landing of every leader, the reference included.
+        struct Item {
+            EntityId id;
+            Vec2 end;
+        };
+        std::vector<Item> items;
         for (EntityId id : sel.ids) {
             if (id == ref.id)
                 continue;
             const Entity* e = ctx.doc().find(id);
-            const auto end = e ? landingOf(*e) : std::nullopt;
-            if (!end)
+            if (const auto end = e ? landingOf(*e) : std::nullopt)
+                items.push_back({id, *end});
+        }
+        items.push_back({ref.id, *anchor});
+        auto along = [&](const Item& it) { return vertical ? it.end.y : it.end.x; };
+        std::stable_sort(items.begin(), items.end(),
+                         [&](const Item& x, const Item& y) { return along(x) < along(y); });
+        std::size_t refIndex = 0;
+        for (std::size_t i = 0; i < items.size(); ++i)
+            if (items[i].id == ref.id)
+                refIndex = i;
+
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            const Item& it = items[i];
+            if (it.id == ref.id)
                 continue;
-            const Vec2 d = vertical ? Vec2{anchor->x - end->x, 0} : Vec2{0, anchor->y - end->y};
-            if (!ctx.tx().modify(id, [d](Entity& x) {
+            const Vec2 target = vertical ? Vec2{anchor->x, spacing > 0 ? anchor->y : it.end.y}
+                                         : Vec2{spacing > 0 ? anchor->x : it.end.x, anchor->y};
+            Vec2 want = target;
+            if (spacing > 0) {
+                const double off =
+                    (static_cast<double>(i) - static_cast<double>(refIndex)) * spacing;
+                (vertical ? want.y : want.x) += off;
+            }
+            const Vec2 d = want - it.end;
+            if (!ctx.tx().modify(it.id, [d](Entity& x) {
                     if (auto* m = entityAs<MLeaderData>(x)) {
                         // The lines that ended at the landing follow it; arrowheads stay put.
                         for (auto& line : m->lines)

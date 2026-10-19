@@ -229,6 +229,28 @@ TEST_CASE("MLEADERALIGN lines landing ends up in a column or a row") {
     CHECK(entityAs<MLeaderData>(*f.doc.find(ids[1]))->landing.x == doctest::Approx(30));
 }
 
+TEST_CASE("MLEADERALIGN Spacing lines leaders up at an even distance, the reference stays") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});
+    f.host->run("MLEADER", {"0,20", "30,22", "b"});
+    f.host->run("MLEADER", {"0,40", "50,47", "c"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    REQUIRE(ids.size() == 3);
+    // Reference: the middle one (landing y 22); others at y 10 and 47.
+    f.host->run("MLEADERALIGN", {ScriptItem::select(ids), ScriptItem::enter(),
+                                 ScriptItem::pick(ids[1], {5, 21}), "Spacing", "8", "Vertical"});
+    const auto* a = entityAs<MLeaderData>(*f.doc.find(ids[0]));
+    const auto* b = entityAs<MLeaderData>(*f.doc.find(ids[1]));
+    const auto* c = entityAs<MLeaderData>(*f.doc.find(ids[2]));
+    CHECK(a->landing.x == doctest::Approx(b->landing.x));
+    CHECK(c->landing.x == doctest::Approx(b->landing.x));
+    CHECK(b->landing.y == doctest::Approx(22));
+    CHECK(a->landing.y == doctest::Approx(14));
+    CHECK(c->landing.y == doctest::Approx(30));
+    CHECK(f.host->undo());
+}
+
 TEST_CASE("MLEADERCOLLECT merges notes into the first multileader") {
     Fixture f;
     f.host->run("MLEADER", {"0,0", "10,10", "a"});
