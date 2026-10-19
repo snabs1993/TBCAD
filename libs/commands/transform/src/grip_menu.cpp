@@ -187,6 +187,16 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
             }
             break;
         }
+        case EntityKind::MLine: {
+            const auto& ml = *entityAs<MlineData>(*e);
+            const int n = static_cast<int>(ml.v.size());
+            if (grip.index < n) {
+                out.push_back(GripAction::AddVertex);
+                if (n > (ml.closed ? 3 : 2))
+                    out.push_back(GripAction::RemoveVertex);
+            }
+            break;
+        }
         case EntityKind::MLeader: {
             // The grips of the leader lines come first (all points of line 1, then line 2 ...);
             // after them the landing and the content.
@@ -375,6 +385,40 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
                 if (n <= 2)
                     return fail("a leader needs two vertices");
                 ld.vertices.erase(ld.vertices.begin() + index);
+                return out;
+            }
+            break;
+        }
+        case EntityKind::MLine: {
+            auto& ml = *entityAs<MlineData>(out);
+            const int n = static_cast<int>(ml.v.size());
+            if (index < 0 || index >= n)
+                break;
+            // Cuts are kept by segment: the segments a change reshapes lose theirs, those after
+            // it move along with the vertex numbers.
+            auto remap = [&](std::initializer_list<int> hit, int shift) {
+                std::vector<MlineCut> kept;
+                for (MlineCut c : ml.cuts) {
+                    const int sg = static_cast<int>(c.seg);
+                    if (std::find(hit.begin(), hit.end(), sg) != hit.end())
+                        continue;
+                    if (sg > index)
+                        c.seg = static_cast<std::uint32_t>(sg + shift);
+                    kept.push_back(c);
+                }
+                ml.cuts = std::move(kept);
+            };
+            if (action == GripAction::AddVertex) {
+                remap({index}, 1);
+                ml.v.insert(ml.v.begin() + index + 1, target);
+                return out;
+            }
+            if (action == GripAction::RemoveVertex) {
+                if (n <= (ml.closed ? 3 : 2))
+                    return fail("a multiline needs its remaining vertices");
+                const int before = ml.closed || index > 0 ? (index + n - 1) % n : index;
+                remap({before, index}, -1);
+                ml.v.erase(ml.v.begin() + index);
                 return out;
             }
             break;
