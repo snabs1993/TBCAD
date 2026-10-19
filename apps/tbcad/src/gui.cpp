@@ -3092,7 +3092,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
             if (!wasOpen)
                 ImGui::OpenPopup("##viewportMenu");
             else if (!chosen.empty())
-                core_.submitText(chosen);
+                // The Undo slice undoes one step (U); UNDO itself asks how many.
+                core_.submitText(chosen == "UNDO" ? std::string("U") : chosen);
         }
     }
     if (wheel_.isOpen())

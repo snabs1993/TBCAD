@@ -4,10 +4,10 @@ namespace tbcad::cmd {
 
 namespace {
 
-class UndoCommand final : public Command {
+// U: undo one step.
+class UCommand final : public Command {
 public:
-    std::string_view name() const override { return "UNDO"; }
-    std::vector<std::string> defaultAliases() const override { return {"U"}; }
+    std::string_view name() const override { return "U"; }
     std::string_view description() const override { return "Undo the last command"; }
     Task run(CommandContext& ctx) override {
         std::string label = ctx.undoStack().undoLabel();
@@ -16,6 +16,82 @@ public:
         else
             ctx.message("Nothing to undo.");
         co_return;
+    }
+};
+
+// UNDO as in AutoCAD: a number of steps, or the group and mark options.
+class UndoCommand final : public Command {
+public:
+    std::string_view name() const override { return "UNDO"; }
+    std::string_view description() const override {
+        return "Undo a number of steps, or set groups and marks";
+    }
+    Task run(CommandContext& ctx) override {
+        UndoStack& st = ctx.undoStack();
+        IntOptions io;
+        io.keywords = {"Auto", "Control", "BEgin", "End", "Mark", "Back"};
+        io.defaultValue = 1;
+        io.min = 1;
+        auto r = co_await ctx.getInteger(
+            "Enter the number of operations to undo or [Auto/Control/BEgin/End/Mark/Back] <1>",
+            io);
+        if (r.status == Status::Ok) {
+            long long done = 0;
+            std::string last;
+            for (; done < r.value; ++done) {
+                last = st.undoLabel();
+                if (!st.undo(ctx.doc()))
+                    break;
+            }
+            if (done == 0)
+                ctx.message(st.blockedReason().empty() ? "Nothing to undo."
+                                                       : st.blockedReason());
+            else if (done == 1)
+                ctx.message("Undo " + last);
+            else
+                ctx.message("Undid " + std::to_string(done) + " steps.");
+            co_return;
+        }
+        if (r.status != Status::Keyword)
+            co_return;
+        if (r.keyword == "BEgin") {
+            st.beginGroup("Group");
+        } else if (r.keyword == "End") {
+            if (!st.endGroup())
+                ctx.message("No undo group is open.");
+        } else if (r.keyword == "Mark") {
+            st.mark();
+        } else if (r.keyword == "Back") {
+            const std::size_t n = st.undoToMark(ctx.doc());
+            if (n != UndoStack::npos) {
+                ctx.message("Undid " + std::to_string(n) + " step(s) back to the mark.");
+                co_return;
+            }
+            // No mark: AutoCAD offers to undo everything.
+            KeywordOptions yn;
+            yn.keywords = {"Yes", "No"};
+            yn.defaultKeyword = "Yes";
+            auto a = co_await ctx.getKeyword("This will undo everything. OK? [Yes/No] <Yes>", yn);
+            if (!a.ok() || a.keyword != "Yes")
+                co_return;
+            std::size_t all = 0;
+            while (st.undo(ctx.doc()))
+                ++all;
+            ctx.message("Undid " + std::to_string(all) + " step(s).");
+        } else if (r.keyword == "Auto" || r.keyword == "Control") {
+            // TBCAD always keeps the whole history (within its memory limit) and every command
+            // is one step, so these are accepted for scripts written for AutoCAD.
+            KeywordOptions ko;
+            ko.keywords = r.keyword == "Auto" ? std::vector<std::string>{"ON", "OFF"}
+                                              : std::vector<std::string>{"All", "None", "One"};
+            ko.defaultKeyword = ko.keywords.front();
+            auto a = co_await ctx.getKeyword(
+                r.keyword == "Auto" ? "Enter UNDO Auto mode [ON/OFF] <ON>"
+                                    : "Enter an UNDO control option [All/None/One] <All>",
+                ko);
+            if (a.ok() && a.keyword != "ON" && a.keyword != "All")
+                ctx.message("TBCAD keeps the full undo history; the setting is not changed.");
+        }
     }
 };
 
@@ -110,6 +186,7 @@ public:
 void registerBuiltinCommands(Registry& registry) {
     // Registering twice is a programmer error that add() reports; ignore it here so the call is
     // idempotent for hosts that register the built-ins and then the generated list.
+    (void)registry.add(std::make_unique<UCommand>());
     (void)registry.add(std::make_unique<UndoCommand>());
     (void)registry.add(std::make_unique<RedoCommand>());
     (void)registry.add(std::make_unique<UndoBeginCommand>());
