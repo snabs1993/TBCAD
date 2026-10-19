@@ -103,6 +103,42 @@ std::optional<dxf::Encoding> parseEncoding(const std::string& text) {
 }
 
 bool readFile(const std::string& path, std::vector<std::byte>& bytes);
+std::string jsonString(const std::string& s);
+
+// The report without the "external reference ... is not loaded" warnings of the xrefs that were
+// loaded after all (an info line says so instead).
+dxf::Report withoutLoadedXrefWarnings(dxf::Report report,
+                                      const std::vector<std::string>& loaded) {
+    dxf::Report out;
+    for (dxf::Diagnostic& d : report.takeItems()) {
+        bool drop = false;
+        if (d.code == dxf::code::kXref)
+            for (const std::string& name : loaded)
+                drop = drop || d.message.starts_with("external reference \"" + name + "\" ");
+        if (!drop)
+            out.add(d.severity, d.code, std::move(d.message), d.line, d.handle);
+    }
+    for (const std::string& name : loaded)
+        out.info(dxf::code::kXref, "external reference \"" + name + "\" loaded from its file");
+    return out;
+}
+
+// The JSON report with what was done about external references added at its end.
+std::string withXrefs(std::string json, const xref::OpenLoad& load, std::size_t entities) {
+    if (json.empty() || json.back() != '}')
+        return json;
+    auto list = [](const std::vector<std::string>& names) {
+        std::string o = "[";
+        for (std::size_t i = 0; i < names.size(); ++i)
+            o += (i ? "," : "") + jsonString(names[i]);
+        return o + "]";
+    };
+    json.pop_back();
+    json += ",\"xrefs\":{\"loaded\":" + list(load.loaded) + ",\"missing\":" +
+            list(load.missing) + ",\"failed\":" + list(load.failed) +
+            ",\"entities\":" + std::to_string(entities) + "}}";
+    return json;
+}
 
 // Lets an xref point at a .dwg file (the app registers the same in its DWG opener).
 void registerDwgXrefLoader() {
@@ -363,6 +399,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     if (!result)
         return fail(input + ": " + result.error().message, report);
     dxf::ImportResult& imported = result.value();
+    std::vector<std::byte>().swap(bytes);  // the file's text is not needed any more
     timer.phase(fromDwg ? "read dwg" : "import dxf");
 
     // As AutoCAD does on open: external references whose files are found are loaded.
@@ -372,6 +409,8 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         xrefLoad = xref::loadOnOpen(*imported.document, platform::pathFromUtf8(input));
         if (!xrefLoad.loaded.empty() || !xrefLoad.failed.empty())
             timer.phase("load xrefs");
+        if (!xrefLoad.loaded.empty())
+            report = withoutLoadedXrefWarnings(std::move(report), xrefLoad.loaded);
     }
 
     // A DWG file whose objects could not be read must not leave an empty drawing behind. A drawing
@@ -399,7 +438,12 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     }
     timer.phase("write");
 
-    if (!reportPath.empty() && !writeText(reportPath, imported.summary.toJson(report))) {
+    std::size_t xrefEntities = 0;
+    for (const std::string& name : xrefLoad.loaded)
+        if (const BlockDef* def = imported.document->blockByName(name))
+            xrefEntities += def->entities.size();
+    if (!reportPath.empty() &&
+        !writeText(reportPath, withXrefs(imported.summary.toJson(report), xrefLoad, xrefEntities))) {
         return fail("cannot write " + reportPath, report);
     }
 
@@ -420,8 +464,12 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
         for (const std::string& line : xrefLoad.failed)
             err << input << ": warning: xref " << line << " (left unloaded)\n";
         out << "tbcad-convert: " << imported.document->modelSpaceCount() << " entities, "
-            << imported.summary.layers << " layers, " << imported.summary.blocks << " blocks, "
-            << warnings << " warnings -> " << output << "\n";
+            << imported.summary.layers << " layers, " << imported.summary.blocks << " blocks, ";
+        if (!xrefLoad.loaded.empty() || !xrefLoad.missing.empty() || !xrefLoad.failed.empty())
+            out << "xrefs " << xrefLoad.loaded.size() << " loaded (" << xrefEntities
+                << " entities), " << xrefLoad.missing.size() + xrefLoad.failed.size()
+                << " not loaded, ";
+        out << warnings << " warnings -> " << output << "\n";
     }
     return warnings > 0 ? kExitWarnings : kExitOk;
 }

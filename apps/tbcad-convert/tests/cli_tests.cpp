@@ -241,3 +241,42 @@ TEST_CASE("watchdog: fires when the work takes too long, stays quiet when it is 
     }
     CHECK(fired == 1);
 }
+
+TEST_CASE("cli: an xref found next to the drawing is loaded into the output, once per file") {
+    TempDir dir;
+    {
+        std::ofstream f(dir / "site.dxf", std::ios::binary);
+        f << "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 11\n5\n 21\n0\n"
+             "  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 11\n0\n 21\n5\n  0\nENDSEC\n  0\nEOF\n";
+    }
+    auto xrefBlock = [](const std::string& name, const std::string& path) {
+        return "  0\nBLOCK\n  8\n0\n  2\n" + name + "\n 70\n4\n 10\n0\n 20\n0\n 30\n0\n  3\n" +
+               name + "\n  1\n" + path + "\n  0\nENDBLK\n";
+    };
+    {
+        std::ofstream f(dir / "host.dxf", std::ios::binary);
+        f << "  0\nSECTION\n  2\nBLOCKS\n" << xrefBlock("site", ".\\site.dxf")
+          << xrefBlock("again", "Q:\\nowhere\\site.dxf") << xrefBlock("gone", "Q:\\gone.dwg")
+          << "  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n"
+             "  0\nINSERT\n  8\n0\n  2\nsite\n 10\n0\n 20\n0\n  0\nENDSEC\n  0\nEOF\n";
+    }
+    Run r = run({(dir / "host.dxf").string(), "-o", (dir / "host.tbcad").string(), "--report",
+                 (dir / "r.json").string()});
+    CHECK(r.out.find("xrefs 2 loaded (4 entities), 1 not loaded") != std::string::npos);
+    const std::string json = readText(dir / "r.json");
+    CHECK(json.find("\"xrefs\":{\"loaded\":[\"site\",\"again\"],\"missing\":[\"gone\"],"
+                    "\"failed\":[],\"entities\":4}") != std::string::npos);
+    // The warnings left are about the one that is really missing.
+    CHECK(json.find("external reference \\\"site\\\" (file") == std::string::npos);
+    CHECK(json.find("external reference \\\"gone\\\" (file") != std::string::npos);
+    tbcad::io::IoReport ioReport;
+    auto doc = tbcad::io::readTbcad(dir / "host.tbcad", ioReport);
+    REQUIRE(doc.ok());
+    const tbcad::BlockDef* site = doc.value()->blockByName("site");
+    REQUIRE(site);
+    CHECK(site->entities.size() == 2);
+    CHECK(site->xrefStamp != 0);
+
+    Run off = run({(dir / "host.dxf").string(), "-o", (dir / "off.tbcad").string(), "--no-xrefs"});
+    CHECK(off.out.find("xrefs") == std::string::npos);
+}
