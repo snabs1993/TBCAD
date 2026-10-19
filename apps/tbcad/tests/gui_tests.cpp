@@ -1828,8 +1828,8 @@ TEST_CASE("save workspace dialog takes the keyboard when it opens and closes on 
 TEST_CASE("random clicks, keys and commands leave the program usable") {
     Harness h(1440, 900);
     h.frame(3);
-    for (const char* line : {"LINE 0,0 100,0 100,100 0,100 c", "CIRCLE 50,50 30", "LINE 0,0 100,100",
-                             "RECTANGLE 10,10 40,40", "TEXT 20,20 5 0 Hello"}) {
+    for (const char* line : {"LINE 0,0 100,0 100,100 0,100 c", "CIRCLE 50,50 30",
+                             "LINE 0,0 100,100", "RECTANGLE 10,10 40,40", "TEXT 20,20 5 0 Hello"}) {
         h.core().submitText(line);
         h.core().pressEscape();
     }
@@ -1839,22 +1839,27 @@ TEST_CASE("random clicks, keys and commands leave the program usable") {
                              ImGuiKey_UpArrow,   ImGuiKey_DownArrow, ImGuiKey_F3,     ImGuiKey_F7,
                              ImGuiKey_F8,        ImGuiKey_F9,        ImGuiKey_F10,    ImGuiKey_F12,
                              ImGuiKey_Backspace, ImGuiKey_Space};
-    const char* typed[] = {"LINE",     "CIRCLE", "MOVE", "COPY", "ERASE",  "ZOOM", "E",     "TRIM",
-                           "OFFSET",   "HATCH",  "10",   "5,5",  "@10<45", "u",    "close", "all",
-                           "LAYER",    "PROPERTIES",     "ARRAY", "MIRROR", "STRETCH", "x y"};
+    const char* typed[] = {"LINE",   "CIRCLE", "MOVE",    "COPY",  "ERASE", "ZOOM",
+                           "E",      "TRIM",   "OFFSET",  "HATCH", "10",    "5,5",
+                           "@10<45", "u",      "close",   "all",   "LAYER", "PROPERTIES",
+                           "ARRAY",  "MIRROR", "STRETCH", "x y"};
     // (TBCAD_FUZZ_SEED picks another sequence, TBCAD_FUZZ_STEPS a longer one)
-    std::uint32_t state = std::getenv("TBCAD_FUZZ_SEED")
-                              ? static_cast<std::uint32_t>(std::atoll(std::getenv("TBCAD_FUZZ_SEED")))
-                              : 20261019u;
+    std::uint32_t state =
+        std::getenv("TBCAD_FUZZ_SEED")
+            ? static_cast<std::uint32_t>(std::atoll(std::getenv("TBCAD_FUZZ_SEED")))
+            : 20261019u;
     const bool menus = std::getenv("TBCAD_FUZZ_MENUS") != nullptr;
-    const int steps = std::getenv("TBCAD_FUZZ_STEPS") ? std::atoi(std::getenv("TBCAD_FUZZ_STEPS")) : 250;
+    const int steps =
+        std::getenv("TBCAD_FUZZ_STEPS") ? std::atoi(std::getenv("TBCAD_FUZZ_STEPS")) : 250;
     auto rnd = [&](std::uint32_t n) {
         state = state * 1664525u + 1013904223u;
         return (state >> 8) % n;
     };
     for (int step = 0; step < steps; ++step) {
         const float x = 40.0f + static_cast<float>(rnd(1360));
-        const float y = (menus ? 2.0f : 70.0f) + static_cast<float>(rnd(menus ? 850 : 780));  // (not the menu bar: file dialogs)
+        const float y =
+            (menus ? 2.0f : 70.0f) +
+            static_cast<float>(rnd(menus ? 850 : 780));  // (not the menu bar: file dialogs)
         switch (rnd(11)) {
             case 8:
                 h.core().newDocument();
@@ -1863,7 +1868,8 @@ TEST_CASE("random clicks, keys and commands leave the program usable") {
                 h.core().closeDocument(rnd(static_cast<std::uint32_t>(h.core().documentCount())));
                 break;
             case 10:
-                h.core().activateDocument(rnd(static_cast<std::uint32_t>(h.core().documentCount())));
+                h.core().activateDocument(
+                    rnd(static_cast<std::uint32_t>(h.core().documentCount())));
                 h.core().submitText(rnd(2) ? "LAYOUT New" : "LAYOUT Move");
                 break;
             case 0:
@@ -1873,7 +1879,8 @@ TEST_CASE("random clicks, keys and commands leave the program usable") {
                 h.click(x, y, 1);
                 break;
             case 2:
-                h.drag(x, y, 40.0f + static_cast<float>(rnd(1360)), 70.0f + static_cast<float>(rnd(780)));
+                h.drag(x, y, 40.0f + static_cast<float>(rnd(1360)),
+                       70.0f + static_cast<float>(rnd(780)));
                 break;
             case 3:
                 h.scroll(x, y, static_cast<float>(rnd(5)) - 2.0f);
@@ -1934,35 +1941,35 @@ FullDrawing fullDrawing(Harness& h) {
         LayerId walls{}, frozen{};
         {
             Layer l;
-            l.name = "Walls";
+            l.name = "T-Walls";
             walls = tx.addLayer(l).value();
-            l.name = "Frozen";
+            l.name = "T-Frozen";
             l.frozen = true;
             frozen = tx.addLayer(l).value();
-            l.name = "Locked";
+            l.name = "T-Locked";
             l.frozen = false;
             l.locked = true;
             REQUIRE(tx.addLayer(l).ok());
-            l.name = "Off";
+            l.name = "T-Off";
             l.locked = false;
             l.on = false;
             REQUIRE(tx.addLayer(l).ok());
         }
         TextStyle ts;
-        ts.name = "Notes";
+        ts.name = "T-Notes";
         const TextStyleId notes = tx.addTextStyle(ts).value();
         DimStyle ds = *doc.dimStyle(doc.header().currentDimStyle);
         ds.id = {};
-        ds.name = "Arch";
+        ds.name = "T-Arch";
         const DimStyleId arch = tx.addDimStyle(ds).value();
 
-        const BlockId door = tx.addBlock(BlockDef{.name = "Door"}).value();
+        const BlockId door = tx.addBlock(BlockDef{.name = "T-Door"}).value();
         (void)tx.add(Entity{{}, LineData{{0, 0}, {9, 0}}}, door);
         TextData tag;
         tag.utf8 = "D1";
         tag.height = 2;
-        tag.attdef = Boxed<AttDefInfo>(AttDefInfo{.tag = "MARK", .prompt = "Mark",
-                                                   .defaultValue = "D1"});
+        tag.attdef =
+            Boxed<AttDefInfo>(AttDefInfo{.tag = "MARK", .prompt = "Mark", .defaultValue = "D1"});
         (void)tx.add(Entity{{}, Indirect<TextData>(tag)}, door);
 
         auto add = [&](EntityData d, LayerId layer = {}) {
@@ -1993,9 +2000,9 @@ FullDrawing fullDrawing(Harness& h) {
         hd.solid = false;
         hd.pattern = "ANSI31";
         HatchLoop loop;
-        loop.edges.push_back(HatchPolylineEdge{
-            {PolyVertex{{60, 60}}, PolyVertex{{80, 60}}, PolyVertex{{80, 80}}, PolyVertex{{60, 80}}},
-            true});
+        loop.edges.push_back(HatchPolylineEdge{{PolyVertex{{60, 60}}, PolyVertex{{80, 60}},
+                                                PolyVertex{{80, 80}}, PolyVertex{{60, 80}}},
+                                               true});
         hd.loops.push_back(loop);
         out.hatch = add(Indirect<HatchData>(hd));
         InsertData in;
@@ -2028,24 +2035,33 @@ FullDrawing fullDrawing(Harness& h) {
     return out;
 }
 
-// Clicks each labelled widget of the panel's window once, closing whatever it opened.
+// Clicks each widget of the panel's window (twice over, so a row picked in the first pass is
+// edited in the second), types a value into any text field a click focused, and closes whatever
+// it opened.
 void clickEveryWidget(Harness& h, const char* tab) {
-    std::vector<std::string> labels;
-    for (const auto& it : imgui_items::items())
-        if (it.window.find(tab) != std::string::npos && !it.label.empty() &&
-            it.label.rfind("##", 0) != 0 && it.label != tab)
-            labels.push_back(it.label);
-    for (const std::string& l : labels) {
-        if (!h.has(l, tab))
-            continue;
-        h.click(l, tab);
-        h.frame(2);
-        h.key(ImGuiKey_Escape);
-        h.frame(1);
-        h.core().pressEscape();  // a command a click started
-        h.frame(1);
-        if (!h.windowOpen(tab) && h.has(tab, "DockSpace"))
-            h.click(tab, "DockSpace");
+    for (int pass = 0; pass < 2; ++pass) {
+        std::vector<std::string> labels;
+        for (const auto& it : imgui_items::items())
+            if (it.window.find(tab) != std::string::npos && !it.label.empty() && it.label != tab)
+                labels.push_back(it.label);
+        for (const std::string& l : labels) {
+            if (!h.has(l, tab))
+                continue;
+            h.click(l, tab);
+            h.frame(2);
+            if (ImGui::GetIO().WantTextInput) {
+                h.key(ImGuiKey_A, /*ctrl=*/true);
+                h.type("3");
+                h.key(ImGuiKey_Enter);
+                h.frame(2);
+            }
+            h.key(ImGuiKey_Escape);
+            h.frame(1);
+            h.core().pressEscape();  // a command a click started
+            h.frame(1);
+            if (!h.windowOpen(tab) && h.has(tab, "DockSpace"))
+                h.click(tab, "DockSpace");
+        }
     }
 }
 
@@ -2070,15 +2086,16 @@ TEST_CASE("panels on a full drawing: every widget clicked, with each kind of obj
                         {"attvalues", "Attribute Values"},
                         {"content", "Content Browser"}};
     for (const P& p : panels) {
-        CAPTURE(p.id);
+        const std::string panelId = p.id;
+        CAPTURE(panelId);
         Harness h(1920, 1080);
         const FullDrawing d = fullDrawing(h);
         // The properties panel draws different sections per kind: try each; the others once
         // with everything selected.
         std::vector<std::vector<EntityId>> selections = {{}};
         if (std::string_view(p.id) == "properties" || std::string_view(p.id) == "attvalues")
-            selections = {{d.line},   {d.circle}, {d.text},  {d.mtext}, {d.dim},
-                          {d.hatch},  {d.insert}, {d.line, d.text, d.insert}};
+            selections = {{d.line}, {d.circle}, {d.text},   {d.mtext},
+                          {d.dim},  {d.hatch},  {d.insert}, {d.line, d.text, d.insert}};
         for (const auto& sel : selections) {
             if (sel.empty())
                 h.core().selectAll();
