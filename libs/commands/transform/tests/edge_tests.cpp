@@ -213,3 +213,39 @@ TEST_CASE("A zero displacement copies and moves nothing") {
         CHECK(lines(f.doc) == 3);
     }
 }
+
+TEST_CASE("ROTATE and SCALE: Copy together with Reference, one undo step, original untouched") {
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{10, 0}, {20, 0}});
+        f.host.setSelection({a});
+        const std::string before = canonicalDump(f.doc);
+        // Copy first, then Reference: the copy turns by new - old = 90 degrees.
+        f.host.run("ROTATE", {"0,0", "Copy", "Reference", "0", "90"});
+        CHECK(f.doc.modelSpaceCount() == 2);
+        CHECK(near(get<LineData>(f.doc, a).b, {20, 0}));
+        bool found = false;
+        for (EntityId id : f.doc.modelSpace())
+            found |= near(get<LineData>(f.doc, id).b, {0, 20});
+        CHECK(found);
+        CHECK(f.host.undo());
+        CHECK(canonicalDump(f.doc) == before);
+        f.host.run("RO", {"0,0", "C", "C", "180"});  // asking twice keeps the copy mode
+        CHECK(f.doc.modelSpaceCount() == 2);
+    }
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        const std::string before = canonicalDump(f.doc);
+        f.host.run("SCALE", {"0,0", "Copy", "Reference", "10", "25"});
+        CHECK(f.doc.modelSpaceCount() == 2);
+        CHECK(near(get<LineData>(f.doc, a).b, {10, 0}));
+        bool found = false;
+        for (EntityId id : f.doc.modelSpace())
+            found |= near(get<LineData>(f.doc, id).b, {25, 0});
+        CHECK(found);
+        CHECK(f.host.undo());
+        CHECK(canonicalDump(f.doc) == before);
+    }
+}

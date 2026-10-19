@@ -70,6 +70,14 @@ public:
     const GlyphOutline& outline(FontId font, std::uint32_t glyphId,
                                 double toleranceEm = kDefaultFlattenTolerance);
 
+    // Box around a glyph's outline (or strokes), em units, y up; `empty` for a glyph that draws
+    // nothing. Cached in this library, so text laid out on several threads does not share one.
+    struct GlyphBounds {
+        double minX = 0, minY = 0, maxX = 0, maxY = 0;
+        bool empty = true;
+    };
+    GlyphBounds glyphBounds(FontId font, std::uint32_t glyphId);
+
     FontMetrics metrics(FontId font);
 
     // True if the font has a glyph for the code point.

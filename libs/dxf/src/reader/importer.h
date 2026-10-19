@@ -168,6 +168,7 @@ private:
     bool convPoint(const Record& r, std::vector<Entity>& out);
     bool convInsert(const Record& r, RecordReader& rr, const Frame& f, std::vector<Entity>& out);
     bool blockHasAttDef(BlockId block, const std::string& tag) const;
+    void attribOffsets(InsertData& d, const std::vector<Vec2>& anchors) const;
     bool convSolid(const Record& r, const Frame& f, std::vector<Entity>& out);
     bool convLeader(const Record& r, std::vector<Entity>& out);
     bool convMLeader(const Record& r, std::vector<Entity>& out);

@@ -4,9 +4,11 @@
 #include <limits>
 
 #include "common.h"
+#include "tbcad/blocks/attributes.h"
+#include "tbcad/geom/geom.h"
+#include "tbcad/transform/grips.h"
 #include "tbcad/transform/transform.h"
 #include "tbcad/ui/ui_registry.h"
-#include "tbcad/transform/grips.h"
 
 using namespace tbtest;
 using cmd::ScriptItem;
@@ -264,6 +266,41 @@ TEST_CASE("a dynamic block insert offers the handle of its linear parameter") {
     CHECK(entityAs<InsertData>(moved[0].second)->dynValues == std::vector<double>{15});
 }
 
+TEST_CASE("an insert offers a grip per attribute and dragging it moves just that value") {
+    Fixture f;
+    BlockId block;
+    {
+        auto tx = f.doc.begin("block");
+        block = tx.addBlock(BlockDef{.name = "Tag"}).value();
+        Entity t;
+        TextData def;
+        def.position = {0, 5};
+        def.height = 2;
+        def.utf8 = "NAME";
+        def.attdef = AttDefInfo{"NAME", "", "x", false, false, false, false};
+        t.data = def;
+        REQUIRE(tx.add(std::move(t), block).ok());
+        tx.commit();
+    }
+    InsertData d{block, {100, 0}, {1, 1}, 0};
+    d.attribs = blocks::defaultAttribs(f.doc, block);
+    auto ins = add(f.doc, d);
+    std::vector<EntityId> ids{ins};
+    auto grips = tf::collectGrips(f.doc, ids);
+    REQUIRE(grips.size() == 2);  // the position and the attribute
+    CHECK(grips[1].index == tf::kAttGripBase);
+    CHECK(near(grips[1].pos, {100, 5}));
+
+    f.host.setSelection(ids);
+    f.host.run("GRIPEDIT", {"100,5", "110,12"});
+    const auto& after = get<InsertData>(f.doc, ins);
+    CHECK(near(after.position, {100, 0}));
+    REQUIRE(after.attribs.size() == 1);
+    CHECK(near(after.attribs[0].offset, {10, 7}));
+    f.host.undo();
+    CHECK(near(get<InsertData>(f.doc, ins).attribs[0].offset, {0, 0}));
+}
+
 TEST_CASE("GRIPOBJLIMIT sets the limit and 0 lifts it") {
     Fixture f;
     f.host.run("GRIPOBJLIMIT", {"2"});
@@ -309,7 +346,8 @@ TEST_CASE("grips of a very big selection are found quickly") {
     CHECK(near(g->pos, {25000.0, 0.0}));
 }
 
-TEST_CASE("performance: the MOVE preview of 100k selected lines does not re-measure them per move") {
+TEST_CASE(
+    "performance: the MOVE preview of 100k selected lines does not re-measure them per move") {
     Fixture f;
     std::vector<EntityId> ids;
     {
@@ -385,7 +423,7 @@ TEST_CASE("Shift-picked grips are dragged together by the same displacement") {
     CHECK(near(get<LineData>(f.doc, b).b, {13, 9}));  // moved by the same (3, 4)
     CHECK(near(get<LineData>(f.doc, c).b, {10, 9}));  // not picked
     CHECK(tf::warmGrips().empty());                   // the drag ends the pick
-    CHECK(f.host.undo());                              // one step for both
+    CHECK(f.host.undo());                             // one step for both
     CHECK(near(get<LineData>(f.doc, a).b, {10, 0}));
     CHECK(near(get<LineData>(f.doc, b).b, {10, 5}));
 }
@@ -426,7 +464,8 @@ TEST_CASE("Picking a picked grip again lets it go, two grips of one polyline mov
     CHECK(near(v[0].p, {0, 0}));
 }
 
-TEST_CASE("Shift-click on a grip picks it without starting a drag, a plain click elsewhere forgets") {
+TEST_CASE(
+    "Shift-click on a grip picks it without starting a drag, a plain click elsewhere forgets") {
     Fixture f;
     auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
     f.host.setSelection({a});
@@ -450,4 +489,31 @@ TEST_CASE("Shift-click on a grip picks it without starting a drag, a plain click
     CHECK(ran[0].rfind("GRIPEDIT ", 0) == 0);
     CHECK_FALSE(hook(ctx, {50, 50}, 1.0, false, false));  // elsewhere: forget
     CHECK(tf::warmGrips().empty());
+}
+
+TEST_CASE("TEXT grips sit at the anchor and aligned text has both ends") {
+    Fixture f;
+    TextData t;
+    t.position = {0, 0};
+    t.alignPoint = {5, 1};
+    t.utf8 = "abc";
+    t.h = HAlign::Center;
+    auto id = add(f.doc, Indirect<TextData>(t));
+    auto g = tf::collectGrips(f.doc, std::vector<EntityId>{id});
+    REQUIRE(g.size() == 1);
+    CHECK(near(g[0].pos, {5, 1}));  // the justification point, where the text is drawn from
+    auto moved = tbcad::geom::moveGrip(*f.doc.find(id), 0, {15, 11});
+    REQUIRE(moved.ok());
+    CHECK(near(entityAs<TextData>(moved.value())->alignPoint, {15, 11}));
+    CHECK(near(entityAs<TextData>(moved.value())->position, {10, 10}));
+    TextData a = t;
+    a.h = HAlign::Aligned;
+    auto aid = add(f.doc, Indirect<TextData>(a));
+    auto ag = tf::collectGrips(f.doc, std::vector<EntityId>{aid});
+    REQUIRE(ag.size() == 2);
+    auto end = tbcad::geom::moveGrip(*f.doc.find(aid), 1, {20, 0});
+    REQUIRE(end.ok());
+    CHECK(near(entityAs<TextData>(end.value())->alignPoint, {20, 0}));
+    CHECK(near(entityAs<TextData>(end.value())->position, {0, 0}));
+    CHECK_FALSE(tbcad::geom::moveGrip(*f.doc.find(aid), 2, {1, 1}).ok());
 }

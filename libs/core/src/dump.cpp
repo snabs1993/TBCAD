@@ -221,6 +221,8 @@ struct DataDumper {
             o.quoted(a.tag);
             o << "=";
             o.quoted(a.value);
+            if (a.offset != Vec2{})
+                o << " off" << a.offset;
         }
         if (d.array) {
             const ArrayInfo& a = *d.array;
@@ -486,6 +488,8 @@ std::string canonicalDump(const Document& doc) {
         if (r.linearFactor != 1 || r.fit != DimFit::Best || r.textMove != DimTextMove::WithLine)
             o << " fit" << r.linearFactor << "/" << static_cast<int>(r.fit) << "/"
               << static_cast<int>(r.textMove);
+        if (packDimRules(r) != kDimRulesDefault || r.textJustify != 0)
+            o << " rules" << static_cast<int>(packDimRules(r)) << "/" << r.textJustify;
         o << "\n";
     }
     for (const auto& [id, r] : doc.blocks()) {

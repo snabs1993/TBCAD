@@ -332,8 +332,12 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
         plain.data = Indirect<TextData>(TextData{.utf8 = "plain"});
         (void)tx.add(std::move(plain));
         Entity ins;
-        ins.data = Indirect<InsertData>(InsertData{
-            blk, {5, 5}, {1, 1}, 0, {AttribValue{"ROOM", "ห้องรับแขก"}, AttribValue{"AREA", "12"}}});
+        ins.data = Indirect<InsertData>(
+            InsertData{blk,
+                       {5, 5},
+                       {1, 1},
+                       0,
+                       {AttribValue{"ROOM", "ห้องรับแขก", {2.5, -1}}, AttribValue{"AREA", "12"}}});
         (void)tx.add(std::move(ins));
         Entity bare;
         bare.data = Indirect<InsertData>(InsertData{blk, {1, 1}, {1, 1}, 0, {}});
@@ -359,6 +363,8 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
             ++withAttribs;
             CHECK(i->attribs.size() == 2);
             CHECK(i->attribs[0].value == "ห้องรับแขก");
+            CHECK(i->attribs[0].offset == Vec2{2.5, -1});
+            CHECK(i->attribs[1].offset == Vec2{});
         }
     });
     CHECK(withAttribs == 1);

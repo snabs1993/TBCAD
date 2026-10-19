@@ -49,4 +49,18 @@ std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
 std::optional<Entity> attributeText(const Entity& definition, const InsertData& insert,
                                     int attDisplay = 0);
 
+// How far the Insert has moved the value of `def` from where the definition puts it (block
+// coordinates); zero when it has not.
+Vec2 attributeOffset(const AttDefInfo& def, const InsertData& insert);
+
+// Grips of the attributes an Insert shows: one per non-constant, visible definition (index k in
+// definition order) at the anchor of its text, carried through the Insert's transform.
+struct AttribHandle {
+    int index = 0;
+    Vec2 world{};
+};
+std::vector<AttribHandle> attribHandles(const Document& doc, const Entity& insert);
+// The Insert with attribute `index` moved so its anchor sits at `world`.
+Result<Entity> attribDrag(const Document& doc, const Entity& insert, int index, Vec2 world);
+
 }  // namespace tbcad::blocks

@@ -15,6 +15,8 @@ namespace tbcad::transform {
 // Grip indices from here up belong to the parameters of a dynamic block Insert: index
 // kDynGripBase + n is the handle of parameter n (see blocks::dynHandles).
 constexpr int kDynGripBase = 1000;
+// kAttGripBase + k is the grip of attribute k of an Insert (see blocks::attribHandles).
+constexpr int kAttGripBase = 2000;
 
 // One grip of one selected entity (index as in geom::gripPoints).
 struct Grip {
@@ -70,8 +72,7 @@ HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot,
 // few thousand).
 std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, const HotGrips& set,
                                                         const Grip& hot, Vec2 delta,
-                                                        std::string* error,
-                                                        std::size_t limit);
+                                                        std::string* error, std::size_t limit);
 
 // Transform for the Move / Rotate / Scale / Mirror modes while the cursor is at `p`.
 // Rotate: the hot grip follows the cursor around `base`. Scale: the hot grip's distance from

@@ -80,12 +80,15 @@ std::string spaced(std::string_view v) {
 }
 
 const std::vector<std::string> kProps = {
-    "TextHeight",   "TextGap",       "TextStyle", "ArrowType", "ArrowSize",    "ExtOffset",
-    "ExtExtension", "LineExtension", "Placement", "Alignment", "Units",        "Precision",
-    "Prefix",       "Suffix",        "RoundOff",  "Scale",     "LeadingZeros", "TrailingZeros",
-    "LineColor",    "ExtColor",      "TextColor", "AltUnits",  "AltScale",     "AltUnit",
-    "AltPrecision", "AltPrefix",     "AltSuffix", "Tolerance", "TolUpper",     "TolLower",
-    "TolPrecision", "LinearFactor",  "Fit",       "TextMove"};
+    "TextHeight",   "TextGap",       "TextStyle",     "ArrowType", "ArrowSize",
+    "ExtOffset",    "ExtExtension",  "LineExtension", "Placement", "Alignment",
+    "Units",        "Precision",     "Prefix",        "Suffix",    "RoundOff",
+    "Scale",        "LeadingZeros",  "TrailingZeros", "LineColor", "ExtColor",
+    "TextColor",    "AltUnits",      "AltScale",      "AltUnit",   "AltPrecision",
+    "AltPrefix",    "AltSuffix",     "Tolerance",     "TolUpper",  "TolLower",
+    "TolPrecision", "LinearFactor",  "Fit",           "TextMove",  "AlignmentOutside",
+    "TextInside",   "ArrowsOutside", "LineInside",    "ExtLine1",  "ExtLine2",
+    "DimLine1",     "DimLine2",      "Justify"};
 
 std::string num(double v) {
     char buf[40];
@@ -149,6 +152,18 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"LinearFactor", num(s.linearFactor)},
         {"Fit", fit[static_cast<int>(s.fit)]},
         {"TextMove", move[static_cast<int>(s.textMove)]},
+        {"AlignmentOutside",
+         s.textAlignOutside == DimTextAlign::WithDimLine ? "WithLine" : "Horizontal"},
+        {"TextInside", s.textInsideForced ? "Forced" : "Auto"},
+        {"ArrowsOutside", s.suppressArrowsOutside ? "Suppress" : "Show"},
+        {"LineInside", s.forceLineInside ? "Force" : "Auto"},
+        {"ExtLine1", s.suppressExt1 ? "Hide" : "Show"},
+        {"ExtLine2", s.suppressExt2 ? "Hide" : "Show"},
+        {"DimLine1", s.suppressDim1 ? "Hide" : "Show"},
+        {"DimLine2", s.suppressDim2 ? "Hide" : "Show"},
+        {"Justify", s.textJustify == 1   ? "Ext1"
+                    : s.textJustify == 2 ? "Ext2"
+                                         : "Centered"},
     };
 }
 
@@ -242,6 +257,52 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             s.textAlign = DimTextAlign::Horizontal;
         else
             return "Alignment is WithLine or Horizontal.";
+        return {};
+    }
+    if (same(key, "AlignmentOutside")) {
+        if (same(value, "WithLine") || same(value, "Aligned"))
+            s.textAlignOutside = DimTextAlign::WithDimLine;
+        else if (same(value, "Horizontal"))
+            s.textAlignOutside = DimTextAlign::Horizontal;
+        else
+            return "AlignmentOutside is WithLine or Horizontal.";
+        return {};
+    }
+    struct Flag {
+        const char* key;
+        const char* on;
+        const char* off;
+        bool DimStyle::*field;
+    };
+    static const Flag flags[] = {
+        {"TextInside", "Forced", "Auto", &DimStyle::textInsideForced},
+        {"ArrowsOutside", "Suppress", "Show", &DimStyle::suppressArrowsOutside},
+        {"LineInside", "Force", "Auto", &DimStyle::forceLineInside},
+        {"ExtLine1", "Hide", "Show", &DimStyle::suppressExt1},
+        {"ExtLine2", "Hide", "Show", &DimStyle::suppressExt2},
+        {"DimLine1", "Hide", "Show", &DimStyle::suppressDim1},
+        {"DimLine2", "Hide", "Show", &DimStyle::suppressDim2},
+    };
+    for (const Flag& fl : flags) {
+        if (!same(key, fl.key))
+            continue;
+        if (same(value, fl.on))
+            s.*fl.field = true;
+        else if (same(value, fl.off))
+            s.*fl.field = false;
+        else
+            return std::string(fl.key) + " is " + fl.on + " or " + fl.off + ".";
+        return {};
+    }
+    if (same(key, "Justify")) {
+        if (same(value, "Centered"))
+            s.textJustify = 0;
+        else if (same(value, "Ext1"))
+            s.textJustify = 1;
+        else if (same(value, "Ext2"))
+            s.textJustify = 2;
+        else
+            return "Justify is Centered, Ext1 or Ext2.";
         return {};
     }
     if (same(key, "Units") || same(key, "AltUnit")) {

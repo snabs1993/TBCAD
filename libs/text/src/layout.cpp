@@ -89,27 +89,12 @@ Chunk shapeChunk(const TextStyle* style, std::string_view text, const Attr& attr
 // ---- glyph boxes -------------------------------------------------------------------------------
 
 BBox2 glyphBoxEm(font::FontId f, std::uint32_t gid) {
-    static std::mutex m;
-    static std::unordered_map<std::uint64_t, BBox2> cache;
-    std::uint64_t key = (static_cast<std::uint64_t>(f.value) << 32) | gid;
-    {
-        std::lock_guard lock(m);
-        if (auto it = cache.find(key); it != cache.end())
-            return it->second;
-    }
+    const font::FontLibrary::GlyphBounds g = fonts().glyphBounds(f, gid);
     BBox2 b;
-    if (fonts().isStroke(f)) {
-        for (const auto& path : fonts().strokes(f, gid).paths)
-            for (const auto& p : path.points)
-                b.expand({p.x, p.y});
-    } else {
-        const font::GlyphOutline& o = fonts().outline(f, gid);
-        for (const auto& c : o.contours)
-            for (const auto& p : c.points)
-                b.expand({p.x, p.y});
+    if (!g.empty) {
+        b.expand({g.minX, g.minY});
+        b.expand({g.maxX, g.maxY});
     }
-    std::lock_guard lock(m);
-    cache.emplace(key, b);
     return b;
 }
 

@@ -117,6 +117,16 @@ TEST_CASE("every DIMSTYLE property accepts a valid value") {
     CHECK(!ok("TolUpper", "-1").empty());
     CHECK(!ok("Tolerance", "Wide").empty());
     CHECK(!ok("AltUnit", "yd").empty());
+    CHECK(ok("AlignmentOutside", "Horizontal").empty());
+    CHECK(s.textAlignOutside == DimTextAlign::Horizontal);
+    CHECK(ok("TextInside", "Forced").empty());
+    CHECK(s.textInsideForced);
+    CHECK(ok("LineInside", "Auto").empty());
+    CHECK_FALSE(s.forceLineInside);
+    CHECK(ok("DimLine2", "Hide").empty());
+    CHECK(s.suppressDim2);
+    CHECK(ok("Justify", "Ext2").empty());
+    CHECK(s.textJustify == 2);
     for (const std::string& k : dimcmd::propertyKeywords())
         if (k != "Prefix" && k != "Suffix" && k != "AltPrefix" && k != "AltSuffix")  // free text
             CHECK(!ok(k.c_str(), "@@@").empty());

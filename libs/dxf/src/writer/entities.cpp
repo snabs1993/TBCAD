@@ -1277,11 +1277,15 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
     for (const TextData* def : defs) {
         // The definition's placement, carried through the insert transform. A non-uniform scale
         // cannot stretch text, so the height follows the Y scale.
-        Vec2 rel = def->position - bd->base;
+        Vec2 shift{};  // the attribute's own grip offset, in block coordinates
+        for (const AttribValue& v : d.attribs)
+            if (v.tag == def->attdef->tag)
+                shift = v.offset;
+        Vec2 rel = def->position + shift - bd->base;
         rel = {rel.x * d.scale.x, rel.y * d.scale.y};
         TextData t = *def;
         t.position = d.position + Vec2{rel.x * c - rel.y * sn, rel.x * sn + rel.y * c};
-        Vec2 al = def->alignPoint - bd->base;
+        Vec2 al = def->alignPoint + shift - bd->base;
         al = {al.x * d.scale.x, al.y * d.scale.y};
         t.alignPoint = d.position + Vec2{al.x * c - al.y * sn, al.x * sn + al.y * c};
         t.height = def->height * std::abs(d.scale.y);

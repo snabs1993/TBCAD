@@ -322,7 +322,8 @@ bool sameGeometry(const Entity& a, const Entity& b, double tol) {
                 return false;
             for (std::size_t i = 0; i < x.attribs.size(); ++i) {
                 if (x.attribs[i].tag != y.attribs[i].tag ||
-                    x.attribs[i].value != y.attribs[i].value)
+                    x.attribs[i].value != y.attribs[i].value ||
+                    x.attribs[i].offset != y.attribs[i].offset)
                     return false;
             }
             return samePoint(x.position, y.position, tol) && samePoint(x.scale, y.scale, 1e-9) &&

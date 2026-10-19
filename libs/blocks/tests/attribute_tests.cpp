@@ -95,6 +95,37 @@ TEST_CASE("attributeText substitutes the value and honours invisible") {
     CHECK_FALSE(attributeText(*defs[0], ins, 2).has_value());
 }
 
+TEST_CASE("attribute grips move one value inside its insert") {
+    Document doc;
+    BlockId b = addBlock(doc, "B",
+                         {attdef("A", "a0", {0, 1}), attdef("H", "hid", {0, 2}, true),
+                          attdef("K", "k0", {0, 3}, false, true)});
+    InsertData d{b, {10, 20}, {2, 2}, 0};
+    d.attribs = defaultAttribs(doc, b);
+    Entity ins;
+    ins.data = d;
+    auto hs = attribHandles(doc, ins);
+    REQUIRE(hs.size() == 1);  // invisible and constant ones have none
+    CHECK(hs[0].world.x == doctest::Approx(10));
+    CHECK(hs[0].world.y == doctest::Approx(22));
+
+    auto moved = attribDrag(doc, ins, 0, {16, 30});
+    REQUIRE(moved);
+    const auto* md = entityAs<InsertData>(moved.value());
+    REQUIRE(md->attribs.size() == 2);
+    CHECK(md->attribs[0].offset.x == doctest::Approx(3));
+    CHECK(md->attribs[0].offset.y == doctest::Approx(4));
+    CHECK(md->attribs[0].value == "a0");
+    CHECK(attribHandles(doc, moved.value())[0].world.x == doctest::Approx(16));
+
+    auto defs = attributeDefinitions(doc, b);
+    auto shown = attributeText(*defs[0], *md);
+    REQUIRE(shown);
+    CHECK(entityAs<TextData>(*shown)->position.x == doctest::Approx(3));
+    CHECK(entityAs<TextData>(*shown)->position.y == doctest::Approx(5));
+    CHECK_FALSE(attribDrag(doc, ins, 1, {0, 0}));
+}
+
 TEST_CASE("an insert displays its own attribute values, not the block's shared ones") {
     registerInsertDisplay();
     registerFakeText();

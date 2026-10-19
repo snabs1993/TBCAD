@@ -963,6 +963,34 @@ bool Importer::blockHasAttDef(BlockId block, const std::string& tag) const {
     return false;
 }
 
+// An ATTRIB that sits away from its definition's place was moved by hand: keep that as the
+// attribute's offset (block coordinates).
+void Importer::attribOffsets(InsertData& d, const std::vector<Vec2>& anchors) const {
+    const BlockDef* def = doc_->block(d.block);
+    if (!def)
+        return;
+    const double c = std::cos(d.rotation), s = std::sin(d.rotation);
+    for (std::size_t i = 0; i < d.attribs.size() && i < anchors.size(); ++i) {
+        AttribValue& v = d.attribs[i];
+        for (EntityId id : def->entities) {
+            const Entity* e = doc_->find(id);
+            const auto* t = e ? entityAs<TextData>(*e) : nullptr;
+            if (!t || !t->attdef || t->attdef->tag != v.tag)
+                continue;
+            const Vec2 rel = anchors[i] - d.position;  // world -> block, undoing the placement
+            const Vec2 local = def->base + Vec2{(rel.x * c + rel.y * s) / d.scale.x,
+                                                (-rel.x * s + rel.y * c) / d.scale.y};
+            const Vec2 home =
+                (t->h == HAlign::Left && t->v == VAlign::Baseline) ? t->position : t->alignPoint;
+            const Vec2 off = local - home;
+            if (std::isfinite(off.x) && std::isfinite(off.y) &&
+                (std::abs(off.x) > 1e-6 || std::abs(off.y) > 1e-6))
+                v.offset = off;
+            break;
+        }
+    }
+}
+
 bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
                           std::vector<Entity>& out) {
     // Our own table export: an INSERT of an anonymous block with the table in extended data.
@@ -1048,6 +1076,7 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
     }
     // Values for the tags the block defines; any other ATTRIB stays visible as plain text.
     std::vector<AttribValue> values;
+    std::vector<Vec2> valueAnchors;  // where each ATTRIB sits (drawing coordinates)
     std::vector<Entity> loose;
     for (const Record& a : attribs) {
         std::string tag = upperAscii(dec(a.raw(2)));
@@ -1056,8 +1085,11 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             bool seen = false;
             for (const AttribValue& v : values)
                 seen = seen || v.tag == tag;
-            if (!seen)
-                values.push_back({std::move(tag), std::move(value)});
+            if (!seen) {
+                const bool anchored = a.integer(72) != 0 || a.integer(74) != 0;
+                values.push_back({std::move(tag), std::move(value), {}});
+                valueAnchors.push_back(f.p(anchored ? P(a, 11, 21) : P(a, 10, 20)));
+            }
             continue;
         }
         Frame af;
@@ -1109,6 +1141,8 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             d.scale = f.mirror ? Vec2{-sx, sy} : Vec2{sx, sy};
             d.rotation = f.rot + (f.mirror ? -rot : rot);
             d.attribs = values;
+            if (rows * cols == 1)
+                attribOffsets(d, valueAnchors);
             d.clip = clip;
             d.clipOn = clipOn;
             d.clipInvert = clipInvert;

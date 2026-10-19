@@ -2,6 +2,8 @@
 
 #include <unordered_set>
 
+#include "tbcad/blocks/blocks.h"
+
 namespace tbcad::blocks {
 
 std::string normalizeTag(std::string_view tag) {
@@ -70,7 +72,7 @@ std::vector<AttribValue> defaultAttribs(const Document& doc, BlockId block) {
     for (const Entity* e : attributeDefinitions(doc, block)) {
         const AttDefInfo& a = *entityAs<TextData>(*e)->attdef;
         if (!a.constant)
-            out.push_back({a.tag, a.defaultValue});
+            out.push_back({a.tag, a.defaultValue, {}});
     }
     return out;
 }
@@ -117,7 +119,9 @@ std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
         auto synced = syncedAttribs(doc, *source);
         bool same = synced.size() == ins->attribs.size();
         for (std::size_t i = 0; same && i < synced.size(); ++i)
-            same = synced[i].tag == ins->attribs[i].tag && synced[i].value == ins->attribs[i].value;
+            same = synced[i].tag == ins->attribs[i].tag &&
+                   synced[i].value == ins->attribs[i].value &&
+                   synced[i].offset == ins->attribs[i].offset;
         if (same)
             continue;
         if (tx.modify(id, [&](Entity& e) {
@@ -136,8 +140,70 @@ std::optional<Entity> attributeText(const Entity& definition, const InsertData& 
     Entity e = definition;
     auto* td = entityAs<TextData>(e);
     td->utf8 = attributeValue(*t->attdef, insert);
+    if (!t->attdef->constant)
+        if (const Vec2 off = attributeOffset(*t->attdef, insert); off != Vec2{}) {
+            td->position += off;
+            td->alignPoint += off;
+        }
     td->attdef.reset();
     return e;
+}
+
+Vec2 attributeOffset(const AttDefInfo& def, const InsertData& insert) {
+    for (const AttribValue& a : insert.attribs)
+        if (a.tag == def.tag)
+            return a.offset;
+    return {};
+}
+
+namespace {
+// The shown, movable attributes of an Insert's block, in definition order.
+std::vector<const TextData*> movableAttribs(const Document& doc, const InsertData& ins) {
+    std::vector<const TextData*> out;
+    for (const Entity* e : attributeDefinitions(doc, ins.block)) {
+        const auto* t = entityAs<TextData>(*e);
+        if (!t->attdef->constant && !t->attdef->invisible)
+            out.push_back(t);
+    }
+    return out;
+}
+Vec2 anchorOf(const TextData& t) {
+    return (t.h == HAlign::Left && t.v == VAlign::Baseline) ? t.position : t.alignPoint;
+}
+}  // namespace
+
+std::vector<AttribHandle> attribHandles(const Document& doc, const Entity& insert) {
+    std::vector<AttribHandle> out;
+    const auto* ins = entityAs<InsertData>(insert);
+    const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+    if (!def || ins->array)
+        return out;
+    const Transform2 t = instanceTransform(*ins, def->base);
+    int k = 0;
+    for (const TextData* td : movableAttribs(doc, *ins))
+        out.push_back({k++, t.apply(anchorOf(*td) + attributeOffset(*td->attdef, *ins))});
+    return out;
+}
+
+Result<Entity> attribDrag(const Document& doc, const Entity& insert, int index, Vec2 world) {
+    const auto* ins = entityAs<InsertData>(insert);
+    const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+    if (!def || ins->array)
+        return makeError(ErrorCode::InvalidArgument, "This object has no movable attributes");
+    const auto defs = movableAttribs(doc, *ins);
+    if (index < 0 || static_cast<std::size_t>(index) >= defs.size())
+        return makeError(ErrorCode::OutOfRange, "There is no such attribute");
+    auto inv = instanceTransform(*ins, def->base).inverse();
+    if (!inv)
+        return makeError(ErrorCode::InvalidArgument, "The block reference is degenerate");
+    const TextData& td = *defs[static_cast<std::size_t>(index)];
+    Entity out = insert;
+    auto& d = *entityAs<InsertData>(out);
+    d.attribs = syncedAttribs(doc, *ins);
+    for (AttribValue& v : d.attribs)
+        if (v.tag == td.attdef->tag)
+            v.offset = inv.value().apply(world) - anchorOf(td);
+    return out;
 }
 
 }  // namespace tbcad::blocks
