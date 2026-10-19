@@ -125,9 +125,16 @@ if(TBCAD_BUILD_TESTS)
     TBCAD_GUI_FONT_DIR="${CMAKE_SOURCE_DIR}/assets/fonts"
     TBCAD_GUI_FAILURE_DIR="${CMAKE_CURRENT_BINARY_DIR}/gui-test-failures")
   target_link_libraries(tbcad_gui_tests PRIVATE tbcad_gui tbcad_mcp tbcad_underlay doctest::doctest)
-  doctest_discover_tests(tbcad_gui_tests PROPERTIES TIMEOUT 600)
+  doctest_discover_tests(tbcad_gui_tests PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
   add_test(NAME tbcad_gui_smoke
            COMMAND tbcad --self-test --frames 5 --script "DEVGEN LINES 20000")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/capture-smoke.txt"
+       "LINE\n0,0\n100,50\n\n@shot ${CMAKE_CURRENT_BINARY_DIR}/capture-smoke.png\n")
+  add_test(NAME tbcad_capture_smoke
+           COMMAND tbcad --self-test --capture-script "${CMAKE_CURRENT_BINARY_DIR}/capture-smoke.txt")
+  set_tests_properties(tbcad_capture_smoke PROPERTIES
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "TBCAD_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-config;TBCAD_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-data")
   set_tests_properties(tbcad_gui_smoke PROPERTIES
     SKIP_RETURN_CODE 77
     ENVIRONMENT "TBCAD_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-config;TBCAD_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-data")

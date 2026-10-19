@@ -28,6 +28,9 @@ struct Options {
     std::string scriptFile{};  // a text file with one command line per line (# starts a comment)
     std::string screenshot{};  // write the last frame to this .ppm
     std::string report{};      // --gate: also write the report here
+    std::string captureScript{};  // --capture-script F: run F offscreen, @shot lines write PNGs
+    int captureW = 1600;          // --size WxH of the hidden capture window (logical pixels)
+    int captureH = 900;
     int frames = 0;            // > 0: draw this many frames, then exit
     int gateLines = 1000000;   // --gate: how many lines DEVGEN makes
     bool selfTest = false;     // hidden window, exit code 77 when no display / OpenGL
@@ -73,6 +76,9 @@ private:
     int runGate();
     int runGateFile();
     bool saveScreenshot(const std::string& path);
+    int runCapture();
+    void captureFrames(int n);
+    bool hidden() const { return options_.selfTest || !options_.captureScript.empty(); }
 
     Options options_;
     platform::AppPaths paths_;

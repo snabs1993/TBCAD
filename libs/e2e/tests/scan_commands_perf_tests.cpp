@@ -325,8 +325,8 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         {"COPYCLIP", {"COPYCLIP"}},
         {"BLOCK", {"BLOCK", "ALLOFIT", "0,0"}},
         {"ZOOM-E", {"ZOOM", "E"}},
-        {"FIND-count", {"FIND", "EL ", "", "No"}},
-        {"FIND-replace", {"FIND", "EL ", "ELEV ", "No"}},
+        {"FIND-count", {"FIND", "EL ", "", "No", "No"}},
+        {"FIND-replace", {"FIND", "EL ", "ELEV ", "No", "No"}},
         {"PROP-layer", {"-PROP", "Layer", "Topo"}},
         {"PROP-color", {"-PROP", "Only", "Line", "Color", "3"}},
         {"PROP-set", {"-PROP", "Only", "Circle", "Set", "radius", "2"}},
@@ -338,7 +338,7 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         {"SETBYLAYER", {"SETBYLAYER", "ALL", "", "Yes", "Yes"}},
         {"ISOLATE", {"ISOLATE", "ALL", ""}},
         {"SELECTALL", {"SELECTALL"}},
-        {"FIND-nomatch", {"FIND", "zzzqq", "yy", "Yes"}},
+        {"FIND-nomatch", {"FIND", "zzzqq", "yy", "Yes", "No"}},
     };
     Site s;
     std::printf("%zu objects\n", s.core->document().modelSpaceCount());
@@ -515,6 +515,8 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
     };
     (void)y;
     for (const Case& c : cases) {
+        if (const char* only = std::getenv("TBCAD_BENCH_ONLY"); only && std::string(only) != c.label)
+            continue;
         const Timing t = s.bench(c.lines, false);
         std::printf("%-20s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
                     s.core->history().empty() ? "" : s.core->history().back().c_str());

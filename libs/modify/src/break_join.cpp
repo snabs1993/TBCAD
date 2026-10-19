@@ -371,27 +371,68 @@ namespace {
 class PointGrid {
 public:
     PointGrid(double cell, double maxAbs) : cell_(std::max({cell, maxAbs * 1e-15, 1e-12})) {}
-    void add(Vec2 p, std::uint32_t id) { cells_[key(cellOf(p.x), cellOf(p.y))].push_back(id); }
+    void add(Vec2 p, std::uint32_t id) {
+        pending_.emplace_back(key(cellOf(p.x), cellOf(p.y)), id);
+        built_ = false;
+    }
     template <class F>
     void around(Vec2 p, F&& f) const {
+        build();
         const std::int64_t cx = cellOf(p.x), cy = cellOf(p.y);
         for (std::int64_t dx = -1; dx <= 1; ++dx)
             for (std::int64_t dy = -1; dy <= 1; ++dy) {
-                auto it = cells_.find(key(cx + dx, cy + dy));
-                if (it != cells_.end())
-                    for (std::uint32_t id : it->second)
-                        f(id);
+                const std::uint64_t k = key(cx + dx, cy + dy);
+                for (std::size_t h = k & mask_;; h = (h + 1) & mask_) {
+                    const Slot& s = slots_[h];
+                    if (s.end == 0)
+                        break;
+                    if (s.key == k) {
+                        for (std::uint32_t i = s.begin; i < s.end; ++i)
+                            f(pending_[i].second);
+                        break;
+                    }
+                }
             }
     }
 
 private:
+    // The points are sorted by cell once, and a flat open-addressing table gives each cell its
+    // range: no allocation per cell, and a query is nine probes into one array.
+    struct Slot {
+        std::uint64_t key = 0;
+        std::uint32_t begin = 0, end = 0;  // end == 0: free
+    };
+    void build() const {
+        if (built_)
+            return;
+        built_ = true;
+        std::sort(pending_.begin(), pending_.end());
+        std::size_t cap = 16;
+        while (cap < pending_.size() * 2 + 2)
+            cap <<= 1;
+        slots_.assign(cap, Slot{});
+        mask_ = cap - 1;
+        for (std::size_t i = 0; i < pending_.size();) {
+            std::size_t j = i;
+            while (j < pending_.size() && pending_[j].first == pending_[i].first)
+                ++j;
+            std::size_t h = pending_[i].first & mask_;
+            while (slots_[h].end != 0)
+                h = (h + 1) & mask_;
+            slots_[h] = {pending_[i].first, static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j)};
+            i = j;
+        }
+    }
     std::int64_t cellOf(double v) const { return static_cast<std::int64_t>(std::floor(v / cell_)); }
     static std::uint64_t key(std::int64_t x, std::int64_t y) {
         return static_cast<std::uint64_t>(x) * 0x9E3779B97F4A7C15ull ^
                (static_cast<std::uint64_t>(y) + 0x7F4A7C15ull) * 0xC2B2AE3D27D4EB4Full;
     }
     double cell_;
-    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> cells_{};
+    mutable std::vector<std::pair<std::uint64_t, std::uint32_t>> pending_{};
+    mutable std::vector<Slot> slots_{};
+    mutable std::size_t mask_ = 0;
+    mutable bool built_ = true;
 };
 
 // Collinear lines fuse. Lines that are at least 100 tolerances long have a direction that two
@@ -464,6 +505,14 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
     for (std::size_t i = 0; i < n; ++i) {
         if (gone[i])
             continue;
+        // The line of i does not change while others fuse into it, so its direction is found once
+        // and most candidates are turned away by one cross product.
+        const Vec2 la = lines[i].a;
+        const double llen = length(lines[i].b - la);
+        const Vec2 ldir = llen > 0 ? (lines[i].b - la) / llen : Vec2{};
+        const auto offLine = [&](const LineItem& l) {
+            return llen > 0 && (std::abs(cross(ldir, l.a - la)) > tolerance || std::abs(cross(ldir, l.b - la)) > tolerance);
+        };
         for (bool changed = true; changed;) {
             changed = false;
             const Span s = spanOf(lines[i]);
@@ -481,7 +530,7 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
                 std::sort(cand.begin(), cand.end());
                 cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
                 for (std::uint32_t j : cand) {
-                    if (gone[j])
+                    if (gone[j] || offLine(lines[j]))
                         continue;
                     if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
                         gone[j] = 1;
@@ -511,7 +560,7 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
                     if (best < 0)
                         break;
                     const std::uint32_t j = (*lists[best])[at[best]++];
-                    if (gone[j])
+                    if (gone[j] || offLine(lines[j]))
                         continue;
                     if (mergeLines(lines[i], lines[j], tolerance, bridgeGaps)) {
                         gone[j] = 1;

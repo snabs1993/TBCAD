@@ -38,7 +38,10 @@ bool canExplode(EntityKind kind);
 //    non-uniform scale is scaled uniformly (message).
 //  * Polyline: lines and arcs (widths are dropped, with a message).
 //  * Other kinds: the registered hook, else an Unsupported error.
-Result<ExplodeResult> explode(const Document& doc, const Entity& entity);
+//  * Attributes of an Insert become plain text holding the insert's values (BURST), or with
+//    `attributesAsDefinitions` set go back to attribute definitions showing their tags (EXPLODE).
+Result<ExplodeResult> explode(const Document& doc, const Entity& entity,
+                              bool attributesAsDefinitions = false);
 
 // The segments of a polyline as lines and arcs; the common properties are copied.
 std::vector<Entity> explodePolyline(const Entity& polylineEntity);

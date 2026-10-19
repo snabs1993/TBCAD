@@ -353,79 +353,269 @@ double cost(const std::vector<double>& r) {
     return s;
 }
 
-// Solves A d = b for a symmetric positive definite A (n x n, row major) by Cholesky; false if
-// A is not positive definite.
-bool cholesky(std::vector<double> A, std::vector<double> b, std::size_t n, std::vector<double>& d) {
-    for (std::size_t j = 0; j < n; ++j) {
-        double s = A[j * n + j];
-        for (std::size_t k = 0; k < j; ++k)
-            s -= A[j * n + k] * A[j * n + k];
-        if (s <= 1e-300)
-            return false;
-        const double ljj = std::sqrt(s);
-        A[j * n + j] = ljj;
-        for (std::size_t i = j + 1; i < n; ++i) {
-            double t = A[i * n + j];
-            for (std::size_t k = 0; k < j; ++k)
-                t -= A[i * n + k] * A[j * n + k];
-            A[i * n + j] = t / ljj;
+// ---- sparse Jacobian and banded normal equations ----------------------------------------------
+
+using SparseRow = std::vector<std::pair<std::uint32_t, double>>;
+
+struct SparseRows {
+    std::size_t cols = 0;
+    std::vector<SparseRow> rows{};  // one per residual, columns ascending
+};
+
+// Every variable the residuals of constraint i can depend on: all variables of the objects it
+// names.
+std::vector<std::size_t> constraintVars(const Model& m, std::size_t i) {
+    std::vector<std::size_t> vars;
+    const Constraint& c = m.constraints[i];
+    for (EntityId id : {c.a.entity, c.b.entity}) {
+        if (!id)
+            continue;
+        const Slot& s = m.slot(id);
+        for (std::size_t k = 0; k < s.count; ++k)
+            vars.push_back(s.offset + k);
+    }
+    std::sort(vars.begin(), vars.end());
+    vars.erase(std::unique(vars.begin(), vars.end()), vars.end());
+    return vars;
+}
+
+// Central differences of every residual against the variables that have a column (colOf >= 0).
+// A residual only moves with the variables of the objects its constraint names, so only those are
+// perturbed and only that constraint is re-evaluated.
+SparseRows jacobian(const Model& m, const std::vector<double>& v, const std::vector<long>& colOf,
+                    std::size_t cols, const std::vector<std::size_t>& first,
+                    const std::vector<std::vector<std::size_t>>& vars) {
+    SparseRows J;
+    J.cols = cols;
+    J.rows.assign(first.back(), {});
+    std::vector<double> w = v, rp, rm;
+    for (std::size_t i = 0; i < m.constraints.size(); ++i) {
+        const std::size_t cnt = first[i + 1] - first[i];
+        for (std::size_t var : vars[i]) {
+            const long col = colOf[var];
+            if (col < 0)
+                continue;
+            const double h = 1e-6 * std::max(1.0, std::abs(v[var]));
+            w[var] = v[var] + h;
+            rp.clear();
+            residuals(m, i, w, rp);
+            w[var] = v[var] - h;
+            rm.clear();
+            residuals(m, i, w, rm);
+            w[var] = v[var];
+            for (std::size_t r = 0; r < cnt; ++r) {
+                const double d = (rp[r] - rm[r]) / (2 * h);
+                if (d != 0)
+                    J.rows[first[i] + r].push_back({static_cast<std::uint32_t>(col), d});
+            }
         }
     }
-    d.assign(n, 0);
-    for (std::size_t i = 0; i < n; ++i) {
-        double t = b[i];
-        for (std::size_t k = 0; k < i; ++k)
-            t -= A[i * n + k] * d[k];
-        d[i] = t / A[i * n + i];
+    return J;
+}
+
+std::vector<double> toDense(const SparseRows& J) {
+    std::vector<double> D(J.rows.size() * J.cols, 0.0);
+    for (std::size_t i = 0; i < J.rows.size(); ++i)
+        for (const auto& [c, val] : J.rows[i])
+            D[i * J.cols + c] = val;
+    return D;
+}
+
+// Variable order that keeps the normal equations narrow (reverse Cuthill-McKee over the columns
+// that share a constraint), and the half bandwidth that order gives.
+struct BandOrder {
+    std::vector<std::size_t> perm{};  // position -> column
+    std::vector<std::size_t> pos{};   // column -> position
+    std::size_t band = 0;
+};
+
+BandOrder bandOrder(std::size_t n, const std::vector<std::vector<std::size_t>>& groups) {
+    std::vector<std::vector<std::uint32_t>> adj(n);
+    for (const auto& g : groups)
+        for (std::size_t a : g)
+            for (std::size_t b : g)
+                if (a != b)
+                    adj[a].push_back(static_cast<std::uint32_t>(b));
+    for (auto& l : adj) {
+        std::sort(l.begin(), l.end());
+        l.erase(std::unique(l.begin(), l.end()), l.end());
     }
-    for (std::size_t ii = n; ii-- > 0;) {
-        double t = d[ii];
-        for (std::size_t k = ii + 1; k < n; ++k)
-            t -= A[k * n + ii] * d[k];
-        d[ii] = t / A[ii * n + ii];
+    BandOrder o;
+    o.perm.reserve(n);
+    std::vector<bool> seen(n, false);
+    std::vector<std::size_t> byDegree(n);
+    for (std::size_t i = 0; i < n; ++i)
+        byDegree[i] = i;
+    std::stable_sort(byDegree.begin(), byDegree.end(),
+                     [&](std::size_t x, std::size_t y) { return adj[x].size() < adj[y].size(); });
+    for (std::size_t root : byDegree) {
+        if (seen[root])
+            continue;
+        std::size_t head = o.perm.size();
+        o.perm.push_back(root);
+        seen[root] = true;
+        while (head < o.perm.size()) {
+            const std::size_t u = o.perm[head++];
+            std::vector<std::size_t> next;
+            for (std::uint32_t w : adj[u])
+                if (!seen[w]) {
+                    seen[w] = true;
+                    next.push_back(w);
+                }
+            std::stable_sort(next.begin(), next.end(), [&](std::size_t x, std::size_t y) {
+                return adj[x].size() < adj[y].size();
+            });
+            o.perm.insert(o.perm.end(), next.begin(), next.end());
+        }
+    }
+    std::reverse(o.perm.begin(), o.perm.end());
+    o.pos.assign(n, 0);
+    for (std::size_t i = 0; i < n; ++i)
+        o.pos[o.perm[i]] = i;
+    for (const auto& g : groups) {
+        if (g.empty())
+            continue;
+        std::size_t lo = n, hi = 0;
+        for (std::size_t c : g) {
+            lo = std::min(lo, o.pos[c]);
+            hi = std::max(hi, o.pos[c]);
+        }
+        o.band = std::max(o.band, hi - lo);
+    }
+    return o;
+}
+
+// Cholesky factor of a symmetric positive definite band matrix kept as rows of the lower triangle:
+// entry (i, j), i - band <= j <= i, is at i * (band + 1) + (j - i + band). Overwrites A with L;
+// false if A is not positive definite.
+bool choleskyBand(std::vector<double>& A, std::size_t n, std::size_t band) {
+    const std::size_t w = band + 1;
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::size_t j0 = i > band ? i - band : 0;
+        for (std::size_t j = j0; j <= i; ++j) {
+            double s = A[i * w + (j - i + band)];
+            const std::size_t k0 = std::max(j0, j > band ? j - band : 0);
+            for (std::size_t k = k0; k < j; ++k)
+                s -= A[i * w + (k - i + band)] * A[j * w + (k - j + band)];
+            if (j == i) {
+                if (s <= 1e-300)
+                    return false;
+                A[i * w + band] = std::sqrt(s);
+            } else {
+                A[i * w + (j - i + band)] = s / A[j * w + band];
+            }
+        }
     }
     return true;
 }
 
-// Rank of a dense m x n matrix (row major) by Gaussian elimination with full pivoting.
-int rankOf(std::vector<double> J, std::size_t rows, std::size_t cols) {
+// Solves L L^T x = b with the factor from choleskyBand.
+std::vector<double> solveBand(const std::vector<double>& L, std::size_t n, std::size_t band,
+                              const std::vector<double>& b) {
+    const std::size_t w = band + 1;
+    std::vector<double> x(n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        double t = b[i];
+        for (std::size_t k = i > band ? i - band : 0; k < i; ++k)
+            t -= L[i * w + (k - i + band)] * x[k];
+        x[i] = t / L[i * w + band];
+    }
+    for (std::size_t i = n; i-- > 0;) {
+        double t = x[i];
+        for (std::size_t k = i + 1; k < n && k <= i + band; ++k)
+            t -= L[k * w + (i - k + band)] * x[k];
+        x[i] = t / L[i * w + band];
+    }
+    return x;
+}
+
+// Gaussian elimination with full pivoting on a dense rows x cols matrix (row major). A pivot must
+// exceed 1e-7 of the largest entry. Row operations only touch rows that have an entry in the pivot
+// column, and the best entry of each row is kept, so a sparse matrix costs little more than its
+// non-zeros. With `trackRows` the same operations are applied to an identity matrix (L), so the
+// rows left without a pivot are combinations of the original rows that cancel.
+struct Elimination {
+    int rank = 0;
+    std::vector<std::size_t> pivRow{}, pivCol{};  // in pivot order
+    std::vector<double> M{};                      // reduced matrix; pivot rows are upper triangular
+    std::vector<double> L{};                      // rows x rows, empty unless tracked
+};
+
+Elimination eliminate(std::vector<double> J, std::size_t rows, std::size_t cols, bool trackRows,
+                      double scale = 0, double relTol = 1e-7) {
+    Elimination e;
+    if (trackRows) {
+        e.L.assign(rows * rows, 0.0);
+        for (std::size_t i = 0; i < rows; ++i)
+            e.L[i * rows + i] = 1.0;
+    }
     double big = 0;
     for (double x : J)
         big = std::max(big, std::abs(x));
-    if (big == 0)
-        return 0;
-    const double eps = big * 1e-7;
-    int rank = 0;
+    if (scale > 0)
+        big = scale;  // the caller's yardstick for what counts as zero
+    if (big == 0) {
+        e.M = std::move(J);
+        return e;
+    }
+    const double eps = big * relTol;
     std::vector<bool> rowUsed(rows, false), colUsed(cols, false);
+    std::vector<double> rowBest(rows, 0.0);
+    std::vector<std::size_t> rowCol(rows, 0);
+    auto rescan = [&](std::size_t r) {
+        double best = eps;
+        rowBest[r] = 0;
+        for (std::size_t c = 0; c < cols; ++c) {
+            if (!colUsed[c] && std::abs(J[r * cols + c]) > best) {
+                best = std::abs(J[r * cols + c]);
+                rowBest[r] = best;
+                rowCol[r] = c;
+            }
+        }
+    };
+    for (std::size_t r = 0; r < rows; ++r)
+        rescan(r);
     for (;;) {
         double best = eps;
-        std::size_t br = rows, bc = cols;
+        std::size_t br = rows;
         for (std::size_t r = 0; r < rows; ++r) {
-            if (rowUsed[r])
-                continue;
-            for (std::size_t c = 0; c < cols; ++c) {
-                if (!colUsed[c] && std::abs(J[r * cols + c]) > best) {
-                    best = std::abs(J[r * cols + c]);
-                    br = r;
-                    bc = c;
-                }
+            if (!rowUsed[r] && rowBest[r] > best) {
+                best = rowBest[r];
+                br = r;
             }
         }
         if (br == rows)
             break;
+        const std::size_t bc = rowCol[br];
         rowUsed[br] = colUsed[bc] = true;
-        ++rank;
+        ++e.rank;
+        e.pivRow.push_back(br);
+        e.pivCol.push_back(bc);
+        const double pv = J[br * cols + bc];
         for (std::size_t r = 0; r < rows; ++r) {
             if (rowUsed[r])
                 continue;
-            const double f = J[r * cols + bc] / J[br * cols + bc];
-            if (f == 0)
-                continue;
-            for (std::size_t c = 0; c < cols; ++c)
-                J[r * cols + c] -= f * J[br * cols + c];
+            const double f = J[r * cols + bc] / pv;
+            if (f != 0) {
+                for (std::size_t c = 0; c < cols; ++c)
+                    J[r * cols + c] -= f * J[br * cols + c];
+                if (trackRows)
+                    for (std::size_t c = 0; c < rows; ++c)
+                        e.L[r * rows + c] -= f * e.L[br * rows + c];
+                rescan(r);
+            } else if (rowBest[r] > 0 && rowCol[r] == bc) {
+                rescan(r);
+            }
         }
     }
-    return rank;
+    e.M = std::move(J);
+    return e;
+}
+
+// Rank of a dense m x n matrix (row major).
+int rankOf(std::vector<double> J, std::size_t rows, std::size_t cols, double scale = 0,
+           double relTol = 1e-7) {
+    return eliminate(std::move(J), rows, cols, false, scale, relTol).rank;
 }
 
 struct Outcome {
@@ -439,63 +629,70 @@ struct Outcome {
 
 // Levenberg-Marquardt over the variables of the entities that are not pinned.
 Outcome run(const Model& m, const SolveOptions& opt, const std::set<EntityId>& pinned) {
-    std::vector<std::size_t> free;
+    std::vector<long> colOf(m.x.size(), -1);
+    std::size_t n = 0;
     for (const Slot& s : m.slots) {
         if (pinned.count(s.id))
             continue;
         for (std::size_t k = 0; k < s.count; ++k)
-            free.push_back(s.offset + k);
+            colOf[s.offset + k] = static_cast<long>(n++);
     }
+    std::vector<std::size_t> free(n);
+    for (std::size_t v = 0; v < colOf.size(); ++v)
+        if (colOf[v] >= 0)
+            free[static_cast<std::size_t>(colOf[v])] = v;
     Outcome out;
     out.x = m.x;
     std::vector<double> r;
     allResiduals(m, out.x, r);
-    const std::size_t rows = r.size(), n = free.size();
+    const std::size_t rows = r.size();
     out.residual = maxAbs(r);
 
-    auto jacobian = [&](const std::vector<double>& v, std::vector<double>& J) {
-        J.assign(rows * n, 0);
-        std::vector<double> w = v, rp, rm;
-        for (std::size_t j = 0; j < n; ++j) {
-            const double h = 1e-6 * std::max(1.0, std::abs(v[free[j]]));
-            w[free[j]] = v[free[j]] + h;
-            allResiduals(m, w, rp);
-            w[free[j]] = v[free[j]] - h;
-            allResiduals(m, w, rm);
-            w[free[j]] = v[free[j]];
-            for (std::size_t i = 0; i < rows; ++i)
-                J[i * n + j] = (rp[i] - rm[i]) / (2 * h);
-        }
-    };
+    std::vector<std::size_t> first(m.constraints.size() + 1, 0);
+    std::vector<std::vector<std::size_t>> vars(m.constraints.size());
+    std::vector<std::vector<std::size_t>> groups;  // the free columns each constraint touches
+    for (std::size_t i = 0; i < m.constraints.size(); ++i) {
+        first[i + 1] = first[i] + residualCount(m, i);
+        vars[i] = constraintVars(m, i);
+        std::vector<std::size_t> g;
+        for (std::size_t var : vars[i])
+            if (colOf[var] >= 0)
+                g.push_back(static_cast<std::size_t>(colOf[var]));
+        groups.push_back(std::move(g));
+    }
+    const BandOrder order = bandOrder(n, groups);
+    const std::size_t band = order.band, w = band + 1;
 
     double lambda = 1e-3;
-    std::vector<double> J, trial, rt;
+    std::vector<double> trial, rt;
     for (; out.iterations < opt.maxIterations && n > 0 && out.residual > opt.tolerance;
          ++out.iterations) {
-        jacobian(out.x, J);
-        std::vector<double> A(n * n, 0), g(n, 0);
+        const SparseRows J = jacobian(m, out.x, colOf, n, first, vars);
+        std::vector<double> A(n * w, 0.0), g(n, 0.0);
         for (std::size_t i = 0; i < rows; ++i) {
-            for (std::size_t a = 0; a < n; ++a) {
-                const double ja = J[i * n + a];
-                if (ja == 0)
-                    continue;
-                g[a] -= ja * r[i];
-                for (std::size_t b = 0; b <= a; ++b)
-                    A[a * n + b] += ja * J[i * n + b];
+            const SparseRow& row = J.rows[i];
+            for (std::size_t p = 0; p < row.size(); ++p) {
+                const auto [ca, ja] = row[p];
+                g[order.pos[ca]] -= ja * r[i];
+                for (std::size_t q = 0; q <= p; ++q) {
+                    const auto [cb, jb] = row[q];
+                    std::size_t hi = order.pos[ca], lo = order.pos[cb];
+                    if (hi < lo)
+                        std::swap(hi, lo);
+                    A[hi * w + (lo - hi + band)] += ja * jb;
+                }
             }
         }
-        for (std::size_t a = 0; a < n; ++a)
-            for (std::size_t b = a + 1; b < n; ++b)
-                A[a * n + b] = A[b * n + a];
         bool improved = false;
         for (int attempt = 0; attempt < 12 && !improved; ++attempt) {
-            std::vector<double> Ad = A, d;
+            std::vector<double> Ad = A;
             for (std::size_t a = 0; a < n; ++a)
-                Ad[a * n + a] += lambda * std::max(A[a * n + a], 1.0);
-            if (cholesky(Ad, g, n, d)) {
+                Ad[a * w + band] += lambda * std::max(A[a * w + band], 1.0);
+            if (choleskyBand(Ad, n, band)) {
+                const std::vector<double> d = solveBand(Ad, n, band, g);
                 trial = out.x;
                 for (std::size_t a = 0; a < n; ++a)
-                    trial[free[a]] += d[a];
+                    trial[free[order.perm[a]]] += d[a];
                 allResiduals(m, trial, rt);
                 if (cost(rt) < cost(r)) {
                     out.x = trial;
@@ -515,8 +712,8 @@ Outcome run(const Model& m, const SolveOptions& opt, const std::set<EntityId>& p
 
     // Degrees of freedom and the worst constraint.
     if (n > 0) {
-        jacobian(out.x, J);
-        out.dof = static_cast<int>(n) - rankOf(J, rows, n);
+        const SparseRows J = jacobian(m, out.x, colOf, n, first, vars);
+        out.dof = static_cast<int>(n) - rankOf(toDense(J), rows, n);
     }
     std::size_t at = 0;
     double worst = -1;
@@ -620,6 +817,10 @@ Result<SolveResult> solve(Transaction& tx, const ConstraintSet& set, const Solve
     return res;
 }
 
+// Dependencies and null vectors are computed from a finite-difference Jacobian by elimination, so
+// their entries carry noise; anything below this (against a largest entry of 1) is zero.
+constexpr double kDerivedTol = 1e-5;
+
 Result<Analysis> analyze(const Document& doc, const ConstraintSet& set) {
     Analysis a;
     if (set.empty()) {
@@ -636,42 +837,56 @@ Result<Analysis> analyze(const Document& doc, const ConstraintSet& set) {
     const std::size_t n = m.x.size();
 
     // Jacobian at the solution (or where the solver stopped), all variables free.
-    std::vector<double> r0, rp, rm;
+    std::vector<double> r0;
     allResiduals(m, out.x, r0);
     const std::size_t rows = r0.size();
-    std::vector<double> J(rows * n, 0), w = out.x;
-    for (std::size_t j = 0; j < n; ++j) {
-        const double h = 1e-6 * std::max(1.0, std::abs(out.x[j]));
-        w[j] = out.x[j] + h;
-        allResiduals(m, w, rp);
-        w[j] = out.x[j] - h;
-        allResiduals(m, w, rm);
-        w[j] = out.x[j];
-        for (std::size_t i = 0; i < rows; ++i)
-            J[i * n + j] = (rp[i] - rm[i]) / (2 * h);
+    std::vector<long> colOf(n);
+    for (std::size_t j = 0; j < n; ++j)
+        colOf[j] = static_cast<long>(j);
+    std::vector<std::size_t> first(m.constraints.size() + 1, 0);
+    std::vector<std::vector<std::size_t>> vars(m.constraints.size());
+    for (std::size_t i = 0; i < m.constraints.size(); ++i) {
+        first[i + 1] = first[i] + residualCount(m, i);
+        vars[i] = constraintVars(m, i);
     }
-    const int rank = rankOf(J, rows, n);
+    const std::vector<double> J = toDense(jacobian(m, out.x, colOf, n, first, vars));
+    const Elimination el = eliminate(J, rows, n, true);
+    const int rank = el.rank;
     a.rows = static_cast<int>(rows);
     a.rank = rank;
     a.degreesOfFreedom = static_cast<int>(n) - rank;
 
-    // Row ranges per constraint.
-    std::vector<std::size_t> first(m.constraints.size() + 1, 0);
-    for (std::size_t i = 0; i < m.constraints.size(); ++i)
-        first[i + 1] = first[i] + residualCount(m, i);
+    // A constraint is redundant when taking its rows away keeps the rank. The rows that found no
+    // pivot give the dependencies (combinations of rows that cancel); the constraint's rows can all
+    // be dropped when those combinations, seen on its rows alone, still have full rank.
+    std::vector<bool> hasPivot(rows, false);
+    for (std::size_t r : el.pivRow)
+        hasPivot[r] = true;
+    std::vector<std::size_t> dependent;
+    double depScale = 0;
+    for (std::size_t r = 0; r < rows; ++r) {
+        if (hasPivot[r])
+            continue;
+        dependent.push_back(r);
+    }
+    depScale = 1.0;  // every dependency below is scaled to a largest entry of 1
+    std::vector<double> depNorm(dependent.size(), 1.0);
+    for (std::size_t k = 0; k < dependent.size(); ++k) {
+        double big = 0;
+        for (std::size_t c = 0; c < rows; ++c)
+            big = std::max(big, std::abs(el.L[dependent[k] * rows + c]));
+        depNorm[k] = big > 0 ? 1.0 / big : 1.0;
+    }
     for (std::size_t i = 0; i < m.constraints.size(); ++i) {
         ConstraintStatus st;
         st.id = m.constraints[i].id;
-        if (out.converged && m.constraints.size() <= 300) {
-            std::vector<double> rest;
-            rest.reserve(J.size());
-            for (std::size_t r = 0; r < rows; ++r) {
-                if (r >= first[i] && r < first[i + 1])
-                    continue;
-                rest.insert(rest.end(), J.begin() + r * n, J.begin() + (r + 1) * n);
-            }
-            const int without = rankOf(rest, rows - (first[i + 1] - first[i]), n);
-            st.redundant = without == rank;
+        if (out.converged) {
+            const std::size_t cnt = first[i + 1] - first[i];
+            std::vector<double> W(dependent.size() * cnt);
+            for (std::size_t k = 0; k < dependent.size(); ++k)
+                for (std::size_t c = 0; c < cnt; ++c)
+                    W[k * cnt + c] = depNorm[k] * el.L[dependent[k] * rows + first[i] + c];
+            st.redundant = static_cast<std::size_t>(rankOf(std::move(W), dependent.size(), cnt, depScale, kDerivedTol)) == cnt;
         }
         a.constraints.push_back(st);
     }
@@ -680,18 +895,43 @@ Result<Analysis> analyze(const Document& doc, const ConstraintSet& set) {
             st.conflicting = st.id == out.worst;
     }
 
-    // Free degrees of freedom of each object: count - rank(J) + rank(J without its columns).
+    // Free degrees of freedom of each object: how many independent ways its own variables can
+    // move, which is the rank of its rows in a basis of the null space of the Jacobian.
+    std::vector<bool> isPivotCol(n, false);
+    for (std::size_t c : el.pivCol)
+        isPivotCol[c] = true;
+    std::vector<std::size_t> freeCols;
+    for (std::size_t c = 0; c < n; ++c)
+        if (!isPivotCol[c])
+            freeCols.push_back(c);
+    const std::size_t d = freeCols.size();
+    double nullScale = 0;
+    std::vector<double> N(n * d, 0.0);  // null space basis, one column per free variable
+    for (std::size_t t = 0; t < d; ++t) {
+        N[freeCols[t] * d + t] = 1.0;
+        for (std::size_t k = el.pivCol.size(); k-- > 0;) {
+            const double* row = el.M.data() + el.pivRow[k] * n;
+            double sum = row[freeCols[t]];
+            for (std::size_t j = k + 1; j < el.pivCol.size(); ++j)
+                sum += row[el.pivCol[j]] * N[el.pivCol[j] * d + t];
+            N[el.pivCol[k] * d + t] = -sum / row[el.pivCol[k]];
+        }
+    }
+    for (std::size_t t = 0; t < d; ++t) {  // every null vector scaled to a largest entry of 1
+        double big = 0;
+        for (std::size_t v = 0; v < n; ++v)
+            big = std::max(big, std::abs(N[v * d + t]));
+        if (big > 0)
+            for (std::size_t v = 0; v < n; ++v)
+                N[v * d + t] /= big;
+    }
+    nullScale = 1.0;
     for (const Slot& s : m.slots) {
-        std::vector<double> cut;
-        cut.reserve(rows * (n - s.count));
-        for (std::size_t r = 0; r < rows; ++r)
-            for (std::size_t c = 0; c < n; ++c)
-                if (c < s.offset || c >= s.offset + s.count)
-                    cut.push_back(J[r * n + c]);
         EntityStatus es;
         es.entity = s.id;
-        es.degreesOfFreedom =
-            static_cast<int>(s.count) - rank + (n > s.count ? rankOf(cut, rows, n - s.count) : 0);
+        std::vector<double> block(N.begin() + static_cast<std::ptrdiff_t>(s.offset * d),
+                                  N.begin() + static_cast<std::ptrdiff_t>((s.offset + s.count) * d));
+        es.degreesOfFreedom = d == 0 ? 0 : rankOf(std::move(block), s.count, d, nullScale, kDerivedTol);
         es.degreesOfFreedom = std::clamp(es.degreesOfFreedom, 0, static_cast<int>(s.count));
         for (const Constraint& c : m.constraints)
             es.constraints += (c.a.entity == s.id || c.b.entity == s.id) ? 1 : 0;

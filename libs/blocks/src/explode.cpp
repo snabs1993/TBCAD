@@ -88,6 +88,10 @@ void Flatten::contents(const Entity& insert, const Transform2& outer, int depth)
         if (!child->common.visible)
             continue;
         if (const auto* t = entityAs<TextData>(*child); t && t->attdef) {
+            if (keepAttDefs) {  // EXPLODE: back to the definition, which shows the tag
+                place(resolveChild(*child, insert), outer, depth);
+                continue;
+            }
             // An attribute turns into plain text holding this insert's value.
             auto shown = attributeText(*child, *ins);
             if (shown)
@@ -228,7 +232,7 @@ std::vector<Entity> explodePolyline(const Entity& e) {
 
 // ---- explode ------------------------------------------------------------------------------------
 
-Result<ExplodeResult> explode(const Document& doc, const Entity& entity) {
+Result<ExplodeResult> explode(const Document& doc, const Entity& entity, bool attributesAsDefinitions) {
     switch (kind(entity)) {
         case EntityKind::Insert: {
             const auto* ins = entityAs<InsertData>(entity);
@@ -236,6 +240,7 @@ Result<ExplodeResult> explode(const Document& doc, const Entity& entity) {
             if (!def)
                 return makeError(ErrorCode::NotFound, "The block of this insert no longer exists");
             detail::Flatten f{doc};
+            f.keepAttDefs = attributesAsDefinitions;
             for (const Transform2& t : instanceTransforms(*ins, def->base))
                 f.contents(entity, t, 0);
             if (ins->clip.size() >= 3 && ins->clipOn)

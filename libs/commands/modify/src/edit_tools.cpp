@@ -34,27 +34,44 @@ public:
         if (!cs.ok())
             co_return;
         bool matchCase = cs.keyword == "Yes";
+        auto ww = co_await ctx.getKeyword("Whole words only", ko);
+        if (!ww.ok())
+            co_return;
+        const bool wholeWord = ww.keyword == "Yes";
         bool replace = !with.text.empty();
-        // The whole drawing: model space and the objects drawn on every layout sheet.
+        // The whole drawing: model space, the objects drawn on every layout sheet and the
+        // definitions of the blocks (text inside a block changes in every insert). Generated
+        // blocks (dimension graphics, anonymous groups) and xrefs are left alone.
         std::vector<EntityId> ids = ctx.doc().modelSpace();
-        for (const auto& [bid, def] : ctx.doc().blocks())
+        std::size_t modelAndSheets = 0;
+        for (const auto& [bid, def] : ctx.doc().blocks()) {
             if (def.name.rfind("*LAYOUT-", 0) == 0)
                 ids.insert(ids.end(), def.entities.begin(), def.entities.end());
+        }
+        modelAndSheets = ids.size();
+        for (const auto& [bid, def] : ctx.doc().blocks()) {
+            if (def.name.empty() || def.name[0] == '*' || !def.xrefPath.empty())
+                continue;
+            ids.insert(ids.end(), def.entities.begin(), def.entities.end());
+        }
         std::size_t objects = 0;
         int matches = 0;
         std::vector<EntityId> found;
         BBox2 foundBox;
-        for (EntityId id : ids) {
+        for (std::size_t at = 0; at < ids.size(); ++at) {
+            const EntityId id = ids[at];
             const Entity* e = ctx.doc().find(id);
             if (!e)
                 continue;
-            auto r = modify::replaceText(*e, what.text, with.text, matchCase);
+            auto r = modify::replaceText(*e, what.text, with.text, matchCase, wholeWord);
             if (!r)
                 continue;
             ++objects;
             matches += r->count;
-            found.push_back(id);
-            foundBox.merge(geom::bounds(*e, ctx.doc()));
+            if (at < modelAndSheets) {  // only what is on a sheet can be shown
+                found.push_back(id);
+                foundBox.merge(geom::bounds(*e, ctx.doc()));
+            }
             if (replace && isModifiable(ctx.doc(), *e))
                 (void)ctx.tx().modify(id, [&](Entity& x) { x = std::move(r->entity); });
         }

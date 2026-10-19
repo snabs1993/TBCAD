@@ -12,6 +12,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/modify/modify.h"
 
 using namespace tbcad;
@@ -607,4 +608,179 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
     }
     MESSAGE(steps << " commands, " << changedSteps << " changed the drawing");
     CHECK(changedSteps > 30);
+}
+
+TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finite and undo") {
+    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED") ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10) : 77u);
+    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    const auto pt = [](Vec2 p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
+    int changed = 0;
+    for (int round = 0; round < 10; ++round) {
+        Rig r;
+        std::vector<EntityId> ids;
+        std::vector<Vec2> spots;  // places worth picking
+        const auto addE = [&](EntityData d, Vec2 spot) {
+            ids.push_back(r.add(std::move(d)));
+            spots.push_back(spot);
+        };
+        const double big = 1e9;
+        addE(LineData{{5, 5}, {5, 5}}, {5, 5});                       // zero length
+        addE(LineData{{0, 0}, {1e-9, 0}}, {0, 0});                    // tiny
+        addE(LineData{{0, 0}, {20, 0}}, {10, 0});
+        addE(LineData{{0, 0}, {20, 0}}, {10, 0});                     // duplicate
+        addE(LineData{{-big, 3}, {big, 3}}, {0, 3});                  // huge
+        addE(LineData{{big, big}, {big + 10, big + 5}}, {big + 5, big + 2});
+        addE(CircleData{{10, 0}, 1e-6}, {10, 0});                     // tiny circle
+        addE(CircleData{{0, 0}, 5}, {5, 0});
+        addE(CircleData{{0, 0}, 5}, {-5, 0});                         // coincident
+        addE(CircleData{{big, 0}, big}, {0, 0});                      // huge circle
+        addE(ArcData{{3, 3}, 4, 1.0, 1.0 + 1e-9}, {3, 7});            // sliver arc
+        addE(ArcData{{3, 3}, 4, 0.0, 6.2831853}, {7, 3});             // nearly full
+        PolylineData z;  // repeated vertices, bulge on a zero segment
+        z.v = {{{0, 0}, 0.5, 0, 0}, {{0, 0}, 0, 0, 0}, {{10, 0}, 1.0, 0, 0}, {{10, 0}, 0, 0, 0},
+               {{10, 10}, 0, 0, 0}};
+        addE(z, {5, 0});
+        PolylineData one;
+        one.v = {{{4, 4}, 0, 0, 0}};
+        addE(one, {4, 4});
+        PolylineData cl;
+        cl.closed = true;
+        cl.v = {{{0, 0}, 0, 0, 0}, {{8, 0}, 0, 0, 0}, {{8, 8}, 0, 0, 0}, {{0, 8}, 0, 0, 0}};
+        addE(cl, {4, 0});
+        const auto pickAt = [&](std::size_t k) {
+            return spots[k] + Vec2{rng() % 2 ? 0.0 : rnd(-0.01, 0.01), rng() % 2 ? 0.0 : rnd(-0.01, 0.01)};
+        };
+        const auto go = [&](std::string_view name, std::vector<ScriptItem> items) {
+            if (!r.host.run(name, items).finished)
+                r.host.feed({ScriptItem::esc(), ScriptItem::esc(), ScriptItem::esc()});
+        };
+        std::vector<std::string> history{canonicalDump(r.doc)};
+        for (int step = 0; step < 40; ++step) {
+            const std::size_t a = rng() % ids.size(), b = rng() % ids.size();
+            const std::string ra = std::to_string(rng() % 4 == 0 ? 0.0 : rnd(0.0, 8.0));
+            const Vec2 where{rnd(-12, 25), rnd(-12, 20)};
+            switch (rng() % 11) {
+                case 0: go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()}); break;
+                case 1: go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()}); break;
+                case 2: go("FILLET", {"R", ra, ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::pick(ids[b], pickAt(b))}); break;
+                case 3: go("CHAMFER", {"D", ra, ra, ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::pick(ids[b], pickAt(b))}); break;
+                case 4: go("OFFSET", {ra, ScriptItem::pick(ids[a], pickAt(a)), pt(where), ScriptItem::enter()}); break;
+                case 5: go("BREAK", {ScriptItem::pick(ids[a], pickAt(a)), pt(where)}); break;
+                case 6: go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()}); break;
+                case 7: go("JOIN", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter()}); break;
+                case 8: go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0", std::to_string(rng() % 3 == 0 ? 0.0 : rnd(-2, 3))}); break;
+                case 9: go("LENGTHEN", {"Delta", std::to_string(rnd(-30, 30)), ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()}); break;
+                default: go("HATCH", {pt(where), ScriptItem::enter()}); break;
+            }
+            const std::string now = canonicalDump(r.doc);
+            CHECK(finiteDump(now));
+            if (step % 8 == 7) {
+                auto bytes = io::writeTbcadToMemory(r.doc);
+                REQUIRE(bytes.ok());
+                io::IoReport rep;
+                auto back = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), rep);
+                REQUIRE(back.ok());
+                CHECK(canonicalDump(*back.value()) == now);
+            }
+            const std::size_t depth = r.host.undoStack().undoCount();
+            CHECK(depth + 1 >= history.size());
+            if (depth == history.size()) {
+                if (now != history.back())
+                    ++changed;
+                history.push_back(now);
+            } else {
+                CHECK(depth == history.size() - 1);
+                CHECK(now == history.back());
+            }
+        }
+        for (std::size_t k = history.size() - 1; k > 0; --k) {
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == history[k - 1]);
+        }
+    }
+    MESSAGE(changed << " steps changed the drawing");
+    CHECK(changed > 20);
+}
+
+TEST_CASE("scenes with blocks, hatches and wide polylines: modify commands stay finite and undo") {
+    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED") ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10) : 31u);
+    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    const auto pt = [](Vec2 p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
+    int changed = 0;
+    for (int round = 0; round < 8; ++round) {
+        Rig r;
+        // A small block, then inserts at odd scales and angles (mirrored and uneven too).
+        r.add(LineData{{0, 0}, {6, 0}});
+        EntityId seed{};
+        r.doc.forEachEntity([&](const Entity& e) { seed = e.common.id; });
+        r.host.setSelection({seed});
+        r.host.run("BLOCK", {"Mark", "0,0", "D"});
+        for (int k = 0; k < 3; ++k) {
+            Rig* rr = &r;
+            rr->host.run("INSERT", {"Mark", pt({rnd(0, 20), rnd(0, 12)})});
+        }
+        PolylineData wide;
+        wide.v = {{{0, 0}, 0, 1.0, 0.2}, {{12, 0}, 0.4, 0.5, 2.0}, {{12, 9}, 0, 0, 0}, {{0, 9}, 0, 3.0, 3.0}};
+        wide.closed = rng() % 2;
+        r.add(wide);
+        PolylineData cw;
+        cw.constantWidth = rnd(0.1, 2.0);
+        cw.v = {{{2, 2}, 0, 0, 0}, {{18, 3}, -0.5, 0, 0}, {{9, 14}, 0, 0, 0}};
+        r.add(cw);
+        r.add(CircleData{{9, 5}, 7});
+        r.host.run("HATCH", {pt({rnd(2, 10), rnd(1, 8)}), ScriptItem::enter()});
+        r.host.run("HATCH", {pt({rnd(2, 10), rnd(1, 8)}), ScriptItem::enter()});
+        std::vector<EntityId> ids;
+        r.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+        REQUIRE(ids.size() >= 6);
+        const auto go = [&](std::string_view name, std::vector<ScriptItem> items) {
+            if (!r.host.run(name, items).finished)
+                r.host.feed({ScriptItem::esc(), ScriptItem::esc(), ScriptItem::esc()});
+        };
+        const std::size_t base = r.host.undoStack().undoCount();  // setup steps stay
+        std::vector<std::string> history{canonicalDump(r.doc)};
+        for (int step = 0; step < 40; ++step) {
+            const std::size_t a = rng() % ids.size(), b = rng() % ids.size();
+            const Vec2 on{rnd(0, 20), rnd(0, 12)}, where{rnd(-5, 25), rnd(-5, 18)};
+            const std::string ra = std::to_string(rnd(0.0, 5.0));
+            switch (rng() % 10) {
+                case 0: go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], on), ScriptItem::enter()}); break;
+                case 1: go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[a], on), ScriptItem::enter()}); break;
+                case 2: go("FILLET", {"R", ra, ScriptItem::pick(ids[a], on), ScriptItem::pick(ids[b], on)}); break;
+                case 3: go("CHAMFER", {"D", ra, ra, ScriptItem::pick(ids[a], on), ScriptItem::pick(ids[b], on)}); break;
+                case 4: go("OFFSET", {ra, ScriptItem::pick(ids[a], on), pt(where), ScriptItem::enter()}); break;
+                case 5: go("BREAK", {ScriptItem::pick(ids[a], on), pt(where)}); break;
+                case 6: go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()}); break;
+                case 7: go("MIRROR", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter(), "0,0", pt({rnd(-5, 5), rnd(-5, 5)}), "N"}); break;
+                case 8: go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), pt(on), std::to_string(rnd(0.3, 2.5))}); break;
+                default: go("ROTATE", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter(), pt(on), std::to_string(rnd(-180, 180))}); break;
+            }
+            const std::string now = canonicalDump(r.doc);
+            CHECK(finiteDump(now));
+            if (step % 8 == 7) {  // what is in memory must survive saving and loading
+                auto bytes = io::writeTbcadToMemory(r.doc);
+                REQUIRE(bytes.ok());
+                io::IoReport rep;
+                auto back = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), rep);
+                REQUIRE(back.ok());
+                CHECK(canonicalDump(*back.value()) == now);
+            }
+            const std::size_t depth = r.host.undoStack().undoCount() - base;
+            CHECK(depth + 1 >= history.size());
+            if (depth == history.size()) {
+                if (now != history.back())
+                    ++changed;
+                history.push_back(now);
+            } else {
+                CHECK(depth == history.size() - 1);
+                CHECK(now == history.back());
+            }
+        }
+        for (std::size_t k = history.size() - 1; k > 0; --k) {
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == history[k - 1]);
+        }
+    }
+    MESSAGE(changed << " steps changed the drawing");
+    CHECK(changed > 20);
 }

@@ -20,6 +20,7 @@ std::unique_ptr<cmd::Command> makeInsertCommand();
 std::unique_ptr<cmd::Command> makeMinsertCommand();
 std::unique_ptr<cmd::Command> makeExplodeCommand();
 std::unique_ptr<cmd::Command> makeXplodeCommand();
+std::unique_ptr<cmd::Command> makeBurstCommand();
 std::unique_ptr<cmd::Command> makeNCopyCommand();
 std::unique_ptr<cmd::Command> makeArrayCommand();
 std::unique_ptr<cmd::Command> makeArrayRectCommand();

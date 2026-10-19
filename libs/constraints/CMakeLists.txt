@@ -12,5 +12,6 @@ tbcad_add_tests(constraints
   SOURCES
     tests/main.cpp
     tests/store_tests.cpp
+    tests/scale_tests.cpp
     tests/solver_tests.cpp
     tests/params_tests.cpp)
