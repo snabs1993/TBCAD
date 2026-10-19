@@ -1,3 +1,5 @@
+#include <string>
+
 #include "commands.h"
 #include "util.h"
 
@@ -16,6 +18,12 @@ modify::OffsetOptions optionsFrom(const cmd::IHost& host) {
     return o;
 }
 
+// Takes back the last offset (each one is made after a checkpoint).
+void undoOffset(cmd::CommandContext& ctx) {
+    if (!ctx.rollbackToCheckpoint())
+        ctx.message("Everything has been undone.");
+}
+
 class OffsetCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "OFFSET"; }
@@ -28,6 +36,11 @@ public:
         ctx.commitOnCancel();
         double dist = getSetting(ctx.host(), kDistanceKey, 0);
         bool through = false;
+        // As AutoCAD reports it when the command starts.
+        ctx.message(std::string("Current settings: Erase source=") +
+                    (getFlag(ctx.host(), kEraseKey, false) ? "Yes" : "No") +
+                    "  Layer=" + (getFlag(ctx.host(), kLayerKey, false) ? "Current" : "Source") +
+                    "  Corners=" + (getFlag(ctx.host(), kRoundKey, false) ? "Round" : "Sharp"));
         for (;;) {
             cmd::DistanceOptions d;
             d.keywords = {"Through", "Erase", "Corners", "Layer"};
@@ -79,7 +92,12 @@ public:
         for (;;) {
             cmd::EntityOptions eo;
             eo.filter = [&doc = ctx.doc()](const Entity& e) { return isTrimTarget(doc, e); };
-            auto pick = co_await ctx.getEntity("Select object to offset or <exit>", eo);
+            eo.keywords = {"Exit", "Undo"};
+            auto pick = co_await ctx.getEntity("Select object to offset or [Exit/Undo] <Exit>", eo);
+            if (pick.status == cmd::Status::Keyword && pick.keyword == "Undo") {
+                undoOffset(ctx);
+                continue;
+            }
             if (!pick.ok())
                 co_return;
             const Entity* found = ctx.doc().find(pick.id);
@@ -92,8 +110,8 @@ public:
             bool multiple = false;
             for (;;) {
                 cmd::PointOptions po;
-                po.keywords = {"Multiple"};
-                po.allowNone = multiple;
+                po.keywords = {"Exit", "Multiple", "Undo"};
+                po.allowNone = true;
                 po.preview = [source, through, dist, opt, &doc = ctx.doc(), &host = ctx.host()](
                                  Vec2 cursor, DisplayList& out) {
                     auto res = through ? modify::offsetThrough(source, cursor, opt)
@@ -104,10 +122,12 @@ public:
                         previewEntity(doc, host, e, out);
                 };
                 auto side = co_await ctx.getPoint(
-                    through ? (multiple ? "Specify through point or <next object>"
-                                        : "Specify through point or [Multiple]")
-                            : (multiple ? "Specify point on side to offset or <next object>"
-                                        : "Specify point on side to offset or [Multiple]"),
+                    through
+                        ? (multiple ? "Specify through point or [Exit/Undo] <next object>"
+                                    : "Specify through point or [Exit/Multiple/Undo] <Exit>")
+                        : (multiple ? "Specify point on side to offset or [Exit/Undo] <next object>"
+                                    : "Specify point on side to offset or [Exit/Multiple/Undo] "
+                                      "<Exit>"),
                     po);
                 if (side.status == cmd::Status::Cancel)
                     co_return;
@@ -115,8 +135,20 @@ public:
                     multiple = true;
                     continue;
                 }
-                if (side.status == cmd::Status::None && multiple)
-                    break;
+                if (side.status == cmd::Status::Keyword && side.keyword == "Undo") {
+                    undoOffset(ctx);
+                    if (!multiple || !ctx.doc().find(pick.id))
+                        break;
+                    continue;
+                }
+                if (side.status == cmd::Status::Keyword)
+                    co_return;  // Exit
+                // Enter: the next object in Multiple, the end of the command otherwise (AutoCAD).
+                if (side.status == cmd::Status::None) {
+                    if (multiple)
+                        break;
+                    co_return;
+                }
                 if (!side.ok())
                     break;
                 auto res = through ? modify::offsetThrough(source, side.point, opt)
@@ -127,6 +159,7 @@ public:
                         break;
                     continue;
                 }
+                ctx.checkpoint();
                 const bool onCurrent = getFlag(ctx.host(), kLayerKey, false);
                 for (Entity& e : res.value()) {
                     if (onCurrent)

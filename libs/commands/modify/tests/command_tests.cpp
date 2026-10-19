@@ -2435,3 +2435,27 @@ TEST_CASE("FILLET and CHAMFER report the current settings and Undo takes back th
     CHECK(dist);
     CHECK(undone);
 }
+
+TEST_CASE("OFFSET reports its settings, Undo takes back the last offset, Enter ends") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    // Multiple: two offsets, Undo takes the second back, Enter for the next object, Exit.
+    auto r = f.host.run("OFFSET", {"2", ScriptItem::pick(a, {5, 0}), "M", "5,1", "5,10", "U",
+                                   ScriptItem::enter(), "E"});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 2);
+    bool reported = false;
+    for (const auto& m : f.host.log())
+        reported |= m.find("Current settings: Erase source=No  Layer=Source") != std::string::npos;
+    CHECK(reported);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Line) == 1);
+
+    // Undo at the object prompt takes back the offset made before; Enter on the side ends.
+    r = f.host.run("OFFSET", {"2", ScriptItem::pick(a, {5, 0}), "5,1", "U", ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 1);
+    r = f.host.run("OFFSET", {"2", ScriptItem::pick(a, {5, 0}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 1);
+}
