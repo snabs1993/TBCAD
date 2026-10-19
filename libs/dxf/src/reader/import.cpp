@@ -1553,8 +1553,9 @@ void Importer::readDimStyle(const Record& r) {
         ds.textJustify =
             g->integer() == 1 || g->integer() == 2 ? static_cast<int>(g->integer()) : 0;
     if (r.has(77))
-        ds.textPlacement =
-            r.find(77)->integer() != 0 ? DimTextPlacement::AboveLine : DimTextPlacement::Centered;
+        ds.textPlacement = r.find(77)->integer() == 4   ? DimTextPlacement::Below
+                           : r.find(77)->integer() != 0 ? DimTextPlacement::AboveLine
+                                                        : DimTextPlacement::Centered;
     if (const Group* g = r.find(144); g && std::isfinite(g->number()) && g->number() > 0)
         ds.linearFactor = g->number();   // DIMLFAC
     if (const Group* g = r.find(279)) {  // DIMTMOVE

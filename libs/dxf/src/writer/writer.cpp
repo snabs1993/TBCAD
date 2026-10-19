@@ -729,7 +729,9 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(172, ds.forceLineInside ? 1 : 0);                              // DIMTOFL
         o.i(174, ds.textInsideForced ? 1 : 0);                             // DIMTIX
         o.i(175, ds.suppressArrowsOutside ? 1 : 0);                        // DIMSOXD
-        o.i(77, ds.textPlacement == DimTextPlacement::AboveLine ? 1 : 0);
+        o.i(77, ds.textPlacement == DimTextPlacement::AboveLine ? 1
+               : ds.textPlacement == DimTextPlacement::Below  ? 4
+                                                              : 0);
         o.i(78, (ds.suppressLeadingZeros ? 4 : 0) | (ds.suppressTrailingZeros ? 8 : 0));
         o.d(140, ds.textHeight);
         o.d(147, ds.textFrame ? -ds.textGap : ds.textGap);  // DIMGAP (negative: framed)
