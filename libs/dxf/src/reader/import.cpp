@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -376,7 +377,8 @@ void Importer::processClasses(RecordReader& rr) {
         if (r.type != "CLASS")
             continue;
         const std::string_view cls = r.raw(1);
-        if (cls == "IMAGE" || cls == "IMAGEDEF" || cls == "IMAGEDEF_REACTOR")
+        if (cls == "IMAGE" || cls == "IMAGEDEF" || cls == "IMAGEDEF_REACTOR" || cls == "PDFUNDERLAY" ||
+            cls == "PDFDEFINITION")
             continue;
         packGroup(kept, 0, "CLASS");
         for (const Group& g : r.g) {
@@ -464,6 +466,17 @@ void Importer::processObjects(RecordReader& rr) {
         if (r.type == "WIPEOUTVARIABLES" && r.has(70) && r.integer(70) >= 0 && r.integer(70) <= 2) {
             const std::string mode = std::to_string(r.integer(70));
             (void)tx_->modifyHeader([&](Header& h) { h.custom[kWipeoutFrameKey] = mode; });
+        }
+        if (r.type == "PDFDEFINITION") {
+            PdfDef def;
+            def.file = dec(r.raw(1));
+            const std::string pg(r.raw(2));
+            // The page is named "1", or "Page 3" in some files.
+            std::size_t i = pg.find_first_of("0123456789");
+            if (i != std::string::npos)
+                def.page = std::max(1, std::atoi(pg.c_str() + i));
+            pdfDefs_[std::string(r.raw(5))] = std::move(def);
+            continue;
         }
         if (r.type == "IMAGEDEF") {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
@@ -979,7 +992,7 @@ void Importer::keepObjects() {
         "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS", "ACAD_WIPEOUT_VARS",
         "TBCAD_SETTINGS"};
     static const std::set<std::string> neverKept = {
-        "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "SORTENTSTABLE", "GROUP",
+        "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "PDFDEFINITION", "SORTENTSTABLE", "GROUP",
         "DIMASSOC", "IMAGEDEFREACTOR", "ACDBPLACEHOLDER",  "MLINESTYLE"};
 
     const ObjRec& root = objStore_.at(objRoot_);

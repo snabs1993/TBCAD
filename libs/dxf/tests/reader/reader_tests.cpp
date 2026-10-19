@@ -6,6 +6,7 @@
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::dxf {
 namespace {
@@ -1010,6 +1011,35 @@ TEST_CASE("IMAGE: a picture block with the file of its IMAGEDEF, fade and rectan
     CHECK(p.u1 == doctest::Approx(0.75));
     CHECK(p.v0 == doctest::Approx(0.25));
     CHECK(p.v1 == doctest::Approx(0.75));
+}
+
+TEST_CASE("PDFUNDERLAY: a PDF page block with the file, page and fade of its PDFDEFINITION") {
+    Pairs ent;
+    ent.section("ENTITIES");
+    ent.g(0, "PDFUNDERLAY").g(8, "0").g(100, "AcDbUnderlayReference").g(340, "3B");
+    ent.g(10, 10.0).g(20, 20.0).g(30, 0.0).g(41, 2.0).g(42, 2.0).g(43, 2.0).g(50, 90.0);
+    ent.g(281, 60).g(282, 40);
+    ent.end();
+    ent.section("OBJECTS");
+    ent.g(0, "PDFDEFINITION").g(5, "3B").g(1, "plans\\a.pdf").g(2, "3");
+    Loaded l = load(ent.text + Pairs().end().g(0, "EOF").text);
+    const Document& doc = l.doc();
+    const InsertData* ins = nullptr;
+    doc.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    CHECK(near(ins->position, Vec2{10, 20}));
+    CHECK(ins->scale.x == doctest::Approx(2));
+    CHECK(ins->rotation == doctest::Approx(1.5707963));
+    const BlockDef* b = doc.block(ins->block);
+    REQUIRE(b);
+    const underlay::Spec spec = underlay::parseSpec(b->xrefPath);
+    CHECK(spec.file == "plans/a.pdf");
+    CHECK(spec.pdf.page == 3);
+    CHECK(spec.pdf.fadePercent == doctest::Approx(40));
+    CHECK(spec.pdf.contrast == 60);
 }
 
 TEST_CASE("TOLERANCE: a feature control frame becomes a frame block at the size of its dim style") {
