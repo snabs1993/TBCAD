@@ -446,7 +446,9 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
                        .count() >= budgetMs;
     };
-    constexpr std::size_t kChunk = 1024;
+    // The first chunk is small; the next ones are sized by how long that took, so one chunk of
+    // big block references does not blow the budget (a first frame after a MOVE took 116 ms).
+    std::size_t chunk = budgetMs > 0 ? 256 : 1024;
     std::vector<const Entity*> slice;
     std::vector<std::uint32_t> orders;
     std::vector<EntityId> ids;
@@ -466,11 +468,19 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
         built += slice.size();
         scene_.removeMany(ids);
         // (half the cores: the frame shares the machine with whatever else runs)
-        upsertParallel(slice, orders, 512,
+        upsertParallel(slice, orders, 128,
                        std::max<std::size_t>(2, std::thread::hardware_concurrency() / 2));
         slice.clear();
         orders.clear();
         ids.clear();
+        if (budgetMs > 0) {
+            const double spent =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count();
+            const double perObject = spent / static_cast<double>(built);
+            chunk = static_cast<std::size_t>(
+                std::clamp((budgetMs - spent) / std::max(perObject, 1e-4), 64.0, 4096.0));
+        }
     };
     bool stopped = false;
     for (PendingRec& rec : pending_) {
@@ -478,7 +488,7 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
             break;
         if (!rec.dead && (rec.box.empty() || view.intersects(rec.box))) {
             take(rec);
-            if (slice.size() >= kChunk) {
+            if (slice.size() >= chunk) {
                 buildSlice();
                 if (outOfTime()) {
                     stopped = true;
@@ -494,7 +504,7 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
                 break;
             if (!rec.dead) {
                 take(rec);
-                if (slice.size() >= kChunk) {
+                if (slice.size() >= chunk) {
                     buildSlice();
                     if (outOfTime())
                         break;
