@@ -31,6 +31,10 @@ struct IoReport {
 struct ReadOptions {
     // Tests turn this off so that mutated files reach the parsers instead of failing the CRC.
     bool verifyCrc = true;
+    // RECOVER: keep whatever can be read of a damaged file (a cut-off tail, chunks that fail
+    // their checksum, tables or entity chunks that do not parse) and explain the losses in
+    // IoReport::warnings. Fails only when the signature, header table or string table is gone.
+    bool salvage = false;
 };
 
 // An optional chunk added by a layer above the document model (for example the entity versions

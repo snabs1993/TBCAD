@@ -293,3 +293,13 @@ options give the same bytes, and `write(read(write(d)))` equals `write(d)`.
 
 Undo history, selection and view state, the effective layer cache, and the linetype pointer
 inside proxy display styles.
+
+## Damaged files (salvage)
+
+`ReadOptions::salvage` (used when a normal open fails, and by RECOVER on a file) keeps what a
+damaged file still holds: a cut-off tail ends the chunk list there, chunks that fail their
+checksum are dropped, and tables or entity chunks that do not parse are skipped. Each loss is a
+warning in `IoReport`. Entity chunks are written about 1 MB each so that one bad chunk costs only
+its own objects. Only a lost signature, header table or string table makes a file unrecoverable.
+The application opens the result as an unsaved untitled drawing, so the damaged original is never
+overwritten.

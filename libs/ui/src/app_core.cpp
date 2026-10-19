@@ -1211,12 +1211,30 @@ Result<void> AppCore::openFile(const fs::path& path) {
     }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
+    bool salvaged = false;
     if (!doc) {
-        printOpenFailure("Cannot open " + path.string() + ": " + doc.error().message);
-        settings_.removeRecentFile(platform::pathToUtf8(path));
-        return doc.error();
+        // A damaged file: keep whatever can still be read, as an untitled drawing so the
+        // original file is never overwritten by mistake.
+        const std::string why = doc.error().message;
+        io::IoReport salvageReport;
+        io::ReadOptions so;
+        so.salvage = true;
+        auto rescued = io::readTbcad(path, salvageReport, so);
+        if (!rescued || salvageReport.entityCount == 0) {
+            printOpenFailure("Cannot open " + path.string() + ": " + why);
+            settings_.removeRecentFile(platform::pathToUtf8(path));
+            return doc.error();
+        }
+        print(path.filename().string() + " is damaged (" + why + ").");
+        print("Recovered " + std::to_string(salvageReport.entityCount) +
+              " objects. Save the drawing under a new name; the original file is left as it is.");
+        doc = std::move(rescued);
+        report = std::move(salvageReport);
+        salvaged = true;
     }
-    addSession(std::move(doc.value()), path);
+    addSession(std::move(doc.value()), salvaged ? fs::path{} : path);
+    if (salvaged)
+        session_->savedRevision = ~std::uint64_t{0};  // unsaved: the rescued content is not on disk
     for (const auto& w : report.warnings) {
         // Reader diagnostics for developers ("header stages: required=...") are not for the user.
         if (w.find("header stages") != std::string::npos ||
@@ -1229,6 +1247,8 @@ Result<void> AppCore::openFile(const fs::path& path) {
     if (report.unknownEntityKinds > 0)
         print(std::to_string(report.unknownEntityKinds) +
               " object(s) from a newer version are kept read-only.");
+    if (salvaged)
+        return {};
     settings_.addRecentFile(platform::pathToUtf8(path));
     (void)settings_.save(paths_.settingsFile());
     print("Opened " + path.string() + " (" + std::to_string(report.entityCount) + " objects)");

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "format.h"
@@ -39,7 +40,10 @@ struct ParsedFile {
 
 // Splits a file image into chunks, checking magic, lengths and (optionally) CRCs.
 // Throws FormatError on any structural problem.
-ParsedFile parseFile(std::span<const std::uint8_t> bytes, bool verifyCrc);
+// With `salvage` set, damage after the header is survived instead: a truncated tail ends the
+// chunk list there, a chunk with a bad checksum is dropped, and each is explained in `*notes`.
+ParsedFile parseFile(std::span<const std::uint8_t> bytes, bool verifyCrc,
+                     std::vector<std::string>* salvage = nullptr);
 // Returns the chunk's payload, inflating it when needed. `scratch` owns inflated data.
 std::span<const std::uint8_t> chunkPayload(const RawChunk& c, std::vector<std::uint8_t>& scratch);
 

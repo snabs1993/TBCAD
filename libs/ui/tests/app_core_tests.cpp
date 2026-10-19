@@ -455,6 +455,30 @@ TEST_CASE("opening a missing or corrupt file reports and keeps the current drawi
     CHECK(f.core->document().modelSpaceCount() == 1);
 }
 
+TEST_CASE("a damaged .tbcad opens with what could be read, as an unsaved drawing") {
+    Fixture f("salvage");
+    for (int i = 0; i < 3; ++i)
+        f.line(("0," + std::to_string(i)).c_str(), ("100," + std::to_string(i)).c_str());
+    REQUIRE(f.core->saveAs(f.dir / "good.tbcad").ok());
+    std::ifstream in(f.dir / "good.tbcad", std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    // Cut the tail: the END chunk and the last bytes are gone.
+    bytes.resize(bytes.size() - 6);
+    { std::ofstream(f.dir / "damaged.tbcad", std::ios::binary) << bytes; }
+    Fixture g("salvage2");
+    const auto before = fs::file_size(f.dir / "damaged.tbcad");
+    auto r = g.core->openFile(f.dir / "damaged.tbcad");
+    REQUIRE(r.ok());
+    CHECK(g.core->file().empty());  // untitled: the damaged original is never overwritten
+    CHECK(g.core->modified());
+    bool said = false;
+    for (const std::string& h : g.core->history())
+        said = said || h.find("Recovered 3 objects") != std::string::npos;
+    CHECK(said);
+    CHECK(fs::file_size(f.dir / "damaged.tbcad") == before);
+}
+
 TEST_CASE("saveAs adds the extension") {
     Fixture f("ext");
     REQUIRE(f.core->saveAs(f.dir / "plain").ok());
