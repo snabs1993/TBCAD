@@ -2521,6 +2521,12 @@ void Importer::finish() {
                      std::to_string(flattened_) + " entities had a non-zero Z; Z was dropped",
                      firstFlattenedLine_);
     }
+    if (meshes_ > 0) {
+        report_.info(code::kFlattened,
+                     std::to_string(meshes_) +
+                         " polygon or polyface mesh(es) drawn as their edges seen from above",
+                     firstMeshLine_);
+    }
     if (mirroredText_ > 0) {
         report_.info(code::kMirroredText,
                      std::to_string(mirroredText_) +

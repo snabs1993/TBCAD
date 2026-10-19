@@ -44,7 +44,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | Entity | Result |
 |---|---|
 | LINE, CIRCLE, ARC, POINT | `LineData`, `CircleData`, `ArcData`, `PointData`; an ARC whose angles differ by 360 is a circle |
-| LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon and polyface meshes are skipped with a warning |
+| LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon meshes become polylines along their rows and columns (the fitted grid of a smoothed surface) and polyface meshes become lines along their visible edges, each shared edge once (one info line `dxf.reader.flattened_3d`) |
 | ELLIPSE | `EllipseData` (a ratio above 1 swaps the axes) |
 | SPLINE | `SplineData`; fit-point-only splines are interpolated with `geom::interpolateSpline`, the fit points stay in `fit`; a knot vector that does not fit is replaced by a uniform one with a warning |
 | TEXT, ATTRIB | `TextData` (`position` = group 10, `alignPoint` = group 11 when the alignment is not left/baseline, else equal to `position`); `%%c %%d %%p` are replaced; ATTDEF becomes a text with attribute-definition info (`TextData::attdef`: tag upper-cased, prompt, default, flags in group 70: 1 invisible, 2 constant, 4 verify, 8 preset) and shows its tag; the ATTRIB records after an INSERT (group 66 = 1, up to SEQEND) become that insert's `attribs` when the block has a matching non-constant definition, so the position and style of the definition win; any other ATTRIB stays a plain text (invisible ones are dropped) |
@@ -55,6 +55,8 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | DIMENSION | see below |
 | LEADER | `LeaderData` (vertices, dimension style); the annotation is a separate MTEXT/TEXT entity in the file and is imported as such |
 | ACAD_PROXY_ENTITY | read-only `ProxyData` (`originalType = "ACAD_PROXY_ENTITY"`, `raw` = the 310 data bytes, without text records); the proxy graphics are decoded into its display list (see "Proxy graphics"); always a warning |
+| MESH (subdivision mesh) | read-only `ProxyData` kept for saving, drawn from the edges of its control cage seen from above (edge records, else face boundaries, each edge once); smoothing levels are not applied |
+| OLE2FRAME (pasted spreadsheets, documents) | read-only `ProxyData` kept for saving; the embedded object is not drawn, its rectangle (10/20 to 11/21) is |
 | AEC_*, AECC_*, 3DSOLID, REGION, SURFACE ... (no reader) | read-only `ProxyData` named after the DXF type when the object carries proxy graphics (groups 160/92 + 310), else skipped as before; one `dxf.reader.proxy_graphics` info per type |
 | MLINE | one polyline per style element (offset along the miter); closed if the closed flag is set |
 | IMAGE (+ IMAGEDEF) | a picture block like IMAGEATTACH makes (docs/underlay.md); fade and a rectangle clip are kept, a polygon clip shows the whole picture |
@@ -82,8 +84,11 @@ definitions), the TBCAD entities produced and the records dropped.
   projected with its bulges cut into short segments, as is a 2D POLYLINE. HATCH, SOLID and TRACE
   are built in the object plane and projected (arc and elliptical boundary edges become short
   lines; spline edges keep their shape). One info line `dxf.reader.extrusion_3d` counts them.
-  Text, inserts and other entity types in such a plane are still skipped with a warning of the
-  same code.
+  TEXT, ATTDEF and ATTRIB keep their exact projected shape (rotation, height, width factor,
+  obliquing angle, upside down); MTEXT gets the projected height and width. Text seen edge-on is
+  skipped as a bad entity. An INSERT turned by a multiple of 90 degrees in its plane becomes a
+  block squashed by the tilt (rotation plus non-uniform scale); any other turn would need a shear
+  and is skipped with a warning of the same code, as are other entity types in such a plane.
 * **Units.** `$INSUNITS` is converted with the usual factors (inch 25.4, foot 304.8, metre 1000,
   ...). Unitless (0) or missing: the numbers are taken as millimetres and an info line says so.
   When a factor other than 1 is applied an info line names it. Every length is scaled: coordinates,

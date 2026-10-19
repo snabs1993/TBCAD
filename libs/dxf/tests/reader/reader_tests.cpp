@@ -144,6 +144,55 @@ TEST_CASE("extrusion: steeply tilted circles, ellipses and polylines are project
     CHECK(ellipses[0]->ratio == doctest::Approx(0.25));
 }
 
+TEST_CASE("extrusion: the tilted plane corpus counts what was projected and what was dropped") {
+    Loaded l = loadCorpus("tilted_planes.dxf");
+    int infos = 0;
+    for (const Diagnostic& d : l.report.diagnostics()) {
+        if (d.code != code::kExtrusion3d)
+            continue;
+        CHECK(d.severity == Severity::Info);
+        ++infos;
+        // 2 circles, arc, ellipse, 2 polylines, hatch, solid and the text.
+        CHECK(d.message.rfind("9 ", 0) == 0);
+    }
+    CHECK(infos == 1);
+    CHECK(l.report.countCode(code::kBadEntity) == 1);  // the one-vertex polyline
+}
+
+TEST_CASE("extrusion: text in a tilted plane keeps its exact shape seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "TEXT").g(8, "0").g(10, 5.0).g(20, 5.0).g(30, 0.0).g(40, 2.0).g(1, "flat");
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.0).g(50, 90.0);
+    p.g(1, "up").g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "MTEXT").g(8, "0").g(10, 1.0).g(20, 2.0).g(30, 3.0).g(40, 2.0).g(41, 10.0);
+    p.g(1, "m").g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    // Edge-on: the baseline runs straight down the view direction.
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.0).g(1, "edge");
+    p.g(210, 0.0).g(220, -1.0).g(230, 0.0).g(50, 90.0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto texts = modelEntities<TextData>(l.doc());
+    REQUIRE(texts.size() == 2);
+    const TextData* flat = texts[0]->utf8 == "flat" ? texts[0] : texts[1];
+    const TextData* up = flat == texts[0] ? texts[1] : texts[0];
+    CHECK(near(flat->position, Vec2{5, 4}, 1e-9));
+    CHECK(near(flat->rotation, 0.0));
+    CHECK(flat->height == doctest::Approx(1.6));        // its up direction is foreshortened
+    CHECK(flat->widthFactor == doctest::Approx(1.25));  // the baseline is not
+    CHECK(near(flat->oblique, 0.0));
+    CHECK(near(up->rotation, kPi / 2));
+    CHECK(up->height == doctest::Approx(2));
+    CHECK(up->widthFactor == doctest::Approx(0.8));
+    const auto mtexts = modelEntities<MTextData>(l.doc());
+    REQUIRE(mtexts.size() == 1);
+    CHECK(near(mtexts[0]->position, Vec2{1, 2}));  // MTEXT points are in world coordinates
+    CHECK(mtexts[0]->height == doctest::Approx(1.6));
+    CHECK(mtexts[0]->width == doctest::Approx(10));
+    CHECK(l.report.countCode(code::kBadEntity) == 1);  // the edge-on text
+}
+
 TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are projected") {
     // Normal (0, -0.866, 0.5): object X is world +X, object Y is (0, 0.5, 0.866).
     Pairs p;
@@ -187,6 +236,107 @@ TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are proj
     CHECK(near(polys[0]->v.front().p, Vec2{0, -3.4641016}, 1e-6));
     CHECK(near(polys[0]->v.back().p, Vec2{10, -3.4641016}, 1e-6));
     CHECK(polys[0]->v.size() > 10);
+}
+
+TEST_CASE("extrusion: inserts in a tilted plane become squashed blocks seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "B").g(70, 0).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 0.0).g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 2.0).g(20, 3.0).g(30, 0.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(50, 90.0);
+    p.g(41, 2.0).g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(50, 45.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto inserts = modelEntities<InsertData>(l.doc());
+    REQUIRE(inserts.size() == 2);
+    CHECK(near(inserts[0]->position, Vec2{2, 2.4}, 1e-9));
+    CHECK(near(inserts[0]->rotation, 0.0));
+    CHECK(near(inserts[0]->scale, Vec2{1, 0.8}, 1e-9));
+    // Turned 90 degrees: the block's X runs along object Y, which is foreshortened.
+    CHECK(near(inserts[1]->rotation, kPi / 2));
+    CHECK(near(inserts[1]->scale, Vec2{1.6, 1}, 1e-9));
+    CHECK(l.report.countCode(code::kExtrusion3d) == 2);  // the info line and the 45 degree one
+}
+
+TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen from above") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A polyface: a square of 4 vertices split into two triangles. The diagonal they share is
+    // hidden (negative index) in one face and visible in the other: drawn once.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 64);
+    p.g(71, 4).g(72, 2);
+    for (const auto& [x, y] : {std::pair{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}})
+        p.g(0, "VERTEX").g(8, "0").g(10, x).g(20, y).g(30, 5.0).g(70, 192);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 128);
+    p.g(71, 1).g(72, 2).g(73, 3);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 128);
+    p.g(71, -3).g(72, 4).g(73, -1);  // edges 3-4 hidden, 4-1 visible, 1-3 hidden
+    p.g(0, "SEQEND").g(8, "0");
+    // A 2 x 3 polygon mesh: 2 rows of 3 points and 3 columns of 2.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 16);
+    p.g(71, 2).g(72, 3);
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 3; ++j)
+            p.g(0, "VERTEX").g(8, "0").g(10, 100.0 + j).g(20, static_cast<double>(i)).g(30, 1.0)
+                .g(70, 64);
+    p.g(0, "SEQEND").g(8, "0");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto lines = modelEntities<LineData>(l.doc());
+    CHECK(lines.size() == 4);  // 1-2, 2-3, 3-1 (the diagonal) and 4-1
+    bool diagonal = false, hidden = false;
+    for (const LineData* ln : lines) {
+        const Vec2 lo = ln->a.x + ln->a.y < ln->b.x + ln->b.y ? ln->a : ln->b;
+        const Vec2 hi = lo == ln->a ? ln->b : ln->a;
+        diagonal = diagonal || (near(lo, Vec2{0, 0}) && near(hi, Vec2{10, 10}));
+        hidden = hidden || (near(lo, Vec2{0, 10}) && near(hi, Vec2{10, 10}));
+    }
+    CHECK(diagonal);
+    CHECK_FALSE(hidden);
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 5);
+    CHECK(polys[0]->v.size() == 3);
+    CHECK(near(polys[1]->v.back().p, Vec2{102, 1}));
+    CHECK(polys[2]->v.size() == 2);
+    CHECK(l.report.countCode(code::kBadEntity) == 0);
+}
+
+TEST_CASE("a MESH entity is kept for saving and drawn from its cage edges") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A square pyramid without edge records: 5 vertices, a quad base and 4 triangles.
+    p.g(0, "MESH").g(8, "0").g(100, "AcDbEntity").g(100, "AcDbSubDMesh").g(71, 2).g(72, 0);
+    p.g(91, 0).g(92, 5);
+    for (const auto& [x, y, z] : {std::tuple{0.0, 0.0, 0.0}, {10.0, 0.0, 0.0}, {10.0, 10.0, 0.0},
+                                  {0.0, 10.0, 0.0}, {5.0, 5.0, 8.0}})
+        p.g(10, x).g(20, y).g(30, z);
+    p.g(93, 21).g(90, 4).g(90, 0).g(90, 1).g(90, 2).g(90, 3);
+    for (int i = 0; i < 4; ++i)
+        p.g(90, 3).g(90, i).g(90, (i + 1) % 4).g(90, 4);
+    p.g(94, 0).g(95, 0).g(90, 0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto proxies = modelEntities<ProxyData>(l.doc());
+    REQUIRE(proxies.size() == 1);
+    CHECK(proxies[0]->originalType == "MESH");
+    CHECK_FALSE(proxyDxfGroups(*proxies[0]).empty());  // written back unchanged
+    CHECK(proxies[0]->graphics.items.size() == 8);     // 4 base edges and 4 to the apex
+}
+
+TEST_CASE("an OLE2FRAME is kept for saving and shows its frame") {
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "OLE2FRAME").g(8, "0").g(100, "AcDbEntity").g(100, "AcDbOle2Frame").g(70, 2);
+    p.g(3, "Microsoft Excel Worksheet").g(10, 0.0).g(20, 50.0).g(30, 0.0).g(11, 80.0).g(21, 0.0);
+    p.g(31, 0.0).g(71, 2).g(72, 0).g(90, 4).g(310, "00000000").g(1, "OLE");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto proxies = modelEntities<ProxyData>(l.doc());
+    REQUIRE(proxies.size() == 1);
+    CHECK(proxies[0]->originalType == "OLE2FRAME");
+    CHECK_FALSE(proxies[0]->graphics.items.empty());
+    CHECK_FALSE(proxyDxfGroups(*proxies[0]).empty());
 }
 
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
