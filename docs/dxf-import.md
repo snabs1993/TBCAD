@@ -55,6 +55,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | DIMENSION | see below |
 | LEADER | `LeaderData` (vertices, dimension style); the annotation is a separate MTEXT/TEXT entity in the file and is imported as such |
 | ACAD_PROXY_ENTITY | read-only `ProxyData` (`originalType = "ACAD_PROXY_ENTITY"`, `raw` = the 310 data bytes, without text records); the proxy graphics are decoded into its display list (see "Proxy graphics"); always a warning |
+| MESH (subdivision mesh) | read-only `ProxyData` kept for saving, drawn from the edges of its control cage seen from above (edge records, else face boundaries, each edge once); smoothing levels are not applied |
 | AEC_*, AECC_*, 3DSOLID, REGION, SURFACE ... (no reader) | read-only `ProxyData` named after the DXF type when the object carries proxy graphics (groups 160/92 + 310), else skipped as before; one `dxf.reader.proxy_graphics` info per type |
 | MLINE | one polyline per style element (offset along the miter); closed if the closed flag is set |
 | IMAGE (+ IMAGEDEF) | a picture block like IMAGEATTACH makes (docs/underlay.md); fade and a rectangle clip are kept, a polygon clip shows the whole picture |

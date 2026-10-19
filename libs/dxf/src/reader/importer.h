@@ -231,6 +231,7 @@ private:
 
     // ---- proxy.cpp --------------------------------------------------------------------------
     std::vector<std::uint8_t> proxyGraphicsOf(const Record& r) const;
+    bool meshEdges(const Record& r, const EntityCommon& base, ProxyData& proxy);
     std::size_t decodeProxyGraphics(std::span<const std::uint8_t> data, const EntityCommon& base,
                                     ProxyData& proxy, std::vector<Entity>& texts,
                                     std::string& problem);

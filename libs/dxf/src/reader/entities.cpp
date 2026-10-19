@@ -2476,6 +2476,8 @@ bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
     std::vector<std::uint8_t> gfx = proxyGraphicsOf(r);
     if (gfx.size() >= 16)
         unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
+    if (d.graphics.items.empty() && r.type == "MESH")
+        meshEdges(r, commonOf(r), d);
 
     // The record itself, to be written back unchanged.
     const std::string kept = keptRecord(r);

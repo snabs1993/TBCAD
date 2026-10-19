@@ -304,6 +304,27 @@ TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen fro
     CHECK(l.report.countCode(code::kBadEntity) == 0);
 }
 
+TEST_CASE("a MESH entity is kept for saving and drawn from its cage edges") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A square pyramid without edge records: 5 vertices, a quad base and 4 triangles.
+    p.g(0, "MESH").g(8, "0").g(100, "AcDbEntity").g(100, "AcDbSubDMesh").g(71, 2).g(72, 0);
+    p.g(91, 0).g(92, 5);
+    for (const auto& [x, y, z] : {std::tuple{0.0, 0.0, 0.0}, {10.0, 0.0, 0.0}, {10.0, 10.0, 0.0},
+                                  {0.0, 10.0, 0.0}, {5.0, 5.0, 8.0}})
+        p.g(10, x).g(20, y).g(30, z);
+    p.g(93, 21).g(90, 4).g(90, 0).g(90, 1).g(90, 2).g(90, 3);
+    for (int i = 0; i < 4; ++i)
+        p.g(90, 3).g(90, i).g(90, (i + 1) % 4).g(90, 4);
+    p.g(94, 0).g(95, 0).g(90, 0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto proxies = modelEntities<ProxyData>(l.doc());
+    REQUIRE(proxies.size() == 1);
+    CHECK(proxies[0]->originalType == "MESH");
+    CHECK_FALSE(proxyDxfGroups(*proxies[0]).empty());  // written back unchanged
+    CHECK(proxies[0]->graphics.items.size() == 8);     // 4 base edges and 4 to the apex
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).
