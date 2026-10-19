@@ -2,6 +2,8 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <random>
 #include <thread>
@@ -557,4 +559,41 @@ TEST_CASE("broken SHX data is refused, never crashes") {
         }
         (void)lib.loadStroke(path);
     }
+}
+
+TEST_CASE("installed fonts are read once and then taken from the cache while the files stay") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_font_scan_test";
+    fs::remove_all(dir);
+    fs::create_directories(dir / "fonts");
+    const fs::path font = dir / "fonts" / "Lato-Regular.ttf";
+    fs::copy_file(fs::path(TBCAD_FONT_TEST_ASSETS) / "Lato-Regular.ttf", font);
+    const fs::path cache = dir / "cache" / "system-fonts.txt";
+    auto families = [](const std::vector<FontLibrary::SystemFace>& faces) {
+        std::vector<std::string> out;
+        for (const auto& f : faces)
+            out.push_back(f.family);
+        return out;
+    };
+
+    const auto first = FontLibrary::scanFontFolders({dir / "fonts"}, cache);
+    CHECK(families(first) == std::vector<std::string>{"lato"});
+    REQUIRE(fs::exists(cache));
+
+    // Same size and time: the file is not opened again (garbage would not read as Lato).
+    const auto time = fs::last_write_time(font);
+    const auto size = fs::file_size(font);
+    {
+        std::ofstream o(font, std::ios::binary | std::ios::trunc);
+        o << std::string(size, 'x');
+    }
+    fs::last_write_time(font, time);
+    const auto second = FontLibrary::scanFontFolders({dir / "fonts"}, cache);
+    CHECK(families(second) == std::vector<std::string>{"lato"});
+    CHECK(second.at(0).path == font);
+
+    // A changed file is read again.
+    fs::last_write_time(font, time + std::chrono::seconds(10));
+    CHECK(FontLibrary::scanFontFolders({dir / "fonts"}, cache).empty());
+    fs::remove_all(dir);
 }
