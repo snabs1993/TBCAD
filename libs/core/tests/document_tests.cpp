@@ -725,6 +725,10 @@ TEST_CASE("draw order creation order bring to front send to back") {
         back = tx.commit();
     }
     CHECK(doc.modelSpace() == std::vector<EntityId>{c, b, d, a});
+    // inDrawOrder gives the same order for any subset, once each, leaving out what is not there
+    CHECK(doc.inDrawOrder(std::vector<EntityId>{a, b, c, d}) == doc.modelSpace());
+    CHECK(doc.inDrawOrder(std::vector<EntityId>{a, d, a, EntityId{999}}) ==
+          std::vector<EntityId>{d, a});
     std::string dump = canonicalDump(doc);
     CHECK(dump.find("draworder") != std::string::npos);
     doc.apply(back, Direction::Undo);
