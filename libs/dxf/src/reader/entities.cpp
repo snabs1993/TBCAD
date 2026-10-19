@@ -675,14 +675,14 @@ bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& o
         const double u[3] = {t.ax[0] * rad, t.ax[1] * rad, 0};
         const double v[3] = {t.ay[0] * rad, t.ay[1] * rad, 0};
         double s = 0, e = kTwoPi;
-        const bool full = type == "CIRCLE";
-        if (!full) {
+        if (type == "ARC") {
             s = r.num(50) * kDeg;
             e = r.num(51) * kDeg;
             while (e <= s)
                 e += kTwoPi;
         }
-        addProjectedEllipse(c, u, v, s, e, full, out);
+        // (an arc whose angles are equal is a whole turn, as in AutoCAD)
+        addProjectedEllipse(c, u, v, s, e, e - s >= kTwoPi - 1e-9, out);
     } else if (type == "ELLIPSE") {
         // An ellipse is stored in world coordinates; its minor axis is N x major.
         const double ratio = r.num(40, 1);
@@ -821,6 +821,7 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
     note3d(r);
 
     std::vector<Entity> out;
+    emptyRecord_ = false;
     if (!convert(r, rr, out, owner)) {
         ++cnt.skipped;
         auto& s = skippedTypes_[type];
@@ -829,7 +830,8 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
         return;
     }
     if (out.empty()) {
-        ++cnt.skipped;
+        // A text without a string draws nothing: left out, but not counted as lost.
+        ++(emptyRecord_ ? cnt.empty : cnt.skipped);
         return;
     }
     // A closed polyline on a sheet may be the outline of a clipped viewport (group 340 of the
@@ -1061,12 +1063,10 @@ bool Importer::convArc(const Record& r, const Frame& f, std::vector<Entity>& out
     double sa = r.num(50) * kDeg, ea = r.num(51) * kDeg;
     Vec2 c = f.p(P(r, 10, 20));
     if (tol::nearlyEqualAngle(sa, ea)) {
-        if (std::abs(r.num(51) - r.num(50)) > 1.0) {
-            out.push_back(makeEntity(CircleData{c, radius}));
-            return true;
-        }
-        bad(r, "ARC", "start and end angle are equal; skipped");
-        return false;
+        // AutoCAD sweeps from the start angle round to the end angle, so equal angles make a
+        // whole turn: the arc draws as a full circle.
+        out.push_back(makeEntity(CircleData{c, radius}));
+        return true;
     }
     // Mirroring reverses the direction of travel, so start and end swap.
     double s = normalizeAngle(f.angle(f.mirror ? ea : sa));
@@ -1436,8 +1436,10 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
         }
         text = d.utf8;
     }
-    if (text.empty())
+    if (text.empty()) {
+        emptyRecord_ = true;
         return true;
+    }
     d.utf8 = std::move(text);
     d.position = f.p(P(r, 10, 20));
     d.height = r.num(40) * k_;
@@ -1480,8 +1482,10 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
             raw += g.str();
     }
     std::string text = convertMText(dec(raw), k_, mtextDropped_);
-    if (text.empty())
+    if (text.empty()) {
+        emptyRecord_ = true;
         return true;
+    }
     MTextData d;
     d.utf8 = std::move(text);
     d.position = f.p(P(r, 10, 20));

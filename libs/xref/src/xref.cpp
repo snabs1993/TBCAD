@@ -332,9 +332,24 @@ void eraseLayerTree(Transaction& tx, const Document& doc, LayerId root) {
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile) {
     const std::string plain = underlay::parseSpec(stored).file;
     std::filesystem::path p{std::u8string(plain.begin(), plain.end())};
-    if (p.is_absolute() || hostFile.empty())
+    if (hostFile.empty())
         return p;
-    return hostFile.parent_path() / p;
+    std::filesystem::path full = p.is_absolute() ? p : hostFile.parent_path() / p;
+    // As AutoCAD does, a file that is not where the path says is looked for by its name in the
+    // folder of the drawing (a project folder copied to another disk keeps working). The name
+    // may follow a Windows separator that is not one on this system.
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(full, ec))
+        return full;
+    const std::size_t cut = plain.find_last_of("/\\");
+    const std::string name = cut == std::string::npos ? plain : plain.substr(cut + 1);
+    if (!name.empty()) {
+        std::filesystem::path near =
+            hostFile.parent_path() / std::filesystem::path(std::u8string(name.begin(), name.end()));
+        if (near != full && std::filesystem::is_regular_file(near, ec))
+            return near;
+    }
+    return full;
 }
 
 std::string rebaseStored(std::string_view stored, const std::filesystem::path& fromHost,
@@ -957,6 +972,49 @@ State state(const Document& doc, BlockId block, const std::filesystem::path& hos
     if (!std::filesystem::is_regular_file(p, ec))
         return State::Missing;
     return fileStamp(p) == def->xrefStamp ? State::UpToDate : State::Changed;
+}
+
+OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile) {
+    OpenLoad out;
+    std::vector<BlockId> todo;
+    for (BlockId id : xrefs(doc)) {
+        const BlockDef* def = doc.block(id);
+        if (def->xrefStamp == 0 && def->entities.empty() && !isUnderlayPath(def->xrefPath))
+            todo.push_back(id);
+    }
+    if (todo.empty())
+        return out;
+    std::error_code ec;
+    std::set<std::filesystem::path> chain;
+    const std::filesystem::path self = std::filesystem::weakly_canonical(hostFile, ec);
+    chain.insert(ec ? hostFile : self);
+    Transaction tx = doc.begin("load external references");
+    for (BlockId id : todo) {
+        const BlockDef* def = doc.block(id);
+        const std::string name = def->name;
+        const std::filesystem::path file = resolvePath(def->xrefPath, hostFile);
+        if (!std::filesystem::is_regular_file(file, ec)) {
+            out.missing.push_back(name);
+            continue;
+        }
+        const std::filesystem::path key = std::filesystem::weakly_canonical(file, ec);
+        if (chain.count(ec ? file : key)) {
+            out.failed.push_back(name + ": refers back to this drawing");
+            continue;
+        }
+        auto source = loadChain(file, chain, 1);
+        if (!source) {
+            out.failed.push_back(name + ": " + source.error().message);
+            continue;
+        }
+        if (auto r = reload(tx, doc, id, source.value()); !r) {
+            out.failed.push_back(name + ": " + r.error().message);
+            continue;
+        }
+        out.loaded.push_back(name);
+    }
+    tx.commit();
+    return out;
 }
 
 std::vector<BlockId> xrefs(const Document& doc) {

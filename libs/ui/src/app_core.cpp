@@ -1021,7 +1021,14 @@ Result<void> AppCore::openDxf(const fs::path& path) {
     std::size_t total = 0;
     for (const auto& [name, count] : imported.summary.entities)
         total += count.imported;
+    // External references whose files are found are loaded, as AutoCAD does on open.
+    const xref::OpenLoad xrefLoad = xref::loadOnOpen(*imported.document, path);
+    lap("load external references");
     addSession(std::move(imported.document), path);
+    for (const std::string& name : xrefLoad.loaded)
+        print("Loaded external reference " + name + ".");
+    for (const std::string& line : xrefLoad.failed)
+        print("Cannot load external reference " + line + ".");
     lap("index, scene, zoom (total)");
     std::size_t shown = 0;
     for (const auto& d : report.diagnostics()) {

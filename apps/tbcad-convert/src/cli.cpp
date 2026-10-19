@@ -21,6 +21,7 @@
 #include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::convert {
 
@@ -44,6 +45,8 @@ const char* kUsage =
     "                          (default 600)\n"
     "  -q, --quiet             print nothing except errors\n"
     "  --timing                print the time and memory of each step (read, convert, write)\n"
+    "  --no-xrefs              leave external references unloaded (by default an xref whose\n"
+    "                          file is found, also next to the drawing, is loaded into it)\n"
     "  -h, --help              show this text\n"
     "\n"
     "import options (DXF -> .tbcad):\n"
@@ -97,6 +100,28 @@ std::optional<dxf::Encoding> parseEncoding(const std::string& text) {
     if (t.rfind("cp", 0) == 0)
         t = "ansi_" + t.substr(2);
     return dxf::encodingFromName(t);
+}
+
+bool readFile(const std::string& path, std::vector<std::byte>& bytes);
+
+// Lets an xref point at a .dwg file (the app registers the same in its DWG opener).
+void registerDwgXrefLoader() {
+    static const bool once = [] {
+        xref::registerLoader(".dwg", [](const std::filesystem::path& file) -> Result<xref::Source> {
+            std::vector<std::byte> bytes;
+            if (!readFile(platform::pathToUtf8(file), bytes))
+                return makeError(ErrorCode::Io, "cannot read " + platform::pathToUtf8(file));
+            dxf::Report report;
+            auto r = dwg::importDwg(bytes, dxf::ImportOptions{}, report);
+            if (!r)
+                return r.error();
+            xref::Source s;
+            s.doc = std::move(r.value().document);
+            return s;
+        });
+        return true;
+    }();
+    (void)once;
 }
 
 bool readFile(const std::string& path, std::vector<std::byte>& bytes) {
@@ -166,6 +191,7 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     dxf::ExportOptions exportOptions;
     bool quiet = false;
     bool timing = false;
+    bool loadXrefs = true;
 
     for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string& a = args[i];
@@ -210,6 +236,8 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             quiet = true;
         } else if (a == "--timing") {
             timing = true;
+        } else if (a == "--no-xrefs") {
+            loadXrefs = false;
         } else if (a == "-o" || a == "--output") {
             auto v = value("a file name");
             if (!v)
@@ -337,6 +365,15 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     dxf::ImportResult& imported = result.value();
     timer.phase(fromDwg ? "read dwg" : "import dxf");
 
+    // As AutoCAD does on open: external references whose files are found are loaded.
+    xref::OpenLoad xrefLoad;
+    if (loadXrefs) {
+        registerDwgXrefLoader();
+        xrefLoad = xref::loadOnOpen(*imported.document, platform::pathFromUtf8(input));
+        if (!xrefLoad.loaded.empty() || !xrefLoad.failed.empty())
+            timer.phase("load xrefs");
+    }
+
     // A DWG file whose objects could not be read must not leave an empty drawing behind. A drawing
     // that really is empty reads without complaints, so only an empty result with warnings fails.
     if (fromDwg && imported.document->modelSpaceCount() == 0 &&
@@ -378,6 +415,10 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             err << ": " << (d.severity == dxf::Severity::Error ? "error" : "warning") << ": "
                 << d.message << " [" << d.code << "]\n";
         }
+        for (const std::string& name : xrefLoad.loaded)
+            err << input << ": xref \"" << name << "\" loaded from its file\n";
+        for (const std::string& line : xrefLoad.failed)
+            err << input << ": warning: xref " << line << " (left unloaded)\n";
         out << "tbcad-convert: " << imported.document->modelSpaceCount() << " entities, "
             << imported.summary.layers << " layers, " << imported.summary.blocks << " blocks, "
             << warnings << " warnings -> " << output << "\n";

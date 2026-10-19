@@ -59,7 +59,8 @@ enum class State {
 };
 
 // Resolves a stored path: absolute paths stay, relative ones are taken from the folder of the
-// host drawing (empty `hostFile` = the current folder). An options part ("plan.pdf#page=2,fade=60",
+// host drawing (empty `hostFile` = the current folder). When there is no file there but the host
+// folder holds one of that name, that one is given (AutoCAD's search). An options part ("plan.pdf#page=2,fade=60",
 // see tbcad/underlay/pdf.h) is not a part of the file name and is dropped.
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile);
 // The stored path of an xref as it must read when the drawing moves from `fromHost` to `toHost`
@@ -106,6 +107,17 @@ Result<BlockId> attach(Transaction& tx, Document& doc, std::string_view name,
 // when missing; layer 0 stays layer 0. The block name must be free.
 Result<BlockId> importAsBlock(Transaction& tx, Document& doc, std::string_view name,
                               const Source& source, Summary* summary = nullptr);
+// What loadOnOpen did, by block name.
+struct OpenLoad {
+    std::vector<std::string> loaded{};   // filled from their files
+    std::vector<std::string> missing{};  // file not found: left unloaded (an empty block)
+    std::vector<std::string> failed{};   // "name: why" for a file found but not read
+};
+// After a DXF or DWG import: fills every external reference the file named but did not carry
+// (an empty, never loaded block) from its file, as AutoCAD does when it opens a drawing. The file
+// is looked for where the stored path points, then by its name next to the drawing. Pictures and
+// PDF underlays are left alone; so is an xref that leads back to `hostFile`.
+OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile);
 // Replaces the content of an xref block by `source`; inserts of the block stay where they are.
 Result<void> reload(Transaction& tx, Document& doc, BlockId block, const Source& source,
                     Summary* summary = nullptr);
