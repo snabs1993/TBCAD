@@ -1675,18 +1675,33 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
             static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
         const std::vector<Vec2> poly = nc.front().pointsAtEqualLength(m);
         const PolylineGrid grid(poly);
+        // The worst sample between each pair of neighbouring fit points; the worst few of those
+        // become fit points together (one per round would refit a long curve hundreds of times).
+        std::vector<std::pair<double, int>> cand;
         double worst = 0;
-        int worstAt = -1;
-        for (int i = 0; i <= n; ++i) {
-            const double d2 = grid.nearestDist2(samples[static_cast<std::size_t>(i)]);
-            if (d2 > worst) {
-                worst = d2;
-                worstAt = i;
+        for (std::size_t j = 0; j < idx.size(); ++j) {
+            const int lo = idx[j];
+            const int hi = j + 1 < idx.size() ? idx[j + 1] : n;
+            double w = 0;
+            int at = -1;
+            for (int i = lo; i <= hi; ++i) {
+                const double d2 = grid.nearestDist2(samples[static_cast<std::size_t>(i)]);
+                if (d2 > w) {
+                    w = d2;
+                    at = i;
+                }
             }
+            if (at >= 0)
+                cand.emplace_back(w, at);
+            worst = std::max(worst, w);
         }
-        if (worstAt < 0 || std::sqrt(worst) <= tolerance * 0.9 || idx.size() >= samples.size())
+        if (cand.empty() || std::sqrt(worst) <= tolerance * 0.9 || idx.size() >= samples.size())
             break;
-        idx.push_back(worstAt);
+        std::sort(cand.begin(), cand.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+        const std::size_t take = std::max<std::size_t>(1, idx.size() / 8);
+        for (std::size_t k = 0; k < cand.size() && k < take; ++k)
+            if (std::sqrt(cand[k].first) > tolerance * 0.9)
+                idx.push_back(cand[k].second);
         std::sort(idx.begin(), idx.end());
         idx.erase(std::unique(idx.begin(), idx.end()), idx.end());
     }
