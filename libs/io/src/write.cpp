@@ -346,6 +346,16 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                     for (EntityId e : objs)
                         dynb.varint(e.value);
                 }
+                if (p.kind == DynParam::Kind::Lookup) {  // (format 1.14: only a lookup has these)
+                    dynb.varint(p.lookupParams.size());
+                    for (int t : p.lookupParams)
+                        dynb.varint(static_cast<std::uint64_t>(std::max(t, 0)));
+                    for (std::size_t row = 0; row < p.states.size(); ++row)
+                        for (std::size_t k = 0; k < p.lookupParams.size(); ++k)
+                            dynb.f64(row < p.lookupValues.size() && k < p.lookupValues[row].size()
+                                         ? p.lookupValues[row][k]
+                                         : 0.0);
+                }
             }
             dynb.varint(r.dynamic->actions.size());
             for (const DynAction& a : r.dynamic->actions) {

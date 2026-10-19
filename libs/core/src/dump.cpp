@@ -556,6 +556,15 @@ std::string canonicalDump(const Document& doc) {
                         for (EntityId e : p.stateObjects[i])
                             o << " " << e;
                 }
+                if (p.kind == DynParam::Kind::Lookup) {
+                    for (int t : p.lookupParams)
+                        o << " drives" << t;
+                    for (const auto& row : p.lookupValues) {
+                        o << " row";
+                        for (double x : row)
+                            o << " " << x;
+                    }
+                }
                 o << "\n";
             }
             for (const DynAction& a : r.dynamic->actions) {

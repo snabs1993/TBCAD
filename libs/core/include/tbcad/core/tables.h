@@ -195,6 +195,7 @@ struct DynParam {
         Rotation,    // value = angle (radians) about `base`; `end` is the handle at angle 0
         Flip,        // value 0 or 1; `base`->`end` is the mirror axis
         Visibility,  // value = index into `states`
+        Lookup,      // value = index into `states` (the rows); each row sets other parameters
     };
     Kind kind = Kind::Linear;
     std::string name{};
@@ -207,6 +208,10 @@ struct DynParam {
     // always shown.
     std::vector<std::string> states{};
     std::vector<std::vector<EntityId>> stateObjects{};
+    // Lookup: the parameters the table drives (indexes into DynamicDef::params) and, for each row
+    // (`states`), the value it gives each of them: lookupValues[row][k] for lookupParams[k].
+    std::vector<int> lookupParams{};
+    std::vector<std::vector<double>> lookupValues{};
 };
 
 struct DynAction {

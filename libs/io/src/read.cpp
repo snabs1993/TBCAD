@@ -3,8 +3,8 @@
 #include <deque>
 #include <fstream>
 #include <future>
-#include <thread>
 #include <limits>
+#include <thread>
 #include <unordered_set>
 
 #include "chunks.h"
@@ -792,7 +792,7 @@ private:
             for (std::size_t k = 0; k < np; ++k) {
                 DynParam prm;
                 std::uint8_t kind = r.u8();
-                if (kind > static_cast<std::uint8_t>(DynParam::Kind::Visibility))
+                if (kind > static_cast<std::uint8_t>(DynParam::Kind::Lookup))
                     bad("unknown dynamic parameter kind");
                 prm.kind = static_cast<DynParam::Kind>(kind);
                 prm.name = str(r);
@@ -804,6 +804,18 @@ private:
                 for (std::size_t s = 0; s < ns; ++s) {
                     prm.states.push_back(str(r));
                     prm.stateObjects.push_back(ids());
+                }
+                if (prm.kind == DynParam::Kind::Lookup) {
+                    std::size_t nt = small(r.varint(), 10000, "lookup parameter");
+                    for (std::size_t t = 0; t < nt; ++t)
+                        prm.lookupParams.push_back(
+                            static_cast<int>(small(r.varint(), 10000, "parameter")));
+                    for (std::size_t row = 0; row < ns; ++row) {
+                        std::vector<double> vals;
+                        for (std::size_t t = 0; t < nt; ++t)
+                            vals.push_back(r.f64());
+                        prm.lookupValues.push_back(std::move(vals));
+                    }
                 }
                 def.params.push_back(std::move(prm));
             }
@@ -932,8 +944,8 @@ private:
                     pr.set_value(decodeChunk(*c));
                     running.push_back(pr.get_future());
                 } else {
-                    running.push_back(std::async(std::launch::async,
-                                                 [this, c] { return decodeChunk(*c); }));
+                    running.push_back(
+                        std::async(std::launch::async, [this, c] { return decodeChunk(*c); }));
                 }
             }
         };

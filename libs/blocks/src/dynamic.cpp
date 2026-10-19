@@ -21,7 +21,7 @@ Vec2 unitOf(Vec2 a, Vec2 b) {
 double clampToLimits(const DynParam& p, double v) {
     if (p.kind == DynParam::Kind::Flip)
         return v >= 0.5 ? 1.0 : 0.0;
-    if (p.kind == DynParam::Kind::Visibility) {
+    if (p.kind == DynParam::Kind::Visibility || p.kind == DynParam::Kind::Lookup) {
         double top = p.states.empty() ? 0.0 : static_cast<double>(p.states.size() - 1);
         return std::clamp(std::round(v), 0.0, top);
     }
@@ -106,6 +106,22 @@ std::vector<double> dynValues(const BlockDef& def, const InsertData& insert) {
         if (!std::isfinite(x))
             x = dynDefault(params[i]);
         v.push_back(clampToLimits(params[i], x));
+    }
+    // A lookup row decides the parameters it drives.
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        const DynParam& p = params[i];
+        if (p.kind != DynParam::Kind::Lookup)
+            continue;
+        const auto row = static_cast<std::size_t>(v[i]);
+        if (row >= p.lookupValues.size())
+            continue;
+        for (std::size_t k = 0; k < p.lookupParams.size() && k < p.lookupValues[row].size(); ++k) {
+            const int target = p.lookupParams[k];
+            if (target >= 0 && static_cast<std::size_t>(target) < params.size() &&
+                static_cast<std::size_t>(target) != i)
+                v[static_cast<std::size_t>(target)] =
+                    clampToLimits(params[static_cast<std::size_t>(target)], p.lookupValues[row][k]);
+        }
     }
     return v;
 }
@@ -224,7 +240,8 @@ std::vector<DynHandle> dynHandles(const Document& doc, const Entity& insert) {
                            t.apply(p.base + Vec2{arm.x * c - arm.y * s, arm.x * s + arm.y * c})});
         } else if (p.kind == DynParam::Kind::Flip) {
             out.push_back({static_cast<int>(i), t.apply((p.base + p.end) * 0.5)});
-        } else if (p.kind == DynParam::Kind::Visibility && p.states.size() > 1) {
+        } else if ((p.kind == DynParam::Kind::Visibility || p.kind == DynParam::Kind::Lookup) &&
+                   p.states.size() > 1) {
             out.push_back({static_cast<int>(i), t.apply(p.base)});
         }
     }
@@ -269,7 +286,8 @@ Result<Entity> dynDrag(const Document& doc, const Entity& insert, int param, Vec
             return insert;
         return dynSet(doc, insert, param, std::atan2(d.y, d.x) - std::atan2(arm.y, arm.x));
     }
-    if (p.kind == DynParam::Kind::Flip || p.kind == DynParam::Kind::Visibility) {
+    if (p.kind == DynParam::Kind::Flip || p.kind == DynParam::Kind::Visibility ||
+        p.kind == DynParam::Kind::Lookup) {
         // A click-only grip: where it is dropped does not matter, each use flips the block or
         // moves on to the next visibility state.
         const std::vector<double> now = dynValues(*def, *ins);
@@ -289,7 +307,8 @@ bool dynGripIsClick(const Document& doc, const Entity& insert, int param) {
         static_cast<std::size_t>(param) >= def->dynamic->params.size())
         return false;
     const DynParam::Kind k = def->dynamic->params[static_cast<std::size_t>(param)].kind;
-    return k == DynParam::Kind::Flip || k == DynParam::Kind::Visibility;
+    return k == DynParam::Kind::Flip || k == DynParam::Kind::Visibility ||
+           k == DynParam::Kind::Lookup;
 }
 
 }  // namespace tbcad::blocks

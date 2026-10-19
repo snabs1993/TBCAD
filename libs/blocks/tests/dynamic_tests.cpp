@@ -265,3 +265,41 @@ TEST_CASE("dynamic: flip and visibility parameters have click-only grips") {
         cur = n.value();
     }
 }
+
+TEST_CASE("dynamic: a lookup parameter sets the parameters it drives, one grip cycles its rows") {
+    Frame f;
+    {
+        Transaction tx = f.doc.begin("dyn");
+        REQUIRE(tx.modifyBlock(f.block, [&](BlockDef& d) {
+                      DynamicDef def;
+                      DynParam w;
+                      w.name = "Width";
+                      w.base = {0, 0};
+                      w.end = {10, 0};
+                      def.params.push_back(w);
+                      DynParam lk;
+                      lk.kind = DynParam::Kind::Lookup;
+                      lk.name = "Size";
+                      lk.base = {0, 8};
+                      lk.states = {"S", "M", "L"};
+                      lk.stateObjects = {{}, {}, {}};
+                      lk.lookupParams = {0};
+                      lk.lookupValues = {{10}, {15}, {30}};
+                      def.params.push_back(lk);
+                      d.dynamic = std::move(def);
+                  }).ok());
+        tx.commit();
+    }
+    EntityId id = f.insert({}, {100, 0});
+    CHECK(dynGripIsClick(f.doc, *f.doc.find(id), 1));
+    const BlockDef* def = f.doc.block(f.block);
+    Entity cur = *f.doc.find(id);
+    for (auto [row, width] : {std::pair{1.0, 15.0}, {2.0, 30.0}, {0.0, 10.0}}) {
+        auto n = dynDrag(f.doc, cur, 1, {0, 0});
+        REQUIRE(n.ok());
+        cur = n.value();
+        const auto values = dynValues(*def, *entityAs<InsertData>(cur));
+        CHECK(values[1] == row);
+        CHECK(values[0] == width);  // the table decides Width
+    }
+}

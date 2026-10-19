@@ -51,6 +51,8 @@ std::string describe(const DynParam& p) {
             return "flip";
         case DynParam::Kind::Visibility:
             return "visibility";
+        case DynParam::Kind::Lookup:
+            return "lookup";
     }
     return "";
 }
@@ -60,7 +62,8 @@ class BParamCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BPARAM"; }
     std::string_view description() const override {
-        return "Add a dynamic parameter (linear, rotation, flip, visibility) to a block";
+        return "Add a dynamic parameter (linear, rotation, flip, visibility, lookup table) to a "
+               "block";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -73,8 +76,8 @@ public:
         const BlockId block = def->id;
 
         auto type = co_await ctx.getKeyword(
-            "Parameter type [Linear/Rotation/Flip/Visibility] <Linear>",
-            cmd::KeywordOptions{.keywords = {"Linear", "Rotation", "Flip", "Visibility"},
+            "Parameter type [Linear/Rotation/Flip/Visibility/Table] <Linear>",
+            cmd::KeywordOptions{.keywords = {"Linear", "Rotation", "Flip", "Visibility", "Table"},
                                 .defaultKeyword = "Linear"});
         if (!type.ok())
             co_return;
@@ -146,6 +149,65 @@ public:
             }
             p.base = a.point;
             p.end = b.point;
+        } else if (type.keyword == "Table") {
+            p.kind = DynParam::Kind::Lookup;
+            if (!def->dynamic || def->dynamic->params.empty()) {
+                ctx.message("Add the parameters the table drives first (BPARAM)");
+                co_return;
+            }
+            auto at =
+                co_await ctx.getPoint("Specify where the lookup grip sits (block coordinates)");
+            if (!at.ok())
+                co_return;
+            p.base = at.point;
+            for (;;) {
+                auto n = co_await ctx.getString(
+                    p.lookupParams.empty()
+                        ? "Enter the name of the first parameter to drive"
+                        : "Enter the name of the next parameter, Enter to finish",
+                    cmd::StringOptions{.allowEmpty = !p.lookupParams.empty()});
+                if (!n.ok() && n.status != cmd::Status::None)
+                    co_return;
+                const std::string target = cmd::trim(n.text);
+                if (target.empty())
+                    break;
+                const int at = blocks::dynFind(*def->dynamic, target);
+                const DynParam* tp =
+                    at >= 0 ? &def->dynamic->params[static_cast<std::size_t>(at)] : nullptr;
+                if (!tp || tp->kind == DynParam::Kind::Lookup) {
+                    ctx.message("There is no parameter called \"" + target +
+                                "\" that a table can drive");
+                    continue;
+                }
+                p.lookupParams.push_back(at);
+            }
+            for (;;) {
+                auto st = co_await ctx.getString(
+                    p.states.empty() ? "Enter the name of the first row"
+                                     : "Enter the name of the next row, Enter to finish",
+                    cmd::StringOptions{.allowEmpty = !p.states.empty()});
+                if (!st.ok() && st.status != cmd::Status::None)
+                    co_return;
+                const std::string rowName = cmd::trim(st.text);
+                if (rowName.empty())
+                    break;
+                std::vector<double> vals;
+                for (int at : p.lookupParams) {
+                    const DynParam& tp = def->dynamic->params[static_cast<std::size_t>(at)];
+                    auto v =
+                        co_await ctx.getReal("Value of " + tp.name + " in \"" + rowName + "\"");
+                    if (!v.ok())
+                        co_return;
+                    vals.push_back(v.value);
+                }
+                p.states.push_back(rowName);
+                p.stateObjects.emplace_back();
+                p.lookupValues.push_back(std::move(vals));
+            }
+            if (p.states.size() < 2) {
+                ctx.message("A lookup parameter needs at least two rows");
+                co_return;
+            }
         } else {
             p.kind = DynParam::Kind::Visibility;
             if (def->dynamic)
@@ -244,6 +306,9 @@ public:
                 break;
             case DynParam::Kind::Visibility:
                 ctx.message("A visibility parameter needs no action");
+                co_return;
+            case DynParam::Kind::Lookup:
+                ctx.message("A lookup parameter needs no action: its rows set other parameters");
                 co_return;
         }
         if (a.kind == DynAction::Kind::Stretch) {

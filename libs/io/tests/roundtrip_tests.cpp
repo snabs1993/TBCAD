@@ -460,6 +460,14 @@ TEST_CASE("round trip: dynamic block definitions and values") {
         v.states = {"Open", "ปิด"};
         v.stateObjects = {{first}, {second}};
         def.params.push_back(v);
+        DynParam lk;
+        lk.kind = DynParam::Kind::Lookup;
+        lk.name = "Size";
+        lk.states = {"เล็ก", "Large"};
+        lk.stateObjects = {{}, {}};
+        lk.lookupParams = {0};
+        lk.lookupValues = {{8}, {20}};
+        def.params.push_back(lk);
         DynAction act;
         act.kind = DynAction::Kind::Stretch;
         act.param = 0;
@@ -470,7 +478,7 @@ TEST_CASE("round trip: dynamic block definitions and values") {
         REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok());
         Entity ins;
         InsertData data{blk, {3, 3}, {1, 1}, 0};
-        data.dynValues = {14, 1};
+        data.dynValues = {14, 1, 1};
         ins.data = Indirect<InsertData>(std::move(data));
         (void)tx.add(std::move(ins));
         tx.commit();
@@ -480,8 +488,10 @@ TEST_CASE("round trip: dynamic block definitions and values") {
     CHECK(canonicalDump(*back) == before);
     const BlockDef* def = back->blockByName("Door");
     REQUIRE((def && def->dynamic));
-    CHECK(def->dynamic->params.size() == 2);
+    CHECK(def->dynamic->params.size() == 3);
     CHECK(def->dynamic->params[1].states[1] == "ปิด");
+    CHECK(def->dynamic->params[2].lookupParams == std::vector<int>{0});
+    CHECK(def->dynamic->params[2].lookupValues == std::vector<std::vector<double>>{{8}, {20}});
     CHECK(def->dynamic->params[0].max == 30);
     REQUIRE(def->dynamic->actions.size() == 1);
     CHECK(def->dynamic->actions[0].objects.size() == 1);
@@ -489,7 +499,7 @@ TEST_CASE("round trip: dynamic block definitions and values") {
     back->forEachEntity([&](const Entity& e) {
         if (const auto* i = entityAs<InsertData>(e)) {
             ++values;
-            CHECK(i->dynValues == std::vector<double>{14, 1});
+            CHECK(i->dynValues == std::vector<double>{14, 1, 1});
         }
     });
     CHECK(values == 1);
