@@ -13,7 +13,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -176,6 +178,21 @@ int ftCubicTo(const FT_Vector* c1, const FT_Vector* c2, const FT_Vector* to, voi
 
 using SystemEntry = FontLibrary::SystemFace;
 
+// TBCAD_FONT_PROFILE=1 (or TBCAD_INDEX_PROFILE): where the time of finding installed fonts goes,
+// on stderr.
+bool fontProfile() {
+    static const bool on = [] {
+        for (const char* var : {"TBCAD_FONT_PROFILE", "TBCAD_INDEX_PROFILE"})
+            if (const char* v = std::getenv(var); v && *v && *v != '0')
+                return true;
+        return false;
+    }();
+    return on;
+}
+double msSince(std::chrono::steady_clock::time_point t) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
+}
+
 // Where the list of installed fonts is kept between runs: TBCAD_CACHE_DIR, else the user's
 // local application data (Windows) or cache folder.
 std::filesystem::path systemFontCacheFile() {
@@ -254,8 +271,8 @@ struct FontLibrary::Impl {
     // layout shapes every string more than once (index bounds, display list, hit tests).
     std::unordered_map<std::string, std::vector<ShapedRun>> shapeCache;
     std::unordered_map<std::uint64_t, GlyphBounds> boundsCache;
-    std::string keyScratch;            // the cache key being looked up
-    hb_buffer_t* shapeBuf = nullptr;   // reused between calls (made on first use)
+    std::string keyScratch;           // the cache key being looked up
+    hb_buffer_t* shapeBuf = nullptr;  // reused between calls (made on first use)
     FT_Library ftLib = nullptr;
     std::vector<std::unique_ptr<Face>> faces;
     std::map<std::pair<std::string, int>, FontId> byPath;
@@ -521,6 +538,7 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
         long long time = 0;
         std::vector<SystemFace> faces;
     };
+    const auto tStart = std::chrono::steady_clock::now();
     std::map<std::string, Known> cached;
     if (!cacheFile.empty()) {
         std::ifstream in(cacheFile, std::ios::binary);
@@ -583,6 +601,9 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
             toRead.emplace_back(key, it->path());
         }
     }
+    const double cacheAndWalkMs = msSince(tStart);
+    const auto tRead = std::chrono::steady_clock::now();
+    std::size_t threadsUsed = 0;
     const bool changed = !toRead.empty();
     if (changed) {
         std::vector<std::vector<SystemFace>> read(toRead.size());
@@ -619,6 +640,7 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
         const std::size_t threads = std::min<std::size_t>(
             toRead.size(), std::clamp<std::size_t>(std::thread::hardware_concurrency(), 1, 8));
         std::vector<std::thread> pool;
+        threadsUsed = threads;
         for (std::size_t t = 1; t < threads; ++t)
             pool.emplace_back(work);
         work();
@@ -633,6 +655,8 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
         out.insert(out.end(), faces.begin(), faces.end());
     }
     // Files that are gone change the cache too.
+    const double readMs = msSince(tRead);
+    const auto tWrite = std::chrono::steady_clock::now();
     if (!cacheFile.empty() && (changed || !cached.empty())) {
         std::error_code ec;
         fs::create_directories(cacheFile.parent_path(), ec);
@@ -651,6 +675,12 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
         if (ec)
             fs::remove(temp, ec);
     }
+    if (fontProfile())
+        std::fprintf(stderr,
+                     "font profile: scan of %zu font files: cache + folder walk %.1f ms, %zu files "
+                     "read in %.1f ms on %zu threads, cache write %.1f ms, %zu faces\n",
+                     order.size(), cacheAndWalkMs, toRead.size(), readMs, threadsUsed,
+                     msSince(tWrite), out.size());
     return out;
 }
 
@@ -660,7 +690,9 @@ void FontLibrary::warmSystemFonts() {
 }
 
 std::optional<FontId> FontLibrary::findSystem(std::string_view family, bool bold, bool italic) {
+    const auto tWait = std::chrono::steady_clock::now();
     const std::vector<SystemEntry>& faces = systemFaces();  // before the lock: it can take a while
+    const double waitMs = msSince(tWait);
     std::lock_guard lock(impl_->mutex);
     const std::string want = lower(family);
     const SystemEntry* best = nullptr;
@@ -674,12 +706,18 @@ std::optional<FontId> FontLibrary::findSystem(std::string_view family, bool bold
             bestScore = score;
         }
     }
-    if (!best)
+    const auto tLoad = std::chrono::steady_clock::now();
+    std::optional<Result<FontId>> r;
+    if (best)
+        r.emplace(impl_->loadFile(best->path, best->index));
+    if (fontProfile())
+        std::fprintf(
+            stderr, "font profile: find '%s'%s%s: waited %.1f ms for the font list, %s %.1f ms\n",
+            want.c_str(), bold ? " bold" : "", italic ? " italic" : "", waitMs,
+            best ? ("loaded " + best->path.string()).c_str() : "not installed", msSince(tLoad));
+    if (!r || !r->ok())
         return std::nullopt;
-    auto r = impl_->loadFile(best->path, best->index);
-    if (!r.ok())
-        return std::nullopt;
-    return r.value();
+    return r->value();
 }
 
 std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Direction direction) {
