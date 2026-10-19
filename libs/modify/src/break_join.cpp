@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
 
 namespace tbcad::modify {
@@ -742,6 +743,64 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
             }
             out.created.push_back(withData(firstProps(el.arc.origins), d));
             consume(el.arc.origins);
+        }
+    }
+
+    // Rays and construction lines on one line fuse: two rays that reach each other, or a ray with
+    // a construction line, make one run; same-way rays keep the earlier start.
+    {
+        struct RayItem {
+            Vec2 o{}, dir{1, 0};
+            double lo = 0, hi = 0;  // extent along dir from o: [0, inf) ray, (-inf, inf) xline
+            std::vector<std::size_t> origins{};
+        };
+        constexpr double kInf = std::numeric_limits<double>::infinity();
+        std::vector<RayItem> rs;
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            const auto* d = entities[i] ? entityAs<RayData>(*entities[i]) : nullptr;
+            if (!d || tol::isZeroLength(d->dir))
+                continue;
+            rs.push_back({d->origin, normalized(d->dir), d->infinite ? -kInf : 0.0, kInf, {i}});
+        }
+        auto fuse = [&](RayItem& a, const RayItem& b) {
+            const Vec2 n = a.dir;
+            const double side = n.x * b.dir.y - n.y * b.dir.x;
+            const Vec2 d = b.o - a.o;
+            if (std::abs(side) > 1e-9 || std::abs(n.x * d.y - n.y * d.x) > tolerance)
+                return false;
+            const double sgn = (n.x * b.dir.x + n.y * b.dir.y) > 0 ? 1.0 : -1.0;
+            const double base = n.x * d.x + n.y * d.y;  // b's origin along a's axis
+            double blo = base + (sgn > 0 ? b.lo : -b.hi);
+            double bhi = base + (sgn > 0 ? b.hi : -b.lo);
+            if (std::max(a.lo, blo) > std::min(a.hi, bhi) + tolerance)
+                return false;
+            a.lo = std::min(a.lo, blo);
+            a.hi = std::max(a.hi, bhi);
+            a.origins.insert(a.origins.end(), b.origins.begin(), b.origins.end());
+            return true;
+        };
+        for (bool changed = true; changed;) {
+            changed = false;
+            for (std::size_t i = 0; i < rs.size() && !changed; ++i)
+                for (std::size_t j = i + 1; j < rs.size() && !changed; ++j)
+                    if (fuse(rs[i], rs[j])) {
+                        rs.erase(rs.begin() + static_cast<std::ptrdiff_t>(j));
+                        changed = true;
+                    }
+        }
+        for (const RayItem& r : rs) {
+            if (r.origins.size() < 2)
+                continue;
+            RayData d;
+            if (std::isinf(r.lo) && std::isinf(r.hi)) {
+                d = RayData{r.o, r.dir, true};
+            } else if (std::isinf(r.hi)) {
+                d = RayData{r.o + r.dir * r.lo, r.dir, false};
+            } else {
+                d = RayData{r.o + r.dir * r.hi, r.dir * -1.0, false};
+            }
+            out.created.push_back(withData(firstProps(r.origins), d));
+            consume(r.origins);
         }
     }
 

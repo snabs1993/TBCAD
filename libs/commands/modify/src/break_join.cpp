@@ -98,7 +98,7 @@ public:
     std::string_view name() const override { return "JOIN"; }
     std::vector<std::string> defaultAliases() const override { return {"J"}; }
     std::string_view description() const override {
-        return "Join lines, arcs, polylines, ellipse arcs and splines that touch or overlap";
+        return "Join lines, arcs, polylines, ellipse arcs, splines and rays that touch or overlap";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -108,7 +108,7 @@ public:
                 return false;
             return kind(e) == EntityKind::Line || kind(e) == EntityKind::Arc ||
                    kind(e) == EntityKind::Polyline || kind(e) == EntityKind::Ellipse ||
-                   kind(e) == EntityKind::Spline;
+                   kind(e) == EntityKind::Spline || kind(e) == EntityKind::Ray;
         };
         auto sel = co_await ctx.getSelection("Select objects to join", so);
         if (!sel.ok())
