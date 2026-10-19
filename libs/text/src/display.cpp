@@ -86,7 +86,7 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
                     line.style.color = paletteColor(static_cast<std::uint8_t>(g.color));
                 line.pts.reserve(sp.points.size());
                 for (const font::FPoint& p : sp.points) {
-                    Vec2 local{g.origin.x + (p.x + g.shear * p.y) * g.scale,
+                    Vec2 local{g.origin.x + (p.x * g.xScale + g.shear * p.y) * g.scale,
                                g.origin.y + p.y * g.scale};
                     line.pts.push_back(layout.toWorld.apply(local));
                 }
@@ -108,7 +108,7 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             std::vector<Vec2> ring;
             ring.reserve(c.points.size());
             for (const font::FPoint& p : c.points) {
-                Vec2 local{g.origin.x + (p.x + g.shear * p.y) * g.scale,
+                Vec2 local{g.origin.x + (p.x * g.xScale + g.shear * p.y) * g.scale,
                            g.origin.y + p.y * g.scale};
                 ring.push_back(layout.toWorld.apply(local));
             }

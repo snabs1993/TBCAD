@@ -112,6 +112,11 @@ struct Attr {
     int color = -1;     // palette index, -1 = the entity's colour
     bool underline = false;
     bool overline = false;
+    bool strike = false;     // `\K` .. `\k`
+    double widthFactor = 1;  // `\W<f>;` glyph width, relative to the text style's
+    double tracking = 1;     // `\T<f>;` letter spacing: advances are multiplied by it
+    double oblique = 0;      // `\Q<deg>;` extra slant, as a tangent
+    int valign = 0;          // `\A<0|1|2>;` smaller text on a line: bottom, middle, top
     friend bool operator==(const Attr&, const Attr&) = default;
 };
 
@@ -156,10 +161,11 @@ std::string markupFromPlain(std::string_view plain);
 struct PlacedGlyph {
     font::FontId font{};
     std::uint32_t glyphId = 0;
-    Vec2 origin{};     // glyph origin in layout space (mm), y up, includes the shaper's offsets
-    double scale = 0;  // mm per em
-    double shear = 0;  // synthetic italic: x += shear * y (in glyph space)
-    int color = -1;    // palette index or -1
+    Vec2 origin{};      // glyph origin in layout space (mm), y up, includes the shaper's offsets
+    double scale = 0;   // mm per em
+    double shear = 0;   // slant (synthetic italic, \Q): x += shear * y (in em, after xScale)
+    double xScale = 1;  // glyph width factor (\W)
+    int color = -1;     // palette index or -1
 };
 
 // An underline or overline: a horizontal rule in layout space.

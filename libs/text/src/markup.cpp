@@ -156,6 +156,32 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
                 p.para = parseParaProps(*arg);
                 out.push_back(std::move(p));
                 i = j;
+            } else if (k == 'K' || k == 'k') {
+                flush();
+                cur.strike = k == 'K';
+                i += 2;
+            } else if (k == 'W' || k == 'T' || k == 'Q' || k == 'A') {
+                std::size_t j = i + 2;
+                auto arg = readArg(s, j);
+                if (!arg) {
+                    text += c;
+                    ++i;
+                    continue;
+                }
+                flush();
+                double v = 0;
+                auto [p, ec] = std::from_chars(arg->data(), arg->data() + arg->size(), v);
+                const bool ok =
+                    ec == std::errc{} && p == arg->data() + arg->size() && std::isfinite(v);
+                if (ok && k == 'W' && v > 0.05 && v <= 20)
+                    cur.widthFactor = v;
+                else if (ok && k == 'T' && v >= 0.1 && v <= 20)
+                    cur.tracking = v;
+                else if (ok && k == 'Q' && v > -85 && v < 85)
+                    cur.oblique = std::tan(v * 3.14159265358979323846 / 180.0);
+                else if (ok && k == 'A' && v >= 0 && v <= 2)
+                    cur.valign = static_cast<int>(v);
+                i = j;
             } else if (k == 'N') {
                 flush();
                 Piece p;

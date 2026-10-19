@@ -4,7 +4,7 @@
 //         as {\b1;..} / {\i1;..}, \H<height>; (scaled to mm, "2x" relative form unchanged) and
 //         \C<aci>; (mapped to the TBCAD palette).
 // Turned into plain text: \S stacks ("1/2"), \~ (space), %% codes.
-// Dropped (and counted): every other formatting code.
+// Dropped (and counted): every other formatting code (\X, \f font names...).
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -194,7 +194,23 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                 case 'A':
                 case 'Q':
                 case 'T':
-                case 'W':
+                case 'W': {
+                    // \W width factor, \T tracking, \Q oblique angle, \A vertical alignment.
+                    const std::string_view p = param(i);
+                    const std::string num(p);
+                    char* end = nullptr;
+                    std::strtod(num.c_str(), &end);
+                    if (end != num.c_str() && *end == 0) {
+                        out.push_back('\\');
+                        out.push_back(k);
+                        out += p;
+                        out.push_back(';');
+                        markCode();
+                    } else {
+                        ++dropped[k];  // e.g. "\Qc;": not a number
+                    }
+                    break;
+                }
                 case 'X':
                     param(i);
                     ++dropped[k];
@@ -209,7 +225,9 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                     break;
                 case 'K':
                 case 'k':
-                    ++dropped[k];
+                    out.push_back('\\');
+                    out.push_back(k);
+                    markCode();
                     break;
                 default:
                     // Unknown escape: keep the character itself.

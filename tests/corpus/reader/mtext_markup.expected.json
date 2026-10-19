@@ -15,7 +15,7 @@
     "\\S1/2; and \\Lunder\\l",
     "Dia ⌀25 \\\\ \\{x\\}",
     "Line1\nLine2",
-    "plain",
+    "{\\W0.8;plain}",
     "{\\C1;Red}",
     "{\\H5;Big} {\\H2x;Rel}",
     "{\\b1;Bold} plain"

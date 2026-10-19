@@ -33,6 +33,13 @@ rotation is ignored for those two.
   capital height below the top of the frame. Lines are left aligned; `attach` chooses which point
   of the frame sits at `position`. `width = 0` means no wrapping.
 
+### Character codes
+
+`\W<f>;` glyph width factor (relative to the style's), `\T<f>;` tracking (letter spacing, 1 =
+normal), `\Q<deg>;` extra slant, `\A0|1|2;` where smaller text sits on a line of taller text
+(bottom, middle, top), `\K` / `\k` strike-through on / off. They follow braces like `\b` and `\H`.
+Out of range values are ignored. DXF keeps them (a non-numeric argument is dropped and counted).
+
 ### Paragraphs
 
 `\pxi-3,l6,r2,qj,t12,24,sb1,sa2;` sets the paragraph settings until the next `\p`: `i` first-line

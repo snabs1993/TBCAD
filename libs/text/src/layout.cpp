@@ -73,12 +73,13 @@ Chunk shapeChunk(const TextStyle* style, std::string_view text, const Attr& attr
             PlacedGlyph pg;
             pg.font = run.font;
             pg.glyphId = g.glyphId;
-            pg.origin = {pen + g.xOffset * k, g.yOffset * k};
+            pg.origin = {pen + g.xOffset * k * attr.widthFactor, g.yOffset * k};
             pg.scale = s;  // mm per em
-            pg.shear = fi.shear;
+            pg.shear = fi.shear + attr.oblique;
+            pg.xScale = attr.widthFactor;
             pg.color = attr.color;
             c.glyphs.push_back(pg);
-            pen += g.xAdvance * k;
+            pen += g.xAdvance * k * attr.widthFactor * attr.tracking;
         }
     }
     c.advance = pen;
@@ -119,7 +120,8 @@ BBox2 glyphBoxLayout(const PlacedGlyph& g) {
         return out;
     for (Vec2 c : {Vec2{e.min.x, e.min.y}, Vec2{e.max.x, e.min.y}, Vec2{e.min.x, e.max.y},
                    Vec2{e.max.x, e.max.y}})
-        out.expand({g.origin.x + (c.x + g.shear * c.y) * g.scale, g.origin.y + c.y * g.scale});
+        out.expand(
+            {g.origin.x + (c.x * g.xScale + g.shear * c.y) * g.scale, g.origin.y + c.y * g.scale});
     return out;
 }
 
@@ -166,7 +168,7 @@ double itemWidth(const TextStyle* style, const std::string& text, const Attr& at
 Attr stackAttr(const Attr& attr) {
     Attr a = attr;
     a.height = attr.height * kStackScale;
-    a.underline = a.overline = false;
+    a.underline = a.overline = a.strike = false;
     return a;
 }
 
@@ -478,16 +480,26 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
         out.height = std::max(out.height, attr.height);
         out.text += text;
         Chunk c = shapeChunk(style, text, attr);
+        // \A: smaller text on a line of taller text sits on the bottom, middle or top of it.
+        double lift = 0;
+        if (attr.valign > 0) {
+            double tall = 0;
+            for (const Item& it : line)
+                tall = std::max(tall, it.attr.height);
+            lift = std::max(0.0, tall - attr.height) * (attr.valign == 1 ? 0.5 : 1.0);
+        }
         for (PlacedGlyph g : c.glyphs) {
             g.origin.x += pen;
-            g.origin.y += baseline;
+            g.origin.y += baseline + lift;
             glyphs.push_back(g);
         }
         // Rules end where the chunk's text does; a chunk that is only spaces still carries one.
         if (attr.underline)
-            out.rules.push_back({pen, pen + c.advance, baseline - 0.18 * attr.height});
+            out.rules.push_back({pen, pen + c.advance, baseline + lift - 0.18 * attr.height});
         if (attr.overline)
-            out.rules.push_back({pen, pen + c.advance, baseline + 1.18 * attr.height});
+            out.rules.push_back({pen, pen + c.advance, baseline + lift + 1.18 * attr.height});
+        if (attr.strike)
+            out.rules.push_back({pen, pen + c.advance, baseline + lift + 0.35 * attr.height});
         pen += c.advance;
         if (extraPerGap > 0 && line[i].space)
             pen += extraPerGap;
