@@ -169,3 +169,49 @@ TEST_CASE("values are typed in the unit of the drawing") {
     auto f = fieldsOf(w, {30, 0}, Vec2{0, 0});
     CHECK(f[0].text == "5");
 }
+
+TEST_CASE("a typed distance follows ORTHO instead of the raw cursor direction") {
+    World w;
+    w.set(keys::ortho, "1");
+    fieldsOf(w, {30, 10}, Vec2{0, 0});
+    REQUIRE(w.dyn.edit(0, "100"));
+    CHECK(near(w.hover({30, 10}, Vec2{0, 0}), {100, 0}));
+    CHECK(near(w.hover({-5, 40}, Vec2{0, 0}), {0, 100}));
+    CHECK(near(w.hover({-40, -5}, Vec2{0, 0}), {-100, 0}));
+    // Shift switches ORTHO off for the move: the raw direction comes back.
+    CHECK(near(w.hover({30, 40}, Vec2{0, 0}, 1, nullptr, true), {60, 80}));
+}
+
+TEST_CASE("a typed distance follows polar tracking when the cursor is near an increment") {
+    World w;
+    w.set(keys::polar, "1");
+    w.set(keys::polarIncrement, "45");
+    fieldsOf(w, {30, 29}, Vec2{0, 0});
+    REQUIRE(w.dyn.edit(0, "10"));
+    const double r = 10 / std::sqrt(2.0);
+    CHECK(near(w.hover({30, 29}, Vec2{0, 0}), {r, r}));
+    // Far from every increment the raw direction is kept.
+    const Vec2 raw = dirDeg(20, 50);
+    CHECK(near(w.hover(raw, Vec2{0, 0}), dirDeg(20, 10), 1e-9));
+}
+
+TEST_CASE("a typed angle beats ORTHO and a typed distance beats an object snap") {
+    World w;
+    w.set(keys::ortho, "1");
+    w.set(keys::osnap, "1");
+    w.line({100, 0}, {100, 50});
+    fieldsOf(w, {30, 10}, Vec2{0, 0});
+    REQUIRE(w.dyn.edit(1, "45"));
+    const Vec2 p = w.hover({30, 10}, Vec2{0, 0});
+    CHECK(near(p, dirDeg(45, dot(Vec2{30, 10}, dirDeg(45, 1))), 1e-9));
+    REQUIRE(w.dyn.edit(0, "100"));
+    CHECK(near(w.hover({99, 1}, Vec2{0, 0}), dirDeg(45, 100), 1e-9));
+}
+
+TEST_CASE("without a lock ORTHO and an endpoint snap still agree: the snap wins") {
+    World w;
+    w.set(keys::ortho, "1");
+    w.set(keys::osnap, "1");
+    w.line({100, 0}, {100, 50});
+    CHECK(near(w.hover({99, 1}, Vec2{0, 0}), {100, 0}));
+}

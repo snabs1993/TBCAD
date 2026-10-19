@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "tbcad/core/units.h"
+#include "tbcad/drafting/filters.h"
 #include "tbcad/drafting/settings.h"
 
 namespace tbcad::drafting {
@@ -60,8 +61,13 @@ std::optional<Vec2> DynamicInput::filter(const cmd::PointQuery& query, Vec2 raw,
         if (dist_ && angle_) {
             p = b + Vec2{std::cos(*angle_), std::sin(*angle_)} * *dist_;
         } else if (dist_) {
-            const double d = length(v);
-            const Vec2 dir = d > 1e-12 ? v * (1.0 / d) : Vec2{1, 0};
+            // A typed distance goes the way ORTHO or polar tracking points the cursor.
+            Vec2 dir{1, 0};
+            if (auto o = orthoPolarDirection(env_, query, raw)) {
+                dir = *o;
+            } else if (const double d = length(v); d > 1e-12) {
+                dir = v * (1.0 / d);
+            }
             p = b + dir * *dist_;
         } else if (angle_) {
             const Vec2 dir{std::cos(*angle_), std::sin(*angle_)};
