@@ -1628,4 +1628,17 @@ TEST_CASE(
     CHECK(c.at("tbcad.mleadercurrent") == "Note");
     CHECK(c.at("tbcad.tablestyle.Grid") == "a\tb\nc");
 }
+TEST_CASE("the unit a drawing shows lengths in survives a DXF round trip") {
+    for (LengthUnit u : {LengthUnit::Inch, LengthUnit::Foot, LengthUnit::Centimeter,
+                         LengthUnit::Meter, LengthUnit::Millimeter}) {
+        Document doc;
+        Transaction tx = doc.begin("units");
+        REQUIRE(tx.modifyHeader([&](Header& h) { h.units = u; }));
+        tx.commit();
+        RoundTrip rt = roundTrip(doc);
+        CHECK(rt.back->header().units == u);
+    }
+}
+
 }  // namespace tbcad::dxf
+

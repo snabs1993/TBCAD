@@ -216,6 +216,8 @@ private:
     std::optional<Transaction> tx_{};
     ImportSummary sum_{};
     double k_ = 1;  // file units -> mm
+    // The unit lengths are shown in: the file's own when TBCAD has it (inch, foot, mm, cm, m).
+    LengthUnit displayUnit_ = LengthUnit::Millimeter;
 
     // tables
     std::vector<LayerRow> layerRows_{};
