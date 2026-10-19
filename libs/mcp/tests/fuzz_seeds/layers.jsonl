@@ -1,0 +1,8 @@
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "create_layer", "arguments": {"name": "S-FLOOR", "color": 3}}}
+{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "create_layer", "arguments": {"name": "edge", "parent": "S-FLOOR"}}}
+{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "modify_layer", "arguments": {"path": "S-FLOOR~edge", "on": false, "rename": "rim"}}}
+{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "set_current_layer", "arguments": {"path": "S-FLOOR"}}}
+{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "delete_layer", "arguments": {"path": "S-FLOOR", "mode": "move_children_up"}}}
+{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "set_active_only", "arguments": {"on": true}}}
+{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "layer_state", "arguments": {"action": "save", "name": "A"}}}
+{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "list_layers", "arguments": {}}}

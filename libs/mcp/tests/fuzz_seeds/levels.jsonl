@@ -1,0 +1,6 @@
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "create_level", "arguments": {"name": "Floor 2", "elevation": 3000}}}
+{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "set_current_level", "arguments": {"name": "Floor 2"}}}
+{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "add_entities", "arguments": {"entities": [{"kind": "line", "start": [0, 0], "end": [1, 1]}]}}}
+{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "set_level_view", "arguments": {"mode": "all"}}}
+{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "modify_level", "arguments": {"name": "Floor 2", "elevation": -5}}}
+{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "delete_level", "arguments": {"name": "Floor 2"}}}

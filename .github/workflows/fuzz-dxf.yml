@@ -1,4 +1,4 @@
-name: Fuzz DXF lexer and reader, .tbcad reader
+name: Fuzz DXF lexer and reader, .tbcad reader, MCP server
 
 # 30 s on every pull request that touches the DXF code, 5 min every night.
 on:
@@ -7,6 +7,7 @@ on:
       - "libs/dxf/**"
       - "libs/io/**"
       - "libs/blocks/**"
+      - "libs/mcp/**"
       - "tests/corpus/**"
       - ".github/workflows/fuzz-dxf.yml"
   schedule:
@@ -32,9 +33,9 @@ jobs:
         run: >
           cmake -S . -B build/fuzz -G Ninja
           -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_IO_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_IO_FUZZ=ON -DTBCAD_MCP_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
       - name: Build
-        run: cmake --build build/fuzz --target tbcad_dxf_fuzz_lexer tbcad_dxf_fuzz_reader tbcad_io_fuzz_tbcad
+        run: cmake --build build/fuzz --target tbcad_dxf_fuzz_lexer tbcad_dxf_fuzz_reader tbcad_io_fuzz_tbcad tbcad_mcp_fuzz
       - name: Fuzz
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
@@ -57,6 +58,14 @@ jobs:
           mkdir -p build/fuzz-corpus-tbcad artifacts
           cp samples/*.tbcad build/fuzz-corpus-tbcad/
           build/fuzz/libs/io/tbcad_io_fuzz_tbcad build/fuzz-corpus-tbcad \
+            -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=artifacts/
+      - name: Fuzz the MCP server
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
+          mkdir -p build/fuzz-corpus-mcp artifacts
+          cp libs/mcp/tests/fuzz_seeds/*.jsonl build/fuzz-corpus-mcp/
+          build/fuzz/libs/mcp/tbcad_mcp_fuzz build/fuzz-corpus-mcp \
             -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
             -artifact_prefix=artifacts/
       - name: Upload crash inputs

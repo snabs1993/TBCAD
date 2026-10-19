@@ -1,0 +1,9 @@
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "add_entities", "arguments": {"entities": [{"kind": "line", "start": [0, 0], "end": [100, 0]}, {"kind": "circle", "center": [50, 50], "radius": 20}, {"kind": "polyline", "vertices": [{"x": 0, "y": 0}, {"x": 10, "y": 0, "bulge": 0.5}, {"x": 10, "y": 10}], "closed": true}, {"kind": "arc", "center": [0, 0], "radius": 5, "startAngle": 0, "endAngle": {"deg": 90}}, {"kind": "text", "position": [0, 0], "value": "สวัสดี", "height": 2.5}, {"kind": "mtext", "position": [5, 5], "value": "a\\Pb", "width": 20, "height": 2.5}, {"kind": "hatch", "loops": [[[0, 0], [10, 0], [10, 10]]]}, {"kind": "ellipse", "center": [0, 0], "majorAxis": [10, 0], "ratio": 0.5}, {"kind": "spline", "controlPoints": [[0, 0], [1, 2], [3, 3], [4, 0]], "degree": 3}, {"kind": "line", "start": [0, -10], "end": [0, 100]}]}}}
+{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "add_constraint", "arguments": {"kind": "Horizontal", "a": "1"}}}
+{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "add_constraint", "arguments": {"kind": "Distance", "a": {"id": "1", "part": "start"}, "b": {"id": "1", "part": "end"}, "value": 50}}}
+{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "add_constraint", "arguments": {"kind": "Tangent", "a": "2", "b": "1"}}}
+{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "add_constraint", "arguments": {"kind": "DistanceRange", "a": "1", "value": 10, "value2": 5}}}
+{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "solve_constraints", "arguments": {}}}
+{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "analyze_constraints", "arguments": {}}}
+{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "list_constraints", "arguments": {}}}
+{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "remove_constraint", "arguments": {"index": 0}}}
