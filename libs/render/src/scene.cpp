@@ -498,6 +498,18 @@ void Scene::removeMany(std::span<const EntityId> ids) {
     ++changeCounter_;
 }
 
+std::size_t Scene::trimMemory() {
+    std::size_t freed = 0;
+    for (auto& [tk, tile] : tiles_)
+        for (auto& [bk, batch] : tile.batches) {
+            freed += (batch.verts.capacity() - batch.verts.size()) * sizeof(GpuVertex) +
+                     (batch.ranges.capacity() - batch.ranges.size()) * sizeof(BatchRange);
+            batch.verts.shrink_to_fit();
+            batch.ranges.shrink_to_fit();
+        }
+    return freed;
+}
+
 void Scene::discardAll() {
     for (auto& [tk, tile] : tiles_)
         for (auto& [bk, batch] : tile.batches)

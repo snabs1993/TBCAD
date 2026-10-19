@@ -2008,8 +2008,17 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             lastTessellatedFor_.center = camera_.center;
     }
     // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
-    if (session_->sync->pumpPending(camera_) > 0)
+    if (session_->sync->pumpPending(camera_) > 0) {
         ++generation_;
+        trimWhenSettled_ = true;
+    }
+    if (trimWhenSettled_ && !sceneBuilding()) {
+        // The batches of a big drawing were grown piece by piece and hold up to twice the room
+        // they use: give it back once, when the drawing is complete.
+        trimWhenSettled_ = false;
+        if (scene_.entityCount() >= 100000)
+            scene_.trimMemory();
+    }
 }
 
 bool AppCore::sceneBuilding() const {

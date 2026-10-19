@@ -3,6 +3,7 @@
 // (default 100,000 polylines and 100,000 lines). Prints; the checks only guard the results.
 #include <doctest/doctest.h>
 
+#include <malloc.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -143,7 +144,7 @@ TEST_CASE("perf: whole-drawing edits with undo and redo") {
 }
 
 namespace {
-double rssMb() {
+double procRssMb() {
     std::FILE* f = std::fopen("/proc/self/status", "r");
     if (!f)
         return 0;
@@ -159,7 +160,7 @@ double rssMb() {
 
 TEST_CASE("perf: memory of the undo stack after 50 whole-drawing edits") {
     Big big;
-    const double base = rssMb();
+    const double base = procRssMb();
     std::printf("undo memory: %zu objects, %.0f MB before any edit, limit %.0f MB\n",
                 big.core->document().modelSpaceCount(), base,
                 static_cast<double>(big.core->undoStack().limitBytes()) / 1048576.0);
@@ -171,9 +172,15 @@ TEST_CASE("perf: memory of the undo stack after 50 whole-drawing edits") {
             std::printf("  after %2d edits: %zu steps kept, stack says %.0f MB, process %.0f MB\n",
                         i, big.core->undoStack().undoCount(),
                         static_cast<double>(big.core->undoStack().usedBytes()) / 1048576.0,
-                        rssMb());
+                        procRssMb());
     }
     CHECK(big.core->undoStack().usedBytes() <= big.core->undoStack().limitBytes());
+}
+
+// Live heap bytes (unlike the process size, not affected by memory freed earlier and kept).
+static double heapMb() {
+    const struct mallinfo2 m = mallinfo2();
+    return static_cast<double>(m.uordblks + m.hblkhd) / 1048576.0;
 }
 
 TEST_CASE("perf: save and open of a big drawing keep every object") {
@@ -195,19 +202,24 @@ TEST_CASE("perf: save and open of a big drawing keep every object") {
         auto memRaw = io::writeTbcadToMemory(big.core->document(), raw);
         const double rawMs = ms(t);
         io::IoReport rep;
+        const double heap0 = heapMb();
         t = std::chrono::steady_clock::now();
         auto back = io::readTbcad(std::span<const std::uint8_t>(mem.value()), rep);
         const double decodeMs = ms(t);
+        std::printf("  document alone: +%.0f MB for %zu objects\n", heapMb() - heap0, count);
         std::printf(
             "  encode %.0f ms (%.1f MB), without deflate %.0f ms (%.1f MB), decode %.0f ms\n",
             encodeMs, static_cast<double>(mem.value().size()) / 1e6, rawMs,
             static_cast<double>(memRaw.value().size()) / 1e6, decodeMs);
     }
+    const double rssBefore = heapMb();
     ui::AppCore fresh(big.registry, platform::AppPaths{big.dir / "cfg2", big.dir / "data2"});
     fresh.setViewportSize(1400, 900);
     t = std::chrono::steady_clock::now();
     auto opened = fresh.openFile(path);
     const double readMs = ms(t);
+    std::printf("  memory right after open (document, index, queue): +%.0f MB\n",
+                heapMb() - rssBefore);
     for (const auto& [what, took] : fresh.openTimings())
         std::printf("    %s: %.0f ms\n", what.c_str(), took);
     fresh.updateFrame();
@@ -225,10 +237,40 @@ TEST_CASE("perf: save and open of a big drawing keep every object") {
     }
     std::printf("  open: read %.0f ms, first frame %.0f ms; %d more frames, worst %.0f ms\n",
                 readMs, openMs - readMs, frames, worstFrameMs);
+    {
+        const double h0 = heapMb();
+        auto tt = std::chrono::steady_clock::now();
+        const std::size_t freed = fresh.scene().trimMemory();
+        std::printf("  trim: %.0f MB spare in batches, heap %.0f MB less, %.0f ms\n",
+                    static_cast<double>(freed) / 1048576.0, h0 - heapMb(), ms(tt));
+    }
     std::printf("save %zu objects: %.0f ms (%.1f MB)   open: %.0f ms\n", count, saveMs,
                 static_cast<double>(std::filesystem::file_size(path)) / 1e6, openMs);
+    std::printf("  memory after open: +%.0f MB\n", heapMb() - rssBefore);
     CHECK(fresh.document().modelSpaceCount() == count);
     CHECK(canonicalDump(fresh.document()) == canonicalDump(big.core->document()));
+    // Panning and zooming with 100k objects highlighted, everything drawn.
+    {
+        auto ids = fresh.document().modelSpace();
+        ids.resize(std::min<std::size_t>(ids.size(), 100000));
+        t = std::chrono::steady_clock::now();
+        fresh.setSelection(ids);
+        fresh.updateFrame();
+        std::printf("  select 100k + frame: %.0f ms\n", ms(t));
+        const Vec2 mid{700, 450};
+        std::vector<double> frameMs;
+        for (int i = 0; i < 60; ++i) {
+            auto tf = std::chrono::steady_clock::now();
+            fresh.panPixels(7, 3);
+            fresh.zoomAtScreen(mid, (i / 15) % 2 == 0 ? 0.08 : -0.08);
+            fresh.updateFrame();
+            frameMs.push_back(ms(tf));
+        }
+        std::sort(frameMs.begin(), frameMs.end());
+        std::printf("  pan/zoom with 100k selected: median %.1f ms, worst %.1f ms\n",
+                    frameMs[frameMs.size() / 2], frameMs.back());
+        std::printf("  memory with selection: +%.0f MB\n", heapMb() - rssBefore);
+    }
 }
 
 TEST_CASE("perf: ERASE of everything alone") {

@@ -397,6 +397,7 @@ private:
     EntityId hoverId_{};
     Vec2 viewportOrigin_{};
     bool haveOrigin_ = false;
+    bool trimWhenSettled_ = false;  // a big build ran: trim the scene's spare memory when done
     int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
     std::chrono::steady_clock::time_point fitUntil_{};  // re-fits only count until this time
     void applyPick(const std::vector<EntityId>& ids, bool remove);
