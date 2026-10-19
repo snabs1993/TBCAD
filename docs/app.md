@@ -102,7 +102,16 @@ required by its license, and opens `THIRD_PARTY_NOTICES.txt` (copied next to the
 ```
 tbcad [file.tbcad|file.dxf] [--script "CMD;CMD"] [--frames N] [--screenshot out.ppm]
       [--gate [--report out.txt]] [--self-test] [--no-vsync]
+      [--capture-script script.txt [--size 1600x900]]
 ```
+
+`--capture-script` is for pictures of the real program without anyone at the screen: the window is
+hidden and never takes focus, the script runs, and each `@shot` line writes a PNG of the whole
+window. A line is a command line (an empty line is Enter, `#` starts a comment) or one of
+`@size W H`, `@frames N`, `@mouse X Y`, `@click X Y`, `@drag X0 Y0 X1 Y1` (window pixels) and
+`@shot name.png`. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
+ordinary commands (`ZOOM`, `W`, `SELECT`) or a `@drag` across the view. A shot waits until the
+drawing has finished building. The program exits when the script ends (status 1 if a line failed).
 
 `--self-test` opens a hidden window, runs the script, draws the frames and checks that something
 was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenGL 3.3, unless
