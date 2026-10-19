@@ -93,15 +93,18 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
 
         // Objects this program has no reader for (AEC, Civil, ACIS ...) are written back as they
         // were read, so the re-imported document is a different, equally valid one.
+        Result<ImportResult> second = importBytes(toBytes(out.value().bytes));
+        REQUIRE_MESSAGE(second.ok(), (second.ok() ? "" : second.error().message));
+        const Document& doc2 = *second.value().document;
+        // Saving and opening again never adds or loses objects (a Civil label's text, kept both
+        // in its proxy graphics and as a Text, once came back twice).
+        CHECK(doc2.modelSpaceCount() == doc1.modelSpaceCount());
+        CHECK(doc2.entityCount() == doc1.entityCount());
         if (path.find("aec_objects") != std::string::npos) {
             CHECK(out.value().bytes.find("AEC_WALL") != std::string::npos);
             ++roundTripped;
             continue;
         }
-
-        Result<ImportResult> second = importBytes(toBytes(out.value().bytes));
-        REQUIRE_MESSAGE(second.ok(), (second.ok() ? "" : second.error().message));
-        const Document& doc2 = *second.value().document;
 
         std::string diff =
             testing::SemanticDump::diff(testing::SemanticDump(doc1), testing::SemanticDump(doc2));
