@@ -140,9 +140,9 @@ hatch::IslandStyle islandStyleOf(double v) {
 }
 
 // BOUNDARY [BO]: a closed polyline for the region around each picked point, and one for every
-// island inside it. Uses the same boundary finder as HATCH. The Islands keyword picks how islands
-// are treated: Normal (every closed shape inside), Outer (only the first level) or Ignore (the
-// outline alone).
+// island inside it. Uses the same boundary finder and gap tolerance (hatch.gap) as HATCH. The
+// Islands keyword picks how islands are treated: Normal (every closed shape inside), Outer (only
+// the first level) or Ignore (the outline alone).
 class BoundaryCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BOUNDARY"; }
@@ -176,9 +176,13 @@ public:
             }
             if (!p.ok())
                 co_return;
+            // The gap tolerance is HATCH's (hatch.gap, HPGAPTOL): ends that stop short of each
+            // other by less than that are joined.
+            hatch::BoundaryOptions bo;
+            bo.gapTolerance = std::max(0.0, settingNumber(ctx, "hatch.gap", 0));
             auto found =
                 hatch::findBoundaryNear([&](const BBox2& w) { return candidatesIn(ctx, w); },
-                                        searchWindow(ctx), p.point)
+                                        searchWindow(ctx), p.point, bo)
                     .result;
             if (!found) {
                 ctx.message(found.error().message);

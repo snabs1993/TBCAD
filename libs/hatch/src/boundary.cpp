@@ -679,7 +679,17 @@ NearBoundary findBoundaryNear(const WindowCandidates& candidatesIn, const BBox2&
             BBox2 box;
             for (const geom::CurveRef& c : loopCurves(r.value().loops[0]))
                 box.merge(c.bounds());
-            const BBox2 inner = window.inflated(-(options.gapTolerance + 1e-3));
+            // A side that sits on the limit of `full` is not a cut: nothing lies beyond it.
+            const double m = options.gapTolerance + 1e-3;
+            BBox2 inner = window;
+            if (window.min.x > full.min.x)
+                inner.min.x += m;
+            if (window.min.y > full.min.y)
+                inner.min.y += m;
+            if (window.max.x < full.max.x)
+                inner.max.x -= m;
+            if (window.max.y < full.max.y)
+                inner.max.y -= m;
             if (inner.containsBox(box))
                 return {std::move(r), std::move(finder)};
         } else if (finder->ok() == false && finder->error().code == ErrorCode::OutOfRange) {
