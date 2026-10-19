@@ -877,8 +877,8 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             std::vector<std::size_t> near;
             for (long long dx = -1; dx <= 1; ++dx) {
                 for (long long dy = -1; dy <= 1; ++dy) {
-                    auto it = byCentre.find(
-                        {centreCell(a.center.x) + dx, centreCell(a.center.y) + dy});
+                    auto it =
+                        byCentre.find({centreCell(a.center.x) + dx, centreCell(a.center.y) + dy});
                     if (it == byCentre.end())
                         continue;
                     for (std::size_t bi : it->second)
@@ -1589,8 +1589,10 @@ public:
         cells_.assign(static_cast<std::size_t>(n_) * static_cast<std::size_t>(n_), {});
         for (std::size_t k = 0; k + 1 < pts.size(); ++k) {
             const Vec2 a = pts[k], b = pts[k + 1];
-            const int x0 = cellOf(std::min(a.x, b.x), lo_.x), x1 = cellOf(std::max(a.x, b.x), lo_.x);
-            const int y0 = cellOf(std::min(a.y, b.y), lo_.y), y1 = cellOf(std::max(a.y, b.y), lo_.y);
+            const int x0 = cellOf(std::min(a.x, b.x), lo_.x),
+                      x1 = cellOf(std::max(a.x, b.x), lo_.x);
+            const int y0 = cellOf(std::min(a.y, b.y), lo_.y),
+                      y1 = cellOf(std::max(a.y, b.y), lo_.y);
             for (int cy = y0; cy <= y1; ++cy)
                 for (int cx = x0; cx <= x1; ++cx)
                     cells_[static_cast<std::size_t>(cy * n_ + cx)].push_back(
@@ -1698,7 +1700,8 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
         }
         if (cand.empty() || std::sqrt(worst) <= tolerance * 0.9 || idx.size() >= samples.size())
             break;
-        std::sort(cand.begin(), cand.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+        std::sort(cand.begin(), cand.end(),
+                  [](const auto& x, const auto& y) { return x.first > y.first; });
         const std::size_t take = std::max<std::size_t>(1, idx.size() / 8);
         for (std::size_t k = 0; k < cand.size() && k < take; ++k)
             if (std::sqrt(cand[k].first) > tolerance * 0.9)
@@ -1790,6 +1793,105 @@ Result<EntityEdit> editSplineCv(const Entity& e, SplineCvOp op, Vec2 a, Vec2 b, 
         return r;
     };
     switch (op) {
+        case SplineCvOp::Elevate: {
+            const int order = static_cast<int>(std::lround(value));
+            const int q = order - 1;  // new degree
+            if (order > 26)
+                return err("The order can be 26 at most.");
+            if (q <= d.degree)
+                return err("The new order must be higher than " + std::to_string(d.degree + 1) +
+                           ".");
+            if (d.periodic || d.closed)
+                return err("Only open splines can have their order raised.");
+            const std::size_t n = d.control.size();
+            const auto& U = d.knots;
+            for (std::size_t i = 1; i <= p; ++i)
+                if (U[i] != U[0] || U[U.size() - 1 - i] != U.back())
+                    return err("Only clamped splines can have their order raised.");
+            // Homogeneous control points, so rational splines stay exact.
+            const bool rational = !d.weights.empty();
+            using H = std::array<double, 3>;
+            std::vector<H> P(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                const double w = rational ? d.weights[i] : 1.0;
+                P[i] = {d.control[i].x * w, d.control[i].y * w, w};
+            }
+            std::vector<double> knots = U;
+            // 1. Bezier pieces: every interior knot is inserted until it appears `p` times.
+            auto insert = [&](double u) {
+                std::size_t k = p;
+                while (k + 1 < P.size() && knots[k + 1] <= u)
+                    ++k;
+                std::vector<H> Q;
+                Q.reserve(P.size() + 1);
+                for (std::size_t i = 0; i <= P.size(); ++i) {
+                    if (i + p <= k) {
+                        Q.push_back(P[i]);
+                    } else if (i > k) {
+                        Q.push_back(P[i - 1]);
+                    } else {
+                        const double alpha = (u - knots[i]) / (knots[i + p] - knots[i]);
+                        H h{};
+                        for (std::size_t c = 0; c < 3; ++c)
+                            h[c] = (1 - alpha) * P[i - 1][c] + alpha * P[i][c];
+                        Q.push_back(h);
+                    }
+                }
+                P = std::move(Q);
+                knots.insert(knots.begin() + static_cast<std::ptrdiff_t>(k) + 1, u);
+            };
+            std::vector<double> interior;
+            for (std::size_t i = p + 1; i + p + 1 < U.size(); ++i)
+                if (interior.empty() || U[i] != interior.back())
+                    interior.push_back(U[i]);
+            for (double u : interior) {
+                std::size_t mult = 0;
+                for (double k : knots)
+                    if (k == u)
+                        ++mult;
+                for (; mult < p; ++mult)
+                    insert(u);
+            }
+            // 2. Each piece of p + 1 points is raised to degree q.
+            const std::size_t pieces = interior.size() + 1;
+            if (P.size() != pieces * p + 1)
+                return err("The spline could not be split into pieces.");
+            std::vector<H> out;
+            for (std::size_t s = 0; s < pieces; ++s) {
+                std::vector<H> b(P.begin() + static_cast<std::ptrdiff_t>(s * p),
+                                 P.begin() + static_cast<std::ptrdiff_t>(s * p + p + 1));
+                for (std::size_t deg = p; deg < static_cast<std::size_t>(q); ++deg) {
+                    std::vector<H> e2(deg + 2);
+                    e2[0] = b[0];
+                    e2[deg + 1] = b[deg];
+                    for (std::size_t i = 1; i <= deg; ++i) {
+                        const double t = static_cast<double>(i) / static_cast<double>(deg + 1);
+                        for (std::size_t c = 0; c < 3; ++c)
+                            e2[i][c] = t * b[i - 1][c] + (1 - t) * b[i][c];
+                    }
+                    b = std::move(e2);
+                }
+                out.insert(out.end(), b.begin() + (s == 0 ? 0 : 1), b.end());
+            }
+            // 3. Knots: clamped ends, every interior knot q times.
+            const std::size_t qq = static_cast<std::size_t>(q);
+            std::vector<double> nk(qq + 1, U.front());
+            for (double u : interior)
+                nk.insert(nk.end(), qq, u);
+            nk.insert(nk.end(), qq + 1, U.back());
+            SplineData nd = d;
+            nd.degree = q;
+            nd.knots = std::move(nk);
+            nd.control.clear();
+            nd.weights.clear();
+            for (const H& h : out) {
+                nd.control.push_back({h[0] / h[2], h[1] / h[2]});
+                if (rational)
+                    nd.weights.push_back(h[2]);
+            }
+            nd.fit.clear();
+            return done(std::move(nd));
+        }
         case SplineCvOp::Purge:
             if (d.fit.empty())
                 return err("This spline has no fit points.");

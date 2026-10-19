@@ -1571,6 +1571,86 @@ TEST_CASE("SPLINEDIT edits the control vertices of a CV spline and converts it t
     CHECK(f.count(EntityKind::Spline) == 0);
 }
 
+TEST_CASE("SPLINEDIT ELevate raises the order without moving the curve, also rational") {
+    for (bool rational : {false, true}) {
+        Fixture f;
+        SplineData sp;
+        sp.degree = 3;
+        sp.knots = {0, 0, 0, 0, 0.4, 1, 1, 1, 1};
+        sp.control = {{0, 0}, {10, 20}, {30, -20}, {40, 0}, {55, 10}};
+        if (rational)
+            sp.weights = {1, 2, 0.5, 1, 1.5};
+        EntityId id = f.add(Indirect<SplineData>(sp));
+        auto before = geom::CurveRef::spline(sp);
+        REQUIRE(before);
+        f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "EL", "6", "Exit"});
+        const auto* d = entityAs<SplineData>(f.get(id));
+        REQUIRE(d);
+        CHECK(d->degree == 5);
+        CHECK(d->knots.size() == d->control.size() + 6);
+        CHECK(d->weights.empty() == !rational);
+        auto after = geom::CurveRef::spline(*d);
+        REQUIRE(after);
+        for (int i = 0; i <= 20; ++i) {
+            const double t0 =
+                before.value().t0() + (before.value().t1() - before.value().t0()) * i / 20.0;
+            const double t1 =
+                after.value().t0() + (after.value().t1() - after.value().t0()) * i / 20.0;
+            CHECK(near(before.value().pointAt(t0), after.value().pointAt(t1), 1e-7));
+        }
+        // the order must go up
+        f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "EL", "4", "Exit"});
+        CHECK(entityAs<SplineData>(f.get(id))->degree == 5);
+        CHECK(f.host.logContains("The new order must be higher than 6."));
+    }
+}
+
+TEST_CASE("SPLINEDIT Join takes in a touching line, Undo puts it back") {
+    Fixture f;
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = {{0, 0}, {10, 20}, {30, -20}, {40, 0}};
+    EntityId id = f.add(Indirect<SplineData>(sp));
+    EntityId l = f.add(LineData{{40, 0}, {60, 0}});
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "Join", ScriptItem::select({l}),
+                             ScriptItem::enter(), "Exit"});
+    CHECK(f.count(EntityKind::Line) == 0);
+    CHECK(f.count(EntityKind::Spline) == 1);
+    Vec2 end{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<SplineData>(e))
+            end = d->control.back();
+    });
+    CHECK(near(end, {60, 0}));
+    f.host.undo();
+    CHECK(f.count(EntityKind::Line) == 1);
+
+    // Undo inside the command
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "Join", ScriptItem::select({l}),
+                             ScriptItem::enter(), "Undo", "Exit"});
+    CHECK(f.count(EntityKind::Line) == 1);
+    CHECK(entityAs<SplineData>(f.get(id))->control.size() == 4);
+}
+
+TEST_CASE("JOIN cLose turns one arc into a circle and one elliptical arc into an ellipse") {
+    Fixture f;
+    EntityId a = f.add(ArcData{{0, 0}, 5, 0, kPi / 2});
+    f.host.run("JOIN", {ScriptItem::select({a}), ScriptItem::enter(), "L"});
+    CHECK(f.count(EntityKind::Arc) == 0);
+    CHECK(f.count(EntityKind::Circle) == 1);
+    EntityId e = f.add(EllipseData{{0, 0}, {10, 0}, 0.5, 0, kPi});
+    f.host.run("JOIN", {ScriptItem::select({e}), ScriptItem::enter(), "L"});
+    CHECK(entityAs<EllipseData>(f.get(e))->endParam == doctest::Approx(kTwoPi));
+    // eXit leaves it alone; one line cannot be joined on its own
+    EntityId b = f.add(ArcData{{0, 0}, 5, 0, kPi / 2});
+    f.host.run("JOIN", {ScriptItem::select({b}), ScriptItem::enter(), "X"});
+    CHECK(f.count(EntityKind::Arc) == 1);
+    EntityId l = f.add(LineData{{0, 0}, {1, 0}});
+    f.host.run("JOIN", {ScriptItem::select({l}), ScriptItem::enter()});
+    CHECK(f.host.logContains("Select at least two objects to join."));
+}
+
 TEST_CASE("SPLINEDIT and PEDIT Tolerance refit a spline through fewer fit points") {
     Fixture f;
     SplineData sp;
