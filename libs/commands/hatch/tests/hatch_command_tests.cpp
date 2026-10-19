@@ -555,3 +555,38 @@ TEST_CASE("HATCH pick point answers quickly in a drawing of 50 000 objects") {
     CHECK(ms < 2000);
 #endif
 }
+
+// A door block closes the doorway: its lines bound the hatch. The hatch is not linked, because a
+// block reference has no curves of its own to re-derive the loops from.
+TEST_CASE("HATCH: lines inside a block reference bound the area, by pick point and as objects") {
+    Fixture f;
+    f.addEntity(LineData{{0, 0}, {100, 0}});
+    f.addEntity(LineData{{100, 0}, {100, 60}});
+    f.addEntity(LineData{{100, 60}, {0, 60}});
+    f.addEntity(LineData{{0, 60}, {0, 40}});
+    f.addEntity(LineData{{0, 20}, {0, 0}});
+    f.host->run("HATCH", {"50,30", ""});
+    CHECK(f.hatches().empty());
+
+    Transaction tx = f.doc.begin("block");
+    const BlockId door = tx.addBlock(BlockDef{.name = "DOOR"}).value();
+    REQUIRE(tx.add(Entity{{}, LineData{{0, 0}, {20, 0}}}, door));
+    REQUIRE(tx.add(Entity{{}, ArcData{{0, 0}, 20, 0, kPi / 2}}, door));  // the swing
+    tx.commit();
+    const EntityId ins =
+        f.addEntity(Indirect<InsertData>(InsertData{door, {0, 40}, {1, 1}, -kPi / 2}));
+    f.host->run("HATCH", {"50,30", ""});
+    auto hs = f.hatches();
+    REQUIRE(hs.size() == 1);
+    CHECK(hs[0]->sourceBoundary.empty());
+    CHECK(hatch::hatchArea(*hs[0]) == doctest::Approx(6000).epsilon(1e-6));
+
+    // Objects mode: the walls and the door block.
+    CHECK(f.host->undo());
+    std::vector<EntityId> picked(f.ids.begin(), f.ids.begin() + 5);
+    picked.push_back(ins);
+    f.host->run("HATCH", {"O", ScriptItem::select(picked), "", ""});
+    hs = f.hatches();
+    REQUIRE(hs.size() == 1);
+    CHECK(hatch::hatchArea(*hs[0]) == doctest::Approx(6000).epsilon(1e-6));
+}

@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <memory>
 #include <optional>
 
 #include "hatch_params.h"
+#include "tbcad/blocks/blocks.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/hatch/hatch.h"
@@ -49,21 +51,45 @@ BBox2 searchWindow(const Document& doc, const cmd::IHost& host) {
     return window;
 }
 
-// Entities that can bound a hatch and meet `window`.
+// World-space copies of the curves inside block references, which bound a hatch like any other
+// object (walls and door blocks in a floor plan). Candidates point into it, so it must outlive
+// the finder that uses them.
+using CurveStore = std::deque<Entity>;
+
+// Adds `e` to `out`; an Insert adds the visible curves it is made of, each with the Insert's id.
+void addCandidate(const Document& doc, const Entity& e, CurveStore& store,
+                  std::vector<Candidate>& out) {
+    if (kind(e) != EntityKind::Insert) {
+        if (hasCurves(e))
+            out.push_back({e.common.id, &e});
+        return;
+    }
+    for (Entity& part : blocks::snapGeometry(doc, e)) {
+        if (!hasCurves(part) || !doc.effective(part.common).live())
+            continue;
+        store.push_back(std::move(part));
+        out.push_back({e.common.id, &store.back()});
+    }
+}
+
+// Entities that can bound a hatch and meet `window`. Clears `store` first.
 std::vector<Candidate> windowCandidates(const Document& doc, const cmd::IHost& host,
-                                        const BBox2& window) {
+                                        const BBox2& window, CurveStore& store) {
+    store.clear();
     bool hasBlocks = !doc.blocks().empty();
     std::vector<Candidate> out;
     auto consider = [&](const Entity& e, bool checkWindow) {
-        if (!e.common.visible || !hasCurves(e))
+        if (!e.common.visible || (!hasCurves(e) && kind(e) != EntityKind::Insert))
             return;
         if (hasBlocks && doc.ownerBlock(e.common.id))
             return;
-        if (checkWindow && !window.intersects(geom::bounds(e)))
+        if (checkWindow &&
+            !window.intersects(kind(e) == EntityKind::Insert ? blocks::insertBounds(doc, e)
+                                                              : geom::bounds(e)))
             return;
         if (!doc.effective(e.common).live())
             return;
-        out.push_back({e.common.id, &e});
+        addCandidate(doc, e, store, out);
     };
     if (auto ids = host.entitiesInWindow(window)) {
         for (EntityId id : *ids)
@@ -75,16 +101,27 @@ std::vector<Candidate> windowCandidates(const Document& doc, const cmd::IHost& h
     return out;
 }
 
-std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& host) {
-    return windowCandidates(doc, host, searchWindow(doc, host));
+std::vector<Candidate> viewCandidates(const Document& doc, const cmd::IHost& host,
+                                      CurveStore& store) {
+    return windowCandidates(doc, host, searchWindow(doc, host), store);
 }
 
-std::vector<Candidate> idCandidates(const Document& doc, const std::vector<EntityId>& ids) {
+std::vector<Candidate> idCandidates(const Document& doc, const std::vector<EntityId>& ids,
+                                    CurveStore& store) {
     std::vector<Candidate> out;
     for (EntityId id : ids)
-        if (const Entity* e = doc.find(id); e && hasCurves(*e))
-            out.push_back({id, e});
+        if (const Entity* e = doc.find(id))
+            addCandidate(doc, *e, store, out);
     return out;
+}
+
+// True when a block reference is among the sources: an associative hatch re-derives its loops
+// from the sources' own curves, which a block reference does not have.
+bool usesBlock(const Document& doc, const std::vector<EntityId>& sources) {
+    for (EntityId id : sources)
+        if (const Entity* e = doc.find(id); e && kind(*e) == EntityKind::Insert)
+            return true;
+    return false;
 }
 
 const char* loopWord(std::size_t n) {
@@ -148,8 +185,9 @@ public:
             BoundaryOptions bo;
             bo.gapTolerance = p.gap;
             NearBoundary nb =
-                findBoundaryNear([&](const BBox2& w) { return windowCandidates(doc, host, w); },
-                                 searchWindow(doc, host), cursor, bo);
+                findBoundaryNear(
+                    [&](const BBox2& w) { return windowCandidates(doc, host, w, nearStore_); },
+                    searchWindow(doc, host), cursor, bo);
             b = std::move(nb.result);
             local = std::move(nb.finder);
             if (!local || !local->ok())
@@ -212,11 +250,14 @@ private:
         size_ = view.sizePx;
         BoundaryOptions bo;
         bo.gapTolerance = p.gap;
-        std::vector<Candidate> cands = viewCandidates(doc, ctx.host());
+        finder_.reset();
+        std::vector<Candidate> cands = viewCandidates(doc, ctx.host(), store_);
         big_ = cands.size() > 4000;
         finder_ = big_ ? nullptr : std::make_unique<BoundaryFinder>(std::move(cands), bo);
     }
 
+    CurveStore store_;      // block curves the view finder points into
+    CurveStore nearStore_;  // the same for a search around the cursor
     std::unique_ptr<BoundaryFinder> finder_;
     bool big_ = false;
     std::uint64_t revision_ = 0;
@@ -343,7 +384,9 @@ public:
                 } else if (r.keyword == "Objects") {
                     cmd::SelectionOptions so;
                     so.allowPreselection = false;
-                    so.filter = hasCurves;
+                    so.filter = [](const Entity& e) {
+                        return hasCurves(e) || kind(e) == EntityKind::Insert;
+                    };
                     auto sel = co_await ctx.getSelection("Select objects to hatch", so);
                     if (sel.ok() && !sel.ids.empty())
                         made += hatchObjects(ctx, p, sel.ids);
@@ -412,7 +455,7 @@ private:
         Entity hatch = makeHatchEntity(b, *pattern, p.scale, angle, p.base);
         if (p.scaleAuto)
             entityAs<HatchData>(hatch)->patternScale = autoScale(*entityAs<HatchData>(hatch));
-        if (!p.associative)
+        if (!p.associative || usesBlock(sdoc, b.sources))
             entityAs<HatchData>(hatch)->sourceBoundary.clear();
         if (gradient_) {
             GradientData g = p.gradient;
@@ -433,8 +476,9 @@ private:
     std::size_t hatchPoint(cmd::CommandContext& ctx, const Params& p, Vec2 at) {
         const Document& doc = ctx.doc();
         const cmd::IHost& host = ctx.host();
+        CurveStore store;
         NearBoundary near =
-            findBoundaryNear([&](const BBox2& w) { return windowCandidates(doc, host, w); },
+            findBoundaryNear([&](const BBox2& w) { return windowCandidates(doc, host, w, store); },
                              searchWindow(doc, host), at, options(p));
         auto& b = near.result;
         const BoundaryFinder& finder = *near.finder;
@@ -453,7 +497,8 @@ private:
 
     std::size_t hatchObjects(cmd::CommandContext& ctx, const Params& p,
                              const std::vector<EntityId>& ids) {
-        auto bs = boundaryFromObjects(idCandidates(ctx.doc(), ids), options(p));
+        CurveStore store;
+        auto bs = boundaryFromObjects(idCandidates(ctx.doc(), ids, store), options(p));
         if (!bs.ok()) {
             ctx.message(bs.error().message);
             return 0;
