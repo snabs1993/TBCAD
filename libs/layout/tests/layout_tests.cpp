@@ -888,3 +888,57 @@ TEST_CASE("a copied layout keeps the sheet, the viewports and every viewport set
     REQUIRE(in.ok());
     check(*in.value().document);
 }
+
+TEST_CASE("an annotative object shows only in viewports whose scale it supports") {
+    Document doc;
+    {
+        auto tx = doc.begin("model");
+        REQUIRE(tx.add(line({0, 0}, {1000, 0})).ok());  // plain: everywhere
+        Entity b = line({0, 100}, {1000, 100});
+        b.common.annotative = true;
+        b.common.annoScales = ScaleList({50.0});
+        REQUIRE(tx.add(std::move(b)).ok());
+        Entity c = line({0, 200}, {1000, 200});
+        c.common.annotative = true;
+        c.common.annoScales = ScaleList({100.0});
+        REQUIRE(tx.add(std::move(c)).ok());
+        Entity d = line({0, 300}, {1000, 300});
+        d.common.annotative = true;  // no scale list: every scale
+        REQUIRE(tx.add(std::move(d)).ok());
+        tx.commit();
+    }
+    run(doc, "layout", [](Transaction& tx) {
+        if (auto r = createLayout(tx, "S", "A3"); !r)
+            return r;
+        BBox2 a, b;
+        a.expand({10, 10});
+        a.expand({200, 140});
+        b.expand({210, 10});
+        b.expand({410, 140});
+        if (auto id = addViewport(tx, "S", a, {500, 150}, 50); !id)
+            return Result<void>(id.error());
+        auto id = addViewport(tx, "S", b, {500, 150}, 100);
+        return id ? Result<void>() : Result<void>(id.error());
+    });
+    auto sheet = buildLayoutSheet(doc, "S");
+    REQUIRE(sheet.ok());
+    // Paths between each pair of clip markers belong to one viewport.
+    std::vector<std::size_t> perViewport;
+    bool inside = false;
+    for (const auto& p : sheet.value().prims) {
+        if (const auto* clip = std::get_if<exportlib::PlotClip>(&p)) {
+            if (clip->begin) {
+                perViewport.push_back(0);
+                inside = true;
+            } else {
+                inside = false;
+            }
+        } else if (inside && std::holds_alternative<exportlib::PlotPath>(p)) {
+            ++perViewport.back();
+        }
+    }
+    REQUIRE(perViewport.size() >= 2);
+    // 1:50 shows plain, anno {50} and the unrestricted one; 1:100 shows plain, anno {100} and it.
+    CHECK(perViewport[perViewport.size() - 2] == 3);
+    CHECK(perViewport.back() == 3);
+}
