@@ -187,6 +187,24 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
             }
             break;
         }
+        case EntityKind::MLeader: {
+            // The grips of the leader lines come first (all points of line 1, then line 2 ...);
+            // after them the landing and the content.
+            const auto& ml = *entityAs<MLeaderData>(*e);
+            int at = grip.index;
+            for (const auto& line : ml.lines) {
+                const int n = static_cast<int>(line.size());
+                if (at < n) {
+                    out.push_back(GripAction::AddVertex);
+                    // The last point of a line is where it meets the landing: it stays.
+                    if (n > 2 && at < n - 1)
+                        out.push_back(GripAction::RemoveVertex);
+                    break;
+                }
+                at -= n;
+            }
+            break;
+        }
         case EntityKind::Spline: {
             // Only a spline defined by fit points can grow or shrink by one point.
             const auto& sp = *entityAs<SplineData>(*e);
@@ -358,6 +376,30 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
                     return fail("a leader needs two vertices");
                 ld.vertices.erase(ld.vertices.begin() + index);
                 return out;
+            }
+            break;
+        }
+        case EntityKind::MLeader: {
+            auto& ml = *entityAs<MLeaderData>(out);
+            int at = index;
+            for (auto& line : ml.lines) {
+                const int n = static_cast<int>(line.size());
+                if (at >= n) {
+                    at -= n;
+                    continue;
+                }
+                if (action == GripAction::AddVertex) {
+                    // After the point, but never past the landing end of the line.
+                    line.insert(line.begin() + std::min(at + 1, n - 1), target);
+                    return out;
+                }
+                if (action == GripAction::RemoveVertex) {
+                    if (n <= 2 || at >= n - 1)
+                        return fail("a leader line needs two points and its landing end");
+                    line.erase(line.begin() + at);
+                    return out;
+                }
+                break;
             }
             break;
         }

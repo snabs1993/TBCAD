@@ -454,3 +454,31 @@ TEST_CASE("leader: add a vertex after the grip, remove one, never below two") {
     CHECK(f.host.undo());
     CHECK(get<LeaderData>(f.doc, id).vertices.size() == 3);
 }
+
+TEST_CASE("multileader: add a bend to a leader line, remove one, the landing end stays") {
+    Fixture f;
+    MLeaderData ml;
+    ml.lines = {{{0, 0}, {5, 5}, {10, 5}}};
+    ml.landing = {10, 5};
+    ml.contentPos = {14, 5};
+    auto id = add(f.doc, Indirect<MLeaderData>(ml));
+    f.host.setSelection({id});
+    CHECK(offers(f.doc, id, 0, GripAction::AddVertex));
+    CHECK(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    CHECK_FALSE(offers(f.doc, id, 2, GripAction::RemoveVertex));  // meets the landing
+    CHECK_FALSE(offers(f.doc, id, 3, GripAction::AddVertex));     // the landing grip
+    auto r = f.host.run("GRIPEDIT", {"0,0", "AddVertex", "2,4"});
+    CHECK(r.finished);
+    {
+        const auto& l = get<MLeaderData>(f.doc, id).lines[0];
+        REQUIRE(l.size() == 4);
+        CHECK(near(l[1], {2, 4}));
+    }
+    CHECK(f.host.undo());
+    CHECK(get<MLeaderData>(f.doc, id).lines[0].size() == 3);
+    r = f.host.run("GRIPEDIT", {"5,5", "RemoveVertex"});
+    CHECK(r.finished);
+    CHECK(get<MLeaderData>(f.doc, id).lines[0].size() == 2);
+    CHECK(f.host.undo());
+    CHECK(get<MLeaderData>(f.doc, id).lines[0].size() == 3);
+}
