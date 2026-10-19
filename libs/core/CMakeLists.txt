@@ -17,4 +17,5 @@ tbcad_add_tests(core
     tests/groups_tests.cpp
     tests/document_tests.cpp
     tests/scale_tests.cpp
+    tests/boxed_tests.cpp
     tests/undo_property_tests.cpp)

@@ -44,6 +44,80 @@ private:
     std::unique_ptr<T> p_{};
 };
 
+// An optional value held on the heap: nothing but a pointer when it is not set, so a field that
+// most entities leave empty (an attribute definition, an array) does not make every entity as big
+// as the value. Reads like std::optional; copies are deep.
+template <class T>
+class Boxed {
+public:
+    Boxed() = default;
+    Boxed(std::nullopt_t) {}                               // NOLINT
+    Boxed(T v) : p_(std::make_unique<T>(std::move(v))) {}  // NOLINT
+    Boxed(std::optional<T> v) { *this = std::move(v); }    // NOLINT
+    Boxed(const Boxed& o) : p_(o.p_ ? std::make_unique<T>(*o.p_) : nullptr) {}
+    Boxed(Boxed&&) noexcept = default;
+    Boxed& operator=(const Boxed& o) {
+        if (this != &o)
+            p_ = o.p_ ? std::make_unique<T>(*o.p_) : nullptr;
+        return *this;
+    }
+    Boxed& operator=(Boxed&&) noexcept = default;
+    Boxed& operator=(std::nullopt_t) {
+        p_.reset();
+        return *this;
+    }
+    Boxed& operator=(T v) {
+        if (p_)
+            *p_ = std::move(v);
+        else
+            p_ = std::make_unique<T>(std::move(v));
+        return *this;
+    }
+    Boxed& operator=(std::optional<T> v) {
+        if (v)
+            *this = std::move(*v);
+        else
+            p_.reset();
+        return *this;
+    }
+    operator std::optional<T>() const {  // NOLINT
+        return p_ ? std::optional<T>(*p_) : std::nullopt;
+    }
+
+    bool has_value() const { return p_ != nullptr; }
+    explicit operator bool() const { return p_ != nullptr; }
+    T& operator*() { return *p_; }
+    const T& operator*() const { return *p_; }
+    T* operator->() { return p_.get(); }
+    const T* operator->() const { return p_.get(); }
+    T& value() {
+        if (!p_)
+            throw std::bad_optional_access();
+        return *p_;
+    }
+    const T& value() const {
+        if (!p_)
+            throw std::bad_optional_access();
+        return *p_;
+    }
+    template <class U>
+    T value_or(U&& fallback) const {
+        return p_ ? *p_ : static_cast<T>(std::forward<U>(fallback));
+    }
+    void reset() { p_.reset(); }
+    template <class... Args>
+    T& emplace(Args&&... args) {
+        p_ = std::make_unique<T>(std::forward<Args>(args)...);
+        return *p_;
+    }
+    friend bool operator==(const Boxed& a, const Boxed& b) {
+        return a.p_ ? (b.p_ && *a.p_ == *b.p_) : !b.p_;
+    }
+
+private:
+    std::unique_ptr<T> p_{};
+};
+
 // A short list of annotation scales, held on the heap (deep copy) so that an entity stays small:
 // most have none.
 class ScaleList {
@@ -279,6 +353,7 @@ struct AttDefInfo {
     bool constant = false;       // fixed value, never asked for or edited per insert
     bool verify = false;         // ask twice (stored, not enforced by the data model)
     bool preset = false;         // takes the default without asking, editable later
+    friend bool operator==(const AttDefInfo&, const AttDefInfo&) = default;
 };
 
 struct TextData {
@@ -292,7 +367,7 @@ struct TextData {
     HAlign h = HAlign::Left;
     VAlign v = VAlign::Baseline;
     std::string utf8{};
-    std::optional<AttDefInfo> attdef{};  // set: this text is an attribute definition
+    Boxed<AttDefInfo> attdef{};  // set: this text is an attribute definition
     // Text generation (DXF 71): drawn mirrored left to right / top to bottom about its insertion
     // point. Combined with the same flags of the text style (either one turns it on, both cancel).
     bool backward = false;
@@ -422,7 +497,7 @@ struct InsertData {
     Vec2 scale{1, 1};
     double rotation = 0;
     std::vector<AttribValue> attribs{};  // non-constant attributes of the block, by tag
-    std::optional<ArrayInfo> array{};    // set: shown once per array item
+    Boxed<ArrayInfo> array{};            // set: shown once per array item
     // Values of the block's dynamic parameters, in parameter order (missing = the default).
     std::vector<double> dynValues{};
     // Values of the block's assembly parameters by name (missing = the default).
