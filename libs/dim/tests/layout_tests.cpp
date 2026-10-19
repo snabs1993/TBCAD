@@ -360,3 +360,22 @@ TEST_CASE("DIMTOH also turns the text of a radius or diameter horizontal when it
     // One that does not fit goes outside and turns horizontal.
     CHECK(rot(DimKind::Diameter, {-2, -2}, {2, 2}, true) == doctest::Approx(0));
 }
+
+TEST_CASE("DIMTOH turns angular text horizontal when the arc lies beyond the extension lines") {
+    auto rot = [&](bool oh, Vec2 textPos) {
+        Document doc;
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) {
+            s.textAlign = DimTextAlign::WithDimLine;
+            s.textAlignOutside = oh ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+        }));
+        tx.commit();
+        DimensionData d = angular2({0, 0}, {10, 0}, {0, 0}, {0, 10}, {15, 15});
+        d.textPosUser = true;
+        d.textPos = textPos;
+        return layoutDimension(doc, d).text.rotation;
+    };
+    CHECK(rot(true, {40, 40}) == doctest::Approx(0));
+    CHECK(std::abs(rot(false, {40, 40})) > 0.1);
+    CHECK(std::abs(rot(true, {5, 5})) > 0.1);  // between the lines: follows the arc
+}
