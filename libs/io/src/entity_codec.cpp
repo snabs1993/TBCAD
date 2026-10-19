@@ -160,9 +160,11 @@ struct PayloadWriter {
         w.u8(static_cast<std::uint8_t>(d.attach));
         w.varint(d.style.value);
         str(d.utf8);
-        if (d.columns > 1) {  // a tail that older readers ignore
+        if (d.columns > 1 || d.lineSpacing != 1.0) {  // a tail that older readers ignore
             w.u8(d.columns);
             w.f64(d.columnGap);
+            if (d.lineSpacing != 1.0)
+                w.f64(d.lineSpacing);
         }
     }
     void operator()(const HatchData& d) {
@@ -675,6 +677,11 @@ struct PayloadReader {
                 if (r.remaining() > 0) {
                     d.columns = std::max<std::uint8_t>(1, r.u8());
                     d.columnGap = r.f64();
+                    if (r.remaining() > 0) {
+                        d.lineSpacing = r.f64();
+                        if (!(d.lineSpacing >= 0.25 && d.lineSpacing <= 4.0))
+                            d.lineSpacing = 1.0;
+                    }
                 }
                 return make(std::move(d));
             }

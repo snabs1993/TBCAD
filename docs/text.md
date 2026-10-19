@@ -33,6 +33,17 @@ rotation is ignored for those two.
   capital height below the top of the frame. Lines are left aligned; `attach` chooses which point
   of the frame sits at `position`. `width = 0` means no wrapping.
 
+### Paragraphs
+
+`\pxi-3,l6,r2,qj,t12,24,sb1,sa2;` sets the paragraph settings until the next `\p`: `i` first-line
+indent (relative to `l`), `l` left indent, `r` right indent, `q` alignment (`l c r j d` = left,
+centre, right, justify, distribute), `t` tab stops (comma list), `sb`/`sa` space before/after.
+Justify stretches the spaces and Thai word gaps of every line but the last of a paragraph;
+distribute stretches the last line too. A tab jumps to the next stop (default pitch 4 text
+heights). `\~` is a no-break space, `\N` forces the next column. `MTextData::lineSpacing`
+(0.25 to 4, default 1) multiplies the line pitch. DXF: `\p` (lengths scaled to mm), `\N`, group
+44 with 73 = 1; .tbcad: optional f64 after the column tail.
+
 ### Columns
 
 `MTextData::columns` (2 to 8) with a `width` flows the text through that many columns, each

@@ -115,10 +115,23 @@ struct Attr {
     friend bool operator==(const Attr&, const Attr&) = default;
 };
 
+// Paragraph settings (`\pxi-3,l3,r2,qj,t4,8,sb1,sa1;`): lengths in drawing units. The first line
+// starts `firstIndent` after `leftIndent`; the other lines at `leftIndent`.
+struct ParaProps {
+    enum class Align : std::uint8_t { Default, Left, Center, Right, Justify, Distribute };
+    double firstIndent = 0, leftIndent = 0, rightIndent = 0;
+    Align align = Align::Default;  // Default: as the attachment point says
+    std::vector<double> tabs{};    // tab stops from the left edge of the text, ascending
+    double spaceBefore = 0, spaceAfter = 0;
+    friend bool operator==(const ParaProps&, const ParaProps&) = default;
+};
+
 struct Piece {
     std::string text{};  // never contains a newline; "num/den" for a stacked fraction
     Attr attr{};
-    bool newline = false;  // paragraph break (text is empty)
+    bool newline = false;             // paragraph break (text is empty)
+    bool columnBreak = false;         // `\N`: the text goes on in the next column
+    std::optional<ParaProps> para{};  // paragraph settings from here on (text is empty)
     // A stacked fraction (`\S1/2;`): numerator over denominator in smaller type. `bar` is '/'
     // (horizontal bar), '#' (diagonal bar) or '^' (no bar, as for tolerances).
     bool stacked = false;

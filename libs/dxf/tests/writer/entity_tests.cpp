@@ -977,6 +977,34 @@ TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with
     CHECK(p.v1 == doctest::Approx(0.75));
 }
 
+TEST_CASE("MTEXT paragraph settings, column breaks and line spacing survive DXF") {
+    Document doc;
+    {
+        auto tx = doc.begin("mtext");
+        MTextData m;
+        m.position = {10, 20};
+        m.height = 3;
+        m.width = 80;
+        m.utf8 = "\\pxi-3,l6,qj,t12,24;A\tB\\PNext\\Nand\\~more";
+        m.lineSpacing = 1.5;
+        Entity e;
+        e.data = Indirect<MTextData>(m);
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const MTextData* back = nullptr;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* m = entityAs<MTextData>(e))
+            back = m;
+    });
+    REQUIRE(back);
+    CHECK(back->lineSpacing == doctest::Approx(1.5));
+    CHECK(back->utf8.find("\\pxi-3,l6,qj,t12,24;") != std::string::npos);
+    CHECK(back->utf8.find("\\N") != std::string::npos);
+    CHECK(back->utf8.find("\xC2\xA0") != std::string::npos);
+}
+
 TEST_CASE("a picture keeps its polygon clip, brightness and contrast through DXF") {
     Document doc;
     {

@@ -924,6 +924,8 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
     d.rotation = f.angle(rot);
     d.attach = static_cast<Attachment>(std::clamp<std::int64_t>(r.integer(71, 1) - 1, 0, 8));
     d.style = textStyleFor(r.raw(7));
+    if (r.has(44) && r.num(44) >= 0.25 && r.num(44) <= 4.0)
+        d.lineSpacing = r.num(44);
     if (r.integer(75, 0) > 0 && r.integer(76, 1) > 1) {
         d.columns = static_cast<std::uint8_t>(std::clamp<std::int64_t>(r.integer(76, 1), 1, 16));
         if (r.has(48) && r.num(48) > 0)

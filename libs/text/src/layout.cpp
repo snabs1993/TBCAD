@@ -138,9 +138,11 @@ struct Stack {
 struct Item {
     std::string text{};
     Attr attr{};
-    bool space = false;
+    bool space = false;  // a space or a gap: dropped at the end of a line, stretched by justify
     double width = 0;
     std::optional<Stack> stack{};
+    bool tab = false;  // a tab: its width is set where it falls on the line
+    bool gap = false;  // a break opportunity without width (between Thai words)
 };
 
 using Line = std::vector<Item>;
@@ -148,7 +150,7 @@ using Line = std::vector<Item>;
 struct Token {
     std::string text{};
     Attr attr{};
-    enum class Kind { Word, Space, Zwsp } kind = Kind::Word;
+    enum class Kind { Word, Space, Zwsp, Tab } kind = Kind::Word;
     std::optional<Stack> stack{};
 };
 
@@ -212,8 +214,9 @@ std::vector<Unit> splitUnits(const std::vector<Piece>& pieces) {
                 flushWordText(buf, p.attr);
                 Token t;
                 t.attr = p.attr;
-                t.kind = cp == kZwsp ? Token::Kind::Zwsp : Token::Kind::Space;
-                t.text = cp == kZwsp ? std::string{} : std::string(" ");
+                t.kind = cp == kZwsp ? Token::Kind::Zwsp
+                                     : (cp == '\t' ? Token::Kind::Tab : Token::Kind::Space);
+                t.text = cp == ' ' ? std::string(" ") : std::string{};
                 cur.brk = std::move(t);
                 units.push_back(std::move(cur));
                 cur = Unit{};
@@ -229,12 +232,28 @@ std::vector<Unit> splitUnits(const std::vector<Piece>& pieces) {
     return units;
 }
 
+// What the layout needs to know about a finished line.
+struct LineMeta {
+    ParaProps pp{};
+    double indent = 0;         // where the line starts, from the left edge
+    bool last = false;         // the last line of its paragraph
+    bool first = false;        // the first line of its paragraph
+    bool columnBreak = false;  // the line starts a new column
+};
+
 class LineBuilder {
 public:
     LineBuilder(const TextStyle* style, double wrapWidth) : style_(style), wrap_(wrapWidth) {}
 
+    void setParagraph(const ParaProps& pp) { pp_ = pp; }
+    // The next line starts a new column.
+    void breakColumn() { columnBreakNext_ = true; }
+
     void addParagraph(const std::vector<Piece>& pieces) {
         cur_.clear();
+        lineInPara_ = 0;
+        const bool stretch =
+            pp_.align == ParaProps::Align::Justify || pp_.align == ParaProps::Align::Distribute;
         std::vector<Unit> units = splitUnits(pieces);
         for (const Unit& u : units) {
             double wg = 0;
@@ -248,8 +267,8 @@ public:
                 items.push_back(std::move(it));
             }
             if (wrap_ > 0 && !items.empty()) {
-                if (wg <= wrap_ + kEps) {
-                    if (!cur_.empty() && usedWidth() + wg > wrap_ + kEps)
+                if (wg <= limit() + kEps) {
+                    if (!cur_.empty() && usedWidth() + wg > limit() + kEps)
                         newLine();
                     for (Item& it : items)
                         push(std::move(it));
@@ -267,25 +286,42 @@ public:
                 Item sp{u.brk->text, u.brk->attr, true,
                         itemWidth(style_, u.brk->text, u.brk->attr)};
                 push(std::move(sp));
+            } else if (u.brk && u.brk->kind == Token::Kind::Tab) {
+                Item tb{std::string{}, u.brk->attr, false, 0};
+                tb.tab = true;
+                push(std::move(tb));
+            } else if (u.brk && u.brk->kind == Token::Kind::Zwsp && stretch) {
+                // Justified Thai text has no spaces: the gap between words takes the slack.
+                Item gp{std::string{}, u.brk->attr, true, 0};
+                gp.gap = true;
+                push(std::move(gp));
             }
         }
         // End of paragraph.
-        lines_.push_back(std::move(cur_));
-        cur_.clear();
+        finishLine(true);
     }
 
     void addEmptyParagraph(const Attr& attr) {
         // A blank line keeps the height of the paragraph break that ended it.
-        Line l;
-        l.push_back({std::string{}, attr, true, 0});
-        lines_.push_back(std::move(l));
+        lineInPara_ = 0;
+        cur_.clear();
+        cur_.push_back({std::string{}, attr, true, 0});
+        finishLine(true);
     }
 
     std::vector<Line>& lines() { return lines_; }
+    const std::vector<LineMeta>& metas() const { return metas_; }
 
 private:
     static constexpr double kEps = 1e-9;
 
+    double indentFor(int k) const {
+        return std::max(0.0, pp_.leftIndent + (k == 0 ? pp_.firstIndent : 0.0));
+    }
+    // Width a line of the paragraph may fill.
+    double limit() const {
+        return std::max(1e-6, wrap_ - indentFor(lineInPara_) - pp_.rightIndent);
+    }
     double totalWidth() const {
         double w = 0;
         for (const Item& it : cur_)
@@ -295,13 +331,46 @@ private:
     // Width the line occupies if more is appended after its trailing spaces.
     double usedWidth() const { return totalWidth(); }
 
-    void push(Item it) { cur_.push_back(std::move(it)); }
+    void push(Item it) {
+        if (it.tab) {
+            // To the next tab stop after the current position, or the next multiple of four
+            // text heights when the paragraph has no more stops.
+            const double x = indentFor(lineInPara_) + totalWidth();
+            double stop = 0;
+            bool found = false;
+            for (double t : pp_.tabs)
+                if (t > x + kEps) {
+                    stop = t;
+                    found = true;
+                    break;
+                }
+            if (!found) {
+                const double pitch = 4 * std::max(it.attr.height, 1e-6);
+                stop = (std::floor(x / pitch + kEps) + 1) * pitch;
+            }
+            it.width = stop - x;
+        }
+        cur_.push_back(std::move(it));
+    }
+
+    void finishLine(bool last) {
+        LineMeta m;
+        m.pp = pp_;
+        m.indent = indentFor(lineInPara_);
+        m.last = last;
+        m.first = lineInPara_ == 0;
+        m.columnBreak = columnBreakNext_;
+        columnBreakNext_ = false;
+        lines_.push_back(std::move(cur_));
+        metas_.push_back(std::move(m));
+        cur_.clear();
+        ++lineInPara_;
+    }
 
     void newLine() {
         while (!cur_.empty() && cur_.back().space)
             cur_.pop_back();  // spaces at a wrap point are dropped
-        lines_.push_back(std::move(cur_));
-        cur_.clear();
+        finishLine(false);
     }
 
     // The unit is wider than the wrap width: fill the line cluster by cluster. A cluster is
@@ -310,7 +379,7 @@ private:
         for (const Token& t : u.word) {
             if (t.stack) {  // a fraction is never split
                 const double w = stackWidth(style_, *t.stack, t.attr);
-                if (!cur_.empty() && totalWidth() + w > wrap_ + kEps)
+                if (!cur_.empty() && totalWidth() + w > limit() + kEps)
                     newLine();
                 push({t.text, t.attr, false, w, t.stack});
                 continue;
@@ -319,7 +388,7 @@ private:
             for (std::size_t k = 0; k + 1 < bounds.size(); ++k) {
                 std::string cl = t.text.substr(bounds[k], bounds[k + 1] - bounds[k]);
                 double w = itemWidth(style_, cl, t.attr);
-                if (!cur_.empty() && totalWidth() + w > wrap_ + kEps)
+                if (!cur_.empty() && totalWidth() + w > limit() + kEps)
                     newLine();
                 push({std::move(cl), t.attr, false, w});
             }
@@ -328,24 +397,37 @@ private:
 
     const TextStyle* style_;
     double wrap_;
+    ParaProps pp_{};
+    int lineInPara_ = 0;
+    bool columnBreakNext_ = false;
     Line cur_{};
     std::vector<Line> lines_{};
+    std::vector<LineMeta> metas_{};
 };
 
 // Emits glyphs for a finished line at baseline y; returns its width (trailing spaces excluded).
 LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
-                    std::vector<PlacedGlyph>& glyphs, double defaultHeight) {
+                    std::vector<PlacedGlyph>& glyphs, double defaultHeight, double startX = 0,
+                    double extraPerGap = 0) {
     LayoutLine out;
     out.baseline = baseline;
+    out.x0 = startX;
     out.firstGlyph = glyphs.size();
     out.height = 0;
     // Drop trailing spaces.
     std::size_t n = line.size();
     while (n > 0 && line[n - 1].space)
         --n;
-    double pen = 0;
+    double pen = startX;
     std::size_t i = 0;
     while (i < n) {
+        if (line[i].tab || line[i].gap) {
+            pen += line[i].width;
+            if (line[i].gap)
+                pen += extraPerGap;
+            ++i;
+            continue;
+        }
         if (line[i].stack) {
             const Item& it = line[i];
             const Stack& st = *it.stack;
@@ -384,9 +466,14 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
         std::string text = line[i].text;
         Attr attr = line[i].attr;
         std::size_t j = i + 1;
-        while (j < n && !line[j].stack && line[j].attr == attr) {
-            text += line[j].text;
-            ++j;
+        if (extraPerGap > 0 && line[i].space) {
+            // Justified: every space is a chunk of its own so it can take its share.
+        } else {
+            while (j < n && !line[j].stack && !line[j].tab && !line[j].gap &&
+                   line[j].attr == attr && !(extraPerGap > 0 && line[j].space)) {
+                text += line[j].text;
+                ++j;
+            }
         }
         out.height = std::max(out.height, attr.height);
         out.text += text;
@@ -402,6 +489,8 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
         if (attr.overline)
             out.rules.push_back({pen, pen + c.advance, baseline + 1.18 * attr.height});
         pen += c.advance;
+        if (extraPerGap > 0 && line[i].space)
+            pen += extraPerGap;
         i = j;
     }
     if (out.height <= 0) {
@@ -410,7 +499,7 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
         if (out.height <= 0)
             out.height = defaultHeight;
     }
-    out.width = pen;
+    out.width = pen - startX;
     out.endGlyph = glyphs.size();
     return out;
 }
@@ -609,7 +698,13 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
     };
     bool any = false;
     for (const Piece& p : pieces) {
-        if (p.newline) {
+        if (p.para) {
+            builder.setParagraph(*p.para);  // holds until the next \p
+        } else if (p.columnBreak) {
+            endParagraph(p.attr);
+            builder.breakColumn();
+            any = true;
+        } else if (p.newline) {
             endParagraph(p.attr);
             any = true;
         } else {
@@ -621,21 +716,84 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
     if (!para.empty() || !any)
         endParagraph(lastAttr);
 
+    const double wfSafe = wf > 0 ? wf : 1.0;
+    const double colW = d.width > 0 ? d.width / wfSafe : [&] {
+        // No wrapping: the frame is as wide as the widest line (indents included).
+        double w = 0;
+        for (std::size_t i = 0; i < builder.lines().size(); ++i) {
+            double lw = 0;
+            std::size_t n = builder.lines()[i].size();
+            while (n > 0 && builder.lines()[i][n - 1].space)
+                --n;
+            for (std::size_t k = 0; k < n; ++k)
+                lw += builder.lines()[i][k].width;
+            w = std::max(w, builder.metas()[i].indent + lw + builder.metas()[i].pp.rightIndent);
+        }
+        return w;
+    }();
+    // The attachment point also says how lines sit in the frame, unless a paragraph says so.
+    const bool centred = d.attach == Attachment::TopCenter ||
+                         d.attach == Attachment::MiddleCenter ||
+                         d.attach == Attachment::BottomCenter;
+    const bool righted = d.attach == Attachment::TopRight || d.attach == Attachment::MiddleRight ||
+                         d.attach == Attachment::BottomRight;
+
     // Stack the lines downward from y = 0 (the top of the frame).
-    double y = 0, maxW = 0, lastH = height;
+    const double pitchK = kLineSpacing * (d.lineSpacing > 0 ? d.lineSpacing : 1.0);
+    double y = 0, lastH = height, owed = 0;
     bool first = true;
-    for (const Line& line : builder.lines()) {
+    for (std::size_t li = 0; li < builder.lines().size(); ++li) {
+        const Line& line = builder.lines()[li];
+        const LineMeta& meta = builder.metas()[li];
         double h = 0;
         for (const Item& it : line)
             h = std::max(h, it.attr.height);
         if (h <= 0)
             h = height;
-        y -= first ? h : kLineSpacing * h;
+        if (meta.first && !first)
+            y -= owed + meta.pp.spaceBefore;
+        y -= first ? h : pitchK * h;
         first = false;
-        LayoutLine ll = emitLine(style, line, y, out.glyphs, height);
+        if (meta.last)
+            owed = meta.pp.spaceAfter;
+        // Room the line may fill and how it sits in it.
+        const double avail = std::max(0.0, colW - meta.indent - meta.pp.rightIndent);
+        std::size_t n = line.size();
+        while (n > 0 && line[n - 1].space)
+            --n;
+        double natural = 0;
+        std::size_t gaps = 0;
+        for (std::size_t k = 0; k < n; ++k) {
+            natural += line[k].width;
+            gaps += line[k].space ? 1 : 0;
+        }
+        const ParaProps::Align al = meta.pp.align;
+        double extra = 0;
+        if (gaps > 0 && natural < avail - 1e-9 &&
+            ((al == ParaProps::Align::Justify && !meta.last) || al == ParaProps::Align::Distribute))
+            extra = (avail - natural) / static_cast<double>(gaps);
+        LayoutLine ll = emitLine(style, line, y, out.glyphs, height, meta.indent, extra);
         ll.height = h;
+        const double slack = std::max(0.0, avail - ll.width);
+        double move = 0;
+        const bool toCentre =
+            al == ParaProps::Align::Center || (al == ParaProps::Align::Default && centred);
+        const bool toRight =
+            al == ParaProps::Align::Right || (al == ParaProps::Align::Default && righted);
+        if (extra == 0 && toCentre)
+            move = slack / 2;
+        else if (extra == 0 && toRight)
+            move = slack;
+        if (move != 0) {
+            for (std::size_t g = ll.firstGlyph; g < ll.endGlyph; ++g)
+                out.glyphs[g].origin.x += move;
+            ll.x0 += move;
+            for (LayoutRule& r : ll.rules) {
+                r.x0 += move;
+                r.x1 += move;
+            }
+        }
         out.lines.push_back(ll);
-        maxW = std::max(maxW, ll.width);
         lastH = h;
     }
     FontInfo fi = fontInfo(style, [&] {
@@ -644,31 +802,15 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
         return a;
     }());
     const double descDepth = -fi.descender * (lastH / fi.capHeight);
-    const double colW = d.width > 0 ? d.width / (wf > 0 ? wf : 1.0) : maxW;
     double frameW = colW;
     double bottom = y - descDepth;
 
-    // Centre and right attachments also set each line centred or right-aligned in the frame.
-    const bool centred = d.attach == Attachment::TopCenter ||
-                         d.attach == Attachment::MiddleCenter ||
-                         d.attach == Attachment::BottomCenter;
-    const bool righted = d.attach == Attachment::TopRight || d.attach == Attachment::MiddleRight ||
-                         d.attach == Attachment::BottomRight;
-    if (centred || righted)
-        for (LayoutLine& ln : out.lines) {
-            const double slack = std::max(0.0, colW - ln.width);
-            const double move = centred ? slack / 2 : slack;
-            for (std::size_t g = ln.firstGlyph; g < ln.endGlyph; ++g)
-                out.glyphs[g].origin.x += move;
-            ln.x0 += move;
-            for (LayoutRule& r : ln.rules) {
-                r.x0 += move;
-                r.x1 += move;
-            }
-        }
-
-    // Columns: split the lines into balanced runs and set the runs side by side.
+    // Columns: split the lines into runs and set the runs side by side. \N starts a column at
+    // that line; without any, the runs are balanced to end at about the same height.
     if (d.columns > 1 && d.width > 0 && out.lines.size() > 1) {
+        const auto& metas = builder.metas();
+        const bool explicitBreaks = std::any_of(metas.begin(), metas.end(),
+                                                [](const LineMeta& m) { return m.columnBreak; });
         const std::size_t cols = std::min<std::size_t>(d.columns, out.lines.size());
         const double gap = (d.columnGap > 0 ? d.columnGap : 2 * height) / (wf > 0 ? wf : 1.0);
         std::vector<double> reach;  // distance of each line's bottom below the first baseline
@@ -681,8 +823,14 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
         double shiftY = 0;
         double lowest = top;
         for (std::size_t i = 0; i < out.lines.size(); ++i) {
-            const double mid = reach[i] + out.lines[i].height / 2;
-            const std::size_t want = std::min(cols - 1, static_cast<std::size_t>(mid / target));
+            std::size_t want = col;
+            if (explicitBreaks) {
+                if (metas[i].columnBreak && i > 0)
+                    want = std::min(cols - 1, col + 1);
+            } else {
+                const double mid = reach[i] + out.lines[i].height / 2;
+                want = std::min(cols - 1, static_cast<std::size_t>(mid / target));
+            }
             if (want > col) {
                 col = want;
                 firstOfCol = i;
