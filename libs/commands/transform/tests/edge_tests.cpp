@@ -366,3 +366,55 @@ TEST_CASE("STRETCH with a whole dimension in the window moves it, text included"
     CHECK(near(get<DimensionData>(f.doc, d).defPts[0], {0, 7}));
     CHECK(near(get<DimensionData>(f.doc, d).textPos, text0 + Vec2{0, 7}, 1e-6));
 }
+
+TEST_CASE("an xref picture with a clip boundary moves, turns, scales and mirrors with it") {
+    struct Op {
+        const char* name;
+        std::vector<ScriptItem> in;
+        Transform2 t;
+    };
+    const Op ops[] = {
+        {"MOVE", {"0,0", "13,-7"}, Transform2::translate({13, -7})},
+        {"ROTATE", {"5,5", "30"}, Transform2::rotate(30 * 3.14159265358979323846 / 180, {5, 5})},
+        {"SCALE", {"0,0", "2.5"}, Transform2::scale(2.5, 2.5)},
+        {"MIRROR", {"0,0", "10,0", "Y"}, Transform2::scale(1, -1)},
+    };
+    for (const Op& op : ops) {
+        CAPTURE(std::string(op.name));
+        Fixture f;
+        BlockId blk{};
+        {
+            auto tx = f.doc.begin("image");
+            blk = tx.addBlock(BlockDef{.name = "IMG", .xrefPath = "a.png"}).value();
+            PolylineData frame;
+            frame.closed = true;
+            for (Vec2 p : {Vec2{0, 0}, Vec2{40, 0}, Vec2{40, 20}, Vec2{0, 20}})
+                frame.v.push_back({p, 0, 0, 0});
+            Entity fe;
+            fe.data = std::move(frame);
+            REQUIRE(tx.add(std::move(fe), blk).ok());
+            tx.commit();
+        }
+        InsertData in{blk, {10, 20}, {0.5, 0.5}, 0.2};
+        in.clip = {{5, 2}, {35, 2}, {35, 18}, {5, 18}};
+        const EntityId id = add(f.doc, in);
+        auto world = [&](const InsertData& d, Vec2 p) {
+            const double c = std::cos(d.rotation), s = std::sin(d.rotation);
+            return d.position + Vec2{c * d.scale.x * p.x - s * d.scale.y * p.y,
+                                     s * d.scale.x * p.x + c * d.scale.y * p.y};
+        };
+        std::vector<Vec2> expected;
+        for (Vec2 p : in.clip)
+            expected.push_back(op.t.apply(world(in, p)));
+        f.host.setSelection({id});
+        f.host.run(op.name, op.in);
+        const InsertData& out = get<InsertData>(f.doc, id);
+        REQUIRE(out.clip.size() == 4);
+        for (std::size_t i = 0; i < 4; ++i)
+            CHECK(near(world(out, out.clip[i]), expected[i], 1e-9));
+        CHECK(out.clipOn);
+        CHECK(f.host.undo());
+        CHECK(near(get<InsertData>(f.doc, id).position, in.position));
+        CHECK(get<InsertData>(f.doc, id).clip == in.clip);
+    }
+}

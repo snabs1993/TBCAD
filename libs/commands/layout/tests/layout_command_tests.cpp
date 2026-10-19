@@ -562,3 +562,45 @@ TEST_CASE("LAYOUT Template brings a layout, its sheet objects and viewports from
     CHECK(layout::layouts(f.doc).size() == 1);
     std::filesystem::remove(file);
 }
+
+TEST_CASE("VPMOVE and VPRESIZE keep a clipped viewport's scale and view centre, and undo") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "110,110", "1:50", "2500,1000"});
+    auto vp = [&] { return *layout::findLayout(f.doc, "Plan")->findViewport(1); };
+    f.host->run("VPCLIP", {"1", "Polygonal", "20,20", "100,20", "60,100", cmd::ScriptItem::enter()});
+    REQUIRE(vp().clip.size() == 3);
+    const auto before = vp();
+
+    f.host->run("VPMOVE", {"1", "0,0", "10,5"});
+    CHECK(vp().scaleN == doctest::Approx(before.scaleN));
+    CHECK(vp().center.x == doctest::Approx(before.center.x));
+    CHECK(vp().center.y == doctest::Approx(before.center.y));
+    CHECK(vp().clip.size() == 3);
+    CHECK(vp().clip[2].x == doctest::Approx(70));
+    CHECK(vp().clip[2].y == doctest::Approx(105));
+    CHECK(vp().paper.min.x == doctest::Approx(before.paper.min.x + 10));
+
+    // Doubling the rectangle stretches the outline with it; scale and centre stay.
+    const BBox2 r = vp().paper;
+    f.host->run("VPRESIZE",
+                {"1", std::to_string(r.min.x) + "," + std::to_string(r.min.y),
+                 std::to_string(r.min.x + 2 * r.width()) + "," +
+                     std::to_string(r.min.y + 2 * r.height())});
+    CHECK(vp().scaleN == doctest::Approx(before.scaleN));
+    CHECK(vp().center.x == doctest::Approx(before.center.x));
+    CHECK(vp().paper.width() == doctest::Approx(2 * before.paper.width()));
+    CHECK(vp().clip[1].x == doctest::Approx(r.min.x + 2 * (100 - before.paper.min.x)).epsilon(1e-6));
+    for (const Vec2& p : vp().clip) {
+        CHECK(p.x >= vp().paper.min.x - 1e-9);
+        CHECK(p.x <= vp().paper.max.x + 1e-9);
+        CHECK(p.y >= vp().paper.min.y - 1e-9);
+        CHECK(p.y <= vp().paper.max.y + 1e-9);
+    }
+
+    CHECK(f.host->undo());
+    CHECK(f.host->undo());
+    CHECK(vp().clip == before.clip);
+    CHECK(vp().paper.min.x == doctest::Approx(before.paper.min.x));
+    CHECK(vp().paper.width() == doctest::Approx(before.paper.width()));
+}
