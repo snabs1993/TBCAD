@@ -227,6 +227,8 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
                   std::string_view subclass) {
     Out& o = *L().o;
     o.zero(type);
+    if (r12_ && owner == paperRec_ && owner != 0)
+        o.i(67, 1);
     if (!r12_) {
         const std::uint64_t self = L().entHandle ? L().entHandle : newHandle();
         if (L().entHandle)

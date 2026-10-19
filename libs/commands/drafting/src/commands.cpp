@@ -215,8 +215,44 @@ public:
         : SwitchCommand("POLAR", "Polar tracking", polar, "Polar tracking on/off and angles") {}
 
 protected:
-    std::vector<std::string> options() const override { return {"Increment"}; }
-    cmd::Task option(cmd::CommandContext& ctx, const std::string&) override {
+    std::vector<std::string> options() const override {
+        return {"Increment", "Additional", "Relative"};
+    }
+    cmd::Task option(cmd::CommandContext& ctx, const std::string& opt) override {
+        if (opt == "Additional") {
+            // Single angles tracked as they are, like AutoCAD's additional polar angles.
+            cmd::StringOptions so;
+            so.allowEmpty = true;
+            auto a = co_await ctx.getString(
+                "Additional angles in degrees (a list like 17,127.5; empty for none)", so);
+            if (!a.ok())
+                co_return;
+            if (!drafting::parsePolarAngles(a.text)) {
+                ctx.message("Invalid angles \"" + a.text + "\"; use numbers between -360 and 360.");
+                co_return;
+            }
+            ctx.host().setSetting(drafting::keys::polarAdditional, a.text);
+            setOnExclusive(ctx, polar, true);
+            ctx.message(a.text.empty() ? std::string("No additional polar angles")
+                                       : "Additional polar angles: " + a.text);
+            co_return;
+        }
+        if (opt == "Relative") {
+            // Measure polar angles from the last segment (Relative) or the UCS X axis (Absolute).
+            const bool rel = drafting::DraftingSettings::read(ctx.host()).polarRelative;
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Absolute", "Relative"};
+            ko.defaultKeyword = rel ? "Relative" : "Absolute";
+            auto k =
+                co_await ctx.getKeyword("Measure polar angles [Absolute/Relative]", std::move(ko));
+            if (!k.ok())
+                co_return;
+            const bool want = k.keyword == "Relative";
+            ctx.host().setSetting(drafting::keys::polarRelative, want ? "1" : "0");
+            ctx.message(want ? "Polar angles relative to the last segment"
+                             : "Polar angles absolute");
+            co_return;
+        }
         cmd::StringOptions so;
         so.defaultValue = "90";
         auto a = co_await ctx.getString(

@@ -27,8 +27,9 @@ enum class SnapMode : std::uint8_t {
     Insertion,             // insertion point of text, mtext, blocks
     ApparentIntersection,  // where two objects would meet if extended, near the cursor
     Extension,             // along the extension of a line or arc end the cursor rested on
+    Parallel,              // from the base point parallel to a straight edge the cursor rested on
 };
-inline constexpr int kSnapModeCount = 12;
+inline constexpr int kSnapModeCount = 13;
 
 using SnapModeMask = std::uint32_t;
 constexpr SnapModeMask maskOf(SnapMode m) {
@@ -82,8 +83,12 @@ inline constexpr const char* osnapOnce = "drafting.osnap.once";  // "endpoint": 
 inline constexpr const char* ucsIcon = "drafting.ucsicon";       // bool, on by default
 inline constexpr const char* ucsIconOrigin = "drafting.ucsicon.origin";    // bool, on by default
 inline constexpr const char* polarIncrement = "drafting.polar.increment";  // degrees, list
-inline constexpr const char* isoDraft = "drafting.isodraft";               // bool
-inline constexpr const char* isoPlane = "drafting.isoplane";  // "left" | "top" | "right"
+// Additional polar angles, tracked as they are (not their multiples). Empty = none.
+inline constexpr const char* polarAdditional = "drafting.polar.additional";  // degrees, list
+// Polar angles measured from the last segment drawn instead of the UCS X axis.
+inline constexpr const char* polarRelative = "drafting.polar.relative";  // bool
+inline constexpr const char* isoDraft = "drafting.isodraft";             // bool
+inline constexpr const char* isoPlane = "drafting.isoplane";             // "left" | "top" | "right"
 }  // namespace keys
 
 // Everything the drafting aids read, taken from the host settings on every use so a change in
@@ -105,6 +110,8 @@ struct DraftingSettings {
     bool gridLines = false;  // false = dots
     // Each entry is an increment: polar tracking snaps to every multiple of every entry.
     std::vector<double> polarIncrementsDeg{90};
+    std::vector<double> polarAdditionalDeg{};  // single angles, in (-360, 360]
+    bool polarRelative = false;                // angles count from the last segment
     double polarToleranceDeg = 2;
     IsoPlane isoPlane = IsoPlane::Off;  // Off unless ISODRAFT is on
 
@@ -113,6 +120,8 @@ struct DraftingSettings {
 
 // "90", "45", "30,45" -> {90} ... Empty on error. Values must be in (0, 180].
 std::vector<double> parsePolarIncrements(std::string_view text);
+// "15,127.5" -> {15, 127.5}; "" -> {} with ok. nullopt on error. Values in [-360, 360].
+std::optional<std::vector<double>> parsePolarAngles(std::string_view text);
 bool parseBoolSetting(std::string_view text, bool fallback);
 
 }  // namespace tbcad::drafting

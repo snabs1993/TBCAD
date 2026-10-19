@@ -299,6 +299,23 @@ void SettingsDialog::drafting(ui::AppCore& core) {
                 core.setSetting(drafting::keys::polarIncrement, text);
         }
         ImGui::TextDisabled("Angles between 0 and 180, separated by commas: 90 or 30,45.");
+        std::string extra = core.setting(drafting::keys::polarAdditional).value_or("");
+        static std::string extraText;
+        static std::string extraShownFor;
+        if (extraShownFor != extra) {
+            extraText = extra;
+            extraShownFor = extra;
+        }
+        ImGui::SetNextItemWidth(140);
+        ImGui::InputText("Additional angles (deg)", &extraText);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            if (!drafting::parsePolarAngles(extraText))
+                extraText = extra;
+            else
+                core.setSetting(drafting::keys::polarAdditional, extraText);
+        }
+        ImGui::TextDisabled("Single angles tracked as they are, not their multiples: 17,127.5.");
+        toggle("Measure angles relative to the last segment", drafting::keys::polarRelative);
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Object Snap")) {

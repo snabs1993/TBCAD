@@ -32,6 +32,9 @@ public:
     double ucsAngle() const override;
     std::optional<Vec2> parsePoint(std::string_view text,
                                    const cmd::PointParseContext& ctx) override;
+    // END, MID, INT, APP, EXT, CEN, QUA, PER, TAN, NEA, NOD, INS, PAR, NON (and the full names).
+    std::optional<std::string> snapOverride(std::string_view word) const override;
+    void trackPoint(Vec2 p) override;
 
 private:
     const DraftingEnv* env_;

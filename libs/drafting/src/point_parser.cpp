@@ -1,8 +1,10 @@
 #include "tbcad/drafting/point_parser.h"
 
+#include <cctype>
 #include <cmath>
 
 #include "tbcad/core/units.h"
+#include "tbcad/drafting/settings.h"
 #include "tbcad/drafting/ucs.h"
 
 namespace tbcad::drafting {
@@ -97,6 +99,34 @@ std::optional<Vec2> TypedPointParser::parsePoint(std::string_view text,
         env_->tracking->rawCursor == ctx.cursor)
         dir = env_->tracking->direction;
     return parseTypedPoint(text, ctx, dir, env_ ? currentUcs(env_->doc, env_->host) : Ucs{});
+}
+
+std::optional<std::string> TypedPointParser::snapOverride(std::string_view word) const {
+    std::string w;
+    for (char c : word)
+        w += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    // AutoCAD's short forms; a full mode name works too. Other words (a keyword, a note typed at
+    // a free-text prompt) are left alone.
+    static const std::pair<const char*, const char*> kShort[] = {
+        {"end", "endpoint"},      {"endp", "endpoint"},      {"mid", "midpoint"},
+        {"int", "intersection"},  {"app", "apparent"},       {"appint", "apparent"},
+        {"cen", "center"},        {"qua", "quadrant"},       {"quad", "quadrant"},
+        {"per", "perpendicular"}, {"perp", "perpendicular"}, {"tan", "tangent"},
+        {"nea", "nearest"},       {"near", "nearest"},       {"nod", "node"},
+        {"ins", "insertion"},     {"ext", "extension"},      {"par", "parallel"},
+        {"non", "none"},          {"none", "none"}};
+    for (const auto& [shortForm, mode] : kShort)
+        if (w == shortForm)
+            return std::string(mode);
+    for (int i = 0; i < kSnapModeCount; ++i)
+        if (w == snapModeName(static_cast<SnapMode>(i)))
+            return w;
+    return std::nullopt;
+}
+
+void TypedPointParser::trackPoint(Vec2 p) {
+    if (env_)
+        env_->tempTrack.push_back(p);
 }
 
 }  // namespace tbcad::drafting

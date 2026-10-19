@@ -220,8 +220,6 @@ std::vector<std::string> splitOn(const std::string& s, char sep) {
 }  // namespace
 
 void Writer::prepareSheets() {
-    if (r12_)
-        return;
     const auto it = doc_.header().custom.find("tbcad.layouts");
     if (it == doc_.header().custom.end())
         return;
@@ -1915,6 +1913,18 @@ Result<ExportResult> Writer::run() {
     Out entities(utf8_, r12_);
     L().o = &entities;
     writeEntityList(model, modelRec_);
+    if (r12_ && !sheets_.empty()) {
+        // R12 has one paper space, kept among the entities with group 67: the first layout's
+        // objects go there; its viewports and the other layouts have no R12 form.
+        if (const BlockDef* def = doc_.block(sheets_[0].content))
+            writeEntityList(def->entities, paperRec_);
+        bool viewports = false;
+        for (const Sheet& s : sheets_)
+            viewports = viewports || !s.viewports.empty();
+        if (sheets_.size() > 1 || viewports)
+            downgrade("LAYOUT", "R12 has one paper space: only the first layout's objects are "
+                                "written, without viewports");
+    }
 
     std::string blocks;
     {
@@ -1923,7 +1933,7 @@ Result<ExportResult> Writer::run() {
         o.raw(2, "BLOCKS");
         blockBegin(o, "*Model_Space", modelRec_, {0, 0}, 0, false);
         blockEnd(o, modelRec_, false);
-        if (sheets_.empty()) {
+        if (sheets_.empty() || r12_) {
             blockBegin(o, "*Paper_Space", paperRec_, {0, 0}, 0, true);
             blockEnd(o, paperRec_, true);
         }
@@ -1939,7 +1949,7 @@ Result<ExportResult> Writer::run() {
             blockEnd(o, rec, false);
         }
         // The sheets come after the blocks they insert, so an INSERT finds its definition.
-        for (std::size_t i = 0; i < sheets_.size(); ++i)
+        for (std::size_t i = 0; !r12_ && i < sheets_.size(); ++i)
             writeSheetBlock(o, sheets_[i],
                             i == 0 ? "*Paper_Space" : "*Paper_Space" + std::to_string(i - 1));
         // Dimension blocks may be added while the blocks above are written, so index.

@@ -127,6 +127,14 @@ private:
     SelShape shape_ = SelShape::None;
     std::vector<Vec2> shapePts_{};
     bool removeMode_ = false;
+    // Typed point modifiers at a point prompt, as in AutoCAD: FROM (a base point, then an offset
+    // from it), M2P / MTP (the middle of two points) and TT (a temporary tracking point).
+    enum class PtMod { None, FromBase, FromOffset, Mid1, Mid2, Track };
+    PtMod ptMod_ = PtMod::None;
+    Vec2 ptModA_{};
+    // The last segment picked in the running command (from its base to the point), for
+    // PointQuery::lastSegment.
+    std::optional<std::pair<Vec2, Vec2>> lastSeg_{};
     std::vector<std::vector<EntityId>> selUndo_{};  // collected_ before each batch, newest last
     PointFilterChain* chain_ = nullptr;
     CommandLineParser* parser_ = nullptr;
