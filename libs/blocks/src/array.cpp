@@ -1,11 +1,120 @@
 #include "tbcad/blocks/array.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <cstdio>
+#include <map>
 
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::blocks {
+
+namespace {
+std::string num(double v) {
+    char buf[40];
+    std::snprintf(buf, sizeof buf, "%.17g", v);
+    return buf;
+}
+}  // namespace
+
+std::string arrayToText(const ArrayInfo& a) {
+    std::string out = "kind=" + std::to_string(static_cast<int>(a.kind)) +
+                      ",rows=" + std::to_string(a.rows) + ",cols=" + std::to_string(a.columns) +
+                      ",rs=" + num(a.rowSpacing) + ",cs=" + num(a.columnSpacing) +
+                      ",ang=" + num(a.angle) + ",cx=" + num(a.center.x) + ",cy=" + num(a.center.y) +
+                      ",count=" + std::to_string(a.count) + ",fill=" + num(a.fillAngle) +
+                      ",rot=" + (a.rotateItems ? "1" : "0") + ",rx=" + num(a.reference.x) +
+                      ",ry=" + num(a.reference.y) + ",pc=" + (a.pathClosed ? "1" : "0") +
+                      ",ps=" + num(a.pathSpacing) + ",path=";
+    for (std::size_t i = 0; i < a.path.size(); ++i) {
+        if (i)
+            out += ';';
+        out += num(a.path[i].p.x) + ":" + num(a.path[i].p.y) + ":" + num(a.path[i].bulge);
+    }
+    return out;
+}
+
+std::optional<ArrayInfo> arrayFromText(std::string_view text, double k) {
+    std::map<std::string, std::string> kv;
+    std::size_t at = 0;
+    while (at < text.size()) {
+        std::size_t comma = text.find(',', at);
+        if (comma == std::string_view::npos)
+            comma = text.size();
+        std::string_view item = text.substr(at, comma - at);
+        std::size_t eq = item.find('=');
+        if (eq == std::string_view::npos)
+            return std::nullopt;
+        kv[std::string(item.substr(0, eq))] = std::string(item.substr(eq + 1));
+        at = comma + 1;
+    }
+    auto real = [&](const char* key, double& v) {
+        auto it = kv.find(key);
+        if (it == kv.end())
+            return false;
+        char* end = nullptr;
+        v = std::strtod(it->second.c_str(), &end);
+        return end != it->second.c_str() && std::isfinite(v);
+    };
+    ArrayInfo a;
+    double v = 0;
+    if (!real("kind", v) || v < 0 || v > 2)
+        return std::nullopt;
+    a.kind = static_cast<ArrayInfo::Kind>(static_cast<int>(v));
+    if (!real("rows", v))
+        return std::nullopt;
+    a.rows = static_cast<int>(v);
+    if (!real("cols", v))
+        return std::nullopt;
+    a.columns = static_cast<int>(v);
+    if (!real("count", v))
+        return std::nullopt;
+    a.count = static_cast<int>(v);
+    if (a.rows < 1 || a.columns < 1 || a.count < 1 ||
+        static_cast<long long>(a.rows) * a.columns > kMaxArrayItems || a.count > kMaxArrayItems)
+        return std::nullopt;
+    if (real("rs", v))
+        a.rowSpacing = v * k;
+    if (real("cs", v))
+        a.columnSpacing = v * k;
+    if (real("ang", v))
+        a.angle = v;
+    if (real("cx", v))
+        a.center.x = v * k;
+    if (real("cy", v))
+        a.center.y = v * k;
+    if (real("fill", v))
+        a.fillAngle = v;
+    if (real("rot", v))
+        a.rotateItems = v != 0;
+    if (real("rx", v))
+        a.reference.x = v * k;
+    if (real("ry", v))
+        a.reference.y = v * k;
+    if (real("pc", v))
+        a.pathClosed = v != 0;
+    if (real("ps", v))
+        a.pathSpacing = v * k;
+    const std::string& path = kv["path"];
+    std::size_t p = 0;
+    while (p < path.size()) {
+        std::size_t semi = path.find(';', p);
+        if (semi == std::string::npos)
+            semi = path.size();
+        double x = 0, y = 0, b = 0;
+        if (std::sscanf(path.substr(p, semi - p).c_str(), "%lf:%lf:%lf", &x, &y, &b) != 3)
+            return std::nullopt;
+        PolyVertex pv;
+        pv.p = {x * k, y * k};
+        pv.bulge = b;
+        a.path.push_back(pv);
+        p = semi + 1;
+    }
+    if (a.kind == ArrayInfo::Kind::Path && a.path.size() < 2)
+        return std::nullopt;
+    return a;
+}
 
 std::vector<Transform2> rectangularTransforms(const RectArray& s) {
     std::vector<Transform2> out;

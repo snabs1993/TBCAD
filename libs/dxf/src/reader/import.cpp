@@ -5,11 +5,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <set>
 #include <unordered_set>
 
 #include "importer.h"
 #include "keep.h"
+#include "tbcad/blocks/array.h"
 #include "tbcad/dim/dim.h"
 
 namespace tbcad::dxf::detail {
@@ -2123,6 +2125,103 @@ Result<ImportResult> Importer::run() {
                     if (measured > 0)
                         d.measurement = measured;
                 });
+            }
+            tx.commit();
+        }
+    }
+    // Associative arrays are written as one INSERT per item with a TBCAD_ARRAY note; fuse the
+    // items of each array back into a single array insert.
+    {
+        struct Item {
+            long long index = 0;
+            EntityId id{};
+        };
+        struct Group {
+            long long count = 0;
+            std::vector<Item> items;
+            std::string info;
+            Vec2 dpos{};
+            double drot = 0;
+            bool hasInfo = false;
+        };
+        std::map<long long, Group> groups;
+        doc_->forEachEntity([&](const Entity& e) {
+            if (!entityAs<InsertData>(e))
+                return;
+            for (const XdataApp& app : e.common.ext.get().xdata) {
+                if (app.app != "TBCAD_ARRAY")
+                    continue;
+                long long id = -1, n = 0, i = -1;
+                std::string info;
+                Vec2 dpos{};
+                double drot = 0;
+                bool hasInfo = false;
+                for (const DataItem& it : app.items) {
+                    if (it.code != 1000)
+                        continue;
+                    if (it.text.rfind("a=", 0) == 0) {
+                        (void)std::sscanf(it.text.c_str(), "a=%lld;n=%lld;i=%lld", &id, &n, &i);
+                    } else if (it.text.rfind("dpos=", 0) == 0) {
+                        (void)std::sscanf(it.text.c_str(), "dpos=%lf,%lf;drot=%lf", &dpos.x,
+                                          &dpos.y, &drot);
+                    } else if (it.text.rfind("info=", 0) == 0) {
+                        info = it.text.substr(5);
+                        hasInfo = true;
+                    }
+                }
+                if (id < 0 || n < 1 || i < 0)
+                    continue;
+                Group& g = groups[id];
+                g.count = n;
+                g.items.push_back({i, e.common.id});
+                if (hasInfo) {
+                    g.info = std::move(info);
+                    g.dpos = dpos * k_;
+                    g.drot = drot;
+                    g.hasInfo = true;
+                }
+            }
+        });
+        if (!groups.empty()) {
+            Transaction tx = doc_->begin("arrays");
+            for (auto& [gid, g] : groups) {
+                std::sort(g.items.begin(), g.items.end(),
+                          [](const Item& a, const Item& b) { return a.index < b.index; });
+                bool whole = g.hasInfo && static_cast<long long>(g.items.size()) == g.count;
+                for (std::size_t k = 0; whole && k < g.items.size(); ++k)
+                    whole = g.items[k].index == static_cast<long long>(k);
+                auto info = whole ? blocks::arrayFromText(g.info, k_) : std::nullopt;
+                if (info && blocks::arrayItemCount(*info) != g.count)
+                    info.reset();
+                const Entity* first = info ? doc_->find(g.items.front().id) : nullptr;
+                if (first && doc_->ownerBlock(first->common.id))
+                    first = nullptr;  // items inside a block definition stay plain
+                if (!first) {
+                    // Not a whole array: the items stay plain inserts, minus the note.
+                    for (const Item& it : g.items)
+                        (void)tx.modify(it.id, [](Entity& e) {
+                            ExtData x = e.common.ext.get();
+                            std::erase_if(x.xdata,
+                                          [](const XdataApp& a) { return a.app == "TBCAD_ARRAY"; });
+                            e.common.ext = ExtDataPtr(std::move(x));
+                        });
+                    continue;
+                }
+                Entity merged = *first;
+                merged.common.id = {};
+                {
+                    ExtData x = merged.common.ext.get();
+                    std::erase_if(x.xdata,
+                                  [](const XdataApp& a) { return a.app == "TBCAD_ARRAY"; });
+                    merged.common.ext = ExtDataPtr(std::move(x));
+                }
+                auto* ins = entityAs<InsertData>(merged);
+                ins->position = ins->position + g.dpos;
+                ins->rotation += g.drot;
+                ins->array = *info;
+                for (const Item& it : g.items)
+                    (void)tx.erase(it.id);
+                (void)tx.add(std::move(merged));
             }
             tx.commit();
         }

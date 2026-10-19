@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "tbcad/core/core.h"
@@ -47,6 +49,12 @@ std::vector<Transform2> polarTransforms(const PolarArray& spec, Vec2 reference);
 std::vector<Transform2> arrayItemTransforms(const ArrayInfo& info);
 // Number of items arrayItemTransforms returns.
 long long arrayItemCount(const ArrayInfo& info);
+
+// One-line text form of an array's parameters (DXF round trip), and back. `lengthScale` multiplies
+// every length and coordinate when reading (file units to drawing units). Fails on text it did
+// not write.
+std::string arrayToText(const ArrayInfo& info);
+std::optional<ArrayInfo> arrayFromText(std::string_view text, double lengthScale = 1);
 
 // Largest number of copies an array may create (guards against typos like 1e6 x 1e6).
 inline constexpr long long kMaxArrayItems = 100000;
