@@ -1663,21 +1663,27 @@ void Importer::readDimStyle(const Record& r) {
         if (fixed != styleHeights_.end() && ds.overallScale > 0)
             ds.textHeight = fixed->second / ds.overallScale;
     }
-    // DIMBLK: the name of a built-in arrow block (a file that stores a handle there matches none).
+    // DIMBLK: the name of a built-in arrow block (a file that stores a handle there matches none);
+    // with DIMSAH the arrows are DIMBLK1 and DIMBLK2 instead (no name: the closed filled arrow).
     {
-        std::string arrow = std::string(r.raw(342));
-        if (arrow.empty())
-            arrow = std::string(r.raw(343));
-        for (char& c : arrow)
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        if (arrow == "_ARCHTICK" || arrow == "_OBLIQUE")
-            ds.arrowType = ArrowType::ArchTick;
-        else if (arrow == "_DOT" || arrow == "_DOTSMALL" || arrow == "_DOTBLANK")
-            ds.arrowType = ArrowType::Dot;
-        else if (arrow == "_OPEN30" || arrow == "_OPEN")
-            ds.arrowType = ArrowType::Open30;
-        else if (arrow == "_NONE")
-            ds.arrowType = ArrowType::None;
+        auto arrowOf = [&](int code, ArrowType none) {
+            std::string arrow = std::string(r.raw(code));
+            for (char& c : arrow)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            if (arrow == "_ARCHTICK" || arrow == "_OBLIQUE")
+                return ArrowType::ArchTick;
+            if (arrow == "_DOT" || arrow == "_DOTSMALL" || arrow == "_DOTBLANK")
+                return ArrowType::Dot;
+            if (arrow == "_OPEN30" || arrow == "_OPEN")
+                return ArrowType::Open30;
+            if (arrow == "_NONE")
+                return ArrowType::None;
+            return arrow.empty() ? none : ArrowType::ClosedFilled;
+        };
+        const ArrowType blk = arrowOf(342, arrowOf(343, ds.arrowType));
+        const ArrowType blk1 = arrowOf(343, ArrowType::ClosedFilled);
+        ds.arrowType = r.integer(173) != 0 ? blk1 : blk;
+        dimArrows_[name] = {blk, blk1};
     }
     for (const Group& x : r.g) {  // the arrow kind TBCAD writes as extended data
         if (x.code != 1000)
