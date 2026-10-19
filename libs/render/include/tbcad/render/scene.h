@@ -156,6 +156,26 @@ public:
     bool upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
                         std::span<const Transform2> placements, const DisplayList* extra,
                         std::uint32_t drawOrder, double builtPixelsPerMm = 0);
+    // upsertInstance in three steps, for many references at once: instanceUsable makes the shared
+    // list's template (one thread); packInstance moves and packs a reference's geometry and may
+    // run on several threads at a time while nothing else changes the scene; commitInstance
+    // adds the packed reference (one thread). The result is the same as upsertInstance.
+    struct InstancePack {
+        struct Run {
+            std::uint32_t group = 0;  // of the template
+            TileKey tile{};
+            BBox2 box{};
+            std::vector<GpuVertex> verts{};
+        };
+        const DisplayList* list = nullptr;
+        std::vector<Run> runs{};
+        std::size_t used = 0;  // runs in use (the others keep their room for the next pack)
+    };
+    bool instanceUsable(const std::shared_ptr<const DisplayList>& blockSpace);
+    void packInstance(const std::shared_ptr<const DisplayList>& blockSpace,
+                      std::span<const Transform2> placements, InstancePack& out) const;
+    bool commitInstance(EntityId id, const InstancePack& pack, const DisplayList* extra,
+                        std::uint32_t drawOrder, double builtPixelsPerMm = 0);
     void remove(EntityId id);
     // Same for many objects at once; much faster than calling remove for each.
     // Drops everything when `ids` (distinct) are exactly the entities of the scene; false and

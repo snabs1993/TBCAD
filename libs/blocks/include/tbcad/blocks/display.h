@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <tuple>
+#include <unordered_map>
 
 #include "tbcad/core/core.h"
 #include "tbcad/geom/geom.h"
@@ -43,12 +44,17 @@ public:
     void clear();
     std::size_t size() const { return entries_.size(); }
 
+    // The attribute definitions among a block's entities, in block order (found once per
+    // revision: every reference draws its own attribute values from them).
+    const std::vector<EntityId>& attdefsOf(const Document& doc, const BlockDef& def);
+
     // Number of block-space lists built (cache misses) since construction; for tests and tuning.
     std::size_t builds() const { return builds_; }
     void countBuild() { ++builds_; }
 
 private:
     std::map<Key, std::shared_ptr<const DisplayList>> entries_{};
+    std::unordered_map<BlockId, std::vector<EntityId>> attdefs_{};
     std::uint64_t revision_ = ~std::uint64_t{0};
     std::size_t builds_ = 0;
 };

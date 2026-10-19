@@ -78,8 +78,15 @@ private:
         double builtZoom = 0;
         bool fields = false;
         DisplayList list{};
+        // A reference to a block whose shared geometry was packed ahead (see packInserts).
+        bool packed = false;
+        blocks::InsertInstance inst{};
+        render::Scene::InstancePack pack{};
     };
     void prepare(const Entity& e, std::uint32_t order, Prepared& out) const;
+    // The references to blocks among `chunk`: their shared geometry is looked up on this thread
+    // (the block cache is single threaded), then moved and packed on all cores.
+    void packInserts(std::vector<Prepared>& chunk, std::size_t lanes);
     void commit(Prepared& p);
     // Builds the display of many entities on all cores and puts them in the scene in the given
     // order, so the scene is the same as when they are added one by one.
