@@ -1380,6 +1380,19 @@ TEST_CASE("FILL and ATTDISP survive a DXF round trip") {
     CHECK(quickText(rt.back->header()));
 }
 
+TEST_CASE("the wipeout frame mode survives a DXF round trip") {
+    for (const char* mode : {"0", "1", "2"}) {
+        Document doc;
+        {
+            auto tx = doc.begin("frame");
+            REQUIRE(tx.modifyHeader([&](Header& h) { h.custom[kWipeoutFrameKey] = mode; }).ok());
+            tx.commit();
+        }
+        RoundTrip rt = roundTrip(doc);
+        CHECK(wipeoutFrameMode(rt.back->header()) == mode[0] - '0');
+    }
+}
+
 TEST_CASE("named plot styles of layers and objects survive a DXF round trip") {
     Document doc;
     EntityId plain{}, own{};

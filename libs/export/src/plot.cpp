@@ -609,6 +609,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
                 li = pl->style.layer;
             else if (const auto* fl = std::get_if<DisplayFill>(&it))
                 li = fl->style.layer;
+            if (const auto* np = std::get_if<DisplayPolyline>(&it); np && np->style.noPlot)
+                continue;
             if (li != LayerId{} && li != e->common.layer &&
                 (isDefpoints(doc, li) || !doc.effective(li).visible() ||
                  (lay.layerHidden && lay.layerHidden(li))))
