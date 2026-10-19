@@ -1545,6 +1545,11 @@ Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>
             touched_.erase(id);
             return ext.error();
         }
+#ifdef TBCAD_HARDEN_EDITS
+        // A fresh copy frees the old data, so a pointer kept into it is caught by a sanitizer.
+        Entity fresh = *live;
+        *live = std::move(fresh);
+#endif
     } else {
         Entity work = *live;
         fn(work);

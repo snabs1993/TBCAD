@@ -16,6 +16,9 @@ endif()
 option(TBCAD_BUILD_APP "Build the tbcad desktop application" ${_tbcad_app_default})
 option(TBCAD_BUILD_TESTS "Build unit tests" ON)
 option(TBCAD_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+# For sanitizer builds: every entity edit reallocates the object's data, so a pointer kept across
+# an edit points at freed memory (which AddressSanitizer reports) instead of at the new value.
+option(TBCAD_HARDEN_EDITS "Reallocate entity data on every edit (sanitizer builds)" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
