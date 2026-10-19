@@ -192,8 +192,7 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     };
 
     bool arrowsIn = false, textIn = true;
-    // DIMATFIT decides what leaves first when text and arrows do not fit together; text placed
-    // by hand keeps the arrows where they would be with the text in its own place.
+    // DIMATFIT decides what leaves first when text and arrows do not fit together.
     auto decideFit = [&] {
         const DimFit fit = c.st.fit;
         if (len >= textW + 2 * c.arrow) {
@@ -233,14 +232,19 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     std::vector<Vec2> leader;
     Vec2 point{};  // the text point (DXF group 11)
     if (d.textPosUser) {
-        decideFit();
         center = point = d.textPos;
         double tc = dot(center - A, uu);
         textIn = tc > 0 && tc < len;
+        // Arrows stay inside when they fit; DIMTIX text between the extension lines that leaves
+        // them no room sends them out.
+        arrowsIn = len >= 2 * c.arrow &&
+                   !(c.st.textInsideForced && textIn && tw > 0 && len < textW + 2 * c.arrow);
         if (!textIn)
             textOutside();
-        // DIMTMOVE 0: the point is on the dimension line, the text sits above it (DIMTAD).
-        if (c.st.textMove == DimTextMove::WithLine)
+        // A point on the dimension line is under (or over) the text, which sits lifted from it
+        // (DIMTAD), as AutoCAD writes it; a point away from the line is the middle of the text.
+        if (c.st.textMove == DimTextMove::WithLine &&
+            std::abs(dot(point - A, perp(uu))) < 1e-3 * std::max(c.th, c.tol))
             center += lift.offset;
         lineEnd = (arrowsIn ? len : len + stub) + c.dext;
         const double lateral = std::abs(dot(point - A, perp(uu)));
