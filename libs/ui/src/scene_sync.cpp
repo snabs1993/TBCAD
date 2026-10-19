@@ -604,8 +604,9 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     if (!pending_.empty())
         dropPending(removed);
     std::vector<const Entity*> redraw;
-    // Boxes the spatial index measured for entities that come back (an undo of ERASE ALL): the
-    // waiting list needs the same ones. Text has its own cheap estimate, so it keeps it.
+    // Boxes the spatial index measured for entities that come back or changed (an undo of ERASE
+    // ALL, a MOVE of everything): the waiting list needs the same ones. Text has its own cheap
+    // estimate, so it keeps it.
     std::vector<const BBox2*> known;
     for (const EntityChange& c : cs.entities) {
         const Entity* after = cs.after(c);
@@ -618,7 +619,7 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         const Entity* live = doc_.find(after->common.id);
         if (live) {
             redraw.push_back(live);
-            const BBox2* box = c.before == kNoSnapshot ? cs.memoBox(c.after) : nullptr;
+            const BBox2* box = cs.memoBox(c.after);
             if (box && (entityAs<TextData>(*live) || entityAs<MTextData>(*live)))
                 box = nullptr;
             known.push_back(box);
@@ -722,7 +723,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         flushPending();
         if (!blockTouched) {
             // Blocks that hold an insert of a changed block change too, all the way up.
-            std::unordered_multimap<BlockId, BlockId> parents;  // shown block -> block that holds it
+            std::unordered_multimap<BlockId, BlockId>
+                parents;  // shown block -> block that holds it
             for (const auto& [bid, def] : doc_.blocks())
                 for (EntityId member : def.entities)
                     if (const Entity* m = doc_.find(member))
