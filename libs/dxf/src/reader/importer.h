@@ -34,6 +34,17 @@ std::string convertMText(std::string_view utf8, double unitScale, std::map<char,
 // the Y axis (extrusion (0, 0, -1)), and either of these turned by `rot` (a slightly tilted
 // extrusion: the arbitrary axis algorithm turns the object x axis, and the tilt itself is
 // dropped by the projection onto the XY plane).
+// The object coordinate system of an entity whose extrusion is tilted too far to be read as flat
+// (its plane is more than about 25 degrees from the XY plane): the arbitrary axis algorithm's
+// axes in world coordinates, for drawing the entity as it is seen from above.
+struct Tilt {
+    double ax[3]{}, ay[3]{}, n[3]{};
+    // A point of the object coordinate system (`elev` along the extrusion), projected onto XY.
+    Vec2 map(Vec2 p, double elev) const {
+        return {p.x * ax[0] + p.y * ay[0] + elev * n[0], p.x * ax[1] + p.y * ay[1] + elev * n[1]};
+    }
+};
+
 struct Frame {
     bool mirror = false;
     double rot = 0;
@@ -139,6 +150,13 @@ private:
              std::optional<std::uint64_t> handle = std::nullopt, const Record* source = nullptr);
     EntityCommon commonOf(const Record& r);
     bool frameOf(const Record& r, Frame& f, std::string_view type);
+    // Set when the entity's extrusion is tilted beyond what frameOf reads as flat.
+    std::optional<Tilt> tiltOf(const Record& r) const;
+    // Circles, arcs, ellipses and polylines in a tilted plane, drawn as seen from above (an
+    // ellipse, or a polyline). Returns false when nothing could be drawn.
+    bool convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out);
+    void addProjectedEllipse(const double c[3], const double u[3], const double v[3], double s,
+                             double e, bool full, std::vector<Entity>& out);
     LayerId layerFor(std::string_view raw, int line);
     LinetypeId linetypeFor(std::string_view raw, int line);
     TextStyleId textStyleFor(std::string_view raw) const;
@@ -346,6 +364,8 @@ private:
     };
     std::vector<PendingPdf> pdfs_{};
     std::size_t acadTables_ = 0;  // AutoCAD tables read into editable tables
+    std::size_t projected_ = 0;   // entities in tilted planes drawn as seen from above
+    int firstProjectedLine_ = 0;
     std::map<std::string, PdfDef> pdfDefs_{};  // PDFDEFINITION handle -> file and page
     std::vector<PendingImage> images_{};
     int imageFrame_ = -1;  // 0 when RASTERVARIABLES hides the frames of all pictures; -1 = no say

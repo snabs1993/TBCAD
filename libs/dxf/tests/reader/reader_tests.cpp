@@ -74,7 +74,9 @@ TEST_CASE("extrusion -Z: circle, polyline, text, insert, ellipse and hatch") {
     CHECK(near(inserts[0]->rotation, -90 * kDeg));
 
     auto ellipses = modelEntities<EllipseData>(d);
-    REQUIRE(ellipses.size() == 1);
+    REQUIRE(ellipses.size() == 2);  // the second is the arc in a tilted plane
+    if (std::abs(ellipses[0]->majorAxis.x) < 2)
+        std::swap(ellipses[0], ellipses[1]);
     // DXF parameters 0..90 degrees run clockwise seen from +Z: world 270..360 degrees.
     CHECK(near(ellipses[0]->startParam, 1.5 * kPi));
     CHECK(near(ellipses[0]->endParam, kTwoPi));
@@ -87,9 +89,59 @@ TEST_CASE("extrusion -Z: circle, polyline, text, insert, ellipse and hatch") {
     CHECK(near(edge->v[1].p, Vec2{-4, 10}));
 }
 
-TEST_CASE("extrusion: a tilted plane is skipped with a warning") {
+static Vec2 pointAt(const EllipseData& e, double t) {
+    const Vec2 minor{-e.majorAxis.y * e.ratio, e.majorAxis.x * e.ratio};
+    return e.center + e.majorAxis * std::cos(t) + minor * std::sin(t);
+}
+
+TEST_CASE("extrusion: an arc in a steeply tilted plane is drawn as the ellipse seen from above") {
+    // Normal (0.5, 0, 0.866): object X is world +Y, object Y is (-0.866, 0, 0.5).
     Loaded l = loadCorpus("extrusion_neg_z.dxf");
+    CHECK(l.report.countCode(code::kExtrusion3d) == 1);  // one note, not a skip
+    const EllipseData* arc = nullptr;
+    for (const EllipseData* e : modelEntities<EllipseData>(l.doc()))
+        if (std::abs(e->ratio - 0.8660254) < 1e-6)
+            arc = e;
+    REQUIRE(arc);
+    CHECK(near(arc->center, Vec2{0, 0}));
+    CHECK(near(pointAt(*arc, arc->startParam), Vec2{0, 1}));
+    CHECK(near(pointAt(*arc, arc->endParam), Vec2{-0.8660254, 0}, 1e-6));
+}
+
+TEST_CASE("extrusion: steeply tilted circles, ellipses and polylines are projected, not skipped") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A circle in a vertical plane (normal +X) is seen edge-on: a straight piece along Y.
+    p.g(0, "CIRCLE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 5.0);
+    p.g(210, 1.0).g(220, 0.0).g(230, 0.0);
+    // A polyline with an arc in a plane tilted 60 degrees about the X axis.
+    p.g(0, "LWPOLYLINE").g(8, "0").g(90, 2).g(70, 0).g(10, 0.0).g(20, 0.0).g(42, 1.0);
+    p.g(10, 10.0).g(20, 0.0).g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    // An ellipse in the same plane: major axis along world X stays, the minor one shrinks.
+    p.g(0, "ELLIPSE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(11, 6.0).g(21, 0.0).g(31, 0.0).g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    p.g(40, 0.5).g(41, 0.0).g(42, kTwoPi);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
     CHECK(l.report.countCode(code::kExtrusion3d) == 1);
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 2);
+    const PolylineData* edge = polys[0]->v.size() == 65 ? polys[0] : polys[1];
+    const PolylineData* bent = edge == polys[0] ? polys[1] : polys[0];
+    REQUIRE(edge->v.size() == 65);
+    for (const PolyVertex& v : edge->v)
+        CHECK(std::abs(v.p.x) < 1e-9);  // object X is world +Y, object Y is world Z
+    // Object X is world +X; object Y is (0, 0.5, 0.866), so y is halved when seen from above.
+    CHECK(near(bent->v.front().p, Vec2{0, 0}));
+    CHECK(near(bent->v.back().p, Vec2{10, 0}));
+    CHECK(bent->v.size() > 10);  // the half circle became short segments
+    double lowest = 0;
+    for (const PolyVertex& v : bent->v)
+        lowest = std::min(lowest, v.p.y);
+    CHECK(lowest == doctest::Approx(-2.5).epsilon(0.01));  // a half circle of radius 5, halved
+    const auto ellipses = modelEntities<EllipseData>(l.doc());
+    REQUIRE(ellipses.size() == 1);
+    CHECK(near(ellipses[0]->majorAxis, Vec2{6, 0}));
+    CHECK(ellipses[0]->ratio == doctest::Approx(0.25));
 }
 
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {

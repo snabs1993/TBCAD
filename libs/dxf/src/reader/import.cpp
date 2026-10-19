@@ -2487,6 +2487,13 @@ void Importer::finish() {
         report_.warn(code::kPaperSpace,
                      std::to_string(paperSpace_) + " paper space entities skipped");
     }
+    if (projected_ > 0) {
+        report_.info(code::kExtrusion3d,
+                     std::to_string(projected_) +
+                         " circles, arcs, ellipses or polylines lie in tilted 3D planes; they are "
+                         "drawn as seen from above",
+                     firstProjectedLine_);
+    }
     if (acadTables_ > 0) {
         report_.info(code::kTableCells,
                      std::to_string(acadTables_) +

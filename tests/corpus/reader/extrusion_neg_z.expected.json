@@ -1,5 +1,5 @@
 {
-  "description": "entities with extrusion (0,0,-1); one tilted arc is skipped",
+  "description": "entities with extrusion (0,0,-1); one arc in a tilted plane is drawn as an ellipse",
   "dxf": {
     "ARC": 2,
     "CIRCLE": 1,
@@ -11,11 +11,11 @@
     "TEXT": 1
   },
   "encoding": "ANSI_1252",
-  "exit": 1,
+  "exit": 0,
   "kinds": {
     "Arc": 1,
     "Circle": 1,
-    "Ellipse": 1,
+    "Ellipse": 2,
     "Hatch": 1,
     "Insert": 1,
     "Polyline": 1,
@@ -29,7 +29,5 @@
     "neg"
   ],
   "version": "AC1015",
-  "warnings": [
-    "dxf.reader.extrusion_3d"
-  ]
+  "warnings": []
 }
