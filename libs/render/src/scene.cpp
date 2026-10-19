@@ -344,6 +344,21 @@ void Scene::removeMany(std::span<const EntityId> ids) {
             remove(id);
         return;
     }
+    // Most ids of a big change are often not in the scene at all (objects that were only queued):
+    // look at the scene's side first instead of hashing every id into a set.
+    std::vector<EntityId> present;
+    for (EntityId id : ids)
+        if (entities_.count(id))
+            present.push_back(id);
+    if (present.size() <= 8) {
+        for (EntityId id : present)
+            remove(id);
+        return;
+    }
+    if (present.size() != ids.size()) {
+        removeMany(present);
+        return;
+    }
     // Erasing one object shifts every later range of its batches, so erasing many one by one is
     // quadratic. Here each touched batch is compacted once.
     const std::unordered_set<EntityId> drop(ids.begin(), ids.end());
