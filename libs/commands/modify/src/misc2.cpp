@@ -329,11 +329,12 @@ public:
             co_return;
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Add",   "Delete",  "Move",    "Weight",  "Close", "Open",
+            ko.keywords = {"Add",   "Delete",   "Move",    "Weight",    "Close", "Open",
                            "Purge", "Polyline", "Reverse", "Tolerance", "Exit"};
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                "Enter an option [Add/Delete/Move/Weight/Close/Open/Purge/Polyline/Reverse/Tolerance/Exit] "
+                "Enter an option "
+                "[Add/Delete/Move/Weight/Close/Open/Purge/Polyline/Reverse/Tolerance/Exit] "
                 "<Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")

@@ -1349,8 +1349,8 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
     for (int i = 0; i <= n; ++i)
         samples.push_back(c.pointAt(c.paramAtLength(len * i / n)));
     const bool closed = sp->closed;
-    std::vector<int> idx = closed ? std::vector<int>{0, n / 4, n / 2, 3 * n / 4}
-                                  : std::vector<int>{0, n};
+    std::vector<int> idx =
+        closed ? std::vector<int>{0, n / 4, n / 2, 3 * n / 4} : std::vector<int>{0, n};
     geom::InterpolateOptions io;
     io.degree = sp->degree;
     io.closed = closed;
@@ -1368,7 +1368,8 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
         if (!geom::curvesOf(trial, nc) || nc.empty())
             return err("The new spline has no geometry.");
         const double nl = nc.front().length();
-        const int m = static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
+        const int m =
+            static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
         std::vector<Vec2> poly;
         poly.reserve(static_cast<std::size_t>(m) + 1);
         for (int i = 0; i <= m; ++i)
