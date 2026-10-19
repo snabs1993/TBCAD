@@ -129,6 +129,7 @@ public:
             } catch (...) {
             }
         }
+        opt.precision = linearPrecision(ctx.doc().header());
         if (auto s = ctx.host().setting("inquiry.precision")) {
             try {
                 opt.precision = std::clamp(std::stoi(*s), 0, 12);
