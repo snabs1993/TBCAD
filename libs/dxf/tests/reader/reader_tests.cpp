@@ -1166,6 +1166,29 @@ TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     CHECK(ds->arrowType == ArrowType::ArchTick);
 }
 
+TEST_CASE("dimension style: DIMSAH takes the separate arrows, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    // Separate arrows without names are the closed filled arrow.
+    p.g(0, "DIMSTYLE").g(2, "Sah").g(342, "_ARCHTICK").g(173, 1).g(140, 2.5).g(41, 2.5);
+    p.g(0, "DIMSTYLE").g(2, "Tick").g(342, "_ARCHTICK").g(343, "_DOT").g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(3, "Sah").g(10, 5.0).g(20, 5.0).g(70, 1);
+    p.g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0);
+    // DIMSAH switched on by the dimension itself: the style's DIMBLK1.
+    p.g(0, "DIMENSION").g(8, "0").g(3, "Tick").g(10, 5.0).g(20, 5.0).g(70, 1);
+    p.g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 173).g(1070, 1).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 2);
+    CHECK(l.doc().dimStyle(dims[0]->style)->arrowType == ArrowType::ClosedFilled);
+    CHECK(l.doc().dimStyleByName("Tick")->arrowType == ArrowType::ArchTick);
+    CHECK(l.doc().dimStyle(dims[1]->style)->arrowType == ArrowType::Dot);
+}
+
 TEST_CASE("dimension style: a text style with a fixed height decides the text height") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "STYLE");

@@ -178,6 +178,8 @@ private:
     DimStyleId dimStyleFor(std::string_view raw) const;
     DimStyleId dimStyleWithOverrides(const Record& r, DimStyleId base);
     std::map<std::string, DimStyleId> dimOverrideStyles_{};
+    // Each dimension style's arrow (DIMBLK) and first separate arrow (DIMBLK1, used with DIMSAH).
+    std::map<std::string, std::pair<ArrowType, ArrowType>> dimArrows_{};
     // Width factor a STYLE record states, by style id (before any stand-in widening): the TEXT
     // group 41 is the object's full factor, TBCAD stores it relative to its style's.
     std::map<std::uint32_t, double> styleRawWidth_{};
