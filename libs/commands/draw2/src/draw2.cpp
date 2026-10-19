@@ -11,6 +11,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makeBreakLine());
     (void)registry.add(detail::makeRevCloud());
     (void)registry.add(detail::makeWipeout());
+    (void)registry.add(detail::makeWipeoutFrame());
     (void)registry.add(detail::makeCenterMark());
     (void)registry.add(detail::makeCenterLine());
     (void)registry.add(detail::makeBoundary());

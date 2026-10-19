@@ -523,6 +523,7 @@ TEST_CASE("wipeouts are plotted in draw order, also inside blocks") {
     EntityId first, last;
     {
         auto tx = doc.begin("add");
+        REQUIRE(tx.modifyHeader([](Header& h) { h.custom[kWipeoutFrameKey] = "0"; }));
         first = tx.add(line({0, 0}, {30, 0})).value();
         REQUIRE(tx.add(wipeout()).ok());
         last = tx.add(line({0, 1}, {30, 1})).value();
@@ -549,6 +550,7 @@ TEST_CASE("wipeouts are plotted in draw order, also inside blocks") {
     EntityId wipe;
     {
         auto tx = d2.begin("block");
+        REQUIRE(tx.modifyHeader([](Header& h) { h.custom[kWipeoutFrameKey] = "0"; }));
         blk = tx.addBlock(BlockDef{.name = "B"}).value();
         REQUIRE(tx.add(line({0, 0}, {30, 0}), blk).ok());
         wipe = tx.add(wipeout(), blk).value();
@@ -564,6 +566,36 @@ TEST_CASE("wipeouts are plotted in draw order, also inside blocks") {
         tx.commit();
     }
     CHECK(kinds(d2) == "FP");
+}
+
+TEST_CASE("the wipeout frame is plotted (1), screen only (2) or hidden (0)") {
+    auto count = [](const char* mode) {
+        Document doc;
+        {
+            auto tx = doc.begin("add");
+            REQUIRE(tx.modifyHeader([&](Header& h) { h.custom[kWipeoutFrameKey] = mode; }));
+            PolylineData p;
+            p.closed = true;
+            for (Vec2 v : {Vec2{10, -5}, Vec2{20, -5}, Vec2{20, 5}, Vec2{10, 5}})
+                p.v.push_back({v, 0, 0, 0});
+            Entity e;
+            e.data = p;
+            e.common.wipeout = true;
+            REQUIRE(tx.add(e).ok());
+            tx.commit();
+        }
+        PlotSettings s;
+        s.paperName = "A4";
+        auto sheet = buildSheet(doc, s);
+        REQUIRE(sheet.ok());
+        std::size_t paths = 0;
+        for (const PlotPrimitive& p : sheet.value().prims)
+            paths += std::holds_alternative<PlotPath>(p);
+        return paths;
+    };
+    CHECK(count("1") == 1);
+    CHECK(count("2") == 0);
+    CHECK(count("0") == 0);
 }
 
 TEST_CASE("layers with plot off, off layers and hidden entities are skipped") {
