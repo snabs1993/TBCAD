@@ -341,7 +341,6 @@ void SceneSync::syncLayers() {
 }
 
 void SceneSync::rebuildDrawOrder() {
-    flushPending();
     // Draw order overrides (bring to front / send to back) change the order of existing
     // entities: rebuild every entity with its position in the document's draw order.
     std::vector<EntityId> order;
@@ -350,6 +349,28 @@ void SceneSync::rebuildDrawOrder() {
         if (e && e->common.visible && !hiddenByLevel(*e))
             order.push_back(id);
     }
+    if (lazyOk(order.size())) {
+        // A big drawing: only the new ranks are recorded, and the objects are built camera first
+        // like any other bulk change (an undo of ERASE ALL with a few objects sent to back must
+        // not build the whole drawing in one go).
+        scene_.removeMany(order);
+        std::vector<PendingRec> recs;
+        recs.reserve(order.size());
+        std::uint32_t rank = 0;
+        for (EntityId id : order) {
+            PendingRec rec;
+            rec.id = id;
+            rec.box = geom::bounds(*doc_.find(id), doc_);
+            rec.order = ++rank;
+            recs.push_back(rec);
+        }
+        std::sort(recs.begin(), recs.end(),
+                  [](const PendingRec& a, const PendingRec& b) { return a.id < b.id; });
+        pending_ = std::move(recs);
+        pendingDead_ = 0;
+        return;
+    }
+    flushPending();
     scene_.removeMany(order);  // one pass instead of one per object
     std::uint32_t rank = 0;
     for (EntityId id : order) {
