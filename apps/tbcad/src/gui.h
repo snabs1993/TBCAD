@@ -248,6 +248,11 @@ private:
     std::size_t activityStamp_ = 0;
     ImVec2 hudSize_{0, 0};
     ImVec2 hoverTipPos_{-1, -1};  // where the pointer rested, for the hover tooltip
+    // Quick Properties next to the pointer: where it was when the selection last changed.
+    ImVec2 quickPropsAt_{-1, -1};
+    std::size_t quickPropsKey_ = 0;
+    bool quickPropsPlaced_ = false;
+    ImVec2 quickPropsSize_{300, 420};
     double hoverTipSince_ = 0;
     // A yes/no setting that also reads right when it was set as text (SETTING command, config).
     bool flag(std::string_view key, bool fallback) const;

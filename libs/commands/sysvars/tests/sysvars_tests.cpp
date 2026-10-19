@@ -262,6 +262,20 @@ TEST_CASE("LWDISPLAY shows or hides lineweights on screen") {
     CHECK(f.host.logContains("LWDISPLAY is 0 or 1"));
 }
 
+TEST_CASE("QPMODE and ROLLOVERTIPS switch Quick Properties and hover tooltips") {
+    Fixture f;
+    f.host.run("QPMODE", {"1"});
+    CHECK(f.host.setting("ui.quickProps") == "1");
+    f.host.run("QPMODE", {"0"});
+    CHECK(f.host.setting("ui.quickProps") == "0");
+    f.host.run("ROLLOVERTIPS", {""});  // Enter keeps the default: on
+    CHECK(f.host.setting("hover.tooltip") == "1");
+    f.host.run("ROLLOVERTIPS", {"0"});
+    CHECK(f.host.setting("hover.tooltip") == "0");
+    f.host.run("QPMODE", {"2"});
+    CHECK(f.host.logContains("QPMODE is 0 or 1"));
+}
+
 TEST_CASE("SCRIPT types each line of the file, RSCRIPT repeats it, Esc stops") {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "tbcad_script_test";

@@ -1312,7 +1312,10 @@ TEST_CASE("hover names the object under the pointer for the tooltip") {
     REQUIRE(f.core->hoveredEntity());
     const std::string text = f.core->describeEntity(f.core->hoveredEntity());
     CHECK(text.find("Line") == 0);
-    CHECK(text.find("length 100.00 mm") != std::string::npos);
+    CHECK(text.find("\nColor: ByLayer") != std::string::npos);
+    CHECK(text.find("\nLayer: 0") != std::string::npos);
+    CHECK(text.find("\nLinetype: ByLayer") != std::string::npos);
+    CHECK(text.find("\nLength: 100.00 mm") != std::string::npos);
     f.core->pointerLeft();
     CHECK(!f.core->hoveredEntity());
 }

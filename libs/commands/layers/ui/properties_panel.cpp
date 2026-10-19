@@ -195,7 +195,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::TextUnformatted("Layer");
         ImGui::TableSetColumnIndex(1);
         ImGui::SetNextItemWidth(-1);
-        std::string layerText = p.layer.varies ? "*varies*" : layerPath(doc, p.layer.value);
+        std::string layerText = p.layer.varies ? "*VARIES*" : layerPath(doc, p.layer.value);
         if (ImGui::BeginCombo("##layer", layerText.c_str(), ImGuiComboFlags_HeightLarge)) {
             for (LayerId id : layerTreeOrder(doc)) {
                 std::string label(static_cast<std::size_t>(layerDepth(doc, id)) * 2, ' ');
@@ -212,7 +212,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::TextUnformatted("Colour");
         ImGui::TableSetColumnIndex(1);
         if (p.color.varies) {
-            if (ImGui::Button("*varies*", ImVec2(-1, 0)))
+            if (ImGui::Button("*VARIES*", ImVec2(-1, 0)))
                 ImGui::OpenPopup("##colour");
         } else {
             Color shown = p.color.value;
@@ -243,7 +243,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::TextUnformatted("Linetype");
         ImGui::TableSetColumnIndex(1);
         ImGui::SetNextItemWidth(-1);
-        std::string ltText = p.linetype.varies ? "*varies*" : linetypeName(doc, p.linetype.value);
+        std::string ltText = p.linetype.varies ? "*VARIES*" : linetypeName(doc, p.linetype.value);
         if (ImGui::BeginCombo("##lt", ltText.c_str(), ImGuiComboFlags_HeightLarge)) {
             if (ImGui::Selectable("ByLayer",
                                   !p.linetype.varies && p.linetype.value == kLinetypeByLayer))
@@ -264,7 +264,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::TextUnformatted("Linetype scale");
         ImGui::TableSetColumnIndex(1);
         if (auto t = editableText("##ltscale", p.linetypeScale.varies
-                                                   ? "*varies*"
+                                                   ? "*VARIES*"
                                                    : formatNumber(p.linetypeScale.value)))
             prop("LTScale", *t);
 
@@ -274,7 +274,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::TextUnformatted("Lineweight");
         ImGui::TableSetColumnIndex(1);
         ImGui::SetNextItemWidth(-1);
-        std::string lwText = p.lineweight.varies ? "*varies*" : lineweightName(p.lineweight.value);
+        std::string lwText = p.lineweight.varies ? "*VARIES*" : lineweightName(p.lineweight.value);
         if (ImGui::BeginCombo("##lw", lwText.c_str(), ImGuiComboFlags_HeightLarge)) {
             static const char* const kWeights[] = {"ByLayer", "ByBlock", "Default", "0.05", "0.09",
                                                    "0.13",    "0.15",    "0.18",    "0.20", "0.25",
@@ -293,7 +293,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
         ImGui::TableSetColumnIndex(1);
         ImGui::SetNextItemWidth(-1);
         std::string trText =
-            p.transparency.varies ? "*varies*" : transparencyName(p.transparency.value);
+            p.transparency.varies ? "*VARIES*" : transparencyName(p.transparency.value);
         if (ImGui::BeginCombo("##tr", trText.c_str(), ImGuiComboFlags_HeightLarge)) {
             static const char* const kSteps[] = {"ByLayer", "ByBlock", "0",  "10", "20", "30",
                                                  "40",      "50",      "60", "70", "80", "90"};
@@ -412,7 +412,7 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
             ImGui::TextUnformatted(w.field.label.c_str());
             ImGui::TableSetColumnIndex(1);
             ImGui::PushID(w.field.id.c_str());
-            const std::string shownText = w.varies ? "*varies*" : w.field.value;
+            const std::string shownText = w.varies ? "*VARIES*" : w.field.value;
             auto setWord = [&](const std::string& value) {
                 std::string first = "-PROP";
                 if (kindInPlay)
@@ -450,7 +450,7 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
             ImGui::TableSetColumnIndex(1);
             std::string text;
             if (f.varies) {
-                text = "*varies*";
+                text = "*VARIES*";
             } else if (f.field.type == FieldType::Flag) {
                 text = f.field.value != 0 ? "Yes" : "No";
             } else if (f.field.type == FieldType::Count) {
