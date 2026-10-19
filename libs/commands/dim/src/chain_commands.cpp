@@ -520,12 +520,76 @@ public:
     }
 };
 
+// Where the dimension line of a linear or aligned dimension runs: its two ends and direction.
+struct DimLine {
+    Vec2 a{}, b{}, u{};
+};
+std::optional<DimLine> dimLineOf(const DimensionData& d) {
+    if (d.kind != DimKind::Linear && d.kind != DimKind::Aligned)
+        return std::nullopt;
+    Vec2 u = d.kind == DimKind::Linear ? Vec2{std::cos(d.rotation), std::sin(d.rotation)}
+                                       : normalized(d.defPts[1] - d.defPts[0]);
+    if (tol::isZeroLength(u))
+        u = {1, 0};
+    const Vec2 n = perp(u);
+    const Vec2 e =
+        d.oblique == 0 ? n : normalized(n * std::cos(d.oblique) - u * std::sin(d.oblique));
+    const double lean = dot(e, n);
+    const Vec2 P = d.defPts[2];
+    return DimLine{d.defPts[0] + e * (dot(P - d.defPts[0], n) / lean),
+                   d.defPts[1] + e * (dot(P - d.defPts[1], n) / lean), u};
+}
+
+// Text put at `at` by hand. With DIMTMOVE 0 the dimension line of a linear or aligned dimension
+// moves with it, as in AutoCAD: the text keeps its lift (DIMTAD) above the line and its middle
+// stays at `at`.
+void placeText(const Document& doc, DimensionData& d, Vec2 at) {
+    d.textPos = at;
+    d.textPosUser = true;
+    if (dim::styleOf(doc, d.style).textMove != DimTextMove::WithLine)
+        return;
+    const auto line = dimLineOf(d);
+    if (!line)
+        return;
+    const Vec2 n = perp(line->u);
+    d.defPts[2] = d.defPts[2] + n * dot(at - d.defPts[2], n);
+    // With the line through the point the text sits lifted from it; move the line back by that.
+    const Vec2 lifted = dim::layoutDimension(doc, d).text.center;
+    d.defPts[2] = d.defPts[2] - n * dot(lifted - at, n);
+}
+
+// DIMTEDIT Left / Right / Center: the text point on the dimension line, next to the extension
+// line on the left (as the text reads) or the right, or in the middle.
+std::optional<Vec2> justifiedText(const Document& doc, const DimensionData& d,
+                                  std::string_view where) {
+    const auto line = dimLineOf(d);
+    if (!line)
+        return std::nullopt;
+    if (where == "Center")
+        return lerp(line->a, line->b, 0.5);
+    const DimStyle& st = dim::styleOf(doc, d.style);
+    const double k = st.overallScale > 0 ? st.overallScale : 1.0;
+    const double edge =
+        2 * st.arrowSize * k + st.textGap * k + dim::layoutDimension(doc, d).text.width / 2;
+    // "Left" as the text reads: text along a line reads left to right or bottom to top.
+    Vec2 t = line->u;
+    if (t.x < -1e-9 || (std::abs(t.x) <= 1e-9 && t.y < 0))
+        t = -t;
+    const bool aFirst = dot(line->a, t) <= dot(line->b, t);
+    const Vec2 left = aFirst ? line->a : line->b, right = aFirst ? line->b : line->a;
+    const double len = distance(left, right);
+    if (len < 2 * edge)
+        return lerp(left, right, 0.5);
+    return where == "Left" ? left + t * edge : right - t * edge;
+}
+
 class TextEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMTEDIT"; }
     std::vector<std::string> defaultAliases() const override { return {"DTE"}; }
     std::string_view description() const override {
-        return "Move dimension text, or reset it to its automatic place";
+        return "Move or turn dimension text, line it up left, right or centre, or reset it to its "
+               "automatic place";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -543,31 +607,54 @@ public:
         const EntityId id = o.id;
 
         cmd::PointOptions po;
-        po.keywords = {"Home"};
+        po.keywords = {"Left", "Right", "Center", "Home", "Angle"};
         auto* c = &ctx;
         po.preview = [c, original](Vec2 cursor, DisplayList& out) {
             DimensionData d = original;
-            d.textPos = cursor;
-            d.textPosUser = true;
+            placeText(c->doc(), d, cursor);
             dim::refresh(c->doc(), d);
             Entity e;
             e.data = Indirect<DimensionData>(std::move(d));
             previewEntity(*c, std::move(e), out);
         };
-        auto where = co_await ctx.getPoint("Specify new text location or [Home]", po);
-        const bool home = where.status == Status::Keyword && where.keyword == "Home";
-        if (!where.ok() && !home)
+        auto where = co_await ctx.getPoint(
+            "Specify new location for dimension text or [Left/Right/Center/Home/Angle]", po);
+        const std::string kw = where.status == Status::Keyword ? where.keyword : std::string();
+        if (!where.ok() && kw.empty())
             co_return;
+        double angle = 0;
+        if (kw == "Angle") {
+            auto a = co_await ctx.getAngle("Specify angle for dimension text, 0 = default",
+                                           cmd::AngleOptions{.defaultValue = 0.0});
+            if (!a.ok())
+                co_return;
+            angle = a.value;
+        }
+        std::optional<Vec2> lined;
+        if (kw == "Left" || kw == "Right" || kw == "Center") {
+            lined = justifiedText(ctx.doc(), original, kw);
+            if (!lined) {
+                ctx.message(
+                    "Left, Right and Center line up the text of linear and aligned "
+                    "dimensions only.");
+                co_return;
+            }
+        }
         ctx.setUndoLabel("DIMTEDIT");
         auto r = ctx.tx().modify(id, [&](Entity& ent) {
             auto* d = entityAs<DimensionData>(ent);
             if (!d)
                 return;
-            if (home) {
+            if (kw == "Home") {
                 d->textPosUser = false;
-            } else {
-                d->textPos = where.point;
+            } else if (kw == "Angle") {
+                d->textRotated = std::abs(angle) > 1e-9;
+                d->textRotation = d->textRotated ? angle : 0;
+            } else if (lined) {
+                d->textPos = *lined;
                 d->textPosUser = true;
+            } else {
+                placeText(ctx.doc(), *d, where.point);
             }
             dim::refresh(ctx.doc(), *d);
         });
@@ -581,7 +668,7 @@ public:
     std::string_view name() const override { return "DIMEDIT"; }
     std::vector<std::string> defaultAliases() const override { return {"DED"}; }
     std::string_view description() const override {
-        return "Replace the text of dimensions, return them to the measured text and place, "
+        return "Replace the text of dimensions, return the text to its automatic place and angle, "
                "rotate the text or lean the extension lines";
     }
 
@@ -635,8 +722,8 @@ public:
                 if (!d)
                     return;
                 if (home) {
+                    // Back to the automatic place and angle; replaced text stays (as in AutoCAD).
                     d->textPosUser = false;
-                    d->textOverride.clear();
                     d->textRotated = false;
                     d->textRotation = 0;
                 } else if (rotate) {
