@@ -974,15 +974,30 @@ TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in 
     TextData td;
     td.utf8 = "Room 1 / room 2";
     EntityId t = f.add(Indirect<TextData>(td));
-    f.host.run("FIND", {"room", "", "No"});
+    f.host.run("FIND", {"room", "", "No", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
     CHECK(f.host.selection() == std::vector<EntityId>{t});  // the matches are selected
-    f.host.run("FIND", {"room", "Hall", "No"});
+    f.host.run("FIND", {"room", "Hall", "No", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1 / Hall 2");
     f.host.undo();
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
-    f.host.run("FIND", {"room", "Hall", "Yes"});
+    f.host.run("FIND", {"room", "Hall", "Yes", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / Hall 2");
+}
+
+TEST_CASE("FIND with whole words only leaves matches inside longer words alone") {
+    Fixture f;
+    TextData td;
+    td.utf8 = "room 1, bedroom, room_2, room.";
+    EntityId t = f.add(Indirect<TextData>(td));
+    MTextData mt;
+    mt.utf8 = "roomy and {\\Lroom}";
+    EntityId m = f.add(Indirect<MTextData>(mt));
+    f.host.run("FIND", {"room", "Hall", "No", "Yes"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1, bedroom, room_2, Hall.");
+    CHECK(entityAs<MTextData>(f.get(m))->utf8 == "roomy and {\\LHall}");
+    f.host.run("FIND", {"room", "Hall", "No", "No"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1, bedHall, Hall_2, Hall.");
 }
 
 TEST_CASE("FIND also changes text inside block definitions") {
@@ -999,7 +1014,7 @@ TEST_CASE("FIND also changes text inside block definitions") {
         inner = tx.add(std::move(e), room).value();
         tx.commit();
     }
-    f.host.run("FIND", {"room", "Hall", "No"});
+    f.host.run("FIND", {"room", "Hall", "No", "No"});
     CHECK(entityAs<TextData>(f.get(inner))->utf8 == "Hall label");
     f.host.undo();
     CHECK(entityAs<TextData>(f.get(inner))->utf8 == "room label");
@@ -1653,7 +1668,7 @@ TEST_CASE("FIND replaces in text, mtext, attributes, table cells, dimensions and
     const EntityId leader = f.add(std::move(ld));
     const EntityId other = f.add(findText("Window W1", {0, 10}));
 
-    (void)f.host.run("FIND", {"door", "gate", "No"});
+    (void)f.host.run("FIND", {"door", "gate", "No", "No"});
     CHECK(entityAs<TextData>(f.get(text))->utf8 == "gate D1");
     CHECK(entityAs<TextData>(f.get(other))->utf8 == "Window W1");
     CHECK(entityAs<MTextData>(f.get(mtext))->utf8 == "Fire gate, steel gate");
@@ -1676,12 +1691,12 @@ TEST_CASE("FIND replaces in text, mtext, attributes, table cells, dimensions and
 TEST_CASE("FIND honours Match case and an empty replacement only counts") {
     Fixture f;
     const EntityId a = f.add(findText("Door door DOOR"));
-    (void)f.host.run("FIND", {"door", "", "No"});
+    (void)f.host.run("FIND", {"door", "", "No", "No"});
     CHECK(entityAs<TextData>(f.get(a))->utf8 == "Door door DOOR");
     CHECK(f.host.logContains("3 match(es) in 1 object(s)."));
-    (void)f.host.run("FIND", {"door", "X", "Yes"});
+    (void)f.host.run("FIND", {"door", "X", "Yes", "No"});
     CHECK(entityAs<TextData>(f.get(a))->utf8 == "Door X DOOR");
-    (void)f.host.run("FIND", {"nothing", "X", "No"});
+    (void)f.host.run("FIND", {"nothing", "X", "No", "No"});
     CHECK(f.host.logContains("No match for"));
 }
 
@@ -1697,7 +1712,7 @@ TEST_CASE("FIND searches the layout sheets too") {
         sheet = tx.add(std::move(e), b).value();
         tx.commit();
     }
-    (void)f.host.run("FIND", {"Door", "Gate", "No"});
+    (void)f.host.run("FIND", {"Door", "Gate", "No", "No"});
     CHECK(entityAs<TextData>(f.get(model))->utf8 == "Gate in model");
     CHECK(entityAs<TextData>(f.get(sheet))->utf8 == "Gate on sheet");
 }
