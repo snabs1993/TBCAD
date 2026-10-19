@@ -158,12 +158,19 @@ Strokes strokes(const MlineData& d, const Style& style) {
     Strokes out;
     // Drop repeated points; fewer than two distinct points draw nothing.
     std::vector<Vec2> p;
-    for (const Vec2& v : d.v)
-        if (p.empty() || distance(p.back(), v) > 1e-12)
-            p.push_back(v);
+    std::vector<std::size_t> kept(d.v.size());  // vertex of the source path -> vertex of `p`
+    for (std::size_t j = 0; j < d.v.size(); ++j) {
+        if (p.empty() || distance(p.back(), d.v[j]) > 1e-12)
+            p.push_back(d.v[j]);
+        kept[j] = p.size() - 1;
+    }
     bool closed = d.closed;
-    if (closed && p.size() > 2 && distance(p.front(), p.back()) <= 1e-12)
+    if (closed && p.size() > 2 && distance(p.front(), p.back()) <= 1e-12) {
+        for (std::size_t& k : kept)
+            if (k == p.size() - 1)
+                k = 0;
         p.pop_back();
+    }
     if (p.size() < 2)
         return out;
     if (p.size() < 3)
@@ -218,11 +225,17 @@ Strokes strokes(const MlineData& d, const Style& style) {
             line.push_back(p[i] + miter[i] * o);
         capPoints[k] = line;
         std::vector<std::pair<double, double>> gaps;  // in segment + fraction units
-        for (const MlineCut& c : d.cuts)
-            if (rank[k] >= c.lo && rank[k] <= c.hi && c.seg < segs) {
-                const double a = std::clamp(c.t0, 0.0, 1.0), b = std::clamp(c.t1, 0.0, 1.0);
-                gaps.emplace_back(c.seg + std::min(a, b), c.seg + std::max(a, b));
-            }
+        for (const MlineCut& c : d.cuts) {
+            if (rank[k] < c.lo || rank[k] > c.hi || c.seg >= d.v.size())
+                continue;
+            // The cut names a segment of the path as drawn, repeated points included.
+            const std::size_t from = kept[c.seg];
+            const std::size_t to = kept[(c.seg + 1) % d.v.size()];
+            if (from == to || from >= segs || (!d.closed && c.seg + 1 >= d.v.size()))
+                continue;
+            const double a = std::clamp(c.t0, 0.0, 1.0), b = std::clamp(c.t1, 0.0, 1.0);
+            gaps.emplace_back(from + std::min(a, b), from + std::max(a, b));
+        }
         if (gaps.empty()) {
             out.lines.push_back(std::move(line));
             out.closed.push_back(closed);
