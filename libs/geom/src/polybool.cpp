@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <map>
+#include <unordered_map>
 #include <utility>
 
 #include "tbcad/geom/box_grid.h"
@@ -100,16 +103,58 @@ void splitParams(Vec2 a, Vec2 b, Vec2 c, Vec2 d, double eps, std::vector<double>
     }
 }
 
-std::vector<Edge> splitEdges(const std::vector<Ring>& mine, const std::vector<Ring>& other,
-                             int owner, double eps) {
+// The segments of a set of rings in a grid, numbered ring after ring, vertex after vertex.
+struct SegSet {
+    const std::vector<Ring>& rings;
+    std::vector<std::pair<Vec2, Vec2>> segs{};
+    std::vector<BBox2> boxes{};
+    BBox2 all{};
+    BoxGrid grid;
+
+    explicit SegSet(const std::vector<Ring>& r) : rings(r), grid(build(r)) {}
+
+    template <class F>
+    void query(const BBox2& q, F&& f) const {
+        grid.query(q, f);
+    }
+
+private:
+    const std::vector<BBox2>& build(const std::vector<Ring>& r) {
+        for (const Ring& ring : r) {
+            for (std::size_t i = 0; i < ring.size(); ++i) {
+                const Vec2 a = ring[i], b = ring[(i + 1) % ring.size()];
+                BBox2 bb;
+                bb.expand(a);
+                bb.expand(b);
+                all.merge(bb);
+                segs.push_back({a, b});
+                boxes.push_back(bb);
+            }
+        }
+        return boxes;
+    }
+};
+
+BBox2 grown(BBox2 b, double by) {
+    b.min = {b.min.x - by, b.min.y - by};
+    b.max = {b.max.x + by, b.max.y + by};
+    return b;
+}
+
+std::vector<Edge> splitEdges(const std::vector<Ring>& mine, const SegSet& other, int owner,
+                             double eps) {
     std::vector<Edge> out;
+    std::vector<double> ts;
     for (const Ring& r : mine) {
         for (std::size_t i = 0; i < r.size(); ++i) {
             const Vec2 a = r[i], b = r[(i + 1) % r.size()];
-            std::vector<double> ts;
-            for (const Ring& o : other)
-                for (std::size_t k = 0; k < o.size(); ++k)
-                    splitParams(a, b, o[k], o[(k + 1) % o.size()], eps, ts);
+            ts.clear();
+            BBox2 q;
+            q.expand(a);
+            q.expand(b);
+            other.query(grown(q, 2 * eps + 1e-12), [&](std::size_t k) {
+                splitParams(a, b, other.segs[k].first, other.segs[k].second, eps, ts);
+            });
             std::sort(ts.begin(), ts.end());
             Vec2 prev = a;
             for (double t : ts) {
@@ -129,31 +174,48 @@ std::vector<Edge> splitEdges(const std::vector<Ring>& mine, const std::vector<Ri
 enum class Where { Out, In, SameDir, OppositeDir };
 
 // Where an edge of one region lies relative to the other (normalised) region.
-Where classify(const Edge& e, const std::vector<Ring>& other, double eps) {
+Where classify(const Edge& e, const SegSet& other, double eps, std::vector<std::size_t>& near) {
     const Vec2 mid{(e.a.x + e.b.x) / 2, (e.a.y + e.b.y) / 2};
     double best = eps;
     Vec2 dir{};
     bool on = false;
-    for (const Ring& r : other) {
-        for (std::size_t i = 0; i < r.size(); ++i) {
-            const Vec2 a = r[i], b = r[(i + 1) % r.size()];
-            const double d = distToSegment(mid, a, b);
-            if (d <= best) {
-                // Only edges that run along ours count as shared; one that merely passes
-                // through the midpoint at an angle does not (the midpoint is then not on it).
-                const Vec2 u = b - a, v = e.b - e.a;
-                const double ul = std::hypot(u.x, u.y), vl = std::hypot(v.x, v.y);
-                if (ul > 0 && vl > 0 && std::fabs(cross(u, v)) / (ul * vl) < 1e-6) {
-                    best = d;
-                    dir = u;
-                    on = true;
-                }
+    // The segments within eps of the midpoint, in the order a full scan would meet them (a tie
+    // goes to the later one).
+    near.clear();
+    BBox2 mb;
+    mb.expand(mid);
+    other.query(grown(mb, eps + 1e-12), [&](std::size_t k) { near.push_back(k); });
+    std::sort(near.begin(), near.end());
+    for (std::size_t k : near) {
+        const Vec2 a = other.segs[k].first, b = other.segs[k].second;
+        const double d = distToSegment(mid, a, b);
+        if (d <= best) {
+            // Only edges that run along ours count as shared; one that merely passes
+            // through the midpoint at an angle does not (the midpoint is then not on it).
+            const Vec2 u = b - a, v = e.b - e.a;
+            const double ul = std::hypot(u.x, u.y), vl = std::hypot(v.x, v.y);
+            if (ul > 0 && vl > 0 && std::fabs(cross(u, v)) / (ul * vl) < 1e-6) {
+                best = d;
+                dir = u;
+                on = true;
             }
         }
     }
     if (on)
         return dot(dir, e.b - e.a) > 0 ? Where::SameDir : Where::OppositeDir;
-    return parityInside(other, mid) ? Where::In : Where::Out;
+    // Even-odd test with a ray towards +x: only segments that straddle the midpoint's y and reach
+    // past its x can cross it.
+    bool in = false;
+    BBox2 rb;
+    rb.expand(mid);
+    rb.expand({other.all.max.x, mid.y});
+    other.query(rb, [&](std::size_t k) {
+        const Vec2 a = other.segs[k].first, b = other.segs[k].second;
+        if ((a.y > mid.y) != (b.y > mid.y) &&
+            mid.x < (b.x - a.x) * (mid.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    });
+    return in ? Where::In : Where::Out;
 }
 
 struct Canon {
@@ -290,12 +352,14 @@ Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps)
             return a;
         return {};
     }
-    std::vector<Edge> ea = splitEdges(a.rings, b.rings, 0, eps);
-    std::vector<Edge> eb = splitEdges(b.rings, a.rings, 1, eps);
+    const SegSet sa(a.rings), sb(b.rings);
+    std::vector<Edge> ea = splitEdges(a.rings, sb, 0, eps);
+    std::vector<Edge> eb = splitEdges(b.rings, sa, 1, eps);
+    std::vector<std::size_t> near;
 
     std::vector<Edge> keep;
     for (const Edge& e : ea) {
-        const Where w = classify(e, b.rings, eps);
+        const Where w = classify(e, sb, eps, near);
         bool k = false;
         switch (op) {
             case BoolOp::Union:
@@ -312,7 +376,7 @@ Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps)
             keep.push_back(e);
     }
     for (const Edge& e : eb) {
-        const Where w = classify(e, a.rings, eps);
+        const Where w = classify(e, sa, eps, near);
         switch (op) {
             case BoolOp::Union:
                 if (w == Where::Out)
@@ -335,6 +399,26 @@ Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps)
         e.b = canon.get(e.b);
     }
     std::vector<bool> used(keep.size(), false);
+    // Edges by their start point. Canon makes equal points bit-identical and keeps different ones
+    // more than eps apart, so the next edge of a chain is found by an exact lookup.
+    struct PointKey {
+        double x, y;
+        bool operator==(const PointKey& o) const { return x == o.x && y == o.y; }
+    };
+    struct PointHash {
+        std::size_t operator()(const PointKey& k) const {
+            std::uint64_t a, b;
+            std::memcpy(&a, &k.x, sizeof a);
+            std::memcpy(&b, &k.y, sizeof b);
+            return static_cast<std::size_t>((a * 0x9E3779B97F4A7C15ull) ^
+                                            (b * 0xC2B2AE3D27D4EB4Full + (a >> 7)));
+        }
+    };
+    auto keyOf = [](Vec2 p) { return PointKey{p.x + 0.0, p.y + 0.0}; };  // -0 becomes +0
+    std::unordered_map<PointKey, std::vector<std::size_t>, PointHash> starts;
+    starts.reserve(keep.size());
+    for (std::size_t k = 0; k < keep.size(); ++k)
+        starts[keyOf(keep[k].a)].push_back(k);
     Region out;
     for (std::size_t i = 0; i < keep.size(); ++i) {
         if (used[i])
@@ -349,11 +433,13 @@ Region booleanLocal(const Region& ina, const Region& inb, BoolOp op, double eps)
             if (distance(end, start) <= eps)
                 break;
             std::size_t next = keep.size();
-            for (std::size_t k = 0; k < keep.size(); ++k)
-                if (!used[k] && distance(keep[k].a, end) <= eps) {
-                    next = k;
-                    break;
-                }
+            if (auto it = starts.find(keyOf(end)); it != starts.end()) {
+                for (std::size_t k : it->second)
+                    if (!used[k]) {
+                        next = k;
+                        break;
+                    }
+            }
             if (next == keep.size())
                 break;  // open chain: a degenerate result, dropped by normalisation
             cur = next;
