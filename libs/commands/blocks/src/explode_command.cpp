@@ -13,22 +13,27 @@ namespace {
 class ExplodeCommand final : public cmd::Command {
 public:
     // XPLODE is EXPLODE that first asks what layer and colour the parts get.
-    explicit ExplodeCommand(bool xplode = false) : xplode_(xplode) {}
-    std::string_view name() const override { return xplode_ ? "XPLODE" : "EXPLODE"; }
+    explicit ExplodeCommand(bool xplode = false, bool burst = false)
+        : xplode_(xplode), burst_(burst) {}
+    std::string_view name() const override {
+        return burst_ ? "BURST" : xplode_ ? "XPLODE" : "EXPLODE";
+    }
     std::vector<std::string> defaultAliases() const override {
-        return xplode_ ? std::vector<std::string>{} : std::vector<std::string>{"X"};
+        return xplode_ || burst_ ? std::vector<std::string>{} : std::vector<std::string>{"X"};
     }
     std::string_view description() const override {
-        return xplode_ ? "Break blocks and polylines into parts and set their layer and colour"
-                       : "Break blocks and polylines into parts";
+        return burst_ ? "Break blocks into parts; attributes become text with their values"
+               : xplode_ ? "Break blocks and polylines into parts and set their layer and colour"
+                         : "Break blocks and polylines into parts";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
         auto base = detail::editableFilter(doc);
         auto sel = co_await ctx.getSelection(
-            "Select objects to explode", cmd::SelectionOptions{.filter = [base](const Entity& e) {
-                return base(e) && blocks::canExplode(kind(e));
+            "Select objects to explode", cmd::SelectionOptions{.filter = [base, burst = burst_](const Entity& e) {
+                return base(e) && blocks::canExplode(kind(e)) &&
+                       (!burst || kind(e) == EntityKind::Insert);
             }});
         if (!sel.ok())
             co_return;
@@ -118,6 +123,7 @@ public:
 
 private:
     bool xplode_;
+    bool burst_;
 };
 
 }  // namespace
@@ -128,6 +134,10 @@ std::unique_ptr<cmd::Command> makeExplodeCommand() {
 
 std::unique_ptr<cmd::Command> makeXplodeCommand() {
     return std::make_unique<ExplodeCommand>(true);
+}
+
+std::unique_ptr<cmd::Command> makeBurstCommand() {
+    return std::make_unique<ExplodeCommand>(false, true);
 }
 
 }  // namespace tbcad::block_cmds

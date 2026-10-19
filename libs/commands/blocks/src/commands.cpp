@@ -30,6 +30,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMinsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeXplodeCommand());
+    (void)registry.add(makeBurstCommand());
     (void)registry.add(makeNCopyCommand());
     (void)registry.add(makeArrayCommand());
     (void)registry.add(makeArrayRectCommand());
