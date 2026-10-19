@@ -1,3 +1,5 @@
+#include <functional>
+
 #include "support.h"
 #include "tbcad/text/text.h"
 
@@ -260,4 +262,82 @@ TEST_CASE("a dimension text override can hold fields") {
     d.textOverride = "<> (%<sheet>%)";
     Layout L = layoutDimension(doc, d);
     CHECK(L.text.utf8 == "100.00 (A-101)");
+}
+
+namespace {
+Layout withStyle(const std::function<void(DimStyle&)>& edit, const DimensionData& d) {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, edit));
+    tx.commit();
+    return layoutDimension(doc, d);
+}
+}  // namespace
+
+TEST_CASE("DIMSE1/2 drop extension lines, DIMSD1/2 drop half the dimension line and its arrow") {
+    const auto d = linear({0, 0}, {100, 0}, {50, 10});
+    Layout se = withStyle([](DimStyle& s) { s.suppressExt1 = true; }, d);
+    CHECK(count(se, Role::ExtLine) == 1);
+    CHECK(findExt(se, {100, 0.625}));
+    Layout sd = withStyle([](DimStyle& s) { s.suppressDim2 = true; }, d);
+    REQUIRE(sd.arrows.size() == 1);
+    CHECK(arrowBox(sd.arrows[0]).min.x == doctest::Approx(0));
+    for (const auto& l : sd.lines)
+        if (l.role == Role::DimLine) {
+            const double hi = std::max(l.pts.front().x, l.pts.back().x);
+            CHECK(hi <= 50 + 1e-9);
+        }
+}
+
+TEST_CASE("DIMJUST puts the text next to an extension line") {
+    const auto d = linear({0, 0}, {100, 0}, {50, 10});
+    Layout c = withStyle([](DimStyle&) {}, d);
+    Layout one = withStyle([](DimStyle& s) { s.textJustify = 1; }, d);
+    Layout two = withStyle([](DimStyle& s) { s.textJustify = 2; }, d);
+    CHECK(c.text.center.x == doctest::Approx(50));
+    CHECK(one.text.center.x < 30);
+    CHECK(two.text.center.x > 70);
+}
+
+TEST_CASE(
+    "DIMTIX keeps the text inside, DIMSOXD drops arrows that do not fit, DIMTOFL off "
+    "leaves the inside empty") {
+    Document probe;
+    const double tw = text::measureWidth(text::styleFor(probe, {}), "0.00", 2.5);
+    const double len = tw + 2.5 + 0.1;  // text fits, arrows do not (see the fit test)
+    const auto d = linear({0, 0}, {len, 0}, {len / 2, 10});
+    Layout soxd = withStyle([](DimStyle& s) { s.suppressArrowsOutside = true; }, d);
+    CHECK(soxd.arrows.empty());
+    Layout tofl = withStyle([](DimStyle& s) { s.forceLineInside = false; }, d);
+    for (const auto& l : tofl.lines)
+        if (l.role == Role::DimLine) {
+            const double lo = std::min(l.pts.front().x, l.pts.back().x);
+            const double hi = std::max(l.pts.front().x, l.pts.back().x);
+            CHECK((hi <= 1e-9 || lo >= len - 1e-9));
+        }
+    // 3 mm: the text would go outside; DIMTIX keeps it between the extension lines.
+    const auto small = linear({0, 0}, {3, 0}, {1.5, 10});
+    Layout out = withStyle([](DimStyle&) {}, small);
+    Layout tix = withStyle([](DimStyle& s) { s.textInsideForced = true; }, small);
+    CHECK(out.text.center.x > 3);
+    CHECK(tix.text.center.x == doctest::Approx(1.5));
+}
+
+TEST_CASE("DIMTOH sets the orientation of text beyond the extension lines apart from DIMTIH") {
+    const auto d = linear({0, 0}, {3, 3}, {1.5, 1.5});
+    auto rot = [&](bool ih, bool oh) {
+        Document doc;
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) {
+            s.textAlign = ih ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+            s.textAlignOutside = oh ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+        }));
+        tx.commit();
+        auto a = aligned({0, 0}, {3, 0}, {1.5, 8});  // 3 mm: the text goes outside
+        a.defPts[1] = {3, 3};
+        return layoutDimension(doc, a).text.rotation;
+    };
+    (void)d;
+    CHECK(rot(false, true) == doctest::Approx(0));
+    CHECK(std::abs(rot(true, false)) > 0.1);
 }

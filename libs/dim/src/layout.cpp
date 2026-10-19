@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "tbcad/dim/dim.h"
 #include "tbcad/text/field.h"
@@ -110,10 +111,12 @@ struct Lift {
     bool centered = false;
     Vec2 offset{};
 };
-Lift liftFor(const Ctx& c, Vec2 lineDir, double rotText) {
+Lift liftFor(const Ctx& c, Vec2 lineDir, double rotText,
+             std::optional<DimTextAlign> align = std::nullopt) {
     Lift l;
+    const DimTextAlign al = align.value_or(c.st.textAlign);
     l.centered = c.st.textPlacement == DimTextPlacement::Centered ||
-                 (c.st.textAlign == DimTextAlign::Horizontal && std::abs(lineDir.y) > 0.5);
+                 (al == DimTextAlign::Horizontal && std::abs(lineDir.y) > 0.5);
     if (!l.centered)
         l.offset = perp(unit(rotText)) * (c.gap + c.th / 2);
     return l;
@@ -146,7 +149,7 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     const double ss[2] = {s1, s2};
     for (int i = 0; i < 2; ++i) {
         double dist = std::abs(ss[i]);
-        if (dist <= c.off)
+        if (dist <= c.off || (i == 0 ? c.st.suppressExt1 : c.st.suppressExt2))
             continue;
         double sg = ss[i] >= 0 ? 1 : -1;
         L.lines.push_back({{pts[i] + e * (sg * c.off), feet[i] + e * (sg * c.ext)}, Role::ExtLine});
@@ -158,13 +161,22 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     const Vec2 uu = len > c.tol ? normalized(B - A) : u;
 
     const double tw = textWidth(c, txt);
-    const double rotText = d.textRotated                                ? d.textRotation
-                           : c.st.textAlign == DimTextAlign::Horizontal ? 0
-                                                                        : readable(angleOf(uu));
-    const Lift lift = liftFor(c, uu, rotText);
+    auto rotFor = [&](DimTextAlign al) {
+        return d.textRotated                    ? d.textRotation
+               : al == DimTextAlign::Horizontal ? 0
+                                                : readable(angleOf(uu));
+    };
+    double rotText = rotFor(c.st.textAlign);
+    Lift lift = liftFor(c, uu, rotText);
     const double stub = 2 * c.arrow;
     const double textW = tw > 0 ? tw + 2 * c.gap : 0;
-    const double he = halfExtent(uu, rotText, tw, c.th);
+    double he = halfExtent(uu, rotText, tw, c.th);
+    // Text beyond the extension lines follows DIMTOH instead of DIMTIH.
+    auto textOutside = [&] {
+        rotText = rotFor(c.st.textAlignOutside);
+        lift = liftFor(c, uu, rotText, c.st.textAlignOutside);
+        he = halfExtent(uu, rotText, tw, c.th);
+    };
 
     bool arrowsIn = false, textIn = true;
     Vec2 center{};
@@ -175,6 +187,8 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         center = d.textPos;
         double tc = dot(center - A, uu);
         textIn = tc > 0 && tc < len;
+        if (!textIn)
+            textOutside();
         lineEnd = (arrowsIn ? len : len + stub) + c.dext;
         if (!textIn && tw > 0 && c.st.textMove != DimTextMove::Free) {
             Vec2 E = tc <= 0 ? A - uu * (arrowsIn ? 0 : stub) : B + uu * (arrowsIn ? 0 : stub);
@@ -192,6 +206,9 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         const DimFit fit = c.st.fit;
         if (len >= textW + 2 * c.arrow) {
             arrowsIn = true;
+            textIn = true;
+        } else if (c.st.textInsideForced && tw > 0) {  // DIMTIX
+            arrowsIn = false;
             textIn = true;
         } else if (fit == DimFit::BothOutside) {
             arrowsIn = false;
@@ -218,21 +235,35 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
             textIn = false;
         }
         if (textIn) {
-            center = A + uu * (len / 2) + lift.offset;
+            double along = len / 2;
+            // DIMJUST: next to one extension line, when the text fits there with the arrows.
+            if (c.st.textJustify != 0 && arrowsIn && len >= textW + 4 * c.arrow) {
+                const bool nearA = (c.st.textJustify == 1) != swap;
+                const double edge = 2 * c.arrow + textW / 2;
+                along = nearA ? edge : len - edge;
+            }
+            center = A + uu * along + lift.offset;
             lineEnd = (arrowsIn ? len : len + stub) + c.dext;
         } else {
+            textOutside();
             double lend = arrowsIn ? len : len + stub;
             double near = lend + c.gap;
             center = A + uu * (near + he) + lift.offset;
             lineEnd = lift.centered ? lend : near + 2 * he;
         }
     }
-    const double lineStart = (arrowsIn ? 0 : -stub) - (arrowsIn ? c.dext : 0);
+    // DIMSOXD: arrows that do not fit are left out (with their stubs).
+    const bool noArrows = !arrowsIn && c.st.suppressArrowsOutside;
+    const double lineStart = (arrowsIn ? 0 : noArrows ? 0 : -stub) - (arrowsIn ? c.dext : 0);
+    if (noArrows && textIn)
+        lineEnd = len;
+    // DIMTOFL off: arrows outside leave nothing between the extension lines.
+    const bool gapInside = !arrowsIn && !c.st.forceLineInside && !noArrows;
 
     // Dimension line, broken around text that sits on it.
     double b0 = 0, b1 = 0;
     bool brk = false;
-    if (tw > 0 && textIn) {
+    if (tw > 0 && textIn && !gapInside) {
         double lateral = std::abs(dot(center - A, perp(uu)));
         if (textOnLine(c, lateral)) {
             double tc = dot(center - A, uu);
@@ -242,11 +273,21 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
             brk = true;
         }
     }
+    // DIMSD1 / DIMSD2: the half of the line (and its arrow) at that extension line is left out.
+    const bool hideA = swap ? c.st.suppressDim2 : c.st.suppressDim1;
+    const bool hideB = swap ? c.st.suppressDim1 : c.st.suppressDim2;
     auto seg = [&](double s0, double s1) {
+        if (hideA)
+            s0 = std::max(s0, len / 2);
+        if (hideB)
+            s1 = std::min(s1, len / 2);
         if (s1 - s0 > c.tol)
             addSeg(L, A + uu * s0, A + uu * s1, Role::DimLine, c.tol);
     };
-    if (brk) {
+    if (gapInside) {
+        seg(lineStart, 0);
+        seg(len, lineEnd);
+    } else if (brk) {
         seg(lineStart, std::min(lineEnd, b0));
         seg(std::max(lineStart, b1), lineEnd);
     } else {
@@ -255,8 +296,12 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     if (leader.size() == 2)
         addSeg(L, leader[0], leader[1], Role::DimLine, c.tol);
 
-    addArrow(L, c, A, arrowsIn ? uu : -uu);
-    addArrow(L, c, B, arrowsIn ? -uu : uu);
+    if (!noArrows) {
+        if (!hideA)
+            addArrow(L, c, A, arrowsIn ? uu : -uu);
+        if (!hideB)
+            addArrow(L, c, B, arrowsIn ? -uu : uu);
+    }
     if (tw > 0 || !txt.empty())
         L.text = {txt, center, rotText, c.th, false, false, tw};
 }

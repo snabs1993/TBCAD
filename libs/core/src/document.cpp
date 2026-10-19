@@ -604,6 +604,7 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     }
     if (!std::isfinite(r.linearFactor) || !(r.linearFactor > 0))
         return invalid("linear scale factor must be positive");
+    r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.altPrecision = std::clamp(r.altPrecision, 0, 16);
     r.tolPrecision = std::clamp(r.tolPrecision, 0, 16);
     return {};

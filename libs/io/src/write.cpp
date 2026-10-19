@@ -220,13 +220,16 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 r.altPrecision == 2 && r.altPrefix.empty() && r.altSuffix.empty() &&
                 r.tolerance == DimTolerance::None && r.tolUpper == 0 && r.tolLower == 0 &&
                 r.tolPrecision == 2 && r.linearFactor == 1 && r.fit == DimFit::Best &&
-                r.textMove == DimTextMove::WithLine)
+                r.textMove == DimTextMove::WithLine && packDimRules(r) == kDimRulesDefault &&
+                r.textJustify == 0)
                 continue;
             const bool extras =
                 r.linearFactor != 1 || r.fit != DimFit::Best || r.textMove != DimTextMove::WithLine;
+            const bool rules = packDimRules(r) != kDimRulesDefault || r.textJustify != 0;
             dstx.varint(id.value);
-            // bit 0: alternate units on; bit 1: linear factor, fit and text movement follow
-            dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0));
+            // bit 0: alternate units on; bit 1: linear factor, fit and text movement follow;
+            // bit 2: the text and line rules follow
+            dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0) | (rules ? 4 : 0));
             dstx.f64(r.altScale);
             dstx.u8(static_cast<std::uint8_t>(r.altUnit));
             dstx.i32(r.altPrecision);
@@ -240,6 +243,10 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 dstx.f64(r.linearFactor);
                 dstx.u8(static_cast<std::uint8_t>(r.fit));
                 dstx.u8(static_cast<std::uint8_t>(r.textMove));
+            }
+            if (rules) {
+                dstx.u8(packDimRules(r));
+                dstx.u8(static_cast<std::uint8_t>(r.textJustify));
             }
             ++dstxCount;
         }
