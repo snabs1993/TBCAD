@@ -504,7 +504,7 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
         for (int step = 0; step < 40; ++step) {
             const std::size_t a = rng() % ids.size(), b = rng() % ids.size();
             const std::string ra = std::to_string(rnd(0.2, 6.0)), rb = std::to_string(rnd(0.2, 6.0));
-            switch (rng() % 8) {
+            switch (rng() % 14) {
                 case 0:
                     go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickOn(a % ss.size())),
                                         ScriptItem::enter()});
@@ -534,8 +534,33 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
                 case 6:
                     go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()});
                     break;
-                default:
+                case 7:
                     go("JOIN", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter()});
+                    break;
+                case 8:
+                    go("MOVE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
+                                std::to_string(rnd(-9, 9)) + "," + std::to_string(rnd(-9, 9))});
+                    break;
+                case 9:
+                    go("ROTATE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "5,5",
+                                  std::to_string(rnd(-180, 180))});
+                    break;
+                case 10:
+                    go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "5,5",
+                                 std::to_string(rnd(0.3, 2.5))});
+                    break;
+                case 11:
+                    go("MIRROR", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
+                                  std::to_string(rnd(-5, 5)) + "," + std::to_string(rnd(-5, 5)), "N"});
+                    break;
+                case 12:
+                    go("HATCH", {std::to_string(rnd(-2, 22)) + "," + std::to_string(rnd(-3, 12)),
+                                 ScriptItem::enter()});
+                    break;
+                default:
+                    go("COPY", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
+                                std::to_string(rnd(-9, 9)) + "," + std::to_string(rnd(-9, 9)),
+                                ScriptItem::enter()});
                     break;
             }
             ++steps;
@@ -553,10 +578,14 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
                 CHECK(now == history.back());
             }
         }
-        // Undo one step at a time: each state must be the one before it.
+        // Undo one step at a time: each state must be the one before it; redo brings them back.
         for (std::size_t k = history.size() - 1; k > 0; --k) {
             CHECK(r.host.undo());
             CHECK(canonicalDump(r.doc) == history[k - 1]);
+        }
+        for (std::size_t k = 1; k < history.size(); ++k) {
+            CHECK(r.host.redo());
+            CHECK(canonicalDump(r.doc) == history[k]);
         }
     }
     MESSAGE(steps << " commands, " << changedSteps << " changed the drawing");
