@@ -122,6 +122,9 @@ struct PlotFill {  // even-odd
     std::vector<std::vector<Vec2>> rings{};
     Rgba color{};
     std::uint32_t layer = 0;  // as in PlotStyle
+    // Also stroked with a hairline of the fill colour, as AutoCAD plots solid hatches, solids and
+    // wide polylines (text characters are not).
+    bool outline = false;
 };
 struct PlotDots {
     std::vector<Vec2> pts{};

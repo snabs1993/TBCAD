@@ -1086,3 +1086,34 @@ TEST_CASE(
     CHECK(sheet.layerNames[0] == "TB|Stamp");
     CHECK(sheet.layerNames[1] == "TB|in$0$Notes");
 }
+
+TEST_CASE("filled areas get a hairline edge of their colour, text characters do not") {
+    Document doc;
+    Entity wide;
+    PolylineData pl;
+    pl.v = {PolyVertex{{0, 0}, 0, 0, 0}, PolyVertex{{100, 0}, 0, 0, 0}};
+    pl.constantWidth = 5;
+    wide.data = pl;
+    addEntity(doc, wide);
+    Entity text;
+    TextData t;
+    t.position = {0, 20};
+    t.height = 10;
+    t.utf8 = "Hi";
+    text.data = t;
+    addEntity(doc, text);
+    PlotSettings s;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    int outlined = 0, plain = 0;
+    for (const PlotPrimitive& p : sheet.value().prims)
+        if (const auto* f = std::get_if<PlotFill>(&p))
+            ++(f->outline ? outlined : plain);
+    CHECK(outlined == 1);  // the wide polyline
+    auto pdf = pdfBytes(sheet.value(), false);
+    REQUIRE(pdf.ok());
+    CHECK(pdf.value().find("0 w") != std::string::npos);
+    CHECK(pdf.value().find("B*") != std::string::npos);
+    if (plain > 0)  // characters drawn as outlines (when a font is found) are only filled
+        CHECK(pdf.value().find("f*") != std::string::npos);
+}

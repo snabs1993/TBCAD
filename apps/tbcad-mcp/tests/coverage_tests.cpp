@@ -123,8 +123,8 @@ TEST_CASE("layouts: create, add a viewport and a title block, change it, plot it
         std::ifstream in(pdf, std::ios::binary);
         std::string all((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         CHECK(all.rfind("%PDF-", 0) == 0);
-        // the sheet is A3 landscape: 420 x 297 mm = 1190.55 x 841.89 pt
-        CHECK(all.find("1190") != std::string::npos);
+        // the sheet is A3 landscape: 420 x 297 mm = 1191 x 842 pt in whole points
+        CHECK(all.find("/MediaBox [0 0 1191 842]") != std::string::npos);
     }
 
     // model space again: a different page size is not required, the call must simply work
