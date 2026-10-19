@@ -926,6 +926,15 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
     d.style = textStyleFor(r.raw(7));
     if (r.has(44) && r.num(44) >= 0.25 && r.num(44) <= 4.0)
         d.lineSpacing = r.num(44);
+    if (const std::int64_t fill = r.integer(90, 0); fill >= 1 && fill <= 3) {
+        // 1 = fill colour (63), 2 / 3 = the drawing / window background.
+        const std::int64_t aci = r.integer(63, 0);
+        d.bgMode = fill == 1 && aci >= 1 && aci <= 255 ? 2 : 1;
+        if (d.bgMode == 2)
+            d.bgColor = static_cast<int>(aci);
+        if (r.has(45) && r.num(45) >= 1.0 && r.num(45) <= 5.0)
+            d.bgScale = r.num(45);
+    }
     if (r.integer(75, 0) > 0 && r.integer(76, 1) > 1) {
         d.columns = static_cast<std::uint8_t>(std::clamp<std::int64_t>(r.integer(76, 1), 1, 16));
         if (r.has(48) && r.num(48) > 0)

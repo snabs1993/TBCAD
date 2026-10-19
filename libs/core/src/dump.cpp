@@ -171,6 +171,8 @@ struct DataDumper {
             o << "cols" << static_cast<int>(d.columns) << " gap" << d.columnGap << " ";
         if (d.lineSpacing != 1.0)
             o << "ls" << d.lineSpacing << " ";
+        if (d.bgMode)
+            o << "bg" << int(d.bgMode) << "," << d.bgColor << "," << d.bgScale << " ";
         o.quoted(d.utf8);
     }
     void operator()(const HatchData& d) {

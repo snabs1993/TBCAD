@@ -27,6 +27,25 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
     const DisplayStyle base = geom::resolveStyle(doc, e, ctx);
     const double px = ctx.pixelSizeMm > 0 ? ctx.pixelSizeMm : 0.1;
 
+    // MTEXT background mask: the frame grown by (bgScale - 1) text heights. In the drawing
+    // background colour it hides what lies behind, like a wipeout.
+    if (const auto* m = entityAs<MTextData>(e); m && m->bgMode && !layout.frame.empty()) {
+        const double h = layout.lines.empty() ? m->height : layout.lines.front().height;
+        const double grow = std::max(0.0, m->bgScale - 1.0) * (h > 0 ? h : m->height);
+        const BBox2 f = layout.frame.inflated(grow);
+        DisplayFill bg;
+        bg.style = base;
+        bg.style.color = m->bgMode == 2 && m->bgColor >= 1 && m->bgColor <= 255
+                             ? paletteColor(static_cast<std::uint8_t>(m->bgColor))
+                             : kBackgroundColor;
+        std::vector<Vec2> ring;
+        for (Vec2 c : {Vec2{f.min.x, f.min.y}, Vec2{f.max.x, f.min.y}, Vec2{f.max.x, f.max.y},
+                       Vec2{f.min.x, f.max.y}})
+            ring.push_back(layout.toWorld.apply(c));
+        bg.rings.push_back(std::move(ring));
+        out.items.emplace_back(std::move(bg));
+    }
+
     // Capital height of the largest line on screen, in pixels.
     double scaleToWorld = std::sqrt(std::abs(layout.toWorld.determinant()));
     double maxH = 0;

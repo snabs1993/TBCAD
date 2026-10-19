@@ -1005,6 +1005,42 @@ TEST_CASE("MTEXT paragraph settings, column breaks and line spacing survive DXF"
     CHECK(back->utf8.find("\xC2\xA0") != std::string::npos);
 }
 
+TEST_CASE("MTEXT background mask survives DXF") {
+    Document doc;
+    {
+        auto tx = doc.begin("mtext");
+        for (int mode : {1, 2}) {
+            MTextData m;
+            m.position = {10.0 * mode, 20};
+            m.height = 3;
+            m.utf8 = "boxed";
+            m.bgMode = static_cast<std::uint8_t>(mode);
+            m.bgColor = 3;
+            m.bgScale = 2.0;
+            Entity e;
+            e.data = Indirect<MTextData>(m);
+            REQUIRE(tx.add(std::move(e)).ok());
+        }
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    int seen = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        const auto* m = entityAs<MTextData>(e);
+        if (!m)
+            return;
+        ++seen;
+        CHECK(m->bgScale == doctest::Approx(2.0));
+        if (m->position.x < 15) {
+            CHECK(m->bgMode == 1);
+        } else {
+            CHECK(m->bgMode == 2);
+            CHECK(m->bgColor == 3);
+        }
+    });
+    CHECK(seen == 2);
+}
+
 TEST_CASE("a picture keeps its polygon clip, brightness and contrast through DXF") {
     Document doc;
     {
