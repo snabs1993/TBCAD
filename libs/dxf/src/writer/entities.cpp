@@ -143,7 +143,9 @@ Props Writer::propsOf(const EntityCommon& c) {
     p.color = c.color;
     p.lineweight = c.lineweight;
     p.transparency = c.transparency;
-    {
+    if (c.linetypeScale == 1.0f) {
+        p.ltScale = 1.0;
+    } else {
         char buf[32];
         std::snprintf(buf, sizeof buf, "%.7g", static_cast<double>(c.linetypeScale));
         p.ltScale = std::strtod(buf, nullptr);

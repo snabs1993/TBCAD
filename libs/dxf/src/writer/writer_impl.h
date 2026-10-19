@@ -2,6 +2,7 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -25,29 +26,41 @@ public:
     std::string buf{};
     std::size_t badNumbers = 0;
 
-    void raw(int code, std::string_view ascii) {
-        buf += std::to_string(code);
-        buf += "\r\n";
-        buf += ascii;
-        buf += "\r\n";
-    }
+    void raw(int code, std::string_view ascii) { emit(code, ascii.data(), ascii.size()); }
     void str(int code, std::string_view utf8) { raw(code, encodeText(utf8, utf8_)); }
-    void i(int code, long long v) { raw(code, std::to_string(v)); }
+    void i(int code, long long v) {
+        char b[24];
+        const auto r = std::to_chars(b, b + sizeof b, v);
+        emit(code, b, static_cast<std::size_t>(r.ptr - b));
+    }
     void d(int code, double v) {
         if (!std::isfinite(v)) {
             ++badNumbers;
             v = 0;
         }
-        raw(code, formatNumber(v));
+        // The shortest text that reads back as the same number, with ".0" when it looks whole.
+        char b[48];
+        const auto r = std::to_chars(b, b + 44, v);
+        char* end = r.ptr;
+        bool plain = true;
+        for (const char* c = b; c != end; ++c)
+            if (*c == '.' || *c == 'e' || *c == 'E' || *c == 'n') {
+                plain = false;
+                break;
+            }
+        if (plain) {
+            *end++ = '.';
+            *end++ = '0';
+        }
+        emit(code, b, static_cast<std::size_t>(end - b));
     }
     void h(int code, std::uint64_t v) {
-        static const char* digits = "0123456789ABCDEF";
-        std::string s;
-        do {
-            s.insert(s.begin(), digits[v & 15]);
-            v >>= 4;
-        } while (v);
-        raw(code, s);
+        char b[24];
+        const auto r = std::to_chars(b, b + sizeof b, v, 16);
+        for (char* c = b; c != r.ptr; ++c)
+            if (*c >= 'a' && *c <= 'f')
+                *c = static_cast<char>(*c - 'a' + 'A');
+        emit(code, b, static_cast<std::size_t>(r.ptr - b));
     }
     // x at `code`, y at code+10, z at code+20.
     void pt(int code, Vec2 p, double z = 0) {
@@ -67,6 +80,18 @@ public:
     bool utf8() const { return utf8_; }
 
 private:
+    // "<code>\r\n<value>\r\n" with one growth check.
+    void emit(int code, const char* value, std::size_t n) {
+        char c[16];
+        const auto r = std::to_chars(c, c + 12, code);
+        const std::size_t cl = static_cast<std::size_t>(r.ptr - c);
+        c[cl] = '\r';
+        c[cl + 1] = '\n';
+        buf.append(c, cl + 2);
+        buf.append(value, n);
+        buf.append("\r\n", 2);
+    }
+
     bool utf8_;
     bool r12_;
 };
