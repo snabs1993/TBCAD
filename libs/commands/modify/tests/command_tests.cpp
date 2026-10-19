@@ -1751,8 +1751,7 @@ TEST_CASE("JOIN fuses rays and construction lines on one line") {
         Fixture f;
         EntityId a = f.add(ray({0, 0}, {1, 0}));
         EntityId b = f.add(ray({5, 0}, {1, 0}));
-        f.host.setSelection({a, b});
-        f.host.run("JOIN", {ScriptItem::enter()});
+        f.host.run("JOIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
         REQUIRE(f.count(EntityKind::Ray) == 1);
         f.doc.forEachEntity([&](const Entity& e) {
             const auto* r = entityAs<RayData>(e);
@@ -1766,8 +1765,7 @@ TEST_CASE("JOIN fuses rays and construction lines on one line") {
         Fixture f;
         EntityId a = f.add(ray({0, 0}, {1, 0}));
         EntityId b = f.add(ray({5, 0}, {-1, 0}));
-        f.host.setSelection({a, b});
-        f.host.run("JOIN", {ScriptItem::enter()});
+        f.host.run("JOIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
         REQUIRE(f.count(EntityKind::Ray) == 1);
         f.doc.forEachEntity([&](const Entity& e) { CHECK(entityAs<RayData>(e)->infinite); });
     }
@@ -1775,8 +1773,7 @@ TEST_CASE("JOIN fuses rays and construction lines on one line") {
         Fixture f;
         EntityId a = f.add(ray({5, 0}, {1, 0}));
         EntityId b = f.add(ray({0, 0}, {-1, 0}));
-        f.host.setSelection({a, b});
-        f.host.run("JOIN", {ScriptItem::enter()});
+        f.host.run("JOIN", {ScriptItem::select({a, b}), ScriptItem::enter()});
         CHECK(f.count(EntityKind::Ray) == 2);
     }
     {  // a ray and a construction line on it; a parallel one is left alone
@@ -1784,8 +1781,7 @@ TEST_CASE("JOIN fuses rays and construction lines on one line") {
         EntityId a = f.add(ray({3, 0}, {1, 0}));
         EntityId b = f.add(ray({0, 0}, {1, 0}, true));
         EntityId c = f.add(ray({0, 4}, {1, 0}, true));
-        f.host.setSelection({a, b, c});
-        f.host.run("JOIN", {ScriptItem::enter()});
+        f.host.run("JOIN", {ScriptItem::select({a, b, c}), ScriptItem::enter()});
         CHECK(f.count(EntityKind::Ray) == 2);
     }
 }
