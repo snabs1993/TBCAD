@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 
 #include "../src/dim_internal.h"
@@ -183,7 +184,7 @@ void colorField(ui::PanelContext& pc, const DimStyle& s, const char* label, cons
         pc.runCommand(editLine(s.name, key, buf));
 }
 
-void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
+void drawEditor(ui::PanelContext& pc, const DimStyle s) {  // by value: fields run DIMSTYLE
     drawPreview(pc, s);
     if (hasSpace(s.name)) {
         ImGui::TextWrapped("Names with spaces cannot be edited here; use the DIMSTYLE command.");
@@ -300,7 +301,12 @@ void drawPanel(ui::PanelContext& pc) {
 
     ImGui::SameLine();
     ImGui::BeginGroup();
-    const DimStyle* sel = pc.doc->dimStyle(st.selected);
+    // A copy: Delete, Rename and the editor's fields run DIMSTYLE, which replaces or removes the
+    // row while this frame still draws it.
+    std::optional<DimStyle> selRow;
+    if (const DimStyle* found = pc.doc->dimStyle(st.selected))
+        selRow = *found;
+    const DimStyle* sel = selRow ? &*selRow : nullptr;
     if (sel) {
         ImGui::BeginDisabled(st.selected == current || hasSpace(sel->name));
         if (ImGui::Button("Set current"))
