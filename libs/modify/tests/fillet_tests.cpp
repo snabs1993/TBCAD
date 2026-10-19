@@ -390,6 +390,40 @@ TEST_CASE("fillet a spline with a short line: the line grows to the tangent poin
     CHECK(near(grown.b.x, 20));
 }
 
+TEST_CASE("two lines with one arc between them: the arc goes and the corner is rounded or cut") {
+    PolylineData pl;
+    pl.v = {{{0, 0}, 0}, {{10, 0}, 0.4142135623730951}, {{12, 2}, 0}, {{12, 10}, 0}};
+    Entity e = make(pl);
+    // Segments 0 and 2 are the straight ones.
+    auto gone = removeArcBetween(e, 0, 2);
+    REQUIRE(gone.ok());
+    const auto& g = as<PolylineData>(gone.value().polyline);
+    REQUIRE(g.v.size() == 3);
+    CHECK(near(g.v[1].p, {12, 0}));
+    CHECK(near(g.v[1].bulge, 0.0, 1e-12));
+    CHECK(gone.value().vertex == 1);
+    // Either order of the picks gives the same corner.
+    auto swapped = removeArcBetween(e, 2, 0);
+    REQUIRE(swapped.ok());
+    CHECK(near(as<PolylineData>(swapped.value().polyline).v[1].p, {12, 0}));
+    // Rounded with R=1: the corner (12,0) is replaced by a tangent arc.
+    auto f = filletPolylineVertex(gone.value().polyline, gone.value().vertex, 1.0);
+    REQUIRE(f.ok());
+    CHECK(as<PolylineData>(f.value()).v.size() == 4);
+    ChamferOptions o;
+    o.distance1 = o.distance2 = 1;
+    auto c = chamferPolylineVertex(gone.value().polyline, gone.value().vertex, o);
+    REQUIRE(c.ok());
+    CHECK(sameVertexSet(verts(c.value()), {{0, 0}, {11, 0}, {12, 1}, {12, 10}}));
+    // The arc itself or two neighbours are not "lines around one arc".
+    CHECK_FALSE(removeArcBetween(e, 0, 1).ok());
+    CHECK_FALSE(removeArcBetween(e, 1, 2).ok());
+    // Parallel lines never meet.
+    PolylineData par;
+    par.v = {{{0, 0}, 0}, {{10, 0}, 1.0}, {{10, 4}, 0}, {{0, 4}, 0}};
+    CHECK_FALSE(removeArcBetween(make(par), 0, 2).ok());
+}
+
 TEST_CASE("polyline with an arc segment: chamfer skips the arc corners, fillet rounds them") {
     PolylineData pl;
     pl.closed = true;

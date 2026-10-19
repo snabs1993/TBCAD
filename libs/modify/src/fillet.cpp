@@ -730,6 +730,58 @@ CornerSolver chamferSolver(const ChamferOptions& o) {
 
 }  // namespace
 
+Result<ArcRemoval> removeArcBetween(const Entity& src, std::size_t segA, std::size_t segB) {
+    const auto* raw = entityAs<PolylineData>(src);
+    if (!raw)
+        return err("This is not a polyline.");
+    PolylineData pl = cleanPolyline(*raw);
+    std::vector<Seg> segs = polylineSegs(pl);
+    const std::size_t n = segs.size();
+    if (n < 3 || segA >= n || segB >= n)
+        return err("These segments have no arc between them.");
+    std::size_t lo = n, hi = n;
+    auto apart = [&](std::size_t a, std::size_t b) {  // b two segments after a
+        return pl.closed ? (a + 2) % n == b : a + 2 == b;
+    };
+    if (apart(segA, segB)) {
+        lo = segA;
+        hi = segB;
+    } else if (apart(segB, segA)) {
+        lo = segB;
+        hi = segA;
+    } else {
+        return err("These segments have no arc between them.");
+    }
+    const std::size_t mid = (lo + 1) % n;
+    if (segs[lo].isArc() || segs[hi].isArc() || !segs[mid].isArc())
+        return err("These segments have no arc between them.");
+    const Vec2 d0 = segs[lo].p1 - segs[lo].p0, d1 = segs[hi].p1 - segs[hi].p0;
+    const double den = cross(d0, d1);
+    if (std::abs(den) <= 1e-12 * length(d0) * length(d1))
+        return err("The two lines are parallel: there is no corner to make.");
+    const Vec2 diff = segs[hi].p0 - segs[lo].p0;
+    const double t = cross(diff, d1) / den;  // along the first line
+    const double u = cross(diff, d0) / den;  // along the second
+    if (t <= 1e-9 || u >= 1.0 - 1e-9)
+        return err("The two lines do not meet beyond the arc.");
+    const Vec2 x = segs[lo].p0 + d0 * t;
+    std::vector<Seg> chain;
+    std::size_t vertex = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (i == mid)
+            continue;
+        Seg s = segs[i];
+        if (i == lo)
+            s.p1 = x;
+        if (i == hi) {
+            s.p0 = x;
+            vertex = chain.size();
+        }
+        chain.push_back(s);
+    }
+    return ArcRemoval{withData(src, polylineFromSegs(chain, pl.closed, &pl)), vertex};
+}
+
 Result<Entity> filletPolylineVertex(const Entity& polyline, std::size_t vertex, double radius) {
     if (radius <= tol::kLinear)
         return polyline;  // a sharp corner stays as it is

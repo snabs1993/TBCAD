@@ -61,4 +61,16 @@ std::size_t nearestSegmentIndex(const PolylineData& polyline, Vec2 p);
 std::optional<std::size_t> sharedVertex(const PolylineData& polyline, std::size_t segA,
                                         std::size_t segB);
 
+// Two straight segments of a polyline with exactly one arc segment between them (as numbered by
+// nearestSegmentIndex): the arc is removed and the two lines are extended or cut back to meet at a
+// corner, the way FILLET and CHAMFER treat them. Returns the new polyline and the index of the new
+// corner, which filletPolylineVertex / chamferPolylineVertex then round or cut. Errors: the
+// segments are not two lines around one arc, or the lines do not meet ahead of the first one and
+// behind the second.
+struct ArcRemoval {
+    Entity polyline;
+    std::size_t vertex = 0;
+};
+Result<ArcRemoval> removeArcBetween(const Entity& polyline, std::size_t segA, std::size_t segB);
+
 }  // namespace tbcad::modify
