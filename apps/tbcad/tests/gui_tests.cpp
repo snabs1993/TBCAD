@@ -1587,3 +1587,38 @@ TEST_CASE("hatch panel golden") {
     h.frame(3);
     CHECK(matchesGolden(h.windowShot("Hatch"), "hatch_panel"));
 }
+
+TEST_CASE("layer translator: rename, merge, one undo step") {
+    Harness h(1920, 1080);
+    threeLayers(h);
+    REQUIRE(h.click("Translate...", "Layers"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Layer Translator"));
+
+    // Rename A-Doors, merge A-Notes into A-Walls; the filter narrows the list to one box.
+    REQUIRE(h.enterText("##trfilter", "A-Doors", "Layer Translator"));
+    h.frame(2);
+    REQUIRE(h.enterText("##to", "B-Doors", "Layer Translator"));
+    h.frame(2);
+    REQUIRE(h.enterText("##trfilter", "A-Notes", "Layer Translator"));
+    h.frame(2);
+    REQUIRE(h.enterText("##to", "A-Walls", "Layer Translator"));
+    h.frame(2);
+    const std::size_t before = h.core().document().layers().size();
+    REQUIRE(h.click("Translate", "Layer Translator"));
+    h.frame(3);
+    CHECK(layer(h, "B-Doors") != nullptr);
+    CHECK(layer(h, "A-Doors") == nullptr);
+    CHECK(layer(h, "A-Notes") == nullptr);
+    CHECK(layer(h, "A-Walls") != nullptr);
+    CHECK(h.core().document().layers().size() == before - 1);
+
+    // One undo brings every name back.
+    REQUIRE(h.click("Close", "Layer Translator"));
+    h.frame(3);
+    h.command("U");
+    h.frame(3);
+    CHECK(layer(h, "A-Doors") != nullptr);
+    CHECK(layer(h, "A-Notes") != nullptr);
+    CHECK(layer(h, "B-Doors") == nullptr);
+}
