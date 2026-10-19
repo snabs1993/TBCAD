@@ -75,11 +75,37 @@ Result<void> writeGroups(Transaction& tx, const std::vector<Group>& groups) {
     });
 }
 
+int pickStyle(const Header& h) {
+    const auto it = h.custom.find(kPickStyleKey);
+    if (it == h.custom.end() || it->second.size() != 1 || it->second[0] < '0' ||
+        it->second[0] > '3')
+        return 1;
+    return it->second[0] - '0';
+}
+
 std::vector<EntityId> expandGroups(const Document& doc, std::span<const EntityId> ids) {
     std::vector<EntityId> out(ids.begin(), ids.end());
-    if (doc.header().custom.find(kKey) == doc.header().custom.end())
+    const int style = pickStyle(doc.header());
+    const bool groupsOn =
+        (style & 1) != 0 && doc.header().custom.find(kKey) != doc.header().custom.end();
+    const bool hatchesOn = (style & 2) != 0;
+    if (!groupsOn && !hatchesOn)
         return out;
     std::unordered_set<EntityId> seen(out.begin(), out.end());
+    if (hatchesOn) {
+        for (EntityId id : ids) {
+            const Entity* e = doc.find(id);
+            const auto* h = e ? entityAs<HatchData>(*e) : nullptr;
+            if (!h)
+                continue;
+            for (EntityId b : h->sourceBoundary) {
+                if (doc.contains(b) && seen.insert(b).second)
+                    out.push_back(b);
+            }
+        }
+    }
+    if (!groupsOn)
+        return out;
     std::vector<Group> groups = readGroups(doc);
     // member -> the selectable groups it belongs to, so a big selection does not search every
     // group for every object.
@@ -91,7 +117,9 @@ std::vector<EntityId> expandGroups(const Document& doc, std::span<const EntityId
             groupsOf[m].push_back(gi);
     }
     std::vector<bool> expanded(groups.size(), false);
-    for (EntityId id : ids) {
+    // (the hatch boundaries added above bring their groups too)
+    const std::vector<EntityId> picked = out;
+    for (EntityId id : picked) {
         const auto it = groupsOf.find(id);
         if (it == groupsOf.end())
             continue;

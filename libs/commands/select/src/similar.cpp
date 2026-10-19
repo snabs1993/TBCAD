@@ -55,10 +55,12 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         for (;;) {
             unsigned match = loadMatch(ctx);
-            EntityId ref{};
-            if (!ctx.host().selection().empty() && ctx.doc().find(ctx.host().selection().front())) {
-                ref = ctx.host().selection().front();
-            } else {
+            // Every preselected object is a reference (AutoCAD); otherwise one is picked.
+            std::vector<EntityId> refs;
+            for (EntityId id : ctx.host().selection())
+                if (ctx.doc().find(id))
+                    refs.push_back(id);
+            if (refs.empty()) {
                 cmd::EntityOptions eo;
                 eo.keywords = {"Settings"};
                 auto e = co_await ctx.getEntity("Select an object or [Settings]", std::move(eo));
@@ -68,12 +70,9 @@ public:
                 }
                 if (!e.ok())
                     co_return;
-                ref = e.id;
+                refs.push_back(e.id);
             }
-            const Entity* ent = ctx.doc().find(ref);
-            if (!ent)
-                co_return;
-            auto ids = similarEntities(ctx.doc(), *ent, match);
+            auto ids = similarEntities(ctx.doc(), refs, match);
             ctx.host().setSelection(ids);
             ctx.message(std::to_string(ids.size()) + " object(s) found matching " +
                         describe(match) + ".");

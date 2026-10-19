@@ -67,3 +67,38 @@ TEST_CASE("similarEntities can match on size, level and transparency") {
         static_cast<unsigned>(Match::Size) | static_cast<unsigned>(Match::Transparency));
     CHECK(both.size() == 1);
 }
+
+TEST_CASE("SELECTSIMILAR uses every preselected object and Style tells blocks apart") {
+    Fixture f;
+    BlockId b1, b2;
+    {
+        Transaction tx = f.doc.begin("setup");
+        BlockDef a;
+        a.name = "A";
+        BlockDef b;
+        b.name = "B";
+        b1 = tx.addBlock(a).value();
+        b2 = tx.addBlock(b).value();
+        tx.commit();
+    }
+    InsertData ia;
+    ia.block = b1;
+    InsertData ib;
+    ib.block = b2;
+    auto i1 = f.addEntity(Indirect<InsertData>(ia));
+    auto i2 = f.addEntity(Indirect<InsertData>(ia));
+    auto i3 = f.addEntity(Indirect<InsertData>(ib));
+    const unsigned typeStyle =
+        static_cast<unsigned>(Match::Type) | static_cast<unsigned>(Match::Style);
+    auto same = similarEntities(f.doc, *f.doc.find(i1), typeStyle);
+    CHECK(same.size() == 2);
+    CHECK_FALSE(has(same, i3));
+
+    auto c = f.addEntity(CircleData{{0, 0}, 1});
+    f.addEntity(LineData{{0, 0}, {1, 0}});
+    f.host.setSelection({i2, c});
+    f.host.run("SELSIM", {});
+    // Type and Layer by default: the inserts and the circle, not the line.
+    CHECK(f.host.selection().size() == 4);
+    CHECK(has(f.host.selection(), c));
+}

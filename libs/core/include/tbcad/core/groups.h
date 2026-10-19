@@ -22,8 +22,14 @@ std::vector<Group> readGroups(const Document& doc);
 // Stores the groups in the transaction's document.
 Result<void> writeGroups(Transaction& tx, const std::vector<Group>& groups);
 
+// PICKSTYLE in Header::custom: 0 no group selection, 1 group selection (default), 2 associative
+// hatch selection (a picked hatch brings its boundary objects), 3 both.
+inline constexpr const char* kPickStyleKey = "tbcad.pickstyle";
+int pickStyle(const Header& h);
+
 // `ids` plus every member of each selectable group that contains one of them (first occurrence
-// order, no duplicates). Cheap when the document has no groups.
+// order, no duplicates), and the boundaries of associative hatches, as PICKSTYLE says. Cheap
+// when the document has no groups.
 std::vector<EntityId> expandGroups(const Document& doc, std::span<const EntityId> ids);
 
 }  // namespace tbcad

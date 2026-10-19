@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -83,13 +84,16 @@ enum class Match : unsigned {
     Lineweight = 16,
     Level = 32,
     Transparency = 64,
-    Style = 128,  // text style, dimension style or hatch pattern
+    Style = 128,  // text, dimension or multileader style, hatch pattern, block of a reference
     Size = 256    // text height or circle and arc radius
 };
 
 // Visible model-space objects that agree with `reference` on every property in `match` (the
 // reference itself is included).
 std::vector<EntityId> similarEntities(const Document& doc, const Entity& reference, unsigned match);
+// Objects similar to any of the references.
+std::vector<EntityId> similarEntities(const Document& doc, std::span<const EntityId> references,
+                                      unsigned match);
 
 // Objects hidden by HIDE / ISOLATE, remembered in the file so UNISOLATE works after a reload.
 std::vector<EntityId> hiddenByIsolate(const Document& doc);

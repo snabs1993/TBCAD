@@ -5,6 +5,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/core/groups.h"
 #include "tbcad/layers/layer_ops.h"
 
 using namespace tbcad;
@@ -384,4 +385,16 @@ TEST_CASE("MULTIPLE refuses unknown names and itself") {
     f.host.run("MULTIPLE", {"NOSUCH", "MULTIPLE"});
     CHECK(f.host.logContains("Unknown command"));
     CHECK(f.host.logContains("cannot repeat itself"));
+}
+
+TEST_CASE("PICKSTYLE is a command and a SETVAR name, 0 to 3") {
+    Fixture f;
+    CHECK(pickStyle(f.doc.header()) == 1);
+    f.host.run("PICKSTYLE", {"3"});
+    CHECK(pickStyle(f.doc.header()) == 3);
+    f.host.run("SETVAR", {"PICKSTYLE", "7"});
+    CHECK(f.host.logContains("PICKSTYLE is 0, 1, 2 or 3."));
+    CHECK(pickStyle(f.doc.header()) == 3);
+    f.host.run("SETVAR", {"PICKSTYLE", "0"});
+    CHECK(pickStyle(f.doc.header()) == 0);
 }

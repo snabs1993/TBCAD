@@ -183,3 +183,34 @@ TEST_CASE("saved filters keep the new properties and comparisons") {
     CHECK(back[1].property == Property::Pattern);
     CHECK(back[1].negate);
 }
+
+TEST_CASE("queryEntities by type knows tables, rays, xlines, mlines and multileaders") {
+    Fixture f;
+    RayData ray;
+    RayData xl;
+    xl.infinite = true;
+    TableData td;
+    td.colWidths = {10};
+    td.rowHeights = {5};
+    td.cells.resize(1);
+    auto t = f.addEntity(Indirect<TableData>(td));
+    auto r = f.addEntity(Indirect<RayData>(ray));
+    auto x = f.addEntity(Indirect<RayData>(xl));
+    auto m = f.addEntity(Indirect<MlineData>(MlineData{}));
+    auto ml = f.addEntity(Indirect<MLeaderData>(MLeaderData{}));
+    auto one = [&](const char* type) {
+        auto q = queryEntities(f.doc, {Property::Type, type, false});
+        REQUIRE(q);
+        return *q;
+    };
+    CHECK(one("TABLE") == std::vector<EntityId>{t});
+    CHECK(one("RAY") == std::vector<EntityId>{r});
+    CHECK(one("xline") == std::vector<EntityId>{x});
+    CHECK(one("MLINE") == std::vector<EntityId>{m});
+    CHECK(one("MULTILEADER") == std::vector<EntityId>{ml});
+    CHECK(one("MLEADER") == std::vector<EntityId>{ml});
+    // Negated queries walk every object: none may read past the name table.
+    auto all = queryEntities(f.doc, {Property::Type, "LINE", true});
+    REQUIRE(all);
+    CHECK(all->size() == 5);
+}
