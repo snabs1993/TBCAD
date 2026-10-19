@@ -2,11 +2,20 @@
 #include <unordered_set>
 
 #include "commands.h"
+#include "tbcad/layout/layout.h"
 #include "util.h"
 
 namespace tbcad::modifycmd {
 
 namespace {
+
+// The objects of one space (model space, or the sheet of a layout) from back to front.
+std::vector<EntityId> spaceOrder(const Document& doc, BlockId space) {
+    if (!space)
+        return doc.modelSpace();
+    const BlockDef* b = doc.block(space);
+    return b ? b->entities : std::vector<EntityId>{};
+}
 
 // ---- GROUP / UNGROUP ----------------------------------------------------------------------------
 
@@ -254,7 +263,10 @@ public:
             co_return;
         std::string mode = k.keyword.empty() ? "Front" : k.keyword;
         // Keep the objects' current relative order.
-        std::vector<EntityId> order = ctx.doc().modelSpace();
+        // The space of the first selected object (model space or a layout's sheet); objects of
+        // other spaces are left alone.
+        const BlockId space = sel.ids.empty() ? BlockId{} : ctx.doc().ownerBlock(sel.ids.front());
+        std::vector<EntityId> order = spaceOrder(ctx.doc(), space);
         std::vector<EntityId> moving;
         const std::unordered_set<EntityId> selected(sel.ids.begin(), sel.ids.end());
         for (EntityId id : order) {
@@ -262,7 +274,7 @@ public:
                 moving.push_back(id);
         }
         if (moving.empty()) {
-            ctx.message("None of the objects is in model space.");
+            ctx.message("None of the objects could be reordered.");
             co_return;
         }
         if (mode == "Front") {
@@ -279,10 +291,10 @@ public:
             auto ref = co_await ctx.getEntity("Select reference object", eo);
             if (!ref.ok())
                 co_return;
-            order = ctx.doc().modelSpace();
+            order = spaceOrder(ctx.doc(), space);
             auto at = std::find(order.begin(), order.end(), ref.id);
             if (at == order.end()) {
-                ctx.message("The reference object is not in model space.");
+                ctx.message("The reference object is not in the same space.");
                 co_return;
             }
             std::size_t refPos = static_cast<std::size_t>(at - order.begin());
@@ -354,21 +366,29 @@ public:
                     return false;
             }
         };
-        std::vector<EntityId> moving;
-        for (EntityId id : ctx.doc().modelSpace()) {
-            const Entity* e = ctx.doc().find(id);
-            if (e && wanted(*e) && isModifiable(ctx.doc(), *e))
-                moving.push_back(id);
-        }
+        // Model space and the sheet of every layout (a title block's text goes over its lines too).
+        std::vector<BlockId> spaces{BlockId{}};
+        for (const layout::Layout& l : layout::layouts(ctx.doc()))
+            spaces.push_back(l.content);
         ctx.setUndoLabel(std::string(name()));
-        if (mode_ == Mode::TextToFront) {
-            for (EntityId id : moving)
-                (void)ctx.tx().bringToFront(id);
-        } else {
-            for (auto it = moving.rbegin(); it != moving.rend(); ++it)
-                (void)ctx.tx().sendToBack(*it);
+        std::size_t count = 0;
+        for (BlockId space : spaces) {
+            std::vector<EntityId> moving;
+            for (EntityId id : spaceOrder(ctx.doc(), space)) {
+                const Entity* e = ctx.doc().find(id);
+                if (e && wanted(*e) && isModifiable(ctx.doc(), *e))
+                    moving.push_back(id);
+            }
+            if (mode_ == Mode::TextToFront) {
+                for (EntityId id : moving)
+                    (void)ctx.tx().bringToFront(id);
+            } else {
+                for (auto it = moving.rbegin(); it != moving.rend(); ++it)
+                    (void)ctx.tx().sendToBack(*it);
+            }
+            count += moving.size();
         }
-        ctx.message(std::to_string(moving.size()) + " objects reordered.");
+        ctx.message(std::to_string(count) + " objects reordered.");
     }
 
 private:

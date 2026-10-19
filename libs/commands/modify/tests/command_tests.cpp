@@ -5,6 +5,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/modify/modify.h"
 #include "tbcad/text/text.h"
 
@@ -928,6 +929,44 @@ TEST_CASE("TEXTTOFRONT and HATCHTOBACK reorder by kind and keep the order inside
     CHECK(f.doc.modelSpace().front() == h);
     f.host.undo();
     CHECK(f.doc.modelSpace().back() == h);
+}
+
+TEST_CASE("DRAWORDER, TEXTTOFRONT and HATCHTOBACK also work on the objects of a layout sheet") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Sheet", "A4", true).ok());
+        tx.commit();
+    }
+    const BlockId sheet = layout::layouts(f.doc).front().content;
+    TextData td;
+    td.utf8 = "title";
+    EntityId text, hatch, line;
+    {
+        auto tx = f.doc.begin("objects");
+        Entity t;
+        t.data = Indirect<TextData>(td);
+        Entity h;
+        h.data = Indirect<HatchData>(HatchData{});
+        Entity l;
+        l.data = LineData{{0, 0}, {10, 0}};
+        text = tx.add(std::move(t), sheet).value();
+        hatch = tx.add(std::move(h), sheet).value();
+        line = tx.add(std::move(l), sheet).value();
+        tx.commit();
+    }
+    auto order = [&] { return f.doc.block(sheet)->entities; };
+    CHECK(order() == std::vector<EntityId>{text, hatch, line});
+    f.host.run("HATCHTOBACK", {});
+    CHECK(order().front() == hatch);
+    f.host.run("TEXTTOFRONT", {"Text"});
+    CHECK(order().back() == text);
+    CHECK(order() == std::vector<EntityId>{hatch, line, text});
+    f.host.run("DRAWORDER", {ScriptItem::select({line}), ScriptItem::enter(), "Back"});
+    CHECK(order().front() == line);
+    f.host.run("DRAWORDER",
+               {ScriptItem::select({line}), ScriptItem::enter(), "Above", ScriptItem::pick(hatch)});
+    CHECK(order() == std::vector<EntityId>{hatch, line, text});
 }
 
 TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in one step") {
