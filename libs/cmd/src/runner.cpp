@@ -419,6 +419,14 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         const Entity* e = doc_.find(id);
         return e && (!req.filter || req.filter(*e));
     };
+    // All and Last take what the user could pick by hand: shown, in this space, and not on a
+    // locked, frozen or switched-off layer.
+    auto pickable = [&](const Entity& e) {
+        if (!e.common.visible || doc_.ownerBlock(e.common.id) != host_.drawingOwner())
+            return false;
+        const EffectiveLayer l = doc_.effective(e.common.layer);
+        return l.on && !l.frozen && !l.locked;
+    };
     auto addCollected = [&](EntityId id) {
         if (collectedSet_.insert(id).second)
             collected_.push_back(id);
@@ -689,17 +697,14 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 std::vector<EntityId> found;
                 if (opt("ALL", 2)) {
                     doc_.forEachEntity([&](const Entity& e) {
-                        if (e.common.visible &&
-                            doc_.ownerBlock(e.common.id) == host_.drawingOwner() &&
-                            accepts(e.common.id))
+                        if (pickable(e) && accepts(e.common.id))
                             found.push_back(e.common.id);
                     });
                 } else if (opt("LAST", 1)) {
                     const Entity* last = nullptr;
                     doc_.forEachEntity([&](const Entity& e) {
-                        if (e.common.visible &&
-                            doc_.ownerBlock(e.common.id) == host_.drawingOwner() &&
-                            accepts(e.common.id) && (!last || e.common.id > last->common.id))
+                        if (pickable(e) && accepts(e.common.id) &&
+                            (!last || e.common.id > last->common.id))
                             last = &e;
                     });
                     if (last)
