@@ -1,8 +1,11 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
+#include <mutex>
 #include <sstream>
 
 #include "tbcad/platform/paths.h"
@@ -140,8 +143,75 @@ std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host) {
     return out;
 }
 
+namespace {
+
+Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveUncached(
+    const cmd::IHost& host, const std::string& name, std::filesystem::path& foundPath);
+
+// Finding a table searches several folders (OneDrive ones are slow on Windows) and a plot asks
+// several times (menu summary, page setup, export): about 0.4 s each on the owner's PC. The
+// answer is kept while the file is unchanged; "not found" is asked again after a few seconds.
+struct CachedTable {
+    Result<std::shared_ptr<const plotstyle::PlotStyleTable>> table = Error{ErrorCode::NotFound, ""};
+    std::filesystem::path path{};
+    std::filesystem::file_time_type mtime{};
+    std::uintmax_t size = 0;
+    std::chrono::steady_clock::time_point at{};
+};
+std::mutex& tableCacheMutex() {
+    static std::mutex m;
+    return m;
+}
+std::map<std::string, CachedTable>& tableCache() {
+    static std::map<std::string, CachedTable> c;
+    return c;
+}
+
+}  // namespace
+
 Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
     const cmd::IHost& host, const std::string& name) {
+    if (name.empty() || name == "none" || name == "None" || name == "NONE")
+        return std::shared_ptr<const plotstyle::PlotStyleTable>{};
+    if (auto b = plotstyle::builtinTable(name))
+        return std::shared_ptr<const plotstyle::PlotStyleTable>(
+            std::make_shared<plotstyle::PlotStyleTable>(std::move(*b)));
+    std::string key = name + '\n' + host.documentFile() + '\n' +
+                      host.setting("plot.stylepaths").value_or("") + '\n' +
+                      plotStyleFolder(host).string();
+    const auto now = std::chrono::steady_clock::now();
+    std::error_code ec;
+    {
+        std::lock_guard lock(tableCacheMutex());
+        if (auto it = tableCache().find(key); it != tableCache().end()) {
+            const CachedTable& c = it->second;
+            if (c.path.empty()) {
+                if (now - c.at < std::chrono::seconds(5))
+                    return c.table;
+            } else if (std::filesystem::last_write_time(c.path, ec) == c.mtime && !ec &&
+                       std::filesystem::file_size(c.path, ec) == c.size && !ec) {
+                return c.table;
+            }
+        }
+    }
+    CachedTable c;
+    c.table = resolveUncached(host, name, c.path);
+    c.at = now;
+    if (!c.path.empty()) {
+        c.mtime = std::filesystem::last_write_time(c.path, ec);
+        c.size = ec ? 0 : std::filesystem::file_size(c.path, ec);
+        if (ec)
+            c.path.clear();  // cannot tell when it changes: keep it only briefly
+    }
+    std::lock_guard lock(tableCacheMutex());
+    tableCache()[std::move(key)] = c;
+    return c.table;
+}
+
+namespace {
+
+Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveUncached(
+    const cmd::IHost& host, const std::string& name, std::filesystem::path& foundPath) {
     using Table = std::shared_ptr<const plotstyle::PlotStyleTable>;
     std::string lowered = name;
     for (char& c : lowered)
@@ -211,8 +281,11 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(
     auto t = plotstyle::loadFile(path);
     if (!t)
         return Error{t.error().code, "Plot style table \"" + name + "\": " + t.error().message};
+    foundPath = path;
     return Table(std::make_shared<plotstyle::PlotStyleTable>(std::move(t.value())));
 }
+
+}  // namespace
 
 bool styleTableMissing(const cmd::IHost& host) {
     const std::string name = plotStyleName(host);
