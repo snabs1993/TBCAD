@@ -12,6 +12,105 @@ Error badGrip() {
     return makeError(ErrorCode::OutOfRange, "grip index out of range");
 }
 
+
+// ---- hatch boundary ---------------------------------------------------------------------------
+// A hatch has a grip on each corner of its boundary: ends of line and arc edges and the vertices
+// of polyline edges, where edges meet being one grip. Ellipse and spline edges have none.
+
+constexpr double kJoin = 1e-9;
+
+HatchArcEdge hatchArcFromEnds(const HatchArcEdge& old, Vec2 start, Vec2 end, bool& ok) {
+    ok = false;
+    // The arc's middle, from the old edge: a ccw edge sweeps start -> end, a cw one the reverse.
+    double sweep = old.endAngle - old.startAngle;
+    if (old.ccw) {
+        sweep = std::fmod(sweep, kTwoPi);
+        if (sweep <= 0)
+            sweep += kTwoPi;
+    } else {
+        sweep = std::fmod(sweep, kTwoPi);
+        if (sweep >= 0)
+            sweep -= kTwoPi;
+    }
+    const double midAngle = old.startAngle + sweep * 0.5;
+    const Vec2 mid = old.center + Vec2{std::cos(midAngle), std::sin(midAngle)} * old.radius;
+    auto r = arcFromThreePoints(start, mid, end);
+    if (!r)
+        return old;
+    HatchArcEdge out = old;
+    out.center = r.value().center;
+    out.radius = r.value().radius;
+    out.startAngle = std::atan2(start.y - out.center.y, start.x - out.center.x);
+    out.endAngle = std::atan2(end.y - out.center.y, end.x - out.center.x);
+    // arcFromThreePoints runs counter-clockwise from its first to its last point when the three
+    // go that way round; when they go clockwise the arc it names starts at the last point.
+    const Vec2 first = out.center + Vec2{std::cos(r.value().startAngle),
+                                         std::sin(r.value().startAngle)} * out.radius;
+    out.ccw = distance(first, start) <= distance(first, end);
+    ok = true;
+    return out;
+}
+
+std::vector<Vec2> hatchCorners(const HatchData& h) {
+    std::vector<Vec2> out;
+    auto add = [&](Vec2 p) {
+        for (const Vec2& q : out)
+            if (distance(p, q) <= kJoin)
+                return;
+        out.push_back(p);
+    };
+    for (const HatchLoop& loop : h.loops)
+        for (const HatchEdge& ed : loop.edges) {
+            if (const auto* l = std::get_if<HatchLineEdge>(&ed)) {
+                add(l->a);
+                add(l->b);
+            } else if (const auto* a = std::get_if<HatchArcEdge>(&ed)) {
+                add(a->center + Vec2{std::cos(a->startAngle), std::sin(a->startAngle)} * a->radius);
+                add(a->center + Vec2{std::cos(a->endAngle), std::sin(a->endAngle)} * a->radius);
+            } else if (const auto* pl = std::get_if<HatchPolylineEdge>(&ed)) {
+                for (const PolyVertex& v : pl->v)
+                    add(v.p);
+            }
+        }
+    return out;
+}
+
+bool moveHatchCorner(HatchData& h, Vec2 from, Vec2 to) {
+    bool moved = false;
+    for (HatchLoop& loop : h.loops)
+        for (HatchEdge& ed : loop.edges) {
+            if (auto* l = std::get_if<HatchLineEdge>(&ed)) {
+                if (distance(l->a, from) <= kJoin) {
+                    l->a = to;
+                    moved = true;
+                }
+                if (distance(l->b, from) <= kJoin) {
+                    l->b = to;
+                    moved = true;
+                }
+            } else if (auto* a = std::get_if<HatchArcEdge>(&ed)) {
+                Vec2 s = a->center + Vec2{std::cos(a->startAngle), std::sin(a->startAngle)} * a->radius;
+                Vec2 e = a->center + Vec2{std::cos(a->endAngle), std::sin(a->endAngle)} * a->radius;
+                const bool ms = distance(s, from) <= kJoin, me = distance(e, from) <= kJoin;
+                if (ms || me) {
+                    bool ok = false;
+                    HatchArcEdge n = hatchArcFromEnds(*a, ms ? to : s, me ? to : e, ok);
+                    if (ok) {
+                        *a = n;
+                        moved = true;
+                    }
+                }
+            } else if (auto* pl = std::get_if<HatchPolylineEdge>(&ed)) {
+                for (PolyVertex& v : pl->v)
+                    if (distance(v.p, from) <= kJoin) {
+                        v.p = to;
+                        moved = true;
+                    }
+            }
+        }
+    return moved;
+}
+
 }  // namespace
 
 std::vector<Vec2> gripPoints(const Entity& e) {
@@ -127,6 +226,9 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             g.push_back(d.origin + Vec2{w * c + h * si, w * si - h * c});
             break;
         }
+        case EntityKind::Hatch:
+            g = hatchCorners(*entityAs<HatchData>(e));
+            break;
         default:
             break;
     }
@@ -217,6 +319,15 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             }
             auto bu = bulgeThrough(a.p, to, b.p);
             a.bulge = bu ? *bu : 0.0;
+            return out;
+        }
+        case EntityKind::Hatch: {
+            auto& h = *entityAs<HatchData>(out);
+            const std::vector<Vec2> corners = hatchCorners(*entityAs<HatchData>(e));
+            if (index >= static_cast<int>(corners.size()))
+                return badGrip();
+            if (!moveHatchCorner(h, corners[static_cast<std::size_t>(index)], to))
+                return makeError(ErrorCode::InvalidArgument, "the boundary cannot follow");
             return out;
         }
         case EntityKind::Point:

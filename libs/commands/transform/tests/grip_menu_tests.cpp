@@ -270,3 +270,105 @@ TEST_CASE("resting the cursor on a polyline vertex grip offers a menu, empty spa
     ctx.commandActive = true;
     CHECK_FALSE(reg.hoverMenus().front()(ctx, none));
 }
+
+namespace {
+
+HatchData squareHatch() {
+    HatchLoop loop;
+    loop.edges = {HatchLineEdge{{0, 0}, {10, 0}}, HatchLineEdge{{10, 0}, {10, 10}},
+                  HatchLineEdge{{10, 10}, {0, 10}}, HatchLineEdge{{0, 10}, {0, 0}}};
+    HatchData h;
+    h.loops.push_back(loop);
+    return h;
+}
+
+}  // namespace
+
+TEST_CASE("hatch: one grip per boundary corner, a corner moves the edges that meet there") {
+    Fixture f;
+    auto id = add(f.doc, squareHatch());
+    const Entity* e = f.doc.find(id);
+    REQUIRE(geom::gripPoints(*e).size() == 4);
+    auto moved = geom::moveGrip(*e, 2, {12, 13});
+    REQUIRE(moved);
+    const auto& loop = entityAs<HatchData>(moved.value())->loops[0];
+    CHECK(std::get<HatchLineEdge>(loop.edges[1]).b.x == doctest::Approx(12));
+    CHECK(std::get<HatchLineEdge>(loop.edges[2]).a.y == doctest::Approx(13));
+    CHECK(std::get<HatchLineEdge>(loop.edges[0]).b.x == doctest::Approx(10));
+    CHECK_FALSE(geom::moveGrip(*e, 9, {0, 0}));
+}
+
+TEST_CASE("hatch: stretching the end of an arc edge keeps the arc through its old middle") {
+    for (bool ccw : {true, false}) {
+        Fixture f;
+        HatchArcEdge arc{{0, 0}, 5, 0, kPi, true};
+        if (!ccw)
+            arc = HatchArcEdge{{0, 0}, 5, kPi, 0, false};
+        HatchLoop loop;
+        loop.edges = {arc, HatchLineEdge{ccw ? Vec2{-5, 0} : Vec2{5, 0}, ccw ? Vec2{5, 0} : Vec2{-5, 0}}};
+        HatchData h;
+        h.loops.push_back(loop);
+        auto id = add(f.doc, h);
+        const Entity* e = f.doc.find(id);
+        auto grips = geom::gripPoints(*e);
+        REQUIRE(grips.size() == 2);
+        // Move the corner at (5, 0) up: the line follows and the arc still bulges to y > 0.
+        int idx = std::abs(grips[0].x - 5) < 1e-9 ? 0 : 1;
+        auto moved = geom::moveGrip(*e, idx, {5, 2});
+        REQUIRE(moved);
+        const auto& out = entityAs<HatchData>(moved.value())->loops[0];
+        const auto& a = std::get<HatchArcEdge>(out.edges[0]);
+        const double s = a.center.y + std::sin(a.startAngle) * a.radius;
+        const double t = a.center.y + std::sin(a.endAngle) * a.radius;
+        CHECK((std::abs(s - 2) < 1e-6 || std::abs(t - 2) < 1e-6));
+        CHECK(a.radius > 0);
+        for (Vec2 p : geom::gripPoints(moved.value())) {
+            CHECK(std::isfinite(p.x));
+            CHECK(std::isfinite(p.y));
+        }
+    }
+}
+
+TEST_CASE("hatch: polyline edge vertices have grips that only stretch, so no menu") {
+    Fixture f;
+    HatchLoop loop;
+    loop.edges = {HatchPolylineEdge{square().v, true}};
+    HatchData h;
+    h.loops.push_back(loop);
+    auto id = add(f.doc, h);
+    f.host.setSelection({id});
+    REQUIRE(geom::gripPoints(*f.doc.find(id)).size() == 4);
+    ui::UiRegistry reg;
+    tf::registerUi(reg);
+    std::vector<EntityId> sel{id};
+    ui::PanelContext ctx;
+    ctx.doc = &f.doc;
+    ctx.host = &f.host;
+    ctx.selection = &sel;
+    ctx.apertureMm = 1;
+    ctx.cursorWorld = {10, 10};
+    ui::HoverMenu menu;
+    CHECK_FALSE(reg.hoverMenus().front()(ctx, menu));
+    for (const auto& g : tf::collectGrips(f.doc, std::vector<EntityId>{id}))
+        CHECK(tf::gripActions(f.doc, g) == std::vector<GripAction>{GripAction::Stretch});
+    auto moved = geom::moveGrip(*f.doc.find(id), 2, {11, 12});
+    REQUIRE(moved);
+    const auto& pe = std::get<HatchPolylineEdge>(entityAs<HatchData>(moved.value())->loops[0].edges[0]);
+    CHECK(pe.v[2].p.y == doctest::Approx(12));
+}
+
+TEST_CASE("hatch: GRIPEDIT stretches a corner, one undo step, redo") {
+    Fixture f;
+    auto id = add(f.doc, squareHatch());
+    f.host.setSelection({id});
+    auto r = f.host.run("GRIPEDIT", {"10,10", "14,15"});
+    CHECK(r.finished);
+    auto corner = [&] {
+        return std::get<HatchLineEdge>(get<HatchData>(f.doc, id).loops[0].edges[1]).b;
+    };
+    CHECK(near(corner(), {14, 15}));
+    CHECK(f.host.undo());
+    CHECK(near(corner(), {10, 10}));
+    CHECK(f.host.redo());
+    CHECK(near(corner(), {14, 15}));
+}
