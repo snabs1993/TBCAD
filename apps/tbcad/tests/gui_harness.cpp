@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <random>
 
 #include "gui.h"
 #include "tbcad/platform/file_dialog.h"
@@ -270,8 +271,15 @@ Harness::Harness(int width, int height) : impl_(std::make_unique<Impl>()) {
     impl_->window = glfwCreateWindow(width, height, "TBCAD test", nullptr, nullptr);
     REQUIRE(impl_->window != nullptr);
 
+    // Several test processes can run at once (ctest -j, one process per test case): each gets a
+    // folder of its own, or one would delete the folder another is using.
     static int counter = 0;
-    impl_->dir = fs::temp_directory_path() / ("tbcad_gui_test_" + std::to_string(++counter));
+    static const std::string unique = [] {
+        std::random_device rd;
+        return std::to_string(rd()) + "_" + std::to_string(rd());
+    }();
+    impl_->dir =
+        fs::temp_directory_path() / ("tbcad_gui_test_" + unique + "_" + std::to_string(++counter));
     fs::remove_all(impl_->dir);
     errorLog().clear();
 

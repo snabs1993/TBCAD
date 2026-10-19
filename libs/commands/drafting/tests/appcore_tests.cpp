@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <filesystem>
+#include <random>
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/draftingcmds/drafting_cmds.h"
@@ -36,7 +37,7 @@ struct App {
     std::unique_ptr<ui::AppCore> core;
 
     App() {
-        dir = fs::temp_directory_path() / ("tbcad_drafting_" + std::to_string(std::rand()));
+        dir = fs::temp_directory_path() / ("tbcad_drafting_" + std::to_string(std::random_device{}()));
         fs::create_directories(dir);
         cmd::registerBuiltinCommands(reg);
         draftingcmds::registerCommands(reg);

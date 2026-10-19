@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <random>
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/ui/app_core.h"
@@ -22,7 +23,7 @@ struct Cli {
     std::unique_ptr<ui::AppCore> core;
 
     Cli() {
-        dir = fs::temp_directory_path() / ("tbcad_cmdline_ux_" + std::to_string(std::rand()));
+        dir = fs::temp_directory_path() / ("tbcad_cmdline_ux_" + std::to_string(std::random_device{}()));
         fs::remove_all(dir);
         fs::create_directories(dir);
         registerAllCommands(registry);
