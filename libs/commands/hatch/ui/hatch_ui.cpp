@@ -105,6 +105,15 @@ bool hasHatchSelected(const ui::PanelContext& pc) {
 
 // ---- Panel: pattern list with thumbnails, parameters, pick / apply buttons -------------------
 
+// Label on the left, box filling the rest of the row (matches the Properties panel).
+std::string leftLabel(const char* label) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(70);
+    ImGui::SetNextItemWidth(-1);
+    return std::string("##") + label;
+}
+
 void drawPanel(ui::PanelContext& pc) {
     if (!pc.host)
         return;
@@ -135,22 +144,22 @@ void drawPanel(ui::PanelContext& pc) {
     if (const Pattern* pattern = PatternRegistry::find(p.pattern))
         ImGui::TextWrapped("%s", pattern->description.c_str());
     double scale = p.scale;
-    ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g", ImGuiInputTextFlags_AutoSelectAll) &&
+    if (ImGui::InputDouble(leftLabel("Scale").c_str(), &scale, 0, 0, "%.6g",
+                           ImGuiInputTextFlags_AutoSelectAll) &&
         scale > 0) {
         p.scale = scale;
         p.scaleAuto = false;
         changed = true;
     }
     double angle = p.angle * 180.0 / kPi;
-    ImGui::SetNextItemWidth(120);
-    if (ImGui::InputDouble("Angle", &angle, 0, 0, "%.6g", ImGuiInputTextFlags_AutoSelectAll)) {
+    if (ImGui::InputDouble(leftLabel("Angle").c_str(), &angle, 0, 0, "%.6g",
+                           ImGuiInputTextFlags_AutoSelectAll)) {
         p.angle = angle * kPi / 180.0;
         changed = true;
     }
     double base[2] = {p.base.x, p.base.y};
-    ImGui::SetNextItemWidth(240);
-    if (ImGui::InputScalarN("Origin", ImGuiDataType_Double, base, 2, nullptr, nullptr, "%.6g")) {
+    if (ImGui::InputScalarN(leftLabel("Origin").c_str(), ImGuiDataType_Double, base, 2, nullptr,
+                            nullptr, "%.6g")) {
         p.base = {base[0], base[1]};
         changed = true;
     }
