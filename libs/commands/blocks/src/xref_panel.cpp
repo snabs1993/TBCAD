@@ -143,8 +143,11 @@ void drawXrefPanel(ui::PanelContext& ctx) {
         ImGui::TextDisabled("Select a reference to reload, unload, detach, bind or relink it.");
         return;
     }
+    // Copies: the buttons below run commands that rewrite or remove this block, so `sel` must not
+    // be used after them.
     const std::string name = sel->name;
-    const xref::State s = xref::state(doc, sel->id, hostFile);
+    const BlockId selId = sel->id;
+    const xref::State s = xref::state(doc, selId, hostFile);
     if (ImGui::Button("Reload"))
         runOn(ctx, "XRELOAD", name);
     ImGui::SameLine();
@@ -165,8 +168,8 @@ void drawXrefPanel(ui::PanelContext& ctx) {
                 runOn(ctx, "XPATH", name, {t});
         ImGui::EndCombo();
     }
-    if (st.relinkFor != sel->id) {
-        st.relinkFor = sel->id;
+    if (st.relinkFor != selId) {
+        st.relinkFor = selId;
         st.relink.clear();
     }
     if (s == xref::State::Missing)

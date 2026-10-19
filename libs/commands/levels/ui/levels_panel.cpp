@@ -118,9 +118,13 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
         // Highest level first, like a section drawing.
         auto order = levelOrder(doc);
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
-            const Level* l = doc.level(*it);
-            if (!l)
+            const Level* found = doc.level(*it);
+            if (!found)
                 continue;
+            // A copy: the cells below run commands that rewrite the level table, which would
+            // leave a pointer into it dangling for the rest of the row.
+            const Level row = *found;
+            const Level* l = &row;
             const bool current = l->id == doc.header().currentLevel;
             ImGui::PushID(static_cast<int>(l->id.value));
             ImGui::TableNextRow();
@@ -195,8 +199,8 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
             }
             ImGui::TableSetColumnIndex(5);
             const auto& counts = levelCounts(st, doc);
-            auto found = counts.find(l->id.value);
-            ImGui::Text("%zu", found == counts.end() ? std::size_t{0} : found->second);
+            auto count = counts.find(l->id.value);
+            ImGui::Text("%zu", count == counts.end() ? std::size_t{0} : count->second);
             ImGui::PopID();
         }
         ImGui::EndTable();

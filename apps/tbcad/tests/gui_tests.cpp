@@ -1905,3 +1905,200 @@ TEST_CASE("random clicks, keys and commands leave the program usable") {
     h.frame(2);
     CHECK(h.core().document().modelSpaceCount() > 0);
 }
+
+namespace {
+
+struct FullDrawing {
+    EntityId line, text, mtext, dim, hatch, insert, circle;
+};
+
+// A drawing with something in every table a panel lists: layers in each state, text and dimension
+// styles, a block with an attribute and two references, text, MText, a dimension, a hatch, a
+// layout and an attached external reference. Saved and opened again so the scene is built the
+// way it is for a real file.
+FullDrawing fullDrawing(Harness& h) {
+    const fs::path dir = scratchDir("full");
+    h.core().submitText("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.core().pressEscape();
+    const fs::path refFile = dir / "ref.tbcad";
+    REQUIRE(h.core().saveAs(refFile).ok());
+    h.core().newDocument();
+    h.frame(2);
+
+    FullDrawing out{};
+    {
+        Document& doc = h.core().document();
+        Transaction tx = doc.begin("setup");
+        LayerId walls{}, frozen{};
+        {
+            Layer l;
+            l.name = "Walls";
+            walls = tx.addLayer(l).value();
+            l.name = "Frozen";
+            l.frozen = true;
+            frozen = tx.addLayer(l).value();
+            l.name = "Locked";
+            l.frozen = false;
+            l.locked = true;
+            REQUIRE(tx.addLayer(l).ok());
+            l.name = "Off";
+            l.locked = false;
+            l.on = false;
+            REQUIRE(tx.addLayer(l).ok());
+        }
+        TextStyle ts;
+        ts.name = "Notes";
+        const TextStyleId notes = tx.addTextStyle(ts).value();
+        DimStyle ds = *doc.dimStyle(doc.header().currentDimStyle);
+        ds.id = {};
+        ds.name = "Arch";
+        const DimStyleId arch = tx.addDimStyle(ds).value();
+
+        const BlockId door = tx.addBlock(BlockDef{.name = "Door"}).value();
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {9, 0}}}, door);
+        TextData tag;
+        tag.utf8 = "D1";
+        tag.height = 2;
+        tag.attdef = Boxed<AttDefInfo>(AttDefInfo{.tag = "MARK", .prompt = "Mark",
+                                                   .defaultValue = "D1"});
+        (void)tx.add(Entity{{}, Indirect<TextData>(tag)}, door);
+
+        auto add = [&](EntityData d, LayerId layer = {}) {
+            Entity e{{}, std::move(d)};
+            e.common.layer = layer;
+            return tx.add(std::move(e)).value();
+        };
+        out.line = add(LineData{{0, 0}, {100, 0}}, walls);
+        (void)add(LineData{{0, 10}, {100, 10}}, frozen);
+        out.circle = add(CircleData{{50, 50}, 10});
+        TextData t;
+        t.utf8 = "Room 101";
+        t.height = 2.5;
+        t.style = notes;
+        t.position = {10, 20};
+        out.text = add(Indirect<TextData>(t));
+        MTextData m;
+        m.utf8 = "{\\H2x;Big} note";
+        m.height = 2.5;
+        m.position = {10, 30};
+        out.mtext = add(Indirect<MTextData>(m));
+        DimensionData d;
+        d.style = arch;
+        d.defPts = {Vec2{0, 0}, Vec2{100, 0}, Vec2{50, -10}, Vec2{0, 0}};
+        d.textPos = {50, -10};
+        out.dim = add(Indirect<DimensionData>(d));
+        HatchData hd;
+        hd.solid = false;
+        hd.pattern = "ANSI31";
+        HatchLoop loop;
+        loop.edges.push_back(HatchPolylineEdge{
+            {PolyVertex{{60, 60}}, PolyVertex{{80, 60}}, PolyVertex{{80, 80}}, PolyVertex{{60, 80}}},
+            true});
+        hd.loops.push_back(loop);
+        out.hatch = add(Indirect<HatchData>(hd));
+        InsertData in;
+        in.block = door;
+        in.position = {120, 0};
+        in.attribs.push_back(AttribValue{"MARK", "D7"});
+        out.insert = add(Indirect<InsertData>(in));
+        in.position = {140, 0};
+        (void)add(Indirect<InsertData>(in));
+        tx.commit();
+    }
+    h.core().submitText("LAYOUT");
+    h.core().submitText("New");
+    h.core().submitText("Sheet-A");
+    h.core().pressEscape();
+    h.core().submitText("XATTACH");
+    h.core().submitText(refFile.string());
+    h.core().submitText("Attach");
+    h.core().submitText("Absolute");
+    h.core().submitText("ref");
+    h.core().submitText("200,0");
+    h.core().pressEscape();
+    const fs::path file = dir / "full.tbcad";
+    REQUIRE(h.core().saveAs(file).ok());
+    h.core().newDocument();
+    h.frame(2);
+    REQUIRE(h.core().openFile(file).ok());
+    h.frame(3);
+    REQUIRE(h.core().document().find(out.insert) != nullptr);
+    return out;
+}
+
+// Clicks each labelled widget of the panel's window once, closing whatever it opened.
+void clickEveryWidget(Harness& h, const char* tab) {
+    std::vector<std::string> labels;
+    for (const auto& it : imgui_items::items())
+        if (it.window.find(tab) != std::string::npos && !it.label.empty() &&
+            it.label.rfind("##", 0) != 0 && it.label != tab)
+            labels.push_back(it.label);
+    for (const std::string& l : labels) {
+        if (!h.has(l, tab))
+            continue;
+        h.click(l, tab);
+        h.frame(2);
+        h.key(ImGuiKey_Escape);
+        h.frame(1);
+        h.core().pressEscape();  // a command a click started
+        h.frame(1);
+        if (!h.windowOpen(tab) && h.has(tab, "DockSpace"))
+            h.click(tab, "DockSpace");
+    }
+}
+
+}  // namespace
+
+TEST_CASE("panels on a full drawing: every widget clicked, with each kind of object selected") {
+    struct P {
+        const char* id;
+        const char* tab;
+    };
+    const P panels[] = {{"layers", "Layers"},
+                        {"properties", "Object Properties"},
+                        {"levels", "Levels"},
+                        {"blocks", "Blocks"},
+                        {"xrefs", "External References"},
+                        {"textstyles", "Text Styles"},
+                        {"dimstyles", "Dimension Styles"},
+                        {"hatch", "Hatch"},
+                        {"palettes", "Tool Palettes"},
+                        {"plotstyle", "Plot Styles"},
+                        {"laywalk", "Layer Walk"},
+                        {"attvalues", "Attribute Values"},
+                        {"content", "Content Browser"}};
+    for (const P& p : panels) {
+        CAPTURE(p.id);
+        Harness h(1920, 1080);
+        const FullDrawing d = fullDrawing(h);
+        // The properties panel draws different sections per kind: try each; the others once
+        // with everything selected.
+        std::vector<std::vector<EntityId>> selections = {{}};
+        if (std::string_view(p.id) == "properties" || std::string_view(p.id) == "attvalues")
+            selections = {{d.line},   {d.circle}, {d.text},  {d.mtext}, {d.dim},
+                          {d.hatch},  {d.insert}, {d.line, d.text, d.insert}};
+        for (const auto& sel : selections) {
+            if (sel.empty())
+                h.core().selectAll();
+            else
+                h.core().setSelection(sel);
+            h.core().openPanel(p.id);
+            h.frame(3);
+            REQUIRE(h.has(p.tab, "DockSpace"));
+            REQUIRE(h.click(p.tab, "DockSpace"));
+            h.frame(3);
+            clickEveryWidget(h, p.tab);
+            // Still a working drawing: undo everything the clicks did, then draw a line.
+            for (int i = 0; i < 50 && h.core().undo(); ++i) {
+            }
+            h.frame(2);
+        }
+        h.core().submitText("LINE");
+        h.core().submitText("0,0");
+        h.core().submitText("1,1");
+        h.core().pressEscape();
+        h.frame(2);
+    }
+}
