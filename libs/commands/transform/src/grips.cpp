@@ -185,7 +185,7 @@ HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot,
 }
 
 std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, const HotGrips& set,
-                                                        const Grip& hot, Vec2 delta,
+                                                        const Grip&, Vec2 delta,
                                                         std::string* error, std::size_t limit) {
     std::vector<std::pair<EntityId, Entity>> out;
     const std::size_t count = std::min(set.order.size(), limit);

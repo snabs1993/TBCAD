@@ -108,10 +108,14 @@ public:
             return std::nullopt;
         return windowQuery_(window);
     }
+    // Tests: the box viewExtents() reports (empty by default).
+    void setViewExtents(const BBox2& box) { extents_ = box; }
+    BBox2 viewExtents() const override { return extents_; }
     void setPreview(const DisplayList* list) override;
     void promptChanged(const PromptInfo* prompt) override;
 
 private:
+    BBox2 extents_{};
     std::vector<std::string> uiRequests_{};
     ScriptResult pump(const std::vector<ScriptItem>& items, ScriptResult r);
 

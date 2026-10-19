@@ -143,6 +143,41 @@ struct Site {
         core->updateFrame();
     }
 
+    // Closed rooms (a rectangle, a round island and a few loose lines) in rows below the drawing.
+    void addRooms(int count) {
+        auto tx = core->document().begin("rooms");
+        for (int i = 0; i < count; ++i) {
+            const double x = (i % 500) * 30.0, y = -1000.0 - (i / 500) * 30.0;
+            PolylineData r;
+            r.closed = true;
+            r.v = {{{x, y}, 0, 0, 0}, {{x + 20, y}, 0, 0, 0}, {{x + 20, y + 20}, 0, 0, 0},
+                   {{x, y + 20}, 0, 0, 0}};
+            Entity e;
+            e.data = std::move(r);
+            (void)tx.add(std::move(e));
+            (void)tx.add(Entity{{}, CircleData{{x + 10, y + 10}, 3}});
+            (void)tx.add(Entity{{}, LineData{{x + 2, y + 2}, {x + 6, y + 3}}});
+            (void)tx.add(Entity{{}, LineData{{x + 14, y + 15}, {x + 18, y + 17}}});
+        }
+        tx.commit();
+        core->zoomExtents();
+        core->updateFrame();
+    }
+
+    // A row of short lines at y = -500, each with a boundary a few units away on both sides.
+    void addExtendRow(int count) {
+        auto tx = core->document().begin("extend row");
+        for (int i = 0; i < count; ++i) {
+            const double x = i * 30.0;
+            (void)tx.add(Entity{{}, LineData{{x, -500}, {x + 10, -500}}});
+            (void)tx.add(Entity{{}, LineData{{x - 5, -510}, {x - 5, -490}}});
+            (void)tx.add(Entity{{}, LineData{{x + 15, -510}, {x + 15, -490}}});
+        }
+        tx.commit();
+        core->zoomExtents();
+        core->updateFrame();
+    }
+
     // Frames until nothing is left waiting to be built, so one command does not pay for the last.
     void settle() {
         for (int i = 0; i < 400; ++i) {
@@ -340,6 +375,41 @@ TEST_CASE("perf: single-object edits on a drawing of 392k objects stay interacti
 #ifdef NDEBUG
         INFO(c.label);
         CHECK(t.runMs < 500);
+#endif
+    }
+}
+
+// TRIM and EXTEND by fence and crossing, OFFSET, FILLET and HATCH pick points on the big drawing:
+// each looks for its neighbours through the spatial index, so the cost follows the objects it
+// touches, not the 392k around them.
+TEST_CASE("perf: trim, extend, offset, fillet and hatch on a big drawing stay fast") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Site s;
+    s.addRooms(s.n / 2);
+    s.addExtendRow(std::min(s.n, 500));
+    const std::vector<Case> cases = {
+        {"TRIM-fence-row", {"TRIM", "", "Fence", "0,1", "15000,1", "", ""}},
+        {"TRIM-fence-diag", {"TRIM", "", "Fence", "0,0", "15000,3000", "", ""}},
+        {"TRIM-crossing", {"TRIM", "", "Crossing", "0,0", "3000,300", ""}},
+        {"TRIM-crossing-edges", {"TRIM", "@window", "", "Crossing", "0,0", "3000,300", ""}},
+        // Every short line of the row has a boundary a few units ahead of its nearer end.
+        {"EXTEND-crossing-row", {"EXTEND", "", "Crossing", "0,-505", "15000,-495", ""}},
+        // Implied edge extension has to look at every object once (an edge can run on from afar).
+        {"TRIM-edge-extend", {"TRIM", "", "Edge", "Extend", "@click10,5", ""}, 5000},
+        {"OFFSET-polyline", {"OFFSET", "3", "@click3,1", "5,5", ""}},
+        {"FILLET-polyline", {"FILLET", "R", "0.3", "Polyline", "@click1,1"}},
+        {"HATCH-room", {"HATCH", "5,-995", ""}},
+        {"HATCH-room-far", {"HATCH", "14505,-1025", ""}},
+        {"HATCH-no-boundary", {"HATCH", "10,5", ""}},
+    };
+    std::printf("%zu objects\n", s.core->document().modelSpaceCount());
+    for (const Case& c : cases) {
+        const Timing t = s.bench(c.lines, false);
+        std::printf("%-20s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
+                    s.core->history().empty() ? "" : s.core->history().back().c_str());
+#ifdef NDEBUG
+        INFO(c.label);
+        CHECK(t.runMs < c.budgetMs);
 #endif
     }
 }
