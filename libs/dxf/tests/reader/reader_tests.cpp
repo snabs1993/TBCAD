@@ -1298,6 +1298,31 @@ TEST_CASE("WIPEOUT: the clip boundary becomes a closed polyline that hides what 
     CHECK(found);
 }
 
+TEST_CASE("WIPEOUT: the clip boundary counts y down from the top of the frame") {
+    // AutoCAD's L-shaped wipeout over (0,0)-(40,20): the foot of the L is at the bottom.
+    Pairs p;
+    p.g(0, "WIPEOUT").g(8, "0").g(100, "AcDbWipeout").g(90, 0);
+    p.g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 40.0).g(21, 0.0).g(31, 0.0);
+    p.g(12, 0.0).g(22, 20.0).g(32, 0.0).g(13, 1.0).g(23, 1.0).g(71, 2).g(91, 7);
+    // (0,0) (40,0) (40,10) (10,10) (10,20) (0,20) in pixel units: x/40 - 0.5, 0.5 - y/20
+    const double px[][2] = {{-0.5, 0.5}, {0.5, 0.5}, {0.5, 0.0}, {-0.25, 0.0},
+                            {-0.25, -0.5}, {-0.5, -0.5}, {-0.5, 0.5}};
+    for (const auto& q : px)
+        p.g(14, q[0]).g(24, q[1]);
+    Loaded l = load(entitiesOnly(p.text));
+    const Vec2 want[] = {{0, 0}, {40, 0}, {40, 10}, {10, 10}, {10, 20}, {0, 20}};
+    std::size_t found = 0;
+    l.doc().forEachEntity([&](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        REQUIRE(pl != nullptr);
+        ++found;
+        REQUIRE(pl->v.size() == 6);
+        for (std::size_t i = 0; i < 6; ++i)
+            CHECK(near(pl->v[i].p, want[i]));
+    });
+    CHECK(found == 1);
+}
+
 TEST_CASE("ARC_DIMENSION: centre, ends and arc point give an arc length dimension") {
     Pairs p;
     p.g(0, "ARC_DIMENSION").g(8, "0").g(100, "AcDbDimension").g(3, "Standard");

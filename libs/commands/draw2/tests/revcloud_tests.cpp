@@ -193,3 +193,89 @@ TEST_CASE("REVCLOUD refuses an arc length that would need too many arcs and skip
     for (std::size_t i = 0; i < pl.v.size(); ++i)
         CHECK(distance(pl.v[i].p, pl.v[(i + 1) % pl.v.size()].p) > 1);
 }
+
+TEST_CASE("REVCLOUD: Enter at the first prompt selects an object, as in AutoCAD") {
+    Fixture f;
+    CircleData c;
+    c.center = {0, 0};
+    c.radius = 20;
+    auto circle = f.addEntity(c);
+    REQUIRE(f.host.run("REVC", {"", ScriptItem::pick(circle, {20, 0}), ""}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    CHECK(as<PolylineData>(es[0]).closed);
+}
+
+TEST_CASE("REVCLOUD Rectangular, Polygonal and Freehand set the mode, which is remembered") {
+    Fixture f;
+    REQUIRE(f.host.run("REVC", {"Rectangular", "0,0", "40,20"}).finished);
+    REQUIRE(f.host.run("REVC", {"100,0", "140,20"}).finished);  // still rectangular
+    auto es = f.entities();
+    REQUIRE(es.size() == 2);
+    BBox2 b;
+    for (const auto& v : as<PolylineData>(es[1]).v)
+        b.expand(v.p);
+    CHECK(close(b.min, {100, 0}));
+    CHECK(close(b.max, {140, 20}));
+    REQUIRE(f.host.run("REVC", {"Polygonal", "0,100", "30,100", "30,130", ""}).finished);
+    CHECK(f.entities().size() == 3);
+    const auto& ps = f.host.prompts();
+    CHECK(std::any_of(ps.begin(), ps.end(), [](const std::string& p) {
+        return p.find("(arc length 10, polygonal)") != std::string::npos;
+    }));
+}
+
+TEST_CASE("REVCLOUD Rectangular previews the cloud to the cursor") {
+    Fixture f;
+    f.host.run("REVC", {"Rectangular", "0,0"});
+    cmd::RawInput in;
+    in.worldCursor = {40, 20};
+    f.host.runner().pointerMoved(in);
+    REQUIRE(f.host.preview().items.size() >= 1);
+    f.host.feed({ScriptItem::esc()});
+    CHECK(f.entities().empty());
+}
+
+TEST_CASE("REVCLOUD Freehand: the cursor lays arcs, and coming back to the start closes it") {
+    Fixture f;
+    f.host.run("REVC", {"A", "10", "Freehand", "0,0"});
+    for (Vec2 p : {Vec2{30, 0}, Vec2{30, 30}, Vec2{0, 30}}) {
+        cmd::RawInput in;
+        in.worldCursor = p;
+        f.host.runner().pointerMoved(in);
+    }
+    REQUIRE(f.host.preview().items.size() >= 1);
+    REQUIRE(f.host.feed({"0,2"}).finished);  // near the start: closed
+    CHECK(f.host.logContains("Revision cloud finished"));
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
+    CHECK(pl.closed);
+    CHECK(pl.v.size() == 12);  // every 10 along the four 30-long sides
+    for (const auto& v : pl.v)
+        CHECK(close(v.bulge, kBulge));
+    f.host.undo();
+    CHECK(f.entities().empty());
+}
+
+TEST_CASE("REVCLOUD Freehand: Enter ends an open cloud and Reverse turns its arcs") {
+    Fixture f;
+    REQUIRE(f.host.run("REVC", {"A", "10", "F", "0,0", "40,0", "", ""}).finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
+    CHECK_FALSE(pl.closed);
+    REQUIRE(pl.v.size() == 5);  // 0, 10, 20, 30, 40
+    CHECK(close(pl.v.back().p, {40, 0}));
+    const double side = pl.v[0].bulge;
+    CHECK(std::abs(side) == doctest::Approx(kBulge));
+
+    REQUIRE(f.host.run("REVC", {"0,10", "40,10", "", "Yes"}).finished);  // freehand remembered
+    es = f.entities();
+    REQUIRE(es.size() == 2);
+    CHECK(close(as<PolylineData>(es[1]).v[0].bulge, -side));
+
+    // nothing but the start point draws nothing
+    REQUIRE(f.host.run("REVC", {"5,5", ""}).finished);
+    CHECK(f.entities().size() == 2);
+}
