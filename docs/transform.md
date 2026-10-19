@@ -12,6 +12,11 @@ Module `libs/commands/transform`. All commands run in one transaction, so each i
 | STRETCH | S | crossing window or CPolygon, base point, second point |
 | GRIPEDIT | | started by clicking a grip of the selection (Ctrl: copy) |
 
+Hovering a grip lists what it can do besides Stretch: Lengthen on line and arc ends and on the
+straight end segment of an open polyline; Radius on circles and arcs; Add vertex, Remove vertex and
+Convert to arc / line on polylines; Add / Remove fit point on fit-point splines and Remove vertex on
+control-vertex splines (while degree + 1 vertices remain).
+
 ## STRETCH
 
 the window moves (`stretchByWindow` in `stretch.h`). Type `CP` at the first prompt to outline a crossing
