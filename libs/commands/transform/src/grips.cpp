@@ -1,7 +1,9 @@
 #include "tbcad/transform/grips.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 #include "tbcad/blocks/dynamic.h"
 #include "tbcad/geom/geom.h"
@@ -32,7 +34,9 @@ std::size_t gripLimit(const cmd::IHost& host) {
     if (auto s = host.setting("grips.limit")) {
         try {
             long long v = std::stoll(*s);
-            if (v >= 0)
+            if (v == 0)  // like GRIPOBJLIMIT 0: grips for any number of objects
+                return std::numeric_limits<std::size_t>::max();
+            if (v > 0)
                 return static_cast<std::size_t>(v);
         } catch (...) {
         }
@@ -45,6 +49,7 @@ std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> id
     std::vector<Grip> out;
     if (ids.size() > limit)
         return out;
+    out.reserve(ids.size() * 2);
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
         if (!e)
@@ -58,10 +63,36 @@ std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> id
     return out;
 }
 
+const std::vector<Grip>& cachedGrips(const Document& doc, std::span<const EntityId> ids,
+                                     std::size_t limit) {
+    struct Cache {
+        std::uint64_t uid = 0;
+        std::uint64_t revision = 0;
+        std::size_t limit = 0;
+        std::vector<EntityId> ids;
+        std::vector<Grip> grips;
+        bool valid = false;
+    };
+    static Cache c;
+    if (!c.valid || c.uid != doc.uid() || c.revision != doc.revision() || c.limit != limit ||
+        c.ids.size() != ids.size() || !std::equal(ids.begin(), ids.end(), c.ids.begin())) {
+        c.grips = collectGrips(doc, ids, limit);
+        c.ids.assign(ids.begin(), ids.end());
+        c.uid = doc.uid();
+        c.revision = doc.revision();
+        c.limit = limit;
+        c.valid = true;
+    }
+    return c.grips;
+}
+
 const Grip* hitGrip(const std::vector<Grip>& grips, Vec2 p, double apertureMm) {
     const Grip* best = nullptr;
     double bestD = apertureMm;
     for (const Grip& g : grips) {
+        // Most grips of a big selection are far away: reject on one axis before the root.
+        if (std::abs(g.pos.x - p.x) > bestD || std::abs(g.pos.y - p.y) > bestD)
+            continue;
         double d = distance(g.pos, p);
         if (d <= bestD) {
             bestD = d;
@@ -85,8 +116,7 @@ std::optional<Vec2> hotGrip() {
 
 std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids, Vec2 world,
                              double apertureMm, std::size_t limit, bool copy) {
-    auto grips = collectGrips(doc, ids, limit);
-    const Grip* g = hitGrip(grips, world, apertureMm);
+    const Grip* g = hitGrip(cachedGrips(doc, ids, limit), world, apertureMm);
     if (!g)
         return {};
     char buf[96];

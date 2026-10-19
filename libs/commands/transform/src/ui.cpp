@@ -38,7 +38,7 @@ void registerUi(ui::UiRegistry& ui) {
         if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty() ||
             ctx.commandActive || ctx.apertureMm <= 0)
             return false;
-        auto grips = collectGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
+        const auto& grips = cachedGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
         const Grip* g = hitGrip(grips, ctx.cursorWorld, ctx.apertureMm * kGripReach);
         if (!g)
             return false;
@@ -64,12 +64,22 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addOverlayDrawer([](ui::PanelContext& ctx, render::Overlay& overlay) {
         if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty())
             return;
-        auto grips = collectGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
+        const auto& grips = cachedGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
         const auto hot = hotGrip();
+        // Only the grips in view are drawn, and no more than a screen can show.
+        constexpr std::size_t kMaxDrawn = 20000;
+        BBox2 view;
+        if (ctx.camera)
+            view = ctx.camera->visibleWorld().inflated(4 * ctx.apertureMm);
+        std::size_t drawn = 0;
         const Grip* hover = ctx.apertureMm > 0
                                 ? hitGrip(grips, ctx.cursorWorld, ctx.apertureMm * kGripReach)
                                 : nullptr;
         for (const Grip& g : grips) {
+            if (ctx.camera && !view.contains(g.pos))
+                continue;
+            if (++drawn > kMaxDrawn)
+                break;
             Rgba colour{38, 120, 255, 255};
             if (hot && distance(g.pos, *hot) < 1e-9)
                 colour = Rgba{255, 50, 50, 255};

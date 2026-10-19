@@ -28,13 +28,20 @@ enum class GripMode { Stretch, Move, Rotate, Scale, Mirror };
 const char* gripModeName(GripMode mode);
 GripMode nextGripMode(GripMode mode);
 
-// Setting `grips.limit` (default 100): above this many selected entities no grips are shown.
+// Setting `grips.limit` (system variable GRIPOBJLIMIT, default 100): above this many selected
+// entities no grips are shown; 0 means no limit.
 constexpr std::size_t kDefaultGripLimit = 100;
 std::size_t gripLimit(const cmd::IHost& host);
 
 // Grips of the given entities, or none when there are more than `limit` of them.
 std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> ids,
                                std::size_t limit = kDefaultGripLimit);
+
+// The grips of the selection as collectGrips finds them, kept while neither the drawing nor the
+// selection nor the limit changes: they are asked for on every mouse move and every frame.
+// UI thread only.
+const std::vector<Grip>& cachedGrips(const Document& doc, std::span<const EntityId> ids,
+                                     std::size_t limit);
 
 // Grip nearest to `p` within `apertureMm`, if any.
 const Grip* hitGrip(const std::vector<Grip>& grips, Vec2 p, double apertureMm);
