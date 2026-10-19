@@ -26,6 +26,10 @@ public:
     // Missing file: not an error (defaults stay). Broken file: error, defaults stay, and the
     // caller is expected to tell the user.
     Result<void> load(const std::filesystem::path& file);
+    // Puts back values a hand-edited or damaged file made unusable: a setting of the wrong type
+    // gets its default, a number outside what the Settings dialog offers is clamped. Returns one
+    // line per change, for the user.
+    std::vector<std::string> repair();
     // Atomic: writes <file>.tmp, then renames over <file>.
     Result<void> save(const std::filesystem::path& file) const;
 

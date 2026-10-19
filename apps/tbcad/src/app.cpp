@@ -26,6 +26,7 @@
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/dwgopen/dwgopen.h"
+#include "tbcad/core/units.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/mcp/png.h"
@@ -633,6 +634,89 @@ int App::runCapture() {
             }
             if (what == "lacks")
                 ok = !rest.empty() && !ok && bytes.size() > 0;
+        } else if (what == "setting") {
+            // setting KEY VALUE: true/false, a number or text, as the settings hold it.
+            std::string key, want;
+            ss >> key;
+            std::getline(ss, want);
+            while (!want.empty() && want.front() == ' ')
+                want.erase(0, 1);
+            const auto& st = core_->settings();
+            switch (st.kindOf(key)) {
+                case platform::Settings::Kind::Bool:
+                    got = st.getBool(key) ? "true" : "false";
+                    break;
+                case platform::Settings::Kind::Number: {
+                    char buf[32];
+                    std::snprintf(buf, sizeof buf, "%g", st.getNumber(key));
+                    got = buf;
+                    break;
+                }
+                case platform::Settings::Kind::String:
+                    got = st.getString(key);
+                    break;
+                case platform::Settings::Kind::Missing:
+                    got = "missing";
+                    break;
+                default:
+                    got = "a list";
+            }
+            ok = got == want;
+        } else if (what == "current-layer") {
+            std::string name;
+            ss >> name;
+            const Layer* l = core_->document().layer(core_->document().header().currentLayer);
+            got = l ? l->name : "none";
+            ok = l && l->name == name;
+        } else if (what == "units") {
+            std::string name;
+            ss >> name;
+            got = std::string(unitSuffix(core_->document().header().units));
+            ok = got == name;
+        } else if (what == "status") {
+            // status LABEL on|off: a toggle of the status bar (OSNAP, ORTHO, ...).
+            std::string label, state;
+            ss >> label >> state;
+            got = "no such toggle";
+            for (const auto& t : uiRegistry_->statusToggles())
+                if (t.label == label || t.id == label) {
+                    got = t.get() ? "on" : "off";
+                    ok = got == state;
+                }
+        } else if (what == "item") {
+            // item LABEL: a widget with this label was drawn in the last frame.
+            std::string label;
+            std::getline(ss, label);
+            while (!label.empty() && label.front() == ' ')
+                label.erase(0, 1);
+            got = "not drawn";
+            for (const imgui_items::Item& it : imgui_items::items())
+                if (!label.empty() && (it.label == label ||
+                                       it.label.substr(0, it.label.find("##")) == label)) {
+                    got = "in " + it.window;
+                    ok = true;
+                }
+        } else if (what == "warnings") {
+            // warnings N: lines the program printed at startup about the settings files.
+            ok = countIs(core_->startupWarnings().size());
+        } else if (what == "startup-ms") {
+            // startup-ms N: the first frame was drawn within N milliseconds.
+            double limit = 0;
+            ss >> limit;
+            const double ms = startupPhases_.empty() ? -1 : startupPhases_.back().second;
+            got = std::to_string(std::lround(ms)) + " ms";
+            ok = ms >= 0 && ms <= limit;
+        } else if (what == "log") {
+            std::string rest;
+            std::getline(ss, rest);
+            while (!rest.empty() && rest.front() == ' ')
+                rest.erase(0, 1);
+            got = "not in the command history";
+            for (const std::string& h : core_->history())
+                if (h.find(rest) != std::string::npos) {
+                    got = h;
+                    ok = !rest.empty();
+                }
         } else if (what == "prompt") {
             std::string rest;
             std::getline(ss, rest);
@@ -1332,6 +1416,33 @@ void App::frame() {
             gPhaseFrames = 0;
         }
     }
+    if (!startupReported_)
+        reportStartup();
+}
+
+void App::startupMark(const char* phase) {
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started_)
+            .count();
+    startupPhases_.emplace_back(phase, ms);
+}
+
+void App::reportStartup() {
+    startupReported_ = true;
+    startupMark("first frame");
+    std::string line = "Startup: first frame after " +
+                       std::to_string(std::lround(startupPhases_.back().second)) + " ms (";
+    double prev = 0;
+    for (std::size_t i = 0; i < startupPhases_.size(); ++i) {
+        const auto& [name, at] = startupPhases_[i];
+        line += (i ? ", " : "") + name + " " + std::to_string(std::lround(at - prev));
+        prev = at;
+    }
+    line += ")";
+    // Capture runs report on stdout with the rest of their log.
+    std::fprintf(options_.captureScript.empty() ? stderr : stdout, "%s\n", line.c_str());
+    if (platform::processEnvironment("TBCAD_STARTUP_TRACE"))
+        core_->print(line);
 }
 
 bool App::saveScreenshot(const std::string& path) {
@@ -1435,8 +1546,10 @@ int App::run() {
     platform::installCrashHandler(paths_.crashDir(), TBCAD_VERSION);
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
+    startupMark("commands");
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);
     dwgopen::registerForeignFormats(*core_);
+    startupMark("settings and drawing");
     if (!options_.listCommands.empty()) {
         const std::string table = cmd::commandListMarkdown(*registry_);
         if (options_.listCommands == "-") {
@@ -1478,15 +1591,19 @@ int App::run() {
     plugins_->registerListCommand(*registry_, pluginFolder);
     for (const std::string& line : plugins_->takeLog())
         core_->print(line);
+    startupMark("plugins");
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
     plugins_->registerUi(*uiRegistry_);
     mcp_->registerUi(*uiRegistry_);
     core_->registerBuiltinUi(*uiRegistry_);
     core_->applyUiKeybindings(*uiRegistry_);
+    startupMark("panels");
 
     std::string why;
-    if (!initWindow(why)) {
+    const bool windowOk = initWindow(why);
+    startupMark("window");
+    if (!windowOk) {
         std::fprintf(stderr, "tbcad: %s\n", why.c_str());
         // 77 = skipped for ctest, unless the CI job says a display must be there.
         const bool required = platform::processEnvironment("TBCAD_REQUIRE_GUI").has_value();
@@ -1499,6 +1616,7 @@ int App::run() {
         buildFonts(total);
         applyTheme(gui_->theme(), total);
     }
+    startupMark("interface and fonts");
     glfwSetWindowUserPointer(window_, gui_.get());
     glfwSetDropCallback(window_, [](GLFWwindow* w, int count, const char** paths) {
         auto* gui = static_cast<Gui*>(glfwGetWindowUserPointer(w));
@@ -1520,8 +1638,10 @@ int App::run() {
         glfwGetFramebufferSize(window_, &w, &h);
         core_->setViewportSize(std::max(1, w - 600), std::max(1, h - 200));
     }
-    if (!options_.openFile.empty())
+    if (!options_.openFile.empty()) {
         (void)core_->openFile(platform::pathFromUtf8(options_.openFile));
+        startupMark("open file");
+    }
     if (!options_.script.empty())
         runScript(options_.script);
     if (!options_.scriptFile.empty())

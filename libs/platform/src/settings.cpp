@@ -1,6 +1,7 @@
 #include "tbcad/platform/settings.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -65,6 +66,53 @@ Result<void> Settings::load(const std::filesystem::path& file) {
     for (const auto& [k, v] : parsed.value().asObject())
         root_.object()[k] = v;
     return {};
+}
+
+std::vector<std::string> Settings::repair() {
+    std::vector<std::string> fixed;
+    auto& o = root_.object();
+    const Settings defaults = withDefaults();
+    for (const auto& [k, v] : defaults.root_.asObject()) {
+        auto it = o.find(k);
+        if (it == o.end())
+            continue;
+        const Json& cur = it->second;
+        const bool same = (v.isBool() && cur.isBool()) || (v.isNumber() && cur.isNumber()) ||
+                          (v.isString() && cur.isString());
+        if (!same) {
+            it->second = v;
+            fixed.push_back("Setting " + k + " had a value of the wrong type; using the default");
+        }
+    }
+    // The ranges of the Settings dialog.
+    struct Range {
+        const char* key;
+        double lo, hi, fallback;
+    };
+    static constexpr Range kRanges[] = {{"ui.scale", 0.75, 2.0, 1.0},
+                                        {"pick.aperturePx", 3, 20, 6},
+                                        {"ui.wheel.delayMs", 100, 800, 250},
+                                        {"autosave.minutes", 1, 60, 10}};
+    for (const Range& r : kRanges) {
+        auto it = o.find(r.key);
+        if (it == o.end())
+            continue;
+        if (!it->second.isNumber()) {
+            o.erase(it);
+            fixed.push_back(std::string("Setting ") + r.key + " was not a number; using the default");
+            continue;
+        }
+        const double v = it->second.asNumber();
+        const double c = std::isfinite(v) ? std::clamp(v, r.lo, r.hi) : r.fallback;
+        if (c != v) {
+            it->second = c;
+            fixed.push_back(std::string("Setting ") + r.key + " was out of range; using " +
+                            toJson(Json(c), false));
+        }
+    }
+    if (!fixed.empty())
+        dirty_ = true;
+    return fixed;
 }
 
 Result<void> Settings::save(const std::filesystem::path& file) const {

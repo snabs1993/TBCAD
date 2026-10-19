@@ -61,14 +61,20 @@ public:
     void runCommitHooks(Document& doc, Transaction& tx) const;
 
     // Effective alias -> command name table (upper case).
-    const std::map<std::string, std::string>& aliases() const { return aliases_; }
+    const std::map<std::string, std::string>& aliases() const {
+        refresh();
+        return aliases_;
+    }
     std::vector<std::string> aliasesOf(std::string_view commandName) const;
     // Every alias in effect plus the entries that are in conflict, sorted by alias.
     std::vector<AliasEntry> aliasTable() const;
     // The user aliases as last set (alias -> command, as given).
     const std::map<std::string, std::string>& userAliases() const { return user_; }
     // Conflicts among built-in aliases found by the last rebuild.
-    const std::vector<std::string>& conflicts() const { return conflicts_; }
+    const std::vector<std::string>& conflicts() const {
+        refresh();
+        return conflicts_;
+    }
 
     // Reads a user alias file ({"L": "LINE", "CC": "CIRCLE"}) over the built-in aliases. A
     // missing file is fine (defaults only). A broken file produces an error in the report and
@@ -78,13 +84,20 @@ public:
     AliasReport setUserAliases(const std::map<std::string, std::string>& userAliases);
 
 private:
-    AliasReport rebuild();
+    AliasReport rebuild() const;
+    // The alias table is rebuilt when first needed after commands were added, not once per
+    // command (registering several hundred commands at startup).
+    void refresh() const {
+        if (stale_)
+            (void)rebuild();
+    }
 
     std::map<std::string, std::unique_ptr<Command>> commands_{};
     std::vector<CommitHook> commitHooks_{};
     std::map<std::string, std::string> user_{};  // alias -> command, as given by the user
-    std::map<std::string, std::string> aliases_{};
-    std::vector<std::string> conflicts_{};
+    mutable std::map<std::string, std::string> aliases_{};
+    mutable std::vector<std::string> conflicts_{};
+    mutable bool stale_ = false;
 };
 
 // Commands that belong to the framework itself: UNDO [U], REDO, UNDOBEGIN, UNDOEND, ALIASES.

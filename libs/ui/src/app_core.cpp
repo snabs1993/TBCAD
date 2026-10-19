@@ -141,8 +141,18 @@ struct AppCore::DocSlot {
 
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     : registry_(registry), paths_(std::move(paths)), settings_(platform::Settings::withDefaults()) {
-    if (auto r = settings_.load(paths_.settingsFile()); !r)
-        startupWarnings_.push_back(r.error().message + " (using default settings)");
+    if (auto r = settings_.load(paths_.settingsFile()); !r) {
+        // Keep the damaged file for the user to look at: the next save would replace it.
+        std::error_code ec;
+        fs::path kept = paths_.settingsFile();
+        kept += ".bad";
+        fs::rename(paths_.settingsFile(), kept, ec);
+        startupWarnings_.push_back(r.error().message + " (using default settings" +
+                                   (ec ? std::string(")") : "; the file was kept as " +
+                                                                kept.filename().string() + ")"));
+    }
+    for (auto& w : settings_.repair())
+        startupWarnings_.push_back(std::move(w));
 
     keybindings_.declare("file.new", "Ctrl+N");
     keybindings_.declare("file.open", "Ctrl+O");

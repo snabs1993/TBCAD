@@ -95,3 +95,27 @@ TEST_CASE("resetToDefaults restores the dialog's options and keeps recent files"
     CHECK(s.getString("custom.thing") == "keep");
     CHECK(s.dirty());
 }
+
+TEST_CASE("repair puts back values a hand-edited file made unusable") {
+    fs::path d = tempDir("repair");
+    {
+        std::ofstream(d / "settings.json")
+            << R"({"ui.scale": 0, "pick.aperturePx": "big", "drafting.osnap": "yes",
+                  "autosave.minutes": 100000, "ui.theme": 5, "my.own": [1, 2]})";
+    }
+    Settings s = Settings::withDefaults();
+    REQUIRE(s.load(d / "settings.json"));
+    const auto fixed = s.repair();
+    CHECK(fixed.size() == 5);
+    CHECK(s.getNumber("ui.scale") == 0.75);
+    CHECK(s.getNumber("pick.aperturePx") == 6);
+    CHECK(s.getBool("drafting.osnap"));
+    CHECK(s.getNumber("autosave.minutes") == 60);
+    CHECK(s.getString("ui.theme") == "dark");
+    CHECK(s.kindOf("my.own") == Settings::Kind::Other);  // not ours: left alone
+    CHECK(s.dirty());
+
+    Settings fresh = Settings::withDefaults();
+    CHECK(fresh.repair().empty());
+    CHECK_FALSE(fresh.dirty());
+}

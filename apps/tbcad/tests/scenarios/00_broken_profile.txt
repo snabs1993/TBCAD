@@ -1,0 +1,19 @@
+# Damaged settings files (cut-off JSON, a key bindings file that is one bracket, a broken alias
+# file and workspace) never stop the program: it starts with the defaults and says what it skipped.
+@expect warnings 3
+@expect log using default settings
+@expect log settings.json.bad
+@expect log using default key bindings
+@expect setting ui.theme dark
+@expect units mm
+@expect current-layer 0
+@expect status OSNAP on
+@expect prompt Command:
+@expect item ##command
+@expect item OSNAP
+LINE
+0,0
+100,0
+
+@expect line 1
+@shot 00_broken_profile.png

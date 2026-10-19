@@ -143,13 +143,24 @@ if(TBCAD_BUILD_TESTS)
   file(GLOB TBCAD_SCENARIOS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/*.txt")
   foreach(scenario ${TBCAD_SCENARIOS})
     get_filename_component(scenarioName "${scenario}" NAME_WE)
+    # Each run starts from an empty settings folder, or from a copy of tests/scenarios/NAME.config
+    # when there is one (a damaged or unusual profile to start from).
+    set(scenarioConfig "${CMAKE_CURRENT_BINARY_DIR}/scenario-config/${scenarioName}")
+    set(scenarioData "${CMAKE_CURRENT_BINARY_DIR}/scenario-data/${scenarioName}")
+    add_test(NAME tbcad_scenario_${scenarioName}_reset
+             COMMAND ${CMAKE_COMMAND} -DCONFIG=${scenarioConfig} -DDATA=${scenarioData}
+                     -DSEED=${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/${scenarioName}.config
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/reset_profile.cmake)
+    set_tests_properties(tbcad_scenario_${scenarioName}_reset PROPERTIES
+      FIXTURES_SETUP tbcad_profile_${scenarioName})
     add_test(NAME tbcad_scenario_${scenarioName}
              COMMAND tbcad --self-test --capture-script "${scenario}"
                      --capture-out "${CMAKE_CURRENT_BINARY_DIR}/scenarios/${scenarioName}")
     set_tests_properties(tbcad_scenario_${scenarioName} PROPERTIES
       SKIP_RETURN_CODE 77
       RUN_SERIAL TRUE
-      ENVIRONMENT "TBCAD_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/scenario-config/${scenarioName};TBCAD_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/scenario-data/${scenarioName}")
+      FIXTURES_REQUIRED tbcad_profile_${scenarioName}
+      ENVIRONMENT "TBCAD_CONFIG_DIR=${scenarioConfig};TBCAD_DATA_DIR=${scenarioData}")
   endforeach()
   set_tests_properties(tbcad_gui_smoke PROPERTIES
     SKIP_RETURN_CODE 77
