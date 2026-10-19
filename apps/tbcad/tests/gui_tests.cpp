@@ -1753,3 +1753,19 @@ TEST_CASE("status bar: its controls sit on one line and are not cut off") {
     CHECK(scale->max.y <= 1080.0f);
     CHECK(layer->min.y == doctest::Approx(scale->min.y));
 }
+
+TEST_CASE("save workspace dialog takes the keyboard when it opens and closes on Esc") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.click("View"));
+    h.frame(2);
+    REQUIRE(h.click("Workspaces"));
+    h.frame(2);
+    REQUIRE(h.click("Save Current Layout As..."));
+    h.frame(4);
+    REQUIRE(h.windowOpen("Save workspace"));
+    CHECK(ImGui::GetCurrentContext()->ActiveId != 0);  // the name field is ready to type in
+    h.key(ImGuiKey_Escape);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Save workspace"));
+}

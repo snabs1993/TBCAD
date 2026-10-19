@@ -1849,6 +1849,8 @@ void Gui::workspaceDialog() {
     if (!ImGui::BeginPopupModal("Save workspace", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         return;
     ImGui::TextUnformatted("Name for the current panel layout:");
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
     ImGui::SetNextItemWidth(260);
     const bool enter =
         ImGui::InputText("##wsName", &workspaceNameInput_, ImGuiInputTextFlags_EnterReturnsTrue);
