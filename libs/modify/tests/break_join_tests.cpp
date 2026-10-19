@@ -205,3 +205,35 @@ TEST_CASE("joining 30000 separate parallel lines fuses only the overlapping ones
     (void)secs;
 #endif
 }
+
+TEST_CASE("a spline absorbs lines at its ends, fit-only splines included") {
+    SplineData ctrl;
+    ctrl.degree = 3;
+    ctrl.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    ctrl.control = {{0, 0}, {5, 10}, {10, -10}, {20, 0}};
+    SplineData fit;
+    fit.degree = 3;
+    fit.fit = {{0, 0}, {5, 6}, {10, -4}, {15, 5}, {20, 0}};
+    for (const SplineData& s : {ctrl, fit}) {
+        Entity sp;
+        sp.data = Indirect<SplineData>(s);
+        // Lines at both ends, and an unrelated one.
+        std::vector<Entity> v = {sp, line({20, 0}, {30, 5}), line({-8, 3}, {0, 0}),
+                                 line({100, 100}, {110, 100})};
+        auto r = joinEntities(ptrs(v));
+        REQUIRE(r.created.size() == 1);
+        CHECK(r.consumed == std::vector<std::size_t>{0, 1, 2});
+        const auto* joined = std::get_if<Indirect<SplineData>>(&r.created[0].data);
+        REQUIRE(joined);
+        const SplineData& j = **joined;
+        CHECK(near(j.control.front(), {-8, 3}));
+        CHECK(near(j.control.back(), {30, 5}));
+        CHECK(j.knots.size() == j.control.size() + static_cast<std::size_t>(j.degree) + 1);
+    }
+    // Two collinear-chain lines touching a spline join each other first, as before.
+    Entity sp;
+    sp.data = Indirect<SplineData>(ctrl);
+    std::vector<Entity> v = {sp, line({40, 0}, {50, 0}), line({50, 0}, {60, 0})};
+    auto r = joinEntities(ptrs(v));
+    CHECK(r.consumed == std::vector<std::size_t>{1, 2});
+}

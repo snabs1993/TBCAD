@@ -214,3 +214,188 @@ TEST_CASE("TRIM and OFFSET stay quick in a drawing of 50 000 objects") {
     CHECK(std::abs(l->b.x - l->a.x) < 10200);  // the pick was trimmed away or cut short
     CHECK(f.doc.modelSpace().size() >= 50001);
 }
+
+namespace {
+
+std::vector<Sample> moreSamples() {
+    std::vector<Sample> s = samples();
+    SplineData fit;  // fit points only: no control points yet
+    fit.degree = 3;
+    fit.fit = {{0, 0}, {5, 6}, {10, -4}, {15, 5}, {20, 0}};
+    s.push_back({"fit-only spline", Indirect<SplineData>(fit), {0, 0}, {20, 0}});
+    SplineData closed;
+    closed.degree = 3;
+    closed.closed = true;
+    closed.fit = {{0, 0}, {10, -4}, {14, 8}, {2, 10}};
+    s.push_back({"closed fit spline", Indirect<SplineData>(closed), {0, 0}, {14, 8}});
+    PolylineData cp;
+    cp.closed = true;
+    cp.v = {{{0, 0}, 0, 0, 0}, {{12, 0}, 0.4, 0, 0}, {{12, 9}, 0, 0, 0}, {{0, 9}, 0, 0, 0}};
+    s.push_back({"closed polyline", cp, {12, 4}, {6, 9}});
+    return s;
+}
+
+}  // namespace
+
+TEST_CASE("modify commands on every curve kind, fit-only splines included, stay finite and undo") {
+    const auto ss = moreSamples();
+    struct Script {
+        const char* command;
+        // Items for the picked object `id` with two points on it; the crossing line is `edge`.
+        std::vector<ScriptItem> (*items)(EntityId id, EntityId edge, Vec2 p1, Vec2 p2);
+    };
+    const std::vector<Script> scripts = {
+        {"MIRROR",
+         [](EntityId id, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id}), ScriptItem::enter(), "0,-5", "20,-5", "N"};
+         }},
+        {"ROTATE",
+         [](EntityId id, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id}), ScriptItem::enter(), "5,5", "37"};
+         }},
+        {"SCALE",
+         [](EntityId id, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id}), ScriptItem::enter(), "5,5", "1.7"};
+         }},
+        {"COPY",
+         [](EntityId id, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id}), ScriptItem::enter(), "0,0", "3,4",
+                     ScriptItem::enter()};
+         }},
+        {"OFFSET",
+         [](EntityId id, EntityId, Vec2 p1, Vec2) -> std::vector<ScriptItem> {
+             return {"1.5", ScriptItem::pick(id, p1), "10,30", ScriptItem::enter()};
+         }},
+        {"EXPLODE",
+         [](EntityId id, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id}), ScriptItem::enter()};
+         }},
+        {"TRIM",
+         [](EntityId id, EntityId edge, Vec2 p1, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({edge}), ScriptItem::enter(), ScriptItem::pick(id, p1),
+                     ScriptItem::enter()};
+         }},
+        {"EXTEND",
+         [](EntityId id, EntityId edge, Vec2 p1, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({edge}), ScriptItem::enter(), ScriptItem::pick(id, p1),
+                     ScriptItem::enter()};
+         }},
+        {"BREAKATPOINT",
+         [](EntityId id, EntityId, Vec2 p1, Vec2 p2) -> std::vector<ScriptItem> {
+             return {ScriptItem::pick(id, p1), std::to_string(p2.x) + "," + std::to_string(p2.y)};
+         }},
+        {"DIVIDE",
+         [](EntityId id, EntityId, Vec2 p1, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::pick(id, p1), "6"};
+         }},
+        {"MEASURE",
+         [](EntityId id, EntityId, Vec2 p1, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::pick(id, p1), "4"};
+         }},
+        {"JOIN",
+         [](EntityId id, EntityId edge, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id, edge}), ScriptItem::enter()};
+         }},
+        {"PEDIT",
+         [](EntityId id, EntityId, Vec2 p1, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::pick(id, p1), "Yes", "Width", "2", ScriptItem::enter()};
+         }},
+        {"STRETCH",
+         [](EntityId, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {"-1,-12", "21,12", "0,0", "3,2"};
+         }},
+        {"ALIGN",
+         [](EntityId id, EntityId, Vec2, Vec2) -> std::vector<ScriptItem> {
+             return {ScriptItem::select({id}),
+                     ScriptItem::enter(),
+                     "0,0",
+                     "4,4",
+                     "10,0",
+                     "14,4",
+                     ScriptItem::enter(),
+                     "N"};
+         }},
+    };
+    int changed = 0, runs = 0;
+    for (const auto& sample : ss) {
+        for (const Script& sc : scripts) {
+            CAPTURE(sample.name);
+            CAPTURE(sc.command);
+            Rig r;
+            const EntityId id = r.add(sample.data);
+            // A vertical line through the middle of the object's box, to trim or extend against.
+            const EntityId edge = r.add(LineData{{9, -20}, {9, 20}});
+            const std::string before = canonicalDump(r.doc);
+            r.host.run(sc.command, sc.items(id, edge, sample.p1, sample.p2));
+            r.host.run("", {});
+            const std::string after = canonicalDump(r.doc);
+            ++runs;
+            CHECK(finiteDump(after));
+            if (after != before) {
+                ++changed;
+                while (r.host.undo()) {
+                }
+                CHECK(canonicalDump(r.doc) == before);
+            }
+        }
+    }
+    MESSAGE("changed the drawing in " << changed << " of " << runs << " runs");
+    CHECK(changed > runs / 4);
+}
+
+TEST_CASE("EXTEND, JOIN and BREAKATPOINT work on splines, fit-only ones included") {
+    SplineData ctrl;
+    ctrl.degree = 3;
+    ctrl.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    ctrl.control = {{0, 0}, {5, 10}, {10, -10}, {20, 0}};
+    SplineData fit;
+    fit.degree = 3;
+    fit.fit = {{0, 0}, {5, 6}, {10, -4}, {15, 5}, {20, 0}};
+    struct Case {
+        const char* name;
+        SplineData data;
+        Vec2 onCurve;  // a point in the middle of the curve
+    };
+    for (const Case& c :
+         {Case{"control points", ctrl, {8.125, 0}}, Case{"fit points", fit, {10, -4}}}) {
+        CAPTURE(c.name);
+        {  // EXTEND to a boundary beyond the end at (20, 0)
+            Rig r;
+            const EntityId id = r.add(Indirect<SplineData>(c.data));
+            const EntityId edge = r.add(LineData{{27, -20}, {27, 20}});
+            const std::string before = canonicalDump(r.doc);
+            r.host.run("EXTEND", {ScriptItem::select({edge}), ScriptItem::enter(),
+                                  ScriptItem::pick(id, {19.5, 0}), ScriptItem::enter()});
+            const Entity* e = r.doc.find(id);
+            REQUIRE(e);
+            const auto b = geom::bounds(*e, r.doc);
+            CHECK(b.max.x == doctest::Approx(27).epsilon(0.01));
+            CHECK(finiteDump(canonicalDump(r.doc)));
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == before);
+        }
+        {  // JOIN with a line that starts where the spline ends
+            Rig r;
+            const EntityId id = r.add(Indirect<SplineData>(c.data));
+            const EntityId ln = r.add(LineData{{20, 0}, {30, 5}});
+            const std::string before = canonicalDump(r.doc);
+            r.host.run("JOIN", {ScriptItem::select({id, ln}), ScriptItem::enter()});
+            CHECK(r.doc.modelSpaceCount() == 1);
+            CHECK(finiteDump(canonicalDump(r.doc)));
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == before);
+        }
+        {  // BREAKATPOINT in the middle: two pieces that meet at the point
+            Rig r;
+            const EntityId id = r.add(Indirect<SplineData>(c.data));
+            const std::string before = canonicalDump(r.doc);
+            r.host.run("BREAKATPOINT",
+                       {ScriptItem::pick(id, c.onCurve),
+                        std::to_string(c.onCurve.x) + "," + std::to_string(c.onCurve.y)});
+            CHECK(r.doc.modelSpaceCount() == 2);
+            CHECK(finiteDump(canonicalDump(r.doc)));
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == before);
+        }
+    }
+}
