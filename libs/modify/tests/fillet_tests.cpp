@@ -389,3 +389,24 @@ TEST_CASE("fillet a spline with a short line: the line grows to the tangent poin
     CHECK(near(grown.a.x, 20));
     CHECK(near(grown.b.x, 20));
 }
+
+TEST_CASE("polyline with an arc segment: chamfer skips the arc corners, fillet rounds them") {
+    PolylineData pl;
+    pl.closed = true;
+    pl.v = {{{0, 0}, 0}, {{10, 0}, 0.4}, {{10, 6}, 0}, {{0, 6}, 0}};
+    Entity e = make(pl);
+    ChamferOptions o;
+    o.distance1 = o.distance2 = 1;
+    auto c = chamferPolyline(e, o);
+    REQUIRE(c.ok());
+    // Only the two line-line corners are cut; the arc keeps its ends and bulge.
+    const auto& cv = as<PolylineData>(c.value()).v;
+    CHECK(cv.size() == 6);
+    CHECK(near(cv[1].p, {10, 0}));
+    CHECK(near(cv[1].bulge, 0.4, 1e-12));
+    CHECK_FALSE(chamferPolylineVertex(e, 1, o).ok());
+    auto f = filletPolyline(e, 1);
+    REQUIRE(f.ok());
+    // All four corners are rounded, the two next to the arc through the line-arc solution.
+    CHECK(as<PolylineData>(f.value()).v.size() == 8);
+}
