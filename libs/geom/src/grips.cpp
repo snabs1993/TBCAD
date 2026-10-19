@@ -179,9 +179,16 @@ std::vector<Vec2> gripPoints(const Entity& e) {
         case EntityKind::Text:
             g = {entityAs<TextData>(e)->position};
             break;
-        case EntityKind::MText:
-            g = {entityAs<MTextData>(e)->position};
+        case EntityKind::MText: {
+            const auto& d = *entityAs<MTextData>(e);
+            g = {d.position};
+            if (d.width > 0 && d.columns <= 1) {  // the wrapping width: drag the free side
+                const int col = static_cast<int>(d.attach) % 3;  // 0 left, 1 centre, 2 right
+                const double off = col == 0 ? d.width : col == 1 ? d.width * 0.5 : -d.width;
+                g.push_back(d.position + Vec2{std::cos(d.rotation), std::sin(d.rotation)} * off);
+            }
             break;
+        }
         case EntityKind::Insert:
             g = {entityAs<InsertData>(e)->position};
             break;
@@ -419,11 +426,23 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             d.alignPoint += delta;
             return out;
         }
-        case EntityKind::MText:
+        case EntityKind::MText: {
+            auto& d = *entityAs<MTextData>(out);
+            if (index == 1 && d.width > 0 && d.columns <= 1) {
+                const double along = (to.x - d.position.x) * std::cos(d.rotation) +
+                                     (to.y - d.position.y) * std::sin(d.rotation);
+                const int col = static_cast<int>(d.attach) % 3;
+                const double w = col == 0 ? along : col == 1 ? along * 2 : -along;
+                if (!(w > 1e-9))
+                    return makeError(ErrorCode::InvalidArgument, "the width would collapse");
+                d.width = w;
+                return out;
+            }
             if (index != 0)
                 return badGrip();
-            entityAs<MTextData>(out)->position = to;
+            d.position = to;
             return out;
+        }
         case EntityKind::Insert:
             if (index != 0)
                 return badGrip();

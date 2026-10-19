@@ -425,3 +425,29 @@ TEST_CASE("a table has grips on its column and row borders") {
     auto gq = gripPoints(q);
     CHECK(distance(gq[2], Vec2{10, 25}) < 1e-9);
 }
+
+TEST_CASE("wrapped MTEXT has a width grip on its free side") {
+    MTextData m;
+    m.position = {10, 10};
+    m.width = 20;
+    m.utf8 = "hello";
+    Entity e = make(m);
+    auto g = gripPoints(e);
+    REQUIRE(g.size() == 2);
+    CHECK(distance(g[1], Vec2{30, 10}) < 1e-12);
+    auto w = moveGrip(e, 1, {45, 99});  // only the distance along the text counts
+    REQUIRE(w.ok());
+    CHECK(entityAs<MTextData>(w.value())->width == doctest::Approx(35));
+    CHECK_FALSE(moveGrip(e, 1, {5, 10}).ok());
+    m.attach = Attachment::TopCenter;
+    CHECK(distance(gripPoints(make(m))[1], Vec2{20, 10}) < 1e-12);
+    CHECK(entityAs<MTextData>(moveGrip(make(m), 1, {25, 10}).value())->width == doctest::Approx(30));
+    m.attach = Attachment::TopRight;
+    CHECK(distance(gripPoints(make(m))[1], Vec2{-10, 10}) < 1e-12);
+    m.rotation = kPi / 2;
+    m.attach = Attachment::TopLeft;
+    CHECK(distance(gripPoints(make(m))[1], Vec2{10, 30}) < 1e-9);
+    // No wrapping, no width grip.
+    m.width = 0;
+    CHECK(gripPoints(make(m)).size() == 1);
+}
