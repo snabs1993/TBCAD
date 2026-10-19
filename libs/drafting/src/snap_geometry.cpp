@@ -87,6 +87,39 @@ void mlineProvider(const Document&, const Entity& e, SnapGeometry& out) {
         vertexPath(m->v, m->closed, out);
 }
 
+// The boundary of a hatch snaps like the objects it was made from: end points, mid points,
+// centres and quadrants of its edges, and its edges as curves.
+void hatchProvider(const Document& doc, const Entity& e, SnapGeometry& out) {
+    const auto* h = entityAs<HatchData>(e);
+    if (!h)
+        return;
+    auto edge = [&](Entity&& part) { curveProvider(doc, part, out); };
+    for (const HatchLoop& loop : h->loops) {
+        for (const HatchEdge& ed : loop.edges) {
+            if (const auto* l = std::get_if<HatchLineEdge>(&ed)) {
+                if (distance(l->a, l->b) > 0)
+                    edge(Entity{{}, LineData{l->a, l->b}});
+            } else if (const auto* a = std::get_if<HatchArcEdge>(&ed)) {
+                // A clockwise edge is the counter-clockwise arc from its end to its start.
+                edge(Entity{{}, a->ccw ? ArcData{a->center, a->radius, a->startAngle, a->endAngle}
+                                       : ArcData{a->center, a->radius, a->endAngle, a->startAngle}});
+            } else if (const auto* el = std::get_if<HatchEllipseEdge>(&ed)) {
+                edge(Entity{{}, el->ccw ? EllipseData{el->center, el->majorAxis, el->ratio,
+                                                      el->startParam, el->endParam}
+                                        : EllipseData{el->center, el->majorAxis, el->ratio,
+                                                      el->endParam, el->startParam}});
+            } else if (const auto* sp = std::get_if<HatchSplineEdge>(&ed)) {
+                edge(Entity{{}, sp->spline});
+            } else if (const auto* pl = std::get_if<HatchPolylineEdge>(&ed)) {
+                PolylineData pd;
+                pd.v = pl->v;
+                pd.closed = pl->closed;
+                edge(Entity{{}, std::move(pd)});
+            }
+        }
+    }
+}
+
 }  // namespace
 
 SnapGeometryRegistry::SnapGeometryRegistry() {
@@ -101,6 +134,7 @@ SnapGeometryRegistry::SnapGeometryRegistry() {
     set(EntityKind::MLeader, mleaderProvider);
     set(EntityKind::Ray, rayProvider);
     set(EntityKind::MLine, mlineProvider);
+    set(EntityKind::Hatch, hatchProvider);
 }
 
 SnapGeometryRegistry& SnapGeometryRegistry::instance() {

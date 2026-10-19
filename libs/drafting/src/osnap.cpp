@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 
 #include "tbcad/geom/entity.h"
 
@@ -146,7 +147,8 @@ double arcDistance(Vec2 p, Vec2 c, double r, double start, double sweep) {
                     distance(p, c + Vec2{std::cos(s1), std::sin(s1)} * r));
 }
 
-double reach(const Entity& e, Vec2 p, double boxDistance) {
+double reach(const Document& doc, const SnapGeometryRegistry& providers, const Entity& e, Vec2 p,
+             double boxDistance) {
     switch (kind(e)) {
         case EntityKind::Line: {
             const auto* l = entityAs<LineData>(e);
@@ -185,6 +187,23 @@ double reach(const Entity& e, Vec2 p, double boxDistance) {
                     best = std::min(best, segmentDistance(p, v0.p, q));
             }
             return best;
+        }
+        case EntityKind::Ellipse:
+        case EntityKind::Spline:
+        case EntityKind::Hatch: {
+            // Their boxes are big and mostly empty: measure the curves, or the box of every
+            // such object around the cursor would count as reaching it.
+            SnapGeometry g;
+            if (!providers.collect(doc, e, g))
+                return boxDistance;
+            double best = 1e300;
+            for (const geom::CurveRef& c : g.curves)
+                best = std::min(best, c.distanceTo(p));
+            // The centre of an ellipse and the like snap although they are not on the curve.
+            for (const auto* pts : {&g.endpoints, &g.midpoints, &g.centers, &g.quadrants})
+                for (const Vec2& q : *pts)
+                    best = std::min(best, distance(p, q));
+            return best < 1e300 ? best : boxDistance;
         }
         default:
             return boxDistance;
@@ -251,6 +270,52 @@ void curveSnapPoints(const geom::CurveRef& curve, const SnapRequest& rq,
     }
 }
 
+// An ellipse or spline can run for kilometres through a drawing and be flattened into a thousand
+// pieces to intersect it, while only the stretch inside the aperture matters. The parts of the
+// curve that come within the aperture box, as sub-curves (a coarse flattening finds them).
+static void clipToAperture(const geom::CurveRef& c, const BBox2& ap, std::deque<geom::CurveRef>& out,
+                    std::vector<const geom::CurveRef*>& clipped) {
+    using Kind = geom::CurveRef::Kind;
+    if (c.kind() != Kind::Ellipse && c.kind() != Kind::Spline) {
+        clipped.push_back(&c);
+        return;
+    }
+    const double tol = std::max(1e-3, (ap.max.x - ap.min.x) * 0.05);
+    std::vector<Vec2> pts;
+    std::vector<double> ts;
+    geom::flatten(c, tol, pts, &ts);
+    const BBox2 grown = ap.inflated(2 * tol);
+    std::size_t i = 0;
+    const std::size_t pieces = pts.size() < 2 ? 0 : pts.size() - 1;
+    while (i < pieces) {
+        auto hit = [&](std::size_t k) {
+            BBox2 b;
+            b.expand(pts[k]);
+            b.expand(pts[k + 1]);
+            return b.inflated(2 * tol).intersects(grown);
+        };
+        if (!hit(i)) {
+            ++i;
+            continue;
+        }
+        std::size_t j = i;
+        while (j + 1 < pieces && hit(j + 1))
+            ++j;
+        // One piece of slack each side, so a crossing at a joint is kept.
+        const std::size_t lo = i > 0 ? i - 1 : 0, hi = std::min(pieces, j + 2);
+        if (lo == 0 && hi == pieces) {
+            clipped.push_back(&c);
+            return;
+        }
+        auto sub = c.subcurve(ts[lo], ts[hi]);
+        if (sub.ok()) {
+            out.push_back(sub.value());
+            clipped.push_back(&out.back());
+        }
+        i = j + 1;
+    }
+}
+
 std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::SpatialIndex& index,
                                               const SnapRequest& rq,
                                               const SnapGeometryRegistry& providers) {
@@ -271,7 +336,7 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
             const Entity* e = doc.find(near[i].id);
             if (!e || !e->common.visible)
                 continue;
-            const double d = reach(*e, rq.cursor, near[i].distance);
+            const double d = reach(doc, providers, *e, rq.cursor, near[i].distance);
             if (d > rq.apertureMm)
                 continue;
             near[kept++] = {near[i].id, d};
@@ -332,11 +397,17 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
         std::vector<Cand> curves;
         const BBox2 ap{{rq.cursor.x - rq.apertureMm, rq.cursor.y - rq.apertureMm},
                        {rq.cursor.x + rq.apertureMm, rq.cursor.y + rq.apertureMm}};
+        std::deque<geom::CurveRef> pieces;  // clipped copies; the pointers below stay valid
+        std::vector<const geom::CurveRef*> clipped;
         for (std::size_t i = 0; i < std::min(items.size(), kIntersectItems); ++i)
-            for (const geom::CurveRef& c : items[i].geometry.curves) {
-                const BBox2 box = relevantBox(c, ap);
-                if (!box.empty() && box.min.x <= box.max.x && box.min.y <= box.max.y)
-                    curves.push_back({i, &c, box});
+            for (const geom::CurveRef& whole : items[i].geometry.curves) {
+                clipped.clear();
+                clipToAperture(whole, ap, pieces, clipped);
+                for (const geom::CurveRef* c : clipped) {
+                    const BBox2 box = relevantBox(*c, ap);
+                    if (!box.empty() && box.min.x <= box.max.x && box.min.y <= box.max.y)
+                        curves.push_back({i, c, box});
+                }
             }
         std::sort(curves.begin(), curves.end(),
                   [](const Cand& a, const Cand& b) { return a.box.min.x < b.box.min.x; });

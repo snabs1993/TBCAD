@@ -251,9 +251,9 @@ std::vector<Piece> pieces(const CurveRef& c, double tol) {
         Vec2 chord = pc.p1 - pc.p0;
         double dev = 0;
         if (c.kind() != CurveRef::Kind::Line) {
-            // Sample a few interior points for the real deviation from the chord.
+            // Sample the middle for the real deviation from the chord (flatten() bounds the rest).
             double cl = length(chord);
-            for (double f : {0.25, 0.5, 0.75}) {
+            for (double f : {0.5}) {
                 Vec2 m = c.pointAt(pc.t0 + (pc.t1 - pc.t0) * f);
                 double d = cl > 0 ? std::abs(cross(chord, m - pc.p0)) / cl : distance(m, pc.p0);
                 if (cl > 0) {
@@ -366,13 +366,29 @@ void numeric(const CurveRef& A0, const CurveRef& B0, bool extA, bool extB, Out& 
     double diag = length(bb.max - bb.min);
     double maxAbs = std::max(
         {std::abs(bb.min.x), std::abs(bb.min.y), std::abs(bb.max.x), std::abs(bb.max.y), 1.0});
-    double ftol = std::max(1e-3, 1e-6 * diag);
+    double ftol = std::max(1e-3, 1e-4 * diag);  // refine() polishes each crossing
     std::vector<Piece> pa = pieces(A, ftol), pb = pieces(B, ftol);
+    // Pieces outside the other curve's box cannot meet it, and the rest are paired by a sweep
+    // along x instead of every piece against every piece (a long spline has about a thousand).
+    {
+        const BBox2 ba = A.bounds().inflated(ftol), bbx = B.bounds().inflated(ftol);
+        std::erase_if(pa, [&](const Piece& x) { return !x.box.intersects(bbx); });
+        std::erase_if(pb, [&](const Piece& y) { return !y.box.intersects(ba); });
+    }
+    std::sort(pb.begin(), pb.end(),
+              [](const Piece& l, const Piece& r) { return l.box.min.x < r.box.min.x; });
+    double widest = 0;
+    for (const Piece& y : pb)
+        widest = std::max(widest, y.box.max.x - y.box.min.x);
     double acc = 1e-9 + 32 * kEps * maxAbs;
     std::size_t first = out.size();
     std::size_t guard = 0;
     for (const Piece& x : pa) {
-        for (const Piece& y : pb) {
+        // Only pieces starting between x.min - widest and x.max can overlap it in x.
+        auto from = std::lower_bound(pb.begin(), pb.end(), x.box.min.x - widest,
+                                     [](const Piece& y, double v) { return y.box.min.x < v; });
+        for (auto yi = from; yi != pb.end() && yi->box.min.x <= x.box.max.x; ++yi) {
+            const Piece& y = *yi;
             if (!x.box.intersects(y.box))
                 continue;
             if (++guard > 400000)
