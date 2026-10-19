@@ -389,3 +389,48 @@ TEST_CASE("formulas: a cell used twice by the next one is worked out once") {
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     CHECK(secs < 20.0);
 }
+
+TEST_CASE(
+    "cell styles: header fill and colour, data height and alignment, round trip in text form") {
+    TableData t = grid(3, 2, "Parts");  // title row + 2 rows
+    t.headerRow = true;
+    t.titleStyle.fill = 5;
+    t.headerStyle.fill = 9;
+    t.headerStyle.color = 1;
+    t.headerStyle.textHeight = 4;
+    t.dataStyle.align = 2;
+    cellAt(t, 1, 0).utf8 = "Item";
+    cellAt(t, 2, 0).utf8 = "12";
+    CHECK(rowRole(t, 0) == 0);
+    CHECK(rowRole(t, 1) == 1);
+    CHECK(rowRole(t, 2) == 2);
+    const Layout L = layout(t);
+    CHECK(L.fills.size() == 1 + 2);  // the merged title cell, the two header cells
+    int nine = 0;
+    for (const Fill& f : L.fills)
+        nine += f.color == 9;
+    CHECK(nine == 2);
+    bool header = false, data = false;
+    for (const TextItem& item : L.texts) {
+        if (item.utf8 == "\\H4;\\C1;Item") {
+            header = true;
+            CHECK(item.attach == Attachment::MiddleLeft);
+        }
+        if (item.utf8 == "12") {
+            data = true;
+            CHECK(item.attach == Attachment::MiddleRight);
+        }
+    }
+    CHECK(header);
+    CHECK(data);
+
+    auto back = parse(serialize(t));
+    REQUIRE(back);
+    CHECK(back->headerRow);
+    CHECK(back->titleStyle == t.titleStyle);
+    CHECK(back->headerStyle == t.headerStyle);
+    CHECK(back->dataStyle == t.dataStyle);
+    // A table without cell styles keeps the older, shorter text form.
+    CHECK(serialize(grid(2, 2)).find("|1,") == std::string::npos);
+    CHECK(parse(serialize(grid(2, 2))));
+}

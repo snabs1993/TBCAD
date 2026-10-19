@@ -31,6 +31,13 @@ void buildTableDisplay(const Document& doc, const Entity& e, const geom::Display
         return;
     const Layout L = layout(*t);
     const DisplayStyle style = geom::resolveStyle(doc, e, ctx);
+    for (const Fill& f : L.fills) {
+        DisplayFill fill;
+        fill.rings.push_back({f.corners[0], f.corners[1], f.corners[2], f.corners[3]});
+        fill.style = style;
+        fill.style.color = paletteColor(static_cast<std::uint8_t>(f.color));
+        out.items.emplace_back(std::move(fill));
+    }
     for (const auto& [a, b] : L.lines) {
         DisplayPolyline pl;
         pl.pts = {a, b};

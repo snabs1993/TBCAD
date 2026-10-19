@@ -102,6 +102,10 @@ public:
         ctx.setUndoLabel("TABLE");
         TableData t = build(where.point);
         t.margin = style.margin;
+        t.headerRow = style.headerRow;
+        t.titleStyle = style.title;
+        t.headerStyle = style.header;
+        t.dataStyle = style.data;
         t.style = ctx.doc().header().currentTextStyle;
         if (!style.textStyle.empty())
             if (const TextStyle* ts = ctx.doc().textStyleByName(style.textStyle))
@@ -305,7 +309,11 @@ public:
                             shortNumber(s.colWidth) + " x rows " + shortNumber(s.rowHeight) +
                             ", text " + shortNumber(s.textHeight) + ", margin " +
                             shortNumber(s.margin) +
-                            (s.textStyle.empty() ? "" : ", text style " + s.textStyle));
+                            (s.textStyle.empty() ? "" : ", text style " + s.textStyle) +
+                            (s.headerRow ? ", header row" : "") +
+                            (s.title.isDefault() && s.header.isDefault() && s.data.isDefault()
+                                 ? ""
+                                 : ", cell styles"));
             co_return;
         }
         auto n = co_await ctx.getString("Style name");
@@ -381,6 +389,65 @@ public:
             s.rowHeight = rh.value;
             s.textHeight = th.value;
             s.margin = mg.value;
+            // Cell styles: one role at a time, until Done.
+            for (;;) {
+                cmd::KeywordOptions cko;
+                cko.keywords = {"Title", "Header", "Data", "HeaderRow", "Done"};
+                cko.defaultKeyword = "Done";
+                auto role = co_await ctx.getKeyword(
+                    "Cell styles [Title/Header/Data/HeaderRow/Done] <Done>", cko);
+                if (!role.ok() || role.keyword == "Done")
+                    break;
+                if (role.keyword == "HeaderRow") {
+                    cmd::KeywordOptions yn;
+                    yn.keywords = {"Yes", "No"};
+                    yn.defaultKeyword = s.headerRow ? "Yes" : "No";
+                    auto h = co_await ctx.getKeyword("Table has a header row", yn);
+                    if (h.ok())
+                        s.headerRow = h.keyword == "Yes";
+                    continue;
+                }
+                TableCellStyle& cs = role.keyword == "Title"    ? s.title
+                                     : role.keyword == "Header" ? s.header
+                                                                : s.data;
+                cmd::RealOptions ro;
+                ro.defaultValue = cs.textHeight;
+                ro.min = 0;
+                auto ch = co_await ctx.getReal(
+                    "Text height, 0 for the table's <" + shortNumber(cs.textHeight) + ">", ro);
+                if (!ch.ok())
+                    continue;
+                cmd::IntOptions io;
+                io.min = 0;
+                io.max = 255;
+                io.defaultValue = cs.color;
+                auto cc = co_await ctx.getInteger(
+                    "Text colour index 1-255, 0 as the text <" + std::to_string(cs.color) + ">",
+                    io);
+                if (!cc.ok())
+                    continue;
+                io.defaultValue = cs.fill;
+                auto cf = co_await ctx.getInteger(
+                    "Fill colour index 1-255, 0 none <" + std::to_string(cs.fill) + ">", io);
+                if (!cf.ok())
+                    continue;
+                cmd::KeywordOptions ako;
+                ako.keywords = {"Default", "Left", "Center", "Right"};
+                ako.defaultKeyword = cs.align == 0   ? "Left"
+                                     : cs.align == 1 ? "Center"
+                                     : cs.align == 2 ? "Right"
+                                                     : "Default";
+                auto ca = co_await ctx.getKeyword("Alignment", ako);
+                if (!ca.ok())
+                    continue;
+                cs.textHeight = std::max(0.0, ch.value);
+                cs.color = static_cast<int>(cc.value);
+                cs.fill = static_cast<int>(cf.value);
+                cs.align = ca.keyword == "Left"     ? 0
+                           : ca.keyword == "Center" ? 1
+                           : ca.keyword == "Right"  ? 2
+                                                    : -1;
+            }
             if (ts.ok()) {
                 if (ts.text == "-") {
                     s.textStyle.clear();
@@ -418,6 +485,10 @@ public:
                             h = s.rowHeight;
                         t->textHeight = s.textHeight;
                         t->margin = s.margin;
+                        t->headerRow = s.headerRow;
+                        t->titleStyle = s.title;
+                        t->headerStyle = s.header;
+                        t->dataStyle = s.data;
                         if (ts)
                             t->style = ts->id;
                     }

@@ -146,7 +146,7 @@ TEST_CASE("TABLEEXPORT writes a CSV that TABLEIMPORT turns back into the same ta
 
 TEST_CASE("TABLESTYLE defines styles, TABLE starts from the current one") {
     Fx f;
-    f.host->run("TABLESTYLE", {"New", "Big", "50", "12", "4", "2", ""});
+    f.host->run("TABLESTYLE", {"New", "Big", "50", "12", "4", "2", "", "Done"});
     auto s = table::findTableStyle(f.doc.header(), "big");
     REQUIRE(s);
     CHECK(s->colWidth == doctest::Approx(50));
@@ -166,7 +166,7 @@ TEST_CASE("TABLESTYLE defines styles, TABLE starts from the current one") {
     CHECK(t->textHeight == doctest::Approx(4));
     CHECK(t->margin == doctest::Approx(2));
     // Modify, then Apply to the table already drawn.
-    f.host->run("TABLESTYLE", {"Modify", "Big", "20", "6", "2", "0.5", ""});
+    f.host->run("TABLESTYLE", {"Modify", "Big", "20", "6", "2", "0.5", "", "Done"});
     f.host->setSelection({f.tableId()});
     f.host->run("TABLESTYLE", {"Apply", "Big"});
     t = entityAs<TableData>(*f.doc.find(f.tableId()));
@@ -178,6 +178,39 @@ TEST_CASE("TABLESTYLE defines styles, TABLE starts from the current one") {
     CHECK(table::currentTableStyleName(f.doc.header()) == "Standard");
     f.host->run("TABLESTYLE", {"Delete", "Standard"});
     CHECK(f.host->logContains("cannot be deleted"));
+    CHECK(f.host->undo());
+}
+
+TEST_CASE("TABLESTYLE cell styles, set per role, stored with the style, used by TABLE and Apply") {
+    Fx f;
+    // Title: height 5, colour 1, fill 8, centre; then Header row on; then Data: right aligned.
+    f.host->run("TABLESTYLE",
+                {"New", "Plan",   "30",        "8",   "2.8",  "1", "",  "Title", "5",     "1",
+                 "8",   "Center", "HeaderRow", "Yes", "Data", "0", "0", "0",     "Right", "Done"});
+    auto s = table::findTableStyle(f.doc.header(), "Plan");
+    REQUIRE(s);
+    CHECK(s->headerRow);
+    CHECK(s->title.textHeight == doctest::Approx(5));
+    CHECK(s->title.color == 1);
+    CHECK(s->title.fill == 8);
+    CHECK(s->title.align == 1);
+    CHECK(s->data.align == 2);
+    CHECK(s->header.isDefault());
+    f.host->run("TABLESTYLE", {"Set", "Plan"});
+    f.host->run("TABLE", {"2", "3", "", "", "", "0,0"});
+    const auto* t = entityAs<TableData>(*f.doc.find(f.tableId()));
+    REQUIRE(t);
+    CHECK(t->headerRow);
+    CHECK(t->titleStyle.fill == 8);
+    CHECK(t->dataStyle.align == 2);
+    // Restyle: a later change of the style reaches the table through Apply.
+    f.host->run("TABLESTYLE", {"Modify", "Plan", "30", "8", "2.8", "1", "", "Header", "3", "2", "0",
+                               "Left", "Done"});
+    f.host->setSelection({f.tableId()});
+    f.host->run("TABLESTYLE", {"Apply", "Plan"});
+    t = entityAs<TableData>(*f.doc.find(f.tableId()));
+    CHECK(t->headerStyle.textHeight == doctest::Approx(3));
+    CHECK(t->headerStyle.color == 2);
     CHECK(f.host->undo());
 }
 

@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <map>
 #include <optional>
 #include <sstream>
 
 #include "tbcad/layers/layer_ops.h"
+#include "tbcad/layout/layout.h"
 
 namespace tbcad::layers {
 
@@ -120,6 +122,16 @@ Result<void> saveLayerState(const Document& doc, Transaction& tx, std::string_vi
         text += '\t' + escape(lineweightName(l->lineweight));
         text += '\n';
     }
+    // The layers frozen in each layout viewport: "#vp<TAB>layout<TAB>viewport id<TAB>path...".
+    for (const layout::Layout& lay : layout::layouts(doc)) {
+        for (const layout::Viewport& vp : lay.viewports) {
+            text += "#vp\t" + escape(lay.name) + '\t' + std::to_string(vp.id);
+            for (LayerId id : vp.frozen)
+                if (doc.layer(id))
+                    text += '\t' + escape(layerPath(doc, id));
+            text += '\n';
+        }
+    }
     return tx.modifyHeader(
         [&](Header& h) { h.custom[std::string(kStatePrefix) + key.value()] = text; });
 }
@@ -142,6 +154,32 @@ Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string
         if (f.size() == 2 && f[0] == "#current") {
             if (auto id = resolveLayer(doc, unescape(f[1])); id)
                 savedCurrent = id.value();
+            continue;
+        }
+        if (f.size() >= 3 && f[0] == "#vp") {  // layers frozen in a layout viewport
+            if (!parts.visibility)
+                continue;
+            const std::string layName = unescape(f[1]);
+            const int vpId = std::atoi(f[2].c_str());
+            auto lay = layout::findLayout(doc, layName);
+            const layout::Viewport* vp = lay ? lay->findViewport(vpId) : nullptr;
+            if (!vp) {
+                ++bad;
+                continue;
+            }
+            std::vector<LayerId> want;
+            for (std::size_t i = 3; i < f.size(); ++i)
+                if (auto id = resolveLayer(doc, unescape(f[i])); id)
+                    want.push_back(id.value());
+                else
+                    ++bad;
+            const std::vector<LayerId> have = vp->frozen;
+            for (LayerId id : have)
+                if (std::find(want.begin(), want.end(), id) == want.end())
+                    (void)layout::setViewportLayerFrozen(tx, lay->name, vpId, id, false);
+            for (LayerId id : want)
+                if (std::find(have.begin(), have.end(), id) == have.end())
+                    (void)layout::setViewportLayerFrozen(tx, lay->name, vpId, id, true);
             continue;
         }
         if (f.size() != 5 || f[1].size() != 4) {

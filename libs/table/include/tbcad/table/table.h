@@ -77,6 +77,9 @@ struct TableStyle {
     double textHeight = 2.8;
     double margin = 1.0;
     std::string textStyle{};  // text style name; empty = the drawing's current one
+    // Cell styles: how the title row, the header row (when `headerRow`) and the other rows look.
+    bool headerRow = false;
+    TableCellStyle title{}, header{}, data{};
 };
 // The name without characters a style name cannot hold, trimmed; empty when nothing is left.
 std::string validStyleName(const std::string& raw);
@@ -139,10 +142,18 @@ struct TextItem {
     Attachment attach = Attachment::MiddleLeft;
     std::string utf8;
 };
+struct Fill {
+    Vec2 corners[4];  // world
+    int color = 0;    // palette index
+};
 struct Layout {
     std::vector<std::pair<Vec2, Vec2>> lines;  // world, grid and border segments
     std::vector<TextItem> texts;
+    std::vector<Fill> fills;  // cell backgrounds (cell styles), drawn under everything else
 };
+// The role of a row: 0 title, 1 header, 2 data.
+int rowRole(const TableData& t, std::size_t row);
+const TableCellStyle& cellStyleOfRow(const TableData& t, std::size_t row);
 Layout layout(const TableData& t);
 
 BBox2 bounds(const TableData& t);

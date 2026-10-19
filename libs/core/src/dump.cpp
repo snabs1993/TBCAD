@@ -304,7 +304,15 @@ struct DataDumper {
     }
     void operator()(const TableData& d) {
         o << "TABLE at" << d.origin << " rot" << d.rotation << " th" << d.textHeight << " m"
-          << d.margin << " style" << d.style << " title" << d.titleRow << " cols";
+          << d.margin << " style" << d.style << " title" << d.titleRow;
+        if (d.headerRow || !d.titleStyle.isDefault() || !d.headerStyle.isDefault() ||
+            !d.dataStyle.isDefault()) {
+            o << " cellstyles" << d.headerRow;
+            for (const TableCellStyle* cs : {&d.titleStyle, &d.headerStyle, &d.dataStyle})
+                o << "/" << cs->textHeight << "," << cs->color << "," << cs->fill << ","
+                  << cs->align;
+        }
+        o << " cols";
         for (double w : d.colWidths)
             o << " " << w;
         o << " rows";

@@ -415,6 +415,16 @@ struct PayloadWriter {
             w.varint(c.rowSpan);
             w.u8(c.covered ? 1 : 0);
         }
+        if (d.headerRow || !d.titleStyle.isDefault() || !d.headerStyle.isDefault() ||
+            !d.dataStyle.isDefault()) {  // a tail older readers ignore
+            w.u8(d.headerRow ? 1 : 0);
+            for (const TableCellStyle* cs : {&d.titleStyle, &d.headerStyle, &d.dataStyle}) {
+                w.f64(cs->textHeight);
+                w.u8(static_cast<std::uint8_t>(cs->color));
+                w.u8(static_cast<std::uint8_t>(cs->fill));
+                w.u8(static_cast<std::uint8_t>(cs->align + 1));
+            }
+        }
     }
     void operator()(const ProxyData& d) {
         str(d.originalType);
@@ -936,6 +946,18 @@ struct PayloadReader {
                     c.rowSpan =
                         static_cast<std::uint16_t>(std::min<std::uint64_t>(r.varint(), 65535));
                     c.covered = r.boolean();
+                }
+                if (r.remaining() > 0) {
+                    d.headerRow = r.u8() != 0;
+                    for (TableCellStyle* cs : {&d.titleStyle, &d.headerStyle, &d.dataStyle}) {
+                        cs->textHeight = r.f64();
+                        if (!std::isfinite(cs->textHeight) || cs->textHeight < 0)
+                            cs->textHeight = 0;
+                        cs->color = r.u8();
+                        cs->fill = r.u8();
+                        const int a = static_cast<int>(r.u8()) - 1;
+                        cs->align = a >= 0 && a <= 2 ? a : -1;
+                    }
                 }
                 return make(std::move(d));
             }
