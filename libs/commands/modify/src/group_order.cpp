@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <unordered_set>
 
 #include "commands.h"
 #include "util.h"
@@ -210,15 +211,15 @@ public:
         Group* g = find(groups);
         if (!g)
             co_return;
+        const std::unordered_set<EntityId> picked(sel.ids.begin(), sel.ids.end());
         for (Group& other : groups) {
             if (&other == g)
                 continue;
-            for (EntityId id : sel.ids)
-                other.members.erase(std::remove(other.members.begin(), other.members.end(), id),
-                                    other.members.end());
+            std::erase_if(other.members, [&](EntityId id) { return picked.count(id) != 0; });
         }
+        std::unordered_set<EntityId> have(g->members.begin(), g->members.end());
         for (EntityId id : sel.ids) {
-            if (std::find(g->members.begin(), g->members.end(), id) == g->members.end())
+            if (have.insert(id).second)
                 g->members.push_back(id);
         }
         if (auto r = writeGroups(ctx.tx(), groups); !r) {
@@ -257,8 +258,9 @@ public:
         // Keep the objects' current relative order.
         std::vector<EntityId> order = ctx.doc().modelSpace();
         std::vector<EntityId> moving;
+        const std::unordered_set<EntityId> selected(sel.ids.begin(), sel.ids.end());
         for (EntityId id : order) {
-            if (std::find(sel.ids.begin(), sel.ids.end(), id) != sel.ids.end())
+            if (selected.count(id))
                 moving.push_back(id);
         }
         if (moving.empty()) {
@@ -273,9 +275,8 @@ public:
                 (void)ctx.tx().sendToBack(*it);
         } else {
             cmd::EntityOptions eo;
-            eo.filter = [&doc = ctx.doc(), &sel](const Entity& e) {
-                return isModifiable(doc, e) &&
-                       std::find(sel.ids.begin(), sel.ids.end(), e.common.id) == sel.ids.end();
+            eo.filter = [&doc = ctx.doc(), &selected](const Entity& e) {
+                return isModifiable(doc, e) && !selected.count(e.common.id);
             };
             auto ref = co_await ctx.getEntity("Select reference object", eo);
             if (!ref.ok())
@@ -289,8 +290,9 @@ public:
             std::size_t refPos = static_cast<std::size_t>(at - order.begin());
             // New order: the moving objects directly above (or below) the reference.
             std::vector<EntityId> rest;
+            const std::unordered_set<EntityId> movingSet(moving.begin(), moving.end());
             for (EntityId id : order) {
-                if (std::find(moving.begin(), moving.end(), id) == moving.end())
+                if (!movingSet.count(id))
                     rest.push_back(id);
             }
             auto restRef = std::find(rest.begin(), rest.end(), ref.id) - rest.begin();

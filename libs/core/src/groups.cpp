@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace tbcad {
@@ -80,12 +81,25 @@ std::vector<EntityId> expandGroups(const Document& doc, std::span<const EntityId
         return out;
     std::unordered_set<EntityId> seen(out.begin(), out.end());
     std::vector<Group> groups = readGroups(doc);
+    // member -> the selectable groups it belongs to, so a big selection does not search every
+    // group for every object.
+    std::unordered_map<EntityId, std::vector<std::size_t>> groupsOf;
+    for (std::size_t gi = 0; gi < groups.size(); ++gi) {
+        if (!groups[gi].selectable)
+            continue;
+        for (EntityId m : groups[gi].members)
+            groupsOf[m].push_back(gi);
+    }
+    std::vector<bool> expanded(groups.size(), false);
     for (EntityId id : ids) {
-        for (const Group& g : groups) {
-            if (!g.selectable ||
-                std::find(g.members.begin(), g.members.end(), id) == g.members.end())
+        const auto it = groupsOf.find(id);
+        if (it == groupsOf.end())
+            continue;
+        for (std::size_t gi : it->second) {
+            if (expanded[gi])
                 continue;
-            for (EntityId m : g.members) {
+            expanded[gi] = true;
+            for (EntityId m : groups[gi].members) {
                 if (seen.insert(m).second)
                     out.push_back(m);
             }

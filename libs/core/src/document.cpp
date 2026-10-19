@@ -1599,13 +1599,15 @@ Result<void> Transaction::bringToFront(EntityId id) {
         list.push_back(id);
         return {};
     }
-    std::int64_t key = kFrontBase;
-    for (const auto& [eid, k] : d.orderOverride_) {
-        if (eid != id && k >= kFrontBase)
-            key = std::max(key, k + 1);
+    if (!nextFront_) {
+        std::int64_t key = kFrontBase;
+        for (const auto& [eid, k] : d.orderOverride_)
+            if (eid != id && k >= kFrontBase)
+                key = std::max(key, k + 1);
+        nextFront_ = key;
     }
     touchOrder(id);
-    d.orderOverride_[id] = key;
+    d.orderOverride_[id] = (*nextFront_)++;
     return {};
 }
 
@@ -1620,13 +1622,15 @@ Result<void> Transaction::sendToBack(EntityId id) {
         list.insert(list.begin(), id);
         return {};
     }
-    std::int64_t key = -kFrontBase;
-    for (const auto& [eid, k] : d.orderOverride_) {
-        if (eid != id && k <= -kFrontBase)
-            key = std::min(key, k - 1);
+    if (!nextBack_) {
+        std::int64_t key = -kFrontBase;
+        for (const auto& [eid, k] : d.orderOverride_)
+            if (eid != id && k <= -kFrontBase)
+                key = std::min(key, k - 1);
+        nextBack_ = key;
     }
     touchOrder(id);
-    d.orderOverride_[id] = key;
+    d.orderOverride_[id] = (*nextBack_)--;
     return {};
 }
 

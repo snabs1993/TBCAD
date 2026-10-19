@@ -1,8 +1,9 @@
 // Commands that read every object of a big drawing (QSELECT, SELECTSIMILAR, LIST, CHANGE, the
-// layer tools, BLOCKCOUNT, FIND) on a real mix of about 392k objects. Each is timed with the whole
-// drawing selected; one that takes more than 3 s in an optimised build loops badly (the FILTER
-// intersection once took 69 s, QSELECT Append 25 s). The slowest honest ones, CHANGE and LAYCHANGE,
-// touch every object and take about a second. Sizes: TBCAD_BENCH_N (pairs).
+// layer tools, GROUP, DRAWORDER, text tools, BLOCK, COPYCLIP, FIND) on a real mix of about 392k
+// objects. Each is timed with the whole drawing selected; one that takes more than 3 s in an
+// optimised build loops badly (the FILTER intersection once took 69 s, QSELECT Append 25 s). The
+// slowest honest ones, CHANGE and LAYCHANGE, touch every object and take about a second. Sizes:
+// TBCAD_BENCH_N (pairs).
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -217,6 +218,15 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         {"LAYISO", {"LAYISO"}},
         {"LAYWALK", {"-LAYWALK", "Show", "Topo"}},
         {"BLOCKCOUNT", {"BLOCKCOUNT"}},
+        {"GROUP", {"GROUP", "Name", "ALLOFIT"}},
+        {"DRAWORDER", {"DRAWORDER", "Back"}},
+        {"JUSTIFYTEXT", {"JUSTIFYTEXT", "Center"}},
+        {"SCALETEXT", {"SCALETEXT", "Existing", "2"}},
+        {"TXT2MTXT", {"TXT2MTXT"}},
+        {"FINDSTRAY", {"FINDSTRAY"}},
+        {"COPYCLIP", {"COPYCLIP"}},
+        {"BLOCK", {"BLOCK", "ALLOFIT", "0,0"}},
+        {"ZOOM-E", {"ZOOM", "E"}},
         {"FIND-count", {"FIND", "EL ", "", "No"}},
         {"FIND-replace", {"FIND", "EL ", "ELEV ", "No"}},
         {"FIND-nomatch", {"FIND", "zzzqq", "yy", "Yes"}},
@@ -229,7 +239,8 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
             only && std::string(only) != c.label)
             continue;
         const Timing t = s.bench(c.lines);
-        std::printf("%-16s %8.0f %8.0f %8.0f\n", c.label, t.runMs, t.undoMs, t.redoMs);
+        std::printf("%-16s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
+                    s.core->history().empty() ? "" : s.core->history().back().c_str());
 #ifdef NDEBUG
         INFO(c.label);
         CHECK(t.runMs < 3000);

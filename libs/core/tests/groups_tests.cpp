@@ -59,3 +59,32 @@ TEST_CASE("erased members drop out and non-selectable groups do not expand") {
     }
     CHECK(readGroups(doc).empty());
 }
+
+TEST_CASE("expanding a big selection against a big group is linear") {
+    Document doc;
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("gen");
+        for (int i = 0; i < 100000; ++i) {
+            Entity e;
+            e.data = LineData{{double(i), 0}, {i + 1.0, 0}};
+            ids.push_back(tx.add(std::move(e)).value());
+        }
+        tx.commit();
+    }
+    std::vector<EntityId> half(ids.begin(), ids.begin() + 50000),
+        rest(ids.begin() + 50000, ids.end());
+    {
+        Transaction tx = doc.begin("group");
+        REQUIRE(writeGroups(tx, {Group{"A", half, true}, Group{"B", rest, true}}).ok());
+        tx.commit();
+    }
+    // One member of each group brings both whole groups; a selection of everything adds nothing.
+    auto both = expandGroups(doc, std::vector<EntityId>{ids[3], ids[99999]});
+    CHECK(both.size() == 100000);
+    auto all = expandGroups(doc, ids);
+    CHECK(all.size() == 100000);
+    auto one = expandGroups(doc, std::vector<EntityId>{ids[7]});
+    CHECK(one.size() == 50000);
+    CHECK(one.front() == ids[7]);
+}
