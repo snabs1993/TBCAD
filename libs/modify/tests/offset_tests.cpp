@@ -347,3 +347,50 @@ TEST_CASE("property: offsets of random polylines with arcs keep the distance") {
     CHECK(checked > 500);
     MESSAGE("checked " << checked << " samples, " << refused << " refused offsets");
 }
+
+// A polyline of many segments finds its neighbours through a grid; the result must be the one
+// found by comparing every segment with every other.
+TEST_CASE("polyline offset with the grid equals the offset comparing every pair") {
+    std::mt19937 rng(11);
+    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    int pieces = 0;
+    for (int round = 0; round < 40; ++round) {
+        PolylineData pl;
+        const int count = 70 + round * 5;
+        Vec2 p{0, 0};
+        for (int i = 0; i < count; ++i) {
+            // A wandering path with sharp turns that folds back on itself now and then.
+            p += Vec2{rnd(-6, 12), rnd(-8, 8)};
+            pl.v.push_back({p, (i % 11 == 5) ? rnd(-0.6, 0.6) : 0.0, 0, 0});
+        }
+        pl.closed = round % 4 == 3;
+        Entity e;
+        e.data = pl;
+        for (double d : {2.5, -2.5, 9.0}) {
+            OffsetOptions fast, slow;
+            slow.scanAll = true;
+            fast.roundCorners = slow.roundCorners = round % 2 == 0;
+            auto a = offsetEntity(e, d, fast);
+            auto b = offsetEntity(e, d, slow);
+            INFO("round " << round << " d " << d);
+            REQUIRE(a.ok() == b.ok());
+            if (!a.ok())
+                continue;
+            REQUIRE(a.value().size() == b.value().size());
+            for (std::size_t k = 0; k < a.value().size(); ++k) {
+                const auto* pa = entityAs<PolylineData>(a.value()[k]);
+                const auto* pb = entityAs<PolylineData>(b.value()[k]);
+                REQUIRE(pa);
+                REQUIRE(pb);
+                REQUIRE(pa->v.size() == pb->v.size());
+                CHECK(pa->closed == pb->closed);
+                for (std::size_t i = 0; i < pa->v.size(); ++i) {
+                    CHECK(distance(pa->v[i].p, pb->v[i].p) < 1e-9);
+                    CHECK(std::abs(pa->v[i].bulge - pb->v[i].bulge) < 1e-9);
+                }
+                ++pieces;
+            }
+        }
+    }
+    CHECK(pieces > 40);
+}

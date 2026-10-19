@@ -8,6 +8,7 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -164,6 +165,46 @@ struct Site {
         core->updateFrame();
     }
 
+    // One big room (a rectangle) with `islands` round islands and as many stray lines inside, at
+    // x = -100000.
+    void addIslandRoom(int islands) {
+        auto tx = core->document().begin("island room");
+        const int side = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(islands))));
+        const double w = side * 20.0 + 20;
+        PolylineData r;
+        r.closed = true;
+        r.v = {{{-100000, 0}, 0, 0, 0},
+               {{-100000 + w, 0}, 0, 0, 0},
+               {{-100000 + w, w}, 0, 0, 0},
+               {{-100000, w}, 0, 0, 0}};
+        Entity e;
+        e.data = std::move(r);
+        (void)tx.add(std::move(e));
+        for (int i = 0; i < islands; ++i) {
+            const double x = -100000 + 20 + (i % side) * 20.0, y = 20 + (i / side) * 20.0;
+            (void)tx.add(Entity{{}, CircleData{{x, y}, 4}});
+            (void)tx.add(Entity{{}, LineData{{x + 8, y + 8}, {x + 14, y + 12}}});
+        }
+        tx.commit();
+        core->zoomExtents();
+        core->updateFrame();
+    }
+
+    // One polyline of `count` vertices (a contour) at y = -300000, and a line across its middle.
+    void addLongPolyline(int count) {
+        auto tx = core->document().begin("contour");
+        PolylineData p;
+        for (int i = 0; i < count; ++i)
+            p.v.push_back({{i * 2.0, -300000 + (i % 2) * 1.5 + std::sin(i * 0.01) * 50}, 0, 0, 0});
+        Entity e;
+        e.data = std::move(p);
+        (void)tx.add(std::move(e));
+        (void)tx.add(Entity{{}, LineData{{count * 1.0, -300100}, {count * 1.0, -299900}}});
+        tx.commit();
+        core->zoomExtents();
+        core->updateFrame();
+    }
+
     // A row of short lines at y = -500, each with a boundary a few units away on both sides.
     void addExtendRow(int count) {
         auto tx = core->document().begin("extend row");
@@ -203,6 +244,12 @@ struct Site {
                 std::sscanf(l.c_str(), "@click%lf,%lf", &x, &y);
                 core->updateFrame();
                 core->click({core->camera().worldToScreen({x, y}), false, false});
+            } else if (l.rfind("@view", 0) == 0) {
+                // "@view x0,y0,x1,y1": the view frames this box (HATCH only looks at the view).
+                double a = 0, b = 0, c = 0, d = 0;
+                std::sscanf(l.c_str(), "@view%lf,%lf,%lf,%lf", &a, &b, &c, &d);
+                core->zoomToBox(BBox2{{a, b}, {c, d}});
+                core->updateFrame();
             } else if (l == "@window") {
                 core->updateFrame();
                 core->click({{2, 2}, false, false});
@@ -387,6 +434,7 @@ TEST_CASE("perf: trim, extend, offset, fillet and hatch on a big drawing stay fa
     Site s;
     s.addRooms(s.n / 2);
     s.addExtendRow(std::min(s.n, 500));
+    s.addIslandRoom(std::min(s.n / 4, 5000));
     const std::vector<Case> cases = {
         {"TRIM-fence-row", {"TRIM", "", "Fence", "0,1", "15000,1", "", ""}},
         {"TRIM-fence-diag", {"TRIM", "", "Fence", "0,0", "15000,3000", "", ""}},
@@ -398,11 +446,43 @@ TEST_CASE("perf: trim, extend, offset, fillet and hatch on a big drawing stay fa
         {"TRIM-edge-extend", {"TRIM", "", "Edge", "Extend", "@click10,5", ""}, 5000},
         {"OFFSET-polyline", {"OFFSET", "3", "@click3,1", "5,5", ""}},
         {"FILLET-polyline", {"FILLET", "R", "0.3", "Polyline", "@click1,1"}},
-        {"HATCH-room", {"HATCH", "5,-995", ""}},
-        {"HATCH-room-far", {"HATCH", "14505,-1025", ""}},
-        {"HATCH-no-boundary", {"HATCH", "10,5", ""}},
+        {"HATCH-room", {"@view -50,-1100,800,-900", "HATCH", "5,-995", ""}},
+        {"HATCH-room-far", {"@view 14000,-1100,15000,-900", "HATCH", "14505,-1025", ""}},
+        {"HATCH-islands", {"@view -100100,-100,-90000,10000", "HATCH", "-99995,5", ""}},
+        {"HATCH-no-boundary", {"@view 0,0,300,100", "HATCH", "10,5", ""}},
     };
     std::printf("%zu objects\n", s.core->document().modelSpaceCount());
+    for (const Case& c : cases) {
+        const Timing t = s.bench(c.lines, false);
+        std::printf("%-20s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
+                    s.core->history().empty() ? "" : s.core->history().back().c_str());
+#ifdef NDEBUG
+        INFO(c.label);
+        CHECK(t.runMs < c.budgetMs);
+#endif
+    }
+}
+
+// One polyline of many vertices (a contour line): the edit tools may walk it, but not once per
+// vertex.
+TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Site s(100);
+    const int count = std::getenv("TBCAD_BENCH_N") ? std::atoi(std::getenv("TBCAD_BENCH_N")) : 100000;
+    s.addLongPolyline(count);
+    const double mid = count * 1.0, y = -300000;
+    const std::string midx = std::to_string(mid);
+    const std::vector<Case> cases = {
+        {"OFFSET-contour", {"OFFSET", "5", "@click0,-300000", "-1000,-299990", ""}, 8000},
+        {"TRIM-contour", {"TRIM", "", "@click0,-300000", ""}},
+        {"EXTEND-contour", {"EXTEND", "", "@click0,-300000", ""}},
+        {"BREAK-contour", {"BREAK", "@click0,-300000", "100,-300000"}},
+        {"FILLET-contour", {"FILLET", "R", "0.2", "Polyline", "@click0,-300000"}},
+        {"EXPLODE-contour", {"EXPLODE", "@click0,-300000", ""}},
+        {"LIST-contour", {"LIST", "@click0,-300000", ""}},
+        {"MOVE-contour", {"MOVE", "@click0,-300000", "", "0,0", "5,5"}},
+    };
+    (void)y;
     for (const Case& c : cases) {
         const Timing t = s.bench(c.lines, false);
         std::printf("%-20s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
