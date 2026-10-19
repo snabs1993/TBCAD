@@ -756,9 +756,42 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
         for (std::size_t i = 0; i < entities.size(); ++i) {
             const Entity* e = entities[i];
             const auto* d = e ? entityAs<SplineData>(*e) : nullptr;
-            if (d && chainable(*d))
+            if (!d)
+                continue;
+            if (chainable(*d)) {
                 sps.push_back({*d, {i}, false});
+            } else if (d->control.empty() && !d->closed && d->fit.size() >= 2) {
+                // Fit points only: join the curve through them.
+                auto through = geom::interpolateSpline(
+                    d->fit, geom::InterpolateOptions{d->degree, false, {}, {}, true});
+                if (through && chainable(through.value()))
+                    sps.push_back({std::move(through).value(), {i}, false});
+            }
         }
+        // Lines that touch the end of a spline continue it as a straight run (a spline absorbs the
+        // lines, as in AutoCAD). A line already joined to other lines above is left to them.
+        std::vector<char> lineTaken(entities.size(), 0);
+        for (std::size_t c : out.consumed)
+            if (c < lineTaken.size())
+                lineTaken[c] = 1;
+        auto lineAt = [&](Vec2 p, Vec2& other) -> std::size_t {
+            for (std::size_t i = 0; i < entities.size(); ++i) {
+                if (lineTaken[i] || !entities[i])
+                    continue;
+                const auto* l = entityAs<LineData>(*entities[i]);
+                if (!l || tol::isZeroLength(l->b - l->a))
+                    continue;
+                if (samePoint(p, l->a, tolerance)) {
+                    other = l->b;
+                    return i;
+                }
+                if (samePoint(p, l->b, tolerance)) {
+                    other = l->a;
+                    return i;
+                }
+            }
+            return entities.size();
+        };
         for (std::size_t i = 0; i < sps.size(); ++i) {
             if (sps[i].used)
                 continue;
@@ -787,6 +820,22 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
                     origins.insert(origins.end(), it.origins.begin(), it.origins.end());
                     grew = true;
                     break;
+                }
+                if (grew)
+                    continue;
+                Vec2 other{};
+                if (const std::size_t at = lineAt(chain.control.back(), other);
+                    at < entities.size()) {
+                    chain = splineWithStraightRun(chain, true, other);
+                    lineTaken[at] = 1;
+                    origins.push_back(at);
+                    grew = true;
+                } else if (const std::size_t front = lineAt(chain.control.front(), other);
+                           front < entities.size()) {
+                    chain = splineWithStraightRun(chain, false, other);
+                    lineTaken[front] = 1;
+                    origins.push_back(front);
+                    grew = true;
                 }
             }
             if (origins.size() < 2)

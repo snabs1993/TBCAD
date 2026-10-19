@@ -79,7 +79,7 @@ Edges are passed in; the command uses every visible curve on a layer that is on 
   arc running counter-clockwise from the first to the second point (AutoCAD's rule), so the remaining
   arc runs from the second point counter-clockwise to the first. A closed polyline opens.
 * `breakAtPoint` splits in two; circles need two points.
-* `joinEntities` also joins elliptical arcs of one ellipse (a full turn becomes an ellipse) and clamped splines whose ends touch (one spline with a C0 joint, same curve), and `EXPLODE` breaks multiline text into one single-line text per line.
+* `joinEntities` also joins elliptical arcs of one ellipse (a full turn becomes an ellipse) and clamped splines whose ends touch (one spline with a C0 joint, same curve; fit-only splines are interpolated first, and lines that touch an end continue the spline as a straight run), and `EXPLODE` breaks multiline text into one single-line text per line.
 * `joinEntities` first fuses collinear lines and arcs of one circle (overlapping or touching), then
   chains line, arc and open-polyline pieces whose ends are within `tolerance` (command setting
   `join.tolerance`, default 0.001 mm) into a polyline, closed when the chain closes. Two arcs that
