@@ -1136,4 +1136,44 @@ TEST_CASE("an AutoCAD TABLE entity shows the lines and text of its anonymous blo
     CHECK(texts == 1);
 }
 
+TEST_CASE("dimension: number format, rules and colours overridden in its extended data") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(2, "Plain").g(140, 2.5).g(41, 2.5).g(40, 1.0).g(271, 2);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    auto dim = [&](double x, bool override) {
+        p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Plain").g(10, x).g(20, 5.0).g(11, x);
+        p.g(21, 8.0).g(70, 1).g(13, x).g(23, 0.0).g(14, x + 10.0).g(24, 0.0).g(42, 10.0);
+        if (override) {
+            p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{");
+            p.g(1070, 271).g(1070, 0);      // DIMDEC
+            p.g(1070, 75).g(1070, 1);       // DIMSE1
+            p.g(1070, 177).g(1070, 5);      // DIMCLRE
+            p.g(1070, 144).g(1040, 0.001);  // DIMLFAC
+            p.g(1070, 340).g(1005, "1B");   // a text style handle: no use to us
+            p.g(1002, "}");
+        }
+    };
+    dim(0.0, true);
+    dim(50.0, true);  // the same overrides share one style
+    dim(100.0, false);
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 3);
+    const DimStyle* a = l.doc().dimStyle(dims[0]->style);
+    const DimStyle* b = l.doc().dimStyle(dims[1]->style);
+    const DimStyle* c = l.doc().dimStyle(dims[2]->style);
+    REQUIRE(a);
+    REQUIRE(c);
+    CHECK(a->precision == 0);
+    CHECK(a->suppressExt1);
+    CHECK(a->extLineColor == Color::index(5));
+    CHECK(a->linearFactor == doctest::Approx(0.001));
+    CHECK(b == a);
+    CHECK(c->precision == 2);
+    CHECK_FALSE(c->suppressExt1);
+}
+
 }  // namespace tbcad::dxf
