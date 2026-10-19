@@ -45,7 +45,18 @@ public:
     void reindex(EntityId id);
 
 private:
-    void rebuildKeeping(const ChangeSet* changes);
+    void rebuildKeeping(const ChangeSet* changes, bool keepOld = false);
+    // The index as it was on the other side of a big all-add or all-remove change. When that same
+    // change comes back the other way (undo of an erase, redo of it ...), the two trees are swapped
+    // instead of built again. Any other change to the index drops it.
+    struct Other {
+        SpatialIndex tree;
+        std::shared_ptr<const void> key;  // the change's shared box memo identifies it
+        std::size_t count = 0;            // entities in the change
+        std::size_t indexSize = 0;        // what the live index must hold for the swap to be valid
+        bool adds = false;                // the change that swaps it back adds entities
+        bool valid = false;
+    } other_;
 
     Document& doc_;
     SpatialIndex& index_;

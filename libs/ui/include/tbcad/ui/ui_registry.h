@@ -109,6 +109,19 @@ struct PropertySection {
 // called once at start-up by the generated registerAllUi.
 class UiRegistry {
 public:
+    UiRegistry() = default;
+    UiRegistry(UiRegistry&&) = default;
+    UiRegistry& operator=(UiRegistry&&) = default;
+    ~UiRegistry() {
+        for (auto& fn : teardown_)
+            fn();
+    }
+    // Runs when the registry goes away: for a module that keeps a raw pointer to something the
+    // registry owns (a point filter) and must not be left with it dangling.
+    void addTeardown(std::function<void()> fn) {
+        if (fn)
+            teardown_.push_back(std::move(fn));
+    }
     // False (and nothing added) when the id is already taken or empty.
     bool addPanel(std::string id, std::string title, PanelDrawFn draw,
                   bool visibleByDefault = false);
@@ -178,6 +191,7 @@ private:
     std::vector<PointFilterEntry> filters_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
     cmd::CursorFieldProvider* cursorFields_ = nullptr;
+    std::vector<std::function<void()>> teardown_;
     std::vector<SessionHookFn> sessionHooks_{};
 };
 

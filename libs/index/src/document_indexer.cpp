@@ -34,12 +34,13 @@ DocumentIndexer::~DocumentIndexer() {
 }
 
 void DocumentIndexer::rebuild() {
+    other_ = {};
     rebuildKeeping(nullptr);
 }
 
 // Loads every entity again. With `changes`, entities it does not name keep the box they have in
 // the index: laying out every text again just to rebuild after a big edit is most of the cost.
-void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
+void DocumentIndexer::rebuildKeeping(const ChangeSet* changes, bool keepOld) {
     std::shared_ptr<void> run = batch_ ? batch_() : nullptr;
     // What the change names, sorted by id: binary search beats hashing a million ids. An entity
     // that comes back may have its box remembered with the change (see onChanged); one that has
@@ -138,10 +139,15 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     for (std::size_t i = 0; i < todo.size(); ++i)
         if (usable(boxes[i]))
             items.emplace_back(todo[i]->common.id, boxes[i]);
+    if (keepOld) {
+        other_.tree = std::move(index_);
+        index_ = SpatialIndex{};
+    }
     index_.bulkLoad(items);
 }
 
 void DocumentIndexer::reindex(EntityId id) {
+    other_ = {};
     const Entity* e = doc_.find(id);
     if (!e || doc_.ownerBlock(id)) {
         index_.remove(id);
@@ -164,9 +170,38 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
             if (index_.contains(id))
                 changes.memoizeBox(c.before, index_.boxOf(id));
         }
+    // A big erase (or the add that undoes it) swaps with the tree kept from the other side.
+    bool allAdd = n > 1000, allRemove = n > 1000;
+    if (allAdd || allRemove)
+        for (const EntityChange& c : changes.entities) {
+            if (c.before != kNoSnapshot)
+                allAdd = false;
+            if (c.after != kNoSnapshot)
+                allRemove = false;
+            if (!allAdd && !allRemove)
+                break;
+        }
+    const bool pure = allAdd || allRemove;
+    const std::shared_ptr<const void> key = changes.boxMemo;
+    if (pure && key && other_.valid && other_.key == key && other_.count == n &&
+        other_.adds == allAdd && other_.indexSize == index_.size()) {
+        std::swap(index_, other_.tree);
+        other_.indexSize = index_.size();
+        other_.adds = !allAdd;
+        return;
+    }
+    other_ = {};
+    auto remember = [&] {
+        other_.key = key;
+        other_.count = n;
+        other_.adds = allRemove;  // coming back, it is the opposite change
+        other_.valid = pure && key;
+    };
     // A large edit (an import, a paste of thousands) is cheaper as one bulk load.
     if (n > 1000 && n * 2 > index_.size()) {
-        rebuildKeeping(&changes);
+        rebuildKeeping(&changes, pure && key);
+        remember();
+        other_.indexSize = index_.size();
         return;
     }
     // Taking out many entries one by one condenses the tree again and again (several times the
@@ -177,7 +212,9 @@ void DocumentIndexer::onChanged(const ChangeSet& changes) {
             if (!changes.after(c))
                 ++gone;
         if (gone * 4 > index_.size()) {
-            rebuildKeeping(&changes);
+            rebuildKeeping(&changes, pure && key);
+            remember();
+            other_.indexSize = index_.size();
             return;
         }
     }
