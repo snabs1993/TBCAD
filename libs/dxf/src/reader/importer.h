@@ -316,7 +316,7 @@ private:
         int line = 0;
     };
     std::vector<PendingImage> images_{};
-    int imageFrame_ = -1;  // IMAGEFRAME of the RASTERVARIABLES object (all pictures); -1 = none
+    int imageFrame_ = -1;  // 0 when RASTERVARIABLES hides the frames of all pictures; -1 = no say
     std::map<std::string, std::vector<Vec2>>
         sheetRings_{};                                // closed polylines on sheets, by handle
     std::map<std::string, std::string> imageDefs_{};  // IMAGEDEF handle -> file path
