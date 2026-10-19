@@ -1,5 +1,8 @@
 #include "tbcad/index/document_indexer.h"
 
+#include <algorithm>
+#include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -32,20 +35,55 @@ void DocumentIndexer::rebuild() {
 // the index: laying out every text again just to rebuild after a big edit is most of the cost.
 void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     std::shared_ptr<void> run = batch_ ? batch_() : nullptr;
-    std::unordered_set<EntityId> touched;
-    if (changes)
+    // Entities the change names: the box it remembers for them, or none (measure them again).
+    struct Touched {
+        std::optional<BBox2> known{};
+        std::uint32_t addedAs = kNoSnapshot;  // snapshot to remember a measured box with
+    };
+    // Ids are small and dense, so a table indexed by id beats hashing 400,000 of them.
+    constexpr std::uint32_t kNone = 0xFFFFFFFFu;
+    std::vector<std::uint32_t> slot;
+    std::vector<Touched> touched;
+    auto touchedOf = [&](EntityId id) -> Touched* {
+        return id.value < slot.size() && slot[id.value] != kNone ? &touched[slot[id.value]]
+                                                                 : nullptr;
+    };
+    if (changes) {
+        std::uint64_t top = 0;
         for (const EntityChange& c : changes->entities)
-            touched.insert(changes->idOf(c));
+            top = std::max(top, changes->idOf(c).value);
+        slot.assign(top + 1, kNone);
+        touched.reserve(changes->entities.size());
+        for (const EntityChange& c : changes->entities) {
+            const std::uint64_t v = changes->idOf(c).value;
+            if (slot[v] == kNone) {
+                slot[v] = static_cast<std::uint32_t>(touched.size());
+                touched.emplace_back();
+            }
+            Touched& t = touched[slot[v]];
+            if (c.before == kNoSnapshot && c.after != kNoSnapshot) {
+                t.addedAs = c.after;
+                if (const BBox2* known = changes->memoBox(c.after))
+                    t.known = *known;
+            }
+        }
+    }
     std::vector<IdBox> items;
     items.reserve(doc_.modelSpaceCount());
     doc_.forEachEntity([&](const Entity& e) {
         if (doc_.ownerBlock(e.common.id))
             return;
         BBox2 b;
-        if (changes && !touched.count(e.common.id) && index_.contains(e.common.id))
+        Touched* t = touchedOf(e.common.id);
+        if (changes && !t && index_.contains(e.common.id))
             b = index_.boxOf(e.common.id);
-        else
+        else if (t && t->known)
+            b = *t->known;
+        else {
             b = bounds_(e);
+            if (t)
+                changes->memoizeBox(t->addedAs, b);
+        }
         if (usable(b))
             items.emplace_back(e.common.id, b);
     });
@@ -67,6 +105,14 @@ void DocumentIndexer::reindex(EntityId id) {
 
 void DocumentIndexer::onChanged(const ChangeSet& changes) {
     std::size_t n = changes.entities.size();
+    // Entities that go away still have their box in the index: keep it with the snapshot, so an
+    // undo that brings them back does not have to measure them again.
+    for (const EntityChange& c : changes.entities)
+        if (c.before != kNoSnapshot && c.after == kNoSnapshot) {
+            const EntityId id = changes.before(c)->common.id;
+            if (index_.contains(id))
+                changes.memoizeBox(c.before, index_.boxOf(id));
+        }
     // A large edit (an import, a paste of thousands) is cheaper as one bulk load.
     if (n > 1000 && n * 2 > index_.size()) {
         rebuildKeeping(&changes);

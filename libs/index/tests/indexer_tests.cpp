@@ -209,3 +209,36 @@ TEST_CASE("erasing a third of a big drawing keeps the index right, and so does i
     CHECK(idx.size() == 6000);
     checkSame(doc, idx);
 }
+
+TEST_CASE("erasing everything and undoing it again and again keeps the boxes right") {
+    Document doc;
+    SpatialIndex idx;
+    DocumentIndexer indexer(doc, idx, boundsOf);
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("bulk");
+        for (int i = 0; i < 3000; ++i) {
+            auto r = tx.add(line(i, 0, i + 1, 1 + i % 7));
+            REQUIRE(r);
+            ids.push_back(r.value());
+        }
+        tx.commit();
+    }
+    ChangeSet erased;
+    {
+        Transaction tx = doc.begin("erase all");
+        for (EntityId id : ids)
+            REQUIRE(tx.erase(id));
+        erased = tx.commit();
+    }
+    CHECK(idx.size() == 0);
+    // The boxes the index held are kept with the change: coming back must give the same ones.
+    for (int round = 0; round < 3; ++round) {
+        doc.apply(erased, Direction::Undo);
+        CHECK(idx.size() == 3000);
+        checkSame(doc, idx);
+        doc.apply(erased, Direction::Redo);
+        CHECK(idx.size() == 0);
+        checkSame(doc, idx);
+    }
+}

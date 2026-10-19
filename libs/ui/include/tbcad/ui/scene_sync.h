@@ -90,7 +90,10 @@ private:
         bool dead = false;  // built or erased meanwhile
     };
     bool lazyOk(std::size_t count) const;
-    void queueLazy(const std::vector<const Entity*>& list);
+    // `known` (optional, same length as `list`) holds boxes already measured for entities of
+    // `list`, or null where there is none.
+    void queueLazy(const std::vector<const Entity*>& list,
+                   const std::vector<const BBox2*>* known = nullptr);
     std::optional<std::uint32_t> takePending(EntityId id);
     void dropPending(const std::vector<EntityId>& ids);
     std::uint32_t orderFor(EntityId id);

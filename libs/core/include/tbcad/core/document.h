@@ -92,10 +92,10 @@ inline constexpr const char* kAttDispKey = "tbcad.attdisp";
 // QTEXT (QTEXTMODE): text shows as a box (default off).
 inline constexpr const char* kQTextKey = "tbcad.qtext";
 bool quickText(const Header& h);
-// Named plot styles (an .stb table): a layer or an object names the style it plots with; an object's own name wins, "ByLayer" or empty takes the layer's, and a layer without one
-// plots with "Normal". Kept in Header::custom. PSTYLEMODE (colour-dependent or named, DXF
-// $PSTYLEMODE) records which kind of table the drawing was made for; the plot uses whichever kind
-// of table is chosen.
+// Named plot styles (an .stb table): a layer or an object names the style it plots with; an
+// object's own name wins, "ByLayer" or empty takes the layer's, and a layer without one plots with
+// "Normal". Kept in Header::custom. PSTYLEMODE (colour-dependent or named, DXF $PSTYLEMODE) records
+// which kind of table the drawing was made for; the plot uses whichever kind of table is chosen.
 inline constexpr const char* kPStyleModeKey = "tbcad.pstylemode";
 bool colorDependentPlotStyles(const Header& h);
 void setColorDependentPlotStyles(Header& h, bool on);
@@ -180,6 +180,33 @@ struct ChangeSet {
     // Entities (added or modified) lying outside the working area, for the app to warn about.
     std::vector<EntityId> outOfArea{};
 
+    // Bounding boxes of snapshot entities, kept for as long as the snapshots live (an inverted()
+    // set shares them). The observers fill and read it, so undoing an ERASE of everything does
+    // not measure every object again: the spatial index knew the boxes when they went away and
+    // the scene wants the same ones. Only the observers decide what a box means; the memo just
+    // stores them, indexed like `snapshots`.
+    struct BoxMemo {
+        std::vector<BBox2> box{};
+        std::vector<std::uint8_t> have{};
+    };
+    mutable std::shared_ptr<BoxMemo> boxMemo{};
+    const BBox2* memoBox(std::uint32_t snap) const {
+        if (snap == kNoSnapshot || !boxMemo || snap >= boxMemo->have.size() || !boxMemo->have[snap])
+            return nullptr;
+        return &boxMemo->box[snap];
+    }
+    void memoizeBox(std::uint32_t snap, const BBox2& b) const {
+        if (snap == kNoSnapshot)
+            return;
+        if (!boxMemo)
+            boxMemo = std::make_shared<BoxMemo>();
+        if (boxMemo->have.size() < snapshots->size()) {
+            boxMemo->box.resize(snapshots->size());
+            boxMemo->have.resize(snapshots->size(), 0);
+        }
+        boxMemo->box[snap] = b;
+        boxMemo->have[snap] = 1;
+    }
     const Entity* before(const EntityChange& c) const {
         return c.before == kNoSnapshot ? nullptr : &(*snapshots)[c.before];
     }
