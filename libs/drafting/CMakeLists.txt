@@ -24,6 +24,7 @@ tbcad_add_tests(drafting
     tests/tracking_tests.cpp
     tests/point_modifier_tests.cpp
     tests/polar_angle_tests.cpp
+    tests/snap_options_tests.cpp
     tests/dyninput_tests.cpp
     tests/grid_tests.cpp
     tests/ucs_tests.cpp

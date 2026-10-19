@@ -65,7 +65,7 @@ void registerUi(ui::UiRegistry& ui) {
         gs.dark = pc.host->setting("ui.theme").value_or("dark") != "light";
         if (pc.doc) {  // the grid follows the current UCS
             const auto ucs = drafting::currentUcs(pc.doc, pc.host);
-            gs.origin = ucs.origin;
+            gs.origin = ucs.toWorld(s.snapBase);  // the grid passes through the snap base
             gs.angle = ucs.angle;
         }
         drafting::buildGrid(underlay, *pc.camera, gs);

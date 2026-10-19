@@ -104,6 +104,47 @@ TEST_CASE("GRID and SNAP spacing and style") {
     CHECK(s.snapSpacing == 5);
 }
 
+TEST_CASE("SNAP Aspect, Base and Type, and POLAR Additional and Relative") {
+    Fixture f;
+    f.host.run("SNAP", {"aspect", "5", "2"});
+    auto s = drafting::DraftingSettings::read(f.host);
+    CHECK(s.snapSpacing == 5);
+    CHECK(s.snapSpacingY == 2);
+    CHECK(s.snap);
+    f.host.run("SNAP", {"base", "3,4"});
+    s = drafting::DraftingSettings::read(f.host);
+    CHECK(s.snapBase.x == doctest::Approx(3));
+    CHECK(s.snapBase.y == doctest::Approx(4));
+    f.host.run("SNAP", {"type", "polar", "7"});
+    s = drafting::DraftingSettings::read(f.host);
+    CHECK(s.polarSnap);
+    CHECK(s.polarDistance == 7);
+    f.host.run("SNAP", {"type", "grid"});
+    CHECK_FALSE(drafting::DraftingSettings::read(f.host).polarSnap);
+    // plain Spacing sets both directions again
+    f.host.run("SNAP", {"spacing", "4"});
+    s = drafting::DraftingSettings::read(f.host);
+    CHECK(s.snapSpacing == 4);
+    CHECK(s.snapSpacingY == 4);
+    // grid spacing 0 follows the snap spacing
+    f.host.run("GRID", {"spacing", "0"});
+    CHECK(drafting::DraftingSettings::read(f.host).gridSpacing == 4);
+
+    f.host.run("POLAR", {"additional", "17,127.5"});
+    s = drafting::DraftingSettings::read(f.host);
+    CHECK(s.polar);
+    REQUIRE(s.polarAdditionalDeg.size() == 2);
+    CHECK(s.polarAdditionalDeg[1] == 127.5);
+    f.host.run("POLAR", {"additional", "nonsense"});
+    CHECK(f.get("drafting.polar.additional") == "17,127.5");  // refused, kept
+    f.host.run("POLAR", {"additional", ""});
+    CHECK(drafting::DraftingSettings::read(f.host).polarAdditionalDeg.empty());
+    f.host.run("POLAR", {"relative", "relative"});
+    CHECK(drafting::DraftingSettings::read(f.host).polarRelative);
+    f.host.run("POLAR", {"relative", "absolute"});
+    CHECK_FALSE(drafting::DraftingSettings::read(f.host).polarRelative);
+}
+
 TEST_CASE("the F-key toggles flip their setting") {
     Fixture f;
     f.host.run("TOGGLEOSNAP", {});

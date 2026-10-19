@@ -33,6 +33,9 @@ accept, Esc to cancel, and Enter on an empty line to repeat the last command.
 
 `POLAR` sets the increment angles, `Additional` angles that are tracked on their own (not their
 multiples), and whether angles count from the X axis or from the last segment (`Relative`).
+`SNAP` sets the spacing (`Aspect` for different X and Y), the `Base` point the lattice passes
+through, and the `Type`: grid snap, or polar snap (steps of a distance along tracking lines only).
+`GRID Spacing 0` makes the grid follow the snap spacing.
 Ortho and polar tracking exclude each other, as in AutoCAD; Shift flips ortho while held.
 
 Object snap modes are chosen with the `OSNAP` command. Every key can be changed, see

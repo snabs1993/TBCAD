@@ -264,6 +264,14 @@ void SettingsDialog::drafting(ui::AppCore& core) {
     if (ImGui::BeginTabItem("Snap and Grid")) {
         toggle("Snap on (F9)", drafting::keys::snap);
         number("Snap spacing", drafting::keys::snapSpacing, cur.snapSpacing, "%.6g");
+        number("Snap Y spacing", drafting::keys::snapSpacingY, cur.snapSpacingY, "%.6g");
+        int snapType = cur.polarSnap ? 1 : 0;
+        ImGui::SetNextItemWidth(140);
+        if (ImGui::Combo("Snap type", &snapType, "Grid snap\0Polar snap\0"))
+            core.setSetting(drafting::keys::snapType, snapType == 1 ? "polar" : "grid");
+        if (cur.polarSnap)
+            number("Polar distance", drafting::keys::polarDistance,
+                   cur.polarDistance > 0 ? cur.polarDistance : cur.snapSpacing, "%.6g");
         ImGui::Separator();
         toggle("Grid on (F7)", drafting::keys::grid);
         number("Grid spacing", drafting::keys::gridSpacing, cur.gridSpacing, "%.6g");
