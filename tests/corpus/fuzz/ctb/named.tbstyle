@@ -1,0 +1,5 @@
+TBCAD-PLOT-STYLE 1
+name Named
+description n
+named 1
+S color=#FF0000 lineweight=0.5 screen=100 gray=0 name=Thick red

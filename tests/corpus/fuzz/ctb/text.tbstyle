@@ -1,0 +1,5 @@
+TBCAD-PLOT-STYLE 1
+name Mono
+description test
+1 color=#000000 lineweight=0.35 screen=100 gray=0
+253 color=object lineweight=object screen=50 gray=1

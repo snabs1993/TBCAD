@@ -1,4 +1,4 @@
-name: Fuzz DXF lexer and reader, .tbcad reader, MCP server
+name: Fuzz file readers, MCP server and formulas
 
 # 30 s on every pull request that touches the DXF code, 5 min every night.
 on:
@@ -8,6 +8,11 @@ on:
       - "libs/io/**"
       - "libs/blocks/**"
       - "libs/mcp/**"
+      - "libs/font/**"
+      - "libs/underlay/**"
+      - "libs/plotstyle/**"
+      - "libs/expr/**"
+      - "libs/hatch/**"
       - "tests/corpus/**"
       - ".github/workflows/fuzz-dxf.yml"
   schedule:
@@ -33,9 +38,11 @@ jobs:
         run: >
           cmake -S . -B build/fuzz -G Ninja
           -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_IO_FUZZ=ON -DTBCAD_MCP_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_IO_FUZZ=ON -DTBCAD_MCP_FUZZ=ON -DTBCAD_FORMATS_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
       - name: Build
         run: cmake --build build/fuzz --target tbcad_dxf_fuzz_lexer tbcad_dxf_fuzz_reader tbcad_io_fuzz_tbcad tbcad_mcp_fuzz
+          tbcad_font_fuzz_stroke tbcad_underlay_fuzz_pdf tbcad_plotstyle_fuzz_ctb tbcad_expr_fuzz
+          tbcad_hatch_fuzz_patterns
       - name: Fuzz
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
@@ -68,6 +75,19 @@ jobs:
           build/fuzz/libs/mcp/tbcad_mcp_fuzz build/fuzz-corpus-mcp \
             -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
             -artifact_prefix=artifacts/
+      - name: Fuzz fonts, PDF underlays, plot styles, formulas and hatch patterns
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then seconds=120; else seconds=15; fi
+          mkdir -p artifacts
+          for t in font/tbcad_font_fuzz_stroke:stroke underlay/tbcad_underlay_fuzz_pdf:pdf \
+                   plotstyle/tbcad_plotstyle_fuzz_ctb:ctb expr/tbcad_expr_fuzz:expr \
+                   hatch/tbcad_hatch_fuzz_patterns:patterns; do
+            mkdir -p "build/fuzz-corpus-${t#*:}"
+            cp tests/corpus/fuzz/${t#*:}/* "build/fuzz-corpus-${t#*:}/"
+            build/fuzz/libs/${t%:*} "build/fuzz-corpus-${t#*:}" \
+              -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
+              -artifact_prefix=artifacts/
+          done
       - name: Upload crash inputs
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
