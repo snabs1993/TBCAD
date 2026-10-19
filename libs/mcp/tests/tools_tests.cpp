@@ -406,6 +406,17 @@ TEST_CASE("measure") {
               ->asNumber() == doctest::Approx(6));
 }
 
+TEST_CASE("measure: the area of a hatch leaves its islands out") {
+    Rig r;
+    r.initialize();
+    Json a = r.ok("add_entities", J(R"({"entities":[{"kind":"hatch","loops":[
+        [[0,0],[10,0],[10,10],[0,10]], [[2,2],[4,2],[4,4],[2,4]]]}]})"));
+    const std::string id = a.find("ids")->asArray()[0].asString();
+    Json m = r.ok("measure", J(R"({"kind":"area","ids":[")" + id + R"("]})"));
+    CHECK(m.find("area")->asNumber() == doctest::Approx(96));
+    CHECK(m.find("perimeter")->asNumber() == doctest::Approx(48));
+}
+
 TEST_CASE("save and open round trip") {
     auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_save";
     std::filesystem::remove_all(dir);
