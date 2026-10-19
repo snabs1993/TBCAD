@@ -81,6 +81,9 @@ struct DimComparison {
     int arrowsStored = 0;         // arrowheads (solids, arrow blocks) in the stored block
     int arrowsUnmatched = 0;      // of those, how many have no arrowhead of TBCAD's nearby
     int arrowsGenerated = 0;
+    // What the dimension was read from, for finding the cause of a difference without the file:
+    // its raw text, the stored text with codes, style values, DSTYLE overrides and both boxes.
+    std::string detail{};
 };
 
 struct ImportSummary {

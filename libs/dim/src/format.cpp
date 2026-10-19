@@ -271,7 +271,9 @@ TextParts dimensionParts(const DimStyle& style, const DimensionData& d, bool sta
     } else {
         num = formatNumber(style, m, angular);
     }
-    std::string head = std::string(kindPrefix(d.kind)) + style.prefix + num;
+    // A prefix from the style replaces the radius and diameter signs, as in AutoCAD.
+    std::string head =
+        (style.prefix.empty() ? std::string(kindPrefix(d.kind)) : style.prefix) + num;
     std::string tail = style.suffix;
     switch (style.tolerance) {
         case DimTolerance::Symmetrical:

@@ -60,6 +60,13 @@ TEST_CASE("dimension text: prefixes, suffix, override") {
     CHECK(dimensionText(plain, radial(DimKind::Diameter, {-10, 0}, {10, 0})) ==
           "\xC3\x98"
           "20.00");
+    // A prefix from the style takes the place of the radius and diameter signs, so "R " written
+    // as the prefix shows once: "R 10.00", never "RR 10.00".
+    DimStyle withR;
+    withR.prefix = "R ";
+    CHECK(dimensionText(withR, radial(DimKind::Radius, {0, 0}, {10, 0})) == "R 10.00");
+    withR.prefix = "DIA ";
+    CHECK(dimensionText(withR, radial(DimKind::Diameter, {-10, 0}, {10, 0})) == "DIA 20.00");
 }
 
 TEST_CASE("angular dimension of perpendicular lines reads 90 degrees") {

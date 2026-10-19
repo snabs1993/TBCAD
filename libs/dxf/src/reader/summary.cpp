@@ -67,6 +67,7 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
     Tally total;
     std::string samples;
     std::size_t sampled = 0;
+    std::map<std::string, int> perSignature;
     for (const DimComparison& c : all) {
         const DimFaults f = faultsOf(c);
         for (Tally* t : {&byKind[c.kind], &total}) {
@@ -78,7 +79,14 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
             t->lines += f.lines;
             t->arrows += f.arrows;
         }
+        // At most three samples of each kind of fault, so one common fault does not hide the
+        // others.
         if (!f.any() || sampled >= 60)
+            continue;
+        const std::string signature = c.kind + (f.text ? "t" : "") + (f.offset ? "o" : "") +
+                                      (f.height ? "h" : "") + (f.lines ? "l" : "") +
+                                      (f.arrows ? "a" : "");
+        if (++perSignature[signature] > 3)
             continue;
         ++sampled;
         if (!samples.empty())
@@ -99,7 +107,9 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
                    ",\"strayGenerated\":" + number(c.strayGenerated) +
                    ",\"arrows\":[" + std::to_string(c.arrowsStored) + "," +
                    std::to_string(c.arrowsGenerated) + "," + std::to_string(c.arrowsUnmatched) +
-                   "]}";
+                   "],\"detail\":";
+        appendString(samples, c.detail);
+        samples += "}";
     }
     auto tally = [](const Tally& t) {
         return "{\"count\":" + std::to_string(t.count) + ",\"differ\":" + std::to_string(t.differ) +
