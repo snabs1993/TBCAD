@@ -234,8 +234,7 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
                 addPoints(c, *p);
         }
     }
-    std::sort(rec.refs.begin(), rec.refs.end());
-    rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());
+    finishRefs(rec);
     ++changeCounter_;
     return true;
 }

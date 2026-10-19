@@ -226,9 +226,26 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
         else if (const auto* p = std::get_if<DisplayPoints>(&item))
             addPoints(c, *p);
     }
-    std::sort(rec.refs.begin(), rec.refs.end());
-    rec.refs.erase(std::unique(rec.refs.begin(), rec.refs.end()), rec.refs.end());
+    finishRefs(rec);
     ++changeCounter_;
+}
+
+std::uint32_t Scene::internRef(const TileKey& tile, const BatchKey& key) {
+    auto [it, fresh] =
+        refIds_.try_emplace(RefPair{tile, key}, static_cast<std::uint32_t>(refPairs_.size()));
+    if (fresh)
+        refPairs_.push_back(it->first);
+    return it->second;
+}
+
+void Scene::finishRefs(EntityRec& rec) {
+    if (rec.refs.size() < 2)
+        return;
+    std::sort(rec.refs.begin(), rec.refs.end(),
+              [this](std::uint32_t a, std::uint32_t b) { return refPairs_[a] < refPairs_[b]; });
+    // The same pair has the same number, so equal numbers are the repeats.
+    rec.refs.truncate(static_cast<std::uint32_t>(std::unique(rec.refs.begin(), rec.refs.end()) -
+                                                 rec.refs.begin()));
 }
 
 // Masks drawn before something with this draw order.
@@ -261,7 +278,8 @@ std::uint32_t Scene::drawOrderOf(EntityId id) const {
 }
 
 void Scene::eraseRefs(EntityId id, const EntityRec& rec) {
-    for (const auto& [tk, bk] : rec.refs) {
+    for (std::uint32_t refId : rec.refs) {
+        const auto& [tk, bk] = refPair(refId);
         auto tit = tiles_.find(tk);
         if (tit == tiles_.end())
             continue;
@@ -347,8 +365,8 @@ void Scene::removeMany(std::span<const EntityId> ids) {
         auto it = entities_.find(id);
         if (it == entities_.end())
             continue;
-        for (const auto& ref : it->second.refs)
-            touched.insert(ref);
+        for (std::uint32_t ref : it->second.refs)
+            touched.insert(refPair(ref));
         if (it->second.mask)
             masks_.erase(id);
         entities_.erase(it);
@@ -412,6 +430,8 @@ void Scene::discardAll() {
     }
     tiles_.clear();
     entities_.clear();
+    refPairs_.clear();
+    refIds_.clear();
     masks_.clear();
     levelOrders_.clear();
 }
@@ -481,7 +501,8 @@ const SelectionGeometry& Scene::geometryFor(const std::unordered_set<EntityId>& 
             auto eit = entities_.find(id);
             if (eit == entities_.end())
                 continue;
-            for (const auto& [tk, bk] : eit->second.refs) {
+            for (std::uint32_t refId : eit->second.refs) {
+                const auto& [tk, bk] = refPair(refId);
                 if (bk.kind != BatchKind::Stroke || !layerVisible(bk.layer))
                     continue;
                 auto tit = tiles_.find(tk);

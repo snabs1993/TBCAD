@@ -1632,6 +1632,13 @@ Result<ExportResult> Writer::run() {
     layoutModel_ = newHandle();
     layoutPaper_ = newHandle();
     prepareSheets();
+    {
+        constexpr std::string_view kPrefix = "tbcad.pstyle.ent:";
+        const auto& custom = doc_.header().custom;
+        auto it = custom.lower_bound(std::string(kPrefix));
+        anyEntityPlotStyle_ =
+            it != custom.end() && it->first.compare(0, kPrefix.size(), kPrefix) == 0;
+    }
     // Extents of model space for $EXTMIN/$EXTMAX and the active viewport.
     std::vector<EntityId> model = doc_.modelSpace();
     if (opt_.onlyLevel) {
