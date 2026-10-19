@@ -185,6 +185,11 @@ struct DimStyle {
     DimLinearFormat linearFormat = DimLinearFormat::Decimal;
     // DIMTFAC: the height of a stacked tolerance (each line) as a fraction of the text height.
     double tolHeightFactor = 1;
+    // DIMFXLON and DIMFXL: extension lines of a fixed length, measured from the dimension line
+    // toward the origin (never nearer to it than the offset).
+    bool fixedExtLines = false;
+    double fixedExtLength = 1;
+    bool hasFixedExt() const { return fixedExtLines || fixedExtLength != 1; }
     bool hasTextBox() const { return textFill != 0 || textFrame; }
     bool hasLinearFormat() const {
         return linearFormat != DimLinearFormat::Decimal || tolHeightFactor != 1;

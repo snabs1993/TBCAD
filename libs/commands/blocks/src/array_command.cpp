@@ -527,7 +527,10 @@ private:
     Mode mode_;
 };
 
-// ARRAYEDIT: change the parameters of an associative array.
+// ARRAYEDIT: change the parameters of an associative array, one option at a time as in AutoCAD
+// (Enter or eXit ends). Rectangular: Rows, Columns (count, then spacing or Total). Polar: Items,
+// Angle between, Fill angle, ROTate items. Path: Method (Divide or Measure), Items, Align items.
+// Every change shows at once and the whole edit is one undo step.
 class ArrayEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ARRAYEDIT"; }
@@ -546,78 +549,172 @@ public:
         if (!picked.ok())
             co_return;
         const Entity* e = doc.find(picked.id);
+        if (!e)
+            co_return;
         ArrayInfo a = *entityAs<InsertData>(*e)->array;
-        if (a.kind == ArrayInfo::Kind::Rectangular) {
-            auto rows = co_await ctx.getInteger(
-                "Enter the number of rows <" + std::to_string(a.rows) + ">",
-                cmd::IntOptions{.defaultValue = a.rows, .min = 1, .max = blocks::kMaxArrayItems});
-            if (!rows.ok())
-                co_return;
-            auto cols = co_await ctx.getInteger(
-                "Enter the number of columns <" + std::to_string(a.columns) + ">",
-                cmd::IntOptions{
-                    .defaultValue = a.columns, .min = 1, .max = blocks::kMaxArrayItems});
-            if (!cols.ok())
-                co_return;
-            auto rsp = co_await ctx.getDistance(
-                "Specify the distance between rows <" + std::to_string(a.rowSpacing) + ">",
-                cmd::DistanceOptions{
-                    .defaultValue = a.rowSpacing, .allowZero = false, .allowNegative = true});
-            if (!rsp.ok())
-                co_return;
-            auto csp = co_await ctx.getDistance(
-                "Specify the distance between columns <" + std::to_string(a.columnSpacing) + ">",
-                cmd::DistanceOptions{
-                    .defaultValue = a.columnSpacing, .allowZero = false, .allowNegative = true});
-            if (!csp.ok())
-                co_return;
-            if (static_cast<long long>(rows.value) * cols.value > blocks::kMaxArrayItems) {
-                ctx.message("That array would have too many items");
-                co_return;
+        auto apply = [&] {
+            (void)ctx.tx().modify(picked.id, [&](Entity& ent) {
+                if (auto* d = entityAs<InsertData>(ent))
+                    d->array = a;
+            });
+        };
+        auto tooMany = [&](const ArrayInfo& x) {
+            if (blocks::arrayItemCount(x) <= blocks::kMaxArrayItems)
+                return false;
+            ctx.message("That array would have too many items");
+            return true;
+        };
+        auto yesNo = [](bool b) { return std::string(b ? "Yes" : "No"); };
+
+        for (;;) {
+            cmd::KeywordOptions ko;
+            std::string prompt;
+            switch (a.kind) {
+                case ArrayInfo::Kind::Rectangular:
+                    ko.keywords = {"Rows", "Columns", "eXit"};
+                    break;
+                case ArrayInfo::Kind::Polar:
+                    ko.keywords = {"Items", "Angle", "Fill", "ROTate", "eXit"};
+                    break;
+                case ArrayInfo::Kind::Path:
+                    ko.keywords = {"Method", "Items", "Align", "eXit"};
+                    break;
             }
-            a.rows = static_cast<int>(rows.value);
-            a.columns = static_cast<int>(cols.value);
-            a.rowSpacing = rsp.value;
-            a.columnSpacing = csp.value;
-        } else {
-            auto n = co_await ctx.getInteger(
-                "Enter the number of items <" + std::to_string(a.count) + ">",
-                cmd::IntOptions{.defaultValue = a.count, .min = 1, .max = blocks::kMaxArrayItems});
-            if (!n.ok())
+            for (const std::string& k : ko.keywords)
+                prompt += (prompt.empty() ? "" : "/") + k;
+            ko.defaultKeyword = "eXit";
+            auto opt = co_await ctx.getKeyword("Enter an option [" + prompt + "] <eXit>", ko);
+            if (!opt.ok())
                 co_return;
-            a.count = static_cast<int>(n.value);
-            if (a.kind == ArrayInfo::Kind::Polar) {
+            const std::string& k = opt.keyword;
+            if (k == "eXit")
+                break;
+
+            if (k == "Rows" || k == "Columns") {
+                const bool rows = k == "Rows";
+                int& count = rows ? a.rows : a.columns;
+                double& spacing = rows ? a.rowSpacing : a.columnSpacing;
+                auto n = co_await ctx.getInteger(
+                    std::string("Enter the number of ") + (rows ? "rows" : "columns") + " <" +
+                        std::to_string(count) + ">",
+                    cmd::IntOptions{.defaultValue = count, .min = 1,
+                                    .max = blocks::kMaxArrayItems});
+                if (!n.ok())
+                    co_return;
+                cmd::DistanceOptions dso{.defaultValue = spacing, .allowZero = false,
+                                         .allowNegative = true};
+                dso.keywords = {"Total"};
+                auto sp = co_await ctx.getDistance(
+                    std::string("Specify the distance between ") + (rows ? "rows" : "columns") +
+                        " or [Total] <" + niceNumber(spacing) + ">",
+                    dso);
+                double newSpacing = sp.value;
+                if (sp.status == cmd::Status::Keyword) {
+                    // the distance from the first to the last row or column
+                    auto total = co_await ctx.getDistance(
+                        std::string("Specify the distance between the first and last ") +
+                            (rows ? "row" : "column"),
+                        cmd::DistanceOptions{.allowZero = false, .allowNegative = true});
+                    if (!total.ok())
+                        co_return;
+                    if (n.value < 2) {
+                        ctx.message("A total needs at least two rows or columns.");
+                        continue;
+                    }
+                    newSpacing = total.value / static_cast<double>(n.value - 1);
+                } else if (!sp.ok()) {
+                    co_return;
+                }
+                ArrayInfo next = a;
+                (rows ? next.rows : next.columns) = static_cast<int>(n.value);
+                (rows ? next.rowSpacing : next.columnSpacing) = newSpacing;
+                if (tooMany(next))
+                    continue;
+                a = next;
+            } else if (k == "Items") {
+                cmd::IntOptions io{.defaultValue = a.count, .min = 1,
+                                   .max = blocks::kMaxArrayItems};
+                if (a.kind == ArrayInfo::Kind::Path && a.pathSpacing > 0) {
+                    // Measure: the spacing first, then how many fit (as AutoCAD asks)
+                    auto sp = co_await ctx.getDistance(
+                        "Specify the distance between items along the path <" +
+                            niceNumber(a.pathSpacing) + ">",
+                        cmd::DistanceOptions{.defaultValue = a.pathSpacing, .allowZero = false});
+                    if (!sp.ok())
+                        co_return;
+                    a.pathSpacing = sp.value;
+                }
+                auto n = co_await ctx.getInteger(
+                    "Enter the number of items <" + std::to_string(a.count) + ">", io);
+                if (!n.ok())
+                    co_return;
+                a.count = static_cast<int>(n.value);
+            } else if (k == "Angle") {  // angle between items
+                const double step = a.count > 1 ? a.fillAngle / (a.count - 1) : a.fillAngle;
+                auto ang = co_await ctx.getAngle(
+                    "Specify the angle between items <" +
+                        niceNumber(step * 180.0 / kPi) + ">",
+                    cmd::AngleOptions{.defaultValue = step});
+                if (!ang.ok())
+                    co_return;
+                if (a.count < 2 || std::abs(ang.value) < 1e-12) {
+                    ctx.message("The angle between items needs two items and a non-zero angle.");
+                    continue;
+                }
+                const double fill = ang.value * (a.count - 1);
+                if (std::abs(fill) > kTwoPi + 1e-9) {
+                    ctx.message("That many items at that angle would go round more than once.");
+                    continue;
+                }
+                a.fillAngle = fill;
+            } else if (k == "Fill") {
                 auto fill = co_await ctx.getAngle(
-                    "Specify the angle to fill <" + std::to_string(a.fillAngle * 180.0 / kPi) + ">",
+                    "Specify the angle to fill (+ counter-clockwise, - clockwise) <" +
+                        niceNumber(a.fillAngle * 180.0 / kPi) + ">",
                     cmd::AngleOptions{.defaultValue = a.fillAngle});
                 if (!fill.ok())
                     co_return;
+                if (std::abs(fill.value) < 1e-12) {
+                    ctx.message("The angle to fill must not be zero.");
+                    continue;
+                }
                 a.fillAngle = fill.value;
-            } else {
-                auto sp = co_await ctx.getDistance(
-                    "Specify the distance between items, 0 = spread evenly <" +
-                        std::to_string(a.pathSpacing) + ">",
-                    cmd::DistanceOptions{.defaultValue = a.pathSpacing, .allowZero = true});
-                if (!sp.ok())
+            } else if (k == "ROTate" || k == "Align") {
+                cmd::KeywordOptions yo;
+                yo.keywords = {"Yes", "No"};
+                yo.defaultKeyword = yesNo(a.rotateItems);
+                auto rot = co_await ctx.getKeyword(
+                    std::string(k == "ROTate" ? "Rotate items as they are arrayed"
+                                              : "Align items to the path") +
+                        " [Yes/No] <" + *yo.defaultKeyword + ">",
+                    yo);
+                if (!rot.ok())
                     co_return;
-                a.pathSpacing = sp.value;
+                a.rotateItems = rot.keyword == "Yes";
+            } else if (k == "Method") {
+                cmd::KeywordOptions mo;
+                mo.keywords = {"Divide", "Measure"};
+                mo.defaultKeyword = a.pathSpacing > 0 ? "Measure" : "Divide";
+                auto m = co_await ctx.getKeyword(
+                    "Enter path method [Divide/Measure] <" + *mo.defaultKeyword + ">", mo);
+                if (!m.ok())
+                    co_return;
+                if (m.keyword == "Divide") {
+                    a.pathSpacing = 0;
+                } else if (a.pathSpacing <= 0) {
+                    // Measure keeps the items where Divide put them: the spacing they had
+                    PolylineData pl;
+                    pl.v = a.path;
+                    pl.closed = a.pathClosed;
+                    double total = 0;
+                    for (const auto& seg : geom::segments(pl))
+                        total += seg.curve.length();
+                    const int gaps = a.pathClosed ? a.count : a.count - 1;
+                    a.pathSpacing = gaps > 0 && total > 0 ? total / gaps : 1;
+                }
             }
-            cmd::KeywordOptions ko;
-            ko.keywords = {"Yes", "No"};
-            ko.defaultKeyword = a.rotateItems ? "Yes" : "No";
-            auto rot = co_await ctx.getKeyword(
-                std::string(a.kind == ArrayInfo::Kind::Polar ? "Rotate items as they are arrayed"
-                                                             : "Align items to the path") +
-                    " [Yes/No] <" + (a.rotateItems ? "Yes" : "No") + ">",
-                ko);
-            if (!rot.ok())
-                co_return;
-            a.rotateItems = rot.keyword == "Yes";
+            apply();
         }
-        (void)ctx.tx().modify(picked.id, [&](Entity& ent) {
-            if (auto* d = entityAs<InsertData>(ent))
-                d->array = a;
-        });
         ctx.message("Array now has " + std::to_string(blocks::arrayItemCount(a)) + " items");
         ctx.setUndoLabel("Edit array");
         co_return;

@@ -98,7 +98,15 @@ gives a C1 closed curve. `splineSubcurve(data, ta, tb)` extracts a clamped piece
 
 ## REVCLOUD
 
-**REVCLOUD** (REVC) draws a revision cloud of 120 degree arcs. Pick points and press Enter to close, or use
-**Rectangular** (two corners) or **Object** (a closed polyline, circle, ellipse or spline; **Reverse**
-turns the arcs inwards). **Arclength** sets the longest arc chord (remembered); **Style** chooses Normal or
+**REVCLOUD** (REVC) draws a revision cloud of 120 degree arcs. As in AutoCAD, Enter at the first
+prompt picks an **Object** (a closed polyline, circle, ellipse or spline, which the cloud replaces;
+**Reverse** turns the arcs inwards). A point starts a cloud in the current mode, which
+**Rectangular**, **Polygonal** and **Freehand** set and the command remembers (REVCLOUDCREATEMODE):
+Rectangular takes two corners, Polygonal takes points until Enter closes the cloud, and Freehand
+lays an arc each time the cursor moves an arc length along its path. In Freehand mode, picking near
+the start closes the cloud; Enter ends an open one and asks whether to reverse its arcs.
+**Modify** reshapes a cloud (any closed polyline): pick it where the new part starts, give points
+until one lands on it again (or press Enter), pick the side of the old outline to erase, and
+answer Reverse; the new part is cloud arcs facing out of the result, and it is one undo step.
+**Arclength** sets the longest arc chord (remembered); **Style** chooses Normal or
 Calligraphy (each arc swells and thins like a pen stroke, stored as polyline widths).

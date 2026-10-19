@@ -540,6 +540,14 @@ void Importer::projectHatch(HatchData& h, const Tilt& t, double elev) {
         loop.edges = std::move(edges);
     }
     h.patternOrigin = m(h.patternOrigin);
+    // A named pattern cannot shear: it keeps the direction of its base angle seen from above, and
+    // its scale shrinks by the square root of the area factor |nz|.
+    if (!h.solid) {
+        const Vec2 dir = t.map(Vec2{std::cos(h.patternAngle), std::sin(h.patternAngle)}, 0);
+        if (length(dir) > 1e-9)
+            h.patternAngle = normalizeAngle(std::atan2(dir.y, dir.x));
+        h.patternScale *= std::sqrt(std::abs(t.n[2]));
+    }
 }
 
 // A text built in object coordinates, projected. The projection of the text's plane is an affine
@@ -1994,9 +2002,11 @@ bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
 }
 
 // WIPEOUT: a closed polyline that hides what is behind it. The clip boundary is in pixel units of
-// an image frame: world = insert + u * (x + 0.5) + v * (y + 0.5).
+// an image frame counted from its top-left corner, y down, as for IMAGE clips:
+// world = insert + u * (x + 0.5) + v * (height - (y + 0.5)), height (23) being 1 in practice.
 bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     const Vec2 origin = P(r, 10, 20), u = P(r, 11, 21), v = P(r, 12, 22);
+    const double height = r.has(23) && std::isfinite(r.num(23)) && r.num(23) > 0 ? r.num(23) : 1;
     std::vector<Vec2> pix;
     for (const Group& g : r.g) {
         if (g.code == 14)
@@ -2018,7 +2028,7 @@ bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
     pl.closed = true;
     for (const Vec2& p : pix) {
         PolyVertex vtx;
-        vtx.p = origin + u * (p.x + 0.5) + v * (p.y + 0.5);
+        vtx.p = origin + u * (p.x + 0.5) + v * (height - (p.y + 0.5));
         pl.v.push_back(vtx);
     }
     Entity e = makeEntity(std::move(pl));
@@ -2511,8 +2521,36 @@ std::string Importer::keptRecord(const Record& r) {
     if (k_ != 1)
         return {};
     std::string body;
+    // A record from a file without subclass markers (R12, or a careless writer) still needs them
+    // when it is written to R2000 or later as a known type: readers refuse it otherwise.
+    struct Marker {
+        std::string_view type, name;
+        int before;  // added before the first group with this code; 0 = first
+    };
+    static constexpr Marker kMarkers[] = {
+        {"LWPOLYLINE", "AcDbPolyline", 0}, {"LINE", "AcDbLine", 0},
+        {"CIRCLE", "AcDbCircle", 0},       {"ARC", "AcDbCircle", 0},
+        {"ARC", "AcDbArc", 50},            {"POINT", "AcDbPoint", 0},
+        {"ELLIPSE", "AcDbEllipse", 0},     {"SPLINE", "AcDbSpline", 0},
+        {"INSERT", "AcDbBlockReference", 0}, {"SOLID", "AcDbTrace", 0},
+        {"TRACE", "AcDbTrace", 0},         {"3DFACE", "AcDbFace", 0},
+        {"MTEXT", "AcDbMText", 0},
+    };
+    std::vector<const Marker*> pending;
+    bool hasMarker = false;
+    for (const Group& g : r.g)
+        hasMarker = hasMarker || (g.code == 100 && g.str() != "AcDbEntity");
+    if (!hasMarker) {
+        for (const Marker& m : kMarkers)
+            if (m.type == r.type)
+                pending.push_back(&m);
+    }
     for (const Group& g : r.g) {
         const int c = g.code;
+        while (!pending.empty() && (pending.front()->before == 0 || pending.front()->before == c)) {
+            packGroup(body, 100, std::string(pending.front()->name));
+            pending.erase(pending.begin());
+        }
         if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 || c == 102 ||
             c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 || c >= 1000 ||
             handleCode(c) || (c >= 480 && c <= 481) || (c == 100 && g.str() == "AcDbEntity"))

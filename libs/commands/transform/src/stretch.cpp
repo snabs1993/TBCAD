@@ -20,7 +20,12 @@ int vertexGrips(const Entity& e, std::size_t gripCount) {
         case EntityKind::Spline:
         case EntityKind::Leader:
         case EntityKind::MLeader:
+        case EntityKind::Hatch:  // the boundary corners, as AutoCAD stretches a hatch's outline
             return static_cast<int>(gripCount);
+        case EntityKind::MLine:
+            return static_cast<int>(entityAs<MlineData>(e)->v.size());
+        case EntityKind::Ray:    // rays and construction lines move with their base point
+        case EntityKind::Table:  // tables with their insertion point
         case EntityKind::Circle:
         case EntityKind::Ellipse:
         case EntityKind::Text:

@@ -389,6 +389,21 @@ TEST_CASE("extrusion: a loose attribute of an insert in a tilted plane is projec
     CHECK(l.report.countCode(code::kBadEntity) == 0);
 }
 
+TEST_CASE("extrusion: a pattern hatch in a tilted plane keeps its angle seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(210, 0.0).g(220, -0.6);
+    p.g(230, 0.8).g(2, "ANSI31").g(70, 0).g(71, 0).g(91, 1).g(92, 2).g(72, 0).g(73, 1).g(93, 4);
+    p.g(10, 0.0).g(20, 0.0).g(10, 10.0).g(20, 0.0).g(10, 10.0).g(20, 10.0).g(10, 0.0).g(20, 10.0);
+    p.g(97, 0).g(75, 0).g(76, 1).g(52, 90.0).g(41, 4.0).g(77, 0).g(78, 0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 1);
+    CHECK(near(hatches[0]->patternAngle, kPi / 2));          // object Y still points up
+    CHECK(hatches[0]->patternScale == doctest::Approx(4 * std::sqrt(0.8)));
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).
@@ -1298,6 +1313,31 @@ TEST_CASE("WIPEOUT: the clip boundary becomes a closed polyline that hides what 
     CHECK(found);
 }
 
+TEST_CASE("WIPEOUT: the clip boundary counts y down from the top of the frame") {
+    // AutoCAD's L-shaped wipeout over (0,0)-(40,20): the foot of the L is at the bottom.
+    Pairs p;
+    p.g(0, "WIPEOUT").g(8, "0").g(100, "AcDbWipeout").g(90, 0);
+    p.g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 40.0).g(21, 0.0).g(31, 0.0);
+    p.g(12, 0.0).g(22, 20.0).g(32, 0.0).g(13, 1.0).g(23, 1.0).g(71, 2).g(91, 7);
+    // (0,0) (40,0) (40,10) (10,10) (10,20) (0,20) in pixel units: x/40 - 0.5, 0.5 - y/20
+    const double px[][2] = {{-0.5, 0.5}, {0.5, 0.5}, {0.5, 0.0}, {-0.25, 0.0},
+                            {-0.25, -0.5}, {-0.5, -0.5}, {-0.5, 0.5}};
+    for (const auto& q : px)
+        p.g(14, q[0]).g(24, q[1]);
+    Loaded l = load(entitiesOnly(p.text));
+    const Vec2 want[] = {{0, 0}, {40, 0}, {40, 10}, {10, 10}, {10, 20}, {0, 20}};
+    std::size_t found = 0;
+    l.doc().forEachEntity([&](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        REQUIRE(pl != nullptr);
+        ++found;
+        REQUIRE(pl->v.size() == 6);
+        for (std::size_t i = 0; i < 6; ++i)
+            CHECK(near(pl->v[i].p, want[i]));
+    });
+    CHECK(found == 1);
+}
+
 TEST_CASE("ARC_DIMENSION: centre, ends and arc point give an arc length dimension") {
     Pairs p;
     p.g(0, "ARC_DIMENSION").g(8, "0").g(100, "AcDbDimension").g(3, "Standard");
@@ -1616,6 +1656,23 @@ TEST_CASE("dimension: number format, rules and colours overridden in its extende
     CHECK(b == a);
     CHECK(c->precision == 2);
     CHECK_FALSE(c->suppressExt1);
+}
+
+TEST_CASE("dimension text: \\X starts the line under the dimension line, radial text stays put") {
+    Pairs p;
+    p.g(0, "DIMENSION").g(8, "0").g(10, 10.0).g(20, 5.0).g(11, 5.0).g(21, 5.0).g(70, 0);
+    p.g(1, "Y\\XMIN <>mm").g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0).g(50, 0.0);
+    // Radius dimension with its text inside the circle and no "moved" flag.
+    p.g(0, "DIMENSION").g(8, "0").g(10, 100.0).g(20, 0.0).g(11, 103.0).g(21, 1.0).g(70, 4);
+    p.g(15, 110.0).g(25, 0.0);
+    Loaded l = load(entitiesOnly(p.text));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[0]->textOverride == "Y\nMIN <>mm");
+    CHECK_FALSE(dims[0]->textPosUser);
+    CHECK(dims[1]->kind == DimKind::Radius);
+    CHECK(dims[1]->textPosUser);
+    CHECK(near(dims[1]->textPos, Vec2{103, 1}));
 }
 
 }  // namespace tbcad::dxf

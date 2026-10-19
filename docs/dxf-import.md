@@ -62,7 +62,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | IMAGE (+ IMAGEDEF) | a picture block like IMAGEATTACH makes (docs/underlay.md); fade and a rectangle clip are kept, a polygon clip shows the whole picture |
 | PDFUNDERLAY (+ PDFDEFINITION) | a PDF page block like PDFATTACH makes ("file.pdf#page=N,fade=F"); placement, scale, rotation, page, fade, contrast and monochrome are kept, the clip boundary is not. PDF page blocks are written back as PDFUNDERLAY + PDFDEFINITION |
 | TOLERANCE | a feature control frame block `TB_TOL_n` like the TOLERANCE command makes (docs/annotative.md): symbol, value, diameter, material condition and up to three datums are read from the gdt-font text, the size from the named dimension style (text height x overall scale), and the rotation from the direction vector; text that is not a frame stays a placeholder |
-| everything else (3DSOLID, REGION, SURFACE, ...) | a read-only `ProxyData` that holds the record's groups (`ProxyData::raw`, see `kProxyDxfFresh`) and the proxy graphics when there are any. It is not shown when it has no graphics. Saving as DXF writes the record back as it was read (layer, colour and the other common properties come from the document; handles and extension dictionaries are not kept, XDATA is). Moving, rotating or scaling it marks the groups stale and only the graphics are written. Skipped, with one warning per type, when the record has nothing but common properties or the drawing's units were scaled |
+| everything else (3DSOLID, REGION, SURFACE, ...) | a read-only `ProxyData` that holds the record's groups (`ProxyData::raw`, see `kProxyDxfFresh`) and the proxy graphics when there are any. It is not shown when it has no graphics. Saving as DXF writes the record back as it was read (layer, colour and the other common properties come from the document; handles and extension dictionaries are not kept, XDATA is; a record that lacks its standard subclass markers, such as `AcDbPolyline` on an LWPOLYLINE, gets them, so later readers accept the saved file). Moving, rotating or scaling it marks the groups stale and only the graphics are written. Skipped, with one warning per type, when the record has nothing but common properties or the drawing's units were scaled |
 
 `ImportSummary::entities` counts, per DXF type, the records read (model space and block
 definitions), the TBCAD entities produced and the records dropped.
@@ -83,7 +83,8 @@ definitions), the TBCAD entities produced and the records dropped.
   polyline when the plane is vertical), an ELLIPSE gets its projected axes, and an LWPOLYLINE is
   projected with its bulges cut into short segments, as is a 2D POLYLINE. HATCH, SOLID and TRACE
   are built in the object plane and projected (arc and elliptical boundary edges become short
-  lines; spline edges keep their shape). One info line `dxf.reader.extrusion_3d` counts them.
+  lines; spline edges keep their shape; a named pattern keeps the direction of its angle and its
+  scale shrinks by the square root of |nz|, since a pattern cannot shear). One info line `dxf.reader.extrusion_3d` counts them.
   TEXT, ATTDEF and ATTRIB (also the loose attributes of an insert) keep their exact projected shape (rotation, height, width factor,
   obliquing angle, upside down); MTEXT gets the projected height and width. Text seen edge-on is
   skipped as a bad entity. An INSERT turned by a multiple of 90 degrees in its plane becomes a
@@ -265,4 +266,4 @@ tests check `decodeText` against it.
 
 ## MULTILEADER, 3DFACE, WIPEOUT and ARC_DIMENSION
 
-A MULTILEADER comes in as one multileader object: its leader lines, the landing point, the dogleg to the text and the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane. A WIPEOUT becomes a closed polyline that hides what is behind it, and an ARC_DIMENSION an arc length dimension.
+A MULTILEADER comes in as one multileader object: its leader lines, the landing point, the dogleg to the text and the text; block content and the leader style's appearance are not read. A 3DFACE comes in as its visible edges projected on the XY plane. A WIPEOUT becomes a closed polyline that hides what is behind it (its boundary is read in pixel units counted down from the top of its frame, as AutoCAD writes it), and an ARC_DIMENSION an arc length dimension.

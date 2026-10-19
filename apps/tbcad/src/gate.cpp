@@ -285,20 +285,14 @@ int App::runGateFile() {
     // Editing everything at once, and taking it back.
     for (const char* edit :
          {"MOVE;ALL;;0,0;100,0", "ROTATE;ALL;;0,0;30", "SCALE;ALL;;0,0;1.5", "ERASE;ALL;"}) {
-        std::string cmds = edit;
+        core.clearSelection();  // ALL picks the objects; a selection would answer first
         t0 = Clock::now();
-        for (std::size_t at = 0; at <= cmds.size();) {
-            const std::size_t end = cmds.find(';', at);
-            core.submitText(cmds.substr(at, end == std::string::npos ? end : end - at));
-            if (end == std::string::npos)
-                break;
-            at = end + 1;
-        }
+        core.submitScript(edit);
         frame();
         glFinish();
         const double doMs = msSince(t0);
         t0 = Clock::now();
-        core.submitText("UNDO");
+        core.submitText("U");  // one step: UNDO asks how many
         frame();
         glFinish();
         const double undoMs = msSince(t0);
@@ -308,7 +302,7 @@ int App::runGateFile() {
         glFinish();
         std::printf("%-22s %8.0f ms, undo %6.0f ms, redo %6.0f ms (%zu objects after)\n", edit,
                     doMs, undoMs, msSince(t0), core.document().modelSpaceCount());
-        core.submitText("UNDO");
+        core.submitText("U");  // one step: UNDO asks how many
         frame();
     }
 

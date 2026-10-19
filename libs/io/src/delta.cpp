@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 12;
+constexpr std::uint8_t kDeltaVersion = 13;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -133,6 +133,9 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     w.u8(static_cast<std::uint8_t>(r.linearFormat));
     // (version 12) DIMTFAC
     w.f64(r.tolHeightFactor);
+    // (version 13) fixed length extension lines
+    w.u8(r.fixedExtLines ? 1 : 0);
+    w.f64(r.fixedExtLength);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -345,6 +348,12 @@ struct Reader {
             d.tolHeightFactor = r.f64();
             if (!std::isfinite(d.tolHeightFactor) || !(d.tolHeightFactor > 0))
                 bad("invalid tolerance height factor");
+        }
+        if (version >= 13) {
+            d.fixedExtLines = r.u8() != 0;
+            d.fixedExtLength = r.f64();
+            if (!std::isfinite(d.fixedExtLength) || d.fixedExtLength < 0)
+                bad("invalid extension line length");
         }
     }
     void row(BlockDef& b) {

@@ -720,3 +720,14 @@ TEST_CASE("a prompt that spells out its keywords and default is not shown twice"
     q.defaultText = "Attach";
     CHECK(q.display() == "Reference type or [Attach/Overlay] <Attach>: ");
 }
+
+TEST_CASE("keywords match by prefix, by the capitals that lead them, and by inner capitals") {
+    const std::vector<std::string> kw{"Rows", "ROTate", "eXit", "BEgin", "Back"};
+    CHECK(matchKeyword(kw, "rows") == std::optional<std::string>("Rows"));
+    CHECK(matchKeyword(kw, "rot") == std::optional<std::string>("ROTate"));
+    CHECK(matchKeyword(kw, "x") == std::optional<std::string>("eXit"));   // inner capital
+    CHECK(matchKeyword(kw, "ex") == std::optional<std::string>("eXit"));  // prefix still works
+    CHECK(matchKeyword(kw, "b") == std::optional<std::string>("Back"));   // BEgin needs BE
+    CHECK(matchKeyword(kw, "be") == std::optional<std::string>("BEgin"));
+    CHECK(matchKeyword(kw, "r") == std::optional<std::string>("Rows"));  // ROTate needs ROT
+}

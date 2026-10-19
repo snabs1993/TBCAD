@@ -128,7 +128,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 | `BPARAM` | | Block name, type (`Linear`, `Rotation`, `Flip`, `Visibility`), parameter name, then its points (and limits, or the states with the window of objects each shows). |
 | `BACTION` | | Block name, parameter, action (`Stretch`/`Move`/`Scale` for linear), the stretch frame (stretch only) and the window of objects it changes. |
 | `DYNSET` | | Pick a dynamic Insert, name a parameter and give its value (distance, angle, `Yes`/`No`, or a state name). |
-| `ARRAYEDIT` | | Pick an associative array and change its rows, columns and spacing (rectangular), or its count and angle or distance (polar, path), and whether items rotate (polar) or align to the path (path). One undo step. |
+| `ARRAYEDIT` | | Pick an associative array, then choose options until eXit (or Enter), as in AutoCAD: rectangular `Rows` and `Columns` (count, then spacing or `Total`); polar `Items`, `Angle` between items, `Fill` angle and `ROTate` items; path `Method` (Divide or Measure), `Items` and `Align` items. Each change shows at once; the whole edit is one undo step. Selecting an array also shows grips besides its base: on a rectangular array the last and second column and row change the count and the spacing, on a polar array the second and the last item change the angle between items and the fill angle. |
 
 Defaults are 3 x 4 for rectangular arrays (spacing 1.5 x the selection's size) and 6 items over
 360 degrees for polar ones, so pressing Enter all the way gives a sensible result.

@@ -1511,6 +1511,81 @@ TEST_CASE("draw order (front, back, wipeouts, inside blocks) survives a DXF roun
     CHECK(sig(*rt.back) == before);
 }
 
+TEST_CASE("a wipeout is written as a WIPEOUT that AutoCAD reads, and reads back unchanged") {
+    // An L shape (not symmetric, so a flipped boundary would show) on its own layer.
+    const std::vector<Vec2> shape{{10, 20}, {50, 20}, {50, 30}, {20, 30}, {20, 60}, {10, 60}};
+    Document doc;
+    {
+        auto tx = doc.begin("wipeout");
+        Layer masks;
+        masks.name = "MASKS";
+        const LayerId lid = tx.addLayer(masks).value();
+        PolylineData p;
+        p.closed = true;
+        for (Vec2 v : shape)
+            p.v.push_back({v, 0, 0, 0});
+        Entity e = make(p);
+        e.common.wipeout = true;
+        e.common.layer = lid;
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("0\r\nWIPEOUT\r\n5\r\n") != std::string::npos);
+    CHECK(rt.bytes.find("AcDbWipeout\r\n") != std::string::npos);
+    CHECK(rt.bytes.find("  1\r\nWIPEOUT\r\n  2\r\nAcDbWipeout") != std::string::npos);  // CLASS
+    CHECK(rt.bytes.find("WIPEOUTVARIABLES") != std::string::npos);
+    CHECK(rt.bytes.find("LWPOLYLINE") == std::string::npos);
+    std::size_t n = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        ++n;
+        const auto* pl = entityAs<PolylineData>(e);
+        REQUIRE(pl != nullptr);
+        CHECK(e.common.wipeout);
+        CHECK(pl->closed);
+        CHECK(rt.back->layer(e.common.layer)->name == "MASKS");
+        REQUIRE(pl->v.size() == shape.size());
+        for (std::size_t i = 0; i < shape.size(); ++i) {
+            CHECK(pl->v[i].p.x == doctest::Approx(shape[i].x));
+            CHECK(pl->v[i].p.y == doctest::Approx(shape[i].y));
+        }
+    });
+    CHECK(n == 1);
+
+    // R12 has no WIPEOUT: the shape stays a polyline.
+    ExportOptions r12;
+    r12.version = DxfVersion::R12;
+    Report rep;
+    auto old = exportDxf(doc, r12, rep);
+    REQUIRE(old.ok());
+    CHECK(old.value().bytes.find("WIPEOUT") == std::string::npos);
+}
+
+TEST_CASE("a wipeout with arc segments is written as a WIPEOUT whose boundary follows the arc") {
+    Document doc;
+    {
+        auto tx = doc.begin("wipeout");
+        PolylineData p;
+        p.closed = true;
+        p.v.push_back({{0, 0}, 1, 0, 0});  // a half circle from (0,0) to (20,0), centre (10,0)
+        p.v.push_back({{20, 0}, 0, 0, 0});
+        Entity e = make(p);
+        e.common.wipeout = true;
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("\r\nWIPEOUT\r\n") != std::string::npos);
+    rt.back->forEachEntity([&](const Entity& e) {
+        const auto* pl = entityAs<PolylineData>(e);
+        REQUIRE(pl != nullptr);
+        CHECK(e.common.wipeout);
+        CHECK(pl->v.size() > 20);
+        for (const PolyVertex& v : pl->v)
+            CHECK(distance(v.p, Vec2{10, 0}) == doctest::Approx(10).epsilon(1e-6));
+    });
+}
+
 TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip") {
     Document doc;
     {
@@ -1547,6 +1622,8 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         s.textFrame = true;
         s.linearFormat = DimLinearFormat::Fractional;
         s.tolHeightFactor = 0.6;
+        s.fixedExtLines = true;
+        s.fixedExtLength = 3.5;
         REQUIRE(tx.addDimStyle(s).ok());
         tx.commit();
     }
@@ -1583,6 +1660,8 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         CHECK(s->textFrame);
         CHECK(s->linearFormat == DimLinearFormat::Fractional);
         CHECK(s->tolHeightFactor == doctest::Approx(0.6));
+        CHECK(s->fixedExtLines);
+        CHECK(s->fixedExtLength == doctest::Approx(3.5));
     };
     RoundTrip rt = roundTrip(doc);
     check(*rt.back);

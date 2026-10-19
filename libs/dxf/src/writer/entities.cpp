@@ -346,6 +346,8 @@ bool Writer::plainEntity(const Entity& e) {
         case EntityKind::Polyline:
             if (entityAs<PolylineData>(e)->v.size() < 2)
                 return false;  // skipped with a warning
+            if (e.common.wipeout)
+                return false;  // a WIPEOUT, which needs its class
             break;
         case EntityKind::Text: {
             const auto* t = entityAs<TextData>(e);
@@ -537,7 +539,8 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
             writeArc(p, *entityAs<ArcData>(e), owner);
             break;
         case EntityKind::Polyline:
-            writePolyline(p, *entityAs<PolylineData>(e), owner);
+            if (!e.common.wipeout || !writeWipeout(p, *entityAs<PolylineData>(e), owner))
+                writePolyline(p, *entityAs<PolylineData>(e), owner);
             break;
         case EntityKind::Point:
             writePoint(p, *entityAs<PointData>(e), owner);
@@ -812,6 +815,65 @@ void Writer::writeVertexPolyline(const Props& p, const std::vector<PolyVertex>& 
     o.zero("SEQEND");
     o.str(8, p.layer);
     count("POLYLINE");
+}
+
+// A wipeout is a WIPEOUT: a one-pixel picture frame stretched over the shape's bounding box, its
+// clip boundary in pixel units counted from the top-left (y down), from -0.5 to 0.5. Arc segments
+// are written as short lines. False when the shape has no area to frame.
+bool Writer::writeWipeout(const Props& p, const PolylineData& d, std::uint64_t owner) {
+    if (r12_ || !d.closed || d.v.size() < 2)
+        return false;
+    std::vector<Vec2> ring;
+    for (std::size_t i = 0; i < d.v.size(); ++i) {
+        const Vec2 a = d.v[i].p, b = d.v[(i + 1) % d.v.size()].p;
+        ring.push_back(a);
+        const double bulge = d.v[i].bulge;
+        if (bulge == 0 || tol::isZeroLength(b - a))
+            continue;
+        // the arc through a and b: sweep 4 atan(bulge), split into pieces of at most 5 degrees
+        const double sweep = 4 * std::atan(bulge);
+        const int n = std::max(2, static_cast<int>(std::ceil(std::abs(sweep) / (kPi / 36))));
+        const Vec2 mid = (a + b) * 0.5, chord = b - a;
+        const Vec2 normal{-chord.y, chord.x};
+        // centre = mid + normal * (1 - bulge^2) / (4 bulge)
+        const Vec2 centre = mid + normal * ((1 - bulge * bulge) / (4 * bulge));
+        const double r = distance(centre, a);
+        const double a0 = std::atan2(a.y - centre.y, a.x - centre.x);
+        for (int k = 1; k < n; ++k) {
+            const double t = a0 + sweep * k / n;
+            ring.push_back({centre.x + r * std::cos(t), centre.y + r * std::sin(t)});
+        }
+    }
+    BBox2 box;
+    for (const Vec2& q : ring)
+        box.expand(q);
+    const double w = box.max.x - box.min.x, h = box.max.y - box.min.y;
+    if (!(w > tol::kLinear) || !(h > tol::kLinear) || !std::isfinite(w) || !std::isfinite(h))
+        return false;
+    head("WIPEOUT", p, owner, "AcDbWipeout");
+    Out& o = *L().o;
+    o.i(90, 0);
+    o.pt(10, box.min);
+    o.pt(11, Vec2{w, 0});
+    o.pt(12, Vec2{0, h});
+    o.d(13, 1);
+    o.d(23, 1);
+    o.h(340, 0);
+    o.i(70, 7);  // shown, shown when not aligned, clipped
+    o.i(280, 1);
+    o.i(281, 50);
+    o.i(282, 50);
+    o.i(283, 0);
+    o.h(360, 0);
+    o.i(71, 2);
+    o.i(91, static_cast<long long>(ring.size()) + 1);
+    auto px = [&](Vec2 q) { return Vec2{(q.x - box.min.x) / w - 0.5, 0.5 - (q.y - box.min.y) / h}; };
+    for (const Vec2& q : ring)
+        o.pt2(14, px(q));
+    o.pt2(14, px(ring.front()));
+    wipeouts_ = true;
+    count("WIPEOUT");
+    return true;
 }
 
 void Writer::writePolyline(const Props& p, const PolylineData& d, std::uint64_t owner) {

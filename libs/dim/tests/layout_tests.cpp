@@ -100,6 +100,17 @@ TEST_CASE("fit: arrows move outside, then text, when the extension lines are clo
     CHECK(arrowBox(arrows.arrows[0]).min.x >= -1e-9);
     CHECK(arrowBox(arrows.arrows[0]).max.x <= 6.0);
     CHECK(arrows.text.center.x - arrows.text.width / 2 > 6);
+
+    // The text goes beside the second extension line: measured from right to left, it sits
+    // left of the dimension, and the dimension line runs out to it.
+    Layout back = layoutDimension(doc, linear({6, 0}, {0, 0}, {3, 10}));
+    CHECK(back.text.center.x + back.text.width / 2 < 0);
+    double leftmost = 0;
+    for (const auto& l : back.lines)
+        if (l.role == Role::DimLine)
+            for (Vec2 p : l.pts)
+                leftmost = std::min(leftmost, p.x);
+    CHECK(leftmost < -back.text.width / 2);
 }
 
 TEST_CASE("vertical and aligned dimensions") {
@@ -284,6 +295,34 @@ Layout withStyle(const std::function<void(DimStyle&)>& edit, const DimensionData
     return layoutDimension(doc, d);
 }
 }  // namespace
+
+TEST_CASE("DIMFXLON: extension lines of a fixed length from the dimension line") {
+    // Dimension line at y = 10: a fixed length of 4 starts the extension lines at y = 6 and they
+    // still reach DIMEXE beyond the dimension line.
+    const auto d = linear({0, 0}, {100, 0}, {50, 10});
+    Layout fixed = withStyle(
+        [](DimStyle& s) {
+            s.fixedExtLines = true;
+            s.fixedExtLength = 4;
+        },
+        d);
+    REQUIRE(count(fixed, Role::ExtLine) == 2);
+    const auto* e1 = findExt(fixed, {0, 6});
+    REQUIRE(e1);
+    CHECK(near(e1->pts.back(), {0, 11.25}));
+    CHECK(findExt(fixed, {100, 6}));
+    // Longer than the distance to the origin: the offset from the origin still applies.
+    Layout tooLong = withStyle(
+        [](DimStyle& s) {
+            s.fixedExtLines = true;
+            s.fixedExtLength = 50;
+        },
+        d);
+    CHECK(findExt(tooLong, {0, 0.625}));
+    // Off: the length is ignored.
+    Layout off = withStyle([](DimStyle& s) { s.fixedExtLength = 4; }, d);
+    CHECK(findExt(off, {0, 0.625}));
+}
 
 TEST_CASE("DIMSE1/2 drop extension lines, DIMSD1/2 drop half the dimension line and its arrow") {
     const auto d = linear({0, 0}, {100, 0}, {50, 10});

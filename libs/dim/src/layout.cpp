@@ -17,7 +17,7 @@ struct Ctx {
     const DimStyle& st;
     double tol;
     const TextStyle* tstyle;
-    double th, arrow, gap, off, ext, dext;  // style values times the overall scale
+    double th, arrow, gap, off, ext, dext, fxl;  // style values times the overall scale
     // The width of the text when it holds a stacked tolerance (measured from its parts), for the
     // plain text `stackedPlain`; < 0 when nothing is stacked.
     double stackedWidth = -1;
@@ -32,6 +32,7 @@ struct Ctx {
         off = s.extLineOffset * k;
         ext = s.extLineExtension * k;
         dext = s.dimLineExtension * k;
+        fxl = s.fixedExtLength * k;
     }
 };
 
@@ -159,7 +160,9 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         if (dist <= c.off || (i == 0 ? c.st.suppressExt1 : c.st.suppressExt2))
             continue;
         double sg = ss[i] >= 0 ? 1 : -1;
-        L.lines.push_back({{pts[i] + e * (sg * c.off), feet[i] + e * (sg * c.ext)}, Role::ExtLine});
+        // A fixed length runs from the dimension line back toward the origin.
+        const double from = c.st.fixedExtLines ? std::max(c.off, dist - c.fxl) : c.off;
+        L.lines.push_back({{pts[i] + e * (sg * from), feet[i] + e * (sg * c.ext)}, Role::ExtLine});
     }
 
     const bool swap = dot(f1, u) > dot(f2, u);
@@ -188,6 +191,7 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     bool arrowsIn = false, textIn = true;
     Vec2 center{};
     double lineEnd = 0;
+    double textBeforeA = 0;  // how far the dimension line runs before A to text placed there
     std::vector<Vec2> leader;
     if (d.textPosUser) {
         arrowsIn = len >= 2 * c.arrow;
@@ -252,16 +256,25 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
             center = A + uu * along + lift.offset;
             lineEnd = (arrowsIn ? len : len + stub) + c.dext;
         } else {
+            // Text that does not fit goes beside the second extension line, as in AutoCAD.
             textOutside();
-            double lend = arrowsIn ? len : len + stub;
-            double near = lend + c.gap;
-            center = A + uu * (near + he) + lift.offset;
-            lineEnd = lift.centered ? lend : near + 2 * he;
+            const double beyond = arrowsIn ? 0 : stub;
+            const double near = beyond + c.gap;
+            if (swap) {
+                center = A - uu * (near + he) + lift.offset;
+                lineEnd = len + beyond;
+                textBeforeA = lift.centered ? beyond : near + 2 * he;
+            } else {
+                center = A + uu * (len + near + he) + lift.offset;
+                lineEnd = len + (lift.centered ? beyond : near + 2 * he);
+            }
         }
     }
     // DIMSOXD: arrows that do not fit are left out (with their stubs).
     const bool noArrows = !arrowsIn && c.st.suppressArrowsOutside;
-    const double lineStart = (arrowsIn ? 0 : noArrows ? 0 : -stub) - (arrowsIn ? c.dext : 0);
+    const double lineStart = textBeforeA > 0
+                                 ? -textBeforeA
+                                 : (arrowsIn ? 0 : noArrows ? 0 : -stub) - (arrowsIn ? c.dext : 0);
     if (noArrows && textIn)
         lineEnd = len;
     // DIMTOFL off: arrows outside leave nothing between the extension lines.

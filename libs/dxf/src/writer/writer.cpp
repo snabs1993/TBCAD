@@ -765,6 +765,15 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                                                      : 3);
             if (ds.tolerance != DimTolerance::None)
                 o.i(272, std::clamp(ds.tolPrecision, 0, 16));
+            // Fixed length extension lines go as extended data, as AutoCAD writes them.
+            if (ds.hasFixedExt()) {
+                o.raw(1001, "ACAD_DSTYLE_DIMEXT_ENABLED");
+                o.i(1070, 383);
+                o.i(1070, ds.fixedExtLines ? 1 : 0);
+                o.raw(1001, "ACAD_DSTYLE_DIMEXT_LENGTH");
+                o.i(1070, 378);
+                o.d(1040, ds.fixedExtLength);
+            }
             // The arrow kind has no group TBCAD can write (DIMBLK wants a block record's handle):
             // it travels as extended data of the style.
             if (ds.arrowType != ArrowType::ClosedFilled) {
@@ -945,6 +954,11 @@ std::string Writer::tablesSection() {
             layerNotes = layerNotes || !layer.description.empty();
         if (layerNotes && !r12_)
             extApps.insert("AcAecLayerStandard");
+        for (const auto& [id, ds] : doc_.dimStyles())
+            if (ds.hasFixedExt() && !r12_) {
+                extApps.insert("ACAD_DSTYLE_DIMEXT_ENABLED");
+                extApps.insert("ACAD_DSTYLE_DIMEXT_LENGTH");
+            }
         tableBegin(o, "APPID", table, 2 + extApps.size());
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "ACAD", 0);
         tableRecord(o, "APPID", newHandle(), table, "AcDbRegAppTableRecord", "TBCAD", 0);
@@ -1079,7 +1093,8 @@ std::string Writer::objectsSection() {
     const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
     const std::uint64_t imageVars = images_.empty() ? 0 : newHandle();
     const std::uint64_t pdfDict = pdfs_.empty() ? 0 : newHandle();
-    const bool hasWipeoutVars = !r12_ && doc_.header().custom.count(kWipeoutFrameKey) != 0;
+    const bool hasWipeoutVars =
+        !r12_ && (wipeouts_ || doc_.header().custom.count(kWipeoutFrameKey) != 0);
     const std::uint64_t wipeoutVars = hasWipeoutVars ? newHandle() : 0;
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
     std::uint64_t scaleRec = hasScales ? newHandle() : 0;
@@ -1966,7 +1981,11 @@ Result<ExportResult> Writer::run() {
                 "  0\r\nCLASS\r\n  1\r\nPDFDEFINITION\r\n  2\r\nAcDbUnderlayDefinition\r\n"
                 "  3\r\nObjectDBX Classes\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         }
-        if (!r12_ && doc_.header().custom.count(kWipeoutFrameKey))
+        if (wipeouts_)
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nWIPEOUT\r\n  2\r\nAcDbWipeout\r\n"
+                "  3\r\nWipeOut\r\n 90\r\n127\r\n280\r\n0\r\n281\r\n1\r\n";
+        if (!r12_ && (wipeouts_ || doc_.header().custom.count(kWipeoutFrameKey)))
             out +=
                 "  0\r\nCLASS\r\n  1\r\nWIPEOUTVARIABLES\r\n  2\r\nAcDbWipeoutVariables\r\n"
                 "  3\r\nWipeOut\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
