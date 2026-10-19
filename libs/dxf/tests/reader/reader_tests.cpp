@@ -238,6 +238,30 @@ TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are proj
     CHECK(polys[0]->v.size() > 10);
 }
 
+TEST_CASE("extrusion: inserts in a tilted plane become squashed blocks seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "B").g(70, 0).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 0.0).g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 2.0).g(20, 3.0).g(30, 0.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(50, 90.0);
+    p.g(41, 2.0).g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(50, 45.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto inserts = modelEntities<InsertData>(l.doc());
+    REQUIRE(inserts.size() == 2);
+    CHECK(near(inserts[0]->position, Vec2{2, 2.4}, 1e-9));
+    CHECK(near(inserts[0]->rotation, 0.0));
+    CHECK(near(inserts[0]->scale, Vec2{1, 0.8}, 1e-9));
+    // Turned 90 degrees: the block's X runs along object Y, which is foreshortened.
+    CHECK(near(inserts[1]->rotation, kPi / 2));
+    CHECK(near(inserts[1]->scale, Vec2{1.6, 1}, 1e-9));
+    CHECK(l.report.countCode(code::kExtrusion3d) == 2);  // the info line and the 45 degree one
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).

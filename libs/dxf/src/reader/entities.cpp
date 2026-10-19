@@ -853,6 +853,41 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
             return true;
         }
     }
+    if (t == "INSERT") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            // Seen from above the plane is squashed across its horizontal axis: rotation(theta)
+            // times scale(1, nz). A block turned by a multiple of 90 degrees in that plane stays a
+            // rotated and scaled block; any other turn would need a shear.
+            const std::size_t before = out.size();
+            convInsert(r, rr, f, out);  // also consumes the ATTRIB records
+            const double q = r.num(50) / 90;
+            const double k = std::round(q);
+            if (std::abs(q - k) > 1e-6) {
+                out.resize(before);
+                report_.warn(code::kExtrusion3d,
+                             "INSERT turned by " + formatDouble(r.num(50)) +
+                                 " degrees in a tilted 3D plane cannot be drawn as seen from "
+                                 "above; skipped",
+                             r.line, handleOf(r));
+                return true;
+            }
+            const double theta = std::atan2(tilt->ax[1], tilt->ax[0]);
+            const bool odd = std::fmod(std::abs(k), 2.0) == 1;
+            const Vec2 squash = odd ? Vec2{tilt->n[2], 1} : Vec2{1, tilt->n[2]};
+            const double elev = r.num(30) * k_;
+            for (std::size_t i = before; i < out.size(); ++i) {
+                if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data)) {
+                    InsertData& in = **d;
+                    in.position = tilt->map(in.position, elev);
+                    in.rotation += theta;
+                    in.scale = Vec2{in.scale.x * squash.x, in.scale.y * squash.y};
+                }
+            }
+            if (out.size() > before)
+                countProjected(r);
+            return true;
+        }
+    }
     if (t == "LINE") {
         convLine(r, out);
     } else if (t == "CIRCLE") {
