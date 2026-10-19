@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include "support.h"
 #include "tbcad/index/document_indexer.h"
 
@@ -54,6 +56,47 @@ TEST_CASE("an associative array displays its block once per item") {
     CHECK(near(box.min, {100, 0}));
     CHECK(near(box.max, {121, 5}));
     CHECK(snapGeometry(doc, *doc.find(i)).size() == 6);
+}
+
+TEST_CASE("perf: a big array inside a block builds in linear time") {
+    registerInsertDisplay();
+    Document doc;
+    std::vector<Entity> lines;
+    for (int k = 0; k < 20; ++k)
+        lines.push_back(line(k, 0, k, 10));
+    BlockId leaf = addBlock(doc, "LEAF", lines);
+    Entity grid = insertOf(leaf, {0, 0}, {1, 1}, 0.5);
+    ArrayInfo a;
+    a.rows = 60;
+    a.columns = 60;
+    a.rowSpacing = 30;
+    a.columnSpacing = 30;
+    entityAs<InsertData>(grid)->array = a;
+    BlockId outer = addBlock(doc, "OUTER", {grid});
+    EntityId i = addEntity(doc, insertOf(outer, {0, 0}));
+    const auto t0 = std::chrono::steady_clock::now();
+    DisplayList l = displayOf(doc, i);
+    const double s =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(l.items.size() == 60u * 60u * 20u);
+    CHECK(s < 2.0);  // was 16 s: every array item moved the whole list
+}
+
+TEST_CASE("turned references of one block measured once per angle keep exact boxes") {
+    Document doc;
+    BlockId b = addBlock(doc, "T", {circle(10, 0, 1), line(0, 0, 3, 4)});
+    EntityId one = addEntity(doc, insertOf(b, {0, 0}, {1, 1}, 0.5));
+    EntityId two = addEntity(doc, insertOf(b, {100, 50}, {1, 1}, 0.5));
+    const BBox2 alone1 = insertBounds(doc, *doc.find(one));
+    const BBox2 alone2 = insertBounds(doc, *doc.find(two));
+    BoundsMemoScope memo;
+    const BBox2 m1 = insertBounds(doc, *doc.find(one));
+    const BBox2 m2 = insertBounds(doc, *doc.find(two));
+    CHECK(near(m1.min, alone1.min, 1e-9));
+    CHECK(near(m1.max, alone1.max, 1e-9));
+    CHECK(near(m2.min, alone2.min, 1e-9));
+    CHECK(near(m2.max, alone2.max, 1e-9));
+    CHECK(near(m2.min, m1.min + Vec2{100, 50}, 1e-9));
 }
 
 TEST_CASE("ByBlock colour and lineweight come from the insert - layer 0 takes its layer") {

@@ -114,7 +114,10 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
         case FillResult::Mode::Lines:
             break;
     }
-    out.items.reserve(out.items.size() + r.segments.size() + 1);
+    // Doubling, not the exact size: a block's list collects many hatches one call at a time.
+    if (const std::size_t want = out.items.size() + r.segments.size() + 1;
+        out.items.capacity() < want)
+        out.items.reserve(std::max(want, out.items.capacity() * 2));
     for (const auto& [a, b] : r.segments) {
         DisplayPolyline pl;
         pl.pts = {a, b};
