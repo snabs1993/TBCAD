@@ -1719,6 +1719,27 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
         if (clip.size() < 3)
             clip.clear();
     }
+    if (rows * cols > 1 && values.empty() && clip.empty()) {
+        // A MINSERT is one object, as in AutoCAD: a rectangular array on the insert. The array
+        // lives in the block's own coordinates, so its spacing is divided by the scale (signed:
+        // a mirrored insert flips the columns' direction with it).
+        InsertData d;
+        d.block = block;
+        d.position = f.p(pos);
+        d.scale = f.mirror ? Vec2{-sx, sy} : Vec2{sx, sy};
+        d.rotation = f.rot + (f.mirror ? -rot : rot);
+        ArrayInfo a;
+        a.kind = ArrayInfo::Kind::Rectangular;
+        a.rows = static_cast<int>(rows);
+        a.columns = static_cast<int>(cols);
+        a.rowSpacing = rs / sy;
+        a.columnSpacing = cs / sx;
+        d.array = a;
+        out.push_back(makeEntity(std::move(d)));
+        for (Entity& e : loose)
+            out.push_back(std::move(e));
+        return true;
+    }
     double cr = std::cos(rot), sr = std::sin(rot);
     for (std::int64_t row = 0; row < rows; ++row) {
         for (std::int64_t col = 0; col < cols; ++col) {
