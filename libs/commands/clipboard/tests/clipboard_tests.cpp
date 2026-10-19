@@ -366,3 +366,139 @@ TEST_CASE("a drawing kept in inches pastes into a millimetre drawing at the same
     });
     CHECK(length == doctest::Approx(25.4));
 }
+
+namespace {
+// A block "Dyn" with one stretchable bar, an assembly binding to a nested insert, and one insert.
+EntityId makeDynamicInsert(Fixture& f, bool padIds) {
+    if (padIds) {  // the destination drawing already uses small ids, so the clip's ids clash
+        for (int i = 0; i < 7; ++i)
+            f.add(PointData{{double(i), 0}});
+    }
+    BlockId inner, blk;
+    EntityId bar, nested;
+    {
+        Transaction tx = f.doc.begin("blocks");
+        inner = tx.addBlock(BlockDef{.name = "Inner"}).value();
+        blk = tx.addBlock(BlockDef{.name = "Dyn"}).value();
+        Entity b;
+        b.data = LineData{{0, 0}, {10, 0}};
+        bar = tx.add(std::move(b), blk).value();
+        Entity n;
+        n.data = InsertData{inner, {20, 0}, {1, 1}, 0};
+        nested = tx.add(std::move(n), blk).value();
+        DynamicDef dd;
+        DynParam w;
+        w.name = "Length";
+        w.base = {0, 0};
+        w.end = {10, 0};
+        dd.params.push_back(w);
+        DynAction st;
+        st.kind = DynAction::Kind::Stretch;
+        st.frameMin = {9, -1};
+        st.frameMax = {11, 1};
+        st.objects = {bar};
+        dd.actions.push_back(st);
+        REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) {
+                    d.dynamic = std::move(dd);
+                    AssemblyDef as;
+                    AsmBinding bind;
+                    bind.kind = AsmBinding::Kind::Nested;
+                    bind.entity = nested;
+                    bind.target = "X";
+                    bind.formula = "1";
+                    as.bindings.push_back(bind);
+                    d.assembly = std::move(as);
+                }).ok());
+        tx.commit();
+    }
+    return f.add(InsertData{blk, {50, 50}, {1, 1}, 0});
+}
+}  // namespace
+
+TEST_CASE("a dynamic block pasted into another drawing keeps its action and binding targets") {
+    Fixture src;
+    const EntityId ins = makeDynamicInsert(src, false);
+    src.host.run("COPYCLIP", {ScriptItem::select({ins}), ScriptItem::enter()});
+    Fixture dst;
+    for (int i = 0; i < 7; ++i)
+        dst.add(PointData{{double(i), 0}});  // ids 1..7 are taken: the clip's ids would clash
+    dst.host.run("PASTECLIP", {"0,0"});
+    const BlockDef* b = dst.doc.blockByName("Dyn");
+    REQUIRE(b != nullptr);
+    REQUIRE(b->dynamic.has_value());
+    REQUIRE(b->dynamic->actions.size() == 1);
+    REQUIRE(b->dynamic->actions[0].objects.size() == 1);
+    const EntityId target = b->dynamic->actions[0].objects[0];
+    // The action still points at the bar inside the pasted block, not at some other object.
+    CHECK(std::find(b->entities.begin(), b->entities.end(), target) != b->entities.end());
+    const Entity* t = dst.doc.find(target);
+    REQUIRE(t != nullptr);
+    CHECK(entityAs<LineData>(*t) != nullptr);
+    REQUIRE(b->assembly.has_value());
+    REQUIRE(b->assembly->bindings.size() == 1);
+    const Entity* nested = dst.doc.find(b->assembly->bindings[0].entity);
+    REQUIRE(nested != nullptr);
+    CHECK(entityAs<InsertData>(*nested) != nullptr);
+    CHECK(std::find(b->entities.begin(), b->entities.end(), b->assembly->bindings[0].entity) !=
+          b->entities.end());
+}
+
+TEST_CASE("a dimension and a multileader pasted elsewhere carry no stale links") {
+    Fixture src;
+    const EntityId line = src.add(LineData{{0, 0}, {10, 0}});
+    src.host.run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    EntityId dim{};
+    src.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dim = e.common.id;
+    });
+    REQUIRE(dim);
+    // Link the dimension to the line as an associative dimension would be.
+    {
+        Transaction tx = src.doc.begin("assoc");
+        REQUIRE(tx.modify(dim, [&](Entity& e) {
+                    auto* d = entityAs<DimensionData>(e);
+                    d->assoc[0] = DimAssoc{DimAssoc::Kind::Vertex, line, 0};
+                    d->assoc[1] = DimAssoc{DimAssoc::Kind::Vertex, line, 1};
+                }).ok());
+        tx.commit();
+    }
+    BlockId marker;
+    {
+        Transaction tx = src.doc.begin("blk");
+        marker = tx.addBlock(BlockDef{.name = "MARK"}).value();
+        Entity c;
+        c.data = CircleData{{0, 0}, 1};
+        REQUIRE(tx.add(std::move(c), marker).ok());
+        tx.commit();
+    }
+    MLeaderData ml;
+    ml.lines = {{{0, 20}, {10, 30}}};
+    ml.landing = {10, 30};
+    ml.contentPos = {15, 30};
+    ml.content = MLeaderData::Content::Block;
+    ml.block = marker;
+    const EntityId mlid = src.add(Indirect<MLeaderData>(ml));
+    src.host.run("COPYCLIP", {ScriptItem::select({dim, mlid}), ScriptItem::enter()});
+
+    Fixture dst;
+    for (int i = 0; i < 7; ++i)
+        dst.add(LineData{{double(i), 5}, {double(i) + 1, 5}});  // lines that ids could hit
+    dst.host.run("PASTECLIP", {"0,0"});
+    bool seenDim = false, seenMl = false;
+    dst.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            seenDim = true;
+            for (const DimAssoc& a : d->assoc)
+                CHECK(a.kind == DimAssoc::Kind::None);  // the link to the source drawing is cut
+        }
+        if (const auto* m = entityAs<MLeaderData>(e)) {
+            seenMl = true;
+            const BlockDef* b = dst.doc.block(m->block);
+            REQUIRE(b != nullptr);
+            CHECK(b->name == "MARK");  // the block came along and is the destination's own row
+        }
+    });
+    CHECK(seenDim);
+    CHECK(seenMl);
+}

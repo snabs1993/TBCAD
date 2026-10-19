@@ -36,8 +36,13 @@ void remap(Entity& e, const RefMap& m) {
         }
         if constexpr (std::is_same_v<D, InsertData>)
             d.block = m.block(d.block);
+        if constexpr (std::is_same_v<D, MLeaderData>)
+            d.block = m.block(d.block);
         if constexpr (std::is_same_v<D, HatchData>)
             d.sourceBoundary.clear();
+        // A pasted dimension is not tied to the objects it measured in the other drawing.
+        if constexpr (std::is_same_v<D, DimensionData>)
+            d.assoc = {};
     });
 }
 
@@ -296,11 +301,23 @@ private:
         }
         BlockId created = r.value();
         blocks_[id] = created;  // before the members: nested inserts may refer back
+        std::map<EntityId, EntityId> memberIds;
         for (const Entity& member : src->second.entities) {
             Entity e = import(member);
             if (auto a = tx_.add(std::move(e), created); !a)
                 fail(a.error().message);
+            else
+                memberIds[member.common.id] = a.value();
         }
+        // Dynamic actions and assembly bindings name members by id: follow them to the new ids.
+        (void)tx_.modifyBlock(created, [&](BlockDef& d) {
+            d.dynamic = src->second.def.dynamic;
+            d.assembly = src->second.def.assembly;
+            remapBlockEntityRefs(d, [&](EntityId old) {
+                auto it = memberIds.find(old);
+                return it == memberIds.end() ? EntityId{} : it->second;
+            });
+        });
         return created;
     }
 
