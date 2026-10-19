@@ -147,11 +147,15 @@ public:
             }
             auto left =
                 std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now());
-            if (left.count() <= 0)
-                return net::kTimeout;
-            if (!net::waitReadable(bio_.handle,
-                                   static_cast<int>(left.count() < 100 ? left.count() : 100)))
+            // With no time left the socket is still looked at once, so read(.., 0) polls.
+            if (!net::waitReadable(
+                    bio_.handle, left.count() <= 0
+                                     ? 0
+                                     : static_cast<int>(left.count() < 100 ? left.count() : 100))) {
+                if (left.count() <= 0)
+                    return net::kTimeout;
                 continue;
+            }
             std::lock_guard<std::mutex> lock(mutex_);
             if (!open_)
                 return net::kClosed;
