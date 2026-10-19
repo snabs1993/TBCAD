@@ -284,6 +284,39 @@ TEST_CASE("a big erase kept as a swapped tree stays right when other edits come 
     checkSame(doc, idx);
 }
 
+TEST_CASE("a big change that both erases and adds swaps back right too") {
+    Document doc;
+    SpatialIndex idx;
+    DocumentIndexer indexer(doc, idx, boundsOf);
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("bulk");
+        for (int i = 0; i < 3000; ++i)
+            ids.push_back(tx.add(line(i, 0, i + 1, 1 + i % 7)).value());
+        tx.commit();
+    }
+    ChangeSet explode;
+    {
+        Transaction tx = doc.begin("explode");
+        for (int i = 0; i < 2000; ++i) {
+            REQUIRE(tx.erase(ids[i]));
+            REQUIRE(tx.add(line(i, 10, i + 2, 12 + i % 5)));
+            REQUIRE(tx.add(line(i, 20, i + 3, 21)));
+        }
+        explode = tx.commit();
+    }
+    CHECK(idx.size() == 1000 + 4000);
+    checkSame(doc, idx);
+    for (int round = 0; round < 3; ++round) {
+        doc.apply(explode, Direction::Undo);
+        CHECK(idx.size() == 3000);
+        checkSame(doc, idx);
+        doc.apply(explode, Direction::Redo);
+        CHECK(idx.size() == 5000);
+        checkSame(doc, idx);
+    }
+}
+
 TEST_CASE("a big load measured on several threads gives the same index") {
     Document doc;
     std::mt19937_64 rng(9);
