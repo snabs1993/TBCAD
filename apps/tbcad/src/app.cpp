@@ -5,6 +5,9 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <glad/gl.h>
 #include <imgui.h>
+#include <imgui_internal.h>
+#include <miniz.h>
+#include <tbcad_imgui_items.h>
 
 #include <algorithm>
 #include <cctype>
@@ -14,12 +17,14 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/mcp/png.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/paths.h"
@@ -236,8 +241,19 @@ void App::captureFrames(int n) {
     for (int i = 0; i < n; ++i) {
         glfwPollEvents();
         mcp_->pump();
+        if (recordItems_)
+            imgui_items::clear();  // keep the newest frame's widgets only
         frame();
         glfwSwapBuffers(window_);
+        if (recordItems_) {
+            // The command line's history goes to the log, so a failed check shows its cause.
+            const auto& h = core_->history();
+            if (h.size() < historySeen_)
+                historySeen_ = 0;
+            for (; historySeen_ < h.size(); ++historySeen_)
+                std::printf("| %s\n", h[historySeen_].c_str());
+            std::fflush(stdout);
+        }
     }
 }
 
@@ -261,8 +277,12 @@ int App::runCapture() {
         io.AddMousePosEvent(x, y);
         captureFrames(2);
     };
-    const std::filesystem::path scriptDir =
-        platform::pathFromUtf8(options_.captureScript).parent_path();
+    std::error_code dirEc;
+    std::filesystem::path scriptDir =
+        std::filesystem::absolute(platform::pathFromUtf8(options_.captureScript), dirEc)
+            .parent_path();
+    if (dirEc)
+        scriptDir = platform::pathFromUtf8(options_.captureScript).parent_path();
     // Entities of the model space with a usable box, in draw order.
     struct Item {
         EntityKind kind;
@@ -440,6 +460,119 @@ int App::runCapture() {
                         have += at(v.p);
             }
             ok = countIs(have);
+        } else if (what == "layout") {
+            std::string name;
+            ss >> name;
+            got = core_->inPaperSpace() ? core_->activeLayout() : std::string("Model");
+            ok = got == name;
+        } else if (what == "viewport") {
+            // viewport LAYOUT ID scale N | viewport LAYOUT ID center X Y
+            std::string lay, field;
+            int id = 0;
+            ss >> lay >> id >> field;
+            const auto l = layout::findLayout(core_->document(), lay);
+            const layout::Viewport* vp = l ? l->findViewport(id) : nullptr;
+            const auto near = [](double a, double b) {
+                return std::abs(a - b) <= 1e-3 * std::max(1.0, std::abs(b));
+            };
+            char buf[96] = "no such viewport";
+            if (vp && field == "scale") {
+                double n = 0;
+                ss >> n;
+                std::snprintf(buf, sizeof buf, "1:%.6g", vp->scaleN);
+                ok = near(vp->scaleN, n);
+            } else if (vp && field == "center") {
+                double x = 0, y = 0;
+                ss >> x >> y;
+                std::snprintf(buf, sizeof buf, "%.6g,%.6g", vp->center.x, vp->center.y);
+                ok = near(vp->center.x, x) && near(vp->center.y, y);
+            }
+            got = buf;
+        } else if (what == "text") {
+            // text N SUBSTRING: TEXT and MTEXT whose contents hold the substring
+            std::size_t want = 0;
+            ss >> want;
+            std::string rest;
+            std::getline(ss, rest);
+            while (!rest.empty() && rest.front() == ' ')
+                rest.erase(0, 1);
+            std::size_t have = 0;
+            for (EntityId id : core_->document().modelSpace()) {
+                const Entity* e = core_->document().find(id);
+                if (!e)
+                    continue;
+                if (const auto* t = entityAs<TextData>(*e))
+                    have += t->utf8.find(rest) != std::string::npos;
+                else if (const auto* m = entityAs<MTextData>(*e))
+                    have += m->utf8.find(rest) != std::string::npos;
+            }
+            got = std::to_string(have);
+            ok = have == want;
+        } else if (what == "on-layer" || what == "color") {
+            // on-layer KIND LAYER N | color KIND ACI N (KIND "any" counts every kind)
+            std::string k, value;
+            ss >> k >> value;
+            int want = -1;
+            for (std::size_t i = 0; i < std::size(kKindNames); ++i)
+                if (k == kKindNames[i])
+                    want = static_cast<int>(i);
+            const Layer* layer =
+                what == "on-layer" ? core_->document().layerByName(value) : nullptr;
+            const int aci = what == "color" ? std::atoi(value.c_str()) : -1;
+            std::size_t have = 0;
+            for (EntityId id : core_->document().modelSpace()) {
+                const Entity* e = core_->document().find(id);
+                if (!e || (k != "any" && static_cast<int>(kind(*e)) != want))
+                    continue;
+                if (layer ? e->common.layer == layer->id
+                          : e->common.color.kind == ColorKind::Index &&
+                                e->common.color.indexValue() == aci)
+                    ++have;
+            }
+            ok = countIs(have);
+        } else if (what == "contains" || what == "lacks") {
+            // contains FILE TEXT / lacks FILE TEXT: the file holds the text or not (PDF streams are
+            // inflated first)
+            std::string name, rest;
+            ss >> name;
+            std::getline(ss, rest);
+            while (!rest.empty() && rest.front() == ' ')
+                rest.erase(0, 1);
+            std::ifstream f(platform::pathFromUtf8(resolveShot(name)), std::ios::binary);
+            const std::string bytes((std::istreambuf_iterator<char>(f)),
+                                    std::istreambuf_iterator<char>());
+            got = !f.good() && bytes.empty() ? "missing" : std::to_string(bytes.size()) + " bytes";
+            ok = !rest.empty() && bytes.find(rest) != std::string::npos;
+            // PDF page content is deflated: look inside each stream as well.
+            for (std::size_t at = 0; !ok && !rest.empty();) {
+                at = bytes.find("stream", at);
+                if (at == std::string::npos)
+                    break;
+                std::size_t begin = at + 6;
+                if (begin < bytes.size() && bytes[begin] == '\r')
+                    ++begin;
+                if (begin < bytes.size() && bytes[begin] == '\n')
+                    ++begin;
+                const std::size_t end = bytes.find("endstream", begin);
+                if (end == std::string::npos)
+                    break;
+                at = end + 9;
+                for (mz_ulong cap = 1 << 16; cap <= (mz_ulong(1) << 24); cap *= 4) {
+                    std::string out(cap, '\0');
+                    mz_ulong n = cap;
+                    const int r =
+                        mz_uncompress(reinterpret_cast<unsigned char*>(out.data()), &n,
+                                      reinterpret_cast<const unsigned char*>(bytes.data() + begin),
+                                      static_cast<mz_ulong>(end - begin));
+                    if (r == MZ_BUF_ERROR)
+                        continue;
+                    if (r == MZ_OK)
+                        ok = std::string_view(out.data(), n).find(rest) != std::string_view::npos;
+                    break;
+                }
+            }
+            if (what == "lacks")
+                ok = !rest.empty() && !ok && bytes.size() > 0;
         } else if (what == "prompt") {
             std::string rest;
             std::getline(ss, rest);
@@ -468,6 +601,33 @@ int App::runCapture() {
         std::fflush(stdout);
         return ok;
     };
+    // Widgets by label (imgui_items records them while capture mode runs).
+    const auto findItem = [](const std::string& label, const std::string& window,
+                             int nth) -> const imgui_items::Item* {
+        const auto visible = [](const std::string& l) {
+            std::string v = l.substr(0, l.find("##"));
+            const auto a = v.find_first_not_of(' ');
+            return a == std::string::npos ? std::string{}
+                                          : v.substr(a, v.find_last_not_of(' ') - a + 1);
+        };
+        std::vector<const imgui_items::Item*> hits;
+        for (const imgui_items::Item& it : imgui_items::items()) {
+            const bool match =
+                (!it.label.empty() && (it.label == label || visible(it.label) == label)) ||
+                (it.seed != 0 && ImHashStr(label.c_str(), 0, it.seed) == it.id);
+            if (match && (window.empty() || it.window.find(window) != std::string::npos))
+                hits.push_back(&it);
+        }
+        std::sort(hits.begin(), hits.end(), [](const auto* a, const auto* b) {
+            return a->min.y != b->min.y ? a->min.y < b->min.y : a->min.x < b->min.x;
+        });
+        hits.erase(std::unique(hits.begin(), hits.end(),
+                               [](const auto* a, const auto* b) { return a->id == b->id; }),
+                   hits.end());
+        return nth >= 0 && nth < static_cast<int>(hits.size()) ? hits[std::size_t(nth)] : nullptr;
+    };
+    imgui_items::setRecording(ImGui::GetCurrentContext(), true);
+    recordItems_ = true;
     settle();  // the window, the viewport size and the first view are in place before line 1
     std::string line;
     int lineNo = 0;
@@ -480,7 +640,9 @@ int App::runCapture() {
         if (!line.empty() && line.front() == '#')
             continue;
         for (std::size_t at; (at = line.find("{out}")) != std::string::npos;)
-            line.replace(at, 5, outDir.string());
+            line.replace(at, 5, platform::pathToUtf8(outDir));
+        for (std::size_t at; (at = line.find("{dir}")) != std::string::npos;)
+            line.replace(at, 5, platform::pathToUtf8(scriptDir));
         // "@10,5" and "@20<45" are relative points typed at a prompt, not capture lines.
         const bool relativePoint = line.size() > 1 && line.front() == '@' &&
                                    (std::isdigit(static_cast<unsigned char>(line[1])) ||
@@ -525,6 +687,16 @@ int App::runCapture() {
             captureFrames(2);
             io.AddMouseButtonEvent(0, false);
             captureFrames(2);
+        } else if (op == "dblclickw" && (ss >> a >> b)) {
+            const ImVec2 w = toWindow(a, b);
+            moveTo(w.x, w.y);
+            for (int k = 0; k < 2; ++k) {
+                io.AddMouseButtonEvent(0, true);
+                captureFrames(1);
+                io.AddMouseButtonEvent(0, false);
+                captureFrames(1);
+            }
+            captureFrames(2);
         } else if (op == "dragw" && (ss >> a >> b >> c >> d)) {
             const ImVec2 w0 = toWindow(a, b), w1 = toWindow(c, d);
             moveTo(w0.x, w0.y);
@@ -534,6 +706,55 @@ int App::runCapture() {
             moveTo(w1.x, w1.y);
             io.AddMouseButtonEvent(0, false);
             captureFrames(2);
+        } else if (op == "clickitem" || op == "dblclickitem" || op == "rclickitem") {
+            // @clickitem LABEL [| WINDOW [| NTH]]: a widget by its label, as the GUI tests do
+            std::string rest;
+            std::getline(ss, rest);
+            std::vector<std::string> parts;
+            for (std::size_t from = 0;;) {
+                const std::size_t bar = rest.find(" | ", from);
+                parts.push_back(rest.substr(from, bar == std::string::npos ? bar : bar - from));
+                if (bar == std::string::npos)
+                    break;
+                from = bar + 3;
+            }
+            for (std::string& part : parts) {
+                const auto first = part.find_first_not_of(' ');
+                part = first == std::string::npos
+                           ? std::string{}
+                           : part.substr(first, part.find_last_not_of(' ') - first + 1);
+            }
+            const imgui_items::Item* it =
+                findItem(parts[0], parts.size() > 1 ? parts[1] : std::string{},
+                         parts.size() > 2 ? std::atoi(parts[2].c_str()) : 0);
+            if (!it) {
+                std::fprintf(stderr, "tbcad: line %d: no widget '%s'\n", lineNo, rest.c_str());
+                ++failed, ++failedSinceShot;
+            } else {
+                const float w = it->max.x - it->min.x;
+                const float x = w > 220.0f ? it->min.x + 24.0f : (it->min.x + it->max.x) * 0.5f;
+                const float y = (it->min.y + it->max.y) * 0.5f;
+                const int button = op == "rclickitem" ? 1 : 0;
+                moveTo(x, y);
+                for (int k = op == "dblclickitem" ? 2 : 1; k > 0; --k) {
+                    io.AddMouseButtonEvent(button, true);
+                    captureFrames(1);
+                    io.AddMouseButtonEvent(button, false);
+                    captureFrames(1);
+                }
+                captureFrames(2);
+            }
+        } else if (op == "items") {
+            // @items [WINDOW]: the widgets of the last frame, to write @clickitem lines with
+            std::string win;
+            std::getline(ss, win);
+            if (!win.empty() && win.front() == ' ')
+                win.erase(0, 1);
+            for (const imgui_items::Item& it : imgui_items::items())
+                if (!it.label.empty() && (win.empty() || it.window.find(win) != std::string::npos))
+                    std::printf("item \"%s\" in \"%s\" at %.0f,%.0f\n", it.label.c_str(),
+                                it.window.c_str(), it.min.x, it.min.y);
+            std::fflush(stdout);
         } else if (op == "key") {
             std::string k;
             ss >> k;

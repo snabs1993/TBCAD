@@ -23,20 +23,21 @@ namespace tbcad::app {
 class Gui;
 
 struct Options {
-    std::string openFile{};    // drawing to open at start
-    std::string script{};      // command lines run after start, separated by ';'
-    std::string scriptFile{};  // a text file with one command line per line (# starts a comment)
-    std::string screenshot{};  // write the last frame to this .ppm
-    std::string report{};      // --gate: also write the report here
+    std::string openFile{};       // drawing to open at start
+    std::string script{};         // command lines run after start, separated by ';'
+    std::string scriptFile{};     // a text file with one command line per line (# starts a comment)
+    std::string screenshot{};     // write the last frame to this .ppm
+    std::string report{};         // --gate: also write the report here
     std::string captureScript{};  // --capture-script F: run F offscreen, @shot lines write PNGs
-    std::string captureOut{};     // --capture-out DIR: where shots and {out} go (default: the script's folder)
-    int captureW = 1600;          // --size WxH of the hidden capture window (logical pixels)
+    std::string
+        captureOut{};  // --capture-out DIR: where shots and {out} go (default: the script's folder)
+    int captureW = 1600;  // --size WxH of the hidden capture window (logical pixels)
     int captureH = 900;
-    int frames = 0;            // > 0: draw this many frames, then exit
-    int gateLines = 1000000;   // --gate: how many lines DEVGEN makes
-    bool selfTest = false;     // hidden window, exit code 77 when no display / OpenGL
-    std::string gateFile{};    // --gate-file: time open, pan/zoom and select-all on this file
-    bool gate = false;         // run the performance gate and exit
+    int frames = 0;           // > 0: draw this many frames, then exit
+    int gateLines = 1000000;  // --gate: how many lines DEVGEN makes
+    bool selfTest = false;    // hidden window, exit code 77 when no display / OpenGL
+    std::string gateFile{};   // --gate-file: time open, pan/zoom and select-all on this file
+    bool gate = false;        // run the performance gate and exit
     bool vsync = true;
     bool mcp = false;  // --mcp: turn the MCP server on (and remember it)
     bool help = false;
@@ -79,6 +80,8 @@ private:
     bool saveScreenshot(const std::string& path);
     int runCapture();
     void captureFrames(int n);
+    bool recordItems_ = false;  // capture mode: widgets are recorded for @clickitem
+    std::size_t historySeen_ = 0;  // capture mode: command-line lines already logged
     bool hidden() const { return options_.selfTest || !options_.captureScript.empty(); }
 
     Options options_;

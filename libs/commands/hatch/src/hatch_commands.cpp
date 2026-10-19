@@ -299,6 +299,7 @@ public:
                     : std::vector<std::string>{"Objects", "Pattern", "Scale", "Angle", "Base",
                                                "Gap",     "Island",  "Link",  "Undo"};
             opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
+            opt.snap = false;  // a snapped pick would sit on the boundary
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
             auto r = co_await ctx.getPoint("Pick internal point (" + what + ")", opt);
             if (r.status == Status::Keyword) {

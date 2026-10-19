@@ -62,6 +62,7 @@ struct PromptRequest {
     std::optional<double> max{};
     bool allowNone = true;
     bool freeText = false;
+    bool snap = true;  // Point: the point filters (object snaps, ortho...) apply
     bool allowEmptyString = false;
     bool allowPreselection = true;
     bool single = false;
