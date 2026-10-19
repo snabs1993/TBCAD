@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <sstream>
+#include <unordered_set>
 
 #include "common.h"
 
@@ -20,9 +21,10 @@ std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
             acc = std::move(r);
             continue;
         }
+        const std::unordered_set<EntityId> in(r->begin(), r->end());
         std::vector<EntityId> keep;
         for (EntityId id : *acc)
-            if (std::find(r->begin(), r->end(), id) != r->end())
+            if (in.count(id))
                 keep.push_back(id);
         acc = std::move(keep);
     }
