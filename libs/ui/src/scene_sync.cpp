@@ -58,6 +58,31 @@ bool holdsFields(const Entity& e) {
     return false;
 }
 
+// Where an object waiting to be built is, for building the ones in view first. Laying text out
+// just for that is the dearest part of queueing a big drawing, and the box only has to cover the
+// text (a wide one builds a little early), so text gets a box from its length and height.
+BBox2 waitingBox(const Entity& e, const Document& doc) {
+    auto around = [](BBox2& box, Vec2 p, double r) {
+        box.expand({p.x - r, p.y - r});
+        box.expand({p.x + r, p.y + r});
+    };
+    if (const auto* t = entityAs<TextData>(e)) {
+        BBox2 box;
+        const double r = t->height * (static_cast<double>(t->utf8.size()) + 2) *
+                         std::max(1.0, t->widthFactor);
+        around(box, t->position, r);
+        around(box, t->alignPoint, r);
+        return box;
+    }
+    if (const auto* m = entityAs<MTextData>(e)) {
+        BBox2 box;
+        around(box, m->position,
+               m->height * (static_cast<double>(m->utf8.size()) + 2) + std::max(0.0, m->width));
+        return box;
+    }
+    return geom::bounds(e, doc);
+}
+
 std::uint32_t drawOrderOf(EntityId id) {
     return static_cast<std::uint32_t>(id.value);
 }
@@ -293,7 +318,7 @@ void SceneSync::queueLazy(const std::vector<const Entity*>& list) {
         ids.push_back(id);
         PendingRec rec;
         rec.id = id;
-        rec.box = geom::bounds(*e, doc_);
+        rec.box = waitingBox(*e, doc_);
         if (scene_.contains(id)) {
             rec.order = scene_.drawOrderOf(id);
         } else {
@@ -469,7 +494,7 @@ void SceneSync::rebuildDrawOrder() {
         for (EntityId id : order) {
             PendingRec rec;
             rec.id = id;
-            rec.box = geom::bounds(*doc_.find(id), doc_);
+            rec.box = waitingBox(*doc_.find(id), doc_);
             rec.order = ++rank;
             recs.push_back(rec);
         }
