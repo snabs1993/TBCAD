@@ -1607,10 +1607,24 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             continue;
         }
         Frame af;
-        if (!frameOf(a, af, "ATTRIB"))
-            continue;
         std::vector<Entity> text;
-        convText(a, af, TextKind::Attrib, text);
+        if (const std::optional<Tilt> tilt = tiltOf(a)) {
+            convText(a, af, TextKind::Attrib, text);
+            bool ok = true;
+            for (Entity& e : text)
+                if (auto* d = std::get_if<Indirect<TextData>>(&e.data))
+                    ok = ok && projectText(**d, *tilt, a.num(30) * k_);
+            if (!ok) {
+                bad(a, "ATTRIB", "seen edge-on in its tilted plane; skipped");
+                continue;
+            }
+            if (!text.empty())
+                countProjected(a);
+        } else if (!frameOf(a, af, "ATTRIB")) {
+            continue;
+        } else {
+            convText(a, af, TextKind::Attrib, text);
+        }
         for (Entity& e : text) {
             e.common = commonOf(a);
             loose.push_back(std::move(e));

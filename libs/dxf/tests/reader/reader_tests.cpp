@@ -356,6 +356,24 @@ TEST_CASE("a spline with too few control points for its degree is drawn with a l
     CHECK(l.report.countCode(code::kBadEntity) == 2);  // one lowered, one dropped
 }
 
+TEST_CASE("extrusion: a loose attribute of an insert in a tilted plane is projected") {
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "B").g(70, 0).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 0.0).g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "INSERT").g(8, "0").g(66, 1).g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "ATTRIB").g(8, "0").g(10, 5.0).g(20, 5.0).g(30, 0.0).g(40, 2.0).g(1, "v").g(2, "NOTE");
+    p.g(70, 0).g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "SEQEND").g(8, "0");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto texts = modelEntities<TextData>(l.doc());
+    REQUIRE(texts.size() == 1);
+    CHECK(near(texts[0]->position, Vec2{5, 4}, 1e-9));
+    CHECK(texts[0]->height == doctest::Approx(1.6));
+    CHECK(l.report.countCode(code::kBadEntity) == 0);
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).
