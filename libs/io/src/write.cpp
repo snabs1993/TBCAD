@@ -610,23 +610,36 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
     }
 }
 
-// Waits for the chunks being deflated and lays the file out in order.
+// Waits for the chunks being deflated and lays the file out in order. The chunks are all
+// finished first so the file buffer is allocated once at its size, not regrown while it fills.
 Result<std::vector<std::uint8_t>> assembleFile(EncodedFile&& file) {
     try {
-        ByteWriter out;
-        appendFileHeader(out);
-        for (FileItem& it : file.items) {
+        std::vector<PreparedChunk> chunks(file.items.size());
+        std::size_t total = sizeof kMagic + 12 + 20;  // header and END
+        for (std::size_t i = 0; i < file.items.size(); ++i) {
+            FileItem& it = file.items[i];
             switch (it.kind) {
                 case FileItem::Kind::Raw:
-                    appendChunk(out, it.type, it.bytes, file.compress);
+                    chunks[i] = prepareChunk(it.bytes, file.compress);
                     break;
                 case FileItem::Kind::Prepared:
-                    appendPrepared(out, it.type, it.prepared.get());
+                    chunks[i] = it.prepared.get();
                     break;
                 case FileItem::Kind::Stored:
-                    appendStoredChunk(out, it.type, it.flags, it.bytes);
+                    chunks[i].flags = it.flags;
+                    chunks[i].crc = tbcadCrc32(it.bytes);
+                    chunks[i].stored = std::move(it.bytes);
                     break;
             }
+            std::vector<std::uint8_t>().swap(it.bytes);
+            total += 20 + chunks[i].stored.size();
+        }
+        ByteWriter out;
+        out.reserve(total);
+        appendFileHeader(out);
+        for (std::size_t i = 0; i < chunks.size(); ++i) {
+            appendPrepared(out, file.items[i].type, chunks[i]);
+            std::vector<std::uint8_t>().swap(chunks[i].stored);
         }
         appendStoredChunk(out, kEnd, 0, {});
         return std::move(out.bytes());
