@@ -253,6 +253,24 @@ TEST_CASE("commands that need a layout say so - LAYOUT List, Rename, Paper and D
     CHECK(layoutcmd::currentLayout(*f.host, f.doc) == "B");  // falls back to the first one
 }
 
+TEST_CASE("LAYOUT Move changes the tab order") {
+    Fixture f;
+    for (const char* n : {"A", "B", "C"})
+        f.host->run("LAYOUT", {"New", n, "A4", "Landscape"});
+    f.host->run("LAYOUT", {"Move", "C", "1"});
+    auto names = [&] {
+        std::string s;
+        for (const auto& l : layout::layouts(f.doc))
+            s += l.name;
+        return s;
+    };
+    CHECK(names() == "CAB");
+    f.host->run("LAYOUT", {"Move", "C", "9"});  // past the end means last
+    CHECK(names() == "ABC");
+    f.host->run("LAYOUT", {"Move", "B", "1"});
+    CHECK(names() == "BAC");
+}
+
 TEST_CASE("TITLEBLOCK adds objects to the sheet") {
     Fixture f;
     f.host->run("LAYOUT", {"New", "S", "A3", ""});

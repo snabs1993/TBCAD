@@ -1249,6 +1249,28 @@ void Gui::layoutTabs(const ViewportRect& rect) {
             }
             if (active)
                 ImGui::PopStyleColor(2);
+            const auto place = std::find(names.begin(), names.end(), name);
+            const std::size_t at = static_cast<std::size_t>(place - names.begin());
+            if (!name.empty() && !readOnly) {
+                // Drag a tab onto another to put it there; double-click renames, as in AutoCAD.
+                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("TBCAD_LAYOUT_TAB", name.c_str(), name.size() + 1);
+                    ImGui::TextUnformatted(name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    layoutTarget_ = name;
+                    openPopup = "rename";
+                }
+            }
+            if (!name.empty() && ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("TBCAD_LAYOUT_TAB")) {
+                    const std::string moved(static_cast<const char*>(pl->Data));
+                    if (moved != name)
+                        run({"LAYOUT", "Move", moved, std::to_string(at + 1)});
+                }
+                ImGui::EndDragDropTarget();
+            }
             if (active && name.empty())
                 layoutFollowed_.clear();
             if (active && layoutFollowed_ != name) {
@@ -1261,6 +1283,17 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                 if (!name.empty()) {
                     if (guarded("Rename..."))
                         openPopup = "rename";
+                    if (guarded("Copy"))
+                        run({"LAYOUT", "Copy", name, ""});
+                    if (ImGui::MenuItem("Move left", nullptr, false, !readOnly && at > 0))
+                        run({"LAYOUT", "Move", name, std::to_string(at)});
+                    if (ImGui::MenuItem("Move right", nullptr, false,
+                                        !readOnly && at + 1 < names.size()))
+                        run({"LAYOUT", "Move", name, std::to_string(at + 2)});
+                    if (ImGui::MenuItem("Page setup...")) {
+                        core_.setActiveLayout(name);
+                        run({"PAGESETUP"});
+                    }
                     if (guarded("Delete")) {
                         if (core_.activeLayout() == name)
                             core_.setActiveLayout("");
