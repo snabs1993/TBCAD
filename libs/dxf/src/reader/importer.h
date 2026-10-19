@@ -188,6 +188,8 @@ private:
     bool convProxy(const Record& r, std::vector<Entity>& out);
     // An entity of another application (AEC, Civil, ACIS ...) that carries proxy graphics.
     bool convForeign(const Record& r, std::vector<Entity>& out);
+    // An AutoCAD TABLE: its graphics live in an anonymous block, shown as an INSERT of it.
+    bool convAcadTable(const Record& r, RecordReader& rr, const Frame& f, std::vector<Entity>& out);
 
     // ---- proxy.cpp --------------------------------------------------------------------------
     std::vector<std::uint8_t> proxyGraphicsOf(const Record& r) const;
