@@ -985,6 +985,26 @@ TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in 
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / Hall 2");
 }
 
+TEST_CASE("FIND also changes text inside block definitions") {
+    Fixture f;
+    BlockId room;
+    EntityId inner;
+    {
+        auto tx = f.doc.begin("block");
+        room = tx.addBlock(BlockDef{.name = "Room"}).value();
+        Entity e;
+        TextData td;
+        td.utf8 = "room label";
+        e.data = Indirect<TextData>(td);
+        inner = tx.add(std::move(e), room).value();
+        tx.commit();
+    }
+    f.host.run("FIND", {"room", "Hall", "No"});
+    CHECK(entityAs<TextData>(f.get(inner))->utf8 == "Hall label");
+    f.host.undo();
+    CHECK(entityAs<TextData>(f.get(inner))->utf8 == "room label");
+}
+
 TEST_CASE("COPYTOLAYER copies onto the layer of the picked object") {
     Fixture f;
     LayerId target;
