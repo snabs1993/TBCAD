@@ -475,74 +475,124 @@ public:
 
 // ---- MATCHPROP ----------------------------------------------------------------------------------
 
-struct MatchCats {
-    bool basic = true;       // layer, colour, linetype, scale, weight, transparency, level
-    bool text = true;        // text and MText height, style, width, slant
-    bool dimension = true;   // dimension, leader and multileader style and text height
-    bool hatch = true;       // hatch pattern, scale, angle, fill
-    bool polyline = true;    // polyline width
-    bool annotative = true;  // annotative flag and scales
+// The properties MATCHPROP passes on, as in AutoCAD's Property Settings: each basic property on
+// its own, then the special groups. Every one can be switched off with Settings; the choice is
+// remembered under "matchprop.<name>".
+enum MatchCat : std::size_t {
+    kMColor,
+    kMLayer,  // the level goes with the layer
+    kMLinetype,
+    kMLtScale,
+    kMLineweight,
+    kMTransparency,
+    kMPlotStyle,
+    kMText,       // text and MText height and style; text width, slant and justification
+    kMDimension,  // dimension and leader style
+    kMHatch,      // pattern, scale, angle, fill
+    kMPolyline,   // width
+    kMTable,      // text style, text height and cell styles
+    kMMleader,    // multileader style and text height
+    kMAnnotative,
+    kMatchCount
 };
 
-constexpr std::array<const char*, 6> kMatchCats = {"Basic", "Text",     "Dimension",
-                                                   "Hatch", "Polyline", "Annotative"};
+struct MatchCatName {
+    const char* key;      // setting name
+    const char* keyword;  // what the Settings prompt takes (capitals: the shortest input)
+};
+constexpr std::array<MatchCatName, kMatchCount> kMatchCats = {{
+    {"Color", "Color"},
+    {"Layer", "LAyer"},
+    {"Linetype", "LType"},
+    {"LinetypeScale", "LTScale"},
+    {"Lineweight", "LWeight"},
+    {"Transparency", "TRansparency"},
+    {"PlotStyle", "PStyle"},
+    {"Text", "Text"},
+    {"Dimension", "Dimension"},
+    {"Hatch", "Hatch"},
+    {"Polyline", "POlyline"},
+    {"Table", "TAble"},
+    {"Multileader", "Multileader"},
+    {"Annotative", "ANnotative"},
+}};
+constexpr std::size_t kBasicCount = kMPlotStyle + 1;  // Basic switches these together
 
-bool& matchFlag(MatchCats& c, std::size_t i) {
-    bool* all[] = {&c.basic, &c.text, &c.dimension, &c.hatch, &c.polyline, &c.annotative};
-    return *all[i];
-}
+using MatchCats = std::array<bool, kMatchCount>;
 
 MatchCats readMatchCats(const cmd::IHost& host) {
-    MatchCats c;
-    for (std::size_t i = 0; i < kMatchCats.size(); ++i)
-        matchFlag(c, i) = getFlag(host, std::string("matchprop.") + kMatchCats[i], true);
+    MatchCats c{};
+    // Files from before the basic properties were split kept one "Basic" switch.
+    const bool basic = getFlag(host, "matchprop.Basic", true);
+    for (std::size_t i = 0; i < kMatchCount; ++i)
+        c[i] = getFlag(host, std::string("matchprop.") + kMatchCats[i].key,
+                       i < kBasicCount ? basic : true);
     return c;
 }
 
-void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = {}) {
-    if (cats.basic) {
+MatchCats allMatchCats() {
+    MatchCats c{};
+    c.fill(true);
+    return c;
+}
+
+void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = allMatchCats()) {
+    if (cats[kMLayer]) {
         dst.common.layer = src.common.layer;
         dst.common.level = src.common.level;
-        dst.common.color = src.common.color;
-        dst.common.linetype = src.common.linetype;
-        dst.common.linetypeScale = src.common.linetypeScale;
-        dst.common.lineweight = src.common.lineweight;
-        dst.common.transparency = src.common.transparency;
     }
-    if (cats.annotative) {
+    if (cats[kMColor])
+        dst.common.color = src.common.color;
+    if (cats[kMLinetype])
+        dst.common.linetype = src.common.linetype;
+    if (cats[kMLtScale])
+        dst.common.linetypeScale = src.common.linetypeScale;
+    if (cats[kMLineweight])
+        dst.common.lineweight = src.common.lineweight;
+    if (cats[kMTransparency])
+        dst.common.transparency = src.common.transparency;
+    if (cats[kMAnnotative]) {
         dst.common.annotative = src.common.annotative;
         dst.common.annoScales = src.common.annoScales;
     }
-    if (cats.text) {
-        if (const auto* a = entityAs<TextData>(src)) {
+    if (cats[kMText]) {
+        const auto* ta = entityAs<TextData>(src);
+        const auto* ma = entityAs<MTextData>(src);
+        if (ta) {
             if (auto* b = entityAs<TextData>(dst)) {
-                b->height = a->height;
-                b->style = a->style;
-                b->widthFactor = a->widthFactor;
-                b->oblique = a->oblique;
+                b->height = ta->height;
+                b->style = ta->style;
+                b->widthFactor = ta->widthFactor;
+                b->oblique = ta->oblique;
                 // Justification: the point the text hangs from stays where it is. Aligned and Fit
                 // need two points of their own, so they are not passed on or replaced.
                 const auto twoPoint = [](HAlign h) { return h == HAlign::Aligned || h == HAlign::Fit; };
-                if (!twoPoint(a->h) && !twoPoint(b->h) && (a->h != b->h || a->v != b->v)) {
+                if (!twoPoint(ta->h) && !twoPoint(b->h) && (ta->h != b->h || ta->v != b->v)) {
                     const auto leftBase = [](const TextData& t) {
                         return t.h == HAlign::Left && t.v == VAlign::Baseline;
                     };
                     const Vec2 anchor = leftBase(*b) ? b->position : b->alignPoint;
-                    b->h = a->h;
-                    b->v = a->v;
+                    b->h = ta->h;
+                    b->v = ta->v;
                     b->position = anchor;
                     b->alignPoint = anchor;
                 }
             }
         }
-        if (const auto* a = entityAs<MTextData>(src)) {
+        // Text and MText pass their height and style to each other, as in AutoCAD.
+        const double height = ta ? ta->height : ma ? ma->height : 0;
+        const TextStyleId style = ta ? ta->style : ma ? ma->style : TextStyleId{};
+        if (ta || ma) {
             if (auto* b = entityAs<MTextData>(dst)) {
-                b->height = a->height;
-                b->style = a->style;
+                b->height = height;
+                b->style = style;
+            } else if (auto* t = entityAs<TextData>(dst); t && ma) {
+                t->height = height;
+                t->style = style;
             }
         }
     }
-    if (cats.polyline) {
+    if (cats[kMPolyline]) {
         if (const auto* a = entityAs<PolylineData>(src)) {
             if (auto* b = entityAs<PolylineData>(dst)) {
                 b->constantWidth = a->constantWidth;
@@ -551,7 +601,7 @@ void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = {}) {
             }
         }
     }
-    if (cats.hatch) {
+    if (cats[kMHatch]) {
         if (const auto* a = entityAs<HatchData>(src)) {
             if (auto* b = entityAs<HatchData>(dst)) {
                 b->solid = a->solid;
@@ -564,39 +614,64 @@ void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = {}) {
             }
         }
     }
-    if (cats.dimension) {
+    if (cats[kMDimension]) {
         if (const auto* a = entityAs<DimensionData>(src))
             if (auto* b = entityAs<DimensionData>(dst))
                 b->style = a->style;
         if (const auto* a = entityAs<LeaderData>(src))
             if (auto* b = entityAs<LeaderData>(dst))
                 b->style = a->style;
+    }
+    if (cats[kMMleader]) {
         if (const auto* a = entityAs<MLeaderData>(src))
             if (auto* b = entityAs<MLeaderData>(dst)) {
                 b->style = a->style;
                 b->textHeight = a->textHeight;
             }
     }
+    if (cats[kMTable]) {
+        if (const auto* a = entityAs<TableData>(src))
+            if (auto* b = entityAs<TableData>(dst)) {
+                b->style = a->style;
+                b->textHeight = a->textHeight;
+                b->margin = a->margin;
+                b->titleStyle = a->titleStyle;
+                b->headerStyle = a->headerStyle;
+                b->dataStyle = a->dataStyle;
+            }
+    }
 }
 
-// MATCHPROP Settings: switch the property groups on and off; the choice is remembered.
+// MATCHPROP Settings: switch properties on and off (Basic switches the seven basic ones
+// together); the choice is remembered. Enter ends.
 cmd::Task askMatchSettings(cmd::CommandContext& ctx) {
     for (;;) {
-        MatchCats c = readMatchCats(ctx.host());
+        const MatchCats c = readMatchCats(ctx.host());
         std::string line = "Properties to match:";
-        for (std::size_t i = 0; i < kMatchCats.size(); ++i)
-            line += std::string(" ") + kMatchCats[i] + (matchFlag(c, i) ? "=On" : "=Off");
+        for (std::size_t i = 0; i < kMatchCount; ++i)
+            line += std::string(" ") + kMatchCats[i].key + (c[i] ? "=On" : "=Off");
         ctx.message(line);
         cmd::KeywordOptions ko;
-        for (const char* k : kMatchCats)
-            ko.keywords.push_back(k);
-        auto r = co_await ctx.getKeyword(
-            "Toggle [Basic/Text/Dimension/Hatch/Polyline/Annotative] <Done>", std::move(ko));
+        std::string prompt = "Basic";
+        ko.keywords.push_back("Basic");
+        for (const MatchCatName& m : kMatchCats) {
+            ko.keywords.push_back(m.keyword);
+            prompt += std::string("/") + m.keyword;
+        }
+        auto r = co_await ctx.getKeyword("Toggle [" + prompt + "] <Done>", std::move(ko));
         if (r.status != cmd::Status::Keyword)
             co_return;
-        for (std::size_t i = 0; i < kMatchCats.size(); ++i)
-            if (r.keyword == kMatchCats[i])
-                putFlag(ctx.host(), std::string("matchprop.") + kMatchCats[i], !matchFlag(c, i));
+        if (r.keyword == "Basic") {
+            bool anyOn = false;
+            for (std::size_t i = 0; i < kBasicCount; ++i)
+                anyOn = anyOn || c[i];
+            for (std::size_t i = 0; i < kBasicCount; ++i)
+                putFlag(ctx.host(), std::string("matchprop.") + kMatchCats[i].key, !anyOn);
+            continue;
+        }
+        for (std::size_t i = 0; i < kMatchCount; ++i)
+            if (r.keyword == kMatchCats[i].keyword)
+                putFlag(ctx.host(), std::string("matchprop.") + kMatchCats[i].key, !c[i]);
     }
 }
 
@@ -618,49 +693,58 @@ public:
             co_return;
         std::size_t done = 0;
         for (;;) {
-            cmd::EntityOptions to;
+            // As in AutoCAD each pick, window or crossing is matched at once; Enter ends.
+            cmd::SelectionOptions to;
             to.filter = modifiableFilter(ctx.doc());
             to.keywords = {"Settings"};
-            auto dst = co_await ctx.getEntity("Select destination object(s) or [Settings]", to);
+            to.allowPreselection = false;
+            to.single = true;
+            auto dst = co_await ctx.getSelection("Select destination object(s) or [Settings]", to);
             if (dst.status == cmd::Status::Keyword && dst.keyword == "Settings") {
                 co_await askMatchSettings(ctx);
                 continue;
             }
-            if (!dst.ok())
+            if (!dst.ok() || dst.ids.empty())
                 break;
             const Entity* s = ctx.doc().find(src.id);
             if (!s)
                 break;
-            if (dst.id == src.id)
-                continue;
             Entity copy = *s;
             const MatchCats cats = readMatchCats(ctx.host());
-            // An associative array draws the items of its own anonymous block; their own
-            // properties win over the Insert's, so they take the new properties too.
-            std::vector<EntityId> inner;
-            if (const Entity* d = ctx.doc().find(dst.id))
-                if (const auto* ins = entityAs<InsertData>(*d))
-                    if (ins->array)
-                        if (const BlockDef* def = ctx.doc().block(ins->block))
-                            if (def->anonymous)
-                                inner = def->entities;
-            if (ctx.tx().modify(dst.id, [&](Entity& d) { matchProps(copy, d, cats); })) {
-                for (EntityId id : inner)
-                    (void)ctx.tx().modify(id, [&](Entity& d) { matchProps(copy, d, cats); });
-                if (cats.basic) {  // the plot style name lives in the header, not on the object
-                    const std::string style = entityPlotStyle(ctx.doc().header(), src.id);
-                    if (style != entityPlotStyle(ctx.doc().header(), dst.id))
-                        (void)ctx.tx().modifyHeader([&](Header& h) {
-                            setEntityPlotStyle(h, dst.id, style);
-                            for (EntityId id : inner)
-                                setEntityPlotStyle(h, id, style);
-                        });
-                }
-                ++done;
-            }
+            for (EntityId target : dst.ids)
+                if (target != src.id && matchOne(ctx, copy, src.id, target, cats))
+                    ++done;
         }
         if (done)
             ctx.message(plural(done, "object", "objects") + " updated.");
+    }
+
+private:
+    static bool matchOne(cmd::CommandContext& ctx, const Entity& copy, EntityId srcId,
+                         EntityId target, const MatchCats& cats) {
+        // An associative array draws the items of its own anonymous block; their own
+        // properties win over the Insert's, so they take the new properties too.
+        std::vector<EntityId> inner;
+        if (const Entity* d = ctx.doc().find(target))
+            if (const auto* ins = entityAs<InsertData>(*d))
+                if (ins->array)
+                    if (const BlockDef* def = ctx.doc().block(ins->block))
+                        if (def->anonymous)
+                            inner = def->entities;
+        if (!ctx.tx().modify(target, [&](Entity& d) { matchProps(copy, d, cats); }))
+            return false;
+        for (EntityId id : inner)
+            (void)ctx.tx().modify(id, [&](Entity& d) { matchProps(copy, d, cats); });
+        if (cats[kMPlotStyle]) {  // the plot style name lives in the header, not on the object
+            const std::string style = entityPlotStyle(ctx.doc().header(), srcId);
+            if (style != entityPlotStyle(ctx.doc().header(), target))
+                (void)ctx.tx().modifyHeader([&](Header& h) {
+                    setEntityPlotStyle(h, target, style);
+                    for (EntityId id : inner)
+                        setEntityPlotStyle(h, id, style);
+                });
+        }
+        return true;
     }
 };
 
