@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
@@ -13,6 +14,7 @@
 
 #include "miniz.h"
 #include "tbcad/pdf/pdf.h"
+#include "truetype.h"
 
 namespace tbcad::pdf {
 namespace {
@@ -158,7 +160,54 @@ std::string deflate(const std::string& raw) {
     return z;
 }
 
+// UTF-16BE hex digits of a string of code points.
+std::string utf16Hex(std::u32string_view text) {
+    std::string out;
+    auto hex4 = [&](unsigned v) {
+        static const char* d = "0123456789ABCDEF";
+        for (int sh = 12; sh >= 0; sh -= 4)
+            out += d[(v >> sh) & 0xF];
+    };
+    for (char32_t cp : text) {
+        if (cp >= 0x10000 && cp <= 0x10FFFF) {
+            cp -= 0x10000;
+            hex4(0xD800 + (cp >> 10));
+            hex4(0xDC00 + (cp & 0x3FF));
+        } else {
+            hex4(cp > 0xFFFF ? 0xFFFD : static_cast<unsigned>(cp));
+        }
+    }
+    return out;
+}
+
+std::string hex4(unsigned v) {
+    static const char* d = "0123456789ABCDEF";
+    std::string out;
+    for (int sh = 12; sh >= 0; sh -= 4)
+        out += d[(v >> sh) & 0xF];
+    return out;
+}
+
+// PDF name characters: letters, digits and a few safe marks; anything else becomes '-'.
+std::string pdfName(std::string_view s) {
+    std::string out;
+    for (char c : s)
+        out += (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.')
+                   ? c
+                   : '-';
+    return out.empty() ? std::string("Font") : out;
+}
+
 }  // namespace
+
+bool canEmbedTrueType(const std::vector<unsigned char>& file, int faceIndex) {
+    return detail::readTrueType(file, faceIndex).has_value();
+}
+
+int PdfDocument::addFont(EmbeddedFont font) {
+    fonts_.push_back(std::move(font));
+    return static_cast<int>(fonts_.size()) - 1;
+}
 
 void PdfDocument::setInfo(std::string_view title, std::string_view creator) {
     title_ = title;
@@ -213,12 +262,35 @@ Result<void> PdfDocument::write(std::ostream& out) const {
     const size_t ocgObj0 = nextObj;
     nextObj += layerNames_.size();
 
+    // Fonts the pages use: Type0 font, CIDFontType2, descriptor, font file and ToUnicode each.
+    std::map<int, std::map<std::uint16_t, std::u32string>> glyphs;
+    for (const Page& p : pages_)
+        for (const auto& [f, used] : p.glyphsUsed_)
+            for (const auto& [g, text] : used) {
+                auto& slot = glyphs[f][g];
+                if (slot.empty())
+                    slot = text;
+            }
+    std::map<int, size_t> fontObj;
+    for (const auto& [f, used] : glyphs) {
+        if (f < 0 || static_cast<size_t>(f) >= fonts_.size() || !fonts_[static_cast<size_t>(f)].file)
+            return makeError(ErrorCode::InvalidArgument, "page uses an unknown font");
+        fontObj[f] = nextObj;
+        nextObj += 5;
+    }
+
     auto resources = [&](const Page& p) {
         std::string props;
         if (!p.layersUsed_.empty()) {
             props = "/Properties << ";
             for (int k : p.layersUsed_)
                 props += "/L" + std::to_string(k) + " " + std::to_string(ocgObj0 + k) + " 0 R ";
+            props += ">> ";
+        }
+        if (!p.fontsUsed_.empty()) {
+            props += "/Font << ";
+            for (int f : p.fontsUsed_)
+                props += "/F" + std::to_string(f) + " " + std::to_string(fontObj.at(f)) + " 0 R ";
             props += ">> ";
         }
         if (p.pics_.empty())
@@ -348,6 +420,97 @@ Result<void> PdfDocument::write(std::ostream& out) const {
     for (size_t k = 0; k < layerNames_.size(); ++k) {
         begin(ocgObj0 + k);
         buf += "<< /Type /OCG /Name " + textString(layerNames_[k]) + " >>\n";
+        end();
+    }
+
+    for (const auto& [f, used] : glyphs) {
+        const EmbeddedFont& ef = fonts_[static_cast<size_t>(f)];
+        auto info = detail::readTrueType(*ef.file, ef.faceIndex);
+        if (!info)
+            return makeError(ErrorCode::InvalidArgument,
+                             "font " + ef.postscriptName + " cannot be embedded");
+        std::set<std::uint16_t> keep;
+        for (const auto& [g, text] : used)
+            keep.insert(g);
+        const std::string subset = detail::subsetTrueType(*ef.file, ef.faceIndex, keep);
+        if (subset.empty())
+            return makeError(ErrorCode::InvalidArgument,
+                             "font " + ef.postscriptName + " cannot be subset");
+        // Subset tag: six capitals from the font number and glyph set, as PDF asks of subsets.
+        std::uint32_t h = 2166136261u ^ static_cast<std::uint32_t>(f);
+        for (std::uint16_t g : keep)
+            h = (h ^ g) * 16777619u;
+        std::string tag;
+        for (int k = 0; k < 6; ++k) {
+            tag += static_cast<char>('A' + h % 26);
+            h /= 26;
+        }
+        std::string ps = ef.postscriptName.empty() ? info->postscriptName : ef.postscriptName;
+        if (ps.empty())
+            ps = "Font" + std::to_string(f);
+        const std::string name = tag + "+" + pdfName(ps);
+        const double k1000 = 1000.0 / info->unitsPerEm;
+        auto u = [&](double v) { return formatNumber(std::round(v * k1000)); };
+        const size_t o = fontObj.at(f);
+
+        begin(o);
+        buf += "<< /Type /Font /Subtype /Type0 /BaseFont /" + name +
+               " /Encoding /Identity-H /DescendantFonts [" + std::to_string(o + 1) +
+               " 0 R] /ToUnicode " + std::to_string(o + 4) + " 0 R >>\n";
+        end();
+
+        std::string widths;
+        for (const auto& [g, text] : used) {
+            const double adv = g < info->advances.size() ? info->advances[g] : 0;
+            widths += std::to_string(g) + " [" + u(adv) + "] ";
+        }
+        begin(o + 1);
+        buf += "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /" + name +
+               " /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>"
+               " /FontDescriptor " + std::to_string(o + 2) +
+               " 0 R /CIDToGIDMap /Identity /DW 1000 /W [" + widths + "] >>\n";
+        end();
+
+        begin(o + 2);
+        const int flags = (info->fixedPitch ? 1 : 0) | 4 | (info->italicAngle != 0 ? 64 : 0);
+        buf += "<< /Type /FontDescriptor /FontName /" + name + " /Flags " +
+               std::to_string(flags) + " /FontBBox [" + u(info->xMin) + " " + u(info->yMin) +
+               " " + u(info->xMax) + " " + u(info->yMax) + "] /ItalicAngle " +
+               formatNumber(info->italicAngle) + " /Ascent " + u(info->ascent) + " /Descent " +
+               u(info->descent) + " /CapHeight " + u(info->capHeight) +
+               " /StemV 80 /FontFile2 " + std::to_string(o + 3) + " 0 R >>\n";
+        end();
+
+        const std::string zf = deflate(subset);
+        if (zf.empty())
+            return makeError(ErrorCode::Io, "deflate failed");
+        begin(o + 3);
+        buf += "<< /Length " + std::to_string(zf.size()) + " /Length1 " +
+               std::to_string(subset.size()) + " /Filter /FlateDecode >>\nstream\n";
+        buf += zf;
+        buf += "\nendstream\n";
+        end();
+
+        std::string cmap =
+            "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"
+            "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"
+            "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"
+            "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n";
+        std::vector<std::pair<std::uint16_t, std::u32string>> mapped;
+        for (const auto& [g, text] : used)
+            if (!text.empty())
+                mapped.emplace_back(g, text);
+        for (size_t i = 0; i < mapped.size(); i += 100) {
+            const size_t n = std::min<size_t>(100, mapped.size() - i);
+            cmap += std::to_string(n) + " beginbfchar\n";
+            for (size_t k = i; k < i + n; ++k)
+                cmap += "<" + hex4(mapped[k].first) + "> <" + utf16Hex(mapped[k].second) + ">\n";
+            cmap += "endbfchar\n";
+        }
+        cmap += "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
+        begin(o + 4);
+        buf += "<< /Length " + std::to_string(cmap.size()) + " >>\nstream\n" + cmap +
+               "\nendstream\n";
         end();
     }
 

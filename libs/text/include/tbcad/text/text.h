@@ -166,6 +166,9 @@ struct PlacedGlyph {
     double shear = 0;   // slant (synthetic italic, \Q): x += shear * y (in em, after xScale)
     double xScale = 1;  // glyph width factor (\W)
     int color = -1;     // palette index or -1
+    // The character(s) this glyph stands for (for copying text out of a PDF); empty for the
+    // second and later glyphs of one character.
+    std::u32string text{};
 };
 
 // An underline or overline: a horizontal rule in layout space.

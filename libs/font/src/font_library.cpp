@@ -757,6 +757,21 @@ bool FontLibrary::hasGlyph(FontId font, char32_t codePoint) {
     return impl_->hasGlyphLocked(font, codePoint);
 }
 
+FontLibrary::FileData FontLibrary::fileData(FontId font) {
+    std::lock_guard lock(impl_->mutex);
+    Impl::Face* f = impl_->get(font);
+    FileData out;
+    if (!f || !f->ft)
+        return out;
+    out.bytes = &f->data;
+    out.faceIndex = static_cast<int>(f->ft->face_index & 0xFFFF);
+    if (const char* ps = FT_Get_Postscript_Name(f->ft))
+        out.postscriptName = ps;
+    else
+        out.postscriptName = f->family;
+    return out;
+}
+
 std::string FontLibrary::familyName(FontId font) {
     std::lock_guard lock(impl_->mutex);
     Impl::Face* f = impl_->get(font);

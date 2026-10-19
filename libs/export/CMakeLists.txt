@@ -15,4 +15,4 @@ tbcad_add_tests(export
   SOURCES
     tests/main.cpp
     tests/plot_tests.cpp
-  DEPENDS tbcad::pdf tbcad::blocks miniz)
+  DEPENDS tbcad::pdf tbcad::blocks tbcad::text miniz)

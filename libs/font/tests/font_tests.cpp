@@ -416,6 +416,29 @@ TEST_CASE("bundled stroke font covers the Thai block and places marks") {
     CHECK(runs.size() == 1);  // no fallback font was needed
 }
 
+TEST_CASE("bundled stroke font: ป ฝ ฟ ฬ rise on the right, ห has no ascender") {
+    FontLibrary lib;
+    FontId f = lib.loadBundledStroke().value();
+    // The x of the highest point, and the height, of a glyph.
+    auto top = [&](char32_t c) {
+        double x = 0, y = -1e9;
+        for (const auto& p : lib.strokes(f, c).paths)
+            for (const FPoint& q : p.points)
+                if (q.y > y) {
+                    y = q.y;
+                    x = q.x;
+                }
+        return std::pair{x, y};
+    };
+    for (char32_t c : {0x0E1B, 0x0E1D, 0x0E1F, 0x0E2C}) {
+        auto [x, y] = top(c);
+        CAPTURE(static_cast<unsigned>(c));
+        CHECK(y > 0.6);   // above the x-height (0.5 em)
+        CHECK(x > 0.35);  // on the right of the 0.55 em cell
+    }
+    CHECK(top(0x0E2B).second <= 0.51);  // ห
+}
+
 namespace {
 // A tiny compiled shapes font: 'L' (vectors), 'O' (octant circle), 'B' (bulge arc, sub-shape).
 std::vector<unsigned char> tinyShx(bool unicode) {

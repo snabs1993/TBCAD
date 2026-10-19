@@ -6,7 +6,7 @@ tbcad_add_library(modify
     src/fillet.cpp
     src/offset.cpp
     src/trim.cpp
-  DEPENDS tbcad::core tbcad::geom)
+  DEPENDS tbcad::core tbcad::geom tbcad::text)
 tbcad_add_tests(modify
   SOURCES
     tests/main.cpp

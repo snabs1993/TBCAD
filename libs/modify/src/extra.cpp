@@ -11,6 +11,7 @@
 
 #include "tbcad/modify/break_join.h"
 #include "tbcad/modify/trim.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::modify {
 
@@ -1979,18 +1980,45 @@ bool isWordChar(char c) {
            (u >= 'A' && u <= 'Z');
 }
 
+// A Thai letter (U+0E00..U+0E7F) in UTF-8 starts with E0 B8 or E0 B9.
+bool thaiAt(std::string_view s, std::size_t i) {
+    return i + 2 < s.size() && static_cast<unsigned char>(s[i]) == 0xE0 &&
+           (static_cast<unsigned char>(s[i + 1]) == 0xB8 ||
+            static_cast<unsigned char>(s[i + 1]) == 0xB9);
+}
+
+// Thai has no spaces between words: a whole-word match may start or end inside a run of Thai
+// where the word list puts a break (ห้อง|น้ำ). `breaks` is filled on first use.
+bool thaiWordEdge(std::string_view s, std::size_t pos, std::vector<std::size_t>& breaks,
+                  bool& haveBreaks) {
+    if (pos < 3 || pos >= s.size() || !thaiAt(s, pos - 3) || !thaiAt(s, pos))
+        return false;
+    if (!haveBreaks) {
+        breaks = text::thaiWordBreaks(s);
+        haveBreaks = true;
+    }
+    return std::binary_search(breaks.begin(), breaks.end(), pos);
+}
+
 int replaceAllIn(std::string& text, std::string_view find, std::string_view repl, bool matchCase,
                  bool wholeWord) {
     if (find.empty() || text.size() < find.size())
         return 0;
+    std::vector<std::size_t> breaks;  // Thai word breaks of the original text, on first use
+    bool haveBreaks = false;
     auto same = [&](std::size_t at) {
         for (std::size_t k = 0; k < find.size(); ++k) {
             char a = text[at + k], b = find[k];
             if (matchCase ? a != b : lowerAscii(a) != lowerAscii(b))
                 return false;
         }
-        if (wholeWord && ((at > 0 && isWordChar(text[at - 1])) ||
-                          (at + find.size() < text.size() && isWordChar(text[at + find.size()]))))
+        if (!wholeWord)
+            return true;
+        const std::size_t end = at + find.size();
+        if (at > 0 && isWordChar(text[at - 1]) && !thaiWordEdge(text, at, breaks, haveBreaks))
+            return false;
+        if (end < text.size() && isWordChar(text[end]) &&
+            !thaiWordEdge(text, end, breaks, haveBreaks))
             return false;
         return true;
     };
@@ -2066,6 +2094,11 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
             text.push_back(a);
     if (text.size() < find.size())
         return 0;
+    std::string plain;  // the characters as read, one byte per character atom
+    for (std::size_t a : text)
+        plain += atoms[a].ch;
+    std::vector<std::size_t> breaks;
+    bool haveBreaks = false;
     std::string safe;
     for (char c : repl) {
         if (c == '\\' || c == '{' || c == '}')
@@ -2087,8 +2120,10 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
         }
         if (same && wholeWord) {
             const std::size_t end = t + find.size();
-            if ((t > 0 && isWordChar(atoms[text[t - 1]].ch)) ||
-                (end < text.size() && isWordChar(atoms[text[end]].ch)))
+            if ((t > 0 && isWordChar(atoms[text[t - 1]].ch) &&
+                 !thaiWordEdge(plain, t, breaks, haveBreaks)) ||
+                (end < text.size() && isWordChar(atoms[text[end]].ch) &&
+                 !thaiWordEdge(plain, end, breaks, haveBreaks)))
                 same = false;
         }
         if (!same) {

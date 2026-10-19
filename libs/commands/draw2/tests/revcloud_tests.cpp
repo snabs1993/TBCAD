@@ -58,8 +58,8 @@ TEST_CASE("REVCLOUD from a rectangle object") {
     auto rect = f.addEntity(box);
     f.host.run("REVC", {"A", "25", "Object", ScriptItem::pick(rect, {0, 0}), ""});
     auto es = f.entities();
-    REQUIRE(es.size() == 2);  // the rectangle stays
-    const auto& pl = as<PolylineData>(es[1]);
+    REQUIRE(es.size() == 1);  // the rectangle became the cloud
+    const auto& pl = as<PolylineData>(es[0]);
     REQUIRE(pl.v.size() == 12);
     CHECK(close(pl.v[1].p, {25, 0}));
     CHECK(close(pl.v[0].bulge, kBulge));
@@ -77,8 +77,8 @@ TEST_CASE("REVCLOUD Reverse turns the arcs inwards") {
     auto rect = f.addEntity(box);
     f.host.run("REVC", {"A", "50", "O", ScriptItem::pick(rect, {0, 0}), "Yes"});
     auto es = f.entities();
-    REQUIRE(es.size() == 2);
-    CHECK(close(as<PolylineData>(es[1]).v[0].bulge, -kBulge));
+    REQUIRE(es.size() == 1);
+    CHECK(close(as<PolylineData>(es[0]).v[0].bulge, -kBulge));
 }
 
 TEST_CASE("REVCLOUD from a circle spaces the vertices evenly on it") {
@@ -86,8 +86,8 @@ TEST_CASE("REVCLOUD from a circle spaces the vertices evenly on it") {
     auto circle = f.addEntity(CircleData{{5, 5}, 10});
     f.host.run("REVC", {"A", "5", "O", ScriptItem::pick(circle, {15, 5}), ""});
     auto es = f.entities();
-    REQUIRE(es.size() == 2);
-    const auto& pl = as<PolylineData>(es[1]);
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
     REQUIRE(pl.v.size() == 13);  // ceil(62.83 / 5)
     for (const auto& v : pl.v)
         CHECK(close(distance(v.p, {5, 5}), 10, 0.05));
@@ -138,4 +138,58 @@ TEST_CASE(
     const auto& cal = as<PolylineData>(es[1]);
     CHECK(cal.v[0].startWidth > cal.v[0].endWidth);
     CHECK(cal.v[0].endWidth > 0);
+}
+
+TEST_CASE("REVCLOUD Object converts the object: the cloud takes its place and its properties") {
+    Fixture f;
+    Transaction tx = f.doc.begin("layer");
+    const LayerId red = tx.addLayer(Layer{.name = "CLOUDS", .color = Color::index(1)}).value();
+    const LayerId locked = tx.addLayer(Layer{.name = "LOCKED", .locked = true}).value();
+    tx.commit();
+    const EntityId circle = f.addEntity(CircleData{{0, 0}, 10});
+    const EntityId other = f.addEntity(CircleData{{100, 0}, 10});
+    Transaction tx2 = f.doc.begin("props");
+    REQUIRE(tx2.modify(circle, [&](Entity& e) { e.common.layer = red; }));
+    REQUIRE(tx2.modify(other, [&](Entity& e) { e.common.layer = locked; }));
+    tx2.commit();
+
+    f.host.run("REVC", {"A", "5", "O", ScriptItem::pick(circle, {10, 0}), ""});
+    CHECK(f.doc.find(circle) == nullptr);
+    auto es = f.entities();
+    REQUIRE(es.size() == 2);
+    CHECK(es[1]->common.layer == red);
+    CHECK(as<PolylineData>(es[1]).closed);
+    f.host.undo();  // one step brings the circle back
+    CHECK(f.doc.find(circle) != nullptr);
+    CHECK(f.entities().size() == 2);
+
+    // An object on a locked layer cannot be picked.
+    f.host.run("REVC", {"O"});
+    CHECK(f.host.feed({ScriptItem::pick(other, {110, 0})}).rejected == 1);
+    f.host.feed({ScriptItem::esc()});
+    CHECK(f.doc.find(other) != nullptr);
+}
+
+TEST_CASE("REVCLOUD refuses an arc length that would need too many arcs and skips repeated points") {
+    Fixture f;
+    f.host.run("REVC", {"A", "0.001", "Rectangular", "0,0", "100000,100000"});
+    CHECK(f.entities().empty());
+    CHECK(f.host.logContains("too small"));
+
+    // A rectangle drawn with its first corner given twice, and closed on the first point.
+    PolylineData box;
+    box.closed = true;
+    for (Vec2 p : {Vec2{0, 0}, Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 50}, Vec2{0, 50}, Vec2{0, 0}}) {
+        PolyVertex v;
+        v.p = p;
+        box.v.push_back(v);
+    }
+    const EntityId rect = f.addEntity(box);
+    f.host.run("REVC", {"A", "25", "O", ScriptItem::pick(rect, {50, 0}), ""});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& pl = as<PolylineData>(es[0]);
+    CHECK(pl.v.size() == 12);
+    for (std::size_t i = 0; i < pl.v.size(); ++i)
+        CHECK(distance(pl.v[i].p, pl.v[(i + 1) % pl.v.size()].p) > 1);
 }

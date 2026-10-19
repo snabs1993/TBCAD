@@ -554,15 +554,15 @@ TEST_CASE("PLOT asks before replacing a file that already exists") {
     CHECK(std::filesystem::file_size(out) > 3);
 }
 
-TEST_CASE("PLOT offers monochrome.ctb when the layout's style table cannot be found") {
+TEST_CASE("PLOT never stops to ask when the layout's style table cannot be found") {
     Fixture f;
     plot::setPlotStyleName(*f.host, "nowhere.ctb");
     auto out = f.path("m.pdf");
     f.host->clearLog();
-    auto r = f.host->run("PLOT", {"Export", "Yes", out});
+    auto r = f.host->run("PLOT", {"Export", out});  // a script: the file name comes next
     CHECK(r.finished);
     CHECK(f.host->logContains("was not found"));
-    CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
+    CHECK(plot::plotStyleName(*f.host) == "nowhere.ctb");
     CHECK(std::filesystem::exists(out));
 }
 

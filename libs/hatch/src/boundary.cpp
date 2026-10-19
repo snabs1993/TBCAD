@@ -6,6 +6,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include "tbcad/geom/box_grid.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/hatch/fill.h"
 
@@ -167,6 +168,7 @@ Result<LoopSet> buildLoops(const std::vector<Candidate>& cands, const BoundaryOp
         std::vector<BBox2> gapBoxes(pieces.size());
         for (std::size_t i = 0; i < pieces.size(); ++i)
             gapBoxes[i] = pieces[i].curve.bounds().inflated(opt.gapTolerance);
+        const geom::BoxGrid grid(gapBoxes);
         std::vector<Piece> connectors;
         for (std::size_t i = 0; i < pieces.size(); ++i) {
             const CurveRef& c = pieces[i].curve;
@@ -175,19 +177,23 @@ Result<LoopSet> buildLoops(const std::vector<Candidate>& cands, const BoundaryOp
             for (Vec2 p : {c.startPoint(), c.endPoint()}) {
                 bool touching = false;
                 double bestD = opt.gapTolerance;
+                std::size_t bestJ = 0;
                 std::optional<Vec2> target;
-                for (std::size_t j = 0; j < pieces.size() && !touching; ++j) {
-                    if (j == i || !gapBoxes[j].contains(p))
-                        continue;
+                // The grid visits pieces in no particular order: among equally near ones the
+                // highest index wins, so the result does not depend on it.
+                grid.query(BBox2{p, p}, [&](std::size_t j) {
+                    if (j == i || touching)
+                        return;
                     Vec2 q = pieces[j].curve.closestPoint(p);
                     double d = distance(p, q);
                     if (d <= kMerge) {
                         touching = true;
-                    } else if (d <= bestD) {
+                    } else if (d < bestD || (d == bestD && (!target || j > bestJ))) {
                         bestD = d;
+                        bestJ = j;
                         target = q;
                     }
-                }
+                });
                 if (!touching && target)
                     connectors.push_back({CurveRef::line(p, *target), -1});
             }
