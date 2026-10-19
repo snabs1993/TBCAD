@@ -165,7 +165,9 @@ cannot write). The file is written to `<output>.tmp` first and renamed.
   `.tbcad`) and library block is saved as R2000, R2007 and R12 and opened again. At R2000 and
   R2007 the same objects of the same kinds come back with the same properties; at R12 the kinds
   R12 has (lines, circles, arcs, polylines, points, texts, inserts, dimensions) may only grow, as
-  hatches, splines, notes and leaders turn into them. Layers are never lost. In the comparison a
+  hatches, splines, notes and leaders turn into them. Layers are never lost. A drawing made in
+  TBCAD with one object of every kind (multileader, table, array, multiline, ray ...) comes back
+  the same at R2000 and R2007. In the comparison a
   ByLayer hatch with its own fill colour equals the same hatch with that colour (DXF has one).
 * R12 has one paper space: the first layout's objects are written among the entities with group
   67 (they open as one layout), its viewports and the other layouts are left out with a
