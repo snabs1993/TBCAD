@@ -878,3 +878,29 @@ TEST_CASE("refitSpline on a long wavy curve is fast and within the tolerance") {
     }
     CHECK(worst <= 0.06);
 }
+
+TEST_CASE("whole-word replace in Thai uses the word breaks, since Thai has no spaces") {
+    Entity t;
+    TextData td;
+    td.utf8 = "ผมชื่อทดสอบ";  // ผม|ชื่อ|ทดสอบ
+    t.data = Indirect<TextData>(td);
+    auto r = replaceText(t, "ชื่อ", "นาม", true, true);
+    REQUIRE(r.has_value());
+    CHECK(entityAs<TextData>(r->entity)->utf8 == "ผมนามทดสอบ");
+    // Part of a word is not a whole word.
+    CHECK_FALSE(replaceText(t, "ทด", "x", true, true).has_value());
+    CHECK(replaceText(t, "ทด", "x", true, false).has_value());
+    // Latin beside Thai still counts as part of the word.
+    td.utf8 = "Aชื่อ";
+    t.data = Indirect<TextData>(td);
+    CHECK_FALSE(replaceText(t, "ชื่อ", "x", true, true).has_value());
+    // The same in MTEXT, across a formatting code.
+    Entity m;
+    MTextData md;
+    md.utf8 = "{\\b1;ผม}ชื่อทดสอบ";
+    m.data = Indirect<MTextData>(md);
+    auto mr = replaceText(m, "ชื่อ", "นาม", true, true);
+    REQUIRE(mr.has_value());
+    CHECK(entityAs<MTextData>(mr->entity)->utf8 == "{\\b1;ผม}นามทดสอบ");
+    CHECK_FALSE(replaceText(m, "สอบ", "x", true, true).has_value());
+}
