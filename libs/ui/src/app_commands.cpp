@@ -691,6 +691,59 @@ public:
     }
 };
 
+// ALIASEDIT: list, add, change or remove one command alias from the command line (the
+// Settings page edits the same table). Saved to aliases.json at once.
+class AliasEditCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ALIASEDIT"; }
+    std::string_view description() const override {
+        return "List, add, change or remove command aliases (as acad.pgp does)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::KeywordOptions ko;
+        ko.keywords = {"List", "Set", "Remove"};
+        ko.defaultKeyword = "List";
+        auto act = co_await ctx.getKeyword("Alias [List/Set/Remove] <List>", ko);
+        if (!act.ok())
+            co_return;
+        AliasEditor editor(ctx.registry(), ctx.host().settingsFolder() / "aliases.json");
+        if (act.keyword == "List") {
+            cmd::StringOptions opt;
+            opt.allowEmpty = true;
+            auto f = co_await ctx.getString("Command to list the aliases of (Enter for all)", opt);
+            if (f.status == cmd::Status::Cancel)
+                co_return;
+            const std::string filter = f.ok() ? cmd::trim(f.text) : std::string();
+            std::size_t n = 0;
+            for (const cmd::AliasEntry& r : editor.rows()) {
+                const std::string up = cmd::toUpperAscii(filter);
+                if (!filter.empty() && cmd::toUpperAscii(r.command) != up &&
+                    cmd::toUpperAscii(r.alias) != up)
+                    continue;
+                ctx.message(r.alias + " -> " + (r.command.empty() ? "(conflict)" : r.command) +
+                            (r.note.empty() ? "" : "  " + r.note));
+                ++n;
+            }
+            ctx.message(std::to_string(n) + " alias(es).");
+            co_return;
+        }
+        auto a = co_await ctx.getString(act.keyword == "Set" ? "Alias to set" : "Alias to remove");
+        if (!a.ok())
+            co_return;
+        const std::string alias = cmd::trim(a.text);
+        if (act.keyword == "Remove") {
+            const std::string err = editor.remove(alias);
+            ctx.message(err.empty() ? "Alias " + alias + " removed." : err);
+            co_return;
+        }
+        auto c = co_await ctx.getString("Command for " + alias);
+        if (!c.ok())
+            co_return;
+        const std::string err = editor.set(alias, cmd::trim(c.text));
+        ctx.message(err.empty() ? "Alias " + alias + " set." : err);
+    }
+};
+
 class KeysFileCommand final : public cmd::Command {
 public:
     KeysFileCommand(const char* name, bool import, const char* what)
@@ -755,6 +808,7 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<WorkspaceCommand>());
     (void)registry.add(std::make_unique<AliasImportCommand>());
     (void)registry.add(std::make_unique<AliasExportCommand>());
+    (void)registry.add(std::make_unique<AliasEditCommand>());
     (void)registry.add(std::make_unique<KeysFileCommand>("KEYSIMPORT", true,
                                                          "Load a key binding profile from a file"));
     (void)registry.add(

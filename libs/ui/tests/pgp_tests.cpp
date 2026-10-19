@@ -80,6 +80,28 @@ TEST_CASE("ALIASIMPORT and ALIASEXPORT run as commands and the import is saved")
     CHECK(core.history().back().find("Cannot read") != std::string::npos);
 }
 
+TEST_CASE("ALIASEDIT sets, lists and removes one alias and saves it") {
+    fs::path dir = tempDir("aliasedit");
+    auto reg = makeRegistry();
+    AppCore core(*reg, platform::AppPaths{dir / "cfg", dir / "data"});
+    for (const char* line : {"ALIASEDIT", "Set", "qq", "TESTLINE"})
+        core.submitText(line);
+    CHECK(reg->find("qq")->name() == "TESTLINE");
+    CHECK(fs::exists(dir / "cfg" / "aliases.json"));
+    for (const char* line : {"ALIASEDIT", "List", "TESTLINE"})
+        core.submitText(line);
+    bool listed = false;
+    for (const std::string& h : core.history())
+        listed = listed || h.find("QQ -> TESTLINE") != std::string::npos;
+    CHECK(listed);
+    for (const char* line : {"ALIASEDIT", "Set", "zz", "NOSUCHCOMMAND"})
+        core.submitText(line);
+    CHECK(reg->find("zz") == nullptr);
+    for (const char* line : {"ALIASEDIT", "Remove", "qq"})
+        core.submitText(line);
+    CHECK(reg->find("qq") == nullptr);
+}
+
 TEST_CASE("key binding profiles export, import and reject a bad file") {
     fs::path dir = tempDir("keys-profile");
     auto reg = makeRegistry();
