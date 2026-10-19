@@ -589,3 +589,19 @@ TEST_CASE("UNITS Precision sets the decimal places DIST, ID and ANGLE show") {
     CHECK(host.undo());  // the UNITS change undoes
     CHECK(linearPrecision(f.doc.header()) == 4);
 }
+
+TEST_CASE("LIST names every kind of object, the newer ones too") {
+    Document doc;
+    auto first = [&](Entity e) { return inquiry::describeEntity(doc, e, 4).front(); };
+    Entity ray;
+    ray.data = RayData{};
+    CHECK(first(ray).rfind("RAY", 0) == 0);
+    RayData x;
+    x.infinite = true;
+    Entity xline;
+    xline.data = x;
+    CHECK(first(xline).rfind("XLINE", 0) == 0);
+    Entity ml;
+    ml.data = Indirect<MLeaderData>(MLeaderData{});
+    CHECK(first(ml).rfind("MULTILEADER", 0) == 0);
+}

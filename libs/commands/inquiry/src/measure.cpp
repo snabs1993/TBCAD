@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 
 #include "tbcad/geom/geom.h"
 #include "tbcad/inquiry/inquiry.h"
@@ -128,11 +129,15 @@ std::string formatAreaIn(const Document& doc, double mm2, Precision precision) {
 
 std::vector<std::string> describeEntity(const Document& doc, const Entity& e, Precision prec) {
     std::vector<std::string> out;
-    static const char* const kNames[] = {"LINE",    "CIRCLE",    "ARC",    "LWPOLYLINE", "POINT",
-                                         "ELLIPSE", "SPLINE",    "TEXT",   "MTEXT",      "HATCH",
-                                         "INSERT",  "DIMENSION", "LEADER", "PROXY"};
+    static const char* const kNames[] = {
+        "LINE",   "CIRCLE", "ARC",   "LWPOLYLINE", "POINT",  "ELLIPSE",
+        "SPLINE", "TEXT",   "MTEXT", "HATCH",      "INSERT", "DIMENSION",
+        "LEADER", "PROXY",  "TABLE", "RAY",        "MLINE",  "MULTILEADER"};
+    static_assert(std::size(kNames) == kEntityKindCount, "a name for every entity kind");
     const auto idx = static_cast<std::size_t>(kind(e));
-    out.push_back(std::string(kNames[idx]) + "  Handle = " + std::to_string(e.common.id.value));
+    const auto* ray = entityAs<RayData>(e);
+    const std::string name = ray && ray->infinite ? "XLINE" : kNames[idx];
+    out.push_back(name + "  Handle = " + std::to_string(e.common.id.value));
     const Layer* layer = doc.layer(e.common.layer);
     out.push_back("  Layer: " + (layer ? layer->name : std::string("?")));
     auto colorName = [](const Color& c) -> std::string {
