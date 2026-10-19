@@ -830,10 +830,48 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
         const BlockDef* def = nullptr;
-        co_await pickUnderlay(ctx, true, def, "Enter the picture to adjust");
+        co_await pickUnderlay(ctx, false, def, "Enter the picture or PDF to adjust");
         if (!def)
             co_return;
         const std::string blockName = def->name;
+        if (!underlay::isImagePath(def->xrefPath)) {
+            // A PDF page is drawn in adjusted colours: rewrite the stored path, read it again.
+            underlay::Spec spec = underlay::parseSpec(def->xrefPath);
+            auto co = co_await ctx.getReal(
+                "Enter the contrast, 0 to 100 <" + std::to_string(spec.pdf.contrast) + ">",
+                cmd::RealOptions{.defaultValue = spec.pdf.contrast});
+            if (!co.ok())
+                co_return;
+            auto mono = co_await ctx.getKeyword(
+                "Monochrome [Yes/No] <" + std::string(spec.pdf.monochrome ? "Yes" : "No") + ">",
+                cmd::KeywordOptions{.keywords = {"Yes", "No"},
+                                    .defaultKeyword = spec.pdf.monochrome ? "Yes" : "No"});
+            if (mono.status == cmd::Status::Cancel)
+                co_return;
+            spec.pdf.contrast = static_cast<int>(std::lround(std::clamp(co.value, 0.0, 100.0)));
+            spec.pdf.monochrome = mono.keyword == "Yes";
+            const std::string stored = underlay::makeSpec(spec.file, spec.pdf);
+            auto loaded = xref::loadStored(stored, hostFileOf(ctx));
+            if (!loaded) {
+                ctx.message(loaded.error().message);
+                co_return;
+            }
+            const BlockId id = def->id;
+            auto mod = ctx.tx().modifyBlock(id, [&](BlockDef& b) { b.xrefPath = stored; });
+            if (!mod) {
+                ctx.message(mod.error().message);
+                co_return;
+            }
+            auto r = xref::reload(ctx.tx(), doc, id, loaded.value());
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            ctx.setUndoLabel("Adjust " + blockName);
+            ctx.message("\"" + blockName + "\": contrast " + std::to_string(spec.pdf.contrast) +
+                        (spec.pdf.monochrome ? ", monochrome" : ""));
+            co_return;
+        }
         underlay::ImageParams params = underlay::imageParams(doc.header(), blockName);
         auto br = co_await ctx.getReal(
             "Enter the brightness, 0 to 100 <" + std::to_string(params.brightness) + ">",
@@ -847,6 +885,13 @@ public:
             co_return;
         params.brightness = static_cast<int>(std::lround(std::clamp(br.value, 0.0, 100.0)));
         params.contrast = static_cast<int>(std::lround(std::clamp(co.value, 0.0, 100.0)));
+        auto mono = co_await ctx.getKeyword(
+            "Monochrome [Yes/No] <" + std::string(params.monochrome ? "Yes" : "No") + ">",
+            cmd::KeywordOptions{.keywords = {"Yes", "No"},
+                                .defaultKeyword = params.monochrome ? "Yes" : "No"});
+        if (mono.status == cmd::Status::Cancel)
+            co_return;
+        params.monochrome = mono.keyword == "Yes";
         auto set = underlay::setImageParams(ctx.tx(), blockName, params);
         if (!set) {
             ctx.message(set.error().message);

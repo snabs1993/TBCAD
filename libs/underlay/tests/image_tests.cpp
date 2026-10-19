@@ -127,6 +127,7 @@ TEST_CASE("display parameters round-trip through the header") {
     Document doc;
     ImageParams p;
     p.fade = 60;
+    p.monochrome = true;
     p.u0 = 0.25;
     p.v1 = 0.5;
     {

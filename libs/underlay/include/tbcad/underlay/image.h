@@ -54,9 +54,10 @@ struct ImageParams {
     int frame = 2;
     // Bitonal (black and white only) pictures: the white background does not show (DXF 70 bit 8).
     bool transparent = false;
+    bool monochrome = false;  // shown in grey tones (by luminance)
     std::vector<Vec2> clip{};
     bool clipped() const { return u0 > 0 || v0 > 0 || u1 < 1 || v1 < 1 || clip.size() >= 3; }
-    bool adjusted() const { return brightness != 50 || contrast != 50; }
+    bool adjusted() const { return brightness != 50 || contrast != 50 || monochrome; }
     bool derived() const { return adjusted() || transparent || clip.size() >= 3; }
     friend bool operator==(const ImageParams&, const ImageParams&) = default;
 };

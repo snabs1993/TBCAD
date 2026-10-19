@@ -278,6 +278,8 @@ PlotSettings loadSettings(const cmd::IHost& h) {
     s.marginMm = getD(h, "plot.margin", s.marginMm);
     s.lineweights = getB(h, "plot.lineweights", s.lineweights);
     s.transparency = getB(h, "plot.transparency", s.transparency);
+    s.lineweightScale = std::max(0.01, getD(h, "plot.lwscale", s.lineweightScale));
+    s.screening = std::clamp(static_cast<int>(getD(h, "plot.screening", s.screening)), 0, 100);
     if (auto v = h.setting("plot.color")) {
         if (*v == "mono")
             s.color = ColorMode::Monochrome;
@@ -308,6 +310,8 @@ void saveSettings(cmd::IHost& h, const PlotSettings& s) {
     h.setSetting("plot.margin", fmt(s.marginMm));
     h.setSetting("plot.lineweights", s.lineweights ? "1" : "0");
     h.setSetting("plot.transparency", s.transparency ? "1" : "0");
+    h.setSetting("plot.lwscale", fmt(s.lineweightScale));
+    h.setSetting("plot.screening", std::to_string(s.screening));
     h.setSetting("plot.color", s.color == ColorMode::Monochrome  ? "mono"
                                : s.color == ColorMode::Greyscale ? "grey"
                                                                  : "color");

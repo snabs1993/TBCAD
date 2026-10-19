@@ -87,3 +87,7 @@ or frozen in the layer list and stays off in plots. Layers the file hides by def
 Content outside any layer is on the `PDF` layer. `XCLIP` clips a PDF underlay like any block, and
 plots honour the clip and the layer state. Pictures plot with their polygon clip, brightness and
 contrast, and with the frame when `IMAGEFRAME Plot` is set.
+
+## Contrast and monochrome
+
+`IMAGEADJUST` (IAD) works on pictures and on PDF underlays. It asks for the contrast (0 to 100, 50 as is) and for Monochrome (Yes/No); pictures also ask for the brightness first. A PDF page is read again with the new colours (stored as `#contrast=70,mono=1` in the path), so fade, contrast and monochrome combine. Plot: the PLOT menu has `LWScale` (every lineweight times a factor) and `Screening` (the whole plot at a lighter tone, percent); both are in the page setup too.

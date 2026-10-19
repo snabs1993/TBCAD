@@ -136,6 +136,8 @@ ImageParamTable readImageParams(const Header& header) {
             }
             if (f.size() >= 11)
                 p.transparent = f[10] == "1";
+            if (f.size() >= 12)
+                p.monochrome = f[11] == "1";
             if (f.size() >= 10 && !f[9].empty()) {  // polygon: u,v;u,v;...
                 std::istringstream ps(f[9]);
                 std::string item;
@@ -174,7 +176,8 @@ void writeImageParams(Header& header, const ImageParamTable& table) {
             std::snprintf(pt, sizeof pt, "%s%.9g,%.9g", i ? ";" : "", p.clip[i].x, p.clip[i].y);
             text += pt;
         }
-        text += p.transparent ? "\t1\n" : "\t0\n";
+        text += p.transparent ? "\t1" : "\t0";
+        text += p.monochrome ? "\t1\n" : "\n";
     }
     if (text.empty())
         header.custom.erase(kImageParamsKey);
@@ -247,7 +250,8 @@ std::shared_ptr<const ImageData> ImageCache::adjusted(std::uint64_t key,
         return src;
     }
     std::string id = std::to_string(key) + "|" + std::to_string(params.brightness) + "|" +
-                     std::to_string(params.contrast) + (clear ? "|t" : "");
+                     std::to_string(params.contrast) + (clear ? "|t" : "") +
+                     (params.monochrome ? "|m" : "");
     if (poly)
         for (const Vec2& p : params.clip) {
             char buf[64];
@@ -265,9 +269,16 @@ std::shared_ptr<const ImageData> ImageCache::adjusted(std::uint64_t key,
             for (int i = 0; i < 256; ++i)
                 lut[i] = static_cast<std::uint8_t>(
                     std::clamp((i - 128.0) * gain + 128.0 + off, 0.0, 255.0) + 0.5);
-            for (std::size_t i = 0; i + 3 < img->rgba.size(); i += 4)
+            for (std::size_t i = 0; i + 3 < img->rgba.size(); i += 4) {
+                if (params.monochrome) {
+                    const auto g = static_cast<std::uint8_t>(
+                        std::lround(0.2126 * img->rgba[i] + 0.7152 * img->rgba[i + 1] +
+                                    0.0722 * img->rgba[i + 2]));
+                    img->rgba[i] = img->rgba[i + 1] = img->rgba[i + 2] = g;
+                }
                 for (int c = 0; c < 3; ++c)
                     img->rgba[i + c] = lut[img->rgba[i + c]];
+            }
         }
         if (clear)  // the white background of a bitonal picture
             for (std::size_t i = 0; i + 3 < img->rgba.size(); i += 4)

@@ -95,6 +95,38 @@ TEST_CASE("colours are faded toward grey, the fade is adjustable") {
     CHECK(faded.g == 80);
 }
 
+TEST_CASE("monochrome and contrast change the colours, and the stored path keeps them") {
+    std::string pdf = simplePdf("1 0 0 RG 0 0 m 50 50 l S");
+    auto colorOf = [](const Document& d) {
+        Color c{};
+        d.forEachEntity([&](const Entity& ent) { c = ent.common.color; });
+        return c;
+    };
+    PdfOptions mono;
+    mono.fadePercent = 0;
+    mono.monochrome = true;
+    auto a = importPdf(bytesOf(pdf), mono);
+    REQUIRE(a.ok());
+    const Color g = colorOf(*a.value());
+    CHECK(g.r == g.g);
+    CHECK(g.g == g.b);
+    CHECK(g.r == 54);  // 0.2126 * 255
+    PdfOptions flat;
+    flat.fadePercent = 0;
+    flat.contrast = 0;  // everything collapses to mid grey
+    auto b = importPdf(bytesOf(pdf), flat);
+    CHECK(colorOf(*b.value()) == Color::rgb(128, 128, 128));
+    PdfOptions both;
+    both.page = 2;
+    both.contrast = 70;
+    both.monochrome = true;
+    const Spec sp = parseSpec(makeSpec("a.pdf", both));
+    CHECK(sp.file == "a.pdf");
+    CHECK(sp.pdf.page == 2);
+    CHECK(sp.pdf.contrast == 70);
+    CHECK(sp.pdf.monochrome);
+}
+
 TEST_CASE("white and page-sized fills are paper, not drawing") {
     std::string pdf = simplePdf(
         "1 1 1 rg 0 0 200 100 re f\n"        // white page background

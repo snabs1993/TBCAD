@@ -582,3 +582,17 @@ TEST_CASE("a plot style chosen after the layout overrides the layout's page setu
               .finished);
     CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
 }
+
+TEST_CASE("the PLOT menu sets the lineweight scale and the screening, and keeps them") {
+    Fixture f;
+    CHECK(f.host->run("EXPORTSVG", {"LWScale", "2", "Screening", "40", "", f.path("lw.svg")})
+              .finished);
+    const auto s = plot::loadSettings(*f.host);
+    CHECK(s.lineweightScale == doctest::Approx(2));
+    CHECK(s.screening == 40);
+    CHECK(f.host->run("PAGESETUP", {"Save", "Light"}).finished);
+    auto saved = layout::findPageSetup(f.doc, "light");
+    REQUIRE(saved);
+    CHECK(saved->settings.screening == 40);
+    CHECK(saved->settings.lineweightScale == doctest::Approx(2));
+}

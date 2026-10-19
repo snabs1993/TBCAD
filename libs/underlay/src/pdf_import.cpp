@@ -587,9 +587,18 @@ Result<std::unique_ptr<Document>> importPdf(std::span<const std::byte> bytes,
         }
         const double fade = std::clamp(options.fadePercent, 0.0, 95.0) / 100.0;
         constexpr double kGrey = 160;
+        const int cont = std::clamp(options.contrast, 0, 100);
+        const double gain = cont <= 50 ? cont / 50.0 : 1.0 + (cont - 50) / 50.0 * 3.0;
         auto chan = [&](double v) {
             double c = std::clamp(v, 0.0, 1.0) * 255.0;
+            c = std::clamp(128.0 + (c - 128.0) * gain, 0.0, 255.0);
             return static_cast<std::uint8_t>(std::lround(c + (kGrey - c) * fade));
+        };
+        auto colorOf = [&](const auto& rgb) {
+            double r = rgb.r, g = rgb.g, b = rgb.b;
+            if (options.monochrome)
+                r = g = b = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            return Color::rgb(chan(r), chan(g), chan(b));
         };
         for (const OutPoly& o : in.out) {
             PolylineData pl;
@@ -600,7 +609,7 @@ Result<std::unique_ptr<Document>> importPdf(std::span<const std::byte> bytes,
             Entity e;
             e.common.layer =
                 o.layer >= 0 ? groupLayers[static_cast<std::size_t>(o.layer)] : lid.value();
-            e.common.color = Color::rgb(chan(o.color.r), chan(o.color.g), chan(o.color.b));
+            e.common.color = colorOf(o.color);
             e.data = std::move(pl);
             auto added = tx.add(std::move(e));
             if (!added)
@@ -662,6 +671,10 @@ Spec parseSpec(std::string_view stored) {
             opt.page = std::max(1, static_cast<int>(v));
         else if (key == "fade")
             opt.fadePercent = std::clamp(v, 0.0, 95.0);
+        else if (key == "contrast")
+            opt.contrast = std::clamp(static_cast<int>(v), 0, 100);
+        else if (key == "mono")
+            opt.monochrome = v != 0;
         any = true;
         if (comma == std::string_view::npos)
             break;
@@ -692,6 +705,10 @@ std::string makeSpec(std::string_view file, const PdfOptions& options) {
         add("page=" + std::to_string(options.page));
     if (options.fadePercent != def.fadePercent)
         add("fade=" + fmt(options.fadePercent));
+    if (options.contrast != def.contrast)
+        add("contrast=" + std::to_string(options.contrast));
+    if (options.monochrome)
+        add("mono=1");
     if (!spec.empty())
         out += "#" + spec;
     return out;

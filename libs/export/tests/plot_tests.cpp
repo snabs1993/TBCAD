@@ -598,6 +598,31 @@ TEST_CASE("the wipeout frame is plotted (1), screen only (2) or hidden (0)") {
     CHECK(count("0") == 0);
 }
 
+TEST_CASE("screening lightens every plotted colour, lineweight scale thickens the pens") {
+    Document doc;
+    {
+        auto tx = doc.begin("add");
+        Entity e = line({0, 0}, {30, 0});
+        e.common.color = Color::rgb(200, 40, 0);
+        REQUIRE(tx.add(e).ok());
+        tx.commit();
+    }
+    auto pen = [&](int screening, double lw) {
+        PlotSettings s;
+        s.paperName = "A4";
+        s.screening = screening;
+        s.lineweightScale = lw;
+        auto sheet = buildSheet(doc, s);
+        REQUIRE(sheet.ok());
+        return std::get<PlotPath>(sheet.value().prims[0]).style;
+    };
+    const PlotStyle full = pen(100, 1), half = pen(50, 2);
+    CHECK(half.color.r == std::lround((full.color.r + 255) / 2.0));
+    CHECK(half.color.g == std::lround((full.color.g + 255) / 2.0));
+    CHECK(half.widthMm == doctest::Approx(full.widthMm * 2));
+    CHECK(pen(0, 1).color.g == 255);  // 0 % is the white sheet
+}
+
 TEST_CASE("layers with plot off, off layers and hidden entities are skipped") {
     Document doc;
     LayerId noPlot;
