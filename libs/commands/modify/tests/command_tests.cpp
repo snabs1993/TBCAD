@@ -2021,3 +2021,76 @@ TEST_CASE("MATCHPROP does not touch objects on locked layers") {
     CHECK(f.get(b).common.color == Color::byLayer());
     CHECK(f.get(b).common.layer == locked);
 }
+
+TEST_CASE("MATCHPROP passes on text justification and keeps the text where it hangs") {
+    Fixture f;
+    TextData ta;
+    ta.h = HAlign::Center;
+    ta.v = VAlign::Middle;
+    ta.position = ta.alignPoint = {0, 0};
+    ta.utf8 = "src";
+    TextData tb;
+    tb.position = tb.alignPoint = {20, 5};
+    tb.utf8 = "dst";
+    TextData tc;  // Fit uses two points: left alone
+    tc.h = HAlign::Fit;
+    tc.position = {0, 30};
+    tc.alignPoint = {10, 30};
+    tc.utf8 = "fit";
+    EntityId a = f.add(ta);
+    EntityId b = f.add(tb);
+    EntityId c = f.add(tc);
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {0, 0}), ScriptItem::pick(b, {20, 5}),
+                             ScriptItem::pick(c, {5, 30}), ScriptItem::esc()});
+    const auto* t = entityAs<TextData>(f.get(b));
+    CHECK(t->h == HAlign::Center);
+    CHECK(t->v == VAlign::Middle);
+    CHECK(near(t->alignPoint, {20, 5}));
+    const auto* u = entityAs<TextData>(f.get(c));
+    CHECK(u->h == HAlign::Fit);
+    CHECK(near(u->alignPoint, {10, 30}));
+    // And back to Left/Baseline: the anchor becomes the insertion point.
+    TextData td;
+    td.utf8 = "left";
+    td.position = td.alignPoint = {50, 50};
+    EntityId d = f.add(td);
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(d, {50, 50}), ScriptItem::pick(b, {20, 5}), ScriptItem::esc()});
+    t = entityAs<TextData>(f.get(b));
+    CHECK(t->h == HAlign::Left);
+    CHECK(near(t->position, {20, 5}));
+}
+
+TEST_CASE("MATCHPROP gives dimensions and leaders the source's style") {
+    Fixture f;
+    DimStyleId big{};
+    {
+        Transaction tx = f.doc.begin("style");
+        DimStyle st;
+        st.name = "Big";
+        st.textHeight = 5;
+        big = tx.addDimStyle(st).value();
+        tx.commit();
+    }
+    DimensionData da;
+    da.defPts = {Vec2{0, 0}, Vec2{10, 0}, Vec2{10, 3}, Vec2{}};
+    da.style = big;
+    DimensionData db;
+    db.defPts = {Vec2{0, 20}, Vec2{10, 20}, Vec2{10, 23}, Vec2{}};
+    EntityId a = f.add(da);
+    EntityId b = f.add(db);
+    LeaderData la;
+    la.vertices = {{0, 40}, {5, 45}};
+    la.style = big;
+    LeaderData lb;
+    lb.vertices = {{20, 40}, {25, 45}};
+    EntityId c = f.add(la);
+    EntityId d = f.add(lb);
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {5, 3}), ScriptItem::pick(b, {5, 23}), ScriptItem::esc()});
+    CHECK(entityAs<DimensionData>(f.get(b))->style == big);
+    CHECK(near(entityAs<DimensionData>(f.get(b))->defPts[1], {10, 20}));
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(c, {0, 40}), ScriptItem::pick(d, {20, 40}), ScriptItem::esc()});
+    CHECK(entityAs<LeaderData>(f.get(d))->style == big);
+}
