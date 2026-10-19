@@ -17,6 +17,16 @@ struct Style {
     std::vector<double> offsets{0.5, -0.5};  // one line each, any order
     bool startCap = false;                   // a line across the first end
     bool endCap = false;                     // a line across the last end
+    // Per line, in the order of `offsets`; shorter or empty = every line takes the multiline's.
+    std::vector<int> colors{};             // palette index; 256 = as the multiline, 0 = ByBlock
+    std::vector<std::string> linetypes{};  // linetype name; empty = as the multiline
+    int fill = -1;        // palette index of the fill between the outer lines; -1 none
+    bool joints = false;  // a line across each corner
+    int colorOf(std::size_t line) const { return line < colors.size() ? colors[line] : 256; }
+    const std::string& linetypeOf(std::size_t line) const {
+        static const std::string none;
+        return line < linetypes.size() ? linetypes[line] : none;
+    }
 };
 
 // The style every drawing has: two lines, 1 unit apart, no caps.
@@ -36,6 +46,8 @@ bool removeStyle(Header& header, const std::string& name);
 struct Strokes {
     std::vector<std::vector<Vec2>> lines{};
     std::vector<bool> closed{};
+    std::vector<int> element{};  // per line: the style line it belongs to, -1 for caps and joints
+    std::vector<std::vector<Vec2>> fill{};  // rings of the style's fill (even-odd), if any
 };
 Strokes strokes(const Document& doc, const MlineData& d);
 Strokes strokes(const MlineData& d, const Style& style);

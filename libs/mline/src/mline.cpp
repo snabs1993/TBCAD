@@ -49,6 +49,22 @@ std::string encode(const Style& s) {
     for (std::size_t i = 0; i < s.offsets.size(); ++i)
         out += (i ? "," : "") + num(s.offsets[i]);
     out += "\n";
+    if (!s.colors.empty()) {
+        out += "colors=";
+        for (std::size_t i = 0; i < s.colors.size(); ++i)
+            out += (i ? "," : "") + std::to_string(s.colors[i]);
+        out += "\n";
+    }
+    if (!s.linetypes.empty()) {
+        out += "linetypes=";
+        for (std::size_t i = 0; i < s.linetypes.size(); ++i)
+            out += (i ? "," : "") + s.linetypes[i];
+        out += "\n";
+    }
+    if (s.fill >= 0)
+        out += "fill=" + std::to_string(s.fill) + "\n";
+    if (s.joints)
+        out += "joints=1\n";
     return out;
 }
 
@@ -66,6 +82,26 @@ std::optional<Style> decode(const std::string& name, const std::string& text) {
         } else if (key == "caps" && val.size() >= 2) {
             s.startCap = val[0] == '1';
             s.endCap = val[1] == '1';
+        } else if (key == "colors") {
+            std::istringstream in(val);
+            std::string item;
+            while (std::getline(in, item, ','))
+                s.colors.push_back(std::clamp(std::atoi(item.c_str()), 0, 256));
+        } else if (key == "linetypes") {
+            std::string item;
+            std::size_t from = 0;
+            while (true) {
+                const auto comma = val.find(',', from);
+                s.linetypes.push_back(val.substr(
+                    from, comma == std::string::npos ? std::string::npos : comma - from));
+                if (comma == std::string::npos)
+                    break;
+                from = comma + 1;
+            }
+        } else if (key == "fill") {
+            s.fill = std::clamp(std::atoi(val.c_str()), -1, 256);
+        } else if (key == "joints") {
+            s.joints = val == "1";
         } else if (key == "offsets") {
             std::istringstream in(val);
             std::string item;
@@ -82,6 +118,10 @@ std::optional<Style> decode(const std::string& name, const std::string& text) {
     }
     if (s.offsets.empty() || s.offsets.size() > 16)
         return std::nullopt;
+    if (s.colors.size() > s.offsets.size())
+        s.colors.resize(s.offsets.size());
+    if (s.linetypes.size() > s.offsets.size())
+        s.linetypes.resize(s.offsets.size());
     return s;
 }
 
@@ -186,6 +226,7 @@ Strokes strokes(const MlineData& d, const Style& style) {
         if (gaps.empty()) {
             out.lines.push_back(std::move(line));
             out.closed.push_back(closed);
+            out.element.push_back(static_cast<int>(k));
             continue;
         }
         if (closed)
@@ -208,6 +249,7 @@ Strokes strokes(const MlineData& d, const Style& style) {
             piece.push_back(at(b));
             out.lines.push_back(std::move(piece));
             out.closed.push_back(false);
+            out.element.push_back(static_cast<int>(k));
         };
         for (const auto& [a, b] : gaps) {
             emit(from, std::max(from, a));
@@ -225,11 +267,33 @@ Strokes strokes(const MlineData& d, const Style& style) {
                       [](const auto& a, const auto& b) { return a.first < b.first; });
             out.lines.push_back({ends.front().second, ends.back().second});
             out.closed.push_back(false);
+            out.element.push_back(-1);
         };
         if (style.startCap)
             cap(0);
         if (style.endCap)
             cap(n - 1);
+    }
+    // The outer lines of the style (lowest and highest offset) bound its fill and its joints.
+    if (style.offsets.size() >= 2) {
+        const std::size_t low = order.front(), high = order.back();
+        if (style.joints) {
+            for (std::size_t i = closed ? 0 : 1; i + (closed ? 0 : 1) < n; ++i) {
+                out.lines.push_back({capPoints[low][i], capPoints[high][i]});
+                out.closed.push_back(false);
+                out.element.push_back(-1);
+            }
+        }
+        if (style.fill >= 0) {
+            if (closed) {
+                out.fill.push_back(capPoints[low]);
+                out.fill.push_back(capPoints[high]);
+            } else {
+                std::vector<Vec2> ring = capPoints[low];
+                ring.insert(ring.end(), capPoints[high].rbegin(), capPoints[high].rend());
+                out.fill.push_back(std::move(ring));
+            }
+        }
     }
     return out;
 }
@@ -256,6 +320,17 @@ Result<std::vector<Entity>> explodeMline(const Document& doc, const Entity& e) {
         Entity n;
         n.common = e.common;
         n.common.id = {};
+        if (const auto style = findStyle(doc, d->style); style && s.element[i] >= 0) {
+            const std::size_t k = static_cast<std::size_t>(s.element[i]);
+            const int c = style->colorOf(k);
+            if (c == 0)
+                n.common.color = Color::byBlock();
+            else if (c < 256)
+                n.common.color = Color::index(static_cast<std::uint8_t>(c));
+            if (!style->linetypeOf(k).empty())
+                if (const Linetype* lt = doc.linetypeByName(style->linetypeOf(k)))
+                    n.common.linetype = lt->id;
+        }
         n.data = std::move(pl);
         out.push_back(std::move(n));
     }

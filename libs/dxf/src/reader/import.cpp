@@ -686,7 +686,9 @@ std::optional<mline::Style> mlineStyleOf(const std::vector<std::pair<int, std::s
     mline::Style st;
     st.offsets.clear();
     bool named = false;
-    int flags = 0;
+    int flags = 0, fillColor = 256;
+    std::vector<int> colors;
+    std::vector<std::string> linetypes;
     for (const auto& [c, v] : g) {
         if (c == 2 && !named) {
             st.name = v;
@@ -697,12 +699,33 @@ std::optional<mline::Style> mlineStyleOf(const std::vector<std::pair<int, std::s
             flags = std::atoi(v.c_str());
         } else if (c == 49) {
             st.offsets.push_back(std::strtod(v.c_str(), nullptr) * k);
+            colors.push_back(256);
+            linetypes.emplace_back();
+        } else if (c == 62) {
+            const int aci = std::atoi(v.c_str());
+            if (colors.empty())
+                fillColor = aci;  // before the first element: the fill colour
+            else
+                colors.back() = aci >= 0 && aci <= 256 ? aci : 256;
+        } else if (c == 6 && !linetypes.empty()) {
+            std::string lt = v;
+            std::string low = lt;
+            for (char& ch : low)
+                ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            linetypes.back() = low == "bylayer" || low == "byblock" ? std::string() : lt;
         }
     }
     if (!named || st.name.empty() || st.offsets.empty())
         return std::nullopt;
     st.startCap = (flags & (16 | 32 | 64)) != 0;
     st.endCap = (flags & (256 | 512 | 1024)) != 0;
+    st.joints = (flags & 2) != 0;
+    st.fill = (flags & 1) ? (fillColor >= 0 && fillColor <= 256 ? fillColor : 256) : -1;
+    if (std::any_of(colors.begin(), colors.end(), [](int c) { return c != 256; }))
+        st.colors = std::move(colors);
+    if (std::any_of(linetypes.begin(), linetypes.end(),
+                    [](const std::string& l) { return !l.empty(); }))
+        st.linetypes = std::move(linetypes);
     return st;
 }
 }  // namespace

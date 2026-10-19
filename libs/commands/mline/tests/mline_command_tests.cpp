@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <set>
+#include <variant>
+
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
@@ -178,4 +181,51 @@ TEST_CASE("MLEDIT Cross and Tee cut the walls where they meet") {
     CHECK(t->v.back().x == doctest::Approx(20));
     CHECK(t->v.back().y > 0);
     CHECK(t->v.back().y < 10);
+}
+
+TEST_CASE("MLSTYLE gives each line a colour, and the display and explode use them") {
+    Fx f;
+    f.host->run("MLSTYLE", {"New", "TWO", "0.5 -0.5", "None"});
+    f.host->run("MLSTYLE", {"Colors", "TWO", "1 3"});
+    f.host->run("MLSTYLE", {"Fill", "TWO", "5"});
+    f.host->run("MLSTYLE", {"Joints", "TWO", "On"});
+    auto s = mline::findStyle(f.doc, "TWO");
+    REQUIRE(s);
+    REQUIRE(s->colors.size() == 2);
+    CHECK(s->colors[0] == 1);
+    CHECK(s->colors[1] == 3);
+    CHECK(s->fill == 5);
+    CHECK(s->joints);
+    // A wrong count changes nothing.
+    f.host->run("MLSTYLE", {"Colors", "TWO", "1"});
+    CHECK(mline::findStyle(f.doc, "TWO")->colors.size() == 2);
+
+    f.host->run("MLSTYLE", {"Current", "TWO"});
+    f.host->run("MLINE", {"0,0", "100,0", "100,50", ""});
+    REQUIRE(f.mline());
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) != EntityKind::MLine)
+            return;
+        DisplayList dl;
+        geom::buildDisplay(f.doc, e, geom::DisplayContext{}, dl);
+        int fills = 0, lines = 0;
+        std::set<std::uint32_t> colours;
+        for (const DisplayItem& it : dl.items) {
+            if (std::holds_alternative<DisplayFill>(it)) {
+                ++fills;
+            } else if (const auto* pl = std::get_if<DisplayPolyline>(&it)) {
+                ++lines;
+                colours.insert((pl->style.color.r << 16) | (pl->style.color.g << 8) |
+                               pl->style.color.b);
+            }
+        }
+        CHECK(fills == 1);
+        CHECK(lines == 3);  // two lines and the joint at the corner
+        CHECK(colours.size() >= 2);
+        auto ex = mline::explodeMline(f.doc, e);
+        REQUIRE(ex);
+        REQUIRE(ex.value().size() == 3);
+        CHECK(ex.value()[0].common.color == Color::index(1));
+        CHECK(ex.value()[1].common.color == Color::index(3));
+    });
 }
