@@ -656,6 +656,20 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
          at = rt.bytes.find("ATTRIB", at + 1))
         ++attribs;
     CHECK(attribs == 2);
+    // The INSERT owns its ATTRIBs and the SEQEND, which has a handle of its own.
+    const std::size_t ins = rt.bytes.find("\r\nINSERT\r\n");
+    REQUIRE(ins != std::string::npos);
+    const std::size_t h = rt.bytes.find("\r\n5\r\n", ins) + 5;
+    const std::string insHandle = rt.bytes.substr(h, rt.bytes.find("\r\n", h) - h);
+    const std::size_t attrib = rt.bytes.find("\r\nATTRIB\r\n", ins);
+    REQUIRE(attrib != std::string::npos);
+    CHECK(rt.bytes.find("330\r\n" + insHandle + "\r\n", attrib) <
+          rt.bytes.find("\r\nSEQEND\r\n", attrib));
+    const std::size_t seqend = rt.bytes.find("\r\nSEQEND\r\n", attrib);
+    REQUIRE(seqend != std::string::npos);
+    CHECK(rt.bytes.compare(seqend + 10, 3, "5\r\n") == 0);
+    CHECK(rt.bytes.find("330\r\n" + insHandle + "\r\n100\r\nAcDbEntity", seqend) ==
+          rt.bytes.find("330\r\n", seqend));
 }
 
 TEST_CASE("a dynamic block is exported as its current geometry") {

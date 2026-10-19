@@ -225,6 +225,7 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
         if (L().entHandle)
             L().handlesWritten.insert(L().entHandle);
         L().entHandle = 0;
+        L().lastHead = self;
         o.h(5, self);
         if (p.dict) {
             PendingDict pd;
@@ -1369,6 +1370,7 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                 if (const auto* t = entityAs<TextData>(*e); t && t->attdef && !t->attdef->constant)
                     defs.push_back(t);
     head("INSERT", p, owner, "AcDbBlockReference");
+    const std::uint64_t insertHandle = L().lastHead;  // owns its ATTRIBs and SEQEND
     Out& o = *L().o;
     if (!defs.empty())
         o.i(66, 1);
@@ -1429,9 +1431,14 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
             }
         if (!found)
             value = def->attdef->defaultValue;
-        writeTextRecord(p, t, owner, "ATTRIB", value);
+        writeTextRecord(p, t, r12_ ? owner : insertHandle, "ATTRIB", value);
     }
     o.zero("SEQEND");
+    if (!r12_) {
+        o.h(5, newHandle());
+        o.h(330, insertHandle);
+        o.raw(100, "AcDbEntity");
+    }
     o.str(8, p.layer);
 }
 

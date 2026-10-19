@@ -346,6 +346,7 @@ private:
         Out* o = nullptr;
         std::uint64_t nextHandle = 0x20;
         std::uint64_t entHandle = 0;  // the handle the next head() gives the entity, 0 = a new one
+        std::uint64_t lastHead = 0;   // the handle the last head() wrote
         std::string levelTag{};
         const EntityCommon* cur = nullptr;  // the entity writeEntity is on
         std::vector<PendingDict> pendingDicts{};
