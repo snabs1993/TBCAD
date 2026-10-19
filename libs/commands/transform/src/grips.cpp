@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <unordered_map>
 
 #include "tbcad/blocks/dynamic.h"
 #include "tbcad/geom/geom.h"
@@ -127,35 +129,37 @@ std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids,
     return line;
 }
 
-std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
-                                                        const std::vector<Grip>& grips,
-                                                        const Grip& hot, Vec2 delta,
-                                                        std::string* error) {
+HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot) {
     // Hot grips: the hot one plus selected grips at the same place (coincident vertices).
     // Midpoint-style grips of other entities are not dragged along: only grips that are the
     // hot grip's own kind of point (same index class is not tracked, location is what counts).
-    std::vector<EntityId> order;
-    std::vector<std::vector<int>> indices;
+    HotGrips set;
+    std::unordered_map<std::uint64_t, std::size_t> slot;  // entity -> position in set.order
     for (const Grip& g : grips) {
         if (distance(g.pos, hot.pos) > 1e-9)
             continue;
-        std::size_t k = 0;
-        while (k < order.size() && order[k] != g.entity)
-            ++k;
-        if (k == order.size()) {
-            order.push_back(g.entity);
-            indices.emplace_back();
+        auto [it, fresh] = slot.try_emplace(g.entity.value, set.order.size());
+        if (fresh) {
+            set.order.push_back(g.entity);
+            set.indices.emplace_back();
         }
-        indices[k].push_back(g.index);
+        set.indices[it->second].push_back(g.index);
     }
+    return set;
+}
+
+std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, const HotGrips& set,
+                                                        const Grip& hot, Vec2 delta,
+                                                        std::string* error, std::size_t limit) {
     std::vector<std::pair<EntityId, Entity>> out;
-    for (std::size_t k = 0; k < order.size(); ++k) {
-        const Entity* src = doc.find(order[k]);
+    const std::size_t count = std::min(set.order.size(), limit);
+    for (std::size_t k = 0; k < count; ++k) {
+        const Entity* src = doc.find(set.order[k]);
         if (!src)
             continue;
         Entity cur = *src;
         bool ok = true;
-        for (int idx : indices[k]) {
+        for (int idx : set.indices[k]) {
             auto moved = idx >= kDynGripBase
                              ? blocks::dynDrag(doc, cur, idx - kDynGripBase, hot.pos + delta)
                              : geom::moveGrip(cur, idx, hot.pos + delta);
@@ -168,9 +172,17 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
             cur = std::move(moved).value();
         }
         if (ok)
-            out.emplace_back(order[k], std::move(cur));
+            out.emplace_back(set.order[k], std::move(cur));
     }
     return out;
+}
+
+std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc,
+                                                        const std::vector<Grip>& grips,
+                                                        const Grip& hot, Vec2 delta,
+                                                        std::string* error) {
+    return stretchResults(doc, hotGripsOf(grips, hot), hot, delta, error,
+                          std::numeric_limits<std::size_t>::max());
 }
 
 std::optional<Transform2> modeTransform(GripMode mode, Vec2 base, Vec2 hotPos, Vec2 p) {

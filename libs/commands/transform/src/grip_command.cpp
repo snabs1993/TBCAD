@@ -67,6 +67,7 @@ public:
             co_return;
         }
         const Grip hot = *found;
+        const HotGrips hotSet = hotGripsOf(grips, hot);  // the same for every mouse move
         struct HotScope {  // the overlay draws the hot grip red while the command runs
             explicit HotScope(Vec2 p) { setHotGrip(p); }
             ~HotScope() { setHotGrip(std::nullopt); }
@@ -84,12 +85,15 @@ public:
             for (GripAction a : menu)
                 if (a != GripAction::Stretch)
                     o.keywords.emplace_back(gripActionKeyword(a));
-            o.preview = [&ctx, &sel, &grips, hot, &mode, &base](Vec2 c, DisplayList& out) {
+            o.preview = [&ctx, &sel, &hotSet, hot, &mode, &base](Vec2 c, DisplayList& out) {
                 const double px = ctx.host().view().scale;
                 if (mode == GripMode::Stretch) {
                     geom::DisplayContext dc;
                     dc.pixelSizeMm = px > 0 ? px : 1;
-                    for (auto& [id, e] : stretchResults(ctx.doc(), grips, hot, c - hot.pos))
+                    // A drawing-sized selection would rebuild every object on each mouse move.
+                    constexpr std::size_t kPreviewMax = 4000;
+                    for (auto& [id, e] :
+                         stretchResults(ctx.doc(), hotSet, hot, c - hot.pos, nullptr, kPreviewMax))
                         geom::buildDisplay(ctx.doc(), e, dc, out);
                     return;
                 }
