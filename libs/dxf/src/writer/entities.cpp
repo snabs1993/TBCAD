@@ -1785,7 +1785,7 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     // text starts, as AutoCAD writes it), else the middle of the text TBCAD draws.
     const bool placed =
         d.textPosUser && d.kind != DimKind::Angular2Line;  // its textPos is on the arc
-    o.pt(11, placed || !layout.text.valid() ? d.textPos : layout.text.center);
+    o.pt(11, placed || !layout.text.valid() ? d.textPos : layout.text.point);
     o.i(70, type | (d.textPosUser ? 128 : 0));
     o.i(71, 5);
     if (!d.textOverride.empty())

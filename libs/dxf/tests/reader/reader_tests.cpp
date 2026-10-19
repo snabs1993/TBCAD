@@ -1553,6 +1553,18 @@ TEST_CASE("dimension text: \\X starts the line under the dimension line, radial 
     CHECK(near(dims[1]->textPos, Vec2{103, 1}));
 }
 
+TEST_CASE("dimension text point on the dimension line is the text in its own place") {
+    // AutoCAD writes group 11 on the dimension line under text lifted above it.
+    Pairs p;
+    p.g(0, "DIMENSION").g(8, "0").g(10, 100.0).g(20, 10.0).g(11, 50.0).g(21, 10.0).g(70, 0);
+    p.g(13, 0.0).g(23, 0.0).g(14, 100.0).g(24, 0.0).g(50, 0.0);
+    Loaded l = load(entitiesOnly(p.text));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    CHECK_FALSE(dims[0]->textPosUser);
+    CHECK(near(dims[0]->textPos, Vec2{50, 10}));
+}
+
 TEST_CASE("dimension comparison: a block drawn at group 12 and a stale block") {
     // The dimension measures 15 (0,0)-(15,0); its block was made elsewhere for 15000 and is
     // drawn moved by group 12 back onto the dimension.

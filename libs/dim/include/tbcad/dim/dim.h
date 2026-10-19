@@ -66,6 +66,9 @@ struct Layout {
         bool attachRight = false;
         double width = 0;  // advance width (dimensions only)
         bool stacked = false;  // dimension text with a stacked tolerance: markup centred
+        // A dimension's text point (DXF group 11): the middle of the text, or the point on the
+        // dimension line under text lifted above it (DIMTAD), as AutoCAD writes it.
+        Vec2 point{};
         bool valid() const { return !utf8.empty(); }
     };
     std::vector<Line> lines{};
