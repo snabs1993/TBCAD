@@ -93,9 +93,18 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes, bool keepOld) {
                 if (i == a || id < last)
                     cur = std::lower_bound(touched.begin(), touched.end(), Touched{id}, byId) -
                           touched.begin();
-                else
-                    while (cur < touched.size() && touched[cur].id < id)
+                else {
+                    // A few steps along the list; when ids jump (two interleaved runs), search.
+                    std::size_t steps = 0;
+                    while (cur < touched.size() && touched[cur].id < id && steps < 8) {
                         ++cur;
+                        ++steps;
+                    }
+                    if (steps == 8 && cur < touched.size() && touched[cur].id < id)
+                        cur = std::lower_bound(touched.begin() + cur, touched.end(), Touched{id},
+                                               byId) -
+                              touched.begin();
+                }
                 last = id;
                 if (cur < touched.size() && touched[cur].id == id)
                     t = &touched[cur];
