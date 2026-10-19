@@ -447,7 +447,9 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
     ImGui::PopID();
 }
 
-void drawLinetypeCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
+// The cell helpers below take the layer by value: a pick runs -LAYER, which replaces the row, and
+// the rest of the combo list still reads the layer.
+void drawLinetypeCell(tbcad::ui::PanelContext& ctx, const Layer l) {
     const Document& doc = *ctx.doc;
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##lt", linetypeName(doc, l.linetype).c_str(),
@@ -465,7 +467,7 @@ void drawLinetypeCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
     }
 }
 
-void drawLineweightCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
+void drawLineweightCell(tbcad::ui::PanelContext& ctx, const Layer l) {
     static const char* const kWeights[] = {"0.00", "0.05", "0.09", "0.13", "0.15", "0.18",
                                            "0.20", "0.25", "0.30", "0.35", "0.40", "0.50",
                                            "0.60", "0.70", "0.80", "1.00", "1.40", "2.00"};
@@ -486,7 +488,7 @@ void drawLineweightCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
     }
 }
 
-void drawTransparencyCell(tbcad::ui::PanelContext& ctx, const Layer& l) {
+void drawTransparencyCell(tbcad::ui::PanelContext& ctx, const Layer l) {
     ImGui::SetNextItemWidth(-1);
     const std::string shown = std::to_string(l.transparency) + "%";
     if (ImGui::BeginCombo("##tr", shown.c_str(), ImGuiComboFlags_HeightLarge)) {
