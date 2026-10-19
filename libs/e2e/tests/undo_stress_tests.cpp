@@ -138,8 +138,8 @@ std::string randomStep(cmd::ScriptHost& host, const Document& doc, std::mt19937&
 // commands themselves (the session below drives those on purpose).
 bool skippedCommand(const std::string& name) {
     static const char* const kParts[] = {
-        "EXPORT", "IMPORT", "SAVE", "PRINT", "PLOT",     "DEVGEN", "NEWFROM", "ATTACH", "RELOAD",
-        "OPEN",   "QUIT",   "EXIT", "NEW",   "TEMPLATE", "UNDO",   "REDO",    "ALIASES"};
+        "EXPORT", "IMPORT", "SAVE", "PRINT", "PLOT",     "DEVGEN", "NEWFROM", "ATTACH",  "RELOAD",
+        "OPEN",   "QUIT",   "EXIT", "NEW",   "TEMPLATE", "UNDO",   "REDO",    "ALIASES", "WBLOCK"};
     for (const char* part : kParts)
         if (name.find(part) != std::string::npos)
             return true;
