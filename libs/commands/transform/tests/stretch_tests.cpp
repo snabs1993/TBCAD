@@ -92,3 +92,53 @@ TEST_CASE("STRETCH CPolygon moves only the vertices inside the polygon") {
     CHECK(near(get<LineData>(f.doc, a).b, {110, 0}));
     CHECK(near(get<LineData>(f.doc, b).b, {100, 40}));
 }
+
+TEST_CASE("STRETCH moves an ellipse whose centre is inside the window and leaves one outside") {
+    Fixture f;
+    EllipseData e;
+    e.center = {90, 5};
+    e.majorAxis = {10, 0};
+    e.ratio = 0.5;
+    auto in = add(f.doc, e);
+    e.center = {0, 5};  // the window only catches its right-hand tip
+    e.majorAxis = {62, 0};
+    auto out = add(f.doc, e);
+    f.host.run("STRETCH", {"60,-10", "120,20", "100,0", "120,0"});
+    CHECK(near(get<EllipseData>(f.doc, in).center, {110, 5}));
+    CHECK(near(get<EllipseData>(f.doc, in).majorAxis, {10, 0}));
+    CHECK(near(get<EllipseData>(f.doc, out).center, {0, 5}));
+    CHECK(f.host.undo());
+    CHECK(near(get<EllipseData>(f.doc, in).center, {90, 5}));
+}
+
+TEST_CASE("STRETCH moves only the control points of a spline inside the window") {
+    Fixture f;
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = {{0, 0}, {20, 30}, {80, 30}, {100, 0}};
+    auto id = add(f.doc, Indirect<SplineData>(sp));
+    f.host.run("STRETCH", {"60,10", "120,40", "0,0", "0,10"});
+    const auto& s = get<SplineData>(f.doc, id);
+    REQUIRE(s.control.size() == 4);
+    CHECK(near(s.control[0], {0, 0}));
+    CHECK(near(s.control[1], {20, 30}));
+    CHECK(near(s.control[2], {80, 40}));
+    CHECK(near(s.control[3], {100, 0}));  // y=0 is below the window
+    CHECK(f.host.undo());
+    CHECK(near(get<SplineData>(f.doc, id).control[2], {80, 30}));
+}
+
+TEST_CASE("STRETCH moves the fit points of a fit-only spline inside the window") {
+    Fixture f;
+    SplineData sp;
+    sp.degree = 3;
+    sp.fit = {{0, 0}, {30, 20}, {60, 20}, {90, 0}};
+    auto id = add(f.doc, Indirect<SplineData>(sp));
+    f.host.run("STRETCH", {"50,10", "100,30", "0,0", "5,0"});
+    const auto& s = get<SplineData>(f.doc, id);
+    REQUIRE(s.fit.size() == 4);
+    CHECK(near(s.fit[0], {0, 0}));
+    CHECK(near(s.fit[1], {30, 20}));
+    CHECK(near(s.fit[2], {65, 20}));
+}
