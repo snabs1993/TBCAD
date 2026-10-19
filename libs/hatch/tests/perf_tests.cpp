@@ -141,3 +141,33 @@ TEST_CASE("pick-point boundary in a 200,000-line drawing at survey coordinates")
     CHECK(ms(t0, t1) < 30000.0);
 #endif
 }
+
+// A survey sheet full of loose ends (contour pieces, symbols) with a gap tolerance set: every
+// free end looks for a curve within the gap, which must not compare it with every other piece.
+TEST_CASE("gap tolerance among 20,000 loose pieces stays quick") {
+    std::mt19937 rng(5);
+    std::uniform_real_distribution<double> pos(0, 4000), ang(0, kTwoPi);
+    Scene s;
+    for (int i = 0; i < 20000; ++i) {
+        const Vec2 a{pos(rng), pos(rng)};
+        const double t = ang(rng);
+        s.add(line(a, a + Vec2{std::cos(t), std::sin(t)} * 3));
+    }
+    // A room with a 0.5 gap in one corner, away from the loose pieces.
+    s.add(line({5000, 0}, {5100, 0}));
+    s.add(line({5100, 0}, {5100, 100}));
+    s.add(line({5100, 100}, {5000, 100}));
+    s.add(line({5000, 100}, {5000, 0.5}));
+    BoundaryOptions bo;
+    bo.gapTolerance = 1;
+    bo.maxEdges = 100000;
+    auto t0 = std::chrono::steady_clock::now();
+    auto r = findBoundary(s.candidates(), {5050, 50}, bo);
+    auto t1 = std::chrono::steady_clock::now();
+    REQUIRE(r.ok());
+    CHECK(r.value().loops.size() == 1);
+    std::printf("[hatch perf] gap tolerance among 20k loose pieces: %.1f ms\n", ms(t0, t1));
+#ifdef NDEBUG
+    CHECK(ms(t0, t1) < 300.0);
+#endif
+}

@@ -723,7 +723,9 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                 o.str(4, ds.altPrefix + "[]" + ds.altSuffix);
         }
         if (ds.linearFactor != 1)
-            o.d(144, ds.linearFactor);                                     // DIMLFAC
+            o.d(144, ds.linearFactor);  // DIMLFAC
+        if (ds.tolHeightFactor != 1)
+            o.d(146, ds.tolHeightFactor);                                  // DIMTFAC
         o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);         // DIMTIH
         o.i(74, ds.textAlignOutside == DimTextAlign::Horizontal ? 1 : 0);  // DIMTOH
         o.i(75, ds.suppressExt1 ? 1 : 0);                                  // DIMSE1

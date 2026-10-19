@@ -14,7 +14,7 @@ tbcad_add_library(draw2
     src/sketch.cpp
     src/ui.cpp
     src/wipeout.cpp
-  DEPENDS tbcad::ui tbcad::cmd tbcad::core tbcad::geom tbcad::hatch tbcad::modify)
+  DEPENDS tbcad::ui tbcad::cmd tbcad::core tbcad::geom tbcad::hatch tbcad::modify tbcad::blocks)
 
 tbcad_add_tests(draw2
   SOURCES

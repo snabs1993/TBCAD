@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <string>
 
 #include "commands.h"
@@ -105,7 +106,7 @@ void drawPreview(ui::PanelContext& pc, const TextStyle& style, const std::string
     ImGui::Dummy(size);
 }
 
-void drawEditor(ui::PanelContext& pc, const TextStyle& s) {
+void drawEditor(ui::PanelContext& pc, const TextStyle s) {  // by value: fields run -STYLE
     PanelState& st = state();
     const std::string head = "-STYLE";
     const bool isStandard = s.id == kTextStyleStandard;
@@ -169,7 +170,12 @@ void drawPanel(ui::PanelContext& pc) {
 
     ImGui::SameLine();
     ImGui::BeginGroup();
-    const TextStyle* sel = pc.doc->textStyle(st.selected);
+    // A copy: Delete, Rename and the editor's fields run -STYLE, which replaces or removes the
+    // row while this frame still draws it.
+    std::optional<TextStyle> selRow;
+    if (const TextStyle* found = pc.doc->textStyle(st.selected))
+        selRow = *found;
+    const TextStyle* sel = selRow ? &*selRow : nullptr;
     if (sel) {
         const bool isStandard = sel->id == kTextStyleStandard;
         ImGui::BeginDisabled(sel->id == current);

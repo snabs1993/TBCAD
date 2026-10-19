@@ -501,7 +501,7 @@ std::string canonicalDump(const Document& doc) {
         if (r.hasTextBox())
             o << " textbox" << r.textFill << "/" << r.textFillColor << "/" << (r.textFrame ? 1 : 0);
         if (r.hasLinearFormat())
-            o << " linfmt" << static_cast<int>(r.linearFormat);
+            o << " linfmt" << static_cast<int>(r.linearFormat) << "/" << r.tolHeightFactor;
         if (r.hasNumberFormat())
             o << " numfmt" << static_cast<int>(r.angleFormat) << "/" << r.angularPrecision << "/"
               << (r.commaDecimal ? 1 : 0) << "/" << r.baselineSpacing << "/" << r.centerMark;
