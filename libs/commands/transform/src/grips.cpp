@@ -116,6 +116,27 @@ std::optional<Vec2> hotGrip() {
     return g_hot;
 }
 
+namespace {
+std::vector<Vec2> g_warm;
+}
+
+void toggleWarmGrip(Vec2 pos) {
+    for (auto it = g_warm.begin(); it != g_warm.end(); ++it)
+        if (distance(*it, pos) <= 1e-9) {
+            g_warm.erase(it);
+            return;
+        }
+    g_warm.push_back(pos);
+}
+
+const std::vector<Vec2>& warmGrips() {
+    return g_warm;
+}
+
+void clearWarmGrips() {
+    g_warm.clear();
+}
+
 std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids, Vec2 world,
                              double apertureMm, std::size_t limit, bool copy) {
     const Grip* g = hitGrip(cachedGrips(doc, ids, limit), world, apertureMm);
@@ -129,21 +150,30 @@ std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids,
     return line;
 }
 
-HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot) {
+HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot,
+                    const std::vector<Vec2>& warm) {
     // Hot grips: the hot one plus selected grips at the same place (coincident vertices).
     // Midpoint-style grips of other entities are not dragged along: only grips that are the
     // hot grip's own kind of point (same index class is not tracked, location is what counts).
     HotGrips set;
     std::unordered_map<std::uint64_t, std::size_t> slot;  // entity -> position in set.order
+    const bool together =
+        std::any_of(warm.begin(), warm.end(), [&](Vec2 w) { return distance(w, hot.pos) <= 1e-9; });
     for (const Grip& g : grips) {
-        if (distance(g.pos, hot.pos) > 1e-9)
+        bool take = distance(g.pos, hot.pos) <= 1e-9;
+        if (!take && together)
+            take = std::any_of(warm.begin(), warm.end(),
+                               [&](Vec2 w) { return distance(w, g.pos) <= 1e-9; });
+        if (!take)
             continue;
         auto [it, fresh] = slot.try_emplace(g.entity.value, set.order.size());
         if (fresh) {
             set.order.push_back(g.entity);
             set.indices.emplace_back();
+            set.from.emplace_back();
         }
         set.indices[it->second].push_back(g.index);
+        set.from[it->second].push_back(g.pos);
     }
     return set;
 }
@@ -159,10 +189,11 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, con
             continue;
         Entity cur = *src;
         bool ok = true;
-        for (int idx : set.indices[k]) {
-            auto moved = idx >= kDynGripBase
-                             ? blocks::dynDrag(doc, cur, idx - kDynGripBase, hot.pos + delta)
-                             : geom::moveGrip(cur, idx, hot.pos + delta);
+        for (std::size_t j = 0; j < set.indices[k].size(); ++j) {
+            const int idx = set.indices[k][j];
+            const Vec2 target = set.from[k][j] + delta;
+            auto moved = idx >= kDynGripBase ? blocks::dynDrag(doc, cur, idx - kDynGripBase, target)
+                                             : geom::moveGrip(cur, idx, target);
             if (!moved) {
                 ok = false;
                 if (error && error->empty())
