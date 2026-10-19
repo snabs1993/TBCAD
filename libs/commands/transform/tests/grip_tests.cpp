@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "common.h"
+#include "tbcad/geom/geom.h"
 #include "tbcad/transform/transform.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/transform/grips.h"
@@ -450,4 +451,31 @@ TEST_CASE("Shift-click on a grip picks it without starting a drag, a plain click
     CHECK(ran[0].rfind("GRIPEDIT ", 0) == 0);
     CHECK_FALSE(hook(ctx, {50, 50}, 1.0, false, false));  // elsewhere: forget
     CHECK(tf::warmGrips().empty());
+}
+
+TEST_CASE("TEXT grips sit at the anchor and aligned text has both ends") {
+    Fixture f;
+    TextData t;
+    t.position = {0, 0};
+    t.alignPoint = {5, 1};
+    t.utf8 = "abc";
+    t.h = HAlign::Center;
+    auto id = add(f.doc, Indirect<TextData>(t));
+    auto g = tf::collectGrips(f.doc, std::vector<EntityId>{id});
+    REQUIRE(g.size() == 1);
+    CHECK(near(g[0].pos, {5, 1}));  // the justification point, where the text is drawn from
+    auto moved = tbcad::geom::moveGrip(*f.doc.find(id), 0, {15, 11});
+    REQUIRE(moved.ok());
+    CHECK(near(entityAs<TextData>(moved.value())->alignPoint, {15, 11}));
+    CHECK(near(entityAs<TextData>(moved.value())->position, {10, 10}));
+    TextData a = t;
+    a.h = HAlign::Aligned;
+    auto aid = add(f.doc, Indirect<TextData>(a));
+    auto ag = tf::collectGrips(f.doc, std::vector<EntityId>{aid});
+    REQUIRE(ag.size() == 2);
+    auto end = tbcad::geom::moveGrip(*f.doc.find(aid), 1, {20, 0});
+    REQUIRE(end.ok());
+    CHECK(near(entityAs<TextData>(end.value())->alignPoint, {20, 0}));
+    CHECK(near(entityAs<TextData>(end.value())->position, {0, 0}));
+    CHECK_FALSE(tbcad::geom::moveGrip(*f.doc.find(aid), 2, {1, 1}).ok());
 }

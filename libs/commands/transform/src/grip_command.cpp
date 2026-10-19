@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 
+#include "tbcad/blocks/dynamic.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/apply.h"
 #include "tbcad/transform/grip_menu.h"
@@ -67,6 +68,21 @@ public:
             co_return;
         }
         const Grip hot = *found;
+        if (hot.index >= kDynGripBase) {
+            // Flip and visibility grips act on the click: no second point.
+            const Entity* src = ctx.doc().find(hot.entity);
+            if (src && blocks::dynGripIsClick(ctx.doc(), *src, hot.index - kDynGripBase)) {
+                auto next = blocks::dynDrag(ctx.doc(), *src, hot.index - kDynGripBase, hot.pos);
+                if (!next) {
+                    ctx.message(next.error().message);
+                    co_return;
+                }
+                Entity moved = std::move(next).value();
+                (void)ctx.tx().modify(hot.entity,
+                                      [&](Entity& tgt) { tgt.data = std::move(moved.data); });
+                co_return;
+            }
+        }
         const HotGrips hotSet = hotGripsOf(grips, hot, warmGrips());  // the same for every mouse move
         struct HotScope {  // the overlay draws the hot grip red while the command runs
             explicit HotScope(Vec2 p) { setHotGrip(p); }

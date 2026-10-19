@@ -222,6 +222,10 @@ std::vector<DynHandle> dynHandles(const Document& doc, const Entity& insert) {
             double c = std::cos(values[i]), s = std::sin(values[i]);
             out.push_back({static_cast<int>(i),
                            t.apply(p.base + Vec2{arm.x * c - arm.y * s, arm.x * s + arm.y * c})});
+        } else if (p.kind == DynParam::Kind::Flip) {
+            out.push_back({static_cast<int>(i), t.apply((p.base + p.end) * 0.5)});
+        } else if (p.kind == DynParam::Kind::Visibility && p.states.size() > 1) {
+            out.push_back({static_cast<int>(i), t.apply(p.base)});
         }
     }
     return out;
@@ -265,7 +269,27 @@ Result<Entity> dynDrag(const Document& doc, const Entity& insert, int param, Vec
             return insert;
         return dynSet(doc, insert, param, std::atan2(d.y, d.x) - std::atan2(arm.y, arm.x));
     }
+    if (p.kind == DynParam::Kind::Flip || p.kind == DynParam::Kind::Visibility) {
+        // A click-only grip: where it is dropped does not matter, each use flips the block or
+        // moves on to the next visibility state.
+        const std::vector<double> now = dynValues(*def, *ins);
+        const double v = now[static_cast<std::size_t>(param)];
+        if (p.kind == DynParam::Kind::Flip)
+            return dynSet(doc, insert, param, v >= 0.5 ? 0.0 : 1.0);
+        const double count = static_cast<double>(p.states.size());
+        return dynSet(doc, insert, param, count > 1 ? std::fmod(v + 1.0, count) : 0.0);
+    }
     return makeError(ErrorCode::InvalidArgument, "That parameter has no handle to drag");
+}
+
+bool dynGripIsClick(const Document& doc, const Entity& insert, int param) {
+    const auto* ins = entityAs<InsertData>(insert);
+    const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+    if (!def || !def->dynamic || param < 0 ||
+        static_cast<std::size_t>(param) >= def->dynamic->params.size())
+        return false;
+    const DynParam::Kind k = def->dynamic->params[static_cast<std::size_t>(param)].kind;
+    return k == DynParam::Kind::Flip || k == DynParam::Kind::Visibility;
 }
 
 }  // namespace tbcad::blocks

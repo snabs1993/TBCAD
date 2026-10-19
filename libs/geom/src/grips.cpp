@@ -176,9 +176,18 @@ std::vector<Vec2> gripPoints(const Entity& e) {
                 g.resize(d.control.size() - static_cast<std::size_t>(d.degree));
             break;
         }
-        case EntityKind::Text:
-            g = {entityAs<TextData>(e)->position};
+        case EntityKind::Text: {
+            // The grip sits where the text is anchored: the justification point of centred,
+            // right or top text; aligned and fitted text has both ends.
+            const auto& d = *entityAs<TextData>(e);
+            if (d.h == HAlign::Aligned || d.h == HAlign::Fit)
+                g = {d.position, d.alignPoint};
+            else if (d.h == HAlign::Left && d.v == VAlign::Baseline)
+                g = {d.position};
+            else
+                g = {d.alignPoint};
             break;
+        }
         case EntityKind::MText: {
             const auto& d = *entityAs<MTextData>(e);
             g = {d.position};
@@ -418,11 +427,21 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             return out;
         }
         case EntityKind::Text: {
+            auto& d = *entityAs<TextData>(out);
+            if (d.h == HAlign::Aligned || d.h == HAlign::Fit) {
+                if (index == 0)
+                    d.position = to;
+                else if (index == 1)
+                    d.alignPoint = to;
+                else
+                    return badGrip();
+                return out;
+            }
             if (index != 0)
                 return badGrip();
-            auto& d = *entityAs<TextData>(out);
-            Vec2 delta = to - d.position;
-            d.position = to;
+            const bool anchored = !(d.h == HAlign::Left && d.v == VAlign::Baseline);
+            const Vec2 delta = to - (anchored ? d.alignPoint : d.position);
+            d.position += delta;
             d.alignPoint += delta;
             return out;
         }
