@@ -977,6 +977,48 @@ TEST_CASE("a picture block is exported as IMAGE and IMAGEDEF and comes back with
     CHECK(p.v1 == doctest::Approx(0.75));
 }
 
+TEST_CASE("a picture keeps its polygon clip, brightness and contrast through DXF") {
+    Document doc;
+    {
+        auto tx = doc.begin("picture");
+        BlockId b = tx.addBlock(BlockDef{.name = "logo", .base = {0, 0}}).value();
+        PolylineData frame;
+        frame.closed = true;
+        for (Vec2 v : {Vec2{0, 0}, Vec2{40, 0}, Vec2{40, 20}, Vec2{0, 20}})
+            frame.v.push_back({v, 0, 0, 0});
+        REQUIRE(tx.add(make(frame), b).ok());
+        REQUIRE(tx.modifyBlock(b, [](BlockDef& d) { d.xrefPath = "pics/logo.png"; }).ok());
+        underlay::ImageParams ip;
+        ip.brightness = 70;
+        ip.contrast = 30;
+        ip.clip = {{0.25, 0.25}, {0.75, 0.25}, {0.5, 0.75}};
+        ip.u0 = 0.25;
+        ip.u1 = 0.75;
+        ip.v0 = 0.25;
+        ip.v1 = 0.75;
+        REQUIRE(underlay::setImageParams(tx, "logo", ip));
+        REQUIRE(tx.add(make(InsertData{b, {0, 0}, {1, 1}, 0})).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const InsertData* ins = nullptr;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            ins = i;
+    });
+    REQUIRE(ins);
+    const BlockDef* b = rt.back->block(ins->block);
+    REQUIRE(b);
+    const underlay::ImageParams p = underlay::imageParams(rt.back->header(), b->name);
+    CHECK(p.brightness == 70);
+    CHECK(p.contrast == 30);
+    REQUIRE(p.clip.size() == 3);
+    CHECK(p.clip[2].x == doctest::Approx(0.5));
+    CHECK(p.clip[2].y == doctest::Approx(0.75));
+    CHECK(p.u0 == doctest::Approx(0.25));
+    CHECK(p.v1 == doctest::Approx(0.75));
+}
+
 TEST_CASE("a tolerance frame is exported as TOLERANCE and comes back as the same frame") {
     Document doc;
     gdt::Spec spec;

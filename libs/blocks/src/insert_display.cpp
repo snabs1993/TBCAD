@@ -7,6 +7,7 @@
 #include "tbcad/blocks/clip.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/blocks/dynamic.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::blocks {
 
@@ -114,6 +115,13 @@ BlockDisplayScope::~BlockDisplayScope() {
     g_active = previous_;
 }
 
+// A picture whose frame is switched off (IMAGEFRAME 0) draws nothing but the picture itself.
+static bool hiddenImageFrame(const Document& doc, const BlockDef& def) {
+    if (def.xrefPath.empty() || !underlay::isImagePath(def.xrefPath))
+        return false;
+    return underlay::imageParams(doc.header(), def.name).frame == 0;
+}
+
 // ---- generator
 // --------------------------------------------------------------------------------------
 
@@ -124,6 +132,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         return;
     const BlockDef* def = doc.block(ins->block);
     if (!def || def->entities.empty())
+        return;
+    if (hiddenImageFrame(doc, *def))
         return;
     DepthGuard guard;
     const std::size_t firstItem = out.items.size();
@@ -223,6 +233,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
         return false;
     const BlockDef* def = doc.block(ins->block);
     if (!def || def->entities.empty() || def->dynamic || def->assembly)
+        return false;
+    if (hiddenImageFrame(doc, *def))
         return false;
     if (ins->clipOn && ins->clip.size() >= 3)
         return false;

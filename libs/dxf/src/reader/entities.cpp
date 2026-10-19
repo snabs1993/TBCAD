@@ -1408,7 +1408,7 @@ bool Importer::convWipeout(const Record& r, std::vector<Entity>& out) {
 // IMAGE: a raster picture. It becomes the same thing IMAGEATTACH makes: a block that is an external
 // reference to the picture file (a frame in pixel units, origin bottom-left) inserted with the size
 // of one pixel as its scale. The file name is in the IMAGEDEF object, read later (resolveImages).
-// A rectangular clip and the fade are kept; a polygonal clip is not (the whole picture shows).
+// The clip (rectangle or polygon), fade, brightness and contrast are kept.
 bool Importer::convImage(const Record& r, std::vector<Entity>& out) {
     const Vec2 origin = P(r, 10, 20), u = P(r, 11, 21);
     const double w = r.num(13), h = r.num(23);
@@ -1447,19 +1447,17 @@ bool Importer::convImage(const Record& r, std::vector<Entity>& out) {
         else if (g.code == 24 && !clip.empty())
             clip.back().y = g.number();
     }
+    img.brightness = static_cast<int>(std::clamp(r.num(281, 50), 0.0, 100.0));
+    img.contrast = static_cast<int>(std::clamp(r.num(282, 50), 0.0, 100.0));
     if (r.integer(71) == 2 && clip.size() >= 3) {
-        // A polygon: use its bounding rectangle when it is one, else leave the picture whole.
-        if (clip.size() > 1 && tol::nearlyEqual(clip.front(), clip.back()))
+        // A polygon (AutoCAD closes it by repeating the first point).
+        if (clip.size() > 3 && tol::nearlyEqual(clip.front(), clip.back()))
             clip.pop_back();
         const bool box = clip.size() == 4 && ((clip[0].x == clip[1].x) != (clip[0].y == clip[1].y));
-        if (!box) {
-            report_.warn(code::kRejected,
-                         "IMAGE \"" + name +
-                             "\": a polygon clip is not supported; the whole picture "
-                             "is shown",
-                         r.line);
-            clip.clear();
-        }
+        if (!box)
+            for (const Vec2& c : clip)
+                img.clip.push_back({std::clamp((c.x + 0.5) / w, 0.0, 1.0),
+                                    std::clamp(1.0 - (c.y + 0.5) / h, 0.0, 1.0)});
     }
     if (clip.size() >= 2) {
         double x0 = clip[0].x, x1 = clip[0].x, y0 = clip[0].y, y1 = clip[0].y;
@@ -1476,6 +1474,7 @@ bool Importer::convImage(const Record& r, std::vector<Entity>& out) {
         if (!(img.u1 > img.u0) || !(img.v1 > img.v0)) {
             img.u0 = img.v0 = 0;
             img.u1 = img.v1 = 1;
+            img.clip.clear();
         }
     }
     images_.push_back(std::move(img));
@@ -1545,6 +1544,11 @@ void Importer::resolveImages() {
         p.v0 = img.v0;
         p.u1 = img.u1;
         p.v1 = img.v1;
+        p.brightness = img.brightness;
+        p.contrast = img.contrast;
+        p.clip = img.clip;
+        if (imageFrame_ >= 0)
+            p.frame = imageFrame_;
         if (!(p == underlay::ImageParams{}))
             table[img.name] = p;
         if (!underlay::isImagePath(path))

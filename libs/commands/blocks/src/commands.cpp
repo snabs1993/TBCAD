@@ -58,6 +58,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makePdfAttachCommand());
     (void)registry.add(makeImageAttachCommand());
     (void)registry.add(makeImageClipCommand());
+    (void)registry.add(makeImageAdjustCommand());
+    (void)registry.add(makeImageFrameCommand());
     (void)registry.add(makeUnderlayFadeCommand());
     (void)registry.add(makeXReloadCommand());
     (void)registry.add(makeXDetachCommand());
