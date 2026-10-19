@@ -133,6 +133,7 @@ TEST_CASE("units: inches are converted to millimetres and reported") {
     CHECK(near(circles[0]->radius, 12.7));
     auto texts = modelEntities<TextData>(l.doc());
     CHECK(near(texts[0]->height, 2.54));
+    CHECK(l.doc().header().units == LengthUnit::Inch);  // the drawing keeps showing inches
 }
 
 TEST_CASE("units: a file without $INSUNITS is taken as millimetres and says so") {
@@ -141,6 +142,7 @@ TEST_CASE("units: a file without $INSUNITS is taken as millimetres and says so")
     CHECK(l.result.summary.unitsAssumed);
     CHECK(l.result.summary.unitScale == 1.0);
     CHECK(l.report.countCode(code::kUnitsAssumed) == 1);
+    CHECK(l.doc().header().units == LengthUnit::Millimeter);
 }
 
 TEST_CASE("units: the --units override wins over the file") {
@@ -152,6 +154,7 @@ TEST_CASE("units: the --units override wins over the file") {
              opt);
     CHECK(l.result.summary.unitScale == doctest::Approx(10.0));
     CHECK(near(modelEntities<LineData>(l.doc())[0]->b, Vec2{30, 40}));
+    CHECK(l.doc().header().units == LengthUnit::Centimeter);
 }
 
 TEST_CASE("colours: ACI 1-7 keep their meaning, true colour and ByLayer/ByBlock map") {

@@ -168,6 +168,25 @@ void Importer::setUnits(int insunits, bool assumed) {
     sum_.unitsName = assumed ? "millimeters" : kUnits[insunits].name;
     k_ = kUnits[insunits].mm;
     sum_.unitScale = k_;
+    displayUnit_ = LengthUnit::Millimeter;
+    if (!assumed) {
+        switch (insunits) {
+            case 1:
+                displayUnit_ = LengthUnit::Inch;
+                break;
+            case 2:
+                displayUnit_ = LengthUnit::Foot;
+                break;
+            case 5:
+                displayUnit_ = LengthUnit::Centimeter;
+                break;
+            case 6:
+                displayUnit_ = LengthUnit::Meter;
+                break;
+            default:
+                break;
+        }
+    }
     if (assumed) {
         report_.info(code::kUnitsAssumed,
                      "the file does not state its drawing units; assuming millimeters");
@@ -181,6 +200,8 @@ void Importer::setUnits(int insunits, bool assumed) {
 void Importer::parseHeader(const Record& rec) {
     std::string var;
     int insunits = 0;
+    int unitMarker = 0;
+    std::string markerVar;
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
     std::int64_t psltscale = -1, msltscale = -1, plinegen = -1, fillmode = -1, attmode = -1,
@@ -200,6 +221,12 @@ void Importer::parseHeader(const Record& rec) {
         } else if (var == "$INSUNITS" && g.code == 70) {
             insunits = static_cast<int>(g.integer());
             haveUnits = true;
+        } else if (var.compare(0, 6, "$USERI") == 0 && var.size() == 7 && g.code == 70 &&
+                   g.integer() > 8100 &&
+                   g.integer() <= 8106) {
+            // TBCAD's own note of the unit it shows lengths in (all lengths are mm in the file)
+            unitMarker = static_cast<int>(g.integer()) - 8100;
+            markerVar = var;
         } else if (var == "$LTSCALE" && g.code == 40) {
             ltscale = g.number();
         } else if (var == "$CELTSCALE" && g.code == 40) {
@@ -235,6 +262,13 @@ void Importer::parseHeader(const Record& rec) {
         }
     }
     setUnits(insunits, !haveUnits);
+    if (unitMarker != 0 && k_ == 1) {
+        displayUnit_ = unitMarker == 1   ? LengthUnit::Inch
+                       : unitMarker == 2 ? LengthUnit::Foot
+                       : unitMarker == 5 ? LengthUnit::Centimeter
+                       : unitMarker == 6 ? LengthUnit::Meter
+                                         : LengthUnit::Millimeter;
+    }
 
     // Variables the writer does not derive from the drawing are kept as they were read.
     std::vector<std::pair<std::string, std::string>> kept;
@@ -243,6 +277,8 @@ void Importer::parseHeader(const Record& rec) {
         bool usable = true;
         auto flush = [&] {
             if (!name.empty() && usable && !packed.empty() &&
+                !(name.compare(0, 6, "$USERI") == 0 && unitMarker != 0 && name.size() == 7 &&
+                  markerVar == name) &&
                 (!ownedHeaderVar(name) || overridableHeaderVar(name)))
                 kept.emplace_back(name, packed);
             name.clear();
@@ -1457,6 +1493,7 @@ void Importer::readDimStyle(const Record& r) {
         return;
     DimStyle ds;
     ds.name = name;
+    ds.units = displayUnit_;
     auto positive = [&](int code, double scale, double& out) {
         if (const Group* g = r.find(code)) {
             double v = g->number() * scale;
@@ -2411,6 +2448,7 @@ void Importer::finishLayouts() {
 }
 
 void Importer::finish() {
+    (void)tx_->modifyHeader([&](Header& h) { h.units = displayUnit_; });
     finishLayouts();
     resolveImages();
     // Anonymous table blocks that no TABLE inserted (erasing fails while an INSERT uses one).
