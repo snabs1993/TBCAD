@@ -12,6 +12,7 @@
 #include <hb.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -546,12 +547,11 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
                                    f[3] == "1", f[4] == "1"});
         }
     }
-    FT_Library ft = nullptr;
-    if (FT_Init_FreeType(&ft) != 0)
-        ft = nullptr;
-    std::vector<SystemFace> out;
+    // Files in folder order; those not in the cache are read afterwards, on several threads
+    // (opening a font file is what is slow on Windows, not FreeType).
+    std::vector<std::string> order;
     std::map<std::string, Known> seen;
-    bool changed = false;
+    std::vector<std::pair<std::string, fs::path>> toRead;
     for (const auto& root : roots) {
         std::error_code ec;
         fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied,
@@ -565,46 +565,73 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
                 continue;
             const std::u8string u8 = it->path().u8string();
             const std::string key(u8.begin(), u8.end());
+            if (seen.count(key))
+                continue;
             const std::uintmax_t size = it->file_size(fec);
             const long long time =
                 static_cast<long long>(it->last_write_time(fec).time_since_epoch().count());
+            order.push_back(key);
             if (auto c = cached.find(key);
                 c != cached.end() && c->second.size == size && c->second.time == time) {
-                out.insert(out.end(), c->second.faces.begin(), c->second.faces.end());
                 seen[key] = std::move(c->second);
                 cached.erase(c);
                 continue;
             }
-            changed = true;
             Known& k = seen[key];
             k.size = size;
             k.time = time;
-            if (!ft)
-                continue;
-            FT_Face face = nullptr;
-            if (FT_New_Face(ft, it->path().string().c_str(), 0, &face) != 0 || !face)
-                continue;
-            const FT_Long count = std::min<FT_Long>(face->num_faces, 16);
-            for (FT_Long i = 0; i < count; ++i) {
-                if (i > 0) {
-                    FT_Done_Face(face);
-                    face = nullptr;
-                    if (FT_New_Face(ft, it->path().string().c_str(), i, &face) != 0 || !face)
-                        break;
-                }
-                if (!face->family_name || !FT_IS_SCALABLE(face))
-                    continue;
-                k.faces.push_back({it->path(), static_cast<int>(i), lower(face->family_name),
-                                   (face->style_flags & FT_STYLE_FLAG_BOLD) != 0,
-                                   (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0});
-            }
-            if (face)
-                FT_Done_Face(face);
-            out.insert(out.end(), k.faces.begin(), k.faces.end());
+            toRead.emplace_back(key, it->path());
         }
     }
-    if (ft)
-        FT_Done_FreeType(ft);
+    const bool changed = !toRead.empty();
+    if (changed) {
+        std::vector<std::vector<SystemFace>> read(toRead.size());
+        std::atomic<std::size_t> next{0};
+        auto work = [&] {
+            FT_Library ft = nullptr;
+            if (FT_Init_FreeType(&ft) != 0)
+                return;
+            for (std::size_t n; (n = next.fetch_add(1)) < toRead.size();) {
+                const fs::path& path = toRead[n].second;
+                const std::string file = path.string();
+                FT_Face face = nullptr;
+                if (FT_New_Face(ft, file.c_str(), 0, &face) != 0 || !face)
+                    continue;
+                const FT_Long count = std::min<FT_Long>(face->num_faces, 16);
+                for (FT_Long i = 0; i < count; ++i) {
+                    if (i > 0) {
+                        FT_Done_Face(face);
+                        face = nullptr;
+                        if (FT_New_Face(ft, file.c_str(), i, &face) != 0 || !face)
+                            break;
+                    }
+                    if (!face->family_name || !FT_IS_SCALABLE(face))
+                        continue;
+                    read[n].push_back({path, static_cast<int>(i), lower(face->family_name),
+                                       (face->style_flags & FT_STYLE_FLAG_BOLD) != 0,
+                                       (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0});
+                }
+                if (face)
+                    FT_Done_Face(face);
+            }
+            FT_Done_FreeType(ft);
+        };
+        const std::size_t threads = std::min<std::size_t>(
+            toRead.size(), std::clamp<std::size_t>(std::thread::hardware_concurrency(), 1, 8));
+        std::vector<std::thread> pool;
+        for (std::size_t t = 1; t < threads; ++t)
+            pool.emplace_back(work);
+        work();
+        for (std::thread& t : pool)
+            t.join();
+        for (std::size_t n = 0; n < toRead.size(); ++n)
+            seen[toRead[n].first].faces = std::move(read[n]);
+    }
+    std::vector<SystemFace> out;
+    for (const std::string& key : order) {
+        const auto& faces = seen[key].faces;
+        out.insert(out.end(), faces.begin(), faces.end());
+    }
     // Files that are gone change the cache too.
     if (!cacheFile.empty() && (changed || !cached.empty())) {
         std::error_code ec;
