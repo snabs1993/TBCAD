@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <limits>
 
 #include "common.h"
 #include "tbcad/transform/grips.h"
@@ -259,4 +260,49 @@ TEST_CASE("a dynamic block insert offers the handle of its linear parameter") {
     auto moved = tf::stretchResults(f.doc, grips, hot, {5, 0}, &error);
     REQUIRE(moved.size() == 1);
     CHECK(entityAs<InsertData>(moved[0].second)->dynValues == std::vector<double>{15});
+}
+
+TEST_CASE("GRIPOBJLIMIT sets the limit and 0 lifts it") {
+    Fixture f;
+    f.host.run("GRIPOBJLIMIT", {"2"});
+    CHECK(tf::gripLimit(f.host) == 2);
+    f.host.run("GRIPOBJLIMIT", {"0"});
+    CHECK(tf::gripLimit(f.host) == std::numeric_limits<std::size_t>::max());
+    std::vector<EntityId> ids;
+    for (int i = 0; i < 300; ++i)
+        ids.push_back(add(f.doc, PointData{{double(i), 0}}));
+    CHECK(tf::collectGrips(f.doc, ids, tf::gripLimit(f.host)).size() == 300);
+    f.host.run("GRIPOBJLIMIT", {"250"});
+    CHECK(tf::collectGrips(f.doc, ids, tf::gripLimit(f.host)).empty());
+}
+
+TEST_CASE("cached grips follow the drawing, the selection and the limit") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    auto b = add(f.doc, LineData{{0, 5}, {10, 5}});
+    std::vector<EntityId> one{a}, two{a, b};
+    CHECK(tf::cachedGrips(f.doc, one, 100).size() == tf::collectGrips(f.doc, one, 100).size());
+    CHECK(tf::cachedGrips(f.doc, two, 100).size() == tf::collectGrips(f.doc, two, 100).size());
+    CHECK(tf::cachedGrips(f.doc, two, 1).empty());
+    {
+        Transaction tx = f.doc.begin("move");
+        REQUIRE(tx.modify(a, [](Entity& e) { std::get<LineData>(e.data).b = {20, 0}; }));
+        tx.commit();
+    }
+    bool found = false;
+    for (const tf::Grip& g : tf::cachedGrips(f.doc, one, 100))
+        found = found || near(g.pos, {20, 0});
+    CHECK(found);
+}
+
+TEST_CASE("grips of a very big selection are found quickly") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    for (int i = 0; i < 50000; ++i)
+        ids.push_back(add(f.doc, LineData{{double(i), 0}, {double(i) + 0.5, 1}}));
+    const auto& grips = tf::cachedGrips(f.doc, ids, std::numeric_limits<std::size_t>::max());
+    CHECK(grips.size() >= 100000);
+    const tf::Grip* g = tf::hitGrip(grips, {25000.0, 0.0}, 0.2);
+    REQUIRE(g);
+    CHECK(near(g->pos, {25000.0, 0.0}));
 }

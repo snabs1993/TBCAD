@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/apply.h"
@@ -221,8 +222,33 @@ public:
 
 }  // namespace
 
+// GRIPOBJLIMIT: grips are shown for a selection of at most this many objects (0: any number).
+class GripObjLimitCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "GRIPOBJLIMIT"; }
+    std::string_view description() const override {
+        return "Most objects that still show grips when selected (0 = no limit)";
+    }
+    Task run(CommandContext& ctx) override {
+        const std::size_t cur = gripLimit(ctx.host());
+        const long long shown =
+            cur == std::numeric_limits<std::size_t>::max() ? 0 : static_cast<long long>(cur);
+        cmd::IntOptions io;
+        io.defaultValue = shown;
+        io.min = 0;
+        io.max = 32767;
+        auto r = co_await ctx.getInteger(
+            "New value for GRIPOBJLIMIT <" + std::to_string(shown) + ">", io);
+        if (!r.ok())
+            co_return;
+        ctx.host().setSetting("grips.limit", std::to_string(r.value));
+        ctx.message("GRIPOBJLIMIT = " + std::to_string(r.value) + ".");
+    }
+};
+
 void registerGripCommand(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<GripEditCommand>());
+    (void)registry.add(std::make_unique<GripObjLimitCommand>());
 }
 
 }  // namespace tbcad::transform
