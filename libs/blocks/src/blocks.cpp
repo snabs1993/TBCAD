@@ -1,7 +1,10 @@
 #include "tbcad/blocks/blocks.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <tuple>
 #include <unordered_map>
@@ -132,6 +135,14 @@ Result<void> validateBlockName(const Document& doc, std::string_view name, Block
 }
 
 namespace {
+// TBCAD_INDEX_PROFILE: an object inside a block that takes long to measure, on stderr.
+bool profileBlocks() {
+    static const bool on = [] {
+        const char* v = std::getenv("TBCAD_INDEX_PROFILE");
+        return v && *v && *v != '0';
+    }();
+    return on;
+}
 
 // Blocks directly inserted by `block`.
 void directChildren(const Document& doc, BlockId block, std::vector<BlockId>& out) {
@@ -219,8 +230,8 @@ BBox2 limitToClip(BBox2 box, const InsertData& ins, const Transform2& t) {
 // for one call, or for a BoundsMemoScope (many measurements while the drawing does not change).
 struct Local {
     bool plain = false;
-    bool attdefs = false;  // has attribute definitions of its own (not counted in `box`)
-    BBox2 box{};  // everything but its own attribute definitions, in block space
+    bool attdefs = false;    // has attribute definitions of its own (not counted in `box`)
+    BBox2 box{};             // everything but its own attribute definitions, in block space
     std::size_t leaves = 0;  // drawn objects below it, counting nested ones (capped)
 };
 struct Memo {
@@ -305,9 +316,10 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
                 const auto key = std::make_tuple(def.id.value, t.m00, t.m01, t.m10, t.m11);
                 auto it = memo.turned.find(key);
                 if (it == memo.turned.end())
-                    it = memo.turned
-                             .emplace(key, contentBounds(doc, def, turn, depth, nullptr, memo, true))
-                             .first;
+                    it =
+                        memo.turned
+                            .emplace(key, contentBounds(doc, def, turn, depth, nullptr, memo, true))
+                            .first;
                 box = it->second;
                 if (!box.empty()) {
                     box.min += Vec2{t.tx, t.ty};
@@ -358,11 +370,25 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
                 continue;
             e = &*shown;
         }
+        const auto start = profileBlocks() ? std::chrono::steady_clock::now()
+                                           : std::chrono::steady_clock::time_point{};
         auto moved = geom::transformed(*e, t);
         if (moved) {
             box.merge(geom::bounds(moved.value(), doc));
         } else {
             box.merge(t.applyToBox(geom::bounds(*e, doc)));
+        }
+        if (profileBlocks()) {
+            const double ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count();
+            if (ms > 20)
+                std::fprintf(stderr,
+                             "block profile: #%llu (kind %zu) in block '%s' measured in %.1f ms "
+                             "(%s)\n",
+                             static_cast<unsigned long long>(e->common.id.value), e->data.index(),
+                             def.name.c_str(), ms,
+                             moved ? "transformed" : "box of the untransformed object");
         }
     }
     return box;
