@@ -813,6 +813,8 @@ TEST_CASE("overkill on a grid of lines and circles finds duplicates and row over
             ++copiesErased;
     CHECK(copiesErased == 80);
     CHECK(res.created.size() == 30);
+}
+
 TEST_CASE("overkill removes exactly the repeats among random lines, circles and points") {
     std::mt19937 rng(11);
     std::vector<Entity> es;
