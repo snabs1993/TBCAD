@@ -44,6 +44,8 @@ void transformList(const DisplayList& in, const Transform2& t, DisplayList& out)
                     for (auto& ring : copy.rings)
                         for (Vec2& p : ring)
                             p = t.apply(p);
+                    if (copy.glyphRef)
+                        copy.glyphRef->emToWorld = t * copy.glyphRef->emToWorld;
                 } else {
                     for (Vec2& p : copy.pts)
                         p = t.apply(p);

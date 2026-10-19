@@ -184,6 +184,7 @@ private:
     bool convWipeout(const Record& r, std::vector<Entity>& out);
     bool convImage(const Record& r, std::vector<Entity>& out);
     bool convPdfUnderlay(const Record& r, std::vector<Entity>& out);
+    std::optional<TableData> acadTableData(const Record& r, const Frame& f);
     bool convTolerance(const Record& r, std::vector<Entity>& out);
     int toleranceBlocks_ = 0;
     void resolveImages();
@@ -344,6 +345,7 @@ private:
         int page = 1;
     };
     std::vector<PendingPdf> pdfs_{};
+    std::size_t acadTables_ = 0;  // AutoCAD tables read into editable tables
     std::map<std::string, PdfDef> pdfDefs_{};  // PDFDEFINITION handle -> file and page
     std::vector<PendingImage> images_{};
     int imageFrame_ = -1;  // 0 when RASTERVARIABLES hides the frames of all pictures; -1 = no say

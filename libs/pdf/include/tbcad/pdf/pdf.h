@@ -8,8 +8,11 @@
 #include <cstddef>
 #include <deque>
 #include <initializer_list>
+#include <cstdint>
 #include <iosfwd>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -33,6 +36,18 @@ inline constexpr double kDefaultLineWidthMm = 0.25;
 std::string formatNumber(double value, int decimals = 4);
 
 class PdfDocument;
+
+// A TrueType font (glyph outlines in a 'glyf' table) to embed: only the glyphs the pages use are
+// kept, and they are addressed by glyph id, so text shaped elsewhere (Thai marks, ligatures) is
+// written exactly as laid out.
+struct EmbeddedFont {
+    std::shared_ptr<const std::vector<unsigned char>> file{};  // the .ttf or .ttc
+    int faceIndex = 0;
+    std::string postscriptName{};  // e.g. "ArialMT"; empty = from the font. Subsets get "ABCDEF+"
+};
+
+// True when `file` (face `faceIndex`) can be embedded as an EmbeddedFont.
+bool canEmbedTrueType(const std::vector<unsigned char>& file, int faceIndex);
 
 class Page {
 public:
@@ -78,19 +93,28 @@ public:
     void drawImage(std::shared_ptr<const ImageData> image, double blx, double bly, double brx,
                    double bry, double tlx, double tly, double opacity = 1.0);
 
+    // One glyph of a font made with PdfDocument::addFont, filled with the current fill colour.
+    // The matrix (a b c d e f) maps the glyph's em square (1 = one em, y up) to the page (mm).
+    // `text` is the character(s) the glyph stands for, used for copying and searching (empty for
+    // the second and later glyphs of one character). Consecutive glyphs share one text object;
+    // any other operation ends it.
+    void showGlyph(int font, std::uint16_t glyphId, std::u32string_view text, double a, double b,
+                   double c, double d, double e, double f);
+
     // Everything drawn between beginLayer and endLayer belongs to an optional-content group made
     // with PdfDocument::addLayer (a layer the viewer can switch off). Not nested.
     void beginLayer(int layer);
     void endLayer();
 
     // Raw (uncompressed) content stream, mainly for tests.
-    const std::string& content() const { return content_; }
+    std::string content() const { return inText_ ? content_ + "ET\n" : content_; }
 
 private:
     friend class PdfDocument;
     Page(double widthMm, double heightMm) : widthMm_(widthMm), heightMm_(heightMm) {}
     void op(std::string_view text);
     void nums(std::initializer_list<double> values, std::string_view opName);
+    void endText();
 
     double widthMm_;
     double heightMm_;
@@ -102,6 +126,11 @@ private:
     };
     std::vector<Pic> pics_{};        // /Im<i> and /Gs<i> of the page resources
     std::vector<int> layersUsed_{};  // /L<i> of the page resources
+    bool inText_ = false;
+    int textFont_ = -1;              // font selected in the open text object
+    std::set<int> fontsUsed_{};      // /F<i> of the page resources
+    // Per font: glyph id -> the text it stands for (the first one seen), for ToUnicode.
+    std::map<int, std::map<std::uint16_t, std::u32string>> glyphsUsed_{};
 };
 
 class PdfDocument {
@@ -116,6 +145,10 @@ public:
     // Returns its number for Page::beginLayer.
     int addLayer(std::string_view name);
 
+    // A font for Page::showGlyph; returns its number. Check canEmbedTrueType first: a font that
+    // cannot be embedded makes write() fail.
+    int addFont(EmbeddedFont font);
+
     Page& addPage(double widthMm, double heightMm);
     size_t pageCount() const { return pages_.size(); }
 
@@ -128,6 +161,7 @@ private:
     std::string creationDate_;
     bool compress_ = true;
     std::vector<std::string> layerNames_;
+    std::vector<EmbeddedFont> fonts_;
     std::deque<Page> pages_;  // deque: addPage never invalidates earlier references
 };
 

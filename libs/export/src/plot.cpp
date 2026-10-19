@@ -255,6 +255,14 @@ struct Builder {
                     r.push_back(pt(p));
                 fill.rings.push_back(std::move(r));
             }
+            if (f->glyphRef && fill.rings.size() == f->rings.size()) {
+                Transform2 toPaper;
+                toPaper.m00 = toPaper.m11 = layout.paperPerUnit;
+                toPaper.tx = layout.origin.x - layout.area.min.x * layout.paperPerUnit;
+                toPaper.ty = layout.origin.y - layout.area.min.y * layout.paperPerUnit;
+                fill.glyph = f->glyphRef;
+                fill.glyph->emToWorld = toPaper * f->glyphRef->emToWorld;
+            }
             if (!fill.rings.empty())
                 out.emplace_back(std::move(fill));
         } else if (const auto* d = std::get_if<DisplayPoints>(&it)) {

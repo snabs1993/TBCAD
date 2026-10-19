@@ -47,4 +47,8 @@ centred title. Text in a cell is TBCAD markup (plain text works) and wraps at th
 - `.tbcad` stores the table in the entity codec (new kind number after Proxy; older files are unaffected).
 - DXF export writes an INSERT of an anonymous `*T<n>` block holding the drawn grid and texts, so other programs
   show the table, plus TBCAD extended data with the table itself. DXF import rebuilds the table from that data
-  and skips the `*T` block. A table from another program (ACAD_TABLE) is not read as a table.
+  and skips the `*T` block. An AutoCAD table (ACAD_TABLE) is read as an editable table: row heights,
+  column widths, merged cells, the text of every cell (group 1, or the CELL_VALUE text of newer files),
+  the text height and style, the data-row alignment, and a title row when the first row is one merged
+  cell. Borders, colours and fills then follow the TBCAD table style. A table whose cell data does not
+  add up is shown from its `*T` block instead.

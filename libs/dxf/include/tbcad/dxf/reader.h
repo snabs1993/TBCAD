@@ -110,6 +110,7 @@ inline constexpr std::string_view kBadEntity = "dxf.reader.bad_entity";
 inline constexpr std::string_view kExtrusion3d = "dxf.reader.extrusion_3d";
 inline constexpr std::string_view kMirroredText = "dxf.reader.mirrored_text";
 inline constexpr std::string_view kFlattened = "dxf.reader.flattened_3d";
+inline constexpr std::string_view kTableCells = "dxf.reader.table_cells";
 inline constexpr std::string_view kMissingLayer = "dxf.reader.missing_layer";
 inline constexpr std::string_view kMissingLinetype = "dxf.reader.missing_linetype";
 inline constexpr std::string_view kMissingBlock = "dxf.reader.missing_block";

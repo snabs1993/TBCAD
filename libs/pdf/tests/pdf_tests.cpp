@@ -432,3 +432,70 @@ TEST_CASE("qpdf --check: pictures, with and without transparency, shared between
         ++count;
     CHECK(count == 3);
 }
+
+#include "truetype.h"
+
+namespace {
+std::shared_ptr<const std::vector<unsigned char>> readFontFile(const char* name) {
+    std::ifstream in(std::filesystem::path(TBCAD_TEST_FONT_DIR) / name, std::ios::binary);
+    REQUIRE(in);
+    return std::make_shared<const std::vector<unsigned char>>(
+        (std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+}  // namespace
+
+TEST_CASE("a TrueType subset keeps the used glyphs and their ids") {
+    auto file = readFontFile("Sarabun-Regular.ttf");
+    REQUIRE(canEmbedTrueType(*file, 0));
+    CHECK_FALSE(canEmbedTrueType(*file, 1));
+    auto info = detail::readTrueType(*file, 0);
+    REQUIRE(info);
+    CHECK(info->numGlyphs > 100);
+    const std::string subset = detail::subsetTrueType(*file, 0, {36, 37, 38});
+    REQUIRE(!subset.empty());
+    CHECK(subset.size() < file->size() / 4);
+    std::vector<unsigned char> sb(subset.begin(), subset.end());
+    auto again = detail::readTrueType(sb, 0);
+    REQUIRE(again);
+    CHECK(again->numGlyphs == info->numGlyphs);
+    CHECK(again->advances == info->advances);
+    CHECK(again->unitsPerEm == info->unitsPerEm);
+}
+
+TEST_CASE("glyphs are written as text with an embedded subset and a ToUnicode map") {
+    PdfDocument doc;
+    doc.setCompression(false);
+    const int f = doc.addFont({readFontFile("Sarabun-Regular.ttf"), 0, "Sarabun-Regular"});
+    Page& p = doc.addPage(210, 297);
+    p.setFillRGB(1, 0, 0);
+    p.showGlyph(f, 36, U"A", 10, 0, 0, 10, 20, 30);
+    p.showGlyph(f, 37, U"ส", 10, 0, 0, 10, 26, 30);  // Thai so sua
+    p.moveTo(0, 0);  // ends the text object
+    p.lineTo(10, 0);
+    p.stroke();
+    const std::string c = p.content();
+    CHECK(c.find("BT\n/F0 1 Tf\n") != std::string::npos);
+    CHECK(c.find("<0024> Tj") != std::string::npos);
+    CHECK(c.find("ET\n") < c.find(" m\n"));
+    const std::string s = bytes(doc);
+    CHECK(s.find("/Subtype /Type0") != std::string::npos);
+    CHECK(s.find("/CIDToGIDMap /Identity") != std::string::npos);
+    CHECK(s.find("+Sarabun-Regular") != std::string::npos);
+    CHECK(s.find("<0024> <0041>") != std::string::npos);
+    CHECK(s.find("<0025> <0E2A>") != std::string::npos);
+    CHECK(s.find("/Font << /F0 ") != std::string::npos);
+
+    // With poppler installed: the text comes back out of the file.
+    if (std::system("pdftotext -v > /dev/null 2>&1") == 0) {
+        const auto dir = std::filesystem::temp_directory_path();
+        const auto pdf = dir / "tbcad_text_test.pdf", txt = dir / "tbcad_text_test.txt";
+        REQUIRE(doc.writeFile(pdf.string()).ok());
+        REQUIRE(std::system(("pdftotext \"" + pdf.string() + "\" \"" + txt.string() + "\"").c_str()) == 0);
+        std::ifstream in(txt, std::ios::binary);
+        std::string out((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(out.find("A") != std::string::npos);
+        CHECK(out.find("\xE0\xB8\xAA") != std::string::npos);  // U+0E2A in UTF-8
+        std::filesystem::remove(pdf);
+        std::filesystem::remove(txt);
+    }
+}

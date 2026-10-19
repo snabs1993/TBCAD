@@ -78,6 +78,7 @@ void place(const DisplayList& local, const Placed& at, DisplayList& out) {
             out.items.emplace_back(std::move(q));
         } else if (const auto* f = std::get_if<DisplayFill>(&item)) {
             DisplayFill q = *f;
+            q.glyphRef.reset();
             for (auto& ring : q.rings)
                 for (Vec2& v : ring)
                     v = at.map(v);
