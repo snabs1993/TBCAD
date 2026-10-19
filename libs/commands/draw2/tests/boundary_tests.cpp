@@ -207,3 +207,43 @@ TEST_CASE("BOUNDARY finds the outline among many islands and refuses a gap") {
     g.host.run("BO", {"5,5", ""});
     CHECK(g.entities().size() == 4);
 }
+
+TEST_CASE("BOUNDARY closes gaps with the HATCH gap tolerance, among 50 000 nearby lines") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("fill");
+        auto line = [&](Vec2 a, Vec2 b) {
+            Entity e;
+            e.data = LineData{a, b};
+            REQUIRE(tx.add(std::move(e)).ok());
+        };
+        for (int i = 0; i < 12500; ++i) {
+            const double x = (i % 125) * 30.0 + 1000, y = (i / 125) * 30.0;
+            line({x, y}, {x + 20, y});
+            line({x + 20, y}, {x + 20, y + 20});
+            line({x + 20, y + 20}, {x, y + 20});
+            line({x, y + 20}, {x, y});
+        }
+        // A messy room: gap at one corner, an overlapping duplicate wall, an arc corner.
+        line({0, 0}, {100, 0});
+        line({50, 0}, {120, 0});  // overlaps the bottom wall
+        line({100, 0}, {100, 100});
+        line({100, 100}, {0, 100});
+        line({0, 100}, {0, 0.4});  // stops 0.4 short of the corner
+        tx.commit();
+    }
+    f.host.run("BO", {"50,50", ""});
+    CHECK(f.entities().size() == 50005);  // no closed region: nothing created
+    f.host.setSetting("hatch.gap", "1");
+    auto t0 = std::chrono::steady_clock::now();
+    f.host.run("BO", {"50,50", ""});
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0)
+            .count();
+    REQUIRE(f.entities().size() == 50006);
+    const auto& pl = as<PolylineData>(f.entities().back());
+    CHECK(pl.closed);
+    CHECK(std::abs(geom::signedArea(pl)) > 9900);
+    MESSAGE("50k objects with a gap: BOUNDARY pick " << ms << " ms");
+    CHECK(ms < 3000);
+}
