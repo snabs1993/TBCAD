@@ -519,7 +519,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 7)
+            if (flags > 15)
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -548,6 +548,17 @@ private:
                 rulesByte = r.u8();
                 justify = r.u8();
             }
+            DimAngleFormat angleFormat = DimAngleFormat::Degrees;
+            int angularPrecision = -1;
+            bool commaDecimal = false;
+            if (flags & 8) {
+                angleFormat =
+                    readEnum<DimAngleFormat>(r, static_cast<std::uint8_t>(DimAngleFormat::Radians));
+                angularPrecision = static_cast<int>(r.u8()) - 1;
+                commaDecimal = r.u8() != 0;
+                if (angularPrecision < -1 || angularPrecision > 8)
+                    bad("invalid dimension style angular precision");
+            }
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
                 bad("invalid dimension style tolerance");
@@ -560,6 +571,9 @@ private:
                                         d.fit = fit;
                                         d.textMove = textMove;
                                         unpackDimRules(d, rulesByte, justify);
+                                        d.angleFormat = angleFormat;
+                                        d.angularPrecision = angularPrecision;
+                                        d.commaDecimal = commaDecimal;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

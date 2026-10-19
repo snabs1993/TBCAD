@@ -1624,7 +1624,18 @@ void Importer::readDimStyle(const Record& r) {
     nonNegative(42, k_, ds.extLineOffset);     // DIMEXO
     nonNegative(44, k_, ds.extLineExtension);  // DIMEXE
     nonNegative(46, k_, ds.dimLineExtension);  // DIMDLE
-    if (const Group* g = r.find(271)) {        // DIMDEC
+    if (const Group* g = r.find(275)) {        // DIMAUNIT
+        const std::int64_t u = g->integer();
+        ds.angleFormat = u == 1   ? DimAngleFormat::Dms
+                         : u == 2 ? DimAngleFormat::Gradians
+                         : u == 3 ? DimAngleFormat::Radians
+                                  : DimAngleFormat::Degrees;
+    }
+    if (const Group* g = r.find(179))  // DIMADEC: -1 means the same as DIMDEC
+        ds.angularPrecision = static_cast<int>(std::clamp<std::int64_t>(g->integer(), -1, 8));
+    if (const Group* g = r.find(278))  // DIMDSEP: the character code of the decimal mark
+        ds.commaDecimal = g->integer() == ',';
+    if (const Group* g = r.find(271)) {  // DIMDEC
         ds.precision = static_cast<int>(std::clamp<std::int64_t>(g->integer(), 0, 16));
     }
     if (const DimStyle* old = doc_->dimStyleByName(name)) {
