@@ -148,7 +148,42 @@ struct DimStyle {
     double linearFactor = 1;
     DimFit fit = DimFit::Best;
     DimTextMove textMove = DimTextMove::WithLine;
+    // Text and line rules for linear dimensions. `textAlign` is DIMTIH (text between the
+    // extension lines), `textAlignOutside` DIMTOH (text beyond them).
+    DimTextAlign textAlignOutside = DimTextAlign::WithDimLine;
+    bool textInsideForced = false;       // DIMTIX: text always between the extension lines
+    bool suppressArrowsOutside = false;  // DIMSOXD: no arrows when they do not fit
+    // DIMTOFL: the dimension line is drawn between the extension lines even when the arrows are
+    // outside. On by default (how TBCAD always drew it); a file's own value (often 0) is kept.
+    bool forceLineInside = true;
+    bool suppressExt1 = false, suppressExt2 = false;  // DIMSE1, DIMSE2
+    bool suppressDim1 = false,
+         suppressDim2 = false;  // DIMSD1, DIMSD2 (half dimension line + arrow)
+    int textJustify = 0;  // DIMJUST: 0 centred, 1 next to the first extension line, 2 the second
 };
+
+// The text and line rules of a dimension style packed in one byte (bit 0 outside text horizontal,
+// 1 DIMTIX, 2 DIMSOXD, 3 DIMTOFL, 4 DIMSE1, 5 DIMSE2, 6 DIMSD1, 7 DIMSD2) for the file formats.
+// The default style packs to kDimRulesDefault.
+inline constexpr std::uint8_t kDimRulesDefault = 0x08;
+inline std::uint8_t packDimRules(const DimStyle& s) {
+    return static_cast<std::uint8_t>(
+        (s.textAlignOutside == DimTextAlign::Horizontal ? 1 : 0) | (s.textInsideForced ? 2 : 0) |
+        (s.suppressArrowsOutside ? 4 : 0) | (s.forceLineInside ? 8 : 0) |
+        (s.suppressExt1 ? 16 : 0) | (s.suppressExt2 ? 32 : 0) | (s.suppressDim1 ? 64 : 0) |
+        (s.suppressDim2 ? 128 : 0));
+}
+inline void unpackDimRules(DimStyle& s, std::uint8_t b, int justify) {
+    s.textAlignOutside = (b & 1) ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+    s.textInsideForced = (b & 2) != 0;
+    s.suppressArrowsOutside = (b & 4) != 0;
+    s.forceLineInside = (b & 8) != 0;
+    s.suppressExt1 = (b & 16) != 0;
+    s.suppressExt2 = (b & 32) != 0;
+    s.suppressDim1 = (b & 64) != 0;
+    s.suppressDim2 = (b & 128) != 0;
+    s.textJustify = justify >= 0 && justify <= 2 ? justify : 0;
+}
 
 // ---- Dynamic blocks --------------------------------------------------------------------------
 // A block can carry parameters and actions. Each Insert stores one value per parameter

@@ -516,7 +516,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 3)
+            if (flags > 7)
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -539,6 +539,12 @@ private:
                 if (!std::isfinite(linearFactor) || !(linearFactor > 0))
                     bad("invalid dimension style linear factor");
             }
+            std::uint8_t rulesByte = kDimRulesDefault;
+            int justify = 0;
+            if (flags & 4) {
+                rulesByte = r.u8();
+                justify = r.u8();
+            }
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
                 bad("invalid dimension style tolerance");
@@ -550,6 +556,7 @@ private:
                                         d.linearFactor = linearFactor;
                                         d.fit = fit;
                                         d.textMove = textMove;
+                                        unpackDimRules(d, rulesByte, justify);
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

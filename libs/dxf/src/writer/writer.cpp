@@ -694,9 +694,14 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                 o.str(4, ds.altPrefix + "[]" + ds.altSuffix);
         }
         if (ds.linearFactor != 1)
-            o.d(144, ds.linearFactor);  // DIMLFAC
-        o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);
-        o.i(74, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);
+            o.d(144, ds.linearFactor);                                     // DIMLFAC
+        o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);         // DIMTIH
+        o.i(74, ds.textAlignOutside == DimTextAlign::Horizontal ? 1 : 0);  // DIMTOH
+        o.i(75, ds.suppressExt1 ? 1 : 0);                                  // DIMSE1
+        o.i(76, ds.suppressExt2 ? 1 : 0);                                  // DIMSE2
+        o.i(172, ds.forceLineInside ? 1 : 0);                              // DIMTOFL
+        o.i(174, ds.textInsideForced ? 1 : 0);                             // DIMTIX
+        o.i(175, ds.suppressArrowsOutside ? 1 : 0);                        // DIMSOXD
         o.i(77, ds.textPlacement == DimTextPlacement::AboveLine ? 1 : 0);
         o.i(78, (ds.suppressLeadingZeros ? 4 : 0) | (ds.suppressTrailingZeros ? 8 : 0));
         o.d(140, ds.textHeight);
@@ -706,6 +711,9 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(178, clr(ds.textColor));
         if (!r12_) {
             o.i(271, std::clamp(ds.precision, 0, 16));
+            o.i(280, ds.textJustify);           // DIMJUST
+            o.i(281, ds.suppressDim1 ? 1 : 0);  // DIMSD1
+            o.i(282, ds.suppressDim2 ? 1 : 0);  // DIMSD2
             // DIMTMOVE (279) and DIMATFIT (289); 0 and 3 are the AutoCAD defaults.
             o.i(279, static_cast<int>(ds.textMove));
             o.i(289, ds.fit == DimFit::BothOutside   ? 0
@@ -714,6 +722,12 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                                                      : 3);
             if (ds.tolerance != DimTolerance::None)
                 o.i(272, std::clamp(ds.tolPrecision, 0, 16));
+            // The arrow kind has no group TBCAD can write (DIMBLK wants a block record's handle):
+            // it travels as extended data of the style.
+            if (ds.arrowType != ArrowType::ClosedFilled) {
+                o.raw(1001, "TBCAD");
+                o.raw(1000, "arrow=" + std::to_string(static_cast<int>(ds.arrowType)));
+            }
         }
     }
     tableEnd(o);

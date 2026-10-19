@@ -10,6 +10,7 @@
 #include "tbcad/dxf/writer.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/hatch/pattern.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/underlay/image.h"
 
 namespace tbcad::dxf {
@@ -1436,6 +1437,69 @@ TEST_CASE("draw order (front, back, wipeouts, inside blocks) survives a DXF roun
     CHECK(before.front() == '3');
     RoundTrip rt = roundTrip(doc);
     CHECK(sig(*rt.back) == before);
+}
+
+TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip") {
+    Document doc;
+    {
+        auto tx = doc.begin("style");
+        DimStyle s;
+        s.name = "Rules";
+        s.arrowType = ArrowType::ArchTick;
+        s.altUnits = true;
+        s.altPrecision = 3;
+        s.altPrefix = "[";
+        s.altSuffix = " in]";
+        s.tolerance = DimTolerance::Deviation;
+        s.tolUpper = 0.1;
+        s.tolLower = 0.05;
+        s.tolPrecision = 3;
+        s.linearFactor = 2;
+        s.fit = DimFit::TextFirst;
+        s.textMove = DimTextMove::Leader;
+        s.textAlign = DimTextAlign::Horizontal;
+        s.textAlignOutside = DimTextAlign::WithDimLine;
+        s.textInsideForced = true;
+        s.suppressArrowsOutside = true;
+        s.forceLineInside = false;
+        s.suppressExt1 = true;
+        s.suppressDim2 = true;
+        s.textJustify = 2;
+        REQUIRE(tx.addDimStyle(s).ok());
+        tx.commit();
+    }
+    auto check = [](const Document& d) {
+        const DimStyle* s = d.dimStyleByName("Rules");
+        REQUIRE(s);
+        CHECK(s->arrowType == ArrowType::ArchTick);
+        CHECK(s->altUnits);
+        CHECK(s->altPrecision == 3);
+        CHECK(s->tolerance == DimTolerance::Deviation);
+        CHECK(s->tolUpper == doctest::Approx(0.1));
+        CHECK(s->tolLower == doctest::Approx(0.05));
+        CHECK(s->tolPrecision == 3);
+        CHECK(s->linearFactor == doctest::Approx(2));
+        CHECK(s->fit == DimFit::TextFirst);
+        CHECK(s->textMove == DimTextMove::Leader);
+        CHECK(s->textAlign == DimTextAlign::Horizontal);
+        CHECK(s->textAlignOutside == DimTextAlign::WithDimLine);
+        CHECK(s->textInsideForced);
+        CHECK(s->suppressArrowsOutside);
+        CHECK_FALSE(s->forceLineInside);
+        CHECK(s->suppressExt1);
+        CHECK_FALSE(s->suppressExt2);
+        CHECK_FALSE(s->suppressDim1);
+        CHECK(s->suppressDim2);
+        CHECK(s->textJustify == 2);
+    };
+    RoundTrip rt = roundTrip(doc);
+    check(*rt.back);
+    auto bytes = io::writeTbcadToMemory(doc);
+    REQUIRE(bytes.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(bytes.value(), ioReport);
+    REQUIRE(reopened.ok());
+    check(*reopened.value());
 }
 
 TEST_CASE("named plot styles of layers and objects survive a DXF round trip") {

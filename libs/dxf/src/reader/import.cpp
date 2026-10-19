@@ -1485,11 +1485,27 @@ void Importer::readDimStyle(const Record& r) {
         }
     }
     // Text orientation: inside (73) or outside (74) text kept horizontal; above the line (77).
-    if (r.has(73) || r.has(74)) {
-        const bool horizontal =
-            (r.has(73) && r.find(73)->integer() != 0) || (r.has(74) && r.find(74)->integer() != 0);
-        ds.textAlign = horizontal ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
-    }
+    auto flag = [&](int code, bool& out) {
+        if (const Group* g = r.find(code))
+            out = g->integer() != 0;
+    };
+    if (r.has(73))
+        ds.textAlign =
+            r.find(73)->integer() != 0 ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+    if (r.has(74))
+        ds.textAlignOutside =
+            r.find(74)->integer() != 0 ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
+    flag(75, ds.suppressExt1);            // DIMSE1
+    flag(76, ds.suppressExt2);            // DIMSE2
+    flag(172, ds.forceLineInside);        // DIMTOFL
+    flag(174, ds.textInsideForced);       // DIMTIX
+    flag(175, ds.suppressArrowsOutside);  // DIMSOXD
+    flag(281, ds.suppressDim1);           // DIMSD1
+    flag(282, ds.suppressDim2);           // DIMSD2
+    if (const Group* g =
+            r.find(280))  // DIMJUST (3 and 4, over the extension line, read as centred)
+        ds.textJustify =
+            g->integer() == 1 || g->integer() == 2 ? static_cast<int>(g->integer()) : 0;
     if (r.has(77))
         ds.textPlacement =
             r.find(77)->integer() != 0 ? DimTextPlacement::AboveLine : DimTextPlacement::Centered;
@@ -1547,6 +1563,16 @@ void Importer::readDimStyle(const Record& r) {
             ds.arrowType = ArrowType::Open30;
         else if (arrow == "_NONE")
             ds.arrowType = ArrowType::None;
+    }
+    for (const Group& x : r.g) {  // the arrow kind TBCAD writes as extended data
+        if (x.code != 1000)
+            continue;
+        const std::string_view v = x.str();
+        if (v.rfind("arrow=", 0) == 0) {
+            const int a = std::atoi(std::string(v.substr(6)).c_str());
+            if (a >= 0 && a <= static_cast<int>(ArrowType::None))
+                ds.arrowType = static_cast<ArrowType>(a);
+        }
     }
     nonNegative(147, k_, ds.textGap);          // DIMGAP
     nonNegative(42, k_, ds.extLineOffset);     // DIMEXO
@@ -2367,9 +2393,10 @@ Result<ImportResult> Importer::run() {
     // A big file is split into records on a second thread while this one builds the drawing (a
     // small one is not worth the thread; asking for threads in the options forces it).
     constexpr std::size_t kReadAheadBytes = std::size_t{1} << 20;
-    const bool readAhead = !groups_ && (opts_.maxThreads ? opts_.maxThreads >= 2
-                                                         : bytes_.size() >= kReadAheadBytes &&
-                                                               std::thread::hardware_concurrency() >= 2);
+    const bool readAhead =
+        !groups_ && (opts_.maxThreads ? opts_.maxThreads >= 2
+                                      : bytes_.size() >= kReadAheadBytes &&
+                                            std::thread::hardware_concurrency() >= 2);
     if (readAhead)
         rr.readAhead(report_);
     Record rec;
