@@ -55,17 +55,27 @@ std::optional<std::string> matchKeyword(const std::vector<std::string>& keywords
         const bool mixed = n < k.size() && std::islower(static_cast<unsigned char>(k[n]));
         return mixed && n >= 2 ? n : std::size_t{1};
     };
+    // A prefix that fits several keywords goes to the one whose shortcut starts with it: "M"
+    // picks "Multiple" over "mEthod", whose shortcut is "E".
     const std::string* found = nullptr;
+    int matches = 0;
+    const std::string* capital = nullptr;
+    int capitals = 0;
     for (const std::string& k : keywords) {
         if (in.size() >= shortest(k) && toUpperAscii(k).rfind(in, 0) == 0) {
-            if (found)
-                return std::nullopt;  // ambiguous prefix
             found = &k;
+            ++matches;
+            if (std::isupper(static_cast<unsigned char>(k[0]))) {
+                capital = &k;
+                ++capitals;
+            }
         }
     }
-    if (found)
+    if (matches == 1)
         return *found;
-    return std::nullopt;
+    if (matches > 1 && capitals == 1)
+        return *capital;
+    return std::nullopt;  // no match, or an ambiguous prefix
 }
 
 void PointFilterChain::add(PointFilter* f, int order) {

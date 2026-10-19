@@ -2399,3 +2399,39 @@ TEST_CASE("MATCHPROP passes text height and style between text and MText, and ta
     CHECK(entityAs<TableData>(f.get(y))->textHeight == doctest::Approx(4));
     CHECK(entityAs<TableData>(f.get(y))->margin == doctest::Approx(2));
 }
+
+TEST_CASE("FILLET and CHAMFER report the current settings and Undo takes back the last corner") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 0}, {0, 10}});
+    EntityId c = f.add(LineData{{30, 0}, {40, 0}});
+    EntityId d = f.add(LineData{{30, 0}, {30, 10}});
+    auto r = f.host.run("FILLET", {"R", "2", "M", ScriptItem::pick(a, {8, 0}),
+                                   ScriptItem::pick(b, {0, 8}), ScriptItem::pick(c, {38, 0}),
+                                   ScriptItem::pick(d, {30, 8}), "U", ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Arc) == 1);  // the second corner was taken back
+    bool reported = false;
+    for (const auto& m : f.host.log())
+        reported |= m.find("Current settings: Mode = TRIM, Radius = 0.0000") != std::string::npos;
+    CHECK(reported);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Arc) == 0);
+
+    // CHAMFER: M is Multiple, E is the method; Undo with nothing made says so.
+    Fixture g;
+    EntityId p = g.add(LineData{{0, 0}, {10, 0}});
+    EntityId q = g.add(LineData{{0, 0}, {0, 10}});
+    r = g.host.run("CHAMFER", {"U", "D", "2", "2", "E", "D", "M", ScriptItem::pick(p, {8, 0}),
+                               ScriptItem::pick(q, {0, 8}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(g.count(EntityKind::Line) == 3);
+    bool dist = false, undone = false;
+    for (const auto& m : g.host.log()) {
+        dist |= m.find("(TRIM mode) Current chamfer Dist1 = 1.0000, Dist2 = 1.0000") !=
+                std::string::npos;
+        undone |= m.find("Everything has been undone.") != std::string::npos;
+    }
+    CHECK(dist);
+    CHECK(undone);
+}

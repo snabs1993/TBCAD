@@ -1,3 +1,6 @@
+#include <cstdio>
+#include <string>
+
 #include "commands.h"
 #include "util.h"
 
@@ -94,7 +97,8 @@ void cornerOp(cmd::CommandContext& ctx, Corner what, const cmd::EntityResult& fi
         auto v = modify::sharedVertex(*pl, sa, sb);
         Entity reduced;
         if (!v) {
-            // Two lines with one arc between them: the arc goes, the lines meet, the corner is made.
+            // Two lines with one arc between them: the arc goes, the lines meet, the corner is
+            // made.
             auto gone = modify::removeArcBetween(*a, sa, sb);
             if (!gone) {
                 ctx.message("Those two segments do not share a corner.");
@@ -104,7 +108,8 @@ void cornerOp(cmd::CommandContext& ctx, Corner what, const cmd::EntityResult& fi
             v = gone.value().vertex;
             a = &reduced;
         }
-        const bool sharp = fillet ? radius <= 0 : (co.distance1 <= 0 && co.distance2 <= 0 && !co.byAngle);
+        const bool sharp =
+            fillet ? radius <= 0 : (co.distance1 <= 0 && co.distance2 <= 0 && !co.byAngle);
         auto res = sharp && &reduced == a ? Result<Entity>(reduced)
                    : fillet               ? modify::filletPolylineVertex(*a, *v, radius)
                                           : modify::chamferPolylineVertex(*a, *v, co);
@@ -148,18 +153,36 @@ void polylineOp(cmd::CommandContext& ctx, Corner what, EntityId id) {
         ctx.message(r.error().message);
 }
 
+std::string fixed4(double v) {
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "%.4f", v);
+    return buf;
+}
+
+// Undo inside FILLET and CHAMFER: each corner is made after a checkpoint.
+void undoCorner(cmd::CommandContext& ctx) {
+    if (!ctx.rollbackToCheckpoint())
+        ctx.message("Everything has been undone.");
+}
+
 cmd::Task filletRun(cmd::CommandContext& ctx) {
     ctx.commitOnCancel();
     bool multiple = false;
+    // As AutoCAD reports it when the command starts.
+    ctx.message(std::string("Current settings: Mode = ") +
+                (getFlag(ctx.host(), kFilletTrimKey, true) ? "TRIM" : "NOTRIM") +
+                ", Radius = " + fixed4(getSetting(ctx.host(), kRadiusKey, 0.0)));
     for (;;) {
         const double radius = getSetting(ctx.host(), kRadiusKey, 0.0);
         cmd::EntityOptions eo;
-        eo.keywords = {"Polyline", "Radius", "Trim", "Multiple"};
+        eo.keywords = {"Undo", "Polyline", "Radius", "Trim", "Multiple"};
         eo.filter = [&doc = ctx.doc()](const Entity& e) { return filletable(doc, e); };
-        auto first =
-            co_await ctx.getEntity("Select first object or [Polyline/Radius/Trim/Multiple]", eo);
+        auto first = co_await ctx.getEntity(
+            "Select first object or [Undo/Polyline/Radius/Trim/Multiple]", eo);
         if (first.status == cmd::Status::Keyword) {
-            if (first.keyword == "Radius") {
+            if (first.keyword == "Undo") {
+                undoCorner(ctx);
+            } else if (first.keyword == "Radius") {
                 cmd::DistanceOptions d;
                 d.defaultValue = radius;
                 auto r = co_await ctx.getDistance("Specify fillet radius", d);
@@ -180,8 +203,10 @@ cmd::Task filletRun(cmd::CommandContext& ctx) {
                     return isEditable(doc, e) && kind(e) == EntityKind::Polyline;
                 };
                 auto p = co_await ctx.getEntity("Select polyline", po);
-                if (p.ok())
+                if (p.ok()) {
+                    ctx.checkpoint();
                     polylineOp(ctx, Corner::Fillet, p.id);
+                }
                 if (!multiple)
                     co_return;
             }
@@ -195,8 +220,10 @@ cmd::Task filletRun(cmd::CommandContext& ctx) {
             co_await ctx.getEntity("Select second object or Shift-select to apply corner", so);
         if (second.status == cmd::Status::Cancel)
             co_return;
-        if (second.ok())
+        if (second.ok()) {
+            ctx.checkpoint();
             cornerOp(ctx, Corner::Fillet, first, second);
+        }
         if (!multiple)
             co_return;
     }
@@ -205,14 +232,28 @@ cmd::Task filletRun(cmd::CommandContext& ctx) {
 cmd::Task chamferRun(cmd::CommandContext& ctx) {
     ctx.commitOnCancel();
     bool multiple = false;
+    {
+        const bool trim = getFlag(ctx.host(), kChamferTrimKey, true);
+        std::string msg = std::string("(") + (trim ? "TRIM" : "NO TRIM") + " mode) ";
+        if (getFlag(ctx.host(), kByAngleKey, false))
+            msg += "Current chamfer Length = " + fixed4(getSetting(ctx.host(), kD1Key, 1.0)) +
+                   ", Angle = " + fixed4(getSetting(ctx.host(), kAngleKey, kPi / 4) * 180 / kPi);
+        else
+            msg += "Current chamfer Dist1 = " + fixed4(getSetting(ctx.host(), kD1Key, 1.0)) +
+                   ", Dist2 = " + fixed4(getSetting(ctx.host(), kD2Key, 1.0));
+        ctx.message(msg);
+    }
     for (;;) {
         cmd::EntityOptions eo;
-        eo.keywords = {"Polyline", "Distance", "Angle", "Trim", "Method", "Multiple"};
+        // mEthod as in AutoCAD: M picks Multiple, E picks the method.
+        eo.keywords = {"Undo", "Polyline", "Distance", "Angle", "Trim", "mEthod", "Multiple"};
         eo.filter = [&doc = ctx.doc()](const Entity& e) { return chamferable(doc, e); };
         auto first = co_await ctx.getEntity(
-            "Select first line or [Polyline/Distance/Angle/Trim/Method/Multiple]", eo);
+            "Select first line or [Undo/Polyline/Distance/Angle/Trim/mEthod/Multiple]", eo);
         if (first.status == cmd::Status::Keyword) {
-            if (first.keyword == "Distance") {
+            if (first.keyword == "Undo") {
+                undoCorner(ctx);
+            } else if (first.keyword == "Distance") {
                 cmd::DistanceOptions d1;
                 d1.defaultValue = getSetting(ctx.host(), kD1Key, 1.0);
                 auto a = co_await ctx.getDistance("Specify first chamfer distance", d1);
@@ -240,7 +281,7 @@ cmd::Task chamferRun(cmd::CommandContext& ctx) {
                         putFlag(ctx.host(), kByAngleKey, true);
                     }
                 }
-            } else if (first.keyword == "Method") {
+            } else if (first.keyword == "mEthod") {
                 cmd::KeywordOptions k;
                 k.keywords = {"Distance", "Angle"};
                 k.defaultKeyword = getFlag(ctx.host(), kByAngleKey, false) ? "Angle" : "Distance";
@@ -262,8 +303,10 @@ cmd::Task chamferRun(cmd::CommandContext& ctx) {
                     return isEditable(doc, e) && kind(e) == EntityKind::Polyline;
                 };
                 auto p = co_await ctx.getEntity("Select polyline", po);
-                if (p.ok())
+                if (p.ok()) {
+                    ctx.checkpoint();
                     polylineOp(ctx, Corner::Chamfer, p.id);
+                }
                 if (!multiple)
                     co_return;
             }
@@ -277,8 +320,10 @@ cmd::Task chamferRun(cmd::CommandContext& ctx) {
             co_await ctx.getEntity("Select second line or Shift-select to apply corner", so);
         if (second.status == cmd::Status::Cancel)
             co_return;
-        if (second.ok())
+        if (second.ok()) {
+            ctx.checkpoint();
             cornerOp(ctx, Corner::Chamfer, first, second);
+        }
         if (!multiple)
             co_return;
     }

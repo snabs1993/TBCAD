@@ -12,8 +12,8 @@ Two modules (W5-2):
 | `OFFSET` | `O` | `offsetEntity`, `offsetToward`, `offsetThrough` |
 | `TRIM` | `TR` | `trimEntity` |
 | `EXTEND` | `EX` | `extendEntity` |
-| `FILLET` | `F` | `filletEntities` (also rays and construction lines: the kept side becomes a ray, or a line towards a ray's start), `filletPolylineVertex`, `filletPolyline` |
-| `CHAMFER` | `CHA` | `chamferEntities` (rays and construction lines as for FILLET), `chamferPolylineVertex`, `chamferPolyline` |
+| `FILLET` | `F` | `filletEntities` (also rays and construction lines: the kept side becomes a ray, or a line towards a ray's start), `filletPolylineVertex`, `filletPolyline`; reports the current mode and radius, `Undo` takes back the last corner |
+| `CHAMFER` | `CHA` | `chamferEntities` (rays and construction lines as for FILLET), `chamferPolylineVertex`, `chamferPolyline`; reports the current mode and distances, `Undo` takes back the last corner, `mEthod` (E) since M is Multiple |
 | `BREAK` | `BR` | `breakEntity` (a construction line becomes two rays, a ray a line plus a new ray) |
 | `BREAKATPOINT` | `BAP` | `breakAtPoint` |
 | `JOIN` | `J` | `joinEntities`. A single arc or elliptical arc asks `[cLose/eXit]`: cLose makes it a full circle or ellipse. |

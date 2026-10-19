@@ -730,4 +730,10 @@ TEST_CASE("keywords match by prefix, by the capitals that lead them, and by inne
     CHECK(matchKeyword(kw, "b") == std::optional<std::string>("Back"));   // BEgin needs BE
     CHECK(matchKeyword(kw, "be") == std::optional<std::string>("BEgin"));
     CHECK(matchKeyword(kw, "r") == std::optional<std::string>("Rows"));  // ROTate needs ROT
+    // A shared first letter goes to the keyword it is the shortcut of (CHAMFER's mEthod).
+    const std::vector<std::string> ch{"Trim", "mEthod", "Multiple"};
+    CHECK(matchKeyword(ch, "m") == std::optional<std::string>("Multiple"));
+    CHECK(matchKeyword(ch, "e") == std::optional<std::string>("mEthod"));
+    CHECK(matchKeyword(ch, "method") == std::optional<std::string>("mEthod"));
+    CHECK(matchKeyword(ch, "mu") == std::optional<std::string>("Multiple"));
 }
