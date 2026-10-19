@@ -514,3 +514,64 @@ TEST_CASE("multiline: add and remove a vertex keep the cuts of the other segment
     CHECK_FALSE(offers(f.doc, id2, 0, GripAction::RemoveVertex));
     CHECK_FALSE(tf::applyGripAction(*f.doc.find(id2), 0, GripAction::RemoveVertex, {}).ok());
 }
+
+TEST_CASE("dimension grips: an extension origin changes the measurement, the line grip does not") {
+    Fixture f;
+    f.host.run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    EntityId dimId{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    REQUIRE(dimId);
+    f.host.setSelection({dimId});
+    CHECK(get<DimensionData>(f.doc, dimId).measurement == doctest::Approx(10));
+    // Second extension origin to x = 20: the dimension now measures 20.
+    f.host.run("GRIPEDIT", {"10,0", "20,0"});
+    CHECK(get<DimensionData>(f.doc, dimId).measurement == doctest::Approx(20));
+    CHECK(near(get<DimensionData>(f.doc, dimId).defPts[1], {20, 0}));
+    // The dimension line grip moves the line, the measurement stays.
+    f.host.run("GRIPEDIT", {"5,5", "5,9"});
+    CHECK(get<DimensionData>(f.doc, dimId).measurement == doctest::Approx(20));
+    CHECK(get<DimensionData>(f.doc, dimId).defPts[2].y == doctest::Approx(9));
+    CHECK_FALSE(get<DimensionData>(f.doc, dimId).textPosUser);
+    // Three drags, three undo steps, back to the original.
+    CHECK(f.host.undo());
+    CHECK(f.host.undo());
+    CHECK(get<DimensionData>(f.doc, dimId).measurement == doctest::Approx(10));
+    CHECK(near(get<DimensionData>(f.doc, dimId).defPts[1], {10, 0}));
+}
+
+TEST_CASE("multileader grips: arrowhead, landing with its lines, and the note position") {
+    Fixture f;
+    MLeaderData ml;
+    ml.lines = {{{0, 0}, {10, 10}}, {{0, 20}, {10, 10}}};
+    ml.landing = {10, 10};
+    ml.contentPos = {15, 10};
+    ml.utf8 = "A";
+    auto id = add(f.doc, Indirect<MLeaderData>(ml));
+    f.host.setSelection({id});
+    const auto grips = tf::collectGrips(f.doc, std::vector<EntityId>{id});
+    CHECK(grips.size() == 6);
+    // An arrowhead moves alone.
+    f.host.run("GRIPEDIT", {"0,0", "-3,-2"});
+    CHECK(near(get<MLeaderData>(f.doc, id).lines[0][0], {-3, -2}));
+    CHECK(near(get<MLeaderData>(f.doc, id).landing, {10, 10}));
+    // The landing drags every line that ended there.
+    f.host.run("GRIPEDIT", {"10,10", "12,14"});
+    const auto& m = get<MLeaderData>(f.doc, id);
+    CHECK(near(m.landing, {12, 14}));
+    CHECK(near(m.lines[0].back(), {12, 14}));
+    CHECK(near(m.lines[1].back(), {12, 14}));
+    CHECK(near(m.contentPos, {15, 10}));
+    // The note end moves alone.
+    f.host.run("GRIPEDIT", {"15,10", "20,16"});
+    CHECK(near(get<MLeaderData>(f.doc, id).contentPos, {20, 16}));
+    CHECK(near(get<MLeaderData>(f.doc, id).landing, {12, 14}));
+    // Everything undoes exactly.
+    CHECK(f.host.undo());
+    CHECK(f.host.undo());
+    CHECK(f.host.undo());
+    CHECK(near(get<MLeaderData>(f.doc, id).lines[0][0], {0, 0}));
+    CHECK(near(get<MLeaderData>(f.doc, id).landing, {10, 10}));
+}

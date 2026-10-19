@@ -10,6 +10,7 @@
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/dynamic.h"
 #include "tbcad/blocks/picture.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::transform {
@@ -211,8 +212,12 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, con
             }
             cur = std::move(moved).value();
         }
-        if (ok)
+        if (ok) {
+            // The measurement (and the automatic text place) follow the new definition points.
+            if (auto* dm = entityAs<DimensionData>(cur))
+                dim::refresh(doc, *dm);
             out.emplace_back(set.order[k], std::move(cur));
+        }
     }
     return out;
 }
