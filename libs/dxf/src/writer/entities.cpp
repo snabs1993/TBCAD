@@ -490,7 +490,9 @@ void Writer::flushPlain(std::vector<PlainItem>& items, std::vector<PlainUnit>& u
     for (const std::string& b : blobs)
         total += b.size();
     std::string merged;
-    merged.reserve(total);
+    // (some room to spare: the model's entities get the rest of the file put in front of them
+    // in place, see Writer::run)
+    merged.reserve(total + total / 16 + (std::size_t{1} << 20));
     std::size_t done = 0;
     for (std::size_t u = 0; u < units.size(); ++u) {
         merged.append(dest.buf, done, units[u].at - done);

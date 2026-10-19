@@ -7,6 +7,8 @@
 #include <functional>
 #include <iterator>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <unordered_map>
 
@@ -329,6 +331,25 @@ void eraseLayerTree(Transaction& tx, const Document& doc, LayerId root) {
 
 }  // namespace
 
+namespace {
+// Whether the drive or share a path starts with is there, asked once per run: a drive letter that
+// is not mapped, or a network share that is off line, can take seconds to time out on every look.
+bool rootReachable(const std::filesystem::path& p) {
+    const std::filesystem::path root = p.root_path();
+    if (root.empty() || root == p.root_directory())
+        return true;  // a relative path, or one on the system's own root
+    static std::mutex m;
+    static std::map<std::filesystem::path, bool> known;
+    std::lock_guard lock(m);
+    if (auto it = known.find(root); it != known.end())
+        return it->second;
+    std::error_code ec;
+    const bool there = std::filesystem::exists(root, ec);
+    known[root] = there;
+    return there;
+}
+}  // namespace
+
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile) {
     const std::string plain = underlay::parseSpec(stored).file;
     std::filesystem::path p{std::u8string(plain.begin(), plain.end())};
@@ -339,7 +360,7 @@ std::filesystem::path resolvePath(std::string_view stored, const std::filesystem
     // folder of the drawing (a project folder copied to another disk keeps working). The name
     // may follow a Windows separator that is not one on this system.
     std::error_code ec;
-    if (std::filesystem::is_regular_file(full, ec))
+    if (rootReachable(full) && std::filesystem::is_regular_file(full, ec))
         return full;
     const std::size_t cut = plain.find_last_of("/\\");
     const std::string name = cut == std::string::npos ? plain : plain.substr(cut + 1);
@@ -467,12 +488,11 @@ Result<Source> loadOne(const std::filesystem::path& file) {
         return out;
     }
     if (ext == ".dxf") {
-        std::ifstream in(file, std::ios::binary);
-        std::vector<char> raw((std::istreambuf_iterator<char>(in)),
-                              std::istreambuf_iterator<char>());
-        std::vector<std::byte> bytes(raw.size());
-        std::transform(raw.begin(), raw.end(), bytes.begin(),
-                       [](char c) { return static_cast<std::byte>(c); });
+        std::ifstream in(file, std::ios::binary | std::ios::ate);
+        const std::streamoff size = in ? static_cast<std::streamoff>(in.tellg()) : 0;
+        std::vector<std::byte> bytes(size > 0 ? static_cast<std::size_t>(size) : 0);
+        in.seekg(0, std::ios::beg);
+        in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         dxf::Report report;
         auto res = dxf::importDxf(bytes, dxf::ImportOptions{}, report);
         if (!res)
@@ -493,10 +513,33 @@ Result<Source> loadOne(const std::filesystem::path& file) {
                      "Only .tbcad, .tbt, .dxf, .dwg, .pdf and picture files can be attached");
 }
 
+// Files already read in one go (loadOnOpen): a drawing that several xrefs, or several levels,
+// point at is parsed once.
+using SourceCache = std::map<std::filesystem::path, std::shared_ptr<Result<Source>>>;
+
+Result<Source> loadChain(const std::filesystem::path& file, std::set<std::filesystem::path>& chain,
+                         int depth, SourceCache* cache = nullptr);
+
+// The file through the cache (read on first use), or read afresh without one.
+std::shared_ptr<Result<Source>> loadCached(const std::filesystem::path& file,
+                                           std::set<std::filesystem::path>& chain, int depth,
+                                           SourceCache* cache) {
+    std::error_code ec;
+    const std::filesystem::path canon = std::filesystem::weakly_canonical(file, ec);
+    const std::filesystem::path& key = ec ? file : canon;
+    if (cache)
+        if (auto it = cache->find(key); it != cache->end())
+            return it->second;
+    auto loaded = std::make_shared<Result<Source>>(loadChain(file, chain, depth, cache));
+    if (cache)
+        (*cache)[key] = loaded;
+    return loaded;
+}
+
 // Reads `file` and refreshes the xrefs inside it from their own files. `chain` holds the files
 // being read up the call chain, so a loop of xrefs is cut where it closes.
 Result<Source> loadChain(const std::filesystem::path& file, std::set<std::filesystem::path>& chain,
-                         int depth) {
+                         int depth, SourceCache* cache) {
     auto loaded = loadOne(file);
     if (!loaded || depth >= kMaxNesting)
         return loaded;
@@ -517,9 +560,9 @@ Result<Source> loadChain(const std::filesystem::path& file, std::set<std::filesy
             std::filesystem::path key = std::filesystem::weakly_canonical(p, ec);
             if (chain.count(ec ? p : key))
                 continue;  // a loop: keep the snapshot
-            auto sub = loadChain(p, chain, depth + 1);
-            if (sub)
-                (void)reload(tx, doc, id, sub.value());
+            auto sub = loadCached(p, chain, depth + 1, cache);
+            if (*sub)
+                (void)reload(tx, doc, id, sub->value());
         }
         tx.commit();
     }
@@ -969,7 +1012,7 @@ State state(const Document& doc, BlockId block, const std::filesystem::path& hos
         return State::Unloaded;
     std::filesystem::path p = resolvePath(def->xrefPath, hostFile);
     std::error_code ec;
-    if (!std::filesystem::is_regular_file(p, ec))
+    if (!rootReachable(p) || !std::filesystem::is_regular_file(p, ec))
         return State::Missing;
     return fileStamp(p) == def->xrefStamp ? State::UpToDate : State::Changed;
 }
@@ -986,6 +1029,7 @@ OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile) {
         return out;
     std::error_code ec;
     std::set<std::filesystem::path> chain;
+    SourceCache cache;
     const std::filesystem::path self = std::filesystem::weakly_canonical(hostFile, ec);
     chain.insert(ec ? hostFile : self);
     Transaction tx = doc.begin("load external references");
@@ -993,7 +1037,7 @@ OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile) {
         const BlockDef* def = doc.block(id);
         const std::string name = def->name;
         const std::filesystem::path file = resolvePath(def->xrefPath, hostFile);
-        if (!std::filesystem::is_regular_file(file, ec)) {
+        if (!rootReachable(file) || !std::filesystem::is_regular_file(file, ec)) {
             out.missing.push_back(name);
             continue;
         }
@@ -1002,12 +1046,12 @@ OpenLoad loadOnOpen(Document& doc, const std::filesystem::path& hostFile) {
             out.failed.push_back(name + ": refers back to this drawing");
             continue;
         }
-        auto source = loadChain(file, chain, 1);
-        if (!source) {
-            out.failed.push_back(name + ": " + source.error().message);
+        auto source = loadCached(file, chain, 1, &cache);
+        if (!*source) {
+            out.failed.push_back(name + ": " + source->error().message);
             continue;
         }
-        if (auto r = reload(tx, doc, id, source.value()); !r) {
+        if (auto r = reload(tx, doc, id, source->value()); !r) {
             out.failed.push_back(name + ": " + r.error().message);
             continue;
         }

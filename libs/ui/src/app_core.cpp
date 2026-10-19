@@ -1026,6 +1026,7 @@ Result<void> AppCore::openDxf(const fs::path& path) {
     lap("read file");
     dxf::Report report;
     auto result = dxf::importDxf(bytes, {}, report);
+    std::vector<std::byte>().swap(bytes);  // not needed while the scene and index are built
     lap("convert to drawing");
     if (!result) {
         printOpenFailure("Cannot open " + path.string() + ": " + result.error().message);

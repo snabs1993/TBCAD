@@ -1954,8 +1954,11 @@ Result<ExportResult> Writer::run() {
     std::string tables = tablesSection();
     std::string objects = r12_ ? std::string() : objectsSection();
 
+    // Everything before the entities goes into `out` first; the entities, usually most of the file,
+    // are then put behind it without a second full copy when their buffer has room (a 1M-entity
+    // drawing would otherwise hold its DXF text twice).
     std::string out;
-    out.reserve(entities.buf.size() + blocks.size() + tables.size() + objects.size() + (1u << 20));
+    out.reserve(blocks.size() + tables.size() + (1u << 20));
     out += headerSection(handleSeed());
     if (!r12_) {
         out += "  0\r\nSECTION\r\n  2\r\nCLASSES\r\n";
@@ -1999,12 +2002,22 @@ Result<ExportResult> Writer::run() {
         out += "  0\r\nENDSEC\r\n";
     }
     out += tables;
+    std::string().swap(tables);
     out += blocks;
+    std::string().swap(blocks);
     out += "0\r\nSECTION\r\n2\r\nENTITIES\r\n";
-    out += entities.buf;
-    out += "0\r\nENDSEC\r\n";
-    out += objects;
-    out += "0\r\nEOF\r\n";
+    std::string tail = "0\r\nENDSEC\r\n" + objects + "0\r\nEOF\r\n";
+    std::string().swap(objects);
+    std::string& body = entities.buf;
+    if (body.capacity() - body.size() >= out.size() + tail.size()) {
+        body.insert(0, out);
+        out = std::move(body);
+    } else {
+        out.reserve(out.size() + body.size() + tail.size());
+        out += body;
+    }
+    std::string().swap(body);
+    out += tail;
 
     std::size_t bad = entities.badNumbers;
     if (bad > 0) {
