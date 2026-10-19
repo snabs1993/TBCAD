@@ -58,6 +58,9 @@ public:
     // Bounds of the rendered geometry, for "zoom extents" on scene content.
     BBox2 bounds() const { return scene_.bounds(); }
 
+    // Block-space lists built since construction (for tests).
+    std::size_t blockBuilds() const { return blockCache_.builds(); }
+
 private:
     bool hiddenByLevel(const Entity& e) const;
     void upsertEntity(const Entity& e, std::optional<std::uint32_t> drawOrder = {});
@@ -122,6 +125,7 @@ private:
     std::unordered_set<EntityId> fieldTexts_{};
     // Block-space display lists shared by the Inserts of one block (dropped on every revision).
     blocks::BlockDisplayCache blockCache_{};
+    std::uint64_t seenRevision_ = ~std::uint64_t{0};  // document revision at the last change seen
 };
 
 }  // namespace tbcad::ui
