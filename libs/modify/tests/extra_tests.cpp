@@ -1,3 +1,4 @@
+#include <chrono>
 #include <algorithm>
 #include <map>
 #include <random>
@@ -854,4 +855,26 @@ TEST_CASE("overkill removes exactly the repeats among random lines, circles and 
     OverkillResult r = overkill(in, oo);
     CHECK(std::set<std::size_t>(r.erased.begin(), r.erased.end()) == expected);
     CHECK(r.erased.size() == expected.size());
+}
+
+TEST_CASE("refitSpline on a long wavy curve is fast and within the tolerance") {
+    std::vector<PolyVertex> v;
+    for (int i = 0; i <= 200; ++i)
+        v.push_back(PolyVertex{{i * 0.5, 3 * std::sin(i * 0.5 * 0.4) + 0.4 * std::sin(i * 1.3)}, 0, 0, 0});
+    auto sp = polylineToSpline(poly(v, false));
+    REQUIRE(sp.ok());
+    const auto t0 = std::chrono::steady_clock::now();
+    auto out = refitSpline(sp.value(), 0.05);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    REQUIRE(out.ok());
+    CHECK(ms < 1500.0);
+    std::vector<geom::CurveRef> oc, nc;
+    REQUIRE(geom::curvesOf(sp.value(), oc));
+    REQUIRE(geom::curvesOf(*out.value().modified, nc));
+    double worst = 0;
+    for (int i = 0; i <= 400; ++i) {
+        const Vec2 q = oc.front().pointAt(oc.front().paramAtLength(oc.front().length() * i / 400));
+        worst = std::max(worst, length(nc.front().closestPoint(q) - q));
+    }
+    CHECK(worst <= 0.06);
 }
