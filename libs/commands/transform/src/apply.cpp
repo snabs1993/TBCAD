@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "tbcad/core/profile.h"
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::transform {
@@ -40,6 +41,7 @@ void reflectText(const Entity& src, Entity& e, const Transform2& t) {
 ApplyReport applyTransform(cmd::CommandContext& ctx, std::span<const EntityId> ids,
                            const Transform2& t, bool copy) {
     ApplyReport rep;
+    profile::EditTimer timer(copy ? "transform: copy" : "transform: move", ids.size());
     const bool reflect = t.determinant() < 0 && mirrText(ctx.doc().header());
     if (!copy)
         ctx.tx().expectTouching(ids.size());

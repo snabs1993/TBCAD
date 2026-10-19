@@ -18,6 +18,7 @@
 #include "app_commands.h"
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/index_refresh.h"
+#include "tbcad/core/profile.h"
 #include "tbcad/drafting/ucs.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
@@ -2158,7 +2159,10 @@ void AppCore::applyPendingLayout() {
 
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     applyPendingLayout();
-    tickAutosave(now);
+    {
+        profile::EditTimer t("frame: autosave");
+        tickAutosave(now);
+    }
     tickXrefs(now);
     if (inPaperSpace()) {
         if (!layout::findLayout(session_->doc, activeLayout_)) {
@@ -2174,7 +2178,10 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     }
     followLockedViewport();
     hideViewportFrozenLayers();
-    retileIfFragmented();
+    {
+        profile::EditTimer t("frame: re-tile");
+        retileIfFragmented();
+    }
     {
         // Objects picked so far at "Select objects:" show as selected, so the drafter sees them.
         const std::vector<EntityId>& picked = runner().collected();
@@ -2203,7 +2210,11 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     }
     // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
     // (about two frames' worth: the rest follows over the next frames)
-    if (session_->sync->pumpPending(camera_, 8000, 30.0) > 0) {
+    std::optional<profile::EditTimer> pumpTimer;
+    pumpTimer.emplace("frame: build waiting objects", session_->sync->pendingCount());
+    const std::size_t pumped = session_->sync->pumpPending(camera_, 8000, 30.0);
+    pumpTimer.reset();
+    if (pumped > 0) {
         ++generation_;
         trimWhenSettled_ = true;
     }
