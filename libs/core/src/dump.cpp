@@ -169,6 +169,8 @@ struct DataDumper {
           << " att" << static_cast<int>(d.attach) << " style" << d.style << " ";
         if (d.columns > 1)
             o << "cols" << static_cast<int>(d.columns) << " gap" << d.columnGap << " ";
+        if (d.lineSpacing != 1.0)
+            o << "ls" << d.lineSpacing << " ";
         o.quoted(d.utf8);
     }
     void operator()(const HatchData& d) {

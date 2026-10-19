@@ -399,6 +399,8 @@ struct MTextData {
     // the same height.
     std::uint8_t columns = 1;
     double columnGap = 0;
+    // Line pitch as a multiple of the usual one (DXF 44: 0.25 to 4).
+    double lineSpacing = 1.0;
 };
 
 struct HatchLineEdge {

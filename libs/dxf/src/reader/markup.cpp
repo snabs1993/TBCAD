@@ -27,6 +27,45 @@ std::string formatNumber(double v) {
     return buf;
 }
 
+// The settings of a \p code with their lengths multiplied by k (the alignment letter, and the
+// "sb"/"sa"/"i"/"l"/"r"/"t" prefixes stay).
+std::string scaleParagraph(std::string_view arg, double k) {
+    std::string out;
+    std::size_t at = 0;
+    bool first = true;
+    while (at <= arg.size()) {
+        std::size_t comma = arg.find(',', at);
+        std::string_view tok =
+            arg.substr(at, comma == std::string_view::npos ? std::string_view::npos : comma - at);
+        at = comma == std::string_view::npos ? arg.size() + 1 : comma + 1;
+        if (tok.empty())
+            continue;
+        std::size_t pre = 0;
+        if (first && tok[0] == 'x')
+            ++pre;
+        first = false;
+        if (tok.compare(pre, 1, "q") != 0) {
+            if (tok.compare(pre, 2, "sb") == 0 || tok.compare(pre, 2, "sa") == 0)
+                pre += 2;
+            else if (pre < tok.size() && std::isalpha(static_cast<unsigned char>(tok[pre])))
+                ++pre;
+            const std::string num(tok.substr(pre));
+            char* end = nullptr;
+            const double v = std::strtod(num.c_str(), &end);
+            if (end != num.c_str() && *end == 0) {
+                if (!out.empty())
+                    out.push_back(',');
+                out += std::string(tok.substr(0, pre)) + formatNumber(v * k);
+                continue;
+            }
+        }
+        if (!out.empty())
+            out.push_back(',');
+        out += tok;
+    }
+    return out;
+}
+
 }  // namespace
 
 std::string convertMText(std::string_view s, double unitScale, std::map<char, int>& dropped) {
@@ -77,9 +116,11 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                     if (k == 'P') {
                         out.push_back('\n');
                     } else {
-                        // \pxi...; paragraph formatting: drop
-                        param(i);
-                        ++dropped['p'];
+                        // \pxi-3,l3,qj,t4;: paragraph settings. Lengths are in drawing units.
+                        out += "\\p";
+                        out += scaleParagraph(param(i), unitScale);
+                        out.push_back(';');
+                        markCode();
                     }
                     break;
                 case '\\':
@@ -92,7 +133,11 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                     out += "\\}";
                     break;
                 case '~':
-                    out.push_back(' ');
+                    out += "\xC2\xA0";  // no-break space
+                    break;
+                case 'N':
+                    out += "\\N";
+                    markCode();
                     break;
                 case 'f':
                 case 'F': {
@@ -164,7 +209,6 @@ std::string convertMText(std::string_view s, double unitScale, std::map<char, in
                     break;
                 case 'K':
                 case 'k':
-                case 'N':
                     ++dropped[k];
                     break;
                 default:

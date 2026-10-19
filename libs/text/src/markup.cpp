@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 
@@ -20,6 +21,72 @@ std::optional<std::string_view> readArg(std::string_view s, std::size_t& i) {
     std::string_view arg = s.substr(i, semi - i);
     i = semi + 1;
     return arg;
+}
+
+// "xi-3,l3,r2,qj,t4,8,sb1,sa1": the settings of a \p code. Unknown items are skipped.
+ParaProps parseParaProps(std::string_view arg) {
+    ParaProps pp;
+    if (!arg.empty() && arg[0] == 'x')
+        arg.remove_prefix(1);
+    auto number = [](std::string_view t, double& v) {
+        if (t.empty())
+            return false;
+        auto [p, ec] = std::from_chars(t.data(), t.data() + t.size(), v);
+        return ec == std::errc{} && p == t.data() + t.size() && std::isfinite(v);
+    };
+    bool inTabs = false;
+    std::size_t at = 0;
+    while (at <= arg.size()) {
+        std::size_t comma = arg.find(',', at);
+        std::string_view tok =
+            arg.substr(at, comma == std::string_view::npos ? std::string_view::npos : comma - at);
+        at = comma == std::string_view::npos ? arg.size() + 1 : comma + 1;
+        if (tok.empty())
+            continue;
+        double v = 0;
+        if (number(tok, v)) {  // a bare number continues the tab list
+            if (inTabs)
+                pp.tabs.push_back(v);
+            continue;
+        }
+        inTabs = false;
+        if (tok.size() >= 2 && tok[0] == 's' && (tok[1] == 'b' || tok[1] == 'a')) {
+            if (number(tok.substr(2), v))
+                (tok[1] == 'b' ? pp.spaceBefore : pp.spaceAfter) = std::max(0.0, v);
+        } else if (tok[0] == 'q' && tok.size() >= 2) {
+            switch (tok[1]) {
+                case 'l':
+                    pp.align = ParaProps::Align::Left;
+                    break;
+                case 'c':
+                    pp.align = ParaProps::Align::Center;
+                    break;
+                case 'r':
+                    pp.align = ParaProps::Align::Right;
+                    break;
+                case 'j':
+                    pp.align = ParaProps::Align::Justify;
+                    break;
+                case 'd':
+                    pp.align = ParaProps::Align::Distribute;
+                    break;
+                default:
+                    break;
+            }
+        } else if (tok[0] == 'i' && number(tok.substr(1), v)) {
+            pp.firstIndent = v;
+        } else if (tok[0] == 'l' && number(tok.substr(1), v)) {
+            pp.leftIndent = v;
+        } else if (tok[0] == 'r' && number(tok.substr(1), v)) {
+            pp.rightIndent = std::max(0.0, v);
+        } else if (tok[0] == 't') {
+            inTabs = true;
+            if (number(tok.substr(1), v))
+                pp.tabs.push_back(v);
+        }
+    }
+    std::sort(pp.tabs.begin(), pp.tabs.end());
+    return pp;
 }
 
 }  // namespace
@@ -75,7 +142,7 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
                     cur.overline = k == 'O';
                 i += 2;
             } else if (k == 'p') {
-                // Paragraph settings (\pxqc; alignment, indents): read and not shown.
+                // Paragraph settings: \pxi-3,l3,r2,qj,t4,8,sb1,sa1;
                 std::size_t j = i + 2;
                 auto arg = readArg(s, j);
                 if (!arg) {
@@ -83,7 +150,22 @@ std::vector<Piece> parseMarkup(std::string_view s, double baseHeight) {
                     ++i;
                     continue;
                 }
+                flush();
+                Piece p;
+                p.attr = cur;
+                p.para = parseParaProps(*arg);
+                out.push_back(std::move(p));
                 i = j;
+            } else if (k == 'N') {
+                flush();
+                Piece p;
+                p.attr = cur;
+                p.columnBreak = true;
+                out.push_back(std::move(p));
+                i += 2;
+            } else if (k == '~') {
+                text += "\xC2\xA0";  // no-break space
+                i += 2;
             } else if (k == 'P') {
                 flush();
                 Piece p;
