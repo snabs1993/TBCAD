@@ -317,8 +317,11 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
     const double r = dia ? len / 2 : len;
 
     const double tw = textWidth(c, txt);
-    const double rotText = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(angleOf(dir));
-    const double he = halfExtent(dir, rotText, tw, c.th);
+    auto rotFor = [&](DimTextAlign al) {
+        return al == DimTextAlign::Horizontal ? 0.0 : readable(angleOf(dir));
+    };
+    double rotText = rotFor(c.st.textAlign);
+    double he = halfExtent(dir, rotText, tw, c.th);
     const Lift lift = liftFor(c, dir, rotText);
 
     bool inside = false;
@@ -329,8 +332,15 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
     } else if (dia && len - 2 * c.arrow >= tw + 2 * c.gap) {
         inside = true;
         center = O + lift.offset;
-    } else {
-        center = B + dir * (c.arrow + c.gap + he);
+    }
+    if (!inside) {
+        // Text beyond the circle is horizontal when DIMTOH asks for it.
+        if (c.st.textAlignOutside == DimTextAlign::Horizontal) {
+            rotText = 0;
+            he = halfExtent(dir, rotText, tw, c.th);
+        }
+        if (!d.textPosUser)
+            center = B + dir * (c.arrow + c.gap + he);
     }
 
     // Dimension line: the whole diameter / radius, broken around text lying on it; text outside
