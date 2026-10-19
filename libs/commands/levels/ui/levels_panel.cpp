@@ -122,81 +122,99 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
             if (!l)
                 continue;
             const bool current = l->id == doc.header().currentLevel;
-            ImGui::PushID(static_cast<int>(l->id.value));
+            const auto levelId = l->id;
+            // Each cell may run a command that replaces or erases the level: fetch it again
+            // after each one and stop the row if it is gone.
+            const auto again = [&] { return (l = doc.level(levelId)) != nullptr; };
+            ImGui::PushID(static_cast<int>(levelId.value));
             ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            if (ImGui::RadioButton("##cur", current) && !current)
-                exec(ctx, {"-LEVEL Set " + idRef(l->id)});
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Work on this level");
-            ImGui::TableSetColumnIndex(1);
-            if (st.renaming == l->id) {
-                if (st.focusRename) {
-                    ImGui::SetKeyboardFocusHere();
-                    st.focusRename = false;
+            do {
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::RadioButton("##cur", current) && !current)
+                    exec(ctx, {"-LEVEL Set " + idRef(l->id)});
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Work on this level");
+                if (!again())
+                    break;
+                ImGui::TableSetColumnIndex(1);
+                if (st.renaming == l->id) {
+                    if (st.focusRename) {
+                        ImGui::SetKeyboardFocusHere();
+                        st.focusRename = false;
+                    }
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::InputText("##rename", &st.renameBuf,
+                                         ImGuiInputTextFlags_EnterReturnsTrue |
+                                             ImGuiInputTextFlags_AutoSelectAll)) {
+                        if (!st.renameBuf.empty() && st.renameBuf != l->name)
+                            exec(ctx, {"-LEVEL Rename " + idRef(l->id), st.renameBuf});
+                        st.renaming = {};
+                    } else if (ImGui::IsItemDeactivated()) {
+                        st.renaming = {};
+                    }
+                } else {
+                    if (current)
+                        ImGui::PushStyleColor(ImGuiCol_Text,
+                                              ImGui::GetStyleColorVec4(ImGuiCol_PlotHistogram));
+                    if (ImGui::Selectable(l->name.c_str(), st.selected == l->id,
+                                          ImGuiSelectableFlags_AllowDoubleClick)) {
+                        st.selected = l->id;
+                        if (ImGui::IsMouseDoubleClicked(0)) {
+                            st.renaming = l->id;
+                            st.renameBuf = l->name;
+                            st.focusRename = true;
+                        }
+                    }
+                    if (current)
+                        ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Click to select, double-click to rename");
                 }
-                ImGui::SetNextItemWidth(-1);
-                if (ImGui::InputText(
-                        "##rename", &st.renameBuf,
-                        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-                    if (!st.renameBuf.empty() && st.renameBuf != l->name)
-                        exec(ctx, {"-LEVEL Rename " + idRef(l->id), st.renameBuf});
-                    st.renaming = {};
-                } else if (ImGui::IsItemDeactivated()) {
-                    st.renaming = {};
-                }
-            } else {
-                if (current)
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                                          ImGui::GetStyleColorVec4(ImGuiCol_PlotHistogram));
-                if (ImGui::Selectable(l->name.c_str(), st.selected == l->id,
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
-                    st.selected = l->id;
-                    if (ImGui::IsMouseDoubleClicked(0)) {
-                        st.renaming = l->id;
-                        st.renameBuf = l->name;
-                        st.focusRename = true;
+                if (!again())
+                    break;
+                ImGui::TableSetColumnIndex(2);
+                {
+                    double v = l->elevation;
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::InputDouble("##elev", &v, 0, 0, "%.0f");
+                    if (ImGui::IsItemDeactivatedAfterEdit()) {
+                        char buf[48];
+                        std::snprintf(buf, sizeof buf, "%.15g", v);
+                        exec(ctx, {"-LEVEL Elevation " + idRef(l->id), buf});
                     }
                 }
-                if (current)
-                    ImGui::PopStyleColor();
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Click to select, double-click to rename");
-            }
-            ImGui::TableSetColumnIndex(2);
-            {
-                double v = l->elevation;
-                ImGui::SetNextItemWidth(-1);
-                ImGui::InputDouble("##elev", &v, 0, 0, "%.0f");
-                if (ImGui::IsItemDeactivatedAfterEdit()) {
-                    char buf[48];
-                    std::snprintf(buf, sizeof buf, "%.15g", v);
-                    exec(ctx, {"-LEVEL Elevation " + idRef(l->id), buf});
+                if (!again())
+                    break;
+                ImGui::TableSetColumnIndex(3);
+                {
+                    bool v = l->visible;
+                    ImGui::BeginDisabled(current);
+                    if (ImGui::Checkbox("##vis", &v))
+                        exec(ctx,
+                             {std::string("-LEVEL ") + (v ? "Show " : "Hide ") + idRef(l->id)});
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                        ImGui::SetTooltip(current ? "The level you work on is always shown"
+                                                  : "Show or hide this level");
                 }
-            }
-            ImGui::TableSetColumnIndex(3);
-            {
-                bool v = l->visible;
-                ImGui::BeginDisabled(current);
-                if (ImGui::Checkbox("##vis", &v))
-                    exec(ctx, {std::string("-LEVEL ") + (v ? "Show " : "Hide ") + idRef(l->id)});
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip(current ? "The level you work on is always shown"
-                                              : "Show or hide this level");
-            }
-            ImGui::TableSetColumnIndex(4);
-            {
-                bool v = l->locked;
-                if (ImGui::Checkbox("##lck", &v))
-                    exec(ctx, {std::string("-LEVEL ") + (v ? "Lock " : "Unlock ") + idRef(l->id)});
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Locked levels show but cannot be edited");
-            }
-            ImGui::TableSetColumnIndex(5);
-            const auto& counts = levelCounts(st, doc);
-            auto found = counts.find(l->id.value);
-            ImGui::Text("%zu", found == counts.end() ? std::size_t{0} : found->second);
+                if (!again())
+                    break;
+                ImGui::TableSetColumnIndex(4);
+                {
+                    bool v = l->locked;
+                    if (ImGui::Checkbox("##lck", &v))
+                        exec(ctx,
+                             {std::string("-LEVEL ") + (v ? "Lock " : "Unlock ") + idRef(l->id)});
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Locked levels show but cannot be edited");
+                }
+                if (!again())
+                    break;
+                ImGui::TableSetColumnIndex(5);
+                const auto& counts = levelCounts(st, doc);
+                auto found = counts.find(levelId.value);
+                ImGui::Text("%zu", found == counts.end() ? std::size_t{0} : found->second);
+            } while (false);
             ImGui::PopID();
         }
         ImGui::EndTable();

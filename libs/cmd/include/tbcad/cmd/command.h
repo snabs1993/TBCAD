@@ -202,6 +202,9 @@ public:
     // Ends the command: commits or rolls back. Returns true if an undo entry was recorded.
     bool finish(bool failed);
     CommandContext* parent() const { return parent_; }
+    // The pickfirst selection this command took at a selection prompt (empty if it took none).
+    // The runner clears the selection when the command ends, as long as it is still that set.
+    const std::vector<EntityId>& usedPreselection() const { return usedPreselection_; }
 
 private:
     bool tryImmediate(detail::PromptRequest& req);
@@ -224,6 +227,7 @@ private:
     bool cancelled_ = false;
     Vec2 lastPoint_{};
     bool commitOnCancel_ = false;
+    std::vector<EntityId> usedPreselection_{};
 
     std::optional<detail::PromptRequest> pending_{};
     std::coroutine_handle<> waiting_{};

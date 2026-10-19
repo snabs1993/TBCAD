@@ -143,8 +143,10 @@ void drawXrefPanel(ui::PanelContext& ctx) {
         ImGui::TextDisabled("Select a reference to reload, unload, detach, bind or relink it.");
         return;
     }
+    // The buttons below run commands that may replace or erase the definition: keep copies.
     const std::string name = sel->name;
-    const xref::State s = xref::state(doc, sel->id, hostFile);
+    const auto selId = sel->id;
+    const xref::State s = xref::state(doc, selId, hostFile);
     if (ImGui::Button("Reload"))
         runOn(ctx, "XRELOAD", name);
     ImGui::SameLine();
@@ -165,8 +167,8 @@ void drawXrefPanel(ui::PanelContext& ctx) {
                 runOn(ctx, "XPATH", name, {t});
         ImGui::EndCombo();
     }
-    if (st.relinkFor != sel->id) {
-        st.relinkFor = sel->id;
+    if (st.relinkFor != selId) {
+        st.relinkFor = selId;
         st.relink.clear();
     }
     if (s == xref::State::Missing)

@@ -231,6 +231,7 @@ TEST_CASE("ROTATE and SCALE: Copy together with Reference, one undo step, origin
         CHECK(found);
         CHECK(f.host.undo());
         CHECK(canonicalDump(f.doc) == before);
+        f.host.setSelection({a});
         f.host.run("RO", {"0,0", "C", "C", "180"});  // asking twice keeps the copy mode
         CHECK(f.doc.modelSpaceCount() == 2);
     }
@@ -336,6 +337,7 @@ TEST_CASE("ROTATE and SCALE turn a block with attributes and its attribute offse
     CHECK(get<InsertData>(f.doc, id).rotation == doctest::Approx(1.5707963267948966));
     // Scale by reference about the insert point: the anchor distance doubles.
     const Vec2 a1 = anchor();
+    f.host.setSelection({id});
     f.host.run("SCALE", {"10,0", "Reference", "5", "10"});
     CHECK(near(anchor(), {10 + 2 * (a1.x - 10), 2 * a1.y}, 1e-9));
     CHECK(get<InsertData>(f.doc, id).scale.x == doctest::Approx(2));

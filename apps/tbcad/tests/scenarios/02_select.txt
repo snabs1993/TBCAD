@@ -1,0 +1,27 @@
+# Window (left to right) selects what is fully inside; crossing (right to left) what it touches.
+@zoom -50 -100 250 200
+LINE
+0,0
+100,0
+
+LINE
+0,40
+100,40
+
+LINE
+0,80
+200,80
+
+@expect objects 3
+@dragw -10 -10 110 50
+@expect selected 2
+@key Escape
+@expect selected 0
+@dragw 150 90 50 30
+@expect selected 2
+@key Escape
+# A click on a line picks it; Shift+click takes it out again.
+@clickw 50 80
+@expect selected 1
+@key Escape
+@shot 02_select.png

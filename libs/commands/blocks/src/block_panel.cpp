@@ -124,9 +124,10 @@ void drawDrawingTab(ui::PanelContext& ctx) {
             slot = {rev + 1, thumbnailOfBlock(*ctx.doc, r.id)};
             ++made;
         }
+        // (read once: the menu below runs commands that may replace the definition)
         const BlockDef* def = ctx.doc->block(r.id);
-        std::string caption =
-            def && !def->xrefPath.empty() ? "xref" : "x" + std::to_string(r.references);
+        const bool isXref = def && !def->xrefPath.empty();
+        std::string caption = isXref ? "xref" : "x" + std::to_string(r.references);
         TileResult t = drawTile(r.name.c_str(), r.name, caption,
                                 slot.first ? &slot.second : nullptr, st.selected == r.id);
         if (t.clicked)
@@ -137,7 +138,7 @@ void drawDrawingTab(ui::PanelContext& ctx) {
             st.selected = r.id;
             if (ImGui::MenuItem("Insert") && ctx.runCommand)
                 ctx.runCommand("INSERT " + r.name);
-            if (def && !def->xrefPath.empty() && ctx.runCommand) {
+            if (isXref && ctx.runCommand) {
                 if (ImGui::MenuItem("Reload xref")) {
                     ctx.runCommand("XRELOAD");
                     ctx.runCommand(r.name);
