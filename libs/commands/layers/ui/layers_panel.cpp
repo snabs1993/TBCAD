@@ -1005,59 +1005,82 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s", tip);
                 };
-                flag(1, "##on", l->on, "On", "Off",
-                     l->on ? "Visible; click to turn off" : "Off; click to turn on");
-                flag(2, "##frz", l->frozen, "Freeze", "Thaw",
-                     "Frozen layers are hidden and skipped when regenerating");
-                if (vp) {
-                    ImGui::TableSetColumnIndex(3);
-                    const bool fz =
-                        std::find(vp.frozen.begin(), vp.frozen.end(), row.id) != vp.frozen.end();
-                    bool v = fz;
-                    if (ImGui::Checkbox("##vpfrz", &v)) {
-                        ctx.host->setSetting("tmp.layout.viewport",
-                                             vp.layout + ":" + std::to_string(vp.id));
-                        exec(ctx, {std::string("VPLAYER ") + (v ? "Freeze" : "Thaw"), l->name});
+                // A cell that runs a command can change the layer table and move the layer, so it
+                // is looked up again after each one (a stale pointer read freed memory).
+                const auto again = [&] { return (l = doc.layer(row.id)) != nullptr; };
+                do {
+                    flag(1, "##on", l->on, "On", "Off",
+                         l->on ? "Visible; click to turn off" : "Off; click to turn on");
+                    if (!again())
+                        break;
+                    flag(2, "##frz", l->frozen, "Freeze", "Thaw",
+                         "Frozen layers are hidden and skipped when regenerating");
+                    if (!again())
+                        break;
+                    if (vp) {
+                        ImGui::TableSetColumnIndex(3);
+                        const bool fz =
+                            std::find(vp.frozen.begin(), vp.frozen.end(), row.id) != vp.frozen.end();
+                        bool v = fz;
+                        if (ImGui::Checkbox("##vpfrz", &v)) {
+                            ctx.host->setSetting("tmp.layout.viewport",
+                                                 vp.layout + ":" + std::to_string(vp.id));
+                            exec(ctx, {std::string("VPLAYER ") + (v ? "Freeze" : "Thaw"), l->name});
+                        }
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("Freeze in viewport %d only (%s)", vp.id,
+                                              fz ? "frozen" : "visible");
                     }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Freeze in viewport %d only (%s)", vp.id,
-                                          fz ? "frozen" : "visible");
-                }
-                flag(4, "##lck", l->locked, "Lock", "Unlock",
-                     "Locked layers show but cannot be edited");
-                ImGui::TableSetColumnIndex(5);
-                {
-                    ImVec4 col = swatch(eff.color);
-                    if (ImGui::ColorButton(
-                            "##col", col,
-                            ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha,
-                            ImVec2(22, ImGui::GetFrameHeight() - 4))) {
-                        st.colorFor = row.id;
-                        ImGui::OpenPopup("##colour");
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip(
-                            "%s%s", colorName(l->color).c_str(),
-                            l->color.kind == ColorKind::ByParent ? " (from parent)" : "");
-                    if (st.colorFor == row.id) {
-                        ColorChoices allowed;
-                        allowed.byParent = l->parent != LayerId{};
-                        std::string chosen;
-                        if (colorPopup("##colour", l->color, allowed, chosen)) {
-                            exec(ctx, {"-LAYER Color " + chosen, idRef(row.id)});
-                            st.colorFor = {};
+                    if (!again())
+                        break;
+                    flag(4, "##lck", l->locked, "Lock", "Unlock",
+                         "Locked layers show but cannot be edited");
+                    if (!again())
+                        break;
+                    ImGui::TableSetColumnIndex(5);
+                    {
+                        ImVec4 col = swatch(eff.color);
+                        if (ImGui::ColorButton(
+                                "##col", col,
+                                ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha,
+                                ImVec2(22, ImGui::GetFrameHeight() - 4))) {
+                            st.colorFor = row.id;
+                            ImGui::OpenPopup("##colour");
+                        }
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip(
+                                "%s%s", colorName(l->color).c_str(),
+                                l->color.kind == ColorKind::ByParent ? " (from parent)" : "");
+                        if (st.colorFor == row.id) {
+                            ColorChoices allowed;
+                            allowed.byParent = l->parent != LayerId{};
+                            std::string chosen;
+                            if (colorPopup("##colour", l->color, allowed, chosen)) {
+                                exec(ctx, {"-LAYER Color " + chosen, idRef(row.id)});
+                                st.colorFor = {};
+                            }
                         }
                     }
-                }
-                ImGui::TableSetColumnIndex(6);
-                drawLinetypeCell(ctx, *l);
-                ImGui::TableSetColumnIndex(7);
-                drawLineweightCell(ctx, *l);
-                flag(8, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
-                ImGui::TableSetColumnIndex(9);
-                drawTransparencyCell(ctx, *l);
-                ImGui::TableSetColumnIndex(10);
-                drawDescriptionCell(ctx, *l);
+                    if (!again())
+                        break;
+                    ImGui::TableSetColumnIndex(6);
+                    drawLinetypeCell(ctx, *l);
+                    if (!again())
+                        break;
+                    ImGui::TableSetColumnIndex(7);
+                    drawLineweightCell(ctx, *l);
+                    if (!again())
+                        break;
+                    flag(8, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
+                    if (!again())
+                        break;
+                    ImGui::TableSetColumnIndex(9);
+                    drawTransparencyCell(ctx, *l);
+                    if (!again())
+                        break;
+                    ImGui::TableSetColumnIndex(10);
+                    drawDescriptionCell(ctx, *l);
+                } while (false);
                 if (dimmed)
                     ImGui::PopStyleColor();
                 ImGui::PopID();
