@@ -2094,3 +2094,48 @@ TEST_CASE("MATCHPROP gives dimensions and leaders the source's style") {
                {ScriptItem::pick(c, {0, 40}), ScriptItem::pick(d, {20, 40}), ScriptItem::esc()});
     CHECK(entityAs<LeaderData>(f.get(d))->style == big);
 }
+
+TEST_CASE("ALIGN asks for a third pair like AutoCAD, scales on request, and dimensions follow") {
+    {
+        // two pairs, Enter at the third, then Yes: the line is scaled to the destination
+        Fixture f;
+        EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+        REQUIRE(f.host.run("ALIGN", {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5",
+                                     "10,0", "5,25", ScriptItem::enter(), "Yes"})
+                    .finished);
+        const auto* ld = entityAs<LineData>(f.get(l));
+        CHECK(near(ld->a, {5, 5}));
+        CHECK(near(ld->b, {5, 25}));
+        CHECK(f.host.undoStack().undoCount() == 1);
+    }
+    {
+        // a third pair is accepted and ignored in a flat drawing; No keeps the size
+        Fixture f;
+        EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+        REQUIRE(f.host.run("ALIGN", {ScriptItem::select({l}), ScriptItem::enter(), "0,0", "5,5",
+                                     "10,0", "5,25", "3,3", "8,8", "No"})
+                    .finished);
+        const auto* ld = entityAs<LineData>(f.get(l));
+        CHECK(near(ld->b, {5, 15}));
+        CHECK(f.host.logContains("third pair"));
+    }
+    {
+        // a dimension aligned with its line keeps measuring it
+        Fixture f;
+        EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+        REQUIRE(f.host.run("DIMALIGNED", {"0,0", "10,0", "5,-3"}).finished);
+        std::vector<EntityId> all;
+        EntityId dim{};
+        f.doc.forEachEntity([&](const Entity& e) {
+            all.push_back(e.common.id);
+            if (entityAs<DimensionData>(e))
+                dim = e.common.id;
+        });
+        REQUIRE(dim);
+        REQUIRE(f.host.run("ALIGN", {ScriptItem::select(all), ScriptItem::enter(), "0,0", "0,0",
+                                     "10,0", "0,20", "Yes"})
+                    .finished);
+        CHECK(near(entityAs<LineData>(f.get(l))->b, {0, 20}));
+        CHECK(entityAs<DimensionData>(f.get(dim))->measurement == doctest::Approx(20));
+    }
+}

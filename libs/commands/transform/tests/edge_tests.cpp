@@ -420,3 +420,40 @@ TEST_CASE("an xref picture with a clip boundary moves, turns, scales and mirrors
         CHECK(get<InsertData>(f.doc, id).clip == in.clip);
     }
 }
+
+TEST_CASE("SCALE and ROTATE Reference: Points gives the new length or angle by two points") {
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        // reference 10, new length = distance 100,100 to 100,125
+        REQUIRE(f.host.run("SCALE", {"0,0", "Reference", "10", "Points", "100,100", "100,125"})
+                    .finished);
+        CHECK(near(get<LineData>(f.doc, a).b, {25, 0}));
+        CHECK(f.host.undo());
+        CHECK(near(get<LineData>(f.doc, a).b, {10, 0}));
+    }
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        // reference picked as the line itself, new direction from 5,5 to 5,15 (90 degrees)
+        REQUIRE(f.host.run("ROTATE", {"0,0", "R", "0,0", "10,0", "P", "5,5", "5,15"}).finished);
+        CHECK(near(get<LineData>(f.doc, a).b, {0, 10}, 1e-9));
+    }
+    {
+        // Esc in the middle of Points changes nothing; equal points are refused
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        const std::string before = canonicalDump(f.doc);
+        f.host.run("SCALE", {"0,0", "R", "10", "P", "1,1", ScriptItem::esc()});
+        CHECK(canonicalDump(f.doc) == before);
+        f.host.setSelection({a});
+        f.host.run("SCALE", {"0,0", "R", "10", "P", "1,1", "1,1"});
+        CHECK(canonicalDump(f.doc) == before);
+        f.host.setSelection({a});
+        f.host.run("ROTATE", {"0,0", "R", "0", "P", "1,1", "1,1"});
+        CHECK(canonicalDump(f.doc) == before);
+    }
+}

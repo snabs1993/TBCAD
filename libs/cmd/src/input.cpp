@@ -36,6 +36,17 @@ std::optional<std::string> matchKeyword(const std::vector<std::string>& keywords
         if (toUpperAscii(k) == in)
             return k;
     }
+    // AutoCAD's capital letters: "X" chooses "eXit" (capitals that do not start the keyword).
+    for (const std::string& k : keywords) {
+        if (k.empty() || !std::islower(static_cast<unsigned char>(k[0])))
+            continue;
+        std::string caps;
+        for (char c : k)
+            if (std::isupper(static_cast<unsigned char>(c)))
+                caps += c;
+        if (!caps.empty() && caps == in)
+            return k;
+    }
     // AutoCAD's capital-letter shortcuts: "BEgin" needs at least "BE", so "B" can mean "Back".
     auto shortest = [](const std::string& k) {
         std::size_t n = 0;

@@ -274,10 +274,29 @@ public:
                     previewOf(ctx, ids, [b, refAngle](Vec2 c) -> std::optional<Transform2> {
                         return Transform2::rotate(std::atan2(c.y - b.y, c.x - b.x) - refAngle, b);
                     });
-                auto next = co_await ctx.getAngle("Specify the new angle", std::move(no));
-                if (!next.ok())
+                no.keywords = {"Points"};
+                auto next =
+                    co_await ctx.getAngle("Specify the new angle or [Points]", std::move(no));
+                double newAngle = next.value;
+                if (next.status == Status::Keyword) {
+                    // as AutoCAD: the new angle is the direction from one point to another
+                    auto p1 = co_await ctx.getPoint("Specify first point");
+                    if (!p1.ok())
+                        co_return;
+                    PointOptions so;
+                    so.base = p1.point;
+                    auto p2 = co_await ctx.getPoint("Specify second point", std::move(so));
+                    if (!p2.ok())
+                        co_return;
+                    if (tol::isZeroLength(p2.point - p1.point)) {
+                        ctx.message("The two points must differ.");
+                        co_return;
+                    }
+                    newAngle = std::atan2(p2.point.y - p1.point.y, p2.point.x - p1.point.x);
+                } else if (!next.ok()) {
                     co_return;
-                angle = next.value - refAngle;
+                }
+                angle = newAngle - refAngle;
                 break;
             }
             if (!r.ok())
@@ -368,10 +387,25 @@ public:
                         return std::nullopt;
                     return Transform2::scale(f, f, b);
                 });
-                auto next = co_await ctx.getDistance("Specify new length", std::move(no));
-                if (!next.ok())
+                no.keywords = {"Points"};
+                auto next =
+                    co_await ctx.getDistance("Specify new length or [Points]", std::move(no));
+                double newLen = next.value;
+                if (next.status == Status::Keyword) {
+                    // as AutoCAD: the new length is the distance between two points
+                    auto p1 = co_await ctx.getPoint("Specify first point");
+                    if (!p1.ok())
+                        co_return;
+                    PointOptions so;
+                    so.base = p1.point;
+                    auto p2 = co_await ctx.getPoint("Specify second point", std::move(so));
+                    if (!p2.ok())
+                        co_return;
+                    newLen = distance(p1.point, p2.point);
+                } else if (!next.ok()) {
                     co_return;
-                factor = next.value / refLen;
+                }
+                factor = newLen / refLen;
                 break;
             }
             if (!r.ok())

@@ -12,6 +12,7 @@ tbcad_add_tests(e2e
     tests/table_churn_tests.cpp
     tests/hatch_follow_tests.cpp
     tests/script_gate_tests.cpp
+    tests/stretch_parity_tests.cpp
     tests/hatch_pattern_follow_tests.cpp
     tests/undo_stress_tests.cpp
     tests/table_ops_tests.cpp
