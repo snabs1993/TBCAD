@@ -111,3 +111,63 @@ TEST_CASE("SELECT leaves the picked objects selected for the next command") {
     CHECK(sel[0] == a);
     (void)b;
 }
+
+TEST_CASE("CHPROP leaves objects on locked layers alone") {
+    Fixture f;
+    const LayerId locked = f.addLayer("Locked");
+    {
+        Transaction tx = f.doc.begin("lock");
+        REQUIRE(tx.modifyLayer(locked, [](Layer& l) { l.locked = true; }).ok());
+        tx.commit();
+    }
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(LineData{{0, 1}, {10, 1}}, locked);
+    f.host.setSelection({a, b});
+    f.host.run("CHPROP", {"Color", "1"});
+    CHECK(f.doc.find(a)->common.color == Color::index(1));
+    CHECK(f.doc.find(b)->common.color == Color::byLayer());
+}
+
+TEST_CASE("CHPROP changes transparency and the plot style") {
+    Fixture f;
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(CircleData{{0, 0}, 5});
+    f.host.setSelection({a, b});
+    f.host.run("CHPROP", {"Transparency", "40"});
+    CHECK(f.doc.find(a)->common.transparency == 40);
+    CHECK(f.doc.find(b)->common.transparency == 40);
+    f.host.setSelection({a, b});
+    f.host.run("CHPROP", {"Transparency", "ByBlock"});
+    CHECK(f.doc.find(a)->common.transparency == kTransparencyByBlock);
+    f.host.setSelection({a, b});
+    f.host.run("CHPROP", {"Transparency", "95"});
+    CHECK(f.host.logContains("transparency"));
+    f.host.feed({cmd::ScriptItem::esc()});
+    CHECK(f.doc.find(a)->common.transparency == kTransparencyByBlock);
+    f.host.setSelection({a});
+    f.host.run("CHPROP", {"Plotstyle", "Thick"});
+    CHECK(entityPlotStyle(f.doc.header(), a) == "Thick");
+    CHECK(entityPlotStyle(f.doc.header(), b).empty());
+    CHECK(f.host.undo());
+    CHECK(entityPlotStyle(f.doc.header(), a).empty());
+}
+
+TEST_CASE("CHANGE moves ends and sets radii but not on locked layers") {
+    Fixture f;
+    const LayerId locked = f.addLayer("Locked");
+    {
+        Transaction tx = f.doc.begin("lock");
+        REQUIRE(tx.modifyLayer(locked, [](Layer& l) { l.locked = true; }).ok());
+        tx.commit();
+    }
+    auto a = f.addEntity(LineData{{0, 0}, {10, 0}});
+    auto b = f.addEntity(LineData{{0, 1}, {10, 1}}, locked);
+    auto c = f.addEntity(CircleData{{0, 5}, 2});
+    f.host.setSelection({a, b, c});
+    f.host.run("CHANGE", {"12,3"});
+    const auto* la = entityAs<LineData>(*f.doc.find(a));
+    REQUIRE(la);
+    CHECK(distance(la->b, {12, 3}) < 1e-9);
+    CHECK(distance(entityAs<LineData>(*f.doc.find(b))->b, {10, 1}) < 1e-9);
+    CHECK(entityAs<CircleData>(*f.doc.find(c))->radius == doctest::Approx(distance({0, 5}, {12, 3})));
+}

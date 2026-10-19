@@ -231,7 +231,7 @@ TEST_CASE("3000 inserts with attributes: ATTSYNC and BATTMAN stay fast and undo 
     CHECK(canonicalDump(r.doc) == before);
 }
 
-TEST_CASE("ATTEDIT takes Thai text and EXPLODE turns the attributes into text") {
+TEST_CASE("ATTEDIT takes Thai text and BURST turns the attributes into text") {
     Rig r;
     r.makeBlock();
     const EntityId a = r.insert({0, 0}, "Alice");
@@ -239,7 +239,7 @@ TEST_CASE("ATTEDIT takes Thai text and EXPLODE turns the attributes into text") 
     CHECK(Rig::valueOf(r.ins(a), "NAME") == "ทดสอบ ๑๒๓");
     CHECK(Rig::valueOf(r.ins(a), "NOTE") == "note text");
     r.host.setSelection({a});
-    r.host.run("EXPLODE", {});
+    r.host.run("BURST", {});
     CHECK(r.inserts().empty());
     std::vector<std::string> texts;
     r.doc.forEachEntity([&](const Entity& e) {

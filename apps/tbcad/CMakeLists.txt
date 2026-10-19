@@ -125,7 +125,7 @@ if(TBCAD_BUILD_TESTS)
     TBCAD_GUI_FONT_DIR="${CMAKE_SOURCE_DIR}/assets/fonts"
     TBCAD_GUI_FAILURE_DIR="${CMAKE_CURRENT_BINARY_DIR}/gui-test-failures")
   target_link_libraries(tbcad_gui_tests PRIVATE tbcad_gui tbcad_mcp tbcad_underlay doctest::doctest)
-  doctest_discover_tests(tbcad_gui_tests PROPERTIES TIMEOUT 600)
+  doctest_discover_tests(tbcad_gui_tests PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
   add_test(NAME tbcad_gui_smoke
            COMMAND tbcad --self-test --frames 5 --script "DEVGEN LINES 20000")
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/capture-smoke.txt"

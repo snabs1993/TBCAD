@@ -533,6 +533,10 @@ public:
     // The same without building the list: how many, and whether one id is among them.
     std::size_t touchedCount() const { return touched_.size(); }
     bool wasTouched(EntityId id) const { return touched_.find(id) != TouchedIndex::kNone; }
+    // Entities added by this transaction that are still there, in id order. Empty when more than
+    // `limit` ids were handed out (a big paste or array is not of interest to a hook that looks
+    // for a few replacement objects).
+    std::vector<EntityId> addedEntities(std::size_t limit) const;
     // A command that is about to touch n entities says so, so the bookkeeping is sized once.
     void expectTouching(std::size_t n) {
         beforeSnaps_.reserve(beforeSnaps_.size() + 2 * n);  // (the "after" copies join them)

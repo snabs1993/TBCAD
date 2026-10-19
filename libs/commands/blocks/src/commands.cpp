@@ -20,6 +20,7 @@ void registerCommands(cmd::Registry& registry) {
         });
     registerSnapProvider(drafting::SnapGeometryRegistry::instance());
     (void)registry.add(makeBlockCommand());
+    (void)registry.add(makeETransmitCommand());
     (void)registry.add(makeAttredefCommand());
     (void)registry.add(makeBaseCommand());
     (void)registry.add(makeBEditCommand());
@@ -30,6 +31,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeMinsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeXplodeCommand());
+    (void)registry.add(makeBurstCommand());
     (void)registry.add(makeNCopyCommand());
     (void)registry.add(makeArrayCommand());
     (void)registry.add(makeArrayRectCommand());

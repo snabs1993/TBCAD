@@ -96,6 +96,7 @@ std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
     });
 
     std::size_t changed = 0;
+    std::vector<Boundary> rootsHolder;
     for (const Job& job : jobs) {
         const Entity* he = doc.find(job.id);
         const HatchData* h = he ? entityAs<HatchData>(*he) : nullptr;
@@ -108,7 +109,7 @@ std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
             const Entity* se = doc.find(s);
             if (!se) {
                 erased = true;
-                break;
+                continue;
             }
             cands.push_back({s, se});
         }
@@ -116,26 +117,68 @@ std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
         std::vector<HatchLoop> newLoops;
         std::vector<EntityId> newSources;
         bool found = false;
-        if (!erased) {
-            BoundaryFinder finder(std::move(cands), options);
-            Result<std::vector<Boundary>> roots = finder.outermost();
-            if (roots.ok() && !roots.value().empty()) {
-                BBox2 old;
-                if (!h->loops.empty())
-                    old = loopBox(h->loops.front());
-                const Boundary* best = nullptr;
-                double bestScore = -1;
-                for (const Boundary& b : roots.value()) {
-                    double score = old.empty() ? 0 : overlapArea(old, loopBox(b.loops.front()));
-                    if (score > bestScore) {
-                        bestScore = score;
-                        best = &b;
-                    }
+        // The best region of `finder` by overlap with the hatch's old outer loop.
+        auto bestRoot = [&](BoundaryFinder& finder, double minOverlap) -> const Boundary* {
+            auto roots = finder.outermost();
+            if (!roots.ok() || roots.value().empty())
+                return nullptr;
+            rootsHolder = std::move(roots).value();
+            BBox2 old;
+            if (!h->loops.empty())
+                old = loopBox(h->loops.front());
+            const Boundary* best = nullptr;
+            double bestScore = -1;
+            for (const Boundary& b : rootsHolder) {
+                const BBox2 nb = loopBox(b.loops.front());
+                double score = old.empty() ? 0 : overlapArea(old, nb);
+                if (minOverlap > 0) {
+                    // A healed boundary must be the old region again: nearly the same box.
+                    const double oa = old.width() * old.height();
+                    const double na = nb.width() * nb.height();
+                    if (!(oa > 0) || score < minOverlap * oa || na > oa / minOverlap)
+                        continue;
                 }
-                if (best) {
-                    newLoops = best->loops;
-                    newSources = best->sources;
-                    found = true;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = &b;
+                }
+            }
+            return best;
+        };
+        if (!erased) {
+            BoundaryFinder finder(cands, options);
+            if (const Boundary* best = bestRoot(finder, 0)) {
+                newLoops = best->loops;
+                newSources = best->sources;
+                found = true;
+            }
+        }
+        if (!found) {
+            // FILLET, CHAMFER, JOIN and the like replace boundary edges by new objects whose ends
+            // meet the rest of the loop. Look again with the surviving sources and what the edit
+            // touched; the result counts only if it is the old region again.
+            std::vector<EntityId> touched = tx.touchedEntities();
+            const std::vector<EntityId> added = tx.addedEntities(2000);
+            touched.insert(touched.end(), added.begin(), added.end());
+            if (touched.size() <= 2000) {
+                std::unordered_set<EntityId> have;
+                for (const Candidate& c : cands)
+                    have.insert(c.id);
+                bool addedNew = false;
+                for (EntityId t : touched) {
+                    const Entity* te = doc.find(t);
+                    if (!te || have.count(t) || entityAs<HatchData>(*te))
+                        continue;
+                    cands.push_back({t, te});
+                    addedNew = true;
+                }
+                if (addedNew && !cands.empty()) {
+                    BoundaryFinder finder(cands, options);
+                    if (const Boundary* best = bestRoot(finder, 0.8)) {
+                        newLoops = best->loops;
+                        newSources = best->sources;
+                        found = true;
+                    }
                 }
             }
         }

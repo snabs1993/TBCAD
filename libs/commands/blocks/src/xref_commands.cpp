@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -555,6 +556,87 @@ public:
     }
 };
 
+// ETRANSMIT [ARCHIVE]: copies the saved drawing and everything it refers to (xrefs, pictures,
+// PDF underlays) into one folder, keeping relative paths, and writes transmittal.txt. A file
+// stored outside the drawing's folder tree goes to "refs" and is listed as needing a new path.
+class ETransmitCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ETRANSMIT"; }
+    std::vector<std::string> defaultAliases() const override { return {"ARCHIVE"}; }
+    std::string_view description() const override {
+        return "Copy the drawing and its references into a folder to send";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        namespace fs = std::filesystem;
+        const fs::path hostFile = hostFileOf(ctx);
+        std::error_code ec;
+        if (hostFile.empty() || !fs::exists(hostFile, ec)) {
+            ctx.message("Save the drawing first: ETRANSMIT packs the saved file.");
+            co_return;
+        }
+        auto f = co_await ctx.getString("Destination folder");
+        if (!f.ok() || cmd::trim(f.text).empty())
+            co_return;
+        const std::string text = cmd::trim(f.text);
+        const fs::path dest(std::u8string(text.begin(), text.end()));
+        fs::create_directories(dest, ec);
+        if (ec) {
+            ctx.message("Cannot create " + text + ": " + ec.message());
+            co_return;
+        }
+        std::string report = "Transmittal of " + hostFile.filename().string() + "\n";
+        std::size_t copied = 0, missing = 0, moved = 0;
+        auto copy = [&](const fs::path& from, const fs::path& to) {
+            std::error_code e;
+            fs::create_directories(to.parent_path(), e);
+            fs::copy_file(from, to, fs::copy_options::overwrite_existing, e);
+            return !e;
+        };
+        if (copy(hostFile, dest / hostFile.filename())) {
+            ++copied;
+            report += "drawing  " + hostFile.filename().string() + "\n";
+        } else {
+            ctx.message("Cannot copy the drawing into " + text + ".");
+            co_return;
+        }
+        Document& doc = ctx.doc();
+        for (BlockId id : xref::xrefs(doc)) {
+            const BlockDef* def = doc.block(id);
+            if (!def)
+                continue;
+            const fs::path found = xref::resolvePath(def->xrefPath, hostFile);
+            if (!fs::exists(found, ec)) {
+                ++missing;
+                report += "MISSING  " + def->xrefPath + "\n";
+                continue;
+            }
+            const std::string stored = underlay::parseSpec(def->xrefPath).file;
+            const fs::path rel(std::u8string(stored.begin(), stored.end()));
+            const bool inside = rel.is_relative() && *rel.begin() != "..";
+            const fs::path target = inside ? dest / rel : dest / "refs" / found.filename();
+            if (!copy(found, target)) {
+                ++missing;
+                report += "FAILED   " + def->xrefPath + "\n";
+                continue;
+            }
+            ++copied;
+            if (inside) {
+                report += "xref     " + def->xrefPath + "\n";
+            } else {
+                ++moved;
+                report += "xref     " + def->xrefPath + "  ->  refs/" +
+                          found.filename().string() + " (set the path again)\n";
+            }
+        }
+        std::ofstream(dest / "transmittal.txt", std::ios::binary) << report;
+        ctx.message(std::to_string(copied) + " file(s) copied to " + text +
+                    (missing ? ", " + std::to_string(missing) + " reference(s) not found" : "") +
+                    (moved ? ", " + std::to_string(moved) + " moved to refs (new paths needed)"
+                           : "") +
+                    ". See transmittal.txt.");
+    }
+};
+
 // EXTERNALREFERENCES [ER]: opens the External References panel.
 class XrefPaletteCommand final : public cmd::Command {
 public:
@@ -1049,6 +1131,9 @@ std::unique_ptr<cmd::Command> makeXRelinkCommand() {
 }
 std::unique_ptr<cmd::Command> makeXrefPaletteCommand() {
     return std::make_unique<XrefPaletteCommand>();
+}
+std::unique_ptr<cmd::Command> makeETransmitCommand() {
+    return std::make_unique<ETransmitCommand>();
 }
 std::unique_ptr<cmd::Command> makeXListCommand() {
     return std::make_unique<XListCommand>();

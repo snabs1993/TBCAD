@@ -784,3 +784,50 @@ TEST_CASE("scenes with blocks, hatches and wide polylines: modify commands stay 
     MESSAGE(changed << " steps changed the drawing");
     CHECK(changed > 20);
 }
+
+TEST_CASE("no modify command changes an object on a locked layer") {
+    Rig r;
+    LayerId locked{};
+    {
+        Transaction tx = r.doc.begin("layer");
+        Layer l;
+        l.name = "Locked";
+        l.locked = true;
+        locked = tx.addLayer(l).value();
+        tx.commit();
+    }
+    const auto ss = samples();
+    std::vector<EntityId> ids;
+    for (const auto& s : ss) {
+        Entity e;
+        e.data = s.data;
+        e.common.layer = locked;
+        Transaction tx = r.doc.begin("add");
+        ids.push_back(tx.add(std::move(e)).value());
+        tx.commit();
+    }
+    const std::string before = canonicalDump(r.doc);
+    const auto go = [&](std::string_view name, std::vector<ScriptItem> items) {
+        CAPTURE(std::string(name));
+        if (!r.host.run(name, items).finished)
+            r.host.feed({ScriptItem::esc(), ScriptItem::esc(), ScriptItem::esc()});
+        CHECK(canonicalDump(r.doc) == before);
+    };
+    for (std::size_t k = 0; k < ids.size(); ++k) {
+        const Vec2 p = ss[k].p1;
+        const std::size_t o = (k + 1) % ids.size();
+        go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[k], p), ScriptItem::enter()});
+        go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[k], p), ScriptItem::enter()});
+        go("FILLET", {"R", "1", ScriptItem::pick(ids[k], p), ScriptItem::pick(ids[o], ss[o].p1)});
+        go("CHAMFER", {"D", "1", "1", ScriptItem::pick(ids[k], p), ScriptItem::pick(ids[o], ss[o].p1)});
+        go("OFFSET", {"1", ScriptItem::pick(ids[k], p), "30,30", ScriptItem::enter()});
+        go("BREAK", {ScriptItem::pick(ids[k], p), "5,5"});
+        go("LENGTHEN", {"Delta", "3", ScriptItem::pick(ids[k], p), ScriptItem::enter()});
+        for (const char* c : {"EXPLODE", "ERASE", "MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "STRETCH",
+                              "JOIN", "PEDIT", "REVERSE", "CHPROP", "CHANGE", "ARRAY", "ALIGN"}) {
+            r.host.setSelection({ids[k]});
+            go(c, {ScriptItem::select({ids[k], ids[o]}), ScriptItem::enter(), "0,0", "5,5",
+                   ScriptItem::enter(), ScriptItem::esc()});
+        }
+    }
+}

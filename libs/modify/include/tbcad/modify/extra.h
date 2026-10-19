@@ -151,8 +151,10 @@ struct TextReplace {
 };
 // Text and MText, leader notes, dimension text overrides, block attribute values and table cells.
 // Returns nothing when the entity holds no match. An empty `find` never matches. With an empty
-// `replacement` the matches are deleted.
+// `replacement` the matches are deleted. With `wholeWord` a match inside a longer word (letters,
+// digits, underscore or non-ASCII text beside it) is left alone.
 std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
-                                       std::string_view replacement, bool matchCase);
+                                       std::string_view replacement, bool matchCase,
+                                       bool wholeWord = false);
 
 }  // namespace tbcad::modify

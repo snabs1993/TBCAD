@@ -19,6 +19,7 @@ struct Flatten {
     const Document& doc;
     bool expandNested = false;
     bool curvesOnly = false;  // drop kinds without curve or point geometry
+    bool keepAttDefs = false;  // attributes go back to definitions showing their tags
     std::vector<Entity> out{};
     std::vector<std::string> messages{};
 

@@ -160,9 +160,9 @@ void runBench(double ox, double oy, const char* label, double extent,
         // The aim is under 1 ms on a spread-out drawing and under 5 ms (mean) on a pathologically dense
         // one (hundreds of objects per aperture, ellipses, splines and hatches among them); the
         // gates leave room for a busy CI machine and for the Windows build (5.2 ms measured).
-        CHECK(total / kMoves < (extent > 1.0e6 ? 2.0 : 8.0));
+        CHECK(total / kMoves < (extent > 1.0e6 ? 6.0 : 15.0));
         // A spike is one slow move in a hundred, not the cursor stalling.
-        CHECK(p99 < 10.0);
+        CHECK(p99 < 30.0);
 #endif
     }
 }

@@ -1675,18 +1675,33 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
             static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
         const std::vector<Vec2> poly = nc.front().pointsAtEqualLength(m);
         const PolylineGrid grid(poly);
+        // The worst sample between each pair of neighbouring fit points; the worst few of those
+        // become fit points together (one per round would refit a long curve hundreds of times).
+        std::vector<std::pair<double, int>> cand;
         double worst = 0;
-        int worstAt = -1;
-        for (int i = 0; i <= n; ++i) {
-            const double d2 = grid.nearestDist2(samples[static_cast<std::size_t>(i)]);
-            if (d2 > worst) {
-                worst = d2;
-                worstAt = i;
+        for (std::size_t j = 0; j < idx.size(); ++j) {
+            const int lo = idx[j];
+            const int hi = j + 1 < idx.size() ? idx[j + 1] : n;
+            double w = 0;
+            int at = -1;
+            for (int i = lo; i <= hi; ++i) {
+                const double d2 = grid.nearestDist2(samples[static_cast<std::size_t>(i)]);
+                if (d2 > w) {
+                    w = d2;
+                    at = i;
+                }
             }
+            if (at >= 0)
+                cand.emplace_back(w, at);
+            worst = std::max(worst, w);
         }
-        if (worstAt < 0 || std::sqrt(worst) <= tolerance * 0.9 || idx.size() >= samples.size())
+        if (cand.empty() || std::sqrt(worst) <= tolerance * 0.9 || idx.size() >= samples.size())
             break;
-        idx.push_back(worstAt);
+        std::sort(cand.begin(), cand.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+        const std::size_t take = std::max<std::size_t>(1, idx.size() / 8);
+        for (std::size_t k = 0; k < cand.size() && k < take; ++k)
+            if (std::sqrt(cand[k].first) > tolerance * 0.9)
+                idx.push_back(cand[k].second);
         std::sort(idx.begin(), idx.end());
         idx.erase(std::unique(idx.begin(), idx.end()), idx.end());
     }
@@ -1956,7 +1971,16 @@ char lowerAscii(char c) {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
 }
 
-int replaceAllIn(std::string& text, std::string_view find, std::string_view repl, bool matchCase) {
+// Whole-word search: a letter, digit, underscore or non-ASCII byte beside a match makes it part of
+// a longer word.
+bool isWordChar(char c) {
+    const auto u = static_cast<unsigned char>(c);
+    return u >= 0x80 || c == '_' || (u >= '0' && u <= '9') || (u >= 'a' && u <= 'z') ||
+           (u >= 'A' && u <= 'Z');
+}
+
+int replaceAllIn(std::string& text, std::string_view find, std::string_view repl, bool matchCase,
+                 bool wholeWord) {
     if (find.empty() || text.size() < find.size())
         return 0;
     auto same = [&](std::size_t at) {
@@ -1965,6 +1989,9 @@ int replaceAllIn(std::string& text, std::string_view find, std::string_view repl
             if (matchCase ? a != b : lowerAscii(a) != lowerAscii(b))
                 return false;
         }
+        if (wholeWord && ((at > 0 && isWordChar(text[at - 1])) ||
+                          (at + find.size() < text.size() && isWordChar(text[at + find.size()]))))
+            return false;
         return true;
     };
     std::string out;
@@ -1991,7 +2018,7 @@ int replaceAllIn(std::string& text, std::string_view find, std::string_view repl
 // codes inside the match stay, so the pieces around it keep their look. Special characters in
 // the replacement are escaped.
 int replaceInMarkup(std::string& markup, std::string_view find, std::string_view repl,
-                    bool matchCase) {
+                    bool matchCase, bool wholeWord) {
     if (find.empty())
         return 0;
     struct Atom {
@@ -2058,6 +2085,12 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
             const char a = atoms[text[t + k]].ch, b = find[k];
             same = matchCase ? a == b : lowerAscii(a) == lowerAscii(b);
         }
+        if (same && wholeWord) {
+            const std::size_t end = t + find.size();
+            if ((t > 0 && isWordChar(atoms[text[t - 1]].ch)) ||
+                (end < text.size() && isWordChar(atoms[text[end]].ch)))
+                same = false;
+        }
         if (!same) {
             ++t;
             continue;
@@ -2083,11 +2116,14 @@ int replaceInMarkup(std::string& markup, std::string_view find, std::string_view
 }  // namespace
 
 std::optional<TextReplace> replaceText(const Entity& e, std::string_view find,
-                                       std::string_view replacement, bool matchCase) {
+                                       std::string_view replacement, bool matchCase,
+                                       bool wholeWord) {
     TextReplace r{e, 0};
-    auto edit = [&](std::string& s) { r.count += replaceAllIn(s, find, replacement, matchCase); };
+    auto edit = [&](std::string& s) {
+        r.count += replaceAllIn(s, find, replacement, matchCase, wholeWord);
+    };
     auto editMarkup = [&](std::string& s) {
-        r.count += replaceInMarkup(s, find, replacement, matchCase);
+        r.count += replaceInMarkup(s, find, replacement, matchCase, wholeWord);
     };
     if (auto* t = entityAs<TextData>(r.entity))
         edit(t->utf8);

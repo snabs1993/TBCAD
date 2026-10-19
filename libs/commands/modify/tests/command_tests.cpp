@@ -974,15 +974,30 @@ TEST_CASE("FIND replaces text, only counts without a replacement, and undoes in 
     TextData td;
     td.utf8 = "Room 1 / room 2";
     EntityId t = f.add(Indirect<TextData>(td));
-    f.host.run("FIND", {"room", "", "No"});
+    f.host.run("FIND", {"room", "", "No", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
     CHECK(f.host.selection() == std::vector<EntityId>{t});  // the matches are selected
-    f.host.run("FIND", {"room", "Hall", "No"});
+    f.host.run("FIND", {"room", "Hall", "No", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1 / Hall 2");
     f.host.undo();
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / room 2");
-    f.host.run("FIND", {"room", "Hall", "Yes"});
+    f.host.run("FIND", {"room", "Hall", "Yes", "No"});
     CHECK(entityAs<TextData>(f.get(t))->utf8 == "Room 1 / Hall 2");
+}
+
+TEST_CASE("FIND with whole words only leaves matches inside longer words alone") {
+    Fixture f;
+    TextData td;
+    td.utf8 = "room 1, bedroom, room_2, room.";
+    EntityId t = f.add(Indirect<TextData>(td));
+    MTextData mt;
+    mt.utf8 = "roomy and {\\Lroom}";
+    EntityId m = f.add(Indirect<MTextData>(mt));
+    f.host.run("FIND", {"room", "Hall", "No", "Yes"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1, bedroom, room_2, Hall.");
+    CHECK(entityAs<MTextData>(f.get(m))->utf8 == "roomy and {\\LHall}");
+    f.host.run("FIND", {"room", "Hall", "No", "No"});
+    CHECK(entityAs<TextData>(f.get(t))->utf8 == "Hall 1, bedHall, Hall_2, Hall.");
 }
 
 TEST_CASE("FIND also changes text inside block definitions") {
@@ -999,7 +1014,7 @@ TEST_CASE("FIND also changes text inside block definitions") {
         inner = tx.add(std::move(e), room).value();
         tx.commit();
     }
-    f.host.run("FIND", {"room", "Hall", "No"});
+    f.host.run("FIND", {"room", "Hall", "No", "No"});
     CHECK(entityAs<TextData>(f.get(inner))->utf8 == "Hall label");
     f.host.undo();
     CHECK(entityAs<TextData>(f.get(inner))->utf8 == "room label");
@@ -1653,7 +1668,7 @@ TEST_CASE("FIND replaces in text, mtext, attributes, table cells, dimensions and
     const EntityId leader = f.add(std::move(ld));
     const EntityId other = f.add(findText("Window W1", {0, 10}));
 
-    (void)f.host.run("FIND", {"door", "gate", "No"});
+    (void)f.host.run("FIND", {"door", "gate", "No", "No"});
     CHECK(entityAs<TextData>(f.get(text))->utf8 == "gate D1");
     CHECK(entityAs<TextData>(f.get(other))->utf8 == "Window W1");
     CHECK(entityAs<MTextData>(f.get(mtext))->utf8 == "Fire gate, steel gate");
@@ -1676,12 +1691,12 @@ TEST_CASE("FIND replaces in text, mtext, attributes, table cells, dimensions and
 TEST_CASE("FIND honours Match case and an empty replacement only counts") {
     Fixture f;
     const EntityId a = f.add(findText("Door door DOOR"));
-    (void)f.host.run("FIND", {"door", "", "No"});
+    (void)f.host.run("FIND", {"door", "", "No", "No"});
     CHECK(entityAs<TextData>(f.get(a))->utf8 == "Door door DOOR");
     CHECK(f.host.logContains("3 match(es) in 1 object(s)."));
-    (void)f.host.run("FIND", {"door", "X", "Yes"});
+    (void)f.host.run("FIND", {"door", "X", "Yes", "No"});
     CHECK(entityAs<TextData>(f.get(a))->utf8 == "Door X DOOR");
-    (void)f.host.run("FIND", {"nothing", "X", "No"});
+    (void)f.host.run("FIND", {"nothing", "X", "No", "No"});
     CHECK(f.host.logContains("No match for"));
 }
 
@@ -1697,7 +1712,7 @@ TEST_CASE("FIND searches the layout sheets too") {
         sheet = tx.add(std::move(e), b).value();
         tx.commit();
     }
-    (void)f.host.run("FIND", {"Door", "Gate", "No"});
+    (void)f.host.run("FIND", {"Door", "Gate", "No", "No"});
     CHECK(entityAs<TextData>(f.get(model))->utf8 == "Gate in model");
     CHECK(entityAs<TextData>(f.get(sheet))->utf8 == "Gate on sheet");
 }
@@ -1837,4 +1852,128 @@ TEST_CASE("FILLET and CHAMFER of two segments with an arc between them remove th
         CHECK(near(pl->v[1].p, {11, 0}));
         CHECK(near(pl->v[2].p, {12, 1}));
     }
+}
+
+TEST_CASE("MATCHPROP copies every basic property, the plot style included, and undoes in one step") {
+    Fixture f;
+    LayerId walls{};
+    {
+        Transaction tx = f.doc.begin("layer");
+        Layer l;
+        l.name = "Walls";
+        walls = tx.addLayer(l).value();
+        tx.commit();
+    }
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(CircleData{{0, 5}, 2});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(a, [&](Entity& e) {
+            e.common.layer = walls;
+            e.common.color = Color::index(3);
+            e.common.lineweight = LineWeight::mm(0.5);
+            e.common.linetypeScale = 2;
+            e.common.transparency = 25;
+        }));
+        (void)tx.modifyHeader([&](Header& h) { setEntityPlotStyle(h, a, "Heavy"); });
+        tx.commit();
+    }
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {5, 0}), ScriptItem::pick(b, {2, 5}), ScriptItem::esc()});
+    const EntityCommon& c = f.get(b).common;
+    CHECK(c.layer == walls);
+    CHECK(c.color == Color::index(3));
+    CHECK(c.lineweight == LineWeight::mm(0.5));
+    CHECK(c.linetypeScale == doctest::Approx(2));
+    CHECK(c.transparency == 25);
+    CHECK(entityPlotStyle(f.doc.header(), b) == "Heavy");
+    CHECK(f.host.undo());
+    CHECK(f.get(b).common.layer != walls);
+    CHECK(f.get(b).common.transparency == kTransparencyByLayer);
+    CHECK(entityPlotStyle(f.doc.header(), b).empty());
+}
+
+TEST_CASE("MATCHPROP gives text its height, style, width and slant, and polylines their width") {
+    Fixture f;
+    TextData ta;
+    ta.height = 7;
+    ta.widthFactor = 0.8;
+    ta.oblique = 0.2;
+    ta.utf8 = "one";
+    TextData tb;
+    tb.utf8 = "two";
+    tb.position = {0, 10};
+    EntityId a = f.add(ta);
+    EntityId b = f.add(tb);
+    PolylineData pa;
+    pa.constantWidth = 1.5;
+    pa.v = {{{0, 0}, 0, 1.5, 1.5}, {{4, 0}, 0, 1.5, 1.5}};
+    PolylineData pb;
+    pb.v = {{{0, 20}, 0, 0, 0}, {{4, 20}, 0.3, 0.5, 2}, {{8, 25}, 0, 0, 0}};
+    EntityId pA = f.add(pa);
+    EntityId pB = f.add(pb);
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {0, 0}), ScriptItem::pick(b, {0, 10}), ScriptItem::esc()});
+    const auto* t = entityAs<TextData>(f.get(b));
+    CHECK(t->height == doctest::Approx(7));
+    CHECK(t->widthFactor == doctest::Approx(0.8));
+    CHECK(t->oblique == doctest::Approx(0.2));
+    CHECK(t->utf8 == "two");
+    CHECK(near(t->position, {0, 10}));
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(pA, {2, 0}), ScriptItem::pick(pB, {2, 20}), ScriptItem::esc()});
+    const auto* p = entityAs<PolylineData>(f.get(pB));
+    CHECK(p->constantWidth == doctest::Approx(1.5));
+    for (const PolyVertex& v : p->v) {
+        CHECK(v.startWidth == doctest::Approx(1.5));
+        CHECK(v.endWidth == doctest::Approx(1.5));
+    }
+    CHECK(near(p->v[1].p, {4, 20}));
+    CHECK(p->v[1].bulge == doctest::Approx(0.3));  // the shape does not change
+}
+
+TEST_CASE("MATCHPROP between unlike kinds copies only what both have, Settings turn Basic off") {
+    Fixture f;
+    TextData ta;
+    ta.height = 9;
+    EntityId a = f.add(ta);
+    EntityId b = f.add(LineData{{0, 0}, {5, 0}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(a, [](Entity& e) { e.common.color = Color::index(1); }));
+        tx.commit();
+    }
+    const LineData before = *entityAs<LineData>(f.get(b));
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {0, 0}), "Settings", "Basic", ScriptItem::enter(),
+                             ScriptItem::pick(b, {2, 0}), ScriptItem::esc()});
+    CHECK(f.get(b).common.color == Color::byLayer());  // Basic is off
+    CHECK(near(entityAs<LineData>(f.get(b))->b, before.b));
+    f.host.run("MATCHPROP", {ScriptItem::pick(a, {0, 0}), "Settings", "Basic", ScriptItem::enter(),
+                             ScriptItem::pick(b, {2, 0}), ScriptItem::esc()});  // Basic back on
+    CHECK(f.get(b).common.color == Color::index(1));
+}
+
+TEST_CASE("MATCHPROP does not touch objects on locked layers") {
+    Fixture f;
+    LayerId locked{};
+    {
+        Transaction tx = f.doc.begin("layer");
+        Layer l;
+        l.name = "Locked";
+        l.locked = true;
+        locked = tx.addLayer(l).value();
+        tx.commit();
+    }
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 3}, {10, 3}});
+    {
+        Transaction tx = f.doc.begin("set");
+        REQUIRE(tx.modify(b, [&](Entity& e) { e.common.layer = locked; }));
+        REQUIRE(tx.modify(a, [](Entity& e) { e.common.color = Color::index(2); }));
+        tx.commit();
+    }
+    f.host.run("MATCHPROP",
+               {ScriptItem::pick(a, {5, 0}), ScriptItem::pick(b, {5, 3}), ScriptItem::esc()});
+    CHECK(f.get(b).common.color == Color::byLayer());
+    CHECK(f.get(b).common.layer == locked);
 }

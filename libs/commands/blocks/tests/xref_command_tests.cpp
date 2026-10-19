@@ -508,3 +508,37 @@ TEST_CASE("EXTERNALREFERENCES opens the External References panel") {
     CHECK(f.reg.find("EXTERNALREFERENCES"));
     CHECK(f.reg.find("ER") == f.reg.find("EXTERNALREFERENCES"));
 }
+
+TEST_CASE("ETRANSMIT copies the drawing and its references, keeping relative paths") {
+    Dir dir;
+    fs::create_directories(dir.path / "sub");
+    fs::path inside = writeSource(dir.path / "sub", "inside.tbcad", 2);
+    Dir other;  // a folder outside the drawing's tree
+    fs::path outside = writeSource(other.path, "outside.tbcad", 2);
+    fs::path main = writeSource(dir.path, "main.tbcad", 1);
+    Fixture f;
+    f.host->setSetting("document.file", main.string());
+    f.host->run("XATTACH", {"sub/inside.tbcad", "", "", "", "0,0"});
+    f.host->run("XATTACH", {outside.string(), "", "", "", "0,0"});
+    // an unreadable reference is reported, not fatal
+    f.host->run("XATTACH", {(dir.path / "sub" / "gone.tbcad").string(), "", "", "", "0,0"});
+    REQUIRE(f.doc.blockByName("inside"));
+    REQUIRE(f.doc.blockByName("outside"));
+
+    Dir pack;
+    fs::path to = pack.path / "send";
+    f.host->clearLog();
+    f.host->run("ETRANSMIT", {to.string()});
+    CHECK(fs::exists(to / "main.tbcad"));
+    CHECK(fs::exists(to / "sub" / "inside.tbcad"));
+    CHECK(fs::exists(to / "refs" / "outside.tbcad"));
+    CHECK(fs::exists(to / "transmittal.txt"));
+    CHECK(f.host->logContains("moved to refs"));
+}
+
+TEST_CASE("ETRANSMIT needs a saved drawing") {
+    Fixture f;
+    f.host->clearLog();
+    f.host->run("ETRANSMIT", {"nowhere"});
+    CHECK(f.host->logContains("Save the drawing first"));
+}

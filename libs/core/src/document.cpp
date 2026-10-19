@@ -1444,6 +1444,17 @@ std::vector<EntityId> Transaction::touchedEntities() const {
     return ids;
 }
 
+std::vector<EntityId> Transaction::addedEntities(std::size_t limit) const {
+    std::vector<EntityId> ids;
+    const std::uint64_t end = doc().allocCursor();
+    if (end <= startNextId_ || end - startNextId_ > limit)
+        return ids;
+    for (std::uint64_t v = startNextId_; v < end; ++v)
+        if (doc().find(EntityId{v}))
+            ids.push_back(EntityId{v});
+    return ids;
+}
+
 void Transaction::touchEntity(EntityId id, bool consume) {
     if ((id.value >= startNextId_ && id.value < doc_->allocCursor()) ||
         touched_.find(id) != TouchedIndex::kNone)
