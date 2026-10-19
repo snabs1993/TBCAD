@@ -5,6 +5,8 @@
 #include <map>
 #include <utility>
 
+#include "tbcad/geom/box_grid.h"
+
 namespace tbcad::geom {
 
 namespace {
@@ -25,15 +27,20 @@ double distToSegment(Vec2 p, Vec2 a, Vec2 b) {
     return std::hypot(p.x - (a.x + ab.x * t), p.y - (a.y + ab.y * t));
 }
 
+bool parityInRing(const Ring& r, Vec2 p) {
+    bool in = false;
+    for (std::size_t i = 0; i < r.size(); ++i) {
+        const Vec2 a = r[i], b = r[(i + 1) % r.size()];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    }
+    return in;
+}
+
 bool parityInside(const std::vector<Ring>& rings, Vec2 p) {
     bool in = false;
-    for (const Ring& r : rings) {
-        for (std::size_t i = 0; i < r.size(); ++i) {
-            const Vec2 a = r[i], b = r[(i + 1) % r.size()];
-            if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
-                in = !in;
-        }
-    }
+    for (const Ring& r : rings)
+        in = in != parityInRing(r, p);
     return in;
 }
 
@@ -178,6 +185,16 @@ Region normalized(Region region, double eps) {
             rings.push_back(std::move(c));
     }
     Region out;
+    // Only a ring whose box holds the probe can contain it: a grid over the boxes finds those.
+    std::vector<BBox2> boxes;
+    boxes.reserve(rings.size());
+    for (const Ring& r : rings) {
+        BBox2 b;
+        for (const Vec2& v : r)
+            b.expand(v);
+        boxes.push_back(b);
+    }
+    const BoxGrid grid(boxes);
     for (std::size_t i = 0; i < rings.size(); ++i) {
         int depth = 0;
         // A point of this ring that is not on another ring: the middle of its longest edge.
@@ -193,9 +210,12 @@ Region normalized(Region region, double eps) {
         }
         const Vec2 probe{(r[best].x + r[(best + 1) % r.size()].x) / 2,
                          (r[best].y + r[(best + 1) % r.size()].y) / 2};
-        for (std::size_t j = 0; j < rings.size(); ++j)
-            if (j != i && parityInside({rings[j]}, probe))
+        BBox2 pb;
+        pb.expand(probe);
+        grid.query(pb, [&](std::size_t j) {
+            if (j != i && parityInRing(rings[j], probe))
                 ++depth;
+        });
         Ring oriented = r;
         const bool ccw = ringArea(oriented) > 0;
         if (ccw != (depth % 2 == 0))

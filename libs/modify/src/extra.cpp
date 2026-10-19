@@ -6,6 +6,7 @@
 #include <functional>
 #include <map>
 #include <numeric>
+#include <unordered_map>
 
 #include "tbcad/modify/break_join.h"
 #include "tbcad/modify/trim.h"
@@ -369,32 +370,33 @@ bool takesPart(const Entity& e) {
     }
 }
 
-double minX(const Entity& e) {
+// The lower-left corner of the box of the entity (its position for entities without curves).
+Vec2 minPoint(const Entity& e) {
     std::vector<CurveRef> cs;
     if (const auto* p = entityAs<PointData>(e))
-        return p->p.x;
+        return p->p;
     if (const auto* t = entityAs<TextData>(e))
-        return t->position.x;
+        return t->position;
     if (const auto* t = entityAs<MTextData>(e))
-        return t->position.x;
+        return t->position;
     if (const auto* i = entityAs<InsertData>(e))
-        return i->position.x;
+        return i->position;
     if (const auto* sp = entityAs<SplineData>(e)) {
-        double m = 0;
+        Vec2 m{};
         bool any = false;
         for (const auto* pts : {&sp->control, &sp->fit}) {
             for (const Vec2& q : *pts) {
-                m = any ? std::min(m, q.x) : q.x;
+                m = any ? Vec2{std::min(m.x, q.x), std::min(m.y, q.y)} : q;
                 any = true;
             }
         }
         return m;
     }
     if (!geom::curvesOf(e, cs) || cs.empty())
-        return 0;
-    double m = cs.front().bounds().min.x;
+        return {};
+    Vec2 m = cs.front().bounds().min;
     for (const CurveRef& c : cs)
-        m = std::min(m, c.bounds().min.x);
+        m = {std::min(m.x, c.bounds().min.x), std::min(m.y, c.bounds().min.y)};
     return m;
 }
 
@@ -639,36 +641,58 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
         if (entities[i] && takesPart(*entities[i]))
             order.push_back(i);
     }
-    std::vector<double> mx(entities.size(), 0.0);
-    for (std::size_t i : order)
-        mx[i] = minX(*entities[i]);
-    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
-        if (kind(*entities[a]) != kind(*entities[b]))
-            return kind(*entities[a]) < kind(*entities[b]);
-        return mx[a] < mx[b];
-    });
     std::vector<bool> gone(entities.size(), false);
 
-    // 1. Exact duplicates: the earliest entity in the input stays.
-    for (std::size_t oi = 0; oi < order.size(); ++oi) {
-        std::size_t i = order[oi];
-        for (std::size_t oj = oi + 1; oj < order.size(); ++oj) {
-            std::size_t j = order[oj];
-            if (kind(*entities[j]) != kind(*entities[i]) || mx[j] - mx[i] > o.tolerance * 4 + 1e-9)
-                break;
-            std::size_t keep = std::min(i, j), drop = std::max(i, j);
-            if (gone[i] || gone[j])
-                continue;
-            if (!o.ignoreProperties && !sameProps(entities[i]->common, entities[j]->common))
-                continue;
-            if (sameGeometry(*entities[i], *entities[j], o.tolerance)) {
-                gone[drop] = true;
-                res.erased.push_back(drop);
-                ++res.duplicates;
-                (void)keep;
-                if (drop == i)
-                    break;
+    // 1. Exact duplicates: the earliest entity in the input stays. Entities of one kind whose
+    // lower-left corners are close are the candidates; a hash of cells finds them without
+    // comparing everything that shares an x (a column of a grid).
+    {
+        const double cell = o.tolerance * 4 + 1e-9;
+        auto cellOf = [&](double v) { return static_cast<long long>(std::floor(v / cell)); };
+        struct Key {
+            int kind;
+            long long cx, cy;
+            bool operator==(const Key& k) const {
+                return kind == k.kind && cx == k.cx && cy == k.cy;
             }
+        };
+        struct KeyHash {
+            std::size_t operator()(const Key& k) const {
+                std::size_t h = static_cast<std::size_t>(k.kind) * 0x9E3779B97F4A7C15ull;
+                h ^= static_cast<std::size_t>(k.cx) * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
+                h ^= static_cast<std::size_t>(k.cy) * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+        std::unordered_map<Key, std::vector<std::size_t>, KeyHash> cells;  // processed entities
+        cells.reserve(order.size());
+        for (std::size_t i : order) {
+            const Vec2 c = minPoint(*entities[i]);
+            const int k = static_cast<int>(kind(*entities[i]));
+            const long long cx = cellOf(c.x), cy = cellOf(c.y);
+            for (long long dx = -1; dx <= 1 && !gone[i]; ++dx) {
+                for (long long dy = -1; dy <= 1 && !gone[i]; ++dy) {
+                    auto it = cells.find({k, cx + dx, cy + dy});
+                    if (it == cells.end())
+                        continue;
+                    for (std::size_t j : it->second) {
+                        if (gone[i])
+                            break;
+                        if (gone[j])
+                            continue;
+                        if (!o.ignoreProperties &&
+                            !sameProps(entities[i]->common, entities[j]->common))
+                            continue;
+                        if (sameGeometry(*entities[i], *entities[j], o.tolerance)) {
+                            const std::size_t drop = std::max(i, j);
+                            gone[drop] = true;
+                            res.erased.push_back(drop);
+                            ++res.duplicates;
+                        }
+                    }
+                }
+            }
+            cells[{k, cx, cy}].push_back(i);
         }
     }
 
@@ -685,7 +709,7 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             if (const auto* l = entityAs<LineData>(*entities[i]); l && !samePoint(l->a, l->b))
                 lines.push_back({i, l->a, l->b});
         }
-        std::vector<bool> used(lines.size(), false);
+        std::vector<bool> used(lines.size(), false), started(lines.size(), false);
         auto canonical = [](const L& l) {
             Vec2 d = l.b - l.a;
             return (d.x < 0 || (d.x == 0 && d.y < 0)) ? d * -1.0 : d;
@@ -731,7 +755,7 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
         }
         for (std::size_t ai = 0; ai < idxs.size(); ++ai) {
             std::size_t a = idxs[ai];
-            if (used[a])
+            if (used[a] || started[a])
                 continue;
             Vec2 d = canonical(lines[a]);
             double dl = length(d);
@@ -756,6 +780,10 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
                 consider(cl[q]);
             if (group.size() < 2)
                 continue;
+            // Every line of the group meets the same neighbours: none of them starts a group of
+            // its own (a row of survey lines would otherwise be walked once per line).
+            for (std::size_t k : group)
+                started[k] = true;
             struct Iv {
                 double lo, hi;
                 std::size_t k;
@@ -805,12 +833,32 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
                 arcs.push_back(i);
         }
         std::vector<bool> done(arcs.size(), false);
+        // Arcs with centres in neighbouring cells are the only ones that can share a circle.
+        const double cell = o.tolerance * 4 + 1e-9;
+        auto cellOf = [&](double v) { return static_cast<long long>(std::floor(v / cell)); };
+        std::map<std::pair<long long, long long>, std::vector<std::size_t>> byCentre;
+        for (std::size_t ai = 0; ai < arcs.size(); ++ai) {
+            const auto& a = *entityAs<ArcData>(*entities[arcs[ai]]);
+            byCentre[{cellOf(a.center.x), cellOf(a.center.y)}].push_back(ai);
+        }
         for (std::size_t ai = 0; ai < arcs.size(); ++ai) {
             if (done[ai])
                 continue;
             const auto& a = *entityAs<ArcData>(*entities[arcs[ai]]);
             std::vector<std::size_t> cluster{ai};
-            for (std::size_t bi = ai + 1; bi < arcs.size(); ++bi) {
+            std::vector<std::size_t> near;
+            for (long long dx = -1; dx <= 1; ++dx) {
+                for (long long dy = -1; dy <= 1; ++dy) {
+                    auto it = byCentre.find({cellOf(a.center.x) + dx, cellOf(a.center.y) + dy});
+                    if (it == byCentre.end())
+                        continue;
+                    for (std::size_t bi : it->second)
+                        if (bi > ai)
+                            near.push_back(bi);
+                }
+            }
+            std::sort(near.begin(), near.end());
+            for (std::size_t bi : near) {
                 const auto& b = *entityAs<ArcData>(*entities[arcs[bi]]);
                 if (done[bi] || !samePoint(a.center, b.center, o.tolerance) ||
                     std::abs(a.radius - b.radius) > o.tolerance)

@@ -329,6 +329,11 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         {"PROP-delete", {"-PROP", "Only", "Line", "Delete"}},
         {"JOIN", {"JOIN"}, 8000},
         {"PEDIT-join", {"PEDIT", "Multiple", "Yes", "Join", "0.001", ""}, 8000},
+        {"OVERKILL", {"OVERKILL", "ALL", "", ""}, 8000},
+        {"REVERSE", {"REVERSE", "ALL", ""}},
+        {"SETBYLAYER", {"SETBYLAYER", "ALL", "", "Yes", "Yes"}},
+        {"ISOLATE", {"ISOLATE", "ALL", ""}},
+        {"SELECTALL", {"SELECTALL"}},
         {"FIND-nomatch", {"FIND", "zzzqq", "yy", "Yes"}},
     };
     Site s;
