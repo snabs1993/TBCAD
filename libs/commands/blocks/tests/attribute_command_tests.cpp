@@ -316,3 +316,76 @@ TEST_CASE("EATTEDIT is an alias of ATTEDIT") {
     Fixture f;
     CHECK(f.reg.find("EATTEDIT") == f.reg.find("ATTEDIT"));
 }
+
+TEST_CASE("ATTSYNC picks the block through an insert, ? lists the blocks with attributes") {
+    Fixture f;
+    BlockId tag = makeTagBlock(f);
+    f.host->run("INSERT", {"Tag", "0,0", "Zed"});
+    const EntityId i = f.modelSpace()[0];
+    {
+        TextData t;
+        t.utf8 = "EXTRA";
+        t.attdef = AttDefInfo{"EXTRA", "", "e0", false, false, false, false};
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        Transaction tx = f.doc.begin("edit block");
+        REQUIRE(tx.add(std::move(e), tag));
+        tx.commit();
+    }
+    f.host->clearLog();
+    auto r = f.host->run("ATTSYNC", {"?", cmd::ScriptItem::pick(i)});
+    CHECK(r.finished);
+    CHECK(f.host->logContains("Tag (3 attributes)"));
+    CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs.size() == 2);
+    CHECK(f.host->undoStack().undoLabel() == "Sync attributes");
+    // Name, then the name, works too; a block without attributes says so
+    EntityId ln = f.addLine(0, 0, 1, 0);
+    f.host->setSelection({ln});
+    f.host->run("BLOCK", {"Plain", "0,0", "D"});
+    f.host->clearLog();
+    f.host->run("ATTSYNC", {"Name", "Plain"});
+    CHECK(f.host->logContains("has no attributes"));
+}
+
+TEST_CASE("BATTMAN removes, reorders and changes the modes of attributes, in one undo step") {
+    Fixture f;
+    BlockId tag = makeTagBlock(f);
+    {
+        TextData t;
+        t.utf8 = "OWNER";
+        t.attdef = AttDefInfo{"OWNER", "Owner", "me", false, false, false, false};
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        Transaction tx = f.doc.begin("edit block");
+        REQUIRE(tx.add(std::move(e), tag));
+        tx.commit();
+    }
+    f.host->run("INSERT", {"Tag", "0,0", "Zed", "Ann"});
+    const EntityId i = f.modelSpace()[0];
+    REQUIRE(entityAs<InsertData>(*f.doc.find(i))->attribs.size() == 2);
+    auto tags = [&] {
+        std::vector<std::string> out;
+        for (EntityId id : f.doc.block(tag)->entities)
+            if (const auto* t = entityAs<TextData>(*f.doc.find(id)); t && t->attdef)
+                out.push_back(t->attdef->tag);
+        return out;
+    };
+    REQUIRE(tags() == std::vector<std::string>{"NAME", "KEY", "OWNER"});
+    auto r = f.host->run("BATTMAN", {cmd::ScriptItem::pick(i), "Up", "owner", "Up", "owner",
+                                     "Edit", "key", "Constant", "No", "Remove", "name", "Done"});
+    CHECK(r.finished);
+    CHECK(tags() == std::vector<std::string>{"OWNER", "KEY"});
+    // the insert follows: OWNER keeps its value, KEY is no longer constant so it gets a value,
+    // NAME is gone
+    const auto& vals = entityAs<InsertData>(*f.doc.find(i))->attribs;
+    REQUIRE(vals.size() == 2);
+    CHECK(vals[0].tag == "OWNER");
+    CHECK(vals[0].value == "Ann");
+    CHECK(vals[1].tag == "KEY");
+    CHECK(vals[1].value == "K1");
+    CHECK(f.host->undoStack().undoLabel() == "BATTMAN");
+    CHECK(f.host->undo());
+    CHECK(tags() == std::vector<std::string>{"NAME", "KEY", "OWNER"});
+    CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs.size() == 2);
+    CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs[0].value == "Zed");
+}

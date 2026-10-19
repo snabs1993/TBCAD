@@ -277,7 +277,75 @@ private:
     }
 };
 
+// The attribute definitions of a block, in order.
+std::vector<const TextData*> attDefs(const Document& doc, BlockId block) {
+    std::vector<const TextData*> out;
+    if (const BlockDef* d = doc.block(block))
+        for (EntityId id : d->entities)
+            if (const Entity* e = doc.find(id))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef)
+                    out.push_back(t);
+    return out;
+}
+
+// Asks for a block as AutoCAD's ATTSYNC and BATTMAN do: an insert picked in the drawing, a block
+// name typed at the prompt, Name (then the name), or ? (lists the blocks with attributes and asks
+// again). `out` stays null when the user cancels.
+cmd::Task chooseBlock(cmd::CommandContext& ctx, BlockId& out) {
+    Document& doc = ctx.doc();
+    out = {};
+    for (;;) {
+        cmd::EntityOptions eo;
+        eo.keywords = {"?", "Name"};
+        // A block name typed at the prompt works as well as the Name option.
+        for (const auto& [id, b] : doc.blocks())
+            if (!b.name.empty() && b.name.front() != '*' && eo.keywords.size() < 400)
+                eo.keywords.push_back(b.name);
+        eo.filter = [&doc](const Entity& e) {
+            const auto* ins = entityAs<InsertData>(e);
+            return ins && doc.block(ins->block);
+        };
+        auto pick = co_await ctx.getEntity("Select a block reference or [?/Name]", eo);
+        if (pick.status == cmd::Status::Keyword) {
+            if (pick.keyword == "?") {
+                std::size_t n = 0;
+                for (const auto& [id, b] : doc.blocks())
+                    if (!b.name.empty() && b.name.front() != '*' && !attDefs(doc, id).empty()) {
+                        ctx.message("  " + b.name + " (" + std::to_string(attDefs(doc, id).size()) +
+                                    " attributes)");
+                        ++n;
+                    }
+                if (n == 0)
+                    ctx.message("No block in this drawing has attributes.");
+                continue;
+            }
+            std::string wanted = pick.keyword;
+            if (wanted == "Name") {
+                auto name = co_await ctx.getString("Enter block name");
+                if (!name.ok())
+                    co_return;
+                wanted = cmd::trim(name.text);
+            }
+            const BlockDef* def = doc.blockByName(wanted);
+            if (!def) {
+                ctx.message("No block named \"" + wanted + "\"");
+                continue;
+            }
+            out = def->id;
+            co_return;
+        }
+        if (!pick.ok())
+            co_return;
+        const Entity* e = doc.find(pick.id);
+        if (const auto* ins = e ? entityAs<InsertData>(*e) : nullptr) {
+            out = ins->block;
+            co_return;
+        }
+    }
+}
+
 // ATTSYNC: after a block definition changed, brings its inserts in line with its attributes.
+// The block is picked through one of its inserts or named (? lists the blocks with attributes).
 class AttSyncCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ATTSYNC"; }
@@ -288,25 +356,27 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        const BlockDef* def = nullptr;
-        for (;;) {
-            auto n = co_await ctx.getString("Enter block name");
-            if (!n.ok())
-                co_return;
-            def = doc.blockByName(cmd::trim(n.text));
-            if (def)
-                break;
-            ctx.message("No block named \"" + cmd::trim(n.text) + "\"");
+        BlockId block;
+        co_await chooseBlock(ctx, block);
+        const BlockDef* def = doc.block(block);
+        if (!def)
+            co_return;
+        if (attDefs(doc, block).empty()) {
+            ctx.message("The block \"" + def->name + "\" has no attributes.");
+            co_return;
         }
-        std::size_t n = blocks::syncInserts(ctx.tx(), doc, def->id);
+        std::size_t n = blocks::syncInserts(ctx.tx(), doc, block);
         ctx.setUndoLabel("Sync attributes");
         ctx.message(std::to_string(n) + (n == 1 ? " insert" : " inserts") + " of \"" + def->name +
                     "\" updated");
     }
 };
 
-// BATTMAN: the attribute definitions of a block, listed and edited one at a time (tag, prompt,
-// default value, invisible). The inserts are brought in line afterwards, like ATTSYNC.
+// BATTMAN: the attribute definitions of a block, listed and edited one at a time, as in
+// AutoCAD's Block Attribute Manager: Edit (tag, prompt, default value and the Invisible,
+// Constant, Verify and Preset modes), Remove, Up and Down (the order inserts ask for and show the
+// values). The inserts are brought in line afterwards, like ATTSYNC; the whole session is one undo
+// step.
 class BattManCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BATTMAN"; }
@@ -316,28 +386,34 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        const BlockDef* def = nullptr;
-        for (;;) {
-            auto n = co_await ctx.getString("Enter block name");
-            if (!n.ok())
-                co_return;
-            def = doc.blockByName(cmd::trim(n.text));
-            if (def)
-                break;
-            ctx.message("No block named \"" + cmd::trim(n.text) + "\"");
+        BlockId block;
+        co_await chooseBlock(ctx, block);
+        const BlockDef* def = doc.block(block);
+        if (!def)
+            co_return;
+        if (!def->xrefPath.empty()) {
+            ctx.message("The attributes of an external reference cannot be edited here.");
+            co_return;
         }
-        const BlockId block = def->id;
         list(ctx, *def);
         bool edited = false;
         std::vector<std::pair<std::string, std::string>> renames;
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Edit", "Done"};
+            ko.keywords = {"Edit", "Remove", "Up", "Down", "List", "Done"};
             ko.defaultKeyword = "Done";
-            auto k = co_await ctx.getKeyword("Attributes [Edit/Done] <Done>", ko);
+            auto k = co_await ctx.getKeyword("Attributes [Edit/Remove/Up/Down/List/Done] <Done>",
+                                             ko);
             if (!k.ok() || k.keyword == "Done")
                 break;
-            auto tag = co_await ctx.getString("Tag of the attribute to edit");
+            if (k.keyword == "List") {
+                if (const BlockDef* d = ctx.doc().block(block))
+                    list(ctx, *d);
+                continue;
+            }
+            auto tag = co_await ctx.getString(
+                std::string("Tag of the attribute to ") +
+                (k.keyword == "Edit" ? "edit" : k.keyword == "Remove" ? "remove" : "move"));
             if (!tag.ok())
                 co_return;
             const EntityId id = find(doc, block, cmd::toUpperAscii(cmd::trim(tag.text)));
@@ -345,12 +421,26 @@ public:
                 ctx.message("That block has no attribute with the tag " + tag.text + ".");
                 continue;
             }
-            co_await editOne(ctx, id, edited, renames);
+            if (k.keyword == "Edit") {
+                co_await editOne(ctx, id, edited, renames);
+            } else if (k.keyword == "Remove") {
+                if (auto r = ctx.tx().erase(id); r) {
+                    edited = true;
+                    ctx.message("Removed " + cmd::toUpperAscii(cmd::trim(tag.text)) + ".");
+                } else {
+                    ctx.message(r.error().message);
+                }
+            } else if (move(ctx, block, id, k.keyword == "Up")) {
+                edited = true;
+            }
         }
         if (edited) {
-            const BlockDef* d = ctx.doc().block(block);
-            if (d)
-                blocks::syncInserts(ctx.tx(), ctx.doc(), block, renames);
+            if (ctx.doc().block(block)) {
+                const std::size_t n = blocks::syncInserts(ctx.tx(), ctx.doc(), block, renames);
+                if (n > 0)
+                    ctx.message(std::to_string(n) + (n == 1 ? " insert" : " inserts") +
+                                " updated.");
+            }
             ctx.setUndoLabel("BATTMAN");
         }
     }
@@ -369,16 +459,49 @@ private:
 
     static BlockId blockOf(const Document& doc, EntityId id) { return doc.ownerBlock(id); }
 
+    // Swaps the attribute with the one before (up) or after it among the block's attributes; the
+    // other objects of the block keep their places.
+    static bool move(cmd::CommandContext& ctx, BlockId block, EntityId id, bool up) {
+        const BlockDef* d = ctx.doc().block(block);
+        if (!d)
+            return false;
+        std::vector<EntityId> order = d->entities;
+        std::vector<std::size_t> slots;  // positions of the attribute definitions
+        for (std::size_t i = 0; i < order.size(); ++i)
+            if (const Entity* e = ctx.doc().find(order[i]))
+                if (const auto* t = entityAs<TextData>(*e); t && t->attdef)
+                    slots.push_back(i);
+        std::size_t k = 0;
+        while (k < slots.size() && order[slots[k]] != id)
+            ++k;
+        if (k == slots.size())
+            return false;
+        if (up ? k == 0 : k + 1 == slots.size()) {
+            ctx.message(std::string("That attribute is already ") + (up ? "first." : "last."));
+            return false;
+        }
+        std::swap(order[slots[k]], order[slots[up ? k - 1 : k + 1]]);
+        if (auto r = ctx.tx().setDrawOrder(order, block); !r) {
+            ctx.message(r.error().message);
+            return false;
+        }
+        return true;
+    }
+
     static void list(cmd::CommandContext& ctx, const BlockDef& d) {
         std::size_t n = 0;
-        for (EntityId id : d.entities)
-            if (const Entity* e = ctx.doc().find(id))
-                if (const auto* t = entityAs<TextData>(*e); t && t->attdef) {
-                    ctx.message(t->attdef->tag + "  prompt \"" + t->attdef->prompt +
-                                "\"  default \"" + t->attdef->defaultValue + "\"" +
-                                (t->attdef->invisible ? "  invisible" : ""));
-                    ++n;
-                }
+        for (const TextData* t : attDefs(ctx.doc(), d.id)) {
+            const AttDefInfo& a = *t->attdef;
+            std::string modes;
+            for (auto [on, name] : {std::pair{a.invisible, "invisible"},
+                                    std::pair{a.constant, "constant"},
+                                    std::pair{a.verify, "verify"}, std::pair{a.preset, "preset"}})
+                if (on)
+                    modes += std::string("  ") + name;
+            ctx.message(a.tag + "  prompt \"" + a.prompt + "\"  default \"" + a.defaultValue +
+                        "\"" + modes);
+            ++n;
+        }
         if (n == 0)
             ctx.message("The block \"" + d.name + "\" has no attributes.");
     }
@@ -386,28 +509,31 @@ private:
     static cmd::Task editOne(cmd::CommandContext& ctx, EntityId id, bool& edited,
                              std::vector<std::pair<std::string, std::string>>& renames) {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Tag", "Prompt", "Default", "Invisible"};
-        auto k = co_await ctx.getKeyword("Change [Tag/Prompt/Default/Invisible]", ko);
+        ko.keywords = {"Tag", "Prompt", "Default", "Invisible", "Constant", "Verify", "Preset"};
+        auto k = co_await ctx.getKeyword(
+            "Change [Tag/Prompt/Default/Invisible/Constant/Verify/Preset]", ko);
         if (!k.ok())
             co_return;
+        const std::string which = k.keyword;
+        const bool isMode = which == "Invisible" || which == "Constant" || which == "Verify" ||
+                            which == "Preset";
         std::string text;
         bool flag = false;
-        if (k.keyword == "Invisible") {
+        if (isMode) {
             cmd::KeywordOptions yn;
             yn.keywords = {"Yes", "No"};
-            auto v = co_await ctx.getKeyword("Invisible [Yes/No]", yn);
+            auto v = co_await ctx.getKeyword(which + " [Yes/No]", yn);
             if (!v.ok())
                 co_return;
             flag = v.keyword == "Yes";
         } else {
             cmd::StringOptions so;
             so.allowEmpty = true;
-            auto v = co_await ctx.getString("New " + k.keyword, so);
+            auto v = co_await ctx.getString("New " + which, so);
             if (v.status == cmd::Status::Cancel)
                 co_return;
             text = v.ok() ? v.text : std::string();
         }
-        const std::string which = k.keyword;
         if (which == "Tag") {
             text = cmd::toUpperAscii(cmd::trim(text));
             if (text.empty() || text.find(' ') != std::string::npos) {
@@ -425,16 +551,27 @@ private:
             auto* t = entityAs<TextData>(e);
             if (!t || !t->attdef)
                 return;
+            AttDefInfo& a = *t->attdef;
             if (which == "Tag") {
-                if (t->attdef->tag != text)
-                    renames.emplace_back(t->attdef->tag, text);
-                t->attdef->tag = text;
-            } else if (which == "Prompt")
-                t->attdef->prompt = text;
-            else if (which == "Default")
-                t->attdef->defaultValue = text;
-            else
-                t->attdef->invisible = flag;
+                if (a.tag != text)
+                    renames.emplace_back(a.tag, text);
+                a.tag = text;
+            } else if (which == "Prompt") {
+                a.prompt = text;
+            } else if (which == "Default") {
+                a.defaultValue = text;
+            } else if (which == "Invisible") {
+                a.invisible = flag;
+            } else if (which == "Constant") {
+                // a constant attribute is never asked for, so it cannot also verify or preset
+                a.constant = flag;
+                if (flag)
+                    a.verify = a.preset = false;
+            } else if (which == "Verify") {
+                a.verify = flag && !a.constant;
+            } else {
+                a.preset = flag && !a.constant;
+            }
         });
         if (r)
             edited = true;
