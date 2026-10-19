@@ -103,6 +103,10 @@ enum class DimFit : std::uint8_t { Best, ArrowsFirst, TextFirst, BothOutside };
 // DIMTMOVE: where text goes when it is dragged away. Outside the extension lines it keeps a
 // leader (WithLine, Leader) or none (Free).
 enum class DimTextMove : std::uint8_t { WithLine, Leader, Free };
+// DIMLUNIT: how a length dimension writes its measurement. Architectural is 12'-6 1/2", Fractional
+// 150 1/2" (inches); `precision` is then the fraction (denominator 2^precision, at most 256).
+enum class DimLinearFormat : std::uint8_t { Decimal, Architectural, Fractional };
+
 // DIMAUNIT: how an angular dimension writes its measurement.
 enum class DimAngleFormat : std::uint8_t { Degrees, Dms, Gradians, Radians };
 
@@ -178,7 +182,9 @@ struct DimStyle {
     int textFill = 0;
     int textFillColor = 0;
     bool textFrame = false;
+    DimLinearFormat linearFormat = DimLinearFormat::Decimal;
     bool hasTextBox() const { return textFill != 0 || textFrame; }
+    bool hasLinearFormat() const { return linearFormat != DimLinearFormat::Decimal; }
     bool hasNumberFormat() const {
         return angleFormat != DimAngleFormat::Degrees || angularPrecision != -1 || commaDecimal ||
                baselineSpacing != 0 || centerMark != 0;

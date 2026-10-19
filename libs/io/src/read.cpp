@@ -519,7 +519,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 31)
+            if (flags > 63)
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -554,6 +554,7 @@ private:
             double baselineSpacing = 0, centerMark = 0;
             int textFill = 0, textFillColor = 0;
             bool textFrame = false;
+            DimLinearFormat linearFormat = DimLinearFormat::Decimal;
             if (flags & 8) {
                 angleFormat =
                     readEnum<DimAngleFormat>(r, static_cast<std::uint8_t>(DimAngleFormat::Radians));
@@ -574,6 +575,9 @@ private:
                 if (textFill > 2)
                     bad("invalid dimension style text fill");
             }
+            if (flags & 32)
+                linearFormat = readEnum<DimLinearFormat>(
+                    r, static_cast<std::uint8_t>(DimLinearFormat::Fractional));
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
                 bad("invalid dimension style tolerance");
@@ -594,6 +598,7 @@ private:
                                         d.textFill = textFill;
                                         d.textFillColor = textFillColor;
                                         d.textFrame = textFrame;
+                                        d.linearFormat = linearFormat;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;
