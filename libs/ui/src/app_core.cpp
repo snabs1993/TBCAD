@@ -507,6 +507,7 @@ void AppCore::closeDocument(std::size_t index) {
         const std::size_t next = index + 1 < slots_.size() ? index + 1 : index - 1;
         std::unique_ptr<Session> dying = std::move(slots_[index].session);
         slots_.erase(slots_.begin() + static_cast<std::ptrdiff_t>(index));
+        session_ = nullptr;  // enterSlot would store the UCS setting into the closed session
         dying.reset();
         enterSlot(next > index ? next - 1 : next, false);
     } else {
