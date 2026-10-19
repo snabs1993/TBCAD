@@ -139,6 +139,13 @@ std::vector<std::string> chunks(const std::string& s, std::size_t n) {
     return out;
 }
 
+DataItem noteText(std::string s) {
+    DataItem it;
+    it.code = 1000;
+    it.text = std::move(s);
+    return it;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------------------------
@@ -595,9 +602,22 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
         case EntityKind::MLeader: {
             downgrade("MULTILEADER",
                       "is written as leaders, a line for the dogleg, and the note or block");
-            if (auto parts = dim::mleaderAsLeaders(doc_, e))
-                for (const Entity& part : parts.value())
-                    writeEntity(part, owner);
+            if (auto parts = dim::mleaderAsLeaders(doc_, e)) {
+                // Each piece carries a TBCAD_MLEADER note, the first one the multileader itself,
+                // so our importer makes them one multileader again (see docs/dxf-export.md).
+                std::vector<Entity>& v = parts.value();
+                const std::string head = "a=" + std::to_string(nextMleaderId_++) +
+                                         ";n=" + std::to_string(v.size()) + ";i=";
+                for (std::size_t i = 0; i < v.size(); ++i) {
+                    ExtData x = v[i].common.ext.get();
+                    XdataApp app{"TBCAD_MLEADER", {noteText(head + std::to_string(i))}};
+                    if (i == 0)
+                        mleaderNote(*entityAs<MLeaderData>(e), app.items);
+                    x.xdata.push_back(std::move(app));
+                    v[i].common.ext = ExtDataPtr(std::move(x));
+                    writeEntity(v[i], owner);
+                }
+            }
             break;
         }
         case EntityKind::Proxy:
@@ -615,6 +635,54 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
     }
     if (kind(e) != EntityKind::Insert)
         writeAnnotativeData(e);
+}
+
+// The multileader a TBCAD_MLEADER note carries: content kind and dogleg, text height, block scale
+// and rotation, landing and content point, the lines (count, then per line its point count and
+// x, y), the dimension style's name and the note as hex UTF-8 in pieces.
+void Writer::mleaderNote(const MLeaderData& m, std::vector<DataItem>& items) {
+    auto real = [&](double v) {
+        DataItem it;
+        it.code = 1040;
+        it.real = v;
+        items.push_back(it);
+    };
+    auto count = [&](std::size_t n) {
+        DataItem it;
+        it.code = 1071;
+        it.integer = static_cast<std::int64_t>(n);
+        items.push_back(it);
+    };
+    items.push_back(noteText("c=" + std::to_string(static_cast<int>(m.content)) +
+                                   ";d=" + (m.dogleg ? "1" : "0")));
+    real(m.textHeight);
+    real(m.blockScale);
+    real(m.blockRotation);
+    for (Vec2 p : {m.landing, m.contentPos}) {
+        real(p.x);
+        real(p.y);
+    }
+    count(m.lines.size());
+    for (const auto& line : m.lines) {
+        count(line.size());
+        for (Vec2 p : line) {
+            real(p.x);
+            real(p.y);
+        }
+    }
+    if (const DimStyle* ds = doc_.dimStyle(m.style))
+        items.push_back(noteText("style=" + ds->name));
+    static constexpr char kDigits[] = "0123456789ABCDEF";
+    constexpr std::size_t kPiece = 120;  // bytes per 1000 group (240 hex digits, under 255)
+    for (std::size_t at = 0; at < m.utf8.size(); at += kPiece) {
+        std::string hex = "t=";
+        for (std::size_t k = at; k < std::min(m.utf8.size(), at + kPiece); ++k) {
+            const auto b = static_cast<unsigned char>(m.utf8[k]);
+            hex.push_back(kDigits[b >> 4]);
+            hex.push_back(kDigits[b & 15]);
+        }
+        items.push_back(noteText(hex));
+    }
 }
 
 // Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer

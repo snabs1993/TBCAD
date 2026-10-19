@@ -269,6 +269,7 @@ private:
     void writeRay(const Props& p, const RayData& d, const Entity& e, std::uint64_t owner);
     void writeMline(const Props& p, const MlineData& d, const Entity& e, std::uint64_t owner);
     void writeAnnotativeData(const Entity& e);
+    void mleaderNote(const MLeaderData& m, std::vector<DataItem>& items);
     void writeExtXdata(const EntityCommon& c);
     void writeTbcadFlags(const Entity& e);
     void writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner);
@@ -361,6 +362,7 @@ private:
     // the importer fuse them into one array again.
     std::vector<DataItem> arrayTag_{};
     int nextArrayId_ = 1;
+    int nextMleaderId_ = 1;
     std::uint64_t layoutModel_ = 0, layoutPaper_ = 0;
     std::vector<BlockId> userBlocks_{};  // blocks written to BLOCKS, in id order
 
