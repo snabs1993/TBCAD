@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <numeric>
@@ -1493,6 +1494,74 @@ Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a, Vec2 b
     return r;
 }
 
+namespace {
+
+// Squared distance from a point to the nearest segment of a polyline, through a uniform grid of
+// the segments: a ring of cells at a time, stopping once the next ring is farther than the best.
+class PolylineGrid {
+public:
+    explicit PolylineGrid(const std::vector<Vec2>& pts) : pts_(pts) {
+        lo_ = hi_ = pts.empty() ? Vec2{0, 0} : pts.front();
+        for (const Vec2& p : pts) {
+            lo_ = {std::min(lo_.x, p.x), std::min(lo_.y, p.y)};
+            hi_ = {std::max(hi_.x, p.x), std::max(hi_.y, p.y)};
+        }
+        const double ext = std::max(hi_.x - lo_.x, hi_.y - lo_.y);
+        const double segs = static_cast<double>(pts.size() > 1 ? pts.size() - 1 : 1);
+        n_ = std::clamp(static_cast<int>(std::sqrt(segs)), 1, 128);
+        cell_ = ext > 0 ? ext / n_ : 1.0;
+        cells_.assign(static_cast<std::size_t>(n_) * static_cast<std::size_t>(n_), {});
+        for (std::size_t k = 0; k + 1 < pts.size(); ++k) {
+            const Vec2 a = pts[k], b = pts[k + 1];
+            const int x0 = cellOf(std::min(a.x, b.x), lo_.x), x1 = cellOf(std::max(a.x, b.x), lo_.x);
+            const int y0 = cellOf(std::min(a.y, b.y), lo_.y), y1 = cellOf(std::max(a.y, b.y), lo_.y);
+            for (int cy = y0; cy <= y1; ++cy)
+                for (int cx = x0; cx <= x1; ++cx)
+                    cells_[static_cast<std::size_t>(cy * n_ + cx)].push_back(
+                        static_cast<std::uint32_t>(k));
+        }
+    }
+
+    double nearestDist2(Vec2 q) const {
+        double best = 1e300;
+        const int qx = cellOf(q.x, lo_.x), qy = cellOf(q.y, lo_.y);
+        for (int r = 0; r < n_ + 1; ++r) {
+            for (int cy = qy - r; cy <= qy + r; ++cy) {
+                if (cy < 0 || cy >= n_)
+                    continue;
+                const bool edgeRow = cy == qy - r || cy == qy + r;
+                for (int cx = qx - r; cx <= qx + r; cx += edgeRow || r == 0 ? 1 : 2 * r) {
+                    if (cx < 0 || cx >= n_)
+                        continue;
+                    for (std::uint32_t k : cells_[static_cast<std::size_t>(cy * n_ + cx)]) {
+                        const Vec2 a = pts_[k], b = pts_[k + 1], ab = b - a;
+                        const double l2 = dot(ab, ab);
+                        const double u = l2 > 0 ? std::clamp(dot(q - a, ab) / l2, 0.0, 1.0) : 0.0;
+                        const Vec2 d = q - (a + ab * u);
+                        best = std::min(best, dot(d, d));
+                    }
+                }
+            }
+            if (best < 1e300 && r * cell_ >= std::sqrt(best))
+                break;
+        }
+        return best;
+    }
+
+private:
+    int cellOf(double v, double lo) const {
+        return std::clamp(static_cast<int>(std::floor((v - lo) / cell_)), 0, n_ - 1);
+    }
+
+    const std::vector<Vec2>& pts_;
+    Vec2 lo_, hi_;
+    double cell_ = 1;
+    int n_ = 1;
+    std::vector<std::vector<std::uint32_t>> cells_;
+};
+
+}  // namespace
+
 Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
     const auto* sp = entityAs<SplineData>(e);
     if (!sp)
@@ -1537,18 +1606,11 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
         poly.reserve(static_cast<std::size_t>(m) + 1);
         for (int i = 0; i <= m; ++i)
             poly.push_back(nc.front().pointAt(nc.front().paramAtLength(nl * i / m)));
+        const PolylineGrid grid(poly);
         double worst = 0;
         int worstAt = -1;
         for (int i = 0; i <= n; ++i) {
-            const Vec2 q = samples[static_cast<std::size_t>(i)];
-            double d2 = 1e300;
-            for (std::size_t k = 0; k + 1 < poly.size(); ++k) {
-                const Vec2 a = poly[k], b = poly[k + 1], ab = b - a;
-                const double l2 = dot(ab, ab);
-                const double u = l2 > 0 ? std::clamp(dot(q - a, ab) / l2, 0.0, 1.0) : 0.0;
-                const Vec2 r = q - (a + ab * u);
-                d2 = std::min(d2, dot(r, r));
-            }
+            const double d2 = grid.nearestDist2(samples[static_cast<std::size_t>(i)]);
             if (d2 > worst) {
                 worst = d2;
                 worstAt = i;

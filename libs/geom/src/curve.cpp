@@ -325,15 +325,39 @@ double CurveRef::paramAtLength(double s) const {
         return s / total;
     if (kind_ == Kind::Arc)
         return t0_ + s / r_;
-    double lo = t0(), hi = t1();
-    for (int i = 0; i < 80; ++i) {
-        double mid = 0.5 * (lo + hi);
-        if (lengthBetween(t0(), mid) < s)
-            lo = mid;
-        else
-            hi = mid;
+    // One pass over the curve gives the length of every integration piece; the piece that holds s
+    // is then bisected on its own, so a call costs about one length() instead of eighty.
+    std::vector<double> cuts;
+    cuts.push_back(t0());
+    if (kind_ == Kind::Spline) {
+        for (double b : sp_->breaks())
+            if (b > t0() && b < t1())
+                cuts.push_back(b);
     }
-    return 0.5 * (lo + hi);
+    cuts.push_back(t1());
+    const int sub = kind_ == Kind::Ellipse ? 16 : 6;
+    auto speed = [&](double t) { return tbcad::length(derivativeAt(t)); };
+    double run = 0;
+    for (std::size_t i = 0; i + 1 < cuts.size(); ++i) {
+        for (int k = 0; k < sub; ++k) {
+            const double a = cuts[i] + (cuts[i + 1] - cuts[i]) * k / sub;
+            const double b = cuts[i] + (cuts[i + 1] - cuts[i]) * (k + 1) / sub;
+            const double piece = gauss8(speed, a, b);
+            if (run + piece >= s) {
+                double lo = a, hi = b;
+                for (int it = 0; it < 60; ++it) {
+                    const double mid = 0.5 * (lo + hi);
+                    if (run + gauss8(speed, a, mid) < s)
+                        lo = mid;
+                    else
+                        hi = mid;
+                }
+                return 0.5 * (lo + hi);
+            }
+            run += piece;
+        }
+    }
+    return t1();
 }
 
 BBox2 CurveRef::bounds() const {
