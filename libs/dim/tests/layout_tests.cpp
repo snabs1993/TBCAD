@@ -512,6 +512,10 @@ TEST_CASE("text above the line: its point is on the dimension line, moved text s
     Layout moved = withStyle([](DimStyle&) {}, d);
     CHECK(near(moved.text.center, {30, 11.875}));
     CHECK(near(moved.text.point, {30, 10}));
+    // A point away from the line is the middle of the text.
+    d.textPos = {30, 20};
+    CHECK(near(withStyle([](DimStyle&) {}, d).text.center, {30, 20}));
+    d.textPos = {30, 10};
     // Centred text is on its point.
     Layout centred =
         withStyle([](DimStyle& s) { s.textPlacement = DimTextPlacement::Centered; }, d);
@@ -559,4 +563,11 @@ TEST_CASE("text moved by hand keeps the arrows where the fit rules put them") {
     };
     CHECK(tailOfArrowAt0(tix) < 0);
     CHECK(tailOfArrowAt0(plain) > 0);
+    // Short text that would fit alone (best fit sends the arrows out in its own place) but was
+    // moved away: the arrows fit, so they stay inside, as AutoCAD draws it.
+    d.textOverride = "1";
+    d.textPos = {20, 10};
+    CHECK(tailOfArrowAt0(plain) > 0);
+    Layout shortText = withStyle([](DimStyle&) {}, d);
+    CHECK(tailOfArrowAt0(shortText) > 0);
 }
