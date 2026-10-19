@@ -1,6 +1,8 @@
 // DIMREASSOC and DIMDISASSOC: link dimensions to the objects they measure, or cut the link.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <optional>
 
 #include "dim_internal.h"
 #include "tbcad/core/dim_assoc.h"
@@ -13,6 +15,38 @@ bool isDim(const Entity& e) {
     return entityAs<DimensionData>(e) != nullptr;
 }
 
+// How many definition points of a dimension DIMREASSOC asks for, and what each one is.
+std::vector<std::string> assocPrompts(const DimensionData& d) {
+    switch (d.kind) {
+        case DimKind::Linear:
+        case DimKind::Aligned:
+            return {"first extension line origin", "second extension line origin"};
+        case DimKind::Radius:
+            return {"centre", "point on the arc or circle"};
+        case DimKind::Diameter:
+            return {"first diameter point", "second diameter point"};
+        case DimKind::Angular3Point:
+            return {"first angle endpoint", "second angle endpoint", "angle vertex"};
+        case DimKind::Angular2Line:
+            return {"start of the first line", "end of the first line", "start of the second line",
+                    "end of the second line"};
+        default:
+            return {};
+    }
+}
+
+// The link for a point picked (snapped) on an object: a vertex or centre, else a point on a
+// circle or arc.
+std::optional<DimAssoc> assocAt(const Document& doc, Vec2 p, BlockId owner) {
+    if (auto a = findDimAssoc(doc, p, owner))
+        return a;
+    return findDimAssocOnCurve(doc, p, owner);
+}
+
+// DIMREASSOCIATE, as in AutoCAD: for each dimension, each of its points in turn. A picked point
+// (on an end, vertex, centre or on a circle) links it there; Enter keeps the point, linking it
+// where it already sits on an object; Select object links a linear dimension to both ends of a
+// line or arc, or a radius or diameter dimension to a circle or arc.
 class DimReassocCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMREASSOC"; }
@@ -22,6 +56,7 @@ public:
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
         cmd::SelectionOptions so;
         so.filter = isDim;
         auto sel = co_await ctx.getSelection("Select dimensions to re-associate", so);
@@ -34,16 +69,121 @@ public:
             if (!e || !isDim(*e))
                 continue;
             DimensionData d = *entityAs<DimensionData>(*e);
-            const int n = linkDimension(ctx.doc(), d, ctx.doc().ownerBlock(id));
-            if (!ctx.tx().modify(id, [&](Entity& x) { *entityAs<DimensionData>(x) = d; }))
+            const BlockId owner = ctx.doc().ownerBlock(id);
+            const std::vector<std::string> what = assocPrompts(d);
+            int linked = 0;
+            for (std::size_t i = 0; i < what.size(); ++i) {
+                cmd::PointOptions po;
+                const bool canSelect =
+                    i == 0 && (d.kind == DimKind::Linear || d.kind == DimKind::Aligned ||
+                               d.kind == DimKind::Radius || d.kind == DimKind::Diameter);
+                if (canSelect)
+                    po.keywords = {"Select"};
+                auto r = co_await ctx.getPoint(
+                    "Specify " + what[i] + (canSelect ? " or [Select object]" : "") + " <next>",
+                    po);
+                if (r.status == Status::Cancel)
+                    co_return;
+                if (r.status == Status::Keyword && r.keyword == "Select") {
+                    cmd::EntityOptions eo;
+                    eo.filter = [](const Entity& t) {
+                        return entityAs<LineData>(t) || entityAs<ArcData>(t) ||
+                               entityAs<CircleData>(t);
+                    };
+                    auto o = co_await ctx.getEntity("Select object", eo);
+                    if (o.status == Status::Cancel)
+                        co_return;
+                    if (o.ok())
+                        linked += linkToObject(ctx.doc(), d, o.id);
+                    break;
+                }
+                std::optional<DimAssoc> a;
+                if (r.ok()) {
+                    a = assocAt(ctx.doc(), r.point, owner);
+                    if (!a)
+                        ctx.message("No end, vertex, centre or curve at that point; the " +
+                                    what[i] + " is kept.");
+                } else {
+                    a = assocAt(ctx.doc(), d.defPts[i], owner);  // Enter: where it already sits
+                }
+                if (!a)
+                    continue;
+                const Entity* t = ctx.doc().find(a->target);
+                if (const auto p = t ? dimAssocPoint(*t, *a) : std::nullopt) {
+                    d.defPts[i] = *p;
+                    d.assoc[i] = *a;
+                    ++linked;
+                }
+            }
+            const Document& doc = ctx.doc();
+            if (!ctx.tx().modify(id, [&](Entity& x) {
+                    *entityAs<DimensionData>(x) = d;
+                    if (auto fn = dimRefresh())
+                        fn(doc, x);
+                }))
                 continue;
-            if (n > 0)
+            if (linked > 0)
                 ++dims;
-            points += n;
+            points += linked;
         }
-        ctx.message(
-            std::to_string(dims) + " dimensions linked at " + std::to_string(points) +
-            " points. A point is linked where it sits exactly on an end, vertex or centre.");
+        ctx.message(std::to_string(dims) + " dimensions linked at " + std::to_string(points) +
+                    " points.");
+    }
+
+private:
+    // Select object: a line or arc gives a linear dimension its two ends (the nearer one first),
+    // a circle or arc gives a radius or diameter dimension its centre and curve points.
+    static int linkToObject(const Document& doc, DimensionData& d, EntityId target) {
+        const Entity* t = doc.find(target);
+        if (!t)
+            return 0;
+        int n = 0;
+        auto link = [&](std::size_t i, DimAssoc a) {
+            a.target = target;
+            if (const auto p = dimAssocPoint(*t, a)) {
+                d.defPts[i] = *p;
+                d.assoc[i] = a;
+                ++n;
+            }
+        };
+        using K = DimAssoc::Kind;
+        if (d.kind == DimKind::Linear || d.kind == DimKind::Aligned) {
+            if (!entityAs<LineData>(*t) && !entityAs<ArcData>(*t))
+                return 0;
+            const auto a0 = dimAssocPoint(*t, {K::Vertex, target, 0});
+            const auto a1 = dimAssocPoint(*t, {K::Vertex, target, 1});
+            if (!a0 || !a1)
+                return 0;
+            const bool swap = distance(*a0, d.defPts[0]) + distance(*a1, d.defPts[1]) >
+                              distance(*a1, d.defPts[0]) + distance(*a0, d.defPts[1]);
+            link(0, {K::Vertex, {}, swap ? 1u : 0u});
+            link(1, {K::Vertex, {}, swap ? 0u : 1u});
+            return n;
+        }
+        const CircleData* c = entityAs<CircleData>(*t);
+        const ArcData* arc = entityAs<ArcData>(*t);
+        if (!c && !arc)
+            return 0;
+        const Vec2 centre = c ? c->center : arc->center;
+        auto onCurve = [&](Vec2 toward) {
+            Vec2 v = toward - centre;
+            if (tol::isZeroLength(v))
+                v = {1, 0};
+            const double ang = normalizeAngle(std::atan2(v.y, v.x));
+            return DimAssoc{K::OnCurve,
+                            {},
+                            static_cast<std::uint32_t>(std::llround(ang / kTwoPi * 4294967296.0) &
+                                                       0xFFFFFFFFll)};
+        };
+        if (d.kind == DimKind::Radius) {
+            link(0, {K::Center, {}, 0});
+            link(1, onCurve(d.defPts[1]));
+        } else if (d.kind == DimKind::Diameter) {
+            const Vec2 v = d.defPts[0] - centre;
+            link(0, onCurve(d.defPts[0]));
+            link(1, onCurve(centre - v));
+        }
+        return n;
     }
 };
 

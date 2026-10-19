@@ -574,7 +574,8 @@ TEST_CASE("an associative dimension follows its line, a dimension moved alone lo
     CHECK(f.dims()[0]->defPts[1].x == doctest::Approx(100));
 
     // DIMREASSOC links by position again only where a point sits on the line's ends.
-    f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
+    f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter(),
+                               ScriptItem::enter(), ScriptItem::enter()});
     CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::None);
 }
 
@@ -595,7 +596,8 @@ TEST_CASE("DIMDISASSOC cuts the links of a dimension") {
     });
     f.host->run("DIMDISASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
     CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::None);
-    f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()});
+    f.host->run("DIMREASSOC", {ScriptItem::select({dimId}), ScriptItem::enter(),
+                               ScriptItem::enter(), ScriptItem::enter()});
     CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::Vertex);
 }
 
@@ -695,4 +697,76 @@ TEST_CASE("DIMUPDATE gives dimensions the current style") {
     f.host->setSelection({dimId});
     REQUIRE(f.host->run("DIMUPDATE", {}).finished);
     CHECK(f.dims()[0]->style == f.doc.header().currentDimStyle);
+}
+
+TEST_CASE("DIMREASSOCIATE asks for each point: a pick links it there, Select object takes a line") {
+    Chain f;
+    EntityId line{}, circle{};
+    {
+        auto tx = f.doc.begin("objects");
+        Entity l;
+        l.data = LineData{{0, 50}, {80, 50}};
+        line = tx.add(std::move(l)).value();
+        Entity c;
+        c.data = CircleData{{200, 0}, 10};
+        circle = tx.add(std::move(c)).value();
+        tx.commit();
+    }
+    // A dimension measuring nothing, then linked point by point to the line's ends.
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId dimId{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    REQUIRE(f.host
+                ->run("DIMREASSOCIATE",
+                      {ScriptItem::select({dimId}), ScriptItem::enter(), "0,50", "80,50"})
+                .finished);
+    auto dimNow = [&] { return *entityAs<DimensionData>(*f.doc.find(dimId)); };
+    CHECK(dimNow().assoc[0].target == line);
+    CHECK(dimNow().assoc[1].target == line);
+    CHECK(dimNow().measurement == doctest::Approx(80));
+    // A pick on nothing keeps the point as it is.
+    REQUIRE(f.host
+                ->run("DIMREASSOCIATE", {ScriptItem::select({dimId}), ScriptItem::enter(),
+                                         "500,500", ScriptItem::enter()})
+                .finished);
+    CHECK(dimNow().measurement == doctest::Approx(80));
+    // Select object: the ends of the line, the nearer one first.
+    REQUIRE(
+        f.host->run("DIMDISASSOC", {ScriptItem::select({dimId}), ScriptItem::enter()}).finished);
+    REQUIRE(f.host
+                ->run("DIMREASSOCIATE", {ScriptItem::select({dimId}), ScriptItem::enter(), "Select",
+                                         ScriptItem::pick(line, {40, 50})})
+                .finished);
+    CHECK(dimNow().assoc[0].index == 0);
+    CHECK(dimNow().assoc[1].index == 1);
+    // A radius dimension linked to a circle by Select object follows it.
+    DimensionData r;
+    r.kind = DimKind::Radius;
+    r.defPts = {Vec2{0, 0}, Vec2{5, 5}, Vec2{}, Vec2{}};
+    r.textPos = {10, 10};
+    EntityId rid{};
+    {
+        auto tx = f.doc.begin("radius");
+        Entity e;
+        e.data = Indirect<DimensionData>(r);
+        rid = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    REQUIRE(f.host
+                ->run("DIMREASSOCIATE", {ScriptItem::select({rid}), ScriptItem::enter(), "Select",
+                                         ScriptItem::pick(circle, {210, 0})})
+                .finished);
+    const auto rd = *entityAs<DimensionData>(*f.doc.find(rid));
+    CHECK(rd.assoc[0].kind == DimAssoc::Kind::Center);
+    CHECK(rd.assoc[1].kind == DimAssoc::Kind::OnCurve);
+    CHECK(rd.measurement == doctest::Approx(10));
+    {
+        auto tx = f.doc.begin("grow");
+        REQUIRE(tx.modify(circle, [](Entity& e) { entityAs<CircleData>(e)->radius = 25; }));
+        tx.commit();
+    }
+    CHECK(entityAs<DimensionData>(*f.doc.find(rid))->measurement == doctest::Approx(25));
 }
