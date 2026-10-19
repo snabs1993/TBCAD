@@ -419,7 +419,8 @@ private:
             std::size_t h = pending_[i].first & mask_;
             while (slots_[h].end != 0)
                 h = (h + 1) & mask_;
-            slots_[h] = {pending_[i].first, static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j)};
+            slots_[h] = {pending_[i].first, static_cast<std::uint32_t>(i),
+                         static_cast<std::uint32_t>(j)};
             i = j;
         }
     }
@@ -511,7 +512,8 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
         const double llen = length(lines[i].b - la);
         const Vec2 ldir = llen > 0 ? (lines[i].b - la) / llen : Vec2{};
         const auto offLine = [&](const LineItem& l) {
-            return llen > 0 && (std::abs(cross(ldir, l.a - la)) > tolerance || std::abs(cross(ldir, l.b - la)) > tolerance);
+            return llen > 0 && (std::abs(cross(ldir, l.a - la)) > tolerance ||
+                                std::abs(cross(ldir, l.b - la)) > tolerance);
         };
         for (bool changed = true; changed;) {
             changed = false;
@@ -544,7 +546,8 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
                 const std::vector<std::uint32_t>* lists[4];
                 std::size_t at[4];
                 for (int d = -1; d <= 1; ++d)
-                    lists[d + 1] = &byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
+                    lists[d + 1] =
+                        &byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
                 lists[3] = &shorts;
                 for (int k = 0; k < 4; ++k)
                     at[k] = static_cast<std::size_t>(
@@ -635,8 +638,46 @@ Item reversedItem(const Item& it) {
 
 }  // namespace
 
+namespace {
+
+// Closes the gaps between consecutive pieces of a chain the PEDIT Jointype way.
+void closeGaps(std::vector<Seg>& chain, bool closed, JoinGap gap) {
+    if (gap == JoinGap::Snap || chain.empty())
+        return;
+    std::vector<Seg> out;
+    out.reserve(chain.size() * 2);
+    const std::size_t n = chain.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        out.push_back(chain[i]);
+        const bool last = i + 1 == n;
+        if (last && !closed)
+            break;
+        Seg& prev = out.back();
+        Seg& next = last ? out.front() : chain[i + 1];
+        if (distance(prev.p1, next.p0) <= 1e-9)
+            continue;
+        bool done = false;
+        if ((gap == JoinGap::Extend || gap == JoinGap::Both) && !prev.isArc() && !next.isArc()) {
+            const Vec2 d1 = prev.p1 - prev.p0, d2 = next.p1 - next.p0;
+            const double den = cross(d1, d2);
+            if (std::abs(den) > 1e-12 * length(d1) * length(d2)) {
+                const double t = cross(next.p0 - prev.p0, d2) / den;
+                const Vec2 x = prev.p0 + d1 * t;
+                prev.p1 = x;
+                next.p0 = x;
+                done = true;
+            }
+        }
+        if (!done && (gap == JoinGap::Add || gap == JoinGap::Both))
+            out.push_back(Seg{prev.p1, next.p0, 0});
+    }
+    chain = std::move(out);
+}
+
+}  // namespace
+
 JoinResult joinEntities(const std::vector<const Entity*>& entities, double tolerance,
-                        bool bridgeGaps) {
+                        bool bridgeGaps, JoinGap gap) {
     JoinResult out;
     std::vector<LineItem> lines;
     std::vector<ArcItem> arcs;
@@ -760,6 +801,7 @@ JoinResult joinEntities(const std::vector<const Entity*>& entities, double toler
             continue;
         }
         bool closed = count >= 2 && samePoint(chain.back().p1, chain.front().p0, tolerance);
+        closeGaps(chain, closed, gap);
         out.created.push_back(withData(firstProps(origins), polylineFromSegs(chain, closed)));
         consume(origins);
     }

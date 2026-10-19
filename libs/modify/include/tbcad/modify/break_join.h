@@ -31,7 +31,12 @@ struct JoinResult {
 // Other entities, and entities that find no partner, are left out of `consumed`. The results take
 // the properties of the first entity of each group in the list. With `bridgeGaps`, collinear
 // lines and arcs of one circle join even when there is a gap between them (the gap is filled).
+// How a polyline chain closes a gap (within `tolerance`) between two pieces, like PEDIT
+// Jointype: Snap moves the next vertex onto the previous end; Extend extends or trims two
+// straight segments to where they meet; Add puts a straight segment in the gap; Both extends where
+// it can and adds a segment elsewhere.
+enum class JoinGap { Snap, Extend, Add, Both };
 JoinResult joinEntities(const std::vector<const Entity*>& entities, double tolerance = 1e-4,
-                        bool bridgeGaps = false);
+                        bool bridgeGaps = false, JoinGap gap = JoinGap::Snap);
 
 }  // namespace tbcad::modify

@@ -313,7 +313,8 @@ TEST_CASE("hatch: stretching the end of an arc edge keeps the arc through its ol
         if (!ccw)
             arc = HatchArcEdge{{0, 0}, 5, kPi, 0, false};
         HatchLoop loop;
-        loop.edges = {arc, HatchLineEdge{ccw ? Vec2{-5, 0} : Vec2{5, 0}, ccw ? Vec2{5, 0} : Vec2{-5, 0}}};
+        loop.edges = {
+            arc, HatchLineEdge{ccw ? Vec2{-5, 0} : Vec2{5, 0}, ccw ? Vec2{5, 0} : Vec2{-5, 0}}};
         HatchData h;
         h.loops.push_back(loop);
         auto id = add(f.doc, h);
@@ -361,7 +362,8 @@ TEST_CASE("hatch: polyline edge vertices have grips that only stretch, so no men
         CHECK(tf::gripActions(f.doc, g) == std::vector<GripAction>{GripAction::Stretch});
     auto moved = geom::moveGrip(*f.doc.find(id), 2, {11, 12});
     REQUIRE(moved);
-    const auto& pe = std::get<HatchPolylineEdge>(entityAs<HatchData>(moved.value())->loops[0].edges[0]);
+    const auto& pe =
+        std::get<HatchPolylineEdge>(entityAs<HatchData>(moved.value())->loops[0].edges[0]);
     CHECK(pe.v[2].p.y == doctest::Approx(12));
 }
 
@@ -574,4 +576,77 @@ TEST_CASE("multileader grips: arrowhead, landing with its lines, and the note po
     CHECK(f.host.undo());
     CHECK(near(get<MLeaderData>(f.doc, id).lines[0][0], {0, 0}));
     CHECK(near(get<MLeaderData>(f.doc, id).landing, {10, 10}));
+}
+
+TEST_CASE("an open polyline's straight end grips lengthen along the end segment") {
+    Fixture f;
+    PolylineData open;
+    open.v = {{{0, 0}, 0}, {{10, 0}, 0}, {{10, 10}, 0}};
+    auto pl = add(f.doc, open);
+    CHECK(offers(f.doc, pl, 2, GripAction::Lengthen));
+    CHECK(offers(f.doc, pl, 0, GripAction::Lengthen));
+    CHECK_FALSE(offers(f.doc, pl, 1, GripAction::Lengthen));
+    auto sq = add(f.doc, square());
+    CHECK_FALSE(offers(f.doc, sq, 0, GripAction::Lengthen));
+    auto r = tf::applyGripAction(*f.doc.find(pl), 2, GripAction::Lengthen, {13, 15});
+    REQUIRE(r);
+    const auto* d = entityAs<PolylineData>(r.value());
+    CHECK(d->v[2].p.x == doctest::Approx(10));
+    CHECK(d->v[2].p.y == doctest::Approx(15));
+    r = tf::applyGripAction(*f.doc.find(pl), 0, GripAction::Lengthen, {-4, 3});
+    REQUIRE(r);
+    CHECK(entityAs<PolylineData>(r.value())->v[0].p.x == doctest::Approx(-4));
+    CHECK(entityAs<PolylineData>(r.value())->v[0].p.y == doctest::Approx(0));
+    // past the other end: refused
+    CHECK_FALSE(tf::applyGripAction(*f.doc.find(pl), 0, GripAction::Lengthen, {20, 0}));
+    // an arc end segment does not lengthen
+    open.v[1].bulge = 0.5;
+    auto arcEnd = add(f.doc, open);
+    CHECK_FALSE(offers(f.doc, arcEnd, 2, GripAction::Lengthen));
+}
+
+TEST_CASE("spline grips add and remove fit points, and remove control vertices") {
+    Fixture f;
+    SplineData fitSp;
+    fitSp.fit = {{0, 0}, {10, 5}, {20, 0}};
+    geom::InterpolateOptions o;
+    auto r0 = geom::interpolateSpline(fitSp.fit, o);
+    REQUIRE(r0);
+    fitSp.degree = r0.value().degree;
+    fitSp.knots = r0.value().knots;
+    fitSp.control = r0.value().control;
+    auto s = add(f.doc, fitSp);
+    CHECK(offers(f.doc, s, 0, GripAction::AddVertex));
+    CHECK(offers(f.doc, s, 1, GripAction::RemoveVertex));
+    auto added = tf::applyGripAction(*f.doc.find(s), 0, GripAction::AddVertex, {5, 6});
+    REQUIRE(added);
+    const auto* a = entityAs<SplineData>(added.value());
+    REQUIRE(a->fit.size() == 4);
+    CHECK(a->fit[1].x == doctest::Approx(5));
+    CHECK(a->control.size() > fitSp.control.size());
+    auto removed = tf::applyGripAction(*f.doc.find(s), 1, GripAction::RemoveVertex, {});
+    REQUIRE(removed);
+    CHECK(entityAs<SplineData>(removed.value())->fit.size() == 2);
+    // two fit points left: nothing to remove
+    SplineData two = fitSp;
+    two.fit = {{0, 0}, {20, 0}};
+    auto r2 = geom::interpolateSpline(two.fit, o);
+    REQUIRE(r2);
+    two.degree = r2.value().degree;
+    two.knots = r2.value().knots;
+    two.control = r2.value().control;
+    auto t = add(f.doc, two);
+    CHECK_FALSE(offers(f.doc, t, 0, GripAction::RemoveVertex));
+
+    // a control-vertex spline: remove only
+    SplineData cv;
+    cv.degree = 3;
+    cv.control = {{0, 0}, {5, 5}, {10, 0}, {15, 5}, {20, 0}};
+    cv.knots = {0, 0, 0, 0, 0.5, 1, 1, 1, 1};
+    auto c = add(f.doc, cv);
+    CHECK(offers(f.doc, c, 2, GripAction::RemoveVertex));
+    CHECK_FALSE(offers(f.doc, c, 2, GripAction::AddVertex));
+    auto rc = tf::applyGripAction(*f.doc.find(c), 2, GripAction::RemoveVertex, {});
+    REQUIRE(rc);
+    CHECK(entityAs<SplineData>(rc.value())->control.size() == 4);
 }

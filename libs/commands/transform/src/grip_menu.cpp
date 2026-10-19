@@ -6,6 +6,7 @@
 #include <cstdio>
 
 #include "tbcad/geom/geom.h"
+#include "tbcad/modify/modify.h"
 
 namespace tbcad::transform {
 
@@ -167,6 +168,11 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
         case EntityKind::Polyline: {
             const auto& pl = *entityAs<PolylineData>(*e);
             const int n = static_cast<int>(pl.v.size());
+            // The end vertex of an open polyline whose last segment is straight lengthens it.
+            if (!pl.closed && n >= 2 &&
+                ((grip.index == 0 && pl.v[0].bulge == 0) ||
+                 (grip.index == n - 1 && pl.v[static_cast<std::size_t>(n - 2)].bulge == 0)))
+                out.push_back(GripAction::Lengthen);
             out.push_back(GripAction::AddVertex);
             if (grip.index < n) {
                 if (n > (pl.closed ? 3 : 2))
@@ -222,6 +228,10 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
                 out.push_back(GripAction::AddVertex);
                 if (sp.fit.size() > 2)
                     out.push_back(GripAction::RemoveVertex);
+            } else if (!sp.periodic &&
+                       sp.control.size() > static_cast<std::size_t>(sp.degree) + 1) {
+                // A control vertex can go while the curve keeps degree + 1 of them.
+                out.push_back(GripAction::RemoveVertex);
             }
             break;
         }
@@ -302,6 +312,22 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
             if (!onVertex && seg >= geom::segmentCount(pl))
                 break;
             switch (action) {
+                case GripAction::Lengthen: {
+                    // Along the straight end segment, from the vertex before the end.
+                    if (!onVertex || pl.closed || n < 2 || (index != 0 && index != n - 1))
+                        break;
+                    const int other = index == 0 ? 1 : n - 2;
+                    if (pl.v[static_cast<std::size_t>(index == 0 ? 0 : n - 2)].bulge != 0)
+                        break;
+                    const Vec2 fixed = pl.v[static_cast<std::size_t>(other)].p;
+                    const Vec2 moving = pl.v[static_cast<std::size_t>(index)].p;
+                    const Vec2 dir = normalized(moving - fixed);
+                    const double len = dot(target - fixed, dir);
+                    if (!(len > tol::kLinear))
+                        return fail("the segment would have no length");
+                    pl.v[static_cast<std::size_t>(index)].p = fixed + dir * len;
+                    return out;
+                }
                 case GripAction::AddVertex: {
                     const int next = (seg + 1) % n;
                     if (onVertex && !pl.closed && seg == n - 1) {
@@ -449,6 +475,16 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
         }
         case EntityKind::Spline: {
             auto& sp = *entityAs<SplineData>(out);
+            if (sp.fit.empty() && action == GripAction::RemoveVertex && index >= 0 &&
+                index < static_cast<int>(sp.control.size())) {
+                auto r = modify::editSplineCv(e, modify::SplineCvOp::Delete,
+                                              sp.control[static_cast<std::size_t>(index)]);
+                if (!r)
+                    return r.error();
+                if (!r.value().modified)
+                    return fail("the vertex cannot be removed");
+                return *r.value().modified;
+            }
             if (sp.fit.empty() || index < 0 || index >= static_cast<int>(sp.fit.size()))
                 break;
             if (action == GripAction::AddVertex) {

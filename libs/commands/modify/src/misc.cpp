@@ -3,10 +3,9 @@
 #include <cmath>
 #include <unordered_set>
 
-#include "tbcad/transform/apply.h"
 #include "commands.h"
-#include "tbcad/transform/apply.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/transform/apply.h"
 #include "util.h"
 
 namespace tbcad::modifycmd {
@@ -43,31 +42,60 @@ public:
         using modify::LengthenMode;
         ctx.commitOnCancel();
         ctx.setUndoLabel("LENGTHEN");
-        std::string mode = "Delta";
+        // Like AutoCAD: until a mode is chosen a pick only measures the object.
+        std::string mode;
         for (;;) {
             cmd::EntityOptions eo;
-            eo.keywords = {"Delta", "Percent", "Total", "Dynamic"};
+            eo.keywords = {"DElta", "Percent", "Total", "DYnamic"};
+            if (!mode.empty())
+                eo.keywords.push_back("Undo");
             eo.filter = [&doc = ctx.doc()](const Entity& e) {
                 return selectable(doc, e) && modify::lengthenableLength(e).has_value();
             };
             auto pick = co_await ctx.getEntity(
-                "Select an object to lengthen or [Delta/Percent/Total/Dynamic]", eo);
+                mode.empty() ? "Select an object to measure or [DElta/Percent/Total/DYnamic]"
+                             : "Select an object to change or [DElta/Percent/Total/DYnamic/Undo]",
+                eo);
             if (pick.status == cmd::Status::Keyword) {
-                mode = pick.keyword;
-                if (mode == "Delta")
-                    mode = "Delta";
-                if (mode == "Dynamic")
-                    mode = "Dynamic";
-                if (mode == "Delta") {
+                if (pick.keyword == "Undo") {
+                    ctx.message(ctx.rollbackToCheckpoint() ? "Last change undone."
+                                                           : "Nothing to undo.");
+                    continue;
+                }
+                const std::string chosen = pick.keyword == "DElta"     ? "Delta"
+                                           : pick.keyword == "DYnamic" ? "Dynamic"
+                                                                       : pick.keyword;
+                if (chosen == "Delta" || chosen == "Total") {
+                    // A length, or [Angle] for arcs.
+                    const bool delta = chosen == "Delta";
                     cmd::DistanceOptions d;
-                    d.allowNegative = true;
-                    d.defaultValue = getSetting(ctx.host(), "lengthen.delta", 10);
-                    auto r = co_await ctx.getDistance("Enter delta length", d);
-                    if (!r.ok())
+                    d.allowNegative = delta;
+                    d.allowZero = delta;
+                    d.keywords = {"Angle"};
+                    d.defaultValue = delta ? delta_ : (total_ > 0 ? total_ : 1.0);
+                    auto r = co_await ctx.getDistance(
+                        delta ? "Enter delta length or [Angle]" : "Specify total length or [Angle]",
+                        d);
+                    if (r.status == cmd::Status::Keyword) {
+                        // Degrees; a negative delta shortens.
+                        cmd::RealOptions ao;
+                        if (!delta)
+                            ao.min = 1e-9;
+                        auto a = co_await ctx.getReal(
+                            delta ? "Enter delta angle" : "Specify total angle", ao);
+                        if (!a.ok())
+                            co_return;
+                        angleMode_ = true;
+                        (delta ? deltaAngle_ : totalAngle_) = a.value * kPi / 180.0;
+                    } else if (r.ok()) {
+                        angleMode_ = false;
+                        (delta ? delta_ : total_) = r.value;
+                        if (delta)
+                            putSetting(ctx.host(), "lengthen.delta", r.value);
+                    } else {
                         co_return;
-                    putSetting(ctx.host(), "lengthen.delta", r.value);
-                    delta_ = r.value;
-                } else if (mode == "Percent") {
+                    }
+                } else if (chosen == "Percent") {
                     cmd::RealOptions ro;
                     ro.defaultValue = getSetting(ctx.host(), "lengthen.percent", 100);
                     ro.min = 0.001;
@@ -76,14 +104,8 @@ public:
                         co_return;
                     putSetting(ctx.host(), "lengthen.percent", r.value);
                     percent_ = r.value;
-                } else if (mode == "Total") {
-                    cmd::DistanceOptions d;
-                    d.allowZero = false;
-                    auto r = co_await ctx.getDistance("Specify total length", d);
-                    if (!r.ok())
-                        co_return;
-                    total_ = r.value;
                 }
+                mode = chosen;
                 continue;
             }
             if (!pick.ok())
@@ -91,31 +113,73 @@ public:
             const Entity* e = ctx.doc().find(pick.id);
             if (!e)
                 continue;
+            if (mode.empty()) {
+                ctx.message(measure(*e));
+                continue;
+            }
+            const Entity source = *e;
+            const Vec2 at = pick.pickPoint;
+            const auto* arc = entityAs<ArcData>(source);
             Result<modify::EntityEdit> edit = Error{ErrorCode::InvalidArgument, "Unsupported"};
-            if (mode == "Delta") {
-                edit = modify::lengthenEntity(*e, pick.pickPoint, LengthenMode::Delta, delta_);
+            if ((mode == "Delta" || mode == "Total") && angleMode_) {
+                if (!arc) {
+                    ctx.message("Angles change arcs only.");
+                    continue;
+                }
+                // An angle on an arc is a length along it: radius x radians.
+                edit = mode == "Delta" ? modify::lengthenEntity(source, at, LengthenMode::Delta,
+                                                                arc->radius * deltaAngle_)
+                                       : modify::lengthenEntity(source, at, LengthenMode::Total,
+                                                                arc->radius * totalAngle_);
+            } else if (mode == "Delta") {
+                edit = modify::lengthenEntity(source, at, LengthenMode::Delta, delta_);
             } else if (mode == "Percent") {
-                edit = modify::lengthenEntity(*e, pick.pickPoint, LengthenMode::Percent, percent_);
+                edit = modify::lengthenEntity(source, at, LengthenMode::Percent, percent_);
             } else if (mode == "Total") {
-                edit = modify::lengthenEntity(*e, pick.pickPoint, LengthenMode::Total, total_);
+                edit = modify::lengthenEntity(source, at, LengthenMode::Total, total_);
             } else {
                 cmd::PointOptions po;
+                po.preview = [source, at, &doc = ctx.doc(), &host = ctx.host()](Vec2 cursor,
+                                                                                DisplayList& out) {
+                    auto r = modify::lengthenToPoint(source, at, cursor);
+                    if (r && r.value().modified)
+                        previewEntity(doc, host, *r.value().modified, out);
+                };
                 auto p = co_await ctx.getPoint("Specify new end point", po);
                 if (!p.ok())
                     continue;
-                edit = modify::lengthenToPoint(*e, pick.pickPoint, p.point);
+                edit = modify::lengthenToPoint(source, at, p.point);
             }
             if (!edit) {
                 ctx.message(edit.error().message);
                 continue;
             }
+            ctx.checkpoint();
             if (auto ids = applyEdit(ctx.tx(), pick.id, std::move(edit.value())); !ids)
                 ctx.message(ids.error().message);
         }
     }
 
 private:
+    // "Current length: 12.5" and, for an arc, its included angle.
+    static std::string measure(const Entity& e) {
+        char buf[96];
+        const double len = modify::lengthenableLength(e).value_or(0);
+        if (const auto* a = entityAs<ArcData>(e)) {
+            double sweep = std::fmod(a->endAngle - a->startAngle, 2 * kPi);
+            if (sweep <= 0)
+                sweep += 2 * kPi;
+            std::snprintf(buf, sizeof buf, "Current length: %.4f, included angle: %.4f", len,
+                          sweep * 180.0 / kPi);
+        } else {
+            std::snprintf(buf, sizeof buf, "Current length: %.4f", len);
+        }
+        return buf;
+    }
+
     double delta_ = 10, percent_ = 100, total_ = 0;
+    double deltaAngle_ = 0, totalAngle_ = 0;  // radians
+    bool angleMode_ = false;                  // DElta / Total were given an Angle
 };
 
 // ---- REVERSE ------------------------------------------------------------------------------------
@@ -416,7 +480,7 @@ public:
             cmd::PointOptions po3;
             po3.base = s2.point;
             po3.preview = [show, a = s1.point, b = d1.point, c2 = s2.point](Vec2 c,
-                                                                           DisplayList& out) {
+                                                                            DisplayList& out) {
                 auto t = modify::alignTransform(a, b, c2, c, false);
                 if (t)
                     show(t.value(), out);
@@ -566,7 +630,9 @@ void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = allMatch
                 b->oblique = ta->oblique;
                 // Justification: the point the text hangs from stays where it is. Aligned and Fit
                 // need two points of their own, so they are not passed on or replaced.
-                const auto twoPoint = [](HAlign h) { return h == HAlign::Aligned || h == HAlign::Fit; };
+                const auto twoPoint = [](HAlign h) {
+                    return h == HAlign::Aligned || h == HAlign::Fit;
+                };
                 if (!twoPoint(ta->h) && !twoPoint(b->h) && (ta->h != b->h || ta->v != b->v)) {
                     const auto leftBase = [](const TextData& t) {
                         return t.h == HAlign::Left && t.v == VAlign::Baseline;
@@ -858,7 +924,7 @@ public:
             bool isSpline = kind(*e) == EntityKind::Spline;
             cmd::KeywordOptions ko;
             if (isSpline) {
-                ko.keywords = {"Decurve", "Tolerance", "Reverse", "Exit"};
+                ko.keywords = {"Decurve", "Tolerance", "Reverse", "Undo", "Exit"};
             } else {
                 const auto* pl = entityAs<PolylineData>(*e);
                 ko.keywords = {pl && pl->closed ? "Open" : "Close",
@@ -868,20 +934,46 @@ public:
                                "Taper",
                                "Fit",
                                "Spline",
+                               "Decurve",
                                "Ltypegen",
                                "Vertices",
                                "Reverse",
+                               "Undo",
                                "Exit"};
             }
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
-                isSpline ? "Enter an option [Decurve/Tolerance/Reverse/Exit] <Exit>"
+                isSpline ? "Enter an option [Decurve/Tolerance/Reverse/Undo/Exit] <Exit>"
                          : "Enter an option "
-                           "[Close/Open/Join/Fuzz/Width/Taper/Fit/Spline/"
-                           "Ltypegen/Vertices/Reverse/Exit] <Exit>",
+                           "[Close/Open/Join/Fuzz/Width/Taper/Fit/Spline/Decurve/"
+                           "Ltypegen/Vertices/Reverse/Undo/Exit] <Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
+            if (k.keyword == "Undo") {
+                // Takes back the last option, like AutoCAD's PEDIT Undo.
+                if (undoIds_.empty() || !ctx.rollbackToCheckpoint()) {
+                    ctx.message("Nothing to undo.");
+                } else {
+                    id = undoIds_.back();
+                    undoIds_.pop_back();
+                }
+                continue;
+            }
+            if (k.keyword != "Fuzz") {
+                ctx.checkpoint();
+                undoIds_.push_back(id);
+            }
+            if (!isSpline && k.keyword == "Decurve") {
+                // Straight segments between the vertices again (undoes Fit's arcs).
+                Entity copy = *e;
+                if (auto* pl = entityAs<PolylineData>(copy)) {
+                    for (PolyVertex& v : pl->v)
+                        v.bulge = 0;
+                    (void)replaceEntity(ctx.tx(), id, copy);
+                }
+                continue;
+            }
             if (k.keyword == "Close" || k.keyword == "Open") {
                 Entity copy = *e;
                 if (auto* pl = entityAs<PolylineData>(copy))
@@ -993,11 +1085,7 @@ public:
                     }
                 }
             } else if (k.keyword == "Fuzz") {
-                cmd::DistanceOptions d;
-                d.defaultValue = fuzz_;
-                auto f = co_await ctx.getDistance("Specify the fuzz distance for Join", d);
-                if (f.ok() && f.value >= 0)
-                    fuzz_ = f.value;
+                co_await askFuzz(ctx);
             } else if (k.keyword == "Reverse") {
                 if (auto edit = modify::reverseEntity(*e))
                     (void)applyEdit(ctx.tx(), id, std::move(edit.value()));
@@ -1051,7 +1139,8 @@ public:
                 for (EntityId m : ids)
                     es.push_back(ctx.doc().find(m));
                 auto res = modify::joinEntities(
-                    es, fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3));
+                    es, fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3), false,
+                    jointype(ctx.host()));
                 if (res.consumed.empty()) {
                     ctx.message("Nothing could be joined.");
                     continue;
@@ -1073,7 +1162,43 @@ public:
     }
 
 private:
-    double fuzz_ = -1;  // negative = the join.tolerance setting
+    double fuzz_ = -1;               // negative = the join.tolerance setting
+    std::vector<EntityId> undoIds_;  // the polyline's id before each option, for Undo
+
+    // PEDIT Jointype, kept in the pedit.jointype setting: how Join closes a gap within the fuzz
+    // distance. Extend (default, as in AutoCAD), Add or Both.
+    static modify::JoinGap jointype(const cmd::IHost& host) {
+        const std::string t = host.setting("pedit.jointype").value_or("extend");
+        return t == "add"    ? modify::JoinGap::Add
+               : t == "both" ? modify::JoinGap::Both
+                             : modify::JoinGap::Extend;
+    }
+
+    // "Specify the fuzz distance for Join or [Jointype]".
+    cmd::Task askFuzz(cmd::CommandContext& ctx) {
+        cmd::DistanceOptions d;
+        d.defaultValue = fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3);
+        d.keywords = {"Jointype"};
+        auto f = co_await ctx.getDistance("Specify the fuzz distance for Join or [Jointype]", d);
+        if (f.status == cmd::Status::Keyword) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Extend", "Add", "Both"};
+            const auto cur = jointype(ctx.host());
+            ko.defaultKeyword = cur == modify::JoinGap::Add    ? "Add"
+                                : cur == modify::JoinGap::Both ? "Both"
+                                                               : "Extend";
+            auto k = co_await ctx.getKeyword("Enter join type [Extend/Add/Both]", std::move(ko));
+            if (!k.ok())
+                co_return;
+            std::string v = k.keyword;
+            for (char& c : v)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            ctx.host().setSetting("pedit.jointype", v);
+            co_return;
+        }
+        if (f.ok() && f.value >= 0)
+            fuzz_ = f.value;
+    }
 
     // PEDIT Multiple: the options act on every selected object.
     cmd::Task editMultiple(cmd::CommandContext& ctx, cmd::EntityFilterFn filter) {
@@ -1128,17 +1253,14 @@ private:
                 co_return;
             std::size_t changed = 0;
             if (k.keyword == "Fuzz") {
-                cmd::DistanceOptions d;
-                d.defaultValue = fuzz_;
-                auto f = co_await ctx.getDistance("Specify the fuzz distance for Join", d);
-                if (f.ok() && f.value >= 0)
-                    fuzz_ = f.value;
+                co_await askFuzz(ctx);
             } else if (k.keyword == "Join") {
                 std::vector<const Entity*> es;
                 for (EntityId id : ids)
                     es.push_back(ctx.doc().find(id));
                 auto res = modify::joinEntities(
-                    es, fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3));
+                    es, fuzz_ >= 0 ? fuzz_ : getSetting(ctx.host(), "join.tolerance", 1e-3), false,
+                    jointype(ctx.host()));
                 if (res.consumed.empty()) {
                     ctx.message("Nothing could be joined.");
                     continue;
