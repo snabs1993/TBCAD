@@ -200,6 +200,7 @@ struct Site {
 struct Case {
     const char* label;
     std::vector<std::string> lines;
+    double budgetMs = 3000;  // joining 170k pairs builds a polyline each
 };
 
 }  // namespace
@@ -229,6 +230,8 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         {"ZOOM-E", {"ZOOM", "E"}},
         {"FIND-count", {"FIND", "EL ", "", "No"}},
         {"FIND-replace", {"FIND", "EL ", "ELEV ", "No"}},
+        {"JOIN", {"JOIN"}, 8000},
+        {"PEDIT-join", {"PEDIT", "Multiple", "Yes", "Join", "0.001", ""}, 8000},
         {"FIND-nomatch", {"FIND", "zzzqq", "yy", "Yes"}},
     };
     Site s;
@@ -243,7 +246,7 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
                     s.core->history().empty() ? "" : s.core->history().back().c_str());
 #ifdef NDEBUG
         INFO(c.label);
-        CHECK(t.runMs < 3000);
+        CHECK(t.runMs < c.budgetMs);
 #endif
     }
 }

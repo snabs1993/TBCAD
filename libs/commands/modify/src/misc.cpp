@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <unordered_set>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -964,11 +965,12 @@ private:
                 co_return;
             const bool convert = k.keyword == "Yes";
             std::vector<EntityId> kept;
+            const std::unordered_set<EntityId> loneSet(lone.begin(), lone.end());
             for (EntityId id : ids) {
                 const Entity* e = ctx.doc().find(id);
                 if (!e)
                     continue;
-                if (std::find(lone.begin(), lone.end(), id) == lone.end()) {
+                if (!loneSet.count(id)) {
                     kept.push_back(id);
                 } else if (convert) {
                     auto pl = modify::toPolylineEntity(*e);
@@ -1012,12 +1014,8 @@ private:
                     gone.push_back(ids[c]);
                 for (EntityId g : gone)
                     (void)ctx.tx().erase(g);
-                ids.erase(std::remove_if(ids.begin(), ids.end(),
-                                         [&](EntityId i) {
-                                             return std::find(gone.begin(), gone.end(), i) !=
-                                                    gone.end();
-                                         }),
-                          ids.end());
+                const std::unordered_set<EntityId> goneSet(gone.begin(), gone.end());
+                std::erase_if(ids, [&](EntityId i) { return goneSet.count(i) != 0; });
                 changed = gone.size();
                 for (Entity& n : created) {
                     if (auto added = ctx.tx().add(std::move(n)))
