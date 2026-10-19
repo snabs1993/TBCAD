@@ -870,7 +870,9 @@ bool Writer::writeWipeout(const Props& p, const PolylineData& d, std::uint64_t o
     o.h(360, 0);
     o.i(71, 2);
     o.i(91, static_cast<long long>(ring.size()) + 1);
-    auto px = [&](Vec2 q) { return Vec2{(q.x - box.min.x) / w - 0.5, 0.5 - (q.y - box.min.y) / h}; };
+    auto px = [&](Vec2 q) {
+        return Vec2{(q.x - box.min.x) / w - 0.5, 0.5 - (q.y - box.min.y) / h};
+    };
     for (const Vec2& q : ring)
         o.pt2(14, px(q));
     o.pt2(14, px(ring.front()));
@@ -1709,7 +1711,11 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
             o.pt(10, d.defPts[3]);
             break;
     }
-    o.pt(11, layout.text.valid() ? layout.text.center : d.textPos);
+    // The text point: where the text was placed (for text moved with a leader that is where the
+    // text starts, as AutoCAD writes it), else the middle of the text TBCAD draws.
+    const bool placed =
+        d.textPosUser && d.kind != DimKind::Angular2Line;  // its textPos is on the arc
+    o.pt(11, placed || !layout.text.valid() ? d.textPos : layout.text.center);
     o.i(70, type | (d.textPosUser ? 128 : 0));
     o.i(71, 5);
     if (!d.textOverride.empty())

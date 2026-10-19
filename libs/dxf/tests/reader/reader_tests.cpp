@@ -296,7 +296,11 @@ TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen fro
     p.g(71, 2).g(72, 3);
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 3; ++j)
-            p.g(0, "VERTEX").g(8, "0").g(10, 100.0 + j).g(20, static_cast<double>(i)).g(30, 1.0)
+            p.g(0, "VERTEX")
+                .g(8, "0")
+                .g(10, 100.0 + j)
+                .g(20, static_cast<double>(i))
+                .g(30, 1.0)
                 .g(70, 64);
     p.g(0, "SEQEND").g(8, "0");
     Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
@@ -325,8 +329,11 @@ TEST_CASE("a MESH entity is kept for saving and drawn from its cage edges") {
     // A square pyramid without edge records: 5 vertices, a quad base and 4 triangles.
     p.g(0, "MESH").g(8, "0").g(100, "AcDbEntity").g(100, "AcDbSubDMesh").g(71, 2).g(72, 0);
     p.g(91, 0).g(92, 5);
-    for (const auto& [x, y, z] : {std::tuple{0.0, 0.0, 0.0}, {10.0, 0.0, 0.0}, {10.0, 10.0, 0.0},
-                                  {0.0, 10.0, 0.0}, {5.0, 5.0, 8.0}})
+    for (const auto& [x, y, z] : {std::tuple{0.0, 0.0, 0.0},
+                                  {10.0, 0.0, 0.0},
+                                  {10.0, 10.0, 0.0},
+                                  {0.0, 10.0, 0.0},
+                                  {5.0, 5.0, 8.0}})
         p.g(10, x).g(20, y).g(30, z);
     p.g(93, 21).g(90, 4).g(90, 0).g(90, 1).g(90, 2).g(90, 3);
     for (int i = 0; i < 4; ++i)
@@ -400,7 +407,7 @@ TEST_CASE("extrusion: a pattern hatch in a tilted plane keeps its angle seen fro
     Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
     const auto hatches = modelEntities<HatchData>(l.doc());
     REQUIRE(hatches.size() == 1);
-    CHECK(near(hatches[0]->patternAngle, kPi / 2));          // object Y still points up
+    CHECK(near(hatches[0]->patternAngle, kPi / 2));  // object Y still points up
     CHECK(hatches[0]->patternScale == doctest::Approx(4 * std::sqrt(0.8)));
 }
 
@@ -701,7 +708,9 @@ TEST_CASE("polylines: LWPOLYLINE and 2D POLYLINE keep bulges, widths and the clo
     CHECK(polys[2]->v.size() == 3);
 }
 
-TEST_CASE("polylines: old-style POLYLINE reads its VERTEX records, 3D polylines are drawn flat, meshes skipped") {
+TEST_CASE(
+    "polylines: old-style POLYLINE reads its VERTEX records, 3D polylines are drawn flat, meshes "
+    "skipped") {
     Pairs p;
     p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(70, 1);
     p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(42, 1.0);
@@ -1320,7 +1329,7 @@ TEST_CASE("WIPEOUT: the clip boundary counts y down from the top of the frame") 
     p.g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 40.0).g(21, 0.0).g(31, 0.0);
     p.g(12, 0.0).g(22, 20.0).g(32, 0.0).g(13, 1.0).g(23, 1.0).g(71, 2).g(91, 7);
     // (0,0) (40,0) (40,10) (10,10) (10,20) (0,20) in pixel units: x/40 - 0.5, 0.5 - y/20
-    const double px[][2] = {{-0.5, 0.5}, {0.5, 0.5}, {0.5, 0.0}, {-0.25, 0.0},
+    const double px[][2] = {{-0.5, 0.5},   {0.5, 0.5},   {0.5, 0.0}, {-0.25, 0.0},
                             {-0.25, -0.5}, {-0.5, -0.5}, {-0.5, 0.5}};
     for (const auto& q : px)
         p.g(14, q[0]).g(24, q[1]);
@@ -1476,7 +1485,6 @@ TEST_CASE("TOLERANCE: text that is not a frame stays a placeholder") {
     CHECK(modelEntities<InsertData>(l.doc()).empty());
 }
 
-
 TEST_CASE("a text or mtext without a string is counted as empty, not as skipped") {
     Pairs p;
     p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(40, 2.5).g(1, "");
@@ -1495,7 +1503,6 @@ TEST_CASE("a text or mtext without a string is counted as empty, not as skipped"
     CHECK(json.find("\"MTEXT\":{\"read\":1,\"imported\":0,\"skipped\":0,\"empty\":1}") !=
           std::string::npos);
 }
-
 
 TEST_CASE("an arc whose start and end angles are equal draws as a full circle") {
     Pairs p;
@@ -1521,7 +1528,9 @@ TEST_CASE("dimension text: \\X starts the line under the dimension line, radial 
     auto dims = modelEntities<DimensionData>(l.doc());
     REQUIRE(dims.size() == 2);
     CHECK(dims[0]->textOverride == "Y\nMIN <>mm");
-    CHECK_FALSE(dims[0]->textPosUser);
+    // Its text point (5,5) is not where TBCAD would put the text, so the text stays there.
+    CHECK(dims[0]->textPosUser);
+    CHECK(near(dims[0]->textPos, Vec2{5, 5}));
     CHECK(dims[1]->kind == DimKind::Radius);
     CHECK(dims[1]->textPosUser);
     CHECK(near(dims[1]->textPos, Vec2{103, 1}));
@@ -1538,7 +1547,7 @@ TEST_CASE("dimension comparison: a block drawn at group 12 and a stale block") {
     p.g(0, "ENDBLK").g(8, "0");
     p.end();
     p.section("ENTITIES");
-    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(10, 15.0).g(20, 5.0).g(11, 7.5).g(21, 6.0);
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(10, 15.0).g(20, 5.0);
     p.g(12, -1000.0).g(22, -2000.0).g(70, 32).g(13, 0.0).g(23, 0.0).g(14, 15.0).g(24, 0.0);
     p.g(50, 0.0);
     p.end().g(0, "EOF");

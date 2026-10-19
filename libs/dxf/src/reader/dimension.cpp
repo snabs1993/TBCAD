@@ -388,7 +388,8 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
     // DIMTEDIT Angle; an absolute angle, as AutoCAD writes it).
     if (d.kind == DimKind::Linear || d.kind == DimKind::Aligned) {
         const Vec2 along = d.defPts[1] - d.defPts[0];
-        const double dimAngle = d.kind == DimKind::Linear ? d.rotation : std::atan2(along.y, along.x);
+        const double dimAngle =
+            d.kind == DimKind::Linear ? d.rotation : std::atan2(along.y, along.x);
         d.oblique = leanOf(r.num(52) * kDeg, dimAngle);
     }
     if (const double rot = r.num(53); rot != 0 && std::isfinite(rot)) {
@@ -428,14 +429,23 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
                 break;
         }
     }
-    // A radius or diameter dimension's text goes where it was picked, so its middle point is
-    // where AutoCAD shows it even without the "moved" flag; it counts as placed by hand unless
-    // it is where TBCAD would put it anyway (a file TBCAD wrote).
-    if ((d.kind == DimKind::Radius || d.kind == DimKind::Diameter) && r.has(11) &&
-        !d.textPosUser) {
+    // Group 11 is where AutoCAD shows the text: its middle point, written whether or not the
+    // text was moved by hand (AutoCAD's own fit rules and font widths put it there, a radius
+    // dimension's text goes where it was picked). Text that is not where TBCAD would put it
+    // counts as placed; a file TBCAD wrote keeps its text where TBCAD puts it anyway. A point
+    // far from the dimension is not trusted (some writers leave it at the origin).
+    const bool textAtPoint = d.kind == DimKind::Linear || d.kind == DimKind::Aligned ||
+                             d.kind == DimKind::Radius || d.kind == DimKind::Diameter;
+    if (textAtPoint && r.has(11) && !d.textPosUser) {
         const dim::Layout auto_ = dim::layoutDimension(*doc_, d, 0.01, 1);
         const double h = std::max(auto_.text.height, 1e-9);
-        if (!auto_.text.valid() || distance(auto_.text.center, d.textPos) > 0.01 * h)
+        BBox2 near;
+        const bool radial = d.kind == DimKind::Radius || d.kind == DimKind::Diameter;
+        for (int i = 0; i < (radial ? 2 : 3); ++i)
+            near.expand(d.defPts[static_cast<std::size_t>(i)]);
+        near = near.inflated(std::max(near.width(), near.height()) + 50 * h);
+        if (near.contains(d.textPos) &&
+            (!auto_.text.valid() || distance(auto_.text.center, d.textPos) > 0.01 * h))
             d.textPosUser = true;
     }
     Entity e;
