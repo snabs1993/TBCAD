@@ -225,7 +225,7 @@ void Scene::upsert(EntityId id, const DisplayList& list, std::uint32_t drawOrder
     const std::uint32_t base = levelBelow(drawOrder);
     c.level = base;
     c.maskLevel = base;
-    c.builtZoom = builtPixelsPerMm;
+    c.builtZoom = static_cast<float>(builtPixelsPerMm);
     bool inMask = false;
     std::uint32_t seen = 0;  // masks of this entity passed so far
     for (const DisplayItem& item : list.items) {
