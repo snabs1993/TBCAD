@@ -17,6 +17,8 @@ namespace tbcad::transform {
 constexpr int kDynGripBase = 1000;
 // kAttGripBase + k is the grip of attribute k of an Insert (see blocks::attribHandles).
 constexpr int kAttGripBase = 2000;
+// kPicGripBase + k is corner k of a raster picture (see blocks::pictureHandles).
+constexpr int kPicGripBase = 3000;
 
 // One grip of one selected entity (index as in geom::gripPoints).
 struct Grip {

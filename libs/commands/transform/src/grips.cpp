@@ -9,6 +9,7 @@
 
 #include "tbcad/blocks/attributes.h"
 #include "tbcad/blocks/dynamic.h"
+#include "tbcad/blocks/picture.h"
 #include "tbcad/geom/geom.h"
 
 namespace tbcad::transform {
@@ -64,6 +65,8 @@ std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> id
             out.push_back({id, kDynGripBase + h.param, h.world});
         for (const blocks::AttribHandle& h : blocks::attribHandles(doc, *e))
             out.push_back({id, kAttGripBase + h.index, h.world});
+        for (const blocks::PictureHandle& h : blocks::pictureHandles(doc, *e))
+            out.push_back({id, kPicGripBase + h.corner, h.world});
     }
     return out;
 }
@@ -196,7 +199,8 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, con
             const int idx = set.indices[k][j];
             const Vec2 target = set.from[k][j] + delta;
             auto moved =
-                idx >= kAttGripBase   ? blocks::attribDrag(doc, cur, idx - kAttGripBase, target)
+                idx >= kPicGripBase   ? blocks::pictureDrag(doc, cur, idx - kPicGripBase, target)
+                : idx >= kAttGripBase ? blocks::attribDrag(doc, cur, idx - kAttGripBase, target)
                 : idx >= kDynGripBase ? blocks::dynDrag(doc, cur, idx - kDynGripBase, target)
                                       : geom::moveGrip(cur, idx, target);
             if (!moved) {

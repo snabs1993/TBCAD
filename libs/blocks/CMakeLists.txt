@@ -9,6 +9,7 @@ tbcad_add_library(blocks
     src/dynamic.cpp
     src/explode.cpp
     src/index_refresh.cpp
+    src/picture.cpp
     src/insert_display.cpp
   DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::expr tbcad::underlay)
 tbcad_add_tests(blocks
@@ -22,4 +23,5 @@ tbcad_add_tests(blocks
     tests/clip_tests.cpp
     tests/display_tests.cpp
     tests/dynamic_tests.cpp
-    tests/explode_tests.cpp)
+    tests/explode_tests.cpp
+    tests/picture_tests.cpp)
