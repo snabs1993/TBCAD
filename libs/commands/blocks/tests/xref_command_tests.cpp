@@ -335,7 +335,7 @@ TEST_CASE("IMAGECLIP Polygonal clips to an outline - IMAGEADJUST and IMAGEFRAME 
     f.host->run("IMAGECLIP", {"Delete"});
     CHECK(underlay::imageParams(f.doc.header(), "site").clip.empty());
 
-    f.host->run("IMAGEADJUST", {"65", "40"});
+    f.host->run("IMAGEADJUST", {"65", "40", "No"});
     p = underlay::imageParams(f.doc.header(), "site");
     CHECK(p.brightness == 65);
     CHECK(p.contrast == 40);

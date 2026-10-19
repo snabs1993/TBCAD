@@ -298,6 +298,10 @@ void draw(ui::PanelContext& pc) {
     // Appearance
     changed |= ImGui::Checkbox("Plot lineweights", &s.lineweights);
     changed |= ImGui::Checkbox("Plot transparency", &s.transparency);
+    changed |= ImGui::InputDouble("Lineweight scale", &s.lineweightScale, 0.1, 1, "%.2f",
+                                  ImGuiInputTextFlags_AutoSelectAll);
+    s.lineweightScale = std::clamp(s.lineweightScale, 0.01, 100.0);
+    changed |= ImGui::SliderInt("Screening %", &s.screening, 0, 100);
     {
         bool stamp = plotStampOn(*pc.host);
         if (ImGui::Checkbox("Plot stamp", &stamp))

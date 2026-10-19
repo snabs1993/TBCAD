@@ -1393,6 +1393,51 @@ TEST_CASE("the wipeout frame mode survives a DXF round trip") {
     }
 }
 
+TEST_CASE("draw order (front, back, wipeouts, inside blocks) survives a DXF round trip") {
+    Document doc;
+    BlockId blk{};
+    {
+        auto tx = doc.begin("order");
+        std::vector<EntityId> ids;
+        for (int i = 0; i < 5; ++i) {
+            Entity e = make(LineData{{0, double(i)}, {10, double(i)}});
+            if (i == 2) {  // a wipeout among the lines
+                PolylineData p;
+                p.closed = true;
+                for (Vec2 v : {Vec2{0, 0}, Vec2{4, 0}, Vec2{4, 4}, Vec2{0, 4}})
+                    p.v.push_back({v, 0, 0, 0});
+                e = make(p);
+                e.common.wipeout = true;
+            }
+            ids.push_back(tx.add(std::move(e)).value());
+        }
+        REQUIRE(tx.bringToFront(ids[0]).ok());
+        REQUIRE(tx.sendToBack(ids[3]).ok());
+        REQUIRE(tx.bringToFront(ids[2]).ok());  // the wipeout above the rest
+        blk = tx.addBlock(BlockDef{.name = "B"}).value();
+        REQUIRE(tx.add(make(LineData{{0, 7}, {1, 7}}), blk).ok());
+        REQUIRE(tx.add(make(LineData{{0, 8}, {1, 8}}), blk).ok());
+        tx.commit();
+    }
+    auto sig = [](const Document& d) {
+        std::string s;
+        for (EntityId id : d.modelSpace()) {
+            const Entity* e = d.find(id);
+            if (const auto* l = entityAs<LineData>(*e))
+                s += char('0' + int(l->a.y));
+            else
+                s += e->common.wipeout ? 'W' : '?';
+        }
+        return s;
+    };
+    const std::string before = sig(doc);
+    REQUIRE(before.size() == 5);
+    CHECK(before.back() == 'W');
+    CHECK(before.front() == '3');
+    RoundTrip rt = roundTrip(doc);
+    CHECK(sig(*rt.back) == before);
+}
+
 TEST_CASE("named plot styles of layers and objects survive a DXF round trip") {
     Document doc;
     EntityId plain{}, own{};
