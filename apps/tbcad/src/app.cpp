@@ -12,10 +12,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/dwgopen/dwgopen.h"
+#include "tbcad/mcp/png.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
@@ -33,6 +35,10 @@ void printUsage() {
               "comment)\n"
               "  --frames N           draw N frames, then exit\n"
               "  --screenshot F.ppm   save the last frame\n"
+              "  --capture-script F   hidden window (never takes focus): run F, which holds command\n"
+              "                       lines and @ lines: @size W H, @frames N, @mouse X Y, @click X Y,\n"
+              "                       @drag X0 Y0 X1 Y1, @shot name.png (PNG of the whole window)\n"
+              "  --size WxH           window size for --capture-script (default 1600x900)\n"
               "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
               "  --gate-file F        time open, pan/zoom and select-all on drawing F, then exit\n"
               "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
@@ -62,7 +68,16 @@ Options parseOptions(int argc, char** argv) {
             o.frames = std::atoi(next().c_str());
         else if (a == "--screenshot")
             o.screenshot = next();
-        else if (a == "--report")
+        else if (a == "--capture-script")
+            o.captureScript = next();
+        else if (a == "--size") {
+            const std::string v = next();
+            int w = 0, h = 0;
+            if (std::sscanf(v.c_str(), "%dx%d", &w, &h) == 2 && w >= 200 && h >= 200) {
+                o.captureW = w;
+                o.captureH = h;
+            }
+        } else if (a == "--report")
             o.report = next();
         else if (a == "--gate")
             o.gate = true;
@@ -107,15 +122,22 @@ bool App::initWindow(std::string& why) {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 #endif
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
-    glfwWindowHint(GLFW_VISIBLE, options_.selfTest ? GLFW_FALSE : GLFW_TRUE);
-    window_ = glfwCreateWindow(1440, 900, "TBCAD", nullptr, nullptr);
+    glfwWindowHint(GLFW_VISIBLE, hidden() ? GLFW_FALSE : GLFW_TRUE);
+    if (hidden()) {
+        glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
+        glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
+        glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_FALSE);  // captures are the same on any screen
+    }
+    const bool capturing = !options_.captureScript.empty();
+    window_ = glfwCreateWindow(capturing ? options_.captureW : 1440, capturing ? options_.captureH : 900,
+                               "TBCAD", nullptr, nullptr);
     if (!window_) {
         why = "could not create an OpenGL 3.3 window";
         return false;
     }
     // Keep the window inside the usable screen (not behind the taskbar): scaled to a high-DPI
     // monitor 1440x900 can be larger than the work area.
-    if (!options_.selfTest && !options_.gate) {
+    if (!hidden() && !options_.gate) {
         int wx = 0, wy = 0, ww = 0, wh = 0;
         glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &wx, &wy, &ww, &wh);
         int fl = 0, ft = 0, fr = 0, fb = 0;
@@ -147,7 +169,7 @@ bool App::initWindow(std::string& why) {
     io.ConfigDockingWithShift = false;
     iniPath_ = (paths_.configDir / "imgui.ini").string();
     platform::ensureDirectory(paths_.configDir);
-    io.IniFilename = options_.selfTest ? nullptr : iniPath_.c_str();
+    io.IniFilename = hidden() ? nullptr : iniPath_.c_str();
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init("#version 330 core");
     imguiReady_ = true;
@@ -200,6 +222,95 @@ void App::runScriptFile(const std::string& file) {
             continue;
         core_->submitText(line);  // an empty line is Enter
     }
+}
+
+// Draws n frames without presenting anything (the window is hidden).
+void App::captureFrames(int n) {
+    for (int i = 0; i < n; ++i) {
+        glfwPollEvents();
+        mcp_->pump();
+        frame();
+        glfwSwapBuffers(window_);
+    }
+}
+
+// --capture-script: the lines are command lines, except those that start with '@'.
+int App::runCapture() {
+    std::ifstream in(platform::pathFromUtf8(options_.captureScript));
+    if (!in) {
+        std::fprintf(stderr, "tbcad: cannot read capture script %s\n", options_.captureScript.c_str());
+        return 1;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    // Frames until the drawing is built and the picture has stopped changing.
+    const auto settle = [&] {
+        captureFrames(3);
+        for (int i = 0; i < 600 && core_->sceneBuilding(); ++i)
+            captureFrames(1);
+        captureFrames(3);
+    };
+    const auto moveTo = [&](float x, float y) {
+        io.AddMousePosEvent(x, y);
+        captureFrames(2);
+    };
+    int failed = 0;
+    std::string line;
+    int lineNo = 0;
+    while (std::getline(in, line)) {
+        ++lineNo;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (!line.empty() && line.front() == '#')
+            continue;
+        if (line.empty() || line.front() != '@') {
+            core_->submitText(line);
+            captureFrames(1);
+            continue;
+        }
+        std::istringstream ss(line.substr(1));
+        std::string op;
+        ss >> op;
+        float a = 0, b = 0, c = 0, d = 0;
+        if (op == "size" && (ss >> a >> b)) {
+            glfwSetWindowSize(window_, static_cast<int>(a), static_cast<int>(b));
+            captureFrames(3);
+        } else if (op == "frames" && (ss >> a)) {
+            captureFrames(std::max(1, static_cast<int>(a)));
+        } else if (op == "mouse" && (ss >> a >> b)) {
+            moveTo(a, b);
+        } else if (op == "click" && (ss >> a >> b)) {
+            moveTo(a, b);
+            io.AddMouseButtonEvent(0, true);
+            captureFrames(2);
+            io.AddMouseButtonEvent(0, false);
+            captureFrames(2);
+        } else if (op == "drag" && (ss >> a >> b >> c >> d)) {
+            moveTo(a, b);
+            io.AddMouseButtonEvent(0, true);
+            captureFrames(2);
+            moveTo((a + c) / 2, (b + d) / 2);
+            moveTo(c, d);
+            io.AddMouseButtonEvent(0, false);
+            captureFrames(2);
+        } else if (op == "shot") {
+            std::string name;
+            ss >> name;
+            settle();
+            // The frame is drawn again so that the pixels are those of the back buffer.
+            glfwPollEvents();
+            mcp_->pump();
+            frame();
+            if (name.empty() || !saveScreenshot(name)) {
+                std::fprintf(stderr, "tbcad: line %d: cannot write %s\n", lineNo, name.c_str());
+                ++failed;
+            }
+            glfwSwapBuffers(window_);
+        } else {
+            std::fprintf(stderr, "tbcad: line %d: unknown capture line '%s'\n", lineNo, line.c_str());
+            ++failed;
+        }
+    }
+    return failed == 0 ? 0 : 1;
 }
 
 namespace {
@@ -345,6 +456,23 @@ bool App::saveScreenshot(const std::string& path) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadPixels(0, 0, framebufferW_, framebufferH_, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    if (path.size() > 4 && path.compare(path.size() - 4, 4, ".png") == 0) {
+        // Rows top first, opaque.
+        std::vector<std::uint8_t> rgba(px.size());
+        const std::size_t row = static_cast<std::size_t>(framebufferW_) * 4;
+        for (int y = 0; y < framebufferH_; ++y) {
+            std::memcpy(&rgba[static_cast<std::size_t>(framebufferH_ - 1 - y) * row],
+                        &px[static_cast<std::size_t>(y) * row], row);
+        }
+        for (std::size_t i = 3; i < rgba.size(); i += 4)
+            rgba[i] = 255;
+        const std::vector<std::uint8_t> png = mcp::encodePng(rgba, framebufferW_, framebufferH_);
+        std::ofstream pout(platform::pathFromUtf8(path), std::ios::binary);
+        if (png.empty() || !pout)
+            return false;
+        pout.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+        return static_cast<bool>(pout);
+    }
     std::ofstream out(path, std::ios::binary);
     if (!out)
         return false;
@@ -512,6 +640,13 @@ int App::run() {
         runScript(options_.script);
     if (!options_.scriptFile.empty())
         runScriptFile(options_.scriptFile);
+
+    if (!options_.captureScript.empty()) {
+        const int status = runCapture();
+        mcp_.reset();
+        core_->shutdown();
+        return status;
+    }
 
     int framesDrawn = 0;
     double last = glfwGetTime();
