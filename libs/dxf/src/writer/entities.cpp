@@ -927,16 +927,26 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     o.d(13, w);
     o.d(23, h);
     o.h(340, img.def);
-    o.i(70, 7);  // shown, shown when not aligned, clipped
-    o.i(280, 1);
-    o.i(281, 50);
-    o.i(282, 50);
+    o.i(70, ip.clipped() ? 7 : 3);  // shown, shown when not aligned, [clipped]
+    o.i(280, ip.clipped() ? 1 : 0);
+    o.i(281, ip.brightness);
+    o.i(282, ip.contrast);
     o.i(283, static_cast<long long>(std::lround(ip.fade)));
     o.h(360, img.reactor);
-    o.i(71, 1);  // rectangular clip: two corners, in pixels counted from the lower-left corner
-    o.i(91, 2);
-    o.pt2(14, {ip.u0 * w - 0.5, (1 - ip.v1) * h - 0.5});
-    o.pt2(14, {ip.u1 * w - 0.5, (1 - ip.v0) * h - 0.5});
+    // Clip corners are in pixels counted from the lower-left corner of the picture.
+    auto px = [&](double u, double v) { return Vec2{u * w - 0.5, (1 - v) * h - 0.5}; };
+    if (ip.clip.size() >= 3) {
+        o.i(71, 2);
+        o.i(91, static_cast<long long>(ip.clip.size()) + 1);
+        for (const Vec2& c : ip.clip)
+            o.pt2(14, px(c.x, c.y));
+        o.pt2(14, px(ip.clip.front().x, ip.clip.front().y));
+    } else {
+        o.i(71, 1);
+        o.i(91, 2);
+        o.pt2(14, px(ip.u0, ip.v1));
+        o.pt2(14, px(ip.u1, ip.v0));
+    }
     images_.push_back(std::move(img));
     count("IMAGE");
     return true;

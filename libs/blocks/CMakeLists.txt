@@ -10,7 +10,7 @@ tbcad_add_library(blocks
     src/explode.cpp
     src/index_refresh.cpp
     src/insert_display.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::expr)
+  DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::expr tbcad::underlay)
 tbcad_add_tests(blocks
   SOURCES
     tests/main.cpp

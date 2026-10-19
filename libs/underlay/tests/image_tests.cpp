@@ -206,6 +206,46 @@ TEST_CASE("collecting images places the corners by the insert") {
     std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("brightness, contrast, frame and a polygon clip are stored and applied") {
+    ImageParams p;
+    p.brightness = 80;
+    p.contrast = 20;
+    p.frame = 1;
+    p.clip = {{0, 0}, {1, 0}, {0, 1}};
+    p.u0 = p.v0 = 0;
+    p.u1 = p.v1 = 1;
+    Header h;
+    ImageParamTable t;
+    t["pic"] = p;
+    writeImageParams(h, t);
+    CHECK(readImageParams(h).at("pic") == p);
+
+    auto src = std::make_shared<ImageData>();
+    src->width = src->height = 4;
+    src->rgba.assign(4 * 4 * 4, 128);
+    for (std::size_t i = 3; i < src->rgba.size(); i += 4)
+        src->rgba[i] = 255;
+    ImageCache cache;
+    ImageParams bright;
+    bright.brightness = 100;
+    std::uint64_t key = 0;
+    auto lit = cache.adjusted(7, src, bright, &key);
+    CHECK(lit->rgba[0] == 255);
+    CHECK(key != 7);
+    // Nothing to apply: the same picture and key.
+    auto same = cache.adjusted(7, src, ImageParams{}, &key);
+    CHECK(same == src);
+    CHECK(key == 7);
+    // The triangle (0,0) (1,0) (0,1) in fractions keeps the top-left half: the pixel at the top
+    // left stays, the one at the bottom right goes transparent.
+    ImageParams tri;
+    tri.clip = {{0, 0}, {1, 0}, {0, 1}};
+    auto cut = cache.adjusted(7, src, tri);
+    CHECK(cut->rgba[3] == 255);
+    CHECK(cut->rgba[(3 * 4 + 3) * 4 + 3] == 0);
+    CHECK(cut->rgba[0] == 128);
+}
+
 TEST_CASE("hidden inserts and missing files give no image") {
     const auto dir = tempDir();
     writeBmp(dir / "p.bmp", 2, 2, [](int, int) { return std::array<int, 3>{9, 9, 9}; });

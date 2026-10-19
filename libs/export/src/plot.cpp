@@ -474,6 +474,9 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
                 params = underlay::readImageParams(doc.header());
                 haveParams = true;
             }
+            // IMAGEFRAME 1: the outline of the picture is plotted with the drawing.
+            if (auto pit = params.find(def->name); pit != params.end() && pit->second.frame == 1)
+                pictures.erase(id.value);
             auto im = underlay::imageOfInsert(doc, *e, params, cache, resolve);
             if (!im)
                 continue;

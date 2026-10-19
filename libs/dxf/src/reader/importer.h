@@ -310,9 +310,12 @@ private:
         std::string defHandle{};
         double fade = 0;
         double u0 = 0, v0 = 0, u1 = 1, v1 = 1;
+        int brightness = 50, contrast = 50;
+        std::vector<Vec2> clip{};  // polygon in picture fractions
         int line = 0;
     };
     std::vector<PendingImage> images_{};
+    int imageFrame_ = -1;  // IMAGEFRAME of the RASTERVARIABLES object (all pictures); -1 = none
     std::map<std::string, std::vector<Vec2>>
         sheetRings_{};                                // closed polylines on sheets, by handle
     std::map<std::string, std::string> imageDefs_{};  // IMAGEDEF handle -> file path

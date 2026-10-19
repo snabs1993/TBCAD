@@ -274,6 +274,31 @@ TEST_CASE("IMAGECLIP keeps a rectangle of the picture - Delete shows it all") {
     CHECK_FALSE(underlay::imageParams(f.doc.header(), "site").clipped());
 }
 
+TEST_CASE("IMAGECLIP Polygonal clips to an outline - IMAGEADJUST and IMAGEFRAME set the rest") {
+    Dir dir;
+    fs::path file = writeBmp(dir.path, "site.bmp", 100, 50);
+    Fixture f;
+    f.host->run("IMAGEATTACH", {file.string(), "0", "", "", "0,0"});
+    f.host->run("IMAGECLIP", {"Polygonal", "0,0", "100,0", "50,50", "Close"});
+    auto p = underlay::imageParams(f.doc.header(), "site");
+    REQUIRE(p.clip.size() == 3);
+    CHECK(p.clip[2].x == doctest::Approx(0.5));
+    CHECK(p.clip[2].y == doctest::Approx(0.0));
+    CHECK(p.u0 == doctest::Approx(0.0));
+    CHECK(p.u1 == doctest::Approx(1.0));
+    f.host->run("IMAGECLIP", {"Delete"});
+    CHECK(underlay::imageParams(f.doc.header(), "site").clip.empty());
+
+    f.host->run("IMAGEADJUST", {"65", "40"});
+    p = underlay::imageParams(f.doc.header(), "site");
+    CHECK(p.brightness == 65);
+    CHECK(p.contrast == 40);
+    f.host->run("IMAGEFRAME", {"Hide"});
+    CHECK(underlay::imageParams(f.doc.header(), "site").frame == 0);
+    f.host->run("IMAGEFRAME", {"Plot"});
+    CHECK(underlay::imageParams(f.doc.header(), "site").frame == 1);
+}
+
 TEST_CASE("UNDERLAYFADE changes the fade of a picture and of a PDF page") {
     Dir dir;
     fs::path bmp = writeBmp(dir.path, "pic.bmp", 10, 10);

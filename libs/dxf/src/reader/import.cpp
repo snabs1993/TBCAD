@@ -418,6 +418,10 @@ void Importer::processObjects(RecordReader& rr) {
             readPlotSettings(r);
             continue;
         }
+        if (r.type == "RASTERVARIABLES") {
+            if (r.has(71))
+                imageFrame_ = std::clamp(static_cast<int>(r.integer(71)), 0, 2);
+        }
         if (r.type == "IMAGEDEF") {
             imageDefs_[std::string(r.raw(5))] = dec(r.raw(1));
             continue;
