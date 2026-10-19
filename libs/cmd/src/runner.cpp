@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <span>
 #include <string>
+#include <unordered_set>
 
 namespace tbcad::cmd {
 
@@ -158,6 +159,17 @@ Result<void> CommandRunner::startImpl(std::string_view nameOrAlias, bool transpa
         lastCommand_ = std::string(c->name());
     stack_.back().task.resume();
     afterResume();
+    // Like AutoCAD, a drawing command that starts with objects selected drops the selection
+    // (the grips go away); the editing commands take it as their first answer instead.
+    if (!transparent && !stack_.empty() && stack_.back().ctx->hasPending() &&
+        stack_.back().ctx->pending()->kind == detail::PromptKind::Point && !host_.selection().empty()) {
+        static const std::unordered_set<std::string_view> kDrawing = {
+            "LINE",    "PLINE",  "POLYLINE", "RECTANG", "RECTANGLE", "POLYGON", "CIRCLE",
+            "ARC",     "ELLIPSE", "SPLINE",  "XLINE",   "RAY",       "POINT",   "DONUT",
+            "TEXT",    "MTEXT",  "MLINE",    "REVCLOUD"};
+        if (kDrawing.count(c->name()))
+            host_.setSelection({});
+    }
     return {};
 }
 

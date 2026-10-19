@@ -302,7 +302,24 @@ int App::runCapture() {
         std::filesystem::path f = platform::pathFromUtf8(name);
         return (f.is_absolute() ? f : scriptDir / f).string();
     };
+    const auto printStats = [&] {
+        const BBox2 view = core_->camera().visibleWorld();
+        std::size_t total[kEntityKindCount] = {}, inView[kEntityKindCount] = {};
+        for (const Item& it : items()) {
+            ++total[static_cast<std::size_t>(it.kind)];
+            if (it.box.intersects(view))
+                ++inView[static_cast<std::size_t>(it.kind)];
+        }
+        std::printf("stats: view %.3f,%.3f to %.3f,%.3f; selected %zu; in view / in drawing:",
+                    view.min.x, view.min.y, view.max.x, view.max.y, core_->selection().size());
+        for (std::size_t k = 0; k < kEntityKindCount; ++k)
+            if (total[k] > 0)
+                std::printf(" %s %zu/%zu", kKindNames[k], inView[k], total[k]);
+        std::printf("\n");
+        std::fflush(stdout);
+    };
     int failed = 0;
+    int failedSinceShot = 0;
     std::string line;
     int lineNo = 0;
     while (std::getline(in, line)) {
@@ -349,7 +366,7 @@ int App::runCapture() {
         } else if (op == "zoom-all") {
             const BBox2 box = robustBox(items());
             if (box.empty())
-                ++failed;
+                ++failed, ++failedSinceShot;
             else
                 core_->zoomToBox(box.inflated(0.03 * std::max(box.width(), box.height())));
             captureFrames(2);
@@ -367,7 +384,7 @@ int App::runCapture() {
                 }
             }
             if (box.empty() || !(box.width() > 0) || !(box.height() > 0)) {
-                ++failed;
+                ++failed, ++failedSinceShot;
                 continue;
             }
             std::vector<int> count(static_cast<std::size_t>(n) * n, 0);
@@ -396,7 +413,7 @@ int App::runCapture() {
                     want = static_cast<int>(k);
             if (want < 0) {
                 std::fprintf(stderr, "tbcad: line %d: unknown kind '%s'\n", lineNo, kn.c_str());
-                ++failed;
+                ++failed, ++failedSinceShot;
                 continue;
             }
             int seen = 0;
@@ -415,24 +432,14 @@ int App::runCapture() {
             }
             if (!found) {
                 std::fprintf(stderr, "tbcad: line %d: no %s number %d\n", lineNo, kn.c_str(), index);
-                ++failed;
+                ++failed, ++failedSinceShot;
             }
             captureFrames(2);
         } else if (op == "stats") {
-            const BBox2 view = core_->camera().visibleWorld();
-            std::size_t total[kEntityKindCount] = {}, inView[kEntityKindCount] = {};
-            for (const Item& it : items()) {
-                ++total[static_cast<std::size_t>(it.kind)];
-                if (it.box.intersects(view))
-                    ++inView[static_cast<std::size_t>(it.kind)];
-            }
-            std::printf("stats: view %.3f,%.3f to %.3f,%.3f; in view / in drawing:", view.min.x,
-                        view.min.y, view.max.x, view.max.y);
-            for (std::size_t k = 0; k < kEntityKindCount; ++k)
-                if (total[k] > 0)
-                    std::printf(" %s %zu/%zu", kKindNames[k], inView[k], total[k]);
-            std::printf("\n");
-            std::fflush(stdout);
+            printStats();
+        } else if (op == "deselect") {
+            core_->setSelection({});
+            captureFrames(2);
         } else if (op == "shot") {
             std::string name;
             ss >> name;
@@ -441,7 +448,15 @@ int App::runCapture() {
             glfwPollEvents();
             mcp_->pump();
             frame();
-            if (name.empty() || !saveScreenshot(resolveShot(name))) {
+            const std::string target = name.empty() ? std::string{} : resolveShot(name);
+            std::error_code ec;
+            if (!target.empty())
+                std::filesystem::remove(platform::pathFromUtf8(target), ec);  // never leave a stale one
+            std::printf("shot %s%s\n", name.c_str(),
+                        failedSinceShot > 0 ? ": WARNING a step before it failed (see the messages above)" : "");
+            printStats();
+            failedSinceShot = 0;
+            if (target.empty() || !saveScreenshot(target)) {
                 std::fprintf(stderr, "tbcad: line %d: cannot write %s\n", lineNo, name.c_str());
                 ++failed;
             }

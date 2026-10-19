@@ -114,7 +114,9 @@ window. A line is a command line (an empty line is Enter, `#` starts a comment) 
 objects), `@zoom-dense [N]` (the busiest cell of an N x N grid, default 40), `@zoom-kind KIND
 [index [factor]]` (the index-th hatch, dimension, text, mtext, insert, leader, mleader, table, ...
 in draw order, shown `factor` times its size) and `@stats` (prints how many objects of each kind
-are in view and in the drawing). A byte order mark at the start of the script is ignored. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
+are in view and in the drawing, and how many are selected; it is also printed after every shot),
+`@deselect` (clear the selection) and the shot line itself: an older file of the same name is
+deleted first, and a warning is printed when a step before the shot failed. A byte order mark at the start of the script is ignored. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
 ordinary commands (`ZOOM`, `W`, `SELECT`) or a `@drag` across the view. A shot waits until the
 drawing has finished building. The program exits when the script ends (status 1 if a line failed).
 
