@@ -1544,3 +1544,98 @@ TEST_CASE("DIVIDE and MEASURE space blocks by length along a spline and a polyli
         expectAt(placed(), step);
     }
 }
+
+namespace {
+
+TextData findText(const char* s, Vec2 p = {0, 0}) {
+    TextData t;
+    t.position = p;
+    t.alignPoint = p;
+    t.height = 2.5;
+    t.utf8 = s;
+    return t;
+}
+
+}  // namespace
+
+TEST_CASE("FIND replaces in text, mtext, attributes, table cells, dimensions and leaders") {
+    Fixture f;
+    const EntityId text = f.add(findText("Door D1"));
+    MTextData m;
+    m.height = 2;
+    m.width = 20;
+    m.utf8 = "Fire door, steel door";
+    const EntityId mtext = f.add(std::move(m));
+    InsertData ins;
+    {
+        Transaction tx = f.doc.begin("blk");
+        ins.block = tx.addBlock(BlockDef{.name = "TAG"}).value();
+        tx.commit();
+    }
+    ins.attribs.push_back({"NAME", "door 7"});
+    ins.attribs.push_back({"NOTE", "wall"});
+    const EntityId insert = f.add(std::move(ins));
+    TableData tb;
+    tb.colWidths = {10, 10};
+    tb.rowHeights = {5, 5};
+    tb.cells.resize(4);
+    tb.cells[0].utf8 = "door";
+    tb.cells[3].utf8 = "Door and door";
+    const EntityId table = f.add(std::move(tb));
+    DimensionData d;
+    d.textOverride = "2 doors";
+    const EntityId dim = f.add(std::move(d));
+    LeaderData ld;
+    ld.vertices = {{0, 0}, {5, 5}};
+    ld.utf8 = "see door";
+    const EntityId leader = f.add(std::move(ld));
+    const EntityId other = f.add(findText("Window W1", {0, 10}));
+
+    (void)f.host.run("FIND", {"door", "gate", "No"});
+    CHECK(entityAs<TextData>(f.get(text))->utf8 == "gate D1");
+    CHECK(entityAs<TextData>(f.get(other))->utf8 == "Window W1");
+    CHECK(entityAs<MTextData>(f.get(mtext))->utf8 == "Fire gate, steel gate");
+    CHECK(entityAs<InsertData>(f.get(insert))->attribs[0].value == "gate 7");
+    CHECK(entityAs<InsertData>(f.get(insert))->attribs[1].value == "wall");
+    const auto* cells = &entityAs<TableData>(f.get(table))->cells;
+    CHECK((*cells)[0].utf8 == "gate");
+    CHECK((*cells)[3].utf8 == "gate and gate");
+    CHECK(entityAs<DimensionData>(f.get(dim))->textOverride == "2 gates");
+    CHECK(entityAs<LeaderData>(f.get(leader))->utf8 == "see gate");
+    CHECK(f.host.logContains("match(es)"));
+
+    // One undo puts everything back.
+    CHECK(f.host.undo());
+    CHECK(entityAs<TextData>(f.get(text))->utf8 == "Door D1");
+    CHECK(entityAs<TableData>(f.get(table))->cells[3].utf8 == "Door and door");
+    CHECK(entityAs<DimensionData>(f.get(dim))->textOverride == "2 doors");
+}
+
+TEST_CASE("FIND honours Match case and an empty replacement only counts") {
+    Fixture f;
+    const EntityId a = f.add(findText("Door door DOOR"));
+    (void)f.host.run("FIND", {"door", "", "No"});
+    CHECK(entityAs<TextData>(f.get(a))->utf8 == "Door door DOOR");
+    CHECK(f.host.logContains("3 match(es) in 1 object(s)."));
+    (void)f.host.run("FIND", {"door", "X", "Yes"});
+    CHECK(entityAs<TextData>(f.get(a))->utf8 == "Door X DOOR");
+    (void)f.host.run("FIND", {"nothing", "X", "No"});
+    CHECK(f.host.logContains("No match for"));
+}
+
+TEST_CASE("FIND searches the layout sheets too") {
+    Fixture f;
+    const EntityId model = f.add(findText("Door in model"));
+    EntityId sheet;
+    {
+        Transaction tx = f.doc.begin("sheet");
+        const BlockId b = tx.addBlock(BlockDef{.name = "*LAYOUT-7"}).value();
+        Entity e;
+        e.data = findText("Door on sheet");
+        sheet = tx.add(std::move(e), b).value();
+        tx.commit();
+    }
+    (void)f.host.run("FIND", {"Door", "Gate", "No"});
+    CHECK(entityAs<TextData>(f.get(model))->utf8 == "Gate in model");
+    CHECK(entityAs<TextData>(f.get(sheet))->utf8 == "Gate on sheet");
+}

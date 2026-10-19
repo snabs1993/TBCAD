@@ -35,11 +35,15 @@ public:
             co_return;
         bool matchCase = cs.keyword == "Yes";
         bool replace = !with.text.empty();
+        // The whole drawing: model space and the objects drawn on every layout sheet.
+        std::vector<EntityId> ids = ctx.doc().modelSpace();
+        for (const auto& [bid, def] : ctx.doc().blocks())
+            if (def.name.rfind("*LAYOUT-", 0) == 0)
+                ids.insert(ids.end(), def.entities.begin(), def.entities.end());
         std::size_t objects = 0;
         int matches = 0;
         std::vector<EntityId> found;
         BBox2 foundBox;
-        std::vector<EntityId> ids = ctx.doc().modelSpace();
         for (EntityId id : ids) {
             const Entity* e = ctx.doc().find(id);
             if (!e)
