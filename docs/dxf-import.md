@@ -44,7 +44,7 @@ units, a `$INSUNITS` code), `splitLayers` (separator for `--split-layers`), `dim
 | Entity | Result |
 |---|---|
 | LINE, CIRCLE, ARC, POINT | `LineData`, `CircleData`, `ArcData`, `PointData`; an ARC whose angles differ by 360 is a circle |
-| LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon and polyface meshes are skipped with a warning |
+| LWPOLYLINE, POLYLINE (2D) | `PolylineData` with bulges, widths, closed flag; spline-fit polylines use the fitted vertices; 3D polylines are drawn flat (Z dropped, reported); polygon meshes become polylines along their rows and columns (the fitted grid of a smoothed surface) and polyface meshes become lines along their visible edges, each shared edge once (one info line `dxf.reader.flattened_3d`) |
 | ELLIPSE | `EllipseData` (a ratio above 1 swaps the axes) |
 | SPLINE | `SplineData`; fit-point-only splines are interpolated with `geom::interpolateSpline`, the fit points stay in `fit`; a knot vector that does not fit is replaced by a uniform one with a warning |
 | TEXT, ATTRIB | `TextData` (`position` = group 10, `alignPoint` = group 11 when the alignment is not left/baseline, else equal to `position`); `%%c %%d %%p` are replaced; ATTDEF becomes a text with attribute-definition info (`TextData::attdef`: tag upper-cased, prompt, default, flags in group 70: 1 invisible, 2 constant, 4 verify, 8 preset) and shows its tag; the ATTRIB records after an INSERT (group 66 = 1, up to SEQEND) become that insert's `attribs` when the block has a matching non-constant definition, so the position and style of the definition win; any other ATTRIB stays a plain text (invisible ones are dropped) |
@@ -75,8 +75,18 @@ definitions), the TBCAD entities produced and the records dropped.
   flip, polyline/hatch coordinates are mirrored, the rotation of text is `pi - r`, an INSERT gets
   `rotation = -r` and `scale.x = -sx`, an ELLIPSE keeps its centre and axis (they are in world
   coordinates) but its parameters run the other way. Text and MText can only be placed correctly,
-  not mirrored (one info line `dxf.reader.mirrored_text`). Any other extrusion is a tilted 3D plane:
-  the entity is skipped with `dxf.reader.extrusion_3d`.
+  not mirrored (one info line `dxf.reader.mirrored_text`). A normal within a few degrees of Z is
+  treated as flat, and one with |nz| >= 0.9 goes through the arbitrary axis algorithm. A plane
+  tilted further is drawn as seen from above: circles and arcs become ellipses (or a straight
+  polyline when the plane is vertical), an ELLIPSE gets its projected axes, and an LWPOLYLINE is
+  projected with its bulges cut into short segments, as is a 2D POLYLINE. HATCH, SOLID and TRACE
+  are built in the object plane and projected (arc and elliptical boundary edges become short
+  lines; spline edges keep their shape). One info line `dxf.reader.extrusion_3d` counts them.
+  TEXT, ATTDEF and ATTRIB keep their exact projected shape (rotation, height, width factor,
+  obliquing angle, upside down); MTEXT gets the projected height and width. Text seen edge-on is
+  skipped as a bad entity. An INSERT turned by a multiple of 90 degrees in its plane becomes a
+  block squashed by the tilt (rotation plus non-uniform scale); any other turn would need a shear
+  and is skipped with a warning of the same code, as are other entity types in such a plane.
 * **Units.** `$INSUNITS` is converted with the usual factors (inch 25.4, foot 304.8, metre 1000,
   ...). Unitless (0) or missing: the numbers are taken as millimetres and an info line says so.
   When a factor other than 1 is applied an info line names it. Every length is scaled: coordinates,

@@ -9,6 +9,7 @@ tbcad_add_tests(e2e
     tests/smoke_tests.cpp
     tests/plot_colour_tests.cpp
     tests/command_fuzz_tests.cpp
+    tests/table_churn_tests.cpp
     tests/hatch_follow_tests.cpp
     tests/hatch_pattern_follow_tests.cpp
     tests/undo_stress_tests.cpp

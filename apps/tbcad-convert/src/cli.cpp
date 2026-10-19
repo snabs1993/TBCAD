@@ -50,6 +50,8 @@ const char* kUsage =
     "  --encoding NAME         text encoding of the file (utf-8, cp874, cp1252, ...)\n"
     "  --split-layers SEP      turn layer names like A~b into a sub-layer b of A (SEP = ~)\n"
     "  --dimension-graphics    also keep the dimension drawings stored in the file\n"
+    "  --dim-compare           list in the --report how TBCAD's dimensions differ from the\n"
+    "                          drawings stored in the file\n"
     "\n"
     "export options (.tbcad -> DXF):\n"
     "  --version V             r2000 (default, AC1015), r12 (AC1009) or r2007 (AC1021, UTF-8)\n"
@@ -244,6 +246,8 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             }
         } else if (a == "--dimension-graphics") {
             options.dimensionGraphics = true;
+        } else if (a == "--dim-compare") {
+            options.dimensionCompare = true;
         } else if (a == "--no-dimension-graphics") {
             options.dimensionGraphics = false;  // the default; accepted for old scripts
         } else if (a == "--version") {

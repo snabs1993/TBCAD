@@ -543,6 +543,29 @@ TEST_CASE("a style imported under another spelling is still found by the layout'
     CHECK_FALSE(plot::resolveStyleTable(h, "_EP-101.ctb").ok());
 }
 
+TEST_CASE("a style table is read once and again when its file changes") {
+    Fixture f;
+    DocHost h(f.doc, f.reg);
+    h.file = (f.dir / "plan.tbcad").string();
+    plotstyle::PlotStyleTable t = *plotstyle::builtinTable("monochrome.ctb");
+    t.name = "Office";
+    t.entries[1].screen = 40;
+    const auto file = f.dir / "Office.tbstyle";
+    REQUIRE(plotstyle::saveFile(t, file).ok());
+    auto a = plot::resolveStyleTable(h, "Office.tbstyle");
+    REQUIRE(a.ok());
+    auto b = plot::resolveStyleTable(h, "Office.tbstyle");
+    REQUIRE(b.ok());
+    CHECK(a.value().get() == b.value().get());  // the same parsed table
+    t.entries[1].screen = 70;
+    REQUIRE(plotstyle::saveFile(t, file).ok());
+    std::filesystem::last_write_time(
+        file, std::filesystem::last_write_time(file) + std::chrono::seconds(2));
+    auto c = plot::resolveStyleTable(h, "Office.tbstyle");
+    REQUIRE(c.ok());
+    CHECK(c.value()->entries[1].screen == 70);
+}
+
 TEST_CASE("PLOT asks before replacing a file that already exists") {
     Fixture f;
     const auto out = f.path("again.pdf");

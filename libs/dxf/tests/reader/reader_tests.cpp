@@ -74,7 +74,9 @@ TEST_CASE("extrusion -Z: circle, polyline, text, insert, ellipse and hatch") {
     CHECK(near(inserts[0]->rotation, -90 * kDeg));
 
     auto ellipses = modelEntities<EllipseData>(d);
-    REQUIRE(ellipses.size() == 1);
+    REQUIRE(ellipses.size() == 2);  // the second is the arc in a tilted plane
+    if (std::abs(ellipses[0]->majorAxis.x) < 2)
+        std::swap(ellipses[0], ellipses[1]);
     // DXF parameters 0..90 degrees run clockwise seen from +Z: world 270..360 degrees.
     CHECK(near(ellipses[0]->startParam, 1.5 * kPi));
     CHECK(near(ellipses[0]->endParam, kTwoPi));
@@ -87,9 +89,219 @@ TEST_CASE("extrusion -Z: circle, polyline, text, insert, ellipse and hatch") {
     CHECK(near(edge->v[1].p, Vec2{-4, 10}));
 }
 
-TEST_CASE("extrusion: a tilted plane is skipped with a warning") {
+static Vec2 pointAt(const EllipseData& e, double t) {
+    const Vec2 minor{-e.majorAxis.y * e.ratio, e.majorAxis.x * e.ratio};
+    return e.center + e.majorAxis * std::cos(t) + minor * std::sin(t);
+}
+
+TEST_CASE("extrusion: an arc in a steeply tilted plane is drawn as the ellipse seen from above") {
+    // Normal (0.5, 0, 0.866): object X is world +Y, object Y is (-0.866, 0, 0.5).
     Loaded l = loadCorpus("extrusion_neg_z.dxf");
+    CHECK(l.report.countCode(code::kExtrusion3d) == 1);  // one note, not a skip
+    const EllipseData* arc = nullptr;
+    for (const EllipseData* e : modelEntities<EllipseData>(l.doc()))
+        if (std::abs(e->ratio - 0.8660254) < 1e-6)
+            arc = e;
+    REQUIRE(arc);
+    CHECK(near(arc->center, Vec2{0, 0}));
+    CHECK(near(pointAt(*arc, arc->startParam), Vec2{0, 1}));
+    CHECK(near(pointAt(*arc, arc->endParam), Vec2{-0.8660254, 0}, 1e-6));
+}
+
+TEST_CASE("extrusion: steeply tilted circles, ellipses and polylines are projected, not skipped") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A circle in a vertical plane (normal +X) is seen edge-on: a straight piece along Y.
+    p.g(0, "CIRCLE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 5.0);
+    p.g(210, 1.0).g(220, 0.0).g(230, 0.0);
+    // A polyline with an arc in a plane tilted 60 degrees about the X axis.
+    p.g(0, "LWPOLYLINE").g(8, "0").g(90, 2).g(70, 0).g(10, 0.0).g(20, 0.0).g(42, 1.0);
+    p.g(10, 10.0).g(20, 0.0).g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    // An ellipse in the same plane: major axis along world X stays, the minor one shrinks.
+    p.g(0, "ELLIPSE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(11, 6.0).g(21, 0.0).g(31, 0.0).g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    p.g(40, 0.5).g(41, 0.0).g(42, kTwoPi);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
     CHECK(l.report.countCode(code::kExtrusion3d) == 1);
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 2);
+    const PolylineData* edge = polys[0]->v.size() == 65 ? polys[0] : polys[1];
+    const PolylineData* bent = edge == polys[0] ? polys[1] : polys[0];
+    REQUIRE(edge->v.size() == 65);
+    for (const PolyVertex& v : edge->v)
+        CHECK(std::abs(v.p.x) < 1e-9);  // object X is world +Y, object Y is world Z
+    // Object X is world +X; object Y is (0, 0.5, 0.866), so y is halved when seen from above.
+    CHECK(near(bent->v.front().p, Vec2{0, 0}));
+    CHECK(near(bent->v.back().p, Vec2{10, 0}));
+    CHECK(bent->v.size() > 10);  // the half circle became short segments
+    double lowest = 0;
+    for (const PolyVertex& v : bent->v)
+        lowest = std::min(lowest, v.p.y);
+    CHECK(lowest == doctest::Approx(-2.5).epsilon(0.01));  // a half circle of radius 5, halved
+    const auto ellipses = modelEntities<EllipseData>(l.doc());
+    REQUIRE(ellipses.size() == 1);
+    CHECK(near(ellipses[0]->majorAxis, Vec2{6, 0}));
+    CHECK(ellipses[0]->ratio == doctest::Approx(0.25));
+}
+
+TEST_CASE("extrusion: the tilted plane corpus counts what was projected and what was dropped") {
+    Loaded l = loadCorpus("tilted_planes.dxf");
+    int infos = 0;
+    for (const Diagnostic& d : l.report.diagnostics()) {
+        if (d.code != code::kExtrusion3d)
+            continue;
+        CHECK(d.severity == Severity::Info);
+        ++infos;
+        // 2 circles, arc, ellipse, 2 polylines, hatch, solid and the text.
+        CHECK(d.message.rfind("9 ", 0) == 0);
+    }
+    CHECK(infos == 1);
+    CHECK(l.report.countCode(code::kBadEntity) == 1);  // the one-vertex polyline
+}
+
+TEST_CASE("extrusion: text in a tilted plane keeps its exact shape seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "TEXT").g(8, "0").g(10, 5.0).g(20, 5.0).g(30, 0.0).g(40, 2.0).g(1, "flat");
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.0).g(50, 90.0);
+    p.g(1, "up").g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "MTEXT").g(8, "0").g(10, 1.0).g(20, 2.0).g(30, 3.0).g(40, 2.0).g(41, 10.0);
+    p.g(1, "m").g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    // Edge-on: the baseline runs straight down the view direction.
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.0).g(1, "edge");
+    p.g(210, 0.0).g(220, -1.0).g(230, 0.0).g(50, 90.0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto texts = modelEntities<TextData>(l.doc());
+    REQUIRE(texts.size() == 2);
+    const TextData* flat = texts[0]->utf8 == "flat" ? texts[0] : texts[1];
+    const TextData* up = flat == texts[0] ? texts[1] : texts[0];
+    CHECK(near(flat->position, Vec2{5, 4}, 1e-9));
+    CHECK(near(flat->rotation, 0.0));
+    CHECK(flat->height == doctest::Approx(1.6));        // its up direction is foreshortened
+    CHECK(flat->widthFactor == doctest::Approx(1.25));  // the baseline is not
+    CHECK(near(flat->oblique, 0.0));
+    CHECK(near(up->rotation, kPi / 2));
+    CHECK(up->height == doctest::Approx(2));
+    CHECK(up->widthFactor == doctest::Approx(0.8));
+    const auto mtexts = modelEntities<MTextData>(l.doc());
+    REQUIRE(mtexts.size() == 1);
+    CHECK(near(mtexts[0]->position, Vec2{1, 2}));  // MTEXT points are in world coordinates
+    CHECK(mtexts[0]->height == doctest::Approx(1.6));
+    CHECK(mtexts[0]->width == doctest::Approx(10));
+    CHECK(l.report.countCode(code::kBadEntity) == 1);  // the edge-on text
+}
+
+TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are projected") {
+    // Normal (0, -0.866, 0.5): object X is world +X, object Y is (0, 0.5, 0.866).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "SOLID").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 10.0).g(21, 0.0);
+    p.g(12, 0.0).g(22, 10.0).g(13, 10.0).g(23, 10.0);
+    p.g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    // A hatch bounded by a full circle of radius 5 (one arc edge).
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(210, 0.0).g(220, -0.8660254);
+    p.g(230, 0.5).g(2, "SOLID").g(70, 1).g(71, 0).g(91, 1).g(92, 1).g(93, 1);
+    p.g(72, 2).g(10, 0.0).g(20, 0.0).g(40, 5.0).g(50, 0.0).g(51, 360.0).g(73, 1);
+    p.g(97, 0).g(75, 0).g(76, 1).g(98, 0);
+    // An old style 2D polyline with a half circle bulge, at elevation 4.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 4.0).g(70, 0);
+    p.g(210, 0.0).g(220, -0.8660254).g(230, 0.5);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(42, 1.0);
+    p.g(0, "VERTEX").g(8, "0").g(10, 10.0).g(20, 0.0).g(0, "SEQEND").g(8, "0");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    CHECK(l.report.countCode(code::kExtrusion3d) == 1);  // the one info line
+    const auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 2);
+    const HatchData* solid = hatches[0]->loops[0].edges.size() == 1 ? hatches[0] : hatches[1];
+    const HatchData* round = solid == hatches[0] ? hatches[1] : hatches[0];
+    const auto* quad = std::get_if<HatchPolylineEdge>(&solid->loops[0].edges[0]);
+    REQUIRE(quad);
+    REQUIRE(quad->v.size() == 4);
+    CHECK(near(quad->v[2].p, Vec2{10, 5}, 1e-6));
+    CHECK(near(quad->v[3].p, Vec2{0, 5}, 1e-6));
+    double top = -1e9, left = 1e9;
+    for (const HatchEdge& e : round->loops[0].edges) {
+        const auto* line = std::get_if<HatchLineEdge>(&e);
+        REQUIRE(line);
+        top = std::max(top, line->a.y);
+        left = std::min(left, line->a.x);
+    }
+    CHECK(top == doctest::Approx(2.5));
+    CHECK(left == doctest::Approx(-5));
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 1);
+    // Elevation 4 along the normal moves everything by (0, -3.464).
+    CHECK(near(polys[0]->v.front().p, Vec2{0, -3.4641016}, 1e-6));
+    CHECK(near(polys[0]->v.back().p, Vec2{10, -3.4641016}, 1e-6));
+    CHECK(polys[0]->v.size() > 10);
+}
+
+TEST_CASE("extrusion: inserts in a tilted plane become squashed blocks seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "B").g(70, 0).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(10, 0.0).g(20, 0.0).g(11, 1.0).g(21, 0.0).g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 2.0).g(20, 3.0).g(30, 0.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(50, 90.0);
+    p.g(41, 2.0).g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "INSERT").g(8, "0").g(2, "B").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(50, 45.0);
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto inserts = modelEntities<InsertData>(l.doc());
+    REQUIRE(inserts.size() == 2);
+    CHECK(near(inserts[0]->position, Vec2{2, 2.4}, 1e-9));
+    CHECK(near(inserts[0]->rotation, 0.0));
+    CHECK(near(inserts[0]->scale, Vec2{1, 0.8}, 1e-9));
+    // Turned 90 degrees: the block's X runs along object Y, which is foreshortened.
+    CHECK(near(inserts[1]->rotation, kPi / 2));
+    CHECK(near(inserts[1]->scale, Vec2{1.6, 1}, 1e-9));
+    CHECK(l.report.countCode(code::kExtrusion3d) == 2);  // the info line and the 45 degree one
+}
+
+TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen from above") {
+    Pairs p;
+    p.section("ENTITIES");
+    // A polyface: a square of 4 vertices split into two triangles. The diagonal they share is
+    // hidden (negative index) in one face and visible in the other: drawn once.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 64);
+    p.g(71, 4).g(72, 2);
+    for (const auto& [x, y] : {std::pair{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}})
+        p.g(0, "VERTEX").g(8, "0").g(10, x).g(20, y).g(30, 5.0).g(70, 192);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 128);
+    p.g(71, 1).g(72, 2).g(73, 3);
+    p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 128);
+    p.g(71, -3).g(72, 4).g(73, -1);  // edges 3-4 hidden, 4-1 visible, 1-3 hidden
+    p.g(0, "SEQEND").g(8, "0");
+    // A 2 x 3 polygon mesh: 2 rows of 3 points and 3 columns of 2.
+    p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0).g(70, 16);
+    p.g(71, 2).g(72, 3);
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 3; ++j)
+            p.g(0, "VERTEX").g(8, "0").g(10, 100.0 + j).g(20, static_cast<double>(i)).g(30, 1.0)
+                .g(70, 64);
+    p.g(0, "SEQEND").g(8, "0");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto lines = modelEntities<LineData>(l.doc());
+    CHECK(lines.size() == 4);  // 1-2, 2-3, 3-1 (the diagonal) and 4-1
+    bool diagonal = false, hidden = false;
+    for (const LineData* ln : lines) {
+        const Vec2 lo = ln->a.x + ln->a.y < ln->b.x + ln->b.y ? ln->a : ln->b;
+        const Vec2 hi = lo == ln->a ? ln->b : ln->a;
+        diagonal = diagonal || (near(lo, Vec2{0, 0}) && near(hi, Vec2{10, 10}));
+        hidden = hidden || (near(lo, Vec2{0, 10}) && near(hi, Vec2{10, 10}));
+    }
+    CHECK(diagonal);
+    CHECK_FALSE(hidden);
+    const auto polys = modelEntities<PolylineData>(l.doc());
+    REQUIRE(polys.size() == 5);
+    CHECK(polys[0]->v.size() == 3);
+    CHECK(near(polys[1]->v.back().p, Vec2{102, 1}));
+    CHECK(polys[2]->v.size() == 2);
+    CHECK(l.report.countCode(code::kBadEntity) == 0);
 }
 
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
@@ -299,6 +511,25 @@ TEST_CASE("text styles: SHX fonts map to the TBCAD Stroke font and are reported"
     CHECK(c->widthFactor == doctest::Approx(1.0));
     CHECK(b->widthFactor == doctest::Approx(1.0 / 0.92));  // the stand-in is widened to SHX size
     CHECK(l.report.countCode(code::kShxFont) == 2);
+}
+
+TEST_CASE("text styles: a TrueType family in ACAD extended data is kept") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 2);
+    p.g(0, "STYLE").g(2, "Ar").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "");
+    p.g(1001, "ACAD").g(1000, "Arial").g(1071, 34).g(0, "STYLE");
+    p.g(2, "Bd").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "arialbd.ttf");
+    p.g(1001, "ACAD").g(1000, "Arial").g(1071, 33554466);
+    p.g(0, "ENDTAB").end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const TextStyle* a = l.doc().textStyleByName("Ar");
+    const TextStyle* b = l.doc().textStyleByName("Bd");
+    REQUIRE(a);
+    REQUIRE(b);
+    CHECK(a->fontFamily == "Arial");
+    CHECK(a->fontFile.empty());
+    CHECK(b->fontFamily == "Arial");
+    CHECK(b->fontFile == "arialbd.ttf");  // the file decides; the family finds a stand-in
 }
 
 TEST_CASE("text styles: a shape font named without its extension is the stroke font too") {
@@ -536,6 +767,39 @@ TEST_CASE("inserts: a block defined after its first use is resolved") {
     CHECK(near(b->base, Vec2{2, 3}));
     CHECK(b->entities.size() == 1);
     CHECK(l.report.countCode(code::kMissingBlock) == 0);
+}
+
+// The diagnostics that compare TBCAD's dimensions with the drawings stored in the file: the
+// linear ones of this file are drawn the same; the summary goes into the report JSON.
+TEST_CASE("dimension comparison lists each dimension against its stored block") {
+    ImportOptions compare;
+    compare.dimensionCompare = true;
+    Loaded l = loadCorpus("r2000_dimensions.dxf", compare);
+    const auto& all = l.result.summary.dimCompare;
+    REQUIRE(all.size() == 6);
+    int linear = 0;
+    for (const DimComparison& c : all) {
+        CHECK(c.handle != 0);
+        if (c.kind != "linear")
+            continue;
+        ++linear;
+        CHECK(c.textMatch);
+        CHECK(c.textOffset < 0.5);
+        CHECK(c.heightRatio == doctest::Approx(1).epsilon(0.05));
+        CHECK(c.strayStored < 0.05);
+        CHECK(c.strayGenerated < 0.05);
+        CHECK(c.arrowsUnmatched == 0);
+    }
+    CHECK(linear == 2);
+    // The diameter sign is the same whichever way the file spells it.
+    for (const DimComparison& c : all)
+        if (c.kind == "diameter")
+            CHECK(c.textMatch);
+    const std::string json = l.result.summary.toJson(l.report);
+    CHECK(json.find("\"dimCompare\":{\"total\":{\"count\":6") != std::string::npos);
+    // Without the option nothing is compared.
+    Loaded plain = loadCorpus("r2000_dimensions.dxf");
+    CHECK(plain.result.summary.dimCompare.empty());
 }
 
 TEST_CASE("dimensions: definition points and the drawn graphics") {

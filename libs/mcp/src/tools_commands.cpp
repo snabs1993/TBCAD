@@ -1,5 +1,10 @@
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <set>
 
+#include "tbcad/platform/paths.h"
 #include "tools_common.h"
 
 namespace tbcad::mcp::detail {
@@ -242,7 +247,18 @@ ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& comman
     }
     inputs.emplace_back("Export");
     inputs.emplace_back(path);
-    return runWith(ctx, cmdName, inputs, false);
+    // The caller named the file: replace it rather than stop at "already exists. Overwrite".
+    std::error_code ec;
+    if (std::filesystem::exists(platform::pathFromUtf8(path), ec))
+        inputs.emplace_back("Yes");
+    const auto start = std::chrono::steady_clock::now();
+    ToolResult r = runWith(ctx, cmdName, inputs, false);
+    if (std::getenv("TBCAD_PLOT_TIMING"))
+        std::fprintf(stderr, "plot timing: %s tool total %.1f ms\n", cmdName.c_str(),
+                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                               start)
+                         .count());
+    return r;
 }
 
 ToolResult exportPdf(ToolContext& ctx, const Json& a) {

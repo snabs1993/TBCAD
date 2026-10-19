@@ -1447,6 +1447,21 @@ void Importer::readStyle(const Record& r) {
                          (big.empty() ? std::string() : " (big font \"" + big + "\" is not read)"),
                      r.line);
     }
+    // A TrueType style often names no file, only the family, in "ACAD" extended data: 1000 Arial,
+    // 1071 flags. The family also finds the font when the named file is not on this machine.
+    if (ts.shxFile.empty()) {
+        bool inAcad = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                inAcad = g.str() == "ACAD";
+            } else if (inAcad && g.code == 1000) {
+                std::string family = dec(g.str());
+                if (!family.empty() && ts.fontFamily.empty())
+                    ts.fontFamily = family;
+                break;
+            }
+        }
+    }
     // AcadAnnotative extended data: "AnnotativeData", { 1070 1 (on) 1070 0 }.
     {
         bool inAnno = false, seenData = false;
@@ -2062,7 +2077,8 @@ void Importer::processBlocks(RecordReader& rr) {
             }
             // The drawn dimension (*D<n>) is regenerated from the definition points; its parts
             // are kept only when the caller asks for the graphics.
-            if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
+            if (!opts_.dimensionGraphics && !opts_.dimensionCompare && f.size() > 2 && f[0] == '*' &&
+                f[1] == 'd')
                 skipBlock_ = true;
             // Table graphics of ours (*TB<n>) are regenerated from the table kept in extended
             // data. An AutoCAD table's block (*T<n>) is kept, for its TABLE to insert; those left
@@ -2487,6 +2503,13 @@ void Importer::finish() {
         report_.warn(code::kPaperSpace,
                      std::to_string(paperSpace_) + " paper space entities skipped");
     }
+    if (projected_ > 0) {
+        report_.info(code::kExtrusion3d,
+                     std::to_string(projected_) +
+                         " circles, arcs, ellipses or polylines lie in tilted 3D planes; they are "
+                         "drawn as seen from above",
+                     firstProjectedLine_);
+    }
     if (acadTables_ > 0) {
         report_.info(code::kTableCells,
                      std::to_string(acadTables_) +
@@ -2497,6 +2520,12 @@ void Importer::finish() {
         report_.info(code::kFlattened,
                      std::to_string(flattened_) + " entities had a non-zero Z; Z was dropped",
                      firstFlattenedLine_);
+    }
+    if (meshes_ > 0) {
+        report_.info(code::kFlattened,
+                     std::to_string(meshes_) +
+                         " polygon or polyface mesh(es) drawn as their edges seen from above",
+                     firstMeshLine_);
     }
     if (mirroredText_ > 0) {
         report_.info(code::kMirroredText,

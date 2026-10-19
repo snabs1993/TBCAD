@@ -1,12 +1,13 @@
 {
-  "description": "one line beyond the working area (kept), one beyond the hard cap (dropped)",
+  "description": "one line beyond the working area (kept), one beyond the hard cap (kept unshown, written back to DXF)",
   "dxf": {
     "LINE": 3
   },
   "exit": 1,
   "ezdxf": false,
   "kinds": {
-    "Line": 2
+    "Line": 2,
+    "Proxy": 1
   },
   "layers": [
     "0"

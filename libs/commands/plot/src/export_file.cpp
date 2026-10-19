@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -10,15 +11,39 @@
 
 namespace tbcad::plot {
 
+namespace {
+// TBCAD_PLOT_TIMING=1: each plot phase's time on stderr (for finding slow exports).
+struct PhaseTimer {
+    const char* name;
+    bool on = std::getenv("TBCAD_PLOT_TIMING") != nullptr;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    ~PhaseTimer() {
+        if (on)
+            std::fprintf(stderr, "plot timing: %s %.1f ms\n", name,
+                         std::chrono::duration<double, std::milli>(
+                             std::chrono::steady_clock::now() - start)
+                             .count());
+    }
+};
+}  // namespace
+
+void timePhase(const char* name, const std::function<void()>& fn) {
+    PhaseTimer t{name};
+    fn();
+}
+
 Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHost& host,
                                             exportlib::PlotSettings settings) {
     if (settings.area == exportlib::PlotArea::Display)
         settings.window = viewWindow(host);
     const std::string layoutName = plotLayout(host);
-    auto sheet = layoutName.empty() ? exportlib::buildSheet(doc, settings)
-                                    : layout::buildLayoutSheet(doc, layoutName, settings);
+    Result<exportlib::PlotSheet> sheet = Error{ErrorCode::InvalidArgument, "not built"};
+    timePhase("build sheet", [&] {
+        sheet = layoutName.empty() ? exportlib::buildSheet(doc, settings)
+                                   : layout::buildLayoutSheet(doc, layoutName, settings);
+    });
     if (sheet)
-        addPlotStamp(sheet.value(), host, settings);
+        timePhase("plot stamp", [&] { addPlotStamp(sheet.value(), host, settings); });
     return sheet;
 }
 
@@ -38,6 +63,7 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     if (auto parent = platform::pathFromUtf8(file).parent_path(); !parent.empty())
         platform::ensureDirectory(parent);
     const double dpi = plotDpi(host);
+    PhaseTimer writeTimer{"write file"};
     auto written = format == Format::Pdf   ? exportlib::writePdf(sheet.value(), file)
                    : format == Format::Svg ? exportlib::writeSvg(sheet.value(), file)
                    : format == Format::Png

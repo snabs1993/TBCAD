@@ -1,0 +1,217 @@
+// DXF import diagnostics: how a dimension TBCAD draws differs from the anonymous *D block the
+// program that wrote the file stored for it (ImportOptions::dimensionCompare). The block is what
+// AutoCAD showed, so every difference is something the generator, or the reading of the
+// dimension's groups, does not do the same way.
+#include <algorithm>
+#include <cmath>
+
+#include "importer.h"
+#include "tbcad/dim/dim.h"
+#include "tbcad/dxf/encoding.h"
+#include "tbcad/geom/geom.h"
+#include "tbcad/hatch/hatch.h"
+
+namespace tbcad::dxf::detail {
+
+namespace {
+
+std::optional<std::uint64_t> handleOf(const Record& r) {
+    if (const Group* g = r.find(5)) {
+        if (const auto* h = std::get_if<Handle>(&g->value)) {
+            if (h->valid)
+                return h->value;
+        }
+    }
+    return std::nullopt;
+}
+
+struct Segment {
+    Vec2 a{}, b{};
+};
+
+double pointSegment(Vec2 p, const Segment& s) {
+    const Vec2 d = s.b - s.a;
+    const double len2 = dot(d, d);
+    const double t = len2 > 0 ? std::clamp(dot(p - s.a, d) / len2, 0.0, 1.0) : 0.0;
+    return distance(p, s.a + d * t);
+}
+
+void addPath(const std::vector<Vec2>& pts, bool closed, std::vector<Segment>& out) {
+    for (std::size_t i = 0; i + 1 < pts.size(); ++i)
+        out.push_back({pts[i], pts[i + 1]});
+    if (closed && pts.size() > 2)
+        out.push_back({pts.back(), pts.front()});
+}
+
+// Share of the length of `from` that lies further than `tol` from every segment of `to`.
+double strayShare(const std::vector<Segment>& from, const std::vector<Segment>& to, double tol) {
+    double total = 0, stray = 0;
+    for (const Segment& s : from) {
+        const double len = distance(s.a, s.b);
+        if (!(len > 0))
+            continue;
+        const int n = std::clamp(static_cast<int>(len / tol), 2, 50);
+        for (int i = 0; i <= n; ++i) {
+            const Vec2 p = s.a + (s.b - s.a) * (static_cast<double>(i) / n);
+            double best = 1e300;
+            for (const Segment& t : to) {
+                best = std::min(best, pointSegment(p, t));
+                if (best <= tol)
+                    break;
+            }
+            total += len / (n + 1);
+            if (best > tol)
+                stray += len / (n + 1);
+        }
+    }
+    return total > 0 ? stray / total : 0;
+}
+
+Vec2 centroid(const std::vector<Vec2>& ring) {
+    Vec2 c{};
+    for (const Vec2& p : ring)
+        c = c + p;
+    return ring.empty() ? c : c * (1.0 / static_cast<double>(ring.size()));
+}
+
+const char* kindName(DimKind k) {
+    switch (k) {
+        case DimKind::Linear:
+            return "linear";
+        case DimKind::Aligned:
+            return "aligned";
+        case DimKind::Angular2Line:
+            return "angular";
+        case DimKind::Angular3Point:
+            return "angular3p";
+        case DimKind::Radius:
+            return "radius";
+        case DimKind::Diameter:
+            return "diameter";
+        case DimKind::Ordinate:
+            return "ordinate";
+        case DimKind::ArcLength:
+            return "arclength";
+        case DimKind::Jogged:
+            return "jogged";
+    }
+    return "other";
+}
+
+void replaceAll(std::string& s, std::string_view from, std::string_view to) {
+    for (std::size_t at = s.find(from); at != std::string::npos; at = s.find(from, at + to.size()))
+        s.replace(at, from.size(), to);
+}
+
+// The text without formatting codes or spaces at the ends, for comparing what is written. The
+// diameter sign has several spellings that all show the same.
+std::string plain(const std::string& s) {
+    std::string t = stripMText(s);
+    for (std::string_view d : {"%%c", "%%C", "\xE2\x8C\x80", "\xE2\x88\x85"})
+        replaceAll(t, d, "\xC3\x98");
+    while (!t.empty() && (t.back() == ' ' || t.back() == '\n'))
+        t.pop_back();
+    std::size_t i = 0;
+    while (i < t.size() && (t[i] == ' ' || t[i] == '\n'))
+        ++i;
+    return t.substr(i);
+}
+
+}  // namespace
+
+void Importer::compareDimension(const Record& r, const Entity& dim) {
+    const auto* d = entityAs<DimensionData>(dim);
+    const BlockDef* def = d ? dimensionBlock(r) : nullptr;
+    if (!def)
+        return;
+    std::vector<Entity> shapes, texts;
+    dimensionBlockEntities(*def, shapes, texts);
+
+    const double factor = annotationFactor(doc_->header(), dim.common, 0);
+    const dim::Layout L = dim::layoutDimension(*doc_, *d, 0.01, factor);
+    const DimStyle& style = dim::styleOf(*doc_, d->style);
+
+    DimComparison c;
+    c.handle = handleOf(r).value_or(0);
+    c.line = r.line;
+    c.kind = kindName(d->kind);
+
+    // Text: the stored one is the first text of the block (AutoCAD writes one MTEXT).
+    double storedHeight = 0;
+    std::optional<Vec2> storedCenter;
+    if (!texts.empty()) {
+        const Entity& t = texts.front();
+        if (const auto* m = entityAs<MTextData>(t)) {
+            c.storedText = plain(m->utf8);
+            storedHeight = m->height;
+        } else if (const auto* x = entityAs<TextData>(t)) {
+            c.storedText = plain(x->utf8);
+            storedHeight = x->height;
+        }
+        const BBox2 box = geom::bounds(t);
+        if (!box.empty())
+            storedCenter = (box.min + box.max) * 0.5;
+    }
+    c.generatedText = plain(L.text.utf8);
+    c.textMatch = c.storedText == c.generatedText;
+    const double unit = storedHeight > 0       ? storedHeight
+                        : L.text.height > 0    ? L.text.height
+                                               : std::max(style.arrowSize * style.overallScale, 1e-6);
+    if (storedHeight > 0 && L.text.height > 0)
+        c.heightRatio = L.text.height / storedHeight;
+    if (storedCenter && L.text.valid())
+        c.textOffset = distance(*storedCenter, L.text.center) / unit;
+
+    // Lines: everything in the block but text, points and filled arrowheads, against the
+    // generator's lines, arcs and arrowhead outlines.
+    std::vector<Segment> stored, generated, generatedLines;
+    std::vector<Vec2> storedArrows;
+    std::vector<geom::CurveRef> curves;
+    for (const Entity& s : shapes) {
+        if (kind(s) == EntityKind::Point)
+            continue;
+        if (const auto* h = entityAs<HatchData>(s)) {
+            for (const HatchLoop& loop : h->loops) {
+                HatchData single;
+                single.loops = {loop};
+                for (const std::vector<Vec2>& ring : hatch::loopRings(single, 0.01 * unit))
+                    if (!ring.empty())
+                        storedArrows.push_back(centroid(ring));
+            }
+            continue;
+        }
+        curves.clear();
+        if (!geom::curvesOf(s, curves))
+            continue;
+        for (const geom::CurveRef& cv : curves) {
+            std::vector<Vec2> pts;
+            geom::flatten(cv, 0.01 * unit, pts);
+            addPath(pts, false, stored);
+        }
+    }
+    for (const dim::Layout::Line& l : L.lines)
+        addPath(l.pts, false, generatedLines);
+    for (const dim::Layout::Arc& a : L.arcs)
+        addPath(dim::arcPoints(a, 0.01 * unit), false, generatedLines);
+    generated = generatedLines;
+    for (const dim::Layout::Arrow& a : L.arrows)
+        addPath(a.ring, true, generated);
+    const double tol = 0.1 * unit;
+    c.strayStored = strayShare(stored, generated, tol);
+    c.strayGenerated = strayShare(generatedLines, stored, tol);
+
+    // Arrowheads: each stored one should have one of the generator's within an arrow size.
+    c.arrowsStored = static_cast<int>(storedArrows.size());
+    c.arrowsGenerated = static_cast<int>(L.arrows.size());
+    const double reach = std::max(style.arrowSize * style.overallScale * factor, tol);
+    for (const Vec2& p : storedArrows) {
+        bool found = false;
+        for (const dim::Layout::Arrow& a : L.arrows)
+            found = found || (!a.ring.empty() && distance(p, centroid(a.ring)) <= reach);
+        if (!found)
+            ++c.arrowsUnmatched;
+    }
+    sum_.dimCompare.push_back(std::move(c));
+}
+
+}  // namespace tbcad::dxf::detail

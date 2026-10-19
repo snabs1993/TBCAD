@@ -1,0 +1,32 @@
+{
+  "description": "entities and text in tilted 3D planes are projected; a one-vertex polyline is dropped",
+  "dxf": {
+    "ARC": 1,
+    "CIRCLE": 2,
+    "ELLIPSE": 1,
+    "HATCH": 1,
+    "LWPOLYLINE": 2,
+    "POLYLINE": 1,
+    "SOLID": 1,
+    "TEXT": 1
+  },
+  "encoding": "ANSI_1252",
+  "exit": 1,
+  "kinds": {
+    "Ellipse": 3,
+    "Hatch": 2,
+    "Polyline": 3,
+    "Text": 1
+  },
+  "layers": [
+    "0",
+    "Defpoints"
+  ],
+  "texts": [
+    "tilted"
+  ],
+  "version": "AC1015",
+  "warnings": [
+    "dxf.reader.bad_entity"
+  ]
+}

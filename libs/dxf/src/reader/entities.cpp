@@ -1,6 +1,8 @@
 // DXF import: one record -> TBCAD entities (everything except HATCH and DIMENSION).
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <set>
 
 #include "importer.h"
 #include "keep.h"
@@ -371,6 +373,294 @@ bool Importer::frameOf(const Record& r, Frame& f, std::string_view type) {
     return false;
 }
 
+std::optional<Tilt> Importer::tiltOf(const Record& r) const {
+    double nx = r.num(210, 0), ny = r.num(220, 0), nz = r.num(230, 1);
+    const double len = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (!(len > 0) || !std::isfinite(len))
+        return std::nullopt;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    // frameOf reads anything closer to the XY plane than this as flat.
+    if ((std::abs(nx) < 5e-2 && std::abs(ny) < 5e-2) || std::abs(nz) >= 0.9)
+        return std::nullopt;
+    Tilt t;
+    t.n[0] = nx;
+    t.n[1] = ny;
+    t.n[2] = nz;
+    // Arbitrary axis algorithm: X = Wz x N (N is far from the Z axis here), Y = N x X.
+    const double al = std::hypot(nx, ny);
+    t.ax[0] = -ny / al;
+    t.ax[1] = nx / al;
+    t.ax[2] = 0;
+    t.ay[0] = ny * t.ax[2] - nz * t.ax[1];
+    t.ay[1] = nz * t.ax[0] - nx * t.ax[2];
+    t.ay[2] = nx * t.ax[1] - ny * t.ax[0];
+    return t;
+}
+
+// The ellipse c + u cos t + v sin t (world coordinates, t from s to e) seen from above. Projected,
+// u and v are conjugate half-diameters of an ellipse; its axes are found where the radius is
+// longest. A plane seen edge-on leaves a straight piece, drawn as a polyline.
+void Importer::addProjectedEllipse(const double c[3], const double u3[3], const double v3[3],
+                                   double s, double e, bool full, std::vector<Entity>& out) {
+    const Vec2 c2{c[0], c[1]}, u{u3[0], u3[1]}, v{v3[0], v3[1]};
+    if (full) {
+        s = 0;
+        e = kTwoPi;
+    }
+    const double t0 = 0.5 * std::atan2(2 * dot(u, v), dot(u, u) - dot(v, v));
+    const Vec2 a = u * std::cos(t0) + v * std::sin(t0);
+    const Vec2 b = v * std::cos(t0) - u * std::sin(t0);
+    const double la = length(a), lb = length(b);
+    if (!(la > 1e-9) || !std::isfinite(la))
+        return;
+    if (lb < la * 1e-6) {
+        PolylineData pl;
+        const int n = 64;
+        for (int i = 0; i <= n; ++i) {
+            const double t = s + (e - s) * i / n;
+            pl.v.push_back({c2 + u * std::cos(t) + v * std::sin(t), 0, 0, 0});
+        }
+        out.push_back(makeEntity(std::move(pl)));
+        return;
+    }
+    EllipseData d;
+    d.center = c2;
+    d.majorAxis = a;
+    d.ratio = lb / la;
+    // b on the left of a: the parameter runs the same way; on the right it runs backwards.
+    double ns = s - t0, ne = e - t0;
+    if (a.x * b.y - a.y * b.x < 0) {
+        ns = -(e - t0);
+        ne = -(s - t0);
+    }
+    const double sweep = ne - ns;
+    if (full || sweep >= kTwoPi - 1e-9) {
+        d.startParam = 0;
+        d.endParam = kTwoPi;
+    } else {
+        d.startParam = normalizeAngle(ns);
+        d.endParam = d.startParam + sweep;
+    }
+    out.push_back(makeEntity(std::move(d)));
+}
+
+namespace {
+
+// Points along an arc of a polyline segment from `p0` with `bulge`, both ends excluded.
+void bulgePoints(Vec2 p0, Vec2 p1, double bulge, std::vector<Vec2>& out) {
+    const Vec2 ch = p1 - p0;
+    if (std::abs(bulge) < 1e-9 || !std::isfinite(bulge) || !(length(ch) > 0))
+        return;
+    const Vec2 centre = p0 + ch * 0.5 + perp(ch) * ((1 - bulge * bulge) / (4 * bulge));
+    const double rad = length(p0 - centre);
+    const double a0 = std::atan2(p0.y - centre.y, p0.x - centre.x);
+    const double sweep = 4 * std::atan(bulge);
+    const int k = std::clamp(static_cast<int>(std::ceil(std::abs(sweep) / (kPi / 18))), 2, 72);
+    for (int j = 1; j < k; ++j) {
+        const double a = a0 + sweep * j / k;
+        out.push_back(centre + Vec2{std::cos(a), std::sin(a)} * rad);
+    }
+}
+
+// Points along a counter-clockwise arc of an ellipse (`minor` is the second half axis) from
+// parameter `from` to `to`, both ends included, reversed when `ccw` is false.
+std::vector<Vec2> arcPoints(Vec2 c, Vec2 major, Vec2 minor, double from, double to, bool ccw) {
+    if (!ccw)
+        std::swap(from, to);
+    double sweep = std::fmod(to - from, kTwoPi);
+    if (sweep <= 1e-12)
+        sweep += kTwoPi;
+    const int k = std::clamp(static_cast<int>(std::ceil(sweep / (kPi / 36))), 2, 144);
+    std::vector<Vec2> pts;
+    for (int j = 0; j <= k; ++j) {
+        const double a = from + sweep * j / k;
+        pts.push_back(c + major * std::cos(a) + minor * std::sin(a));
+    }
+    if (!ccw)
+        std::reverse(pts.begin(), pts.end());
+    return pts;
+}
+
+}  // namespace
+
+// An object-coordinate path with bulges, projected: the arcs become short segments.
+std::vector<PolyVertex> Importer::projectPath(const std::vector<PolyVertex>& vs, bool closed,
+                                              const Tilt& t, double elev) {
+    std::vector<PolyVertex> out;
+    const std::size_t n = vs.size(), segs = closed ? n : n - 1;
+    std::vector<Vec2> mid;
+    for (std::size_t i = 0; i < n; ++i) {
+        out.push_back({t.map(vs[i].p, elev), 0, 0, 0});
+        if (i >= segs)
+            continue;
+        mid.clear();
+        bulgePoints(vs[i].p, vs[(i + 1) % n].p, vs[i].bulge, mid);
+        for (Vec2 q : mid)
+            out.push_back({t.map(q, elev), 0, 0, 0});
+    }
+    return out;
+}
+
+// A hatch built in object coordinates, projected. Arcs, elliptical arcs and bulges become line
+// segments; splines keep their shape (projection is affine).
+void Importer::projectHatch(HatchData& h, const Tilt& t, double elev) {
+    auto m = [&](Vec2 p) { return t.map(p, elev); };
+    auto lines = [&](const std::vector<Vec2>& pts, std::vector<HatchEdge>& out) {
+        for (std::size_t i = 1; i < pts.size(); ++i)
+            out.emplace_back(HatchLineEdge{m(pts[i - 1]), m(pts[i])});
+    };
+    for (HatchLoop& loop : h.loops) {
+        std::vector<HatchEdge> edges;
+        for (HatchEdge& e : loop.edges) {
+            if (auto* l = std::get_if<HatchLineEdge>(&e)) {
+                edges.emplace_back(HatchLineEdge{m(l->a), m(l->b)});
+            } else if (auto* a = std::get_if<HatchArcEdge>(&e)) {
+                lines(arcPoints(a->center, {a->radius, 0}, {0, a->radius}, a->startAngle,
+                                a->endAngle, a->ccw),
+                      edges);
+            } else if (auto* el = std::get_if<HatchEllipseEdge>(&e)) {
+                lines(arcPoints(el->center, el->majorAxis, perp(el->majorAxis) * el->ratio,
+                                el->startParam, el->endParam, el->ccw),
+                      edges);
+            } else if (auto* sp = std::get_if<HatchSplineEdge>(&e)) {
+                for (Vec2& p : sp->spline.control)
+                    p = m(p);
+                for (Vec2& p : sp->spline.fit)
+                    p = m(p);
+                edges.push_back(std::move(e));
+            } else if (auto* pl = std::get_if<HatchPolylineEdge>(&e)) {
+                if (pl->v.size() >= 2)
+                    pl->v = projectPath(pl->v, pl->closed, t, elev);
+                edges.push_back(std::move(e));
+            }
+        }
+        loop.edges = std::move(edges);
+    }
+    h.patternOrigin = m(h.patternOrigin);
+}
+
+// A text built in object coordinates, projected. The projection of the text's plane is an affine
+// map, which the rotation, height, width factor, obliquing angle and upside-down flag of a text
+// can express exactly. False when the text is seen edge-on.
+bool Importer::projectText(TextData& d, const Tilt& t, double elev) {
+    auto lin = [&](Vec2 v) { return t.map(v, 0); };
+    const Vec2 e1{std::cos(d.rotation), std::sin(d.rotation)};
+    const Vec2 dir = lin(e1);
+    const Vec2 up = lin(perp(e1) + e1 * std::tan(d.oblique));
+    const double dl = length(dir);
+    if (!(dl > 1e-6))
+        return false;
+    const Vec2 dh = dir / dl;
+    double a = dot(up, dh), b = dot(up, perp(dh));
+    if (b < 0) {
+        d.upsideDown = !d.upsideDown;
+        a = -a;
+        b = -b;
+    }
+    if (!(b > 1e-6))
+        return false;
+    d.position = t.map(d.position, elev);
+    d.alignPoint = t.map(d.alignPoint, elev);
+    d.rotation = std::atan2(dh.y, dh.x);
+    d.widthFactor *= dl / b;
+    d.height *= b;
+    d.oblique = std::clamp(std::atan(a / b), -85 * kDeg, 85 * kDeg);
+    return true;
+}
+
+// MTEXT keeps its insertion point and direction in world coordinates: only the height and the
+// wrapping width follow the plane. False when the text is seen edge-on.
+bool Importer::projectMText(MTextData& d, const Record& r, const Tilt& t) const {
+    double dir3[3];
+    if (r.has(11)) {
+        dir3[0] = r.num(11);
+        dir3[1] = r.num(21);
+        dir3[2] = r.num(31);
+    } else {
+        const double c = std::cos(r.num(50) * kDeg), s = std::sin(r.num(50) * kDeg);
+        for (int i = 0; i < 3; ++i)
+            dir3[i] = t.ax[i] * c + t.ay[i] * s;
+    }
+    const double l3 = std::sqrt(dir3[0] * dir3[0] + dir3[1] * dir3[1] + dir3[2] * dir3[2]);
+    if (!(l3 > 0))
+        return false;
+    for (double& v : dir3)
+        v /= l3;
+    const Vec2 dir{dir3[0], dir3[1]};
+    const Vec2 up{t.n[1] * dir3[2] - t.n[2] * dir3[1], t.n[2] * dir3[0] - t.n[0] * dir3[2]};
+    const double dl = length(dir);
+    if (!(dl > 1e-6))
+        return false;
+    const double b = std::abs(dot(up, perp(dir / dl)));
+    if (!(b > 1e-6))
+        return false;
+    d.rotation = std::atan2(dir.y, dir.x);
+    d.height *= b;
+    d.width *= dl;
+    return true;
+}
+
+bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out) {
+    const std::string_view type = r.type;
+    const std::size_t before = out.size();
+    if (type == "CIRCLE" || type == "ARC") {
+        const double rad = r.num(40) * k_;
+        if (!(rad > 0) || !std::isfinite(rad))
+            return false;
+        const Vec2 cc = t.map(P(r, 10, 20), r.num(30) * k_);
+        const double c[3] = {cc.x, cc.y, 0};
+        const double u[3] = {t.ax[0] * rad, t.ax[1] * rad, 0};
+        const double v[3] = {t.ay[0] * rad, t.ay[1] * rad, 0};
+        double s = 0, e = kTwoPi;
+        const bool full = type == "CIRCLE";
+        if (!full) {
+            s = r.num(50) * kDeg;
+            e = r.num(51) * kDeg;
+            while (e <= s)
+                e += kTwoPi;
+        }
+        addProjectedEllipse(c, u, v, s, e, full, out);
+    } else if (type == "ELLIPSE") {
+        // An ellipse is stored in world coordinates; its minor axis is N x major.
+        const double ratio = r.num(40, 1);
+        const double c[3] = {r.num(10) * k_, r.num(20) * k_, r.num(30) * k_};
+        const double u[3] = {r.num(11) * k_, r.num(21) * k_, r.num(31) * k_};
+        if (!(ratio > 0) || !std::isfinite(ratio))
+            return false;
+        const double v[3] = {ratio * (t.n[1] * u[2] - t.n[2] * u[1]),
+                             ratio * (t.n[2] * u[0] - t.n[0] * u[2]),
+                             ratio * (t.n[0] * u[1] - t.n[1] * u[0])};
+        const double s = r.num(41, 0);
+        double e = r.num(42, kTwoPi);
+        while (e <= s)
+            e += kTwoPi;
+        addProjectedEllipse(c, u, v, s, e, e - s >= kTwoPi - 1e-9, out);
+    } else if (type == "LWPOLYLINE") {
+        PolylineData pl;
+        for (const Group& g : r.g) {
+            if (g.code == 10)
+                pl.v.push_back({{g.number() * k_, 0}, 0, 0, 0});
+            else if (g.code == 20 && !pl.v.empty())
+                pl.v.back().p.y = g.number() * k_;
+            else if (g.code == 42 && !pl.v.empty())
+                pl.v.back().bulge = g.number();
+        }
+        if (pl.v.size() < 2)
+            return false;
+        pl.closed = (r.integer(70) & 1) != 0;
+        pl.v = projectPath(pl.v, pl.closed, t, r.num(38) * k_);
+        out.push_back(makeEntity(std::move(pl)));
+    } else {
+        return false;
+    }
+    if (out.size() == before)
+        return false;
+    countProjected(r);
+    return true;
+}
+
 void Importer::note3d(const Record& r) {
     for (const Group& g : r.g) {
         if (g.code >= 30 && g.code <= 33 && std::abs(g.number()) > 1e-9) {
@@ -385,8 +675,9 @@ void Importer::note3d(const Record& r) {
 // Dispatch
 
 void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
-                   std::optional<std::uint64_t> handle) {
+                   std::optional<std::uint64_t> handle, const Record* source) {
     EntityCount& cnt = sum_.entities[std::string(type)];
+    const EntityCommon common = e.common;
     tbcad::Result<EntityId> res = tx_->add(std::move(e), owner);
     if (res) {
         ++cnt.imported;
@@ -394,13 +685,29 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
             srcHandles_.emplace_back(res.value().value, *handle);
         return;
     }
-    ++cnt.skipped;
     if (res.error().code == ErrorCode::OutOfRange) {
         ++sum_.beyondHardCap;
+        // AutoCAD keeps objects however far away they are. Such an object cannot be drawn here,
+        // but its record is kept as it was and written back when the drawing is saved as DXF.
+        std::vector<Entity> kept;
+        if (source && keepUnshown(*source, kept)) {
+            kept[0].common = common;
+            if (tx_->add(std::move(kept[0]), owner)) {
+                ++cnt.imported;
+                report_.warn(code::kBeyondHardCap,
+                             std::string(type) +
+                                 ": coordinates beyond the hard limit of 1e10 mm; kept for "
+                                 "saving, not shown",
+                             line, handle);
+                return;
+            }
+        }
+        ++cnt.skipped;
         report_.warn(code::kBeyondHardCap,
                      std::string(type) + ": coordinates beyond the hard limit of 1e10 mm; dropped",
-                     line);
+                     line, handle);
     } else {
+        ++cnt.skipped;
         report_.warn(code::kRejected,
                      std::string(type) + " rejected by the document: " + res.error().message, line);
     }
@@ -477,6 +784,8 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
     }
     EntityCommon c = commonOf(r);
     std::optional<std::uint64_t> handle = handleOf(r);  // (only the first entity of a record)
+    // A record that made one object can be kept as it was if that object cannot be stored.
+    const Record* source = out.size() == 1 ? &r : nullptr;
     for (Entity& e : out) {
         if (!e.common.layer) {
             const bool wipeout = e.common.wipeout;
@@ -484,7 +793,7 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
             if (wipeout)
                 e.common.wipeout = true;
         }
-        add(std::move(e), owner, type, r.line, handle);
+        add(std::move(e), owner, type, r.line, handle, source);
         handle.reset();
     }
 }
@@ -496,6 +805,91 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
         if (frameOf(r, f, t))
             fn();
     };
+    if (t == "CIRCLE" || t == "ARC" || t == "ELLIPSE" || t == "LWPOLYLINE") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            if (!convTilted(r, *tilt, out))
+                bad(r, t, "degenerate in its tilted plane; skipped");
+            return true;
+        }
+    }
+    if (t == "HATCH" || t == "SOLID" || t == "TRACE") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            // Built in object coordinates, then projected.
+            const std::size_t before = out.size();
+            if (t == "HATCH")
+                convHatch(r, f, out);
+            else
+                convSolid(r, f, out);
+            for (std::size_t i = before; i < out.size(); ++i)
+                if (auto* h = std::get_if<Indirect<HatchData>>(&out[i].data))
+                    projectHatch(**h, *tilt, r.num(30) * k_);
+            if (out.size() > before)
+                countProjected(r);
+            return true;
+        }
+    }
+    if (t == "TEXT" || t == "ATTRIB" || t == "ATTDEF" || t == "MTEXT") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            const std::size_t before = out.size();
+            if (t == "MTEXT") {
+                convMText(r, f, out);
+            } else {
+                const TextKind kind = t == "TEXT"     ? TextKind::Text
+                                      : t == "ATTRIB" ? TextKind::Attrib
+                                                      : TextKind::AttDef;
+                convText(r, f, kind, out);
+            }
+            bool ok = out.size() > before;
+            for (std::size_t i = before; i < out.size() && ok; ++i) {
+                if (auto* d = std::get_if<Indirect<TextData>>(&out[i].data))
+                    ok = projectText(**d, *tilt, r.num(30) * k_);
+                else if (auto* m = std::get_if<Indirect<MTextData>>(&out[i].data))
+                    ok = projectMText(**m, r, *tilt);
+            }
+            if (ok) {
+                countProjected(r);
+            } else if (out.size() > before) {
+                out.resize(before);
+                bad(r, t, "seen edge-on in its tilted plane; skipped");
+            }
+            return true;
+        }
+    }
+    if (t == "INSERT") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            // Seen from above the plane is squashed across its horizontal axis: rotation(theta)
+            // times scale(1, nz). A block turned by a multiple of 90 degrees in that plane stays a
+            // rotated and scaled block; any other turn would need a shear.
+            const std::size_t before = out.size();
+            convInsert(r, rr, f, out);  // also consumes the ATTRIB records
+            const double q = r.num(50) / 90;
+            const double k = std::round(q);
+            if (std::abs(q - k) > 1e-6) {
+                out.resize(before);
+                report_.warn(code::kExtrusion3d,
+                             "INSERT turned by " + formatDouble(r.num(50)) +
+                                 " degrees in a tilted 3D plane cannot be drawn as seen from "
+                                 "above; skipped",
+                             r.line, handleOf(r));
+                return true;
+            }
+            const double theta = std::atan2(tilt->ax[1], tilt->ax[0]);
+            const bool odd = std::fmod(std::abs(k), 2.0) == 1;
+            const Vec2 squash = odd ? Vec2{tilt->n[2], 1} : Vec2{1, tilt->n[2]};
+            const double elev = r.num(30) * k_;
+            for (std::size_t i = before; i < out.size(); ++i) {
+                if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data)) {
+                    InsertData& in = **d;
+                    in.position = tilt->map(in.position, elev);
+                    in.rotation += theta;
+                    in.scale = Vec2{in.scale.x * squash.x, in.scale.y * squash.y};
+                }
+            }
+            if (out.size() > before)
+                countProjected(r);
+            return true;
+        }
+    }
     if (t == "LINE") {
         convLine(r, out);
     } else if (t == "CIRCLE") {
@@ -659,10 +1053,95 @@ bool Importer::convLwPolyline(const Record& r, const Frame& f, std::vector<Entit
     pl.restartLinetype = (r.integer(70) & 128) == 0;  // flag 128: the linetype runs on
     pl.constantWidth = std::max(0.0, r.num(43) * k_);
     if (pl.v.size() < 2) {
+        // AutoCAD keeps such a polyline (it draws as nothing, or a dot): so does a save to DXF.
+        if (keepUnshown(r, out)) {
+            report_.warn(code::kBadEntity,
+                         "LWPOLYLINE with fewer than two vertices; kept for saving, not shown",
+                         r.line, handleOf(r));
+            return true;
+        }
         bad(r, "LWPOLYLINE", "fewer than two vertices; skipped");
         return false;
     }
     out.push_back(makeEntity(std::move(pl)));
+    return true;
+}
+
+// A polygon mesh (M x N grid of vertices) or polyface mesh (vertices plus faces of up to four
+// vertex indices, negative for a hidden edge), drawn as its visible edges seen from above.
+bool Importer::convMesh(const Record& r, const std::vector<Vec2>& ctrl,
+                        const std::vector<Vec2>& fit,
+                        const std::vector<std::array<std::int64_t, 4>>& faces,
+                        std::vector<Entity>& out) {
+    const std::int64_t flags = r.integer(70);
+    const std::size_t before = out.size();
+    if (flags & 64) {  // polyface
+        const std::vector<Vec2>& vs = fit.empty() ? ctrl : fit;
+        std::set<std::pair<std::int64_t, std::int64_t>> seen;
+        for (const auto& f : faces) {
+            int n = 0;
+            while (n < 4 && f[n] != 0)
+                ++n;
+            if (n < 2)
+                continue;
+            for (int i = 0; i < n; ++i) {
+                const std::int64_t a = f[i], b = std::abs(f[(i + 1) % n]);
+                if (a < 0 || (n == 2 && i == 1))
+                    continue;  // hidden edge (the sign of the edge's first vertex)
+                const std::int64_t lo = std::min(a, b), hi = std::max(a, b);
+                if (lo < 1 || hi > static_cast<std::int64_t>(vs.size()) || lo == hi ||
+                    !seen.insert({lo, hi}).second)
+                    continue;
+                out.push_back(makeEntity(LineData{vs[static_cast<std::size_t>(a - 1)],
+                                                  vs[static_cast<std::size_t>(b - 1)]}));
+            }
+        }
+    } else {  // polygon mesh
+        std::int64_t m = r.integer(71), n = r.integer(72);
+        const std::int64_t sm = r.integer(73), sn = r.integer(74);
+        const std::vector<Vec2>* vs = nullptr;
+        bool closedM = (flags & 1) != 0, closedN = (flags & 32) != 0;
+        if (!fit.empty() && sm > 1 && sn > 1 && static_cast<std::int64_t>(fit.size()) == sm * sn) {
+            vs = &fit;  // a smoothed surface: draw its fitted grid
+            m = sm;
+            n = sn;
+        } else if (m > 0 && n > 0 && static_cast<std::int64_t>(fit.size()) == m * n) {
+            vs = &fit;
+        } else if (m > 0 && n > 0 && static_cast<std::int64_t>(ctrl.size()) == m * n) {
+            vs = &ctrl;
+        }
+        if (vs && m * n >= 2) {
+            auto at = [&](std::int64_t i, std::int64_t j) {
+                return (*vs)[static_cast<std::size_t>(i * n + j)];
+            };
+            auto line = [&](std::vector<PolyVertex> pts, bool closed) {
+                if (pts.size() < 2)
+                    return;
+                PolylineData pl;
+                pl.v = std::move(pts);
+                pl.closed = closed && pl.v.size() > 2;
+                out.push_back(makeEntity(std::move(pl)));
+            };
+            for (std::int64_t i = 0; i < m; ++i) {
+                std::vector<PolyVertex> row;
+                for (std::int64_t j = 0; j < n; ++j)
+                    row.push_back({at(i, j), 0, 0, 0});
+                line(std::move(row), closedN);
+            }
+            for (std::int64_t j = 0; j < n; ++j) {
+                std::vector<PolyVertex> col;
+                for (std::int64_t i = 0; i < m; ++i)
+                    col.push_back({at(i, j), 0, 0, 0});
+                line(std::move(col), closedM);
+            }
+        }
+    }
+    if (out.size() == before) {
+        bad(r, "POLYLINE", "mesh without usable vertices or faces; skipped");
+        return false;
+    }
+    if (meshes_++ == 0)
+        firstMeshLine_ = r.line;
     return true;
 }
 
@@ -674,11 +1153,20 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
     const double defStart = r.num(40) * k_, defEnd = r.num(41) * k_;
 
     std::vector<PolyVertex> plain, splineVerts;
+    std::vector<Vec2> meshCtrl, meshFit;           // polygon mesh / polyface vertices
+    std::vector<std::array<std::int64_t, 4>> faces;  // polyface faces (1-based, < 0 = hidden)
     bool zSeen = false;
     Record v;
     while (rr.next(v)) {
         if (v.type == "VERTEX") {
             std::int64_t vf = v.integer(70);
+            if (mesh) {
+                if ((vf & 128) && !(vf & 64))
+                    faces.push_back({v.integer(71), v.integer(72), v.integer(73), v.integer(74)});
+                else
+                    ((vf & 16) ? meshCtrl : meshFit).push_back(P(v, 10, 20));
+                continue;
+            }
             if (vf & 16)
                 continue;  // spline frame control point
             if (line3d && !zSeen && std::abs(v.num(30)) > 1e-9) {
@@ -699,12 +1187,11 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
             break;
         }
     }
-    if (mesh) {
-        bad(r, "POLYLINE", "polygon meshes and polyface meshes are not supported; skipped");
-        return false;
-    }
+    if (mesh)
+        return convMesh(r, meshCtrl, meshFit, faces, out);
     Frame f;  // a 3D polyline is in world coordinates; its vertices have no extrusion
-    if (!line3d && !frameOf(r, f, "POLYLINE"))
+    const std::optional<Tilt> tilt = line3d ? std::nullopt : tiltOf(r);
+    if (!line3d && !tilt && !frameOf(r, f, "POLYLINE"))
         return false;
     PolylineData pl;
     pl.v = ((flags & (2 | 4)) && !splineVerts.empty()) ? std::move(splineVerts) : std::move(plain);
@@ -717,6 +1204,10 @@ bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*un
     if (pl.v.size() < 2) {
         bad(r, "POLYLINE", "fewer than two vertices; skipped");
         return false;
+    }
+    if (tilt) {
+        pl.v = projectPath(pl.v, pl.closed, *tilt, r.num(30) * k_);
+        countProjected(r);
     }
     out.push_back(makeEntity(std::move(pl)));
     return true;
@@ -1942,6 +2433,40 @@ bool Importer::convAcadTable(const Record& r, RecordReader& rr, const Frame& f,
     return true;
 }
 
+std::string Importer::keptRecord(const Record& r) {
+    // Valid while the units were not scaled.
+    if (k_ != 1)
+        return {};
+    std::string body;
+    for (const Group& g : r.g) {
+        const int c = g.code;
+        if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 || c == 102 ||
+            c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 || c >= 1000 ||
+            handleCode(c) || (c >= 480 && c <= 481) || (c == 100 && g.str() == "AcDbEntity"))
+            continue;
+        // The ATTRIB records that followed an INSERT are not kept with it, so it no longer says
+        // they follow.
+        if (c == 66 && r.type == "INSERT")
+            continue;
+        std::string text;
+        if (!keptValue(g, [&](std::string_view v) { return dec(v); }, text))
+            return {};
+        packGroup(body, c, text);
+    }
+    return body.empty() ? std::string{} : std::string(kProxyDxfFresh) + body;
+}
+
+bool Importer::keepUnshown(const Record& r, std::vector<Entity>& out) {
+    const std::string kept = keptRecord(r);
+    if (kept.empty())
+        return false;
+    ProxyData d;
+    d.originalType = std::string(r.type);
+    d.raw.assign(kept.begin(), kept.end());
+    out.push_back(makeEntity(std::move(d)));
+    return true;
+}
+
 bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
     ProxyData d;
     d.originalType = std::string(r.type);
@@ -1952,29 +2477,10 @@ bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
     if (gfx.size() >= 16)
         unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
 
-    // The record itself, to be written back unchanged (valid while the units were not scaled).
-    std::string kept;
-    if (k_ == 1) {
-        std::string body;
-        for (const Group& g : r.g) {
-            const int c = g.code;
-            if (c == 5 || c == 6 || c == 8 || c == 48 || c == 60 || c == 62 || c == 67 ||
-                c == 102 || c == 284 || c == 370 || c == 410 || c == 420 || c == 430 || c == 440 ||
-                c >= 1000 || handleCode(c) || (c >= 480 && c <= 481) ||
-                (c == 100 && g.str() == "AcDbEntity"))
-                continue;
-            std::string text;
-            if (!keptValue(g, [&](std::string_view v) { return dec(v); }, text)) {
-                body.clear();
-                break;
-            }
-            packGroup(body, c, text);
-        }
-        if (!body.empty()) {
-            kept = std::string(kProxyDxfFresh) + body;
-            d.raw.assign(kept.begin(), kept.end());
-        }
-    }
+    // The record itself, to be written back unchanged.
+    const std::string kept = keptRecord(r);
+    if (!kept.empty())
+        d.raw.assign(kept.begin(), kept.end());
     if (d.graphics.items.empty() && texts.empty() && kept.empty())
         return false;
     std::string type(r.type);

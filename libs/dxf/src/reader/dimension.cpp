@@ -43,6 +43,16 @@ void bulgeArc(Vec2 a, Vec2 b, double bulge, std::vector<Vec2>& out) {
     }
 }
 
+// Group 52 is the angle of the extension lines from the X axis (DIMEDIT Oblique), 0 when they are
+// not tilted. DimensionData::oblique is their lean from the perpendicular of the dimension line,
+// whose direction is `dimAngle`. Both radians.
+double leanOf(double obliqueAngle, double dimAngle) {
+    if (!std::isfinite(obliqueAngle) || obliqueAngle == 0)
+        return 0;
+    const double lean = std::remainder(obliqueAngle - dimAngle - kPi / 2, kPi);
+    return std::abs(lean) < 1e-12 ? 0 : lean;
+}
+
 }  // namespace
 
 // A dimension can carry its own values for a few style variables (the "DSTYLE" block of its
@@ -357,6 +367,17 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
                 appendDimensionGraphics(r, none, out);
             return true;
     }
+    // Extension lines that lean (DIMEDIT Oblique) and text turned by hand (DIMEDIT Rotate,
+    // DIMTEDIT Angle; an absolute angle, as AutoCAD writes it).
+    if (d.kind == DimKind::Linear || d.kind == DimKind::Aligned) {
+        const Vec2 along = d.defPts[1] - d.defPts[0];
+        const double dimAngle = d.kind == DimKind::Linear ? d.rotation : std::atan2(along.y, along.x);
+        d.oblique = leanOf(r.num(52) * kDeg, dimAngle);
+    }
+    if (const double rot = r.num(53); rot != 0 && std::isfinite(rot)) {
+        d.textRotated = true;
+        d.textRotation = rot * kDeg;
+    }
     d.textPos = P(r, 11, 21);
     // Two-line angular dimensions keep the point on their arc in textPos (see docs/dim.md).
     if ((flags & 7) == 2 && r.has(16))
@@ -392,6 +413,11 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
     }
     Entity e;
     e.data = Indirect<DimensionData>(std::move(d));
+    if (opts_.dimensionCompare) {
+        e.common = commonOf(r);
+        compareDimension(r, e);
+        e.common = {};
+    }
     if (opts_.dimensionGraphics)
         appendDimensionGraphics(r, e, out);
     out.insert(out.begin(), std::move(e));
@@ -421,38 +447,19 @@ bool Importer::convArcDimension(const Record& r, std::vector<Entity>& out) {
     return true;
 }
 
-void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
-                                       std::vector<Entity>& out) {
-    auto it = blockByFold_.end();
-    {
-        std::string name = dec(r.raw(2));
-        for (char& c : name) {
-            if (c >= 'A' && c <= 'Z')
-                c = static_cast<char>(c - 'A' + 'a');
-        }
-        it = blockByFold_.find(name);
+const BlockDef* Importer::dimensionBlock(const Record& r) {
+    std::string name = dec(r.raw(2));
+    for (char& c : name) {
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
     }
+    const auto it = blockByFold_.find(name);
     const BlockDef* def = it == blockByFold_.end() ? nullptr : doc_->block(it->second);
-    if (!def || def->entities.empty()) {
-        report_.info(code::kNoDimensionBlock,
-                     "DIMENSION: the drawn dimension block \"" + dec(r.raw(2)) +
-                         "\" is missing; no graphics kept",
-                     r.line);
-        return;
-    }
+    return def && !def->entities.empty() ? def : nullptr;
+}
 
-    const EntityCommon dc = commonOf(r);
-    Entity styleHolder;
-    styleHolder.common = dc;
-    styleHolder.data = PointData{};
-    geom::DisplayContext ctx;
-    ctx.chordTolMm = 0.01;
-    DisplayStyle dimStyle = geom::resolveStyle(*doc_, styleHolder, ctx);
-    ctx.byBlockColor = dimStyle.color;
-    ctx.byBlockLineweightMm = dimStyle.lineweight;
-    ctx.byBlockPattern = dimStyle.pattern;
-
-    std::vector<Entity> shapes, texts;
+void Importer::dimensionBlockEntities(const BlockDef& def, std::vector<Entity>& shapes,
+                                      std::vector<Entity>& texts) {
     struct Walker {
         Importer& self;
         std::vector<Entity>& shapes;
@@ -487,7 +494,33 @@ void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
             }
         }
     };
-    Walker{*this, shapes, texts}.run(*def, std::nullopt, 0);
+    Walker{*this, shapes, texts}.run(def, std::nullopt, 0);
+}
+
+void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
+                                       std::vector<Entity>& out) {
+    const BlockDef* def = dimensionBlock(r);
+    if (!def) {
+        report_.info(code::kNoDimensionBlock,
+                     "DIMENSION: the drawn dimension block \"" + dec(r.raw(2)) +
+                         "\" is missing; no graphics kept",
+                     r.line);
+        return;
+    }
+
+    const EntityCommon dc = commonOf(r);
+    Entity styleHolder;
+    styleHolder.common = dc;
+    styleHolder.data = PointData{};
+    geom::DisplayContext ctx;
+    ctx.chordTolMm = 0.01;
+    DisplayStyle dimStyle = geom::resolveStyle(*doc_, styleHolder, ctx);
+    ctx.byBlockColor = dimStyle.color;
+    ctx.byBlockLineweightMm = dimStyle.lineweight;
+    ctx.byBlockPattern = dimStyle.pattern;
+
+    std::vector<Entity> shapes, texts;
+    dimensionBlockEntities(*def, shapes, texts);
 
     ProxyData proxy;
     proxy.originalType = "DIMENSION";

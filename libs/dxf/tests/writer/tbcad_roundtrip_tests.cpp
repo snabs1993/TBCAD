@@ -483,3 +483,106 @@ TEST_CASE("unit precision comes in from a DXF and goes out with the value set in
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+// AutoCAD keeps an INSERT placed further away than TBCAD can draw (1e10 mm) and an LWPOLYLINE
+// with a single vertex. TBCAD cannot show them, but keeps their records and writes them back.
+TEST_CASE("an object beyond the coordinate limit and a one-vertex polyline are saved back") {
+    const std::string src =
+        "  0\nSECTION\n  2\nBLOCKS\n"
+        "  0\nBLOCK\n  8\n0\n  2\nFAR\n 70\n0\n 10\n0\n 20\n0\n 30\n0\n  3\nFAR\n"
+        "  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 30\n0\n 11\n1\n 21\n0\n 31\n0\n"
+        "  0\nENDBLK\n  8\n0\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nINSERT\n  8\nMARKS\n  2\nFAR\n 10\n3.5E+13\n 20\n-2E+12\n 30\n0\n 41\n2\n"
+        "  0\nLWPOLYLINE\n  8\nDOTS\n 90\n1\n 70\n0\n 10\n12.5\n 20\n7.5\n"
+        "  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 30\n0\n 11\n10\n 21\n0\n 31\n0\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    std::vector<std::byte> bytes(src.size());
+    std::memcpy(bytes.data(), src.data(), src.size());
+    Report r1;
+    Result<ImportResult> first = importDxf(bytes, ImportOptions{}, r1);
+    REQUIRE(first.ok());
+    Document& doc = *first.value().document;
+    CHECK(doc.modelSpace().size() == 3);
+    CHECK(first.value().summary.beyondHardCap == 1);
+    CHECK(r1.countCode(code::kBeyondHardCap) == 1);
+
+    auto saved = io::writeTbcadToMemory(doc);
+    REQUIRE(saved.ok());
+    io::IoReport ioReport;
+    auto reopened = io::readTbcad(saved.value(), ioReport);
+    REQUIRE(reopened.ok());
+    Report r2;
+    Result<ExportResult> out = exportDxf(*reopened.value(), ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string text(out.value().bytes.begin(), out.value().bytes.end());
+    // The text of a record, up to the type of the one written after it.
+    auto record = [&](const char* type, const char* next) {
+        const std::size_t at = text.find(std::string("\r\n") + type + "\r\n", text.find("ENTITIES"));
+        REQUIRE(at != std::string::npos);
+        return text.substr(at, text.find(std::string("\r\n") + next + "\r\n", at) - at);
+    };
+    const std::string ins = record("INSERT", "LWPOLYLINE");
+    CHECK(ins.find("\r\n8\r\nMARKS\r\n") != std::string::npos);
+    CHECK(ins.find("\r\n2\r\nFAR\r\n") != std::string::npos);
+    CHECK(ins.find("\r\n10\r\n35000000000000\r\n") != std::string::npos);
+    CHECK(ins.find("\r\n41\r\n2\r\n") != std::string::npos);
+    const std::string pl = record("LWPOLYLINE", "LINE");
+    CHECK(pl.find("\r\n8\r\nDOTS\r\n") != std::string::npos);
+    CHECK(pl.find("\r\n90\r\n1\r\n") != std::string::npos);
+    CHECK(pl.find("\r\n10\r\n12.5\r\n") != std::string::npos);
+
+    // Read again: the same objects, still kept.
+    Report r3;
+    Result<ImportResult> again = importDxf(std::as_bytes(std::span(text)), ImportOptions{}, r3);
+    REQUIRE(again.ok());
+    CHECK(again.value().document->modelSpace().size() == 3);
+}
+
+}  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+// DIMEDIT Oblique (group 52, the angle of the extension lines from the X axis) and text turned by
+// hand (group 53) come in and go out again.
+TEST_CASE("a dimension's oblique extension lines and turned text survive a DXF round trip") {
+    const std::string src =
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nDIMENSION\n  8\n0\n  2\n*D1\n 10\n100\n 20\n20\n 30\n0\n 11\n50\n 21\n22\n 31\n0\n"
+        " 70\n32\n  1\n<>\n 53\n45\n100\nAcDbAlignedDimension\n"
+        " 13\n0\n 23\n0\n 33\n0\n 14\n100\n 24\n0\n 34\n0\n 50\n0\n 52\n60\n"
+        "100\nAcDbRotatedDimension\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    auto load = [](const std::string& text) {
+        Report r;
+        Result<ImportResult> in = importDxf(std::as_bytes(std::span(text)), ImportOptions{}, r);
+        REQUIRE(in.ok());
+        return std::move(in.value().document);
+    };
+    auto check = [](const Document& doc) {
+        const DimensionData* d = nullptr;
+        doc.forEachEntity([&](const Entity& e) {
+            if (const auto* x = entityAs<DimensionData>(e))
+                d = x;
+        });
+        REQUIRE(d != nullptr);
+        CHECK(d->kind == DimKind::Linear);
+        CHECK(d->oblique == doctest::Approx(-kPi / 6));  // 60 degrees from X: 30 from upright
+        CHECK(d->textRotated);
+        CHECK(d->textRotation == doctest::Approx(kPi / 4));
+    };
+    auto doc = load(src);
+    check(*doc);
+    Report r2;
+    Result<ExportResult> out = exportDxf(*doc, ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    const std::string text(out.value().bytes.begin(), out.value().bytes.end());
+    CHECK(text.find("\r\n52\r\n60.0\r\n") != std::string::npos);
+    CHECK(text.find("\r\n53\r\n45.0\r\n") != std::string::npos);
+    check(*load(text));
+}
+
+}  // namespace tbcad::dxf
