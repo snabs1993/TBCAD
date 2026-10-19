@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -1814,4 +1815,78 @@ TEST_CASE("save workspace dialog takes the keyboard when it opens and closes on 
     h.key(ImGuiKey_Escape);
     h.frame(3);
     CHECK_FALSE(h.windowOpen("Save workspace"));
+}
+
+// A person who clicks, drags and types without a plan: whatever happens, nothing may crash, ImGui
+// may not report misuse (the harness fails the test on that), and Esc must always bring the
+// program back to an idle prompt.
+TEST_CASE("random clicks, keys and commands leave the program usable") {
+    Harness h(1440, 900);
+    h.frame(3);
+    for (const char* line : {"LINE 0,0 100,0 100,100 0,100 c", "CIRCLE 50,50 30", "LINE 0,0 100,100",
+                             "RECTANGLE 10,10 40,40", "TEXT 20,20 5 0 Hello"}) {
+        h.core().submitText(line);
+        h.core().pressEscape();
+    }
+    h.core().zoomExtents();
+    h.frame(3);
+    const ImGuiKey keys[] = {ImGuiKey_Escape,    ImGuiKey_Enter,     ImGuiKey_Delete, ImGuiKey_Tab,
+                             ImGuiKey_UpArrow,   ImGuiKey_DownArrow, ImGuiKey_F3,     ImGuiKey_F7,
+                             ImGuiKey_F8,        ImGuiKey_F9,        ImGuiKey_F10,    ImGuiKey_F12,
+                             ImGuiKey_Backspace, ImGuiKey_Space};
+    const char* typed[] = {"LINE",     "CIRCLE", "MOVE", "COPY", "ERASE",  "ZOOM", "E",     "TRIM",
+                           "OFFSET",   "HATCH",  "10",   "5,5",  "@10<45", "u",    "close", "all",
+                           "LAYER",    "PROPERTIES",     "ARRAY", "MIRROR", "STRETCH", "x y"};
+    // (TBCAD_FUZZ_SEED picks another sequence, TBCAD_FUZZ_STEPS a longer one)
+    std::uint32_t state = std::getenv("TBCAD_FUZZ_SEED")
+                              ? static_cast<std::uint32_t>(std::atoll(std::getenv("TBCAD_FUZZ_SEED")))
+                              : 20261019u;
+    const bool menus = std::getenv("TBCAD_FUZZ_MENUS") != nullptr;
+    const int steps = std::getenv("TBCAD_FUZZ_STEPS") ? std::atoi(std::getenv("TBCAD_FUZZ_STEPS")) : 250;
+    auto rnd = [&](std::uint32_t n) {
+        state = state * 1664525u + 1013904223u;
+        return (state >> 8) % n;
+    };
+    for (int step = 0; step < steps; ++step) {
+        const float x = 40.0f + static_cast<float>(rnd(1360));
+        const float y = (menus ? 2.0f : 70.0f) + static_cast<float>(rnd(menus ? 850 : 780));  // (not the menu bar: file dialogs)
+        switch (rnd(8)) {
+            case 0:
+                h.click(x, y);
+                break;
+            case 1:
+                h.click(x, y, 1);
+                break;
+            case 2:
+                h.drag(x, y, 40.0f + static_cast<float>(rnd(1360)), 70.0f + static_cast<float>(rnd(780)));
+                break;
+            case 3:
+                h.scroll(x, y, static_cast<float>(rnd(5)) - 2.0f);
+                break;
+            case 4:
+                h.key(keys[rnd(sizeof keys / sizeof *keys)], rnd(4) == 0, rnd(5) == 0);
+                break;
+            case 5:
+                h.core().submitText(typed[rnd(sizeof typed / sizeof *typed)]);
+                break;
+            case 6:
+                h.doubleClick(x, y);
+                break;
+            default:
+                h.moveMouse(x, y);
+                break;
+        }
+        h.frame(1);
+    }
+    // Back to idle: Esc ends commands, popups and dialogs.
+    for (int i = 0; i < 6; ++i) {
+        h.key(ImGuiKey_Escape);
+        h.core().pressEscape();
+        h.frame(2);
+    }
+    CHECK_FALSE(h.core().runner().active());
+    h.core().submitText("LINE 0,0 5,5");
+    h.core().pressEscape();
+    h.frame(2);
+    CHECK(h.core().document().modelSpaceCount() > 0);
 }
