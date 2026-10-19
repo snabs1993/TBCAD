@@ -196,10 +196,12 @@ TEST_CASE("LAYTRANS renames, merges and restyles layers from a CSV standard, Exp
 
     const std::string out = (dir / "out.csv").string();
     CHECK(f.run("LAYTRANS", {"Export", out}).finished);
-    std::ifstream in(out, std::ios::binary);
-    std::stringstream buf;
-    buf << in.rdbuf();
-    CHECK(buf.str().find("A,A,") != std::string::npos);
+    {  // closed before the folder goes: Windows will not delete a file that is still open
+        std::ifstream in(out, std::ios::binary);
+        std::stringstream buf;
+        buf << in.rdbuf();
+        CHECK(buf.str().find("A,A,") != std::string::npos);
+    }
     fs::remove_all(dir);
 }
 

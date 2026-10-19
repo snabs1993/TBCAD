@@ -3,7 +3,6 @@
 // (default 100,000 polylines and 100,000 lines). Prints; the checks only guard the results.
 #include <doctest/doctest.h>
 
-#include <malloc.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -17,10 +16,24 @@
 #include "tbcad/ui/app_core.h"
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <psapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "psapi.lib")
+#endif
 #include <process.h>
 #define getpid _getpid
 #else
 #include <unistd.h>
+#endif
+#if defined(__GLIBC__)
+#include <malloc.h>
 #endif
 
 using namespace tbcad;
@@ -177,10 +190,21 @@ TEST_CASE("perf: memory of the undo stack after 50 whole-drawing edits") {
     CHECK(big.core->undoStack().usedBytes() <= big.core->undoStack().limitBytes());
 }
 
-// Live heap bytes (unlike the process size, not affected by memory freed earlier and kept).
+// Live heap bytes (unlike the process size, not affected by memory freed earlier and kept). The
+// numbers are only printed. Windows has no such count: the private bytes of the process stand in.
 static double heapMb() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS_EX pmc{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc),
+                             sizeof pmc))
+        return static_cast<double>(pmc.PrivateUsage) / 1048576.0;
+    return 0;
+#elif defined(__GLIBC__)
     const struct mallinfo2 m = mallinfo2();
     return static_cast<double>(m.uordblks + m.hblkhd) / 1048576.0;
+#else
+    return 0;
+#endif
 }
 
 TEST_CASE("perf: save and open of a big drawing keep every object") {
