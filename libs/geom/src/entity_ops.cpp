@@ -5,6 +5,7 @@
 
 #include "internal.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/geom/box_grid.h"
 
 namespace tbcad::geom {
 
@@ -329,30 +330,63 @@ Result<void> intersectEntities(const Entity& a, const Entity& b,
     };
     std::vector<Intersection> tmp;
     std::size_t first = out.size();
-    for (const Piece& x : pa) {
-        for (const Piece& y : pb) {
-            tmp.clear();
-            bool ex = extendA && (!x.seg || x.first || x.last);
-            bool ey = extendB && (!y.seg || y.first || y.last);
-            intersect(x.curve, y.curve, tmp, ex, ey);
-            for (const Intersection& i : tmp) {
-                bool okA = true, okB = true;
-                double ta = paramOf(x, i.tA, extendA, okA);
-                double tb = paramOf(y, i.tB, extendB, okB);
-                if (!okA || !okB)
-                    continue;
-                bool dup = false;
-                for (std::size_t k = first; k < out.size(); ++k)
-                    if (distance(out[k].p, i.p) <=
-                        std::max(tol::kLinear,
-                                 1e-13 * std::max({std::abs(i.p.x), std::abs(i.p.y), 1.0}))) {
-                        dup = true;
-                        break;
-                    }
-                if (!dup)
-                    out.push_back({i.p, ta, tb});
-            }
+    const auto pairUp = [&](const Piece& x, const Piece& y) {
+        tmp.clear();
+        bool ex = extendA && (!x.seg || x.first || x.last);
+        bool ey = extendB && (!y.seg || y.first || y.last);
+        intersect(x.curve, y.curve, tmp, ex, ey);
+        for (const Intersection& i : tmp) {
+            bool okA = true, okB = true;
+            double ta = paramOf(x, i.tA, extendA, okA);
+            double tb = paramOf(y, i.tB, extendB, okB);
+            if (!okA || !okB)
+                continue;
+            bool dup = false;
+            for (std::size_t k = first; k < out.size(); ++k)
+                if (distance(out[k].p, i.p) <=
+                    std::max(tol::kLinear,
+                             1e-13 * std::max({std::abs(i.p.x), std::abs(i.p.y), 1.0}))) {
+                    dup = true;
+                    break;
+                }
+            if (!dup)
+                out.push_back({i.p, ta, tb});
         }
+    };
+    if (pa.size() * pb.size() <= 4096) {
+        for (const Piece& x : pa)
+            for (const Piece& y : pb)
+                pairUp(x, y);
+        return {};
+    }
+    // Many pieces on both sides (two long polylines): a grid over the boxes of one side finds, for
+    // each piece of the other, the few it can meet. A piece that may be extended has no useful box
+    // and meets all of them. Pairs are visited in the same order as above.
+    std::vector<BBox2> boxes;
+    boxes.reserve(pb.size());
+    std::vector<std::size_t> everywhere;  // pieces of b that extend
+    const double margin = std::max(tol::kLinear * 10, 1e-6);
+    for (std::size_t j = 0; j < pb.size(); ++j) {
+        boxes.push_back(pb[j].curve.bounds().inflated(margin));
+        if (extendB && (!pb[j].seg || pb[j].first || pb[j].last))
+            everywhere.push_back(j);
+    }
+    const BoxGrid grid(boxes);
+    std::vector<std::size_t> hits;
+    for (const Piece& x : pa) {
+        const bool xExtends = extendA && (!x.seg || x.first || x.last);
+        hits.clear();
+        if (xExtends) {
+            for (std::size_t j = 0; j < pb.size(); ++j)
+                hits.push_back(j);
+        } else {
+            grid.query(x.curve.bounds().inflated(margin), [&](std::size_t j) { hits.push_back(j); });
+            hits.insert(hits.end(), everywhere.begin(), everywhere.end());
+            std::sort(hits.begin(), hits.end());
+            hits.erase(std::unique(hits.begin(), hits.end()), hits.end());
+        }
+        for (std::size_t j : hits)
+            pairUp(x, pb[j]);
     }
     return {};
 }
