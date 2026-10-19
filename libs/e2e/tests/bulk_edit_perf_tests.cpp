@@ -502,3 +502,37 @@ TEST_CASE("perf: a big block made, exploded, redefined and edited") {
     timed("undo BLOCK", [&] { big.core->undo(); });
     CHECK(big.core->document().modelSpaceCount() == static_cast<std::size_t>(2 * big.n));
 }
+
+TEST_CASE("a drawing that is still filling in can be edited, undone and closed") {
+    // The scene of a big drawing is built in the frames after it opens; commands, undo and a
+    // second document may arrive before it is done. The scene must end up equal to the drawing.
+    Big big;
+    const std::size_t count = big.core->document().modelSpaceCount();
+    const auto path = big.dir / "fill.tbcad";
+    REQUIRE(big.core->saveAs(path).ok());
+    ui::AppCore fresh(big.registry, platform::AppPaths{big.dir / "cfg3", big.dir / "data3"});
+    fresh.setViewportSize(1400, 900);
+    REQUIRE(fresh.openFile(path).ok());
+    fresh.updateFrame();
+    REQUIRE(fresh.sceneBuilding());  // the point of the test: not done yet
+    fresh.selectAll();
+    fresh.submitText("MOVE");
+    fresh.submitText("0,0");
+    fresh.submitText("5,5");
+    fresh.updateFrame();
+    CHECK(fresh.undo());
+    fresh.updateFrame();
+    fresh.selectAll();
+    fresh.submitText("ERASE");  // (the selection is taken as the answer)
+    fresh.pressEscape();
+    fresh.updateFrame();
+    CHECK(fresh.document().modelSpaceCount() == 0);
+    CHECK(fresh.undo());
+    CHECK(fresh.document().modelSpaceCount() == count);
+    // Cancelling a command that waits at a prompt while the scene is still filling.
+    fresh.submitText("MOVE");
+    fresh.pressEscape();
+    for (int guard = 0; fresh.sceneBuilding() && guard < 100000; ++guard)
+        fresh.updateFrame();
+    CHECK(fresh.scene().entityCount() == fresh.document().modelSpaceCount());
+}
